@@ -37,6 +37,21 @@ def monte_carlo_test(
     Null hypothesis: the observed Sharpe / max-drawdown is no better than
     a random ordering of the same trades.
 
+    All Sharpe figures here are computed on the *per-trade* realised-PnL
+    sequence (one observation per closed trade), then annualised by the
+    strategy's realised trade frequency — ``sqrt(trades_per_year)``, derived
+    from the first entry and last exit timestamp. The previous implementation
+    hard-coded ``sqrt(252)`` as if each trade were one trading day, which
+    inflated the reported Sharpe by ``sqrt(252 / trades_per_year)`` (roughly
+    8x for a ~12-trade multi-year backtest). The p-values are unchanged by
+    this: a constant factor applied to both the actual and every simulated
+    Sharpe cannot change their ordering.
+
+    ``actual_max_dd`` is the drawdown of the realised-PnL path (visible only
+    at trade-exit granularity); it is deliberately *not* the mark-to-market
+    daily max drawdown reported on the run card, because the permutation test
+    is about trade ordering, not intraday marks.
+
     Args:
         trades: Completed round-trip trades from backtest.
         initial_capital: Starting capital.
@@ -45,7 +60,8 @@ def monte_carlo_test(
 
     Returns:
         Dict with actual_sharpe, p_value_sharpe, actual_max_dd,
-        p_value_max_dd, simulated_sharpes (percentiles).
+        p_value_max_dd, simulated_sharpe percentiles, plus ``basis``,
+        ``trades_per_year`` and ``annualization_factor``.
     """
     if isinstance(n_simulations, bool) or not isinstance(n_simulations, Integral) or n_simulations < 1:
         return {
@@ -58,7 +74,8 @@ def monte_carlo_test(
         return {"error": "need at least 3 trades", "p_value_sharpe": 1.0}
 
     pnls = np.array([t.pnl for t in trades])
-    actual = _path_metrics(pnls, initial_capital)
+    ann_factor, trades_per_year = _trade_annualization(trades)
+    actual = _path_metrics(pnls, initial_capital, ann_factor)
 
     rng = np.random.default_rng(seed)
     sharpe_count = 0
@@ -73,7 +90,7 @@ def monte_carlo_test(
         shuffled = rng.permutation(pnls)
         if sim_equities is not None:
             sim_equities[i] = initial_capital + np.cumsum(shuffled)
-        sim = _path_metrics(shuffled, initial_capital)
+        sim = _path_metrics(shuffled, initial_capital, ann_factor)
         sim_sharpes.append(sim["sharpe"])
         if sim["sharpe"] >= actual["sharpe"]:
             sharpe_count += 1
@@ -92,6 +109,12 @@ def monte_carlo_test(
         "simulated_sharpe_p95": round(float(np.percentile(sim_arr, 95)), 4),
         "n_simulations": n_simulations,
         "n_trades": len(trades),
+        "trades_per_year": round(trades_per_year, 2) if trades_per_year else None,
+        "annualization_factor": round(ann_factor, 4),
+        "basis": (
+            "per-trade realised PnL sequence; Sharpe annualised by realised "
+            "trade frequency (sqrt(trades_per_year)), not sqrt(252)"
+        ),
         "sharpe_samples": [round(float(s), 4) for s in sim_sharpes],
     }
     if sim_equities is not None:
@@ -113,8 +136,15 @@ def monte_carlo_test(
     return result
 
 
-def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, float]:
-    """Compute Sharpe and max drawdown from a PnL sequence."""
+def _path_metrics(
+    pnls: np.ndarray, initial_capital: float, ann_factor: float = 1.0
+) -> Dict[str, float]:
+    """Sharpe and max drawdown from a per-trade PnL sequence.
+
+    ``ann_factor`` scales the raw per-trade Sharpe to an annual figure; it is
+    ``sqrt(trades_per_year)`` (see :func:`_trade_annualization`). Pass ``1.0``
+    to get the un-annualised per-trade Sharpe.
+    """
     equity = initial_capital + np.cumsum(pnls)
     if len(equity) > 1:
         prev = equity[:-1]
@@ -123,11 +153,30 @@ def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, float]:
     else:
         returns = np.array([0.0])
     std = returns.std()
-    sharpe = float(returns.mean() / (std + 1e-10) * np.sqrt(252))
+    sharpe = float(returns.mean() / (std + 1e-10) * ann_factor)
     peak = np.maximum.accumulate(equity)
     dd = (equity - peak) / np.where(peak > 0, peak, 1.0)
     max_dd = float(dd.min())
     return {"sharpe": sharpe, "max_dd": max_dd}
+
+
+def _trade_annualization(trades: List[TradeRecord]) -> tuple[float, float | None]:
+    """Return ``(sqrt(trades_per_year), trades_per_year)`` from the realised
+    trade cadence — first entry to last exit. Falls back to ``(1.0, None)``
+    (no annualisation) when the timestamps are missing or span no time, so a
+    Sharpe is never silently annualised on a wrong basis.
+    """
+    try:
+        stamps = [pd.Timestamp(t.entry_time) for t in trades]
+        stamps += [pd.Timestamp(t.exit_time) for t in trades]
+        stamps = [s for s in stamps if not pd.isna(s)]
+        span_days = (max(stamps) - min(stamps)).total_seconds() / 86_400.0
+    except (ValueError, TypeError, AttributeError):
+        return 1.0, None
+    if span_days <= 0 or len(trades) == 0:
+        return 1.0, None
+    trades_per_year = len(trades) / (span_days / 365.25)
+    return math.sqrt(trades_per_year), trades_per_year
 
 
 # ─── Bootstrap Sharpe CI ───
@@ -368,28 +417,45 @@ def _load_trades(run_dir: Path) -> List[TradeRecord]:
     if df.empty:
         return []
 
-    # trades.csv has entry+exit row pairs; extract exit rows (they have pnl != 0)
-    trades = []
-    exit_rows = df[df["pnl"] != 0].reset_index(drop=True)
-    for _, row in exit_rows.iterrows():
-        hold = pd.to_numeric(row.get("holding_bars"), errors="coerce")
-        if pd.isna(hold):
-            hold = pd.to_numeric(row.get("holding_days", 0), errors="coerce")
-        holding_bars = 0.0 if pd.isna(hold) else float(hold)
+    # trades.csv is time-ordered entry/exit rows. An entry row carries no
+    # realised numbers (pnl / holding / return_pct all zero); an exit row
+    # carries at least one. Pair each exit with the most recent open entry of
+    # the same code so entry_time / entry_price are real — the old code keyed
+    # only on ``pnl != 0`` (dropping zero-PnL exits) and stamped entry_time
+    # with the exit timestamp (breaking walk-forward bucketing).
+    def _num(row: pd.Series, col: str) -> float:
+        val = pd.to_numeric(row.get(col), errors="coerce")
+        return 0.0 if pd.isna(val) else float(val)
+
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    open_entries: Dict[str, pd.Series] = {}
+    trades: List[TradeRecord] = []
+    for _, row in df.iterrows():
+        code = str(row.get("code", ""))
+        realised = _num(row, "pnl") or _num(row, "return_pct") or max(
+            _num(row, "holding_bars"), _num(row, "holding_days")
+        )
+        if not realised and code not in open_entries:
+            open_entries[code] = row
+            continue
+        entry = open_entries.pop(code, None)
+        hold = _num(row, "holding_bars") or _num(row, "holding_days")
         trades.append(
             TradeRecord(
-                symbol=str(row.get("code", "")),
+                symbol=code,
                 direction=1 if row.get("side") == "sell" else -1,
-                entry_price=0.0,
-                exit_price=float(row.get("price", 0)),
-                entry_time=pd.Timestamp(row.get("timestamp", "2000-01-01")),
+                entry_price=_num(entry, "price") if entry is not None else 0.0,
+                exit_price=_num(row, "price"),
+                entry_time=pd.Timestamp(
+                    (entry if entry is not None else row).get("timestamp", "2000-01-01")
+                ),
                 exit_time=pd.Timestamp(row.get("timestamp", "2000-01-01")),
-                size=float(row.get("qty", 0)),
+                size=_num(row, "qty"),
                 leverage=1.0,
-                pnl=float(row.get("pnl", 0)),
-                pnl_pct=float(row.get("return_pct", 0)),
+                pnl=_num(row, "pnl"),
+                pnl_pct=_num(row, "return_pct"),
                 exit_reason=str(row.get("reason", "signal")),
-                holding_bars=holding_bars,
+                holding_bars=hold,
                 commission=0.0,
             )
         )

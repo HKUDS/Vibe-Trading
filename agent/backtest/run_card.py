@@ -75,6 +75,18 @@ def write_run_card(
         card["artifact_refs"] = normalized_refs
     if "validation" in metrics:
         card["validation"] = metrics["validation"]
+    else:
+        # The standalone validator (``python -m backtest.validation <run_dir>``)
+        # writes artifacts/validation.json without going through ``metrics``.
+        # Surface it so the card never says "Not present" while the file exists.
+        validation_file = run_dir / "artifacts" / "validation.json"
+        if validation_file.exists():
+            try:
+                card["validation"] = json.loads(
+                    validation_file.read_text(encoding="utf-8")
+                )
+            except (json.JSONDecodeError, OSError):
+                pass
 
     card = _json_safe(card)
     json_path = run_dir / "run_card.json"
@@ -178,6 +190,57 @@ def _normalize_artifact_refs(artifact_refs: Sequence[Mapping[str, Any]] | None) 
     return refs
 
 
+def _render_validation(validation: Any) -> list[str]:
+    """Compact Markdown for the validation block.
+
+    ``artifacts/validation.json`` nests ``monte_carlo`` / ``bootstrap`` /
+    ``walk_forward`` and carries raw sample arrays and equity-path matrices —
+    dumping those verbatim (the old behaviour) bloats the card with thousands
+    of numbers on one line. Summarise the headline fields; the full data
+    stays in ``run_card.json`` and ``artifacts/validation.json``.
+    """
+    if not isinstance(validation, Mapping):
+        return [f"- {validation}"]
+
+    summary_keys = {
+        "monte_carlo": (
+            "actual_sharpe", "p_value_sharpe", "actual_max_dd", "p_value_max_dd",
+            "simulated_sharpe_mean", "simulated_sharpe_p5", "simulated_sharpe_p95",
+            "n_trades", "trades_per_year", "n_simulations", "basis", "error",
+        ),
+        "bootstrap": (
+            "observed_sharpe", "ci_lower", "ci_upper", "median_sharpe",
+            "prob_positive", "n_bootstrap", "error",
+        ),
+        "walk_forward": (
+            "n_windows", "profitable_windows", "consistency_rate",
+            "return_mean", "sharpe_mean", "sharpe_std", "error",
+        ),
+    }
+    lines: list[str] = []
+    handled = False
+    for section, keys in summary_keys.items():
+        block = validation.get(section)
+        if not isinstance(block, Mapping):
+            continue
+        handled = True
+        shown = ", ".join(f"{k}={block[k]}" for k in keys if k in block)
+        lines.append(f"- {section}: {shown}")
+    if handled:
+        return lines
+
+    # Unknown shape (e.g. the legacy flat dict): key/value, but never dump
+    # long arrays or nested dicts inline.
+    for key, value in validation.items():
+        if isinstance(value, (list, tuple)) and len(value) > 8:
+            lines.append(f"- {key}: [{len(value)} values]")
+        elif isinstance(value, Mapping):
+            lines.append(f"- {key}: {{{len(value)} fields}}")
+        else:
+            lines.append(f"- {key}: {value}")
+    return lines or ["- Present but empty."]
+
+
 def _render_markdown(card: Mapping[str, Any]) -> str:
     lines = [
         "# Backtest Run Card",
@@ -210,11 +273,7 @@ def _render_markdown(card: Mapping[str, Any]) -> str:
 
     lines.extend(["", "## Validation"])
     if "validation" in card:
-        validation = card["validation"]
-        if isinstance(validation, Mapping):
-            lines.extend(f"- {key}: {value}" for key, value in validation.items())
-        else:
-            lines.append(f"- {validation}")
+        lines.extend(_render_validation(card["validation"]))
     else:
         lines.append("- Not present.")
 
