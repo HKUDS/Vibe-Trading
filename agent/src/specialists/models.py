@@ -39,6 +39,9 @@ FORBIDDEN_SPECIALIST_TOOLS: frozenset[str] = frozenset(
         "session_search",
         "remember",
         "compact",
+        # process-level connection state mutation; specialists use per-call
+        # `connection` params instead
+        "trading_select_connection",
         # skill self-modification
         "save_skill",
         "patch_skill",

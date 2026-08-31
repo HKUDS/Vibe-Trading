@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.specialists.loader import DEFINITIONS_DIR, load_specialists
+from src.specialists.models import FORBIDDEN_SPECIALIST_TOOLS
 
 EXPECTED_SPECIALIST_COUNT = 12
 
@@ -17,13 +18,13 @@ EXPECTED_SPECIALIST_COUNT = 12
 # construction. Order-writing tools must never enter its whitelist.
 TRADING_CONNECTOR_READONLY_TOOLS = {
     "trading_connections",
-    "trading_select_connection",
     "trading_check",
     "trading_account",
     "trading_positions",
     "trading_orders",
     "trading_quote",
     "trading_history",
+    "trading_history_deals",
 }
 
 
@@ -48,3 +49,5 @@ def test_trading_connector_whitelist_is_exactly_read_only() -> None:
     assert set(spec.tools) == TRADING_CONNECTOR_READONLY_TOOLS
     assert "trading_place_order" not in spec.tools
     assert "trading_cancel_order" not in spec.tools
+    assert "trading_select_connection" not in spec.tools
+    assert "trading_select_connection" in FORBIDDEN_SPECIALIST_TOOLS
