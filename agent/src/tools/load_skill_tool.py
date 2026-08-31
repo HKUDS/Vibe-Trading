@@ -185,13 +185,25 @@ class LoadSkillTool(BaseTool):
     }
     repeatable = True
 
-    def __init__(self, skills_loader: SkillsLoader | None = None) -> None:
+    def __init__(
+        self,
+        skills_loader: SkillsLoader | None = None,
+        allowed_skills: "frozenset[str] | None" = None,
+    ) -> None:
         """Initialize LoadSkillTool.
 
         Args:
             skills_loader: SkillsLoader instance; creates one automatically if omitted.
+            allowed_skills: When not ``None``, only these skill names may be
+                loaded; any other name fails closed with an error listing the
+                allowed set. ``None`` (the default) keeps the historical
+                unrestricted behavior. Swarm workers and domain specialists
+                receive their spec's ``skills`` list here so the documented
+                per-agent skill boundary is enforced at runtime, not only in
+                the prompt.
         """
         self._loader = skills_loader or SkillsLoader()
+        self._allowed_skills = allowed_skills
 
     def execute(self, **kwargs: Any) -> str:
         """Load a skill as a skeleton, a named section, or a character page.
@@ -211,6 +223,12 @@ class LoadSkillTool(BaseTool):
             KeyError: If ``name`` is missing.
         """
         name = kwargs["name"]
+        if self._allowed_skills is not None and name not in self._allowed_skills:
+            allowed = ", ".join(sorted(self._allowed_skills)) or "(none)"
+            return _error(
+                f"Error: skill {name!r} is outside the skill allowlist for this "
+                f"context. Allowed skills: {allowed}"
+            )
         content = self._loader.get_content(name)
         if content.startswith("Error:"):
             return json.dumps({"status": "error", "content": content}, ensure_ascii=False)

@@ -275,7 +275,12 @@ def build_registry(
     return registry
 
 
-def build_filtered_registry(tool_names: list[str], *, include_shell_tools: bool = False) -> ToolRegistry:
+def build_filtered_registry(
+    tool_names: list[str],
+    *,
+    include_shell_tools: bool = False,
+    skill_allowlist: list[str] | None = None,
+) -> ToolRegistry:
     """Build a ToolRegistry with only specified tools.
 
     Local-tools-only filtered builder. Swarm workers should call
@@ -286,12 +291,20 @@ def build_filtered_registry(tool_names: list[str], *, include_shell_tools: bool 
     Args:
         tool_names: Tool names to include.
         include_shell_tools: Whether to include filtered shell execution tools.
+        skill_allowlist: When not ``None``, the ``load_skill`` tool (if
+            whitelisted) is rebuilt to refuse skill names outside this list,
+            so a documented skill boundary is enforced at runtime.
 
     Returns:
         ToolRegistry containing only the requested tools.
     """
     full = build_registry(include_shell_tools=include_shell_tools)
-    return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+    return _filter_registry(
+        full,
+        tool_names,
+        include_shell_tools=include_shell_tools,
+        skill_allowlist=skill_allowlist,
+    )
 
 
 def build_swarm_registry(
@@ -299,6 +312,7 @@ def build_swarm_registry(
     *,
     agent_config: "AgentConfig | None" = None,
     include_shell_tools: bool = False,
+    skill_allowlist: list[str] | None = None,
 ) -> ToolRegistry:
     """Build a per-worker registry that merges local + remote MCP tools.
 
@@ -321,6 +335,9 @@ def build_swarm_registry(
             MCP wrappers are appended to the candidate pool before filtering.
             Pass ``None`` to keep the worker strictly local.
         include_shell_tools: Whether shell-execution tools are eligible.
+        skill_allowlist: When not ``None``, the ``load_skill`` tool (if
+            whitelisted) is rebuilt to refuse skill names outside this list,
+            enforcing the per-worker ``skills:`` boundary at runtime.
 
     Returns:
         ToolRegistry containing the whitelist intersection of local tools
@@ -335,7 +352,12 @@ def build_swarm_registry(
         include_shell_tools=include_shell_tools,
         _mcp_server_tool_name_segments=swarm_local_server_names,
     )
-    return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+    return _filter_registry(
+        full,
+        tool_names,
+        include_shell_tools=include_shell_tools,
+        skill_allowlist=skill_allowlist,
+    )
 
 
 def _prune_agent_config_for_swarm_tools(
@@ -374,6 +396,7 @@ def _filter_registry(
     tool_names: list[str],
     *,
     include_shell_tools: bool,
+    skill_allowlist: list[str] | None = None,
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
     filtered = ToolRegistry()
@@ -388,6 +411,12 @@ def _filter_registry(
                 "depends on it cannot execute it.",
                 name, include_shell_tools,
             )
+    if skill_allowlist is not None and filtered.get("load_skill") is not None:
+        # Rebuild load_skill with the boundary baked in. ``register`` replaces
+        # by name, so the unrestricted auto-discovered instance is dropped.
+        from src.tools.load_skill_tool import LoadSkillTool
+
+        filtered.register(LoadSkillTool(allowed_skills=frozenset(skill_allowlist)))
     return filtered
 
 
