@@ -153,3 +153,25 @@ class TestParallelBench:
         result = run_bench("test_zoo", "mock", "2020-2021", registry=mock_reg)
 
         assert result["status"] == "ok"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="mock registry not inherited on spawn")
+    def test_broken_process_pool_falls_back_to_sequential(self, monkeypatch):
+        """A pool that dies on fork (threaded host) must not empty the bench."""
+        from concurrent.futures.process import BrokenProcessPool
+
+        from src.factors import bench_runner
+
+        mock_reg = self._setup_mocks(monkeypatch, n_alphas=4)
+        monkeypatch.setenv("VIBE_TRADING_BENCH_WORKERS", "4")
+
+        def _boom(*_a, **_kw):
+            raise BrokenProcessPool("simulated fork failure")
+
+        monkeypatch.setattr(bench_runner, "ProcessPoolExecutor", _boom)
+
+        result = bench_runner.run_bench("test_zoo", "mock", "2020-2021")
+
+        assert result["status"] == "ok"
+        # every alpha still evaluated, in-process
+        assert result["n_alphas_tested"] + result["n_skipped"] == 4
+        assert result["n_alphas_tested"] >= 1

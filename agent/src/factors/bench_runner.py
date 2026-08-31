@@ -20,6 +20,7 @@ import math
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from typing import Any, Callable, Iterable
 
 import numpy as np
@@ -220,6 +221,13 @@ def run_bench(
     n_workers = max(1, min(n_workers, n_total))
     use_parallel = registry is None and n_workers > 1 and n_total > 1
 
+    # ``ProcessPoolExecutor`` forks the current process. When ``run_bench`` is
+    # driven from a multi-threaded host (the uvicorn API worker for
+    # ``POST /alpha/bench``), the forked children can die on startup and every
+    # future then raises ``BrokenProcessPool`` — surfacing as "all N alphas
+    # skipped". Detect that and re-run the batch in-process instead of leaving
+    # the bench silently empty.
+    ran_parallel = False
     if use_parallel:
         ctx_kwargs: dict[str, Any] = {}
         try:
@@ -231,39 +239,52 @@ def run_bench(
             pass
 
         future_to_id: dict[Any, str] = {}
-        with ProcessPoolExecutor(
-            max_workers=n_workers,
-            initializer=_init_bench_worker,
-            initargs=(panel, return_df),
-            **ctx_kwargs,
-        ) as pool:
-            for aid in alpha_ids:
-                fut = pool.submit(_compute_single_alpha, aid)
-                future_to_id[fut] = aid
+        try:
+            with ProcessPoolExecutor(
+                max_workers=n_workers,
+                initializer=_init_bench_worker,
+                initargs=(panel, return_df),
+                **ctx_kwargs,
+            ) as pool:
+                for aid in alpha_ids:
+                    fut = pool.submit(_compute_single_alpha, aid)
+                    future_to_id[fut] = aid
 
-            n_done = 0
-            for fut in as_completed(future_to_id):
-                n_done += 1
-                aid = future_to_id[fut]
-                try:
-                    result = fut.result()
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("bench: worker crash on %s", aid)
-                    skipped.append({"id": aid, "reason": f"worker crash: {exc}", "kind": "unexpected"})
-                    result = None
-
-                if result is not None:
-                    if "row" in result:
-                        rows.append(result["row"])
-                    elif "skip" in result:
-                        skipped.append(result["skip"])
-
-                if on_progress is not None:
+                n_done = 0
+                for fut in as_completed(future_to_id):
+                    n_done += 1
+                    aid = future_to_id[fut]
                     try:
-                        on_progress(n_done, n_total, aid)
-                    except Exception:  # noqa: BLE001
-                        logger.exception("on_progress callback raised; ignoring")
-    else:
+                        result = fut.result()
+                    except BrokenProcessPool:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("bench: worker crash on %s", aid)
+                        skipped.append({"id": aid, "reason": f"worker crash: {exc}", "kind": "unexpected"})
+                        result = None
+
+                    if result is not None:
+                        if "row" in result:
+                            rows.append(result["row"])
+                        elif "skip" in result:
+                            skipped.append(result["skip"])
+
+                    if on_progress is not None:
+                        try:
+                            on_progress(n_done, n_total, aid)
+                        except Exception:  # noqa: BLE001
+                            logger.exception("on_progress callback raised; ignoring")
+            ran_parallel = True
+        except BrokenProcessPool:
+            logger.warning(
+                "bench: process pool broke (forking from a threaded host?); "
+                "re-running %d alphas in-process",
+                n_total,
+            )
+            rows.clear()
+            skipped.clear()
+
+    if not ran_parallel:
         for idx, aid in enumerate(alpha_ids, start=1):
             try:
                 factor_df = reg.compute(aid, panel)
