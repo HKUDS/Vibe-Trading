@@ -83,6 +83,7 @@ tools:
   - get_stock_news
   - get_research_reports
   - research_papers
+  - load_skill
 skills:
   - financial-statement
   - edgar-sec-filings

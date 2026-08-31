@@ -73,6 +73,7 @@ prompt: |
 tools:
   - quantlib_call
   - prediction_market
+  - load_skill
 skills:
   - valuation-model
   - investor-lenses

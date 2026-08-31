@@ -52,6 +52,7 @@ tools:
   - web_search
   - read_url
   - read_document
+  - load_skill
 skills:
   - web-reader
   - doc-reader

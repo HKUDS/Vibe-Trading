@@ -118,6 +118,31 @@ def test_unknown_skill_fails_loud(tmp_path: Path) -> None:
         )
 
 
+def test_skills_without_load_skill_fails_loud(tmp_path: Path) -> None:
+    path = tmp_path / "no-loader-agent.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "name": "no-loader-agent",
+                "description": "d",
+                "prompt": "p",
+                "tools": ["read_file"],
+                "skills": ["strategy-generate"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"no-loader-agent\.yaml: declares skills but does not grant load_skill",
+    ):
+        _load_file(
+            path,
+            known_tools=known_local_tool_names(),
+            known_skills=frozenset({"strategy-generate"}),
+        )
+
+
 def test_user_override_replaces_bundled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

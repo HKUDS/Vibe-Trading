@@ -66,6 +66,7 @@ prompt: |
 tools:
   - get_macro_series
   - get_sector_info
+  - load_skill
 skills:
   - macro-analysis
   - global-macro

@@ -907,6 +907,8 @@ class AgentLoop:
         max_iterations: int = 50,
         persistent_memory: Optional[Any] = None,
         skills_loader: Optional[Any] = None,
+        system_template: Optional[str] = None,
+        role_prompt: Optional[str] = None,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -920,6 +922,11 @@ class AgentLoop:
             skills_loader: Optional SkillsLoader override (nested specialist
                 runs pass an allowlist-filtered one; ``None`` keeps the
                 default loader).
+            system_template: Optional system-prompt template override
+                (specialist runs pass a slim template; ``None`` keeps the
+                default main-agent prompt).
+            role_prompt: Optional specialist behavior contract, bound to the
+                ``{role_prompt}`` template slot.
         """
         self.registry = registry
         self.llm = llm
@@ -945,6 +952,8 @@ class AgentLoop:
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
         self._skills_loader = skills_loader
+        self._system_template = system_template
+        self._role_prompt = role_prompt
         # A delegation-capable tool needs this loop's cancel event so a user
         # cancel reaches a running nested specialist; the event object itself
         # is stable for the loop's lifetime (run() clears it on reuse). The
@@ -1085,7 +1094,9 @@ class AgentLoop:
 
         context = ContextBuilder(self.registry, self.memory,
                                   persistent_memory=self._persistent_memory,
-                                  skills_loader=self._skills_loader)
+                                  skills_loader=self._skills_loader,
+                                  system_template=self._system_template,
+                                  role_prompt=self._role_prompt)
         goal_context, active_goal_id = get_current_goal_context(session_id) if session_id else ("", None)
         llm_user_message = user_message
         if goal_context:

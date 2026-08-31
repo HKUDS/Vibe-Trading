@@ -63,6 +63,7 @@ prompt: |
   A single text score or the Fear & Greed read: 1 tool call. A framework read on supplied data: load the skill, then analyze; no tool calls beyond `sentiment` when a text needs scoring. If inputs are still missing after one clarification pass, return what you have with the gap list.
 tools:
   - sentiment
+  - load_skill
 skills:
   - sentiment-analysis
   - social-media-intelligence

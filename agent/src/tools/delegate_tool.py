@@ -15,6 +15,15 @@ Lifecycle and thread-safety contract:
   tools in one turn run in parallel — so every per-call value lives in
   locals. The only mutable attribute is written once by ``bind_parent`` at
   loop-construction time.
+- **Behavior contract injection.** The child loop runs under
+  ``SPECIALIST_SYSTEM_PROMPT`` (imported from ``src.specialists.prompt``)
+  with ``spec.prompt`` bound to the ``{role_prompt}`` slot, so the
+  specialist sees its own slim system prompt instead of the main agent's.
+- **Specialist skills semantics.** ``spec.skills`` is passed through
+  verbatim (never ``or None``): an empty list means the specialist is shown
+  no skill catalog and ``load_skill`` rejects every skill name. This
+  deliberately diverges from the swarm worker "empty = unrestricted"
+  convention.
 - **Cancel relay (load-bearing).** The parent loop blocks on this tool's
   queue slot and only polls its own cancel event between tool batches, so
   without a relay a user cancel would not reach a running specialist until
@@ -41,6 +50,7 @@ from typing import Any, Dict, Optional
 
 from src.agent.tools import BaseTool
 from src.specialists.loader import load_specialists
+from src.specialists.prompt import SPECIALIST_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -162,9 +172,9 @@ class DelegateToSpecialistTool(BaseTool):
         registry = build_filtered_registry(
             spec.tools,
             include_shell_tools=False,
-            skill_allowlist=spec.skills or None,
+            skill_allowlist=spec.skills,
         )
-        skills_loader = SkillsLoader(only=spec.skills or None)
+        skills_loader = SkillsLoader(only=spec.skills)
         llm = ChatLLM(model_name=spec.model_name)
         child = AgentLoop(
             registry=registry,
@@ -172,6 +182,8 @@ class DelegateToSpecialistTool(BaseTool):
             event_callback=None,
             max_iterations=spec.max_iterations,
             skills_loader=skills_loader,
+            system_template=SPECIALIST_SYSTEM_PROMPT,
+            role_prompt=spec.prompt,
         )
 
         # Per-call state below is local by contract (see module docstring).

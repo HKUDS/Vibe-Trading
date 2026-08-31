@@ -65,6 +65,7 @@ prompt: |
   A lookup or a single-fund holdings read: 1 tool call. A screen plus comparison on supplied data: load the skill, then analyze. If a requested fund resolves to zero matches after one query rephrase, return the empty result and say so.
 tools:
   - etf_holdings
+  - load_skill
 skills:
   - fund-analysis
   - etf-analysis

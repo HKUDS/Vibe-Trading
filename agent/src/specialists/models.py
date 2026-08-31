@@ -71,8 +71,10 @@ class SpecialistSpec(BaseModel):
         prompt: Behavior contract injected as the specialist's system prompt.
         tools: Hard whitelist of internal (local) tool names. MCP-served
             (``mcp_*``) tools are not supported in v1.
-        skills: Skill names loadable via ``load_skill``. Empty means
-            unrestricted, matching the swarm worker convention.
+        skills: Skill names loadable via ``load_skill``. Empty means no
+            skills are loadable and no skill catalog is shown — the
+            specialist path deliberately diverges from the swarm worker's
+            "empty = unrestricted" convention.
         max_iterations: Specialist ReAct-loop iteration budget.
         timeout_seconds: Wall-clock budget for one delegation.
         model_name: Optional model override; ``None`` inherits the run's model.

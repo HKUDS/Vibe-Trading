@@ -64,6 +64,7 @@ tools:
   - options_pricing
   - options_payoff
   - get_options_chain
+  - load_skill
 skills:
   - options-strategy
   - options-payoff

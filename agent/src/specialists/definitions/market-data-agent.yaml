@@ -84,6 +84,7 @@ tools:
   - get_dragon_tiger
   - get_lockup_expiry
   - get_shareholder_count
+  - load_skill
 skills:
   - data-routing
   - tushare

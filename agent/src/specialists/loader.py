@@ -70,11 +70,19 @@ def _validate(
     unknown_skills = [name for name in spec.skills if name not in known_skills]
     if unknown_skills:
         raise ValueError(f"{source.name}: unknown skill name(s) {unknown_skills}")
+    if spec.skills and "load_skill" not in spec.tools:
+        raise ValueError(
+            f"{source.name}: declares skills but does not grant load_skill; "
+            "the declared skills are unreachable. Add `load_skill` to the "
+            "tools list so the specialist can load them, or drop the skills "
+            "declaration."
+        )
     if "load_skill" in spec.tools and not spec.skills:
         logger.warning(
             "Specialist %r (%s) grants load_skill with an empty skills list: "
-            "every skill becomes loadable. Pin an explicit skills list to keep "
-            "the specialist surface small.",
+            "no skill is loadable — the allowlist is empty and every load is "
+            "refused. Declare an explicit skills list or drop load_skill from "
+            "the tools list.",
             spec.name,
             source.name,
         )

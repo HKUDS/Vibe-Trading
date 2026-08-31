@@ -65,6 +65,7 @@ prompt: |
 tools:
   - quantlib_call
   - cashflow_performance
+  - load_skill
 skills:
   - risk-analysis
   - quant-statistics

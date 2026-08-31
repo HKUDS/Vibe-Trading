@@ -66,6 +66,7 @@ tools:
   - run_shadow_backtest
   - render_shadow_report
   - scan_shadow_signals
+  - load_skill
 skills:
   - trade-journal
   - shadow-account

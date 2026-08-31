@@ -308,10 +308,10 @@ def test_child_registry_is_whitelist_projected_without_delegation() -> None:
     assert "run_swarm" not in names
     assert not names.intersection({"bash", "background_run", "cancel_background"})
     loader_tool = registry.get("load_skill")
-    if loader_tool is not None:
-        refused = json.loads(loader_tool.execute(name="doc-reader"))
-        assert refused["status"] == "error"
-        assert json.loads(loader_tool.execute(name="alpha-zoo"))["status"] == "ok"
+    assert loader_tool is not None
+    refused = json.loads(loader_tool.execute(name="doc-reader"))
+    assert refused["status"] == "error"
+    assert json.loads(loader_tool.execute(name="alpha-zoo"))["status"] == "ok"
 
 
 def test_gate_off_excludes_tool_from_registry(monkeypatch: pytest.MonkeyPatch) -> None:

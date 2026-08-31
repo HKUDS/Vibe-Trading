@@ -78,6 +78,7 @@ tools:
   - read_file
   - pattern
   - quantlib_call
+  - load_skill
 skills:
   - strategy-generate
   - factor-research
