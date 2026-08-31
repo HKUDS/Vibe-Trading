@@ -214,6 +214,25 @@ class SymbolSearchTool(BaseTool):
                 if _canonical_crypto_pair(str(candidate.get("symbol") or ""))
                 == crypto_pair
             ]
+        elif "-" in query or "/" in query or query.endswith("=F") or query.endswith("=X"):
+            # The query is a non-crypto, ticker-shaped symbol (e.g. ``XAUUSD``,
+            # ``EUR/USD``, ``GC=F``, ``XAUUSD=X``). Any candidate Yahoo
+            # returned whose canonical form IS a crypto pair (e.g.
+            # ``VALOUR-BTC-0-SEK.ST`` as a free-text near-string of a gold
+            # query, or ``AETHUSDT-USD`` for ``XAU-USD``) would silently lock
+            # a wrong crypto identity. Drop them. The gate was previously
+            # inverted (#1234 only checked the crypto-pair branch) — a bare
+            # ``XAUUSD`` query then propagated a near-string crypto
+            # candidate that the user's grounded ``_canonical_crypto_pair``
+            # already rejected, but the symbol-search tool never knew. A bare
+            # name query (``apple``, ``tesla``, ``Gold``) is NOT a ticker shape
+            # and falls through to the existing free-text behavior.
+            candidates = [
+                candidate
+                for candidate in candidates
+                if _canonical_crypto_pair(str(candidate.get("symbol") or ""))
+                is None
+            ]
 
         # Canada fail-fast: a Canadian ticker must resolve to the Canadian venue
         # only. Yahoo also returns the US OTC alias of the same company (e.g.

@@ -13,6 +13,7 @@ from src.agent.context import ContextBuilder
 from src.agent.grounding import (
     GroundingLedger,
     _infer_currency,
+    _infer_instrument_type,
     _infer_venue,
     _scan_symbols,
     _symbol_from_csv_filename,
@@ -543,6 +544,56 @@ def test_explicit_symbol_and_resolver_suffix_alias_are_one_identity(
     assert ledger.identity_status == "locked"
     assert ledger.authorized_symbols == {"562500.SH"}
     assert authorization.allowed is True
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected_venue", "expected_type"),
+    [
+        # Spot gold: bare 6-letter, dashed, slashed, Yahoo forex notation.
+        # Before this fix, the shape-based fallback in _infer_venue / _infer_instrument_type
+        # mis-classified any dashed / slashed symbol as crypto_or_fx / crypto.
+        ("XAUUSD", "forex", "forex"),
+        ("XAU-USD", "forex", "forex"),
+        ("XAU/USD", "forex", "forex"),
+        ("XAUUSD=X", "forex", "forex"),
+        # COMEX gold futures via Yahoo continuous-front-month notation.
+        ("GC=F", "futures", "future"),
+        # Tokenized gold stays crypto.
+        ("XAUT-USDT", "crypto_or_fx", "crypto"),
+        ("PAXG-USDT", "crypto_or_fx", "crypto"),
+        # Regression: existing crypto / US equity behavior unchanged.
+        ("BTC-USDT", "crypto_or_fx", "crypto"),
+        ("GLD", None, "listed_security"),
+        ("AAPL.US", "us", "listed_security"),
+    ],
+)
+def test_runtime_registry_classifies_gold_fx_futures_consistently(
+    symbol, expected_venue, expected_type
+) -> None:
+    """The runtime registry must agree with the engine classifier for gold / FX / futures.
+
+    PR #1280 added the metal/FX/futures patterns to the engine
+    ``_MARKET_PATTERNS`` and the correlation helper. This test pins the
+    third copy (the shape-based fallback in
+    ``_infer_venue`` / ``_infer_instrument_type``) to the same
+    whitelist. Without this, a bare ``XAUUSD`` query would surface in
+    the registry as ``venue=None, type=listed_security`` and a dashed
+    ``XAU-USD`` would surface as ``venue=crypto_or_fx, type=crypto``,
+    contradicting the engine's actual classification. The user observed
+    this exact runtime state in the agent before the fix.
+    """
+    assert _infer_venue(symbol) == expected_venue
+    assert _infer_instrument_type(symbol) == expected_type
+    # Quote currency is non-None only for dashed / slashed shapes.
+    if "-" in symbol or "/" in symbol:
+        # Whitelist-based ``USD`` leg: only metals/FX/forex (not crypto).
+        if symbol.endswith("-USD") and symbol not in {"XAUT-USD", "PAXG-USD"}:
+            assert _infer_currency(symbol) == "USD"
+        # Otherwise the trailing 3-5 letter leg is the quote currency.
+        elif symbol.endswith("-USDT") or symbol.endswith("-USDC") or \
+             symbol.endswith("-BUSD") or symbol.endswith("-TUSD") or \
+             symbol.endswith("-FDUSD"):
+            assert _infer_currency(symbol) in {"USDT", "USDC", "BUSD", "TUSD", "FDUSD"}
 
 
 def test_resolver_answering_a_different_venue_is_still_conflicting(
