@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 import yaml
@@ -141,6 +142,41 @@ def test_skills_without_load_skill_fails_loud(tmp_path: Path) -> None:
             known_tools=known_local_tool_names(),
             known_skills=frozenset({"strategy-generate"}),
         )
+
+
+def test_timeout_without_headroom_fails_loud(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cfg = SimpleNamespace(
+        agent_tuning=SimpleNamespace(vibe_trading_tool_timeout_seconds=600.0)
+    )
+    monkeypatch.setattr("src.config.accessor.get_env_config", lambda: fake_cfg)
+    path = tmp_path / "slow-agent.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "name": "slow-agent",
+                "description": "d",
+                "prompt": "p",
+                "tools": ["read_file"],
+                "timeout_seconds": 600,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="leaves no headroom"):
+        _load_file(
+            path,
+            known_tools=known_local_tool_names(),
+            known_skills=frozenset(),
+        )
+
+
+def test_roster_cache_is_structurally_read_only() -> None:
+    specs = load_specialists()
+    assert isinstance(specs, MappingProxyType)
+    with pytest.raises(TypeError):
+        specs["rogue-agent"] = specs["quant-agent"]
 
 
 def test_user_override_replaces_bundled(

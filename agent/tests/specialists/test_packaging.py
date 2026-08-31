@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from src.specialists.loader import DEFINITIONS_DIR, load_specialists
-from src.specialists.models import FORBIDDEN_SPECIALIST_TOOLS
+from src.specialists.models import FORBIDDEN_SPECIALIST_TOOLS, SpecialistSpec
 
 EXPECTED_SPECIALIST_COUNT = 12
 
@@ -51,3 +54,16 @@ def test_trading_connector_whitelist_is_exactly_read_only() -> None:
     assert "trading_cancel_order" not in spec.tools
     assert "trading_select_connection" not in spec.tools
     assert "trading_select_connection" in FORBIDDEN_SPECIALIST_TOOLS
+
+
+def test_orchestration_and_billable_api_tools_are_rejected_at_model_layer() -> None:
+    assert "retry_run" in FORBIDDEN_SPECIALIST_TOOLS
+    assert "qveris_execute" in FORBIDDEN_SPECIALIST_TOOLS
+    for tool in ("retry_run", "qveris_execute"):
+        with pytest.raises(ValidationError, match="may never include"):
+            SpecialistSpec(
+                name="quant-agent",
+                description="test specialist",
+                prompt="You are a test.",
+                tools=["read_file", tool],
+            )

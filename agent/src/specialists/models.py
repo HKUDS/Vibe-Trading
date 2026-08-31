@@ -25,6 +25,7 @@ FORBIDDEN_SPECIALIST_TOOLS: frozenset[str] = frozenset(
         "delegate_to_specialist",
         "run_swarm",
         "run_research_autopilot",
+        "retry_run",
         "scheduled_research",
         # shell family
         "bash",
@@ -58,6 +59,8 @@ FORBIDDEN_SPECIALIST_TOOLS: frozenset[str] = frozenset(
         "etoro_close_position",
         "etoro_cancel_close_order",
         "etoro_edit_position_stops",
+        # billable API execution — same money-effect class as order writes
+        "qveris_execute",
         # disposable-cache rebuild (operator action, not specialist work)
         "refresh_strategy_evidence",
     }

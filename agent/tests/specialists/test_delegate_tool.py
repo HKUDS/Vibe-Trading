@@ -229,6 +229,32 @@ def test_budget_timeout_cancels_and_reports(fake_loop_class) -> None:
     release.set()
 
 
+def test_timeout_payload_drops_late_child_result(fake_loop_class) -> None:
+    """A child that lands its result inside the cancel grace window writes
+    outcome["result"] after the budget already fired. The timeout payload must
+    not carry that late content — status=timeout always ships empty content,
+    while run_dir survives for partial-work recovery."""
+
+    def _finish_on_cancel(self: _FakeLoop, task: str) -> dict:
+        self._cancel_event.wait(30)
+        return {
+            "status": "ok",
+            "content": "late-arriving result body",
+            "run_dir": "/tmp/specialist-late-result",
+            "iterations": 3,
+        }
+
+    fake_loop_class.run_behavior = _finish_on_cancel
+    roster = {"quant-agent": _spec(timeout=1)}
+    tool = _tool(roster)
+    payload = _execute(tool, roster, specialist="quant-agent", task="slow task")
+    assert payload["status"] == "timeout"
+    assert payload["content"] == ""
+    assert payload["run_dir"] == "/tmp/specialist-late-result"
+    assert "budget" in payload["error"]
+    assert fake_loop_class.instances[0].cancel_called >= 1
+
+
 def test_zombie_child_is_abandoned_and_reclaimed(
     fake_loop_class, monkeypatch: pytest.MonkeyPatch
 ) -> None:

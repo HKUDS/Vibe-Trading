@@ -36,7 +36,10 @@ Lifecycle and thread-safety contract:
   if it still will not exit, the daemon thread is abandoned and the child's
   LLM transport is closed under it (intentional — closing self-created
   transports breaks a blocked stream, and the child loop converts the error
-  into a failed result nobody reads).
+  into a failed result nobody reads). A timeout payload always carries empty
+  ``content``: a child result that lands during the cancel grace period is
+  dropped from the payload so ``status: timeout`` never ships a late result,
+  while ``run_dir`` is preserved for recovering partial work.
 """
 
 from __future__ import annotations
@@ -215,6 +218,11 @@ class DelegateToSpecialistTool(BaseTool):
         relay_thread = threading.Thread(
             target=_cancel_relay, name=f"specialist-relay-{name}-{run_tag}", daemon=True
         )
+        # Defensive default, not a bug fix: every current path through the try
+        # either assigns timed_out or propagates, so nothing today reads it
+        # unbound. Pre-initializing hardens against future edits that add an
+        # early-exit path past the try.
+        timed_out = False
         try:
             child_thread.start()
             relay_thread.start()
@@ -275,6 +283,10 @@ class DelegateToSpecialistTool(BaseTool):
         if usage is not None:
             payload["usage"] = usage
         if timed_out:
+            # A child result that lands during the cancel grace window must
+            # not ride along on a timeout payload: status=timeout always
+            # carries empty content. run_dir stays for partial-work recovery.
+            payload["content"] = ""
             payload["error"] = (
                 f"specialist exceeded its {spec.timeout_seconds}s budget and was "
                 "cancelled; any partial work is in run_dir"

@@ -23,6 +23,8 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 import yaml
 
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 DEFINITIONS_DIR = Path(__file__).resolve().parent / "definitions"
 
-_cache: "dict[str, SpecialistSpec] | None" = None
+_cache: "Mapping[str, SpecialistSpec] | None" = None
 _cache_lock = threading.Lock()
 
 
@@ -87,6 +89,43 @@ def _validate(
             source.name,
         )
 
+    # The specialist runs inside a delegate_to_specialist tool call, which the
+    # agent loop wraps with the global tool timeout
+    # (``VIBE_TRADING_TOOL_TIMEOUT_SECONDS``, default 1800s). The specialist's
+    # own budget must leave headroom under that wrapper: the 60s margin
+    # exceeds delegate_tool's ``_CANCEL_GRACE_SECONDS`` (30s), so even a
+    # cancelled child thread finishes unwinding before the wrapper fires and
+    # the parent always observes a structured result instead of a bare
+    # tool-timeout kill.
+    #
+    # Design consequence (intentional): this clamp lives in _validate, so a
+    # *bundled* file in violation makes load_specialists() raise as a whole →
+    # delegate_tool.check_available catches it, warns, and takes the ENTIRE
+    # specialist feature offline — not just the one specialist. A bundled
+    # violation is a release-grade bug, so failing loud is correct. An
+    # operator setting VIBE_TRADING_TOOL_TIMEOUT_SECONDS below 1260 (bundled
+    # max quant-agent 1200 + 60) turns the whole feature off.
+    try:
+        from src.config.accessor import get_env_config
+
+        wrapper = get_env_config().agent_tuning.vibe_trading_tool_timeout_seconds
+    except Exception:  # noqa: BLE001 — fail-safe, see below
+        # If the env config cannot be read (e.g. a malformed env var), skip
+        # the headroom check rather than take the whole roster down for a
+        # config problem the specialist author cannot fix; the loop still
+        # enforces its own wrapper timeout at runtime.
+        wrapper = None
+    # A non-positive wrapper disables the loop's tool timeout entirely
+    # (``loop.py``: timeout = _tool_timeout if _tool_timeout > 0 else None),
+    # so there is nothing to leave headroom under.
+    if wrapper is not None and wrapper > 0 and spec.timeout_seconds + 60 > wrapper:
+        raise ValueError(
+            f"{source.name}: timeout_seconds {spec.timeout_seconds} leaves no "
+            f"headroom under the loop tool timeout {wrapper}s (need +60s "
+            "margin); lower timeout_seconds or raise "
+            "VIBE_TRADING_TOOL_TIMEOUT_SECONDS."
+        )
+
 
 def _load_file(
     path: Path, *, known_tools: frozenset[str], known_skills: frozenset[str]
@@ -99,12 +138,14 @@ def _load_file(
     return spec
 
 
-def load_specialists() -> dict[str, SpecialistSpec]:
+def load_specialists() -> Mapping[str, SpecialistSpec]:
     """Return the merged roster, ordered by name (user dir overrides bundled).
 
     Returns:
-        Mapping of specialist name to its validated spec. The result is
-        cached process-wide.
+        Read-only mapping of specialist name to its validated spec. The
+        result is cached process-wide; the ``MappingProxyType`` wrapper makes
+        the shared cache structurally immutable so no caller can mutate the
+        roster other callers see.
     """
     global _cache
     with _cache_lock:
@@ -133,7 +174,7 @@ def load_specialists() -> dict[str, SpecialistSpec]:
                     continue
                 merged[spec.name] = spec
 
-        _cache = dict(sorted(merged.items()))
+        _cache = MappingProxyType(dict(sorted(merged.items())))
         return _cache
 
 
