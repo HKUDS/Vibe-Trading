@@ -34,26 +34,32 @@ from src.quantlib.options import bs_greeks, bs_price, normalise_option_type
 # --- Historical volatility ---
 
 
-def historical_volatility(close: pd.Series, window: int = 30) -> pd.Series:
+def historical_volatility(
+    close: pd.Series, window: int = 30, default_iv: float = 0.3
+) -> pd.Series:
     """Calculate annualised historical volatility from a close price series.
 
     Args:
         close: Close price Series.
         window: Rolling window in days.
+        default_iv: Fallback IV for warm-up bars before the rolling window
+            is valid. The previous implementation backfilled the first
+            computed window into the early bars, leaking future information.
 
     Returns:
         Annualised historical volatility Series.
     """
     log_ret = np.log(close / close.shift(1))
     hv = log_ret.rolling(window=window).std() * np.sqrt(252)
-    return hv.fillna(hv.dropna().iloc[0] if len(hv.dropna()) > 0 else 0.3)
+    return hv.fillna(default_iv)
 
 
 # --- IV Smile model (v2) ---
 
 
-def iv_smile_adjustment(S: float, K: float, base_iv: float,
-                        skew: float = -0.15, curvature: float = 0.05) -> float:
+def iv_smile_adjustment(
+    S: float, K: float, base_iv: float, skew: float = -0.15, curvature: float = 0.05
+) -> float:
     """Adjust IV for moneyness using a quadratic smile model.
 
     IV(K) = base_iv + skew * log(K/S) + curvature * log(K/S)^2
@@ -71,7 +77,7 @@ def iv_smile_adjustment(S: float, K: float, base_iv: float,
     if S <= 0 or K <= 0:
         return max(base_iv, 0.01)
     log_moneyness = np.log(K / S)
-    adj = base_iv + skew * log_moneyness + curvature * log_moneyness ** 2
+    adj = base_iv + skew * log_moneyness + curvature * log_moneyness**2
     return max(adj, 0.01)
 
 
@@ -121,9 +127,16 @@ class OptionPosition:
         ValueError: If ``option_type`` is neither call nor put.
     """
 
-    def __init__(self, option_type: str, strike: float, expiry: str,
-                 qty: int, entry_price: float, entry_date: str,
-                 underlying_code: str):
+    def __init__(
+        self,
+        option_type: str,
+        strike: float,
+        expiry: str,
+        qty: int,
+        entry_price: float,
+        entry_date: str,
+        underlying_code: str,
+    ):
         self.option_type = normalise_option_type(option_type)
         self.strike = strike
         self.expiry = pd.Timestamp(expiry)
@@ -210,9 +223,15 @@ def run_options_backtest(
     options_cfg = config.get("options_config", {})
     risk_free_rate = options_cfg.get("risk_free_rate", 0.05)
     contract_multiplier = options_cfg.get("contract_multiplier", 1.0)
-    exercise_style = options_cfg.get("exercise_style", "european")  # v2: "european" or "american"
-    iv_skew = options_cfg.get("iv_skew", 0.0)         # v2: smile skew param (0 = flat)
+    exercise_style = options_cfg.get(
+        "exercise_style", "european"
+    )  # v2: "european" or "american"
+    iv_skew = options_cfg.get("iv_skew", 0.0)  # v2: smile skew param (0 = flat)
     iv_curvature = options_cfg.get("iv_curvature", 0.0)  # v2: smile curvature
+    # Fill timing: default next-bar (T+1) to match equity engines; opt-in
+    # same-day fill preserves the legacy lookahead for reproduction.
+    same_day_fill = bool(options_cfg.get("same_day_fill", False))
+    default_iv = float(options_cfg.get("default_iv", 0.3))
 
     # Load underlying data
     data_map = loader.fetch(codes, start_date, end_date)
@@ -223,7 +242,7 @@ def run_options_backtest(
     # Compute implied volatility (approximated by historical volatility)
     iv_map: Dict[str, pd.Series] = {}
     for code, df in data_map.items():
-        iv_map[code] = historical_volatility(df["close"])
+        iv_map[code] = historical_volatility(df["close"], default_iv=default_iv)
 
     # Generate trade signals
     signals = engine.generate(data_map)
@@ -240,11 +259,41 @@ def run_options_backtest(
     if warmup_end:
         dates = dates[warmup_end:]
 
-    # Index signals by date
-    signal_by_date: Dict[str, List[Dict[str, Any]]] = {}
-    for sig in signals:
-        d = sig.get("date", "")
-        signal_by_date.setdefault(d, []).append(sig)
+    # Index signals by date — default next-bar execution (T fills at T+1)
+    # mirrors the equity engines which shift signals by one bar. Opt-in
+    # same_day_fill keeps the legacy same-day fill for reproduction.
+    if same_day_fill:
+        signal_by_date: Dict[str, List[Dict[str, Any]]] = {}
+        for sig in signals:
+            d = sig.get("date", "")
+            signal_by_date.setdefault(d, []).append(sig)
+        exec_by_date = signal_by_date
+    else:
+        # Delayed execution: each signal dated T is carried to the next
+        # trading bar strictly after T. Using bisect_right reuses the
+        # existing carry-forward semantics for missing dates — a signal
+        # whose date is not a trading day fills on the first bar after it,
+        # and when that bar is itself T+1 for a trading-day signal.
+        import bisect
+
+        signal_by_date = {}
+        for sig in signals:
+            d = sig.get("date", "")
+            signal_by_date.setdefault(d, []).append(sig)
+        exec_by_date: Dict[str, List[Dict[str, Any]]] = {}
+        for sig in signals:
+            try:
+                sig_ts = pd.Timestamp(sig.get("date", ""))
+            except Exception:
+                continue
+            idx = bisect.bisect_right(dates, sig_ts)
+            if idx < len(dates):
+                exec_str = (
+                    str(dates[idx].date())
+                    if hasattr(dates[idx], "date")
+                    else str(dates[idx])
+                )
+                exec_by_date.setdefault(exec_str, []).append(sig)
 
     # Day-by-day simulation
     cash = float(initial_cash)
@@ -263,14 +312,22 @@ def run_options_backtest(
         for code, df in data_map.items():
             if ts in df.index:
                 spot_prices[code] = float(df.at[ts, "close"])
-                ivs[code] = float(iv_map[code].at[ts]) if ts in iv_map[code].index else 0.3
+                ivs[code] = (
+                    float(iv_map[code].at[ts])
+                    if ts in iv_map[code].index
+                    else default_iv
+                )
             else:
                 # Use the last available price
                 before = df.index[df.index <= ts]
                 if len(before) > 0:
                     last = before[-1]
                     spot_prices[code] = float(df.at[last, "close"])
-                    ivs[code] = float(iv_map[code].at[last]) if last in iv_map[code].index else 0.3
+                    ivs[code] = (
+                        float(iv_map[code].at[last])
+                        if last in iv_map[code].index
+                        else default_iv
+                    )
 
         # 2a. American early exercise (v2): exercise if intrinsic > continuation
         if exercise_style == "american":
@@ -278,7 +335,7 @@ def run_options_backtest(
                 if pos.is_expired(ts):
                     continue  # handled below
                 spot = spot_prices.get(pos.underlying_code, 0.0)
-                iv_val_ex = ivs.get(pos.underlying_code, 0.3)
+                iv_val_ex = ivs.get(pos.underlying_code, default_iv)
                 T_ex = pos.time_to_expiry(ts)
                 if T_ex <= 0:
                     continue
@@ -286,24 +343,28 @@ def run_options_backtest(
                 # The continuation value must use the same vol the leg is
                 # marked at, or early exercise triggers off a mispriced hold.
                 iv_ex = leg_iv(spot, pos.strike, iv_val_ex, iv_skew, iv_curvature)
-                continuation = bs_price(spot, pos.strike, T_ex, risk_free_rate, iv_ex, pos.option_type)
+                continuation = bs_price(
+                    spot, pos.strike, T_ex, risk_free_rate, iv_ex, pos.option_type
+                )
                 if intrinsic > 0 and intrinsic > continuation * 1.02:
                     # Early exercise is optimal
                     settlement = intrinsic * pos.qty * contract_multiplier
                     cash += settlement
                     pnl = (intrinsic - pos.entry_price) * pos.qty * contract_multiplier
-                    trade_records.append({
-                        "timestamp": date_str,
-                        "code": pos.underlying_code,
-                        "option_type": pos.option_type,
-                        "strike": pos.strike,
-                        "expiry": str(pos.expiry.date()),
-                        "side": "early_exercise",
-                        "price": round(intrinsic, 4),
-                        "qty": pos.qty,
-                        "pnl": round(pnl, 4),
-                        "entry_date": pos.entry_date,
-                    })
+                    trade_records.append(
+                        {
+                            "timestamp": date_str,
+                            "code": pos.underlying_code,
+                            "option_type": pos.option_type,
+                            "strike": pos.strike,
+                            "expiry": str(pos.expiry.date()),
+                            "side": "early_exercise",
+                            "price": round(intrinsic, 4),
+                            "qty": pos.qty,
+                            "pnl": round(pnl, 4),
+                            "entry_date": pos.entry_date,
+                        }
+                    )
                     positions.remove(pos)
 
         # 2b. Handle expiry
@@ -318,29 +379,31 @@ def run_options_backtest(
             pnl = (intrinsic - pos.entry_price) * pos.qty * contract_multiplier
 
             side = "exercise" if intrinsic > 0 else "expire"
-            trade_records.append({
-                "timestamp": date_str,
-                "code": pos.underlying_code,
-                "option_type": pos.option_type,
-                "strike": pos.strike,
-                "expiry": str(pos.expiry.date()),
-                "side": side,
-                "price": round(intrinsic, 4),
-                "qty": pos.qty,
-                "pnl": round(pnl, 4),
-                "entry_date": pos.entry_date,
-            })
+            trade_records.append(
+                {
+                    "timestamp": date_str,
+                    "code": pos.underlying_code,
+                    "option_type": pos.option_type,
+                    "strike": pos.strike,
+                    "expiry": str(pos.expiry.date()),
+                    "side": side,
+                    "price": round(intrinsic, 4),
+                    "qty": pos.qty,
+                    "pnl": round(pnl, 4),
+                    "entry_date": pos.entry_date,
+                }
+            )
             positions.remove(pos)
 
-        # 3. Execute today's signals
-        day_signals = signal_by_date.get(date_str, [])
+        # 3. Execute today's signals (delayed to T+1 by default)
+        day_signals = exec_by_date.get(date_str, [])
         for sig in day_signals:
             action = sig.get("action", "")
             legs = sig.get("legs", [])
             underlying = sig.get("underlying", codes[0] if codes else "")
 
             spot = spot_prices.get(underlying, 0.0)
-            iv_val = ivs.get(underlying, 0.3)
+            iv_val = ivs.get(underlying, default_iv)
 
             for leg in legs:
                 # Fold before it is priced, matched and recorded: config comes
@@ -365,33 +428,38 @@ def run_options_backtest(
                     else:
                         cash += abs_cost * (1 - commission)
 
-                    positions.append(OptionPosition(
-                        option_type=leg_type,
-                        strike=strike,
-                        expiry=expiry,
-                        qty=qty,
-                        entry_price=opt_price,
-                        entry_date=date_str,
-                        underlying_code=underlying,
-                    ))
+                    positions.append(
+                        OptionPosition(
+                            option_type=leg_type,
+                            strike=strike,
+                            expiry=expiry,
+                            qty=qty,
+                            entry_price=opt_price,
+                            entry_date=date_str,
+                            underlying_code=underlying,
+                        )
+                    )
 
-                    trade_records.append({
-                        "timestamp": date_str,
-                        "code": underlying,
-                        "option_type": leg_type,
-                        "strike": strike,
-                        "expiry": expiry,
-                        "side": "buy" if qty > 0 else "sell",
-                        "price": round(opt_price, 4),
-                        "qty": qty,
-                        "pnl": 0.0,
-                        "entry_date": date_str,
-                    })
+                    trade_records.append(
+                        {
+                            "timestamp": date_str,
+                            "code": underlying,
+                            "option_type": leg_type,
+                            "strike": strike,
+                            "expiry": expiry,
+                            "side": "buy" if qty > 0 else "sell",
+                            "price": round(opt_price, 4),
+                            "qty": qty,
+                            "pnl": 0.0,
+                            "entry_date": date_str,
+                        }
+                    )
 
                 elif action == "close":
                     # Close: find matching position, honoring a partial-close qty.
                     matched = _find_matching_position(
-                        positions, underlying, leg_type, strike, expiry)
+                        positions, underlying, leg_type, strike, expiry
+                    )
                     if matched:
                         # An explicit leg ``qty`` closes only that many contracts
                         # (clamped to the open size); a close leg with no ``qty``
@@ -400,14 +468,22 @@ def run_options_backtest(
                         # so a partial close no longer flattens the lot (#577).
                         requested = leg.get("qty")
                         full_mag = abs(matched.qty)
-                        close_mag = full_mag if requested is None else min(abs(requested), full_mag)
+                        close_mag = (
+                            full_mag
+                            if requested is None
+                            else min(abs(requested), full_mag)
+                        )
                         if close_mag <= 0:
                             continue
                         sign = 1 if matched.qty > 0 else -1
                         closed_qty = sign * close_mag
                         remaining_qty = matched.qty - closed_qty
 
-                        pnl = (opt_price - matched.entry_price) * closed_qty * contract_multiplier
+                        pnl = (
+                            (opt_price - matched.entry_price)
+                            * closed_qty
+                            * contract_multiplier
+                        )
                         abs_close = opt_price * close_mag * contract_multiplier
                         if matched.qty > 0:
                             # Long close: sell to recover
@@ -416,18 +492,20 @@ def run_options_backtest(
                             # Short close: buy back
                             cash -= abs_close * (1 + commission)
 
-                        trade_records.append({
-                            "timestamp": date_str,
-                            "code": underlying,
-                            "option_type": leg_type,
-                            "strike": strike,
-                            "expiry": expiry,
-                            "side": "close",
-                            "price": round(opt_price, 4),
-                            "qty": closed_qty,
-                            "pnl": round(pnl, 4),
-                            "entry_date": matched.entry_date,
-                        })
+                        trade_records.append(
+                            {
+                                "timestamp": date_str,
+                                "code": underlying,
+                                "option_type": leg_type,
+                                "strike": strike,
+                                "expiry": expiry,
+                                "side": "close",
+                                "price": round(opt_price, 4),
+                                "qty": closed_qty,
+                                "pnl": round(pnl, 4),
+                                "entry_date": matched.entry_date,
+                            }
+                        )
                         if abs(remaining_qty) < 1e-9:
                             positions.remove(matched)
                         else:
@@ -453,37 +531,45 @@ def run_options_backtest(
 
         for pos in positions:
             spot = spot_prices.get(pos.underlying_code, 0.0)
-            iv_val = ivs.get(pos.underlying_code, 0.3)
+            iv_val = ivs.get(pos.underlying_code, default_iv)
             T = pos.time_to_expiry(ts)
 
             mark_iv = leg_iv(spot, pos.strike, iv_val, iv_skew, iv_curvature)
 
-            mark_price = bs_price(spot, pos.strike, T, risk_free_rate, mark_iv, pos.option_type)
+            mark_price = bs_price(
+                spot, pos.strike, T, risk_free_rate, mark_iv, pos.option_type
+            )
             portfolio_value += mark_price * pos.qty * contract_multiplier
 
-            greeks = bs_greeks(spot, pos.strike, T, risk_free_rate, mark_iv, pos.option_type)
+            greeks = bs_greeks(
+                spot, pos.strike, T, risk_free_rate, mark_iv, pos.option_type
+            )
             total_delta += greeks["delta"] * pos.qty * contract_multiplier
             total_gamma += greeks["gamma"] * pos.qty * contract_multiplier
             total_theta += greeks["theta"] * pos.qty * contract_multiplier
             total_vega += greeks["vega"] * pos.qty * contract_multiplier
             total_rho += greeks["rho"] * pos.qty * contract_multiplier
 
-        equity_records.append({
-            "timestamp": date_str,
-            "equity": round(portfolio_value, 4),
-            "cash": round(cash, 4),
-            "positions_value": round(portfolio_value - cash, 4),
-        })
+        equity_records.append(
+            {
+                "timestamp": date_str,
+                "equity": round(portfolio_value, 4),
+                "cash": round(cash, 4),
+                "positions_value": round(portfolio_value - cash, 4),
+            }
+        )
 
-        greeks_records.append({
-            "timestamp": date_str,
-            "delta": round(total_delta, 6),
-            "gamma": round(total_gamma, 6),
-            "theta": round(total_theta, 6),
-            "vega": round(total_vega, 6),
-            "rho": round(total_rho, 6),
-            "num_positions": len(positions),
-        })
+        greeks_records.append(
+            {
+                "timestamp": date_str,
+                "delta": round(total_delta, 6),
+                "gamma": round(total_gamma, 6),
+                "theta": round(total_theta, 6),
+                "vega": round(total_vega, 6),
+                "rho": round(total_rho, 6),
+                "num_positions": len(positions),
+            }
+        )
 
     # Compute metrics
     equity_df = pd.DataFrame(equity_records)
@@ -492,7 +578,9 @@ def run_options_backtest(
         sys.exit(1)
 
     equity_series = equity_df.set_index("timestamp")["equity"]
-    metrics = _calc_options_metrics(equity_series, initial_cash, trade_records, bars_per_year)
+    metrics = _calc_options_metrics(
+        equity_series, initial_cash, trade_records, bars_per_year
+    )
 
     # Write artifacts
     out = run_dir / "artifacts"
@@ -503,15 +591,27 @@ def run_options_backtest(
 
     equity_df.to_csv(out / "equity.csv", index=False)
 
-    trade_cols = ["timestamp", "code", "option_type", "strike", "expiry",
-                  "side", "price", "qty", "pnl", "entry_date"]
+    trade_cols = [
+        "timestamp",
+        "code",
+        "option_type",
+        "strike",
+        "expiry",
+        "side",
+        "price",
+        "qty",
+        "pnl",
+        "entry_date",
+    ]
     pd.DataFrame(trade_records or [], columns=trade_cols).to_csv(
-        out / "trades.csv", index=False)
+        out / "trades.csv", index=False
+    )
 
     pd.DataFrame(greeks_records).to_csv(out / "greeks.csv", index=False)
     pd.DataFrame([metrics]).to_csv(out / "metrics.csv", index=False)
 
     from backtest.run_card import write_run_card
+
     write_run_card(
         run_dir,
         config,
@@ -551,10 +651,12 @@ def _find_matching_position(
     """
     expiry_ts = pd.Timestamp(expiry)
     for pos in positions:
-        if (pos.underlying_code == underlying
-                and pos.option_type == option_type
-                and abs(pos.strike - strike) < 1e-6
-                and pos.expiry == expiry_ts):
+        if (
+            pos.underlying_code == underlying
+            and pos.option_type == option_type
+            and abs(pos.strike - strike) < 1e-6
+            and pos.expiry == expiry_ts
+        ):
             return pos
     return None
 

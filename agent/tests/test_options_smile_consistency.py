@@ -165,10 +165,13 @@ class TestGreeksUseTheLegVol:
 
         smile_vol = leg_iv(100.0, 110.0, _BASE_IV, -0.15, 0.05)
         expiry = pd.Timestamp("2025-02-21")
-        time_to_expiry = max((expiry - _DATES[0]).days / 365.0, 0.001)
+        # Signals fill at T+1 (next bar), so Greeks first appear on the bar
+        # after the signal date. Signal is on _DATES[0], position live from _DATES[1].
+        assert float(greeks.iloc[0]["delta"]) == pytest.approx(0.0, abs=1e-9)
+        time_to_expiry = max((expiry - _DATES[1]).days / 365.0, 0.001)
         expected = bs_greeks(100.0, 110.0, time_to_expiry, 0.0, smile_vol, "call")
 
-        assert float(greeks.iloc[0]["delta"]) == pytest.approx(
+        assert float(greeks.iloc[1]["delta"]) == pytest.approx(
             expected["delta"] * 10, rel=1e-6
         )
 
@@ -176,5 +179,10 @@ class TestGreeksUseTheLegVol:
         # Guards the test above from silently passing on an unchanged surface.
         assert leg_iv(100.0, 110.0, _BASE_IV, -0.15, 0.05) != _BASE_IV
         assert bs_price(100.0, 110.0, 30 / 365, 0.0, _BASE_IV, "call") != bs_price(
-            100.0, 110.0, 30 / 365, 0.0, leg_iv(100.0, 110.0, _BASE_IV, -0.15, 0.05), "call"
+            100.0,
+            110.0,
+            30 / 365,
+            0.0,
+            leg_iv(100.0, 110.0, _BASE_IV, -0.15, 0.05),
+            "call",
         )
