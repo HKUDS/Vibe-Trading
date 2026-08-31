@@ -47,7 +47,10 @@ _MARKET_PATTERNS = [
     # USDT pairs only in the quote currency; both belong to CryptoEngine.
     (re.compile(r"^[A-Z]+-USD$", re.I), "crypto"),
     # China futures: product+delivery.exchange (e.g. IF2406.CFFEX, rb2410.SHFE)
-    (re.compile(r"^[A-Za-z]{1,2}\d{3,4}\.(ZCE|DCE|SHFE|INE|CFFEX|GFEX)$", re.I), "futures"),
+    (
+        re.compile(r"^[A-Za-z]{1,2}\d{3,4}\.(ZCE|DCE|SHFE|INE|CFFEX|GFEX)$", re.I),
+        "futures",
+    ),
     # Global futures: product+month-code (e.g. ESZ4, CLF25, GCM2025)
     (re.compile(r"^[A-Z]{2,4}[FGHJKMNQUVXZ]\d{1,2}$", re.I), "futures"),
     # Global futures: product+YYMM (e.g. CL2412, ES2503)
@@ -124,6 +127,7 @@ def code_currency(code: str) -> str:
         return _FUTURES_EXCHANGE_CURRENCY.get(exchange, "USD")
     return f"UNKNOWN:{market}"
 
+
 # Known Chinese-futures product codes — used as a heuristic when a symbol
 # lacks an exchange suffix (e.g. bare ``RB2410``, ``IF2406``). Without this
 # table composite.py was misrouting such bare codes to GlobalFutures.
@@ -131,14 +135,59 @@ def code_currency(code: str) -> str:
 # before lookup so callers can pass any case (``RB2410`` and ``rb2410``
 # both resolve correctly).
 _CN_FUTURES_PRODUCTS = {
-    "if", "ic", "ih", "im", "t", "tf", "ts", "tl",
-    "au", "ag", "cu", "al", "zn", "pb", "ni", "sn", "ss",
-    "rb", "hc", "i", "j", "jm",
-    "sc", "fu", "lu", "bu", "nr",
-    "c", "cs", "m", "y", "a", "p", "jd", "lh",
-    "cf", "sr", "ta", "ma", "ap", "rm", "oi",
-    "pp", "l", "v", "eg", "eb", "pf", "sa", "fg", "ur",
-    "si", "lc",
+    "if",
+    "ic",
+    "ih",
+    "im",
+    "t",
+    "tf",
+    "ts",
+    "tl",
+    "au",
+    "ag",
+    "cu",
+    "al",
+    "zn",
+    "pb",
+    "ni",
+    "sn",
+    "ss",
+    "rb",
+    "hc",
+    "i",
+    "j",
+    "jm",
+    "sc",
+    "fu",
+    "lu",
+    "bu",
+    "nr",
+    "c",
+    "cs",
+    "m",
+    "y",
+    "a",
+    "p",
+    "jd",
+    "lh",
+    "cf",
+    "sr",
+    "ta",
+    "ma",
+    "ap",
+    "rm",
+    "oi",
+    "pp",
+    "l",
+    "v",
+    "eg",
+    "eb",
+    "pf",
+    "sa",
+    "fg",
+    "ur",
+    "si",
+    "lc",
 }
 
 
@@ -210,6 +259,7 @@ def _detect_submarket(codes: List[str]) -> str:
         if upper.endswith(".L"):
             return "uk"
     return "us"
+
 
 # ── Crypto: OKX tiered maintenance margin table (simplified) ──
 
@@ -289,12 +339,62 @@ def calc_crypto_funding_fee(
     return notional * funding_rate * pos.direction
 
 
+def _liquidation_mark_price(bar: pd.Series, pos: Position) -> float:
+    """Return the adverse extremum for liquidation marking.
+
+    For longs the adverse move is a drop, so mark against ``low``;
+    for shorts it is a spike, so mark against ``high``.  Falls back
+    to ``close`` when neither extremum is present (close-only bars).
+
+    Supports both non-strict (``high``/``low``) and strict
+    (``mark_high``/``mark_low``) field names.
+
+    Args:
+        bar: Current bar data.
+        pos: Position whose liquidation is being evaluated.
+
+    Returns:
+        Price to use for the maintenance check.
+    """
+    if pos.direction == -1:
+        for key in ("high", "mark_high"):
+            if key in bar.index:
+                val = bar.get(key)
+                if val is not None and pd.notna(val):
+                    return float(val)
+    else:
+        for key in ("low", "mark_low"):
+            if key in bar.index:
+                val = bar.get(key)
+                if val is not None and pd.notna(val):
+                    return float(val)
+    return float(bar.get("close", pos.entry_price))
+
+
+def crypto_liquidation_mark_price(bar: pd.Series, pos: Position) -> float:
+    """Public helper for callers that need the same liquidation mark.
+
+    Args:
+        bar: Current bar data.
+        pos: Position to mark.
+
+    Returns:
+        Adverse mark price for liquidation.
+    """
+    return _liquidation_mark_price(bar, pos)
+
+
 def check_crypto_liquidation(
     symbol: str,
     bar: pd.Series,
     positions: Dict[str, Position],
 ) -> bool:
     """Check if a crypto position should be liquidated.
+
+    Direction-aware: longs at leverage <=1 remain exempt, shorts at
+    leverage <=1 are always evaluated.  Marks against the bar's
+    adverse extremum (high for shorts, low for longs) when high/low
+    are present, otherwise falls back to close.
 
     Args:
         symbol: Instrument code.
@@ -306,10 +406,13 @@ def check_crypto_liquidation(
         Does NOT execute the liquidation -- caller handles that.
     """
     pos = positions.get(symbol)
-    if pos is None or pos.leverage <= 1.0:
+    if pos is None:
+        return False
+    # 1x longs are exempt (cannot be liquidated); 1x shorts are not.
+    if pos.leverage <= 1.0 and pos.direction != -1:
         return False
 
-    mark_price = float(bar.get("close", pos.entry_price))
+    mark_price = _liquidation_mark_price(bar, pos)
     margin = pos.size * pos.entry_price / pos.leverage
     unrealized = pos.direction * pos.size * (mark_price - pos.entry_price)
 
@@ -323,12 +426,22 @@ def check_crypto_liquidation(
 # ── Forex: swap tables ──
 
 _SWAP_LONG: dict[str, float] = {
-    "EUR/USD": -6.5, "GBP/USD": -3.0, "USD/JPY": 8.0, "USD/CHF": 4.0,
-    "AUD/USD": -2.0, "USD/CAD": 2.0, "NZD/USD": -1.5,
+    "EUR/USD": -6.5,
+    "GBP/USD": -3.0,
+    "USD/JPY": 8.0,
+    "USD/CHF": 4.0,
+    "AUD/USD": -2.0,
+    "USD/CAD": 2.0,
+    "NZD/USD": -1.5,
 }
 _SWAP_SHORT: dict[str, float] = {
-    "EUR/USD": 3.5, "GBP/USD": -1.0, "USD/JPY": -12.0, "USD/CHF": -8.0,
-    "AUD/USD": -1.0, "USD/CAD": -5.0, "NZD/USD": -2.0,
+    "EUR/USD": 3.5,
+    "GBP/USD": -1.0,
+    "USD/JPY": -12.0,
+    "USD/CHF": -8.0,
+    "AUD/USD": -1.0,
+    "USD/CAD": -5.0,
+    "NZD/USD": -2.0,
 }
 
 
