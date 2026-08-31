@@ -18,6 +18,7 @@ here is the engine's own volatility surface -- historical vol, the smile, and
 the per-leg vol every pricing site must agree on.
 """
 
+import bisect
 import json
 import sys
 from pathlib import Path
@@ -34,19 +35,24 @@ from src.quantlib.options import bs_greeks, bs_price, normalise_option_type
 # --- Historical volatility ---
 
 
-def historical_volatility(close: pd.Series, window: int = 30) -> pd.Series:
+def historical_volatility(close: pd.Series, window: int = 30,
+                          default_iv: float = 0.3) -> pd.Series:
     """Calculate annualised historical volatility from a close price series.
 
     Args:
         close: Close price Series.
         window: Rolling window in days.
+        default_iv: Volatility for bars without a full rolling window. The
+            previous behavior backfilled the first computed window into the
+            early bars, pricing them with information from the window's own
+            end (#1293).
 
     Returns:
         Annualised historical volatility Series.
     """
     log_ret = np.log(close / close.shift(1))
     hv = log_ret.rolling(window=window).std() * np.sqrt(252)
-    return hv.fillna(hv.dropna().iloc[0] if len(hv.dropna()) > 0 else 0.3)
+    return hv.fillna(default_iv)
 
 
 # --- IV Smile model (v2) ---
@@ -213,6 +219,10 @@ def run_options_backtest(
     exercise_style = options_cfg.get("exercise_style", "european")  # v2: "european" or "american"
     iv_skew = options_cfg.get("iv_skew", 0.0)         # v2: smile skew param (0 = flat)
     iv_curvature = options_cfg.get("iv_curvature", 0.0)  # v2: smile curvature
+    # Signals are computed on a bar's close and filled on the next bar by
+    # default; opt back into the legacy same-date fill for reproduction.
+    same_day_fill = bool(options_cfg.get("same_day_fill", False))
+    default_iv = float(options_cfg.get("default_iv", 0.3))
 
     # Load underlying data
     data_map = loader.fetch(codes, start_date, end_date)
@@ -223,7 +233,7 @@ def run_options_backtest(
     # Compute implied volatility (approximated by historical volatility)
     iv_map: Dict[str, pd.Series] = {}
     for code, df in data_map.items():
-        iv_map[code] = historical_volatility(df["close"])
+        iv_map[code] = historical_volatility(df["close"], default_iv=default_iv)
 
     # Generate trade signals
     signals = engine.generate(data_map)
@@ -245,6 +255,25 @@ def run_options_backtest(
     for sig in signals:
         d = sig.get("date", "")
         signal_by_date.setdefault(d, []).append(sig)
+
+    # Signals are computed on one bar's close and filled on the next bar's
+    # (#1293): filling on the signal date prices the fill with the very close
+    # the signal was computed from. The shift is resolved against the full
+    # date range (warm-up included), so a signal dated the last warm-up bar
+    # still fills on the first evaluated bar; a signal dated after the last
+    # bar simply never fills. ``same_day_fill`` restores the legacy fill.
+    if same_day_fill:
+        exec_by_date = signal_by_date
+    else:
+        exec_by_date: Dict[str, List[Dict[str, Any]]] = {}
+        full_dates = sorted(all_dates)
+        for sig in signals:
+            d = sig.get("date", "")
+            next_idx = bisect.bisect_right(full_dates, pd.Timestamp(d))
+            if next_idx < len(full_dates):
+                exec_ts = full_dates[next_idx]
+                exec_str = str(exec_ts.date()) if hasattr(exec_ts, "date") else str(exec_ts)
+                exec_by_date.setdefault(exec_str, []).append(sig)
 
     # Day-by-day simulation
     cash = float(initial_cash)
@@ -333,7 +362,7 @@ def run_options_backtest(
             positions.remove(pos)
 
         # 3. Execute today's signals
-        day_signals = signal_by_date.get(date_str, [])
+        day_signals = exec_by_date.get(date_str, [])
         for sig in day_signals:
             action = sig.get("action", "")
             legs = sig.get("legs", [])
