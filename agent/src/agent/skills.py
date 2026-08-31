@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -105,17 +105,24 @@ class SkillsLoader:
     """
 
     def __init__(self, skills_dir: Optional[Path] = None,
-                 user_skills_dir: Optional[Path] = None) -> None:
+                 user_skills_dir: Optional[Path] = None,
+                 only: Optional[Collection[str]] = None) -> None:
         """Initialize SkillsLoader.
 
         Args:
             skills_dir: Bundled skills directory path; defaults to agent/skills/.
             user_skills_dir: User-created skills directory; defaults to ~/.vibe-trading/skills/user/.
+            only: When not ``None``, restrict the loaded set to these skill
+                names (nested specialist runs pass their skill whitelist so the
+                prompt surface matches the runtime boundary). ``None`` loads all.
         """
         self.skills_dir = skills_dir or Path(__file__).resolve().parents[1] / "skills"
         self._user_skills_dir = user_skills_dir or USER_SKILLS_DIR
+        self._only: Optional[frozenset] = frozenset(only) if only is not None else None
         self.skills: List[Skill] = []
         self._load()
+        if self._only is not None:
+            self.skills = [skill for skill in self.skills if skill.name in self._only]
 
     def _load(self) -> None:
         """Load all skill subdirectories from user and bundled directories.
@@ -177,6 +184,12 @@ class SkillsLoader:
         for skill in self.skills:
             if skill.name == name:
                 return f'<skill name="{name}">\n{skill.body}\n</skill>'
+
+        # An allowlisted loader never reaches for names outside its set, not
+        # even via the mid-session disk fallback below.
+        if self._only is not None:
+            allowed = ", ".join(sorted(self._only))
+            return f"Error: Unknown skill '{name}'. Available: {allowed}"
 
         # Fallback: check user skills directory on disk (mid-session created skills)
         if self._user_skills_dir:

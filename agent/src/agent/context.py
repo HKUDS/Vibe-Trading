@@ -78,7 +78,7 @@ skill document, not recalled memory. They are not defaults to be tuned.
 ## Task Routing
 
 Decide which workflow to use based on the request:
-{strategy_discovery_routing}
+{strategy_discovery_routing}{specialist_routing}
 **Backtest** — user wants to create, test, or optimize a trading strategy:
 1. `load_skill("strategy-generate")` — read the SignalEngine contract
 2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {{"monte_carlo": {{"n_simulations": 1000}}}}` in config.json for Monte Carlo testing
@@ -277,6 +277,17 @@ class ContextBuilder:
         except Exception:  # noqa: BLE001
             routing = ""
 
+        # Specialist-delegation routing text follows the same fail-safe
+        # contract: present only when the delegate tool is registered, empty
+        # string otherwise. The slot shares the strategy-routing template
+        # position so a disabled gate leaves the prompt byte-identical.
+        try:
+            from src.specialists.routing import specialist_routing_block
+
+            specialists = specialist_routing_block(self.registry)
+        except Exception:  # noqa: BLE001
+            specialists = ""
+
         return _SYSTEM_PROMPT.format(
             tool_count=len(self.registry._tools),
             skill_count=len(self.skills_loader.skills),
@@ -286,6 +297,7 @@ class ContextBuilder:
             memory_summary=self.memory.to_summary(),
             memory_section=memory_section,
             strategy_discovery_routing=routing,
+            specialist_routing=specialists,
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M UTC"),
         )
 
