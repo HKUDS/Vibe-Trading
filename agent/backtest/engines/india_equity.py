@@ -32,7 +32,6 @@ from __future__ import annotations
 import pandas as pd
 
 from backtest.engines.base import BaseEngine
-from backtest.engines.china_a import _blocked_by_limit
 
 
 class IndiaEquityEngine(BaseEngine):
@@ -73,32 +72,15 @@ class IndiaEquityEngine(BaseEngine):
         Returns:
             True if the trade is allowed.
         """
-        # 1. Short selling: blocked unless explicitly modelling intraday (MIS).
-        if direction == -1 and not self.allow_short:
-            return False
-
-        # 2. T+1: can't sell shares bought today (delivery).
-        if direction == 0:
-            pos = self.positions.get(symbol)
-            if pos is not None:
-                bar_date = _bar_date(bar)
-                entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
-                if bar_date is not None and entry_date is not None and bar_date == entry_date:
-                    return False
-
-        # 3. Circuit bands, tested at execution time (see _blocked_by_limit).
-        if self.price_limit and _blocked_by_limit(
-            self, symbol, direction, bar, float(self.price_limit)
-        ):
-            return False
-
-        return True
+        return india_can_execute(self, self, symbol, direction, bar)
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Cash equity trades in 1-share lots."""
         return float(max(int(raw_size), 0))
 
-    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+    def calc_commission(
+        self, size: float, price: float, _direction: int, is_open: bool
+    ) -> float:
         """India delivery cost stack (see module docstring).
 
         ``_direction`` is unused — reserved for future asymmetric long/short
@@ -106,15 +88,15 @@ class IndiaEquityEngine(BaseEngine):
         """
         notional = size * price
         brokerage = notional * self.in_brokerage
-        exchange_txn = notional * self.in_exchange_txn        # bilateral
-        sebi_fee = notional * self.in_sebi_fee                # bilateral
+        exchange_txn = notional * self.in_exchange_txn  # bilateral
+        sebi_fee = notional * self.in_sebi_fee  # bilateral
         gst = (brokerage + exchange_txn + sebi_fee) * self.in_gst
-        stt = notional * self.in_stt                          # bilateral (delivery)
+        stt = notional * self.in_stt  # bilateral (delivery)
         comm = brokerage + exchange_txn + sebi_fee + gst + stt
         if is_open:
-            comm += notional * self.in_stamp_duty             # stamp duty: buy-only
+            comm += notional * self.in_stamp_duty  # stamp duty: buy-only
         else:
-            comm += self.in_dp_charge                         # DP charge: sell-only, flat
+            comm += self.in_dp_charge  # DP charge: sell-only, flat
         return comm
 
     def apply_slippage(self, price: float, direction: int) -> float:
@@ -139,3 +121,75 @@ def _bar_date(bar: pd.Series):
     if hasattr(bar, "name") and hasattr(bar.name, "date"):
         return bar.name.date()
     return None
+
+
+def _blocked_with_state(
+    state, rules, symbol: str, direction: int, bar: pd.Series, limit: float
+) -> bool:
+    """Limit check reading base price from *state* and slippage from *rules*."""
+
+    band = state.limit_band(symbol, bar, limit)
+    if band is None:
+        return False
+    lower, upper = band
+    pos = state.positions.get(symbol) if direction == 0 else None
+    pos_dir = pos.direction if pos is not None else None
+    fill_direction = -(pos_dir or 1) if direction == 0 else direction
+    raw = bar.get("open", bar.get("close"))
+    if raw is None or pd.isna(raw):
+        return False
+    price = float(raw)
+    if price <= 0 and not getattr(rules, "allow_nonpositive_prices", False):
+        return False
+    fill = rules.apply_slippage(price, fill_direction)
+    if fill is None or pd.isna(fill):
+        return False
+    tol = 1e-9 * max(abs(lower), abs(upper), 1.0)
+    buying = direction == 1 or (direction == 0 and pos_dir == -1)
+    if buying:
+        return fill >= upper - tol
+    return fill <= lower + tol
+
+
+def india_can_execute(
+    state, rules, symbol: str, direction: int, bar: pd.Series
+) -> bool:
+    """India delivery rules reading state from *state* and params from *rules*.
+
+    Splitting the two lets :class:`CompositeEngine` enforce the same rules in
+    a cross-market run: the composite owns the shared positions and close
+    panel, while the India sub-engine supplies ``allow_short``/``price_limit``
+    and slippage. A single-market run passes the same engine as both arguments.
+
+    Args:
+        state: Engine owning positions, close panel and bar cursor.
+        rules: India engine supplying ``allow_short``, ``price_limit`` and
+            slippage.
+        symbol: NSE/BSE symbol.
+        direction: 1 (buy), -1 (short), 0 (sell/close).
+        bar: Current bar.
+
+    Returns:
+        True if the trade is allowed.
+    """
+    if direction == -1 and not getattr(rules, "allow_short", False):
+        return False
+    if direction == 0:
+        pos = state.positions.get(symbol)
+        if pos is not None:
+            bar_date = _bar_date(bar)
+            entry_date = (
+                pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
+            )
+            if (
+                bar_date is not None
+                and entry_date is not None
+                and bar_date == entry_date
+            ):
+                return False
+    limit = getattr(rules, "price_limit", 0.20)
+    if limit and _blocked_with_state(
+        state, rules, symbol, direction, bar, float(limit)
+    ):
+        return False
+    return True

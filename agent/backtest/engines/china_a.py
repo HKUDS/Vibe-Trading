@@ -48,30 +48,15 @@ class ChinaAEngine(BaseEngine):
         Returns:
             True if the trade is allowed.
         """
-        # 1. No short selling
-        if direction == -1:
-            return False
-
-        # 2. T+1: can't sell shares bought today
-        if direction == 0:
-            pos = self.positions.get(symbol)
-            if pos is not None:
-                bar_date = _bar_date(bar)
-                entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
-                if bar_date is not None and entry_date is not None and bar_date == entry_date:
-                    return False
-
-        # 3. Price limits, tested at execution time (see _blocked_by_limit).
-        if _blocked_by_limit(self, symbol, direction, bar, _price_limit(symbol)):
-            return False
-
-        return True
+        return china_a_can_execute(self, self, symbol, direction, bar)
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Round down to 100-share lots."""
         return max(int(raw_size / 100) * 100, 0)
 
-    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+    def calc_commission(
+        self, size: float, price: float, _direction: int, is_open: bool
+    ) -> float:
         """A-share fee structure: commission + stamp tax (sell) + transfer fee.
 
         ``_direction`` is unused today — reserved for future asymmetric
@@ -190,3 +175,76 @@ def _price_limit(symbol: str) -> float:
         return 0.30
     # Main board: ±10%
     return 0.10
+
+
+def _blocked_with_state(
+    state,
+    rules,
+    symbol: str,
+    direction: int,
+    bar: pd.Series,
+    limit: float,
+) -> bool:
+    """Limit check reading base price from *state* and slippage from *rules*."""
+
+    band = state.limit_band(symbol, bar, limit)
+    if band is None:
+        return False
+    lower, upper = band
+    pos = state.positions.get(symbol) if direction == 0 else None
+    pos_dir = pos.direction if pos is not None else None
+    fill_direction = -(pos_dir or 1) if direction == 0 else direction
+    raw = bar.get("open", bar.get("close"))
+    if raw is None or pd.isna(raw):
+        return False
+    price = float(raw)
+    if price <= 0 and not getattr(rules, "allow_nonpositive_prices", False):
+        return False
+    fill = rules.apply_slippage(price, fill_direction)
+    if fill is None or pd.isna(fill):
+        return False
+    tol = 1e-9 * max(abs(lower), abs(upper), 1.0)
+    buying = direction == 1 or (direction == 0 and pos_dir == -1)
+    if buying:
+        return fill >= upper - tol
+    return fill <= lower + tol
+
+
+def china_a_can_execute(
+    state, rules, symbol: str, direction: int, bar: pd.Series
+) -> bool:
+    """A-share rules reading state from *state* and parameters from *rules*.
+
+    Splitting the two lets :class:`CompositeEngine` enforce the same market
+    rules in a cross-market run: the composite owns the shared positions and
+    close panel, while the A-share sub-engine supplies only the tick/limit
+    parameters. A single-market run passes the same engine as both arguments.
+
+    Args:
+        state: Engine owning positions, close panel and bar cursor.
+        rules: A-share engine supplying slippage and limit parameters.
+        symbol: Stock code.
+        direction: 1 (buy), -1 (short), 0 (sell/close).
+        bar: Current bar.
+
+    Returns:
+        True if the trade is allowed.
+    """
+    if direction == -1:
+        return False
+    if direction == 0:
+        pos = state.positions.get(symbol)
+        if pos is not None:
+            bar_date = _bar_date(bar)
+            entry_date = (
+                pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
+            )
+            if (
+                bar_date is not None
+                and entry_date is not None
+                and bar_date == entry_date
+            ):
+                return False
+    if _blocked_with_state(state, rules, symbol, direction, bar, _price_limit(symbol)):
+        return False
+    return True
