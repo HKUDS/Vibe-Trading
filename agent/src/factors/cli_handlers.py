@@ -78,7 +78,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # ``src.tools.alpha_bench_tool._UNIVERSE_TAG``. There is no KRX (or NSE/BSE)
 # panel yet, so Korea/India are deliberately absent — ``alpha bench`` would
 # fail at universe load, not produce a Korean benchmark.
-_UNIVERSE_CHOICES = ["csi300", "sp500", "btc-usdt"]
+_UNIVERSE_CHOICES = ["csi300", "sp500", "btc-usdt", "nifty50"]
 
 # Per-row fields that only ``bench_runner_strict`` produces. They are the
 # statistics ``categorise_strict`` actually gates on, so a strict run that
@@ -107,6 +107,7 @@ _LIST_UNIVERSE_ALIASES = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
     "btc-usdt": "crypto",
+    "nifty50": "equity_in",
 }
 
 

@@ -1033,6 +1033,7 @@
     "universeOption": {
       "csi300": "CSI 300 (الصين A)",
       "sp500": "S&P 500 (الولايات المتحدة)",
+      "nifty50": "NIFTY 50 (الهند)",
       "btc-usdt": "BTC-USDT (عملات رقمية)",
       "equity_cn": "أسهم الصين A",
       "equity_us": "أسهم أمريكية",

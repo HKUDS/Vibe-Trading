@@ -1033,6 +1033,7 @@
     "universeOption": {
       "csi300": "沪深 300（A 股）",
       "sp500": "标普 500（美股）",
+      "nifty50": "NIFTY 50（印度）",
       "btc-usdt": "BTC-USDT（加密货币）",
       "equity_cn": "A 股",
       "equity_us": "美股",

@@ -60,6 +60,18 @@ _SP500_MIN_SECTOR_COVERAGE = 0.9
 # allows ~200 calls/min; 4 workers stays well under that with a 300-name list.
 _CSI300_FETCH_WORKERS = 4
 
+# Concurrent per-symbol Yahoo chart fetches for the sp500 / nifty50 panels.
+# The Yahoo loader fetches one symbol per HTTP call and loops sequentially, so
+# a 500-name sp500 panel took >8 min to build (never finished inside the API's
+# stream timeout). 8 workers keeps well under Yahoo's soft rate limit while
+# cutting a cold sp500 build to ~1-2 min; the panel is then pickle-cached.
+_EQUITY_FETCH_WORKERS = 8
+
+# Date the NIFTY 50 constituent list was sampled from Wikipedia (best-effort
+# label for the survivorship-bias warning, mirroring _SP500_CONSTITUENT_SOURCE_DATE).
+_NIFTY50_CONSTITUENT_SOURCE_DATE = "2026-08-31"
+_NIFTY50_MIN_SECTOR_COVERAGE = 0.9
+
 
 # ---------------------------------------------------------------------------
 # Universe + period parsing
@@ -74,6 +86,7 @@ _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
     "btc-usdt": "crypto",
+    "nifty50": "equity_in",
 }
 
 
@@ -108,7 +121,7 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500`` | ``btc-usdt``.
+        universe: ``csi300`` | ``sp500`` | ``btc-usdt`` | ``nifty50``.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
             ``~/.vibe-trading/cache/`` if the same universe+period was fetched
@@ -136,6 +149,8 @@ def _load_universe_panel(
         panel = _load_csi300_panel(start, end)
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
+    elif universe == "nifty50":
+        panel = _load_nifty_panel(start, end)
     elif universe == "btc-usdt":
         panel = _load_btc_panel(start, end)
     else:  # pragma: no cover — guarded above
@@ -304,6 +319,196 @@ _SP500_FALLBACK_CODES = [
     "VZ", "PFE", "INTC", "DIS", "CMCSA", "AMD", "TXN", "PM", "QCOM",
     "NEE", "RTX", "HON", "T", "IBM",
 ]
+
+
+# NIFTY 50 constituents (NSE symbols, no suffix) + NSE sector labels. Used when
+# the Wikipedia fetch in ``_fetch_nifty50_constituents`` fails. Sampled from
+# en.wikipedia.org/wiki/NIFTY_50 on _NIFTY50_CONSTITUENT_SOURCE_DATE.
+_NIFTY50_FALLBACK: dict[str, str] = {
+    "ADANIENT": "Metals & Mining", "ADANIPORTS": "Services",
+    "APOLLOHOSP": "Healthcare", "ASIANPAINT": "Consumer Durables",
+    "AXISBANK": "Financial Services", "BAJAJ-AUTO": "Automobile and Auto Components",
+    "BAJFINANCE": "Financial Services", "BAJAJFINSV": "Financial Services",
+    "BEL": "Capital Goods", "BHARTIARTL": "Telecommunication",
+    "CIPLA": "Healthcare", "COALINDIA": "Oil, Gas & Consumable Fuels",
+    "DRREDDY": "Healthcare", "EICHERMOT": "Automobile and Auto Components",
+    "ETERNAL": "Consumer Services", "GRASIM": "Construction Materials",
+    "HCLTECH": "Information Technology", "HDFCBANK": "Financial Services",
+    "HDFCLIFE": "Financial Services", "HINDALCO": "Metals & Mining",
+    "HINDUNILVR": "Fast Moving Consumer Goods", "ICICIBANK": "Financial Services",
+    "INDIGO": "Services", "INFY": "Information Technology",
+    "ITC": "Fast Moving Consumer Goods", "JIOFIN": "Financial Services",
+    "JSWSTEEL": "Metals & Mining", "KOTAKBANK": "Financial Services",
+    "LT": "Construction", "M&M": "Automobile and Auto Components",
+    "MARUTI": "Automobile and Auto Components", "MAXHEALTH": "Healthcare",
+    "NESTLEIND": "Fast Moving Consumer Goods", "NTPC": "Power",
+    "ONGC": "Oil, Gas & Consumable Fuels", "POWERGRID": "Power",
+    "RELIANCE": "Oil, Gas & Consumable Fuels", "SBILIFE": "Financial Services",
+    "SHRIRAMFIN": "Financial Services", "SBIN": "Financial Services",
+    "SUNPHARMA": "Healthcare", "TCS": "Information Technology",
+    "TATACONSUM": "Fast Moving Consumer Goods",
+    "TATAMOTORS": "Automobile and Auto Components",
+    "TATASTEEL": "Metals & Mining", "TECHM": "Information Technology",
+    "TITAN": "Consumer Durables", "TRENT": "Consumer Services",
+    "ULTRACEMCO": "Construction Materials", "WIPRO": "Information Technology",
+}
+
+
+def _fetch_equity_panel_concurrent(
+    loader: Any,
+    project_codes: list[str],
+    start: str,
+    end: str,
+    *,
+    interval: str = "1D",
+    workers: int = _EQUITY_FETCH_WORKERS,
+) -> dict[str, pd.DataFrame]:
+    """Fetch a wide equity panel one symbol per worker.
+
+    ``loader.fetch`` accepts a list but iterates it sequentially (one HTTP call
+    per symbol), so a 500-name panel is 500 blocking round-trips. Submitting a
+    single-symbol ``fetch`` per worker keeps the loader's own per-symbol cache
+    and normalisation while running the I/O concurrently. One symbol failing
+    never aborts the batch — the loader already logs and drops it.
+    """
+    fetched: dict[str, pd.DataFrame] = {}
+
+    def _one(code: str) -> tuple[str, pd.DataFrame | None]:
+        try:
+            out = loader.fetch([code], start, end, interval=interval)
+        except TypeError:
+            out = loader.fetch([code], start, end)
+        except Exception as exc:  # noqa: BLE001 — loader logs specifics
+            logger.warning("equity panel fetch failed for %s: %s", code, exc)
+            return code, None
+        df = out.get(code) if isinstance(out, dict) else None
+        return code, df
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for fut in as_completed(pool.submit(_one, c) for c in project_codes):
+            code, df = fut.result()
+            if df is not None and not df.empty:
+                fetched[code] = df
+    return fetched
+
+
+def _fetch_nifty50_constituents() -> tuple[list[str], dict[str, str]]:
+    """Current NIFTY 50 tickers + NSE sector labels from Wikipedia.
+
+    Mirrors ``_fetch_sp500_constituents`` (requests + UA, then ``read_html``).
+    Returns ``([], {})`` on any failure so the caller drops to the static list.
+    """
+    url = "https://en.wikipedia.org/wiki/NIFTY_50"
+    try:
+        import io
+
+        import requests
+
+        resp = requests.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Vibe-Trading/0.1 (research bench; "
+                    "https://github.com/HKUDS/Vibe-Trading)"
+                )
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        tables = pd.read_html(io.StringIO(resp.text))
+        for tbl in tables:
+            cols = {re.sub(r"\[.*?\]", "", str(c)).strip(): c for c in tbl.columns}
+            if "Symbol" not in cols or "Sector" not in cols:
+                continue
+            syms = tbl[cols["Symbol"]].astype(str).str.strip()
+            secs = tbl[cols["Sector"]].astype(str).map(
+                lambda s: re.sub(r"\[.*?\]", "", s).strip()
+            )
+            keep = syms.str.fullmatch(r"[A-Z&\-]+")
+            tickers = syms[keep].tolist()
+            sectors = {
+                s: sec
+                for s, sec, k in zip(syms, secs, keep)
+                if k and sec and sec != "nan"
+            }
+            if len(tickers) >= 40:
+                logger.info(
+                    "nifty50: %d tickers from Wikipedia (%d with a sector)",
+                    len(tickers),
+                    len(sectors),
+                )
+                return tickers, sectors
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("nifty50 Wikipedia fetch failed: %s", exc)
+    return [], {}
+
+
+def _load_nifty_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
+    """NIFTY 50 panel via Yahoo (``.NS`` symbols, no auth). Adds synthetic vwap.
+
+    Same shape and survivorship-bias caveat as ``_load_sp500_panel``: the
+    constituent list is Wikipedia's *current* roster, so names that left the
+    index inside ``start..end`` are silently excluded and IC is biased upward.
+    """
+    tickers, sectors = _fetch_nifty50_constituents()
+    constituent_source = "wikipedia"
+    constituent_source_date: str | None = _NIFTY50_CONSTITUENT_SOURCE_DATE
+    if len(tickers) < 40:
+        tickers = list(_NIFTY50_FALLBACK)
+        sectors = dict(_NIFTY50_FALLBACK)
+        constituent_source = "hand-picked fallback"
+        constituent_source_date = _NIFTY50_CONSTITUENT_SOURCE_DATE
+        logger.warning("nifty50: using %d-name static list", len(tickers))
+
+    logger.warning(
+        "NIFTY 50 universe uses current constituents (%s @ %s) → survivorship-biased",
+        constituent_source,
+        constituent_source_date,
+    )
+
+    project_codes = [f"{t}.NS" for t in tickers]
+    from backtest.loaders.registry import resolve_loader
+
+    loader = resolve_loader("india_equity")
+    fetched = _fetch_equity_panel_concurrent(loader, project_codes, start, end)
+
+    panel = _wide_from_fetched(fetched, include_amount=False)
+    if all(k in panel for k in ("open", "high", "low", "close")):
+        panel["vwap"] = (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
+
+    sector_coverage = 0.0
+    if sectors and "close" in panel and not panel["close"].empty:
+        columns = panel["close"].columns
+        labels = [sectors.get(str(c).removesuffix(".NS"), "") for c in columns]
+        sector_coverage = sum(1 for label in labels if label) / len(labels)
+        if sector_coverage >= _NIFTY50_MIN_SECTOR_COVERAGE:
+            panel["sector"] = pd.DataFrame(
+                np.repeat(
+                    np.array([label or "UNKNOWN" for label in labels], dtype=object)[None, :],
+                    len(panel["close"].index),
+                    axis=0,
+                ),
+                index=panel["close"].index,
+                columns=columns,
+            )
+        else:
+            logger.warning(
+                "nifty50: sector coverage %.1f%% below %.0f%% — leaving the tag off",
+                sector_coverage * 100,
+                _NIFTY50_MIN_SECTOR_COVERAGE * 100,
+            )
+
+    panel["_meta"] = {
+        "universe": "nifty50",
+        "survivorship_bias": True,
+        "degraded": constituent_source == "hand-picked fallback",
+        "constituent_source": constituent_source,
+        "constituent_source_date": constituent_source_date,
+        "constituent_count": len(tickers),
+        "sector_source": "wikipedia NSE sector" if "sector" in panel else None,
+        "sector_coverage": round(sector_coverage, 4),
+    }
+    return panel
 
 
 def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
@@ -500,7 +705,7 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     from backtest.loaders.registry import resolve_loader
 
     loader = resolve_loader("us_equity")
-    fetched = _retry(lambda: loader.fetch(project_codes, start, end)) or {}
+    fetched = _fetch_equity_panel_concurrent(loader, project_codes, start, end)
 
     panel = _wide_from_fetched(fetched, include_amount=False)
     # Synthetic vwap for alpha101 alphas that require it on US universe

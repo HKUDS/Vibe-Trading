@@ -96,6 +96,12 @@ def test_compare_rejects_unknown_universe() -> None:
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize("universe", ["csi300", "sp500", "nifty50", "btc-usdt"])
+def test_compare_request_accepts_every_bench_universe(universe: str) -> None:
+    """Each benchable universe passes CompareRequest validation (no worker spawned)."""
+    alpha_routes.CompareRequest(**_valid_body(universe=universe))
+
+
 def test_compare_rejects_unknown_sort() -> None:
     r = _client().post("/alpha/compare", json=_valid_body(sort="sharpe"))
     assert r.status_code == 422

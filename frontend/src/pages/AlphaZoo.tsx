@@ -75,19 +75,21 @@ const ZOO_CARDS: ZooCard[] = [
 ];
 
 // Benchmarkable data universes (bench + compare): each one needs a panel loader
-// on the backend, so there is no Korea/India entry — the KRX factor capability
-// is a metadata universe, not a benchmark universe.
+// on the backend. Korea (equity_kr) and futures have no panel yet, so they stay
+// metadata-only universes.
 const UNIVERSE_OPTIONS = [
   { value: "csi300" },
   { value: "sp500" },
+  { value: "nifty50" },
   { value: "btc-usdt" },
 ];
 
 // Metadata universe -> the benchmark universe whose panel represents it. Markets
-// without a panel (equity_in, equity_kr, futures) are intentionally absent.
+// without a panel (equity_kr, futures) are intentionally absent.
 const BENCH_UNIVERSE_FOR_METADATA: Record<string, string> = {
   equity_cn: "csi300",
   equity_us: "sp500",
+  equity_in: "nifty50",
   crypto: "btc-usdt",
 };
 
