@@ -603,6 +603,7 @@ class CryptoEngine(BaseEngine):
         fee = calc_crypto_funding_fee(
             symbol, bar, timestamp, self.positions,
             self.funding_rate, self._funding_applied, self._funding_daily_done,
+            self._run_interval,
         )
         self.capital -= fee
 

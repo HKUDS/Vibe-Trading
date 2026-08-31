@@ -225,6 +225,36 @@ _TIER_TABLE = [
 FUNDING_HOURS = {0, 8, 16}
 
 
+def _interval_hours(interval: str) -> float:
+    """Convert interval token to span hours.
+
+    Supports project intervals like 1m/5m/15m/30m/1H/4H/1D/1W/1M.
+    """
+    token = str(interval).strip()
+    if not token:
+        return 24.0
+    # normalize: allow e.g. "1D", "1d", "4H"
+    import re as _re
+
+    m = _re.match(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]+)\s*$", token)
+    if not m:
+        return 24.0
+    value = float(m.group(1))
+    unit = m.group(2).lower()
+    if unit in {"m", "min", "mins", "minute", "minutes"}:
+        return value / 60.0
+    if unit in {"h", "hour", "hours"}:
+        return value
+    if unit in {"d", "day", "days"}:
+        return value * 24.0
+    if unit in {"w", "week", "weeks"}:
+        return value * 24.0 * 7
+    if unit in {"mo", "mth", "month", "months"}:
+        return value * 24.0 * 30
+    # fallback: treat as hours
+    return value
+
+
 def _maintenance_rate(notional_usd: float) -> float:
     """Look up tiered maintenance margin rate."""
     for tier_max, rate in _TIER_TABLE:
@@ -241,6 +271,7 @@ def calc_crypto_funding_fee(
     funding_rate: float,
     applied_set: set,
     daily_done_set: set,
+    interval: str | None = None,
 ) -> float:
     """Calculate crypto funding fee for one symbol.
 
@@ -253,6 +284,10 @@ def calc_crypto_funding_fee(
             carries no historical ``funding_rate`` column.
         applied_set: (symbol, date, hour) dedup set — mutated.
         daily_done_set: (symbol, date) dedup set — mutated.
+        interval: Bar interval token (e.g. "1D", "4H", "1H", "15m").
+            When span >= 8h, settlement count is ``max(1, span_hours // 8)``
+            per bar so daily bars settle 3x/day, 12h 1x/bar (2/day), weekly 21x.
+            Intraday spans (<8h) keep the slot logic on 0/8/16 UTC.
 
     Returns:
         Fee amount (positive = longs pay, negative = longs receive).
@@ -262,6 +297,46 @@ def calc_crypto_funding_fee(
 
     current_date = timestamp.date()
     hour = timestamp.hour if hasattr(timestamp, "hour") else 0
+
+    # Span-based settlement for daily+ bars: count is per-bar, not per-slot
+    if interval is not None:
+        try:
+            span_hours = _interval_hours(interval)
+        except Exception:
+            span_hours = None
+        if span_hours is not None and span_hours >= 8:
+            settlements = max(1, int(span_hours // 8))
+            key = (symbol, current_date, hour)
+            if key in applied_set:
+                return 0.0
+            applied_set.add(key)
+            pos = positions.get(symbol)
+            if pos is None:
+                return 0.0
+            mark_price = float(bar.get("close", pos.entry_price))
+            notional = pos.size * mark_price
+            hist = bar.get("funding_rate")
+            if hist is not None and pd.notna(hist):
+                funding_rate = float(hist)
+            return notional * funding_rate * pos.direction * settlements
+        # Intraday (<8h): only settlement-hour slots, no daily fallback
+        if span_hours is not None and span_hours < 8:
+            if hour in FUNDING_HOURS:
+                key = (symbol, current_date, hour)
+                if key in applied_set:
+                    return 0.0
+                applied_set.add(key)
+            else:
+                return 0.0
+            pos = positions.get(symbol)
+            if pos is None:
+                return 0.0
+            mark_price = float(bar.get("close", pos.entry_price))
+            notional = pos.size * mark_price
+            hist = bar.get("funding_rate")
+            if hist is not None and pd.notna(hist):
+                funding_rate = float(hist)
+            return notional * funding_rate * pos.direction
 
     if hour in FUNDING_HOURS:
         key = (symbol, current_date, hour)

@@ -132,6 +132,8 @@ class CompositeEngine(BaseEngine):
         # Forex dedup state
         self._last_swap_dates: dict = {}
 
+        self._run_interval = str(config.get("interval", "1D"))
+
     def run_backtest(self, config: dict, *args, **kwargs):
         """Run the pipeline, refusing a code set that spans currencies.
 
@@ -150,6 +152,7 @@ class CompositeEngine(BaseEngine):
             ValueError: If the codes span more than one settlement currency.
         """
         _reject_mixed_currency(config.get("codes") or list(self._symbol_market))
+        self._run_interval = str(config.get("interval", "1D"))
         return super().run_backtest(config, *args, **kwargs)
 
     def _rule_for(self, symbol: str) -> BaseEngine:
@@ -255,6 +258,7 @@ class CompositeEngine(BaseEngine):
                 symbol, bar, timestamp, self.positions,
                 crypto_sub.funding_rate,
                 self._funding_applied, self._funding_daily_done,
+                self._run_interval,
             )
             self.capital -= fee
 

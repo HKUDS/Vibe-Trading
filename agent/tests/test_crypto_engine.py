@@ -261,7 +261,7 @@ class TestSlippage:
 
 class TestFundingFee:
     def test_funding_deducted_at_settlement_hour(self) -> None:
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -269,11 +269,11 @@ class TestFundingFee:
         bar = _make_bar(close=60000.0)
         ts = pd.Timestamp("2025-01-01 08:00:00")  # settlement hour
         engine.on_bar("BTC-USDT", bar, ts)
-        # Long pays: 1.0 × 60000 × 0.0001 × 1(long) = $6
+        # Long pays: 1.0 × 60000 × 0.0001 × 1(long) = $6 (intraday slot)
         assert engine.capital == pytest.approx(initial_capital - 6.0)
 
     def test_non_settlement_hour_applies_daily_fallback(self) -> None:
-        """Non-settlement hour still applies funding once per day (daily bar support)."""
+        """Daily interval settles 3x per day regardless of bar hour (span-based)."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
@@ -282,8 +282,8 @@ class TestFundingFee:
         bar = _make_bar(close=60000.0)
         ts = pd.Timestamp("2025-01-01 05:00:00")  # not settlement hour
         engine.on_bar("BTC-USDT", bar, ts)
-        # Daily fallback: applies once even at non-settlement hour
-        assert engine.capital == pytest.approx(initial_capital - 6.0)
+        # Daily bars: 1D -> 3 settlements per bar (span_hours // 8)
+        assert engine.capital == pytest.approx(initial_capital - 18.0)
 
     def test_short_receives_funding(self) -> None:
         engine = _make_engine(funding_rate=0.0001)
@@ -319,7 +319,7 @@ class TestFundingFee:
         assert engine.capital == initial_capital
 
     def test_daily_bars_apply_each_day(self) -> None:
-        """Regression: daily bars (all hour=0) must apply funding every day, not just day 1."""
+        """Regression: daily bars (all hour=0) must apply 3x funding every day."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
@@ -342,12 +342,12 @@ class TestFundingFee:
         after_day3 = engine.capital
         assert after_day3 < after_day2  # fee deducted again
 
-        # Each day: 1 × 60000 × 0.0001 = $6
-        assert initial - after_day3 == pytest.approx(18.0)
+        # Each day: 3 × 60000 × 0.0001 = $18; 3 days = $54
+        assert initial - after_day3 == pytest.approx(54.0)
 
     def test_multi_symbol_funding(self) -> None:
         """Each symbol gets independent funding settlement."""
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -463,7 +463,7 @@ class TestHistoricalFundingRate:
     def test_bar_funding_rate_overrides_fixed_rate(self) -> None:
         """A bar carrying a historical ``funding_rate`` column (USD-M perp
         data) must be charged at that rate, not the fixed config rate."""
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT-PERP"] = Position(
             "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -475,7 +475,7 @@ class TestHistoricalFundingRate:
         assert engine.capital == pytest.approx(initial_capital - 30.0)
 
     def test_negative_historical_funding_pays_longs(self) -> None:
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT-PERP"] = Position(
             "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -489,7 +489,7 @@ class TestHistoricalFundingRate:
     def test_nan_funding_rate_falls_back_to_fixed(self) -> None:
         """Non-settlement bars carry NaN funding_rate — must fall back to
         the fixed config rate (daily-fallback path), not charge NaN."""
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT-PERP"] = Position(
             "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
