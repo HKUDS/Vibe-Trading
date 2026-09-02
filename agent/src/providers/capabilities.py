@@ -362,6 +362,22 @@ def get_llm_credentials(
         preflight, environment synchronization, and runtime construction all
         consume the same endpoint.
     """
+    normalized_provider = (provider or "").strip().lower().replace("_", "-")
+    if normalized_provider == "custom":
+        try:
+            from src.providers.custom_profiles import active_provider_credentials
+
+            active = active_provider_credentials()
+        except (RuntimeError, ValueError, OSError):
+            active = None
+        if active:
+            return {
+                "provider": "custom",
+                "api_key": active["api_key"],
+                "base_url": active["base_url"],
+                "model": model or active["model"],
+            }
+
     caps = get_provider_capabilities(provider, model)
     key_env, base_env = caps.api_key_env, caps.base_url_env
 

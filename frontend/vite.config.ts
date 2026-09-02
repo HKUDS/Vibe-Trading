@@ -11,6 +11,7 @@ const PROXY_PATHS = [
   "/qveris",
   "/settings/llm",
   "/settings/data-sources",
+  "/settings/custom-providers",
   "/channels",
   "/mandate",
   "/live",

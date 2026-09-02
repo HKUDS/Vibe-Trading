@@ -10,6 +10,8 @@ const apiMock = vi.hoisted(() => ({
   stopChannels: vi.fn(),
   updateLLMSettings: vi.fn(),
   updateDataSourceSettings: vi.fn(),
+  listCustomProviders: vi.fn(),
+  getChannelsConfig: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async () => {
@@ -112,6 +114,8 @@ describe("Settings IM channels panel", () => {
     });
     apiMock.startChannels.mockResolvedValue(channelStatus({ running: true }));
     apiMock.stopChannels.mockResolvedValue(channelStatus());
+    apiMock.listCustomProviders.mockResolvedValue({ status: "ok", providers: [] });
+    apiMock.getChannelsConfig.mockResolvedValue({ status: "ok", channels: [], env_path: "agent.json" });
   });
 
   it("renders channel runtime status and refreshes it", async () => {
