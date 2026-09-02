@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from types import MappingProxyType
 from typing import Mapping, Optional
 
 
@@ -109,6 +110,50 @@ _NVIDIA_CAPABILITIES = ProviderCapabilities(
     "NVIDIA_API_KEY",
     "NVIDIA_BASE_URL",
     default_headers={"User-Agent": _VIBE_USER_AGENT},
+)
+
+#: Attribution headers for AI/ML API requests. ``HTTP-Referer`` and ``X-Title``
+#: are the OpenRouter convention and name the *calling application* — this
+#: project — not the gateway. The two ``X-AIMLAPI-*`` headers are the gateway's
+#: own partner/channel attribution. Read-only so the constant cannot be mutated
+#: by a caller that receives the merged header dict; ``build_llm`` copies it per
+#: request.
+#:
+#: These are scoped by request host at the call site
+#: (``_aimlapi_attribution_headers`` in ``llm.py``) rather than by provider
+#: label, because ``AIMLAPI_BASE_URL`` can point the same label at a corporate
+#: proxy or a look-alike domain, and an identifier must not follow it there.
+AIMLAPI_ATTRIBUTION_HEADERS: Mapping[str, str] = MappingProxyType(
+    {
+        "HTTP-Referer": "https://github.com/HKUDS/Vibe-Trading",
+        "X-Title": "Vibe-Trading",
+        "X-AIMLAPI-Partner-ID": "part_vibetrading",
+        "X-AIMLAPI-Source": "agent/vibe-trading",
+    }
+)
+
+#: Hosts that really are AI/ML API. Matched against the resolved base URL's
+#: hostname *exactly*: a substring or suffix test would also accept
+#: ``api.aimlapi.com.example.net``.
+AIMLAPI_ATTRIBUTION_HOSTS: frozenset[str] = frozenset(
+    {"api.aimlapi.com", "aimlapi.com"}
+)
+
+# AI/ML API is an OpenAI-compatible aggregator: one key, 350+ chat models under
+# ``vendor/model`` ids. Verified live on 2026-09-03 against
+# ``deepseek/deepseek-v4-pro``, ``openai/gpt-5-5``,
+# ``anthropic/claude-sonnet-4.5``, ``google/gemini-3.5-flash``,
+# ``alibaba/qwen3.5-plus`` and ``z-ai/glm-5.3-flash``: reasoning models return
+# ``reasoning_content``, and a top-level ``reasoning_effort`` was accepted by
+# every one of them, which is the bar ``top_level_reasoning_effort`` sets.
+# ``send_reasoning_content`` stays off — replaying reasoning on assistant turns
+# is unverified here, exactly as it is for OpenRouter.
+_AIMLAPI_CAPABILITIES = ProviderCapabilities(
+    "aimlapi",
+    "AIMLAPI_API_KEY",
+    "AIMLAPI_BASE_URL",
+    capture_reasoning=True,
+    top_level_reasoning_effort=True,
 )
 
 # GLM thinking models (glm-4.5+/glm-5.x) stream the chain-of-thought as
@@ -231,6 +276,7 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         "MODELSCOPE_API_KEY",
         "MODELSCOPE_BASE_URL",
     ),
+    "aimlapi": _AIMLAPI_CAPABILITIES,
     "ollama": ProviderCapabilities("ollama", None, "OLLAMA_BASE_URL"),
     "copilot": _COPILOT_CAPABILITIES,
     "github-copilot": _COPILOT_CAPABILITIES,
