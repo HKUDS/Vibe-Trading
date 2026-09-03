@@ -127,7 +127,7 @@ AIMLAPI_ATTRIBUTION_HEADERS: Mapping[str, str] = MappingProxyType(
     {
         "HTTP-Referer": "https://github.com/HKUDS/Vibe-Trading",
         "X-Title": "Vibe-Trading",
-        "X-AIMLAPI-Partner-ID": "part_vibetrading",
+        "X-AIMLAPI-Partner-ID": "part_m4LUWIsqHcT74jLfzge4zJAJ",
         "X-AIMLAPI-Source": "agent/vibe-trading",
     }
 )
