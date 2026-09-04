@@ -70,7 +70,7 @@ BADGE_ORDER = ("skills", "brokers", "presets", "alphas", "engines", "quantlib")
 # Without that guard the count tests only prove the five READMEs agree with
 # each other, which they did while all five were uniformly wrong — eToro
 # shipped as the 13th connector and the pin stayed at 12.
-EXPECTED_BROKERS = 13
+EXPECTED_BROKERS = 14
 
 
 def _read(name: str) -> str:

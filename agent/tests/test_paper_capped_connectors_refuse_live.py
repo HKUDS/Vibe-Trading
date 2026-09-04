@@ -28,7 +28,7 @@ _CONNECTOR_ROOT = Path(__file__).resolve().parents[1] / "src" / "trading" / "con
 
 # Brokers with no runtime paper/live discriminator. Capped at paper; every
 # order entry point must refuse a non-paper config up front.
-_PAPER_CAPPED = frozenset({"longbridge", "dhan", "shoonya", "trading212"})
+_PAPER_CAPPED = frozenset({"longbridge", "dhan", "shoonya", "trading212", "zerodha"})
 
 # Brokers with a structural discriminator (host separation, demo flag, account
 # id format, trade environment). Live placement is allowed here, but only

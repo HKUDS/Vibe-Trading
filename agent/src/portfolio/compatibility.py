@@ -67,6 +67,7 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
     ),
     "dhan": PortfolioCompatibility("experimental", 1, "positions", "INR valuation is not supported yet."),
     "shoonya": PortfolioCompatibility("experimental", 1, "positions", "INR valuation is not supported yet."),
+    "zerodha": PortfolioCompatibility("experimental", 1, "positions", "INR valuation is not supported yet."),
     "futu": PortfolioCompatibility(
         "experimental",
         1,

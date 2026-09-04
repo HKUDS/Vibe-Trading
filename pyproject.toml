@@ -113,6 +113,12 @@ mt5 = [
     # the marker makes this a no-op and everything degrades gracefully.
     "MetaTrader5>=5.0.45; sys_platform == 'win32'",
 ]
+zerodha = [
+    # Zerodha Kite Connect (India NSE/BSE) broker connector + india_broker
+    # loader backend. Lazy-imported with a named error; zerodha_available()
+    # stays False (loader falls through to Shoonya/Dhan) until installed.
+    "kiteconnect>=4.0.0",
+]
 deepseek = [
     "langchain-deepseek>=1.0.0,<2",
 ]

@@ -1,7 +1,8 @@
-"""India broker data bridge: feed Shoonya / Dhan history into the backtest layer.
+"""India broker data bridge: feed Zerodha / Shoonya / Dhan history into the backtest layer.
 
-The Shoonya (Finvasia) and Dhan connectors already expose live-account market
-data via ``get_historical_bars`` (read path). This loader adapts that envelope
+The Zerodha (Kite Connect), Shoonya (Finvasia) and Dhan connectors already
+expose live-account market data via ``get_historical_bars`` (read path). This
+loader adapts that envelope
 into the standard OHLCV frame so a user's *broker* history can back the same
 backtests as the public Yahoo feed — useful when matching a live account exactly
 or pulling symbols Yahoo lacks.
@@ -23,7 +24,7 @@ come back short. For deep history prefer Yahoo.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -50,11 +51,20 @@ _PERIOD_MAP = {
 def _resolve_broker():
     """Return ``(broker_key, sdk_module)`` for the first available India broker.
 
-    Prefers Shoonya, then Dhan. Returns ``(None, None)`` when neither the SDK
-    nor a config is present. Import is deferred and defensive so a missing
+    Prefers Zerodha, then Shoonya, then Dhan. Returns ``(None, None)`` when
+    neither the SDK nor a config is present (a connector is "available" only
+    when its SDK is importable AND its credentials are configured — see
+    ``zerodha_available``). Import is deferred and defensive so a missing
     ``src.trading`` package or broker SDK simply means "unavailable", never a
     crash in the loader registry.
     """
+    try:
+        from src.trading.connectors.zerodha import sdk as zerodha_sdk
+
+        if zerodha_sdk.zerodha_available():
+            return "zerodha", zerodha_sdk
+    except Exception as exc:  # noqa: BLE001 — optional dependency / config
+        logger.debug("zerodha bridge unavailable: %s", exc)
     try:
         from src.trading.connectors.shoonya import sdk as shoonya_sdk
 
@@ -117,7 +127,7 @@ def _bars_to_frame(bars: list[dict], start_date: str, end_date: str) -> Optional
 
 @register
 class DataLoader:
-    """Shoonya / Dhan history adapter for the ``india_equity`` market."""
+    """Zerodha / Shoonya / Dhan history adapter for the ``india_equity`` market."""
 
     name = "india_broker"
     markets = {"india_equity"}
