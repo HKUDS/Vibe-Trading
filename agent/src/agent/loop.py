@@ -434,11 +434,18 @@ def _verification_ledger(messages: list) -> str:
             break
     return "\n".join(unique)
 
-def _microcompact(messages: list) -> None:
+def _microcompact(messages: list, called_ok: set[str] | None = None) -> None:
     """Layer 1: silently prune old tool results, keeping the most recent N intact.
 
     Args:
         messages: Message list (mutated in place).
+        called_ok: Names of already-completed non-repeatable tools the loop
+            dedup guard blocks from re-calling (#1343). Clearing a result
+            destroys the only copy the model could "use the previous result"
+            from, so release the dedup lock for every tool whose result gets
+            cleared — otherwise the model retries the same tool forever and
+            every retry is skipped (44 wasted tool_skipped calls in the
+            2026-09-04 investment_committee run).
     """
     tool_msgs = [m for m in messages if m.get("role") == "tool"]
     if len(tool_msgs) <= KEEP_RECENT:
@@ -447,6 +454,8 @@ def _microcompact(messages: list) -> None:
         content = msg.get("content", "")
         if isinstance(content, str) and len(content) > 100:
             msg["content"] = "[cleared]"
+            if called_ok is not None:
+                called_ok.discard(msg.get("name"))
 
 
 def _context_collapse(messages: list) -> None:
@@ -1159,7 +1168,7 @@ class AgentLoop:
                 # tool history available for the model to reference instead of
                 # having every result past the most recent few cleared.
                 if tokens > int(_token_threshold() * 0.5):
-                    _microcompact(messages)
+                    _microcompact(messages, called_ok=self._called_ok)
                     tokens = estimate_tokens(messages)
 
                 # Layer 2: context collapse (fold long text, zero API cost)

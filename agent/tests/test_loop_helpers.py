@@ -598,3 +598,89 @@ def test_stall_timeout_seconds_default_and_override(monkeypatch) -> None:
     assert _stall_timeout_seconds() == 42.0
     monkeypatch.delattr(loop_module, "STALL_TIMEOUT_SECONDS", raising=False)
     assert _stall_timeout_seconds() > 0
+
+
+# ---------------------------------------------------------------------------
+# _microcompact + dedup interplay (#1343)
+# ---------------------------------------------------------------------------
+
+
+class TestMicrocompactReleasesDedupLock:
+    """Clearing a tool result destroys the copy the dedup guard says to reuse.
+
+    loop.py blocks re-calls of succeeded non-repeatable tools with
+    ``"use the previous result"`` — but if microcompact already cleared that
+    result, the model can never see it and retries forever (44 wasted
+    tool_skipped calls in the 2026-09-04 investment_committee run). Clearing
+    a result must release the dedup lock (#1343).
+    """
+
+    def _messages_with_old_results(self) -> list:
+        tools = [
+            "get_financial_statements",
+            "get_fund_flow",
+            "get_margin_trading",
+            "get_research_reports",
+        ]
+        messages: list = [
+            {"role": "system", "content": "system"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": f"tc_{i}", "type": "function", "function": {"name": t, "arguments": "{}"}}
+                    for i, t in enumerate(tools)
+                ],
+            },
+        ]
+        for i, t in enumerate(tools):
+            messages.append(
+                {
+                    "role": "tool",
+                    "name": t,
+                    "tool_call_id": f"tc_{i}",
+                    "content": f"{'x' * 300} result_{t}",
+                }
+            )
+        # Recent — fresh get_market_data results must stay intact.
+        for i in range(KEEP_RECENT):
+            messages.append(
+                {
+                    "role": "tool",
+                    "name": "get_market_data",
+                    "tool_call_id": f"recent_{i}",
+                    "content": f"{'x' * 300} recent_{i}",
+                }
+            )
+        return messages
+
+    def test_clearing_result_releases_dedup_lock(self) -> None:
+        called_ok = {"get_financial_statements", "get_fund_flow", "get_margin_trading", "get_research_reports"}
+        messages = self._messages_with_old_results()
+
+        _microcompact(messages, called_ok=called_ok)
+
+        cleared = [m for m in messages if m.get("role") == "tool" and m["content"] == "[cleared]"]
+        assert len(cleared) == 4
+        # Dedup guard (`tc.name in called_ok and not repeatable`) must not fire.
+        assert "get_financial_statements" not in called_ok
+        assert "get_fund_flow" not in called_ok
+        assert "get_margin_trading" not in called_ok
+        assert "get_research_reports" not in called_ok
+
+    def test_preserved_results_keep_dedup_lock(self) -> None:
+        called_ok = {"get_market_data", "get_financial_statements"}
+        messages = self._messages_with_old_results()
+
+        _microcompact(messages, called_ok=called_ok)
+
+        recent = [m for m in messages if m.get("tool_call_id", "").startswith("recent_")]
+        assert all(m["content"] != "[cleared]" for m in recent)
+        assert "get_market_data" in called_ok
+
+    def test_no_called_ok_arg_back_compatible(self) -> None:
+        messages = self._messages_with_old_results()
+        # Existing callers / tests pass only messages.
+        _microcompact(messages)
+        cleared = [m for m in messages if m.get("role") == "tool" and m["content"] == "[cleared]"]
+        assert len(cleared) == 4
