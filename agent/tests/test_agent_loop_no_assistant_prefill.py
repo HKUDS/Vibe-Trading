@@ -146,3 +146,49 @@ def test_auto_compact_handoff_summary_is_reintroduced_as_user_message(
 
     assert messages[-1]["role"] == "user"
     assert "Continue from the summary above" in messages[-1]["content"]
+
+
+def test_auto_compact_releases_dedup_locks_for_unseeable_results(
+    tmp_path: Path,
+) -> None:
+    """#1343: layer-3 compaction must not leave dedup locks pointing at
+    results that no longer exist. After reconstruction only the preserved
+    tail keeps verbatim tool results — locks for tools whose results were
+    folded into the summary are released (model may re-fetch); locks for
+    tools whose results survived in the tail are kept.
+    """
+    llm = _StubLLM()
+    agent = _build_agent(llm, max_iter=1, tmp_run_dir=tmp_path / "run")
+    agent._called_ok.update({"get_fund_flow", "get_financial_statements"})
+    trace = TraceWriter(tmp_path / "trace")
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "turn 0"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "old_1", "type": "function", "function": {"name": "get_fund_flow", "arguments": "{}"}}
+            ],
+        },
+        {"role": "tool", "name": "get_fund_flow", "tool_call_id": "old_1", "content": "fund flow data " + "x" * 200},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "old_2", "type": "function", "function": {"name": "get_financial_statements", "arguments": "{}"}}
+            ],
+        },
+        {"role": "tool", "name": "get_financial_statements", "tool_call_id": "old_2", "content": "balance sheet data " + "y" * 200},
+        {"role": "user", "content": "recent " + "z" * 40_000},
+    ]
+    try:
+        agent._auto_compact(messages, tmp_path / "run", trace, iteration=1)
+    finally:
+        trace.close()
+
+    # Body (6 msgs) is far under TAIL_TOKEN_BUDGET -> force split at 3:
+    # head = [turn 0, fund-flow pair] (folded into the summary),
+    # tail = [balance-sheet pair, big user message] (verbatim).
+    assert "get_fund_flow" not in agent._called_ok
+    assert "get_financial_statements" in agent._called_ok

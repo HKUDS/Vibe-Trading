@@ -56,6 +56,10 @@ from src.tools.redaction import redact_payload, redact_tool_result
 RUNS_DIR = get_runs_dir()
 SESSIONS_DIR = get_sessions_dir()
 KEEP_RECENT = 3
+# (#1343) Placeholder written in place of tool results that no longer exist in
+# the model-visible context. Used by both _fix_tool_pairs and the dedup
+# reconciliation in _auto_compact — single source so the two never drift.
+_COMPACT_STUB_CONTENT = "[Result from earlier context — see summary above]"
 LLM_USAGE_ARTIFACT = "llm_usage.json"
 
 COLLAPSE_PRESERVE_RECENT = 6
@@ -529,7 +533,7 @@ def _fix_tool_pairs(messages: list) -> None:
                     "role": "tool",
                     "tool_call_id": tc_id,
                     "name": tc.get("function", {}).get("name", "unknown"),
-                    "content": "[Result from earlier context — see summary above]",
+                    "content": _COMPACT_STUB_CONTENT,
                 }
                 inserts.append((idx + 1, stub))
                 result_ids.add(tc_id)
@@ -2805,6 +2809,22 @@ class AgentLoop:
 
         # Fix orphaned tool pairs in the reconstructed message list
         _fix_tool_pairs(messages)
+
+        # (#1343) Dedup may only point at results the model can still see.
+        # After reconstruction only the preserved tail retains verbatim tool
+        # results — everything else survives solely inside the summary (or not
+        # at all), so the dedup guard's "use the previous result" would point
+        # at a dead reference and lock the model out of re-fetching under
+        # sustained pressure (same 44-wasted-call failure as layer 1). Release
+        # every lock whose tool no longer has a real, visible result.
+        self._called_ok &= {
+            m.get("name")
+            for m in messages
+            if m.get("role") == "tool"
+            and m.get("name")
+            and isinstance(m.get("content"), str)
+            and m["content"] not in ("[cleared]", _COMPACT_STUB_CONTENT)
+        }
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""
