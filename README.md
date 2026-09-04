@@ -615,6 +615,38 @@ alongside the bundled roster (same-name files override it, like user skills) and
 </details>
 
 <details>
+<summary><b>Domain Specialist Sub-agents</b> <sub>opt-in per-turn delegation inside the interactive loop</sub></summary>
+
+- 🧭 The interactive agent can delegate domain work to named specialists, each holding a small hard-enforced tool whitelist instead of the full registry
+- 📉 Fewer visible tools per model decision: specialists see only their domain surface, and the main agent only decides "handle directly or delegate"
+- 🧪 Every bundled specialist passed a pre-registered admission protocol (routing recall ≥ 85%, mis-delegation ≤ 5%, boundary arbitration ≥ 85%) before joining the roster
+
+Swarm presets are fixed multi-agent workflows you launch explicitly; specialists are the per-turn counterpart — automatic delegation inside the interactive loop, enforced by the same whitelist projection the swarm runtime uses.
+
+**Off by default.** Enable with `VIBE_TRADING_SPECIALISTS_ENABLED=1` and restart (registries are built at process start). When enabled, the main agent gains a `delegate_to_specialist` tool and a delegation section in its system prompt; the roster below ships with the package:
+
+| Specialist | Domain |
+|------------|--------|
+| `quant-agent` | Factor research, alpha zoo, strategy authoring and backtests |
+| `market-data-agent` | Symbol resolution, OHLCV, rankings, capital flow, order-book depth |
+| `fundamentals-text-agent` | Statements, SEC filings, 13F, news, sell-side research, papers |
+| `derivatives-agent` | Options pricing/Greeks, multi-leg payoff, perp funding/basis |
+| `risk-portfolio-agent` | VaR/stress, statistical tests, attribution, allocation |
+| `valuation-agent` | DCF/comps/three-statement, event-driven construction, prediction markets |
+| `macro-sector-agent` | FRED series, sector boards, macro/industry/regulatory frameworks |
+| `altdata-agent` | Sentiment, on-chain, stablecoin flows, DeFi yields, unlocks |
+| `funds-fi-agent` | ETF look-through, fund screening, credit and convertible bonds, dividends |
+| `user-analytics-agent` | Trade-journal diagnostics and the shadow-account pipeline |
+| `web-docs-agent` | Web search, page-to-Markdown, document/OCR extraction |
+| `trading-connector-agent` | Read-only broker connector reads (never holds order tools) |
+
+Safety and lifecycle contract: specialists never receive shell, order-write, orchestration, or session-state tools (structurally excluded at definition-load time); a specialist run is a nested agent loop with its own iteration budget, wall-clock timeout, run directory and grounding ledger; a user cancel propagates into a running specialist, and a specialist that exceeds its budget is cancelled and reported, never silently abandoned. The `trading-connector-agent` whitelist is pinned read-only by test.
+
+Bring your own: drop `<name>.yaml` files into `~/.vibe-trading/specialists/` (same override rule as user skills; definitions are validated at load — unknown tool/skill names fail loudly, and a broken user file is skipped with a warning rather than breaking the roster). Definitions are loaded once per process.
+
+</details>
+
+<details>
 <summary><b>Alpha Zoo</b> <sub>462 pre-built quant alphas across 5 families</sub></summary>
 
 - 🧬 462 cross-sectional alphas, lookahead-banned at the operator layer
@@ -948,6 +980,7 @@ Copy `agent/.env.example` to `agent/.env` and uncomment the provider block you w
 | `TIMEOUT_SECONDS` | No | LLM call timeout, default 120s |
 | `API_AUTH_KEY` | Recommended for network deployments | Bearer token required when the API is reachable from non-local clients |
 | `VIBE_TRADING_ENABLE_SHELL_TOOLS` | No | Explicit opt-in for shell-capable tools in remote API/MCP-SSE style deployments |
+| `VIBE_TRADING_SPECIALISTS_ENABLED` | No | Opt-in domain specialist sub-agents for the interactive agent (default off; takes effect on process start) |
 | `VIBE_TRADING_ALLOWED_FILE_ROOTS` | No | Extra comma-separated roots for document and broker-journal imports |
 | `VIBE_TRADING_ALLOWED_RUN_ROOTS` | No | Extra comma-separated roots for generated-code run directories |
 | `VIBE_TW_STOCK_DB` | No | Path to a Taiwan-market SQLite snapshot; the read-only `taiwan_stock_data` tool registers only when it is schema-valid |

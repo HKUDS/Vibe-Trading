@@ -79,6 +79,7 @@ class TestAttributionPromptIntegrity:
             memory_summary="[test memory]",
             memory_section="[test section]",
             strategy_discovery_routing="[test routing]",
+            specialist_routing="[test specialists]",
             current_datetime="2025-01-01 12:00:00",
         )
         assert len(result) > 1000

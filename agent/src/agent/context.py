@@ -78,7 +78,7 @@ skill document, not recalled memory. They are not defaults to be tuned.
 ## Task Routing
 
 Decide which workflow to use based on the request:
-{strategy_discovery_routing}
+{strategy_discovery_routing}{specialist_routing}
 **Backtest** — user wants to create, test, or optimize a trading strategy:
 1. `load_skill("strategy-generate")` — read the SignalEngine contract
 2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {{"monte_carlo": {{"n_simulations": 1000}}}}` in config.json for Monte Carlo testing
@@ -229,7 +229,9 @@ class ContextBuilder:
 
     def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
                  skills_loader: Optional[SkillsLoader] = None,
-                 persistent_memory: Optional[PersistentMemory] = None) -> None:
+                 persistent_memory: Optional[PersistentMemory] = None,
+                 system_template: Optional[str] = None,
+                 role_prompt: Optional[str] = None) -> None:
         """Initialize ContextBuilder.
 
         Args:
@@ -237,11 +239,18 @@ class ContextBuilder:
             memory: Workspace memory.
             skills_loader: Skills loader (auto-created if not provided).
             persistent_memory: PersistentMemory instance for cross-session recall.
+            system_template: System-prompt template override (specialist
+                sub-agents pass a slim template; ``None`` keeps the default
+                ``_SYSTEM_PROMPT``). Formatted with the same field set.
+            role_prompt: Specialist behavior contract, bound to the
+                ``{role_prompt}`` slot; ``None`` renders an empty string.
         """
         self.registry = registry
         self.memory = memory
         self.skills_loader = skills_loader or SkillsLoader()
         self._persistent_memory = persistent_memory
+        self._system_template = system_template
+        self._role_prompt = role_prompt
 
     def build_system_prompt(self, user_message: str = "") -> str:
         """Build system prompt.
@@ -277,7 +286,19 @@ class ContextBuilder:
         except Exception:  # noqa: BLE001
             routing = ""
 
-        return _SYSTEM_PROMPT.format(
+        # Specialist-delegation routing text follows the same fail-safe
+        # contract: present only when the delegate tool is registered, empty
+        # string otherwise. The slot shares the strategy-routing template
+        # position so a disabled gate leaves the prompt byte-identical.
+        try:
+            from src.specialists.routing import specialist_routing_block
+
+            specialists = specialist_routing_block(self.registry)
+        except Exception:  # noqa: BLE001
+            specialists = ""
+
+        template = self._system_template or _SYSTEM_PROMPT
+        return template.format(
             tool_count=len(self.registry._tools),
             skill_count=len(self.skills_loader.skills),
             data_source_count=self._count_data_sources(),
@@ -286,7 +307,9 @@ class ContextBuilder:
             memory_summary=self.memory.to_summary(),
             memory_section=memory_section,
             strategy_discovery_routing=routing,
+            specialist_routing=specialists,
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M UTC"),
+            role_prompt=self._role_prompt or "",
         )
 
     @staticmethod

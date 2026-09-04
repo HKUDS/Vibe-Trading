@@ -906,6 +906,9 @@ class AgentLoop:
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         max_iterations: int = 50,
         persistent_memory: Optional[Any] = None,
+        skills_loader: Optional[Any] = None,
+        system_template: Optional[str] = None,
+        role_prompt: Optional[str] = None,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -916,6 +919,14 @@ class AgentLoop:
             event_callback: Event callback (event_type, data).
             max_iterations: Maximum number of loop iterations.
             persistent_memory: PersistentMemory for cross-session recall.
+            skills_loader: Optional SkillsLoader override (nested specialist
+                runs pass an allowlist-filtered one; ``None`` keeps the
+                default loader).
+            system_template: Optional system-prompt template override
+                (specialist runs pass a slim template; ``None`` keeps the
+                default main-agent prompt).
+            role_prompt: Optional specialist behavior contract, bound to the
+                ``{role_prompt}`` template slot.
         """
         self.registry = registry
         self.llm = llm
@@ -940,6 +951,19 @@ class AgentLoop:
         self._cancel_event = threading.Event()
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
+        self._skills_loader = skills_loader
+        self._system_template = system_template
+        self._role_prompt = role_prompt
+        # A delegation-capable tool needs this loop's cancel event so a user
+        # cancel reaches a running nested specialist; the event object itself
+        # is stable for the loop's lifetime (run() clears it on reuse). The
+        # registry is duck-typed: test doubles may not expose tool_names/get.
+        _registry_get = getattr(self.registry, "get", None)
+        for _tool_name in getattr(self.registry, "tool_names", None) or ():
+            _tool = _registry_get(_tool_name) if callable(_registry_get) else None
+            _bind = getattr(_tool, "bind_parent", None)
+            if callable(_bind):
+                _bind(cancel_event=self._cancel_event)
         self._run_iteration: int = 0
         self._has_run = False
         self._grounding: GroundingLedger | None = None
@@ -1069,7 +1093,10 @@ class AgentLoop:
         )
 
         context = ContextBuilder(self.registry, self.memory,
-                                  persistent_memory=self._persistent_memory)
+                                  persistent_memory=self._persistent_memory,
+                                  skills_loader=self._skills_loader,
+                                  system_template=self._system_template,
+                                  role_prompt=self._role_prompt)
         goal_context, active_goal_id = get_current_goal_context(session_id) if session_id else ("", None)
         llm_user_message = user_message
         if goal_context:

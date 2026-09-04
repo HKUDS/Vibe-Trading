@@ -130,6 +130,7 @@ def build_registry(
         UpdateResearchGoalStatusTool,
     )
     from src.tools.autopilot_tool import RunResearchAutopilotTool
+    from src.tools.delegate_tool import DelegateToSpecialistTool
     from src.tools.remember_tool import RememberTool
     from src.tools.swarm_tool import SwarmTool
     from src.tools.scheduled_research_tool import ScheduledResearchTool
@@ -165,6 +166,8 @@ def build_registry(
                 registry.register(cls(default_session_id=session_id, event_callback=event_callback))
             elif cls is SwarmTool:
                 registry.register(cls(include_shell_tools=include_shell_tools, event_callback=event_callback))
+            elif cls is DelegateToSpecialistTool:
+                registry.register(cls(event_callback=event_callback))
             else:
                 registry.register(cls())
         except Exception as exc:
@@ -275,7 +278,12 @@ def build_registry(
     return registry
 
 
-def build_filtered_registry(tool_names: list[str], *, include_shell_tools: bool = False) -> ToolRegistry:
+def build_filtered_registry(
+    tool_names: list[str],
+    *,
+    include_shell_tools: bool = False,
+    skill_allowlist: list[str] | None = None,
+) -> ToolRegistry:
     """Build a ToolRegistry with only specified tools.
 
     Local-tools-only filtered builder. Swarm workers should call
@@ -286,12 +294,20 @@ def build_filtered_registry(tool_names: list[str], *, include_shell_tools: bool 
     Args:
         tool_names: Tool names to include.
         include_shell_tools: Whether to include filtered shell execution tools.
+        skill_allowlist: When not ``None``, the ``load_skill`` tool (if
+            whitelisted) is rebuilt to refuse skill names outside this list,
+            so a documented skill boundary is enforced at runtime.
 
     Returns:
         ToolRegistry containing only the requested tools.
     """
     full = build_registry(include_shell_tools=include_shell_tools)
-    return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+    return _filter_registry(
+        full,
+        tool_names,
+        include_shell_tools=include_shell_tools,
+        skill_allowlist=skill_allowlist,
+    )
 
 
 def build_swarm_registry(
@@ -299,6 +315,7 @@ def build_swarm_registry(
     *,
     agent_config: "AgentConfig | None" = None,
     include_shell_tools: bool = False,
+    skill_allowlist: list[str] | None = None,
 ) -> ToolRegistry:
     """Build a per-worker registry that merges local + remote MCP tools.
 
@@ -321,11 +338,23 @@ def build_swarm_registry(
             MCP wrappers are appended to the candidate pool before filtering.
             Pass ``None`` to keep the worker strictly local.
         include_shell_tools: Whether shell-execution tools are eligible.
+        skill_allowlist: When not ``None``, the ``load_skill`` tool (if
+            whitelisted) is rebuilt to refuse skill names outside this list,
+            enforcing the per-worker ``skills:`` boundary at runtime.
 
     Returns:
         ToolRegistry containing the whitelist intersection of local tools
         and any operator-surfaced MCP tools.
     """
+    if "delegate_to_specialist" in tool_names:
+        # One orchestration channel per run: a swarm worker is already a
+        # specialist, so nesting a second delegation layer inside it would
+        # compound latency and telephone loss with no routing benefit.
+        logger.warning(
+            "delegate_to_specialist is not available to swarm workers; "
+            "dropping it from the worker whitelist"
+        )
+        tool_names = [name for name in tool_names if name != "delegate_to_specialist"]
     swarm_agent_config, swarm_local_server_names = _prune_agent_config_for_swarm_tools(
         agent_config,
         tool_names,
@@ -335,7 +364,12 @@ def build_swarm_registry(
         include_shell_tools=include_shell_tools,
         _mcp_server_tool_name_segments=swarm_local_server_names,
     )
-    return _filter_registry(full, tool_names, include_shell_tools=include_shell_tools)
+    return _filter_registry(
+        full,
+        tool_names,
+        include_shell_tools=include_shell_tools,
+        skill_allowlist=skill_allowlist,
+    )
 
 
 def _prune_agent_config_for_swarm_tools(
@@ -374,6 +408,7 @@ def _filter_registry(
     tool_names: list[str],
     *,
     include_shell_tools: bool,
+    skill_allowlist: list[str] | None = None,
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
     filtered = ToolRegistry()
@@ -388,7 +423,32 @@ def _filter_registry(
                 "depends on it cannot execute it.",
                 name, include_shell_tools,
             )
+    if skill_allowlist is not None and filtered.get("load_skill") is not None:
+        # Rebuild load_skill with the boundary baked in. ``register`` replaces
+        # by name, so the unrestricted auto-discovered instance is dropped.
+        from src.tools.load_skill_tool import LoadSkillTool
+
+        filtered.register(LoadSkillTool(allowed_skills=frozenset(skill_allowlist)))
     return filtered
 
 
-__all__ = ["build_registry", "build_filtered_registry", "build_swarm_registry"]
+__all__ = [
+    "build_registry",
+    "build_filtered_registry",
+    "build_swarm_registry",
+    "known_local_tool_names",
+]
+
+
+def known_local_tool_names() -> frozenset[str]:
+    """Return every discoverable local tool name, before availability gating.
+
+    Unlike :func:`build_registry`, this never instantiates tools and never
+    applies ``check_available`` — it answers "does a tool with this name
+    exist", which is what definition-file validation (specialist whitelists)
+    needs: a typo must fail loudly even when the tool is currently gated off
+    by missing credentials.
+    """
+    return frozenset(
+        cls.name for cls in _discover_subclasses() if getattr(cls, "name", "")
+    )

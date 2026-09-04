@@ -403,6 +403,9 @@ class AgentTuningConfig(_EnvBase):
     vibe_trading_tool_timeout_seconds: float = Field(
         alias="VIBE_TRADING_TOOL_TIMEOUT_SECONDS", default=1800.0,
     )
+    vibe_trading_specialists_enabled: EnvBool = Field(
+        alias="VIBE_TRADING_SPECIALISTS_ENABLED", default=False,
+    )
     vibe_trading_llm_timeout_seconds: float = Field(
         alias="VIBE_TRADING_LLM_TIMEOUT_SECONDS", default=300.0,
     )

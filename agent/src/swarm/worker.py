@@ -573,11 +573,16 @@ def _run_worker_impl(
     _emit(event_callback, "worker_started", agent_id, task_id)
 
     # 1. Build per-worker tool registry — local pool plus any operator-
-    #    surfaced MCP tools, projected onto the agent's whitelist.
+    #    surfaced MCP tools, projected onto the agent's whitelist. The
+    #    documented ``skills:`` boundary is enforced at runtime by rebuilding
+    #    ``load_skill`` with the allowlist baked in; an empty ``skills`` list
+    #    means unrestricted, matching the prompt-side filter semantics
+    #    (``_filter_skill_descriptions`` treats empty as include-all).
     registry = build_swarm_registry(
         agent_spec.tools,
         agent_config=agent_config,
         include_shell_tools=include_shell_tools,
+        skill_allowlist=agent_spec.skills or None,
     )
 
     # 2. Build system prompt with filtered skills
