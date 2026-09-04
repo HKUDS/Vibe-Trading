@@ -60,6 +60,10 @@ KEEP_RECENT = 3
 # the model-visible context. Used by both _fix_tool_pairs and the dedup
 # reconciliation in _auto_compact — single source so the two never drift.
 _COMPACT_STUB_CONTENT = "[Result from earlier context — see summary above]"
+# Tool-result sentinel written by _microcompact when a result is cleared, and
+# matched by callers so cleared results are never treated as live evidence or
+# as a valid dedup target. Single source so writer and readers never drift.
+_CLEARED_CONTENT = "[cleared]"
 LLM_USAGE_ARTIFACT = "llm_usage.json"
 
 COLLAPSE_PRESERVE_RECENT = 6
@@ -457,7 +461,7 @@ def _microcompact(messages: list, called_ok: set[str] | None = None) -> None:
     for msg in tool_msgs[:-KEEP_RECENT]:
         content = msg.get("content", "")
         if isinstance(content, str) and len(content) > 100:
-            msg["content"] = "[cleared]"
+            msg["content"] = _CLEARED_CONTENT
             if called_ok is not None:
                 called_ok.discard(msg.get("name"))
 
@@ -477,7 +481,7 @@ def _context_collapse(messages: list) -> None:
         content = msg.get("content")
         if not isinstance(content, str) or len(content) <= COLLAPSE_TEXT_MIN:
             continue
-        if content == "[cleared]":
+        if content == _CLEARED_CONTENT:
             continue
         head = content[:COLLAPSE_HEAD]
         tail = content[-COLLAPSE_TAIL:]
@@ -2823,7 +2827,7 @@ class AgentLoop:
             if m.get("role") == "tool"
             and m.get("name")
             and isinstance(m.get("content"), str)
-            and m["content"] not in ("[cleared]", _COMPACT_STUB_CONTENT)
+            and m["content"] not in (_CLEARED_CONTENT, _COMPACT_STUB_CONTENT)
         }
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
