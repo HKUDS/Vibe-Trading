@@ -415,6 +415,65 @@ def get_quote(symbol: str, *, config: BinanceConfig | None = None, **_: Any) -> 
     }
 
 
+def search_instruments(
+    query: str,
+    *,
+    config: BinanceConfig | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Resolve an exact spot pair against the selected Binance market catalog.
+
+    Binance's exchange-info catalog has symbols and assets, but no stable
+    human-readable asset names. The connector therefore resolves only explicit
+    pair spellings (``ETH-USDT``, ``ETH/USDT`` or ``ETHUSDT``) and never guesses
+    from prose such as ``Ethereum``.
+    """
+    cfg = config or load_config()
+    _reject_unsupported_usdm_surface(cfg)
+    _assert_host(cfg)
+
+    requested = normalize_symbol(query)
+    if "/" not in requested:
+        return {"status": "ok", "query": query, "instruments": []}
+
+    try:
+        bounded_limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError, OverflowError):
+        bounded_limit = 10
+
+    markets = _exchange(cfg).load_markets()
+    if not isinstance(markets, Mapping):
+        raise BinanceConfigError("Binance load_markets returned a non-mapping payload")
+
+    instruments: list[dict[str, Any]] = []
+    for key, raw_market in markets.items():
+        if not isinstance(raw_market, Mapping):
+            continue
+        native_symbol = normalize_symbol(str(raw_market.get("symbol") or key))
+        if native_symbol != requested:
+            continue
+        if raw_market.get("spot") is False or raw_market.get("active") is False:
+            continue
+        base, quote = native_symbol.split("/", 1)
+        instruments.append(
+            {
+                "symbol": f"{base}-{quote}",
+                "native_symbol": native_symbol,
+                "exchange_symbol": str(raw_market.get("id") or "").strip() or None,
+                "base": base,
+                "quote": quote,
+                "market": "crypto",
+                "type": "cryptocurrency",
+                "exchange": "BINANCE",
+                "active": raw_market.get("active"),
+            }
+        )
+        if len(instruments) >= bounded_limit:
+            break
+
+    return {"status": "ok", "query": query, "instruments": instruments}
+
+
 #: Project/canonical period token → ccxt unified timeframe (lowercase).
 _TIMEFRAME_MAP = {
     "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",

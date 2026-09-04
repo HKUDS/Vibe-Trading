@@ -46,9 +46,15 @@ from src.live.mandate.model import Mandate
 from src.live.mandate.store import load_mandate
 from src.live.runtime.flatten import flatten_and_cancel
 from src.live.runtime.jobstore import JobStore
-from src.live.runtime.sweep_latch import mark_sweep_fired, sweep_already_fired
+from src.live.runtime.sweep_latch import (
+    claim_sweep,
+    halt_snapshot,
+    mark_sweep_fired,
+    release_claim,
+    sweep_already_fired,
+)
 from src.live.runtime.liveness import write_heartbeat
-from src.live.runtime.scheduler import Job, Scheduler
+from src.live.runtime.scheduler import Job
 from src.live.runtime.triggers import Trigger, due_now
 
 logger = logging.getLogger(__name__)
@@ -57,6 +63,7 @@ logger = logging.getLogger(__name__)
 TICK_HALTED = "halted"
 TICK_NO_MANDATE = "no_mandate"
 TICK_EXPIRED = "expired"
+TICK_MARKET_CLOSED = "market_closed"
 TICK_RECONCILE_UNSAFE = "reconcile_unsafe"
 TICK_RECONCILE_ERROR = "reconcile_error"
 TICK_INVOKED = "invoked"
@@ -390,6 +397,9 @@ class LiveRunner:
         #: Set once the preemptive sweep has fired so a tripped channel never
         #: flattens twice across consecutive ticks (no-retry, SPEC §8.5).
         self._flatten_fired = False
+        # (episode, intent) pairs whose no-side-effect sweep outcome this
+        # runner has already audited — see _note_sweep_recheck.
+        self._sweep_recheck_audited: set[tuple[str, str]] = set()
 
     @property
     def runner_id(self) -> str:
@@ -414,11 +424,14 @@ class LiveRunner:
         2. **Mandate + proactive expiry** — load the mandate; if absent or past
            ``expires_at``, trip a stop + clear authority + audit, and return
            BEFORE any agent invocation. A dead mandate never reaches step 5.
-        3. **Reconcile** — pull broker truth via the injected READ callables; an
+        3. **Market hours** — with market triggers attached, skip the tick when
+           every one of their markets is closed, so a weekend tick cannot queue
+           orders into the next open.
+        4. **Reconcile** — pull broker truth via the injected READ callables; an
            unsafe/ambiguous report aborts the tick (no auto-resend, §8 finding 5).
-        4. **Pin + invoke** — build the autonomous-turn prompt with the full
+        5. **Pin + invoke** — build the autonomous-turn prompt with the full
            mandate inline and invoke the agent through the public caller.
-        5. **Audit** — record the tick outcome.
+        6. **Audit** — record the tick outcome.
 
         Returns:
             A JSON-serializable tick result (see :meth:`TickResult.to_dict`).
@@ -434,6 +447,14 @@ class LiveRunner:
             return self._no_mandate_result()
         if _mandate_is_expired(mandate, now):
             return self._expired_result()
+
+        if not self._any_market_open(now):
+            logger.info("tick skipped for %s: market closed", self.broker)
+            return TickResult(
+                outcome=TICK_MARKET_CLOSED,
+                broker=self.broker,
+                reason="market closed",
+            ).to_dict()
 
         reconcile_outcome = self._run_reconcile()
         if reconcile_outcome is not None:
@@ -543,16 +564,20 @@ class LiveRunner:
             logger.warning("failed to write heartbeat for %s", self.runner_id, exc_info=True)
 
     def _halted_result(self) -> dict[str, Any]:
-        """Fire the preemptive sweep ONCE, audit, and return for a halted tick.
+        """Fire the preemptive sweep, audit, and return for a halted tick.
 
         This closes Hole #1 (SPEC §7.5 #6): a tripped halt is no longer merely
         cooperative (refuse the next order). The runner cancels every resting
         order and — per the mandate's flatten flag — flattens open positions, via
-        the injected broker submit callable. The sweep runs at most once per
-        runner lifetime (``_flatten_fired`` latch): a halted channel that keeps
-        ticking must not re-submit closes (no-retry, SPEC §8.5). With no broker
-        write surface wired (``submit_fn is None``) the sweep is skipped and the
-        cooperative gate alone blocks future orders.
+        the injected broker submit callable. The sweep submits closes at most
+        once per halt episode (``_flatten_fired`` plus the on-disk latch): a
+        halted channel that keeps ticking must not re-submit closes (no-retry,
+        SPEC §8.5). A sweep that attempted NO broker write — reads failed, or
+        the book was already flat — is not latched and re-checks on the next
+        tick, so a resting order that appears after the first sweep is still
+        cancelled. With no broker write surface wired (``submit_fn is None``)
+        the sweep is skipped and the cooperative gate alone blocks future
+        orders.
         """
         self._run_preemptive_sweep()
         audit_id = self._audit(
@@ -567,37 +592,200 @@ class LiveRunner:
             audit_id=audit_id,
         ).to_dict()
 
+    def _note_sweep_recheck(self, episode: str, intent: str) -> bool:
+        """Return whether this sweep re-check outcome is new for the episode.
+
+        The no-side-effect branch of :meth:`_run_preemptive_sweep` re-runs on
+        every halted tick by design (a resting order that appears after the
+        first sweep must still be cancelled). Its audit record must not repeat
+        with it: one tick per minute on a channel left halted overnight would
+        append ~1440 records describing the same unchanged condition. The
+        record is therefore written the first time a given ``(episode,
+        intent)`` pair is seen by this runner and suppressed afterwards, while
+        the logger still sees every occurrence.
+
+        Args:
+            episode: Halt-episode identity the sweep is running under.
+            intent: Normalized intent string identifying the condition.
+
+        Returns:
+            ``True`` when the pair has not been audited yet by this runner.
+        """
+        key = (episode, intent)
+        if key in self._sweep_recheck_audited:
+            return False
+        self._sweep_recheck_audited.add(key)
+        return True
+
     def _run_preemptive_sweep(self) -> None:
         """Cancel resting orders + (per mandate) flatten positions, exactly once.
 
         Invoked the moment the runner observes a tripped HALT. Idempotent across
         ticks via the ``_flatten_fired`` latch so the no-retry rule (SPEC §8.5)
-        holds even if the halted runner keeps waking. The latch is also persisted
-        on disk (``sweep_latch``) so a restart with flatten orders still working
-        does not replay the sweep. A sweep failure is audited but not retried —
-        flatten/cancel side effects are not idempotent.
+        holds even if the halted runner keeps waking. The latch is persisted on
+        disk (``sweep_latch``) so a restart with flatten orders still working
+        does not replay the sweep.
+
+        The persisted latch is written only when the sweep actually attempted
+        a broker write. ``flatten_and_cancel`` reports
+        ``side_effects_attempted`` — set the moment any cancel/close submit is
+        tried. When that flag is false, no cancel or close was attempted
+        (reads failed, or there was nothing to do), so nothing happened that a
+        later tick (or a restart) must not repeat: latching would silently
+        skip the kill switch's action for that episode. Any attempted broker
+        write — even one that errors, and even when a later read phase fails —
+        latches: those are the non-idempotent cases SPEC §8.5 protects. A
+        sweep that raises outright latches too (side effects may have begun).
+
+        Inter-process safety: the whole check -> sweep -> durable-record
+        window runs under an exclusive disk claim (``FLATTEN_CLAIM``,
+        :func:`sweep_latch.claim_sweep`). A second runner process for the
+        same broker cannot sweep concurrently — both would see
+        ``sweep_already_fired`` false (check-then-act) and duplicate closes.
+        When a claim is already held (another runner active, or a prior
+        process crashed mid-sweep), the episode is treated as *unknowable*:
+        never re-sweep, audit for operator resolution, and leave the HALT
+        tripped. The claim is released in ``finally`` on every path. A failed
+        durable latch write (fs error after side effects) is audited
+        explicitly — the in-process flag still protects this process, but the
+        operator is told a restart may replay.
         """
         if self._flatten_fired or self._submit_fn is None:
             return
-        self._flatten_fired = True
-        if sweep_already_fired(self.broker):
+        # Capture ONE coherent halt snapshot before claiming. The claim, the
+        # already-fired check, the latch write and the release must all bind
+        # to the SAME view of the halt state: re-reading the sentinels later
+        # would let a mid-sweep clear/re-trip record an episode whose sweep
+        # never ran (next runner would skip it — positions stay open).
+        active_episodes, episode = halt_snapshot(self.broker)
+        episode = episode or "unknown"
+        if sweep_already_fired(self.broker, episode):
+            self._flatten_fired = True
             return
-        mark_sweep_fired(self.broker)
-        try:
-            self._flatten_fn(
+        # The episode is resolved exactly once: the claim and its release in
+        # ``finally`` must refer to the same one. Re-resolving at release time
+        # can bind to a NEWER episode (halt cleared + re-tripped mid-sweep)
+        # and delete that episode's claim — even a different process's —
+        # which would unprotect a concurrent sweep of the new episode.
+        if not claim_sweep(self.broker, episode):
+            # Another process holds this episode's claim (or a crash left it
+            # behind): the outcome is unknowable — re-sweeping could duplicate
+            # a close. Claims are episode-keyed, so this never blocks a future
+            # trip of the same broker.
+            self._flatten_fired = True
+            logger.warning(
+                "preemptive sweep already claimed for %s — skipping (another "
+                "runner active, or a crash left FLATTEN_CLAIM behind); operator "
+                "resolution required",
                 self.broker,
-                self._submit_fn,
-                self._read_positions,
-                self._read_open_orders,
             )
-        except Exception as exc:  # noqa: BLE001 — surfaced via audit, never retried
-            logger.exception("preemptive flatten failed for %s", self.broker)
             self._audit(
                 kind="breach",
                 outcome="error",
-                intent="preemptive halt sweep failed — not retried (no-retry §8.5)",
-                error=str(exc),
+                intent="preemptive halt sweep skipped — claim held by another process; operator resolution required",
+                error="FLATTEN_CLAIM present for this episode",
             )
+            return
+        try:
+            try:
+                report = self._flatten_fn(
+                    self.broker,
+                    self._submit_fn,
+                    self._read_positions,
+                    self._read_open_orders,
+                )
+            except Exception as exc:  # noqa: BLE001 — surfaced via audit, never retried
+                # Unknown failure: cancel/flatten side effects may have begun
+                # and are not retryable — latch so a restart does not replay.
+                self._flatten_fired = True
+                try:
+                    mark_sweep_fired(self.broker, active_episodes)
+                except Exception as persist_exc:  # noqa: BLE001 — double failure
+                    # Both the sweep AND the durable latch write failed: the
+                    # in-memory flag still shields this process, and the
+                    # operator must know a restart may replay.
+                    logger.exception(
+                        "durable sweep latch write failed for %s while the sweep "
+                        "itself failed — restart may replay; verify broker state",
+                        self.broker,
+                    )
+                    self._audit(
+                        kind="breach",
+                        outcome="error",
+                        intent="durable sweep latch write failed during sweep failure — restart may replay; verify broker state",
+                        error=f"sweep: {exc}; latch: {persist_exc}",
+                    )
+                else:
+                    logger.exception("preemptive flatten failed for %s", self.broker)
+                    self._audit(
+                        kind="breach",
+                        outcome="error",
+                        intent="preemptive halt sweep failed — not retried (no-retry §8.5)",
+                        error=str(exc),
+                    )
+                return
+            report = report or {}
+            read_errors = [
+                entry
+                for entry in report.get("errors", [])
+                if isinstance(entry, dict)
+                and entry.get("phase") in ("read_open_orders", "read_positions")
+            ]
+            if read_errors:
+                detail = "; ".join(str(entry.get("error")) for entry in read_errors)
+                logger.warning(
+                    "preemptive sweep read failure for %s during execution: %s",
+                    self.broker,
+                    detail,
+                )
+            if not report.get("side_effects_attempted"):
+                # No cancel or close was attempted → nothing happened that a
+                # later tick (or a restart) must not repeat. Do NOT latch: the
+                # sweep retries for this episode.
+                #
+                # This branch runs on EVERY halted tick, so the audit record is
+                # written once per (episode, condition) per runner instead of
+                # once per tick: a channel left halted overnight would otherwise
+                # append one record per tick to the hash-chained ledger forever.
+                # Every occurrence is still logged. A flat book is also not a
+                # breach — auditing "nothing to act on" as kind=breach/error
+                # made a clean outcome indistinguishable from a real one.
+                if read_errors:
+                    detail = "; ".join(str(e.get("error")) for e in read_errors)
+                    kind, outcome = "breach", "error"
+                    intent = "preemptive halt sweep read failed — retrying on next tick"
+                else:
+                    detail = "no open orders or positions to act on"
+                    kind, outcome = "halt_tripped", "blocked"
+                    intent = "preemptive halt sweep found nothing to act on — re-checking on next tick"
+                if self._note_sweep_recheck(episode, intent):
+                    self._audit(
+                        kind=kind,
+                        outcome=outcome,
+                        intent=intent,
+                        error=detail,
+                    )
+                return
+            self._flatten_fired = True
+            try:
+                mark_sweep_fired(self.broker, active_episodes)
+            except Exception as exc:  # noqa: BLE001 — persistence must not be silent
+                # Durability failure AFTER a broker write: the in-memory flag
+                # protects this process, but a restart sees no latch and could
+                # replay the close. Say so — recovery is operator's.
+                logger.exception(
+                    "durable sweep latch write failed for %s — restart may "
+                    "replay the sweep; verify broker state",
+                    self.broker,
+                )
+                self._audit(
+                    kind="breach",
+                    outcome="error",
+                    intent="durable sweep latch write failed — restart may replay; verify broker state",
+                    error=str(exc),
+                )
+        finally:
+            release_claim(self.broker, episode)
 
     def _no_mandate_result(self) -> dict[str, Any]:
         """Audit + return the result when no valid mandate is on file."""
@@ -758,6 +946,25 @@ class LiveRunner:
             except Exception:  # noqa: BLE001 — persistence is best-effort at start
                 logger.exception("job store save failed for %s", self.broker)
         return synthesized
+
+    def _any_market_open(self, now: datetime) -> bool:
+        """Whether any attached MARKET trigger's market is open at ``now``.
+
+        Runners without MARKET triggers are always open (interval-only or
+        event-driven channels never gate on sessions). With several MARKET
+        triggers the union wins: one open market is enough to trade. 24/7
+        markets (crypto) report open at every instant, so they never block.
+        """
+        now_ms = int(now.timestamp() * 1000)
+        market_triggers = [
+            trigger
+            for trigger in self._triggers or []
+            if getattr(getattr(trigger, "kind", None), "value", getattr(trigger, "kind", None))
+            == "market"
+        ]
+        if not market_triggers:
+            return True
+        return any(due_now(trigger, now_ms) for trigger in market_triggers)
 
     def _jobs_from_triggers(self, now: datetime) -> list[Job]:
         """Convert the injected triggers (R3) into schedulable watch jobs (R1).

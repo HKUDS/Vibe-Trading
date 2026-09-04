@@ -19,6 +19,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+import pytest
+
 import api_server
 
 
@@ -446,3 +448,80 @@ def test_fetch_broker_ceilings_falls_back_to_none(tmp_path, monkeypatch) -> None
 
     monkeypatch.setattr(api_server, "_live_broker_adapter", _unavail)
     assert api_server._fetch_broker_ceilings("robinhood") is None
+
+
+def test_build_live_runner_reads_normalize_adapter_payloads(tmp_path, monkeypatch) -> None:
+    # The halt-sweep + reconcile reads must receive broker RECORDS, not the
+    # adapter's {status: ok, data: ...} envelope — a successful positions
+    # read must decode into the records list, not be rejected as a dict.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
+    monkeypatch.setattr(api_server, "_runner_factory", None, raising=False)
+
+    class _StubAdapter:
+        def __init__(self):
+            self.calls: list[tuple[str, dict]] = []
+
+        def call_tool(self, name, args):
+            self.calls.append((name, args))
+            if name.endswith("positions"):
+                return {"status": "ok", "data": {"positions": [{"symbol": "NVDA", "qty": 3}]}}
+            if name.endswith("orders"):
+                return {"status": "ok", "data": {"orders": [{"order_id": "o1"}]}}
+            if name.endswith("portfolio"):
+                return {"status": "ok", "data": {"buying_power": 4200.0}}
+            raise AssertionError(f"unexpected tool {name}")
+
+    class _StubSvc:
+        session_id = "live-sess-2"
+        event_bus = SimpleNamespace(emit=lambda *a, **k: None)
+
+        def create_session(self, title=""):
+            return self
+
+        async def send_message(self, sid, content, **kw):
+            return {"message_id": "m1", "attempt_id": "a1"}
+
+    adapter = _StubAdapter()
+    monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: adapter)
+    monkeypatch.setattr(api_server, "_get_session_service", lambda: _StubSvc())
+
+    runner = api_server._build_live_runner("robinhood")
+    assert runner._read_positions() == [{"symbol": "NVDA", "qty": 3}]
+    assert runner._read_open_orders() == [{"order_id": "o1"}]
+    assert runner._read_balance() == {"buying_power": 4200.0}
+
+
+def test_build_live_runner_read_error_envelope_raises(tmp_path, monkeypatch) -> None:
+    # An error envelope at the boundary must raise (fail-closed: reconcile
+    # ticks error, the sweep records a structured read error) — never be
+    # consumed as an empty/mangled record list.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
+    monkeypatch.setattr(api_server, "_runner_factory", None, raising=False)
+
+    class _StubAdapter:
+        def call_tool(self, name, args):
+            return {
+                "status": "error",
+                "server": "robinhood",
+                "remote_tool": name,
+                "tool": name,
+                "error": "connection reset while reading positions",
+                "error_type": "ConnectionError",
+            }
+
+    class _StubSvc:
+        session_id = "live-sess-3"
+        event_bus = SimpleNamespace(emit=lambda *a, **k: None)
+
+        def create_session(self, title=""):
+            return self
+
+        async def send_message(self, sid, content, **kw):
+            return {"message_id": "m1", "attempt_id": "a1"}
+
+    monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
+    monkeypatch.setattr(api_server, "_get_session_service", lambda: _StubSvc())
+
+    runner = api_server._build_live_runner("robinhood")
+    with pytest.raises(RuntimeError, match="connection reset while reading positions"):
+        runner._read_positions()

@@ -5,9 +5,16 @@ last backend slice, alongside the shipped turnover-aware optimizer and the
 risk x-ray. The notes here are computed from the target position frame, so
 they work for every optimizer and for the no-optimizer baseline: a rebalance
 is any decision date whose target weight vector moved past ``epsilon`` from
-the previous one. Trade-derived turnover in ``metrics`` measures what the
+the previous one. Trace-derived turnover in ``metrics`` measures what the
 execution layer actually exchanged; these notes measure what the signal and
 optimizer asked for, which is where churn starts.
+
+The base engine merges execution evidence into ``summary`` (``target_change_count``
+is the rename of the old ``rebalance_count`` and counts requested target
+changes; ``rebalance_executed_bars`` / ``rebalance_executed_fills`` /
+``rebalance_realized_turnover`` come from immutable fill evidence) so a report
+shows both what the strategy asked for and what actually reached the book
+(#1275).
 """
 
 from __future__ import annotations
@@ -19,6 +26,8 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
+from backtest.metrics import calc_fill_turnover_series
+from backtest.models import FillRecord
 from backtest.validation import _json_safe
 
 
@@ -37,14 +46,14 @@ def compute_rebalance_notes(
         epsilon: Turnover at or below this counts as "no rebalance".
 
     Returns:
-        JSON-safe dict with ``rebalances`` (per date: turnover, entries,
-        exits, top moves by absolute weight change) and ``summary`` (count
-        plus turnover aggregates).
+        JSON-safe dict with ``rebalances`` (per date: turnover, entries, exits, top moves by absolute weight change) and ``summary``
+        (requested target-change count plus turnover aggregates; execution
+        fields are appended by the engine from immutable fill evidence).
     """
     empty = {
         "rebalances": [],
         "summary": {
-            "rebalance_count": 0,
+            "target_change_count": 0,
             "turnover_total": 0.0,
             "turnover_mean": 0.0,
             "turnover_max": 0.0,
@@ -104,12 +113,43 @@ def compute_rebalance_notes(
     return {
         "rebalances": rebalances,
         "summary": {
-            "rebalance_count": len(rebalances),
+            "target_change_count": len(rebalances),
             "turnover_total": float(sum(turnovers)),
             "turnover_mean": float(np.mean(turnovers)) if turnovers else 0.0,
             "turnover_max": float(max(turnovers)) if turnovers else 0.0,
             "largest_rebalance_date": rebalances[largest]["date"] if largest is not None else None,
         },
+    }
+
+
+def compute_rebalance_execution_evidence(
+    fills: List[FillRecord],
+    equity_series: pd.Series,
+) -> Dict[str, float]:
+    """Execution-side rebalance evidence from immutable fill records.
+
+    The target-frame notes above count what the strategy asked for; this
+    counts what the execution layer actually did (#1275). Fills tagged
+    ``reason="target_rebalance"`` are the evidence — the engine's provenance
+    taxonomy reserves that tag for same-direction resizing fills; direction-flip
+    entries/exits (including close-to-zero) are ``"signal"`` events and terminal
+    liquidations ``"end_of_backtest"`` — both stay in ``trade_count`` /
+    ``by_exit_reason``. A constant-target strategy that "rebalanced once"
+    therefore reports one requested change and as many executed fills as the
+    bars it actually re-pinned. 
+    ``rebalance_executed_fills`` counts those fills, ``rebalance_executed_bars``
+    the distinct bars they hit, and ``rebalance_realized_turnover`` the
+    realized turnover they caused, using the same per-bar
+    ``margin / (2 * equity)`` convention as
+    :func:`backtest.metrics.calc_fill_turnover_series`.
+    """
+    evidence = [fill for fill in fills if fill.reason == "target_rebalance"]
+    return {
+        "rebalance_executed_bars": len({fill.bar_idx for fill in evidence}),
+        "rebalance_executed_fills": len(evidence),
+        "rebalance_realized_turnover": float(
+            calc_fill_turnover_series(evidence, equity_series).sum()
+        ),
     }
 
 
@@ -119,10 +159,16 @@ def render_rebalance_notes_markdown(notes: Dict[str, Any]) -> str:
     lines = [
         "# Rebalance Notes",
         "",
-        f"- rebalances: {summary['rebalance_count']}",
-        f"- turnover total / mean / max: {summary['turnover_total']:.4f} / "
+        f"- target changes (requested): {summary['target_change_count']}",
+        f"- requested turnover total / mean / max: {summary['turnover_total']:.4f} / "
         f"{summary['turnover_mean']:.4f} / {summary['turnover_max']:.4f}",
     ]
+    if "rebalance_executed_fills" in summary:
+        lines.append(
+            f"- rebalance fills (executed): {summary['rebalance_executed_fills']} "
+            f"across {summary['rebalance_executed_bars']} bar(s); realized turnover "
+            f"{summary['rebalance_realized_turnover']:.4f}"
+        )
     if summary["largest_rebalance_date"] is not None:
         lines.append(f"- largest rebalance: {summary['largest_rebalance_date']}")
     lines.append("")

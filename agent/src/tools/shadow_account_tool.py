@@ -280,11 +280,13 @@ class RenderShadowReportTool(BaseTool):
         except ValueError as exc:
             return _err(str(exc))
 
-        result = load_cached_result(profile.shadow_id)
+        today = date.today()
+        window_end = kwargs.get("window_end") or today.isoformat()
+        window_start = kwargs.get("window_start") or (today - timedelta(days=365)).isoformat()
+        result = load_cached_result(
+            profile, window_start=window_start, window_end=window_end,
+        )
         if result is None:
-            today = date.today()
-            window_end = kwargs.get("window_end") or today.isoformat()
-            window_start = kwargs.get("window_start") or (today - timedelta(days=365)).isoformat()
             try:
                 result = run_shadow_backtest(
                     profile,

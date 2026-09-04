@@ -330,7 +330,7 @@ def test_api_run_response_includes_portfolio_studio_artifacts(tmp_path: Path) ->
     }
     rebalance_notes = {
         "rebalances": [{"date": "2026-01-05", "turnover": 0.4, "entries": [], "exits": [], "top_moves": []}],
-        "summary": {"rebalance_count": 1, "turnover_total": 0.4, "turnover_mean": 0.4, "turnover_max": 0.4, "largest_rebalance_date": "2026-01-05"},
+        "summary": {"target_change_count": 1, "turnover_total": 0.4, "turnover_mean": 0.4, "turnover_max": 0.4, "largest_rebalance_date": "2026-01-05"},
     }
     (run_dir / "artifacts" / "risk_xray.json").write_text(json.dumps(risk_xray), encoding="utf-8")
     (run_dir / "artifacts" / "rebalance_notes.json").write_text(json.dumps(rebalance_notes), encoding="utf-8")

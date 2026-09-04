@@ -106,5 +106,5 @@ and `remaining_credits` over text summaries.
 
 ## References
 
-- [REST API reference](qveris/references/rest-api.md)
-- [Coverage map](qveris/references/coverage.md)
+- [REST API reference](references/rest-api.md)
+- [Coverage map](references/coverage.md)

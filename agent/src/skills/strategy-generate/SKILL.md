@@ -21,6 +21,7 @@ category: strategy
 Extract the following from the user's description:
 - **Instrument codes**: process them according to the normalization rules below
 - **Time range**: if the user does not specify dates, default to **10 years back from today** (for example, if today is `2026-03-18`, then `start_date=2016-03-18`, `end_date=2026-03-18`)
+- **Indicator warm-up**: a long lookback (MA200, a 252-day z-score) needs bars from *before* the requested period. Move `start_date` back to load them **and declare the boundary with `warmup_bars`** — the requested period is what gets graded, and undeclared warm-up bars are graded too. Silently backdating `start_date` by a year turns a 10-year backtest into an 11-year one that still calls itself 10 years: the extra year's trades, CAGR and benchmark all enter the report, the run succeeds, and the numbers look internally consistent
 - **Strategy logic**: entry / exit conditions and indicator parameters
 
 **If critical information is missing, you must ask the user instead of guessing:**
@@ -118,6 +119,7 @@ Self-check after writing `signal_engine.py`:
   "codes": ["000001.SZ"],
   "start_date": "2016-03-18",
   "end_date": "2026-03-18",
+  "warmup_bars": 0,
   "interval": "1D",
   "initial_cash": 1000000,
   "commission": 0.001,
@@ -127,6 +129,7 @@ Self-check after writing `signal_engine.py`:
   "optimizer_params": {},
   "engine": "daily",
   "position_adjustment": "rebalance",
+  "rebalance_mask": null,
   "rebalance_tolerance": 0.05,
   "validation": null
 }
@@ -138,16 +141,21 @@ Self-check after writing `signal_engine.py`:
 - `interval`: candlestick interval, default `"1D"`. Supported values: `"1m"` / `"5m"` / `"15m"` / `"30m"` / `"1H"` / `"4H"` / `"1D"`
   - The annualization factor for minute backtests is inferred automatically from `source` (252 trading days for China A-shares, 365 calendar days for crypto)
   - Minute backtests can be very data-heavy. Recommended limits are no more than 30 days for `1m`, or 1 year for `1H`
+- `warmup_bars`: how many leading bars exist only to prime the indicators. They are loaded and fed to `SignalEngine.generate()`, then excluded from trades, the equity curve, the benchmark and every metric. Default `0` grades the whole loaded window.
+  - Use it whenever you widen `start_date` for an indicator's lookback. `start_date` is the **data** window; `start_date` plus `warmup_bars` is the **evaluation** window, and the report describes the second one.
+  - Size it from the longest lookback in the strategy, plus a margin: MA200 needs at least 200 daily bars, a 252-day rolling z-score needs 252. Then set `start_date` far enough back to supply them.
+  - `evaluation_start_date` (`"YYYY-MM-DD"`) is the same instruction stated as a date, for when the user names the period rather than the lookback. Declare one or the other — declaring both is rejected.
 - `extra_fields`: China A-shares can use values such as `["pe", "pb", "roe"]`; other markets should use `null`
 - `fundamental_fields`: optional China A-share statement fields, such as `{"income": ["total_revenue", "n_income"], "fina_indicator": ["roe"]}`; use `null` unless the strategy needs financial statement pre-filtering
 - `optimizer`: optional, one of `"equal_volatility"` / `"risk_parity"` / `"mean_variance"` / `"max_diversification"` / `"turnover_aware"` / `null` (equal-weight by default)
 - `optimizer_params`: optimizer parameters, such as `{"lookback": 60}`. `mean_variance` additionally supports `{"risk_free": 0.0}`; `turnover_aware` supports `{"risk_aversion": 1.0, "turnover_penalty": 0.5}` (L1 penalty on weight changes; tune to data frequency)
 - `engine`: backtest engine, default `"daily"`. For options strategies, set `"options"` (requires `OptionsSignalEngine`)
 - `position_adjustment`: **always state this explicitly** — the two modes produce different books from the same signals, and neither is right for every strategy.
-  - `"rebalance"` executes every target change with market fills and weighted-average entry accounting. It also re-sizes whenever the held weight has drifted from the target, and a strategy restates its target on every bar, so a constant target means a fill on every bar: measured on a 40-bar rising series, a constant 20% target produced **40 fills instead of 1**, with the fees, slippage and transaction taxes that follow. A strategy that rebalances on its own schedule (e.g. `rebalance_freq=20`) will still trade daily here.
+  - `"rebalance"` executes every target change with market fills and weighted-average entry accounting. It also re-sizes whenever the held weight has drifted from the target, and a strategy restates its target on every bar, so a constant target means a fill on every bar: measured on a 40-bar rising series, a constant 20% target produced **40 fills instead of 1**, with the fees, slippage and transaction taxes that follow. Use `rebalance_mask` when the strategy has its own execution cadence.
   - `"hold"` keeps a same-direction position until it exits or reverses, so the weight drifts with price and a requested resize is **not executed**. Dropped requests are counted in the report as `dropped_target_adjustment_count`, with the first twenty listed, so a rebalance count that does not match the trade log is explained rather than silent.
   - Rule of thumb: `"rebalance"` when the target weight itself carries the strategy (optimizers, risk budgets, continuous scaling); `"hold"` when entries and exits carry it and the weight in between is incidental.
-- `rebalance_tolerance`: drift band around the target, as a fraction of it, used only under `"rebalance"`. A resize executes once the held weight has moved further than this from its target; a **changed** target breaches any sane band on its own, so target changes always execute. Default `0.0` means no band, and then the resize test is decided by the slippage width alone — measured on a constant 20% target over 60 bars, `0.0` produced 60 fills, `0.02` produced 12, and `0.05` produced 5 while the weight never left 0.21. **State it for any strategy with its own rebalance cadence**, otherwise a `rebalance_freq=20` strategy still trades every bar. `0.05` is a reasonable starting point, not a recommendation with evidence behind it — it is your modelling choice and the report records the value the run used.
+- `rebalance_mask`: optional execution schedule used only under `"rebalance"`. Use a pandas offset alias such as `"MS"`, `"W-FRI"`, or `"QS"`, or an explicit ISO-date list such as `["2026-01-02", "2026-02-02"]`. Each period/date selects the first aligned trading bar on or after it; ordinary bars HOLD even when the dense target is zero. An alias must not be finer than the aligned bar interval; `W-FRI` starts a Friday-anchored period and normally executes on the following Monday. Omit it to preserve every-bar execution. Do not combine it with `"hold"`.
+- `rebalance_tolerance`: drift band around the target, as a fraction of it, used only under `"rebalance"`. A resize executes once the held weight has moved further than this from its target; a **changed** target breaches any sane band on its own, so target changes always execute. Default `0.0` means no band, and then the resize test is decided by the slippage width alone — measured on a constant 20% target over 60 bars, `0.0` produced 60 fills, `0.02` produced 12, and `0.05` produced 5 while the weight never left 0.21. Use `rebalance_mask`, not tolerance, to express a strategy's execution cadence. `0.05` is a reasonable starting point, not a recommendation with evidence behind it — it is your modelling choice and the report records the value the run used.
 - `initial_cash`: default 1,000,000
 - `commission`: default 0.1%
 - `validation`: optional statistical validation after backtest completes. Omit to skip. Example:

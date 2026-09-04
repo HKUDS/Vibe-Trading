@@ -26,6 +26,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from backtest.metrics import effective_bars_per_year
 from backtest.validation import _json_safe
 
 MIN_HISTORY_DAYS = 30
@@ -87,7 +88,7 @@ def compute_risk_xray(
     closes: pd.DataFrame,
     weights: Mapping[str, float],
     *,
-    periods_per_year: int = PERIODS_PER_YEAR,
+    periods_per_year: int | None = PERIODS_PER_YEAR,
     var_levels: Sequence[float] = VAR_LEVELS,
     min_history: int = MIN_HISTORY_DAYS,
 ) -> dict[str, Any]:
@@ -97,7 +98,9 @@ def compute_risk_xray(
         closes: Close-price panel, one column per symbol, sorted by date.
         weights: Symbol → weight. Renormalized to 1.0 with a warning when the
             sum differs; must be long-only and reference existing columns.
-        periods_per_year: Annualization factor for the bar interval.
+        periods_per_year: Annualization factor for the bar interval; ``None``
+            falls back to span-derived calendar annualization (mirrors
+            ``calc_metrics``) — the runner's cross-market convention.
         var_levels: Tail levels for historical VaR / expected shortfall.
         min_history: Minimum valid bars a symbol must have to be included.
 
@@ -187,17 +190,33 @@ def _concentration(w: np.ndarray) -> dict[str, Any]:
     }
 
 
-def _volatility(port: pd.Series, ppy: int) -> dict[str, Any]:
+def _volatility(port: pd.Series, ppy: int | None) -> dict[str, Any]:
     vol = float(port.std(ddof=1)) if len(port) > 1 else None
     downside = port[port < 0]
     downside_dev = float(downside.std(ddof=1)) if len(downside) > 1 else None
+    annualize = _annualize_factor(ppy, port.index)
     return {
         "daily_vol": _finite(vol),
-        "annualized_vol": _finite(vol * math.sqrt(ppy)) if vol is not None else None,
+        "annualized_vol": _finite(vol * annualize) if vol is not None else None,
         "downside_deviation_annualized": (
-            _finite(downside_dev * math.sqrt(ppy)) if downside_dev is not None else None
+            _finite(downside_dev * annualize) if downside_dev is not None else None
         ),
     }
+
+
+def _annualize_factor(ppy: int | None, index: Any) -> float:
+    """Return the annualization factor ``sqrt(periods_per_year)``.
+
+    ``ppy is None`` means the caller deliberately declined to specify a
+    per-market bar count — the runner's cross-market convention
+    (``bars_per_year=None``). Resolving it through the shared
+    ``effective_bars_per_year`` is what keeps the x-ray's annualized
+    volatility on the same footing as the Sharpe in the same run card (a
+    fixed 365 would sit ~18% higher for a 252-trading-day daily series).
+    """
+    if ppy is not None:
+        return math.sqrt(float(ppy))
+    return math.sqrt(float(effective_bars_per_year(index)))
 
 
 def _drawdown(port: pd.Series) -> dict[str, Any]:

@@ -24,7 +24,12 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from backtest.loaders import yahoo_client
-from backtest.loaders.base import cached_loader_fetch, validate_date_range
+from backtest.loaders.base import (
+    cached_loader_fetch,
+    is_lse_symbol,
+    normalize_lse_quote_currency,
+    validate_date_range,
+)
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
@@ -47,14 +52,21 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India/Korea/Canada/Vietnam equities plus Yahoo's own futures
-    (``GC=F``) and forex (``EURUSD=X``) suffix conventions, which the public
-    chart endpoint serves verbatim (the code is used as-is in the request URL,
-    no conversion) (#718).
+    Covers US/HK/India/Korea/Canada/Vietnam/UK equities plus Yahoo's own
+    futures (``GC=F``), forex (``EURUSD=X``) and index (``^SPX``) symbol
+    conventions, which the public chart endpoint serves verbatim (the code is
+    used as-is in the request URL, no conversion) (#718). Supported UK ``.L``
+    lines must declare GBP or GBp; GBp is normalized to GBP at fetch time
+    (#1206).
     """
     upper = code.strip().upper()
+    if upper.startswith("^"):
+        return True
     return upper.endswith(
-        (".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", "=F", "=X")
+        (
+            ".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN",
+            ".L", "=F", "=X",
+        )
     )
 
 
@@ -180,12 +192,12 @@ class DataLoader:
     name = "yahoo"
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
-        "vietnam_equity",
+        "vietnam_equity", "uk_equity",
     }
     # Yahoo chart volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00
     # vs tencent/eastmoney). Other equity markets stay undeclared.
-    volume_units = {"us_equity": "shares", "hk_equity": "shares"}
+    volume_units = {"us_equity": "shares", "hk_equity": "shares", "uk_equity": "shares"}
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -257,8 +269,8 @@ class DataLoader:
             interval: Backtest interval string.
 
         Returns:
-            The OHLCV DataFrame for *code*, ``None`` if it is not a US/HK/India
-            symbol or Yahoo returns no usable bars.
+            The OHLCV DataFrame for *code*, ``None`` if it is unsupported or
+            Yahoo returns no usable bars.
         """
         if not _is_supported(code):
             return None
@@ -268,11 +280,13 @@ class DataLoader:
         period1 = _epoch_seconds(start_date)
         period2 = _epoch_seconds(end_date) + 86400
 
-        rows = yahoo_client.get_chart(
+        rows, currency = yahoo_client.get_chart(
             code,
             interval=_to_yahoo_interval(interval),
             period1=period1,
             period2=period2,
         )
         frame = _rows_to_frame(rows, start_date, end_date, interval)
+        if is_lse_symbol(code):
+            frame = normalize_lse_quote_currency(frame, currency)
         return frame if not frame.empty else None

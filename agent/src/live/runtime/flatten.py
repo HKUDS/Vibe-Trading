@@ -99,16 +99,23 @@ def flatten_and_cancel(
                     {"symbol": "NVDA", "qty": 3, "side": "sell", "response": {...}},
                 ],
                 "flatten_skipped_reason": "mandate forbids flatten" | None,
+                "side_effects_attempted": bool,      # any cancel/close submit tried
                 "errors": [                            # one per failed broker call
                     {"phase": "cancel", "order_id": "o2", "error": "..."},
                 ],
             }
+
+        ``side_effects_attempted`` is set the moment a cancel or close order
+        submit is attempted (not merely read). The runner uses it to decide
+        whether the sweep's side effects made replay after a restart unsafe
+        (see ``LiveRunner._run_preemptive_sweep``).
     """
     report: dict[str, Any] = {
         "broker": broker,
         "cancelled_order_ids": [],
         "flatten_orders_submitted": [],
         "flatten_skipped_reason": None,
+        "side_effects_attempted": False,
         "errors": [],
     }
 
@@ -151,6 +158,76 @@ def _resolve_allow_flatten(broker: str, allow_flatten: bool | None) -> bool:
     return bool(getattr(mandate, "flatten_on_halt", False))
 
 
+def _read_broker_state(
+    phase: str,
+    expected_key: str,
+    read_fn: Callable[[], Any],
+    report: dict[str, Any],
+) -> list[Any] | None:
+    """Read broker state for the sweep, or record a structured read error.
+
+    Broker reads are wired to ``MCPServerAdapter.call_tool``, whose contract
+    is: a failed call returns an error envelope (``{"status": "error",
+    "error": ...}``) instead of raising; a successful call returns
+    ``{"status": "ok", "data": <value>}``. ``data`` is either the records
+    list itself or a wrapper dict carrying the pinned per-tool key
+    (``positions`` for a positions read, ``orders`` for an open-orders
+    read). Anything else — an exception, a non-list, a non-``ok`` status, or
+    a wrapper without the expected key — is rejected into
+    ``report["errors"]`` under ``phase`` and the sweep phase aborts without
+    attempting side effects. Wrapper dicts are never accepted generically:
+    that would turn unrelated metadata into fake broker records.
+
+    Returns:
+        The broker record list, or ``None`` (after recording the error).
+    """
+    try:
+        response = read_fn()
+    except Exception as exc:  # noqa: BLE001 — broker read must not abort the sweep
+        report["errors"].append({"phase": phase, "error": str(exc)})
+        return None
+    envelope_error = _error_envelope_message(response)
+    if envelope_error is not None:
+        report["errors"].append({"phase": phase, "error": envelope_error})
+        return None
+    records = _unwrap_ok_payload(response, expected_key)
+    if records is None:
+        report["errors"].append(
+            {
+                "phase": phase,
+                "error": (
+                    f"unexpected broker response: expected a records list or an "
+                    f"adapter {{status: ok, data: ...}} payload carrying "
+                    f"{expected_key!r}, got {type(response).__name__}"
+                ),
+            }
+        )
+        return None
+    return records
+
+
+def _unwrap_ok_payload(response: Any, expected_key: str) -> list[Any] | None:
+    """Decode a successful adapter read payload into a records list.
+
+    Accepts a bare list (injected/legacy read stubs) or the adapter's
+    ``{"status": "ok", "data": <value>}`` shape, where ``data`` is either the
+    records list or a wrapper dict carrying the pinned ``expected_key``.
+    Returns ``None`` for anything else — never a generic dict.
+    """
+    if isinstance(response, list):
+        return response
+    if not isinstance(response, dict) or response.get("status") != "ok":
+        return None
+    payload = response.get("data")
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        records = payload.get(expected_key)
+        if isinstance(records, list):
+            return records
+    return None
+
+
 def _cancel_resting_orders(
     broker: str,
     submit: SubmitFn,
@@ -166,15 +243,24 @@ def _cancel_resting_orders(
         report: Mutated in place — successful ids appended to
             ``cancelled_order_ids``, failures to ``errors``.
     """
-    try:
-        open_orders = read_open_orders()
-    except Exception as exc:  # noqa: BLE001 — broker read must not abort the sweep
-        report["errors"].append({"phase": "read_open_orders", "error": str(exc)})
+    open_orders = _read_broker_state(
+        "read_open_orders", "orders", read_open_orders, report
+    )
+    if open_orders is None:
         return
 
     for order in open_orders:
+        if not isinstance(order, dict):
+            report["errors"].append(
+                {
+                    "phase": "read_open_orders",
+                    "error": f"invalid entry: {type(order).__name__}",
+                }
+            )
+            continue
         order_id = order.get("order_id")
         request = {"action": "cancel", "order_id": order_id}
+        report["side_effects_attempted"] = True
         try:
             response = submit(request)
         except Exception as exc:  # noqa: BLE001 — record + move on, never retry
@@ -236,13 +322,19 @@ def _flatten_open_positions(
         report: Mutated in place — accepted closes appended to
             ``flatten_orders_submitted``, failures to ``errors``.
     """
-    try:
-        positions = read_positions()
-    except Exception as exc:  # noqa: BLE001 — broker read must not abort the sweep
-        report["errors"].append({"phase": "read_positions", "error": str(exc)})
+    positions = _read_broker_state("read_positions", "positions", read_positions, report)
+    if positions is None:
         return
 
     for position in positions:
+        if not isinstance(position, dict):
+            report["errors"].append(
+                {
+                    "phase": "read_positions",
+                    "error": f"invalid entry: {type(position).__name__}",
+                }
+            )
+            continue
         symbol = position.get("symbol")
         qty = float(position.get("qty", 0) or 0)
         if qty == 0:
@@ -257,6 +349,7 @@ def _flatten_open_positions(
             "type": "market",
         }
         intent = f"flatten {symbol}: {side} {close_qty} @ market"
+        report["side_effects_attempted"] = True
         try:
             response = submit(request)
         except Exception as exc:  # noqa: BLE001 — record + move on, never retry
@@ -310,9 +403,27 @@ def _error_envelope_message(response: Any) -> str | None:
     dict is not proof the broker accepted the request. Treating that
     envelope as success would audit a resting order as cancelled while it
     stays live, which is the failure the sweep exists to prevent.
+
+    A *nested* broker-level failure is just as dangerous: the MCP transport
+    succeeded, but the connector/broker rejected the order inside its own
+    payload (``{"status": "ok", "data": {"status": "error", ...}}`` or
+    ``{"status": "ok", "data": {"ok": False, ...}}``). Only the top level was
+    checked before, so such a rejection was recorded as accepted and the
+    sweep latched with a live order still resting.
     """
-    if isinstance(response, dict) and response.get("status") == "error":
-        return str(response.get("error") or "broker returned an error envelope")
+    if isinstance(response, dict):
+        if response.get("status") == "error":
+            return str(response.get("error") or "broker returned an error envelope")
+        data = response.get("data")
+        if isinstance(data, dict):
+            if data.get("status") == "error":
+                return str(data.get("error") or "broker returned an error envelope")
+            if data.get("ok") is False:
+                return str(
+                    data.get("error")
+                    or data.get("message")
+                    or "broker rejected the request"
+                )
     return None
 
 

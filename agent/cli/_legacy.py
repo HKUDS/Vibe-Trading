@@ -4365,6 +4365,7 @@ def cmd_connector_configure(
 def cmd_connector_check(
     profile_id: Optional[str] = None,
     *,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -4375,7 +4376,15 @@ def cmd_connector_check(
 
     try:
         profile = _selected_profile_or(profile_id)
-        report = check_connection(profile.id, host=host, port=port, client_id=client_id, account=account)
+        options = {
+            "host": host,
+            "port": port,
+            "client_id": client_id,
+            "account": account,
+        }
+        if connection_id is not None:
+            options["connection_id"] = connection_id
+        report = check_connection(profile.id, **options)
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Connector check failed:[/red] {exc}")
         return EXIT_RUN_FAILED
@@ -4437,6 +4446,78 @@ def cmd_connector_check(
         console.print(f"[red]{rich_escape(str(report.get('error') or report.get('status') or 'not ready'))}[/red]")
         return EXIT_RUN_FAILED
     console.print("[green]Connector profile is ready.[/green]")
+    return EXIT_SUCCESS
+
+
+def cmd_connector_setup(
+    profile_id: str,
+    *,
+    connection_id: str | None = None,
+    label: str | None = None,
+    skip_check: bool = False,
+) -> int:
+    """Create a local read-only connection and collect secrets outside AI prompts."""
+    from src.trading.connections import (
+        ConnectionStore,
+        credential_field_catalog,
+        is_portfolio_connection_profile,
+    )
+    from src.trading.profiles import profile_by_id
+    from src.trading.service import check_connection
+
+    try:
+        profile = profile_by_id(profile_id)
+        if not is_portfolio_connection_profile(profile):
+            raise ValueError(f"{profile.id} is not a read-only portfolio profile")
+        local_id = str(connection_id or f"{profile.connector}-{profile.environment}").strip().lower()
+        store = ConnectionStore()
+        connection = store.ensure(local_id, profile.id, label or profile.label)
+        fields = credential_field_catalog(profile.id)
+        names = [str(field["name"]) for field in fields]
+        status = store.credentials.status(connection.id, names) if names else {}
+        values: dict[str, str] = {}
+        for field in fields:
+            name = str(field["name"])
+            required = bool(field.get("required", True))
+            while True:
+                saved = bool(status.get(name))
+                suffix = " [already saved; Enter keeps it]" if saved else ""
+                value = Prompt.ask(
+                    f"{field.get('label') or name}{suffix}",
+                    password=bool(field.get("secret", True)),
+                    default="",
+                    show_default=False,
+                )
+                if value:
+                    values[name] = value
+                    break
+                if saved or not required:
+                    break
+                console.print(f"[yellow]{field.get('label') or name} is required.[/yellow]")
+        if values:
+            store.credentials.save(connection.id, values)
+    except (RuntimeError, ValueError) as exc:
+        console.print(f"[red]Connector setup failed:[/red] {rich_escape(str(exc))}")
+        return EXIT_USAGE_ERROR
+
+    console.print(
+        f"[green]Local read-only connection ready[/green] "
+        f"{connection.id} [dim]({connection.profile_id})[/dim]"
+    )
+    if skip_check:
+        return EXIT_SUCCESS
+    try:
+        report = check_connection(profile.id, connection_id=connection.id)
+    except Exception as exc:  # noqa: BLE001 - return an actionable diagnostic
+        console.print(f"[red]Connection test failed:[/red] {rich_escape(str(exc))}")
+        return EXIT_RUN_FAILED
+    if report.get("status") != "ok":
+        console.print(
+            f"[red]Connection test failed:[/red] "
+            f"{rich_escape(str(report.get('error') or report.get('status')))}"
+        )
+        return EXIT_RUN_FAILED
+    console.print("[green]Connection test passed.[/green]")
     return EXIT_SUCCESS
 
 
@@ -5033,14 +5114,23 @@ def _dispatch_connector(args: argparse.Namespace) -> int:
             account=args.account,
             yes=args.yes,
         )
-    if sub == "check":
-        return cmd_connector_check(
+    if sub == "setup":
+        return cmd_connector_setup(
             args.profile,
-            host=args.host,
-            port=args.port,
-            client_id=args.client_id,
-            account=args.account,
+            connection_id=args.connection_id,
+            label=args.label,
+            skip_check=args.skip_check,
         )
+    if sub == "check":
+        options = {
+            "host": args.host,
+            "port": args.port,
+            "client_id": args.client_id,
+            "account": args.account,
+        }
+        if args.connection_id is not None:
+            options["connection_id"] = args.connection_id
+        return cmd_connector_check(args.profile, **options)
     if sub == "account":
         return cmd_connector_account(
             args.profile,
@@ -5340,9 +5430,19 @@ def _build_parser() -> argparse.ArgumentParser:
     connector_configure.add_argument("--account", default=None)
     connector_configure.add_argument("-y", "--yes", action="store_true", help="Overwrite without prompting")
 
+    connector_setup = connector_subparsers.add_parser(
+        "setup",
+        help="Create a local read-only connection and securely collect its credentials",
+    )
+    _add_connector_profile_arg(connector_setup, required=True)
+    connector_setup.add_argument("--connection-id", default=None)
+    connector_setup.add_argument("--label", default=None)
+    connector_setup.add_argument("--skip-check", action="store_true")
+
     connector_check = connector_subparsers.add_parser("check", help="Check selected connector readiness")
     _add_connector_profile_arg(connector_check)
     _add_connector_local(connector_check)
+    connector_check.add_argument("--connection-id", default=None)
 
     connector_status = connector_subparsers.add_parser("status", help="Show selected connector status")
     _add_connector_profile_arg(connector_status)

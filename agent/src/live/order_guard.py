@@ -258,6 +258,12 @@ class LiveOrderGuardTool(MCPRemoteTool):
             notional_usd=enforced,
             quantity=intent.quantity,
             instrument_type=intent.instrument_type,
+            # asset_class must survive the rebuild: check_mandate prefers an
+            # explicit one over the instrument-type default (enforcement.py:524),
+            # so dropping it buckets an HK/A-share order as us_equity and lets it
+            # past a mandate that permits only us_equity.
+            asset_class=intent.asset_class,
+            limit_price=intent.limit_price,
         )
 
     def _quote_price(self, intent: OrderIntent) -> float | None:

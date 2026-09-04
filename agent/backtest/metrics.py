@@ -170,6 +170,39 @@ def calc_bars_per_year(interval: str = "1D", source: str = "tushare") -> int:
     return trading_days * bars_per_day
 
 
+def effective_bars_per_year(index: Any, default: int = 252) -> int:
+    """Bars per elapsed calendar year observed on ``index``.
+
+    The cross-market annualisation convention. A basket that spans markets has
+    no single per-market bar count — the runner signals that by passing
+    ``bars_per_year=None`` — so the factor is measured from the series itself
+    instead of assumed: bars observed divided by calendar years elapsed. Every
+    consumer of ``bars_per_year=None`` (portfolio metrics, risk x-ray, options
+    metrics, validation) resolves it through this one function, so the Sharpe,
+    the annualised volatility, and the validation Sharpe in a single run card
+    are annualised identically.
+
+    Args:
+        index: Datetime-like index of the series being annualised.
+        default: Returned when the span cannot be measured (empty index, or an
+            index whose difference carries no ``days``).
+
+    Returns:
+        Effective bars per year. A span shorter than one calendar day counts as
+        one year, matching how a single-bar curve annualises to its own return.
+    """
+    n = len(index)
+    if n == 0:
+        return default
+    try:
+        diff = index[-1] - index[0]
+    except (IndexError, TypeError):
+        return default
+    calendar_days = diff.days if hasattr(diff, "days") else 0
+    years = calendar_days / 365.25 if calendar_days > 0 else 1.0
+    return int(n / years) if years > 0 else default
+
+
 # ─── Sign-safe returns ───
 
 _log = logging.getLogger(__name__)
@@ -491,11 +524,7 @@ def calc_metrics(
 
     # Calendar-day annualization for cross-market (bars_per_year=None)
     if bars_per_year is None:
-        first, last = equity_curve.index[0], equity_curve.index[-1]
-        diff = last - first
-        calendar_days = diff.days if hasattr(diff, "days") else 0
-        years = calendar_days / 365.25 if calendar_days > 0 else 1.0
-        bpy = int(n / years) if years > 0 else 252
+        bpy = effective_bars_per_year(equity_curve.index)
     else:
         bpy = bars_per_year
 

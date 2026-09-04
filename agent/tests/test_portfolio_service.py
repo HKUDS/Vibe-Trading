@@ -17,9 +17,7 @@ from src.trading.types import TradingProfile
 def _settings_store(tmp_path):
     store = PortfolioSettingsStore(tmp_path / "portfolio.json")
     store.connection_store.ensure("ibkr", "ibkr-live-local-readonly", "IBKR")
-    store.connection_store.ensure(
-        "longbridge", "longbridge-live-sdk-readonly", "Longbridge"
-    )
+    store.connection_store.ensure("longbridge", "longbridge-live-sdk-readonly", "Longbridge")
     store.connection_store.ensure("binance", "binance-live-sdk-readonly", "Binance")
     store.save(
         {
@@ -36,12 +34,8 @@ def _settings_store(tmp_path):
 
 def test_refresh_aggregates_three_readonly_connectors(tmp_path):
     accounts = {
-        "ibkr-live-local-readonly": {
-            "summary": [{"tag": "NetLiquidation", "value": "1000", "currency": "USD"}]
-        },
-        "longbridge-live-sdk-readonly": {
-            "balances": [{"net_assets": "7800", "currency": "HKD"}]
-        },
+        "ibkr-live-local-readonly": {"summary": [{"tag": "NetLiquidation", "value": "1000", "currency": "USD"}]},
+        "longbridge-live-sdk-readonly": {"balances": [{"net_assets": "7800", "currency": "HKD"}]},
         "binance-live-sdk-readonly": {"balances": []},
     }
     positions = {
@@ -114,6 +108,30 @@ def test_refresh_aggregates_three_readonly_connectors(tmp_path):
     assert "quantity" not in context["holdings"][0]
 
 
+def test_latest_enriches_legacy_snapshot_with_current_compatibility(tmp_path):
+    store = PortfolioStore(tmp_path / "portfolio.sqlite3")
+    settings = _settings_store(tmp_path)
+    store.save_snapshot(
+        {
+            "snapshot_id": "legacy-snapshot",
+            "valuation_version": portfolio_service.PORTFOLIO_VALUATION_VERSION,
+            "created_at": "2026-08-09T00:00:00+00:00",
+            "complete": True,
+            "totals": {"usd": 0, "cny": 0},
+            "accounts": [
+                {"source_id": source, "broker": source, "status": "ok"} for source in ("ibkr", "longbridge", "binance")
+            ],
+            "positions": [],
+            "warnings": [],
+        }
+    )
+
+    latest = PortfolioService(store, settings_store=settings).latest()
+
+    assert latest is not None
+    assert {row["portfolio_compatibility"]["level"] for row in latest["accounts"]} == {"native"}
+
+
 def test_partial_refresh_is_saved_and_marked_incomplete(tmp_path):
     def get_account(profile_id):
         if profile_id.startswith("longbridge"):
@@ -146,11 +164,7 @@ def test_failed_source_is_excluded_from_totals_and_reports_its_last_success(tmp_
         if offline and profile_id.startswith("ibkr"):
             raise ConnectionError("offline")
         if profile_id.startswith("ibkr"):
-            return {
-                "summary": [
-                    {"tag": "NetLiquidation", "value": "1000", "currency": "USD"}
-                ]
-            }
+            return {"summary": [{"tag": "NetLiquidation", "value": "1000", "currency": "USD"}]}
         return {"summary": []}
 
     service = PortfolioService(
@@ -195,13 +209,13 @@ def test_failed_source_is_excluded_from_totals_and_reports_its_last_success(tmp_
     assert partial["totals"]["cny"] == 0.0
     assert ibkr["status"] == "error"
     assert ibkr["error_code"] == "ConnectionError"
+    assert ibkr["failure_kind"] == "transient"
+    assert ibkr["reconnect_required"] is False
     assert ibkr["total_usd"] is None
     assert ibkr["total_cny"] is None
     assert ibkr["position_count"] == 0
     assert [item["broker"] for item in partial["positions"] if item["broker"] == "ibkr"] == []
-    assert [
-        item for item in partial["combined_holdings"] if "ibkr" in item["brokers"]
-    ] == []
+    assert [item for item in partial["combined_holdings"] if "ibkr" in item["brokers"]] == []
     assert partial["valuation"]["priced_usd"] == 0.0
 
     # ...but the dashboard can still say when that source was last healthy.
@@ -212,9 +226,7 @@ def test_failed_source_is_excluded_from_totals_and_reports_its_last_success(tmp_
     assert all("data_state" not in item for item in partial["accounts"])
     assert all("stale" not in item for item in partial["positions"])
 
-    excluded = [
-        warning for warning in partial["warnings"] if "excluded" in warning.lower()
-    ]
+    excluded = [warning for warning in partial["warnings"] if "excluded" in warning.lower()]
     assert len(excluded) == 1
     assert "IBKR" in excluded[0]
 
@@ -249,9 +261,7 @@ def test_a_source_that_never_succeeded_reports_no_last_success_time(tmp_path):
     assert ibkr["last_success_at"] is None
 
 
-def test_remote_mcp_sources_are_read_without_an_interactive_oauth_prompt(
-    tmp_path, monkeypatch
-):
+def test_remote_mcp_sources_are_read_without_an_interactive_oauth_prompt(tmp_path, monkeypatch):
     """A dashboard refresh must never be able to pop a browser, for any connector."""
     settings = PortfolioSettingsStore(tmp_path / "portfolio.json")
     settings.connection_store.ensure("remote", "alpaca-live-sdk-readonly", "Remote")
@@ -306,15 +316,59 @@ def test_remote_mcp_sources_are_read_without_an_interactive_oauth_prompt(
     ]
 
 
+def test_remote_mcp_authorization_failure_is_the_only_reconnectable_failure(
+    tmp_path, monkeypatch
+):
+    settings = PortfolioSettingsStore(tmp_path / "portfolio.json")
+    settings.connection_store.ensure("remote", "alpaca-live-sdk-readonly", "Remote")
+    settings.save(
+        {
+            "display_currency": "USD",
+            "sources": [
+                {"connection_id": "remote", "label": "Remote", "order": 0}
+            ],
+        }
+    )
+    remote = TradingProfile(
+        id="alpaca-live-sdk-readonly",
+        connector="examplebroker",
+        label="Example remote MCP",
+        environment="live",
+        transport="remote_mcp",
+        capabilities=("account.read", "positions.read"),
+        readonly=True,
+    )
+    monkeypatch.setattr(portfolio_service, "profile_by_id", lambda _: remote)
+
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=settings,
+        get_account=lambda *args, **kwargs: {
+            "status": "not_authorized",
+            "error": "OAuth authorization required",
+        },
+        get_positions=lambda *args, **kwargs: {"positions": []},
+        get_quote=lambda *args, **kwargs: {},
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-08-09T00:00:00+00:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+    account = snapshot["accounts"][0]
+
+    assert account["status"] == "error"
+    assert account["failure_kind"] == "authorization"
+    assert account["reconnect_required"] is True
+
+
 def test_analysis_context_supplies_risk_xray_arguments(tmp_path):
     """The portfolio feeds the existing risk x-ray; it does not reimplement it."""
     accounts = {
-        "ibkr-live-local-readonly": {
-            "summary": [{"tag": "NetLiquidation", "value": "300", "currency": "USD"}]
-        },
-        "longbridge-live-sdk-readonly": {
-            "balances": [{"net_assets": "3900", "currency": "HKD"}]
-        },
+        "ibkr-live-local-readonly": {"summary": [{"tag": "NetLiquidation", "value": "300", "currency": "USD"}]},
+        "longbridge-live-sdk-readonly": {"balances": [{"net_assets": "3900", "currency": "HKD"}]},
         "binance-live-sdk-readonly": {"balances": []},
     }
     positions = {
@@ -427,9 +481,7 @@ def test_generic_readonly_profile_uses_common_account_and_position_fields(tmp_pa
     service = PortfolioService(
         PortfolioStore(tmp_path / "portfolio.sqlite3"),
         settings_store=settings,
-        get_account=lambda profile_id: {
-            "account": {"portfolio_value": "1000", "cash": "200", "currency": "USD"}
-        },
+        get_account=lambda profile_id: {"account": {"portfolio_value": "1000", "cash": "200", "currency": "USD"}},
         get_positions=lambda profile_id: {
             "positions": [
                 {
@@ -458,6 +510,64 @@ def test_generic_readonly_profile_uses_common_account_and_position_fields(tmp_pa
     assert account["cash_usd"] == 0.0
     assert position["source_label"] == "Main stocks"
     assert position["market_value_usd"] == 800.0
+
+
+def test_okx_spot_balances_flow_through_the_generic_portfolio_contract(tmp_path):
+    settings = PortfolioSettingsStore(tmp_path / "portfolio.json")
+    settings.connection_store.ensure(
+        "okx-spot",
+        "okx-live-sdk-readonly",
+        "OKX Spot",
+    )
+    settings.save(
+        {
+            "display_currency": "USD",
+            "sources": [
+                {
+                    "connection_id": "okx-spot",
+                    "label": "OKX Spot",
+                    "enabled": True,
+                    "order": 0,
+                    "include_cash": True,
+                }
+            ],
+        }
+    )
+    quoted = []
+
+    def get_quote(symbol, profile_id, **kwargs):
+        quoted.append((symbol, profile_id))
+        return {"quote": {"last": "40000"}}
+
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=settings,
+        get_account=lambda profile_id: {
+            "account": {
+                "total_equity": "60250",
+                "details": [
+                    {"currency": "BTC", "equity": "1.5", "available": "1.5"},
+                    {"currency": "USDT", "equity": "250", "available": "250"},
+                ],
+            }
+        },
+        get_positions=lambda profile_id: {"positions": []},
+        get_quote=get_quote,
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-08-25T00:00:00+00:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+
+    assert snapshot["complete"] is True
+    assert snapshot["totals"]["usd"] == 60250.0
+    assert [row["symbol"] for row in snapshot["positions"]] == ["BTC", "USDT"]
+    assert quoted == [("BTC-USDT", "okx-live-sdk-readonly")]
+    assert snapshot["accounts"][0]["portfolio_compatibility"]["level"] == ("contract_tested")
+    assert any("okx" in warning.lower() for warning in snapshot["warnings"])
 
 
 def test_auth_metadata_describes_the_profile_without_claiming_key_permissions():

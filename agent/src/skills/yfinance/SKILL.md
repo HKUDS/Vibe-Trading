@@ -25,17 +25,19 @@ one you need rather than loading them all:
 
 | Doc | Covers |
 |-----|--------|
-| [yahoo_client.get_chart](yfinance/references/yahoo_client_get_chart.md) | Direct v8 OHLCV bars (range or epoch window) |
-| [yahoo_client.get_quote_summary](yfinance/references/yahoo_client_get_quote_summary.md) | v10 quoteSummary modules (key stats, financials, ownership) |
-| [yahoo_client.get_options](yfinance/references/yahoo_client_get_options.md) | v7 option chain (expirations + calls/puts) |
-| [yahoo_client.search](yfinance/references/yahoo_client_search.md) | v1 instrument search by ticker/name |
-| [get_options_chain tool](yfinance/references/tool_get_options_chain.md) | Agent tool: US options ladder envelope |
-| [get_stock_profile tool](yfinance/references/tool_get_stock_profile.md) | Agent tool: company profile/estimates/ownership envelope |
+| [yahoo_client.get_chart](references/yahoo_client_get_chart.md)          | Direct v8 OHLCV bars (range or epoch window) |
+| [yahoo_client.get_quote_summary](references/yahoo_client_get_quote_summary.md)          | v10 quoteSummary modules (key stats, financials, ownership) |
+| [yahoo_client.get_options](references/yahoo_client_get_options.md)          | v7 option chain (expirations + calls/puts) |
+| [yahoo_client.search](references/yahoo_client_search.md)          | v1 instrument search by ticker/name |
+| [get_options_chain tool](references/tool_get_options_chain.md)          | Agent tool: US options ladder envelope |
+| [get_stock_profile tool](references/tool_get_stock_profile.md)          | Agent tool: company profile/estimates/ownership envelope |
 
-> Path convention: `read_file` resolves paths with `skills/` as the root, so
-> every link above is written with the **skill-name prefix** (`yfinance/references/...`).
-> Omitting the prefix makes the read fail. Reuse this `yfinance/references/...`
-> form for any new reference docs.
+> Path convention: every link above is written **relative to this document**
+> (`references/...`), the form GitHub resolves when the file is opened in a
+> browser. `read_file` resolves the same string against the skill that owns it,
+> so the agent and a human reader reach one file. Reuse the relative form for
+> any new reference docs, and keep reference paths unique across skills: a path
+> two skills both carry is reported as ambiguous rather than guessed.
 
 The Yahoo client uses the project ticker convention (`AAPL.US` → `AAPL`,
 `00700.HK` → `0700.HK`, `TD.TO` and `PNG.V` pass through); see the

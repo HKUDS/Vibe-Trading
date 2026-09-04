@@ -36,6 +36,7 @@ from src.live.runtime.runner import (
     TICK_EXPIRED,
     TICK_HALTED,
     TICK_INVOKED,
+    TICK_MARKET_CLOSED,
     TICK_NO_MANDATE,
     TICK_RECONCILE_ERROR,
     TICK_RECONCILE_UNSAFE,
@@ -566,3 +567,58 @@ def test_real_audit_write_on_halt(monkeypatch, tmp_path) -> None:
     ledger = audit_ledger_path()
     assert ledger.exists()
     assert "halt_tripped" in ledger.read_text(encoding="utf-8")
+
+
+def test_market_trigger_skips_tick_when_market_closed() -> None:
+    # _FIXED_NOW is Monday 08:00 ET, before the 09:30 bell. A market-triggered
+    # tick must not trade into a closed session.
+    from src.live.runtime.triggers import Trigger
+
+    tracker = _OrderTracker()
+    runner = _build_runner(tracker, triggers=[Trigger.market("us_equity")])
+    result = asyncio.run(runner.run_once())
+
+    assert result["outcome"] == TICK_MARKET_CLOSED
+    # Stops before reconcile: no broker reads, no invoke, no audit spam.
+    assert tracker.calls == ["halt", "mandate"]
+    assert tracker.audits == []
+
+
+def test_market_trigger_ticks_when_market_open() -> None:
+    from src.live.runtime.triggers import Trigger
+
+    tracker = _OrderTracker()
+    # Tuesday 10:30 ET, mid-session.
+    open_now = datetime(2026, 6, 2, 14, 30, 0, tzinfo=timezone.utc)
+    runner = _build_runner(
+        tracker, triggers=[Trigger.market("us_equity")], clock=lambda: open_now
+    )
+    result = asyncio.run(runner.run_once())
+
+    assert result["outcome"] == TICK_INVOKED
+    assert "invoke" in tracker.calls
+
+
+def test_market_gate_open_when_any_market_trigger_is_open() -> None:
+    from src.live.runtime.triggers import Trigger
+
+    tracker = _OrderTracker()
+    # us_equity closed at _FIXED_NOW, crypto is 24/7: the union stays open.
+    runner = _build_runner(
+        tracker,
+        triggers=[Trigger.market("us_equity"), Trigger.market("crypto")],
+    )
+    result = asyncio.run(runner.run_once())
+
+    assert result["outcome"] == TICK_INVOKED
+
+
+def test_interval_only_runner_ignores_the_market_gate() -> None:
+    from src.live.runtime.triggers import Trigger
+
+    tracker = _OrderTracker()
+    runner = _build_runner(tracker, triggers=[Trigger.interval(30_000)])
+    result = asyncio.run(runner.run_once())
+
+    assert result["outcome"] == TICK_INVOKED
+    assert "invoke" in tracker.calls

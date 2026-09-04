@@ -359,3 +359,138 @@ class TestErrorEnvelope:
         )
         assert payload["ok"] is False
         assert "period" in payload["error"]
+
+
+class TestUKYahooStatements:
+    """UK (.L) routes to Yahoo quoteSummary with flattened raw values."""
+
+    _INCOME_PAYLOAD = {
+        "incomeStatementHistory": {
+            "maxAge": 1,
+            "incomeStatementHistory": [
+                {
+                    "maxAge": 1,
+                    "endDate": 1743379200,
+                    "totalRevenue": {"raw": 37448000000, "fmt": "37.45B"},
+                    "netIncome": {"raw": -4169000000, "fmt": "-4.17B"},
+                    "currencyCode": "GBp",
+                },
+                {
+                    "maxAge": 1,
+                    "endDate": 1711843200,
+                    "totalRevenue": {"raw": 32907000000, "fmt": "32.91B"},
+                    "netIncome": {"raw": 1248000000, "fmt": "1.25B"},
+                },
+            ],
+        }
+    }
+
+    def test_uk_income_annual_uses_annual_module(self) -> None:
+        with patch(
+            "src.tools.financial_statements_tool.yahoo_client.get_quote_summary",
+            return_value=self._INCOME_PAYLOAD,
+        ) as mock_qs:
+            text = FinancialStatementsTool().execute(
+                code="VOD.L", statement="income", period="annual"
+            )
+
+        payload = json.loads(text)
+        assert payload["ok"] is True
+        assert payload["source"] == "yahoo"
+        assert payload["market"] == "uk"
+        assert mock_qs.call_args.args == ("VOD.L", ["incomeStatementHistory"])
+        periods = payload["data"]["VOD.L"]["periods"]
+        assert periods[0]["endDate"] == 1743379200
+        assert periods[0]["totalRevenue"] == 37448000000
+        assert periods[0]["netIncome"] == -4169000000
+        # Newest first.
+        assert periods[0]["endDate"] > periods[1]["endDate"]
+
+    def test_uk_income_quarter_uses_quarterly_module(self) -> None:
+        quarterly = {
+            "incomeStatementHistoryQuarterly": {
+                "maxAge": 1,
+                "incomeStatementHistory": [
+                    {
+                        "maxAge": 1,
+                        "endDate": {"raw": 1743379200, "fmt": "2025-03-31"},
+                        "totalRevenue": {"raw": 9361000000, "fmt": "9.36B"},
+                    },
+                ],
+            }
+        }
+        with patch(
+            "src.tools.financial_statements_tool.yahoo_client.get_quote_summary",
+            return_value=quarterly,
+        ) as mock_qs:
+            payload = json.loads(
+                FinancialStatementsTool().execute(
+                    code="VOD.L", statement="income", period="quarter"
+                )
+            )
+
+        assert payload["ok"] is True
+        assert payload["period"] == "quarter"
+        assert mock_qs.call_args.args == (
+            "VOD.L",
+            ["incomeStatementHistoryQuarterly"],
+        )
+        period_record = payload["data"]["VOD.L"]["periods"][0]
+        # Quarterly endDate is a {raw, fmt} dict on Yahoo; flattened to int.
+        assert period_record["endDate"] == 1743379200
+        assert period_record["totalRevenue"] == 9361000000
+
+    def test_uk_il_suffix_routes_to_yahoo(self) -> None:
+        with patch(
+            "src.tools.financial_statements_tool.yahoo_client.get_quote_summary",
+            return_value=self._INCOME_PAYLOAD,
+        ) as mock_qs:
+            FinancialStatementsTool().execute(
+                code="BARC.L", statement="income", period="annual"
+            )
+        assert mock_qs.call_args.args == ("BARC.L", ["incomeStatementHistory"])
+
+    def test_uk_indicators_flatten_nested_blocks(self) -> None:
+        payload = {
+            "financialData": {
+                "maxAge": 1,
+                "totalRevenue": {"raw": 40461000704, "longFmt": "40,461,000,704"},
+                "grossMargins": {"raw": 0.3147},
+            },
+            "defaultKeyStatistics": {
+                "maxAge": 1,
+                "returnOnEquity": {"raw": 0.00109},
+                "trailingEps": {"raw": -0.17},
+            },
+        }
+        with patch(
+            "src.tools.financial_statements_tool.yahoo_client.get_quote_summary",
+            return_value=payload,
+        ) as mock_qs:
+            text = FinancialStatementsTool().execute(
+                code="VOD.L", statement="indicators", period="annual"
+            )
+
+        payload_out = json.loads(text)
+        assert payload_out["ok"] is True
+        assert mock_qs.call_args.args == (
+            "VOD.L",
+            ["financialData", "defaultKeyStatistics"],
+        )
+        record = payload_out["data"]["VOD.L"]["periods"][0]
+        assert record["totalRevenue"] == 40461000704
+        assert record["grossMargins"] == 0.3147
+        assert record["returnOnEquity"] == 0.00109
+
+    def test_uk_yahoo_failure_surfaces_ok_false(self) -> None:
+        with patch(
+            "src.tools.financial_statements_tool.yahoo_client.get_quote_summary",
+            side_effect=RuntimeError("crumb expired"),
+        ):
+            text = FinancialStatementsTool().execute(
+                code="VOD.L", statement="balance", period="annual"
+            )
+        payload = json.loads(text)
+        assert payload["ok"] is False
+        assert "crumb expired" in payload["error"]
+        assert "crumb expired" in payload["data"]["VOD.L"]["error"]

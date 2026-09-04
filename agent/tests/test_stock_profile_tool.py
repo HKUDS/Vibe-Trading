@@ -177,3 +177,14 @@ class TestStockProfileErrors:
         assert payload["ok"] is False
         assert "yahoo quoteSummary request failed" in payload["error"]
         assert "429" in payload["error"]
+
+
+def test_uk_ticker_market_label() -> None:
+    """VOD.L is served by Yahoo but must not be labeled 'us' (#1206)."""
+    from src.tools.stock_profile_tool import _market_for
+
+    assert _market_for("VOD.L") == "uk"
+    assert _market_for("BARC.L") == "uk"
+    assert _market_for("AAPL.US") == "us"
+    assert _market_for("AAPL") == "us"
+    assert _market_for("00700.HK") == "hk"

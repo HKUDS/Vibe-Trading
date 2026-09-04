@@ -216,10 +216,17 @@ class TestSymbolIsolation:
                 return {"000001.SZ": pd.Series(0.0, index=data_map["000001.SZ"].index)}
 
         def fake_resolve_benchmark(**kwargs):
-            return SimpleNamespace(
+            # The real result type, not a namespace: the engine re-measures the
+            # benchmark over the evaluated window via BenchmarkResult's own
+            # method, so a stub that only carries attributes would not exercise
+            # the path under test.
+            from backtest.benchmark import BenchmarkResult
+
+            return BenchmarkResult(
                 ticker="000300.SH",
                 ret_series=pd.Series([0.0, 0.01, -0.005], index=dates),
                 total_ret=0.00495,
+                close=pd.Series([100.0, 101.0, 100.495], index=dates),
             )
 
         monkeypatch.setattr("backtest.benchmark.resolve_benchmark", fake_resolve_benchmark)

@@ -132,3 +132,36 @@ def test_all_numeric_trade_pnl_emits_no_ignored_warning() -> None:
     metrics = _calc_options_metrics(pd.Series([100.0, 150.0]), 100.0, trades)
     assert not any("Ignored PnL" in w for w in metrics["warnings"])
     json.dumps(metrics, allow_nan=False)
+
+
+def test_bars_per_year_none_does_not_crash() -> None:
+    # The runner passes bars_per_year=None for cross-market baskets
+    # (calendar-day convention). All three guards used to raise
+    # TypeError ('<=' / '>' not supported between NoneType and int).
+    # Zigzag path with multiple downside observations so the sortino guard
+    # is reached (a single negative return yields an undefined downside std,
+    # unrelated to the None bug under test).
+    equity = pd.Series(
+        [100.0, 90.0, 95.0, 85.0, 92.0, 80.0],
+        index=pd.date_range("2026-01-01", periods=6, freq="D"),
+    )
+    metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=None)
+
+    assert metrics["sharpe"] is not None
+    assert metrics["sortino"] is not None
+    assert metrics["annual_return"] is not None
+    assert not any(
+        "positive bars_per_year" in w or "bars_per_year" in w for w in metrics["warnings"]
+    )
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_bars_per_year_none_on_degenerate_span_falls_back_to_default() -> None:
+    # A one-bar equity curve has no calendar span to derive from; it must
+    # fall back to the default factor instead of raising.
+    equity = pd.Series(
+        [99.0], index=pd.date_range("2026-01-01", periods=1, freq="D")
+    )
+    metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=None)
+    assert metrics["final_value"] == 99.0
+    json.dumps(metrics, allow_nan=False)

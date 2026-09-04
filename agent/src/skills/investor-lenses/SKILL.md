@@ -50,18 +50,18 @@ decision rests on.
 
 | Lens | Style | Sharpest on | Blindest on | File |
 | --- | --- | --- | --- | --- |
-| Statistical deep value (Graham) | Value / balance sheet | Cheap, boring, asset-heavy, wide-basket | Asset-light compounders; single names | [graham-deep-value](investor-lenses/references/graham-deep-value.md) |
-| Quality franchise (Buffett) | Quality / durability | Durable consumer & toll-road economics | Fast-changing tech; deep cyclicals | [buffett-quality-franchise](investor-lenses/references/buffett-quality-franchise.md) |
-| Inversion (Munger) | Risk / pre-mortem | Finding the way this dies | Sizing an opportunity; timing | [munger-inversion](investor-lenses/references/munger-inversion.md) |
-| Scuttlebutt growth (Fisher) | Growth / qualitative | Product & channel truth vs. reported numbers | Anything you cannot reach people about | [fisher-scuttlebutt](investor-lenses/references/fisher-scuttlebutt.md) |
-| GARP by category (Lynch) | Growth at a price | Mid-cap earnings compounding; retail-visible businesses | Financials; commodity cyclicals | [lynch-garp](investor-lenses/references/lynch-garp.md) |
-| Cycle positioning (Marks) | Contrarian / risk-first | Where we are in the greed–fear cycle | Single-company fundamentals | [marks-cycle-position](investor-lenses/references/marks-cycle-position.md) |
-| Debt cycle & uncorrelated bets (Dalio) | Macro / allocation | Rates, currency, liquidity regime; portfolio shape | Stock picking | [dalio-debt-cycle](investor-lenses/references/dalio-debt-cycle.md) |
-| Forensic short (Chanos) | Short / accounting | Accounting distortion, value traps, structural decline | Longs; anything you must be right about *soon* | [chanos-forensic-short](investor-lenses/references/chanos-forensic-short.md) |
-| Cost drag & mean reversion (Bogle) | Allocation / cost | Whether the *activity itself* is worth its cost | Individual security selection | [bogle-cost-drag](investor-lenses/references/bogle-cost-drag.md) |
-| Right business, right people (Duan Yongping / 段永平) | Quality / concentration | Founder-led A-share, HK and US-listed China names | Diversified baskets; turnarounds | [duan-right-business](investor-lenses/references/duan-right-business.md) |
-| Weak-system contrarian (Feng Liu / 冯柳) | Contrarian / positioning | A-share names beaten down by known bad news | Momentum regimes; names with unresolved fraud risk | [fengliu-weak-system](investor-lenses/references/fengliu-weak-system.md) |
-| Three questions (Qiu Guolu / 邱国鹭) | Value / industry structure | A-share and HK industry structure and pricing power | Early-stage, structure-not-yet-formed industries | [qiuguolu-three-questions](investor-lenses/references/qiuguolu-three-questions.md) |
+| Statistical deep value (Graham) | Value / balance sheet | Cheap, boring, asset-heavy, wide-basket | Asset-light compounders; single names | [graham-deep-value](references/graham-deep-value.md)                 |
+| Quality franchise (Buffett) | Quality / durability | Durable consumer & toll-road economics | Fast-changing tech; deep cyclicals | [buffett-quality-franchise](references/buffett-quality-franchise.md)                 |
+| Inversion (Munger) | Risk / pre-mortem | Finding the way this dies | Sizing an opportunity; timing | [munger-inversion](references/munger-inversion.md)                 |
+| Scuttlebutt growth (Fisher) | Growth / qualitative | Product & channel truth vs. reported numbers | Anything you cannot reach people about | [fisher-scuttlebutt](references/fisher-scuttlebutt.md)                 |
+| GARP by category (Lynch) | Growth at a price | Mid-cap earnings compounding; retail-visible businesses | Financials; commodity cyclicals | [lynch-garp](references/lynch-garp.md)                 |
+| Cycle positioning (Marks) | Contrarian / risk-first | Where we are in the greed–fear cycle | Single-company fundamentals | [marks-cycle-position](references/marks-cycle-position.md)                 |
+| Debt cycle & uncorrelated bets (Dalio) | Macro / allocation | Rates, currency, liquidity regime; portfolio shape | Stock picking | [dalio-debt-cycle](references/dalio-debt-cycle.md)                 |
+| Forensic short (Chanos) | Short / accounting | Accounting distortion, value traps, structural decline | Longs; anything you must be right about *soon* | [chanos-forensic-short](references/chanos-forensic-short.md)                 |
+| Cost drag & mean reversion (Bogle) | Allocation / cost | Whether the *activity itself* is worth its cost | Individual security selection | [bogle-cost-drag](references/bogle-cost-drag.md)                 |
+| Right business, right people (Duan Yongping / 段永平) | Quality / concentration | Founder-led A-share, HK and US-listed China names | Diversified baskets; turnarounds | [duan-right-business](references/duan-right-business.md)                 |
+| Weak-system contrarian (Feng Liu / 冯柳) | Contrarian / positioning | A-share names beaten down by known bad news | Momentum regimes; names with unresolved fraud risk | [fengliu-weak-system](references/fengliu-weak-system.md)                 |
+| Three questions (Qiu Guolu / 邱国鹭) | Value / industry structure | A-share and HK industry structure and pricing power | Early-stage, structure-not-yet-formed industries | [qiuguolu-three-questions](references/qiuguolu-three-questions.md)                 |
 
 ## Choosing a lens
 

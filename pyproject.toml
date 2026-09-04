@@ -55,7 +55,10 @@ dependencies = [
     "pydantic>=2.0.0",
     "python-multipart>=0.0.18",
     "sse-starlette>=1.6.0",
-    "fastmcp>=2.14.0",
+    # 4.0.0 changed MCPError's constructor (message is now separate) and the
+    # session snapshot shape; tests construct it the 2.x way. Cap until the
+    # adaptation lands.
+    "fastmcp>=2.14.0,<4.0.0",
     "ddgs>=6.0.0",
     "jinja2>=3.1.0",
     "matplotlib>=3.7.0",

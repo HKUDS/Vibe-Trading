@@ -15,6 +15,7 @@ import math
 import re as _re
 import sys
 from abc import ABC, abstractmethod
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -42,6 +43,11 @@ from backtest.metrics import (
     calc_metrics,
 )
 from backtest.models import EquitySnapshot, FillRecord, Position, TradeRecord
+from backtest.rebalance_mask import (
+    RebalanceMask,
+    resolve_rebalance_dates,
+    validate_rebalance_mask,
+)
 
 
 def _json_safe_scalar_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
@@ -144,6 +150,76 @@ def _ffill_2d(arr: np.ndarray, limit: int = 5) -> np.ndarray:
 
 
 # ─── Signal alignment (reused from daily_portfolio logic) ───
+
+
+def evaluation_start_index(config: Dict[str, Any], dates: pd.DatetimeIndex) -> int:
+    """Return the first bar index that counts as performance.
+
+    A long-lookback indicator needs history before the period the user asked
+    about — an MA200 strategy over ten years needs bars from before those ten
+    years. Loading that history is correct; *grading* it is not. Without a
+    declared boundary the extra bars silently join the evaluation: trades fire
+    in them, the equity curve starts in them, and CAGR and the benchmark are
+    computed over a window longer than the one that was requested. The run
+    still succeeds and its metrics are still internally consistent, which is
+    what makes it dangerous.
+
+    Two spellings, because a strategy author knows one or the other: the number
+    of warm-up bars the indicator needs, or the date the evaluation should
+    start. Declaring both is refused rather than resolved — the two can
+    disagree, and picking a winner would silently discard the author's other
+    instruction.
+
+    Args:
+        config: Backtest configuration. Reads ``warmup_bars`` (int >= 0) and
+            ``evaluation_start_date`` (``YYYY-MM-DD``); absent means the whole
+            loaded window is evaluated, which is the historical behaviour.
+        dates: The aligned bar index the backtest would otherwise run over.
+
+    Returns:
+        Index into ``dates`` of the first evaluated bar; ``0`` when nothing is
+        declared.
+
+    Raises:
+        ValueError: Both keys declared, a malformed value, or a boundary that
+            leaves fewer than two bars to evaluate.
+    """
+    warmup = config.get("warmup_bars")
+    eval_start = config.get("evaluation_start_date")
+    if warmup in (None, 0) and not eval_start:
+        return 0
+    if warmup not in (None, 0) and eval_start:
+        raise ValueError(
+            "declare warmup_bars or evaluation_start_date, not both — they can "
+            "disagree, and resolving that silently would discard one of them"
+        )
+
+    if eval_start:
+        boundary = pd.Timestamp(eval_start)
+        if boundary.tz is None and dates.tz is not None:
+            boundary = boundary.tz_localize(dates.tz)
+        elif boundary.tz is not None and dates.tz is None:
+            boundary = boundary.tz_localize(None)
+        start = int(np.searchsorted(dates.values, boundary.to_datetime64(), side="left"))
+        if start >= len(dates):
+            raise ValueError(
+                f"evaluation_start_date {eval_start} is after the last loaded bar "
+                f"({dates[-1].date()}); nothing would be evaluated"
+            )
+    else:
+        try:
+            start = int(warmup)
+        except (TypeError, ValueError):
+            raise ValueError(f"warmup_bars must be an integer, got {warmup!r}") from None
+        if start < 0:
+            raise ValueError(f"warmup_bars must be non-negative, got {start}")
+
+    if len(dates) - start < 2:
+        raise ValueError(
+            f"the evaluation window would hold {max(0, len(dates) - start)} bar(s) of "
+            f"{len(dates)} loaded; widen start_date or shorten the warm-up"
+        )
+    return start
 
 
 def _align(
@@ -392,6 +468,14 @@ class BaseEngine(ABC):
         self.position_adjustment = str(config.get("position_adjustment", "hold")).lower()
         if self.position_adjustment not in {"hold", "rebalance"}:
             raise ValueError("position_adjustment must be 'hold' or 'rebalance'")
+        self.rebalance_mask: RebalanceMask = validate_rebalance_mask(
+            config.get("rebalance_mask")
+        )
+        if self.rebalance_mask is not None and self.position_adjustment != "rebalance":
+            raise ValueError(
+                "rebalance_mask requires position_adjustment='rebalance'"
+            )
+        self.rebalance_bars_executed = 0
         # Relative drift band around the target weight. Zero reproduces the
         # historical behaviour, where the only thing separating "resize" from
         # "leave it alone" was the slippage width -- measured, a 0.01% daily
@@ -431,6 +515,12 @@ class BaseEngine(ABC):
         # buy-and-hold position, whose weight drifts with price by design.
         self._last_target_weight: Dict[str, float] = {}
         self.dropped_target_adjustments: List[Dict[str, Any]] = []
+        # Opening plans the engine wanted but could not take, keyed
+        # (symbol, reason). A sleeve whose target notional rounds below one
+        # lot trades zero times while the run reports a normal result
+        # (#1235); counting the causes is what makes that visible in the
+        # metrics instead of only to a subclass that overrode the hook.
+        self.plan_rejections: Counter = Counter()
         self._bar_idx: int = 0
         self._active_symbol: str = ""  # set by _rebalance/_close_position for subclass use
 
@@ -619,6 +709,62 @@ class BaseEngine(ABC):
         """Allow engines to update risk state/evidence after a committed delta fill."""
         return None
 
+    #: Rejection causes that mean the engine WANTED a position and could not
+    #: take it. ``no_target_weight`` and ``already_held`` are excluded: they
+    #: mean nothing was wanted, which is not a finding.
+    UNFILLED_PLAN_REASONS = (
+        "no_data",
+        "no_bar",
+        "execution_blocked",
+        "invalid_price",
+        "zero_size",
+    )
+
+    def _plan_rejection_metrics(self) -> Dict[str, Any]:
+        """Summarise opening plans the engine wanted but could not take.
+
+        A rejected plan is invisible in the result otherwise: the run reports a
+        normal equity curve over the symbols that did fill, so a sleeve whose
+        target notional never clears one lot silently drops out of the book and
+        the configuration is graded as if it had never contained that sleeve
+        (#1235). Only the causes that mean "wanted but unfillable" are counted.
+
+        Returns:
+            ``unfilled_plan_rejections`` (total) and
+            ``unfilled_plan_rejections_by_symbol`` (``{symbol: {reason: n}}``),
+            the latter empty when nothing was rejected.
+        """
+        by_symbol: Dict[str, Dict[str, int]] = {}
+        total = 0
+        for (symbol, reason), count in self.plan_rejections.items():
+            if reason not in self.UNFILLED_PLAN_REASONS:
+                continue
+            by_symbol.setdefault(symbol, {})[reason] = count
+            total += count
+        return {
+            "unfilled_plan_rejections": total,
+            "unfilled_plan_rejections_by_symbol": by_symbol,
+        }
+
+    def _on_plan_rejected(self, symbol: str, reason: str, timestamp: pd.Timestamp) -> None:
+        """Observe a silently rejected opening-order plan.
+
+        ``_plan_open_order`` returns ``None`` for several distinct reasons —
+        nothing wanted, already held, missing data, missing bar, market rule
+        block, unusable price, or a target too small to fill after lot
+        rounding. Callers only see ``None``, so this hook is the only way for
+        an engine subclass to tell "nothing to do" apart from "wanted but
+        unfillable".
+
+        Args:
+            symbol: Instrument the plan was for.
+            reason: Machine-readable cause: ``no_target_weight``,
+                ``already_held``, ``no_data``, ``no_bar``,
+                ``execution_blocked``, ``invalid_price`` or ``zero_size``.
+            timestamp: Decision bar timestamp.
+        """
+        self.plan_rejections[(symbol, reason)] += 1
+
     def execution_open(self, bar: pd.Series) -> float:
         """Return the normal market-fill price for a bar."""
         return float(bar.get("open", bar.get("close", 0)))
@@ -672,7 +818,7 @@ class BaseEngine(ABC):
         loader: Any,
         signal_engine: Any,
         run_dir: Path,
-        bars_per_year: int = 252,
+        bars_per_year: int | None = 252,
     ) -> Dict[str, Any]:
         """Full backtest pipeline.
 
@@ -736,6 +882,18 @@ class BaseEngine(ABC):
         # Sync codes after _align may have dropped all-NaN symbols
         valid_codes = [c for c in valid_codes if c in target_pos.columns]
 
+        # 3b. Drop the warm-up prefix from the evaluation window. Signals were
+        # generated over the whole loaded panel above, so the first evaluated
+        # bar already carries an indicator that saw its full lookback; from here
+        # on the warm-up bars simply do not exist, so no trade, no equity point,
+        # no benchmark return and no metric can come from them.
+        warmup_end = evaluation_start_index(config, dates)
+        if warmup_end:
+            dates = dates[warmup_end:]
+            close_df = close_df.iloc[warmup_end:]
+            target_pos = target_pos.iloc[warmup_end:]
+            ret_df = ret_df.iloc[warmup_end:]
+
         # 4. Bar-by-bar execution
         self._execute_bars(dates, data_map, close_df, target_pos, valid_codes)
         actual_pos = self._actual_positions_frame(valid_codes)
@@ -767,9 +925,20 @@ class BaseEngine(ABC):
             )
             if bench_result is not None:
                 bench_ret = bench_result.ret_series.reindex(dates).fillna(0.0)
+                # The benchmark is fetched over the requested start_date..
+                # end_date, but a declared warm-up boundary makes the EVALUATED
+                # window shorter than that (`dates` is already clipped above).
+                # Grading total_return over the short window against a
+                # benchmark measured over the long one is the mismatched-window
+                # error the warm-up boundary exists to prevent, so re-measure
+                # the benchmark over the same bars. Falls back to the fetched
+                # total only when the overlap is too short to measure.
+                window_ret = bench_result.total_return_over(dates)
                 benchmark_metadata = {
                     "benchmark_ticker": bench_result.ticker,
-                    "benchmark_return": bench_result.total_ret,
+                    "benchmark_return": (
+                        window_ret if window_ret is not None else bench_result.total_ret
+                    ),
                 }
         # ── External benchmark fetch ──────────────────────────────────────────
 
@@ -801,6 +970,10 @@ class BaseEngine(ABC):
             m["excess_return"] = round(
                 m["total_return"] - benchmark_metadata["benchmark_return"], 6
             )
+        m.update(self._plan_rejection_metrics())
+        if self.rebalance_mask is not None:
+            m["rebalance_mask"] = self.rebalance_mask
+            m["rebalance_bars_executed"] = self.rebalance_bars_executed
         m["by_symbol"] = by_symbol_stats(self.trades)
         m["by_exit_reason"] = by_exit_reason_stats(self.trades)
 
@@ -808,15 +981,27 @@ class BaseEngine(ABC):
         # positions. Optimizer-agnostic, so they land for the baseline too.
         from backtest.rebalance_notes import (
             compute_rebalance_notes,
+            compute_rebalance_execution_evidence,
             render_rebalance_notes_markdown,
             write_rebalance_notes,
         )
         rebalance_notes = compute_rebalance_notes(target_pos)
+        # The requested count above cannot be read as executions (#1275): under
+        # position_adjustment="rebalance" a constant target re-pins the book on
+        # many bars, so report what the immutable fills actually did alongside
+        # what the strategy asked for.
+        rebalance_notes["summary"].update(
+            compute_rebalance_execution_evidence(self.fill_records, equity_series)
+        )
         write_rebalance_notes(run_dir / "artifacts" / "rebalance_notes.json", rebalance_notes)
         (run_dir / "artifacts" / "rebalance_notes.md").write_text(
             render_rebalance_notes_markdown(rebalance_notes), encoding="utf-8"
         )
-        m["rebalance_count"] = rebalance_notes["summary"]["rebalance_count"]
+        m["target_change_count"] = rebalance_notes["summary"]["target_change_count"]
+        m["rebalance_executed_bars"] = rebalance_notes["summary"]["rebalance_executed_bars"]
+        m["rebalance_executed_fills"] = rebalance_notes["summary"]["rebalance_executed_fills"]
+        m["rebalance_realized_turnover"] = rebalance_notes["summary"]["rebalance_realized_turnover"]
+        # Requested (target-delta) turnover, kept from the notes summary.
         m["rebalance_turnover_mean"] = rebalance_notes["summary"]["turnover_mean"]
         m["rebalance_turnover_max"] = rebalance_notes["summary"]["turnover_max"]
 
@@ -840,7 +1025,7 @@ class BaseEngine(ABC):
         if self.dropped_target_adjustments:
             logger.warning(
                 "position_adjustment='hold' dropped %d target change(s) across %d "
-                "symbol(s); the report's rebalance_count describes requests, not "
+                "symbol(s); the report's target_change_count describes requests, not "
                 "fills. Set position_adjustment='rebalance' to execute them.",
                 len(self.dropped_target_adjustments),
                 len({event["symbol"] for event in self.dropped_target_adjustments}),
@@ -894,6 +1079,9 @@ class BaseEngine(ABC):
         )
 
         # 9. Trust Layer run card
+        card_warnings = list(config.get("content_filter_warnings") or [])
+        if config.get("_run_card_caliber_warning"):
+            card_warnings.append(config["_run_card_caliber_warning"])
         from backtest.run_card import write_run_card
         write_run_card(
             run_dir,
@@ -901,7 +1089,7 @@ class BaseEngine(ABC):
             m,
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
-            warnings=config.get("content_filter_warnings") or None,
+            warnings=card_warnings or None,
         )
 
         # Print scalar metrics (skip nested dicts for JSON compat).
@@ -931,11 +1119,14 @@ class BaseEngine(ABC):
         self._close_arr = _close_arr
         self._code_to_col = _code_to_col
         self.actual_position_snapshots = []
+        execution_dates = resolve_rebalance_dates(self.rebalance_mask, dates)
+        self.rebalance_bars_executed = 0
 
         for i, ts in enumerate(dates):
             self._bar_idx = i
 
             stop_run = self.before_rebalance_bar(ts, data_map, codes)
+            execute_targets = execution_dates is None or ts in execution_dates
 
             # a. Value the book at prices observable when orders execute.
             # Rebalances happen at the bar open, so using close_df[ts] here
@@ -946,14 +1137,20 @@ class BaseEngine(ABC):
                 try:
                     val = _target_arr[i, _code_to_col[c]]
                     target_weights[c] = (
-                        None if stop_run else (float(val) if not np.isnan(val) else 0.0)
+                        None
+                        if stop_run or not execute_targets
+                        else (float(val) if not np.isnan(val) else 0.0)
                     )
                 except Exception as exc:
                     target_weights[c] = None
                     logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
 
             if self.position_adjustment == "rebalance":
-                self._execute_target_rebalance(target_weights, data_map, ts, equity, codes)
+                if execute_targets and not stop_run:
+                    self._execute_target_rebalance(
+                        target_weights, data_map, ts, equity, codes
+                    )
+                    self.rebalance_bars_executed += 1
                 target_weights = {}
             else:
                 self._record_dropped_target_adjustments(target_weights, ts)
@@ -1241,15 +1438,21 @@ class BaseEngine(ABC):
         """Price an opening order without mutating portfolio state."""
         self._active_symbol = symbol
         direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
-        if (
-            direction == 0
-            or (symbol in self.positions and not allow_existing)
-            or df is None
-            or ts not in df.index
-        ):
+        if direction == 0:
+            self._on_plan_rejected(symbol, "no_target_weight", ts)
+            return None
+        if symbol in self.positions and not allow_existing:
+            self._on_plan_rejected(symbol, "already_held", ts)
+            return None
+        if df is None:
+            self._on_plan_rejected(symbol, "no_data", ts)
+            return None
+        if ts not in df.index:
+            self._on_plan_rejected(symbol, "no_bar", ts)
             return None
         bar = df.loc[ts]
         if not self.can_execute(symbol, direction, bar):
+            self._on_plan_rejected(symbol, "execution_blocked", ts)
             return None
         open_price = self.execution_open(bar)
         if require_positive_price:
@@ -1258,6 +1461,7 @@ class BaseEngine(ABC):
         # negatives are rejected unless this engine opted into non-positive
         # prices, in which case abs()-based sizing/margin below handle them.
         elif open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
+            self._on_plan_rejected(symbol, "invalid_price", ts)
             return None
         price = self.apply_slippage(open_price, direction)
         if require_positive_price:
@@ -1268,6 +1472,7 @@ class BaseEngine(ABC):
             self._calc_raw_size(symbol, target_notional, price), price
         )
         if size <= 0:
+            self._on_plan_rejected(symbol, "zero_size", ts)
             return None
         margin = self._calc_margin(symbol, size, price, leverage)
         commission = self.calc_commission(

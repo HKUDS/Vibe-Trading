@@ -139,6 +139,11 @@ class LLMConfig(_EnvBase):
     langchain_provider: str = Field(alias="LANGCHAIN_PROVIDER", default="openai")
     langchain_model_name: str = Field(alias="LANGCHAIN_MODEL_NAME", default="")
     langchain_temperature: float = Field(alias="LANGCHAIN_TEMPERATURE", default=0.0)
+    # The native Anthropic credential. Read through bare ``os.getenv`` in
+    # ``llm.py``, which left it out of this schema — so ``provider doctor`` and
+    # preflight could not tell a missing key from a working one and the failure
+    # surfaced as an opaque 401 at the first call instead (#1223).
+    anthropic_api_key: str = Field(alias="ANTHROPIC_API_KEY", default="")
     anthropic_max_tokens: int | None = Field(alias="ANTHROPIC_MAX_TOKENS", default=None, gt=0)
     timeout_seconds: int = Field(alias="TIMEOUT_SECONDS", default=120)
     max_retries: int = Field(alias="MAX_RETRIES", default=2)
@@ -228,6 +233,7 @@ class DataConfig(_EnvBase):
     market_data_order_fund: str = Field(alias="MARKET_DATA_ORDER_FUND", default="")
     market_data_order_macro: str = Field(alias="MARKET_DATA_ORDER_MACRO", default="")
     market_data_order_forex: str = Field(alias="MARKET_DATA_ORDER_FOREX", default="")
+    market_data_order_index: str = Field(alias="MARKET_DATA_ORDER_INDEX", default="")
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +351,9 @@ class SwarmConfig(_EnvBase):
     swarm_timeout: int = Field(alias="SWARM_TIMEOUT", default=1800)
     swarm_heartbeat_interval_s: float = Field(alias="SWARM_HEARTBEAT_INTERVAL_S", default=3.0)
     swarm_stream_retry_delay_s: float = Field(alias="SWARM_STREAM_RETRY_DELAY_S", default=1.0)
+    swarm_stream_retry_max_delay_s: float = Field(
+        alias="SWARM_STREAM_RETRY_MAX_DELAY_S", default=30.0, ge=0
+    )
     swarm_worker_retry_base_delay_s: float = Field(
         alias="SWARM_WORKER_RETRY_BASE_DELAY_S", default=1.0, ge=0
     )
@@ -354,11 +363,16 @@ class SwarmConfig(_EnvBase):
     swarm_grounding_max_symbols: int = Field(alias="SWARM_GROUNDING_MAX_SYMBOLS", default=8)
 
     @model_validator(mode="after")
-    def _validate_worker_retry_delays(self) -> SwarmConfig:
+    def _validate_retry_delays(self) -> SwarmConfig:
         if self.swarm_worker_retry_max_delay_s < self.swarm_worker_retry_base_delay_s:
             raise ValueError(
                 "SWARM_WORKER_RETRY_MAX_DELAY_S must be greater than or equal to "
                 "SWARM_WORKER_RETRY_BASE_DELAY_S"
+            )
+        if self.swarm_stream_retry_max_delay_s < self.swarm_stream_retry_delay_s:
+            raise ValueError(
+                "SWARM_STREAM_RETRY_MAX_DELAY_S must be greater than or equal to "
+                "SWARM_STREAM_RETRY_DELAY_S"
             )
         return self
 
@@ -383,6 +397,9 @@ class AgentTuningConfig(_EnvBase):
         alias="VT_REASONING_DELTA_MIN_INTERVAL_S", default=1.0,
     )
     vt_stream_retry_delay_s: float = Field(alias="VT_STREAM_RETRY_DELAY_S", default=1.0)
+    vt_stream_retry_max_delay_s: float = Field(
+        alias="VT_STREAM_RETRY_MAX_DELAY_S", default=30.0, ge=0
+    )
     vibe_trading_tool_timeout_seconds: float = Field(
         alias="VIBE_TRADING_TOOL_TIMEOUT_SECONDS", default=1800.0,
     )
@@ -429,6 +446,15 @@ class AgentTuningConfig(_EnvBase):
     vibe_live_authorize_timeout_s: int = Field(
         alias="VIBE_LIVE_AUTHORIZE_TIMEOUT_SECONDS", default=300,
     )
+
+    @model_validator(mode="after")
+    def _validate_stream_retry_delays(self) -> AgentTuningConfig:
+        if self.vt_stream_retry_max_delay_s < self.vt_stream_retry_delay_s:
+            raise ValueError(
+                "VT_STREAM_RETRY_MAX_DELAY_S must be greater than or equal to "
+                "VT_STREAM_RETRY_DELAY_S"
+            )
+        return self
 
 
 # ---------------------------------------------------------------------------

@@ -36,7 +36,7 @@ def test_connection_registry_never_serializes_credentials(tmp_path):
 
     payload = (tmp_path / "connections.json").read_text(encoding="utf-8")
     assert "secret-value" not in payload
-    assert connection.credential_ref == "connector-config://binance"
+    assert connection.credential_ref == "keyring://vibe-trading/main-binance"
     assert (tmp_path / "connections.json").stat().st_mode & 0o777 == 0o600
 
 
@@ -140,15 +140,172 @@ def get_positions(*, credentials, config):
     registry = ConnectionStore()
     registry.create("my-sample", "sample-live-readonly", "My Sample")
 
-    assert (
-        get_account("sample-live-readonly", connection_id="my-sample")["account"][
-            "portfolio_value"
-        ]
-        == "42"
+    assert get_account("sample-live-readonly", connection_id="my-sample")["account"]["portfolio_value"] == "42"
+    assert get_positions("sample-live-readonly", connection_id="my-sample")["positions"][0]["symbol"] == "DEMO"
+
+
+def test_builtin_sdk_connections_use_isolated_keyring_credentials(
+    tmp_path,
+    monkeypatch,
+):
+    from src.trading import connections
+    from src.trading.profiles import profile_by_id
+    from src.trading.service import _sdk_config, _sdk_module
+
+    credentials = CredentialStore(_MemoryCredentials())
+
+    class CredentialFactory:
+        reference = staticmethod(CredentialStore.reference)
+
+        def __new__(cls):
+            return credentials
+
+    monkeypatch.setattr(connections, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(connections, "CredentialStore", CredentialFactory)
+    store = ConnectionStore()
+    store.create("binance-one", "binance-live-sdk-readonly", "Binance one")
+    store.create("binance-two", "binance-live-sdk-readonly", "Binance two")
+    credentials.save(
+        "binance-one",
+        {"api_key": "first-key", "api_secret": "first-secret"},
     )
+    credentials.save(
+        "binance-two",
+        {"api_key": "second-key", "api_secret": "second-secret"},
+    )
+
+    profile = profile_by_id("binance-live-sdk-readonly")
+    module = _sdk_module("binance")
+    first = _sdk_config(profile, module, {"connection_id": "binance-one"})
+    second = _sdk_config(profile, module, {"connection_id": "binance-two"})
+
+    assert (first.api_key, first.api_secret) == ("first-key", "first-secret")
+    assert (second.api_key, second.api_secret) == ("second-key", "second-secret")
+
+
+def test_builtin_sdk_connection_rejects_partial_vault_set(tmp_path, monkeypatch):
+    from src.trading import connections
+    from src.trading.profiles import profile_by_id
+    from src.trading.service import _sdk_config, _sdk_module
+
+    credentials = CredentialStore(_MemoryCredentials())
+
+    class CredentialFactory:
+        reference = staticmethod(CredentialStore.reference)
+
+        def __new__(cls):
+            return credentials
+
+    monkeypatch.setattr(connections, "get_runtime_root", lambda: tmp_path)
+    monkeypatch.setattr(connections, "CredentialStore", CredentialFactory)
+    ConnectionStore().create(
+        "partial-okx",
+        "okx-live-sdk-readonly",
+        "Partial OKX",
+    )
+    credentials.save("partial-okx", {"api_key": "only-one-field"})
+
+    with pytest.raises(ValueError, match="api_secret, passphrase"):
+        _sdk_config(
+            profile_by_id("okx-live-sdk-readonly"),
+            _sdk_module("okx"),
+            {"connection_id": "partial-okx"},
+        )
+
+
+def test_mcp_connector_discovery_exposes_onboarding_contract_without_values():
+    from src.tools.trading_connector_tool import TradingConnectionsTool
+
+    payload = json.loads(TradingConnectionsTool().execute())
+    okx = next(profile for profile in payload["profiles"] if profile["id"] == "okx-live-sdk-readonly")
+
+    assert okx["onboarding"]["dependency"] == "python-okx"
+    assert [field["name"] for field in okx["onboarding"]["credential_fields"]] == [
+        "api_key",
+        "api_secret",
+        "passphrase",
+    ]
+    assert "credential_values" not in okx["onboarding"]
+
+
+# ---------------------------------------------------------------------------
+# Per-call overrides must pass the connector's own allowlist (#1250 follow-up)
+# ---------------------------------------------------------------------------
+
+
+def _vault_store(tmp_path, connection_id, profile_id):
+    credentials = CredentialStore(_MemoryCredentials())
+    store = ConnectionStore(tmp_path / "connections.json", credential_store=credentials)
+    store.create(connection_id, profile_id, "Test")
+    return store, credentials
+
+
+def test_connection_scoped_overrides_obey_the_connector_allowlist(tmp_path, monkeypatch):
+    """A vault-backed call must not widen what a caller may override.
+
+    Every SDK connector narrows overrides on purpose: OKX and Binance both
+    exclude ``readonly`` ("always true for this layer") and ``timeout``, and
+    Longbridge's overlay is ``profile``/``region`` only so a caller "cannot mix
+    or bypass the shared resolver". ``build_config`` enforces that; a config
+    built from a raw merged mapping would not — and ``overrides`` is the one
+    part of that payload that arrives from an MCP tool argument or REST body.
+    """
+    import src.trading.connections as conns
+    from src.trading import service
+    from src.trading.connectors.okx import sdk as okx_sdk
+    from src.trading.profiles import profile_by_id
+
+    store, credentials = _vault_store(tmp_path, "main-okx", "okx-live-sdk-readonly")
+    credentials.save("main-okx", {"api_key": "k", "api_secret": "s", "passphrase": "p"})
+    monkeypatch.setattr(conns, "ConnectionStore", lambda *a, **k: store)
+
+    profile = profile_by_id("okx-live-sdk-readonly")
+    out_of_allowlist = {"readonly": False, "timeout": 999.0}
+
+    # The connector's own builder drops them...
+    legacy = okx_sdk.build_config(profile.config, out_of_allowlist)
+    assert legacy.readonly is True
+    assert legacy.timeout == 15.0
+
+    # ...and so must the vault-backed path.
+    vaulted = service._sdk_config(
+        profile, okx_sdk, {"connection_id": "main-okx", **out_of_allowlist}
+    )
+    assert vaulted.readonly is True
+    assert vaulted.timeout == 15.0
+    # An allowlisted override still works.
     assert (
-        get_positions("sample-live-readonly", connection_id="my-sample")["positions"][
-            0
-        ]["symbol"]
-        == "DEMO"
+        service._sdk_config(
+            profile, okx_sdk, {"connection_id": "main-okx", "expected_uid": "uid-1"}
+        ).expected_uid
+        == "uid-1"
+    )
+    # And the vault credentials really were used, or the assertions are vacuous.
+    assert vaulted.api_key == "k"
+
+
+def test_every_sdk_connector_declares_an_override_allowlist():
+    """A connector added without one must fail closed, and be noticed here."""
+    import importlib
+    import pkgutil
+
+    from src.trading import connectors as connectors_pkg
+    from src.trading.service import _allowed_override_keys
+
+    missing = []
+    for info in pkgutil.iter_modules(connectors_pkg.__path__):
+        try:
+            module = importlib.import_module(
+                f"src.trading.connectors.{info.name}.sdk"
+            )
+        except ModuleNotFoundError:
+            continue  # connector without an SDK surface
+        if not hasattr(module, "build_config"):
+            continue  # not a per-call-config connector
+        if not _allowed_override_keys(module):
+            missing.append(info.name)
+    assert missing == [], (
+        f"SDK connectors without an override allowlist: {missing}. "
+        "_allowed_override_keys fails closed, so their per-call overrides are "
+        "silently dropped — declare _OVERRIDE_KEYS."
     )

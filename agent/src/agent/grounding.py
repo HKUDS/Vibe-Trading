@@ -6,8 +6,9 @@ facts are structural rather than advisory:
 * a market-data consumer may only use an identity that was locked before the
   current assistant tool-call batch started;
 * a final price claim may not contradict the full, untruncated tool result; and
-* a figure may not be attached to an instrument that no tool call in this run
-  ever passed in or returned.
+* every observed figure attached to an instrument must occur in that
+  instrument's tool evidence, while derived figures use a separate arithmetic
+  validator.
 
 Those are the mechanically decidable parts of the agent's output principles.
 The rest of that contract — "state the as-of", "analysis, not advice", "refuse
@@ -20,6 +21,7 @@ its state machine and final-answer checks remain deterministic and testable.
 
 from __future__ import annotations
 
+import ast
 import csv
 import hashlib
 import json
@@ -29,6 +31,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+from src.market_data import canonical_fx_pair
 
 from src.agent.price_claims import (
     NumericClaim,
@@ -166,6 +169,7 @@ _CANONICAL_SYMBOL_RE = re.compile(
     r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V)|"
     r"[A-Z]{3}/[A-Z]{3}|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
+    r"\^[A-Z0-9&.\-]{1,20}|"
     r"[A-Z0-9]{2,15}=[FX]"
     r")(?![A-Za-z0-9_])",
     re.IGNORECASE,
@@ -185,6 +189,324 @@ _PRIVATE_ASSERTION_RE = re.compile(
     r"(?:是|仍是|属于)(?:一家)?(?:私人|私营|非上市)公司|未上市|没有上市)",
     re.IGNORECASE,
 )
+_PRICE_CONTEXT_RE = re.compile(
+    r"(?:\b(?:opening|open|high|low|closing|close|price|quote)\b|"
+    r"\b(?:entry|buy|target|support|resistance)\s+(?:price|level)\b|"
+    r"开盘价?|最高价?|最低价?|收盘价?|买入价|入场价|目标价|支撑位?|阻力位?|"
+    r"现价|报价|价格|价位)",
+    re.IGNORECASE,
+)
+_DERIVATION_RE = re.compile(
+    r"(?:\bderived\b|\bcalculated\b|\bformula\b|\bbased on\b|计算|推导|公式|基于)",
+    re.IGNORECASE,
+)
+_NUMBER_RE = re.compile(
+    r"(?<![A-Za-z0-9_])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+    r"(?![A-Za-z0-9_])"
+)
+# A line-leading ordered-list marker ("1. **标题**") is prose structure, not a
+# number. Without masking it, "1." is parsed as a float and rejected downstream
+# as a numeric_claim_conflict against an observed OHLC range (#BUGS-1). The
+# pattern only matches a digit run at the start of a line followed by "." or ")"
+# and whitespace, so an in-text decimal like "1.5" (digit after the dot) is
+# never affected.
+_MD_LIST_ITEM_RE = re.compile(r"^\s*\d+[.)]\s+", re.MULTILINE)
+# Unitless identity constants in a symbolic rate formula are not quoted prices.
+# Without this mask, ``1 - 单边成本率`` in a position-sizing formula is read as
+# a one-yuan price merely because the same clause also mentions a close price.
+# Keep the relaxation narrow: only 0/1 directly participating in arithmetic
+# with a token explicitly labelled as a rate is removed.
+_RATE_FORMULA_IDENTITY_RE = re.compile(
+    r"\b[01](?=\s*[-+]\s*(?:[A-Za-z_][A-Za-z0-9_]*_?rate\b|[^\d\s()+*/=-]{0,12}(?:成本率|费率|税率|滑点率)))",
+    re.IGNORECASE,
+)
+# re.ASCII keeps ``\b`` a *byte* word boundary. Without it, ``\w`` is
+# Unicode-aware and CJK letters count as word characters, so a date that runs
+# straight into Chinese text -- "(2026-07-14最低)" -- has no boundary after
+# "14" and is left unmasked, contributing 2026/7/14 as candidate prices that
+# reject a correct report (#1122).
+_DATE_RE = re.compile(r"\b(?:19|20)\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", re.ASCII)
+# A year-less "8/5" is how a trading day is written in running prose, and it
+# contributed 8 and 5 as candidate prices (#983). The month and day ranges are
+# bounded, and both sides are fenced off from a longer slash run, so the window
+# enumeration "20/50/200-day" cannot be mistaken for a date. Reports also write
+# the same day as "08-10(一)" or "08-10盘中"; that dash form is masked by
+# ``_DASH_DATE_RE`` below, where a zero-padded month or a weekday/session
+# marker is required so a quoted price range like "8-10 元" stays checkable.
+_SHORT_DATE_RE = re.compile(
+    r"(?<![\d/])(?:0?[1-9]|1[0-2])/(?:0?[1-9]|[12]\d|3[01])(?![\d/])"
+)
+# A report writes a trading day as "08-10(一)" or "08-10盘中", and the dash form
+# leaked 8 and 10 as candidate prices exactly as "8/5" once did. The dash is
+# NOT symmetric with the slash, though: it also separates a range, and "目标价
+# 10-20 元" must stay checkable. So the two halves are split -- a zero-padded
+# month (01-09) is a formatting intent no price range imitates, while 10/11/12
+# have to carry a weekday or session marker to read as a date.
+_DASH_DATE_RE = re.compile(
+    r"(?<![\d/-])(?:"
+    r"0[1-9]-(?:0[1-9]|[12]\d|3[01])"
+    r"|1[0-2]-(?:0[1-9]|[12]\d|3[01])"
+    r"(?=\s*(?:[(（]\s*(?:周|星期)?[一二三四五六日天]\s*[)）]"
+    r"|盘中|盘后|盘前|收盘|开盘|最低|最高"
+    r"|\s*(?:close|open|intraday|low|high)\b))"
+    r")(?![\d/-])",
+    re.IGNORECASE,
+)
+# A level stated as a RANGE has the same shape: the separator touches the
+# second number, so masking "目标价 10" left "-20" behind and a negative price
+# matches no OHLC window at all -- a guaranteed rejection of a correct draft.
+# The tail is optional, so a single-value level is unaffected.
+_RANGE_TAIL = r"(?:\s*[-–—~～至到]\s*[-+]?\d[\d,]*(?:\.\d+)?)?"
+
+# A percentage range masks only its upper bound through the "%" tail check
+# below, because the sign touches the second number: "1–2%" left 1 behind
+# (#983). Mask the span as a whole.
+_PERCENT_RANGE_RE = re.compile(
+    r"\d[\d,]*(?:\.\d+)?\s*[-–—~至]\s*\d[\d,]*(?:\.\d+)?\s*[%％]"
+)
+# Localized calendar text carries digits that the ISO pattern above leaves
+# behind: "8 月 3 日" otherwise contributes 8 and 3 as candidate prices.
+_LOCALIZED_DATE_RE = re.compile(
+    r"(?:(?:19|20)\d{2}\s*年\s*)?\d{1,2}\s*月(?:\s*\d{1,2}\s*[日号])?|(?:19|20)\d{2}\s*年"
+)
+# An aggregate amount is not a quoted price. "100 股成本 820 CNY" states a
+# position cost; comparing 820 against a per-share OHLC range is a category
+# error. The tradeoff is that a per-share figure written only as "成本 8.20"
+# goes unchecked — provenance still requires symbol, source, and currency.
+_AGGREGATE_AMOUNT_RE = re.compile(
+    r"(?:成本|总额|总价|总市值|市值|合计|金额|cost|total|notional|market value)"
+    r"\s*(?:为|是|约)?\s*[:：]?\s*[-+]?\d[\d,]*(?:\.\d+)?",
+    re.IGNORECASE,
+)
+# Quantities, horizons, lot sizes, and lookback windows are unit-bearing:
+# "100 股", "1–4 周", "3 个月", "52-week", "20/50/200-day". None are prices.
+# The hyphenated English compound needs its own branch: the range alternation
+# consumes "-4" in "1-4 周" but stalls on "-week", which left 52 behind to be
+# compared against an OHLC range (#1001). The slash enumeration shares a single
+# trailing unit, so "20/50/200-day" has to be masked as one span or its first
+# two window lengths survive. ASCII units carry a trailing word boundary so
+# "120 more" is not read as a quantity; the CJK branch cannot, because 周 and
+# 内 are both word characters and "1–4 周内" must still mask.
+_QUANTITY_WITH_UNIT_RE = re.compile(
+    r"\d[\d,]*(?:\.\d+)?"
+    r"(?:\s*/\s*\d[\d,]*(?:\.\d+)?)*"
+    r"(?:\s*[-–—~至]\s*\d[\d,]*(?:\.\d+)?)?"
+    r"\s*[-–—]?\s*"
+    r"(?:"
+    r"(?:股|手|张|份|口|笔|倍|个月|周|天|日|年|次|个交易日|项|行)"
+    r"|(?:shares?|contracts?|lots?|units?|sessions?|bars?|periods?|"
+    r"wks?|weeks?|months?|days?|years?|yrs?)\b"
+    r")",
+    re.IGNORECASE,
+)
+# A conviction reading is on a labelled scale, not a price scale: the 6 in
+# "CONFIDENCE: 6" is bounded by the label that introduces it. Only the value
+# bound to the label is masked, so a genuine quote elsewhere in the same
+# clause is still checked. The optional denominator covers "6/10" (#1001).
+_LABELLED_SCORE_RE = re.compile(
+    r"(?:confidence|conviction|score|rating|probability|odds|weight|weighting|allocation|"
+    r"置信度|信心|评分|得分|概率|胜率|权重)"
+    r"\s*(?:is|of|=|为|是)?\s*[:：]?\s*"
+    r"[-+]?\d[\d,]*(?:\.\d+)?(?:\s*/\s*\d[\d,]*(?:\.\d+)?)?",
+    re.IGNORECASE,
+)
+# A named indicator reads on its own scale — "RSI of 46.7" is bounded at 100,
+# not quoted in the instrument's currency. The name must be adjacent to the
+# value, so a bare number elsewhere in the clause stays checked. Only
+# unambiguous indicator names are listed: generic words such as "momentum" or
+# "volatility" sit too close to price prose to mask safely.
+_INDICATOR_VALUE_RE = re.compile(
+    r"\b(?:rsi|macd|atr|adx|cci|obv|kdj|boll|dif|dea|vix|iv|"
+    r"sharpe|sortino|beta)\b"
+    r"(?:\s*\([^)]{0,20}\))?"
+    r"\s*(?:is|at|of|reads?|=|为|是)?\s*[:：]?\s*"
+    r"[-+]?\d[\d,]*(?:\.\d+)?",
+    re.IGNORECASE,
+)
+# A currency token may sit between a level marker or comparison operator and
+# the number: "收盘 <$2.86", "目标位 C$6.80", "trigger at $119.68". Without
+# it, the number survives masking and is compared against observed OHLC as a
+# price claim even though it is a prospective level, not an observed quote.
+_CURRENCY_TOKEN = r"(?:\$|US\$|C\$|HK\$|CAD|USD|CNY|HKD|¥|￥)?"
+
+# An order line is an instruction, not an observation. "100 @ $3.50" states
+# where a limit sits and "100" is a share count that was never a price at all,
+# yet both went to the OHLC check and rejected a weekly update whose quotes
+# were correct. This is the same category as the target/stop levels below -- a
+# level the report proposes, not one the data source reported.
+_ORDER_LEVEL_RE = re.compile(
+    r"(?:"
+    # (a) "<qty> [股|shares] @ <price>" -- the whole clause, quantity included
+    r"\d[\d,]*(?:\.\d+)?\s*(?:股|shares?)?\s*@\s*"
+    + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r"|"
+    # (b) an order label, optionally carrying its own "<qty> @", then the level.
+    # There is deliberately no bare "@ <price>" branch: dates are masked before
+    # this runs, so "收盘 2026-08-10 @ 8.20" would arrive here as "@ 8.20" and a
+    # genuinely observed close would stop being checked. 买入价 / 卖出价 are
+    # absent for the same reason -- in running prose they name a price the
+    # report says it observed, not an instruction it proposes.
+    r"(?:挂单|限价单|限价|委托价?|订单"
+    r"|limit\s+(?:order|price)|\bGTC\b|\bGTD\b|\bIOC\b|\bFOK\b)"
+    r"\s*(?:为|是|at|=)?\s*[:：]?\s*"
+    r"(?:\d[\d,]*(?:\.\d+)?\s*(?:股|shares?)?\s*@\s*)?"
+    + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?"
+    r")" + _RANGE_TAIL,
+    re.IGNORECASE,
+)
+# A historical reference names a price the instrument once traded at — an
+# all-time high, a 52-week extreme — and the answer is not claiming it as
+# today's observed quote. "8/12 高 149.60 为 6/16 ATH 225.64 以来最高" was
+# rejected because 225.64 (the June ATH) fell outside this session's observed
+# OHLC range. The marker must be adjacent to the number, so a plain field
+# reading such as "8/12 高 149.60" stays checked: its 高 carries no historical
+# qualifier. "创历史新高" shares the 历史新高 marker and is masked with it; the
+# relaxation follows the same trade-off as prospective levels — the historical
+# extreme is a reference, not an assertion about the current bar.
+_REFERENCE_LEVEL_RE = re.compile(
+    r"(?:"
+    r"\bATH\b|all[- ]?time\s+(?:high|low)|"
+    r"52\s*[- ]?W(?:EEK)?\s*(?:high|low)|52\s*[- ]?W(?:EEK)?\s*高(?:点|位)?|"
+    r"52\s*周(?:高|低)(?:点|位)?|"
+    r"历史(?:最高|最低|新高|新低|高|低)(?:点|位|价)?|"
+    r"上市以来(?:最高|最低)(?:点|位|价)?"
+    r")"
+    r"\s*(?:of|为|是|约|at)?\s*[:：]?\s*\(?"
+    r"\s*" + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL,
+    re.IGNORECASE,
+)
+# A date-anchored reference puts the historical extreme after the number:
+# "7/10(150.57)以来最高" and "highest since 7/10 (150.57)". The parenthesized
+# value is the earlier high/low, not a current quote, and was rejected against
+# the session's observed window (which does not reach back to July).
+_SINCE_REFERENCE_RE = re.compile(
+    r"[-+]?\d[\d,]*(?:\.\d+)?\s*\)?\s*以来(?:最高|最低|高|低)(?:点|位)?"
+    # Dates are masked before this runs, so "since 7/10 (150.57)" has lost its
+    # date digits by the time the connector is matched.
+    r"|(?:highest|lowest)\s+since[^0-9\n]{0,16}"
+    r"[-+]?\d[\d,]*(?:\.\d+)?",
+    re.IGNORECASE,
+)
+# A validation report cites a plan file by line number — "~line 206",
+# "第 206 行" — and the number is a document location, not a price. Before
+# this mask, "**文档 ~line 206「…」不成立" contributed 206.0 as a candidate
+# price claim and was rejected against the observed OHLC range.
+_LINE_REFERENCE_RE = re.compile(
+    r"(?:~\s*)?\blines?\b\s*[:#]?\s*\d{1,5}(?:\s*[-–—至~]\s*\d{1,5})?"
+    r"|第\s*\d{1,5}(?:\s*[-–—至~]\s*\d{1,5})?\s*行"
+    r"|行\s*[:：]?\s*\d{1,5}(?:\s*[-–—至~]\s*\d{1,5})?",
+    re.IGNORECASE,
+)
+# A numbered markdown heading ("### 6. 关键价位") names a section index, not
+# a price. The ordered-list mask only covers line-leading "1." and stops at
+# the "### " prefix, so the section number was extracted as a claim.
+_NUMBERED_HEADING_RE = re.compile(r"(?m)^\s*#{1,6}\s*\d+(?:[.、．])?\s*")
+# Regulatory form identifiers name documents rather than financial values.
+_FORM_IDENTIFIER_RE = re.compile(r"\b(?:10-[KQ]|20-F|8-K|6-K)\b", re.IGNORECASE)
+# A derived value is authorized by a different component from an observed
+# fact: its formula must be visible, its non-constant inputs must have been
+# observed for the same instrument, and the stated result must recompute. The
+# regex only identifies the bounded arithmetic span; evaluation below uses an
+# AST allow-list rather than Python ``eval``.
+_DERIVED_FORMULA_RE = re.compile(
+    r"(?P<expression>[\d\s,.()+\-−–—*/×÷%]+?)\s*=\s*"
+    r"(?P<result>[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
+    r"(?P<result_percent>\s*[%％])?"
+)
+_AGGREGATE_COST_RE = re.compile(
+    r"(?P<quantity>\d[\d,]*(?:\.\d+)?)\s*(?:股|shares?)\s*"
+    r"(?:的)?(?:成本|总额|总价|合计|cost|total|notional)"
+    r"\s*(?:为|是|约)?\s*[:：]?\s*"
+    r"(?P<amount>[-+]?\d[\d,]*(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+# A ratio ("6:1 折算", "10:1") names a conversion basis, not a quote price.
+_RATIO_RE = re.compile(r"\d+(?:\.\d+)?\s*[:：]\s*\d+(?:\.\d+)?")
+# A currency conversion cited inside a report ("USD/CAD≈1.36") is a basis, not
+# an instrument quote. But `EUR/USD` IS this project's canonical forex symbol
+# (``backtest/engines/forex.py``, and akshare_loader accepts the slash form), so
+# masking every ``AAA/BBB <number>`` would stop checking real FX quotes on a
+# first-class market — an invented rate would pass. The pair form therefore
+# requires an approximation marker, which a conversion basis carries and a quote
+# does not: "USD/CAD≈1.36" is masked, bare "USD/CAD 1.36" stays checked. The
+# labelled 汇率 / "exchange rate" form is unambiguous and needs no marker.
+_FX_RATE_RE = re.compile(
+    r"[A-Z]{3}\s*/\s*[A-Z]{3}\s*(?:≈|~|约)\s*\d+(?:\.\d+)?"
+    r"|(?:汇率|FX\s*rate|exchange\s+rate)\s*(?:≈|~|=|为|是)?\s*\d+(?:\.\d+)?",
+    re.IGNORECASE,
+)
+# A trading plan quotes levels it does not claim to have observed. In the
+# committee report attached to #983, "收盘 ≥6.45 且量 ≥35M手" is an entry
+# trigger, "年线 4.63 成目标区" is a target zone, and neither asserts anything
+# about what the instrument traded at. Compared against observed OHLC evidence
+# they were reported first as numeric_claim_unavailable (before the run fetched
+# prices) and then as numeric_claim_conflict (after it did) — the same false
+# positive under two codes.
+#
+# This is a real relaxation, so every branch is span-local and anchored to the
+# token that makes the number prospective, never to a word elsewhere in the
+# clause: "现价 5.97，目标位 6.45" masks 6.45 and still checks 5.97. An
+# assertion carries no such token and stays checked.
+#
+# Branch (d) accepts a conditional opener. A number inside "若收盘 5.36" is a
+# hypothesis, and a hypothesis does not misrepresent observed data the way a
+# bare quote does — but it is the widest branch here, so it requires the opener
+# to PRECEDE the number with no digits in between, which keeps it from reaching
+# back over an assertion that was already made.
+_PROSPECTIVE_LEVEL_RE = re.compile(
+    r"(?:"
+    # (a) comparison operator immediately before the number
+    r"(?:>=|<=|≥|≤|>|<|大于|小于|不低于|不高于|高于|低于)"
+    r"\s*" + _CURRENCY_TOKEN + r"\s*[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL
+    + r"|"
+    # (b) a level marker introducing the number
+    r"(?:目标位|目标区|目标价|均值目标(?:价)?|平均目标(?:价)?|止损位?|止盈位?|触发价|触发位|触发点|上看|下看|"
+    r"支撑(?:阶梯|位|线)?|阻力(?:位|线)?|压力位|压力线|support(?:\s+(?:level|line|zone))?|"
+    r"resistance(?:\s+(?:level|line|zone))?|target\s+(?:price|level|zone)|trigger|stop[-\s]?loss|take[-\s]?profit)"
+    r"\s*(?:为|是|至|到|on|at|of|=)?\s*[:：]?\s*"
+    + _CURRENCY_TOKEN
+    + r"\s*[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL
+    + r"|"
+    # (c) the number followed by a level marker
+    r"" + _CURRENCY_TOKEN + r"[-+]?\d[\d,]*(?:\.\d+)?" + _RANGE_TAIL
+    + r"\s*(?:一线|附近)?\s*(?:成为?|作为|是)?\s*"
+    r"(?:目标区|目标位|止损位|止盈位)"
+    r"|"
+    # (d) a conditional opener before the number, digits fencing the reach
+    r"(?:若|如果|一旦|倘若|假如|\bif\b|\bwhen\b|\bshould\b)[^0-9\n]{0,12}"
+    r"[-+]?\d[\d,]*(?:\.\d+)?"
+    r")",
+    re.IGNORECASE,
+)
+# Full-width enumeration commas delimit prose clauses. Paired brackets (ASCII
+# or full-width ()()[]) are deliberately not separators: an explicit
+# derivation such as "(8.5 - 7.9) / 2" must stay in one segment for the
+# formula check, and 公司名（代码）价格 must stay in one segment so the
+# unsourced-symbol gate can see the symbol with its figure (#1260).
+_CLAUSE_SEPARATOR_RE = re.compile(r"[,，;；。、\n]")
+
+
+# The ASCII comma both separates clauses and groups thousands, and the clause
+# split ran first: "收盘价 ¥1,309.22" became a clause ending in "¥1", whose 1 was
+# compared against the observed 1300.01–1363.35 range and rejected as a
+# conflict. That is every price above 999 written the ordinary way, and it is
+# self-contradictory — ``_NUMBER_RE`` and the float conversion below it both
+# already understand grouped numbers. Only a real group is removed: a comma
+# needs a digit before it and exactly three digits after.
+_THOUSANDS_SEPARATOR_RE = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+
+
+def _split_clauses(text: str) -> list[str]:
+    """Split prose into clauses without breaking a grouped number apart.
+
+    Args:
+        text: One line of candidate answer text.
+
+    Returns:
+        The clause segments, with thousands separators removed so a grouped
+        price survives as one number.
+    """
+    return _CLAUSE_SEPARATOR_RE.split(_THOUSANDS_SEPARATOR_RE.sub("", text))
 _TABLE_SEPARATOR_RE = re.compile(r"^:?-{3,}:?$")
 
 _TABLE_FIELD_ALIASES = {
@@ -241,9 +563,19 @@ def _normalize_symbol(value: Any) -> str:
         Kong code zero-padded, and a crypto pair hyphenated. Text that is not a
         symbol is returned uppercased and otherwise untouched.
     """
-    symbol = str(value or "").strip().upper().replace("/", "-")
+    # A fiat/fiat pair is one FX instrument regardless of spelling: ``GBP/USD``
+    # and ``GBPUSD`` are both ``GBPUSD=X``. Checked BEFORE the slash is
+    # rewritten ("GBP/USD" -> "GBP-USD", the crypto-pair spelling), which
+    # disagreed with the resolver's ``GBPUSD=X`` answer — a contradictory
+    # identity that outranked every later lock and blocked all further tools.
+    raw = str(value or "").strip().upper()
+    fx = canonical_fx_pair(raw)
+    if fx is not None:
+        return fx
+    symbol = raw.replace("/", "-")
     if not symbol:
         return ""
+
     prefixed = _EXCHANGE_PREFIXED_RE.match(symbol)
     if prefixed:
         return f"{prefixed.group(2)}.{prefixed.group(1)}"
@@ -511,6 +843,10 @@ def _infer_currency(symbol: str) -> str | None:
             quote = upper.rsplit(separator, 1)[-1]
             if 3 <= len(quote) <= 5:
                 return quote
+    if upper.endswith("=X"):
+        pair = upper[:-2]
+        if len(pair) == 6:
+            return pair[3:6]
     return None
 
 
@@ -527,6 +863,8 @@ def _infer_instrument_type(symbol: str, candidate_type: Any = None) -> str:
         return "option"
     if "forex" in raw or raw == "currency":
         return "forex"
+    if "index" in raw:
+        return "index"
     upper = _normalize_symbol(symbol)
     if upper.endswith("=F"):
         return "future"
@@ -534,6 +872,8 @@ def _infer_instrument_type(symbol: str, candidate_type: Any = None) -> str:
         return "forex"
     if "-" in upper or "/" in upper:
         return "crypto"
+    if upper.startswith("^"):
+        return "index"
     return "listed_security"
 
 
@@ -680,6 +1020,11 @@ class GroundingLedger:
         # tools whose contract is a bare US ticker. "AAPL.US" in the answer then
         # names an instrument the run really handled.
         self._session_symbol_roots: set[str] = set()
+        # Mentions are not provenance. These sets are widened only by successful
+        # tool calls (or inherited tool evidence), so a symbol supplied by the
+        # user cannot by itself license a numeric assertion.
+        self._handled_symbols: set[str] = set()
+        self._handled_symbol_roots: set[str] = set()
 
         self._hydrate_inherited_grounding(inherited_grounding)
         self._seed_symbols(user_message, source="user_message")
@@ -738,6 +1083,8 @@ class GroundingLedger:
                 )
                 self._identities[f"inherited:{symbol}"] = record
                 self._session_symbols.add(symbol)
+                if record.source_tool_call_id not in {None, "user_message"}:
+                    self._handled_symbols.add(symbol)
 
         evidence_rows = payload.get("evidence")
         if isinstance(evidence_rows, list):
@@ -787,6 +1134,7 @@ class GroundingLedger:
                     )
                 )
                 self._session_symbols.add(symbol)
+                self._handled_symbols.add(symbol)
 
         if self._identities or self._evidence:
             self._identity_required = True
@@ -1061,7 +1409,7 @@ class GroundingLedger:
         self._ingest_run_dir_ohlc_csvs()
         issues: list[dict[str, Any]] = []
         issues.extend(self._validate_identity(content))
-        issues.extend(self._validate_unsourced_symbols(content))
+        issues.extend(self._validate_numeric_provenance(content))
         price_issues, warnings = self._validate_price_claims(content)
         issues.extend(price_issues)
         result = ValidationResult(valid=not issues, issues=issues, warnings=warnings)
@@ -1094,7 +1442,14 @@ class GroundingLedger:
             code = issue.get("code")
             value = issue.get("value")
             if (
-                code in {"numeric_claim_conflict", "numeric_claim_unavailable", "unsourced_symbol_figures"}
+                code in {
+                    "numeric_claim_conflict",
+                    "numeric_claim_unavailable",
+                    "unsourced_symbol_figures",
+                    "unverified_numeric_claim",
+                    "derived_claim_invalid",
+                    "derived_claim_unverified_inputs",
+                }
                 and value is not None
             ):
                 symbol = issue.get("symbol") or ""
@@ -1129,6 +1484,8 @@ class GroundingLedger:
                 "Reuse the exact locked symbol and venue.",
                 "Do not attach figures to a symbol no tool call in this session handled; "
                 "report it as not retrieved instead.",
+                "A tool handling the symbol is not enough: each observed figure must also "
+                "appear in that symbol's tool evidence.",
             ]
         )
         recovery = self.recovery_action(validation)
@@ -1218,6 +1575,26 @@ class GroundingLedger:
     def safe_fallback(self) -> str:
         """Return a deterministic fail-closed answer after repeated rejection."""
         is_zh = bool(re.search(r"[\u3400-\u9fff]", self.user_message))
+        issue_codes = {
+            code
+            for validation in self._validations
+            for code in (issue.get("code") for issue in validation.get("issues", []))
+        }
+        if issue_codes & {
+            "unverified_numeric_claim",
+            "derived_claim_invalid",
+            "derived_claim_unverified_inputs",
+        }:
+            if is_zh:
+                return (
+                    "我的回答被安全门槛拒绝：草稿包含工具证据未返回的数值，或包含无法复算的推导。"
+                    "我不会仅凭工具见过该标的就放行这些数字；请补取对应字段，或删去该数值。"
+                )
+            return (
+                "My previous answer was rejected by the verification gate because it included "
+                "a value absent from the instrument's tool evidence or a derivation that could "
+                "not be recomputed. Retrieve the relevant field or omit the figure."
+            )
         price_records = self._price_records()
         if price_records:
             by_symbol: dict[str, list[EvidenceRecord]] = {}
@@ -1250,12 +1627,14 @@ class GroundingLedger:
         # "the draft cited prices this session never observed". Reporting the
         # identity message for the latter is misleading (the run may not even
         # have touched the market tools).
-        issue_codes = {
-            code
-            for validation in self._validations
-            for code in (issue.get("code") for issue in validation.get("issues", []))
-        }
-        if issue_codes & {"numeric_claim_unavailable", "numeric_claim_conflict", "unsourced_symbol_figures"}:
+        if issue_codes & {
+            "numeric_claim_unavailable",
+            "numeric_claim_conflict",
+            "unsourced_symbol_figures",
+            "unverified_numeric_claim",
+            "derived_claim_invalid",
+            "derived_claim_unverified_inputs",
+        }:
             if is_zh:
                 return (
                     "我的回答被安全门槛拒绝:草稿引用了本会话未通过工具获取的价格数字,无法核验。"
@@ -1287,6 +1666,8 @@ class GroundingLedger:
                 "identity": self.identity_summary(),
                 "session_symbols": sorted(self._session_symbols),
                 "session_symbol_roots": sorted(self._session_symbol_roots),
+                "handled_symbols": sorted(self._handled_symbols),
+                "handled_symbol_roots": sorted(self._handled_symbol_roots),
                 "evidence": [asdict(record) for record in self._evidence],
                 "tool_failures": list(self._tool_failures),
                 "validations": list(self._validations),
@@ -1614,7 +1995,10 @@ class GroundingLedger:
             arguments: Exact normalized tool arguments.
             result: Full raw result, before model-context truncation.
         """
-        if len(self._session_symbols) >= _MAX_TRACKED_SYMBOLS:
+        if (
+            len(self._session_symbols) >= _MAX_TRACKED_SYMBOLS
+            and len(self._handled_symbols) >= _MAX_TRACKED_SYMBOLS
+        ):
             return
         try:
             rendered_arguments = json.dumps(arguments, ensure_ascii=False, default=str)
@@ -1623,9 +2007,13 @@ class GroundingLedger:
         found = _scan_symbols(rendered_arguments) | _scan_symbols(result)
         room = _MAX_TRACKED_SYMBOLS - len(self._session_symbols)
         self._session_symbols.update(sorted(found)[:room])
-        self._session_symbol_roots.update(
+        handled_room = _MAX_TRACKED_SYMBOLS - len(self._handled_symbols)
+        self._handled_symbols.update(sorted(found)[:handled_room])
+        argument_roots = {
             symbol for symbol in self._extract_symbol_arguments(arguments) if "." not in symbol
-        )
+        }
+        self._session_symbol_roots.update(argument_roots)
+        self._handled_symbol_roots.update(argument_roots)
 
     def _record_tool_failure(self, tool_name: str, call_id: str, result: str) -> None:
         """Store structured unavailable evidence for failed business envelopes."""
@@ -1870,6 +2258,7 @@ class GroundingLedger:
                             venue=_infer_venue(symbol),
                         )
                     )
+                    self._handled_symbols.add(symbol)
                     room -= 1
 
     def _validate_identity(self, content: str) -> list[dict[str, Any]]:
@@ -1884,7 +2273,7 @@ class GroundingLedger:
         # every draft it could ever produce, including the honest answer. This
         # relaxation invents no licence to guess: a figure still has to survive
         # ``_validate_price_claims``, and a figure attached to a symbol no tool
-        # handled still has to survive ``_validate_unsourced_symbols``.
+        # handled still has to survive ``_validate_numeric_provenance``.
         #
         # ``ambiguous`` is deliberately absent. A shortlist is an answer, which
         # is why ``_RESOLUTION_INCOMPLETE_STATUSES`` already lets workflow
@@ -1919,47 +2308,288 @@ class GroundingLedger:
             )
         return issues
 
-    def _validate_unsourced_symbols(self, content: str) -> list[dict[str, Any]]:
-        """Reject explicit price claims for an instrument no tool handled.
+    def _validate_numeric_provenance(self, content: str) -> list[dict[str, Any]]:
+        """Reject symbol-bound figures without matching tool provenance.
 
-        Counts, dates and other arbitrary figures do not establish a price
-        assertion.  Reusing the same positive parser as the numeric validator
-        keeps this gate mechanically decidable without a second exclusion list.
+        This provenance gate deliberately does not depend on the observed-price
+        phrase parser. Every non-structural number attached to a canonical
+        symbol enters the gate, including numbers whose financial field cannot
+        yet be classified. Price wording only improves the later value
+        comparison; failing to recognize that wording never grants permission
+        to invent a figure.
 
         Args:
             content: Candidate assistant answer.
 
         Returns:
-            One issue per distinct unsourced symbol carrying figures.
+            Issues for unhandled symbols, unobserved values, or invalid
+            derivations.
         """
         issues: list[dict[str, Any]] = []
-        reported: set[str] = set()
-        for claim in extract_prose_price_claims(content):
-            unknown = sorted(
-                symbol for symbol in _scan_symbols(claim.text) - reported if not self._symbol_was_sourced(symbol)
-            )
-            for symbol in unknown:
-                reported.add(symbol)
-                issues.append(
-                    {
-                        "code": "unsourced_symbol_figures",
-                        "symbol": symbol,
-                        "value": claim.value,
-                        "field": claim.field,
-                        "claim": claim.text[:200],
-                        "message": (
-                            f"No tool call in this session passed in or returned {symbol}, "
-                            "yet the answer makes an explicit price claim for it. Retrieve "
-                            "it, or report it as not retrieved."
-                        ),
-                    }
+        reported_unsourced: set[str] = set()
+        reported_unverified: set[tuple[str, float]] = set()
+        _table_issues, _table_warnings, typed_table_lines = self._validate_price_tables(
+            content
+        )
+        for line_number, line in enumerate(content.splitlines()):
+            if line_number in typed_table_lines:
+                # Typed OHLC table cells are checked by _validate_price_tables;
+                # other tables still pass through this general provenance gate.
+                continue
+            line_symbols = _scan_symbols(line)
+            for segment in _split_clauses(line):
+                values = self._numbers_requiring_provenance(segment)
+                if not values:
+                    continue
+                segment_symbols = _scan_symbols(segment)
+                # Citations and parentheticals often place a comma between the
+                # symbol and its figure. If the line has exactly one subject,
+                # keep that subject bound across clause boundaries; with more
+                # than one subject, require an explicit segment-local symbol.
+                bound_symbols = segment_symbols
+                if not bound_symbols and len(line_symbols) == 1:
+                    bound_symbols = line_symbols
+                unknown = sorted(
+                    symbol
+                    for symbol in bound_symbols - reported_unsourced
+                    if not self._symbol_was_sourced(symbol)
                 )
+                for symbol in unknown:
+                    reported_unsourced.add(symbol)
+                    issues.append(
+                        {
+                            "code": "unsourced_symbol_figures",
+                            "symbol": symbol,
+                            "value": values[0],
+                            "values": values[:12],
+                            "claim": segment.strip()[:200],
+                            "message": (
+                                f"No successful tool call in this session passed in or returned {symbol}, "
+                                "yet the answer attaches a non-structural numeric claim to it. "
+                                "Retrieve it, or report it as not retrieved."
+                            ),
+                        }
+                    )
+                recognized_price_values = [
+                    claim.value for claim in extract_prose_price_claims(segment)
+                ]
+                for symbol in sorted(bound_symbols - set(unknown)):
+                    derived_values, derived_issue = self._validate_derived_formula(
+                        segment, symbol
+                    )
+                    if derived_issue:
+                        issues.append(derived_issue)
+                    aggregate_values = self._validated_aggregate_values(segment, symbol)
+                    for value in values:
+                        if any(
+                            math.isclose(value, price, rel_tol=1e-12, abs_tol=1e-12)
+                            for price in recognized_price_values
+                        ) and self._symbol_has_price_evidence(symbol):
+                            continue
+                        if any(
+                            math.isclose(value, derived, rel_tol=1e-12, abs_tol=1e-12)
+                            for derived in derived_values
+                        ):
+                            continue
+                        if any(
+                            math.isclose(value, aggregate, rel_tol=1e-12, abs_tol=1e-12)
+                            for aggregate in aggregate_values
+                        ):
+                            continue
+                        key = (symbol, value)
+                        if key in reported_unverified or self._numeric_value_was_observed(
+                            symbol, value
+                        ):
+                            continue
+                        reported_unverified.add(key)
+                        issues.append(
+                            {
+                                "code": "unverified_numeric_claim",
+                                "symbol": symbol,
+                                "value": value,
+                                "claim": segment.strip()[:200],
+                                "message": (
+                                    f"The answer attaches {value:g} to {symbol}, but no observed "
+                                    "numeric evidence for that instrument contains this value. "
+                                    "Use a field-bound tool value or omit the figure."
+                                ),
+                            }
+                        )
         return issues
 
+    def _validate_derived_formula(
+        self, segment: str, symbol: str
+    ) -> tuple[list[float], dict[str, Any] | None]:
+        """Validate one explicitly labelled arithmetic derivation.
+
+        This is intentionally separate from observed-fact provenance. A
+        visible formula is allowed only when every non-identity input is
+        present in tool evidence for the same symbol and the printed result
+        agrees with the arithmetic at its displayed precision.
+        """
+        if not _DERIVATION_RE.search(segment):
+            return [], None
+        match = _DERIVED_FORMULA_RE.search(segment)
+        if not match:
+            return [], None
+        expression = match.group("expression").strip()
+        result_token = match.group("result").replace(",", "")
+        result = float(result_token)
+        normalized = (
+            expression.replace(",", "")
+            .replace("−", "-")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("×", "*")
+            .replace("÷", "/")
+            .replace("%", "")
+            .replace("％", "")
+        )
+        try:
+            tree = ast.parse(normalized, mode="eval")
+            computed, operands = self._evaluate_numeric_expression(tree)
+        except (SyntaxError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+            return [], {
+                "code": "derived_claim_invalid",
+                "symbol": symbol,
+                "value": result,
+                "claim": segment.strip()[:200],
+                "message": "The stated derivation is not a supported finite arithmetic formula.",
+            }
+
+        observed_inputs = [
+            value
+            for value in operands
+            if self._numeric_value_was_observed(symbol, value)
+        ]
+        unsupported_inputs = [
+            value
+            for value in operands
+            if value not in {0.0, 1.0, 2.0, 100.0}
+            and not self._numeric_value_was_observed(symbol, value)
+        ]
+        if unsupported_inputs or not observed_inputs:
+            return [*operands, result], {
+                "code": "derived_claim_unverified_inputs",
+                "symbol": symbol,
+                "value": result,
+                "inputs": unsupported_inputs,
+                "claim": segment.strip()[:200],
+                "message": (
+                    "The derivation must use at least one observed numeric input and no "
+                    f"unsupported inputs for {symbol}."
+                ),
+            }
+
+        decimals = len(result_token.rsplit(".", 1)[1]) if "." in result_token else 0
+        rounding_tolerance = 0.5 * (10 ** -decimals)
+        if not math.isclose(computed, result, rel_tol=1e-12, abs_tol=rounding_tolerance + 1e-12):
+            return [*operands, result], {
+                "code": "derived_claim_invalid",
+                "symbol": symbol,
+                "value": result,
+                "computed": computed,
+                "claim": segment.strip()[:200],
+                "message": (
+                    f"The stated derived value {result:g} does not match the visible "
+                    f"formula result {computed:g}."
+                ),
+            }
+        return [*operands, result], None
+
+    @classmethod
+    def _evaluate_numeric_expression(cls, tree: ast.AST) -> tuple[float, list[float]]:
+        """Evaluate a numeric AST containing only basic arithmetic operators."""
+
+        def visit(node: ast.AST) -> tuple[float, list[float]]:
+            if isinstance(node, ast.Expression):
+                return visit(node.body)
+            if isinstance(node, ast.Constant) and _is_number(node.value):
+                value = float(node.value)
+                return value, [value]
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+                value, operands = visit(node.operand)
+                return ((value if isinstance(node.op, ast.UAdd) else -value), operands)
+            if isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)
+            ):
+                left, left_operands = visit(node.left)
+                right, right_operands = visit(node.right)
+                if isinstance(node.op, ast.Add):
+                    value = left + right
+                elif isinstance(node.op, ast.Sub):
+                    value = left - right
+                elif isinstance(node.op, ast.Mult):
+                    value = left * right
+                else:
+                    value = left / right
+                if not math.isfinite(value):
+                    raise ValueError("non-finite arithmetic result")
+                return value, [*left_operands, *right_operands]
+            raise ValueError("unsupported arithmetic expression")
+
+        return visit(tree)
+
+    def _validated_aggregate_values(self, segment: str, symbol: str) -> list[float]:
+        """Return aggregate costs reproducible from quantity and observed price."""
+        validated: list[float] = []
+        segment_values = self._numeric_values(segment)
+        for match in _AGGREGATE_COST_RE.finditer(segment):
+            quantity = float(match.group("quantity").replace(",", ""))
+            amount_token = match.group("amount").replace(",", "")
+            amount = float(amount_token)
+            decimals = len(amount_token.rsplit(".", 1)[1]) if "." in amount_token else 0
+            tolerance = 0.5 * (10 ** -decimals) + 1e-12
+            observed = [
+                float(record.value)
+                for record in self._evidence
+                if record.status == "observed"
+                and record.value is not None
+                and record.symbol
+                and _normalize_symbol(record.symbol) == _normalize_symbol(symbol)
+                and _price_field_for_path(record.field) is not None
+                and any(
+                    math.isclose(float(record.value), value, rel_tol=1e-12, abs_tol=1e-12)
+                    for value in segment_values
+                )
+            ]
+            if any(
+                math.isclose(quantity * price, amount, rel_tol=1e-12, abs_tol=tolerance)
+                for price in observed
+            ):
+                validated.append(amount)
+        return validated
+
     def _symbol_was_sourced(self, symbol: str) -> bool:
-        """Return whether this run was entitled to make claims for ``symbol``."""
+        """Return whether a successful tool call handled ``symbol``."""
         normalized = _normalize_symbol(symbol)
-        return normalized in self._session_symbols or normalized.rsplit(".", 1)[0] in self._session_symbol_roots
+        return (
+            normalized in self._handled_symbols
+            or normalized.rsplit(".", 1)[0] in self._handled_symbol_roots
+        )
+
+    def _numeric_value_was_observed(self, symbol: str, value: float) -> bool:
+        """Return whether tool evidence contains ``value`` for ``symbol``."""
+        normalized = _normalize_symbol(symbol)
+        root = normalized.rsplit(".", 1)[0]
+        for record in self._evidence:
+            if record.status != "observed" or record.value is None or not record.symbol:
+                continue
+            evidence_symbol = _normalize_symbol(record.symbol)
+            evidence_root = evidence_symbol.rsplit(".", 1)[0]
+            if evidence_symbol != normalized and evidence_root != root:
+                continue
+            if math.isclose(float(record.value), value, rel_tol=1e-12, abs_tol=1e-12):
+                return True
+        return False
+
+    def _symbol_has_price_evidence(self, symbol: str) -> bool:
+        """Return whether comparable price evidence exists for ``symbol``."""
+        normalized = _normalize_symbol(symbol)
+        return any(
+            record.symbol and _normalize_symbol(record.symbol) == normalized
+            for record in self._comparable_price_records()
+        )
 
     def _validate_price_claims(
         self,
@@ -2282,6 +2912,81 @@ class GroundingLedger:
                 continue
             records.append(replace(record, field=field_name))
         return records
+
+    @staticmethod
+    def _numeric_values(text: str, *, include_percent: bool = False) -> list[float]:
+        """Return finite numeric tokens left in already-classified prose."""
+        values: list[float] = []
+        for match in _NUMBER_RE.finditer(text):
+            tail = text[match.end() :].lstrip()
+            if not include_percent and tail.startswith(("%", "％")):
+                continue
+            try:
+                value = float(match.group(0).replace(",", ""))
+            except ValueError:
+                continue
+            if math.isfinite(value):
+                values.append(value)
+        return values
+
+    @classmethod
+    def _numbers_requiring_provenance(cls, text: str) -> list[float]:
+        """Extract symbol-bound numeric claims without relying on price words.
+
+        Only mechanically structural or explicitly prospective spans are
+        removed. Observed fundamentals, indicators, historical references,
+        aggregate amounts, FX rates, and unknown wording deliberately remain:
+        if the answer attaches one of those figures to a symbol no successful
+        tool handled, the provenance gate must fail closed.
+        """
+        masked = _MD_LIST_ITEM_RE.sub(" ", text)
+        masked = _RATE_FORMULA_IDENTITY_RE.sub(" ", masked)
+        masked = _CANONICAL_SYMBOL_RE.sub(" ", masked)
+        masked = _LOCALIZED_DATE_RE.sub(" ", masked)
+        masked = _DATE_RE.sub(" ", masked)
+        masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _DASH_DATE_RE.sub(" ", masked)
+        masked = _PERCENT_RANGE_RE.sub(" ", masked)
+        masked = _ORDER_LEVEL_RE.sub(" ", masked)
+        masked = _LABELLED_SCORE_RE.sub(" ", masked)
+        masked = _PROSPECTIVE_LEVEL_RE.sub(" ", masked)
+        masked = _LINE_REFERENCE_RE.sub(" ", masked)
+        masked = _NUMBERED_HEADING_RE.sub(" ", masked)
+        masked = _FORM_IDENTIFIER_RE.sub(" ", masked)
+        masked = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
+        return cls._numeric_values(masked, include_percent=True)
+
+    @classmethod
+    def _numbers_without_dates_or_percent(cls, text: str) -> list[float]:
+        """Extract values that the legacy price-context tests consider prices.
+
+        This narrower classifier remains separate from the provenance gate.
+        Its exclusions may prevent a value from being compared with OHLC
+        evidence, but they can never authorize an unsupported symbol-bound
+        numeric claim.
+        """
+        masked = _MD_LIST_ITEM_RE.sub(" ", text)
+        masked = _RATE_FORMULA_IDENTITY_RE.sub(" ", masked)
+        masked = _CANONICAL_SYMBOL_RE.sub(" ", masked)
+        masked = _LOCALIZED_DATE_RE.sub(" ", masked)
+        masked = _DATE_RE.sub(" ", masked)
+        masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _DASH_DATE_RE.sub(" ", masked)
+        masked = _PERCENT_RANGE_RE.sub(" ", masked)
+        masked = _ORDER_LEVEL_RE.sub(" ", masked)
+        masked = _AGGREGATE_AMOUNT_RE.sub(" ", masked)
+        masked = _LABELLED_SCORE_RE.sub(" ", masked)
+        masked = _INDICATOR_VALUE_RE.sub(" ", masked)
+        masked = _PROSPECTIVE_LEVEL_RE.sub(" ", masked)
+        masked = _REFERENCE_LEVEL_RE.sub(" ", masked)
+        masked = _SINCE_REFERENCE_RE.sub(" ", masked)
+        masked = _LINE_REFERENCE_RE.sub(" ", masked)
+        masked = _NUMBERED_HEADING_RE.sub(" ", masked)
+        masked = _FORM_IDENTIFIER_RE.sub(" ", masked)
+        masked = _RATIO_RE.sub(" ", masked)
+        masked = _FX_RATE_RE.sub(" ", masked)
+        masked = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
+        return cls._numeric_values(masked)
 
     @staticmethod
     def _dedupe_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:

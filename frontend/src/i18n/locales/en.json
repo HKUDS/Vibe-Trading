@@ -614,6 +614,8 @@
     "runNotFound": "Run not found",
     "runNotFoundDesc": "The run directory may have been removed, or your browser may not have API access configured. Check that the API authentication key is set in Settings if accessing remotely.",
     "goBack": "Go back",
+    "showFullPrompt": "Show full prompt",
+    "showLessPrompt": "Show less",
     "chart": "Chart",
     "trades": "Trades",
     "factor": "Factor Research",
@@ -626,9 +628,11 @@
     "maxDrawdown": "Max Drawdown",
     "symbol": "Symbol",
     "weight": "Weight",
-    "rebalanceCount": "Rebalances",
-    "turnoverMean": "Avg Turnover",
-    "turnoverMax": "Max Turnover",
+    "rebalanceCount": "Target changes (requested)",
+    "rebalanceExecuted": "Rebalance executions (fills)",
+    "rebalanceRealizedTurnover": "Realized rebalance turnover",
+    "turnoverMean": "Avg Turnover (requested)",
+    "turnoverMax": "Max Turnover (requested)",
     "largestRebalance": "Largest Rebalance",
     "date": "Date",
     "turnover": "Turnover",
@@ -1399,6 +1403,8 @@
   },
   "runDashboard": {
     "eyebrow": "Quantitative research · Backtest",
+    "noBacktestData": "This run has no backtest data to chart",
+    "noBacktestDataStudioHint": "It looks like a portfolio/risk analysis instead — check the Studio tab for its numbers.",
     "engine": "engine",
     "portfolio": "Portfolio",
     "systematicStrategy": "Systematic strategy",
@@ -1477,6 +1483,7 @@
       "errorLoad": "Portfolio unavailable",
       "errorRefresh": "Refresh failed",
       "errorReconnect": "Account reconnect failed",
+      "errorReconnectTimeout": "Browser authorization timed out. Reconnect and complete the broker authorization promptly.",
       "errorSaveSettings": "Unable to save portfolio settings",
       "errorExport": "Export failed"
     },
@@ -1507,7 +1514,8 @@
       "failed": "Could not be read — not counted in the total",
       "lastSuccess": "Last successful read {{time}}",
       "noSuccess": "No successful read yet",
-      "reconnect": "Reconnect"
+      "reconnect": "Reconnect",
+      "retryRead": "Retry read"
     },
     "holdings": {
       "title": "Holdings",
@@ -1549,6 +1557,11 @@
     "env": {
       "live": "Live",
       "paper": "Paper"
+    },
+    "compatibility": {
+      "native": "Native adapter",
+      "contractTested": "Contract-tested",
+      "experimental": "Experimental"
     },
     "editor": {
       "title": "Manage portfolio accounts",
@@ -1595,12 +1608,17 @@
       "codexBody": "Ask Codex to run connector init, implement the read adapter from official docs, validate it, then install it. The plugin stays outside the repository.",
       "readOnly": "Read-only",
       "credentialSaved": "saved",
+      "optional": "(optional)",
+      "authType": "Authentication",
+      "dependency": "Local dependency",
       "oauthNote": "Uses OAuth; authorize through reconnect when required.",
-      "localNote": "Credentials are managed by the existing local connector configuration.",
+      "localNote": "This connector uses a local app or gateway session; start it as described above, then test.",
       "saveVault": "Save to vault",
       "savedVault": "Credentials saved to the OS vault.",
       "test": "Test",
       "testOk": "{{label}} is ready.",
+      "testFailed": "{{label}} check failed: {{error}}",
+      "unknownTestError": "The connector returned an unknown error.",
       "delete": "Delete",
       "configured": "Required credentials configured"
     }

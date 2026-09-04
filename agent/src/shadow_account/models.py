@@ -94,6 +94,9 @@ class AttributionBreakdown:
     late_exit_pnl: float
     overtrading_pnl: float
     counterfactual_trades: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    # Roundtrips settled in other currencies than the shadow pool's, kept out
+    # of the comparison (currency -> count). Empty for single-currency journals.
+    excluded_currencies: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

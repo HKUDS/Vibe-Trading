@@ -261,7 +261,7 @@ class TestSlippage:
 
 class TestFundingFee:
     def test_funding_deducted_at_settlement_hour(self) -> None:
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -273,7 +273,7 @@ class TestFundingFee:
         assert engine.capital == pytest.approx(initial_capital - 6.0)
 
     def test_non_settlement_hour_applies_daily_fallback(self) -> None:
-        """Non-settlement hour still applies funding once per day (daily bar support)."""
+        """Daily interval settles 3x per day (span-based count, #1290)."""
         engine = _make_engine(funding_rate=0.0001)
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
@@ -282,8 +282,8 @@ class TestFundingFee:
         bar = _make_bar(close=60000.0)
         ts = pd.Timestamp("2025-01-01 05:00:00")  # not settlement hour
         engine.on_bar("BTC-USDT", bar, ts)
-        # Daily fallback: applies once even at non-settlement hour
-        assert engine.capital == pytest.approx(initial_capital - 6.0)
+        # Daily bars settle 3x per bar regardless of which hour the bar prints
+        assert engine.capital == pytest.approx(initial_capital - 18.0)
 
     def test_short_receives_funding(self) -> None:
         engine = _make_engine(funding_rate=0.0001)
@@ -342,12 +342,35 @@ class TestFundingFee:
         after_day3 = engine.capital
         assert after_day3 < after_day2  # fee deducted again
 
-        # Each day: 1 × 60000 × 0.0001 = $6
-        assert initial - after_day3 == pytest.approx(18.0)
+        # Each day: 3 × 60000 × 0.0001 = $18; three days = $54
+        assert initial - after_day3 == pytest.approx(54.0)
+
+    def test_intraday_four_hour_bars_keep_slot_and_fallback(self) -> None:
+        """4H bars are below the span threshold: slot + daily fallback, as before."""
+        engine = _make_engine(funding_rate=0.0001, interval="4H")
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
+        )
+        initial = engine.capital
+        bar = _make_bar(close=60000.0)
+        # 00:00 slot, 04:00 fallback, 08:00 slot, 16:00 slot -> 4 settlements
+        for hour in (0, 4, 8, 12, 16, 20):
+            engine.on_bar("BTC-USDT", bar, pd.Timestamp(f"2025-01-01 {hour:02d}:00:00"))
+        assert initial - engine.capital == pytest.approx(4 * 6.0)
+
+    def test_interval_span_hours_parser(self) -> None:
+        from backtest.engines._market_hooks import _interval_span_hours
+
+        assert _interval_span_hours("1m") == pytest.approx(1 / 60)
+        assert _interval_span_hours("30m") == pytest.approx(0.5)
+        assert _interval_span_hours("1H") == 1.0
+        assert _interval_span_hours("4H") == 4.0
+        assert _interval_span_hours("1D") == 24.0
+        assert _interval_span_hours("nonsense") is None
 
     def test_multi_symbol_funding(self) -> None:
         """Each symbol gets independent funding settlement."""
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT"] = Position(
             "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -435,6 +458,39 @@ class TestLiquidation:
         engine.on_bar("BTC-USDT", bar, ts)
         assert "BTC-USDT" not in engine.positions
 
+    def test_wick_only_trigger_liquidates(self) -> None:
+        """A levered long whose low pierces maintenance is liquidated even when
+        the close recovers; the fill is priced at the adverse mark (bar low)."""
+        engine = _make_engine(leverage=2.0, slippage=0.0)
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 100.0, pd.Timestamp("2025-01-01"), 10.0, leverage=2.0,
+        )
+        # Hook marks at low=30: margin 500, unrealized -700 -> equity -200,
+        # <= maint (300 * 0.004 = 1.2), so liquidation fires on the wick alone.
+        bar = pd.Series({"close": 100.0, "high": 101.0, "low": 30.0})
+        ts = pd.Timestamp("2025-01-02")
+        engine.on_bar("BTC-USDT", bar, ts)
+        assert "BTC-USDT" not in engine.positions
+        assert len(engine.trades) == 1
+        assert engine.trades[0].exit_reason == "liquidation"
+        assert engine.trades[0].exit_price == pytest.approx(30.0)
+
+    def test_1x_short_liquidates_through_twice_the_entry_price(self) -> None:
+        """#1291: a 1x short must be liquidated, not exempted at 2x adverse."""
+        engine = _make_engine(leverage=1.0, slippage=0.0)
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", -1, 100.0, pd.Timestamp("2025-01-01"), 10.0, leverage=1.0,
+        )
+        # Margin is the full notional (1000); the 2x adverse bar zeroes it:
+        # equity 0 <= maint (2000 * 0.004 = 8), filled at the adverse high.
+        bar = pd.Series({"close": 200.0, "high": 200.0, "low": 101.0})
+        ts = pd.Timestamp("2025-01-02")
+        engine.on_bar("BTC-USDT", bar, ts)
+        assert "BTC-USDT" not in engine.positions
+        assert len(engine.trades) == 1
+        assert engine.trades[0].exit_reason == "liquidation"
+        assert engine.trades[0].exit_price == pytest.approx(200.0)
+
 
 # ---------------------------------------------------------------------------
 # Tiered maintenance margin
@@ -463,7 +519,7 @@ class TestHistoricalFundingRate:
     def test_bar_funding_rate_overrides_fixed_rate(self) -> None:
         """A bar carrying a historical ``funding_rate`` column (USD-M perp
         data) must be charged at that rate, not the fixed config rate."""
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT-PERP"] = Position(
             "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -475,7 +531,7 @@ class TestHistoricalFundingRate:
         assert engine.capital == pytest.approx(initial_capital - 30.0)
 
     def test_negative_historical_funding_pays_longs(self) -> None:
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT-PERP"] = Position(
             "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )
@@ -489,7 +545,7 @@ class TestHistoricalFundingRate:
     def test_nan_funding_rate_falls_back_to_fixed(self) -> None:
         """Non-settlement bars carry NaN funding_rate — must fall back to
         the fixed config rate (daily-fallback path), not charge NaN."""
-        engine = _make_engine(funding_rate=0.0001)
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
         engine.positions["BTC-USDT-PERP"] = Position(
             "BTC-USDT-PERP", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0,
         )

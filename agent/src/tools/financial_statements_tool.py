@@ -29,6 +29,7 @@ import logging
 from typing import Any
 
 from backtest.loaders import sec_frames
+from backtest.loaders import yahoo_client
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
 from backtest.loaders.sec_edgar_client import cik_for, get_company_facts
 from src.agent.tools import BaseTool
@@ -286,6 +287,96 @@ def _fetch_eastmoney_statement(
         return {"error": str(exc)}
 
     periods = _filter_by_period(_parse_eastmoney_periods(payload), period)
+    return {"periods": _cap_periods(periods)}
+
+
+# Yahoo quoteSummary module + result-key per (statement, cadence). UK
+# (.L) names have no Eastmoney or SEC filing pipeline; Yahoo's
+# crumb-gated quoteSummary serves annual and quarterly histories for
+# LSE tickers (UK parity, #1206).
+_YAHOO_STATEMENT_MODULES: dict[tuple[str, str], tuple[str, str]] = {
+    ("balance", "annual"): ("balanceSheetHistory", "balanceSheetStatements"),
+    ("balance", "quarter"): ("balanceSheetHistoryQuarterly", "balanceSheetStatements"),
+    ("income", "annual"): ("incomeStatementHistory", "incomeStatementHistory"),
+    ("income", "quarter"): ("incomeStatementHistoryQuarterly", "incomeStatementHistory"),
+    ("cashflow", "annual"): ("cashflowStatementHistory", "cashflowStatements"),
+    ("cashflow", "quarter"): ("cashflowStatementHistoryQuarterly", "cashflowStatements"),
+}
+_YAHOO_INDICATOR_MODULES = ["financialData", "defaultKeyStatistics"]
+# {raw, fmt, longFmt} value shapes; keep the numeric raw only.
+_YAHOO_NUMERIC_KEYS = {"raw", "longFmt", "fmt"}
+
+
+def _yahoo_value(value: Any) -> Any:
+    """Flatten a Yahoo ``{raw, fmt, ...}`` value to plain numbers/integers.
+
+    Args:
+        value: A Yahoo quoteSummary value (``{raw, fmt, longFmt}``) or a
+            scalar (``str``/``int``/``float``/``bool``/``None``).
+
+    Returns:
+        The numeric ``raw`` when present (``None`` when raw is missing), or the
+        scalar itself. Text values like ``"2026-08-24"`` pass through.
+    """
+    if isinstance(value, dict):
+        if "raw" in value:
+            return value.get("raw")
+        return {k: _yahoo_value(v) for k, v in value.items() if k not in _YAHOO_NUMERIC_KEYS}
+    return value
+
+
+def _fetch_yahoo_statement(
+    code: str, *, statement: str, period: str
+) -> dict[str, Any]:
+    """Fetch one UK (.L) statement/indicators from Yahoo quoteSummary.
+
+    Args:
+        code: UK symbol (e.g. ``"VOD.L"``).
+        statement: One of :data:`_VALID_STATEMENTS`.
+        period: ``"annual"`` or ``"quarter"`` — selects the corresponding
+            history module; both exist for LSE tickers.
+
+    Returns:
+        ``{"periods": [...]}`` on success or ``{"error": ...}`` on failure;
+        never raises.
+    """
+    if statement == "indicators":
+        modules = _YAHOO_INDICATOR_MODULES
+    else:
+        module, key = _YAHOO_STATEMENT_MODULES[(statement, period)]
+        modules = [module]
+    try:
+        result = yahoo_client.get_quote_summary(code, modules)
+    except Exception as exc:  # noqa: BLE001 - one bad fetch must not kill the call
+        logger.warning("yahoo statement fetch failed for %s: %s", code, exc)
+        return {"error": str(exc)}
+
+    if statement == "indicators":
+        record: dict[str, Any] = {}
+        for module in modules:
+            block = result.get(module) or {}
+            for field, value in block.items():
+                if field == "maxAge":
+                    continue
+                record[field] = _yahoo_value(value)
+        return {"periods": [record]} if record else {"error": "no indicator data"}
+
+    block = result.get(module) or {}
+    rows = block.get(key) or []
+    periods = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        flat: dict[str, Any] = {}
+        for field, value in row.items():
+            if field in ("maxAge",):
+                continue
+            flat[field] = _yahoo_value(value)
+        if flat:
+            periods.append(flat)
+    if not periods:
+        return {"error": f"Yahoo returned no {statement} history for {code}"}
+    periods.sort(key=lambda row: str(row.get("endDate") or ""), reverse=True)
     return {"periods": _cap_periods(periods)}
 
 
@@ -568,7 +659,7 @@ def _fetch_sec_statement(code: str, *, statement: str, period: str) -> dict[str,
 
 
 def _classify_market(code: str) -> str | None:
-    """Classify a symbol's suffix into ``a_share``, ``us``, ``hk``, or ``None``.
+    """Classify a symbol's suffix into ``a_share``, ``us``, ``hk``, ``uk``, or ``None``.
 
     Args:
         code: Symbol with a market suffix (e.g. ``"600519.SH"``, ``"AAPL.US"``).
@@ -583,6 +674,9 @@ def _classify_market(code: str) -> str | None:
         return "us"
     if suffix == "HK":
         return "hk"
+    if suffix == "L":
+        # London Stock Exchange (#1206).
+        return "uk"
     return None
 
 
@@ -593,9 +687,10 @@ class FinancialStatementsTool(BaseTool):
     description = (
         "Fetch a single stock's financial statements: balance sheet, income "
         "statement, cash-flow statement, or key per-period indicators (margins, "
-        "ROE, EPS, etc.). Markets: A-share (.SH/.SZ/.BJ), US (.US) and "
-        "Hong Kong (.HK). US uses SEC EDGAR companyfacts; A-share and HK use "
-        "Eastmoney. Reports come back newest-first as flat per-period rows. Use "
+        "ROE, EPS, etc.). Markets: A-share (.SH/.SZ/.BJ), US (.US), "
+        "Hong Kong (.HK) and UK LSE (.L). US uses SEC EDGAR companyfacts; "
+        "A-share and HK use Eastmoney; UK uses Yahoo quoteSummary (annual "
+        "history). Reports come back newest-first as flat per-period rows. Use "
         'this to read fundamentals before building a valuation or screen. Example: '
         '{"code": "600519.SH", "statement": "income", "period": "annual"}.'
     )
@@ -606,7 +701,7 @@ class FinancialStatementsTool(BaseTool):
                 "type": "string",
                 "description": (
                     "Single symbol with a market suffix, e.g. '600519.SH', "
-                    "'000001.SZ', 'AAPL.US', or '00700.HK'."
+                    "'000001.SZ', 'AAPL.US', '00700.HK', or 'VOD.L'."
                 ),
             },
             "statement": {
@@ -673,12 +768,15 @@ class FinancialStatementsTool(BaseTool):
         market = _classify_market(code)
         if market is None:
             return _error(
-                "code must carry a supported suffix: .SH/.SZ/.BJ, .US, or .HK"
+                "code must carry a supported suffix: .SH/.SZ/.BJ, .US, .HK, or .L"
             )
 
         if market == "us":
             result = _fetch_sec_statement(code, statement=statement, period=period)
             source = "sec_edgar"
+        elif market == "uk":
+            result = _fetch_yahoo_statement(code, statement=statement, period=period)
+            source = "yahoo"
         else:
             result = _fetch_eastmoney_statement(
                 code, statement=statement, period=period

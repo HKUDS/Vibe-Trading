@@ -609,6 +609,8 @@
     "runNotFound": "実行が見つかりません",
     "runNotFoundDesc": "実行ディレクトリが削除されたか、ブラウザに API アクセスが設定されていない可能性があります。リモートでアクセスする場合は、設定で API 認証キーが設定されているか確認してください。",
     "goBack": "戻る",
+    "showFullPrompt": "プロンプト全文を表示",
+    "showLessPrompt": "折りたたむ",
     "chart": "チャート",
     "trades": "トレード",
     "factor": "ファクター分析",
@@ -621,9 +623,11 @@
     "maxDrawdown": "最大ドローダウン",
     "symbol": "シンボル",
     "weight": "ウェイト",
-    "rebalanceCount": "リバランス回数",
-    "turnoverMean": "平均ターンオーバー",
-    "turnoverMax": "最大ターンオーバー",
+    "rebalanceCount": "目標リバランス回数（要求）",
+    "rebalanceExecuted": "実行されたリバランス数",
+    "rebalanceRealizedTurnover": "実現リバランス回転率",
+    "turnoverMean": "平均ターンオーバー（要求）",
+    "turnoverMax": "最大ターンオーバー（要求）",
     "largestRebalance": "最大リバランス",
     "date": "日付",
     "turnover": "ターンオーバー",
@@ -1399,6 +1403,8 @@
   },
   "runDashboard": {
     "eyebrow": "定量リサーチ · バックテスト",
+    "noBacktestData": "このRunにはグラフ化できるバックテストデータがありません",
+    "noBacktestDataStudioHint": "ポートフォリオ/リスク分析のようです — 数値はStudioタブで確認してください。",
     "engine": "エンジン",
     "portfolio": "ポートフォリオ",
     "systematicStrategy": "システマティック戦略",
@@ -1477,6 +1483,7 @@
       "errorLoad": "ポートフォリオを取得できません",
       "errorRefresh": "更新に失敗しました",
       "errorReconnect": "口座の再接続に失敗しました",
+      "errorReconnectTimeout": "ブラウザー認証がタイムアウトしました。再接続し、ブローカー認証を速やかに完了してください。",
       "errorSaveSettings": "ポートフォリオ設定を保存できません",
       "errorExport": "書き出しに失敗しました"
     },
@@ -1507,7 +1514,8 @@
       "failed": "読み取れませんでした — 合計に含まれていません",
       "lastSuccess": "最後に読み取れたのは {{time}}",
       "noSuccess": "まだ一度も読み取れていません",
-      "reconnect": "再接続"
+      "reconnect": "再接続",
+      "retryRead": "再読み込み"
     },
     "holdings": {
       "title": "保有明細",
@@ -1549,6 +1557,11 @@
     "env": {
       "live": "ライブ",
       "paper": "ペーパー"
+    },
+    "compatibility": {
+      "native": "専用アダプター",
+      "contractTested": "契約テスト済み",
+      "experimental": "実験的"
     },
     "editor": {
       "title": "ポートフォリオの口座を管理",
@@ -1595,12 +1608,17 @@
       "codexBody": "Codex に connector init を実行させ、公式ドキュメントから読み取り用アダプターを実装し、validate を通してから install します。プラグインはリポジトリの外に置かれます。",
       "readOnly": "読み取り専用",
       "credentialSaved": "保存済み",
+      "optional": "（任意）",
+      "authType": "認証方式",
+      "dependency": "ローカル依存関係",
       "oauthNote": "OAuth を使用します。必要に応じて再接続で認可してください。",
       "localNote": "認証情報は既存のローカルコネクタ設定が管理します。",
       "saveVault": "資格情報ストアに保存",
       "savedVault": "認証情報を OS の資格情報ストアに保存しました。",
       "test": "接続テスト",
       "testOk": "{{label}} は正常です。",
+      "testFailed": "{{label}} のテストに失敗しました: {{error}}",
+      "unknownTestError": "コネクターが不明なエラーを返しました。",
       "delete": "削除",
       "configured": "必要な認証情報は設定済みです"
     }

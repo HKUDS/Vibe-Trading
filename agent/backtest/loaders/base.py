@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -22,6 +23,85 @@ from typing import Callable, Protocol, TypeVar, runtime_checkable
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+# The supported LSE contract settles in GBP. Yahoo may declare an individual
+# ``.L`` line in pence (``GBp``), pounds (``GBP``), another currency, or no
+# currency at all. Loaders must normalize declared pence to pounds and reject
+# every non-GBP/unknown line before the static GBP market accounting sees it.
+_GBP_PENCE_CURRENCY = "GBp"
+_PRICE_COLUMNS = ("open", "high", "low", "close")
+_UK_EQUITY_PATTERN = re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I)
+
+
+def is_lse_symbol(code: str) -> bool:
+    """Return whether a project symbol uses the supported LSE ``.L`` form.
+
+    The suffix identifies the venue, not the quote currency. Every caller must
+    still inspect source metadata through :func:`normalize_lse_quote_currency`
+    before emitting bars.
+    """
+    return bool(_UK_EQUITY_PATTERN.match(str(code).strip()))
+
+
+def scale_pence_to_currency(
+    frame: pd.DataFrame, currency: str
+) -> tuple[pd.DataFrame, str]:
+    """Convert GBp-quoted OHLC prices to GBP (÷100) when the source says GBp.
+
+    Args:
+        frame: OHLCV frame with float price columns.
+        currency: Quote currency declared by the source (e.g. ``"GBp"`` for
+            LSE pence-quoted names; ``"USD"``/``"EUR"``/``"GBP"`` pass
+            through).
+
+    Returns:
+        ``(frame, applied)``: the (possibly scaled) frame, and the conversion
+        applied — ``"GBp→GBP (÷100)"`` when scaled, else ``"none"``.
+    """
+    if currency != _GBP_PENCE_CURRENCY or frame is None or frame.empty:
+        return frame, "none"
+    scaled = frame.copy()
+    for column in _PRICE_COLUMNS:
+        scaled[column] = scaled[column] / 100.0
+    return scaled, "GBp→GBP (÷100)"
+
+
+def normalize_lse_quote_currency(
+    frame: pd.DataFrame, currency: str | None
+) -> pd.DataFrame:
+    """Normalize a declared LSE quote into the engine's GBP-only contract.
+
+    Args:
+        frame: Normalized OHLCV frame.
+        currency: Quote currency declared by the source.
+
+    Returns:
+        A frame quoted in GBP with per-symbol conversion provenance attached.
+
+    Raises:
+        ValueError: If the source declares USD/another currency or omits the
+            currency. Passing such bars into the static ``uk_equity=GBP``
+            accounting contract would silently mix currencies.
+    """
+    declared = currency.strip() if isinstance(currency, str) else ""
+    normalized = frame.copy()
+    if declared in {_GBP_PENCE_CURRENCY, "p"}:
+        normalized, conversion = scale_pence_to_currency(
+            normalized, _GBP_PENCE_CURRENCY
+        )
+    elif declared == "GBP":
+        conversion = "none"
+    else:
+        label = declared or "missing"
+        raise ValueError(
+            "LSE quote currency must be declared as GBP or GBp; "
+            f"got {label!r}"
+        )
+
+    normalized.attrs["quote_currency"] = "GBP"
+    normalized.attrs["currency_conversion"] = conversion
+    return normalized
 
 
 class NoAvailableSourceError(Exception):
@@ -247,7 +327,11 @@ _LOADER_CACHE_TRUE_VALUES = {"1", "true", "yes", "on"}
 # simply never matched (old files become unreachable garbage, safe to delete).
 # v4: baostock volume normalized from shares to lots (#1062) — entries cached
 # under the pre-normalization unit must never be served again.
-_LOADER_CACHE_VERSION = 4
+# v5: UK (.L) prices normalized from GBp to GBP (÷100) (#1206).
+# v6: LSE quote currency is fail-closed and per-symbol conversion provenance is
+# persisted. v5 USD/unknown .L entries must never be served as static GBP.
+_LOADER_CACHE_VERSION = 6
+_LOADER_FRAME_METADATA_ATTRS = ("quote_currency", "currency_conversion")
 
 
 def loader_cache_enabled() -> bool:
@@ -510,6 +594,12 @@ def _read_loader_cache_frame(cache_path: Path) -> pd.DataFrame | None:
         frame.index.names = metadata.get("index_names") or index_columns
         frame = _restore_cache_index_dtypes(frame, metadata.get("index_dtypes"))
     frame.columns.name = metadata.get("columns_name")
+    frame_attrs = metadata.get("frame_attrs")
+    if isinstance(frame_attrs, dict):
+        for name in _LOADER_FRAME_METADATA_ATTRS:
+            value = frame_attrs.get(name)
+            if isinstance(value, str):
+                frame.attrs[name] = value
     return frame
 
 
@@ -593,6 +683,11 @@ def _frame_for_loader_cache(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict[str
         # resolution, e.g. [s] -> [us]).
         "columns_name": None if columns_name is None else str(columns_name),
         "index_dtypes": index_dtypes,
+        "frame_attrs": {
+            name: frame.attrs[name]
+            for name in _LOADER_FRAME_METADATA_ATTRS
+            if isinstance(frame.attrs.get(name), str)
+        },
     }
     return cache_frame.reset_index(), metadata
 

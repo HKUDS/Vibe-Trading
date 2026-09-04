@@ -5,10 +5,10 @@
 Tool: `get_stock_profile`
 Backed by: `backtest.loaders.yahoo_client.get_quote_summary`
 Description: Read-only agent/CLI tool that returns a compact company profile for
-a US or Hong Kong listing — valuation key statistics, analyst price targets and
-earnings/revenue estimates, institutional and insider ownership, and the
-analyst recommendation trend. Use it for fundamentals and consensus context,
-not for OHLCV price bars (use `get_market_data` for prices).
+a US, Hong Kong, or UK (LSE .L) listing — valuation key statistics, analyst price
+targets and earnings/revenue estimates, institutional and insider ownership,
+and the analyst recommendation trend. Use it for fundamentals and consensus
+context, not for OHLCV price bars (use `get_market_data` for prices).
 
 The tool selects the right Yahoo quoteSummary modules, unwraps Yahoo
 `{"raw","fmt"}` cells to their numeric `raw` value, caps each list section at
@@ -21,7 +21,7 @@ The tool selects the right Yahoo quoteSummary modules, unwraps Yahoo
 
 Name | Type | Required | Description
 ---- | ---- | -------- | -----------
-ticker | str | Y | US (`AAPL` or `AAPL.US`) or HK (`00700.HK`, zero-padded) symbol.
+ticker | str | Y | US (`AAPL` or `AAPL.US`), HK (`00700.HK`, zero-padded), or UK LSE (`VOD.L`) symbol.
 sections | list[str] | N | Which sections to return (one or more of the section names below). Defaults to all sections. Unknown names return an error envelope.
 
 Section name → underlying Yahoo module:
@@ -45,11 +45,12 @@ A JSON-string envelope.
 On success:
 
 ```json
-{"ok": true, "market": "us|hk", "source": "yahoo",
+{"ok": true, "market": "us|hk|uk", "source": "yahoo",
  "data": {"ticker": "<input>", "sections": {"<name>": <shaped>}}}
 ```
 
-`market` is `hk` when the ticker ends `.HK`, else `us`. Scalar sections
+`market` is `hk` when the ticker ends `.HK`, `uk` when it ends `.L`,
+else `us`. Scalar sections
 (`key_stats`, `financials`) shape to a flat dict; list sections
 (`earnings_trend`, `institution_ownership`, `insider_holders`,
 `recommendation_trend`) shape to a list of rows (≤ 25).
@@ -72,6 +73,7 @@ Failures are returned as an envelope (never raised) — e.g. a missing/blank
 get_stock_profile(ticker="AAPL.US")
 get_stock_profile(ticker="AAPL", sections=["key_stats", "financials"])
 get_stock_profile(ticker="00700.HK", sections=["key_stats"])
+get_stock_profile(ticker="VOD.L", sections=["key_stats"])
 ```
 
 <br>

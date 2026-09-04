@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 MARKER = "VIBE_PORTFOLIO_JSON="
 
@@ -22,13 +23,15 @@ def main() -> None:
     credentials or account identifiers into the parent process's logs.
     """
     try:
-        from src.trading.connectors.longbridge.sdk import (
-            build_config,
-            get_account_and_positions,
-            get_quotes,
-        )
+        from src.trading.connectors.longbridge.sdk import get_account_and_positions, get_quotes
+        from src.trading.profiles import profile_by_id
+        from src.trading.service import _sdk_config, _sdk_module
 
-        config = build_config({"profile": "live-readonly", "region": "global"})
+        profile = profile_by_id("longbridge-live-sdk-readonly")
+        module = _sdk_module(profile.connector)
+        connection_id = str(sys.argv[1] if len(sys.argv) > 1 else "").strip()
+        overrides = {"connection_id": connection_id} if connection_id else {}
+        config = _sdk_config(profile, module, overrides)
         payload = get_account_and_positions(config)
         symbols = [
             str(item.get("symbol") or "")
@@ -37,9 +40,7 @@ def main() -> None:
         ]
         try:
             payload["quotes"] = get_quotes(symbols, config=config)
-        except (
-            Exception
-        ) as exc:  # account totals remain usable if quote permission/network fails
+        except Exception as exc:  # account totals remain usable if quote permission/network fails
             payload["quotes"] = {
                 "status": "error",
                 "error": type(exc).__name__,

@@ -602,6 +602,22 @@ export function Agent() {
         }
       }
       if (genRef.current !== gen) return;
+      // A background session's SSE stream disconnects the moment you navigate
+      // away (doDisconnect() in the session-switch effect), so the
+      // session_completed event that would normally clear streamingSessionId
+      // never arrives -- the sidebar's "thinking" spinner for that session
+      // sticks around for the rest of the tab's life, even long after the
+      // turn actually finished. Reopening the session re-fetches its
+      // committed history right here; if the newest stored message is
+      // already the assistant's reply, the turn is done, so release the
+      // stale marker instead of leaving it dangling.
+      if (
+        act().streamingSessionId === sid
+        && msgs.length > 0
+        && msgs[msgs.length - 1].role === "assistant"
+      ) {
+        act().clearStreamingSession(sid);
+      }
       act().loadHistory(agentMsgs);
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);

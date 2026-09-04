@@ -116,6 +116,9 @@
       <tr><th>Overtrading</th><td class="mono {{ 'pos' if attribution.overtrading_pnl > 0 else 'neg' if attribution.overtrading_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.overtrading_pnl) }}</td></tr>
       <tr><th>Missed signals (residual)</th><td class="mono {{ 'pos' if attribution.missed_signals_pnl > 0 else 'neg' if attribution.missed_signals_pnl < 0 else '' }}">{{ '%+.2f' | format(attribution.missed_signals_pnl) }}</td></tr>
     </table>
+    {% if attribution.excluded_currencies %}
+      <p class="muted">Real PnL above covers the shadow pool's settlement currency only. There is no FX translation layer, so roundtrips settling elsewhere are excluded rather than summed against it: {% for currency, count in attribution.excluded_currencies.items() %}{{ count }} in {{ currency }}{{ ", " if not loop.last }}{% endfor %}.</p>
+    {% endif %}
   </section>
 
   <section class="panel">

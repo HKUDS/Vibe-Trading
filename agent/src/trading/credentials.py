@@ -133,9 +133,13 @@ class CredentialStore:
         Raises:
             RuntimeError: If the ``keyring`` extra is not installed.
         """
-        backend = self.backend
+        field_names = tuple(fields)
+        try:
+            backend = self.backend
+        except RuntimeError:
+            return {field: False for field in field_names}
         result = {}
-        for field in fields:
+        for field in field_names:
             try:
                 result[field] = bool(
                     backend.get_password(

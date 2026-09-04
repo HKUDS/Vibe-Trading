@@ -181,9 +181,9 @@ idna==3.18 \
     #   anyio
     #   httpx
     #   requests
-lark-oapi==1.7.2 \
-    --hash=sha256:d73cbcac28d8e7cd75efe64a8c350da50b1a45be046c5e5b8382701ea8bb764c \
-    --hash=sha256:deee5ed90f6b54448e00af6749af90a1ac72f212050c24a6c619f5a12c542774
+lark-oapi==1.7.3 \
+    --hash=sha256:c91f00087b7977dc9059ab492e8fe435e1a873863dca1d4e660d2be5b801e4cd \
+    --hash=sha256:e532e57fa295a1cc10e3432191f80638a082a190dc678cb2eddb6de301ff3573
     # via -r agent/requirements-channels.txt
 pycryptodome==3.23.0 \
     --hash=sha256:0011f7f00cdb74879142011f95133274741778abba114ceca229adbf8e62c3e4 \

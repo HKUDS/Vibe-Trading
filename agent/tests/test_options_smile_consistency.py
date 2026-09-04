@@ -165,10 +165,14 @@ class TestGreeksUseTheLegVol:
 
         smile_vol = leg_iv(100.0, 110.0, _BASE_IV, -0.15, 0.05)
         expiry = pd.Timestamp("2025-02-21")
-        time_to_expiry = max((expiry - _DATES[0]).days / 365.0, 0.001)
+        # The signal dated 2025-01-01 fills on the next bar at the same 100.0
+        # spot, so the first greeks row is zero and the position's greeks
+        # appear on the fill bar (2025-01-02).
+        fill_day = _DATES[1]
+        time_to_expiry = max((expiry - fill_day).days / 365.0, 0.001)
         expected = bs_greeks(100.0, 110.0, time_to_expiry, 0.0, smile_vol, "call")
 
-        assert float(greeks.iloc[0]["delta"]) == pytest.approx(
+        assert float(greeks.iloc[1]["delta"]) == pytest.approx(
             expected["delta"] * 10, rel=1e-6
         )
 

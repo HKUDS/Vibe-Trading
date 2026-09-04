@@ -117,6 +117,22 @@ class LLMResponse:
         return len(self.tool_calls) > 0
 
 
+def _extract_retry_after_s(original: Exception) -> Optional[float]:
+    """Return the provider-suggested Retry-After delay in seconds, if any."""
+    response = getattr(original, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    raw = headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0.0 else None
+
+
 class ProviderStreamError(RuntimeError):
     """Raised when provider streaming fails before a complete response."""
 
@@ -127,11 +143,17 @@ class ProviderStreamError(RuntimeError):
             provider: Effective provider name.
             model: Effective model name.
             original: Original exception from the stream path.
+
+        Attributes:
+            retry_after_s: Provider-suggested Retry-After delay in seconds,
+                extracted from the original exception's response headers when
+                present and parseable as a non-negative number; otherwise None.
         """
         self.provider = provider
         self.model = model
         self.original = original
         self.status_code: Optional[int] = getattr(original, "status_code", None)
+        self.retry_after_s: Optional[float] = _extract_retry_after_s(original)
         safe_message = _redact_provider_error(str(original))
         hint = ""
         lowered = safe_message.lower()

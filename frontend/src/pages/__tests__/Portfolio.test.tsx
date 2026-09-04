@@ -53,9 +53,9 @@ const snapshot = {
   valuation: { priced_usd: 800, cash_usd: 200, unpriced_or_other_usd: 0, identified_coverage: 1 },
   fx: { usd_cny: 7.2, usd_hkd: 7.8, fetched_at: "2026-08-09T00:00:00Z", stale: false },
   accounts: [
-    { broker: "ibkr", status: "ok" as const, total_usd: 600, total_cny: 4320, position_count: 1, last_success_at: "2026-08-09T00:00:00Z" },
-    { broker: "longbridge", status: "ok" as const, total_usd: 300, total_cny: 2160, position_count: 1, last_success_at: "2026-08-09T00:00:00Z" },
-    { broker: "binance", status: "ok" as const, total_usd: 100, total_cny: 720, position_count: 1, last_success_at: "2026-08-09T00:00:00Z" },
+    { broker: "ibkr", status: "ok" as const, total_usd: 600, total_cny: 4320, position_count: 1, last_success_at: "2026-08-09T00:00:00Z", portfolio_compatibility: { level: "native" as const, contract_version: 1, asset_scope: "stocks_etfs", note: "Dedicated mapping." } },
+    { broker: "longbridge", status: "ok" as const, total_usd: 300, total_cny: 2160, position_count: 1, last_success_at: "2026-08-09T00:00:00Z", portfolio_compatibility: { level: "native" as const, contract_version: 1, asset_scope: "stocks_etfs", note: "Dedicated mapping." } },
+    { broker: "binance", status: "ok" as const, total_usd: 100, total_cny: 720, position_count: 1, last_success_at: "2026-08-09T00:00:00Z", portfolio_compatibility: { level: "native" as const, contract_version: 1, asset_scope: "spot", note: "Dedicated mapping." } },
   ],
   positions: [{
     broker: "ibkr", symbol: "AAPL", name: "Apple", asset_type: "stock", market: "US",
@@ -82,6 +82,8 @@ const snapshotWithFailedSource = {
       status: "error" as const,
       error_code: "ConnectionError",
       error: "Read timed out after 30s",
+      failure_kind: "transient" as const,
+      reconnect_required: false,
       last_success_at: FAILED_LAST_SUCCESS,
     },
   ],
@@ -99,6 +101,8 @@ const snapshotWithFailedOAuth = {
       status: "error" as const,
       error_code: "AuthenticationError",
       error: "OAuth authorization expired",
+      failure_kind: "authorization" as const,
+      reconnect_required: true,
       auth: {
         method: "OAuth",
         renewal: "automatic" as const,
@@ -122,9 +126,9 @@ const portfolioConfiguration = {
     ],
   },
   catalog: [
-    { id: "ibkr", connection_id: "ibkr", profile_id: "ibkr-live-official-mcp-readonly", connector: "ibkr", label: "IBKR", environment: "live" as const, transport: "remote_mcp" as const, capabilities: ["mcp.read.discovery"], readonly: true, notes: "", selected: true, source_id: "ibkr", supports_reconnect: true, credential_fields: [], credential_status: {}, credentials_configured: false },
-    { id: "longbridge", connection_id: "longbridge", profile_id: "longbridge-live-sdk-readonly", connector: "longbridge", label: "Longbridge", environment: "live" as const, transport: "broker_sdk" as const, capabilities: ["account.read", "positions.read"], readonly: true, notes: "", selected: true, source_id: "longbridge", supports_reconnect: false, credential_fields: [], credential_status: {}, credentials_configured: false },
-    { id: "binance", connection_id: "binance", profile_id: "binance-live-sdk-readonly", connector: "binance", label: "Binance", environment: "live" as const, transport: "broker_sdk" as const, capabilities: ["account.read", "positions.read"], readonly: true, notes: "", selected: true, source_id: "binance", supports_reconnect: false, credential_fields: [], credential_status: {}, credentials_configured: false },
+    { id: "ibkr", connection_id: "ibkr", profile_id: "ibkr-live-official-mcp-readonly", connector: "ibkr", label: "IBKR", environment: "live" as const, transport: "remote_mcp" as const, capabilities: ["mcp.read.discovery"], readonly: true, notes: "", selected: true, source_id: "ibkr", supports_reconnect: true, credential_fields: [], credential_status: {}, credentials_configured: false, portfolio_compatibility: { level: "native" as const, contract_version: 1, asset_scope: "stocks_etfs", note: "Dedicated mapping." } },
+    { id: "longbridge", connection_id: "longbridge", profile_id: "longbridge-live-sdk-readonly", connector: "longbridge", label: "Longbridge", environment: "live" as const, transport: "broker_sdk" as const, capabilities: ["account.read", "positions.read"], readonly: true, notes: "", selected: true, source_id: "longbridge", supports_reconnect: false, credential_fields: [], credential_status: {}, credentials_configured: false, portfolio_compatibility: { level: "native" as const, contract_version: 1, asset_scope: "stocks_etfs", note: "Dedicated mapping." } },
+    { id: "binance", connection_id: "binance", profile_id: "binance-live-sdk-readonly", connector: "binance", label: "Binance", environment: "live" as const, transport: "broker_sdk" as const, capabilities: ["account.read", "positions.read"], readonly: true, notes: "", selected: true, source_id: "binance", supports_reconnect: false, credential_fields: [], credential_status: {}, credentials_configured: false, portfolio_compatibility: { level: "native" as const, contract_version: 1, asset_scope: "spot", note: "Dedicated mapping." } },
   ],
 };
 
@@ -171,16 +175,19 @@ describe("Portfolio page", () => {
         local_plugin: true,
         credential_fields: [],
         supports_reconnect: false,
+        portfolio_compatibility: { level: "experimental", contract_version: 1, asset_scope: "declared_by_connector", note: "No built-in fixture." },
       }],
       plugin_directory: "/tmp/vibe/connectors",
     });
     mocked.createConnection.mockResolvedValue({ status: "ok", connection: {} });
+    mocked.checkConnection.mockResolvedValue({ status: "ok", connection_id: "ibkr", report: { status: "ok" } });
   });
 
   it("renders the combined portfolio and refreshes all connectors", async () => {
     render(<Portfolio />);
     expect(await screen.findByText("AAPL")).toBeInTheDocument();
     expect(screen.getByText("$1,000.00")).toBeInTheDocument();
+    expect(screen.getAllByText(i18n.t("portfolio.compatibility.native")).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: i18n.t("portfolio.page.refreshAll") }));
     await waitFor(() => expect(mocked.refreshPortfolio).toHaveBeenCalledTimes(1));
@@ -256,6 +263,71 @@ describe("Portfolio page", () => {
     }));
   });
 
+  it("shows a failed connection check on the matching connection card", async () => {
+    mocked.checkConnection.mockResolvedValue({
+      status: "ok",
+      connection_id: "ibkr",
+      report: { status: "error", error: "missing api_key" },
+    });
+    render(<Portfolio />);
+    await screen.findByText("AAPL");
+
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("portfolio.page.manageAccounts") }));
+    fireEvent.click(await screen.findByRole("button", { name: i18n.t("portfolio.editor.openConnections") }));
+    fireEvent.click((await screen.findAllByRole("button", { name: i18n.t("portfolio.connections.test") }))[0]);
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      i18n.t("portfolio.connections.testFailed", {
+        label: "IBKR",
+        error: "missing api_key",
+      }),
+    );
+  });
+
+  it("renders built-in onboarding fields and saves values through the vault API", async () => {
+    mocked.getConnections.mockResolvedValue({
+      status: "ok",
+      connections: [{
+        ...portfolioConfiguration.catalog[2],
+        credential_fields: [
+          { name: "api_key", label: "API Key", secret: true, required: true },
+          { name: "api_secret", label: "API Secret", secret: true, required: true },
+        ],
+        credential_status: { api_key: false, api_secret: false },
+        onboarding: {
+          schema_version: 1,
+          auth_type: "api_key",
+          credential_fields: [],
+          dependency: "ccxt",
+          install_command: "pip install ccxt keyring",
+          test_operation: "account.read",
+          setup_hint: "Create a read-only key.",
+          secret_storage: "os_keyring",
+        },
+      }],
+      profiles: [],
+      plugin_directory: "/tmp/vibe/connectors",
+    });
+    mocked.saveConnectionCredentials.mockResolvedValue({
+      status: "ok",
+      credential_status: { api_key: true, api_secret: true },
+    });
+    render(<Portfolio />);
+    await screen.findByText("AAPL");
+
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("portfolio.page.manageAccounts") }));
+    fireEvent.click(await screen.findByRole("button", { name: i18n.t("portfolio.editor.openConnections") }));
+    fireEvent.change(await screen.findByLabelText(/API Key/), { target: { value: "local-key" } });
+    fireEvent.change(screen.getByLabelText(/API Secret/), { target: { value: "local-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("portfolio.connections.saveVault") }));
+
+    await waitFor(() => expect(mocked.saveConnectionCredentials).toHaveBeenCalledWith(
+      "binance",
+      { api_key: "local-key", api_secret: "local-secret" },
+    ));
+    expect(screen.getByText("ccxt")).toBeInTheDocument();
+  });
+
   it("reports an unreadable account as an error and keeps it out of the total", async () => {
     mocked.getPortfolio.mockResolvedValue({ status: "ok", snapshot: snapshotWithFailedSource });
     render(<Portfolio />);
@@ -273,5 +345,36 @@ describe("Portfolio page", () => {
     expect(screen.getByText("$1,000.00")).toBeInTheDocument();
     expect(screen.getByText(i18n.t("portfolio.metrics.excluded", { count: 1 }))).toBeInTheDocument();
     expect(screen.getByText(snapshotWithFailedSource.warnings[0])).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: i18n.t("portfolio.accounts.retryRead") })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: i18n.t("portfolio.accounts.reconnect") })).not.toBeInTheDocument();
+  });
+
+  it("offers reconnect only when an OAuth source explicitly needs authorization", async () => {
+    mocked.getPortfolio.mockResolvedValue({
+      status: "ok",
+      snapshot: {
+        ...snapshotWithFailedSource,
+        accounts: [
+          ...snapshot.accounts,
+          {
+            source_id: "ibkr-auth",
+            broker: "ibkr",
+            label: "IBKR authorization",
+            status: "error" as const,
+            error: "OAuth authorization required",
+            failure_kind: "authorization" as const,
+            reconnect_required: true,
+            auth: { method: "OAuth", renewal: "automatic" as const, readonly: true, detail: "" },
+          },
+        ],
+      },
+    });
+    render(<Portfolio />);
+    expect((await screen.findAllByText("IBKR authorization")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("portfolio.accounts.reconnect") }));
+
+    await waitFor(() => expect(mocked.reconnectPortfolioSource).toHaveBeenCalledWith("ibkr-auth"));
+    expect(screen.queryByRole("button", { name: i18n.t("portfolio.accounts.retryRead") })).not.toBeInTheDocument();
   });
 });

@@ -128,7 +128,7 @@ class TestEnvConfigDefaults:
         for market in (
             "a_share", "us_equity", "hk_equity", "india_equity", "kr_equity",
             "ca_equity", "vietnam_equity", "crypto", "futures", "fund",
-            "macro", "forex",
+            "macro", "forex", "index",
         ):
             assert getattr(c.data, f"market_data_order_{market}") == ""
 

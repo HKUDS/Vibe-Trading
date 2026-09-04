@@ -20,6 +20,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
+from backtest.metrics import effective_bars_per_year
 from backtest.models import TradeRecord
 
 
@@ -293,7 +294,7 @@ def run_validation(
     equity_curve: pd.Series,
     trades: List[TradeRecord],
     initial_capital: float,
-    bars_per_year: int = 252,
+    bars_per_year: int | None = 252,
 ) -> Dict[str, Any]:
     """Run configured validation checks.
 
@@ -314,6 +315,13 @@ def run_validation(
     """
     v_cfg = config.get("validation", {})
     results: Dict[str, Any] = {}
+
+    # Cross-market convention (runner.py passes bars_per_year=None): resolve
+    # it through the shared span-derived factor — otherwise _sharpe's
+    # np.sqrt(bars_per_year) raises TypeError for every validation-enabled
+    # cross-market run.
+    if bars_per_year is None:
+        bars_per_year = effective_bars_per_year(equity_curve.index)
 
     if "monte_carlo" in v_cfg:
         mc_cfg = v_cfg["monte_carlo"] if isinstance(v_cfg["monte_carlo"], dict) else {}

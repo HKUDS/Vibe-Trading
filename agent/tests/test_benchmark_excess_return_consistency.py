@@ -67,6 +67,7 @@ def test_excess_return_matches_corrected_benchmark_return(monkeypatch, tmp_path)
         ticker="BENCH",
         ret_series=bar_returns(bench_close, label="test-benchmark"),
         total_ret=buy_and_hold_return(bench_close),
+        close=bench_close,
     )
     assert fake_result.total_ret == pytest.approx(-0.5)
 

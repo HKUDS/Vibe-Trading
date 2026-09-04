@@ -74,8 +74,47 @@ def _stream_retry_delay_s() -> float:
     return get_env_config().swarm.swarm_stream_retry_delay_s
 
 
+def _stream_retry_max_delay_s() -> float:
+    """Resolve the cap for the escalating stream-retry delay, robust to garbage.
+
+    Returns:
+        Upper bound in seconds for both the escalated exponential delay and a
+        provider-suggested ``Retry-After``. Configurable via
+        ``SWARM_STREAM_RETRY_MAX_DELAY_S``; a non-numeric value fails config
+        validation, mirroring the other swarm delay knobs.
+    """
+    from src.config.accessor import get_env_config
+
+    return get_env_config().swarm.swarm_stream_retry_max_delay_s
+
+
+def _escalated_stream_retry_delay_s(streak: int) -> float:
+    """Return the capped exponential delay for the one-based failure streak.
+
+    Doubles per consecutive retryable failure (1.0s, 2.0s, 4.0s, ...) so a
+    sustained provider outage backs off instead of burning the retry budget
+    at a constant cadence. The exponent is clamped at 62 (mirroring
+    ``src/swarm/runtime.py``'s worker-level backoff) and the result is capped
+    at ``_STREAM_RETRY_MAX_DELAY_S`` so a long outage never exceeds the
+    configured ceiling.
+
+    Args:
+        streak: Number of consecutive retryable stream failures including the
+            current one; values below 1 are treated as 1.
+
+    Returns:
+        Seconds to sleep before the stream retry, never negative.
+    """
+    ceiling = min(
+        _STREAM_RETRY_DELAY_S * (2 ** min(max(streak, 1) - 1, 62)),
+        _STREAM_RETRY_MAX_DELAY_S,
+    )
+    return max(ceiling, 0.0)
+
+
 _HEARTBEAT_INTERVAL_S = _heartbeat_interval_s()
 _STREAM_RETRY_DELAY_S = _stream_retry_delay_s()
+_STREAM_RETRY_MAX_DELAY_S = _stream_retry_max_delay_s()
 _MAX_TOKEN_ESTIMATE = 60_000
 
 
@@ -590,6 +629,7 @@ def _run_worker_impl(
     data_tool_calls = 0
     content_filter_count = 0
     consecutive_content_filter_count = 0
+    stream_failure_streak = 0
 
     for iteration in range(max_iterations):
         # Microcompact: clear old tool results to prevent token bloat
@@ -744,24 +784,46 @@ def _run_worker_impl(
             # absorbed by ChatLLM's silent non-streaming fallback; it now
             # surfaces as ProviderStreamError, so retry the stream exactly
             # once before taking the existing failure path. Deterministic
-            # 4xx errors skip the retry and fail immediately.
+            # 4xx errors skip the retry and fail immediately. The delay
+            # escalates across consecutive retryable failures, honoring the
+            # provider's Retry-After header (bounded by the configured cap)
+            # when present. A successful retry does not reset the streak —
+            # only a clean first-attempt success does.
             try:
                 response = _stream_once()
             except ProviderStreamError as stream_exc:
                 if not stream_exc.retryable:
                     raise
+                stream_failure_streak += 1
+                retry_delay_s = (
+                    min(stream_exc.retry_after_s, _STREAM_RETRY_MAX_DELAY_S)
+                    if stream_exc.retry_after_s is not None
+                    else _escalated_stream_retry_delay_s(stream_failure_streak)
+                )
                 logger.warning(
                     "Provider stream failed for agent=%s task=%s iteration=%d "
-                    "(provider=%s model=%s); retrying once: %s",
+                    "(provider=%s model=%s); retrying once in %.2fs: %s",
                     agent_id,
                     task_id,
                     iteration,
                     stream_exc.provider,
                     stream_exc.model,
+                    retry_delay_s,
                     stream_exc,
                 )
-                time.sleep(_STREAM_RETRY_DELAY_S)
-                response = _stream_once()
+                # Wait on the cancel event, not time.sleep: the delay now
+                # escalates to the configured cap (30s by default) and a
+                # provider Retry-After can ask for that much on the first
+                # failure. A blocking sleep would hold a cancelled worker
+                # for the whole delay before the check below sees the flag.
+                if cancel_event is not None:
+                    cancel_event.wait(retry_delay_s)
+                else:
+                    time.sleep(retry_delay_s)
+                if cancel_event is None or not cancel_event.is_set():
+                    response = _stream_once()
+            else:
+                stream_failure_streak = 0
 
             # Cancelled mid-stream: discard this turn's partial response and
             # stop now, without executing any of its tool calls — mirrors

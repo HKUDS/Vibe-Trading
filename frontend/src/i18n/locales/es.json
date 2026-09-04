@@ -614,6 +614,8 @@
     "runNotFound": "Ejecución no encontrada",
     "runNotFoundDesc": "El directorio de la ejecución puede haberse eliminado, o tu navegador puede no tener el acceso a la API configurado. Verifica que la clave de autenticación de la API esté configurada en Configuración si accedes de forma remota.",
     "goBack": "Volver",
+    "showFullPrompt": "Ver prompt completo",
+    "showLessPrompt": "Ver menos",
     "chart": "Gráfico",
     "trades": "Operaciones",
     "factor": "Investigación de factores",
@@ -626,9 +628,11 @@
     "maxDrawdown": "Drawdown máximo",
     "symbol": "Símbolo",
     "weight": "Peso",
-    "rebalanceCount": "Rebalanceos",
-    "turnoverMean": "Rotación promedio",
-    "turnoverMax": "Rotación máxima",
+    "rebalanceCount": "Cambios de objetivo (solicitados)",
+    "rebalanceExecuted": "Ejecuciones de rebalanceo",
+    "rebalanceRealizedTurnover": "Rotación real de rebalanceo",
+    "turnoverMean": "Rotación promedio (solicitada)",
+    "turnoverMax": "Rotación máxima (solicitada)",
     "largestRebalance": "Mayor rebalanceo",
     "date": "Fecha",
     "turnover": "Rotación",
@@ -1399,6 +1403,8 @@
   },
   "runDashboard": {
     "eyebrow": "Investigación cuantitativa · Backtest",
+    "noBacktestData": "Este run no tiene datos de backtest que graficar",
+    "noBacktestDataStudioHint": "Parece un análisis de cartera/riesgo — consulta sus números en la pestaña Studio.",
     "engine": "motor",
     "portfolio": "Cartera",
     "systematicStrategy": "Estrategia sistemática",
@@ -1477,6 +1483,7 @@
       "errorLoad": "Cartera no disponible",
       "errorRefresh": "Fallo al actualizar",
       "errorReconnect": "No se pudo volver a conectar la cuenta",
+      "errorReconnectTimeout": "La autorización del navegador agotó el tiempo. Vuelve a conectar y completa pronto la autorización del bróker.",
       "errorSaveSettings": "No se pudieron guardar los ajustes de la cartera",
       "errorExport": "Fallo al exportar"
     },
@@ -1507,7 +1514,8 @@
       "failed": "No se pudo leer: no cuenta en el total",
       "lastSuccess": "Última lectura correcta {{time}}",
       "noSuccess": "Todavía sin ninguna lectura correcta",
-      "reconnect": "Volver a conectar"
+      "reconnect": "Volver a conectar",
+      "retryRead": "Reintentar lectura"
     },
     "holdings": {
       "title": "Posiciones",
@@ -1549,6 +1557,11 @@
     "env": {
       "live": "En vivo",
       "paper": "Demo"
+    },
+    "compatibility": {
+      "native": "Adaptador nativo",
+      "contractTested": "Probado por contrato",
+      "experimental": "Experimental"
     },
     "editor": {
       "title": "Gestionar las cuentas de la cartera",
@@ -1595,12 +1608,17 @@
       "codexBody": "Pide a Codex que ejecute connector init, implemente el adaptador de lectura a partir de la documentación oficial, lo valide y luego lo instale. El plugin queda fuera del repositorio.",
       "readOnly": "Solo lectura",
       "credentialSaved": "guardada",
+      "optional": "(opcional)",
+      "authType": "Autenticación",
+      "dependency": "Dependencia local",
       "oauthNote": "Usa OAuth; autoriza mediante la reconexión cuando haga falta.",
       "localNote": "Las credenciales las gestiona la configuración local del conector existente.",
       "saveVault": "Guardar en el almacén",
       "savedVault": "Credenciales guardadas en el almacén del sistema.",
       "test": "Probar",
       "testOk": "{{label}} está lista.",
+      "testFailed": "Falló la prueba de {{label}}: {{error}}",
+      "unknownTestError": "El conector devolvió un error desconocido.",
       "delete": "Eliminar",
       "configured": "Credenciales necesarias configuradas"
     }

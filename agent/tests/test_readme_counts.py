@@ -155,6 +155,34 @@ def _quantlib_export_count() -> int:
     return total
 
 
+def _quantlib_module_count() -> int:
+    """Count the `src/quantlib` submodules the badge claims.
+
+    Counted the same way the function total is: a submodule that exports an
+    `__all__` is one module of the library. The badge states both numbers and
+    only the function half was ever guarded, so four modules landed while the
+    badge still said nineteen — the count was right about functions and wrong
+    about modules for as long as nobody read it.
+
+    Returns:
+        Number of `quantlib` submodules exporting `__all__`.
+    """
+    import importlib
+    import pkgutil
+
+    if str(AGENT_DIR) not in sys.path:
+        sys.path.insert(0, str(AGENT_DIR))
+    quantlib = importlib.import_module("src.quantlib")
+
+    return len(
+        [
+            module
+            for module in pkgutil.walk_packages(quantlib.__path__, "src.quantlib.")
+            if getattr(importlib.import_module(module.name), "__all__", None)
+        ]
+    )
+
+
 def _counts() -> dict[str, int]:
     """Return every code-derived count the READMEs state.
 
@@ -324,6 +352,20 @@ def test_feature_badges_state_the_real_counts(name: str) -> None:
         assert str(counts[key]) in _numbers(badge), (
             f"{name}: {key} badge says {badge!r}, code ships {counts[key]}"
         )
+
+
+@pytest.mark.parametrize("name", READMES)
+def test_quantlib_badge_states_both_the_function_and_module_counts(name: str) -> None:
+    """The Quant Library badge carries two numbers; both must be the real ones."""
+    badge = _badges(_read(name))[BADGE_ORDER.index("quantlib")]
+
+    assert _numbers(badge) == {
+        str(_quantlib_export_count()),
+        str(_quantlib_module_count()),
+    }, (
+        f"{name}: quantlib badge says {badge!r}, code ships "
+        f"{_quantlib_export_count()} functions across {_quantlib_module_count()} modules"
+    )
 
 
 @pytest.mark.parametrize("name", READMES)

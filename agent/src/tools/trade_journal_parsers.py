@@ -527,6 +527,10 @@ def _infer_market_from_symbol(symbol: str) -> str:
     s = symbol.upper()
     if s.endswith(".HK"):
         return "hk"
+    if s.endswith(".L"):
+        # LSE names (#1206); without this they landed in "other"
+        # and shadow analysis silently degraded to NaN.
+        return "uk"
     if s.endswith(".SH") or s.endswith(".SZ") or s.endswith(".BJ"):
         return "china_a"
     if ("-" in s or "/" in s) and any(quote in s for quote in ("USDT", "USDC", "BTC", "USD")):

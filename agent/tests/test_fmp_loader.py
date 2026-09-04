@@ -119,17 +119,18 @@ class TestFetch:
             out = DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")
         assert set(out) == {"AAPL.US"}
         assert len(out["AAPL.US"]) == 2
-        # .US suffix stripped in the request URL.
+        # .US suffix stripped; Stable endpoint uses ?symbol= query param.
         url = mock_get.call_args[0][0]
-        assert url.endswith("/AAPL")
+        assert url == "https://financialmodelingprep.com/stable/historical-price-eod/full"
         params = mock_get.call_args.kwargs["params"]
-        assert params == {"from": "2024-01-01", "to": "2024-01-31", "apikey": "secret"}
+        assert params == {"symbol": "AAPL", "from": "2024-01-01", "to": "2024-01-31", "apikey": "secret"}
 
     def test_one_failing_symbol_does_not_abort_batch(self, monkeypatch):
         monkeypatch.setenv("FMP_API_KEY", "secret")
 
         def _side(url, **kwargs):
-            if url.endswith("/BAD"):
+            params = kwargs.get("params", {})
+            if params.get("symbol") == "BAD":
                 raise RuntimeError("boom")
             return _body("AAPL", _AAPL_BARS)
 

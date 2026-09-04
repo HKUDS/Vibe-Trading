@@ -133,7 +133,9 @@ export function StrategyResearchDashboard({ run }: { run: RunData }) {
       drawdown: String(row.drawdown ?? ""),
     }));
   }, [run.artifacts_equity_csv, run.equity_curve]);
-  const trades = run.artifacts_trades_csv || run.trade_log || [];
+  const trades = run.artifacts_trades_csv?.length
+    ? run.artifacts_trades_csv
+    : run.trade_log || [];
   const identity = useMemo(() => getStrategyReportIdentity(run), [run]);
 
   useEffect(() => {
@@ -206,6 +208,21 @@ export function StrategyResearchDashboard({ run }: { run: RunData }) {
       charts.forEach((chart) => chart.dispose());
     };
   }, [dark, equityRows, trades]);
+
+  // This dashboard is built around a classic equity-curve backtest. A
+  // portfolio-construction / risk-snapshot run (risk_xray, rebalance_notes)
+  // has neither, so every KPI and chart here would silently render as
+  // dashes/blank -- which reads as "broken", not "different run type". Point
+  // to the Studio tab instead, which actually renders that run's data.
+  if (equityRows.length === 0 && trades.length === 0 && (run.risk_xray || run.rebalance_notes)) {
+    return (
+      <div className="mx-auto max-w-[640px] rounded-xl border border-[#dfe2e7] bg-card p-8 text-center shadow-sm">
+        <FlaskConical className="mx-auto h-8 w-8 text-muted-foreground" aria-hidden="true" />
+        <p className="mt-3 text-sm font-medium text-foreground">{t("runDashboard.noBacktestData")}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t("runDashboard.noBacktestDataStudioHint")}</p>
+      </div>
+    );
+  }
 
   const metrics: Record<string, number> = run.metrics || {};
   const kpis = [

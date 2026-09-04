@@ -132,6 +132,9 @@ class OrderIntent:
     quantity: float | None
     instrument_type: InstrumentType
     asset_class: AssetClass | None = None
+    # Buy-limit worst-case fill price for notional math (#18); None on market
+    # orders and on connectors that do not pass one through.
+    limit_price: float | None = None
 
 
 @dataclass(frozen=True)

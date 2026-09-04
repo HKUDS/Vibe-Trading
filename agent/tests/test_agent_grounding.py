@@ -394,6 +394,68 @@ def test_provider_spellings_of_one_instrument_are_one_identity(
     assert authorization.allowed is True
 
 
+def test_binance_pair_resolution_authorizes_crypto_consumers(tmp_path: Path) -> None:
+    """Issue #1234: an exact connector pair must survive unrelated Yahoo hits."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="Check the ETH-USDT orderbook and current price.",
+    )
+    before_resolution = ledger.authorized_symbols
+    resolver = ledger.authorize_tool_call(
+        "search_symbol",
+        {"query": "ETH-USDT"},
+        batch_authorized_symbols=before_resolution,
+        call_id="resolve-crypto",
+    )
+    assert resolver.allowed is True
+
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": "ETH-USDT"},
+        result=json.dumps(
+            {
+                "ok": True,
+                "source": "symbol_search",
+                "data": {
+                    "query": "ETH-USDT",
+                    "count": 2,
+                    "sources": {"binance": "ok", "yahoo": "ok"},
+                    "candidates": [
+                        {
+                            "symbol": "ETH-USDT",
+                            "market": "crypto",
+                            "type": "cryptocurrency",
+                            "exchange": "BINANCE",
+                            "source": "binance",
+                        },
+                        {
+                            "symbol": "AETHUSDT-USD",
+                            "market": "global",
+                            "type": "cryptocurrency",
+                            "exchange": "CCC",
+                            "source": "yahoo",
+                        },
+                    ],
+                },
+            }
+        ),
+        call_id="resolve-crypto",
+        success=True,
+    )
+
+    authorization = ledger.authorize_tool_call(
+        "orderbook_depth",
+        {"symbol": "ETH-USDT", "exchange": "binance"},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        batch_identity_status=ledger.identity_status,
+        call_id="crypto-book",
+    )
+
+    assert ledger.identity_status == "locked"
+    assert ledger.authorized_symbols == {"ETH-USDT"}
+    assert authorization.allowed is True
+
+
 def test_stale_history_identity_does_not_unlock_new_subject(tmp_path: Path) -> None:
     """A previous turn's AAPL identity cannot authorize a SpaceX price request."""
     ledger = GroundingLedger(
@@ -968,8 +1030,8 @@ def test_run_dir_ohlc_csv_stray_symbol_is_ignored(tmp_path: Path) -> None:
     assert any(issue["code"] == "unsourced_symbol_figures" for issue in result.issues)
 
 
-def test_numeric_gate_does_not_treat_a_derived_plan_as_observed_data(tmp_path: Path) -> None:
-    """Derived entry levels remain model analysis, not mechanical observations."""
+def test_numeric_gate_validates_derived_plan_in_its_own_component(tmp_path: Path) -> None:
+    """A derivation needs observed inputs and arithmetic that recomputes."""
     ledger = GroundingLedger(
         run_dir=tmp_path,
         user_message="请分析 562500.SS 并给出买入价",
@@ -984,11 +1046,17 @@ def test_numeric_gate_does_not_treat_a_derived_plan_as_observed_data(tmp_path: P
 
     bad_math = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 0.881。")
     no_observed_input = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(0.88 + 0.90) / 2 = 0.89。")
+    constants_only = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(2 * 100) = 200。")
     good = ledger.validate_final_answer("562500.SS（Yahoo，CNY）的推导买入价：(1.141 + 1.137) / 2 = 1.139。")
     concise_answer = ledger.validate_final_answer("2026-06-23 的已观测收盘价为 1.137。")
 
-    assert bad_math.valid is True
-    assert no_observed_input.valid is True
+    assert [issue["code"] for issue in bad_math.issues] == ["derived_claim_invalid"]
+    assert [issue["code"] for issue in no_observed_input.issues] == [
+        "derived_claim_unverified_inputs"
+    ]
+    assert [issue["code"] for issue in constants_only.issues] == [
+        "derived_claim_unverified_inputs"
+    ]
     assert good.valid is True
     assert concise_answer.valid is True, concise_answer.issues
 
@@ -1283,10 +1351,10 @@ def test_price_validation_still_rejects_a_quote_outside_observed_range(
     assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
 
 
-def test_price_validation_ignores_score_indicator_and_window_digits(
+def test_numeric_gate_ignores_structure_but_requires_indicator_evidence(
     tmp_path: Path,
 ) -> None:
-    """Confidence scores, indicator readings, and lookback windows are not prices (#1001).
+    """Scores and windows are structure; an indicator reading is an observed fact.
 
     A well-formed verdict line carries a conviction score, the moving-average
     windows it cites, and an oscillator reading. Compared against an OHLC range
@@ -1301,11 +1369,28 @@ def test_price_validation_ignores_score_indicator_and_window_digits(
         # The hyphenated English compound the quantity mask used to stall on.
         "000543.SZ 现价 8.20 CNY 距 52-week high 有距离（source: tencent）",
         "000543.SZ 收盘价 8.20 CNY 低于其 20/50/200-day 均线（source: tencent）",
-        # An indicator reading sharing a clause with a genuine quote.
-        "000543.SZ 现价 8.20 CNY 而 RSI 46.7（source: tencent）",
     ):
         result = ledger.validate_final_answer(draft)
         assert result.valid is True, (draft, result.issues)
+
+    missing_indicator = ledger.validate_final_answer(
+        "000543.SZ 现价 8.20 CNY 而 RSI 46.7（source: tencent）"
+    )
+    assert [issue["code"] for issue in missing_indicator.issues] == [
+        "unverified_numeric_claim"
+    ]
+
+    ledger.ingest_tool_result(
+        tool_name="get_indicators",
+        arguments={"symbol": "000543.SZ"},
+        result=json.dumps({"symbol": "000543.SZ", "rsi": 46.7}),
+        call_id="indicator",
+        success=True,
+    )
+    grounded_indicator = ledger.validate_final_answer(
+        "000543.SZ 现价 8.20 CNY 而 RSI 46.7（source: tencent）"
+    )
+    assert grounded_indicator.valid is True, grounded_indicator.issues
 
 
 def test_price_validation_ignores_short_dates_and_percent_ranges(
@@ -1363,8 +1448,11 @@ def test_short_date_mask_does_not_swallow_a_plain_ratio(tmp_path: Path) -> None:
     result = ledger.validate_final_answer("000543.SZ 收盘价 42.00 CNY，P/E 15（source: tencent）")
 
     assert result.valid is False
-    assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
-    assert [issue["value"] for issue in result.issues] == [42.0]
+    assert [issue["code"] for issue in result.issues] == [
+        "unverified_numeric_claim",
+        "numeric_claim_conflict",
+    ]
+    assert [issue["value"] for issue in result.issues] == [15.0, 42.0]
 
 
 def test_masked_window_does_not_shield_a_wrong_quote_in_the_same_clause(
@@ -1386,7 +1474,10 @@ def test_masked_window_does_not_shield_a_wrong_quote_in_the_same_clause(
     ):
         result = ledger.validate_final_answer(draft)
         assert result.valid is False, draft
-        assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"], draft
+        codes = [issue["code"] for issue in result.issues]
+        assert "numeric_claim_conflict" in codes, draft
+        if "RSI" in draft:
+            assert "unverified_numeric_claim" in codes, draft
 
 
 def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
@@ -1731,16 +1822,15 @@ def test_ratios_and_fx_rates_are_not_read_as_price_claims(
     assert _price_values(segment) == expected
 
 
-def test_historical_price_with_another_date_is_nonblocking(tmp_path: Path) -> None:
+def test_historical_price_with_another_date_still_requires_evidence(tmp_path: Path) -> None:
     ledger = _screened_ledger(tmp_path)
 
     result = ledger.validate_final_answer("000543.SZ 在 6/16 的 all-time high 225.64 CNY，来源待核对。")
 
-    assert result.valid is True
-    assert not {
-        "numeric_claim_conflict",
-        "numeric_claim_unavailable",
-    } & {finding["code"] for finding in [*result.issues, *result.warnings]}
+    assert result.valid is False
+    assert [issue["code"] for issue in result.issues] == [
+        "unverified_numeric_claim"
+    ]
 
 
 def test_plan_level_mask_does_not_shield_a_wrong_quote_end_to_end(tmp_path: Path) -> None:
@@ -1788,6 +1878,22 @@ def _spcx_us_ledger(tmp_path: Path) -> GroundingLedger:
     payload = json.dumps(
         {
             "SPCX.US": [
+                {
+                    "trade_date": "2026-06-16",
+                    "open": 210.0,
+                    "high": 225.64,
+                    "low": 205.0,
+                    "close": 220.0,
+                    "volume": 180000000,
+                },
+                {
+                    "trade_date": "2026-07-10",
+                    "open": 142.0,
+                    "high": 150.57,
+                    "low": 140.0,
+                    "close": 148.0,
+                    "volume": 170000000,
+                },
                 {
                     "trade_date": "2026-08-07",
                     "open": 114.97,
@@ -2200,6 +2306,134 @@ def test_an_unevidenced_price_is_still_rejected_without_any_tool_call(
     }
 
 
+@pytest.mark.parametrize(
+    ("draft", "paren_width"),
+    [
+        ("同期五粮液（000858.SZ）收 168.50 元。", "full-width"),
+        ("同期五粮液(000858.SZ)收 168.50 元。", "half-width"),
+    ],
+)
+def test_fullwidth_parentheses_do_not_split_symbol_from_figure(
+    tmp_path: Path,
+    draft: str,
+    paren_width: str,
+) -> None:
+    """#1260: 公司名（代码）价格 must stay in one clause for the gate.
+
+    Full-width （） were treated as clause separators, so the symbol landed in
+    one segment and the figure in the next and the unsourced-symbol gate
+    never saw them together — a false negative that flipped on parenthesis
+    width alone. Both widths must fire now; the half-width form is the
+    control that already passed.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="What is Kweichow Moutai (600519.SH) trading at this week?",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={
+            "codes": ["600519.SH"],
+            "start_date": "2026-08-24",
+            "end_date": "2026-08-28",
+            "source": "baostock",
+        },
+        result=json.dumps(
+            {
+                "600519.SH": [
+                    {
+                        "trade_date": "2026-08-28T00:00:00",
+                        "open": 1289.0,
+                        "high": 1297.89,
+                        "low": 1288.0,
+                        "close": 1297.4,
+                        "volume": 16126.11,
+                    }
+                ],
+                "_provenance": {
+                    "600519.SH": {
+                        "source": "baostock",
+                        "fallback_used": False,
+                        "currency_conversion": "none",
+                        "volume_unit": "lots",
+                    }
+                },
+            }
+        ),
+        call_id="c1",
+        success=True,
+    )
+
+    issues = [
+        issue
+        for issue in ledger.validate_final_answer(draft).issues
+        if issue.get("code") == "unsourced_symbol_figures"
+    ]
+
+    assert issues, f"{paren_width} parentheses must fire unsourced_symbol_figures"
+    # Pin the offending symbol, not just "some issue fired": the gate must
+    # blame the unsourced 000858.SZ, not the sourced 600519.SH.
+    assert [issue["symbol"] for issue in issues] == ["000858.SZ"]
+
+
+def test_unsourced_symbol_without_a_figure_stays_silent(tmp_path: Path) -> None:
+    """#1260 guard arm: figure co-presence is what the gate checks.
+
+    The regression test above pins that the gate fires when symbol and figure
+    share a clause. This arm pins the inverse: an unsourced symbol with NO
+    nearby figure must not fire unsourced_symbol_figures, so the gate's
+    figure-presence guard (_numbers_without_dates_or_percent) cannot be
+    dropped without this test failing.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="What is Kweichow Moutai (600519.SH) trading at this week?",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={
+            "codes": ["600519.SH"],
+            "start_date": "2026-08-24",
+            "end_date": "2026-08-28",
+            "source": "baostock",
+        },
+        result=json.dumps(
+            {
+                "600519.SH": [
+                    {
+                        "trade_date": "2026-08-28T00:00:00",
+                        "open": 1289.0,
+                        "high": 1297.89,
+                        "low": 1288.0,
+                        "close": 1297.4,
+                        "volume": 16126.11,
+                    }
+                ],
+                "_provenance": {
+                    "600519.SH": {
+                        "source": "baostock",
+                        "fallback_used": False,
+                        "currency_conversion": "none",
+                        "volume_unit": "lots",
+                    }
+                },
+            }
+        ),
+        call_id="c1",
+        success=True,
+    )
+
+    issues = [
+        issue
+        for issue in ledger.validate_final_answer(
+            "同期五粮液（000858.SZ）是知名白酒企业。"
+        ).issues
+        if issue.get("code") == "unsourced_symbol_figures"
+    ]
+
+    assert issues == []
+
+
 def test_a_shortlist_answers_the_user_but_still_cannot_fetch_a_quote(
     tmp_path: Path,
 ) -> None:
@@ -2448,12 +2682,17 @@ def test_in_text_decimal_survives_list_marker_mask(
     ledger = _screened_ledger(tmp_path)
     symbol = "000543.SZ"
 
-    for draft in (
-        f"{symbol} 目标价 1.5 CNY，收盘价 8.20 CNY（source: tencent）",
-        f"{symbol} 变动 0.03 CNY，收盘价 8.20 CNY（source: tencent）",
-    ):
-        result = ledger.validate_final_answer(draft)
-        assert result.valid is True, (draft, result.issues)
+    target = ledger.validate_final_answer(
+        f"{symbol} 目标价 1.5 CNY，收盘价 8.20 CNY（source: tencent）"
+    )
+    assert target.valid is True, target.issues
+
+    unsupported_delta = ledger.validate_final_answer(
+        f"{symbol} 变动 0.03 CNY，收盘价 8.20 CNY（source: tencent）"
+    )
+    assert [issue["code"] for issue in unsupported_delta.issues] == [
+        "unverified_numeric_claim"
+    ]
 
 
 def test_order_level_prices_are_not_observed_quotes(tmp_path: Path) -> None:
@@ -2613,3 +2852,105 @@ def test_a_us_csv_stem_resolves_to_its_venue_suffix() -> None:
     assert _symbol_from_csv_filename("GC_F") == "GC=F"
     # A bare name has no venue suffix and must stay unresolvable.
     assert _symbol_from_csv_filename("AAPL") is None
+
+
+class TestFiatPairAndIndexNormalization:
+    """Search, fetch and grounding agree on one FX spelling; ^ is a symbol."""
+
+    def test_fiat_pair_spellings_normalize_to_yahoo_form(self) -> None:
+        from src.agent.grounding import _normalize_symbol
+
+        assert _normalize_symbol("GBP/USD") == "GBPUSD=X"
+        assert _normalize_symbol("GBPUSD") == "GBPUSD=X"
+        assert _normalize_symbol("GBPUSD=X") == "GBPUSD=X"
+        # Crypto/metals keep their pair form — not fiat/fiat FX.
+        assert _normalize_symbol("ETH/USD") == "ETH-USD"
+        assert _normalize_symbol("XAU/USD") == "XAU-USD"
+
+    def test_scanned_slashed_pair_matches_resolver_answer(self) -> None:
+        """The query-as-asserted scan must agree with the chosen candidate."""
+        from src.agent.grounding import _scan_symbols
+
+        assert _scan_symbols("use GBP/USD spot") == {"GBPUSD=X"}
+
+    def test_index_symbols_are_scanned_and_typed(self) -> None:
+        from src.agent.grounding import (
+            _infer_currency,
+            _infer_instrument_type,
+            _scan_symbols,
+        )
+
+        assert _scan_symbols("quote ^SPX") == {"^SPX"}
+        assert _infer_instrument_type("^SPX", "INDEX") == "index"
+        assert _infer_instrument_type("^SPX") == "index"
+        assert _infer_currency("GBPUSD=X") == "USD"
+
+    def test_ingest_search_symbol_does_not_create_conflicting_identity(self) -> None:
+        """The flagship regression: ingest('GBP/USD') must lock, never conflict."""
+        from src.agent.grounding import _normalize_symbol
+
+        # Chosen (from search_symbol) and asserted (the query text) must be
+        # the same canonical identity — the comparison in _ingest_resolution.
+        chosen = _normalize_symbol("GBPUSD=X")
+        asserted = _scan_symbols("GBP/USD")
+        assert chosen in asserted
+
+
+def test_fx_pair_resolution_authorizes_market_data_consumer(tmp_path: Path) -> None:
+    """Issue: search_symbol('GBP/USD') must lock, and get_market_data('GBPUSD=X')
+    must be authorized — the slashed query used to normalize to the crypto
+    spelling (GBP-USD), disagreeing with the chosen GBPUSD=X candidate and
+    creating a conflicting identity that outranked every later lock.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="Get me the GBP/USD spot rate.",
+    )
+    before_resolution = ledger.authorized_symbols
+    resolver = ledger.authorize_tool_call(
+        "search_symbol",
+        {"query": "GBP/USD"},
+        batch_authorized_symbols=before_resolution,
+        call_id="resolve-fx",
+    )
+    assert resolver.allowed is True
+
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": "GBP/USD"},
+        result=json.dumps(
+            {
+                "ok": True,
+                "source": "symbol_search",
+                "data": {
+                    "query": "GBP/USD",
+                    "count": 1,
+                    "sources": {"yahoo": "ok", "fx_normalizer": "ok"},
+                    "candidates": [
+                        {
+                            "symbol": "GBPUSD=X",
+                            "name": "GBP/USD",
+                            "market": "fx",
+                            "type": "currency",
+                            "exchange": "CCY",
+                            "source": "fx_normalizer",
+                        },
+                    ],
+                },
+            }
+        ),
+        call_id="resolve-fx",
+        success=True,
+    )
+
+    authorization = ledger.authorize_tool_call(
+        "get_market_data",
+        {"codes": ["GBPUSD=X"]},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        batch_identity_status=ledger.identity_status,
+        call_id="fx-prices",
+    )
+
+    assert ledger.identity_status == "locked"
+    assert ledger.authorized_symbols == {"GBPUSD=X"}
+    assert authorization.allowed is True

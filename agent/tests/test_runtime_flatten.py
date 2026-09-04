@@ -208,6 +208,165 @@ def test_mandate_flatten_flag_honored(
     assert report["flatten_skipped_reason"] is None
 
 
+def test_error_envelope_read_open_orders_recorded_not_raised(
+    live_runtime: Path,
+) -> None:
+    # MCPServerAdapter.call_tool returns an error envelope instead of raising;
+    # the sweep must reject it as a structured read error, not crash while
+    # iterating the mapping's string keys.
+    broker = _Broker(open_orders=[{"order_id": "o1"}], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        lambda: _error_envelope("open orders"),
+    )
+    assert {
+        "phase": "read_open_orders",
+        "error": "connection reset while cancelling open orders",
+    } in report["errors"]
+    assert broker.calls == []  # nothing was cancelled
+
+
+def test_error_envelope_read_positions_recorded_not_raised(
+    live_runtime: Path,
+) -> None:
+    broker = _Broker(open_orders=[], positions=[{"symbol": "NVDA", "qty": 1}])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        lambda: _error_envelope("positions"),
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert {
+        "phase": "read_positions",
+        "error": "connection reset while cancelling positions",
+    } in report["errors"]
+    assert broker.calls == []  # no close order was submitted
+
+
+def test_non_list_read_rejected_without_iterating(live_runtime: Path) -> None:
+    # A dict-shaped read result (e.g. a wrapped payload) must be rejected
+    # safely rather than iterated as a mapping.
+    broker = _Broker(open_orders=[], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        lambda: {"orders": [{"order_id": "o1"}]},
+    )
+    read_errors = [e for e in report["errors"] if e["phase"] == "read_open_orders"]
+    assert read_errors and "got dict" in read_errors[0]["error"]
+    assert broker.calls == []
+
+
+def test_invalid_read_entries_skipped_safely(live_runtime: Path) -> None:
+    broker = _Broker(open_orders=[{"order_id": "o1"}], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        lambda: ["o1", {"order_id": "o2"}, 42],
+    )
+    assert report["cancelled_order_ids"] == ["o2"]  # only the dict entry
+    assert any(
+        e["phase"] == "read_open_orders" and "invalid entry" in e["error"]
+        for e in report["errors"]
+    )
+
+
+def test_adapter_ok_envelope_open_orders_unwrapped(live_runtime: Path) -> None:
+    # A REAL successful MCPServerAdapter response is {"status": "ok",
+    # "data": ...} — the sweep must decode it, not treat it as a failure
+    # ("expected a list of records, got dict"), or the halt action never runs.
+    broker = _Broker(open_orders=[{"order_id": "o1"}], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        lambda: {"status": "ok", "data": {"orders": [{"order_id": "o1"}]}},
+    )
+    assert report["cancelled_order_ids"] == ["o1"]
+    assert report["errors"] == []
+    assert report["side_effects_attempted"] is True
+
+
+def test_adapter_ok_envelope_positions_unwrapped(live_runtime: Path) -> None:
+    broker = _Broker(open_orders=[], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        lambda: {"status": "ok", "data": {"positions": [{"symbol": "NVDA", "qty": 3}]}},
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert [s["symbol"] for s in report["flatten_orders_submitted"]] == ["NVDA"]
+    assert report["errors"] == []
+    assert report["side_effects_attempted"] is True
+
+
+def test_adapter_ok_envelope_bare_list_data_unwrapped(live_runtime: Path) -> None:
+    broker = _Broker(open_orders=[], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        lambda: {"status": "ok", "data": [{"order_id": "o1"}]},
+    )
+    assert report["cancelled_order_ids"] == ["o1"]
+
+
+def test_adapter_ok_envelope_missing_pinned_key_rejected(live_runtime: Path) -> None:
+    # A wrapper dict without the pinned key must NOT be accepted generically
+    # (metadata would become fake broker records).
+    broker = _Broker(open_orders=[], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        lambda: {"status": "ok", "data": {"foo": [{"order_id": "o1"}]}},
+    )
+    assert any(
+        e["phase"] == "read_open_orders" and "unexpected broker response" in e["error"]
+        for e in report["errors"]
+    )
+    assert broker.calls == []
+    assert report["side_effects_attempted"] is False
+
+
+def test_read_failure_but_flatten_attempted_sets_side_effects_flag(
+    live_runtime: Path,
+) -> None:
+    # The reviewer's sequence: order read fails, position read succeeds, a
+    # close is submitted. side_effects_attempted must be True so the runner
+    # latches — replaying that close after restart would be a duplicate.
+    broker = _Broker(open_orders=[], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        lambda: {"status": "ok", "data": {"positions": [{"symbol": "NVDA", "qty": 3}]}},
+        lambda: _error_envelope("open orders"),
+        allow_flatten=True,
+    )
+    assert {"phase": "read_open_orders", "error": "connection reset while cancelling open orders"} in report["errors"]
+    assert [s["symbol"] for s in report["flatten_orders_submitted"]] == ["NVDA"]
+    assert report["side_effects_attempted"] is True
+
+
+def test_all_reads_failed_no_side_effects_flag(live_runtime: Path) -> None:
+    broker = _Broker(open_orders=[], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        lambda: _error_envelope("positions"),
+        lambda: _error_envelope("open orders"),
+        allow_flatten=True,
+    )
+    assert report["side_effects_attempted"] is False
+    assert broker.calls == []
+
+
 def _error_envelope(key: str) -> dict[str, Any]:
     """The shape MCPServerAdapter.call_tool returns instead of raising."""
     return {
@@ -278,3 +437,58 @@ def test_error_envelope_flatten_is_not_a_success(live_runtime: Path) -> None:
             "error": "connection reset while cancelling NVDA",
         }
     ]
+
+
+def test_nested_broker_error_cancel_is_not_a_success(live_runtime: Path) -> None:
+    # MCP transport succeeded but the broker rejected inside its own payload
+    # ({"status": "ok", "data": {"status": "error", ...}}): the order stays
+    # live, so it must NOT be recorded as cancelled.
+    broker = _Broker(open_orders=[{"order_id": "o1"}, {"order_id": "o2"}], positions=[])
+    real_submit = broker.submit
+
+    def submit(request: dict[str, Any]) -> dict[str, Any]:
+        if request.get("order_id") == "o1":
+            return {
+                "status": "ok",
+                "data": {"status": "error", "error": "broker rejected o1"},
+            }
+        return real_submit(request)
+
+    report = flatten.flatten_and_cancel(
+        "robinhood", submit, broker.read_positions, broker.read_open_orders
+    )
+    assert report["cancelled_order_ids"] == ["o2"]  # only the accepted one
+    assert {
+        "phase": "cancel",
+        "order_id": "o1",
+        "error": "broker rejected o1",
+    } in report["errors"]
+    assert report["side_effects_attempted"] is True  # submitted, just rejected
+
+
+def test_nested_broker_error_flatten_is_not_a_success(live_runtime: Path) -> None:
+    broker = _Broker(open_orders=[], positions=[{"symbol": "NVDA", "qty": 3}])
+    real_submit = broker.submit
+
+    def submit(request: dict[str, Any]) -> dict[str, Any]:
+        if request.get("symbol") == "NVDA":
+            return {
+                "status": "ok",
+                "data": {"ok": False, "message": "insufficient buying power"},
+            }
+        return real_submit(request)
+
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        submit,
+        broker.read_positions,
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert report["flatten_orders_submitted"] == []
+    assert {
+        "phase": "flatten",
+        "symbol": "NVDA",
+        "error": "insufficient buying power",
+    } in report["errors"]
+    assert report["side_effects_attempted"] is True

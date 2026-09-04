@@ -17,6 +17,7 @@ from src.trading.profiles import (
     profile_by_id,
     save_selected_profile_id,
 )
+from src.trading.onboarding import onboarding_dict
 from src.trading.service import (
     cancel_close_order,
     cancel_order,
@@ -148,6 +149,10 @@ TRADING_COMMON_PARAMETERS = {
         "type": "string",
         "description": "Trading connector profile id, e.g. ibkr-paper-local or robinhood-live-mcp. Defaults to the selected profile.",
     },
+    "connection_id": {
+        "type": "string",
+        "description": "Optional local read-only connection instance id. Credentials are loaded from the OS vault and never passed through MCP.",
+    },
     "host": {
         "type": "string",
         "description": "Optional local TWS/Gateway host override for local profiles.",
@@ -163,10 +168,7 @@ TRADING_COMMON_PARAMETERS = {
     "market_type": {
         "type": "string",
         "enum": ["spot", "usdm"],
-        "description": (
-            "Optional Binance read market. USD-M is accepted only by the "
-            "live read-only Binance profile."
-        ),
+        "description": ("Optional Binance read market. USD-M is accepted only by the live read-only Binance profile."),
     },
     "observation_absolute_tolerance": {
         "type": "number",
@@ -209,6 +211,7 @@ def _overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
             terminal than the caller asked for.
     """
     return {
+        "connection_id": _connection(kwargs.get("connection_id")),
         "host": _connection(kwargs.get("host")),
         "port": _int_or_none(kwargs.get("port"), "port"),
         "client_id": _int_or_none(kwargs.get("client_id"), "client_id"),
@@ -249,7 +252,13 @@ class TradingConnectionsTool(BaseTool):
                 {
                     "status": "ok",
                     "selected_profile": selected,
-                    "profiles": [profile.to_dict(selected=profile.id == selected) for profile in list_profiles()],
+                    "profiles": [
+                        {
+                            **profile.to_dict(selected=profile.id == selected),
+                            "onboarding": onboarding_dict(profile),
+                        }
+                        for profile in list_profiles()
+                    ],
                 }
             )
         except Exception as exc:  # noqa: BLE001
@@ -533,7 +542,9 @@ class TradingCapitalDistributionTool(BaseTool):
     """
 
     name = "trading_capital_distribution"
-    description = "Read today's capital in-flow vs out-flow snapshot (super/big/mid/small buckets) for a symbol. Read-only."
+    description = (
+        "Read today's capital in-flow vs out-flow snapshot (super/big/mid/small buckets) for a symbol. Read-only."
+    )
     parameters = {
         "type": "object",
         "properties": {

@@ -32,6 +32,7 @@ from scipy.stats import norm
 
 __all__ = [
     "BARRIER_TYPES",
+    "barrier_greeks",
     "barrier_option_price",
     "bs_greeks",
     "bs_price",
@@ -633,3 +634,69 @@ def barrier_option_price(
             raise ValueError(f"Unhandled barrier type {b_type}")
 
     return float(max(0.0, price))
+
+
+
+def barrier_greeks(
+    S: float,
+    K: float,
+    H: float,
+    T: float,
+    r: float,
+    sigma: float,
+    barrier_type: str,
+    option_type: str = "call",
+    q: float = 0.0,
+    rebate: float = 0.0,
+) -> dict[str, float]:
+    """Compute sensitivity Greeks for single-barrier options via central finite differences.
+
+    Matches the conventions of :func:`bs_greeks`:
+      * delta: per 1.0 of spot
+      * gamma: per 1.0 of spot squared
+      * theta: per calendar day (1/365)
+      * vega: per 1 percentage point of volatility (0.01)
+      * rho: per 1 percentage point of interest rate (0.01)
+
+    Args:
+        S, K, H, T, r, sigma, barrier_type, option_type, q, rebate: Standard barrier inputs.
+
+    Returns:
+        dict with keys: ``delta``, ``gamma``, ``theta``, ``vega``, ``rho``.
+    """
+    p = barrier_option_price(S, K, H, T, r, sigma, barrier_type, option_type, q, rebate)
+
+    dS = max(1e-4, 1e-4 * S)
+    p_up = barrier_option_price(S + dS, K, H, T, r, sigma, barrier_type, option_type, q, rebate)
+    p_down = barrier_option_price(S - dS, K, H, T, r, sigma, barrier_type, option_type, q, rebate)
+
+    delta = float((p_up - p_down) / (2.0 * dS))
+    gamma = float((p_up - 2.0 * p + p_down) / (dS**2))
+
+    # Theta (per calendar day): time decay moves forward, so T - dt
+    dt = 1.0 / 365.0
+    if T > dt:
+        p_dt = barrier_option_price(S, K, H, T - dt, r, sigma, barrier_type, option_type, q, rebate)
+        theta = float(p_dt - p)
+    else:
+        theta = 0.0
+
+    # Vega (per 1 percentage point = 0.01)
+    dvol = 1e-4
+    p_vol_up = barrier_option_price(S, K, H, T, r, sigma + dvol, barrier_type, option_type, q, rebate)
+    p_vol_down = barrier_option_price(S, K, H, T, r, max(1e-6, sigma - dvol), barrier_type, option_type, q, rebate)
+    vega = float((p_vol_up - p_vol_down) / (2.0 * dvol) * 0.01)
+
+    # Rho (per 1 percentage point = 0.01)
+    dr = 1e-4
+    p_r_up = barrier_option_price(S, K, H, T, r + dr, sigma, barrier_type, option_type, q, rebate)
+    p_r_down = barrier_option_price(S, K, H, T, r - dr, sigma, barrier_type, option_type, q, rebate)
+    rho = float((p_r_up - p_r_down) / (2.0 * dr) * 0.01)
+
+    return {
+        "delta": delta,
+        "gamma": gamma,
+        "theta": theta,
+        "vega": vega,
+        "rho": rho,
+    }

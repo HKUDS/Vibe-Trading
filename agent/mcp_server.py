@@ -254,9 +254,7 @@ class _HostGuardMiddleware:
             if not any(_host_matches(normalized, pattern) for pattern in self.allowed_hosts):
                 from starlette.responses import PlainTextResponse
 
-                await PlainTextResponse("Invalid host header", status_code=400)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Invalid host header", status_code=400)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -283,9 +281,7 @@ class _OriginGuardMiddleware:
             if not _origin_allowed(origin, self.allowed_hosts):
                 from starlette.responses import PlainTextResponse
 
-                await PlainTextResponse("Origin not allowed", status_code=403)(
-                    scope, receive, send
-                )
+                await PlainTextResponse("Origin not allowed", status_code=403)(scope, receive, send)
                 return
         await self.app(scope, receive, send)
 
@@ -1293,9 +1289,7 @@ def get_strategy_evidence(strategy_id: str, regime: str | None = None) -> str:
 
 
 @mcp.tool
-def refresh_strategy_evidence(
-    manifest_path: str | None = None, runs: list | None = None
-) -> str:
+def refresh_strategy_evidence(manifest_path: str | None = None, runs: list | None = None) -> str:
     """Rebuild the strategy-discovery evidence cache from backtest run artifacts.
 
     WRITE tool with disposable-cache-only scope: it replaces the facade-owned
@@ -1332,6 +1326,7 @@ def refresh_strategy_evidence(
 def _trading_common_args(
     *,
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1341,6 +1336,8 @@ def _trading_common_args(
     payload: dict[str, Any] = {}
     if connection:
         payload["connection"] = connection
+    if connection_id:
+        payload["connection_id"] = connection_id
     if host:
         payload["host"] = host
     if port is not None:
@@ -1377,6 +1374,7 @@ def trading_select_connection(connection: str) -> str:
 @mcp.tool
 def trading_check(
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1390,6 +1388,7 @@ def trading_check(
 
     Args:
         connection: Optional profile id. Defaults to the selected profile.
+        connection_id: Optional local connection id whose OS-vault credentials are used.
         host: Optional local host override.
         port: Optional local socket port override.
         client_id: Optional local client id override.
@@ -1398,13 +1397,21 @@ def trading_check(
     registry = _get_registry()
     return registry.execute(
         "trading_check",
-        _trading_common_args(connection=connection, host=host, port=port, client_id=client_id, account=account),
+        _trading_common_args(
+            connection=connection,
+            connection_id=connection_id,
+            host=host,
+            port=port,
+            client_id=client_id,
+            account=account,
+        ),
     )
 
 
 @mcp.tool
 def trading_account(
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1414,6 +1421,7 @@ def trading_account(
 
     Args:
         connection: Optional profile id. Defaults to the selected profile.
+        connection_id: Optional local connection id whose OS-vault credentials are used.
         host: Optional local host override.
         port: Optional local socket port override.
         client_id: Optional local client id override.
@@ -1422,13 +1430,21 @@ def trading_account(
     registry = _get_registry()
     return registry.execute(
         "trading_account",
-        _trading_common_args(connection=connection, host=host, port=port, client_id=client_id, account=account),
+        _trading_common_args(
+            connection=connection,
+            connection_id=connection_id,
+            host=host,
+            port=port,
+            client_id=client_id,
+            account=account,
+        ),
     )
 
 
 @mcp.tool
 def trading_positions(
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1438,6 +1454,7 @@ def trading_positions(
 
     Args:
         connection: Optional profile id. Defaults to the selected profile.
+        connection_id: Optional local connection id whose OS-vault credentials are used.
         host: Optional local host override.
         port: Optional local socket port override.
         client_id: Optional local client id override.
@@ -1446,13 +1463,21 @@ def trading_positions(
     registry = _get_registry()
     return registry.execute(
         "trading_positions",
-        _trading_common_args(connection=connection, host=host, port=port, client_id=client_id, account=account),
+        _trading_common_args(
+            connection=connection,
+            connection_id=connection_id,
+            host=host,
+            port=port,
+            client_id=client_id,
+            account=account,
+        ),
     )
 
 
 @mcp.tool
 def trading_orders(
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1471,7 +1496,9 @@ def trading_orders(
         account: Optional account code filter.
         include_executions: Include recent executions when available.
     """
-    params = _trading_common_args(connection=connection, host=host, port=port, client_id=client_id, account=account)
+    params = _trading_common_args(
+        connection=connection, connection_id=connection_id, host=host, port=port, client_id=client_id, account=account
+    )
     params["include_executions"] = include_executions
     registry = _get_registry()
     return registry.execute("trading_orders", params)
@@ -1481,6 +1508,7 @@ def trading_orders(
 def trading_quote(
     symbol: str,
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1502,7 +1530,9 @@ def trading_quote(
         currency: Contract currency, default USD.
         sec_type: Security type, default STK.
     """
-    params = _trading_common_args(connection=connection, host=host, port=port, client_id=client_id, account=account)
+    params = _trading_common_args(
+        connection=connection, connection_id=connection_id, host=host, port=port, client_id=client_id, account=account
+    )
     params.update({"symbol": symbol, "exchange": exchange, "currency": currency, "sec_type": sec_type})
     registry = _get_registry()
     return registry.execute("trading_quote", params)
@@ -1512,6 +1542,7 @@ def trading_quote(
 def trading_history(
     symbol: str,
     connection: str | None = None,
+    connection_id: str | None = None,
     host: str | None = None,
     port: int | None = None,
     client_id: int | None = None,
@@ -1545,7 +1576,9 @@ def trading_history(
         period: Bar interval for SDK connectors (broker_sdk): 1m/5m/1h/1d/1w.
         limit: Number of bars for SDK connectors.
     """
-    params = _trading_common_args(connection=connection, host=host, port=port, client_id=client_id, account=account)
+    params = _trading_common_args(
+        connection=connection, connection_id=connection_id, host=host, port=port, client_id=client_id, account=account
+    )
     params.update(
         {
             "symbol": symbol,
@@ -1629,9 +1662,7 @@ async def run_swarm(
     runtime = SwarmRuntime(store=store, agent_config=agent_config)
 
     try:
-        run = runtime.start_run(
-            preset_name, variables, include_shell_tools=_include_shell_tools
-        )
+        run = runtime.start_run(preset_name, variables, include_shell_tools=_include_shell_tools)
     except FileNotFoundError as exc:
         return json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False)
     except ValueError as exc:
@@ -1699,6 +1730,7 @@ async def run_swarm(
 # Market data tool
 # ---------------------------------------------------------------------------
 
+
 def _detect_source(code: str) -> str:
     return detect_source(code)
 
@@ -1763,6 +1795,12 @@ def get_market_data(
     single shares). Each symbol's ``_provenance.volume_unit`` states the unit
     of the returned rows ("lots" / "shares"; null = source undeclared) — read
     it before interpreting or comparing volume values across symbols/sources.
+
+    Price caliber: which source served a symbol decides what its prices mean
+    (some adjust for splits and dividends, others serve raw quotes). Each
+    symbol's ``_provenance.adjustment`` states the caliber ("raw" / "split" /
+    "split_dividend" / "na" / "unknown") — read it before comparing price
+    levels across symbols.
     """
     registry = _get_registry()
     return registry.execute(
@@ -2137,7 +2175,7 @@ def get_options_chain(ticker: str, expiration: int | None = None) -> str:
 
 @mcp.tool
 def get_stock_profile(ticker: str, sections: _lenient_str_list_opt = None) -> str:
-    """Fetch a read-only company profile for a US or HK listing (Yahoo Finance).
+    """Fetch a read-only company profile for a US, HK, or UK (LSE .L) listing (Yahoo Finance).
 
     Returns valuation key statistics, analyst price targets and
     earnings/revenue estimates, institutional and insider ownership, and the
@@ -2145,7 +2183,8 @@ def get_stock_profile(ticker: str, sections: _lenient_str_list_opt = None) -> st
     context, not for OHLCV price bars (use get_market_data).
 
     Args:
-        ticker: US (bare or .US suffix) or HK (zero-padded .HK code) symbol.
+        ticker: US (bare or .US suffix), HK (zero-padded .HK code), or
+            UK (LSE .L, e.g. VOD.L) symbol.
         sections: Profile sections to return, any of: key_stats, financials,
             earnings_trend, institution_ownership, insider_holders,
             recommendation_trend. Defaults to all sections.
@@ -2405,9 +2444,7 @@ def _mirrored_tool_classes() -> list[Any]:
         try:
             classes.append(getattr(import_module(module_path), class_name))
         except Exception:  # noqa: BLE001 - one unavailable module, not four
-            logger.exception(
-                "Tool module %s is unavailable; its MCP tool will be absent", module_path
-            )
+            logger.exception("Tool module %s is unavailable; its MCP tool will be absent", module_path)
     return classes
 
 
@@ -2495,8 +2532,7 @@ def _register_mirrored_tool(tool_cls: Any) -> bool:
     name = getattr(tool_cls, "name", "")
     if getattr(tool_cls, "is_readonly", False) is not True:
         logger.error(
-            "Refusing to expose non-read-only tool %r via MCP; only read-only "
-            "tools are ever surfaced.",
+            "Refusing to expose non-read-only tool %r via MCP; only read-only tools are ever surfaced.",
             name or tool_cls,
         )
         return False
@@ -2984,9 +3020,7 @@ def main():
         default="127.0.0.1",
         help="Network bind host for --transport sse / http (default: 127.0.0.1)",
     )
-    parser.add_argument(
-        "--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)"
-    )
+    parser.add_argument("--port", type=int, default=8900, help="SSE/HTTP port (default: 8900)")
     parser.add_argument(
         "--enable-shell-tools",
         action="store_true",
@@ -3003,9 +3037,7 @@ def main():
 
         _migrate.migrate_legacy_state()
     except Exception:  # pragma: no cover — best-effort
-        logging.getLogger(__name__).warning(
-            "Legacy state migration failed", exc_info=True
-        )
+        logging.getLogger(__name__).warning("Legacy state migration failed", exc_info=True)
 
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
     _registry = None
@@ -3022,9 +3054,7 @@ def main():
 
         from src.config.accessor import get_env_config
 
-        allowed_hosts = _parse_allowed_hosts(
-            get_env_config().api.vibe_trading_mcp_allowed_hosts
-        )
+        allowed_hosts = _parse_allowed_hosts(get_env_config().api.vibe_trading_mcp_allowed_hosts)
         transport = "streamable-http" if args.transport == "http" else "sse"
         app = _build_network_app(transport, allowed_hosts)
         uvicorn.run(app, host=args.host, port=args.port)

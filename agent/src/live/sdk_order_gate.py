@@ -943,6 +943,16 @@ def _implied_notional(intent: OrderIntent, connector_module: Any, config: Any) -
             return None
         return float(value)
     price = _quote_price(intent, connector_module, config)
+    # A buy limit is fillable anywhere up to its limit, so the cap must be
+    # sized for the worse of the two (#18): pricing it at the quote alone
+    # would let a limit at 2x the market fill at twice the authorized amount.
+    # Sell limits do not create exposure, so the quote stands there.
+    if (
+        intent.side == "buy"
+        and intent.limit_price is not None
+        and price is not None
+    ):
+        price = max(price, intent.limit_price)
     if price is None:
         return None
     return intent.quantity * price

@@ -39,14 +39,14 @@ resolve_secid("AAPL.US")     # -> "105.AAPL"（经 suggest 端点解析并进程
 - **日期**：datacenter `filter` 用 `YYYY-MM-DD`；kline `beg`/`end` 用 `YYYYMMDD`。
 - **返回**：统一 JSON 字符串信封，成功 `{"ok": true, "market", "source": "eastmoney", "data": {...}}`，失败 `{"ok": false, "error": ...}`。单个失败 symbol 以 per-symbol error 上报，不中断批次。
 
-> 链接约定：本文档内所有指向 `references/` 的链接均以**技能名前缀** `eastmoney/references/...` 书写。`read_file` 工具以 `skills/` 为根解析路径，省略前缀会读取失败。
+> 链接约定：本文档内所有指向 `references/` 的链接均以**相对本文档**的形式书写（`references/...`），这是 GitHub 在浏览器中打开该文件时解析的形式。`read_file` 工具会把同一字符串解析到拥有它的技能目录下，因此人和 agent 读到的是同一份文件。新增文档请沿用相对形式，并保证 references 路径在各技能之间不重名：两个技能同时拥有的路径会被报为歧义，而不会被猜测。
 
 ## python 脚本示例
 
-- [资金流向 + 板块联动研究](eastmoney/scripts/fund_flow_example.py)
-- [龙虎榜 + 大宗交易 + 融资融券披露面研究](eastmoney/scripts/disclosure_example.py)
-- [研报舆情 + 财报基本面研究](eastmoney/scripts/fundamentals_example.py)
-- [代码搜索 + 全市场选股](eastmoney/scripts/screen_search_example.py)
+- [资金流向 + 板块联动研究](scripts/fund_flow_example.py)
+- [龙虎榜 + 大宗交易 + 融资融券披露面研究](scripts/disclosure_example.py)
+- [研报舆情 + 财报基本面研究](scripts/fundamentals_example.py)
+- [代码搜索 + 全市场选股](scripts/screen_search_example.py)
 
 ## 接口列表
 
@@ -54,45 +54,45 @@ resolve_secid("AAPL.US")     # -> "105.AAPL"（经 suggest 端点解析并进程
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `get_fund_flow` | [资金流向](eastmoney/references/资金面/资金流向.md) | A股/港股/美股 | 主力/超大单/大单/中单/小单净流入，日线历史或当日分钟线 |
+| `get_fund_flow` | [资金流向](references/资金面/资金流向.md)           | A股/港股/美股 | 主力/超大单/大单/中单/小单净流入，日线历史或当日分钟线 |
 
 ### 龙虎榜
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `get_dragon_tiger` | [龙虎榜](eastmoney/references/龙虎榜/龙虎榜.md) | A股 | 某交易日全市场上榜个股 + 指定个股的买卖席位排名 |
+| `get_dragon_tiger` | [龙虎榜](references/龙虎榜/龙虎榜.md)           | A股 | 某交易日全市场上榜个股 + 指定个股的买卖席位排名 |
 
 ### 参考数据（披露面）
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `get_margin_trading` | [融资融券](eastmoney/references/参考数据/融资融券.md) | A股 | 个股每日融资余额/融资买入/融券余额/RZRQ 合计 |
-| `get_block_trades` | [大宗交易](eastmoney/references/参考数据/大宗交易.md) | A股 | 逐笔成交价/量/额、相对收盘折溢价、买卖营业部 |
-| `get_shareholder_count` | [股东户数](eastmoney/references/参考数据/股东户数.md) | A股 | 各报告期股东户数、环比变动、户均持股 |
-| `get_lockup_expiry` | [限售解禁](eastmoney/references/参考数据/限售解禁.md) | A股 | 个股全历史解禁表，或全市场未来 N 日解禁日历 |
+| `get_margin_trading` | [融资融券](references/参考数据/融资融券.md)           | A股 | 个股每日融资余额/融资买入/融券余额/RZRQ 合计 |
+| `get_block_trades` | [大宗交易](references/参考数据/大宗交易.md)           | A股 | 逐笔成交价/量/额、相对收盘折溢价、买卖营业部 |
+| `get_shareholder_count` | [股东户数](references/参考数据/股东户数.md)           | A股 | 各报告期股东户数、环比变动、户均持股 |
+| `get_lockup_expiry` | [限售解禁](references/参考数据/限售解禁.md)           | A股 | 个股全历史解禁表，或全市场未来 N 日解禁日历 |
 
 ### 板块
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `get_sector_info` | [行业概念板块](eastmoney/references/板块/行业概念板块.md) | A股 | 个股所属行业/概念板块（membership）或行业板块按涨幅排名（ranking） |
+| `get_sector_info` | [行业概念板块](references/板块/行业概念板块.md)           | A股 | 个股所属行业/概念板块（membership）或行业板块按涨幅排名（ranking） |
 
 ### 研报舆情
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `get_research_reports` | [券商研报](eastmoney/references/研报舆情/券商研报.md) | A股 | 券商研报列表（标题/机构/分析师/评级/EPS·PE 预测）+ 同花顺一致预期 EPS |
-| `get_stock_news` | [财经新闻](eastmoney/references/研报舆情/财经新闻.md) | A股/港股/美股 | 个股新闻或全市场财经快讯（A 股走东财，美/港走 Yahoo） |
+| `get_research_reports` | [券商研报](references/研报舆情/券商研报.md)           | A股 | 券商研报列表（标题/机构/分析师/评级/EPS·PE 预测）+ 同花顺一致预期 EPS |
+| `get_stock_news` | [财经新闻](references/研报舆情/财经新闻.md)           | A股/港股/美股 | 个股新闻或全市场财经快讯（A 股走东财，美/港走 Yahoo） |
 
 ### 财务报表（A 股 / 港股；美股走 SEC）
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `get_financial_statements` | [三大报表与主要指标](eastmoney/references/财务报表/三大报表与主要指标.md) | A股/港股(东财)·美股(SEC EDGAR) | 资产负债表/利润表/现金流量表/主要指标；美股不再走东财 |
+| `get_financial_statements` | [三大报表与主要指标](references/财务报表/三大报表与主要指标.md)           | A股/港股(东财)·美股(SEC EDGAR) | 资产负债表/利润表/现金流量表/主要指标；美股不再走东财 |
 
 ### 选股检索
 
 | 工具 | 标题(详细文档) | 市场 | 描述 |
 | ---- | -------------- | ---- | ---- |
-| `screen_market` | [全市场选股](eastmoney/references/选股检索/全市场选股.md) | A股/美股/港股 | 全市场按涨跌幅/成交量/成交额/换手率排名取 top N |
-| `search_symbol` | [代码搜索](eastmoney/references/选股检索/代码搜索.md) | 多市场 | 名称/代码片段解析为候选 symbol + 市场（东财 suggest + Yahoo + SEC CIK） |
+| `screen_market` | [全市场选股](references/选股检索/全市场选股.md)           | A股/美股/港股 | 全市场按涨跌幅/成交量/成交额/换手率排名取 top N |
+| `search_symbol` | [代码搜索](references/选股检索/代码搜索.md)           | 多市场 | 名称/代码片段解析为候选 symbol + 市场（东财 suggest + Yahoo + SEC CIK） |

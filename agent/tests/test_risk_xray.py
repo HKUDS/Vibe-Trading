@@ -391,3 +391,101 @@ def test_run_backtest_emits_risk_xray_artifacts(tmp_path):
     # signal lag and the terminal liquidation.  The old target-frame report
     # counted the latter as invested even though the position was closed.
     assert metrics["risk_xray_avg_invested"] == pytest.approx(38 / 40, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Cross-market annualization: bars_per_year=None (#1237)
+# ---------------------------------------------------------------------------
+
+
+def test_periods_per_year_none_uses_calendar_day_annualization():
+    # The runner passes bars_per_year=None for cross-market baskets (its
+    # comment: "calendar-day annualization"). math.sqrt(None) used to crash
+    # every multi-market backtest; the annualized fields must stay defined
+    # with the 365 calendar-day factor.
+    # Zigzag closes so both positive and negative return observations exist
+    # (a monotonic-up fixture has an empty downside series and cannot exercise
+    # the second math.sqrt call).
+    idx = pd.date_range("2026-01-01", periods=60, freq="D")
+    closes = pd.DataFrame(
+        {
+            "AAA": pd.Series([100.0 + (i % 5) * 2.0 - 4.0 for i in range(60)], index=idx),
+            "BBB": pd.Series([50.0 + (i % 7) * 1.0 - 3.0 for i in range(60)], index=idx),
+        }
+    )
+    result = compute_risk_xray(
+        closes, {"AAA": 0.5, "BBB": 0.5}, min_history=10, periods_per_year=None
+    )
+    vol = result["volatility"]
+    assert vol["annualized_vol"] is not None
+    assert vol["downside_deviation_annualized"] is not None
+    port = (closes.pct_change().dropna() * pd.Series({"AAA": 0.5, "BBB": 0.5})).sum(axis=1)
+    # Span-derived convention (mirrors calc_metrics): effective bars per year
+    # from the observed calendar span — NOT a fixed 365.
+    first, last = port.index[0], port.index[-1]
+    years = (last - first).days / 365.25
+    bpy = int(len(port) / years)
+    assert vol["annualized_vol"] == pytest.approx(port.std(ddof=1) * bpy**0.5)
+    assert vol["downside_deviation_annualized"] == pytest.approx(
+        port[port < 0].std(ddof=1) * bpy**0.5
+    )
+    _assert_strict_json(result)
+
+
+def test_periods_per_year_explicit_keeps_explicit_factor():
+    closes = _closes({"AAA": list(range(100, 160)), "BBB": list(range(50, 110))})
+    result = compute_risk_xray(
+        closes, {"AAA": 0.5, "BBB": 0.5}, min_history=10, periods_per_year=252
+    )
+    vol = result["volatility"]
+    assert vol["annualized_vol"] == pytest.approx(vol["daily_vol"] * 252**0.5)
+
+
+def test_run_backtest_with_bars_per_year_none_does_not_crash(tmp_path):
+    # The full crash contract: engine.run_backtest(..., bars_per_year=None),
+    # which base.py forwards into compute_risk_xray (issue trace
+    # runner.py:1260 -> composite.py:150 -> base.py:860).
+    from backtest.engines.base import BaseEngine
+
+    class _FlatEngine(BaseEngine):
+        def can_execute(self, symbol, direction, bar):
+            return True
+
+        def round_size(self, raw_size, price):
+            return float(raw_size)
+
+        def calc_commission(self, size, price, direction, is_open):
+            return 0.0
+
+        def apply_slippage(self, price, direction):
+            return price
+
+    dates = pd.bdate_range("2026-01-05", periods=40)
+    data_map = {
+        "AAA": pd.DataFrame(
+            {"open": [100.0 + i for i in range(40)], "close": [100.0 + i for i in range(40)]},
+            index=dates,
+        ),
+        "BTC": pd.DataFrame(
+            {"open": [50.0 + 0.2 * i for i in range(40)], "close": [50.0 + 0.2 * i for i in range(40)]},
+            index=dates,
+        ),
+    }
+
+    class _Loader:
+        def fetch(self, codes, start_date, end_date, fields=None, interval="1D"):
+            return data_map
+
+    class _Signals:
+        def generate(self, data):
+            return {code: pd.Series(1.0, index=frame.index) for code, frame in data.items()}
+
+    engine = _FlatEngine({"initial_cash": 100_000.0})
+    metrics = engine.run_backtest(
+        {"codes": ["AAA", "BTC"], "start_date": "2026-01-05", "end_date": "2026-03-01"},
+        _Loader(),
+        _Signals(),
+        tmp_path,
+        bars_per_year=None,
+    )
+    assert metrics["risk_xray_annualized_vol"] is not None

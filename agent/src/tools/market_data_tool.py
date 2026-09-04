@@ -57,7 +57,10 @@ class MarketDataTool(BaseTool):
         "yfinance/OKX/Tushare scripts. Volume units are source- and market-dependent "
         "(A-share sources report board lots of 100 shares, HK/US sources report single "
         "shares); read the per-symbol _provenance.volume_unit field ('lots' / 'shares' / "
-        "null=undeclared) before interpreting or comparing volume values."
+        "null=undeclared) before interpreting or comparing volume values. Price caliber "
+        "is source-dependent too (some sources adjust for splits/dividends, others serve "
+        "raw quotes); read _provenance.adjustment ('raw' / 'split' / 'split_dividend' / "
+        "'na' / 'unknown') before comparing price levels across symbols."
     )
     parameters = {
         "type": "object",

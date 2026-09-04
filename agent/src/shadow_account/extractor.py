@@ -55,6 +55,7 @@ _MARKET_KEY_MAP = {
     "china_a": "a_share",
     "us": "us_equity",
     "hk": "hk_equity",
+    "uk": "uk_equity",
     "crypto": "crypto",
 }
 
@@ -552,6 +553,7 @@ _MARKET_LABELS = {
     "china_a": "China A-share",
     "us": "US equity",
     "hk": "HK equity",
+    "uk": "UK equity",
     "crypto": "Crypto",
     "other": "Other",
 }

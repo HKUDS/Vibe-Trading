@@ -13,7 +13,8 @@ from typing import Any
 
 from src.config.paths import get_runtime_root
 from src.trading.credentials import CredentialStore
-from src.trading.local_plugins import discover_plugins, plugin_by_profile_id
+from src.trading.local_plugins import discover_plugins
+from src.trading.onboarding import onboarding_dict, onboarding_for_profile
 from src.trading.profiles import list_profiles, profile_by_id
 from src.trading.types import TradingProfile
 
@@ -36,9 +37,7 @@ def is_portfolio_connection_profile(profile: TradingProfile) -> bool:
     Returns:
         True when the profile can serve account and position reads.
     """
-    return bool(profile.readonly) and REQUIRED_READ_CAPABILITIES.issubset(
-        profile.capabilities
-    )
+    return bool(profile.readonly) and REQUIRED_READ_CAPABILITIES.issubset(profile.capabilities)
 
 
 def _now() -> str:
@@ -53,15 +52,15 @@ def _credential_reference(profile_id: str, connection_id: str) -> str:
         connection_id: Identifier of the connection instance.
 
     Returns:
-        An opaque reference naming where the credentials live. Only local
-        plugins keep secrets in the OS vault; the other transports reuse the
-        connector's own OAuth cache, local session, or config file.
+        An opaque reference naming where the credentials live. SDK profiles
+        and local plugins use the OS vault; OAuth and local-session transports
+        retain their own stores.
 
     Raises:
         ValueError: If the profile id is unknown.
     """
     profile = profile_by_id(profile_id)
-    if profile.transport == "local_plugin":
+    if profile.transport in {"broker_sdk", "local_plugin"}:
         return CredentialStore.reference(connection_id)
     if profile.transport == "remote_mcp":
         return f"oauth-cache://{profile.connector}"
@@ -135,9 +134,7 @@ class ConnectionStore:
             raise ValueError(f"invalid local connection registry: {exc}") from exc
         rows = payload.get("connections", []) if isinstance(payload, dict) else []
         if not isinstance(rows, list):
-            raise ValueError(
-                "invalid local connection registry: connections must be a list"
-            )
+            raise ValueError("invalid local connection registry: connections must be a list")
         return [self._parse(row) for row in rows]
 
     def get(self, connection_id: str) -> TradingConnection:
@@ -178,9 +175,7 @@ class ConnectionStore:
         self._write(sorted(rows, key=lambda row: (row.created_at, row.id)))
         return validated
 
-    def create(
-        self, connection_id: str, profile_id: str, label: str
-    ) -> TradingConnection:
+    def create(self, connection_id: str, profile_id: str, label: str) -> TradingConnection:
         """Create a new connection instance.
 
         Args:
@@ -208,9 +203,7 @@ class ConnectionStore:
             )
         )
 
-    def ensure(
-        self, connection_id: str, profile_id: str, label: str
-    ) -> TradingConnection:
+    def ensure(self, connection_id: str, profile_id: str, label: str) -> TradingConnection:
         """Return an existing connection, creating it when absent.
 
         Args:
@@ -230,9 +223,7 @@ class ConnectionStore:
         except ValueError:
             return self.create(connection_id, profile_id, label)
         if existing.profile_id != str(profile_id or "").strip().lower():
-            raise ValueError(
-                f"local connection {existing.id} already uses profile {existing.profile_id}"
-            )
+            raise ValueError(f"local connection {existing.id} already uses profile {existing.profile_id}")
         return existing
 
     def delete(self, connection_id: str) -> None:
@@ -264,9 +255,10 @@ class ConnectionStore:
         for connection in self.list():
             profile = profile_by_id(connection.profile_id)
             fields = credential_fields(profile.id)
-            field_status = (
-                self.credentials.status(connection.id, fields) if fields else {}
+            required_fields = tuple(
+                str(field["name"]) for field in credential_field_catalog(profile.id) if field.get("required", True)
             )
+            field_status = self.credentials.status(connection.id, fields) if fields else {}
             result.append(
                 {
                     **connection.to_dict(),
@@ -278,8 +270,9 @@ class ConnectionStore:
                     "supports_reconnect": profile.transport == "remote_mcp",
                     "credential_fields": credential_field_catalog(profile.id),
                     "credential_status": field_status,
-                    "credentials_configured": bool(field_status)
-                    and all(field_status.values()),
+                    "credentials_configured": bool(required_fields)
+                    and all(field_status.get(field, False) for field in required_fields),
+                    "onboarding": onboarding_dict(profile),
                 }
             )
         return result
@@ -307,29 +300,17 @@ class ConnectionStore:
         profile_id = str(raw.get("profile_id") or "").strip().lower()
         profile = profile_by_id(profile_id)
         if not is_portfolio_connection_profile(profile):
-            raise ValueError(
-                f"connection profile is not eligible for read-only portfolios: {profile_id}"
-            )
+            raise ValueError(f"connection profile is not eligible for read-only portfolios: {profile_id}")
         label = str(raw.get("label") or profile.label).strip()
-        if (
-            not label
-            or len(label) > 80
-            or any(ord(character) < 32 for character in label)
-        ):
-            raise ValueError(
-                "connection label must contain 1 to 80 printable characters"
-            )
+        if not label or len(label) > 80 or any(ord(character) < 32 for character in label):
+            raise ValueError("connection label must contain 1 to 80 printable characters")
         expected_ref = _credential_reference(profile.id, connection_id)
         credential_ref = str(raw.get("credential_ref") or expected_ref)
-        if (
-            credential_ref == CredentialStore.reference(connection_id)
-            and profile.transport != "local_plugin"
-        ):
+        legacy_sdk_ref = f"connector-config://{profile.connector}"
+        if profile.transport == "broker_sdk" and credential_ref == legacy_sdk_ref:
             credential_ref = expected_ref
         if credential_ref != expected_ref:
-            raise ValueError(
-                "connection credential_ref does not match its local transport"
-            )
+            raise ValueError("connection credential_ref does not match its local transport")
         return TradingConnection(
             id=connection_id,
             profile_id=profile.id,
@@ -378,20 +359,15 @@ def credential_field_catalog(profile_id: str) -> list[dict[str, Any]]:
         profile_id: Profile to inspect.
 
     Returns:
-        Field metadata for local plugin profiles, otherwise an empty list
-        because the other transports own their own credential storage.
+        Field metadata declared by a local plugin or built-in SDK onboarding
+        contract. OAuth and local-session transports return an empty list.
 
     Raises:
         ValueError: If the profile id is unknown, or names a local plugin that
             is not installed.
     """
     profile = profile_by_id(profile_id)
-    if profile.transport == "local_plugin":
-        return [
-            field.to_dict()
-            for field in plugin_by_profile_id(profile.id).credential_fields
-        ]
-    return []
+    return [field.to_dict() for field in onboarding_for_profile(profile).credential_fields]
 
 
 def credential_fields(profile_id: str) -> tuple[str, ...]:
@@ -438,8 +414,9 @@ def readonly_profile_catalog() -> list[dict[str, Any]]:
                 "local_plugin": profile.id in plugin_ids,
                 "credential_fields": credential_field_catalog(profile.id),
                 "supports_reconnect": profile.transport == "remote_mcp",
+                "onboarding": onboarding_dict(profile),
             }
         )
-    return sorted(
-        rows, key=lambda row: (row["connector"], row["environment"], row["label"])
-    ) + [{"invalid_plugin": True, **error} for error in errors]
+    return sorted(rows, key=lambda row: (row["connector"], row["environment"], row["label"])) + [
+        {"invalid_plugin": True, **error} for error in errors
+    ]

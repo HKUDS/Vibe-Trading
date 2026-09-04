@@ -744,6 +744,8 @@ th { background: #f0f0f0; }
 .meta { color: #666; font-size: .9em; margin-bottom: 1.5em; }
 .formula { font-family: monospace; background: #f4f4f4; padding: .25em .5em; }
 .skipped { color: #a33; font-size: .9em; }
+.bias-warning { background: #fff4e5; border: 1px solid #e0a800; border-left-width: 4px;
+       color: #7a4d00; padding: .75em 1em; margin-bottom: 1.5em; font-size: .95em; }
 """
 
 _JINJA_TEMPLATE = """<!doctype html>
@@ -758,6 +760,13 @@ _JINJA_TEMPLATE = """<!doctype html>
   Generated {{ generated_at }} &middot; Universe {{ universe }} &middot;
   Period {{ period }} &middot; {{ n_alphas_tested }} tested, {{ n_skipped }} skipped
 </div>
+{% if meta and meta.survivorship_bias %}
+<div class="bias-warning">
+  <strong>Survivorship bias:</strong> universe membership is the current constituent
+  list{% if meta.constituent_source %} ({{ meta.constituent_source }}{% if meta.constituent_source_date %}, as of {{ meta.constituent_source_date }}{% endif %}){% endif %},
+  so delisted and removed names are absent. IC statistics in this report are biased upward.
+</div>
+{% endif %}
 
 <h2>Top {{ top|length }} by IR</h2>
 <table>
@@ -851,6 +860,22 @@ def _render_html_manual(ctx: dict[str, Any]) -> str:
         _esc(ctx["period"]),
         f" &middot; {int(ctx['n_alphas_tested'])} tested, {int(ctx['n_skipped'])} skipped",
         "</div>",
+    ]
+    _meta = ctx.get("meta") or {}
+    if _meta.get("survivorship_bias"):
+        source = _meta.get("constituent_source")
+        as_of = _meta.get("constituent_source_date")
+        provenance = ""
+        if source:
+            provenance = f" ({_esc(source)}"
+            provenance += f", as of {_esc(as_of)})" if as_of else ")"
+        parts.append(
+            "<div class=\"bias-warning\"><strong>Survivorship bias:</strong> universe "
+            f"membership is the current constituent list{provenance}, so delisted and "
+            "removed names are absent. IC statistics in this report are biased upward."
+            "</div>"
+        )
+    parts += [
         f"<h2>Top {len(ctx['top'])} by IR</h2><table>",
         "<tr><th>#</th><th>Alpha ID</th><th>Zoo</th><th>Theme</th>"
         "<th>IC mean</th><th>IC std</th><th>IR</th><th>IC+ ratio</th><th>N</th></tr>",

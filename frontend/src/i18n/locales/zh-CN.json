@@ -609,6 +609,8 @@
     "runNotFound": "运行记录未找到",
     "runNotFoundDesc": "运行目录可能已被删除，或者浏览器未配置 API 访问。如果远程访问，请检查设置中的 API 认证密钥是否已设置。",
     "goBack": "返回",
+    "showFullPrompt": "显示完整提示词",
+    "showLessPrompt": "收起",
     "chart": "图表",
     "trades": "交易",
     "factor": "因子研究",
@@ -621,9 +623,11 @@
     "maxDrawdown": "最大回撤",
     "symbol": "标的",
     "weight": "权重",
-    "rebalanceCount": "调仓次数",
-    "turnoverMean": "平均换手",
-    "turnoverMax": "最大换手",
+    "rebalanceCount": "目标调仓次数（请求）",
+    "rebalanceExecuted": "已执行调仓成交数",
+    "rebalanceRealizedTurnover": "实际调仓换手",
+    "turnoverMean": "平均换手（请求）",
+    "turnoverMax": "最大换手（请求）",
     "largestRebalance": "最大一次调仓",
     "date": "日期",
     "turnover": "换手率",
@@ -1399,6 +1403,8 @@
   },
   "runDashboard": {
     "eyebrow": "量化研究 · 策略回测",
+    "noBacktestData": "该次运行没有可供绘图的回测数据",
+    "noBacktestDataStudioHint": "这看起来是一次投资组合/风险分析——请在 Studio 标签页查看具体数值。",
     "engine": "回测引擎",
     "portfolio": "投资组合",
     "systematicStrategy": "系统化交易策略",
@@ -1477,6 +1483,7 @@
       "errorLoad": "无法读取持仓",
       "errorRefresh": "刷新失败",
       "errorReconnect": "账户重新连接失败",
+      "errorReconnectTimeout": "等待浏览器授权超时，请重新连接并及时完成券商授权",
       "errorSaveSettings": "无法保存持仓设置",
       "errorExport": "导出失败"
     },
@@ -1507,7 +1514,8 @@
       "failed": "读取失败 — 未计入合计",
       "lastSuccess": "上一次成功读取于 {{time}}",
       "noSuccess": "尚未成功读取过",
-      "reconnect": "重新连接"
+      "reconnect": "重新连接",
+      "retryRead": "重试读取"
     },
     "holdings": {
       "title": "持仓明细",
@@ -1549,6 +1557,11 @@
     "env": {
       "live": "实盘",
       "paper": "模拟"
+    },
+    "compatibility": {
+      "native": "专用适配",
+      "contractTested": "契约测试通过",
+      "experimental": "实验性"
     },
     "editor": {
       "title": "管理持仓账户",
@@ -1595,12 +1608,17 @@
       "codexBody": "让 Codex 运行 connector init，按券商官方文档补全只读 adapter，通过 validate 后再 install。插件安装在本机目录，不进入项目仓库。",
       "readOnly": "结构只读",
       "credentialSaved": "已保存",
+      "optional": "（可选）",
+      "authType": "认证方式",
+      "dependency": "本机依赖",
       "oauthNote": "使用 OAuth；需要时通过重新连接完成授权。",
-      "localNote": "凭证由现有的本地连接器配置管理。",
+      "localNote": "该连接使用本机应用或网关会话；请按上方提示启动后测试。",
       "saveVault": "保存到钥匙串",
       "savedVault": "凭证已保存到系统钥匙串。",
       "test": "测试连接",
       "testOk": "{{label}} 连接正常。",
+      "testFailed": "{{label}} 测试失败：{{error}}",
+      "unknownTestError": "连接器返回了未知错误。",
       "delete": "删除",
       "configured": "所需凭证已配置"
     }

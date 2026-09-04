@@ -72,7 +72,7 @@ def test_summary_aggregates_and_largest_date():
 
     summary = compute_rebalance_notes(pos)["summary"]
 
-    assert summary["rebalance_count"] == 2
+    assert summary["target_change_count"] == 2
     assert summary["turnover_total"] == pytest.approx(0.8)
     assert summary["turnover_mean"] == pytest.approx(0.4)
     assert summary["turnover_max"] == pytest.approx(0.5)
@@ -85,7 +85,7 @@ def test_short_and_long_only_frames():
     assert len(notes["rebalances"]) == 1
     assert {e["code"] for e in notes["rebalances"][0]["entries"]} == {"A", "B"}
 
-    assert compute_rebalance_notes(pos.iloc[:1])["summary"]["rebalance_count"] == 0
+    assert compute_rebalance_notes(pos.iloc[:1])["summary"]["target_change_count"] == 0
     assert compute_rebalance_notes(pos.iloc[0:0])["rebalances"] == []
 
 
@@ -103,7 +103,7 @@ def test_write_strict_json_and_markdown(tmp_path):
     payload = write_rebalance_notes(out, notes)
 
     parsed = json.loads(out.read_text(encoding="utf-8"))
-    assert parsed["summary"]["rebalance_count"] == 1
+    assert parsed["summary"]["target_change_count"] == 1
     assert parsed["rebalances"][0]["turnover"] == pytest.approx(0.4)
     assert payload == parsed
 

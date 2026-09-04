@@ -53,16 +53,31 @@ def test_connection_routes_create_list_and_check_without_returning_secrets(
         },
     )
     assert created.status_code == 200
+    saved = client.post(
+        "/api/connections/main-binance/credentials",
+        json={
+            "values": {
+                "api_key": "must-not-leak-key",
+                "api_secret": "must-not-leak-secret",
+            }
+        },
+    )
+    assert saved.status_code == 200
     listed = client.get("/api/connections").json()
     assert listed["connections"][0]["id"] == "main-binance"
-    assert "secret" not in str(listed).lower()
+    assert listed["connections"][0]["portfolio_compatibility"]["level"] == "native"
+    binance_profiles = [row for row in listed["profiles"] if row.get("connector") == "binance"]
+    assert {row["portfolio_compatibility"]["level"] for row in binance_profiles} == {"native"}
+    assert "must-not-leak" not in str(listed).lower()
+    assert [field["name"] for field in listed["connections"][0]["credential_fields"]] == [
+        "api_key",
+        "api_secret",
+    ]
     checked = client.post("/api/connections/main-binance/check")
     assert checked.json()["report"]["connection_id"] == "main-binance"
 
 
-def test_connection_routes_reject_credentials_not_declared_by_profile(
-    tmp_path, monkeypatch
-):
+def test_connection_routes_reject_credentials_not_declared_by_profile(tmp_path, monkeypatch):
     store = ConnectionStore(
         tmp_path / "connections.json",
         credential_store=CredentialStore(_MemoryCredentials()),
@@ -75,6 +90,6 @@ def test_connection_routes_reject_credentials_not_declared_by_profile(
 
     response = client.post(
         "/api/connections/main-binance/credentials",
-        json={"values": {"api_secret": "must-not-be-accepted"}},
+        json={"values": {"withdrawal_token": "must-not-be-accepted"}},
     )
     assert response.status_code == 400

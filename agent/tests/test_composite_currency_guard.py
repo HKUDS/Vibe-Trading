@@ -124,3 +124,23 @@ class TestRunBacktestFailsClosed:
         codes = ["IF2406.CFFEX", "ESZ4"]
         engine = CompositeEngine({"initial_cash": 1_000_000, "codes": codes}, codes)
         assert engine._rule_for("IF2406.CFFEX") is not engine._rule_for("ESZ4")
+
+
+class TestCompositeRunInterval:
+    """The run config, not the construction config, sets the funding bar span.
+
+    ``CryptoEngine`` re-reads ``interval`` in ``run_backtest`` (crypto.py:105);
+    the composite must follow the same convention or a run launched with a
+    different interval than the one it was constructed with settles funding at
+    the stale span (#1290).
+    """
+
+    def test_run_backtest_rereads_the_interval(self) -> None:
+        codes = ["BTC-USDT"]
+        engine = CompositeEngine({"initial_cash": 100_000, "interval": "1D"}, codes)
+        assert engine._run_interval == "1D"
+        try:
+            engine.run_backtest({"codes": codes, "interval": "4H"}, None, None, None)
+        except Exception:
+            pass  # the pipeline needs a real loader; only the re-read matters here
+        assert engine._run_interval == "4H"

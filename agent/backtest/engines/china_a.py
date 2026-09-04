@@ -48,24 +48,7 @@ class ChinaAEngine(BaseEngine):
         Returns:
             True if the trade is allowed.
         """
-        # 1. No short selling
-        if direction == -1:
-            return False
-
-        # 2. T+1: can't sell shares bought today
-        if direction == 0:
-            pos = self.positions.get(symbol)
-            if pos is not None:
-                bar_date = _bar_date(bar)
-                entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
-                if bar_date is not None and entry_date is not None and bar_date == entry_date:
-                    return False
-
-        # 3. Price limits, tested at execution time (see _blocked_by_limit).
-        if _blocked_by_limit(self, symbol, direction, bar, _price_limit(symbol)):
-            return False
-
-        return True
+        return china_a_can_execute(self, self, symbol, direction, bar)
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Round down to 100-share lots."""
@@ -190,3 +173,32 @@ def _price_limit(symbol: str) -> float:
         return 0.30
     # Main board: ±10%
     return 0.10
+
+
+def china_a_can_execute(state, rules, symbol: str, direction: int, bar: pd.Series) -> bool:
+    """A-share execution rules read against ``state`` with params from ``rules``.
+
+    Composite runs pass the composite engine as ``state`` (it owns the shared
+    positions and the close panel) and the A-share sub-engine as ``rules``;
+    a single-market run passes the same engine for both. Reading through the
+    state side is what lets the composite enforce T+1 and the limit bands
+    instead of evaluating them against a stateless rule book (#1292).
+    """
+    # 1. No short selling
+    if direction == -1:
+        return False
+
+    # 2. T+1: can't sell shares bought today
+    if direction == 0:
+        pos = state.positions.get(symbol)
+        if pos is not None:
+            bar_date = _bar_date(bar)
+            entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
+            if bar_date is not None and entry_date is not None and bar_date == entry_date:
+                return False
+
+    # 3. Price limits, tested at execution time (see _blocked_by_limit).
+    if _blocked_by_limit(state, symbol, direction, bar, _price_limit(symbol)):
+        return False
+
+    return True

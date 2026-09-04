@@ -94,6 +94,7 @@ def test_market_data_json_can_include_actual_source_provenance():
         "fallback_used": True,
         "currency_conversion": "none",
         "volume_unit": None,
+        "adjustment": "split_dividend",
     }
 
 
@@ -131,6 +132,61 @@ def test_market_data_provenance_exposes_declared_volume_unit():
 
     assert payload["_provenance"]["600519.SH"]["volume_unit"] == "lots"
     assert payload["_provenance"]["0700.HK"]["volume_unit"] == "shares"
+
+
+def test_market_data_provenance_uses_per_symbol_currency_conversion():
+    """Conversion provenance follows the frame, not the ``.L`` suffix."""
+    idx = pd.date_range("2026-01-01", periods=1, freq="D")
+    idx.name = "trade_date"
+    df = pd.DataFrame(
+        {
+            "open": [1.17],
+            "high": [1.18],
+            "low": [1.16],
+            "close": [1.175],
+            "volume": [100],
+        },
+        index=idx,
+    )
+
+    class _UKAwareLoader:
+        volume_units = {"uk_equity": "shares"}
+
+        def fetch(self, codes, start, end, interval="1D"):
+            result = {}
+            for code in codes:
+                frame = df.copy()
+                if code == "VOD.L":
+                    frame.attrs.update(
+                        quote_currency="GBP",
+                        currency_conversion="GBp→GBP (÷100)",
+                    )
+                elif code == "VUSA.L":
+                    frame.attrs.update(
+                        quote_currency="GBP",
+                        currency_conversion="none",
+                    )
+                result[code] = frame
+            return result
+
+    payload = json.loads(
+        fetch_market_data_json(
+            codes=["VOD.L", "VUSA.L", "AAPL.US"],
+            start_date="2026-01-01",
+            end_date="2026-01-02",
+            source="yahoo",
+            loader_resolver=lambda source: _UKAwareLoader,
+            include_provenance=True,
+        )
+    )
+
+    assert payload["_provenance"]["VOD.L"]["currency_conversion"] == "GBp→GBP (÷100)"
+    assert payload["_provenance"]["VOD.L"]["quote_currency"] == "GBP"
+    assert payload["_provenance"]["VOD.L"]["volume_unit"] == "shares"
+    assert payload["_provenance"]["VUSA.L"]["currency_conversion"] == "none"
+    assert payload["_provenance"]["VUSA.L"]["quote_currency"] == "GBP"
+    # Non-LSE symbols without frame metadata keep the neutral default.
+    assert payload["_provenance"]["AAPL.US"]["currency_conversion"] == "none"
 
 
 def test_market_data_provenance_volume_unit_follows_serving_loader():

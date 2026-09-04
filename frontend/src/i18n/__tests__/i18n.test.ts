@@ -159,7 +159,7 @@ describe("i18n utilities", () => {
     // the order the switcher renders, and that "en" stays first so the
     // primary-match fallback in Layout resolves regional codes to it.
     const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
-    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar", "es", "de"]);
+    expect(codes).toEqual(["en", "zh-CN", "ja", "ko", "ar", "es", "de", "pt-BR"]);
   });
 
   it("accepts zh-CN as an explicit supported language", async () => {

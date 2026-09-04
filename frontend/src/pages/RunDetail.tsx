@@ -123,6 +123,10 @@ export function RunDetail() {
   const { t } = useTranslation();
   const [run, setRun] = useState<RunData | null>(null);
   const [code, setCode] = useState<Record<string, string>>({});
+  // The prompt header sits above the scrollable body (flex-1 min-h-0
+  // overflow-auto), so an unclamped multi-paragraph prompt eats most of the
+  // viewport and leaves almost no room for the tabs/dashboard below it.
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const [tab, setTab] = useState<Tab>(requestedInitialTab);
   const [loading, setLoading] = useState(true);
   const [selectedSymbol, setSelectedSymbol] = useState("");
@@ -164,6 +168,7 @@ export function RunDetail() {
     cancelBulkChartLoadRef.current = true;
     setRun(null);
     setCode({});
+    setPromptExpanded(false);
     setTab(requestedInitialTab);
     setLoading(true);
     setSelectedSymbol("");
@@ -364,7 +369,21 @@ export function RunDetail() {
           </div>
           {run.elapsed_seconds && <span className="text-xs text-muted-foreground">{run.elapsed_seconds.toFixed(1)}s</span>}
         </div>
-        {run.prompt && <p className="text-sm text-muted-foreground">{run.prompt}</p>}
+        {run.prompt && (
+          <div>
+            <p className={cn("text-sm text-muted-foreground whitespace-pre-wrap", !promptExpanded && "line-clamp-3")}>
+              {run.prompt}
+            </p>
+            <button
+              type="button"
+              aria-expanded={promptExpanded}
+              onClick={() => setPromptExpanded((v) => !v)}
+              className="mt-1 text-xs text-primary hover:underline"
+            >
+              {promptExpanded ? t("runDetail.showLessPrompt") : t("runDetail.showFullPrompt")}
+            </button>
+          </div>
+        )}
         {run.metrics && <MetricsCard metrics={run.metrics as Record<string, number>} />}
 
         <div className="flex flex-wrap items-center gap-1">
@@ -585,7 +604,9 @@ function StudioTab({ xray, notes }: { xray?: RiskXRayPayload; notes?: RebalanceN
       {notes && summary && (
         <RunCardPanel title={i18n.t("runDetail.rebalanceNotes")} icon={Gauge}>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <RunCardStat label={i18n.t("runDetail.rebalanceCount")} value={String(summary.rebalance_count)} />
+            <RunCardStat label={i18n.t("runDetail.rebalanceCount")} value={String(summary.target_change_count ?? summary.rebalance_count ?? 0)} />
+            <RunCardStat label={i18n.t("runDetail.rebalanceExecuted")} value={String(summary.rebalance_executed_fills ?? "-")} />
+            <RunCardStat label={i18n.t("runDetail.rebalanceRealizedTurnover")} value={fmtPct(summary.rebalance_realized_turnover ?? 0)} />
             <RunCardStat label={i18n.t("runDetail.turnoverMean")} value={fmtPct(summary.turnover_mean)} />
             <RunCardStat label={i18n.t("runDetail.turnoverMax")} value={fmtPct(summary.turnover_max)} />
             <RunCardStat label={i18n.t("runDetail.largestRebalance")} value={summary.largest_rebalance_date || "-"} />

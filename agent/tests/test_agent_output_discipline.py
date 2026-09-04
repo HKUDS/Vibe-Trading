@@ -228,6 +228,81 @@ class TestPrincipleOneReachesEveryTool:
 class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
     """A figure needs an instrument the session actually touched (#886/#887)."""
 
+    @pytest.mark.parametrize(
+        "answer",
+        (
+            "TSLA.US last traded at 412.35 USD.",
+            "TSLA.US price is 412.35 USD.",
+            "TSLA.US is at 412.35.",
+            "TSLA.US currently sits around 412.35.",
+            "TSLA.US changed hands near 412.35.",
+        ),
+    )
+    def test_price_wording_cannot_bypass_symbol_provenance(
+        self, tmp_path: Path, answer: str
+    ) -> None:
+        """Unknown wording stays fail-closed instead of escaping a phrase list."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="What looks good in EV right now?",
+        )
+
+        result = ledger.validate_final_answer(answer)
+
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [
+            issue["code"] for issue in result.issues
+        ]
+
+    def test_user_mention_does_not_count_as_numeric_provenance(
+        self, tmp_path: Path
+    ) -> None:
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="What is TSLA.US worth?",
+        )
+
+        result = ledger.validate_final_answer("TSLA.US currently sits around 412.35.")
+
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [
+            issue["code"] for issue in result.issues
+        ]
+
+    def test_resolver_mention_does_not_license_an_unobserved_number(
+        self, tmp_path: Path
+    ) -> None:
+        """Handling a symbol and observing a value are separate capabilities."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="What is Tesla trading at?",
+        )
+        ledger.ingest_tool_result(
+            tool_name="search_symbol",
+            arguments={"query": "Tesla"},
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "data": {
+                        "candidates": [
+                            {"symbol": "TSLA.US", "name": "Tesla", "source": "yahoo"}
+                        ]
+                    },
+                }
+            ),
+            call_id="resolve",
+            success=True,
+        )
+
+        result = ledger.validate_final_answer(
+            "TSLA.US currently sits around 412.35."
+        )
+
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unverified_numeric_claim"
+        ]
+
     def test_a_figure_on_an_unhandled_ticker_is_rejected(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
             f"{_GROUNDED_ANSWER}\n600519.SH 收盘价 1680.0。"
@@ -287,12 +362,15 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_a_percentage_on_an_unhandled_ticker_is_allowed(self, tmp_path: Path) -> None:
+    def test_a_percentage_on_an_unhandled_ticker_requires_provenance(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
             f"{_GROUNDED_ANSWER}\n600519.SH 年内涨约 12%。"
         )
 
-        assert result.valid is True, result.issues
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [
+            issue["code"] for issue in result.issues
+        ]
 
     def test_a_calendar_date_on_an_unhandled_ticker_is_allowed(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
@@ -355,10 +433,10 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_non_price_figures_are_not_interpreted_as_market_prices(
+    def test_unhandled_ticker_financial_fact_requires_provenance(
         self, tmp_path: Path
     ) -> None:
-        """A revenue figure has no OHLC field binding and stays out of this gate."""
+        """A non-price fact still cannot be invented for an untouched ticker."""
         ledger = GroundingLedger(
             run_dir=tmp_path,
             user_message="Summarize AAPL's latest annual filing.",
@@ -375,7 +453,59 @@ class TestTheGateDoesNotKillCorrectAnswers:
             "MSFT.US reported revenue of 400.0 billion USD."
         )
 
-        assert result.valid is True
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unsourced_symbol_figures"
+        ]
+
+    def test_handled_ticker_financial_fact_requires_the_value(
+        self, tmp_path: Path
+    ) -> None:
+        """A successful filing call cannot license a value it did not return."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Summarize AAPL's latest annual filing.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"symbol": "AAPL", "form_type": "10-K"},
+            result=json.dumps({"status": "success", "data": {"symbol": "AAPL"}}),
+            call_id="f1",
+            success=True,
+        )
+
+        result = ledger.validate_final_answer(
+            "AAPL.US reported revenue of 400.0 billion USD."
+        )
+
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unverified_numeric_claim"
+        ]
+
+    def test_non_price_table_cannot_bypass_numeric_provenance(
+        self, tmp_path: Path
+    ) -> None:
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Summarize AAPL's latest annual filing.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"symbol": "AAPL", "form_type": "10-K"},
+            result=json.dumps({"status": "success", "data": {"symbol": "AAPL"}}),
+            call_id="f1",
+            success=True,
+        )
+
+        result = ledger.validate_final_answer(
+            "| Symbol | Revenue (USD bn) |\n| --- | --- |\n| AAPL.US | 400.0 |"
+        )
+
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unverified_numeric_claim"
+        ]
 
     def test_a_shortlist_candidate_is_allowed(self, tmp_path: Path) -> None:
         """A resolver that offered the symbol is a tool that returned it."""
@@ -417,15 +547,18 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_constituent_counts_are_not_interpreted_as_market_prices(
+    def test_unhandled_index_count_requires_provenance(
         self, tmp_path: Path
     ) -> None:
-        """An index constituent count has no OHLC field/value contract."""
+        """Unknown wording is blocked even when the number is not a price."""
         ledger = GroundingLedger(run_dir=tmp_path, user_message="A股宽基指数有哪些")
 
         result = ledger.validate_final_answer("000300.SH 覆盖 300 只成分股。")
 
-        assert result.valid is True
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unsourced_symbol_figures"
+        ]
 
 
 class TestTheSemanticPrinciplesStayInThePrompt:

@@ -20,12 +20,11 @@ import numpy as np
 import pytest
 
 from src.quantlib.options import (
-    BARRIER_TYPES,
+    barrier_greeks,
     barrier_option_price,
     bs_greeks,
     bs_price,
     implied_volatility,
-    normalise_barrier_type,
     normalise_option_type,
 )
 
@@ -560,6 +559,17 @@ class TestBarrierOptions:
         assert barrier_option_price(85.0, 100.0, 90.0, 0.5, 0.05, 0.20, "down-and-in", "call") == pytest.approx(
             vanilla
         )
+    def test_barrier_greeks_far_from_barrier_matches_bs_greeks(self):
+        # When barrier H is far away (e.g. down barrier H=10 when S=100), barrier call greeks ~ vanilla call greeks
+        S, K, H, T, r, sigma = 100.0, 100.0, 10.0, 1.0, 0.05, 0.20
+        bg = barrier_greeks(S, K, H, T, r, sigma, "down-and-out", "call")
+        vg = bs_greeks(S, K, T, r, sigma, "call")
+
+        assert bg["delta"] == pytest.approx(vg["delta"], abs=5e-3)
+        assert bg["gamma"] == pytest.approx(vg["gamma"], abs=5e-3)
+        assert bg["vega"] == pytest.approx(vg["vega"], abs=5e-3)
+        assert bg["theta"] == pytest.approx(vg["theta"], abs=5e-3)
+        assert bg["rho"] == pytest.approx(vg["rho"], abs=5e-3)
 
     def test_barrier_option_input_validation(self):
         with pytest.raises(ValueError, match="strictly positive"):

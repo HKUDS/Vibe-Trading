@@ -665,8 +665,8 @@ def test_get_data_source_settings_lists_default_source_orders(
     orders = {entry["market"]: entry for entry in entries}
     assert set(orders) == {
         "a_share", "us_equity", "hk_equity", "india_equity", "kr_equity",
-        "ca_equity", "vietnam_equity", "crypto", "futures", "fund", "macro",
-        "forex",
+        "ca_equity", "vietnam_equity", "uk_equity", "crypto", "futures",
+        "fund", "macro", "forex", "index",
     }
     a_share = orders["a_share"]
     assert a_share["env_var"] == "MARKET_DATA_ORDER_A_SHARE"
@@ -674,6 +674,9 @@ def test_get_data_source_settings_lists_default_source_orders(
     assert a_share["override_invalid"] is False
     assert a_share["effective_order"] == a_share["default_order"]
     assert a_share["default_order"][0] == "tencent"
+    uk_equity = orders["uk_equity"]
+    assert uk_equity["env_var"] == "MARKET_DATA_ORDER_UK_EQUITY"
+    assert uk_equity["default_order"][0] == "yahoo"
 
 
 def test_update_source_orders_persists_and_hot_applies(

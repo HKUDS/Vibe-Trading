@@ -15,7 +15,9 @@ import pandas as pd
 from backtest.engines.base import BaseEngine
 from backtest.engines._market_hooks import (
     _detect_market,
+    _interval_span_hours,
     _is_china_futures,
+    _liquidation_mark,
     code_currency,
     calc_crypto_funding_fee,
     check_crypto_liquidation,
@@ -50,9 +52,15 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
         elif market == "ca_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
             engines["ca_equity"] = GlobalEquityEngine(config, market="ca")
+        elif market == "uk_equity":
+            from backtest.engines.global_equity import GlobalEquityEngine
+            engines["uk_equity"] = GlobalEquityEngine(config, market="uk")
         elif market == "crypto":
             from backtest.engines.crypto import CryptoEngine
             engines["crypto"] = CryptoEngine(config)
+        elif market == "index":
+            from backtest.engines.global_equity import GlobalEquityEngine
+            engines["index"] = GlobalEquityEngine(config, market="us")
         elif market == "forex":
             from backtest.engines.forex import ForexEngine
             engines["forex"] = ForexEngine(config)
@@ -129,6 +137,8 @@ class CompositeEngine(BaseEngine):
         # Forex dedup state
         self._last_swap_dates: dict = {}
 
+        self._run_interval = str(config.get("interval", "1D"))
+
     def run_backtest(self, config: dict, *args, **kwargs):
         """Run the pipeline, refusing a code set that spans currencies.
 
@@ -147,6 +157,9 @@ class CompositeEngine(BaseEngine):
             ValueError: If the codes span more than one settlement currency.
         """
         _reject_mixed_currency(config.get("codes") or list(self._symbol_market))
+        # The run config, not the construction config, is authoritative for the
+        # bar span — same convention as CryptoEngine.run_backtest.
+        self._run_interval = str(config.get("interval", "1D"))
         return super().run_backtest(config, *args, **kwargs)
 
     def _rule_for(self, symbol: str) -> BaseEngine:
@@ -164,15 +177,14 @@ class CompositeEngine(BaseEngine):
     # ── Stateless method dispatch ──
 
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
-        """Market-rule check with settlement interceptors for A-shares and HOSE."""
+        """Market-rule check with state/rules split helpers for HOSE, A-share, India."""
         market = self._symbol_market.get(symbol, "a_share")
 
-        # HOSE: both the T+2 hold and the ±7% band read run state — positions
-        # and the fill ledger for the hold, the close panel for the reference
-        # price — that a stateless rule book does not have. Delegating them
-        # would pass every sell and skip every band check, so the rules are
-        # evaluated against this engine's state using the Vietnam engine's own
-        # implementation, with the sub-engine supplying only the parameters.
+        # HOSE, A-share and India all read run state a stateless rule book
+        # does not have: positions for T+1/T+2 and the close panel for the
+        # band reference price. Each market's module-level helper takes the
+        # composite as the state side and the sub-engine as the parameter
+        # side, so the shared state is what the rules are evaluated against.
         if market == "vietnam_equity":
             sub = self._rule_engines.get("vietnam_equity")
             if sub is not None:
@@ -180,20 +192,19 @@ class CompositeEngine(BaseEngine):
 
                 return hose_can_execute(self, sub, symbol, direction, bar)
 
-        # T+1: intercept here because sub-engine has no access to shared positions
-        if market == "a_share" and direction == 0:
-            pos = self.positions.get(symbol)
-            if pos is not None:
-                bar_date = None
-                if hasattr(bar, "name") and hasattr(bar.name, "date"):
-                    bar_date = bar.name.date()
-                entry_date = (
-                    pos.entry_time.date()
-                    if hasattr(pos.entry_time, "date")
-                    else None
-                )
-                if bar_date and entry_date and bar_date == entry_date:
-                    return False
+        if market == "a_share":
+            sub = self._rule_engines.get("a_share")
+            if sub is not None:
+                from backtest.engines.china_a import china_a_can_execute
+
+                return china_a_can_execute(self, sub, symbol, direction, bar)
+
+        if market == "india_equity":
+            sub = self._rule_engines.get("india_equity")
+            if sub is not None:
+                from backtest.engines.india_equity import india_can_execute
+
+                return india_can_execute(self, sub, symbol, direction, bar)
 
         # Delegate remaining checks (price limits, short-sell block, etc.)
         return self._rule_for(symbol).can_execute(symbol, direction, bar)
@@ -252,14 +263,16 @@ class CompositeEngine(BaseEngine):
                 symbol, bar, timestamp, self.positions,
                 crypto_sub.funding_rate,
                 self._funding_applied, self._funding_daily_done,
+                _interval_span_hours(self._run_interval),
             )
             self.capital -= fee
 
             if check_crypto_liquidation(symbol, bar, self.positions):
                 pos = self.positions.get(symbol)
                 if pos is not None:
-                    mark_price = float(bar.get("close", pos.entry_price))
-                    liq_price = crypto_sub.apply_slippage(mark_price, -pos.direction)
+                    # Fill at the same adverse mark the hook used for the check so
+                    # a wick trigger never exits at a better price than the venue.
+                    liq_price = crypto_sub.apply_slippage(_liquidation_mark(bar, pos), -pos.direction)
                     self._close_position(symbol, liq_price, timestamp, "liquidation")
 
         elif market == "forex":

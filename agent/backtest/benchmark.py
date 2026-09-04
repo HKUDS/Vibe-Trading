@@ -34,7 +34,33 @@ MARKET_BENCHMARKS: dict[str, Optional[str]] = {
 class BenchmarkResult:
     ticker:     str
     ret_series: pd.Series       # per-bar returns, index = timestamps
-    total_ret: float          # total return over the period
+    total_ret: float          # total return over the FETCHED period
+    close:      pd.Series       # benchmark closes, index = timestamps
+
+    def total_return_over(self, dates: pd.DatetimeIndex) -> Optional[float]:
+        """Return the buy-and-hold return restricted to ``dates``.
+
+        ``total_ret`` spans everything that was fetched, which is the requested
+        ``start_date``..``end_date``. When the run declares a warm-up boundary
+        the evaluated window is shorter than that, and grading a strategy over
+        the short window against a benchmark measured over the long one is the
+        mismatched-window error the warm-up boundary exists to prevent (#1240).
+
+        Computed as a price relative rather than the compounded product of
+        ``ret_series``, which is the only form that stays honest once a price
+        series contains a non-positive prior close (#872).
+
+        Args:
+            dates: The evaluated bar index.
+
+        Returns:
+            The buy-and-hold return over the overlap, or ``None`` when fewer
+            than two benchmark closes fall inside it.
+        """
+        window = self.close.reindex(dates).dropna()
+        if len(window) < 2:
+            return None
+        return buy_and_hold_return(window)
 
 
 def resolve_benchmark(
@@ -99,7 +125,9 @@ def resolve_benchmark(
     if total is None:
         return None
 
-    return BenchmarkResult(ticker=ticker, ret_series=ret_series, total_ret=total)
+    return BenchmarkResult(
+        ticker=ticker, ret_series=ret_series, total_ret=total, close=close
+    )
 
 
 # -------------------------------------------------------------------

@@ -73,26 +73,7 @@ class IndiaEquityEngine(BaseEngine):
         Returns:
             True if the trade is allowed.
         """
-        # 1. Short selling: blocked unless explicitly modelling intraday (MIS).
-        if direction == -1 and not self.allow_short:
-            return False
-
-        # 2. T+1: can't sell shares bought today (delivery).
-        if direction == 0:
-            pos = self.positions.get(symbol)
-            if pos is not None:
-                bar_date = _bar_date(bar)
-                entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
-                if bar_date is not None and entry_date is not None and bar_date == entry_date:
-                    return False
-
-        # 3. Circuit bands, tested at execution time (see _blocked_by_limit).
-        if self.price_limit and _blocked_by_limit(
-            self, symbol, direction, bar, float(self.price_limit)
-        ):
-            return False
-
-        return True
+        return india_can_execute(self, self, symbol, direction, bar)
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Cash equity trades in 1-share lots."""
@@ -139,3 +120,35 @@ def _bar_date(bar: pd.Series):
     if hasattr(bar, "name") and hasattr(bar.name, "date"):
         return bar.name.date()
     return None
+
+
+def india_can_execute(state, rules, symbol: str, direction: int, bar: pd.Series) -> bool:
+    """India delivery rules read against ``state`` with params from ``rules``.
+
+    Composite runs pass the composite engine as ``state`` (shared positions
+    and close panel) and the India sub-engine as ``rules`` (``allow_short``,
+    ``price_limit``, slippage); a single-market run passes the same engine
+    for both. Without this the composite evaluated T+1 against the
+    sub-engine's always-empty positions and let same-day sells through
+    (#1292).
+    """
+    # 1. Short selling: blocked unless explicitly modelling intraday (MIS).
+    if direction == -1 and not rules.allow_short:
+        return False
+
+    # 2. T+1: can't sell shares bought today (delivery).
+    if direction == 0:
+        pos = state.positions.get(symbol)
+        if pos is not None:
+            bar_date = _bar_date(bar)
+            entry_date = pos.entry_time.date() if hasattr(pos.entry_time, "date") else None
+            if bar_date is not None and entry_date is not None and bar_date == entry_date:
+                return False
+
+    # 3. Circuit bands, tested at execution time (see _blocked_by_limit).
+    if rules.price_limit and _blocked_by_limit(
+        state, symbol, direction, bar, float(rules.price_limit)
+    ):
+        return False
+
+    return True

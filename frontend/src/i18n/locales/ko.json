@@ -609,6 +609,8 @@
     "runNotFound": "실행을 찾을 수 없음",
     "runNotFoundDesc": "실행 디렉터리가 제거되었거나 브라우저에 API 액세스가 설정되지 않았을 수 있습니다. 원격으로 액세스하는 경우 설정에서 API 인증 키가 설정되어 있는지 확인하세요.",
     "goBack": "뒤로",
+    "showFullPrompt": "전체 프롬프트 보기",
+    "showLessPrompt": "간략히 보기",
     "chart": "차트",
     "trades": "거래",
     "factor": "팩터 분석",
@@ -621,9 +623,11 @@
     "maxDrawdown": "최대 낙폭",
     "symbol": "심볼",
     "weight": "비중",
-    "rebalanceCount": "리밸런스 횟수",
-    "turnoverMean": "평균 회전율",
-    "turnoverMax": "최대 회전율",
+    "rebalanceCount": "목표 리밸런스 횟수(요청)",
+    "rebalanceExecuted": "실행된 리밸런스 수",
+    "rebalanceRealizedTurnover": "실현 리밸런스 회전율",
+    "turnoverMean": "평균 회전율(요청)",
+    "turnoverMax": "최대 회전율(요청)",
     "largestRebalance": "최대 리밸런스",
     "date": "날짜",
     "turnover": "회전율",
@@ -1399,6 +1403,8 @@
   },
   "runDashboard": {
     "eyebrow": "계량 리서치 · 백테스트",
+    "noBacktestData": "이 실행에는 표시할 백테스트 데이터가 없습니다",
+    "noBacktestDataStudioHint": "포트폴리오/리스크 분석으로 보입니다 — 수치는 Studio 탭에서 확인하세요.",
     "engine": "엔진",
     "portfolio": "포트폴리오",
     "systematicStrategy": "시스테매틱 전략",
@@ -1477,6 +1483,7 @@
       "errorLoad": "포트폴리오를 불러올 수 없습니다",
       "errorRefresh": "새로고침에 실패했습니다",
       "errorReconnect": "계좌 재연결에 실패했습니다",
+      "errorReconnectTimeout": "브라우저 인증 시간이 초과되었습니다. 다시 연결하고 브로커 인증을 신속히 완료하세요.",
       "errorSaveSettings": "포트폴리오 설정을 저장할 수 없습니다",
       "errorExport": "내보내기에 실패했습니다"
     },
@@ -1507,7 +1514,8 @@
       "failed": "읽지 못했습니다 — 합계에 포함되지 않음",
       "lastSuccess": "마지막으로 성공한 읽기 {{time}}",
       "noSuccess": "아직 성공한 읽기가 없습니다",
-      "reconnect": "다시 연결"
+      "reconnect": "다시 연결",
+      "retryRead": "다시 읽기"
     },
     "holdings": {
       "title": "보유 내역",
@@ -1549,6 +1557,11 @@
     "env": {
       "live": "실거래",
       "paper": "페이퍼"
+    },
+    "compatibility": {
+      "native": "전용 어댑터",
+      "contractTested": "계약 테스트 완료",
+      "experimental": "실험적"
     },
     "editor": {
       "title": "포트폴리오 계좌 관리",
@@ -1595,12 +1608,17 @@
       "codexBody": "Codex에 connector init을 실행시키고, 공식 문서를 보고 읽기 전용 어댑터를 구현한 뒤 validate를 통과시키고 install 하세요. 플러그인은 저장소 밖에 설치됩니다.",
       "readOnly": "읽기 전용",
       "credentialSaved": "저장됨",
+      "optional": "(선택 사항)",
+      "authType": "인증 방식",
+      "dependency": "로컬 종속성",
       "oauthNote": "OAuth를 사용합니다. 필요하면 재연결로 승인하세요.",
       "localNote": "자격 증명은 기존 로컬 커넥터 설정이 관리합니다.",
       "saveVault": "자격 증명 저장소에 저장",
       "savedVault": "자격 증명을 OS 저장소에 저장했습니다.",
       "test": "연결 테스트",
       "testOk": "{{label}} 연결이 정상입니다.",
+      "testFailed": "{{label}} 테스트 실패: {{error}}",
+      "unknownTestError": "커넥터가 알 수 없는 오류를 반환했습니다.",
       "delete": "삭제",
       "configured": "필요한 자격 증명이 설정되었습니다"
     }

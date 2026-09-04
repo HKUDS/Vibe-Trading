@@ -67,7 +67,7 @@ class TestFetch:
     def test_fetch_returns_ohlcv_frame(self) -> None:
         with patch(
             "backtest.loaders.yahoo_loader.yahoo_client.get_chart",
-            return_value=self._chart_rows(),
+            return_value=(self._chart_rows(), "VND"),
         ) as chart:
             result = DataLoader().fetch(
                 ["VIC.VN"], "2024-01-01", "2024-01-31", interval="1D"
@@ -86,7 +86,7 @@ class TestFetch:
         # HNX/UPCOM are unsupported on Yahoo: no rows, no exception.
         with patch(
             "backtest.loaders.yahoo_loader.yahoo_client.get_chart",
-            return_value=[],
+            return_value=([], ""),
         ):
             result = DataLoader().fetch(
                 ["PVS.VN"], "2024-01-01", "2024-01-31", interval="1D"

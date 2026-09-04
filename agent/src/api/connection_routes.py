@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.security import require_auth, require_settings_write_auth
+from src.portfolio.compatibility import profile_compatibility
 from src.portfolio.config import PortfolioSettingsStore
 from src.trading.connections import (
     ConnectionStore,
@@ -14,6 +15,7 @@ from src.trading.connections import (
     readonly_profile_catalog,
 )
 from src.trading.local_plugins import plugin_root
+from src.trading.profiles import profile_by_id
 from src.trading.service import check_connection
 
 
@@ -48,10 +50,28 @@ def register_connection_routes(app: FastAPI) -> None:
     @app.get("/api/connections", dependencies=[Depends(require_auth)])
     def list_connections():
         """List connection instances, eligible profiles, and the plugin root."""
+        connections = [
+            {
+                **row,
+                "portfolio_compatibility": profile_compatibility(profile_by_id(row["profile_id"])),
+            }
+            for row in store().public_list()
+        ]
+        profiles = []
+        for row in readonly_profile_catalog():
+            if row.get("invalid_plugin"):
+                profiles.append(row)
+            else:
+                profiles.append(
+                    {
+                        **row,
+                        "portfolio_compatibility": profile_compatibility(profile_by_id(row["id"])),
+                    }
+                )
         return {
             "status": "ok",
-            "connections": store().public_list(),
-            "profiles": readonly_profile_catalog(),
+            "connections": connections,
+            "profiles": profiles,
             "plugin_directory": str(plugin_root()),
         }
 
@@ -74,9 +94,7 @@ def register_connection_routes(app: FastAPI) -> None:
     def update_connection(connection_id: str, payload: ConnectionRequest):
         """Rename a connection instance; its id and profile are immutable."""
         if payload.id.strip().lower() != connection_id.strip().lower():
-            raise HTTPException(
-                status_code=400, detail="connection id cannot be changed"
-            )
+            raise HTTPException(status_code=400, detail="connection id cannot be changed")
         try:
             instance = store()
             current = instance.get(connection_id)
@@ -106,9 +124,7 @@ def register_connection_routes(app: FastAPI) -> None:
             connection = instance.get(connection_id)
             allowed = set(credential_fields(connection.profile_id))
             if not set(payload.values).issubset(allowed):
-                raise ValueError(
-                    "credential payload contains fields not declared by the connector"
-                )
+                raise ValueError("credential payload contains fields not declared by the connector")
             instance.credentials.save(connection.id, payload.values)
             return {
                 "status": "ok",
@@ -147,14 +163,9 @@ def register_connection_routes(app: FastAPI) -> None:
     def delete_connection(connection_id: str):
         """Delete a connection and its secrets once no portfolio source uses it."""
         try:
-            selected = {
-                source.connection_id
-                for source in PortfolioSettingsStore().load().sources
-            }
+            selected = {source.connection_id for source in PortfolioSettingsStore().load().sources}
             if connection_id.strip().lower() in selected:
-                raise ValueError(
-                    "remove this connection from the portfolio before deleting it"
-                )
+                raise ValueError("remove this connection from the portfolio before deleting it")
             store().delete(connection_id)
             return {"status": "ok", "deleted": connection_id}
         except ValueError as exc:

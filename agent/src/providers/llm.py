@@ -524,13 +524,66 @@ if ChatOpenAI is not None:
                 self._capture(choice["message"], gen.message)
             return result
 
+        def _generate(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                return super()._generate(*args, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - retried or re-raised below
+                if not self._remember_temperature_unsupported(exc):
+                    raise
+                return super()._generate(*args, **kwargs)
+
+        async def _agenerate(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                return await super()._agenerate(*args, **kwargs)
+            except Exception as exc:  # noqa: BLE001 - retried or re-raised below
+                if not self._remember_temperature_unsupported(exc):
+                    raise
+                return await super()._agenerate(*args, **kwargs)
+
+        def _remember_temperature_unsupported(self, exc: BaseException) -> bool:
+            """Record a temperature-unsupported error and report a one-shot retry.
+
+            Mirrors the native Anthropic path for the generic OpenAI-compatible
+            branch: next-generation Claude models served through
+            ``OPENAI_BASE_URL`` return HTTP 400 when `temperature` is sent
+            (issue #1223). The model is remembered in
+            ``_ANTHROPIC_TEMPERATURE_UNSUPPORTED`` so later requests omit it up
+            front.
+            """
+            if not _is_anthropic_temperature_unsupported_error(exc):
+                return False
+            model = str(self.model_name)
+            if model not in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
+                logger.info(
+                    "Model %s rejects `temperature`; retrying without it "
+                    "and omitting it for subsequent calls.",
+                    model,
+                )
+                _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(model)
+            return True
+
         def _stream(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
             """Route Responses streams through the mapping-compatible adapter."""
             if self._use_responses_api({**kwargs, **self.model_kwargs}):
                 cloned = copy(self)
                 cloned.root_client = _ResponsesSyncClient(self.root_client)
-                return super(ChatOpenAIWithReasoning, cloned)._stream(*args, **kwargs)
-            return self._stream_with_usage_fallback(*args, **kwargs)
+                inner = super(ChatOpenAIWithReasoning, cloned)._stream(*args, **kwargs)
+            else:
+                inner = self._stream_with_usage_fallback(*args, **kwargs)
+            # The 400 arrives before the first chunk, so restarting the stream
+            # cannot duplicate output — but that is a property of the provider,
+            # not of this code. Enforce it here instead of assuming it: once a
+            # chunk has been emitted the error is re-raised, because replaying
+            # the stream would emit those chunks a second time.
+            emitted = False
+            try:
+                for chunk in inner:
+                    emitted = True
+                    yield chunk
+            except Exception as exc:  # noqa: BLE001 - retried or re-raised below
+                if emitted or not self._remember_temperature_unsupported(exc):
+                    raise
+                yield from self._stream(*args, **kwargs)
 
         def _stream_with_usage_fallback(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
             # stream_usage=True is set at build time so streamed calls report
@@ -553,19 +606,17 @@ if ChatOpenAI is not None:
             _STREAM_USAGE_UNSUPPORTED.add(model)
             yield from super()._stream(*args, stream_usage=False, **kwargs)
 
-        async def _astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
-            """Async route matching ``_stream`` for Responses compatibility."""
-            if self._use_responses_api({**kwargs, **self.model_kwargs}):
-                cloned = copy(self)
-                cloned.root_async_client = _ResponsesAsyncClient(self.root_async_client)
-                async for chunk in super(ChatOpenAIWithReasoning, cloned)._astream(
-                    *args, **kwargs
-                ):
-                    yield chunk
-                return
+        async def _astream_with_usage_fallback(
+            self, *args: Any, **kwargs: Any
+        ) -> AsyncIterator[Any]:
+            # stream_usage=True is set at build time so streamed calls report
+            # real token counts (issue #1224); an endpoint that rejects
+            # stream_options is remembered and retried without it.
             model = str(self.model_name)
             if model in _STREAM_USAGE_UNSUPPORTED:
-                async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
+                async for chunk in super()._astream(
+                    *args, stream_usage=False, **kwargs
+                ):
                     yield chunk
                 return
             try:
@@ -582,6 +633,30 @@ if ChatOpenAI is not None:
             _STREAM_USAGE_UNSUPPORTED.add(model)
             async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
                 yield chunk
+
+        async def _astream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+            """Async route matching ``_stream`` for Responses compatibility."""
+            if self._use_responses_api({**kwargs, **self.model_kwargs}):
+                cloned = copy(self)
+                cloned.root_async_client = _ResponsesAsyncClient(self.root_async_client)
+                inner = super(ChatOpenAIWithReasoning, cloned)._astream(*args, **kwargs)
+            else:
+                inner = self._astream_with_usage_fallback(*args, **kwargs)
+            # The 400 arrives before the first chunk, so restarting the stream
+            # cannot duplicate output — but that is a property of the provider,
+            # not of this code. Enforce it here instead of assuming it: once a
+            # chunk has been emitted the error is re-raised, because replaying
+            # the stream would emit those chunks a second time.
+            emitted = False
+            try:
+                async for chunk in inner:
+                    emitted = True
+                    yield chunk
+            except Exception as exc:  # noqa: BLE001 - retried or re-raised below
+                if emitted or not self._remember_temperature_unsupported(exc):
+                    raise
+                async for chunk in self._astream(*args, **kwargs):
+                    yield chunk
 
         def _convert_chunk_to_generation_chunk(  # type: ignore[override]
             self,
@@ -614,6 +689,9 @@ if ChatOpenAI is not None:
             is absent, breaking ReAct continuations after a tool call (#39).
             """
             payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+            # Models that rejected `temperature` before omit it up front (#1223).
+            if str(self.model_name) in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
+                payload.pop("temperature", None)
             if "messages" in payload:
                 messages = super()._convert_input(input_).to_messages()
                 caps = self._capabilities()

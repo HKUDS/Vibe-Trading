@@ -96,6 +96,13 @@ describe("Layout accessibility", () => {
     expect(screen.getByText("Skip to main content")).toHaveAttribute("href", "#main");
     expect(screen.getByRole("main")).toHaveAttribute("id", "main");
     expect(screen.getByRole("main").parentElement).toHaveClass("relative");
+    // Regression: <main> is a flex item inside a flex-col/overflow-hidden
+    // parent. Without min-h-0, a flex item's default min-height:auto lets it
+    // grow past its allotted space to fit tall content (e.g. a long
+    // generated report) instead of respecting its own overflow-auto -- the
+    // excess then gets hard-clipped by the parent's overflow-hidden with no
+    // scrollbar at all, rather than scrolling into view.
+    expect(screen.getByRole("main")).toHaveClass("flex-1", "min-h-0", "overflow-auto");
   });
 
   it("exposes session actions on keyboard focus and labels the rename input", async () => {

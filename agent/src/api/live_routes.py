@@ -565,8 +565,42 @@ def _build_live_runner(broker: str) -> Any:
     # _live_broker_adapter is monkeypatched on host by tests
     adapter = h._live_broker_adapter(broker)
 
-    def _read(remote_tool: str):
-        return lambda: adapter.call_tool(remote_tool, {})
+    def _read(remote_tool: str, record_key: str | None = None):
+        """Wrap adapter.call_tool into a READ callable with a normalized payload.
+
+        The MCP adapter returns ``{"status": "error", ...}`` envelopes instead
+        of raising, and wraps successful values in ``{"status": "ok",
+        "data": ...}``. Normalize at the boundary so consumers (reconcile and
+        the halt sweep) receive broker records — or the balance dict — not
+        envelopes: error envelopes raise, success payloads unwrap to ``data``
+        (with the pinned ``record_key`` extracted for positions/orders record
+        reads, e.g. ``data.positions`` / ``data.orders``). Bare values pass
+        through unchanged.
+        """
+        def read() -> Any:
+            payload = adapter.call_tool(remote_tool, {})
+            if isinstance(payload, list):
+                return payload  # injected/legacy bare response
+            if not isinstance(payload, dict) or payload.get("status") != "ok":
+                if isinstance(payload, dict) and payload.get("status") == "error":
+                    raise RuntimeError(
+                        str(payload.get("error") or "broker read failed")
+                    )
+                return payload
+            data = payload.get("data")
+            if record_key is None:
+                return data
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                records = data.get(record_key)
+                if isinstance(records, list):
+                    return records
+                raise RuntimeError(
+                    f"broker read response missing {record_key!r} records"
+                )
+            raise RuntimeError("broker read response has no data payload")
+        return read
 
     def _submit(order: Dict[str, Any]) -> Dict[str, Any]:
         if order.get("action") == "cancel":
@@ -599,9 +633,9 @@ def _build_live_runner(broker: str) -> Any:
         broker,
         agent_caller=_agent_caller,
         reconcile_fn=reconcile,
-        read_positions=_read(positions_tool),
+        read_positions=_read(positions_tool, "positions"),
         read_balance=_read(balance_tool),
-        read_open_orders=_read(open_orders_tool),
+        read_open_orders=_read(open_orders_tool, "orders"),
         submit_fn=_submit,
         write_audit_fn=_audit_with_bus,
         scheduler=scheduler,

@@ -609,6 +609,8 @@
     "runNotFound": "التشغيل غير موجود",
     "runNotFoundDesc": "ربما تم حذف دليل التشغيل، أو ربما لا يمتلك المتصفح حق الوصول إلى API. تحقّق من ضبط مفتاح مصادقة API في الإعدادات عند الوصول عن بُعد.",
     "goBack": "رجوع",
+    "showFullPrompt": "عرض الطلب كاملاً",
+    "showLessPrompt": "عرض أقل",
     "chart": "الرسم البياني",
     "trades": "التداولات",
     "factor": "تحليل العوامل",
@@ -621,9 +623,11 @@
     "maxDrawdown": "أقصى تراجع",
     "symbol": "الرمز",
     "weight": "الوزن",
-    "rebalanceCount": "عدد مرات إعادة التوازن",
-    "turnoverMean": "متوسط دوران",
-    "turnoverMax": "أقصى دوران",
+    "rebalanceCount": "تغييرات الهدف (المطلوبة)",
+    "rebalanceExecuted": "تنفيذات إعادة التوازن",
+    "rebalanceRealizedTurnover": "دوران إعادة التوازن المحقق",
+    "turnoverMean": "متوسط دوران (المطلوب)",
+    "turnoverMax": "أقصى دوران (المطلوب)",
     "largestRebalance": "أكبر إعادة توازن",
     "date": "التاريخ",
     "turnover": "دوران",
@@ -1399,6 +1403,8 @@
   },
   "runDashboard": {
     "eyebrow": "بحث كمّي · اختبار رجعي",
+    "noBacktestData": "لا توجد بيانات اختبار رجعي لعرضها في هذا التشغيل",
+    "noBacktestDataStudioHint": "يبدو أنه تحليل محفظة/مخاطر بدلاً من ذلك — راجع أرقامه في تبويب Studio.",
     "engine": "محرك",
     "portfolio": "محفظة",
     "systematicStrategy": "استراتيجية منهجية",
@@ -1477,6 +1483,7 @@
       "errorLoad": "تعذّر عرض المحفظة",
       "errorRefresh": "فشل التحديث",
       "errorReconnect": "فشلت إعادة ربط الحساب",
+      "errorReconnectTimeout": "انتهت مهلة تفويض المتصفح. أعد الاتصال وأكمل تفويض الوسيط سريعًا.",
       "errorSaveSettings": "تعذّر حفظ إعدادات المحفظة",
       "errorExport": "فشل التصدير"
     },
@@ -1507,7 +1514,8 @@
       "failed": "تعذّرت قراءته — غير محتسب في الإجمالي",
       "lastSuccess": "آخر قراءة ناجحة {{time}}",
       "noSuccess": "لا توجد قراءة ناجحة بعد",
-      "reconnect": "إعادة الاتصال"
+      "reconnect": "إعادة الاتصال",
+      "retryRead": "إعادة محاولة القراءة"
     },
     "holdings": {
       "title": "تفاصيل الحيازات",
@@ -1549,6 +1557,11 @@
     "env": {
       "live": "حي",
       "paper": "ورقي"
+    },
+    "compatibility": {
+      "native": "موصل أصلي",
+      "contractTested": "مختبر بالعقد",
+      "experimental": "تجريبي"
     },
     "editor": {
       "title": "إدارة حسابات المحفظة",
@@ -1595,12 +1608,17 @@
       "codexBody": "اطلب من Codex تشغيل connector init، ثم كتابة موصل القراءة اعتمادًا على وثائق الوسيط الرسمية، واجتياز validate قبل install. تبقى الإضافة خارج مستودع المشروع.",
       "readOnly": "للقراءة فقط",
       "credentialSaved": "محفوظ",
+      "optional": "(اختياري)",
+      "authType": "المصادقة",
+      "dependency": "اعتماد محلي",
       "oauthNote": "يستخدم OAuth؛ امنح التفويض عبر إعادة الاتصال عند الحاجة.",
       "localNote": "تدير بيانات الاعتماد إعدادات الموصل المحلي الحالية.",
       "saveVault": "حفظ في الخزنة",
       "savedVault": "حُفظت بيانات الاعتماد في خزنة النظام.",
       "test": "اختبار",
       "testOk": "{{label}} جاهز.",
+      "testFailed": "فشل اختبار {{label}}: {{error}}",
+      "unknownTestError": "أرجع الموصل خطأ غير معروف.",
       "delete": "حذف",
       "configured": "بيانات الاعتماد المطلوبة مضبوطة"
     }

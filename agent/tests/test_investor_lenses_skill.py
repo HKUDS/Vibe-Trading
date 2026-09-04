@@ -8,9 +8,9 @@ that silently rot as lenses are added or renamed:
 * every lens file parses as frontmatter and declares the same metadata keys;
 * the router index and the files on disk agree **in both directions**, so a
   renamed file cannot leave a dead index row and a new file cannot stay orphaned;
-* every router link carries the ``investor-lenses/`` prefix and resolves through
-  ``read_file`` (bare ``references/...`` links are unreachable — the skills root
-  has no top-level ``references/`` directory);
+* every router link is written relative to the router (``references/...``) — the
+  form GitHub resolves for a reader in a browser — and still resolves through
+  ``read_file``, which matches it against the skill that owns it;
 * each lens keeps the sections the output contract depends on, the
   not-investment-advice disclaimer, and framework-conditional phrasing;
 * no lens hardcodes a registered tool name, which is what keeps the lenses
@@ -38,7 +38,7 @@ _SKILLS_ROOT = Path(__file__).resolve().parents[1] / "src" / "skills"
 _SKILL_DIR = _SKILLS_ROOT / _SKILL_NAME
 _REFS_DIR = _SKILL_DIR / "references"
 
-# Router index rows link to "investor-lenses/references/<slug>.md".
+# Router index rows link to "references/<slug>.md", relative to the router.
 _INDEX_LINK_RE = re.compile(r"\]\((?P<target>[^)]*references/[^)]+\.md)\)")
 
 # Metadata every lens file must declare.
@@ -176,11 +176,12 @@ def test_router_index_and_disk_agree_both_ways() -> None:
 
 
 @pytest.mark.parametrize("target", _router_link_targets())
-def test_router_links_carry_skill_prefix(target: str) -> None:
-    """Links are prefixed with the skill name so they resolve from the skills root."""
-    assert target.startswith(f"{_SKILL_NAME}/"), (
-        f"link must start with '{_SKILL_NAME}/', got: {target}"
+def test_router_links_are_relative_to_the_router(target: str) -> None:
+    """Links are written relative to SKILL.md, which is what GitHub follows."""
+    assert target.startswith("references/"), (
+        f"link must start with 'references/', got: {target}"
     )
+    assert (_SKILL_DIR / target).is_file(), f"{target} is missing on disk"
 
 
 @pytest.mark.parametrize("target", _router_link_targets())
