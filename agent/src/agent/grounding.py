@@ -2141,10 +2141,6 @@ class GroundingLedger:
         if symbol:
             symbol = self._match_authorized_symbol(symbol, self.authorized_symbols) or symbol
         source = str(payload.get("source") or tool_name)
-        timestamp = next(
-            (str(payload[key]) for key in _TIMESTAMP_FIELDS if payload.get(key) is not None),
-            None,
-        )
         observed_at = _utc_now()
         market_session = str(payload.get("market_session") or "") or None
         adjustment = str(payload.get("adjustment") or payload.get("adjust") or "") or None
@@ -2789,7 +2785,9 @@ class GroundingLedger:
                 "message": "Price claim could not be attributed to exactly one instrument.",
             }
 
+        dated_candidates: list[EvidenceRecord] = []
         if claim.date:
+            dated_candidates = [record for record in candidates if record.timestamp]
             candidates = [
                 record
                 for record in candidates
@@ -2800,6 +2798,20 @@ class GroundingLedger:
             if observed_days:
                 latest_day = max(observed_days)
                 candidates = [record for record in candidates if _observation_day(record.timestamp) == latest_day]
+
+        if not candidates and claim.date and not dated_candidates:
+            return {
+                "code": "numeric_claim_unavailable",
+                "claim": claim.text,
+                "value": claim.value,
+                "symbol": symbol,
+                "field": claim.field,
+                "date": claim.date,
+                "message": (
+                    "No observed tool evidence matched the stated date for this "
+                    "price claim."
+                ),
+            }, None
 
         if not candidates:
             return None, {
