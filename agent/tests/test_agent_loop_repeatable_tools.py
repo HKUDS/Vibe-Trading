@@ -67,6 +67,12 @@ from src.tools.symbol_search_tool import SymbolSearchTool
             {"code": "600276.SH", "statement": "indicators"},
             {"code": "601899.SH", "statement": "indicators"},
         ),
+        pytest.param(
+            FinancialStatementsTool,
+            {"code": "ATRC.US", "statement": "income"},
+            {"code": "ATRC.US", "statement": "income", "offset": 13},
+            id="financial-statements-paging",
+        ),
         (
             SectorInfoTool,
             {"code": "600276.SH", "mode": "membership"},
@@ -86,7 +92,7 @@ def test_readonly_query_executes_again_with_different_arguments(
     first_args: dict[str, object],
     second_args: dict[str, object],
 ) -> None:
-    """A successful query must not suppress the next iteration's symbol."""
+    """A successful query must not suppress the next argument-dependent call."""
     calls: list[dict[str, object]] = []
     tool = tool_cls()
 
