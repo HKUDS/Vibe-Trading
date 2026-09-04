@@ -23,6 +23,8 @@ per-source skill.
 | akshare | A-shares, US, HK, futures, macro, forex | No | Unrestricted | akshare |
 | yfinance | US, HK, Canada (TSX/TSXV) stocks, ETFs | No | Needs Yahoo access | yfinance |
 | okx | Crypto (OKX exchange) | No | Needs okx.com access | okx-market |
+| nobitex | Crypto, IRT/Toman-quoted pairs (BTC-IRT, USDT-IRT — Iran market premium) | No | Needs apiv2.nobitex.ir access | data-routing (explicit `*IRT` routing only) |
+| wallex | Crypto, TMN/Toman-quoted pairs (USDT-TMN, BTC-TMN — Iran market premium) | No | Needs api.wallex.ir access | data-routing (explicit `*TMN` routing only; truly serves 1m/1h/1d) |
 | ccxt | Crypto (100+ exchanges) | No | Needs exchange access | ccxt |
 | baostock | A-shares (free daily/min) | No | China network | data-routing |
 | tencent | A-shares, HK, US (never-banned) | No | Unrestricted | data-routing |

@@ -46,6 +46,13 @@ _SOURCE_PATTERNS = [
     (re.compile(r"^\d{6}\.(KS|KQ)$", re.I), "pykrx"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "okx"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "ccxt"),
+    # Iran: Nobitex IRT-quoted crypto pairs (BTCIRT / BTC-IRT). Toman-
+    # denominated public UDF endpoint, no auth; explicit-source only (not in
+    # the crypto fallback chain — non-IRT pairs would never resolve there).
+    (re.compile(r"^[A-Z]+[-/]?IRT$", re.I), "nobitex"),
+    # Iran: Wallex TMN-quoted crypto pairs (USDTTMN / USDT-TMN). Public UDF
+    # endpoint, no auth; explicit-source only like nobitex.
+    (re.compile(r"^[A-Z]+[-/]?TMN$", re.I), "wallex"),
     # Forex pairs and metals (EUR/USD, XAU/USD, EURUSD.FX). mt5 is the head of
     # the forex chain and degrades to akshare/yfinance via the registry when no
     # local MT5 terminal is attached. The 3-letter quote cannot collide with

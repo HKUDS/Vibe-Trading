@@ -33,6 +33,8 @@ _registered = False
 VALID_SOURCES: set[str] = {
     "tushare",
     "okx",
+    "nobitex",
+    "wallex",
     "binance",
     "yfinance",
     "akshare",
@@ -88,6 +90,8 @@ def _ensure_registered() -> None:
     _loader_modules = [
         "backtest.loaders.tushare",
         "backtest.loaders.okx",
+        "backtest.loaders.nobitex",
+        "backtest.loaders.wallex",
         "backtest.loaders.binance_loader",
         "backtest.loaders.yfinance_loader",
         "backtest.loaders.akshare_loader",
