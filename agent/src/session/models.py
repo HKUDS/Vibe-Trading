@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
@@ -256,6 +257,9 @@ class Attempt:
         summary: Execution summary.
         react_trace: ReAct agent trace records.
         created_at: Creation time in ISO format.
+        started_at: Wall-clock time (epoch seconds) execution began, once running.
+            Clients that join mid-attempt resume their elapsed clock from it, so
+            it must outlive the event ring buffer that first announced it.
         completed_at: Completion time in ISO format, if available.
         error: Error message when the attempt fails.
         metrics: Snapshot of backtest metrics.
@@ -270,6 +274,7 @@ class Attempt:
     summary: Optional[str] = None
     react_trace: List[Dict[str, Any]] = field(default_factory=list)
     created_at: str = field(default_factory=_utc_now_iso)
+    started_at: Optional[float] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
@@ -300,8 +305,9 @@ class Attempt:
         return cls(**data)
 
     def mark_running(self) -> None:
-        """Mark the attempt as running."""
+        """Mark the attempt as running and record when execution began."""
         self.status = AttemptStatus.RUNNING
+        self.started_at = time.time()
         self.completed_at = None
 
     def mark_completed(self, summary: Optional[str] = None) -> None:

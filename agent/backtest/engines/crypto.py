@@ -445,7 +445,7 @@ class CryptoEngine(BaseEngine):
         )
         self._risk_after_atomic_mutation(timestamp)
 
-    def _execute_bars(self, dates, data_map, close_df, target_pos, codes) -> None:
+    def _execute_bars(self, dates, data_map, close_df, target_pos, codes, close_val_df=None) -> None:
         if self.perpetual_strict:
             try:
                 close_df = pd.DataFrame(
@@ -453,7 +453,8 @@ class CryptoEngine(BaseEngine):
                 )
             except KeyError as exc:
                 raise ValueError(f"missing strict mark-close data: {exc}") from exc
-        super()._execute_bars(dates, data_map, close_df, target_pos, codes)
+            close_val_df = close_df.ffill()
+        super()._execute_bars(dates, data_map, close_df, target_pos, codes, close_val_df=close_val_df)
         if self.perpetual_strict and self.terminal_status == "active":
             self.terminal_status = "completed"
 

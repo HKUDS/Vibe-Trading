@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src.session.events import SSEEvent
 from src.session.service import SessionBusyError
 
 logger = logging.getLogger(__name__)
@@ -803,12 +804,31 @@ def register_sessions_routes(app: FastAPI) -> None:
         event_id = header_id or last_event_id
         replay_active = (replay or "").lower() == "active"
         replay_all = False
+        running_attempt = None
         if replay_active and not event_id and session.last_attempt_id:
             attempt = svc.store.get_attempt(session_id, session.last_attempt_id)
             attempt_status = getattr(attempt.status, "value", attempt.status) if attempt else None
             replay_all = attempt_status == "running"
+            if replay_all:
+                running_attempt = attempt
 
         async def event_generator():
+            # The ring buffer is bounded, so a long attempt's original
+            # `attempt.started` may already have rotated out by the time a client
+            # joins. Re-announce it from the persisted attempt so the client's
+            # elapsed clock starts from the real start, not from now. Clients
+            # treat a repeated attempt.started for the same attempt as a no-op.
+            if running_attempt is not None and running_attempt.started_at:
+                yield SSEEvent(
+                    event_id=None,
+                    event_type="attempt.started",
+                    data={
+                        "attempt_id": running_attempt.attempt_id,
+                        "started_at": running_attempt.started_at,
+                        "replayed": True,
+                    },
+                    session_id=session_id,
+                ).to_sse()
             async for event in svc.event_bus.subscribe(
                 session_id,
                 last_event_id=event_id,

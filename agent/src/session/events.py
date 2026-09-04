@@ -64,13 +64,18 @@ class EventBus:
         max_buffer_size: Maximum number of buffered events per session.
     """
 
-    def __init__(self, max_buffer_size: int = 500) -> None:
+    def __init__(self, max_buffer_size: int = 500, heartbeat_interval_s: float = 30.0) -> None:
         """Initialize the event bus.
 
         Args:
             max_buffer_size: Maximum number of buffered events per session.
+            heartbeat_interval_s: Idle seconds before a subscriber is sent a
+                ``heartbeat`` frame. Also bounds how long a subscriber waiting
+                on an idle queue takes to notice a cross-thread publish when no
+                loop was injected via :meth:`set_loop`.
         """
         self.max_buffer_size = max_buffer_size
+        self.heartbeat_interval_s = heartbeat_interval_s
         self._buffers: Dict[str, List[SSEEvent]] = {}
         self._subscribers: Dict[str, List[asyncio.Queue]] = {}
         self._listeners: List[Callable[[SSEEvent], None]] = []
@@ -253,7 +258,7 @@ class EventBus:
 
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=self.heartbeat_interval_s)
                 except asyncio.TimeoutError:
                     yield SSEEvent(
                         event_id=None,

@@ -46,13 +46,15 @@ def test_session_id_is_not_a_required_argument(name, tool_parameters) -> None:
 
 
 def test_the_other_arguments_stay_required(tool_parameters) -> None:
-    """Making session_id optional must not loosen the real inputs."""
+    """Making session_id optional must not loosen the real inputs.
+
+    goal_id/expected_goal_id are deliberately not in this set: they default
+    to the current goal for the session, the same fallback the registered
+    AddGoalEvidenceTool/UpdateResearchGoalStatusTool already implement.
+    """
     assert tool_parameters["start_research_goal"]["required"] == ["objective"]
-    assert set(tool_parameters["update_research_goal_status"]["required"]) == {
-        "goal_id",
-        "expected_goal_id",
-        "status",
-    }
+    assert tool_parameters["update_research_goal_status"]["required"] == ["status"]
+    assert tool_parameters["add_goal_evidence"]["required"] == ["text"]
 
 
 def test_resolve_session_id_is_stable_within_a_process(mcp_server, monkeypatch) -> None:

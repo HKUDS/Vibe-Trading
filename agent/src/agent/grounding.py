@@ -2150,8 +2150,9 @@ class GroundingLedger:
         adjustment = str(payload.get("adjustment") or payload.get("adjust") or "") or None
         unit = str(payload.get("price_unit") or "") or None
         remaining = _MAX_GENERIC_EVIDENCE
+        timestamp_fields = (*_TIMESTAMP_FIELDS, "as_of")
 
-        def visit(value: Any, path: str) -> None:
+        def visit(value: Any, path: str, timestamp: str | None = None) -> None:
             nonlocal remaining
             if remaining <= 0:
                 return
@@ -2177,11 +2178,25 @@ class GroundingLedger:
                 remaining -= 1
                 return
             if isinstance(value, dict):
+                local_timestamp = next(
+                    (
+                        str(value[key])
+                        for key in timestamp_fields
+                        if value.get(key) is not None
+                    ),
+                    timestamp,
+                )
                 for key, item in value.items():
-                    visit(item, f"{path}.{key}" if path else str(key))
+                    if str(key).casefold() in timestamp_fields:
+                        continue
+                    visit(
+                        item,
+                        f"{path}.{key}" if path else str(key),
+                        local_timestamp,
+                    )
             elif isinstance(value, list):
                 for index, item in enumerate(value):
-                    visit(item, f"{path}[{index}]")
+                    visit(item, f"{path}[{index}]", timestamp)
 
         visit(payload, "")
 

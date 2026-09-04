@@ -16,10 +16,7 @@ IMPORTANT — v1 limits exercised here:
   - stdio transport only (no SSE / streamable HTTP)
   - serial execution (is_readonly == False on every remote tool)
   - tools-only exposure (resources / prompts excluded)
-  - Swarm path NOT tested (excluded from MCP config propagation in v1)
-
-TODO(v1): Add Swarm-path integration tests once Swarm worker registries are
-allowed to load MCP config.
+  - Swarm registry path covered for operator-configured stdio tools
 """
 
 from __future__ import annotations
@@ -126,6 +123,25 @@ def test_remote_tool_is_callable_and_returns_expected_result(tmp_path: Path) -> 
     # The tool returns a JSON string with the text content.
     # Successful call: the raw return is the text content from the remote tool.
     assert "hello" in result
+
+
+def test_swarm_registry_loads_and_calls_remote_stdio_tool(tmp_path: Path) -> None:
+    """A Swarm worker registry can discover and call an approved MCP tool."""
+    from src.config.loader import load_agent_config
+    from src.tools import build_swarm_registry
+
+    cfg_path = _make_agent_json(tmp_path, "fake", enabledTools=["echo"])
+    agent_config = load_agent_config(config_path=cfg_path)
+
+    registry = build_swarm_registry(
+        ["mcp_fake_echo"],
+        agent_config=agent_config,
+    )
+
+    assert registry.tool_names == ["mcp_fake_echo"]
+    echo_tool = registry.get("mcp_fake_echo")
+    assert echo_tool is not None
+    assert "swarm" in echo_tool.execute(message="swarm")
 
 
 def test_remote_tool_add_returns_correct_sum(tmp_path: Path) -> None:

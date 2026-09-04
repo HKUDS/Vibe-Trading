@@ -49,6 +49,40 @@ _PROPOSALS_DIRNAME = "proposals"
 _CONSENT_DIRNAME = "consent"
 _PROPOSAL_ID_RE = re.compile(r"^mp_[0-9a-f]{32}$")
 
+def _is_real_number(value: Any) -> bool:
+    """Return whether ``value`` is a non-bool int/float."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+#: The leverage axis is the one clamped limit whose FLOOR is spelled as a word:
+#: ``"none"`` means cash only, and it is this module's own default
+#: (``leverage_raw = profile.get("leverage", "none")`` below). It is therefore
+#: not an "invalid non-numeric type" — it is the most conservative value on the
+#: axis, and it has to sort BELOW every number rather than fall into a
+#: fail-closed reject branch. Without this, narrowing 2x -> cash-only is refused
+#: while the equivalent 2x -> 1.0 is accepted, so the gate rejects the safest
+#: option a user can pick.
+_LEVERAGE_FLOOR_SENTINELS = ("none", None)
+
+
+def _normalize_leverage(value: Any) -> float | None:
+    """Return leverage as a comparable float, or ``None`` when it is not one.
+
+    Args:
+        value: Raw leverage from a profile, ceiling snapshot or adjustment.
+
+    Returns:
+        ``1.0`` for the cash-only sentinel, the value itself for a real
+        (non-bool) number, and ``None`` for anything else — a string like
+        ``"10"``, a bool, or any other type — so the caller fails closed.
+    """
+    if value is None or (isinstance(value, str) and value.strip().casefold() == "none"):
+        return 1.0
+    if _is_real_number(value):
+        return float(value)
+    return None
+
+
 #: Maps every accepted alias of a clamped limit to its CANONICAL name. The
 #: proposal profile, the ceiling snapshot, and the clamp in
 #: ``propose_mandate_tool`` all use slightly different human-vs-schema spellings
@@ -262,12 +296,51 @@ def _resolve_profile(
             if key not in resolved:
                 raise CommitError(f"adjustment {key!r} is not a field of the selected profile")
             current = resolved[key]
-            if isinstance(current, (int, float)) and isinstance(value, (int, float)):
+            if key == "leverage" and (
+                current in _LEVERAGE_FLOOR_SENTINELS or value in _LEVERAGE_FLOOR_SENTINELS
+            ):
+                # Cash-only sits at the floor of this axis, so compare on the
+                # normalized scale instead of by type. Narrowing 2x -> "none"
+                # is the safest adjustment there is and must commit.
+                current_lev = _normalize_leverage(current)
+                new_lev = _normalize_leverage(value)
+                if current_lev is None or new_lev is None:
+                    raise CommitError(
+                        f"adjustment {key!r}={value!r} has an invalid type for the rendered limit "
+                        f"{current!r}; leverage narrowing requires a number or \"none\""
+                    )
+                if new_lev > current_lev:
+                    raise CommitError(
+                        f"adjustment {key!r}={value!r} widens the rendered limit {current!r}; "
+                        "widening must go through a fresh proposal"
+                    )
+            elif _is_real_number(current):
+                if not _is_real_number(value):
+                    raise CommitError(
+                        f"adjustment {key!r}={value!r} has an invalid type for the rendered limit "
+                        f"{current!r}; numeric narrowing requires an int or float"
+                    )
                 if value > current:
                     raise CommitError(
                         f"adjustment {key!r}={value} widens the rendered limit {current}; "
                         "widening must go through a fresh proposal"
                     )
+            elif isinstance(current, list):
+                if not isinstance(value, list):
+                    raise CommitError(
+                        f"adjustment {key!r}={value!r} has an invalid type for the rendered list "
+                        f"{current!r}; list narrowing requires a list subset"
+                    )
+                if not all(item in current for item in value):
+                    raise CommitError(
+                        f"adjustment {key!r}={value!r} widens the rendered whitelist {current!r}; "
+                        "widening must go through a fresh proposal"
+                    )
+            elif type(value) is not type(current) or value != current:
+                raise CommitError(
+                    f"adjustment {key!r}={value!r} changes the rendered value {current!r}; "
+                    "only narrowing or equivalent adjustments are allowed"
+                )
             resolved[key] = value
     return resolved
 
@@ -299,12 +372,27 @@ def _profile_fits_ceilings(profile: Mapping[str, Any], ceilings: Mapping[str, An
         if key not in prof:
             continue
         prof_value = prof[key]
-        if isinstance(ceiling_value, (int, float)) and isinstance(prof_value, (int, float)):
-            if prof_value > ceiling_value:
+        if key == "leverage":
+            # One scale for both sides: "none" is the floor (1.0), not a type
+            # error. A cash-only ceiling therefore still forbids any real
+            # leverage, and a cash-only PROFILE still fits a numeric ceiling.
+            ceiling_lev = _normalize_leverage(ceiling_value)
+            prof_lev = _normalize_leverage(prof_value)
+            if ceiling_lev is None or prof_lev is None:
                 return False
-        elif key == "leverage":
-            # Cash-only ceiling forbids any leverage other than "none".
-            if ceiling_value == "none" and prof_value not in ("none", None, 1, 1.0):
+            if prof_lev > ceiling_lev:
+                return False
+        elif key == "allowed_instruments":
+            # A whitelist may only be narrowed, never widened at commit time.
+            if not isinstance(ceiling_value, list) or not isinstance(prof_value, list):
+                return False
+            if not all(item in ceiling_value for item in prof_value):
+                return False
+        else:
+            # Numeric ceilings fail closed when either side is bool/non-numeric.
+            if not _is_real_number(ceiling_value) or not _is_real_number(prof_value):
+                return False
+            if prof_value > ceiling_value:
                 return False
     return True
 

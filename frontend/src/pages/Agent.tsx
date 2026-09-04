@@ -534,6 +534,16 @@ export function Agent() {
           };
         }
         const ts = new Date(m.created_at).getTime();
+        // The reply is committed when the attempt ends, so created_at is the
+        // end. The start comes from the persisted attempt start when present,
+        // else is backed out of the attempt's elapsed time; only legacy rows
+        // without either fall back to the first tool call.
+        const startedAtSec = typeof meta?.started_at === "number" ? meta.started_at : NaN;
+        const attemptStartedAt = Number.isFinite(startedAtSec) && startedAtSec > 0
+          ? startedAtSec * 1000
+          : elapsedMs != null
+            ? ts - elapsedMs
+            : undefined;
         const toolTimeline = m.role === "assistant"
           ? buildToolTimelineMessages(m.tool_trail ?? [], {
               fallbackTimestamp: ts,
@@ -544,6 +554,7 @@ export function Agent() {
                 : meta?.status === "cancelled"
                   ? "stopped"
                   : "done",
+              startedAt: attemptStartedAt,
               endedAt: ts,
             })
           : [];
@@ -619,6 +630,22 @@ export function Agent() {
         act().clearStreamingSession(sid);
       }
       act().loadHistory(agentMsgs);
+      // The live activity is carried across a same-session re-mount so its
+      // clock survives, but if the attempt finished while we were away its
+      // committed reply is now in history: the durable row above supersedes
+      // the live one, which would otherwise sit at "Working" until the safety
+      // timeout fired.
+      const liveActivity = act().activity;
+      if (
+        liveActivity
+        && msgs.some((message) => (
+          message.role === "assistant"
+          && message.linked_attempt_id === liveActivity.attemptId
+        ))
+      ) {
+        useAgentStore.setState({ activity: null, toolCalls: [] });
+        if (act().status === "streaming") act().setStatus("idle");
+      }
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);
       setRuntimeIdentity(latestRuntimeIdentity ?? {});
@@ -684,8 +711,15 @@ export function Agent() {
         return false;
       }
       const current = store.activity;
+      // `attempt.started` carries the backend's wall-clock start (epoch
+      // seconds). On a replayed stream that is the original start, so the
+      // elapsed timer resumes from the truth rather than from reconnect time.
+      const startedAtSec = Number(data.started_at);
+      const startedAt = Number.isFinite(startedAtSec) && startedAtSec > 0
+        ? startedAtSec * 1000
+        : undefined;
       if (!current) {
-        store.startActivity(attemptId || `pending-${Date.now()}`);
+        store.startActivity(attemptId || `pending-${Date.now()}`, startedAt);
       } else if (
         attemptId &&
         current.attemptId !== attemptId &&
@@ -693,7 +727,7 @@ export function Agent() {
       ) {
         store.setActivityAttemptId(attemptId);
       } else if (attemptId && current.attemptId !== attemptId) {
-        store.startActivity(attemptId);
+        store.startActivity(attemptId, startedAt);
       }
       act().setActivityState(state);
       return true;
@@ -870,14 +904,39 @@ export function Agent() {
         }
         const streamedAnswer = act().streamingText + pendingTextRef.current;
         flushPendingStreamUpdate();
+        // No live activity means we never saw this attempt run (connected after
+        // the fact); rebuild its timing from the event rather than from now.
+        const eventStartedSec = Number(d.started_at);
+        const eventElapsedMs = Number(d.elapsed_ms);
+        const eventEndedSec = Number(d.ended_at);
+        const completedEndedAt = Number.isFinite(eventEndedSec) && eventEndedSec > 0
+          ? eventEndedSec * 1000
+          : Date.now();
+        const completedStartedAt = Number.isFinite(eventStartedSec) && eventStartedSec > 0
+          ? eventStartedSec * 1000
+          : Number.isFinite(eventElapsedMs) && eventElapsedMs > 0
+            ? completedEndedAt - eventElapsedMs
+            : undefined;
         if (!act().activity) {
-          act().startActivity(attemptId || `completed-${Date.now()}`);
+          act().startActivity(attemptId || `completed-${Date.now()}`, completedStartedAt);
         } else if (attemptId && act().activity?.attemptId !== attemptId) {
           act().setActivityAttemptId(attemptId);
         }
+        // A client that joined mid-attempt may have started its clock late; the
+        // backend's start is authoritative for the durable row.
+        const liveStart = act().activity?.startedAt;
+        if (
+          completedStartedAt !== undefined
+          && liveStart !== undefined
+          && completedStartedAt < liveStart
+        ) {
+          useAgentStore.setState((state) => ({
+            activity: state.activity ? { ...state.activity, startedAt: completedStartedAt } : null,
+          }));
+        }
         const s = act();
         const completedTools = s.activity?.steps ?? s.toolCalls;
-        const completedActivity = archiveActivity("done");
+        const completedActivity = archiveActivity("done", completedEndedAt);
         const completedAttemptId = completedActivity?.attemptId || attemptId;
         useAgentStore.setState((state) => ({
           messages: state.messages.filter(
@@ -1216,7 +1275,18 @@ export function Agent() {
       genRef.current = gen;
       setRuntimeIdentity({});
       const seed = curMsgs.length > 0 ? curMsgs : getCachedSession(urlSessionId);
+      // switchSession() drops the live activity so replay can rebuild its
+      // steps without duplicating them — but the attempt's start time is not
+      // something replay can restore once the ring buffer has rotated past
+      // `attempt.started`. Re-seed the still-running activity with its
+      // original startedAt so the elapsed clock does not restart at 0s.
+      const liveActivity = act().activity;
       switchSession(urlSessionId, seed);
+      if (liveActivity && liveActivity.endedAt === undefined) {
+        const store = act();
+        store.startActivity(liveActivity.attemptId, liveActivity.startedAt);
+        store.setActivityState(liveActivity.state);
+      }
       loadSessionMessages(urlSessionId, gen);
       setupSSE(urlSessionId);
     } else if (!urlSessionId && curSid) {

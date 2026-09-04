@@ -38,6 +38,17 @@ HOST_KEY = "stooq"
 _MIN_INTERVAL_ENV = "VIBE_TRADING_STOOQ_MIN_INTERVAL"
 _DEFAULT_MIN_INTERVAL_S = 0.6
 
+# Stooq currently answers non-browser clients with a JavaScript proof-of-work
+# challenge page (HTTP 200, HTML body) instead of CSV. Without detection the
+# loader parses it as "no data" and the fallback chain slides past a source
+# that never serves, with nothing in the run log to show for it.
+_challenge_warned = False
+
+
+def _looks_like_challenge_page(body: str) -> bool:
+    text = (body or "").lstrip().lower()
+    return text.startswith("<") or "challenge" in text[:2000] or "proof of work" in text[:2000]
+
 # Stooq's CSV header columns mapped to our output field names.
 _COLUMN_MAP = {
     "Open": "open",
@@ -162,6 +173,17 @@ class DataLoader:
             params=params,
         )
         response.raise_for_status()
+        if _looks_like_challenge_page(response.text):
+            global _challenge_warned
+            if not _challenge_warned:
+                logger.warning(
+                    "stooq is serving an anti-bot challenge page instead of CSV "
+                    "data; treating it as unavailable for the rest of this "
+                    "process. Reorder the chain via VIBE_TRADING_MARKET_DATA_ORDER_* "
+                    "or drop stooq from it."
+                )
+                _challenge_warned = True
+            return None
         return _parse_csv(response.text)
 
 

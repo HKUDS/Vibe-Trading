@@ -81,3 +81,51 @@ describe("buildToolTimelineMessages", () => {
     });
   });
 });
+
+describe("buildToolTimelineMessages attempt start", () => {
+  const trail = [
+    { tool: "read_document", status: "ok" as const, elapsed_ms: 80, timestamp: 1_785_342_405_000 },
+  ];
+
+  it("prefers the attempt's recorded start over the first tool call", () => {
+    // The model thought for 5s before its only (80ms) tool call, then answered
+    // for another 3s: the durable row must read 8s, not 80ms.
+    const [row] = buildToolTimelineMessages(trail, {
+      fallbackTimestamp: 1_785_342_408_000,
+      attemptId: "attempt-1",
+      startedAt: 1_785_342_400_000,
+      endedAt: 1_785_342_408_000,
+    });
+    expect(row.meta?.activity?.startedAt).toBe(1_785_342_400_000);
+    expect(row.meta?.activity?.endedAt).toBe(1_785_342_408_000);
+    expect(row.timestamp).toBe(1_785_342_400_000);
+  });
+
+  it("never places the start after a tool that already ran", () => {
+    const [row] = buildToolTimelineMessages(trail, {
+      fallbackTimestamp: 1_785_342_408_000,
+      attemptId: "attempt-1",
+      startedAt: 1_785_342_407_000,
+      endedAt: 1_785_342_408_000,
+    });
+    expect(row.meta?.activity?.startedAt).toBe(1_785_342_405_000);
+  });
+
+  it("falls back to the first tool call when no start is recorded", () => {
+    const [row] = buildToolTimelineMessages(trail, {
+      fallbackTimestamp: 1_785_342_408_000,
+      attemptId: "attempt-1",
+      endedAt: 1_785_342_408_000,
+    });
+    expect(row.meta?.activity?.startedAt).toBe(1_785_342_405_000);
+  });
+
+  it("uses the fallback timestamp for a tool-less turn without a recorded start", () => {
+    const [row] = buildToolTimelineMessages([], {
+      fallbackTimestamp: 1_785_342_408_000,
+      attemptId: "attempt-1",
+      endedAt: 1_785_342_408_000,
+    });
+    expect(row.meta?.activity?.startedAt).toBe(1_785_342_408_000);
+  });
+});

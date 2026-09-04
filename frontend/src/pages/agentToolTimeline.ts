@@ -21,6 +21,8 @@ interface ToolTimelineOptions {
   idPrefix?: string;
   attemptId?: string;
   state?: ActivityState;
+  /** Attempt wall-clock start (ms). When known it beats the first-tool guess. */
+  startedAt?: number;
   endedAt?: number;
   activity?: AgentActivity;
 }
@@ -45,9 +47,17 @@ export function buildToolTimelineMessages(
         : fallbackTimestamp + index
     ),
   }));
-  const startedAt = steps.length > 0
+  // The first tool call is only a lower bound on when the attempt started: the
+  // model thinks before it reaches for a tool, and a pure-text turn has no
+  // tools at all. Prefer the attempt's recorded start when the caller has it.
+  const inferredStart = steps.length > 0
     ? Math.min(...steps.map((step) => step.timestamp))
     : fallbackTimestamp;
+  const startedAt = (
+    typeof options.startedAt === "number" && Number.isFinite(options.startedAt)
+      ? Math.min(options.startedAt, inferredStart)
+      : inferredStart
+  );
   const inferredEnd = Math.max(
     fallbackTimestamp,
     startedAt + steps.reduce((sum, step) => sum + (step.elapsed_ms ?? 0), 0),

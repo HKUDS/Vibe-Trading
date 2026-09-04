@@ -617,9 +617,9 @@ def get_research_goal(session_id: str = "", ctx: Context | None = None) -> str:
 
 @mcp.tool
 def add_goal_evidence(
-    goal_id: str,
-    expected_goal_id: str,
     text: str,
+    goal_id: str = "",
+    expected_goal_id: str = "",
     session_id: str = "",
     criterion_id: str | None = None,
     claim_id: str | None = None,
@@ -645,9 +645,11 @@ def add_goal_evidence(
     """Append traceable evidence to a finance research goal.
 
     Args:
-        goal_id: Goal being mutated.
-        expected_goal_id: Goal id captured before the tool/model turn started.
         text: Evidence note or result summary.
+        goal_id: Optional goal id. Defaults to the current goal for this
+            session.
+        expected_goal_id: Optional stale-write guard captured before the
+            tool/model turn started. Defaults to goal_id.
         session_id: Optional conversation id. Omit it unless the client tracks
             its own sessions; this server then uses one id per process.
         criterion_id: Optional criterion this evidence satisfies.
@@ -656,7 +658,9 @@ def add_goal_evidence(
         tool_call_id: Source tool call id for traceability; it does not verify evidence by itself.
         run_id: Vibe-Trading run id. It verifies evidence only when the run directory exists.
         source_provider: Data/provider name such as yfinance, OKX, tushare.
+            Defaults to "agent_tool" when omitted.
         source_type: Source category such as market_data, document, backtest.
+            Defaults to "tool_note" when omitted.
         source_uri: Optional source URL/path.
         symbol_universe: Symbols covered by the evidence.
         benchmark: Benchmark symbols covered by the evidence.
@@ -673,10 +677,20 @@ def add_goal_evidence(
     try:
         from src.goal import EvidenceInput, StaleGoalError
 
-        evidence = _get_goal_store().append_evidence(
-            session_id=_resolve_session_id(session_id, ctx),
-            goal_id=goal_id.strip(),
-            expected_goal_id=expected_goal_id.strip(),
+        store = _get_goal_store()
+        resolved_session_id = _resolve_session_id(session_id, ctx)
+        resolved_goal_id = goal_id.strip()
+        if not resolved_goal_id:
+            snapshot = store.get_current_snapshot(resolved_session_id)
+            if snapshot is None:
+                return _json_error("no current goal for this session", error_type="not_found")
+            resolved_goal_id = str(snapshot["goal"]["goal_id"])
+        resolved_expected_goal_id = expected_goal_id.strip() or resolved_goal_id
+
+        evidence = store.append_evidence(
+            session_id=resolved_session_id,
+            goal_id=resolved_goal_id,
+            expected_goal_id=resolved_expected_goal_id,
             evidence=EvidenceInput(
                 criterion_id=_blank_to_none(criterion_id),
                 claim_id=_blank_to_none(claim_id),
@@ -684,8 +698,8 @@ def add_goal_evidence(
                 text=text,
                 tool_call_id=_blank_to_none(tool_call_id),
                 run_id=_blank_to_none(run_id),
-                source_provider=_blank_to_none(source_provider),
-                source_type=_blank_to_none(source_type),
+                source_provider=_blank_to_none(source_provider) or "agent_tool",
+                source_type=_blank_to_none(source_type) or "tool_note",
                 source_uri=_blank_to_none(source_uri),
                 symbol_universe=_clean_list(symbol_universe),
                 benchmark=_clean_list(benchmark),
@@ -700,7 +714,7 @@ def add_goal_evidence(
                 contradicts_claim_ids=_clean_list(contradicts_claim_ids),
             ),
         )
-        snapshot = _get_goal_store().get_goal_snapshot(goal_id.strip())
+        snapshot = store.get_goal_snapshot(resolved_goal_id)
         if snapshot is None:
             return _json_error("Goal snapshot could not be reloaded")
         from dataclasses import asdict
@@ -714,9 +728,9 @@ def add_goal_evidence(
 
 @mcp.tool
 def update_research_goal_status(
-    goal_id: str,
-    expected_goal_id: str,
     status: str,
+    goal_id: str = "",
+    expected_goal_id: str = "",
     session_id: str = "",
     audit: _lenient_dict_list_opt = None,
     recap: str | None = None,
@@ -729,9 +743,11 @@ def update_research_goal_status(
     required criterion and verified evidence for satisfied rows.
 
     Args:
-        goal_id: Goal being mutated.
-        expected_goal_id: Goal id captured before the tool/model turn started.
         status: Goal lifecycle status, e.g. complete, cancelled, blocked.
+        goal_id: Optional goal id. Defaults to the current goal for this
+            session.
+        expected_goal_id: Optional stale-write guard captured before the
+            tool/model turn started. Defaults to goal_id.
         session_id: Optional conversation id. Omit it unless the client tracks
             its own sessions; this server then uses one id per process.
         audit: Optional list of criterion audit rows.
@@ -740,15 +756,25 @@ def update_research_goal_status(
     try:
         from src.goal import GoalStatus, StaleGoalError
 
-        updated = _get_goal_store().update_status(
-            session_id=_resolve_session_id(session_id, ctx),
-            goal_id=goal_id.strip(),
-            expected_goal_id=expected_goal_id.strip(),
+        store = _get_goal_store()
+        resolved_session_id = _resolve_session_id(session_id, ctx)
+        resolved_goal_id = goal_id.strip()
+        if not resolved_goal_id:
+            snapshot = store.get_current_snapshot(resolved_session_id)
+            if snapshot is None:
+                return _json_error("no current goal for this session", error_type="not_found")
+            resolved_goal_id = str(snapshot["goal"]["goal_id"])
+        resolved_expected_goal_id = expected_goal_id.strip() or resolved_goal_id
+
+        updated = store.update_status(
+            session_id=resolved_session_id,
+            goal_id=resolved_goal_id,
+            expected_goal_id=resolved_expected_goal_id,
             status=GoalStatus(status),
             audit=_audit_rows_from_payload(audit),
             recap=_blank_to_none(recap),
         )
-        snapshot = _get_goal_store().get_goal_snapshot(updated.goal_id)
+        snapshot = store.get_goal_snapshot(updated.goal_id)
         if snapshot is None:
             return _json_error("Goal snapshot could not be reloaded")
         return _json_ok(goal=snapshot["goal"], snapshot=snapshot)

@@ -23,6 +23,7 @@ import src.live.mandate.commit as mandate_commit
 from src.live.mandate.commit import (
     CommitError,
     DEFAULT_MANDATE_LIFETIME_DAYS,
+    _profile_fits_ceilings,
     commit_mandate,
     save_proposal,
 )
@@ -323,6 +324,117 @@ def _save_handcrafted_proposal(
     return proposal_id
 
 
+def _save_h19_proposal(live_runtime: Path) -> str:
+    """Persist the H19 fixture: numeric leverage and a two-item whitelist."""
+    profile = {
+        "ordinal": 1,
+        "label": "h19",
+        "max_order_usd": 100.0,
+        "max_total_exposure_usd": 100.0,
+        "daily_trade_cap": 2,
+        "leverage": 2,
+        "instruments": ["equity", "option"],
+    }
+    ceilings = {
+        "account_funding_usd": 100.0,
+        "max_order_notional_usd": 100.0,
+        "max_total_exposure_usd": 100.0,
+        "max_trades_per_day": 2,
+        "leverage": 2,
+        "allowed_instruments": ["equity", "option"],
+    }
+    return _save_handcrafted_proposal("robinhood", profile, ceilings)
+
+
+def test_adjust_string_numeric_widening_rejected(live_runtime: Path) -> None:
+    """H19: a string "10" cannot widen numeric leverage 2 by type confusion."""
+    proposal_id = _save_h19_proposal(live_runtime)
+    with pytest.raises(CommitError, match="invalid type"):
+        commit_mandate(
+            proposal_id=proposal_id,
+            ordinal=1,
+            adjustments={"leverage": "10"},
+            consent_ack=True,
+            broker="robinhood",
+        )
+    assert load_mandate("robinhood") is None
+
+
+def test_adjust_string_numeric_narrowing_rejected(live_runtime: Path) -> None:
+    """H19 policy: even string numeric narrowing is rejected as an invalid type."""
+    proposal_id = _save_h19_proposal(live_runtime)
+    with pytest.raises(CommitError, match="numeric narrowing requires an int or float"):
+        commit_mandate(
+            proposal_id=proposal_id,
+            ordinal=1,
+            adjustments={"leverage": "1"},
+            consent_ack=True,
+            broker="robinhood",
+        )
+    assert load_mandate("robinhood") is None
+
+
+def test_adjust_bool_numeric_limit_rejected(live_runtime: Path) -> None:
+    """H19: bool is an int subclass, but is never a valid numeric limit value."""
+    proposal_id = _save_h19_proposal(live_runtime)
+    with pytest.raises(CommitError, match="invalid type"):
+        commit_mandate(
+            proposal_id=proposal_id,
+            ordinal=1,
+            adjustments={"leverage": True},
+            consent_ack=True,
+            broker="robinhood",
+        )
+    assert load_mandate("robinhood") is None
+
+
+def test_adjust_instruments_widening_rejected(live_runtime: Path) -> None:
+    """H19: adding an instrument to the rendered whitelist must re-propose."""
+    proposal_id = _save_h19_proposal(live_runtime)
+    with pytest.raises(CommitError, match="widen"):
+        commit_mandate(
+            proposal_id=proposal_id,
+            ordinal=1,
+            adjustments={"instruments": ["equity", "option", "cfd"]},
+            consent_ack=True,
+            broker="robinhood",
+        )
+    assert load_mandate("robinhood") is None
+
+
+def test_adjust_instruments_narrowing_subset_commits(live_runtime: Path) -> None:
+    """H19: a true subset of the rendered whitelist commits as narrowing."""
+    proposal_id = _save_h19_proposal(live_runtime)
+    result = commit_mandate(
+        proposal_id=proposal_id,
+        ordinal=1,
+        adjustments={"instruments": ["equity"]},
+        consent_ack=True,
+        broker="robinhood",
+    )
+    mandate = load_mandate("robinhood")
+    assert result["mandate_id"]
+    assert mandate is not None
+    assert mandate.hard_caps.allowed_instruments == ("equity",)
+
+
+def test_profile_fits_ceilings_rejects_non_numeric_profile_value() -> None:
+    """H19 defense-in-depth: numeric ceilings reject string profile values."""
+    assert not _profile_fits_ceilings({"leverage": "10"}, {"leverage": 2})
+
+
+def test_profile_fits_ceilings_rejects_bool_profile_value() -> None:
+    """H19 defense-in-depth: bool cannot masquerade as a numeric profile value."""
+    assert not _profile_fits_ceilings({"leverage": True}, {"leverage": 2})
+
+
+def test_profile_fits_ceilings_rejects_instrument_widening() -> None:
+    """H19 defense-in-depth: the ceiling whitelist must contain every instrument."""
+    profile = {"instruments": ["equity", "option"]}
+    ceilings = {"allowed_instruments": ["equity"]}
+    assert not _profile_fits_ceilings(profile, ceilings)
+
+
 def test_commit_rejects_profile_over_alias_keyed_order_ceiling(live_runtime: Path) -> None:
     """H9: an order notional over an ALIAS-keyed ceiling is rejected at commit.
 
@@ -560,3 +672,79 @@ def test_registry_has_propose_tool_but_no_mandate_writer() -> None:
     assert "propose_mandate_profiles" in names
     for forbidden in ("commit_mandate", "set_mandate", "write_mandate", "authorize_live"):
         assert forbidden not in names, f"{forbidden} must not be a registered tool"
+
+
+# ---------------------------------------------------------------------------
+# The other column: adjustments and profiles that must STILL be accepted.
+#
+# Every H19 test above asserts a refusal. A gate tested only for what it blocks
+# reads identically whether it blocks the right things or everything, which is
+# how the cash-only regression survived nine green checks twice. These pin the
+# open side of the same gate, and "none" is the case that matters: it is this
+# module's own default and the floor of the leverage axis, not an invalid type.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rendered, adjusted",
+    [
+        (2.0, "none"),  # cash only: the safest narrowing a user can make
+        (2.0, 1.0),  # the same thing spelled as a number
+        (2.0, 2.0),  # unchanged
+        ("none", "none"),  # already cash only, unchanged
+    ],
+)
+def test_leverage_narrowing_still_commits(rendered, adjusted) -> None:
+    proposal = {
+        "proposal_id": "p-open",
+        "profiles": [{"ordinal": 1, "label": "conservative", "leverage": rendered}],
+    }
+
+    resolved = mandate_commit._resolve_profile(proposal, 1, {"leverage": adjusted})
+
+    assert resolved["leverage"] == adjusted
+
+
+def test_leverage_widening_from_cash_only_is_still_refused() -> None:
+    """The floor sorts below every number in BOTH directions."""
+    proposal = {
+        "proposal_id": "p-widen",
+        "profiles": [{"ordinal": 1, "label": "cash", "leverage": "none"}],
+    }
+
+    with pytest.raises(mandate_commit.CommitError, match="widens"):
+        mandate_commit._resolve_profile(proposal, 1, {"leverage": 2.0})
+
+
+@pytest.mark.parametrize("bad", ["10", "1", True, False, [2.0]])
+def test_leverage_adjustment_of_an_invalid_type_is_still_refused(bad) -> None:
+    """Normalizing the sentinel must not re-open the H19 type hole."""
+    proposal = {
+        "proposal_id": "p-type",
+        "profiles": [{"ordinal": 1, "label": "conservative", "leverage": 2.0}],
+    }
+
+    with pytest.raises(mandate_commit.CommitError):
+        mandate_commit._resolve_profile(proposal, 1, {"leverage": bad})
+
+
+@pytest.mark.parametrize(
+    "profile_leverage, ceiling_leverage, fits",
+    [
+        ("none", 2.0, True),  # cash-only profile under a leveraged ceiling
+        (1.0, 2.0, True),
+        (2.0, 2.0, True),
+        (4.0, 2.0, False),
+        ("none", "none", True),  # cash-only under a cash-only ceiling
+        (2.0, "none", False),  # leverage under a cash-only ceiling
+        ("10", 2.0, False),  # a stringified number is still not a number
+        (True, 2.0, False),  # bool is still not a number
+    ],
+)
+def test_leverage_ceiling_table(profile_leverage, ceiling_leverage, fits) -> None:
+    assert (
+        mandate_commit._profile_fits_ceilings(
+            {"leverage": profile_leverage}, {"leverage": ceiling_leverage}
+        )
+        is fits
+    )

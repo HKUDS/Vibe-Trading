@@ -172,7 +172,7 @@ def test_align_keeps_move_across_halt_longer_than_ffill_limit() -> None:
     data_map = {"HALTED": _frame(halted), "NORMAL": _frame(normal)}
     signal_map = {c: pd.Series(1.0, index=df.index) for c, df in data_map.items()}
 
-    _, close, _, ret = _align(data_map, signal_map, ["HALTED", "NORMAL"])
+    _, close, _, _, ret = _align(data_map, signal_map, ["HALTED", "NORMAL"])
 
     # Precondition: the halt really does outlive the ffill limit.
     assert np.isnan(close.loc[dates[7], "HALTED"])

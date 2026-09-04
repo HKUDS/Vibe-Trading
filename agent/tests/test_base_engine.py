@@ -591,7 +591,7 @@ class TestAlign:
         frame = pd.DataFrame({"open": [100.0] * 3, "close": [100.0] * 3}, index=dates)
         signals = pd.Series([0.0, 1.0, 0.0], index=dates)
 
-        out_dates, close_df, pos_df, _ = _align(
+        out_dates, close_df, _, pos_df, _ = _align(
             {"BTC-USDT-PERP": frame}, {"BTC-USDT-PERP": signals}, ["BTC-USDT-PERP"]
         )
 
@@ -601,7 +601,7 @@ class TestAlign:
 
     def test_output_shapes(self) -> None:
         data_map, signal_map, dates = _simple_data_and_signals()
-        out_dates, close_df, pos_df, ret_df = _align(data_map, signal_map, ["A", "B"])
+        out_dates, close_df, _, pos_df, ret_df = _align(data_map, signal_map, ["A", "B"])
         assert len(out_dates) == len(dates)
         assert close_df.shape == (len(dates), 2)
         assert pos_df.shape == (len(dates), 2)
@@ -610,7 +610,7 @@ class TestAlign:
     def test_signal_shifted_by_one(self) -> None:
         """Signal at bar i should produce position at bar i+1 (next-bar-open)."""
         data_map, signal_map, dates = _simple_data_and_signals()
-        _, _, pos_df, _ = _align(data_map, signal_map, ["A", "B"])
+        _, _, _, pos_df, _ = _align(data_map, signal_map, ["A", "B"])
         # Signal A goes to 1.0 at index 3 → position should be 0 at index 3, non-zero at index 4
         assert pos_df.at[dates[3], "A"] == 0.0
         assert pos_df.at[dates[4], "A"] > 0.0
@@ -618,7 +618,7 @@ class TestAlign:
     def test_positions_normalized(self) -> None:
         """Sum of abs(weights) should be <= 1.0 per row."""
         data_map, signal_map, dates = _simple_data_and_signals()
-        _, _, pos_df, _ = _align(data_map, signal_map, ["A", "B"])
+        _, _, _, pos_df, _ = _align(data_map, signal_map, ["A", "B"])
         row_sums = pos_df.abs().sum(axis=1)
         assert (row_sums <= 1.0 + 1e-10).all()
 
@@ -629,7 +629,7 @@ class TestAlign:
         sig = pd.Series([0, 0, 2.0, -3.0, 0.5], index=dates)
         data_map = {"X": df}
         signal_map = {"X": sig}
-        _, _, pos_df, _ = _align(data_map, signal_map, ["X"])
+        _, _, _, pos_df, _ = _align(data_map, signal_map, ["X"])
         # After shift, clipped values show up at indices 3 and 4
         assert pos_df["X"].abs().max() <= 1.0 + 1e-10
 
@@ -639,7 +639,7 @@ class TestAlign:
         sig = pd.Series([np.nan, 1.0, np.nan, 0.5, np.nan], index=dates)
         data_map = {"X": df}
         signal_map = {"X": sig}
-        _, _, pos_df, _ = _align(data_map, signal_map, ["X"])
+        _, _, _, pos_df, _ = _align(data_map, signal_map, ["X"])
         assert not pos_df.isna().any().any()
 
     def test_close_ffill_bfill(self) -> None:
@@ -650,7 +650,7 @@ class TestAlign:
             index=dates,
         )
         sig = pd.Series([0, 1, 1, 1, 0], index=dates)
-        _, close_df, _, _ = _align({"X": df}, {"X": sig}, ["X"])
+        _, close_df, _, _, _ = _align({"X": df}, {"X": sig}, ["X"])
         assert not close_df.isna().any().any()
 
     def test_with_optimizer(self) -> None:
@@ -660,9 +660,9 @@ class TestAlign:
         def dummy_optimizer(ret, pos, dates_arg):
             return pos * 0.5  # halve everything
 
-        _, _, pos_df, _ = _align(data_map, signal_map, ["A", "B"], optimizer=dummy_optimizer)
+        _, _, _, pos_df, _ = _align(data_map, signal_map, ["A", "B"], optimizer=dummy_optimizer)
         # Positions should be smaller due to optimizer
-        _, _, pos_no_opt, _ = _align(data_map, signal_map, ["A", "B"])
+        _, _, _, pos_no_opt, _ = _align(data_map, signal_map, ["A", "B"])
         assert pos_df.abs().sum().sum() <= pos_no_opt.abs().sum().sum() + 1e-10
 
 
@@ -787,3 +787,35 @@ class TestSafePrice:
         dates = pd.DatetimeIndex([pd.Timestamp("2025-01-02")])
         close_df = pd.DataFrame({"X": [np.nan]}, index=dates)
         assert BaseEngine._safe_price(close_df, dates[0], "X", 10.0) == 10.0
+
+
+def test_halted_position_marks_at_last_close_past_ffill_limit():
+    # #1318: a position held through a halt longer than the ffill limit used to
+    # be re-marked at entry price, producing a phantom drawdown mid-halt.
+    run_dates = pd.date_range("2026-01-02", periods=30, freq="B")
+    halt_dates = run_dates[:10]
+    halt_close = [100.0 + 5.0 * i for i in range(10)]
+    data_map = {
+        "HALT": pd.DataFrame({"open": halt_close, "close": halt_close}, index=halt_dates),
+        "RUN": pd.DataFrame({"open": 50.0, "close": 50.0}, index=run_dates),
+    }
+    signal_map = {
+        "HALT": pd.Series(0.5, index=halt_dates),
+        "RUN": pd.Series(0.0, index=run_dates),
+    }
+    dates, close_df, close_val_df, target_pos, _ = _align(data_map, signal_map, ["HALT", "RUN"])
+
+    engine = _AdjustmentEngine()
+    engine._execute_bars(
+        dates, data_map, close_df, target_pos, ["HALT", "RUN"],
+        close_val_df=close_val_df,
+    )
+
+    snaps = {s.timestamp: s.equity for s in engine.equity_snapshots}
+    marked_at_last_close = snaps[run_dates[9]]
+    # Deep into the halt the equity must not fall back to the entry-cost mark.
+    for bar in (14, 15, 20, 29):
+        assert snaps[run_dates[bar]] == pytest.approx(marked_at_last_close, rel=1e-9)
+    # The terminal forced liquidation also marks at the last traded close, so
+    # the halt's unrealized PnL survives into the final equity.
+    assert engine.equity_snapshots[-1].equity == pytest.approx(marked_at_last_close, rel=1e-6)

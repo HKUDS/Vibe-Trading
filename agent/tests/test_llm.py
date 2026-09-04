@@ -1091,3 +1091,110 @@ class TestGetLlmCredentials:
         ):
             creds = get_llm_credentials("deepseek", "deepseek-v4-pro")
             assert creds["base_url"] == "https://legacy.example/v1"
+
+
+# ---------------------------------------------------------------------------
+# Anthropic temperature self-heal: SDK >= 1 relocates sampling params
+# ---------------------------------------------------------------------------
+
+
+def _make_relocating_anthropic_base():
+    """ChatAnthropic stand-in for langchain-anthropic >= 1.4 on anthropic >= 1.
+
+    ``anthropic>=1`` dropped ``temperature`` from ``Messages.create``, so
+    langchain-anthropic moves it into ``extra_body`` (which the SDK merges into
+    the request JSON as-is). The API rejects it from either location, so the
+    self-heal must strip both — popping the top-level key alone retried with
+    ``extra_body={"temperature": 0.0}`` and failed a second time.
+    """
+
+    class _RelocatingAnthropicBase:
+        def __init__(self, **kwargs: object) -> None:
+            self.model = kwargs.get("model")
+            self.temperature = kwargs.get("temperature")
+            self.extra_body = kwargs.get("extra_body")
+            self.calls: list[dict] = []
+
+        def _get_request_payload(self, *args: object, **kwargs: object) -> dict:
+            payload: dict = {"model": self.model, "messages": []}
+            relocated = (
+                {"temperature": self.temperature}
+                if self.temperature is not None
+                else {}
+            )
+            merged = {**relocated, **(self.extra_body or {})}
+            if merged:
+                payload["extra_body"] = merged
+            return payload
+
+        @staticmethod
+        def _has_temperature(payload: dict) -> bool:
+            return "temperature" in payload or "temperature" in (
+                payload.get("extra_body") or {}
+            )
+
+        def _generate(self, *args: object, **kwargs: object):
+            payload = self._get_request_payload(*args, **kwargs)
+            self.calls.append(
+                {**payload, "extra_body": dict(payload.get("extra_body") or {})}
+            )
+            if self.model == "deprecates-temp" and self._has_temperature(payload):
+                raise RuntimeError("`temperature` is deprecated for this model.")
+            return SimpleNamespace(payload=payload)
+
+    return _RelocatingAnthropicBase
+
+
+def test_anthropic_temperature_self_heal_strips_relocated_extra_body() -> None:
+    import src.providers.llm as llm_mod
+
+    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("deprecates-temp")
+    safe_cls = llm_mod._make_temperature_safe_anthropic(
+        _make_relocating_anthropic_base()
+    )
+    inst = safe_cls(model="deprecates-temp", temperature=0.0)
+
+    result = inst._generate([])
+
+    assert len(inst.calls) == 2
+    assert inst.calls[0]["extra_body"] == {"temperature": 0.0}
+    # The retry must not carry temperature anywhere, and an emptied extra_body
+    # must not be sent as `{}`.
+    assert "temperature" not in inst.calls[1]
+    assert (
+        "extra_body" not in inst.calls[1]
+        or "temperature" not in inst.calls[1]["extra_body"]
+    )
+    assert "extra_body" not in result.payload
+    assert "deprecates-temp" in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED
+
+
+def test_anthropic_temperature_self_heal_keeps_other_extra_body_keys() -> None:
+    import src.providers.llm as llm_mod
+
+    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("deprecates-temp")
+    safe_cls = llm_mod._make_temperature_safe_anthropic(
+        _make_relocating_anthropic_base()
+    )
+    inst = safe_cls(model="deprecates-temp", temperature=0.0, extra_body={"top_k": 40})
+
+    result = inst._generate([])
+
+    assert len(inst.calls) == 2
+    assert result.payload["extra_body"] == {"top_k": 40}
+
+
+def test_anthropic_relocated_temperature_preserved_for_supported_model() -> None:
+    import src.providers.llm as llm_mod
+
+    llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED.discard("supports-temp")
+    safe_cls = llm_mod._make_temperature_safe_anthropic(
+        _make_relocating_anthropic_base()
+    )
+    inst = safe_cls(model="supports-temp", temperature=0.0)
+
+    result = inst._generate([])
+
+    assert len(inst.calls) == 1
+    assert result.payload["extra_body"] == {"temperature": 0.0}
+    assert "supports-temp" not in llm_mod._ANTHROPIC_TEMPERATURE_UNSUPPORTED

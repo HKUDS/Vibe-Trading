@@ -240,7 +240,9 @@ def _align(
         optimizer: Optional weight optimiser ``(ret, pos, dates) -> pos``.
 
     Returns:
-        (dates, close_df, positions_df, returns_df)
+        (dates, close_df, close_val_df, positions_df, returns_df). ``close_df``
+        is the bounded-ffill trading view; ``close_val_df`` carries the last
+        traded close through halts of any length and is only for valuation.
     """
     # Build unified sorted date index from all symbols' trading calendars
     indexes = [data_map[c].index for c in codes]
@@ -271,6 +273,9 @@ def _align(
     # Vectorized ffill with limit using pandas (C-optimized internals)
     _tmp = pd.DataFrame(close_arr)
     close_arr = _tmp.ffill(limit=ffill_limit).values
+    # Valuation marks carry the last traded close through a halt of any
+    # length; the bounded matrix above stays the trading/decision view.
+    close_val_arr = _tmp.ffill().values
 
     # Drop symbols that are entirely NaN (no data overlap with date range)
     all_nan_mask = np.all(np.isnan(close_arr), axis=0)
@@ -282,6 +287,7 @@ def _align(
         if not codes:
             raise ValueError("All symbols have no data in the requested date range")
         close_arr = close_arr[:, keep_mask]
+        close_val_arr = close_val_arr[:, keep_mask]
         n_codes = len(codes)
 
     # Build position matrix: shift on each symbol's OWN calendar, then fill
@@ -313,6 +319,7 @@ def _align(
 
     # Construct DataFrames for return
     close = pd.DataFrame(close_arr, index=dates, columns=codes)
+    close_val = pd.DataFrame(close_val_arr, index=dates, columns=codes)
     pos = pd.DataFrame(pos_arr, index=dates, columns=codes)
     ret = bar_returns(close, label="engine per-symbol returns")
 
@@ -322,7 +329,7 @@ def _align(
     scale = pos.abs().sum(axis=1).clip(lower=1.0)
     pos = pos.div(scale, axis=0)
 
-    return dates, close, pos, ret
+    return dates, close, close_val, pos, ret
 
 
 def _load_optimizer(config: Dict[str, Any]) -> Optional[Callable]:
@@ -875,7 +882,7 @@ class BaseEngine(ABC):
 
         # 3. Pre-compute target weights (with optimizer)
         opt_fn = _load_optimizer(config)
-        dates, close_df, target_pos, ret_df = _align(
+        dates, close_df, close_val_df, target_pos, ret_df = _align(
             data_map, signal_map, valid_codes, optimizer=opt_fn,
         )
 
@@ -891,11 +898,12 @@ class BaseEngine(ABC):
         if warmup_end:
             dates = dates[warmup_end:]
             close_df = close_df.iloc[warmup_end:]
+            close_val_df = close_val_df.iloc[warmup_end:]
             target_pos = target_pos.iloc[warmup_end:]
             ret_df = ret_df.iloc[warmup_end:]
 
         # 4. Bar-by-bar execution
-        self._execute_bars(dates, data_map, close_df, target_pos, valid_codes)
+        self._execute_bars(dates, data_map, close_df, target_pos, valid_codes, close_val_df=close_val_df)
         actual_pos = self._actual_positions_frame(valid_codes)
 
         # 5. Build output series
@@ -1107,6 +1115,7 @@ class BaseEngine(ABC):
         close_df: pd.DataFrame,
         target_pos: pd.DataFrame,
         codes: List[str],
+        close_val_df: Optional[pd.DataFrame] = None,
     ) -> None:
         """Bar-by-bar execution with market rule enforcement."""
         # Pre-extract numpy arrays for O(1) indexed access instead of DataFrame.at[]
@@ -1114,9 +1123,13 @@ class BaseEngine(ABC):
         # regardless of DataFrame internal column ordering (which may be alphabetical).
         _target_arr = target_pos[codes].values  # (n_dates, n_codes) ndarray
         _close_arr = close_df[codes].values  # (n_dates, n_codes) ndarray
+        if close_val_df is None:
+            close_val_df = close_df.ffill()
+        _val_arr = close_val_df[codes].values  # unbounded ffill, valuation only
         _code_to_col = {c: j for j, c in enumerate(codes)}
         # Store as instance attrs for use in _calc_equity / _safe_price
         self._close_arr = _close_arr
+        self._val_arr = _val_arr
         self._code_to_col = _code_to_col
         self.actual_position_snapshots = []
         execution_dates = resolve_rebalance_dates(self.rebalance_mask, dates)
@@ -1243,6 +1256,7 @@ class BaseEngine(ABC):
                     self._safe_price(
                         close_df, ts, s, ep,
                         _arr=_close_arr, _row=i, _col=_code_to_col.get(s),
+                        _val_arr=_val_arr,
                     )
                     for s, ep in zip(_syms, _eps)
                 ])
@@ -1253,6 +1267,7 @@ class BaseEngine(ABC):
                     cp = self._safe_price(
                         close_df, ts, p.symbol, p.entry_price,
                         _arr=_close_arr, _row=i, _col=_code_to_col.get(p.symbol),
+                        _val_arr=_val_arr,
                     )
                     total_unrealized += self._calc_pnl(p.symbol, p.direction, p.size, p.entry_price, cp)
             self.equity_snapshots.append(EquitySnapshot(
@@ -1275,6 +1290,7 @@ class BaseEngine(ABC):
                 mark_price = self._safe_price(
                     close_df, last_ts, c, pos.entry_price,
                     _arr=_close_arr, _row=_last_row, _col=_code_to_col.get(c),
+                    _val_arr=_val_arr,
                 )
                 self._active_symbol = c
                 exit_price = self.apply_slippage(mark_price, -pos.direction)
@@ -1298,6 +1314,7 @@ class BaseEngine(ABC):
 
         # Clean up temporary instance attributes
         self._close_arr = None
+        self._val_arr = None
         self._code_to_col = None
 
     def _calc_open_equity(
@@ -1319,11 +1336,13 @@ class BaseEngine(ABC):
         equity = self.capital
         for sym, pos in self.positions.items():
             _arr = getattr(self, "_close_arr", None)
+            _varr = getattr(self, "_val_arr", None)
             _row = getattr(self, "_bar_idx", None)
             _c2c = getattr(self, "_code_to_col", None)
             current_price = self._safe_price(
                 close_df, ts, sym, pos.entry_price,
                 _arr=_arr, _row=_row, _col=(_c2c.get(sym) if _c2c else None),
+                _val_arr=_varr,
             )
             frame = data_map.get(sym)
             if frame is not None and ts in frame.index:
@@ -1355,6 +1374,7 @@ class BaseEngine(ABC):
 
         # Use array fast-path when available
         _arr = getattr(self, "_close_arr", None)
+        _varr = getattr(self, "_val_arr", None)
         _row = getattr(self, "_bar_idx", None)
         _c2c = getattr(self, "_code_to_col", None)
 
@@ -1369,6 +1389,7 @@ class BaseEngine(ABC):
                 self._safe_price(
                     close_df, ts, s, ep,
                     _arr=_arr, _row=_row, _col=(_c2c.get(s) if _c2c else None),
+                    _val_arr=_varr,
                 )
                 for s, ep in zip(syms, entry_prices)
             ])
@@ -1382,6 +1403,7 @@ class BaseEngine(ABC):
             cp = self._safe_price(
                 close_df, ts, sym, pos.entry_price,
                 _arr=_arr, _row=_row, _col=(_c2c.get(sym) if _c2c else None),
+                _val_arr=_varr,
             )
             margin = self._calc_margin(sym, pos.size, pos.entry_price, pos.leverage)
             unrealized = self._calc_pnl(sym, pos.direction, pos.size, pos.entry_price, cp)
@@ -1858,6 +1880,7 @@ class BaseEngine(ABC):
                 _arr=getattr(self, "_close_arr", None),
                 _row=getattr(self, "_bar_idx", None),
                 _col=getattr(self, "_code_to_col", {}).get(symbol),
+                _val_arr=getattr(self, "_val_arr", None),
             )
             margin_value = self._calc_margin(
                 symbol, pos.size, price, pos.leverage
@@ -2119,12 +2142,24 @@ class BaseEngine(ABC):
         _arr: "np.ndarray | None" = None,
         _row: "int | None" = None,
         _col: "int | None" = None,
+        _val_arr: "np.ndarray | None" = None,
     ) -> float:
-        """Get close price with fallback. Uses array fast-path when available."""
+        """Get close price with fallback. Uses array fast-path when available.
+
+        Valuation call sites pass ``_val_arr`` (unbounded ffill) so a halted
+        position marks at its last traded close instead of ``fallback`` once
+        the bounded matrix goes NaN past the ffill limit.
+        """
         # Fast path: pre-computed array indexing (O(1) vs DataFrame.at hash lookup)
         if _arr is not None and _row is not None and _col is not None:
             val = _arr[_row, _col]
-            return float(val) if not np.isnan(val) else fallback
+            if not np.isnan(val):
+                return float(val)
+            if _val_arr is not None:
+                vval = _val_arr[_row, _col]
+                if not np.isnan(vval):
+                    return float(vval)
+            return fallback
         # Original path (backward compatible for subclasses)
         if ts in close_df.index and symbol in close_df.columns:
             val = close_df.at[ts, symbol]

@@ -157,7 +157,7 @@ class TestAlignGoldStandard:
         dates_ref, close_ref, pos_ref, ret_ref = _align_pandas_reference(
             data_map, signal_map, list(codes)
         )
-        dates_opt, close_opt, pos_opt, ret_opt = _align(
+        dates_opt, close_opt, _, pos_opt, ret_opt = _align(
             data_map, signal_map, list(codes)
         )
 
@@ -175,7 +175,7 @@ class TestAlignGoldStandard:
         dates_ref, close_ref, pos_ref, ret_ref = _align_pandas_reference(
             data_map, signal_map, list(codes)
         )
-        dates_opt, close_opt, pos_opt, ret_opt = _align(
+        dates_opt, close_opt, _, pos_opt, ret_opt = _align(
             data_map, signal_map, list(codes)
         )
 
@@ -211,7 +211,7 @@ class TestAlignGoldStandard:
         dates_ref, close_ref, pos_ref, ret_ref = _align_pandas_reference(
             data_map, signal_map, list(codes)
         )
-        dates_opt, close_opt, pos_opt, ret_opt = _align(
+        dates_opt, close_opt, _, pos_opt, ret_opt = _align(
             data_map, signal_map, list(codes)
         )
 
@@ -242,7 +242,7 @@ class TestAlignGoldStandard:
         dates_ref, close_ref, pos_ref, ret_ref = _align_pandas_reference(
             data_map, signal_map, list(codes)
         )
-        dates_opt, close_opt, pos_opt, ret_opt = _align(
+        dates_opt, close_opt, _, pos_opt, ret_opt = _align(
             data_map, signal_map, list(codes)
         )
 
@@ -266,7 +266,7 @@ class TestAlignGoldStandard:
         dates_ref, close_ref, pos_ref, ret_ref = _align_pandas_reference(
             data_map, signal_map, list(codes), optimizer=scale_optimizer
         )
-        dates_opt, close_opt, pos_opt, ret_opt = _align(
+        dates_opt, close_opt, _, pos_opt, ret_opt = _align(
             data_map, signal_map, list(codes), optimizer=scale_optimizer
         )
 
@@ -282,7 +282,7 @@ class TestAlignGoldStandard:
         )
 
         # New (optimized) path
-        dates_opt, close_opt, pos_opt, _ = _align(data_map, signal_map, list(codes))
+        dates_opt, close_opt, _, pos_opt, _ = _align(data_map, signal_map, list(codes))
         codes_opt = list(pos_opt.columns)
         engine_opt = ChinaAEngine({"initial_cash": 1_000_000})
         engine_opt._execute_bars(dates_opt, data_map, close_opt, pos_opt, codes_opt)
@@ -322,7 +322,7 @@ class TestAlignConsistency:
         data_map, signal_map, codes = _build_synthetic_dataset(
             n_bars=150, n_symbols=5, nan_ratio=0.03
         )
-        dates, close_df, _, _ = _align(data_map, signal_map, codes)
+        dates, close_df, _, _, _ = _align(data_map, signal_map, codes)
 
         # For each symbol, non-NaN source values should appear at correct positions
         for code in codes:
@@ -344,7 +344,7 @@ class TestAlignConsistency:
         sig = pd.Series(0.0, index=dates)
         sig.iloc[5] = 1.0
 
-        _, _, pos_df, _ = _align({"X": df}, {"X": sig}, ["X"])
+        _, _, _, pos_df, _ = _align({"X": df}, {"X": sig}, ["X"])
 
         # At bar 5 position should still be 0 (signal not yet effective)
         assert pos_df.at[dates[5], "X"] == 0.0
@@ -367,7 +367,7 @@ class TestAlignConsistency:
         data_map = {"X": df}
         signal_map = {"X": sig}
 
-        _, close_df, _, _ = _align(data_map, signal_map, ["X"])
+        _, close_df, _, _, _ = _align(data_map, signal_map, ["X"])
 
         # Bar 0 filled, bars 1-5 should be ffilled from bar 0
         for i in range(1, 6):
@@ -391,7 +391,7 @@ class TestAlignConsistency:
         data_map = {"GOOD": df_good, "BAD": df_bad}
         signal_map = {"GOOD": sig, "BAD": sig}
 
-        _, close_df, pos_df, _ = _align(data_map, signal_map, ["GOOD", "BAD"])
+        _, close_df, _, pos_df, _ = _align(data_map, signal_map, ["GOOD", "BAD"])
 
         assert "GOOD" in close_df.columns
         assert "BAD" not in close_df.columns
@@ -414,7 +414,7 @@ class TestAlignConsistency:
         data_map = {"000001.SZ": df_equity, "BTC-USDT": df_crypto}
         signal_map = {"000001.SZ": sig, "BTC-USDT": sig}
 
-        _, close_df, _, _ = _align(data_map, signal_map, ["000001.SZ", "BTC-USDT"])
+        _, close_df, _, _, _ = _align(data_map, signal_map, ["000001.SZ", "BTC-USDT"])
 
         # With ffill_limit=10, bars 1-10 should be ffilled from bar 0
         for i in range(1, 11):
@@ -500,7 +500,7 @@ class TestExecuteBarsOptimization:
         data_map, signal_map, codes = _build_synthetic_dataset(
             n_bars=200, n_symbols=3, nan_ratio=0.01
         )
-        dates, close_df, target_pos, _ = _align(data_map, signal_map, codes)
+        dates, close_df, _, target_pos, _ = _align(data_map, signal_map, codes)
         # Sync codes after potential all-NaN drops
         codes = [c for c in codes if c in target_pos.columns]
 
@@ -662,7 +662,7 @@ class TestFundPanelCompatibility:
             n_dates=200, n_codes=5
         )
 
-        _, close_df, pos_df, ret_df = _align(data_map, signal_map, list(codes))
+        _, close_df, _, pos_df, ret_df = _align(data_map, signal_map, list(codes))
 
         # Columns must only be symbol codes, no fund:* leakage
         for col in close_df.columns:
@@ -717,10 +717,10 @@ class TestFundPanelCompatibility:
                 index=dates,
             )
 
-        _, close_clean, pos_clean, ret_clean = _align(
+        _, close_clean, _, pos_clean, ret_clean = _align(
             data_map_clean, signal_map, list(codes)
         )
-        _, close_fund, pos_fund, ret_fund = _align(
+        _, close_fund, _, pos_fund, ret_fund = _align(
             data_map_fund, signal_map, list(codes)
         )
 
@@ -767,7 +767,7 @@ class TestFundPanelCompatibility:
             )
 
         # Should not raise
-        _, close_df, pos_df, ret_df = _align(data_map, signal_map, list(codes))
+        _, close_df, _, pos_df, ret_df = _align(data_map, signal_map, list(codes))
 
         assert set(close_df.columns) == set(codes)
         assert set(pos_df.columns) == set(codes)
@@ -781,7 +781,7 @@ class TestFundPanelCompatibility:
             n_dates=200, n_codes=4
         )
 
-        dates, close_df, target_pos, _ = _align(data_map, signal_map, list(codes))
+        dates, close_df, _, target_pos, _ = _align(data_map, signal_map, list(codes))
         valid_codes = [c for c in codes if c in target_pos.columns]
 
         engine = ChinaAEngine({"initial_cash": 1_000_000})
@@ -827,7 +827,7 @@ class TestFundPanelCompatibility:
             data_map[c] = df
             signal_map[c] = pd.Series(1.0, index=dates)
 
-        _, close_df, _, _ = _align(data_map, signal_map, list(codes))
+        _, close_df, _, _, _ = _align(data_map, signal_map, list(codes))
 
         # No cell in close_df should contain the sentinel value
         assert not (close_df == sentinel).any().any(), (

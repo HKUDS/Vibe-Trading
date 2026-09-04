@@ -39,7 +39,7 @@ class TestFfillLimit:
         df = pd.DataFrame({"close": close, "open": close}, index=dates)
         sig = pd.Series(1.0, index=dates)
 
-        _, close_df, _, _ = _align({"A": df}, {"A": sig}, ["A"])
+        _, close_df, _, _, _ = _align({"A": df}, {"A": sig}, ["A"])
         # 3-bar gap should be filled — no NaN in close
         assert close_df["A"].isna().sum() == 0
 
@@ -50,7 +50,7 @@ class TestFfillLimit:
         df = pd.DataFrame({"close": close, "open": close}, index=dates)
         sig = pd.Series(1.0, index=dates)
 
-        _, close_df, _, _ = _align({"A": df}, {"A": sig}, ["A"])
+        _, close_df, _, _, _ = _align({"A": df}, {"A": sig}, ["A"])
         # 8-bar gap: ffill covers first 5, remaining 3 should be NaN
         nan_count = close_df["A"].isna().sum()
         assert nan_count == 3, f"Expected 3 NaN bars after ffill limit=5, got {nan_count}"
@@ -72,7 +72,7 @@ class TestFfillLimit:
             "BAD": pd.Series(1.0, index=dates),
         }
 
-        _, close_df, pos_df, _ = _align(data_map, signal_map, ["GOOD", "BAD"])
+        _, close_df, _, pos_df, _ = _align(data_map, signal_map, ["GOOD", "BAD"])
         assert "BAD" not in close_df.columns, "All-NaN symbol should be dropped"
         assert "GOOD" in close_df.columns
         assert "BAD" not in pos_df.columns
@@ -115,7 +115,7 @@ class TestSymbolIsolation:
         signal_map = {"GOOD": sig.copy(), "BAD": sig.copy()}
         valid_codes = ["GOOD", "BAD"]
 
-        _, close_df, target_pos, _ = _align(data_map, signal_map, valid_codes)
+        _, close_df, _, target_pos, _ = _align(data_map, signal_map, valid_codes)
 
         engine = ChinaAEngine({"initial_cash": 1_000_000})
 
@@ -559,7 +559,7 @@ class TestFullBacktestRobustness:
         signal_map = {"NORMAL": sig.copy(), "SUSPENDED": sig.copy()}
         valid_codes = ["NORMAL", "SUSPENDED"]
 
-        _, close_df, target_pos, _ = _align(data_map, signal_map, valid_codes)
+        _, close_df, _, target_pos, _ = _align(data_map, signal_map, valid_codes)
 
         # The 14-bar gap should not be fully filled
         suspended_nan_count = close_df["SUSPENDED"].isna().sum()

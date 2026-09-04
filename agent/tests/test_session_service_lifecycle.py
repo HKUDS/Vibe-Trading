@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import pytest
@@ -313,3 +314,94 @@ def test_cancel_before_the_agent_loop_exists_releases_the_claim(tmp_path, monkey
         assert attempt.status == AttemptStatus.CANCELLED
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Start-time provenance
+# ---------------------------------------------------------------------------
+
+
+def test_attempt_started_event_carries_wall_clock_start(tmp_path, monkeypatch):
+    """A client that (re)connects mid-attempt resumes its elapsed clock from
+    the real start, so the event must carry it rather than leave the client to
+    guess from its own reconnect time."""
+
+    async def scenario() -> None:
+        service = _service(tmp_path, monkeypatch)
+        session = service.create_session(title="started-at")
+        seen: list[tuple[str, dict]] = []
+        service.event_bus.emit = lambda sid, event, data: seen.append((event, data))  # type: ignore[assignment]
+        _stub_agent(service, monkeypatch, {"status": "success", "content": "ok"})
+
+        before = time.time()
+        await service.send_message(session.session_id, "go")
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if session.session_id not in service._inflight:
+                break
+        after = time.time()
+
+        started = [data for event, data in seen if event == "attempt.started"]
+        assert len(started) == 1
+        stored = service.store.get_session(session.session_id)
+        assert started[0]["attempt_id"] == stored.last_attempt_id
+        assert isinstance(started[0]["started_at"], float)
+        assert before <= started[0]["started_at"] <= after
+
+    asyncio.run(scenario())
+
+
+def test_completed_reply_and_terminal_event_carry_attempt_timing(tmp_path, monkeypatch):
+    """History hydration needs the attempt's real start: the first tool call is
+    only a lower bound (the model thinks before it reaches for a tool, and a
+    pure-text turn has no tools), so the reply persists ``started_at`` next to
+    ``elapsed_ms`` and the terminal event carries both ends."""
+
+    async def scenario() -> None:
+        service = _service(tmp_path, monkeypatch)
+        session = service.create_session(title="timing")
+        seen: list[tuple[str, dict]] = []
+        service.event_bus.emit = lambda sid, event, data: seen.append((event, data))  # type: ignore[assignment]
+        _stub_agent(service, monkeypatch, {"status": "success", "content": "ok"})
+
+        before = time.time()
+        await service.send_message(session.session_id, "go")
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if session.session_id not in service._inflight:
+                break
+        after = time.time()
+
+        started = next(data for event, data in seen if event == "attempt.started")
+        completed = next(data for event, data in seen if event == "attempt.completed")
+        reply = service.store.get_messages(session.session_id)[-1]
+
+        assert reply.role == "assistant"
+        assert reply.metadata["started_at"] == started["started_at"]
+        assert before <= reply.metadata["started_at"] <= after
+        assert reply.metadata["elapsed_ms"] >= 0
+        assert completed["started_at"] == started["started_at"]
+        assert completed["started_at"] <= completed["ended_at"] <= after
+        assert completed["elapsed_ms"] == reply.metadata["elapsed_ms"]
+
+    asyncio.run(scenario())
+
+
+def test_attempt_records_and_round_trips_its_wall_clock_start():
+    """``started_at`` outlives the event ring buffer only if it is persisted
+    with the attempt; legacy attempt files without it must still load."""
+    attempt = Attempt(session_id="s1", prompt="go")
+    assert attempt.started_at is None
+
+    before = time.time()
+    attempt.mark_running()
+    assert isinstance(attempt.started_at, float)
+    assert before <= attempt.started_at <= time.time()
+
+    restored = Attempt.from_dict(attempt.to_dict())
+    assert restored.started_at == attempt.started_at
+    assert restored.status == AttemptStatus.RUNNING
+
+    legacy = attempt.to_dict()
+    del legacy["started_at"]
+    assert Attempt.from_dict(legacy).started_at is None

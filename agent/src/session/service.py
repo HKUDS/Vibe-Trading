@@ -361,8 +361,19 @@ class SessionService:
         started_at = time.perf_counter()
         try:
             attempt.mark_running()
+            # Wall-clock start (epoch seconds) is the one timing fact clients
+            # cannot reconstruct on their own: a client that (re)connects
+            # mid-attempt resumes its elapsed timer from it, and history
+            # hydration derives the finished attempt's duration from it rather
+            # than from the first tool call. It lives on the persisted attempt
+            # so it survives the event ring buffer that first announced it.
+            wall_started_at = attempt.started_at or time.time()
             self.store.update_attempt(attempt)
-            self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id})
+            self.event_bus.emit(
+                session.session_id,
+                "attempt.started",
+                {"attempt_id": attempt.attempt_id, "started_at": wall_started_at},
+            )
             messages = self.store.get_messages(session.session_id)
             result = await self._run_with_agent(
                 attempt,
@@ -393,6 +404,7 @@ class SessionService:
             if attempt.metrics:
                 reply_metadata["metrics"] = attempt.metrics
             reply_metadata["elapsed_ms"] = max(0, round((time.perf_counter() - started_at) * 1000))
+            reply_metadata["started_at"] = wall_started_at
             runtime_keys = (
                 "provider",
                 "configured_model",
@@ -428,6 +440,7 @@ class SessionService:
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
                  "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir,
+                 "started_at": wall_started_at, "ended_at": time.time(),
                  **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
             )
 

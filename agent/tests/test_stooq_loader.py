@@ -7,6 +7,7 @@ we monkeypatch that name on the ``stooq_loader`` module.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List
 
 import pandas as pd
@@ -174,3 +175,47 @@ class TestParseCsv:
     def test_all_rows_dropped_returns_none(self):
         body = "Date,Open,High,Low,Close,Volume\n2024-01-02,,,,,\n"
         assert stooq_loader._parse_csv(body) is None
+
+
+# ---------------------------------------------------------------------------
+# Anti-bot challenge detection (#1315)
+# ---------------------------------------------------------------------------
+
+
+class TestChallengePageDetection:
+    """The PoW challenge page must read as source-unavailable, not as no data."""
+
+    _CHALLENGE_HTML = (
+        "<html><head><title>One moment, please...</title></head>"
+        "<body>Verifying your browser... proof of work challenge</body></html>"
+    )
+
+    def test_challenge_page_yields_no_data_and_warns_once(self, monkeypatch, caplog):
+        monkeypatch.setattr(stooq_loader, "_challenge_warned", False)
+        monkeypatch.setattr(
+            stooq_loader,
+            "throttled_get",
+            lambda url, **kw: _FakeResponse(text=self._CHALLENGE_HTML),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="backtest.loaders.stooq_loader"):
+            out = stooq_loader.DataLoader().fetch(
+                ["AAPL.US", "MSFT.US"], "2024-01-01", "2024-01-31",
+            )
+
+        assert out == {}
+        warnings = [r.message for r in caplog.records if "anti-bot challenge" in r.message]
+        assert len(warnings) == 1  # two symbols, one warning
+
+    def test_challenge_page_does_not_reach_csv_parser(self, monkeypatch):
+        monkeypatch.setattr(stooq_loader, "_challenge_warned", True)  # latch already set
+        monkeypatch.setattr(
+            stooq_loader,
+            "throttled_get",
+            lambda url, **kw: _FakeResponse(text=self._CHALLENGE_HTML),
+        )
+        # A CSV parse of HTML would return None anyway; the point here is the
+        # detector fires before parsing and the source counts as unavailable.
+        assert stooq_loader._looks_like_challenge_page(self._CHALLENGE_HTML)
+        assert not stooq_loader._looks_like_challenge_page(_CSV)
+        assert not stooq_loader._looks_like_challenge_page("N/D\n")
