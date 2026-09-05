@@ -6,8 +6,9 @@ facts are structural rather than advisory:
 * a market-data consumer may only use an identity that was locked before the
   current assistant tool-call batch started;
 * a final price claim may not contradict the full, untruncated tool result; and
-* a figure may not be attached to an instrument that no tool call in this run
-  ever passed in or returned.
+* every observed figure attached to an instrument must occur in that
+  instrument's tool evidence, while derived figures use a separate arithmetic
+  validator.
 
 Those are the mechanically decidable parts of the agent's output principles.
 The rest of that contract — "state the as-of", "analysis, not advice", "refuse
@@ -31,6 +32,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 from src.market_data import canonical_fx_pair
+
+from src.agent.price_claims import (
+    NumericClaim,
+    extract_prose_price_claims,
+    parse_numeric_cell,
+)
 
 
 GROUNDING_ARTIFACT = "grounding_evidence.json"
@@ -160,6 +167,7 @@ _CANONICAL_SYMBOL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
     r"\d{3,6}\.(?:SH|SZ|BJ|SS|HK|KS|KQ)|"
     r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V)|"
+    r"[A-Z]{3}/[A-Z]{3}|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"\^[A-Z0-9&.\-]{1,20}|"
     r"[A-Z0-9]{2,15}=[FX]"
@@ -296,8 +304,8 @@ _QUANTITY_WITH_UNIT_RE = re.compile(
 # bound to the label is masked, so a genuine quote elsewhere in the same
 # clause is still checked. The optional denominator covers "6/10" (#1001).
 _LABELLED_SCORE_RE = re.compile(
-    r"(?:confidence|conviction|score|rating|probability|odds|weighting|"
-    r"置信度|信心|评分|得分|概率|胜率)"
+    r"(?:confidence|conviction|score|rating|probability|odds|weight|weighting|allocation|"
+    r"置信度|信心|评分|得分|概率|胜率|权重)"
     r"\s*(?:is|of|=|为|是)?\s*[:：]?\s*"
     r"[-+]?\d[\d,]*(?:\.\d+)?(?:\s*/\s*\d[\d,]*(?:\.\d+)?)?",
     re.IGNORECASE,
@@ -393,6 +401,25 @@ _LINE_REFERENCE_RE = re.compile(
 # a price. The ordered-list mask only covers line-leading "1." and stops at
 # the "### " prefix, so the section number was extracted as a claim.
 _NUMBERED_HEADING_RE = re.compile(r"(?m)^\s*#{1,6}\s*\d+(?:[.、．])?\s*")
+# Regulatory form identifiers name documents rather than financial values.
+_FORM_IDENTIFIER_RE = re.compile(r"\b(?:10-[KQ]|20-F|8-K|6-K)\b", re.IGNORECASE)
+# A derived value is authorized by a different component from an observed
+# fact: its formula must be visible, its non-constant inputs must have been
+# observed for the same instrument, and the stated result must recompute. The
+# regex only identifies the bounded arithmetic span; evaluation below uses an
+# AST allow-list rather than Python ``eval``.
+_DERIVED_FORMULA_RE = re.compile(
+    r"(?P<expression>[\d\s,.()+\-−–—*/×÷%]+?)\s*=\s*"
+    r"(?P<result>[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
+    r"(?P<result_percent>\s*[%％])?"
+)
+_AGGREGATE_COST_RE = re.compile(
+    r"(?P<quantity>\d[\d,]*(?:\.\d+)?)\s*(?:股|shares?)\s*"
+    r"(?:的)?(?:成本|总额|总价|合计|cost|total|notional)"
+    r"\s*(?:为|是|约)?\s*[:：]?\s*"
+    r"(?P<amount>[-+]?\d[\d,]*(?:\.\d+)?)",
+    re.IGNORECASE,
+)
 # A ratio ("6:1 折算", "10:1") names a conversion basis, not a quote price.
 _RATIO_RE = re.compile(r"\d+(?:\.\d+)?\s*[:：]\s*\d+(?:\.\d+)?")
 # A currency conversion cited inside a report ("USD/CAD≈1.36") is a basis, not
@@ -504,44 +531,6 @@ _TABLE_FIELD_ALIASES = {
 }
 _DATE_HEADERS = {"date", "datetime", "trade date", "timestamp", "日期", "交易日", "时间"}
 
-# A loader's id is ASCII, but the answer follows the user's language, so a
-# Chinese report names the same provider in Chinese. Demanding the ASCII id
-# verbatim rejected correct prose: an answer reading "数据来源：腾讯财经" was
-# reported as ``data_source_not_surfaced`` against evidence sourced from
-# ``tencent``, and no rewrite short of writing the English word could pass.
-_SOURCE_ALIASES = {
-    "akshare": ("akshare", "ak share"),
-    "baostock": ("baostock",),
-    "binance": ("binance", "币安"),
-    "ccxt": ("ccxt",),
-    "eastmoney": ("eastmoney", "东方财富", "东财"),
-    "futu": ("futu", "富途"),
-    "mootdx": ("mootdx", "通达信"),
-    "okx": ("okx", "欧易"),
-    "pykrx": ("pykrx", "krx"),
-    "sina": ("sina", "新浪"),
-    "stooq": ("stooq",),
-    "tencent": ("tencent", "腾讯"),
-    "tushare": ("tushare",),
-    "yahoo": ("yahoo", "雅虎"),
-    "yfinance": ("yfinance", "yahoo", "雅虎"),
-}
-# "元" is how a Chinese answer writes a CNY quote, but it is also the tail of
-# 港元/美元/日元, so accepting it unguarded would let an answer about a Hong Kong
-# listing satisfy a CNY requirement. It counts only when no other currency's
-# character owns it.
-_BARE_YUAN_RE = re.compile(r"(?<![港美日欧韩台新加澳])元")
-_CURRENCY_ALIASES = {
-    "USD": ("usd", "us$", "美元", "美金"),
-    # ¥ is how a model actually writes a CNY quote. It is the yen sign too, but
-    # ``_infer_currency`` maps no venue to JPY, so nothing in this system can
-    # mean yen by it; adding a JPY venue means revisiting this entry.
-    "CNY": ("cny", "cnh", "rmb", "人民币", "¥", "￥"),
-    "HKD": ("hkd", "hk$", "港元", "港币"),
-    "KRW": ("krw", "韩元", "韩圜"),
-    "INR": ("inr", "印度卢比", "卢比"),
-    "CAD": ("cad", "c$", "加元", "加拿大元"),
-}
 _SYMBOL_HEADERS = {"symbol", "ticker", "code", "标的", "代码", "证券代码"}
 
 
@@ -645,11 +634,7 @@ def _json_object(value: Any) -> dict[str, Any] | None:
 
 def _is_number(value: Any) -> bool:
     """Return whether a value is a finite JSON-style number, excluding bool."""
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _coerce_csv_number(value: Any) -> int | float | None:
@@ -682,9 +667,7 @@ _TRADING_DAY_SUFFIX = (
     r"\s*(?:盘中|盘后|盘前|收盘|开盘|早盘|尾盘)?"
 )
 _YEARLESS_CLAIM_DATE_RE = re.compile(
-    r"^(0?[1-9]|1[0-2])\s*[-/月]\s*(0?[1-9]|[12]\d|3[01])\s*[日号]?"
-    + _TRADING_DAY_SUFFIX
-    + r"$"
+    r"^(0?[1-9]|1[0-2])\s*[-/月]\s*(0?[1-9]|[12]\d|3[01])\s*[日号]?" + _TRADING_DAY_SUFFIX + r"$"
 )
 # Two-digit day alternatives are tried before a bare digit so an
 # unanchored prefix match consumes the full day ("10" of "08-10(一)")
@@ -692,10 +675,34 @@ _YEARLESS_CLAIM_DATE_RE = re.compile(
 _ISO_CLAIM_DATE_PREFIX_RE = re.compile(
     r"^\s*((?:19|20)\d{2})\s*[-/]\s*(0?[1-9]|1[0-2])\s*[-/]\s*([12]\d|3[01]|0?[1-9])"
 )
-_YEARLESS_CLAIM_DATE_PREFIX_RE = re.compile(
-    r"^\s*(0?[1-9]|1[0-2])\s*[-/月]\s*([12]\d|3[01]|0?[1-9])"
-)
+_YEARLESS_CLAIM_DATE_PREFIX_RE = re.compile(r"^\s*(0?[1-9]|1[0-2])\s*[-/月]\s*([12]\d|3[01]|0?[1-9])")
 _ISO_TIMESTAMP_RE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
+_COMPACT_TIMESTAMP_RE = re.compile(r"^((?:19|20)\d{2})(\d{2})(\d{2})$")
+
+
+def _observation_day(timestamp: str | None) -> str | None:
+    """Normalize common bar timestamps to an ISO trading-day key."""
+    raw = str(timestamp or "").strip()
+    if not raw:
+        return None
+    iso = _ISO_TIMESTAMP_RE.match(raw)
+    if iso:
+        return f"{int(iso.group(1)):04d}-{int(iso.group(2)):02d}-{int(iso.group(3)):02d}"
+    compact = _COMPACT_TIMESTAMP_RE.match(raw)
+    if compact:
+        return f"{compact.group(1)}-{compact.group(2)}-{compact.group(3)}"
+    try:
+        epoch = float(raw)
+    except ValueError:
+        return None
+    if not math.isfinite(epoch):
+        return None
+    if abs(epoch) >= 1_000_000_000_000:
+        epoch /= 1000.0
+    try:
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).date().isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _claim_date_tuple(date_value: str) -> tuple[int, int] | None:
@@ -758,7 +765,8 @@ def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
     if stamp.startswith(claim):
         return True
     claim_tuple = _claim_date_tuple(claim)
-    iso = _ISO_TIMESTAMP_RE.match(stamp)
+    day = _observation_day(stamp)
+    iso = _ISO_TIMESTAMP_RE.match(day or "")
     if claim_tuple is None or not iso:
         return False
     return (int(iso.group(2)), int(iso.group(3))) == claim_tuple
@@ -781,10 +789,7 @@ def _price_field_for_path(path: str) -> str | None:
 
 def _scan_symbols(text: str) -> set[str]:
     """Return the canonical symbols written anywhere in a blob of text."""
-    return {
-        _normalize_symbol(match.group(0))
-        for match in _CANONICAL_SYMBOL_RE.finditer(text or "")
-    }
+    return {_normalize_symbol(match.group(0)) for match in _CANONICAL_SYMBOL_RE.finditer(text or "")}
 
 
 def _infer_venue(symbol: str) -> str | None:
@@ -887,6 +892,9 @@ class IdentityRecord:
     candidates: list[dict[str, Any]] = field(default_factory=list)
     version: int = 1
     updated_at: str = field(default_factory=_utc_now)
+    inherited_from_attempt_id: str | None = None
+    inherited_from_run_id: str | None = None
+    inherited_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -904,6 +912,13 @@ class EvidenceRecord:
     currency: str | None = None
     venue: str | None = None
     currency_conversion: str | None = None
+    observed_at: str = field(default_factory=_utc_now)
+    market_session: str | None = None
+    adjustment: str | None = None
+    unit: str | None = None
+    inherited_from_attempt_id: str | None = None
+    inherited_from_run_id: str | None = None
+    inherited_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -943,6 +958,24 @@ class ValidationResult:
 
     valid: bool
     issues: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _observation_cohort(record: EvidenceRecord) -> tuple[str, str, str, str, str]:
+    """Return the semantic identity required before two quotes are comparable."""
+    return (
+        _observation_day(record.timestamp) or "unknown-day",
+        (record.market_session or "unknown-session").casefold(),
+        (record.adjustment or "unknown-adjustment").casefold(),
+        (record.currency or "unknown-currency").upper(),
+        (record.unit or "unknown-unit").casefold(),
+    )
+
+
+def _price_tolerance(values: Sequence[float]) -> float:
+    """Return the existing 0.5% quote tolerance for one comparable cohort."""
+    scale = max((abs(value) for value in values), default=0.0)
+    return max(scale * 0.005, 1e-9)
 
 
 class GroundingLedger:
@@ -954,6 +987,7 @@ class GroundingLedger:
         run_dir: Path,
         user_message: str,
         history: Sequence[Mapping[str, Any]] | None = None,
+        inherited_grounding: Mapping[str, Any] | None = None,
     ) -> None:
         """Create a ledger and seed only authoritative prior identities.
 
@@ -964,6 +998,8 @@ class GroundingLedger:
                 the model, but is deliberately not an authorization source for
                 this run: stale identities from an earlier user subject must
                 not unlock a new subject's tools.
+            inherited_grounding: Trusted artifact from the direct parent
+                Attempt after SessionService has verified task continuity.
         """
         self.run_dir = Path(run_dir)
         self.user_message = user_message
@@ -984,18 +1020,130 @@ class GroundingLedger:
         # tools whose contract is a bare US ticker. "AAPL.US" in the answer then
         # names an instrument the run really handled.
         self._session_symbol_roots: set[str] = set()
+        # Mentions are not provenance. These sets are widened only by successful
+        # tool calls (or inherited tool evidence), so a symbol supplied by the
+        # user cannot by itself license a numeric assertion.
+        self._handled_symbols: set[str] = set()
+        self._handled_symbol_roots: set[str] = set()
 
+        self._hydrate_inherited_grounding(inherited_grounding)
         self._seed_symbols(user_message, source="user_message")
         self.persist()
+
+    def _hydrate_inherited_grounding(
+        self,
+        payload: Mapping[str, Any] | None,
+    ) -> None:
+        """Import trusted locked identities and observed evidence from a parent run."""
+        if not isinstance(payload, Mapping) or payload.get("schema_version") != 1:
+            return
+        inheritance = payload.get("_inheritance")
+        if not isinstance(inheritance, Mapping):
+            return
+        attempt_id = str(inheritance.get("attempt_id") or "").strip()
+        run_id = str(inheritance.get("run_id") or "").strip()
+        if not attempt_id or not run_id:
+            return
+        inherited_at = _utc_now()
+
+        identity = payload.get("identity")
+        identity_rows = identity.get("records") if isinstance(identity, Mapping) else []
+        if isinstance(identity_rows, list):
+            for raw in identity_rows:
+                if not isinstance(raw, Mapping) or raw.get("status") != "locked":
+                    continue
+                symbol_value = raw.get("symbol")
+                symbol = _normalize_symbol(str(symbol_value)) if symbol_value else ""
+                if not symbol:
+                    continue
+                query = str(raw.get("query") or symbol).strip()
+                source_value = raw.get("source")
+                sources = (
+                    [str(item) for item in source_value if str(item).strip()] if isinstance(source_value, list) else []
+                )
+                raw_version = raw.get("version")
+                version = (
+                    max(1, raw_version) if isinstance(raw_version, int) and not isinstance(raw_version, bool) else 1
+                )
+                record = IdentityRecord(
+                    query=query,
+                    status="locked",
+                    symbol=symbol,
+                    venue=str(raw.get("venue") or "") or None,
+                    instrument_type=str(raw.get("instrument_type") or "") or None,
+                    currency=str(raw.get("currency") or "") or None,
+                    source_tool_call_id=(str(raw.get("source_tool_call_id") or "") or None),
+                    source=sources,
+                    candidates=[],
+                    version=version,
+                    updated_at=str(raw.get("updated_at") or inherited_at),
+                    inherited_from_attempt_id=attempt_id,
+                    inherited_from_run_id=run_id,
+                    inherited_at=inherited_at,
+                )
+                self._identities[f"inherited:{symbol}"] = record
+                self._session_symbols.add(symbol)
+                if record.source_tool_call_id not in {None, "user_message"}:
+                    self._handled_symbols.add(symbol)
+
+        evidence_rows = payload.get("evidence")
+        if isinstance(evidence_rows, list):
+            for raw in evidence_rows:
+                if not isinstance(raw, Mapping) or raw.get("status") != "observed":
+                    continue
+                symbol_value = raw.get("symbol")
+                symbol = _normalize_symbol(str(symbol_value)) if symbol_value else ""
+                source = str(raw.get("source") or "").strip()
+                timestamp = str(raw.get("timestamp") or "").strip()
+                value = raw.get("value")
+                if (
+                    not symbol
+                    or not source
+                    or source.casefold() in {"auto", "unknown"}
+                    or not timestamp
+                    or isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                ):
+                    continue
+                call_id = str(raw.get("call_id") or "").strip()
+                tool = str(raw.get("tool") or "").strip()
+                field_name = str(raw.get("field") or "").strip()
+                if not call_id or not tool or not field_name:
+                    continue
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool=tool,
+                        symbol=symbol,
+                        source=source,
+                        timestamp=timestamp,
+                        field=field_name,
+                        value=value,
+                        status="observed",
+                        currency=str(raw.get("currency") or "") or None,
+                        venue=str(raw.get("venue") or "") or None,
+                        currency_conversion=(str(raw.get("currency_conversion") or "") or None),
+                        observed_at=str(raw.get("observed_at") or inherited_at),
+                        market_session=(str(raw.get("market_session") or "") or None),
+                        adjustment=str(raw.get("adjustment") or "") or None,
+                        unit=str(raw.get("unit") or "") or None,
+                        inherited_from_attempt_id=attempt_id,
+                        inherited_from_run_id=run_id,
+                        inherited_at=inherited_at,
+                    )
+                )
+                self._session_symbols.add(symbol)
+                self._handled_symbols.add(symbol)
+
+        if self._identities or self._evidence:
+            self._identity_required = True
+            self._buffer_output = True
 
     @property
     def authorized_symbols(self) -> set[str]:
         """Return exact symbols locked before the next tool batch."""
-        return {
-            record.symbol
-            for record in self._identities.values()
-            if record.status == "locked" and record.symbol
-        }
+        return {record.symbol for record in self._identities.values() if record.status == "locked" and record.symbol}
 
     @property
     def identity_status(self) -> str:
@@ -1128,21 +1276,13 @@ class GroundingLedger:
                 symbols=symbols,
             )
 
-        mismatched = tuple(
-            symbol
-            for symbol in symbols
-            if self._match_authorized_symbol(symbol, authorized) is None
-        )
+        mismatched = tuple(symbol for symbol in symbols if self._match_authorized_symbol(symbol, authorized) is None)
         if mismatched:
             message = (
                 "Consumer symbol/venue differs from the locked resolver identity; "
                 "silent suffix or exchange rewrites are forbidden."
             )
-            hints = [
-                hint
-                for symbol in mismatched
-                for hint in self._venue_mismatch_hints(symbol, authorized)
-            ]
+            hints = [hint for symbol in mismatched for hint in self._venue_mismatch_hints(symbol, authorized)]
             if hints:
                 message += " " + " ".join(hints)
             return ToolAuthorization(
@@ -1170,11 +1310,7 @@ class GroundingLedger:
         authorized = {_normalize_symbol(item) for item in authorized_symbols}
         if "." in requested:
             base = requested.rsplit(".", 1)[0]
-            same_issuer = sorted(
-                item
-                for item in authorized
-                if "." in item and item.rsplit(".", 1)[0] == base
-            )
+            same_issuer = sorted(item for item in authorized if "." in item and item.rsplit(".", 1)[0] == base)
             if same_issuer:
                 return [
                     f"[{requested_symbol} is a second venue of {', '.join(same_issuer)}; "
@@ -1182,11 +1318,7 @@ class GroundingLedger:
                     f"before querying it.]"
                 ]
             return []
-        matches = sorted(
-            item
-            for item in authorized
-            if "." in item and item.rsplit(".", 1)[0] == requested
-        )
+        matches = sorted(item for item in authorized if "." in item and item.rsplit(".", 1)[0] == requested)
         if len(matches) > 1:
             return [
                 f"[{requested_symbol} matches multiple locked identities "
@@ -1226,11 +1358,7 @@ class GroundingLedger:
             return requested
         if "." in requested:
             return None
-        matches = [
-            symbol
-            for symbol in authorized
-            if "." in symbol and symbol.rsplit(".", 1)[0] == requested
-        ]
+        matches = [symbol for symbol in authorized if "." in symbol and symbol.rsplit(".", 1)[0] == requested]
         return matches[0] if len(matches) == 1 else None
 
     def ingest_tool_result(
@@ -1281,9 +1409,10 @@ class GroundingLedger:
         self._ingest_run_dir_ohlc_csvs()
         issues: list[dict[str, Any]] = []
         issues.extend(self._validate_identity(content))
-        issues.extend(self._validate_unsourced_symbols(content))
-        issues.extend(self._validate_price_claims(content))
-        result = ValidationResult(valid=not issues, issues=issues)
+        issues.extend(self._validate_numeric_provenance(content))
+        price_issues, warnings = self._validate_price_claims(content)
+        issues.extend(price_issues)
+        result = ValidationResult(valid=not issues, issues=issues, warnings=warnings)
         self._validations.append(
             {
                 "attempt": len(self._validations) + 1,
@@ -1291,6 +1420,7 @@ class GroundingLedger:
                 "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
                 "valid": result.valid,
                 "issues": issues,
+                "warnings": warnings,
             }
         )
         self.persist()
@@ -1311,7 +1441,17 @@ class GroundingLedger:
         for issue in validation.issues:
             code = issue.get("code")
             value = issue.get("value")
-            if code in {"numeric_claim_conflict", "numeric_claim_unavailable", "unsourced_symbol_figures"} and value is not None:
+            if (
+                code in {
+                    "numeric_claim_conflict",
+                    "numeric_claim_unavailable",
+                    "unsourced_symbol_figures",
+                    "unverified_numeric_claim",
+                    "derived_claim_invalid",
+                    "derived_claim_unverified_inputs",
+                }
+                and value is not None
+            ):
                 symbol = issue.get("symbol") or ""
                 label = f"{value:g}" if isinstance(value, (int, float)) else str(value)
                 banned.append(f"{label} ({symbol})" if symbol else label)
@@ -1344,6 +1484,8 @@ class GroundingLedger:
                 "Reuse the exact locked symbol and venue.",
                 "Do not attach figures to a symbol no tool call in this session handled; "
                 "report it as not retrieved instead.",
+                "A tool handling the symbol is not enough: each observed figure must also "
+                "appear in that symbol's tool evidence.",
             ]
         )
         recovery = self.recovery_action(validation)
@@ -1353,8 +1495,7 @@ class GroundingLedger:
                     "Instrument identity is unresolved. Call `search_symbol` for the "
                     "candidate name in a separate tool-call turn, lock the exact canonical "
                     "symbol and venue it returns, then call `get_market_data` before finalizing.",
-                    "Do NOT ask the user to confirm or continue while this read-only recovery "
-                    "remains available.",
+                    "Do NOT ask the user to confirm or continue while this read-only recovery remains available.",
                 ]
             )
         elif recovery == "get_market_data":
@@ -1363,8 +1504,7 @@ class GroundingLedger:
                     "Identity is locked but price evidence is missing. Call `get_market_data` "
                     "for the locked canonical symbol and venue in a separate tool-call turn, "
                     "then regenerate and re-validate the final answer.",
-                    "Do NOT ask the user to confirm or continue while this read-only recovery "
-                    "remains available.",
+                    "Do NOT ask the user to confirm or continue while this read-only recovery remains available.",
                 ]
             )
         else:
@@ -1375,7 +1515,7 @@ class GroundingLedger:
         return "\n".join(lines)
 
     def recovery_action(self, validation: ValidationResult) -> str | None:
-        """Decide the next safe read-only recovery step for a rejected draft.
+        """Decide the next safe read-only recovery step for a draft.
 
         Returns ``search_symbol`` when instrument identity is unresolved and
         resolution attempts remain; ``get_market_data`` when identity is locked
@@ -1393,9 +1533,10 @@ class GroundingLedger:
             if self._symbol_resolution_attempts < MAX_SYMBOL_RESOLUTION_ATTEMPTS:
                 return _RESOLVER_TOOL
             return None
+        findings = [*validation.issues, *validation.warnings]
         if self.identity_status == "locked" and any(
-            issue.get("code") in {"numeric_claim_unavailable", "unsourced_symbol_figures"}
-            for issue in validation.issues
+            finding.get("code") in {"numeric_claim_unavailable", "unsourced_symbol_figures", "evidence_unavailable"}
+            for finding in findings
         ):
             if self._price_evidence_attempts < MAX_PRICE_EVIDENCE_ATTEMPTS:
                 return "get_market_data"
@@ -1434,6 +1575,26 @@ class GroundingLedger:
     def safe_fallback(self) -> str:
         """Return a deterministic fail-closed answer after repeated rejection."""
         is_zh = bool(re.search(r"[\u3400-\u9fff]", self.user_message))
+        issue_codes = {
+            code
+            for validation in self._validations
+            for code in (issue.get("code") for issue in validation.get("issues", []))
+        }
+        if issue_codes & {
+            "unverified_numeric_claim",
+            "derived_claim_invalid",
+            "derived_claim_unverified_inputs",
+        }:
+            if is_zh:
+                return (
+                    "我的回答被安全门槛拒绝：草稿包含工具证据未返回的数值，或包含无法复算的推导。"
+                    "我不会仅凭工具见过该标的就放行这些数字；请补取对应字段，或删去该数值。"
+                )
+            return (
+                "My previous answer was rejected by the verification gate because it included "
+                "a value absent from the instrument's tool evidence or a derivation that could "
+                "not be recomputed. Retrieve the relevant field or omit the figure."
+            )
         price_records = self._price_records()
         if price_records:
             by_symbol: dict[str, list[EvidenceRecord]] = {}
@@ -1466,13 +1627,13 @@ class GroundingLedger:
         # "the draft cited prices this session never observed". Reporting the
         # identity message for the latter is misleading (the run may not even
         # have touched the market tools).
-        issue_codes = {
-            code
-            for validation in self._validations
-            for code in (issue.get("code") for issue in validation.get("issues", []))
-        }
         if issue_codes & {
-            "numeric_claim_unavailable", "numeric_claim_conflict", "unsourced_symbol_figures"
+            "numeric_claim_unavailable",
+            "numeric_claim_conflict",
+            "unsourced_symbol_figures",
+            "unverified_numeric_claim",
+            "derived_claim_invalid",
+            "derived_claim_unverified_inputs",
         }:
             if is_zh:
                 return (
@@ -1486,10 +1647,7 @@ class GroundingLedger:
                 "or ask it to answer without the unverified prices."
             )
         if is_zh:
-            return (
-                "当前无法安全确认标的身份或价格证据，因此没有生成交易结论。"
-                "请确认候选证券代码和交易所后再继续。"
-            )
+            return "当前无法安全确认标的身份或价格证据，因此没有生成交易结论。请确认候选证券代码和交易所后再继续。"
         return (
             "I could not safely lock the instrument identity or price evidence, so I did not "
             "produce a trading conclusion. Please confirm the candidate symbol and venue."
@@ -1508,6 +1666,8 @@ class GroundingLedger:
                 "identity": self.identity_summary(),
                 "session_symbols": sorted(self._session_symbols),
                 "session_symbol_roots": sorted(self._session_symbol_roots),
+                "handled_symbols": sorted(self._handled_symbols),
+                "handled_symbol_roots": sorted(self._handled_symbol_roots),
                 "evidence": [asdict(record) for record in self._evidence],
                 "tool_failures": list(self._tool_failures),
                 "validations": list(self._validations),
@@ -1595,7 +1755,11 @@ class GroundingLedger:
             return
 
         raw_candidates = data.get("candidates")
-        candidates = [dict(item) for item in raw_candidates if isinstance(item, dict)] if isinstance(raw_candidates, list) else []
+        candidates = (
+            [dict(item) for item in raw_candidates if isinstance(item, dict)]
+            if isinstance(raw_candidates, list)
+            else []
+        )
         sources = data.get("sources") if isinstance(data.get("sources"), dict) else {}
         if not candidates:
             # "This entity does not exist" may only be concluded when every
@@ -1604,16 +1768,11 @@ class GroundingLedger:
             # one at all — so an entity that simply is not listed came back as
             # ``invalidated``, which blocks the run rather than answering it.
             # A source that skipped an unsupported query shape is not an outage.
-            clean_sources = [
-                str(name)
-                for name, value in sources.items()
-                if str(value).casefold() == "ok"
-            ]
+            clean_sources = [str(name) for name, value in sources.items() if str(value).casefold() == "ok"]
             failed_sources = [
                 str(name)
                 for name, value in sources.items()
-                if str(value).casefold() != "ok"
-                and not str(value).casefold().startswith("skipped")
+                if str(value).casefold() != "ok" and not str(value).casefold().startswith("skipped")
             ]
             self._identities[key] = IdentityRecord(
                 query=query,
@@ -1712,13 +1871,9 @@ class GroundingLedger:
         for key, record in self._identities.items():
             if record.status != "ambiguous":
                 continue
-            offered = {
-                _normalize_symbol(candidate.get("symbol")) for candidate in record.candidates
-            }
+            offered = {_normalize_symbol(candidate.get("symbol")) for candidate in record.candidates}
             if symbol in offered:
-                self._identities[key] = replace(
-                    record, status="superseded", updated_at=_utc_now()
-                )
+                self._identities[key] = replace(record, status="superseded", updated_at=_utc_now())
 
     @staticmethod
     def _choose_candidate(
@@ -1765,8 +1920,7 @@ class GroundingLedger:
         locked_listings = [
             record
             for record in self._identities.values()
-            if record.status == "locked"
-            and record.instrument_type in {"listed_security", "fund"}
+            if record.status == "locked" and record.instrument_type in {"listed_security", "fund"}
         ]
         if locked_listings:
             return ToolAuthorization(
@@ -1776,9 +1930,7 @@ class GroundingLedger:
                     "A resolver has locked this entity to a listed security. Model memory "
                     "cannot replace that evidence with a private-company workflow."
                 ),
-                symbols=tuple(
-                    record.symbol for record in locked_listings if record.symbol
-                ),
+                symbols=tuple(record.symbol for record in locked_listings if record.symbol),
             )
         if self.identity_status == "not_found" or not self._identity_required:
             return ToolAuthorization(allowed=True)
@@ -1800,9 +1952,7 @@ class GroundingLedger:
         if tool_name != "load_skill":
             return False
         name = str(arguments.get("name") or "").strip().casefold()
-        return name in _PRIVATE_COMPANY_SKILL_NAMES or (
-            "private" in name and "company" in name
-        )
+        return name in _PRIVATE_COMPANY_SKILL_NAMES or ("private" in name and "company" in name)
 
     @staticmethod
     def _extract_symbol_arguments(arguments: Mapping[str, Any]) -> list[str]:
@@ -1838,15 +1988,17 @@ class GroundingLedger:
         Bare symbol arguments are tracked separately as roots. Many tools take a
         bare ticker by contract, so a run that legitimately fetched ``AAPL``
         never writes ``AAPL.US`` into any argument or result. Without the root,
-        the canonical spelling the rest of this module demands — see
-        ``canonical_symbol_not_surfaced`` — would be the one spelling this gate
-        rejects.
+        the canonical spelling used in the answer would be rejected as an
+        unhandled instrument.
 
         Args:
             arguments: Exact normalized tool arguments.
             result: Full raw result, before model-context truncation.
         """
-        if len(self._session_symbols) >= _MAX_TRACKED_SYMBOLS:
+        if (
+            len(self._session_symbols) >= _MAX_TRACKED_SYMBOLS
+            and len(self._handled_symbols) >= _MAX_TRACKED_SYMBOLS
+        ):
             return
         try:
             rendered_arguments = json.dumps(arguments, ensure_ascii=False, default=str)
@@ -1855,11 +2007,13 @@ class GroundingLedger:
         found = _scan_symbols(rendered_arguments) | _scan_symbols(result)
         room = _MAX_TRACKED_SYMBOLS - len(self._session_symbols)
         self._session_symbols.update(sorted(found)[:room])
-        self._session_symbol_roots.update(
-            symbol
-            for symbol in self._extract_symbol_arguments(arguments)
-            if "." not in symbol
-        )
+        handled_room = _MAX_TRACKED_SYMBOLS - len(self._handled_symbols)
+        self._handled_symbols.update(sorted(found)[:handled_room])
+        argument_roots = {
+            symbol for symbol in self._extract_symbol_arguments(arguments) if "." not in symbol
+        }
+        self._session_symbol_roots.update(argument_roots)
+        self._handled_symbol_roots.update(argument_roots)
 
     def _record_tool_failure(self, tool_name: str, call_id: str, result: str) -> None:
         """Store structured unavailable evidence for failed business envelopes."""
@@ -1886,6 +2040,7 @@ class GroundingLedger:
             self._record_tool_failure("get_market_data", call_id, "malformed JSON result")
             return
         requested_source = str(arguments.get("source") or "auto")
+        observed_at = _utc_now()
         provenance = payload.get("_provenance")
         provenance = provenance if isinstance(provenance, dict) else {}
         for raw_symbol, raw_rows in payload.items():
@@ -1903,8 +2058,23 @@ class GroundingLedger:
             )
             currency_conversion = (
                 str(symbol_provenance.get("currency_conversion"))
+                if isinstance(symbol_provenance, dict) and symbol_provenance.get("currency_conversion")
+                else None
+            )
+            market_session = (
+                str(symbol_provenance.get("market_session"))
+                if isinstance(symbol_provenance, dict) and symbol_provenance.get("market_session")
+                else None
+            )
+            adjustment = (
+                str(symbol_provenance.get("adjustment") or symbol_provenance.get("adjust"))
                 if isinstance(symbol_provenance, dict)
-                and symbol_provenance.get("currency_conversion")
+                and (symbol_provenance.get("adjustment") or symbol_provenance.get("adjust"))
+                else None
+            )
+            price_unit = (
+                str(symbol_provenance.get("price_unit"))
+                if isinstance(symbol_provenance, dict) and symbol_provenance.get("price_unit")
                 else None
             )
             for row in rows:
@@ -1931,6 +2101,12 @@ class GroundingLedger:
                             currency=_infer_currency(symbol),
                             venue=_infer_venue(symbol),
                             currency_conversion=currency_conversion,
+                            observed_at=observed_at,
+                            market_session=(
+                                str(row.get("market_session")) if row.get("market_session") else market_session
+                            ),
+                            adjustment=adjustment,
+                            unit=price_unit,
                         )
                     )
         unresolved = payload.get("_unresolved")
@@ -1963,10 +2139,12 @@ class GroundingLedger:
         symbols = self._extract_symbol_arguments(arguments)
         symbol = symbols[0] if len(symbols) == 1 else None
         if symbol:
-            symbol = (
-                self._match_authorized_symbol(symbol, self.authorized_symbols) or symbol
-            )
+            symbol = self._match_authorized_symbol(symbol, self.authorized_symbols) or symbol
         source = str(payload.get("source") or tool_name)
+        observed_at = _utc_now()
+        market_session = str(payload.get("market_session") or "") or None
+        adjustment = str(payload.get("adjustment") or payload.get("adjust") or "") or None
+        unit = str(payload.get("price_unit") or "") or None
         remaining = _MAX_GENERIC_EVIDENCE
         timestamp_fields = (*_TIMESTAMP_FIELDS, "as_of")
 
@@ -1987,6 +2165,10 @@ class GroundingLedger:
                         status="observed",
                         currency=_infer_currency(symbol or ""),
                         venue=_infer_venue(symbol or ""),
+                        observed_at=observed_at,
+                        market_session=market_session,
+                        adjustment=adjustment,
+                        unit=unit,
                     )
                 )
                 remaining -= 1
@@ -2062,15 +2244,12 @@ class GroundingLedger:
                     (
                         str(row[key]).strip()
                         for key in row
-                        if str(key).strip().casefold() in _CSV_DATE_COLUMNS
-                        and row[key] not in (None, "")
+                        if str(key).strip().casefold() in _CSV_DATE_COLUMNS and row[key] not in (None, "")
                     ),
                     None,
                 )
                 for key, value in row.items():
-                    field_name = _CSV_PRICE_COLUMNS.get(
-                        str(key).strip().casefold().replace(" ", "_")
-                    )
+                    field_name = _CSV_PRICE_COLUMNS.get(str(key).strip().casefold().replace(" ", "_"))
                     if field_name is None:
                         continue
                     numeric = _coerce_csv_number(value)
@@ -2090,6 +2269,7 @@ class GroundingLedger:
                             venue=_infer_venue(symbol),
                         )
                     )
+                    self._handled_symbols.add(symbol)
                     room -= 1
 
     def _validate_identity(self, content: str) -> list[dict[str, Any]]:
@@ -2104,7 +2284,7 @@ class GroundingLedger:
         # every draft it could ever produce, including the honest answer. This
         # relaxation invents no licence to guess: a figure still has to survive
         # ``_validate_price_claims``, and a figure attached to a symbol no tool
-        # handled still has to survive ``_validate_unsourced_symbols``.
+        # handled still has to survive ``_validate_numeric_provenance``.
         #
         # ``ambiguous`` is deliberately absent. A shortlist is an answer, which
         # is why ``_RESOLUTION_INCOMPLETE_STATUSES`` already lets workflow
@@ -2112,11 +2292,7 @@ class GroundingLedger:
         # so a screening run loaded its skill and was then refused a conclusion.
         # Consumers remain blocked on ambiguous in ``authorize_tool_call``, so
         # such a run still cannot fetch a quote to misattribute.
-        if (
-            self._identity_required
-            and self._identities
-            and status in {"unresolved", "conflicting", "invalidated"}
-        ):
+        if self._identity_required and self._identities and status in {"unresolved", "conflicting", "invalidated"}:
             issues.append(
                 {
                     "code": "identity_not_locked",
@@ -2127,8 +2303,7 @@ class GroundingLedger:
         listed = [
             record
             for record in self._identities.values()
-            if record.status == "locked"
-            and record.instrument_type in {"listed_security", "fund"}
+            if record.status == "locked" and record.instrument_type in {"listed_security", "fund"}
         ]
         if listed and _PRIVATE_ASSERTION_RE.search(content):
             symbols = sorted(record.symbol for record in listed if record.symbol)
@@ -2144,101 +2319,309 @@ class GroundingLedger:
             )
         return issues
 
-    def _validate_unsourced_symbols(self, content: str) -> list[dict[str, Any]]:
-        """Reject figures attached to an instrument no tool in this run handled.
+    def _validate_numeric_provenance(self, content: str) -> list[dict[str, Any]]:
+        """Reject symbol-bound figures without matching tool provenance.
 
-        This is the mechanically decidable half of "what the tools did not
-        return, you do not supply" (#886/#887). Naming a symbol is left alone —
-        prose may legitimately mention an index or a peer — but the moment a
-        clause pairs an unhandled canonical symbol with a figure, the figure has
-        no possible origin other than model memory.
+        This provenance gate deliberately does not depend on the observed-price
+        phrase parser. Every non-structural number attached to a canonical
+        symbol enters the gate, including numbers whose financial field cannot
+        yet be classified. Price wording only improves the later value
+        comparison; failing to recognize that wording never grants permission
+        to invent a figure.
 
         Args:
             content: Candidate assistant answer.
 
         Returns:
-            One issue per distinct unsourced symbol carrying figures.
+            Issues for unhandled symbols, unobserved values, or invalid
+            derivations.
         """
         issues: list[dict[str, Any]] = []
-        reported: set[str] = set()
-        for line in content.splitlines():
+        reported_unsourced: set[str] = set()
+        reported_unverified: set[tuple[str, float]] = set()
+        _table_issues, _table_warnings, typed_table_lines = self._validate_price_tables(
+            content
+        )
+        for line_number, line in enumerate(content.splitlines()):
+            if line_number in typed_table_lines:
+                # Typed OHLC table cells are checked by _validate_price_tables;
+                # other tables still pass through this general provenance gate.
+                continue
+            line_symbols = _scan_symbols(line)
             for segment in _split_clauses(line):
+                values = self._numbers_requiring_provenance(segment)
+                if not values:
+                    continue
+                segment_symbols = _scan_symbols(segment)
+                # Citations and parentheticals often place a comma between the
+                # symbol and its figure. If the line has exactly one subject,
+                # keep that subject bound across clause boundaries; with more
+                # than one subject, require an explicit segment-local symbol.
+                bound_symbols = segment_symbols
+                if not bound_symbols and len(line_symbols) == 1:
+                    bound_symbols = line_symbols
                 unknown = sorted(
                     symbol
-                    for symbol in _scan_symbols(segment) - self._session_symbols - reported
-                    if symbol.rsplit(".", 1)[0] not in self._session_symbol_roots
+                    for symbol in bound_symbols - reported_unsourced
+                    if not self._symbol_was_sourced(symbol)
                 )
-                if not unknown or not self._numbers_without_dates_or_percent(segment):
-                    continue
                 for symbol in unknown:
-                    reported.add(symbol)
+                    reported_unsourced.add(symbol)
                     issues.append(
                         {
                             "code": "unsourced_symbol_figures",
                             "symbol": symbol,
+                            "value": values[0],
+                            "values": values[:12],
                             "claim": segment.strip()[:200],
                             "message": (
-                                f"No tool call in this session passed in or returned {symbol}, "
-                                "yet the answer attaches figures to it. Retrieve it, or report "
-                                "it as not retrieved."
+                                f"No successful tool call in this session passed in or returned {symbol}, "
+                                "yet the answer attaches a non-structural numeric claim to it. "
+                                "Retrieve it, or report it as not retrieved."
                             ),
                         }
                     )
+                recognized_price_values = [
+                    claim.value for claim in extract_prose_price_claims(segment)
+                ]
+                for symbol in sorted(bound_symbols - set(unknown)):
+                    derived_values, derived_issue = self._validate_derived_formula(
+                        segment, symbol
+                    )
+                    if derived_issue:
+                        issues.append(derived_issue)
+                    aggregate_values = self._validated_aggregate_values(segment, symbol)
+                    for value in values:
+                        if any(
+                            math.isclose(value, price, rel_tol=1e-12, abs_tol=1e-12)
+                            for price in recognized_price_values
+                        ) and self._symbol_has_price_evidence(symbol):
+                            continue
+                        if any(
+                            math.isclose(value, derived, rel_tol=1e-12, abs_tol=1e-12)
+                            for derived in derived_values
+                        ):
+                            continue
+                        if any(
+                            math.isclose(value, aggregate, rel_tol=1e-12, abs_tol=1e-12)
+                            for aggregate in aggregate_values
+                        ):
+                            continue
+                        key = (symbol, value)
+                        if key in reported_unverified or self._numeric_value_was_observed(
+                            symbol, value
+                        ):
+                            continue
+                        reported_unverified.add(key)
+                        issues.append(
+                            {
+                                "code": "unverified_numeric_claim",
+                                "symbol": symbol,
+                                "value": value,
+                                "claim": segment.strip()[:200],
+                                "message": (
+                                    f"The answer attaches {value:g} to {symbol}, but no observed "
+                                    "numeric evidence for that instrument contains this value. "
+                                    "Use a field-bound tool value or omit the figure."
+                                ),
+                            }
+                        )
         return issues
 
-    def _validate_price_claims(self, content: str) -> list[dict[str, Any]]:
-        """Check Markdown OHLC tables and price prose against observed records.
+    def _validate_derived_formula(
+        self, segment: str, symbol: str
+    ) -> tuple[list[float], dict[str, Any] | None]:
+        """Validate one explicitly labelled arithmetic derivation.
 
-        Comparison runs against every observed quote in the run, whichever tool
-        produced it. The provenance demands below stay keyed on ``get_market_data``
-        evidence, whose ``source``/``currency``/venue fields are authoritative;
-        a generic tool's fallback source is its own name, and requiring the
-        answer to spell that out would reject correct prose.
+        This is intentionally separate from observed-fact provenance. A
+        visible formula is allowed only when every non-identity input is
+        present in tool evidence for the same symbol and the printed result
+        agrees with the arithmetic at its displayed precision.
         """
-        issues, table_lines = self._validate_price_tables(content)
-        records = self._comparable_price_records()
-        # A report names its subject once and then writes prose about it. Both
-        # narrower scopes are tried first; this is the last resort, and it only
-        # resolves when the whole answer names exactly one evidence symbol.
-        document_symbol = self._symbol_for_claim(content, records)
-        has_price_claim = any(
-            self._numbers_without_dates_or_percent(line)
-            for index, line in enumerate(content.splitlines())
-            if index in table_lines
+        if not _DERIVATION_RE.search(segment):
+            return [], None
+        match = _DERIVED_FORMULA_RE.search(segment)
+        if not match:
+            return [], None
+        expression = match.group("expression").strip()
+        result_token = match.group("result").replace(",", "")
+        result = float(result_token)
+        normalized = (
+            expression.replace(",", "")
+            .replace("−", "-")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("×", "*")
+            .replace("÷", "/")
+            .replace("%", "")
+            .replace("％", "")
         )
-        for index, line in enumerate(content.splitlines()):
-            if index in table_lines or "|" in line:
-                continue
-            line_symbol = self._symbol_for_claim(line, records)
-            for segment in _split_clauses(line):
-                if not _PRICE_CONTEXT_RE.search(segment):
-                    continue
-                values = self._numbers_without_dates_or_percent(segment)
-                if not values:
-                    continue
-                has_price_claim = True
-                symbol = (
-                    self._symbol_for_claim(segment, records)
-                    or line_symbol
-                    or document_symbol
+        try:
+            tree = ast.parse(normalized, mode="eval")
+            computed, operands = self._evaluate_numeric_expression(tree)
+        except (SyntaxError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+            return [], {
+                "code": "derived_claim_invalid",
+                "symbol": symbol,
+                "value": result,
+                "claim": segment.strip()[:200],
+                "message": "The stated derivation is not a supported finite arithmetic formula.",
+            }
+
+        observed_inputs = [
+            value
+            for value in operands
+            if self._numeric_value_was_observed(symbol, value)
+        ]
+        unsupported_inputs = [
+            value
+            for value in operands
+            if value not in {0.0, 1.0, 2.0, 100.0}
+            and not self._numeric_value_was_observed(symbol, value)
+        ]
+        if unsupported_inputs or not observed_inputs:
+            return [*operands, result], {
+                "code": "derived_claim_unverified_inputs",
+                "symbol": symbol,
+                "value": result,
+                "inputs": unsupported_inputs,
+                "claim": segment.strip()[:200],
+                "message": (
+                    "The derivation must use at least one observed numeric input and no "
+                    f"unsupported inputs for {symbol}."
+                ),
+            }
+
+        decimals = len(result_token.rsplit(".", 1)[1]) if "." in result_token else 0
+        rounding_tolerance = 0.5 * (10 ** -decimals)
+        if not math.isclose(computed, result, rel_tol=1e-12, abs_tol=rounding_tolerance + 1e-12):
+            return [*operands, result], {
+                "code": "derived_claim_invalid",
+                "symbol": symbol,
+                "value": result,
+                "computed": computed,
+                "claim": segment.strip()[:200],
+                "message": (
+                    f"The stated derived value {result:g} does not match the visible "
+                    f"formula result {computed:g}."
+                ),
+            }
+        return [*operands, result], None
+
+    @classmethod
+    def _evaluate_numeric_expression(cls, tree: ast.AST) -> tuple[float, list[float]]:
+        """Evaluate a numeric AST containing only basic arithmetic operators."""
+
+        def visit(node: ast.AST) -> tuple[float, list[float]]:
+            if isinstance(node, ast.Expression):
+                return visit(node.body)
+            if isinstance(node, ast.Constant) and _is_number(node.value):
+                value = float(node.value)
+                return value, [value]
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+                value, operands = visit(node.operand)
+                return ((value if isinstance(node.op, ast.UAdd) else -value), operands)
+            if isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)
+            ):
+                left, left_operands = visit(node.left)
+                right, right_operands = visit(node.right)
+                if isinstance(node.op, ast.Add):
+                    value = left + right
+                elif isinstance(node.op, ast.Sub):
+                    value = left - right
+                elif isinstance(node.op, ast.Mult):
+                    value = left * right
+                else:
+                    value = left / right
+                if not math.isfinite(value):
+                    raise ValueError("non-finite arithmetic result")
+                return value, [*left_operands, *right_operands]
+            raise ValueError("unsupported arithmetic expression")
+
+        return visit(tree)
+
+    def _validated_aggregate_values(self, segment: str, symbol: str) -> list[float]:
+        """Return aggregate costs reproducible from quantity and observed price."""
+        validated: list[float] = []
+        segment_values = self._numeric_values(segment)
+        for match in _AGGREGATE_COST_RE.finditer(segment):
+            quantity = float(match.group("quantity").replace(",", ""))
+            amount_token = match.group("amount").replace(",", "")
+            amount = float(amount_token)
+            decimals = len(amount_token.rsplit(".", 1)[1]) if "." in amount_token else 0
+            tolerance = 0.5 * (10 ** -decimals) + 1e-12
+            observed = [
+                float(record.value)
+                for record in self._evidence
+                if record.status == "observed"
+                and record.value is not None
+                and record.symbol
+                and _normalize_symbol(record.symbol) == _normalize_symbol(symbol)
+                and _price_field_for_path(record.field) is not None
+                and any(
+                    math.isclose(float(record.value), value, rel_tol=1e-12, abs_tol=1e-12)
+                    for value in segment_values
                 )
-                if self._is_explicit_derivation(segment, records, symbol):
-                    continue
-                for value in values:
-                    issue = self._compare_price_claim(
-                        value=value,
-                        records=records,
-                        field_name=None,
-                        date_value=None,
-                        symbol=symbol,
-                        claim=segment.strip(),
-                    )
-                    if issue:
-                        issues.append(issue)
-        market_records = self._price_records()
-        if has_price_claim and market_records:
-            issues.extend(self._validate_price_provenance(content, market_records))
-        return self._dedupe_issues(issues)
+            ]
+            if any(
+                math.isclose(quantity * price, amount, rel_tol=1e-12, abs_tol=tolerance)
+                for price in observed
+            ):
+                validated.append(amount)
+        return validated
+
+    def _symbol_was_sourced(self, symbol: str) -> bool:
+        """Return whether a successful tool call handled ``symbol``."""
+        normalized = _normalize_symbol(symbol)
+        return (
+            normalized in self._handled_symbols
+            or normalized.rsplit(".", 1)[0] in self._handled_symbol_roots
+        )
+
+    def _numeric_value_was_observed(self, symbol: str, value: float) -> bool:
+        """Return whether tool evidence contains ``value`` for ``symbol``."""
+        normalized = _normalize_symbol(symbol)
+        root = normalized.rsplit(".", 1)[0]
+        for record in self._evidence:
+            if record.status != "observed" or record.value is None or not record.symbol:
+                continue
+            evidence_symbol = _normalize_symbol(record.symbol)
+            evidence_root = evidence_symbol.rsplit(".", 1)[0]
+            if evidence_symbol != normalized and evidence_root != root:
+                continue
+            if math.isclose(float(record.value), value, rel_tol=1e-12, abs_tol=1e-12):
+                return True
+        return False
+
+    def _symbol_has_price_evidence(self, symbol: str) -> bool:
+        """Return whether comparable price evidence exists for ``symbol``."""
+        normalized = _normalize_symbol(symbol)
+        return any(
+            record.symbol and _normalize_symbol(record.symbol) == normalized
+            for record in self._comparable_price_records()
+        )
+
+    def _validate_price_claims(
+        self,
+        content: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Check only positively identified observed-price claims."""
+        issues, warnings, _table_lines = self._validate_price_tables(content)
+        records = self._comparable_price_records()
+        document_symbol = self._symbol_for_claim(content, records)
+        for claim in extract_prose_price_claims(content):
+            symbol = self._symbol_for_claim(claim.text, records) or document_symbol
+            issue, warning = self._compare_price_claim(
+                claim=claim,
+                records=records,
+                symbol=symbol,
+            )
+            if issue:
+                issues.append(issue)
+            if warning:
+                warnings.append(warning)
+        return self._dedupe_issues(issues), self._dedupe_issues(warnings)
 
     @staticmethod
     def _symbol_for_claim(
@@ -2254,109 +2637,14 @@ class GroundingLedger:
         }
         return next(iter(matches)) if len(matches) == 1 else None
 
-    def _validate_price_provenance(
-        self,
-        content: str,
-        records: Sequence[EvidenceRecord],
-    ) -> list[dict[str, Any]]:
-        """Require canonical symbol, actual source, and quote currency in output."""
-        issues: list[dict[str, Any]] = []
-        folded = content.casefold()
-        symbols = sorted({record.symbol for record in records if record.symbol})
-        # ``_scan_symbols`` canonicalizes, so an answer that writes Shanghai as
-        # ``600519.SS`` still surfaces the ``600519.SH`` identity it names.
-        written = _scan_symbols(content)
-        mentioned = [
-            symbol
-            for symbol in symbols
-            if symbol in written or symbol.casefold() in folded
-        ]
-        if not mentioned:
-            issues.append(
-                {
-                    "code": "canonical_symbol_not_surfaced",
-                    "symbols": symbols,
-                    "message": (
-                        "A price claim must surface its locked canonical symbol and venue suffix."
-                    ),
-                }
-            )
-        target_symbols = set(mentioned or (symbols if len(symbols) == 1 else []))
-        target_records = [
-            record
-            for record in records
-            if not target_symbols or record.symbol in target_symbols
-        ]
-
-        sources = sorted(
-            {
-                record.source
-                for record in target_records
-                if record.source and record.source.casefold() not in {"auto", "unknown"}
-            }
-        )
-        missing_sources = [
-            source
-            for source in sources
-            if not any(
-                alias in folded
-                for alias in _SOURCE_ALIASES.get(
-                    source.casefold(), (source.casefold(),)
-                )
-            )
-        ]
-        if missing_sources:
-            issues.append(
-                {
-                    "code": "data_source_not_surfaced",
-                    "sources": missing_sources,
-                    "message": (
-                        "Price claims must name the actual data source: "
-                        + ", ".join(missing_sources)
-                        + "."
-                    ),
-                }
-            )
-
-        currencies = sorted(
-            {record.currency for record in target_records if record.currency}
-        )
-        missing_currencies = [
-            currency
-            for currency in currencies
-            if not self._currency_is_surfaced(currency, content)
-        ]
-        if missing_currencies:
-            issues.append(
-                {
-                    "code": "currency_not_surfaced",
-                    "currencies": missing_currencies,
-                    "message": (
-                        "Price claims must name their quote currency: "
-                        + ", ".join(missing_currencies)
-                        + "."
-                    ),
-                }
-            )
-        return issues
-
-    @staticmethod
-    def _currency_is_surfaced(currency: str, content: str) -> bool:
-        """Return whether a quote currency or an unambiguous alias is visible."""
-        folded = content.casefold()
-        code = currency.upper()
-        tokens = _CURRENCY_ALIASES.get(code, (currency.casefold(),))
-        if any(token.casefold() in folded for token in tokens):
-            return True
-        return code == "CNY" and bool(_BARE_YUAN_RE.search(content))
-
     def _validate_price_tables(
         self,
         content: str,
-    ) -> tuple[list[dict[str, Any]], set[int]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[int]]:
         """Validate field/date-specific claims in Markdown OHLC tables."""
         lines = content.splitlines()
         issues: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
         consumed: set[int] = set()
         index = 0
         records = self._comparable_price_records()
@@ -2395,22 +2683,45 @@ class GroundingLedger:
                 date_value = row[date_column].strip() if date_column is not None else None
                 symbol = _normalize_symbol(row[symbol_column]) if symbol_column is not None else None
                 for position, field_name in field_columns.items():
-                    values = self._numbers_without_dates_or_percent(row[position])
-                    if len(values) != 1:
+                    parsed = parse_numeric_cell(row[position])
+                    if parsed is None:
                         continue
-                    issue = self._compare_price_claim(
-                        value=values[0],
+                    value, currency, unit = parsed
+                    if symbol and not self._symbol_was_sourced(symbol):
+                        issues.append(
+                            {
+                                "code": "unsourced_symbol_figures",
+                                "symbol": symbol,
+                                "value": value,
+                                "field": field_name,
+                                "claim": row[position].strip(),
+                                "message": (
+                                    f"No successful tool call in this session handled {symbol}, "
+                                    "yet the answer makes an explicit table price claim for it."
+                                ),
+                            }
+                        )
+                        continue
+                    issue, warning = self._compare_price_claim(
+                        claim=NumericClaim(
+                            value=value,
+                            field=field_name,
+                            text=row[position].strip(),
+                            date=date_value,
+                            currency=currency,
+                            unit=unit,
+                            temporal_scope="dated" if date_value else "latest",
+                        ),
                         records=records,
-                        field_name=field_name,
-                        date_value=date_value,
                         symbol=symbol,
-                        claim=row[position].strip(),
                     )
                     if issue:
                         issues.append(issue)
+                    if warning:
+                        warnings.append(warning)
                 row_index += 1
             index = max(row_index, index + 1)
-        return issues, consumed
+        return issues, warnings, consumed
 
     @staticmethod
     def _table_cells(line: str) -> list[str]:
@@ -2427,74 +2738,181 @@ class GroundingLedger:
     def _compare_price_claim(
         self,
         *,
-        value: float,
+        claim: NumericClaim,
         records: list[EvidenceRecord],
-        field_name: str | None,
-        date_value: str | None,
         symbol: str | None,
-        claim: str,
-    ) -> dict[str, Any] | None:
-        """Compare one unlabelled observed claim to the closest evidence value."""
-        candidates = records
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Compare one explicit claim only when its evidence is comparable.
+
+        A contradiction is blocking only when the ledger has one semantic
+        observation cohort (same instrument, field, trading day, session,
+        adjustment, currency and unit) and the sources in that cohort agree.
+        Missing attribution, mixed cohorts and disagreeing providers are data
+        quality facts, so they are returned as auditable warnings instead of
+        suppressing the whole answer.
+        """
+        if not records:
+            return {
+                "code": "numeric_claim_unavailable",
+                "claim": claim.text,
+                "value": claim.value,
+                "symbol": symbol,
+                "field": claim.field,
+                "date": claim.date,
+                "message": "No observed tool evidence was available for this price claim.",
+            }, None
+
+        candidates = [record for record in records if record.field == claim.field]
         if symbol:
-            candidates = [record for record in candidates if record.symbol == symbol]
-        symbols = sorted({record.symbol for record in candidates if record.symbol})
-        if not symbol and len(symbols) == 1:
-            symbol = symbols[0]
-        # An unattributed claim used to be rejected outright once the run held
-        # evidence for more than one symbol. That is every comparison report:
-        # "Apple's closing price was 313.33 USD. Microsoft closed higher." names
-        # its subject by company name, and the clause was refused although the
-        # value was exactly the observed close sitting in evidence. Such a claim
-        # is now checked against the union of the observed quotes instead, so a
-        # number the run never observed is still caught below — it simply has to
-        # match nothing at all rather than nothing under one chosen symbol.
-        if field_name:
-            candidates = [record for record in candidates if record.field == field_name]
-        if date_value:
+            normalized_symbol = _normalize_symbol(symbol)
             candidates = [
                 record
                 for record in candidates
-                if record.timestamp
-                and _timestamp_matches_claim_date(record.timestamp, date_value)
+                if record.symbol and _normalize_symbol(record.symbol) == normalized_symbol
             ]
-        if not candidates:
+            symbol = normalized_symbol
+        symbols = sorted({record.symbol for record in candidates if record.symbol})
+        if not symbol and len(symbols) == 1:
+            symbol = symbols[0]
+        elif not symbol and len(symbols) > 1:
+            return None, {
+                "code": "evidence_not_comparable",
+                "reason": "ambiguous_symbol",
+                "claim": claim.text,
+                "value": claim.value,
+                "field": claim.field,
+                "symbols": symbols,
+                "message": "Price claim could not be attributed to exactly one instrument.",
+            }
+
+        dated_candidates: list[EvidenceRecord] = []
+        if claim.date:
+            dated_candidates = [record for record in candidates if record.timestamp]
+            candidates = [
+                record
+                for record in candidates
+                if record.timestamp and _timestamp_matches_claim_date(record.timestamp, claim.date)
+            ]
+        else:
+            observed_days = [day for record in candidates if (day := _observation_day(record.timestamp)) is not None]
+            if observed_days:
+                latest_day = max(observed_days)
+                candidates = [record for record in candidates if _observation_day(record.timestamp) == latest_day]
+
+        if not candidates and claim.date and not dated_candidates:
             return {
                 "code": "numeric_claim_unavailable",
-                "claim": claim,
-                "value": value,
+                "claim": claim.text,
+                "value": claim.value,
                 "symbol": symbol,
-                "field": field_name,
-                "date": date_value,
-                "message": f"Price claim {value:g} has no matching observed tool evidence.",
+                "field": claim.field,
+                "date": claim.date,
+                "message": (
+                    "No observed tool evidence matched the stated date for this "
+                    "price claim."
+                ),
+            }, None
+
+        if not candidates:
+            return None, {
+                "code": "evidence_unavailable",
+                "claim": claim.text,
+                "value": claim.value,
+                "symbol": symbol,
+                "field": claim.field,
+                "date": claim.date,
+                "message": "No matching observed evidence was available for this price claim.",
             }
-        observed = [float(record.value) for record in candidates if record.value is not None]
-        if any(abs(value - item) <= max(abs(item) * 0.005, 1e-9) for item in observed):
-            return None
+
+        known_currencies = sorted({record.currency.upper() for record in candidates if record.currency})
+        if claim.currency:
+            if known_currencies and claim.currency not in known_currencies:
+                return {
+                    "code": "explicit_currency_conflict",
+                    "claim": claim.text,
+                    "value": claim.value,
+                    "symbol": symbol,
+                    "currency": claim.currency,
+                    "observed_currencies": known_currencies,
+                    "message": (
+                        f"Price claim declares {claim.currency}, but matching evidence "
+                        f"uses {', '.join(known_currencies)}."
+                    ),
+                }, None
+            candidates = [
+                record for record in candidates if not record.currency or record.currency.upper() == claim.currency
+            ]
+
+        if claim.unit:
+            known_units = {record.unit.casefold() for record in candidates if record.unit}
+            if known_units and claim.unit.casefold() not in known_units:
+                return None, {
+                    "code": "evidence_not_comparable",
+                    "reason": "unit_mismatch",
+                    "claim": claim.text,
+                    "value": claim.value,
+                    "unit": claim.unit,
+                    "observed_units": sorted(known_units),
+                    "message": "Claim and evidence use different units.",
+                }
+            candidates = [
+                record for record in candidates if not record.unit or record.unit.casefold() == claim.unit.casefold()
+            ]
+
+        cohorts: dict[tuple[str, str, str, str, str], list[EvidenceRecord]] = {}
+        for record in candidates:
+            cohorts.setdefault(_observation_cohort(record), []).append(record)
+        if len(cohorts) != 1:
+            return None, {
+                "code": "evidence_not_comparable",
+                "reason": "mixed_observation_cohorts",
+                "claim": claim.text,
+                "value": claim.value,
+                "symbol": symbol,
+                "field": claim.field,
+                "cohorts": [list(cohort) for cohort in sorted(cohorts)],
+                "message": "Matching sources use different observation semantics.",
+            }
+
+        comparable = next(iter(cohorts.values()))
+        observed = [float(record.value) for record in comparable if record.value is not None]
+        tolerance = _price_tolerance(observed)
+        if max(observed) - min(observed) > tolerance:
+            return None, {
+                "code": "source_divergence",
+                "claim": claim.text,
+                "value": claim.value,
+                "symbol": symbol,
+                "field": claim.field,
+                "observed_min": min(observed),
+                "observed_max": max(observed),
+                "source_tool_call_ids": sorted({record.call_id for record in comparable}),
+                "message": "Comparable sources disagree beyond the configured tolerance.",
+            }
+        if any(abs(claim.value - value) <= tolerance for value in observed):
+            return None, None
         return {
             "code": "numeric_claim_conflict",
-            "claim": claim,
-            "value": value,
+            "claim": claim.text,
+            "value": claim.value,
             "symbol": symbol,
-            "field": field_name,
-            "date": date_value,
+            "field": claim.field,
+            "date": claim.date,
             "observed_min": min(observed),
             "observed_max": max(observed),
-            "source_tool_call_ids": sorted({record.call_id for record in candidates}),
+            "source_tool_call_ids": sorted({record.call_id for record in comparable}),
             "message": (
-                f"Price claim {value:g} conflicts with observed {field_name or 'OHLC'} "
+                f"Price claim {claim.value:g} conflicts with observed {claim.field} "
                 f"evidence {min(observed):g}–{max(observed):g}."
             ),
-        }
+        }, None
 
     def _price_records(self) -> list[EvidenceRecord]:
         """Return observed OHLC/price evidence only."""
         return [
             record
             for record in self._evidence
-            if record.status == "observed"
-            and record.field in _PRICE_FIELDS
-            and record.value is not None
+            if record.status == "observed" and record.field in _PRICE_FIELDS and record.value is not None
         ]
 
     def _comparable_price_records(self) -> list[EvidenceRecord]:
@@ -2523,22 +2941,56 @@ class GroundingLedger:
         return records
 
     @staticmethod
-    def _numbers_without_dates_or_percent(text: str) -> list[float]:
-        """Extract the numbers in a claim that could plausibly be prices.
+    def _numeric_values(text: str, *, include_percent: bool = False) -> list[float]:
+        """Return finite numeric tokens left in already-classified prose."""
+        values: list[float] = []
+        for match in _NUMBER_RE.finditer(text):
+            tail = text[match.end() :].lstrip()
+            if not include_percent and tail.startswith(("%", "％")):
+                continue
+            try:
+                value = float(match.group(0).replace(",", ""))
+            except ValueError:
+                continue
+            if math.isfinite(value):
+                values.append(value)
+        return values
 
-        Digits that belong to a canonical symbol, a calendar date, an aggregate
-        amount, a labelled score, a named indicator reading, a unit-bearing
-        quantity, or a percentage are masked first. Left unmasked they are
-        compared against observed OHLC ranges and reject a correct draft:
-        ``000543.SZ`` alone contributes 543, and a well-formed verdict line
-        contributes its confidence score and every moving-average window it
-        names (#1001).
+    @classmethod
+    def _numbers_requiring_provenance(cls, text: str) -> list[float]:
+        """Extract symbol-bound numeric claims without relying on price words.
 
-        Args:
-            text: One claim segment or table cell.
+        Only mechanically structural or explicitly prospective spans are
+        removed. Observed fundamentals, indicators, historical references,
+        aggregate amounts, FX rates, and unknown wording deliberately remain:
+        if the answer attaches one of those figures to a symbol no successful
+        tool handled, the provenance gate must fail closed.
+        """
+        masked = _MD_LIST_ITEM_RE.sub(" ", text)
+        masked = _RATE_FORMULA_IDENTITY_RE.sub(" ", masked)
+        masked = _CANONICAL_SYMBOL_RE.sub(" ", masked)
+        masked = _LOCALIZED_DATE_RE.sub(" ", masked)
+        masked = _DATE_RE.sub(" ", masked)
+        masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _DASH_DATE_RE.sub(" ", masked)
+        masked = _PERCENT_RANGE_RE.sub(" ", masked)
+        masked = _ORDER_LEVEL_RE.sub(" ", masked)
+        masked = _LABELLED_SCORE_RE.sub(" ", masked)
+        masked = _PROSPECTIVE_LEVEL_RE.sub(" ", masked)
+        masked = _LINE_REFERENCE_RE.sub(" ", masked)
+        masked = _NUMBERED_HEADING_RE.sub(" ", masked)
+        masked = _FORM_IDENTIFIER_RE.sub(" ", masked)
+        masked = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
+        return cls._numeric_values(masked, include_percent=True)
 
-        Returns:
-            Candidate price values, in order of appearance.
+    @classmethod
+    def _numbers_without_dates_or_percent(cls, text: str) -> list[float]:
+        """Extract values that the legacy price-context tests consider prices.
+
+        This narrower classifier remains separate from the provenance gate.
+        Its exclusions may prevent a value from being compared with OHLC
+        evidence, but they can never authorize an unsupported symbol-bound
+        numeric claim.
         """
         masked = _MD_LIST_ITEM_RE.sub(" ", text)
         masked = _RATE_FORMULA_IDENTITY_RE.sub(" ", masked)
@@ -2557,111 +3009,11 @@ class GroundingLedger:
         masked = _SINCE_REFERENCE_RE.sub(" ", masked)
         masked = _LINE_REFERENCE_RE.sub(" ", masked)
         masked = _NUMBERED_HEADING_RE.sub(" ", masked)
+        masked = _FORM_IDENTIFIER_RE.sub(" ", masked)
         masked = _RATIO_RE.sub(" ", masked)
         masked = _FX_RATE_RE.sub(" ", masked)
-        without_dates = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
-        values: list[float] = []
-        for match in _NUMBER_RE.finditer(without_dates):
-            tail = without_dates[match.end() :].lstrip()
-            if tail.startswith(("%", "％")):
-                continue
-            try:
-                values.append(float(match.group(0).replace(",", "")))
-            except ValueError:
-                continue
-        return values
-
-    def _is_explicit_derivation(
-        self,
-        text: str,
-        records: Sequence[EvidenceRecord],
-        symbol: str | None,
-    ) -> bool:
-        """Allow only an arithmetically valid formula anchored to observed input."""
-        if not _DERIVATION_RE.search(text):
-            return False
-        candidates = list(records)
-        if symbol:
-            candidates = [record for record in candidates if record.symbol == symbol]
-        candidate_symbols = {record.symbol for record in candidates if record.symbol}
-        if not symbol and len(candidate_symbols) > 1:
-            return False
-        observed = [
-            float(record.value) for record in candidates if record.value is not None
-        ]
-        if not observed:
-            return False
-
-        for equals in re.finditer(r"=", text):
-            left = re.search(r"([0-9.,+\-*/×÷()\s]+)$", text[: equals.start()])
-            right = re.match(
-                r"\s*([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)",
-                text[equals.end() :],
-            )
-            if not left or not right:
-                continue
-            evaluated = self._evaluate_formula(left.group(1))
-            if evaluated is None:
-                continue
-            computed, inputs = evaluated
-            try:
-                claimed = float(right.group(1).replace(",", ""))
-            except ValueError:
-                continue
-            if not any(
-                abs(item - value) <= max(abs(value) * 0.005, 1e-9)
-                for item in inputs
-                for value in observed
-            ):
-                continue
-            if abs(computed - claimed) <= max(abs(computed) * 0.005, 1e-9):
-                return True
-        return False
-
-    @staticmethod
-    def _evaluate_formula(expression: str) -> tuple[float, list[float]] | None:
-        """Evaluate a numeric ``+ - * /`` expression without executing code."""
-        normalized = expression.replace("×", "*").replace("÷", "/").replace(",", "").strip()
-        try:
-            tree = ast.parse(normalized, mode="eval")
-        except (SyntaxError, ValueError):
-            return None
-        inputs: list[float] = []
-
-        def visit(node: ast.AST) -> float:
-            if isinstance(node, ast.Expression):
-                return visit(node.body)
-            if isinstance(node, ast.Constant) and _is_number(node.value):
-                value = float(node.value)
-                inputs.append(value)
-                return value
-            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-                value = visit(node.operand)
-                return value if isinstance(node.op, ast.UAdd) else -value
-            if isinstance(node, ast.BinOp) and isinstance(
-                node.op,
-                (ast.Add, ast.Sub, ast.Mult, ast.Div),
-            ):
-                left_value = visit(node.left)
-                right_value = visit(node.right)
-                if isinstance(node.op, ast.Add):
-                    return left_value + right_value
-                if isinstance(node.op, ast.Sub):
-                    return left_value - right_value
-                if isinstance(node.op, ast.Mult):
-                    return left_value * right_value
-                if right_value == 0:
-                    raise ValueError("division by zero")
-                return left_value / right_value
-            raise ValueError("unsupported formula")
-
-        try:
-            value = visit(tree)
-        except (TypeError, ValueError, ZeroDivisionError, OverflowError):
-            return None
-        if len(inputs) < 2 or not math.isfinite(value):
-            return None
-        return value, inputs
+        masked = _QUANTITY_WITH_UNIT_RE.sub(" ", masked)
+        return cls._numeric_values(masked)
 
     @staticmethod
     def _dedupe_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:

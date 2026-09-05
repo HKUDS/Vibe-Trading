@@ -190,7 +190,7 @@ class TestPrincipleOneReachesEveryTool:
         """Measured before this landed: rejected as numeric_claim_unavailable."""
         ledger = _ledger(tmp_path, tool="get_stock_profile", result=_PROFILE_QUOTE)
 
-        result = ledger.validate_final_answer("AAPL.US 收盘价 212.5 USD。")
+        result = ledger.validate_final_answer("AAPL.US 现价 212.5 USD。")
 
         assert result.valid is True, result.issues
 
@@ -211,22 +211,16 @@ class TestPrincipleOneReachesEveryTool:
         assert result.valid is False
         assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
 
-    def test_the_widened_corpus_did_not_widen_what_output_must_disclose(
+    def test_disclosure_wording_does_not_gate_a_grounded_number(
         self, tmp_path: Path
     ) -> None:
-        """Provenance demands stay keyed on market-data evidence, whose source is real."""
+        """Structured evidence keeps provenance without forcing it into prose."""
         market = _ledger(tmp_path / "market").validate_final_answer("AAPL.US 收盘价 212.5。")
 
-        assert market.valid is False
-        assert {issue["code"] for issue in market.issues} >= {
-            "data_source_not_surfaced",
-            "currency_not_surfaced",
-        }
-        # The generic tool's fallback source is its own name; demanding the model
-        # spell that out would reject a correct answer, so it is not demanded.
+        assert market.valid is True, market.issues
         generic = _ledger(
             tmp_path / "generic", tool="get_stock_profile", result=_PROFILE_QUOTE
-        ).validate_final_answer("AAPL.US 收盘价 212.5。")
+        ).validate_final_answer("AAPL.US 现价 212.5。")
 
         assert generic.valid is True, generic.issues
 
@@ -234,9 +228,84 @@ class TestPrincipleOneReachesEveryTool:
 class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
     """A figure needs an instrument the session actually touched (#886/#887)."""
 
+    @pytest.mark.parametrize(
+        "answer",
+        (
+            "TSLA.US last traded at 412.35 USD.",
+            "TSLA.US price is 412.35 USD.",
+            "TSLA.US is at 412.35.",
+            "TSLA.US currently sits around 412.35.",
+            "TSLA.US changed hands near 412.35.",
+        ),
+    )
+    def test_price_wording_cannot_bypass_symbol_provenance(
+        self, tmp_path: Path, answer: str
+    ) -> None:
+        """Unknown wording stays fail-closed instead of escaping a phrase list."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="What looks good in EV right now?",
+        )
+
+        result = ledger.validate_final_answer(answer)
+
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [
+            issue["code"] for issue in result.issues
+        ]
+
+    def test_user_mention_does_not_count_as_numeric_provenance(
+        self, tmp_path: Path
+    ) -> None:
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="What is TSLA.US worth?",
+        )
+
+        result = ledger.validate_final_answer("TSLA.US currently sits around 412.35.")
+
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [
+            issue["code"] for issue in result.issues
+        ]
+
+    def test_resolver_mention_does_not_license_an_unobserved_number(
+        self, tmp_path: Path
+    ) -> None:
+        """Handling a symbol and observing a value are separate capabilities."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="What is Tesla trading at?",
+        )
+        ledger.ingest_tool_result(
+            tool_name="search_symbol",
+            arguments={"query": "Tesla"},
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "data": {
+                        "candidates": [
+                            {"symbol": "TSLA.US", "name": "Tesla", "source": "yahoo"}
+                        ]
+                    },
+                }
+            ),
+            call_id="resolve",
+            success=True,
+        )
+
+        result = ledger.validate_final_answer(
+            "TSLA.US currently sits around 412.35."
+        )
+
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unverified_numeric_claim"
+        ]
+
     def test_a_figure_on_an_unhandled_ticker_is_rejected(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
-            f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。"
+            f"{_GROUNDED_ANSWER}\n600519.SH 收盘价 1680.0。"
         )
 
         assert result.valid is False
@@ -262,14 +331,16 @@ class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
             success=False,
         )
 
-        result = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\nFAKE.US 收盘 9.9。")
+        result = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\nFAKE.US 收盘价 9.9。")
 
         assert result.valid is False
         assert "unsourced_symbol_figures" in [issue["code"] for issue in result.issues]
 
     def test_the_correction_names_the_way_out(self, tmp_path: Path) -> None:
         ledger = _ledger(tmp_path)
-        validation = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。")
+        validation = ledger.validate_final_answer(
+            f"{_GROUNDED_ANSWER}\n600519.SH 收盘价 1680.0。"
+        )
 
         prompt = ledger.correction_prompt(validation)
 
@@ -291,12 +362,15 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_a_percentage_on_an_unhandled_ticker_is_allowed(self, tmp_path: Path) -> None:
+    def test_a_percentage_on_an_unhandled_ticker_requires_provenance(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
             f"{_GROUNDED_ANSWER}\n600519.SH 年内涨约 12%。"
         )
 
-        assert result.valid is True, result.issues
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [
+            issue["code"] for issue in result.issues
+        ]
 
     def test_a_calendar_date_on_an_unhandled_ticker_is_allowed(self, tmp_path: Path) -> None:
         result = _ledger(tmp_path).validate_final_answer(
@@ -359,10 +433,10 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_the_root_allowance_does_not_licence_an_untouched_ticker(
+    def test_unhandled_ticker_financial_fact_requires_provenance(
         self, tmp_path: Path
     ) -> None:
-        """Only the root a succeeding call actually passed in is licensed."""
+        """A non-price fact still cannot be invented for an untouched ticker."""
         ledger = GroundingLedger(
             run_dir=tmp_path,
             user_message="Summarize AAPL's latest annual filing.",
@@ -380,7 +454,58 @@ class TestTheGateDoesNotKillCorrectAnswers:
         )
 
         assert result.valid is False
-        assert [issue["code"] for issue in result.issues] == ["unsourced_symbol_figures"]
+        assert [issue["code"] for issue in result.issues] == [
+            "unsourced_symbol_figures"
+        ]
+
+    def test_handled_ticker_financial_fact_requires_the_value(
+        self, tmp_path: Path
+    ) -> None:
+        """A successful filing call cannot license a value it did not return."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Summarize AAPL's latest annual filing.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"symbol": "AAPL", "form_type": "10-K"},
+            result=json.dumps({"status": "success", "data": {"symbol": "AAPL"}}),
+            call_id="f1",
+            success=True,
+        )
+
+        result = ledger.validate_final_answer(
+            "AAPL.US reported revenue of 400.0 billion USD."
+        )
+
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unverified_numeric_claim"
+        ]
+
+    def test_non_price_table_cannot_bypass_numeric_provenance(
+        self, tmp_path: Path
+    ) -> None:
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Summarize AAPL's latest annual filing.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"symbol": "AAPL", "form_type": "10-K"},
+            result=json.dumps({"status": "success", "data": {"symbol": "AAPL"}}),
+            call_id="f1",
+            success=True,
+        )
+
+        result = ledger.validate_final_answer(
+            "| Symbol | Revenue (USD bn) |\n| --- | --- |\n| AAPL.US | 400.0 |"
+        )
+
+        assert result.valid is False
+        assert [issue["code"] for issue in result.issues] == [
+            "unverified_numeric_claim"
+        ]
 
     def test_a_shortlist_candidate_is_allowed(self, tmp_path: Path) -> None:
         """A resolver that offered the symbol is a tool that returned it."""
@@ -422,24 +547,18 @@ class TestTheGateDoesNotKillCorrectAnswers:
 
         assert result.valid is True, result.issues
 
-    def test_the_gate_is_strict_about_encyclopaedic_figures_on_purpose(
+    def test_unhandled_index_count_requires_provenance(
         self, tmp_path: Path
     ) -> None:
-        """Where it is strict, it is strict knowingly.
-
-        A definitional figure recited about an instrument the session never
-        fetched is still a figure with no origin but memory, so it is rejected.
-        The alternative — exempting runs the identity gate has not already
-        flagged — opens the case where a symbol-free request ("看看新能源板块")
-        ends in fabricated quotes, so the strictness is kept and the model is
-        handed one round trip to source the figure or call it not retrieved.
-        """
+        """Unknown wording is blocked even when the number is not a price."""
         ledger = GroundingLedger(run_dir=tmp_path, user_message="A股宽基指数有哪些")
 
         result = ledger.validate_final_answer("000300.SH 覆盖 300 只成分股。")
 
         assert result.valid is False
-        assert [issue["code"] for issue in result.issues] == ["unsourced_symbol_figures"]
+        assert [issue["code"] for issue in result.issues] == [
+            "unsourced_symbol_figures"
+        ]
 
 
 class TestTheSemanticPrinciplesStayInThePrompt:
