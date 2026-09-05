@@ -244,6 +244,14 @@ class LiveOrderGuardTool(MCPRemoteTool):
             return intent
 
         price = self._quote_price(intent)
+        # A buy limit is fillable anywhere up to its limit, so the cap must be
+        # sized for the worse of the two — same rule as the direct-SDK
+        # gate (src.live.sdk_order_gate._implied_notional). Without this the
+        # MCP path priced a buy limit at the quote alone, so a limit at 2x the
+        # market could fill at twice the authorized notional. Sell limits do
+        # not create exposure, so the quote stands there.
+        if intent.side == "buy" and intent.limit_price is not None and price is not None:
+            price = max(price, intent.limit_price)
         if price is None:
             return None
         implied = intent.quantity * price

@@ -55,6 +55,10 @@ _NOTIONAL_KEYS = ("notional_usd", "notional", "dollar_amount", "amount")
 #: Order-size keys for the share/contract/coin quantity path.
 _QUANTITY_KEYS = ("quantity", "qty", "shares", "units")
 
+#: Buy-limit worst-case fill price for notional math. Only the exact
+#: normalized name is mapped — never guessed from aliases.
+_LIMIT_PRICE_KEY = "limit_price"
+
 
 def extract_order_intent(remote_name: str, kwargs: dict) -> OrderIntent | None:
     """Parse Robinhood ``place_equity_order`` kwargs into a normalized :class:`OrderIntent`.
@@ -95,12 +99,27 @@ def extract_order_intent(remote_name: str, kwargs: dict) -> OrderIntent | None:
     if notional is None and quantity is None:
         return None
 
+    # A buy limit is fillable anywhere up to its limit: kwargs are forwarded
+    # verbatim, so a limit price the gate cannot see is exactly the sizing
+    # hole the merged SDK-path fix (789ca2b1) closed. Present-but-unparseable
+    # is ambiguous → DENY (fail-closed); absent → None (market-order sizing).
+    # Infinity (float overflow, "1e999", "inf") has no finite worst case, so
+    # it counts as unparseable too — and must never reach enforcement math
+    # or the audit records as an infinite notional.
+    if _LIMIT_PRICE_KEY in kwargs:
+        limit_price = _first_positive_float(kwargs, (_LIMIT_PRICE_KEY,))
+        if limit_price is None or limit_price == float("inf"):
+            return None
+    else:
+        limit_price = None
+
     return OrderIntent(
         symbol=symbol,
         side=side,
         notional_usd=notional,
         quantity=quantity,
         instrument_type=instrument,
+        limit_price=limit_price,
     )
 
 

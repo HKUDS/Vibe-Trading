@@ -114,6 +114,44 @@ def test_extractor_rejects_missing_or_ambiguous_fields() -> None:
     assert extract_order_intent("place_equity_order", {"symbol": "AAPL", "side": "buy", "instrument_type": "equity"}) is None
 
 
+def test_extractor_maps_limit_price() -> None:
+    """A buy limit's worst-case fill price must reach the
+    gate, which sizes the notional at the worse of quote and limit."""
+    intent = extract_order_intent(
+        "place_equity_order",
+        {"symbol": "AAPL", "side": "buy", "instrument_type": "equity",
+         "quantity": 5, "limit_price": 200.0},
+    )
+    assert intent is not None
+    assert intent.limit_price == pytest.approx(200.0)
+
+
+def test_extractor_limit_price_absent_is_none() -> None:
+    """No limit_price kwarg → market-order sizing (intent.limit_price None)."""
+    intent = extract_order_intent(
+        "place_equity_order",
+        {"symbol": "AAPL", "side": "buy", "instrument_type": "equity", "quantity": 5},
+    )
+    assert intent is not None
+    assert intent.limit_price is None
+
+
+def test_extractor_rejects_unparseable_limit_price() -> None:
+    """A present-but-unparseable limit price is forwarded to the broker verbatim
+    and cannot be priced → the whole intent is ambiguous → DENY (fail-closed)."""
+    assert extract_order_intent(
+        "place_equity_order",
+        {"symbol": "AAPL", "side": "buy", "instrument_type": "equity",
+         "quantity": 5, "limit_price": "not-a-price"},
+    ) is None
+    # Non-positive and NaN are equally unusable.
+    assert extract_order_intent(
+        "place_equity_order",
+        {"symbol": "AAPL", "side": "buy", "instrument_type": "equity",
+         "quantity": 5, "limit_price": 0},
+    ) is None
+
+
 # --------------------------------------------------------------------------- #
 # L6 — quantity-only quote derivation through the gate                         #
 # --------------------------------------------------------------------------- #
@@ -320,3 +358,15 @@ def test_normalization_preserves_a_none_asset_class(live_runtime: Path) -> None:
     normalized = guard._normalize_intent_notional(intent)
     assert normalized is not None
     assert normalized.asset_class is None
+
+
+@pytest.mark.parametrize("bad", ["inf", "1e999", float("inf"), "9" * 400])
+def test_extractor_rejects_non_finite_limit_price(bad) -> None:
+    """A limit price of Infinity (via overflow or 'inf' spellings) has no
+    finite worst case, so it must be DENIED at extraction — never allowed to
+    reach enforcement math or the audit records as an infinite notional."""
+    assert extract_order_intent(
+        "place_equity_order",
+        {"symbol": "AAPL", "side": "buy", "instrument_type": "equity",
+         "quantity": 5, "limit_price": bad},
+    ) is None
