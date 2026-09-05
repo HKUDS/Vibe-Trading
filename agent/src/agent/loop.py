@@ -468,10 +468,9 @@ def _microcompact(messages: list) -> list:
         messages: Message list (mutated in place).
 
     Returns:
-        Names of tools whose every result just became unreadable. The caller
-        drops these from the dedup ledger: blocking a re-call with "use the
-        previous result" only makes sense while that result is still in
-        context, and a cleared result is not.
+        Names of tools whose every result just became unreadable (legacy
+        helper contract). The loop reconciles its dedup ledger separately by
+        exact successful call identity, not by these tool names.
     """
     tool_msgs = [m for m in messages if m.get("role") == "tool"]
     if len(tool_msgs) <= KEEP_RECENT:
@@ -1074,6 +1073,9 @@ class AgentLoop:
         # deterministic cache uses, so the block path and the cache path can
         # never disagree about what 'the same call' means.
         self._called_ok: set[tuple[str, str]] = set()
+        # Capture successful identities before context collapse can stub args.
+        # Skipped/error call IDs never enter this ledger.
+        self._successful_call_keys: dict[str, tuple[str, str]] = {}
         self._cancel_event = threading.Event()
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
@@ -1179,6 +1181,7 @@ class AgentLoop:
         else:
             self._has_run = True
         self._called_ok = set()
+        self._successful_call_keys = {}
         self._previous_summary = ""
         self._released_fallback = False
         self._released_fallback_reason = None
@@ -2119,6 +2122,8 @@ class AgentLoop:
                 if cache_key is not None and cache_key in self._called_identical:
                     cached = self._called_identical[cache_key]
                     messages.append(context.format_tool_result(tc.id, tc.name, cached))
+                    self._successful_call_keys[tc.id] = cache_key
+                    self._called_ok.add(cache_key)
                     trace.write({
                         "type": "tool_result_cached",
                         "iter": iteration,
@@ -2641,14 +2646,12 @@ class AgentLoop:
         )
 
     def _microcompact_and_unblock(self, messages: list, trace: TraceWriter, iteration: int) -> list[str]:
-        """Run layer-1 microcompact and re-open the tools it made unreadable.
+        """Run layer-1 microcompact and re-open lost readonly call identities.
 
-        The dedup ledger may only point the model at a result that is still in
-        context. Once microcompact clears every result a tool produced, the
-        "already completed successfully, use the previous result" skip is
-        pointing at ``[cleared]``, which is how #1343 deadlocked: the model
-        needed the numbers, could not see them, re-called, and was blocked 44
-        times.
+        A readable result for another argument variant, or a synthetic skip,
+        cannot satisfy "use the previous result". Keep an exact call gated if
+        any successful copy survives; never re-open mutating tools just because
+        their results were compacted away.
 
         Args:
             messages: Message list, mutated in place by the compaction.
@@ -2660,24 +2663,37 @@ class AgentLoop:
         Returns:
             The tool names re-opened, for callers and tests to assert on.
         """
-        unreadable_tools = _microcompact(messages)
+        readable_before = self._readable_success_keys(messages)
+        _microcompact(messages)
+        unreadable_tools = self._unblock_lost_readonly_results(messages, readable_before)
         if unreadable_tools:
-            # The ledger is keyed by (tool name, canonical arguments), so a
-            # name cannot be subtracted from it directly: a plain
-            # ``difference_update`` of names against tuples removes nothing and
-            # the unblock silently becomes a no-op. Drop EVERY argument variant
-            # of a cleared tool — microcompact only reports a name once no
-            # readable result of any variant survives.
-            cleared = set(unreadable_tools)
-            self._called_ok = {
-                key for key in self._called_ok if key[0] not in cleared
-            }
             trace.write({
                 "type": "microcompact_cleared",
                 "iter": iteration,
                 "tools": unreadable_tools,
             })
         return unreadable_tools
+
+    def _readable_success_keys(self, messages: list) -> set[tuple[str, str]]:
+        """Identify surviving successful results, not synthetic skip/stub calls."""
+        return {
+            self._successful_call_keys[msg["tool_call_id"]]
+            for msg in messages
+            if msg.get("role") == "tool"
+            and msg.get("tool_call_id") in self._successful_call_keys
+            and not _result_data_gone(msg.get("content"))
+        }
+
+    def _unblock_lost_readonly_results(
+        self, messages: list, readable_before: set[tuple[str, str]]
+    ) -> list[str]:
+        """Recover only lost exact queries; context loss cannot replay writes."""
+        lost = readable_before - self._readable_success_keys(messages)
+        reopened = {
+            key for key in lost & self._called_ok if self._is_tool_readonly(key[0])
+        }
+        self._called_ok.difference_update(reopened)
+        return sorted({key[0] for key in reopened})
 
     def _identical_call_key(self, tool_name: str, arguments: Mapping[str, Any]) -> tuple[str, str] | None:
         """Build a stable key identifying a deterministic tool invocation.
@@ -2734,6 +2750,7 @@ class AgentLoop:
             recorded_key = self._identical_call_key(tc.name, tc.arguments)
             if recorded_key is not None:
                 self._called_ok.add(recorded_key)
+                self._successful_call_keys[tc.id] = recorded_key
             if tc.name == "backtest":
                 try:
                     _archive_backtest_result(result, self.memory.run_dir)
@@ -2834,6 +2851,7 @@ class AgentLoop:
             for msg in messages:
                 f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
 
+        readable_before = self._readable_success_keys(messages)
         system_msg = messages[0]
         body = messages[1:]
 
@@ -2975,6 +2993,7 @@ class AgentLoop:
 
         # Fix orphaned tool pairs in the reconstructed message list
         _fix_tool_pairs(messages)
+        self._unblock_lost_readonly_results(messages, readable_before)
 
     def _emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Fire an event via the callback."""
