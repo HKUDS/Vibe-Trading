@@ -86,7 +86,7 @@ def test_bare_number_still_extracted():
         # A trailing CJK character rather than punctuation: \b after a CJK
         # unit needs a non-word char to follow, so this is the case that
         # breaks if the boundary is reintroduced there.
-        "毛利率下降 3.6 个百分点，主因是原材料",
+        "毛利率下降 3.6 个百分点后企稳",
     ],
 )
 def test_chinese_percentage_point_deltas_are_masked(text: str) -> None:

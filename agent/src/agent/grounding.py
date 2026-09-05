@@ -309,7 +309,7 @@ _PERCENT_RANGE_RE = re.compile(
 # The Chinese units take an optional measure word ("3.6 个百分点" is the
 # ordinary spelling; bare "3.6 百分点" is the rare one) and are matched
 # without a trailing \b: after a CJK character \b requires a non-word
-# character to follow, so "下降 3.6 个百分点，主因…" would not match. The
+# character to follow, so "下降 3.6 个百分点后企稳" would not match. The
 # ASCII units keep \b, which is what stops "3.6ppm" being read as pp.
 _PERCENTAGE_POINT_RE = re.compile(
     r"[-+~≈]?\s*\d[\d,]*(?:\.\d+)?\s*"
