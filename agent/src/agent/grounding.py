@@ -42,6 +42,18 @@ from src.agent.resolution_context import (
 GROUNDING_ARTIFACT = "grounding_evidence.json"
 
 _RESOLVER_TOOL = "search_symbol"
+
+# Tools whose successful completion can ground backtest/analysis metric claims
+# (#1336). Success alone is not authority: only results that actually carried
+# metric output (parsed from the result or its run-dir artifacts) raise
+# ``analysis_claim_unavailable``. A deduplicated ("skipped") call is never a
+# completion.
+_ANALYSIS_TOOLS = frozenset(
+    {"backtest", "factor_analysis", "run_shadow_backtest", "quantlib_call"}
+)
+# Tools whose run produces the equity/regime windows behind a categorical
+# "all N-month windows were profitable" statement.
+_ANALYSIS_WINDOW_TOOLS = frozenset({"backtest", "run_shadow_backtest"})
 _PRIVATE_COMPANY_SKILL_NAMES = {
     "private-company",
     "private-company-analysis",
@@ -231,8 +243,134 @@ _PRICE_CONTEXT_RE = re.compile(
     r"现价|报价|价格|价位)",
     re.IGNORECASE,
 )
+_ANALYSIS_METRIC_RE = re.compile(
+    r"(?:\breturn vol(?:atility)?\b|\bmax(?: |\.)?drawdown\b|\bmaxdd\b|"
+    r"\bsharpe(?: ratio)?\b|\bwin rate\b|\bhit rate\b|"
+    r"\bprob(?:ability)?\.?\s+of\b|\bvolatility\b|\bdrawdown\b|"
+    r"\bannualiz\w*\b|\bwindow(?:s)?\b|\bregime(?:s)?\b|"
+    r"\b(?:annual|cumulative|total)\s+return\b|"
+    r"夏普|回撤|波动率|胜率|命中率|概率|年化|回测|窗口|收益(?:率)?|回报(?:率)?)",
+    re.IGNORECASE,
+)
+# Phrases that indicate a figure is attributed to an external source rather
+# than model memory (paper restatement, #1338 review). Attributing a number
+# to a named source is the opposite of an unsourced claim. The subject list
+# is deliberately restricted to sources that cannot be this run's own output
+# (papers, studies, analysts, filings): "the backtest reports" / "the data
+# shows" is exactly how a model dresses up its own numbers (#1336), so
+# data/backtest/strategy/report subjects do NOT count.
+_ATTRIBUTION_RE = re.compile(
+    r"(?:"
+    r"\b(?:the\s+(?:papers?|studies?|researchers?|analysts?|surveys?"
+    r"|regulators?|authorities|literature|authors?)"
+    r"|analysts?|researchers?|literature|sec\s+filings?\b|filings?"
+    r"|annual\s+filings?|quarterly\s+filings?|rating\s+agencies?)"
+    r"\s+(?:reports?|estimates?|shows?|indicates?|suggests?|states?|claims?"
+    r"|notes?|cites?|mentions?|reveals?|discloses?|publishes?|found"
+    r"|calculated|computed|derived)\b"
+    r"|"
+    r"(?:论文|文献|分析师|研究机构|学者)"
+    r"[^。，\n]{0,6}?(?:报告|显示|表明|指出|称|估计|发现)"
+    r")",
+    re.IGNORECASE,
+)
+# Measurement-shaped numbers for analysis claims: keeps the % sign and sign
+# (unlike _numbers_without_dates_or_percent, which drops percentages on
+# purpose). A bare integer is NOT a measurement — "252 个交易日年化" is the
+# standard convention, not a claim about this run's analysis (#1032-style
+# definitional prose must stay untouched). Dates can still look like
+# measurements, so date masks run first.
+_MEASURE_NUMBER_RE = re.compile(
+    r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)\s*[%％]?"  # decimal: 1.21, -8.1%
+    r"|[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)\s*[%％]"  # integer percent: 55%, 70%
+)
+# A forward-looking frame means the figure is a forecast, not a claim that a
+# backtest/analysis measured it — the measurement gate only polices "measured
+# facts" (#1336), forecasts stay under the "analysis, not advice" prompt rule.
+_FORECAST_FRAME_RE = re.compile(
+    r"(?:\b(?:forecast|expected|projected|predicted)\b|预计|预期|预测|估计|展望)",
+    re.IGNORECASE,
+)
+
+# Metric family for a claim/evidence leaf, so a figure is only grounded by
+# evidence of its own kind: an observed price must never stand in for an
+# invented volatility (#1336).
+_ANALYSIS_KIND_ALIASES = {
+    "annualized_vol": "vol",
+    "annualized_volatility": "vol",
+    "volatility": "vol",
+    "return_vol": "vol",
+    "return_volatility": "vol",
+    "vol": "vol",
+    "max_drawdown": "drawdown",
+    "maxdd": "drawdown",
+    "drawdown": "drawdown",
+    "sharpe": "sharpe",
+    "sharpe_ratio": "sharpe",
+    "win_rate": "win_rate",
+    "hit_rate": "win_rate",
+    "hitrate": "win_rate",
+    "probability": "probability",
+    "prob": "probability",
+    "total_return": "return",
+    "annual_return": "return",
+    "cumulative_return": "return",
+    "benchmark_return": "return",
+    "excess_return": "return",
+    "annualized_return": "return",
+    "return": "return",
+    "returns": "return",
+    "ic_positive_ratio": "win_rate",
+}
+
+# Order matters: 最大回撤 is drawdown before 收益/return, and 年化波动率 is vol
+# before the generic return branch.
+_ANALYSIS_KIND_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?:回撤|drawdown|maxdd|最大亏损)", re.IGNORECASE), "drawdown"),
+    (
+        re.compile(
+            r"(?:波动率|波动性|volatility|annualized\s*vol|return\s*vol|年化波动)",
+            re.IGNORECASE,
+        ),
+        "vol",
+    ),
+    (re.compile(r"(?:夏普|sharpe)", re.IGNORECASE), "sharpe"),
+    (re.compile(r"(?:胜率|命中率|win\s*rate|hit\s*rate)", re.IGNORECASE), "win_rate"),
+    (re.compile(r"(?:概率|probability|prob)", re.IGNORECASE), "probability"),
+    (re.compile(r"(?:收益|回报|收益率|回报率|\breturns?\b)", re.IGNORECASE), "return"),
+)
+
+# Definitional prose ("夏普比率大于 1.0 通常被认为较好") states a convention,
+# not a measurement this session produced (#1336: preserve explicitly labelled
+# definitions). The bare 通常 alone is deliberately not enough — "通常实现
+# 18.2% 年化" is a measured claim.
+_DEFINITION_FRAME_RE = re.compile(
+    r"(?:通常(?:认为|被?认为|说来|指|用于)|一般认为|定义为|是指|惯例|"
+    r"conventionally|typically\s+(?:considered|regarded|seen)|"
+    r"generally\s+(?:accepted|considered|regarded)|by\s+convention)",
+    re.IGNORECASE,
+)
+
+# A categorical "all N-month windows were profitable" claim carries only an
+# integer window length, which _MEASURE_NUMBER_RE deliberately ignores; it is a
+# measured fact about the run and needs a window-producing analysis result.
+_CATEGORICAL_WINDOW_RE = re.compile(
+    r"(?:所有|全部|每个|任何|each|every|all)[\s\S]{0,40}?"
+    r"(?:窗口|区间|windows?|periods?)[\s\S]{0,30}?"
+    r"(?:正收益|均为正|都为正|盈利|上涨|positive|profitable)",
+    re.IGNORECASE,
+)
 _DERIVATION_RE = re.compile(
     r"(?:\bderived\b|\bcalculated\b|\bformula\b|\bbased on\b|计算|推导|公式|基于)",
+    re.IGNORECASE,
+)
+# "从 2026-08-03 的 100.0 涨到 2026-09-02 的 112.4" / "rose from 100.0 to
+# 112.4": a return figure framed as growth between two endpoints is
+# arithmetic on sourced inputs, not an invented backtest metric (#1338
+# review). The frame alone never grounds anything — the values must also
+# match an observed endpoint pair exactly (see _return_derived_from_observed).
+_GROWTH_FRAME_RE = re.compile(
+    r"从[^，。;；\n]{0,60}?(?:到|至)|\bfrom\b[^,;。\n]{0,80}?\bto\b",
     re.IGNORECASE,
 )
 _NUMBER_RE = re.compile(
@@ -852,6 +990,35 @@ def _price_field_for_path(path: str) -> str | None:
     return _GENERIC_PRICE_FIELD_ALIASES.get(leaf)
 
 
+def _metric_kind_for_path(path: str) -> str | None:
+    """Map an evidence JSON path to an analysis metric kind."""
+    leaf = re.sub(r"\[\d+\]$", "", str(path or "").rsplit(".", 1)[-1])
+    leaf = leaf.strip().casefold()
+    kind = _ANALYSIS_KIND_ALIASES.get(leaf)
+    if kind is not None:
+        return kind
+    # Compound leaves name the kind as a token ("reported_annualized_return",
+    # "strategy_max_drawdown"). #1338 review: matching only the verbatim alias
+    # table makes every other spelling silently ungroundable. Scan from the
+    # right — English compounds put the head noun last, so "return_vol"
+    # resolves to vol, never to return.
+    tokens = [token for token in re.split(r"[_.]", leaf) if token]
+    for size in (2, 1):
+        for start in range(len(tokens) - size, -1, -1):
+            kind = _ANALYSIS_KIND_ALIASES.get("_".join(tokens[start : start + size]))
+            if kind is not None:
+                return kind
+    return _metric_kind_for_text(path)
+
+
+def _metric_kind_for_text(text: str) -> str | None:
+    """Return the analysis metric kind named in a claim or header."""
+    for pattern, kind in _ANALYSIS_KIND_PATTERNS:
+        if pattern.search(text):
+            return kind
+    return None
+
+
 def _scan_symbols(text: str) -> set[str]:
     """Return the canonical symbols written anywhere in a blob of text."""
     return {
@@ -1052,6 +1219,8 @@ class GroundingLedger:
         self._identities: dict[str, IdentityRecord] = {}
         self._evidence: list[EvidenceRecord] = []
         self._tool_failures: list[dict[str, Any]] = []
+        self._analysis_completed: list[dict[str, Any]] = []
+        self._analysis_metrics: list[dict[str, Any]] = []
         self._validations: list[dict[str, Any]] = []
         self._recovery_rounds = 0
         self._symbol_resolution_attempts = 0
@@ -1342,6 +1511,8 @@ class GroundingLedger:
             return
 
         self._track_session_symbols(arguments, result)
+        if tool_name in _ANALYSIS_TOOLS:
+            self._ingest_analysis_result(tool_name, arguments, payload, call_id)
         if tool_name == _RESOLVER_TOOL:
             self._ingest_resolution(arguments, payload, call_id)
         elif tool_name == "get_market_data":
@@ -1349,6 +1520,190 @@ class GroundingLedger:
         elif payload is not None:
             self._ingest_generic_numeric(tool_name, arguments, payload, call_id)
         self.persist()
+
+    def _ingest_analysis_result(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any] | None,
+        call_id: str,
+    ) -> None:
+        """Record metric numbers a completed analysis result actually produced.
+
+        Success of the call envelope is not enough: ``backtest`` reports ok for
+        any runner exit, and a deduplicated ("skipped") call carries no new
+        result at all (#1336). Only results that yielded at least one
+        recognisable metric figure count as completed analysis.
+        """
+        if payload is None or payload.get("skipped"):
+            return
+        if tool_name == "backtest":
+            if str(payload.get("status") or "").casefold() != "ok" and payload.get(
+                "exit_code"
+            ) not in (0, "0"):
+                return
+            recorded = self._record_backtest_metrics(arguments, payload, call_id)
+        elif tool_name == "factor_analysis":
+            if str(payload.get("status") or "").casefold() != "ok":
+                return
+            recorded = self._record_leaf_metrics(payload, call_id, tool_name, "")
+        elif tool_name == "run_shadow_backtest":
+            if str(payload.get("status") or "").casefold() != "ok":
+                return
+            combined = payload.get("combined")
+            if not isinstance(combined, dict):
+                # A combined dict containing only {"error": ...} is no analysis.
+                return
+            recorded = self._record_leaf_metrics(combined, call_id, tool_name, "combined")
+        elif tool_name == "quantlib_call":
+            if payload.get("ok") is not True or str(
+                arguments.get("action") or ""
+            ).casefold() != "call":
+                return
+            function = str(arguments.get("function") or "")
+            recorded = self._record_leaf_metrics(
+                payload.get("result"), call_id, tool_name, function
+            )
+        else:
+            return
+        if recorded:
+            self._analysis_completed.append(
+                {"call_id": call_id, "tool": tool_name, "recorded_at": _utc_now()}
+            )
+
+    def _record_leaf_metrics(
+        self,
+        value: Any,
+        call_id: str,
+        tool_name: str,
+        field_prefix: str,
+    ) -> int:
+        """Record nested numeric leaves whose key names a metric kind."""
+        recorded = 0
+
+        def visit(item: Any, path: str) -> None:
+            nonlocal recorded
+            if _is_number(item):
+                kind = _metric_kind_for_path(path)
+                if kind is None:
+                    return
+                self._analysis_metrics.append(
+                    {
+                        "metric": kind,
+                        "value": float(item),
+                        "tool": tool_name,
+                        "call_id": call_id,
+                        "field": path,
+                    }
+                )
+                recorded += 1
+                return
+            if isinstance(item, dict):
+                for key, child in item.items():
+                    visit(child, f"{path}.{key}" if path else str(key))
+            elif isinstance(item, list):
+                for index, child in enumerate(item):
+                    visit(child, f"{path}[{index}]")
+
+        visit(value, field_prefix or "")
+        return recorded
+
+    def _record_backtest_metrics(
+        self,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any],
+        call_id: str,
+    ) -> int:
+        """Parse metric figures from a successful backtest's run-dir artifacts."""
+        root = self.run_dir.resolve()
+        candidates: list[Path] = []
+        raw_dir = arguments.get("run_dir") or payload.get("run_dir")
+        if raw_dir:
+            candidate = Path(str(raw_dir))
+            if not candidate.is_absolute():
+                candidate = self.run_dir / candidate
+            try:
+                resolved = candidate.resolve()
+                if resolved == root or resolved.is_relative_to(root):
+                    candidates.append(resolved)
+            except OSError:
+                pass
+        # The loop archives a detached backtest's artifacts into the active run
+        # dir right after it succeeds, so that copy is the second candidate.
+        candidates.append(root)
+        artifacts = payload.get("artifacts")
+        if isinstance(artifacts, dict):
+            for path_value in artifacts.values():
+                if not isinstance(path_value, str):
+                    continue
+                try:
+                    resolved = Path(path_value).resolve()
+                    if resolved.is_relative_to(root):
+                        candidates.append(resolved)
+                except OSError:
+                    continue
+        files: list[Path] = []
+        seen_dirs: set[Path] = set()
+        for candidate in candidates:
+            if candidate.is_file():
+                files.append(candidate)
+                continue
+            if candidate in seen_dirs:
+                continue
+            seen_dirs.add(candidate)
+            for dir_path in (candidate, candidate / "artifacts"):
+                for name in ("metrics.csv", "metrics.json"):
+                    target = dir_path / name
+                    if target.is_file():
+                        files.append(target)
+        recorded = 0
+        seen_files: set[Path] = set()
+        for file_path in files:
+            if file_path in seen_files:
+                continue
+            seen_files.add(file_path)
+            recorded += self._record_metrics_file(file_path, call_id)
+        return recorded
+
+    def _record_metrics_file(self, path: Path, call_id: str) -> int:
+        """Record metric figures from one metrics.csv/metrics.json artifact."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return 0
+        if path.suffix == ".json":
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                return 0
+            if not isinstance(data, dict):
+                return 0
+            return self._record_leaf_metrics(data, call_id, "backtest", "")
+        try:
+            rows = list(csv.reader(text.splitlines()))
+        except csv.Error:
+            return 0
+        if len(rows) < 2:
+            return 0
+        header = [cell.strip().casefold() for cell in rows[0]]
+        recorded = 0
+        for index, raw in enumerate(rows[1]):
+            if index >= len(header):
+                break
+            kind = _ANALYSIS_KIND_ALIASES.get(header[index])
+            value = _coerce_csv_number(raw)
+            if kind is not None and value is not None:
+                self._analysis_metrics.append(
+                    {
+                        "metric": kind,
+                        "value": float(value),
+                        "tool": "backtest",
+                        "call_id": call_id,
+                        "field": header[index],
+                    }
+                )
+                recorded += 1
+        return recorded
 
     def validate_final_answer(self, content: str) -> ValidationResult:
         """Validate identity assertions and numeric price claims.
@@ -1365,6 +1720,7 @@ class GroundingLedger:
         issues.extend(self._validate_identity(content))
         issues.extend(self._validate_unsourced_symbols(content))
         issues.extend(self._validate_price_claims(content))
+        issues.extend(self._validate_analysis_claims(content))
         result = ValidationResult(valid=not issues, issues=issues)
         self._validations.append(
             {
@@ -1393,7 +1749,7 @@ class GroundingLedger:
         for issue in validation.issues:
             code = issue.get("code")
             value = issue.get("value")
-            if code in {"numeric_claim_conflict", "numeric_claim_unavailable", "unsourced_symbol_figures"} and value is not None:
+            if code in {"numeric_claim_conflict", "numeric_claim_unavailable", "unsourced_symbol_figures", "analysis_claim_unavailable"} and value is not None:
                 symbol = issue.get("symbol") or ""
                 label = f"{value:g}" if isinstance(value, (int, float)) else str(value)
                 banned.append(f"{label} ({symbol})" if symbol else label)
@@ -1592,6 +1948,8 @@ class GroundingLedger:
                 "session_symbol_roots": sorted(self._session_symbol_roots),
                 "evidence": [asdict(record) for record in self._evidence],
                 "tool_failures": list(self._tool_failures),
+                "analysis_completed": list(self._analysis_completed),
+                "analysis_evidence": list(self._analysis_metrics),
                 "validations": list(self._validations),
             }
             temp.write_text(
@@ -2288,6 +2646,13 @@ class GroundingLedger:
                 )
                 if not unknown or not self._numbers_without_dates_or_percent(segment):
                     continue
+                # Accept figures that are attributed to an external source
+                # (e.g., "The paper reports a Sharpe ratio of 1.8.") rather
+                # than model memory. Scoped to the clause: a line-level check
+                # would let a citation in one clause launder an invented
+                # sibling metric in the next.
+                if _ATTRIBUTION_RE.search(segment):
+                    continue
                 for symbol in unknown:
                     reported.add(symbol)
                     issues.append(
@@ -2303,6 +2668,267 @@ class GroundingLedger:
                         }
                     )
         return issues
+
+    def _validate_analysis_claims(self, content: str) -> list[dict[str, Any]]:
+        """Reject backtest/analysis metrics with no kind-scoped evidence.
+
+        #1336: after failed or deduplicated market-data calls the model may
+        still present return-volatility / drawdown / probability figures as
+        measured facts. A metric figure is legitimate only when the run's
+        evidence contains the same *kind* of figure — recorded from a
+        completed analysis result (backtest artifacts, factor/shadow/quantlib
+        output) or from any successful tool's numeric output (e.g.
+        ``portfolio_risk_xray``, flattened into ``_evidence``). Kind scoping
+        is what keeps an observed price from standing in for an invented
+        volatility figure. Definitional prose ("夏普比率大于 1.0 通常被认为
+        较好"), explicitly forward-looking forecasts, and categorical
+        historical-window facts without any window-producing analysis are
+        handled separately here.
+
+        Args:
+            content: Candidate assistant answer.
+
+        Returns:
+            One issue per metric-bearing clause or table cell.
+        """
+        issues: list[dict[str, Any]] = []
+        lines = content.splitlines()
+        consumed: set[int] = set()
+        price_records = self._comparable_price_records()
+        for header, rows, row_indices in self._pipe_tables(lines):
+            consumed.update(row_indices)
+            columns = [
+                (cell, _metric_kind_for_text(cell), bool(_FORECAST_FRAME_RE.search(cell)))
+                for cell in header
+            ]
+            if not any(kind for _, kind, _ in columns):
+                continue
+            for row in rows:
+                cells = row + [""] * (len(columns) - len(row))
+                for (cell_text, kind, header_forecast), cell in zip(columns, cells):
+                    if kind is None or header_forecast:
+                        continue
+                    values = self._measure_numbers(cell)
+                    if not values:
+                        continue
+                    # A forecast annotation inside the cell ("预计 12.4%")
+                    # exempts only that cell, never its neighbours.
+                    if _FORECAST_FRAME_RE.search(cell) or _DEFINITION_FRAME_RE.search(
+                        cell
+                    ):
+                        continue
+                    unsupported = [
+                        value
+                        for value in values
+                        if not self._analysis_value_observed(value, kind)
+                    ]
+                    if not unsupported:
+                        continue
+                    issues.append(
+                        {
+                            "code": "analysis_claim_unavailable",
+                            "claim": f"{cell_text}: {cell}"[:200],
+                            "value": unsupported[0],
+                            "kind": kind,
+                            "message": (
+                                "No supporting analysis evidence (a completed "
+                                "backtest result or observed risk metric) exists "
+                                "for this figure. Mark the analysis as incomplete "
+                                "and omit these figures."
+                            ),
+                        }
+                    )
+        for index, line in enumerate(lines):
+            if index in consumed:
+                continue
+            line_symbol = self._symbol_for_claim(line, price_records)
+            for segment in _split_clauses(line):
+                if _CATEGORICAL_WINDOW_RE.search(segment) and _NUMBER_RE.search(segment):
+                    if not any(
+                        entry.get("tool") in _ANALYSIS_WINDOW_TOOLS
+                        for entry in self._analysis_completed
+                    ):
+                        match = _NUMBER_RE.search(segment)
+                        issues.append(
+                            {
+                                "code": "analysis_claim_unavailable",
+                                "claim": segment.strip()[:200],
+                                "value": match.group(0) if match else None,
+                                "message": (
+                                    "No backtest completed in this session, yet the "
+                                    "answer states a categorical historical-window "
+                                    "fact. Mark the analysis as incomplete and omit "
+                                    "this claim."
+                                ),
+                            }
+                        )
+                    continue
+                if _DEFINITION_FRAME_RE.search(segment):
+                    continue
+                # Attributed figures ("The paper reports a Sharpe of 1.8",
+                # or the marker in a neighbouring clause: "据研究显示，策略
+                # 年化收益 18.2%") are citations, not invented measurements
+                # — skip the gate.
+                if _ATTRIBUTION_RE.search(segment):
+                    continue
+                values = self._measure_numbers(segment)
+                if not values:
+                    continue
+                if not _ANALYSIS_METRIC_RE.search(segment):
+                    continue
+                if _FORECAST_FRAME_RE.search(segment):
+                    continue
+                kind = _metric_kind_for_text(segment)
+                unsupported = [
+                    value
+                    for value in values
+                    if not self._analysis_value_observed(value, kind)
+                ]
+                if not unsupported:
+                    continue
+                # A return figure may be arithmetic on sourced inputs rather
+                # than an invented backtest metric (#1338 review): an explicit
+                # formula anchored to observed values, or growth between two
+                # observed endpoints stated in the same line.
+                if kind == "return":
+                    if _DERIVATION_RE.search(line) and self._is_explicit_derivation(
+                        line, price_records, line_symbol
+                    ):
+                        continue
+                    if _GROWTH_FRAME_RE.search(line) and self._return_derived_from_observed(
+                        unsupported, price_records, line_symbol
+                    ):
+                        continue
+                issues.append(
+                    {
+                        "code": "analysis_claim_unavailable",
+                        "claim": segment.strip()[:200],
+                        "value": unsupported[0],
+                        "kind": kind,
+                        "message": (
+                            "No supporting analysis evidence (a completed "
+                            "backtest result or observed risk metric) exists for "
+                            "this figure. Mark the analysis as incomplete and omit "
+                            "these figures."
+                        ),
+                    }
+                )
+        return issues
+
+    @staticmethod
+    def _measure_numbers(text: str) -> list[str]:
+        """Extract measurement-shaped numbers (decimal or percent) from a claim."""
+        masked = _LOCALIZED_DATE_RE.sub(" ", text)
+        masked = _DATE_RE.sub(" ", masked)
+        masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _DASH_DATE_RE.sub(" ", masked)
+        return [
+            match.group(0).replace(" ", "").replace(",", "")
+            for match in _MEASURE_NUMBER_RE.finditer(masked)
+        ]
+
+    @staticmethod
+    def _pipe_tables(
+        lines: Sequence[str],
+    ) -> list[tuple[list[str], list[list[str]], list[int]]]:
+        """Yield (header cells, row cells, row line indices) per pipe table."""
+        tables: list[tuple[list[str], list[list[str]], list[int]]] = []
+        index = 0
+        while index < len(lines):
+            if lines[index].count("|") < 2:
+                index += 1
+                continue
+            block_start = index
+            block: list[str] = []
+            while index < len(lines) and lines[index].count("|") >= 2:
+                block.append(lines[index])
+                index += 1
+            rows: list[list[str]] = []
+            row_indices: list[int] = []
+            for offset, block_line in enumerate(block[1:], start=1):
+                cells = GroundingLedger._table_cells(block_line)
+                if not cells or all(
+                    _TABLE_SEPARATOR_RE.fullmatch(cell.strip()) for cell in cells
+                ):
+                    continue
+                rows.append(cells)
+                row_indices.append(block_start + offset)
+            tables.append((GroundingLedger._table_cells(block[0]), rows, row_indices))
+        return tables
+
+    def _analysis_value_observed(self, raw: str, kind: str | None) -> bool:
+        """Return True when a claim measurement matches kind-scoped evidence.
+
+        Tools disagree on scale: ``compute_risk_xray`` returns fractions
+        (annualized_vol 0.182, max_drawdown -0.094) while answers quote
+        percents (18.2%, -9.4%). Try both the value and its percent scaling
+        so an observed 0.182 grounds an 18.2% claim and vice versa. Drawdown
+        sign conventions disagree too (positive vs negative fraction), so
+        magnitude is compared for that kind. Only evidence of the claim's own
+        kind counts: an observed price never grounds a volatility figure.
+        """
+        try:
+            value = float(raw.replace("%", "").replace("％", "").replace(",", ""))
+        except ValueError:
+            return True
+        observed: list[float] = []
+        for record in self._analysis_metrics:
+            if record.get("metric") == kind and record.get("value") is not None:
+                observed.append(float(record["value"]))
+        for record in self._evidence:
+            if record.status != "observed" or record.value is None:
+                continue
+            if _metric_kind_for_path(record.field) != kind:
+                continue
+            observed.append(float(record.value))
+        candidates = {value, value / 100.0}
+        if kind == "drawdown":
+            candidates |= {abs(value), abs(value) / 100.0}
+
+        def close(candidate: float, item: float) -> bool:
+            return abs(candidate - item) <= max(abs(item) * 0.005, 1e-9)
+
+        return any(close(candidate, item) for candidate in candidates for item in observed)
+
+    def _return_derived_from_observed(
+        self,
+        claimed: Sequence[str],
+        records: Sequence[EvidenceRecord],
+        symbol: str | None,
+    ) -> bool:
+        """True when a return figure equals growth between observed endpoints.
+
+        #1338 review: "AAPL.US 从 2026-08-03 的 100.0 涨到 2026-09-02 的
+        112.4，区间收益率为 12.4%" states arithmetic on sourced inputs. Only
+        an exact (±0.5%) match against a pair of observed values grounds the
+        figure; the caller must already have verified the from/to frame, so a
+        bare unanchored return claim never reaches here.
+        """
+        candidates = [record for record in records if record.value is not None]
+        if symbol:
+            candidates = [record for record in candidates if record.symbol == symbol]
+        observed = sorted({float(record.value) for record in candidates})
+        if len(observed) < 2:
+            return False
+        values: list[float] = []
+        for raw in claimed:
+            try:
+                values.append(float(str(raw).rstrip("%％")))
+            except ValueError:
+                continue
+        for base in observed:
+            for target in observed:
+                if target == base:
+                    continue
+                derived = (target - base) / base
+                for value in values:
+                    if abs(value - derived) <= max(abs(derived) * 0.005, 1e-9):
+                        return True
+                    if abs(value - derived * 100.0) <= max(
+                        abs(derived * 100.0) * 0.005, 1e-9
+                    ):
+                        return True
+        return False
 
     def _validate_price_claims(self, content: str) -> list[dict[str, Any]]:
         """Check Markdown OHLC tables and price prose against observed records.
@@ -2341,6 +2967,16 @@ class GroundingLedger:
                     or document_symbol
                 )
                 if self._is_explicit_derivation(segment, records, symbol):
+                    continue
+                # An attributed figure ("The paper reports TSLA.US traded at
+                # 412.35") is a citation, not an invented price — skip the
+                # price gate too, for the same reason as the analysis and
+                # unsourced-symbol gates. Without this, an attributed price
+                # is rejected or accepted purely on whether its verb happens
+                # to match _PRICE_CONTEXT_RE ("reports" does, "estimate"
+                # doesn't), which is the exact vocabulary asymmetry under
+                # review.
+                if _ATTRIBUTION_RE.search(segment):
                     continue
                 for value in values:
                     issue = self._compare_price_claim(

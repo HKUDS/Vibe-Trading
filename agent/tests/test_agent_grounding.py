@@ -2788,3 +2788,586 @@ def test_fx_pair_resolution_authorizes_market_data_consumer(tmp_path: Path) -> N
     assert ledger.identity_status == "locked"
     assert ledger.authorized_symbols == {"GBPUSD=X"}
     assert authorization.allowed is True
+
+
+def test_backtest_metrics_rejected_when_analysis_tool_failed(
+    tmp_path: Path,
+) -> None:
+    """#1336: failed analysis tools cannot ground backtest-style metrics."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="比较几支标的并回测不同市场状态",
+    )
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": "runs/compare"},
+        result=(
+            '{"status": "error", "error": "market data unavailable after dedup"}'
+        ),
+        call_id="bt-failed",
+        success=False,
+    )
+
+    bad = ledger.validate_final_answer(
+        "| 策略 | Return vol | MaxDD | Prob. of hitting target |\n"
+        "|---|---:|---:|---:|\n"
+        "| M1 | 12.4% | -8.1% | 55% |"
+    )
+
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_backtest_metrics_rejected_when_no_analysis_result(
+    tmp_path: Path,
+) -> None:
+    """#1336: without any completed analysis, metric prose is unsupported."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="比较几个标的的历史行情",
+    )
+
+    bad = ledger.validate_final_answer(
+        "历史回测显示策略年化波动率约 18.2%，最大回撤 -9.4%，"
+        "夏普比率 1.21，命中目标概率 58%。"
+    )
+
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_backtest_metrics_accepted_after_successful_backtest(
+    tmp_path: Path,
+) -> None:
+    """#1336: a genuinely completed backtest grounds metrics its artifact holds."""
+    run_dir = tmp_path / "runs" / "compare"
+    (run_dir / "artifacts").mkdir(parents=True)
+    (run_dir / "artifacts" / "metrics.csv").write_text(
+        "total_return,sharpe,max_drawdown\n0.124,1.21,-0.081\n",
+        encoding="utf-8",
+    )
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="比较几支标的并回测不同市场状态",
+    )
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(run_dir)},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "exit_code": 0,
+                "run_dir": str(run_dir),
+                "artifacts": {
+                    "metrics.csv": str(run_dir / "artifacts" / "metrics.csv")
+                },
+            }
+        ),
+        call_id="bt-ok",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer(
+        "| 策略 | 年化收益 | 夏普比率 | MaxDD |\n"
+        "|---|---:|---:|---:|\n"
+        "| M1 | 12.4% | 1.21 | -8.1% |"
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_analysis_mention_without_figures_is_allowed(tmp_path: Path) -> None:
+    """#1336: refusal prose naming the gap is not a quantitative claim."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="回测这几个标的",
+    )
+
+    good = ledger.validate_final_answer(
+        "回测未能完成（行情数据不可用），因此无法给出波动率或回撤数据。"
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_metrics_from_successful_numeric_tool_are_allowed(
+    tmp_path: Path,
+) -> None:
+    """A successful generic analysis result grounds its returned metrics.
+
+    The real tool returns fractions (annualized_vol 0.182, max_drawdown
+    -0.094) while answers quote percents — the unit scaling must match.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "data": {
+                    "volatility": {"annualized_vol": 0.182},
+                    "drawdown": {"max_drawdown": -0.094},
+                    "sharpe": 1.21,
+                },
+            }
+        ),
+        call_id="risk-ok",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer(
+        "组合年化波动率 18.2%，最大回撤 -9.4%，夏普比率 1.21。"
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_partially_unsupported_analysis_metrics_are_rejected(
+    tmp_path: Path,
+) -> None:
+    """One observed metric cannot launder another invented metric."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "data": {"volatility": {"annualized_vol": 0.182}},
+            }
+        ),
+        call_id="risk-partial",
+        success=True,
+    )
+
+    bad = ledger.validate_final_answer(
+        "组合年化波动率 18.2%，最大回撤 -9.4%。"
+    )
+
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_forecast_probability_is_not_a_measured_claim(tmp_path: Path) -> None:
+    """#1336 gates measured facts, not forward-looking forecasts."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="明天市场会怎么样",
+    )
+
+    good = ledger.validate_final_answer(
+        "预计明日上涨概率 70%，波动率可能放大。"
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_valid_price_does_not_launder_unsupported_analysis_metric(
+    tmp_path: Path,
+) -> None:
+    """A valid quote must not make an invented backtest metric acceptable."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="AAPL.US 现价多少",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={"codes": ["AAPL.US"]},
+        result=json.dumps(
+            {"AAPL.US": [{"trade_date": "2026-09-02", "close": 18.2}]}
+        ),
+        call_id="quote",
+        success=True,
+    )
+
+    result = ledger.validate_final_answer(
+        "AAPL.US 收盘价 18.2 USD。历史回测年化波动率 18.2%。"
+    )
+
+    assert result.valid is False, result.issues
+    assert any(issue["code"] == "analysis_claim_unavailable" for issue in result.issues)
+
+
+def test_successful_backtest_only_supports_metrics_in_its_artifact(
+    tmp_path: Path,
+) -> None:
+    """One successful result must not authorize unrelated invented metrics."""
+    metrics = tmp_path / "artifacts" / "metrics.csv"
+    metrics.parent.mkdir()
+    metrics.write_text("annual_return,sharpe\n0.182,1.21\n", encoding="utf-8")
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="回测策略",
+    )
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(tmp_path)},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "run_dir": str(tmp_path),
+                "artifacts": {"metrics": str(metrics)},
+            }
+        ),
+        call_id="backtest",
+        success=True,
+    )
+
+    result = ledger.validate_final_answer(
+        "策略年化收益 18.2%，夏普比率 1.21，最大回撤 -9.4%。"
+    )
+
+    assert result.valid is False, result.issues
+    assert any(issue.get("value") == "-9.4%" for issue in result.issues)
+
+
+def test_skipped_analysis_result_does_not_authorize_metrics(tmp_path: Path) -> None:
+    """A skipped/deduplicated call is not a completed analysis."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(tmp_path)},
+        result=json.dumps({"skipped": True, "reason": "already completed"}),
+        call_id="backtest-skipped",
+        success=True,
+    )
+
+    result = ledger.validate_final_answer("回测年化收益 18.2%，最大回撤 -9.4%。")
+
+    assert result.valid is False, result.issues
+
+
+def test_integer_historical_window_claim_is_rejected(tmp_path: Path) -> None:
+    """Categorical claims about all historical windows need evidence too."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析策略")
+
+    result = ledger.validate_final_answer("所有历史 12 个月窗口均实现正收益。")
+
+    assert result.valid is False, result.issues
+    assert any(issue["code"] == "analysis_claim_unavailable" for issue in result.issues)
+
+
+def test_analysis_definition_is_not_rejected(tmp_path: Path) -> None:
+    """A threshold definition is not a measured result from this session."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="什么是夏普比率？")
+
+    result = ledger.validate_final_answer("夏普比率大于 1.0 通常被认为较好。")
+
+    assert result.valid is True, result.issues
+
+
+def test_forecast_table_cell_does_not_exempt_measured_cell(
+    tmp_path: Path,
+) -> None:
+    """A forecast column must not hide an unsupported historical metric cell."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="比较两种策略")
+
+    result = ledger.validate_final_answer(
+        "| 策略 | 预计收益 | 历史最大回撤 |\n"
+        "|---|---:|---:|\n"
+        "| M1 | 预计 12.4% | -8.1% |"
+    )
+
+    assert result.valid is False, result.issues
+    assert any(issue["code"] == "analysis_claim_unavailable" for issue in result.issues)
+
+
+def test_analysis_completion_is_persisted_with_metric_provenance(
+    tmp_path: Path,
+) -> None:
+    """The grounding artifact records why an analysis figure was accepted."""
+    metrics = tmp_path / "artifacts" / "metrics.csv"
+    metrics.parent.mkdir()
+    metrics.write_text("annual_return\n0.182\n", encoding="utf-8")
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(tmp_path)},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "run_dir": str(tmp_path),
+                "artifacts": {"metrics": str(metrics)},
+            }
+        ),
+        call_id="backtest",
+        success=True,
+    )
+
+    artifact = json.loads(
+        (tmp_path / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
+    )
+
+    assert artifact["analysis_evidence"]
+    assert artifact["analysis_evidence"][0]["metric"] == "return"
+
+
+def test_derived_interval_return_from_observed_endpoints_is_allowed(
+    tmp_path: Path,
+) -> None:
+    """#1338 review: a return figure derived from observed endpoints stays legal.
+
+    Both endpoints are observed evidence and the answer states the growth
+    inline — arithmetic on sourced inputs, not an invented backtest metric.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="AAPL.US 最近一个月走势如何",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={"codes": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "AAPL.US": [
+                    {"trade_date": "2026-08-03", "close": 100.0},
+                    {"trade_date": "2026-09-02", "close": 112.4},
+                ]
+            }
+        ),
+        call_id="quote",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer(
+        "AAPL.US 从 2026-08-03 的 100.0 涨到 2026-09-02 的 112.4，"
+        "区间收益率为 12.4%。"
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_derived_cumulative_return_english_is_allowed(tmp_path: Path) -> None:
+    """#1338 review: same derivation exemption for the English shape."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="AAPL.US price history",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={"codes": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "AAPL.US": [
+                    {"trade_date": "2026-08-03", "close": 100.0},
+                    {"trade_date": "2026-09-02", "close": 112.4},
+                ]
+            }
+        ),
+        call_id="quote",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer(
+        "AAPL.US rose from 100.0 to 112.4, a cumulative return of 12.4% "
+        "over the window."
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_unanchored_return_claim_is_still_rejected(tmp_path: Path) -> None:
+    """Without the from/to frame, a return figure stays gated."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="AAPL.US 价格",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={"codes": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "AAPL.US": [
+                    {"trade_date": "2026-08-03", "close": 100.0},
+                    {"trade_date": "2026-09-02", "close": 112.4},
+                ]
+            }
+        ),
+        call_id="quote",
+        success=True,
+    )
+
+    bad = ledger.validate_final_answer(
+        "AAPL.US 区间收益率为 12.4%，历史回测年化收益 18.2%。"
+    )
+
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_wrong_derived_return_arithmetic_is_rejected(tmp_path: Path) -> None:
+    """A from/to frame with arithmetic that no observed pair supports fails."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="AAPL.US 价格",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={"codes": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "AAPL.US": [
+                    {"trade_date": "2026-08-03", "close": 100.0},
+                    {"trade_date": "2026-09-02", "close": 112.4},
+                ]
+            }
+        ),
+        call_id="quote",
+        success=True,
+    )
+
+    bad = ledger.validate_final_answer(
+        "AAPL.US 从 2026-08-03 的 100.0 涨到 2026-09-02 的 112.4，"
+        "区间收益率为 30.5%。"
+    )
+
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue.get("value") == "30.5%" for issue in bad.issues
+    )
+
+
+def test_research_paper_reported_metrics_are_grounded(tmp_path: Path) -> None:
+    """#1338 review: attributed paper figures must not be suppressed.
+
+    research_papers reports `reported_annualized_return` / `reported_max_drawdown`
+    — compound leaves whose kind must resolve by token, not verbatim alias.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="查一下动量策略论文的回测表现",
+    )
+    ledger.ingest_tool_result(
+        tool_name="research_papers",
+        arguments={"query": "momentum"},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "data": {
+                    "results": [
+                        {
+                            "title": "Momentum crashes",
+                            "reported_annualized_return": 0.182,
+                            "reported_max_drawdown": -0.094,
+                        }
+                    ]
+                },
+            }
+        ),
+        call_id="rp-ok",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer(
+        "该论文报告其策略年化收益 18.2%，最大回撤 -9.4%（论文自述，非本次回测）。"
+    )
+
+    assert good.valid is True, good.issues
+
+
+def test_compound_metric_leaf_kind_resolution() -> None:
+    """Token-split kind resolution covers the compound-leaf family."""
+    from src.agent.grounding import _metric_kind_for_path
+
+    assert _metric_kind_for_path("results[0].reported_annualized_return") == "return"
+    assert _metric_kind_for_path("strategy_max_drawdown") == "drawdown"
+    assert _metric_kind_for_path("data.benchmark_return_vol") == "vol"
+    assert _metric_kind_for_path("data.hit_rate_daily") == "win_rate"
+    assert _metric_kind_for_path("data.risk_free_rate") is None
+    assert _metric_kind_for_path("data.trade_count") is None
+
+
+def test_analysis_gates_accept_attributed_paper_restatement(tmp_path: Path) -> None:
+    """An attributed figure is a citation, not an invented measurement (#1338
+    review): 'The paper reports a Sharpe ratio of 1.8' must pass with zero tool
+    results, in both languages, while unattributed phrasing stays blocked."""
+    for answer in (
+        "The paper reports a Sharpe ratio of 1.8 for the momentum factor.",
+        "该论文报告其策略夏普比率为 1.8。",
+        "研究机构指出该策略年化收益 18.2%。",
+        "文献指出因子年化收益 18.2%。",
+        "Analysts estimate an annualized volatility of 22%.",
+    ):
+        ledger = GroundingLedger(run_dir=tmp_path, user_message="Research the factor.")
+        issues = ledger.validate_final_answer(answer).issues
+        assert not [i for i in issues if i.get("code") == "analysis_claim_unavailable"], (
+            answer,
+            issues,
+        )
+
+
+def test_analysis_gate_still_rejects_unattributed_and_unsourced(
+    tmp_path: Path,
+) -> None:
+    """The attribution exemption must not launder model-memory figures: the
+    review's pinned reject pair and an invented metric with an ordinary prose
+    subject keep failing."""
+    for answer in (
+        "TSLA.US last traded at 412.35 USD.",
+        "特斯拉现价 412.35 美元。",
+        "The strategy reports a Sharpe ratio of 1.8.",
+    ):
+        ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze something.")
+        ledger.ingest_tool_result(
+            tool_name="get_market_data",
+            arguments={"codes": ["AAPL.US"]},
+            result=json.dumps(
+                {
+                    "AAPL.US": [
+                        {
+                            "trade_date": "2026-09-02T00:00:00",
+                            "close": 112.4,
+                        }
+                    ]
+                }
+            ),
+            call_id="md-1",
+            success=True,
+        )
+        issues = ledger.validate_final_answer(answer).issues
+        assert issues, answer
+        assert not any(
+            issue.get("code") == "analysis_claim_unavailable" and "1.8" not in str(issue)
+            for issue in issues
+        ), answer
+
+
+def test_attribution_exemption_cannot_launders_self_claims(tmp_path: Path) -> None:
+    """The #1336 attack shape must not escape via attribution vocabulary:
+    "the backtest/data shows" is a self-claim, and a citation in one clause
+    must not exempt an invented sibling metric in the next."""
+    for answer in (
+        "The backtest data shows an annualized return of 25%.",
+        "回测数据显示策略年化收益 25%。",
+        "数据显示策略夏普比率为 3.5。",
+        "根据本次回测，年化波动率 18.2%。",
+        "The strategy reports a Sharpe ratio of 1.8.",
+        "研究显示策略年化收益 25%。",
+        "研究报告显示策略年化收益 25%。",
+        "回测研究显示策略年化收益 25%。",
+        "投资者普遍认为其年化收益 25%。",
+        # citation in clause 1, invented sibling in clause 2
+        "The paper reports a Sharpe ratio of 1.8, and our strategy achieved "
+        "an annualized return of 47.3%.",
+    ):
+        ledger = GroundingLedger(run_dir=tmp_path, user_message="Research the factor.")
+        issues = ledger.validate_final_answer(answer).issues
+        assert [i for i in issues if i.get("code") == "analysis_claim_unavailable"], (
+            answer,
+            issues,
+        )
