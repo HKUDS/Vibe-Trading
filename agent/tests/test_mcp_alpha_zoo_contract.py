@@ -4,10 +4,13 @@ import asyncio
 import datetime as dt
 import inspect
 import json
+import os
 import re
 from pathlib import Path
 
 import mcp_server
+import pytest
+
 from src.tools.alpha_bench_tool import AlphaBenchTool
 from src.tools.alpha_zoo_tool import AlphaZooTool
 from src.tools import alpha_bench_tool as alpha_bench_module
@@ -201,6 +204,9 @@ def test_alpha_bench_rejects_output_outside_allowed_roots(monkeypatch) -> None:
     assert registry.calls == []
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="symlink creation requires privileges unavailable on Windows"
+)
 def test_alpha_bench_does_not_follow_preexisting_report_symlink(monkeypatch, tmp_path: Path) -> None:
     class _BenchRegistry:
         def get(self, alpha_id: str) -> object:

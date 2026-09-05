@@ -159,6 +159,9 @@ def test_write_calls_fsync_for_crash_safety(
         trace.close()
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="directory fsync is a POSIX-only durability primitive"
+)
 def test_new_trace_file_fsyncs_parent_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

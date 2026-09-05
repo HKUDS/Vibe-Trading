@@ -131,11 +131,7 @@ def _lock_token_file(handle: Any) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         return
     if msvcrt is not None:  # pragma: no cover - exercised with a platform mock.
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
-            os.fsync(handle.fileno())
+        # Lock byte 0 beyond EOF without writing a sentinel byte (see ledger.py).
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
         return

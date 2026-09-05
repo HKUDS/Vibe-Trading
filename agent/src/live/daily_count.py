@@ -55,10 +55,7 @@ def _try_lock(handle: BinaryIO) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         return
     if msvcrt is not None:  # pragma: no cover - exercised on Windows CI
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
+        # Lock byte 0 beyond EOF without writing a sentinel byte (see ledger.py).
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         return

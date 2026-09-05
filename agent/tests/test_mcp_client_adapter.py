@@ -468,7 +468,7 @@ def test_data_only_fallback_uses_pydantic_json_serialization() -> None:
         _StandardJsonAdapters(
             amount=Decimal("1234.5600"),
             order_id=UUID("12345678-1234-5678-1234-567812345678"),
-            output_path=Path("reports/daily.json"),
+            output_path=Path("daily.json"),
             state=_OrderState.OPEN,
             labels={"beta", "alpha"},
             range_pair=(1, 5),
@@ -480,7 +480,7 @@ def test_data_only_fallback_uses_pydantic_json_serialization() -> None:
     assert payload["data"] == {
         "amount": "1234.5600",
         "order_id": "12345678-1234-5678-1234-567812345678",
-        "output_path": "reports/daily.json",
+        "output_path": "daily.json",
         "state": "open",
         "range_pair": [1, 5],
     }

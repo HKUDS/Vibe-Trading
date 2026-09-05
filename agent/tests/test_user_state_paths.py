@@ -249,7 +249,7 @@ def test_welcome_panel_reports_runtime_root_as_workspace(
     console = Console(width=200, record=True)
     console.print(_legacy._build_welcome_panel(term_width=120))
 
-    assert "/RTROOT" in console.export_text()
+    assert "RTROOT" in console.export_text()
 
 
 def test_state_dir_helpers_do_not_create_directories(

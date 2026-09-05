@@ -330,10 +330,10 @@ def _lock_exclusive(handle: BinaryIO) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         return
     if msvcrt is not None:  # pragma: no cover - exercised on Windows CI
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
+        # Windows byte-range locks are valid beyond EOF, so an empty ledger is
+        # locked at offset 0 WITHOUT writing anything. Writing a b"\0" sentinel
+        # made the chain walk see a malformed line 0 and refuse every first
+        # append with LedgerCorruptionError.
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
         return

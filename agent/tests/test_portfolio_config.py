@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -34,7 +35,8 @@ def test_portfolio_settings_round_trip_without_credentials(tmp_path):
     )
 
     assert store.load() == settings
-    assert (tmp_path / "portfolio.json").stat().st_mode & 0o777 == 0o600
+    if os.name == "posix":
+        assert (tmp_path / "portfolio.json").stat().st_mode & 0o777 == 0o600
     payload = json.loads((tmp_path / "portfolio.json").read_text(encoding="utf-8"))
     assert "api_key" not in json.dumps(payload)
     assert "profile_id" not in json.dumps(payload)

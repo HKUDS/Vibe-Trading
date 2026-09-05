@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -341,6 +342,10 @@ class TestMemoryLock:
         with memory_lock(tmp_path) as acquired:
             assert acquired is True
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="POSIX flock; the win32 lock path yields without creating a .lock file",
+    )
     def test_lock_file_created(self, tmp_path: Path) -> None:
         """Lock file .lock should be created in memory dir."""
         with memory_lock(tmp_path):

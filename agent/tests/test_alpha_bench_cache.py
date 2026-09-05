@@ -9,6 +9,7 @@ sidecar, so the tampered blob is rejected before ``pickle.loads``.
 from __future__ import annotations
 
 import hashlib
+import os
 import pickle
 import stat
 
@@ -72,7 +73,8 @@ def test_fallback_key_is_stable_and_0600(tmp_path, no_api_key):
 
     key_file = tmp_path / ".hmac_key"
     assert key_file.is_file()
-    assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(key_file.stat().st_mode) == 0o600
 
 
 def test_configured_api_key_takes_priority(tmp_path, monkeypatch):

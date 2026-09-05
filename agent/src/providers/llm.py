@@ -1201,7 +1201,12 @@ def _build_anthropic(
 
 
 def _load_env_file(path: Path) -> None:
-    """Load a single .env file into os.environ (setdefault, no override)."""
+    """Load a single .env file into os.environ without clobbering real vars.
+
+    Exported environment variables are explicit operator intent and outrank
+    the file; ``.env`` only fills the gaps (pinned by
+    ``test_dispatch_connector_never_overrides_a_real_environment_variable``).
+    """
     if load_dotenv is not None:
         load_dotenv(dotenv_path=path, override=False)
     else:
@@ -1211,8 +1216,8 @@ def _load_env_file(path: Path) -> None:
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
-            if key:
-                os.environ.setdefault(key, value.strip().strip('"').strip("'"))
+            if key and key not in os.environ:
+                os.environ[key] = value.strip().strip('"').strip("'")
 
 
 def _ensure_dotenv() -> None:

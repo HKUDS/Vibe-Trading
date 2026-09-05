@@ -846,8 +846,11 @@ def _looks_like_tool_call_syntax(content: str) -> bool:
 # create or update ("update C:\\...\\plan.md"). If a run approaches its
 # iteration cap without having written that file, the loop must remind the
 # model instead of ending "answered but incomplete".
+# Windows absolute paths may contain spaces (e.g. C:\Users\Emad Karimi\...),
+# so the drive-letter branch allows spaces and stops non-greedily at the first
+# ".md"; the POSIX and bare-name branches stay space-free word matches.
 _TARGET_PATH_RE = re.compile(
-    r"[A-Za-z]:\\[^\s\x22\x27<>|?*]+\.md\b"
+    r"[A-Za-z]:\\[^<>|?*\x22\x27\r\n]+?\.md\b"
     r"|/[\w./\\-]+\.md\b"
     r"|\b[\w./\\-]+\.md\b"
 )
@@ -988,7 +991,7 @@ def _archive_backtest_result(result: str, active_run_dir: str | None) -> bool:
         if source_dir.is_dir():
             shutil.copytree(source_dir, target / directory, dirs_exist_ok=True)
             archived += [
-                str(path.relative_to(source))
+                path.relative_to(source).as_posix()
                 for path in source_dir.rglob("*")
                 if path.is_file()
             ]

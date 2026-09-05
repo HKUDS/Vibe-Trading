@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 
 from src.channels.feishu import _persist_login_credentials
@@ -38,4 +39,5 @@ def test_persist_login_credentials_preserves_config_and_writes_private_file(tmp_
         "app_secret": "test-secret",
         "domain": "feishu",
     }
-    assert stat.S_IMODE(saved.stat().st_mode) == 0o600
+    if os.name == "posix":
+        assert stat.S_IMODE(saved.stat().st_mode) == 0o600
