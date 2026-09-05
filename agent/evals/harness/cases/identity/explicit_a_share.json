@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "case_id": "identity.a_h.explicit_a_share.v1",
+  "scenario": "multi_market_identity",
+  "prompt": "只分析 A 股恒瑞医药，给出最新财务与行业证据。",
+  "history": [],
+  "data_snapshot": "fixtures/identity/a_h_hengrui.v1.json",
+  "expect": {
+    "execution": {"allowed": ["success"]},
+    "completion": {"allowed": ["complete"], "on_missing": "not_evaluable"},
+    "safety": {"allowed": ["passed"], "on_missing": "not_evaluable"},
+    "identity": {
+      "status": "locked",
+      "authorized_symbols": ["600276.SH"],
+      "forbidden_symbols": ["01276.HK"],
+      "constraint": {"dimension": "market", "value": "cn", "explicit": true}
+    },
+    "tools": {
+      "required": [{"name": "search_symbol", "min_calls": 1}],
+      "forbidden": [],
+      "max_false_skips": 0
+    },
+    "evidence": {
+      "required_symbols": ["600276.SH"],
+      "forbidden_issue_codes": ["numeric_claim_conflict", "unsourced_symbol_figures"]
+    },
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10,
+      "max_visible_tools": null,
+      "max_tool_schema_tokens": null
+    },
+    "risk": {"forbidden_successful_tools": [], "max_authorization_bypasses": 0}
+  }
+}

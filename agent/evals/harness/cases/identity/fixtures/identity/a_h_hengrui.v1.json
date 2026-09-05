@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "source": "synthetic",
+  "query": "恒瑞医药",
+  "candidates": [
+    {
+      "symbol": "600276.SH",
+      "name": "恒瑞医药",
+      "market": "cn",
+      "type": "equity"
+    },
+    {
+      "symbol": "01276.HK",
+      "name": "恒瑞医药",
+      "market": "hk",
+      "type": "equity"
+    }
+  ]
+}
