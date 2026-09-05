@@ -114,6 +114,49 @@ def test_normalize_side_rejects_missing_or_unknown(raw: object) -> None:
 
 
 @pytest.mark.parametrize(
+    "raw",
+    [
+        "红利入账",
+        "红利",
+        "分红",
+        "分红入账",
+        "派息",
+        "股息入账",
+        "股息",
+        "现金分红",
+        "Dividend",
+        " Cash Dividend ",
+    ],
+)
+def test_normalize_side_dividend_tokens(raw: str) -> None:
+    assert _normalize_side(raw) == "dividend"
+
+
+@pytest.mark.parametrize(
+    "raw", ["红股入账", "转股入账", "配股缴款", "配股上市", "利息归本", "利息"]
+)
+def test_tonghuashun_corporate_action_rows_are_skipped(raw: str) -> None:
+    """Known non-trade corporate-action rows drop out instead of raising."""
+    df = pd.DataFrame([{
+        "成交时间": "2026-01-10 09:00:00", "证券代码": "600519", "证券名称": "贵州茅台",
+        "操作": raw, "成交数量": "100", "成交价格": "", "成交金额": "",
+        "手续费": "", "印花税": "", "过户费": "",
+    }])
+    assert parse_tonghuashun(df) == []
+
+
+@pytest.mark.parametrize(
+    "raw", ["stock dividend", "stock split", "bonus issue", "rights issue", "interest"]
+)
+def test_generic_corporate_action_rows_are_skipped(raw: str) -> None:
+    df = pd.DataFrame([{
+        "datetime": "2026-01-10 09:00:00", "symbol": "AAPL",
+        "side": raw, "quantity": "", "price": "",
+    }])
+    assert parse_generic(df) == []
+
+
+@pytest.mark.parametrize(
     "symbol,expected",
     [
         ("00700.HK", "hk"),
@@ -204,6 +247,46 @@ def test_parse_file_tonghuashun_csv(tmp_path: Path) -> None:
     assert records[1].side == "sell"
     # fee = 手续费 + 印花税 + 过户费
     assert records[1].fee == pytest.approx(5 + 180 + 0.1)
+
+
+def test_parse_file_tonghuashun_dividend_and_bonus_rows(tmp_path: Path) -> None:
+    """A 红利入账 row used to kill the whole parse with "Unsupported trade side"."""
+    csv = tmp_path / "ths_dividend.csv"
+    csv.write_text(
+        "成交时间,证券代码,证券名称,操作,成交数量,成交价格,成交金额,手续费,印花税,过户费\n"
+        "2026-01-02 09:35:00,600519,贵州茅台,买入,100,1700,170000,5,0,0.1\n"
+        "2026-01-10 09:00:00,600519,贵州茅台,红利入账,,,500,0,0,0\n"
+        "2026-01-12 09:00:00,600519,贵州茅台,红股入账,10,,,0,0,0\n",
+        encoding="utf-8",
+    )
+    fmt, records = parse_file(csv)
+    assert fmt == "tonghuashun"
+    # The bonus-share row is dropped; the dividend row keeps its cash in amount.
+    assert [r.side for r in records] == ["buy", "dividend"]
+    dividend = records[1]
+    assert dividend.symbol == "600519.SH"
+    assert dividend.amount == 500.0
+    assert dividend.quantity == 0.0
+
+
+def test_parse_futu_dividend_row_carries_cash_amount() -> None:
+    df = pd.DataFrame([
+        {
+            "Date": "2026-01-02", "Time": "10:00:00", "Symbol": "AAPL",
+            "Name": "Apple", "Side": "Buy", "Quantity": "10", "Price": "180",
+            "Amount": "1800", "Commission": "1", "Platform Fee": "0",
+        },
+        {
+            "Date": "2026-01-10", "Time": "", "Symbol": "AAPL",
+            "Name": "Apple", "Side": "Dividend", "Quantity": "", "Price": "",
+            "Amount": "25.5", "Commission": "", "Platform Fee": "",
+        },
+    ])
+    records = parse_futu(df)
+    assert [r.side for r in records] == ["buy", "dividend"]
+    assert records[1].amount == 25.5
+    assert records[1].quantity == 0.0
+    assert records[1].market == "us"
 
 
 def test_parse_file_unknown_raises(tmp_path: Path) -> None:
@@ -353,6 +436,52 @@ def test_compute_profile_win_rate_and_pnl() -> None:
     assert profile["total_roundtrips"] == 2
     assert profile["win_rate"] == 0.5
     assert profile["total_pnl"] == -300.0  # 200 - 500
+
+
+def _dividend_rec(dt: str, symbol: str, amount: float, market: str = "china_a") -> TradeRecord:
+    return TradeRecord(
+        datetime=dt,
+        symbol=symbol,
+        name="",
+        side="dividend",
+        quantity=0.0,
+        price=0.0,
+        amount=amount,
+        fee=0.0,
+        market=market,
+    )
+
+
+def test_compute_profile_dividend_rows() -> None:
+    profile = _compute_profile(
+        _df(
+            [
+                _rec("2026-01-01 10:00:00", "A.SH", "buy", 100, 10),
+                _rec("2026-01-05 10:00:00", "A.SH", "sell", 100, 12),  # +200 win
+                _dividend_rec("2026-01-10 09:00:00", "A.SH", 500.0),
+            ]
+        )
+    )
+    assert profile["total_trades"] == 2  # the dividend row is not a trade
+    assert profile["total_roundtrips"] == 1
+    assert profile["total_dividends"] == 500.0
+    assert profile["total_pnl"] == 700.0  # 200 roundtrip + 500 dividend
+    # A 09:00 dividend row must not leak into the trading-activity stats.
+    assert profile["market_distribution"] == {"china_a": 2}
+    assert profile["hourly_distribution"] == {10: 2}
+
+
+def test_compute_profile_without_dividends_is_unchanged() -> None:
+    profile = _compute_profile(
+        _df(
+            [
+                _rec("2026-01-01 10:00:00", "A.SH", "buy", 100, 10),
+                _rec("2026-01-05 10:00:00", "A.SH", "sell", 100, 12),
+            ]
+        )
+    )
+    assert profile["total_dividends"] == 0.0
+    assert profile["total_pnl"] == 200.0
 
 
 def test_compute_profile_empty() -> None:

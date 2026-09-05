@@ -114,3 +114,35 @@ def test_short_without_adjust_is_unchanged() -> None:
     rt = pair_trades_fifo(df)[0]
     assert rt["side"] == "short"
     assert rt["pnl"] == 200.0  # (100 - 80) * 10
+
+
+def test_dividend_rows_do_not_open_or_close_positions() -> None:
+    """A dividend cash row between the legs leaves the roundtrip untouched."""
+    df = _df([
+        ("2026-01-02 09:30:00", "AAPL.US", "Apple", "buy", 10.0, 100.0, 1000.0, 0.0),
+        ("2026-01-03 09:30:00", "AAPL.US", "Apple", "dividend", 0.0, 0.0, 25.0, 0.0),
+        ("2026-01-05 09:30:00", "AAPL.US", "Apple", "sell", 10.0, 110.0, 1100.0, 0.0),
+    ])
+    rts = pair_trades_fifo(df)
+    assert len(rts) == 1
+    assert rts[0]["side"] == "long"
+    assert rts[0]["pnl"] == 100.0  # (110 - 100) * 10
+
+
+def test_dividend_row_does_not_cover_an_open_short() -> None:
+    df = _df([
+        ("2026-01-02 09:30:00", "AAPL.US", "Apple", "sell", 10.0, 100.0, 1000.0, 0.0),
+        ("2026-01-03 09:30:00", "AAPL.US", "Apple", "dividend", 0.0, 0.0, 25.0, 0.0),
+        ("2026-01-05 09:30:00", "AAPL.US", "Apple", "buy", 10.0, 90.0, 900.0, 0.0),
+    ])
+    rts = pair_trades_fifo(df)
+    assert len(rts) == 1
+    assert rts[0]["side"] == "short"
+    assert rts[0]["pnl"] == 100.0  # (100 - 90) * 10
+
+
+def test_dividend_only_journal_yields_no_roundtrips() -> None:
+    df = _df([
+        ("2026-01-03 09:30:00", "AAPL.US", "Apple", "dividend", 0.0, 0.0, 25.0, 0.0),
+    ])
+    assert pair_trades_fifo(df) == []

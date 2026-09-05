@@ -759,6 +759,116 @@ def test_all_currency_groups_failure(
     assert all(row == {} for row in result.per_market.values())
 
 
+# ---------------- M3c: cash dividends in the journal ----------------
+
+def _journal_with_dividend(path: Path, *, include_dividend: bool = True) -> Path:
+    """One 600519 roundtrip plus (optionally) a 500-yuan 红利入账 cash row."""
+    rows = _make_tonghuashun_rows([
+        ("2026-01-02 10:30:00", "600519", "buy", 100.0, 10.0),
+        ("2026-01-05 14:15:00", "600519", "sell", 100.0, 10.2),
+    ])
+    if include_dividend:
+        rows.append({
+            "成交时间": "2026-01-10 09:00:00",
+            "证券代码": "600519",
+            "证券名称": "标的600519",
+            "操作": "红利入账",
+            "成交数量": 0.0,
+            "成交价格": 0.0,
+            "成交金额": 500.0,
+            "手续费": 0.0,
+            "印花税": 0.0,
+            "过户费": 0.0,
+        })
+    return _write_journal(path, rows)
+
+
+def _dividend_scenario_run(
+    profile: ShadowProfile, journal: Path, *, with_frame: bool,
+) -> ShadowBacktestResult:
+    """Run the shadow backtest over a dividend journal with a stub runner.
+
+    With ``with_frame`` the CNY pool also emits an ohlcv artifact for
+    600519.SH (constant closes, so the caliber factor is 1.0 and roundtrip
+    PnL is unchanged), which marks the symbol as frame-covered.
+    """
+    metrics = {
+        "CNY": {"total_return_abs": 1000.0, "sharpe": 1.0},
+        "HKD": {"total_return_abs": 200.0, "sharpe": 2.0},
+        "USD": {"total_return_abs": 300.0, "sharpe": 3.0},
+    }
+
+    def stub(run_dir_str: str) -> str:
+        run_path = Path(run_dir_str)
+        artifacts_dir = run_path / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = artifacts_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(metrics[run_path.name]), encoding="utf-8",
+        )
+        if with_frame and run_path.name == "CNY":
+            (artifacts_dir / "ohlcv_600519.SH.csv").write_text(
+                "date,close\n"
+                "2026-01-01,10.0\n2026-01-02,10.0\n"
+                "2026-01-05,10.0\n2026-01-10,10.0\n",
+                encoding="utf-8",
+            )
+        return json.dumps({
+            "status": "ok", "exit_code": 0,
+            "artifacts": {"metrics.json": str(metrics_path)},
+        })
+
+    return run_shadow_backtest(
+        profile,
+        window_start="2026-01-01",
+        window_end="2026-06-30",
+        journal_path=journal,
+        run_backtest_fn=stub,
+    )
+
+
+@pytest.mark.unit
+def test_uncovered_symbol_dividend_raises_real_pnl_and_shrinks_missed(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    profile = extract_shadow_profile(profitable_journal)
+    plain = _journal_with_dividend(tmp_path / "journal_plain.csv", include_dividend=False)
+    with_div = _journal_with_dividend(tmp_path / "journal_div.csv")
+
+    baseline = _dividend_scenario_run(profile, plain, with_frame=False)
+    treated = _dividend_scenario_run(profile, with_div, with_frame=False)
+
+    assert treated.real_total_pnl == pytest.approx(baseline.real_total_pnl + 500.0)
+    # The roundtrip decomposition is untouched; only the residual absorbs it.
+    assert treated.attribution.noise_trades_pnl == baseline.attribution.noise_trades_pnl
+    assert treated.attribution.early_exit_pnl == baseline.attribution.early_exit_pnl
+    assert treated.attribution.missed_signals_pnl == pytest.approx(
+        baseline.attribution.missed_signals_pnl - 500.0
+    )
+
+
+@pytest.mark.unit
+def test_frame_covered_symbol_dividend_is_not_double_counted(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    profile = extract_shadow_profile(profitable_journal)
+    with_div = _journal_with_dividend(tmp_path / "journal_div.csv")
+
+    uncovered = _dividend_scenario_run(profile, with_div, with_frame=False)
+    covered = _dividend_scenario_run(profile, with_div, with_frame=True)
+
+    # The dividend is already embedded in the adjusted price caliber for a
+    # frame-covered symbol, so the cash must not be added on top of it.
+    assert covered.real_total_pnl == pytest.approx(uncovered.real_total_pnl - 500.0)
+    assert covered.attribution.missed_signals_pnl == pytest.approx(
+        uncovered.attribution.missed_signals_pnl + 500.0
+    )
+
+
 # ---------------- M4: Reporter ----------------
 
 def _stub_backtest_result(profile: ShadowProfile) -> ShadowBacktestResult:

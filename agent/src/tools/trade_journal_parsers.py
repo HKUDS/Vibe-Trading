@@ -58,6 +58,41 @@ _SELL_TOKENS = {
     "做空",
     "short",
 }
+# Cash dividend events (同花顺 红利入账, 富途 Side=Dividend, ...). They bring
+# cash into the account without moving shares, so they parse as
+# side="dividend" records whose `amount` carries the cash received.
+_DIVIDEND_TOKENS = {
+    "dividend",
+    "cash dividend",
+    "红利入账",
+    "红利",
+    "分红",
+    "分红入账",
+    "派息",
+    "股息入账",
+    "股息",
+    "现金分红",
+}
+# Non-trade corporate-action rows are dropped outright instead of parsed:
+# bonus-share / conversion credits and splits only move share counts (the
+# frame-caliber adjustment from #1311 already restates split effects on
+# covered symbols, and we do not model bonus shares), rights issues are a
+# separate subscription flow, and 利息 entries are interest settlements, not
+# trade PnL. The English tokens cover Futu/generic exports of the same events.
+_SKIP_SIDE_TOKENS = {
+    "红股入账",
+    "转股入账",
+    "配股缴款",
+    "配股上市",
+    "利息归本",
+    "利息",
+    "stock dividend",
+    "bonus issue",
+    "stock split",
+    "reverse split",
+    "rights issue",
+    "interest",
+}
 
 
 @dataclass(frozen=True)
@@ -68,7 +103,7 @@ class TradeRecord:
         datetime: ISO8601 timestamp, e.g. "2026-01-15 09:35:00".
         symbol: Exchange-qualified symbol, e.g. "600519.SH" / "AAPL" / "BTC-USDT".
         name: Human-readable instrument name.
-        side: "buy" or "sell".
+        side: "buy", "sell" or "dividend" (cash payout; amount is the cash).
         quantity: Filled quantity.
         price: Filled price.
         amount: Gross amount (quantity * price, pre-fee).
@@ -155,7 +190,7 @@ def detect_format(df: pd.DataFrame) -> FormatName:
 # ---------------- Parsers ----------------
 
 def _normalize_side(raw: Any) -> str:
-    """Return ``buy`` or ``sell`` for an exact supported direction alias.
+    """Return ``buy``/``sell``/``dividend`` for an exact supported direction alias.
 
     Raises:
         ValueError: Direction is missing or unsupported.
@@ -169,7 +204,21 @@ def _normalize_side(raw: Any) -> str:
         return "buy"
     if s in _SELL_TOKENS:
         return "sell"
+    if s in _DIVIDEND_TOKENS:
+        return "dividend"
     raise ValueError(f"Unsupported trade side: {raw!r}")
+
+
+def _is_skippable_side(raw: Any) -> bool:
+    """True for known non-trade corporate-action rows; callers drop the row."""
+    if raw is None:
+        return False
+    try:
+        if pd.isna(raw):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return str(raw).strip().lower() in _SKIP_SIDE_TOKENS
 
 
 def _is_empty_code(raw: Any) -> bool:
@@ -232,6 +281,8 @@ def parse_tonghuashun(df: pd.DataFrame) -> list[TradeRecord]:
         raw_code = row.get("证券代码", "")
         if _is_empty_code(raw_code):
             continue
+        if _is_skippable_side(row.get("操作")):
+            continue
         qty = _to_float(row.get("成交数量"))
         price = _to_float(row.get("成交价格"))
         amount = _to_float(row.get("成交金额")) or qty * price
@@ -288,6 +339,8 @@ def parse_eastmoney(df: pd.DataFrame) -> list[TradeRecord]:
     for _, row in df.iterrows():
         raw_code = row.get("股票代码", "")
         if _is_empty_code(raw_code):
+            continue
+        if _is_skippable_side(row.get("买卖标志")):
             continue
         raw_date = str(row.get("成交日期", "")).strip()
         # Excel numeric YYYYMMDD cells stringify as "20260115.0".
@@ -410,6 +463,9 @@ def parse_futu(df: pd.DataFrame) -> list[TradeRecord]:
         raw_symbol = row.get("Symbol", "")
         if _is_empty_code(raw_symbol):
             continue
+        side_raw = row.get("Side") if "Side" in df.columns else row.get("Direction")
+        if _is_skippable_side(side_raw):
+            continue
         dt = _futu_datetime(row.get("Date", ""), row.get("Time", ""))
         symbol = str(raw_symbol).strip().upper()
         qty = _to_float(row.get("Quantity"))
@@ -420,7 +476,7 @@ def parse_futu(df: pd.DataFrame) -> list[TradeRecord]:
             datetime=dt,
             symbol=symbol,
             name=str(row.get("Name", "")).strip(),
-            side=_normalize_side(row.get("Side") if "Side" in df.columns else row.get("Direction")),
+            side=_normalize_side(side_raw),
             quantity=qty,
             price=price,
             amount=amount,
@@ -466,6 +522,8 @@ def parse_generic(df: pd.DataFrame) -> list[TradeRecord]:
     records: list[TradeRecord] = []
     for _, row in df.iterrows():
         if sym_col and _is_empty_code(row.get(sym_col)):
+            continue
+        if _is_skippable_side(row.get(side_col)):
             continue
         if dt_col:
             raw_dt = row.get(dt_col, "")

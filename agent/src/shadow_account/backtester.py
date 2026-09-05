@@ -284,6 +284,7 @@ def run_shadow_backtest(
         initial_capital=initial_capital,
         pool_currency=headline_currency,
         adjust=build_frame_adjust(adjust_frames) if adjust_frames else None,
+        covered_symbols=frozenset(adjust_frames),
     )
 
     result = ShadowBacktestResult(
@@ -538,6 +539,7 @@ def _attribution_or_zero(
     initial_capital: float,
     pool_currency: str | None = None,
     adjust=None,
+    covered_symbols: frozenset[str] = frozenset(),
 ) -> tuple[AttributionBreakdown, float | None, float]:
     """Compute attribution if the journal is available, else return zeros."""
     shadow_pnl = _shadow_pnl_from_metrics(combined, initial_capital)
@@ -560,12 +562,44 @@ def _attribution_or_zero(
     if not roundtrips:
         return _zero_attribution(), shadow_pnl, 0.0
 
+    dividend_cash = _dividend_cash(
+        trades_df, covered_symbols=covered_symbols, pool_currency=pool_currency,
+    )
     return _compute_attribution(
         profile=profile,
         roundtrips=roundtrips,
         shadow_pnl=shadow_pnl,
         pool_currency=pool_currency,
+        extra_real_pnl=dividend_cash,
     )
+
+
+def _dividend_cash(
+    trades_df: pd.DataFrame,
+    *,
+    covered_symbols: frozenset[str],
+    pool_currency: str | None,
+) -> float:
+    """Sum cash-dividend rows the adjusted frames do not already capture.
+
+    When the run's adjusted frames cover a symbol, the dividend is embedded in
+    the adjusted-close caliber the roundtrip legs are restated through (#1311),
+    so booking the cash as well would count it twice; only dividends on
+    uncovered symbols add to real PnL here. Rows settling in a currency other
+    than the pool's are excluded exactly like the roundtrips are (#14).
+    """
+    if trades_df.empty or "side" not in trades_df.columns:
+        return 0.0
+    total = 0.0
+    for row in trades_df.itertuples(index=False):
+        if row.side != "dividend":
+            continue
+        if row.symbol in covered_symbols:
+            continue
+        if pool_currency is not None and code_currency(row.symbol) != pool_currency:
+            continue
+        total += float(row.amount)
+    return total
 
 
 def _zero_attribution() -> AttributionBreakdown:
@@ -585,6 +619,7 @@ def _compute_attribution(
     roundtrips: list[dict[str, Any]],
     shadow_pnl: float,
     pool_currency: str | None = None,
+    extra_real_pnl: float = 0.0,
 ) -> tuple[AttributionBreakdown, float, float]:
     """Attribute the delta between user's real PnL and shadow PnL.
 
@@ -609,6 +644,10 @@ def _compute_attribution(
     are excluded from ``real_pnl`` and counted in
     ``AttributionBreakdown.excluded_currencies`` instead of being summed
     against it (#14).
+
+    ``extra_real_pnl`` carries real cash the roundtrips do not capture (cash
+    dividends on symbols the run's adjusted frames do not cover). It is added
+    into ``real_pnl`` so the ``missed`` residual stays balanced.
     """
     rule_hold_lo, rule_hold_hi = _aggregate_holding_range(profile)
     noise = 0.0
@@ -625,7 +664,7 @@ def _compute_attribution(
             currency = code_currency(rt["symbol"])
             if currency != pool_currency:
                 excluded_currencies[currency] = excluded_currencies.get(currency, 0) + 1
-    real_pnl = 0.0
+    real_pnl = float(extra_real_pnl)
     counterfactuals: list[dict[str, Any]] = []
 
     for rt in pool_roundtrips:

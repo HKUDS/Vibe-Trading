@@ -112,6 +112,9 @@ def pair_trades_fifo(
         return float(factor)
 
     for row in df.itertuples(index=False):
+        # Dividend cash rows and other non-trade events carry no position change.
+        if row.side not in ("buy", "sell"):
+            continue
         if row.side == "buy":
             # Cover open shorts first, then queue any remainder as a long lot.
             remaining = row.quantity
@@ -224,12 +227,15 @@ def _compute_profile(df: pd.DataFrame) -> dict[str, Any]:
     """Build the trading profile dict.
 
     Args:
-        df: Standardized DataFrame (datetime parsed, sorted).
+        df: Standardized DataFrame (datetime parsed, sorted). May carry
+            dividend cash rows; those are summed into ``total_dividends`` and
+            ``total_pnl`` but never counted as trades.
 
     Returns:
         Dict with avg_holding_days, trade_frequency_per_week, win_rate,
-        profit_loss_ratio, total_pnl, max_drawdown, top_symbols,
-        market_distribution, hourly_distribution, roundtrips_sample.
+        profit_loss_ratio, total_pnl, total_dividends, max_drawdown,
+        top_symbols, market_distribution, hourly_distribution,
+        roundtrips_sample.
     """
     if df.empty:
         return {"error": "empty trade journal"}
@@ -237,7 +243,11 @@ def _compute_profile(df: pd.DataFrame) -> dict[str, Any]:
     rts = pair_trades_fifo(df)
     rts_df = pd.DataFrame(rts)
 
-    total_trades = len(df)
+    trades_df = df[df["side"].isin(("buy", "sell"))]
+    dividend_amounts = df.loc[df["side"] == "dividend", "amount"]
+    total_dividends = round(float(dividend_amounts.sum()), 2)
+
+    total_trades = len(trades_df)
     span_days = max(1, (df["datetime"].max() - df["datetime"].min()).days)
     freq_per_week = round(total_trades / span_days * 7, 2)
 
@@ -249,14 +259,15 @@ def _compute_profile(df: pd.DataFrame) -> dict[str, Any]:
         win_rate = round(len(wins) / len(rts_df), 4)
         pnl_ratio = round(_safe_div(avg_win, abs(avg_loss)), 2) if avg_loss else float("inf") if avg_win else 0.0
         avg_hold = round(rts_df["hold_days"].mean(), 2)
-        total_pnl = round(rts_df["pnl"].sum(), 2)
+        total_pnl = round(rts_df["pnl"].sum() + total_dividends, 2)
         # Cumulative PnL → max drawdown
         cum = rts_df.sort_values("sell_dt")["pnl"].cumsum()
         running_max = cum.cummax()
         drawdown = (cum - running_max).min()
         max_drawdown = round(float(drawdown), 2) if pd.notna(drawdown) else 0.0
     else:
-        win_rate = pnl_ratio = avg_hold = total_pnl = max_drawdown = 0.0
+        win_rate = pnl_ratio = avg_hold = max_drawdown = 0.0
+        total_pnl = total_dividends
 
     top_symbols = (
         df.groupby("symbol")
@@ -268,8 +279,8 @@ def _compute_profile(df: pd.DataFrame) -> dict[str, Any]:
         .to_dict(orient="records")
     )
 
-    market_dist = df["market"].value_counts().to_dict()
-    hourly_dist = df["datetime"].dt.hour.value_counts().sort_index().to_dict()
+    market_dist = trades_df["market"].value_counts().to_dict()
+    hourly_dist = trades_df["datetime"].dt.hour.value_counts().sort_index().to_dict()
     hourly_dist = {int(h): int(c) for h, c in hourly_dist.items()}
 
     sample = rts_df.head(5).copy()
@@ -288,6 +299,7 @@ def _compute_profile(df: pd.DataFrame) -> dict[str, Any]:
         "win_rate": win_rate,
         "profit_loss_ratio": pnl_ratio,
         "total_pnl": total_pnl,
+        "total_dividends": total_dividends,
         "max_drawdown": max_drawdown,
         "top_symbols": top_symbols,
         "market_distribution": market_dist,
@@ -468,7 +480,8 @@ def _compute_behavior(df: pd.DataFrame) -> dict[str, Any]:
     """Run all 4 behavior diagnostics.
 
     Args:
-        df: Standardized DataFrame (datetime-sorted).
+        df: Standardized DataFrame (datetime-sorted). Diagnostics run on the
+            buy/sell rows only; dividend cash rows are not trading behavior.
 
     Returns:
         Dict with disposition_effect / overtrading / chasing_momentum /
@@ -476,12 +489,13 @@ def _compute_behavior(df: pd.DataFrame) -> dict[str, Any]:
     """
     if df.empty:
         return {"error": "empty trade journal"}
+    trades_df = df[df["side"].isin(("buy", "sell"))]
     rts_df = pd.DataFrame(pair_trades_fifo(df))
     return {
         "disposition_effect": _disposition_effect(rts_df),
-        "overtrading": _overtrading(df, rts_df),
-        "chasing_momentum": _chasing_momentum(df),
-        "anchoring": _anchoring(df),
+        "overtrading": _overtrading(trades_df, rts_df),
+        "chasing_momentum": _chasing_momentum(trades_df),
+        "anchoring": _anchoring(trades_df),
     }
 
 
