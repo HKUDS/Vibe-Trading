@@ -58,6 +58,7 @@ def test_sdk_profiles_registered() -> None:
         "shoonya-paper-sdk", "shoonya-live-sdk-readonly",
         "etoro-paper-sdk", "etoro-paper-trade",
         "etoro-live-sdk-readonly", "etoro-live-trade",
+        "toss-live-sdk-readonly",
     } <= ids
 
 

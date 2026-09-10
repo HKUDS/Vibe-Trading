@@ -586,9 +586,9 @@ run from a clone (`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Broker Connectors</b> <sub>14 brokers — read + paper, bounded-live where supported</sub></summary>
+<summary><b>Broker Connectors</b> <sub>15 brokers — read + paper, bounded-live where supported</sub></summary>
 
-Connector-first profiles. Most do read + paper-account order placement — IBKR is read-only, Robinhood is live-only (no paper account), and Trading 212 refuses order placement entirely, paper included; live order placement is bounded by a user-defined mandate (symbol allowlist, order-size / exposure caps, daily trade cap, instant kill switch) and never holds funds — the broker executes. Order-placing tools stay off MCP (agent + CLI only). Research / backtest paths are structurally barred from any live endpoint.
+Connector-first profiles. Most do read + paper-account order placement — IBKR is read-only, Robinhood is live-only (no paper account), and Trading 212 and Toss Securities refuse order placement entirely, paper included; live order placement is bounded by a user-defined mandate (symbol allowlist, order-size / exposure caps, daily trade cap, instant kill switch) and never holds funds — the broker executes. Order-placing tools stay off MCP (agent + CLI only). Research / backtest paths are structurally barred from any live endpoint.
 
 | Broker | Markets | Capabilities |
 |--------|---------|--------------|
@@ -601,7 +601,7 @@ Connector-first profiles. Most do read + paper-account order placement — IBKR 
 | **eToro** | global | read + paper + bounded live (Public API; demo keys reach only `/demo` paths, plus copy-trading workflows) |
 | **MetaTrader 5** | forex / CFD | read + paper + bounded live (Exness-style; demo ⇔ paper identity guard) |
 | **Longbridge** · **Dhan** · **Shoonya** · **Zerodha** | US / HK · India (NSE/BSE) | read + paper only — no runtime paper/live discriminator, so live order placement is hard-refused |
-| **Trading 212** | UK / EU | fully read-only — `place_order` / `cancel_order` hard-refuse even paper |
+| **Trading 212** · **Toss Securities** | UK / EU · Korea/US | fully read-only — `place_order` / `cancel_order` hard-refuse even paper (no verified sandbox) |
 
 Paper-vs-live is a **structural per-broker runtime guard** (account-id format, host separation, demo flag, or trade environment), never a config flag the agent can flip. A broker exposing no such discriminator is capped at paper + read-only.
 

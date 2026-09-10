@@ -560,9 +560,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Broker Connectors</b> <sub>14 家券商——读取 + 模拟盘，支持的券商可受约束实盘</sub></summary>
+<summary><b>Broker Connectors</b> <sub>15 家券商——读取 + 模拟盘，支持的券商可受约束实盘</sub></summary>
 
-连接器优先（connector-first）的配置档。多数连接器支持读取 + 模拟盘下单 —— IBKR 只读，Robinhood 只有实盘（没有模拟盘），Trading 212 连模拟盘下单也一律拒绝；实盘下单受用户定义的 mandate 约束（标的白名单、下单规模 / 敞口上限、每日交易次数上限、即时 kill switch），且从不托管资金——由券商执行。下单类工具不经 MCP 暴露（仅 agent + CLI）。研究 / 回测路径在结构上被隔离，无法触达任何实盘端点。
+连接器优先（connector-first）的配置档。多数连接器支持读取 + 模拟盘下单 —— IBKR 只读，Robinhood 只有实盘（没有模拟盘），Trading 212 与 Toss Securities 连模拟盘下单也一律拒绝；实盘下单受用户定义的 mandate 约束（标的白名单、下单规模 / 敞口上限、每日交易次数上限、即时 kill switch），且从不托管资金——由券商执行。下单类工具不经 MCP 暴露（仅 agent + CLI）。研究 / 回测路径在结构上被隔离，无法触达任何实盘端点。
 
 | Broker | 市场 | 能力 |
 |--------|------|------|
@@ -575,7 +575,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 | **eToro** | global | 读取 + 模拟盘 + 受约束实盘（Public API；demo 密钥在结构上只能访问 `/demo` 路径，另支持跟单交易流程） |
 | **MetaTrader 5** | forex / CFD | 读取 + 模拟盘 + 受约束实盘（Exness 风格；demo ⇔ 模拟盘身份守卫） |
 | **Longbridge** · **Dhan** · **Shoonya** · **Zerodha** | US / HK · India (NSE/BSE) | 仅读取 + 模拟盘——无运行时模拟/实盘判别标识，因此实盘下单被硬拒 |
-| **Trading 212** | UK / EU | 完全只读——`place_order` / `cancel_order` 连模拟盘也硬拒 |
+| **Trading 212** · **Toss Securities** | UK / EU · 韩国/美国 | 完全只读——`place_order` / `cancel_order` 连模拟盘也硬拒（无可验证的沙盒） |
 
 模拟盘与实盘的区分是**每家券商的结构性运行时守卫**（account-id 格式、host 隔离、demo 标志或交易环境），绝非 agent 能翻转的配置开关。不暴露此类判别标识的券商一律封顶为模拟盘 + 只读。
 

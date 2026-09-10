@@ -25,6 +25,7 @@ _SDK_CONNECTOR_MODULES = {
     "dhan": "src.trading.connectors.dhan.sdk",
     "shoonya": "src.trading.connectors.shoonya.sdk",
     "zerodha": "src.trading.connectors.zerodha.sdk",
+    "toss": "src.trading.connectors.toss.sdk",
     "trading212": "src.trading.connectors.trading212.sdk",
     "mt5": "src.trading.connectors.mt5.sdk",
     "etoro": "src.trading.connectors.etoro.sdk",
