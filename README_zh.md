@@ -559,7 +559,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Broker Connectors</b> <sub>14 家券商——读取 + 模拟盘，支持的券商可受约束实盘</sub></summary>
+<summary><b>Broker Connectors</b> <sub>15 家券商——读取 + 模拟盘，支持的券商可受约束实盘</sub></summary>
 
 连接器优先（connector-first）的配置档。多数连接器支持读取 + 模拟盘下单 —— IBKR 只读，Robinhood 只有实盘（没有模拟盘），Trading 212 连模拟盘下单也一律拒绝；实盘下单受用户定义的 mandate 约束（标的白名单、下单规模 / 敞口上限、每日交易次数上限、即时 kill switch），且从不托管资金——由券商执行。下单类工具不经 MCP 暴露（仅 agent + CLI）。研究 / 回测路径在结构上被隔离，无法触达任何实盘端点。
 
@@ -573,6 +573,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 | **Futu** | HK / US / A | 读取 + 模拟盘 + 受约束实盘 |
 | **eToro** | global | 读取 + 模拟盘 + 受约束实盘（Public API；demo 密钥在结构上只能访问 `/demo` 路径，另支持跟单交易流程） |
 | **MetaTrader 5** | forex / CFD | 读取 + 模拟盘 + 受约束实盘（Exness 风格；demo ⇔ 模拟盘身份守卫） |
+| **KIS** | 韩国 (KOSPI/KOSDAQ) | 读取 + 真实模拟盘（모의투자，独立主机上的真实券商侧沙盒）——该市场的实盘下单尚未接入 |
 | **Longbridge** · **Dhan** · **Shoonya** · **Zerodha** | US / HK · India (NSE/BSE) | 仅读取 + 模拟盘——无运行时模拟/实盘判别标识，因此实盘下单被硬拒 |
 | **Trading 212** | UK / EU | 完全只读——`place_order` / `cancel_order` 连模拟盘也硬拒 |
 

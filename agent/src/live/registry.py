@@ -28,6 +28,7 @@ from src.trading.connectors.binance.classification import BINANCE_TOOL_CLASS
 from src.trading.connectors.dhan.classification import DHAN_TOOL_CLASS
 from src.trading.connectors.futu.classification import FUTU_TOOL_CLASS
 from src.trading.connectors.ibkr.classification import IBKR_TOOL_CLASS
+from src.trading.connectors.kis.classification import KIS_TOOL_CLASS
 from src.trading.connectors.longbridge.classification import LONGBRIDGE_TOOL_CLASS
 from src.trading.connectors.mt5.classification import MT5_TOOL_CLASS
 from src.trading.connectors.okx.classification import OKX_TOOL_CLASS
@@ -59,6 +60,7 @@ _BROKER_CURATED_MAPS = {
     "mt5": MT5_TOOL_CLASS,
     "etoro": ETORO_TOOL_CLASS,
     "zerodha": ZERODHA_TOOL_CLASS,
+    "kis": KIS_TOOL_CLASS,
 }
 
 

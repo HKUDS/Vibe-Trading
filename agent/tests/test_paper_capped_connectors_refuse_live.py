@@ -45,6 +45,7 @@ _LIVE_CAPABLE = frozenset(
         "robinhood",
         "ibkr",
         "mt5",
+        "kis",
     }
 )
 

@@ -550,7 +550,7 @@ clon (`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Conectores de Broker</b> <sub>14 brokers — lectura + paper, live acotado donde esté soportado</sub></summary>
+<summary><b>Conectores de Broker</b> <sub>15 brokers — lectura + paper, live acotado donde esté soportado</sub></summary>
 
 Perfiles centrados en el conector. La mayoría hace lectura + colocación de órdenes en cuenta paper — IBKR es de solo lectura, Robinhood es solo live (sin cuenta paper), y Trading 212 rechaza la colocación de órdenes por completo, incluido el paper; la colocación de órdenes live está acotada por un mandato definido por el usuario (lista blanca de símbolos, límites de tamaño de orden / exposición, límite diario de operaciones, interruptor de apagado instantáneo) y nunca retiene fondos — el broker ejecuta. Las herramientas de colocación de órdenes se mantienen fuera de MCP (solo agente + CLI). Las rutas de investigación / backtest están estructuralmente vetadas de cualquier endpoint live.
 
@@ -564,6 +564,7 @@ Perfiles centrados en el conector. La mayoría hace lectura + colocación de ór
 | **Futu** | HK / EE. UU. / A | lectura + paper + live acotado |
 | **eToro** | global | lectura + paper + live acotado (API pública; las claves demo solo alcanzan rutas `/demo`, además de flujos de copy-trading) |
 | **MetaTrader 5** | forex / CFD | lectura + paper + live acotado (estilo Exness; guardia de identidad demo ⇔ paper) |
+| **KIS** (Korea Investment & Securities) | Corea (KOSPI/KOSDAQ) | lectura + paper genuino (모의투자, un sandbox real del lado del broker en un host separado) — la colocación de órdenes live aún no está conectada para este mercado |
 | **Longbridge** · **Dhan** · **Shoonya** · **Zerodha** | EE. UU. / HK · India (NSE/BSE) | solo lectura + paper — sin discriminador de runtime paper/live, por lo que la colocación de órdenes live se rechaza de forma estricta |
 | **Trading 212** | Reino Unido / UE | completamente de solo lectura — `place_order` / `cancel_order` se rechazan de forma estricta incluso en paper |
 
