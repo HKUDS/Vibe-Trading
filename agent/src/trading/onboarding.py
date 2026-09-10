@@ -161,6 +161,16 @@ _BUILTIN: dict[str, ConnectorOnboarding] = {
         dependency="requests",
         install_command="pip install keyring",
     ),
+    "upbit": ConnectorOnboarding(
+        auth_type="api_key",
+        credential_fields=(
+            _field("access_key", "Access Key"),
+            _field("secret_key", "Secret Key"),
+        ),
+        dependency="PyJWT",
+        install_command="pip install PyJWT keyring",
+        setup_hint="Create a read-only key; do not grant withdrawal permission.",
+    ),
 }
 
 
