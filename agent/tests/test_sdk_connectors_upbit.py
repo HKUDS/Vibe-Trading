@@ -64,10 +64,22 @@ def test_upbit_paper_place_order_simulated_locally() -> None:
 
 def test_upbit_paper_cancel_order_simulated() -> None:
     cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
-    result = up.cancel_order(cfg, "ORD1")
+    placed = up.place_order(cfg, symbol="KRW-BTC", side="buy", quantity=1)
+    result = up.cancel_order(cfg, placed["order_id"])
     assert result["status"] == "ok"
     assert result["cancelled"] is True
     assert result["is_paper"] is True
+
+
+def test_upbit_paper_cancel_refuses_an_id_the_simulator_never_issued() -> None:
+    """get_open_orders reads the real account, so a real order's id could
+    reach here; it must not be acknowledged as cancelled (no Upbit call was
+    ever made)."""
+    cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
+    result = up.cancel_order(cfg, "250911000123456")
+    assert result["status"] == "error"
+    assert "cancelled" not in result
+    assert "not issued by this paper simulator" in result["error"]
 
 
 def test_upbit_live_order_hard_refused() -> None:

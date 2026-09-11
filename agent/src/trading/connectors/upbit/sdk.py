@@ -35,6 +35,13 @@ PROFILE_ENVIRONMENTS = {
 
 UPBIT_API_URL = "https://api.upbit.com/v1"
 
+#: Prefix of every order id the local paper simulator issues. ``cancel_order``
+#: refuses any other id, because only these orders exist in the simulation —
+#: reads (``get_open_orders``) hit the real account, so a real order's id
+#: could otherwise reach here and be acknowledged as cancelled without ever
+#: calling Upbit.
+_PAPER_ORDER_PREFIX = "PAPER-"
+
 #: Returned by order methods when a non-paper config reaches them. Upbit
 #: exposes no runtime paper/live discriminator (same key pair reads the same
 #: account), so — following the Dhan/Longbridge precedent — the connector is
@@ -414,15 +421,17 @@ def place_order(
         return {"status": "error", "error": "limit order requires limit_price"}
 
     # Paper-only: simulate locally against a live quote (Upbit has no sandbox).
+    # A quantity-sized order needs no price at all, so it never makes the
+    # network call -- only notional sizing (converting a KRW spend into a
+    # quantity) does, and only when no limit_price was given to use instead.
     fill_price = float(limit_price) if limit_price is not None else None
-    if fill_price is None:
-        quote = get_quote(market, config=cfg)
-        fill_price = _as_float(quote.get("quote", {}).get("last")) if quote.get("status") == "ok" else None
 
     if has_notional:
-        # notional sizing needs a price to convert KRW spend into a quantity —
-        # an unpriced fill here would silently fabricate a null quantity.
+        if fill_price is None:
+            quote = get_quote(market, config=cfg)
+            fill_price = _as_float(quote.get("quote", {}).get("last")) if quote.get("status") == "ok" else None
         if not fill_price:
+            # An unpriced fill here would silently fabricate a null quantity.
             return {
                 "status": "error",
                 "error": "could not resolve a live quote to size this notional order; retry or pass limit_price",
@@ -434,7 +443,7 @@ def place_order(
 
     return {
         "status": "ok",
-        "order_id": f"PAPER-{market}-{side_token}-{uuid.uuid4().hex[:8]}",
+        "order_id": f"{_PAPER_ORDER_PREFIX}{market}-{side_token}-{uuid.uuid4().hex[:8]}",
         "symbol": market,
         "side": side_token,
         "profile": cfg.profile,
@@ -468,6 +477,17 @@ def cancel_order(
     clean_id = str(order_id or "").strip()
     if not clean_id:
         return {"status": "error", "error": "order_id is required"}
+    if not clean_id.startswith(_PAPER_ORDER_PREFIX):
+        # get_open_orders reads the real account, so a real order's id can
+        # arrive here; acknowledging it would report a cancel that never
+        # happened while the real order keeps working.
+        return {
+            "status": "error",
+            "error": (
+                f"order {clean_id!r} was not issued by this paper simulator, so it "
+                "cannot be cancelled here; cancel a real order on Upbit directly"
+            ),
+        }
 
     return {
         "status": "ok",
