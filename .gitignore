@@ -84,6 +84,8 @@ agent/uploads/
 /okx.json
 /shoonya.json
 /tiger.json
+/toss.json
+/toss-token.json
 /trading212.json
 /zerodha.json
 agent/tests/*_result.json

@@ -12,17 +12,18 @@ recorded in every payload as
 cancellation are disabled for every profile until Toss offers a structural
 paper/demo safety boundary this connector can verify.
 
-Caveat: this connector was authored from the public Open API reference
-(https://developers.tossinvest.com/docs) without a live Toss account to test
-against — exact field names for less-common responses may need adjustment.
-Endpoint paths and the OAuth flow (client-credentials grant) are documented;
-verify response field names against the live API before relying on this in
-production.
+Caveat: this connector was authored and endpoint paths verified against the
+published OpenAPI spec (https://openapi.tossinvest.com/openapi-docs/latest/
+openapi.json) without a live Toss account to test against. Every response is
+wrapped as ``{"result": ...}`` (see :func:`_unwrap`); field names inside that
+envelope for less-common responses may still need adjustment against a real
+account.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -203,11 +204,16 @@ def check_status(config: TossConfig | None = None) -> dict[str, Any]:
     return report
 
 
+#: Order-status tokens the Toss API is documented to use for a resting order.
+#: Anything else observed on a row is treated as closed/executed.
+_OPEN_ORDER_STATUSES = frozenset({"OPEN", "PENDING", "PARTIALLY_FILLED", "NEW"})
+
+
 def get_account_snapshot(config: TossConfig | None = None) -> dict[str, Any]:
     """Fetch holdings summary totals for the configured account."""
     cfg = config or load_config()
-    payload = _get(cfg, "/api/v1/assets", authed=True, account_scoped=True)
-    summary = _mapping_or_raw(_first(payload, ("summary", "accountSummary")))
+    payload = _get(cfg, "/api/v1/holdings", authed=True, account_scoped=True)
+    summary = _mapping_or_raw(_first(_unwrap(payload), ("summary", "accountSummary")))
     return {
         "status": "ok",
         "profile": cfg.profile,
@@ -219,7 +225,7 @@ def get_account_snapshot(config: TossConfig | None = None) -> dict[str, Any]:
 def get_positions(config: TossConfig | None = None) -> dict[str, Any]:
     """Fetch current KR/US equity holdings."""
     cfg = config or load_config()
-    payload = _get(cfg, "/api/v1/assets", authed=True, account_scoped=True)
+    payload = _get(cfg, "/api/v1/holdings", authed=True, account_scoped=True)
     return {
         "status": "ok",
         "profile": cfg.profile,
@@ -233,20 +239,25 @@ def get_open_orders(
     *,
     include_executions: bool = False,
 ) -> dict[str, Any]:
-    """Fetch open Toss orders, optionally with recently closed ones."""
+    """Fetch Toss orders, split into still-open vs already-executed.
+
+    Toss exposes one order-reading endpoint rather than separate open/history
+    ones, so open vs executed is a client-side split on each row's own status
+    field, the same way the Dhan/Trading 212 connectors do it.
+    """
     cfg = config or load_config()
-    open_payload = _get(cfg, "/api/v1/order-history", authed=True, account_scoped=True, params={"status": "OPEN"})
+    payload = _get(cfg, "/api/v1/orders", authed=True, account_scoped=True)
+    rows = [_order_to_dict(item) for item in _extract_items(payload)]
+
+    open_orders = [row for row in rows if str(row.get("status") or "").upper() in _OPEN_ORDER_STATUSES]
     result: dict[str, Any] = {
         "status": "ok",
         "profile": cfg.profile,
         "paper_guard": PAPER_GUARD,
-        "open_orders": [_order_to_dict(item) for item in _extract_items(open_payload)],
+        "open_orders": open_orders,
     }
     if include_executions:
-        closed_payload = _get(
-            cfg, "/api/v1/order-history", authed=True, account_scoped=True, params={"status": "CLOSED"}
-        )
-        result["executions"] = [_order_to_dict(item) for item in _extract_items(closed_payload)]
+        result["executions"] = [row for row in rows if row not in open_orders]
     return result
 
 
@@ -260,11 +271,15 @@ def get_quote(symbol: str, *, config: TossConfig | None = None, **_: Any) -> dic
         return {"status": "error", "error": str(exc), "symbol": clean}
 
     row = _first_item(payload)
+    last = _first(row, ("lastPrice", "price"))
+    if last is None:
+        # An empty/unpriced result is a data problem, not a valid quote.
+        return {"status": "error", "error": f"Toss returned no price for {clean!r}", "symbol": clean}
     return {
         "status": "ok",
         "symbol": clean,
         "quote": {
-            "last": _first(row, ("lastPrice", "price")),
+            "last": last,
             "currency": _first(row, ("currency",)),
             "timestamp": _first(row, ("timestamp",)),
         },
@@ -302,12 +317,14 @@ def get_historical_bars(
             "/api/v1/candles",
             authed=True,
             account_scoped=False,
-            params={"symbol": clean, "interval": interval, "limit": capped_limit},
+            params={"symbol": clean, "interval": interval, "count": capped_limit},
         )
     except TossAPIError as exc:
         return {"status": "error", "error": str(exc), "symbol": clean}
 
     bars = [_bar_to_dict(item) for item in _extract_items(payload)]
+    # A bar with no close price is a data problem, not a zero-priced candle.
+    bars = [bar for bar in bars if bar.get("close") is not None]
     return {"status": "ok", "symbol": clean, "period": period, "bars": bars}
 
 
@@ -401,23 +418,29 @@ def _access_token(cfg: TossConfig) -> str:
     if response.status_code >= 400:
         raise TossAPIError(f"Toss token issuance returned HTTP {response.status_code}: {_error_message(response)}")
 
-    body = response.json()
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise TossAPIError("Toss token issuance returned invalid JSON.") from exc
     token = str(body.get("access_token") or "")
     if not token:
-        raise TossAPIError(f"Toss token issuance returned no access_token: {body}")
+        # Never echo the response body here: it is the token endpoint, and a
+        # future field could be another secret rather than diagnostic text.
+        raise TossAPIError("Toss token issuance returned no access_token.")
     expires_in = float(body.get("expires_in") or 0)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({
-            "client_id": cfg.client_id,
-            "access_token": token,
-            "expires_at": now + max(expires_in - _TOKEN_REFRESH_MARGIN_SECONDS, 0),
-        }),
-        encoding="utf-8",
-    )
+    payload = json.dumps({
+        "client_id": cfg.client_id,
+        "access_token": token,
+        "expires_at": now + max(expires_in - _TOKEN_REFRESH_MARGIN_SECONDS, 0),
+    })
+    # Create with owner-only permissions from the start -- chmod-ing after
+    # write leaves a brief window where the token is world-readable.
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
-        path.chmod(0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(payload)
     except OSError:
         pass
     return token
@@ -515,7 +538,15 @@ def _as_iter(value: Any) -> list[Any]:
     return [value]
 
 
+def _unwrap(payload: Any) -> Any:
+    """Unwrap the Toss API's ``{"result": ...}`` envelope, present on every response."""
+    if isinstance(payload, Mapping) and "result" in payload:
+        return payload["result"]
+    return payload
+
+
 def _extract_items(payload: Any) -> list[Any]:
+    payload = _unwrap(payload)
     if isinstance(payload, list):
         return payload
     if isinstance(payload, Mapping):
