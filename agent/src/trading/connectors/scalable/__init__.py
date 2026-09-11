@@ -1,0 +1,1 @@
+"""Scalable Capital connector package."""
