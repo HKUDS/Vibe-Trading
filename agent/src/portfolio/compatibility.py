@@ -98,6 +98,15 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "open_positions",
         "Account totals and instrument quote resolution require verification.",
     ),
+    "scalable": PortfolioCompatibility(
+        "experimental",
+        1,
+        "stocks_etfs",
+        (
+            "Declares portfolio reads, but Scalable publishes no tool argument schemas "
+            "yet, so the holdings payload shape is unverified."
+        ),
+    ),
 }
 
 _EXPERIMENTAL_DEFAULT = PortfolioCompatibility(
