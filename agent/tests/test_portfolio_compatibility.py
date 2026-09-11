@@ -28,6 +28,7 @@ def test_every_builtin_portfolio_connector_has_an_explicit_compatibility_tier():
         "tiger": "experimental",
         "trading212": "experimental",
         "zerodha": "experimental",
+        "scalable": "experimental",
     }
 
     observed = {profile.connector: profile_compatibility(profile)["level"] for profile in eligible_profiles()}

@@ -45,6 +45,11 @@ _LIVE_CAPABLE = frozenset(
         "robinhood",
         "ibkr",
         "mt5",
+        # Scalable Capital publishes no paper environment at all — the same shape
+        # as Robinhood — so there is no ambiguity a discriminator would protect
+        # against. Tier settled as bounded live in #1367; the profile that ships
+        # today is read-only and exposes no order capability.
+        "scalable",
     }
 )
 

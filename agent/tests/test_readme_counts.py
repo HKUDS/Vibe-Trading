@@ -69,8 +69,9 @@ BADGE_ORDER = ("skills", "brokers", "presets", "alphas", "engines", "quantlib")
 # must equal the number of distinct connectors the profile registry exposes.
 # Without that guard the count tests only prove the five READMEs agree with
 # each other, which they did while all five were uniformly wrong — eToro
-# shipped as the 13th connector and the pin stayed at 12.
-EXPECTED_BROKERS = 14
+# shipped as the 13th connector and the pin stayed at 12. Same again for
+# Scalable Capital, which landed as the 15th.
+EXPECTED_BROKERS = 15
 
 
 def _read(name: str) -> str:
