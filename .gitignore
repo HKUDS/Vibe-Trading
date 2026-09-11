@@ -79,6 +79,8 @@ agent/uploads/
 /etoro.json
 /futu.json
 /ibkr-local.json
+/kis.json
+/kis-token-*.json
 /longbridge.json
 /mt5.json
 /okx.json

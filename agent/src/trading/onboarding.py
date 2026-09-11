@@ -94,6 +94,21 @@ _BUILTIN: dict[str, ConnectorOnboarding] = {
         install_command="pip install futu-api",
         setup_hint="Start and sign in to Futu OpenD on this computer before testing.",
     ),
+    "kis": ConnectorOnboarding(
+        auth_type="api_key",
+        credential_fields=(
+            _field("app_key", "App Key"),
+            _field("app_secret", "App Secret"),
+            _field("account_no", "Account Number (CANO)", secret=False),
+            _field("account_product_code", "Account Product Code", secret=False, required=False),
+        ),
+        dependency="requests",
+        install_command="pip install keyring",
+        setup_hint=(
+            "Apply for an app key/secret at apiportal.koreainvestment.com; test "
+            "against a 모의투자 (paper) account before ever using live-readonly."
+        ),
+    ),
     "longbridge": ConnectorOnboarding(
         auth_type="api_key",
         credential_fields=(
