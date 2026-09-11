@@ -38,6 +38,7 @@ _PUBLIC_PROVIDERS = frozenset(
         "openai",
         "openai-codex",
         "openai_codex",
+        "opencode",
         "opencode-go",
         "opencode-zen",
         "openrouter",
