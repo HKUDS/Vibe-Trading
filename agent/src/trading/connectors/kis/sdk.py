@@ -24,12 +24,22 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 import requests
 
 from src.config.paths import get_runtime_root
+
+#: KIS dates (order history, chart ranges) are Korea Standard Time, not the
+#: machine's local clock.
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def _kst_today() -> str:
+    return datetime.now(_KST).strftime("%Y%m%d")
 
 CONFIG_FILENAME = "kis.json"
 
@@ -62,6 +72,23 @@ _EXCHANGE_ID_KRX = "KRX"
 #: Safety margin subtracted from the token's reported TTL before it is
 #: treated as expired, so a request never races an in-flight expiry.
 _TOKEN_REFRESH_MARGIN_SECONDS = 120
+
+#: Fallback token TTL when KIS's token response omits ``expires_in`` (should
+#: not happen per the docs, but re-issuing on every call would blow through
+#: KIS's once-per-minute token rate limit if it ever does).
+_DEFAULT_TOKEN_TTL_SECONDS = 3600.0
+
+#: Returned by order methods for any non-paper config. KIS's host separation
+#: means live order placement is technically reachable, but this connector
+#: deliberately does not wire a mandate-gated live-trade profile yet.
+_LIVE_ORDER_ERROR = (
+    "KIS live order placement is not wired in this connector yet (no "
+    "kis-live-trade profile exists); use a kis-paper-* profile."
+)
+
+#: Safety cap on KIS's tr_cont continuation loop so a misbehaving or
+#: adversarial response cannot page forever.
+_MAX_CONTINUATION_PAGES = 20
 
 
 class KISConfigError(RuntimeError):
@@ -148,7 +175,10 @@ class KISConfig:
         return BASE_URLS[self.environment]
 
 
-_OVERRIDE_KEYS = ("app_key", "app_secret", "account_no", "account_product_code", "profile")
+#: ``profile`` is deliberately excluded: a per-call override could otherwise
+#: flip a paper-declared profile to the live host/TR_ID without the service
+#: layer noticing (see the structural guard in place_order/cancel_order below).
+_OVERRIDE_KEYS = ("app_key", "app_secret", "account_no", "account_product_code")
 
 
 def build_config(
@@ -280,8 +310,8 @@ def get_open_orders(
 ) -> dict[str, Any]:
     """Fetch today's orders, split into still-open vs already-executed."""
     cfg = config or load_config()
-    today = time.strftime("%Y%m%d")
-    payload = _get(
+    today = _kst_today()
+    payload = _get_paginated(
         cfg,
         "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
         tr_id=_TR_DAILY_CCLD[cfg.environment],
@@ -378,7 +408,7 @@ def get_historical_bars(
             "symbol": ticker,
         }
 
-    end = time.strftime("%Y%m%d")
+    end = _kst_today()
     try:
         payload = _get(
             cfg,
@@ -414,22 +444,24 @@ def place_order(
 ) -> dict[str, Any]:
     """Place an order against the account matching ``config``'s environment.
 
-    Paper-vs-live is structural: :func:`_get`/:func:`_post` send the request to
-    ``config.base_url``, which is the paper host for a ``paper`` profile and
-    the live host for a ``live-readonly`` profile — but ``live-readonly``
-    profiles set ``readonly=True`` and never reach this function (the caller,
-    ``src.trading.service.place_order``, refuses before calling any connector).
-    So in practice only a genuine KIS paper (모의투자) account is ever ordered
-    against here.
+    Paper-vs-live is structural in two ways: the very first check refuses any
+    non-paper config (this connector wires no live-trade profile yet, see
+    ``_LIVE_ORDER_ERROR`), and — for the paper case that does proceed —
+    :func:`_get`/:func:`_post` send the request to ``config.base_url``, the
+    real KIS paper host.
 
     Args:
         symbol: 6-digit KRX ticker, e.g. ``"005930"``.
         side: ``buy`` or ``sell``.
         quantity: Share quantity (KIS trades whole shares only).
         order_type: ``market`` or ``limit``.
-        limit_price: Required for limit orders.
+        limit_price: Required for limit orders (whole KRW won only).
     """
     cfg = config or load_config()
+
+    # ---- HARD GUARD: no live-trade profile wired yet (must run first) ----
+    if not cfg.is_paper:
+        return {"status": "error", "error": _LIVE_ORDER_ERROR}
 
     ticker = str(symbol or "").strip().upper()
     if not ticker:
@@ -447,10 +479,14 @@ def place_order(
         return {"status": "error", "error": "KIS requires a share quantity; notional-based sizing is not supported"}
     if quantity is None or float(quantity) < 1:
         return {"status": "error", "error": "quantity must be a positive whole number of shares"}
-    qty = int(float(quantity))
+    if float(quantity) != int(float(quantity)):
+        return {"status": "error", "error": "quantity must be a whole number of shares"}
+    qty = int(quantity)
 
     if type_token == "limit" and limit_price is None:
         return {"status": "error", "error": "limit order requires limit_price"}
+    if type_token == "limit" and float(limit_price) != int(float(limit_price)):
+        return {"status": "error", "error": "limit_price must be a whole KRW amount"}
 
     ord_dvsn = "00" if type_token == "limit" else "01"  # 00=지정가, 01=시장가
     unit_price = str(int(limit_price)) if type_token == "limit" else "0"
@@ -501,19 +537,36 @@ def cancel_order(
         order_id: The broker order number (``ODNO``) from :func:`place_order`.
         order_branch: The branch code (``KRX_FWDG_ORD_ORGNO``) returned
             alongside ``order_id`` by :func:`place_order` — KIS requires it to
-            identify which order to cancel.
+            identify which order to cancel. When omitted, it is looked up from
+            today's order list (:func:`get_open_orders`) by ``order_id``, so a
+            caller that only has the id (e.g. a later agent turn) can still
+            cancel.
         quantity: Quantity to cancel; omit or ``0`` to cancel the full
             remaining quantity (``전량``).
     """
     cfg = config or load_config()
 
+    # ---- HARD GUARD: no live-trade profile wired yet (must run first) ----
+    if not cfg.is_paper:
+        return {"status": "error", "error": _LIVE_ORDER_ERROR}
+
     clean_id = str(order_id or "").strip()
     if not clean_id:
         return {"status": "error", "error": "order_id is required"}
-    if not order_branch:
-        return {"status": "error", "error": "order_branch (KRX_FWDG_ORD_ORGNO) is required"}
     if quantity is not None and 0 < float(quantity) < 1:
         return {"status": "error", "error": "quantity must be 0 (cancel all) or a whole number of shares"}
+
+    branch = str(order_branch or "").strip()
+    if not branch:
+        branch = _lookup_order_branch(cfg, clean_id)
+    if not branch:
+        return {
+            "status": "error",
+            "error": (
+                f"could not find order_branch (KRX_FWDG_ORD_ORGNO) for order_id "
+                f"{clean_id!r} in today's order list; pass order_branch explicitly"
+            ),
+        }
 
     qty = int(float(quantity)) if quantity else 0
     payload = _post(
@@ -523,13 +576,14 @@ def cancel_order(
         body={
             "CANO": cfg.account_no,
             "ACNT_PRDT_CD": cfg.account_product_code,
-            "KRX_FWDG_ORD_ORGNO": order_branch,
+            "KRX_FWDG_ORD_ORGNO": branch,
             "ORGN_ODNO": clean_id,
             "ORD_DVSN": "00",
             "RVSE_CNCL_DVSN_CD": "02",  # 02=취소
             "ORD_QTY": str(qty),
             "ORD_UNPR": "0",
             "QTY_ALL_ORD_YN": "N" if qty else "Y",
+            "EXCG_ID_DVSN_CD": _EXCHANGE_ID_KRX,
         },
     )
 
@@ -550,8 +604,25 @@ def cancel_order(
 # ---------------------------------------------------------------------------
 
 
+def _lookup_order_branch(cfg: KISConfig, order_id: str) -> str:
+    """Resolve ``KRX_FWDG_ORD_ORGNO`` for ``order_id`` from today's order list.
+
+    ``place_order`` returns the branch code directly, but a caller that only
+    kept the order id (e.g. a later agent turn) has no other way to recover
+    it, and KIS requires it to identify which order ``cancel_order`` targets.
+    """
+    try:
+        orders = get_open_orders(cfg, include_executions=True)
+    except (KISAPIError, KISConfigError):
+        return ""
+    for row in (*orders.get("open_orders", []), *orders.get("executions", [])):
+        if str(row.get("order_id") or "") == order_id:
+            return str(row.get("order_branch") or "")
+    return ""
+
+
 def _balance(cfg: KISConfig) -> dict[str, Any]:
-    return _get(
+    return _get_paginated(
         cfg,
         "/uapi/domestic-stock/v1/trading/inquire-balance",
         tr_id=_TR_BALANCE[cfg.environment],
@@ -611,7 +682,7 @@ def _access_token(cfg: KISConfig) -> str:
     token = str(body.get("access_token") or "")
     if not token:
         raise KISAPIError(f"KIS token issuance returned no access_token: {body}")
-    expires_in = float(body.get("expires_in") or 0)
+    expires_in = float(body.get("expires_in") or 0) or _DEFAULT_TOKEN_TTL_SECONDS
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -629,23 +700,64 @@ def _access_token(cfg: KISConfig) -> str:
     return token
 
 
-def _headers(cfg: KISConfig, tr_id: str) -> dict[str, str]:
+def _headers(cfg: KISConfig, tr_id: str, tr_cont: str) -> dict[str, str]:
     return {
         "content-type": "application/json; charset=utf-8",
         "authorization": f"Bearer {_access_token(cfg)}",
         "appkey": cfg.app_key,
         "appsecret": cfg.app_secret,
         "tr_id": tr_id,
+        "tr_cont": tr_cont,
         "custtype": "P",
     }
 
 
 def _get(cfg: KISConfig, path: str, *, tr_id: str, params: Mapping[str, Any]) -> dict[str, Any]:
-    return _request(cfg, "GET", path, tr_id=tr_id, params=params)
+    body, _headers_out = _request(cfg, "GET", path, tr_id=tr_id, params=params)
+    return body
 
 
 def _post(cfg: KISConfig, path: str, *, tr_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
-    return _request(cfg, "POST", path, tr_id=tr_id, body=body)
+    payload, _headers_out = _request(cfg, "POST", path, tr_id=tr_id, body=body)
+    return payload
+
+
+def _get_paginated(
+    cfg: KISConfig,
+    path: str,
+    *,
+    tr_id: str,
+    params: Mapping[str, Any],
+    rows_key: str = "output1",
+) -> dict[str, Any]:
+    """Follow KIS's ``tr_cont`` continuation protocol, merging every page's rows.
+
+    A response ``tr_cont`` header of ``F`` (first page, more follows) or ``M``
+    (middle page, more follows) means another page exists; the client echoes
+    that response's ``ctx_area_fk100``/``ctx_area_nk100`` into the next
+    request and sends request header ``tr_cont: "N"`` on every call after the
+    first, per the official ``inquire_balance``/``inquire_daily_ccld``
+    examples. Anything else (``D``/``E``, or an absent header) is the last
+    page. Capped at :data:`_MAX_CONTINUATION_PAGES` so a misbehaving response
+    cannot page forever.
+    """
+    rows: list[Any] = []
+    last_body: dict[str, Any] = {}
+    tr_cont = ""
+    page_params = dict(params)
+    for _ in range(_MAX_CONTINUATION_PAGES):
+        body, headers = _request(cfg, "GET", path, tr_id=tr_id, params=page_params, tr_cont=tr_cont)
+        last_body = body
+        rows.extend(_as_list(body.get(rows_key)))
+        if str(headers.get("tr_cont", "")) not in ("F", "M"):
+            break
+        page_params = dict(params)
+        page_params["CTX_AREA_FK100"] = body.get("ctx_area_fk100", "")
+        page_params["CTX_AREA_NK100"] = body.get("ctx_area_nk100", "")
+        tr_cont = "N"
+    merged = dict(last_body)
+    merged[rows_key] = rows
+    return merged
 
 
 def _request(
@@ -656,7 +768,8 @@ def _request(
     tr_id: str,
     params: Mapping[str, Any] | None = None,
     body: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
+    tr_cont: str = "",
+) -> tuple[dict[str, Any], Mapping[str, str]]:
     missing = _missing_fields(cfg)
     if missing:
         raise KISConfigError(f"KIS connector not configured: missing {', '.join(missing)}.")
@@ -665,7 +778,7 @@ def _request(
         response = requests.request(
             method.upper(),
             f"{cfg.base_url}{path}",
-            headers=_headers(cfg, tr_id),
+            headers=_headers(cfg, tr_id, tr_cont),
             params=dict(params or {}),
             json=dict(body) if body is not None else None,
             timeout=cfg.timeout,
@@ -678,7 +791,7 @@ def _request(
     if response.status_code >= 400:
         raise KISAPIError(f"KIS API returned HTTP {response.status_code}: {_error_message(response)}")
     try:
-        return response.json()
+        return response.json(), response.headers
     except ValueError as exc:
         raise KISAPIError("KIS API returned invalid JSON.") from exc
 
