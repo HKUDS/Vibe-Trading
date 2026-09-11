@@ -9,13 +9,26 @@ returns the right numbers; that needs a live ``tools/list`` plus an account.
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
 import pytest
+from mcp import types as mcp_types
+
+import src.live.paths as paths
+from src.live.extractors import get_extractor
+from src.live.mandate.model import MANDATE_SCHEMA_VERSION
+from src.live.order_guard import LiveOrderGuardTool
+from src.live.registry import is_live_broker, wrap_live_broker_tools
+from src.tools.mcp import MCPRemoteTool, build_mcp_tool_wrappers
 
 from src.config.schema import (
     LIVE_BROKER_SERVER_KEYS,
     LIVE_BROKER_URL_HOST_SUFFIX_TO_KEY,
     SCALABLE_MCP_SERVER_SEED,
     AgentConfig,
+    MCPServerConfig,
     is_live_broker_url,
 )
 from src.live import registry
@@ -171,3 +184,129 @@ def test_remote_arguments_never_invents_a_portfolio() -> None:
         "symbols": ["IE00B4L5Y983", "IE00B5BMR087"]
     }
     assert remote_arguments("quote", {}) == {}
+
+
+# ── Adversarial pass: what an operator could still do, and where it lands ─────
+#
+# The seed is OFF-by-default, but nothing stops an operator hand-editing
+# `enabledTools` — that is the documented path for the Robinhood write tools.
+# These four tests take that path for Scalable and pin where it ends.
+
+_SCALABLE_CATALOG = tuple(str(t) for t in SCALABLE_MCP_SERVER_SEED["enabled_tools"]) + ("submit_buy_order",)
+
+
+class _RefusingClient:
+    """Mock MCP client that fails the test if a remote call is ever attempted."""
+
+    async def __aenter__(self) -> "_RefusingClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def list_tools(self) -> list[mcp_types.Tool]:
+        return [
+            mcp_types.Tool(name=name, description=f"remote {name}", inputSchema={"type": "object"})
+            for name in _SCALABLE_CATALOG
+        ]
+
+    async def call_tool(self, name, arguments=None, *, timeout=None, raise_on_error=False):
+        raise AssertionError(f"the gate must refuse before any remote call (tried {name})")
+
+
+def _assemble(enabled_tools: list[str]) -> list[MCPRemoteTool]:
+    """Discover + live-wrap the scalable channel for a given allowlist."""
+    cfg = MCPServerConfig.model_validate(dict(SCALABLE_MCP_SERVER_SEED) | {"enabled_tools": enabled_tools})
+    wrappers = build_mcp_tool_wrappers("scalable", cfg, client_factory=lambda: _RefusingClient())
+    assert is_live_broker("scalable", cfg.url)
+    return wrap_live_broker_tools("scalable", wrappers, url=cfg.url)
+
+
+def test_seeded_read_tools_are_plain_readonly_and_ungated() -> None:
+    tools = _assemble(list(SCALABLE_MCP_SERVER_SEED["enabled_tools"]))
+
+    assert {t._spec.remote_name for t in tools} == set(SCALABLE_MCP_SERVER_SEED["enabled_tools"])
+    assert all(type(t) is MCPRemoteTool and t.is_readonly for t in tools)
+    assert not any(isinstance(t, LiveOrderGuardTool) for t in tools)
+
+
+def test_a_hand_enabled_order_tool_is_gate_wrapped_not_exposed() -> None:
+    """An operator adding a WRITE name by hand gets a gated tool, never a plain one."""
+    tools = _assemble(list(SCALABLE_MCP_SERVER_SEED["enabled_tools"]) + ["submit_buy_order"])
+    by_name = {t._spec.remote_name: t for t in tools}
+
+    assert type(by_name["submit_buy_order"]) is LiveOrderGuardTool
+    assert by_name["submit_buy_order"].broker == "scalable"
+    assert type(by_name["get_portfolio_holdings"]) is MCPRemoteTool
+
+
+def test_scalable_has_no_order_intent_extractor() -> None:
+    """No extractor is registered for Scalable — the gate can only fail closed."""
+    assert get_extractor("scalable") is None
+
+
+def test_order_path_fails_closed_at_the_intent_step(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hand-enabled Scalable order is refused before any remote call.
+
+    This exercises the gate's no-extractor branch, which had no test before this
+    connector: Scalable is the first live-capable connector that ships without an
+    order-intent extractor, so nothing else could reach
+    "order intent could not be parsed". A committed mandate is deliberately
+    present, so the refusal cannot be explained by a missing mandate.
+    """
+    monkeypatch.setattr(paths, "get_runtime_root", lambda: tmp_path)
+    _commit_scalable_mandate(tmp_path)
+
+    guard = {
+        t._spec.remote_name: t
+        for t in _assemble(list(SCALABLE_MCP_SERVER_SEED["enabled_tools"]) + ["submit_buy_order"])
+    }["submit_buy_order"]
+    # The fake client raises if this reaches the broker; a refusal payload is the
+    # only way this line returns.
+    payload = json.loads(guard.execute(symbol="VWCE", side="buy", quantity=1, instrument_type="etf"))
+
+    assert payload["status"] == "blocked"
+    assert payload["reason"] == "order intent could not be parsed"
+    decision = payload["live_action"]["gate_decision"]
+    assert decision["allowed"] is False
+    assert decision["decision"] == "deny"
+    assert decision["checked_limits"] == ["mandate", "expiry", "halt_flag", "intent"]
+    # Nothing was sized and nothing reached the broker: the refusal is structural,
+    # not a mandate-cap rejection.
+    assert payload["live_action"]["intent_normalized"] is None
+    assert payload["live_action"]["broker_request"] is None
+
+
+def _commit_scalable_mandate(runtime_root: Path) -> None:
+    """Write a valid committed mandate for Scalable, so a denial is not 'no mandate'."""
+    broker = runtime_root / "live" / "scalable"
+    broker.mkdir(parents=True, exist_ok=True)
+    created = datetime.now(timezone.utc)
+    payload = {
+        "schema_version": MANDATE_SCHEMA_VERSION,
+        "hard_caps": {
+            "account_funding_usd": 5000.0,
+            "max_order_notional_usd": 750.0,
+            "max_total_exposure_usd": 5000.0,
+            "max_leverage": 1.0,
+            "allowed_instruments": ["equity", "etf"],
+            "max_trades_per_day": 5,
+        },
+        "universe": {
+            # No EU bucket exists in the mandate AssetClass vocabulary (us/hk/cn/in
+            # equity, crypto, forex) — see the follow-up noted in the PR. Any
+            # valid bucket works here; the refusal under test happens earlier.
+            "asset_classes": ["us_etf"],
+            "min_market_cap_usd": None,
+            "min_avg_daily_volume_usd": None,
+            "exclude_symbols": [],
+        },
+        "consent": {
+            "created_at": created.isoformat(),
+            "consent_token_sha256": "deadbeef",
+            "broker": "scalable",
+            "account_ref": "acct_ref",
+            "expires_at": (created + timedelta(days=30)).isoformat(),
+        },
+    }
+    (broker / "mandate.json").write_text(json.dumps(payload), encoding="utf-8")
