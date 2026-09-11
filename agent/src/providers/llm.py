@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from copy import copy
 from urllib.parse import urlparse
 import re
@@ -17,6 +18,7 @@ from urllib.parse import urlsplit
 from pydantic import PrivateAttr
 
 from src.config.accessor import get_env_config, reset_env_config
+from src.providers.session_context import current_llm_session_id
 from src.providers.capabilities import (
     ProviderCapabilities,
     get_llm_credentials,
@@ -68,6 +70,27 @@ def _build_proxy_free_http_clients() -> tuple[Any, Any]:
         httpx.Client(transport=sync_transport),
         httpx.AsyncClient(transport=async_transport),
     )
+
+
+_OPENCODE_PROVIDER_NAMES = frozenset({"opencode", "opencode-go", "opencode-zen"})
+_OPENCODE_SESSION_HEADER = "x-opencode-session"
+
+
+def _targets_opencode(provider: str | None, base_url: str | None) -> bool:
+    """Report whether requests go to the OpenCode relay.
+
+    True for the ``opencode*`` provider names and for any provider whose base
+    URL points at ``opencode.ai`` (e.g. ``deepseek`` re-pointed at the Go
+    endpoint), so the session header follows the endpoint, not the label.
+    """
+    normalized = (provider or "").strip().lower().replace("_", "-")
+    if normalized in _OPENCODE_PROVIDER_NAMES:
+        return True
+    raw = (base_url or "").strip()
+    if not raw:
+        return False
+    host = (urlparse(raw if "//" in raw else f"https://{raw}").hostname or "").lower()
+    return host == "opencode.ai" or host.endswith(".opencode.ai")
 
 
 _AMBIENT_OPENAI_HEADER_ENV_VARS = (
@@ -266,6 +289,7 @@ if ChatOpenAI is not None:
         _vibe_ambient_header_names: tuple[str, ...] = PrivateAttr(default=())
         _vibe_has_explicit_authorization: bool = PrivateAttr(default=False)
         _vibe_owned_http_clients: tuple[Any, ...] = PrivateAttr(default=())
+        _vibe_fallback_session_id: str = PrivateAttr(default="")
 
         def __init__(
             self,
@@ -290,12 +314,31 @@ if ChatOpenAI is not None:
             self._vibe_provider = vibe_provider
             self._vibe_api_key = vibe_api_key or ""
             self._vibe_owned_http_clients = tuple(vibe_owned_http_clients or ())
+            # One id per adapter: outside a bound Vibe session (swarm workers,
+            # scheduled research, CLI) every request from this adapter still
+            # shares a stable conversation identity.
+            self._vibe_fallback_session_id = uuid.uuid4().hex
             self._vibe_ambient_header_names = tuple(
                 name for name in ambient_names if name not in explicit_names
             )
             self._vibe_has_explicit_authorization = (
                 "authorization" in explicit_names_lower
             )
+
+        def _opencode_session_headers(self) -> dict[str, str]:
+            """Return the ``x-opencode-session`` header for opencode.ai relays.
+
+            OpenCode Go rejects requests without a stable per-conversation id
+            (400 ``MissingSessionID``) and uses it for routing and prompt
+            caching. The agent loop binds the active Vibe session id via
+            ``src.providers.session_context``; the per-adapter fallback keeps
+            one conversation stable when no session is bound.
+            """
+            base_url = getattr(self, "openai_api_base", None)
+            if not _targets_opencode(self._vibe_provider, base_url):
+                return {}
+            session_id = current_llm_session_id() or self._vibe_fallback_session_id
+            return {_OPENCODE_SESSION_HEADER: session_id} if session_id else {}
 
         def _provider_scoped_extra_headers(self) -> dict[str, Any]:
             """Remove ambient OpenAI-only headers from named relay requests."""
@@ -720,6 +763,17 @@ if ChatOpenAI is not None:
                 if isinstance(existing_headers, Mapping):
                     scoped_headers.update(existing_headers)
                 payload["extra_headers"] = scoped_headers
+            session_headers = self._opencode_session_headers()
+            if session_headers:
+                existing_headers = payload.get("extra_headers")
+                merged: dict[str, Any] = (
+                    dict(existing_headers) if isinstance(existing_headers, Mapping) else {}
+                )
+                present = {str(name).lower() for name in merged}
+                for name, value in session_headers.items():
+                    if name.lower() not in present:
+                        merged[name] = value
+                payload["extra_headers"] = merged
             return payload
 
 else:

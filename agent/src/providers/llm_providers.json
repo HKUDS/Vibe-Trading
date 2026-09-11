@@ -56,6 +56,19 @@
     "api_key_required": true
   },
   {
+    "name": "opencode",
+    "label": "OpenCode (Go / Zen)",
+    "api_key_env": "OPENCODE_API_KEY",
+    "base_url_env": "OPENCODE_BASE_URL",
+    "default_model": "deepseek-v4.1-flash",
+    "default_base_url": "https://opencode.ai/zen/go/v1",
+    "base_url_options": [
+      "https://opencode.ai/zen/go/v1",
+      "https://opencode.ai/zen/v1"
+    ],
+    "api_key_required": true
+  },
+  {
     "name": "siliconflow-cn",
     "label": "SiliconFlow (CN)",
     "api_key_env": "SILICONFLOW_API_KEY",

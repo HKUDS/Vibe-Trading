@@ -111,6 +111,21 @@ _NVIDIA_CAPABILITIES = ProviderCapabilities(
     default_headers={"User-Agent": _VIBE_USER_AGENT},
 )
 
+
+# OpenCode Go / Zen relay (opencode.ai). Speaks the OpenAI wire format and
+# serves DeepSeek/GLM/Kimi models that stream ``reasoning_content``. OpenCode
+# Go additionally requires a stable per-conversation ``x-opencode-session``
+# header (400 ``MissingSessionID`` without it); that value depends on the
+# active session and is injected at request time in ``llm.py``. The
+# User-Agent is the client identification the service asks for.
+_OPENCODE_CAPABILITIES = ProviderCapabilities(
+    "opencode",
+    "OPENCODE_API_KEY",
+    "OPENCODE_BASE_URL",
+    capture_reasoning=True,
+    default_headers={"User-Agent": _VIBE_USER_AGENT},
+)
+
 # GLM thinking models (glm-4.5+/glm-5.x) stream the chain-of-thought as
 # ``reasoning_content`` with the final answer in ``content``. Capture the
 # reasoning like DeepSeek; do NOT replay it on assistant turns —
@@ -236,6 +251,7 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "github-copilot": _COPILOT_CAPABILITIES,
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
+    "opencode": _OPENCODE_CAPABILITIES,
     "opencode-zen": ProviderCapabilities(
         "opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"
     ),
