@@ -670,6 +670,8 @@
     "noBacktestSummary": "لم يتم تسجيل ملخص اختبار عكسي.",
     "noReproducibilityHashes": "لم يتم تسجيل تجزئات قابلية إعادة الإنتاج.",
     "noScalarMetrics": "لم يتم تسجيل مقاييس عددية.",
+    "noStructuredMetrics": "لم يتم تسجيل أي مقاييس مهيكلة.",
+    "structuredMetrics": "المقاييس المهيكلة",
     "noValidationPayload": "لم يتم تسجيل حمولة التحقق.",
     "noArtifactChecksums": "لم يتم تسجيل مجاميع التحقق للمنتجات.",
     "noCodeFiles": "لا توجد ملفات شفرة.",

@@ -11,6 +11,25 @@ from typing import Any, Mapping, Sequence
 
 
 SCHEMA_VERSION = "0.1"
+# Largest single structured metric the card will carry, counted in BYTES of the
+# JSON the card actually writes (indented, sorted, non-ASCII kept literal). The
+# card is an at-a-glance artefact read on every run, so a structured metric that
+# exceeds this is named under `_OMITTED_KEY` rather than allowed to grow the
+# card without bound.
+_STRUCTURED_METRIC_MAX_BYTES = 4096
+# Reserved: records which structured metrics were dropped. A metric of this name
+# is itself omitted-and-named rather than published, so the record can never be
+# silently overwritten by one.
+_OMITTED_KEY = "_omitted"
+# Metrics whose value is also stored under a dedicated top-level card key, so
+# carrying them here would publish the same object twice. Only ``validation``
+# qualifies: ``card["validation"] = metrics["validation"]``.
+#
+# ``warnings`` deliberately does NOT: the card's top-level ``warnings`` comes
+# from ``config["content_filter_warnings"]``, whereas the options engine puts
+# its own annualisation warnings under ``metrics["warnings"]`` - a different
+# list with no other home. Excluding it would silently discard them.
+_DEDICATED_CARD_KEYS = ("validation",)
 BACKTEST_SUMMARY_KEYS = (
     "codes",
     "start_date",
@@ -38,7 +57,8 @@ def write_run_card(
         run_dir: Directory where run_card.json and run_card.md are written.
         config: Full backtest configuration. Only a summary and hash are stored.
         metrics: Backtest metrics. Scalar values are stored; ``validation`` is
-            stored separately when present.
+            stored under its own top-level key. Non-scalar metrics are carried
+            in ``structured_metrics``.
         data_sources: Data sources used by the run.
         strategy_path: Optional strategy source file to hash for reproducibility.
         warnings: Optional warnings to include in the card.
@@ -73,6 +93,9 @@ def write_run_card(
     normalized_refs = _normalize_artifact_refs(artifact_refs)
     if normalized_refs:
         card["artifact_refs"] = normalized_refs
+    structured = _structured_metrics(metrics)
+    if structured:
+        card["structured_metrics"] = structured
     if "validation" in metrics:
         card["validation"] = metrics["validation"]
 
@@ -123,11 +146,82 @@ def _backtest_summary(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _scalar_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
+    """Scalar metrics, minus any whose value has a dedicated top-level key."""
     return {
         key: value
         for key, value in metrics.items()
-        if key != "validation" and _is_scalar(value)
+        if key not in _DEDICATED_CARD_KEYS and _is_scalar(value)
     }
+
+
+def _structured_metrics(metrics: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the non-scalar metrics that ``metrics`` cannot hold.
+
+    ``metrics`` is a deliberately scalar-only, stable surface, so a dict- or
+    list-shaped metric is filtered out of it. Discarding those outright loses
+    evidence the engine authors for card readers: for example
+    ``unfilled_plan_rejections_by_symbol`` names the sleeve and reason behind a
+    rejection, while the scalar ``unfilled_plan_rejections`` beside it is an
+    anonymous count. They are carried here instead, excluding
+    ``_DEDICATED_CARD_KEYS`` - those already have their own top-level key and
+    would otherwise be published twice.
+
+    The card is written at the end of an already-completed run, so this must
+    never raise: a value that cannot be serialised, or that is larger than
+    ``_STRUCTURED_METRIC_MAX_BYTES``, is omitted and named under
+    ``_OMITTED_KEY`` rather than allowed to fail the run or bloat the card. The
+    bound is what keeps ``by_symbol``-style maps from turning into a
+    multi-hundred-kilobyte card as new structured metrics are added.
+
+    Args:
+        metrics: Backtest metrics as passed to :func:`write_run_card`.
+
+    Returns:
+        The non-scalar metrics that fit, or an empty dict when there are none.
+    """
+    structured = {
+        key: value
+        for key, value in metrics.items()
+        if key not in _DEDICATED_CARD_KEYS and not _is_scalar(value)
+    }
+    if not structured:
+        return {}
+    kept: dict[str, Any] = {}
+    omitted: list[str] = []
+    for key, value in structured.items():
+        if key == _OMITTED_KEY:
+            omitted.append(key)
+            continue
+        try:
+            size = _serialised_size(value)
+        except (TypeError, ValueError, RecursionError):
+            omitted.append(key)
+            continue
+        if size > _STRUCTURED_METRIC_MAX_BYTES:
+            omitted.append(key)
+        else:
+            kept[key] = value
+    if omitted:
+        kept[_OMITTED_KEY] = sorted(omitted)
+    return kept
+
+
+def _serialised_size(value: Any) -> int:
+    """UTF-8 bytes this value occupies in the card's own JSON formatting.
+
+    Measured on the normalised value (``_json_safe``, as the writer applies)
+    and in bytes: ``len()`` on the string counts characters, which understates
+    a CJK value roughly threefold, and the card is written indented rather than
+    compact, so a compact dump would understate it again.
+    """
+    rendered = json.dumps(
+        _json_safe(value),
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+        default=str,
+    )
+    return len(rendered.encode("utf-8"))
 
 
 def _json_safe(value: Any) -> Any:
@@ -207,6 +301,21 @@ def _render_markdown(card: Mapping[str, Any]) -> str:
     lines.extend(["", "## Metrics"])
     metric_values = card.get("metrics", {})
     lines.extend(f"- {key}: {value}" for key, value in metric_values.items()) if metric_values else lines.append("- No scalar metrics recorded.")
+
+    structured = card.get("structured_metrics", {})
+    if structured:
+        lines.extend(["", "## Structured metrics", ""])
+        lines.append(
+            "Non-scalar metrics, which the `metrics` block cannot hold - carried so "
+            "they can be inspected by key instead of only as a flattened count."
+        )
+        lines.append("")
+        # Deliberately not an inline code span: a value containing a backtick
+        # would close the span early and corrupt the section. Formatted like
+        # the scalar lines above instead.
+        for key, value in structured.items():
+            rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+            lines.append(f"- {key}: {rendered}")
 
     lines.extend(["", "## Validation"])
     if "validation" in card:

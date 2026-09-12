@@ -1154,6 +1154,9 @@ export interface RunCard {
   reproducibility?: Record<string, unknown>;
   data_sources?: string[];
   metrics?: Record<string, unknown>;
+  // Carried alongside `metrics`, which is scalar-only: dict/list-shaped metrics
+  // (e.g. which sleeve a plan rejection dropped) reach the card here.
+  structured_metrics?: Record<string, unknown>;
   validation?: unknown;
   warnings?: string[];
   artifacts?: RunCardArtifact[];
