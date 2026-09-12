@@ -206,19 +206,28 @@ def check_status(config: TossConfig | None = None) -> dict[str, Any]:
 
 #: Order-status tokens the Toss API is documented to use for a resting order.
 #: Anything else observed on a row is treated as closed/executed.
-_OPEN_ORDER_STATUSES = frozenset({"OPEN", "PENDING", "PARTIALLY_FILLED", "NEW"})
-
-
 def get_account_snapshot(config: TossConfig | None = None) -> dict[str, Any]:
-    """Fetch holdings summary totals for the configured account."""
+    """Fetch holdings summary totals for the configured account.
+
+    Per-total values (``market_value``, ``profit_loss``) are passed through as
+    the API's own ``{"krw": ..., "usd": ...}``-wrapped objects rather than
+    flattened into one number, since flattening would mean guessing which
+    currency the caller wants.
+    """
     cfg = config or load_config()
     payload = _get(cfg, "/api/v1/holdings", authed=True, account_scoped=True)
-    summary = _mapping_or_raw(_first(_unwrap(payload), ("summary", "accountSummary")))
+    result = _unwrap(payload)
+    result = result if isinstance(result, Mapping) else {}
     return {
         "status": "ok",
         "profile": cfg.profile,
         "paper_guard": PAPER_GUARD,
-        "account": summary,
+        "account": {
+            "total_purchase_amount": result.get("totalPurchaseAmount"),
+            "market_value": result.get("marketValue"),
+            "profit_loss": result.get("profitLoss"),
+            "daily_profit_loss": result.get("dailyProfitLoss"),
+        },
     }
 
 
@@ -239,25 +248,26 @@ def get_open_orders(
     *,
     include_executions: bool = False,
 ) -> dict[str, Any]:
-    """Fetch Toss orders, split into still-open vs already-executed.
+    """Fetch open Toss orders, optionally with recently closed ones.
 
-    Toss exposes one order-reading endpoint rather than separate open/history
-    ones, so open vs executed is a client-side split on each row's own status
-    field, the same way the Dhan/Trading 212 connectors do it.
+    ``status`` is a required query parameter on ``/api/v1/orders`` -- it is
+    not something to derive client-side from each row, so open and closed are
+    two separate calls, the same as the original design. ``CLOSED`` is
+    paginated by the API (``limit``/``cursor``); this fetches one page.
     """
     cfg = config or load_config()
-    payload = _get(cfg, "/api/v1/orders", authed=True, account_scoped=True)
-    rows = [_order_to_dict(item) for item in _extract_items(payload)]
-
-    open_orders = [row for row in rows if str(row.get("status") or "").upper() in _OPEN_ORDER_STATUSES]
+    open_payload = _get(cfg, "/api/v1/orders", authed=True, account_scoped=True, params={"status": "OPEN"})
     result: dict[str, Any] = {
         "status": "ok",
         "profile": cfg.profile,
         "paper_guard": PAPER_GUARD,
-        "open_orders": open_orders,
+        "open_orders": [_order_to_dict(item) for item in _extract_items(open_payload)],
     }
     if include_executions:
-        result["executions"] = [row for row in rows if row not in open_orders]
+        closed_payload = _get(
+            cfg, "/api/v1/orders", authed=True, account_scoped=True, params={"status": "CLOSED"}
+        )
+        result["executions"] = [_order_to_dict(item) for item in _extract_items(closed_payload)]
     return result
 
 
@@ -323,8 +333,9 @@ def get_historical_bars(
         return {"status": "error", "error": str(exc), "symbol": clean}
 
     bars = [_bar_to_dict(item) for item in _extract_items(payload)]
-    # A bar with no close price is a data problem, not a zero-priced candle.
-    bars = [bar for bar in bars if bar.get("close") is not None]
+    # A bar with no close price is a data problem, not a gap to drop silently.
+    if any(bar.get("close") is None for bar in bars):
+        return {"status": "error", "error": f"Toss returned a candle with no close price for {clean!r}", "symbol": clean}
     return {"status": "ok", "symbol": clean, "period": period, "bars": bars}
 
 
@@ -562,14 +573,6 @@ def _first_item(payload: Any) -> Any:
     return items[0] if items else {}
 
 
-def _mapping_or_raw(value: Any) -> dict[str, Any]:
-    if isinstance(value, Mapping):
-        return dict(value)
-    if value is None:
-        return {}
-    return {"raw": value}
-
-
 def _obj_get(obj: Any, name: str, default: Any = None) -> Any:
     if obj is None:
         return default
@@ -586,16 +589,24 @@ def _first(obj: Any, names: tuple[str, ...], default: Any = None) -> Any:
     return default
 
 
+def _nested(obj: Any, key: str, subkey: str, default: Any = None) -> Any:
+    """Read ``obj[key][subkey]``, e.g. an order's ``execution.filledQuantity``."""
+    value = _obj_get(obj, key)
+    if isinstance(value, Mapping):
+        return value.get(subkey, default)
+    return default
+
+
 def _position_to_dict(item: Any) -> dict[str, Any]:
     return {
         "symbol": _first(item, ("symbol", "productCode")),
         "name": _first(item, ("name", "productName")),
         "quantity": _first(item, ("quantity", "qty")),
-        "average_price": _first(item, ("averagePrice", "avgPrice")),
-        "current_price": _first(item, ("currentPrice", "price")),
-        "pnl": _first(item, ("profitLoss", "pnl")),
+        "average_price": _first(item, ("averagePurchasePrice", "averagePrice", "avgPrice")),
+        "current_price": _first(item, ("lastPrice", "currentPrice", "price")),
+        "pnl": _nested(item, "profitLoss", "amount"),
         "currency": _first(item, ("currency",)),
-        "market": _first(item, ("market", "exchange")),
+        "market": _first(item, ("marketCountry", "market", "exchange")),
     }
 
 
@@ -607,10 +618,10 @@ def _order_to_dict(item: Any) -> dict[str, Any]:
         "order_type": str(_first(item, ("orderType", "type"), "")),
         "status": str(_first(item, ("status",), "")),
         "quantity": _first(item, ("quantity", "qty")),
-        "filled_quantity": _first(item, ("filledQuantity", "filledQty")),
+        "filled_quantity": _nested(item, "execution", "filledQuantity"),
         "price": _first(item, ("price", "limitPrice")),
         "currency": _first(item, ("currency",)),
-        "created_at": _first(item, ("createdAt", "orderedAt")),
+        "created_at": _first(item, ("orderedAt", "createdAt")),
     }
 
 

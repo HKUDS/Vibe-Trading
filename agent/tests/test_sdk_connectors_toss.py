@@ -80,16 +80,44 @@ def test_toss_invalid_profile_rejected() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_toss_positions_reads_holdings_and_unwraps_result(monkeypatch) -> None:
+#: A single holdings item shaped exactly like GET /api/v1/holdings per the
+#: openapi.json v1.2.15 spec (confirmed by review on #1409).
+_HOLDINGS_PAYLOAD = {
+    "result": {
+        "totalPurchaseAmount": {"krw": 700000, "usd": None},
+        "marketValue": {"amount": {"krw": 715000, "usd": None}, "amountAfterCost": {"krw": 714000, "usd": None}},
+        "profitLoss": {
+            "amount": {"krw": 15000, "usd": None},
+            "amountAfterCost": {"krw": 14000, "usd": None},
+            "rate": 2.14,
+            "rateAfterCost": 2.0,
+        },
+        "dailyProfitLoss": {"krw": 1500, "usd": None},
+        "items": [
+            {
+                "symbol": "005930",
+                "name": "Samsung Electronics",
+                "marketCountry": "KR",
+                "currency": "KRW",
+                "quantity": 10,
+                "lastPrice": "71500",
+                "averagePurchasePrice": "70000",
+                "marketValue": {"purchaseAmount": "700000", "amount": "715000", "amountAfterCost": "714000"},
+                "profitLoss": {"amount": "15000", "amountAfterCost": "14000", "rate": "2.14", "rateAfterCost": "2.0"},
+                "dailyProfitLoss": "1500",
+                "cost": "1000",
+            }
+        ],
+    }
+}
+
+
+def test_toss_positions_reads_holdings_and_unwraps_nested_items(monkeypatch) -> None:
     def fake_get(cfg, path, *, authed, account_scoped, params=None):
         assert path == "/api/v1/holdings"
         assert authed is True
         assert account_scoped is True
-        return {
-            "result": [
-                {"symbol": "005930", "quantity": 10, "averagePrice": 70000, "currentPrice": 71500, "currency": "KRW"}
-            ]
-        }
+        return _HOLDINGS_PAYLOAD
 
     monkeypatch.setattr(toss, "_get", fake_get)
     cfg = toss.TossConfig(client_id="c", client_secret="s", account_seq="1")
@@ -99,33 +127,79 @@ def test_toss_positions_reads_holdings_and_unwraps_result(monkeypatch) -> None:
     assert result["positions"] == [
         {
             "symbol": "005930",
-            "name": None,
+            "name": "Samsung Electronics",
             "quantity": 10,
-            "average_price": 70000,
-            "current_price": 71500,
-            "pnl": None,
+            "average_price": "70000",
+            "current_price": "71500",
+            "pnl": "15000",
             "currency": "KRW",
-            "market": None,
+            "market": "KR",
         }
     ]
 
 
-def test_toss_open_orders_splits_on_status_from_a_single_endpoint(monkeypatch) -> None:
+def test_toss_account_snapshot_reads_holdings_totals_without_flattening_currency(monkeypatch) -> None:
+    monkeypatch.setattr(toss, "_get", lambda *a, **k: _HOLDINGS_PAYLOAD)
+    cfg = toss.TossConfig(client_id="c", client_secret="s", account_seq="1")
+    result = toss.get_account_snapshot(cfg)
+
+    assert result["status"] == "ok"
+    assert result["account"]["total_purchase_amount"] == {"krw": 700000, "usd": None}
+    assert result["account"]["market_value"]["amount"] == {"krw": 715000, "usd": None}
+    assert result["account"]["profit_loss"]["rate"] == 2.14
+
+
+def test_toss_open_orders_calls_status_open_and_closed_separately(monkeypatch) -> None:
+    """status is a required query param on /api/v1/orders, not something to
+    derive by inspecting each row -- two calls, matching the spec."""
+    calls = []
+
     def fake_get(cfg, path, *, authed, account_scoped, params=None):
+        calls.append(params)
         assert path == "/api/v1/orders"
-        return {
-            "result": [
-                {"orderId": "1", "symbol": "005930", "status": "OPEN", "side": "buy", "quantity": 5},
-                {"orderId": "2", "symbol": "005930", "status": "FILLED", "side": "sell", "quantity": 3},
-            ]
-        }
+        if params == {"status": "OPEN"}:
+            return {
+                "result": {
+                    "orders": [
+                        {
+                            "orderId": "1",
+                            "symbol": "005930",
+                            "side": "BUY",
+                            "orderType": "LIMIT",
+                            "status": "PARTIAL_FILLED",
+                            "price": "70000",
+                            "quantity": 5,
+                            "currency": "KRW",
+                            "orderedAt": "t1",
+                            "execution": {"filledQuantity": 2, "averageFilledPrice": "70000"},
+                        }
+                    ],
+                    "hasNext": False,
+                    "nextCursor": None,
+                }
+            }
+        return {"result": {"orders": [], "hasNext": False, "nextCursor": None}}
 
     monkeypatch.setattr(toss, "_get", fake_get)
     cfg = toss.TossConfig(client_id="c", client_secret="s", account_seq="1")
     result = toss.get_open_orders(cfg, include_executions=True)
 
-    assert [row["order_id"] for row in result["open_orders"]] == ["1"]
-    assert [row["order_id"] for row in result["executions"]] == ["2"]
+    assert calls == [{"status": "OPEN"}, {"status": "CLOSED"}]
+    assert result["open_orders"] == [
+        {
+            "order_id": "1",
+            "symbol": "005930",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "status": "PARTIAL_FILLED",
+            "quantity": 5,
+            "filled_quantity": 2,
+            "price": "70000",
+            "currency": "KRW",
+            "created_at": "t1",
+        }
+    ]
+    assert result["executions"] == []
 
 
 def test_toss_get_quote_unwraps_result_list(monkeypatch) -> None:
@@ -169,7 +243,9 @@ def test_toss_get_historical_bars_uses_count_not_limit_and_unwraps_nested_result
     assert result["bars"] == [{"time": "t1", "open": "1", "high": "2", "low": "1", "close": "1.5", "volume": None}]
 
 
-def test_toss_get_historical_bars_drops_bars_with_no_close_price(monkeypatch) -> None:
+def test_toss_get_historical_bars_errors_on_a_bar_with_no_close_price(monkeypatch) -> None:
+    """A missing close is a data problem -- silently dropping it would leave a
+    gap in the series with no signal that anything was wrong."""
     monkeypatch.setattr(
         toss,
         "_get",
@@ -177,7 +253,7 @@ def test_toss_get_historical_bars_drops_bars_with_no_close_price(monkeypatch) ->
     )
     cfg = toss.TossConfig(client_id="c", client_secret="s", account_seq="1")
     result = toss.get_historical_bars("005930", config=cfg)
-    assert result["bars"] == []
+    assert result["status"] == "error"
 
 
 # --------------------------------------------------------------------------- #
