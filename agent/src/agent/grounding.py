@@ -752,6 +752,30 @@ _CLAUSE_SEPARATOR_RE = re.compile(r"[,，;；。、\n]")
 # needs a digit before it and exactly three digits after.
 _THOUSANDS_SEPARATOR_RE = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 
+# Locale numerals (#1418): decimal-comma detection must never flip English
+# list prose ("steps 1,2 and 3") into a decimal, so a bare `1,5` stays
+# ambiguous-by-design and only unambiguous shapes count as markers: a
+# percent-adjacent comma group, a leading-zero group English would never
+# write, or a signed group (nobody signs a list). Once any marker is present
+# the text speaks decimal-comma and every digit-comma is a decimal point
+# (`5,132` is 5.132 there, not 5132). With no marker the text reads as
+# English and commas keep their thousands meaning.
+_DECIMAL_COMMA_MARK_RE = re.compile(
+    r"\d,\d{1,2}\s*[%％]"
+    r"|(?<![\d,])0,\d{3}(?!\d)"
+    r"|[-+]\d+,\d{1,3}(?!\d)"
+)
+_DECIMAL_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
+_UNICODE_MINUS = "−"
+
+
+def _normalize_locale_numerals(text: str) -> str:
+    """Normalize Unicode minus and decimal commas into English numerals."""
+    normalized = text.replace(_UNICODE_MINUS, "-")
+    if not _DECIMAL_COMMA_MARK_RE.search(normalized):
+        return normalized
+    return _DECIMAL_COMMA_RE.sub(".", normalized)
+
 
 def _split_clauses(text: str) -> list[str]:
     """Split prose into clauses without breaking a grouped number apart.
@@ -763,7 +787,8 @@ def _split_clauses(text: str) -> list[str]:
         The clause segments, with thousands separators removed so a grouped
         price survives as one number.
     """
-    return _CLAUSE_SEPARATOR_RE.split(_THOUSANDS_SEPARATOR_RE.sub("", text))
+    normalized = _normalize_locale_numerals(text)
+    return _CLAUSE_SEPARATOR_RE.split(_THOUSANDS_SEPARATOR_RE.sub("", normalized))
 _TABLE_SEPARATOR_RE = re.compile(r"^:?-{3,}:?$")
 
 _TABLE_FIELD_ALIASES = {
@@ -3044,7 +3069,8 @@ class GroundingLedger:
     @staticmethod
     def _measure_numbers(text: str) -> list[str]:
         """Extract measurement-shaped numbers (decimal or percent) from a claim."""
-        masked = _LOCALIZED_DATE_RE.sub(" ", text)
+        masked = _normalize_locale_numerals(text)
+        masked = _LOCALIZED_DATE_RE.sub(" ", masked)
         masked = _DATE_RE.sub(" ", masked)
         masked = _SHORT_DATE_RE.sub(" ", masked)
         masked = _DASH_DATE_RE.sub(" ", masked)
