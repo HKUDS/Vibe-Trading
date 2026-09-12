@@ -98,6 +98,7 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "open_positions",
         "Account totals and instrument quote resolution require verification.",
     ),
+    "toss": PortfolioCompatibility("experimental", 1, "positions", "KRW valuation is not supported yet."),
 }
 
 _EXPERIMENTAL_DEFAULT = PortfolioCompatibility(
