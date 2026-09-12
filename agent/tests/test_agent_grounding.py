@@ -3747,3 +3747,80 @@ def test_crypto_pair_tables_match_the_resolver() -> None:
     # gold and forex are quoted in it too); grounding decides it by the base
     # whitelist instead, so it is the only permitted difference.
     assert set(g._CRYPTO_QUOTE_ASSETS) | {"USD"} == set(ss._CRYPTO_QUOTE_ASSETS)
+
+
+def test_metadata_count_leaf_is_not_return_evidence(tmp_path: Path) -> None:
+    """#1420: return_observations is a sample-size count, not an 81% return."""
+    from src.agent.grounding import _metric_kind_for_path
+
+    assert _metric_kind_for_path("return_observations") is None
+    assert _metric_kind_for_path("benchmark_return_count") is None
+    assert _metric_kind_for_path("observation_count") is None
+    # real return fields must keep their kind
+    assert _metric_kind_for_path("total_return") == "return"
+    assert _metric_kind_for_path("annualized_return") == "return"
+    assert _metric_kind_for_path("return") == "return"
+    assert _metric_kind_for_path("return_vol") == "vol"
+    assert _metric_kind_for_path("strategy_max_drawdown") == "drawdown"
+
+
+def test_a_count_column_cannot_ground_a_return_claim(tmp_path: Path) -> None:
+    """End to end: an 81 in return_observations must not validate "年化 81%"."""
+    run_dir = tmp_path / "runs" / "count"
+    (run_dir / "artifacts").mkdir(parents=True)
+    (run_dir / "artifacts" / "metrics.csv").write_text(
+        "return_observations,total_return\n81,0.031\n",
+        encoding="utf-8",
+    )
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略表现")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(run_dir)},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "exit_code": 0,
+                "run_dir": str(run_dir),
+                "artifacts": {
+                    "metrics.csv": str(run_dir / "artifacts" / "metrics.csv")
+                },
+            }
+        ),
+        call_id="bt-count",
+        success=True,
+    )
+
+    fabricated = ledger.validate_final_answer("策略年化收益 81%。")
+    assert fabricated.valid is False
+    assert "analysis_claim_unavailable" in {
+        issue["code"] for issue in fabricated.issues
+    }
+
+    honest = ledger.validate_final_answer("策略年化收益 3.1%。")
+    assert honest.valid is True, honest.issues
+
+
+def test_a_count_field_in_analysis_json_cannot_ground_a_return_claim(
+    tmp_path: Path,
+) -> None:
+    """#1420 的真实路径：factor_analysis 的 JSON 叶子 return_observations=81
+    不得把"年化 81%"验证为真（修复前恰好能）。"""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析策略表现")
+    ledger.ingest_tool_result(
+        tool_name="factor_analysis",
+        arguments={},
+        result=json.dumps(
+            {"status": "ok", "return_observations": 81, "total_return": 0.031}
+        ),
+        call_id="fa-count",
+        success=True,
+    )
+
+    fabricated = ledger.validate_final_answer("策略年化收益 81%。")
+    assert fabricated.valid is False
+    assert "analysis_claim_unavailable" in {
+        issue["code"] for issue in fabricated.issues
+    }
+
+    honest = ledger.validate_final_answer("策略年化收益 3.1%。")
+    assert honest.valid is True, honest.issues
