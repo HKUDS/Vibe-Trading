@@ -675,6 +675,8 @@
     "noBacktestSummary": "No backtest summary recorded.",
     "noReproducibilityHashes": "No reproducibility hashes recorded.",
     "noScalarMetrics": "No scalar metrics recorded.",
+    "noStructuredMetrics": "No structured metrics recorded.",
+    "structuredMetrics": "Structured metrics",
     "noValidationPayload": "No validation payload recorded.",
     "noArtifactChecksums": "No artifact checksums recorded.",
     "noCodeFiles": "No code files.",

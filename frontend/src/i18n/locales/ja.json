@@ -670,6 +670,8 @@
     "noBacktestSummary": "バックテストサマリは記録されていません。",
     "noReproducibilityHashes": "再現性ハッシュは記録されていません。",
     "noScalarMetrics": "スカラーメトリクスは記録されていません。",
+    "noStructuredMetrics": "構造化メトリクスは記録されていません。",
+    "structuredMetrics": "構造化メトリクス",
     "noValidationPayload": "検証ペイロードは記録されていません。",
     "noArtifactChecksums": "成果物チェックサムは記録されていません。",
     "noCodeFiles": "コードファイルがありません。",
