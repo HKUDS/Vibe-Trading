@@ -205,7 +205,7 @@ def check_status(config: UpbitConfig | None = None) -> dict[str, Any]:
 
     if not report["sdk"]["installed"]:
         report["status"] = "error"
-        report["error"] = "Optional dependency missing: install with `pip install PyJWT`."
+        report["error"] = "Optional dependency missing: install with `pip install \"vibe-trading-ai[upbit]\"`."
         return report
 
     try:
@@ -258,7 +258,11 @@ def get_positions(config: UpbitConfig | None = None) -> dict[str, Any]:
             "quantity": quantity,
             "available": _as_float(item.get("balance")),
             "locked": _as_float(item.get("locked")),
+            # avg_buy_price is a price per unit of `currency`, denominated in
+            # `unit_currency` (e.g. a KRW price for a BTC position) -- not in
+            # `currency` itself, which is what `average_cost` alone would imply.
             "average_cost": _as_float(item.get("avg_buy_price")),
+            "average_cost_currency": unit_currency,
             "unit_currency": unit_currency,
         })
 
@@ -381,6 +385,12 @@ def place_order(
     ``environment`` is not ``paper``. There is therefore no live order path
     here, by design.
 
+    Every order looks up the current live price and refuses if none is
+    available. A market order fills at that price. A limit order fills only
+    if it is immediately marketable against it -- a buy at ``min(limit,
+    last)``, a sell at ``max(limit, last)`` -- and is refused otherwise, since
+    this simulator has no order book to rest a non-marketable order on.
+
     Args:
         symbol: Market code, e.g. ``KRW-BTC``.
         side: ``buy`` or ``sell``.
@@ -420,26 +430,47 @@ def place_order(
     if type_token == "limit" and limit_price is None:
         return {"status": "error", "error": "limit order requires limit_price"}
 
-    # Paper-only: simulate locally against a live quote (Upbit has no sandbox).
-    # A quantity-sized order needs no price at all, so it never makes the
-    # network call -- only notional sizing (converting a KRW spend into a
-    # quantity) does, and only when no limit_price was given to use instead.
-    fill_price = float(limit_price) if limit_price is not None else None
+    # Paper-only: simulate locally against a live quote (Upbit has no
+    # sandbox). Every order looks up the current price and refuses when none
+    # is available -- a simulated fill with no price is not a fill; any
+    # position or P&L built on it would be invented.
+    quote = get_quote(market, config=cfg)
+    last = _as_float(quote.get("quote", {}).get("last")) if quote.get("status") == "ok" else None
+    if not last:
+        return {
+            "status": "error",
+            "error": f"could not resolve a live quote for {market!r}; Upbit may not recognize this market",
+            "symbol": market,
+        }
 
-    if has_notional:
-        if fill_price is None:
-            quote = get_quote(market, config=cfg)
-            fill_price = _as_float(quote.get("quote", {}).get("last")) if quote.get("status") == "ok" else None
-        if not fill_price:
-            # An unpriced fill here would silently fabricate a null quantity.
-            return {
-                "status": "error",
-                "error": "could not resolve a live quote to size this notional order; retry or pass limit_price",
-                "symbol": market,
-            }
-        filled_qty = float(notional) / fill_price
+    if type_token == "limit":
+        limit = float(limit_price)  # type: ignore[arg-type]
+        if side_token == "buy":
+            if limit < last:
+                return {
+                    "status": "error",
+                    "error": (
+                        f"limit price {limit} would not fill against the current price {last}; "
+                        "this simulator only fills orders that are immediately marketable"
+                    ),
+                    "symbol": market,
+                }
+            fill_price = min(limit, last)
+        else:
+            if limit > last:
+                return {
+                    "status": "error",
+                    "error": (
+                        f"limit price {limit} would not fill against the current price {last}; "
+                        "this simulator only fills orders that are immediately marketable"
+                    ),
+                    "symbol": market,
+                }
+            fill_price = max(limit, last)
     else:
-        filled_qty = float(quantity)
+        fill_price = last
+
+    filled_qty = float(notional) / fill_price if has_notional else float(quantity)  # type: ignore[arg-type]
 
     return {
         "status": "ok",
@@ -451,7 +482,7 @@ def place_order(
         "paper_guard": "simulated_locally",
         "order_type": type_token,
         "quantity": filled_qty,
-        "limit_price": fill_price if type_token == "limit" else None,
+        "limit_price": float(limit_price) if type_token == "limit" else None,  # type: ignore[arg-type]
         "fill_price": fill_price,
         "order_status": "simulated_fill",
     }
@@ -509,7 +540,7 @@ def _require_jwt() -> ModuleType:
         import jwt  # type: ignore
     except ModuleNotFoundError as exc:
         raise UpbitDependencyError(
-            "PyJWT is not installed; run `pip install PyJWT`."
+            "PyJWT is not installed; run `pip install \"vibe-trading-ai[upbit]\"`."
         ) from exc
     return jwt
 

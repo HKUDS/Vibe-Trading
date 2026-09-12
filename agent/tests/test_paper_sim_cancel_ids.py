@@ -23,15 +23,22 @@ _CONNECTORS = [
     pytest.param(zerodha_sdk, zerodha_sdk.ZerodhaConfig, {"symbol": "RELIANCE"}, id="zerodha"),
     pytest.param(dhan_sdk, dhan_sdk.DhanConfig, {"symbol": "RELIANCE"}, id="dhan"),
     pytest.param(shoonya_sdk, shoonya_sdk.ShoonyaConfig, {"symbol": "RELIANCE"}, id="shoonya"),
-    # quantity-based sizing needs no live quote, so Upbit's place_order takes
-    # the same no-network path as the other three here; a notional-sized
-    # order would call get_quote and needs a mocked one instead.
+    # Upbit's place_order always looks up a live quote (a fill needs a real
+    # price), so its case here needs one mocked -- see the monkeypatch below.
     pytest.param(upbit_sdk, upbit_sdk.UpbitConfig, {"symbol": "KRW-BTC"}, id="upbit"),
 ]
 
 
+def _mock_upbit_quote_if_needed(monkeypatch, mod) -> None:
+    if mod is upbit_sdk:
+        monkeypatch.setattr(
+            upbit_sdk, "get_quote", lambda *a, **k: {"status": "ok", "quote": {"last": 150_000_000}}
+        )
+
+
 @pytest.mark.parametrize("mod, Config, order_kwargs", _CONNECTORS)
-def test_the_id_place_order_issued_can_be_cancelled(mod, Config, order_kwargs) -> None:
+def test_the_id_place_order_issued_can_be_cancelled(monkeypatch, mod, Config, order_kwargs) -> None:
+    _mock_upbit_quote_if_needed(monkeypatch, mod)
     placed = mod.place_order(Config(profile="paper"), side="buy", quantity=1, **order_kwargs)
     assert placed["status"] == "ok"
 

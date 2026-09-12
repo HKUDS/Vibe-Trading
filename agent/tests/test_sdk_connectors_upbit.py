@@ -52,9 +52,14 @@ def test_upbit_exposes_no_live_trade_profile() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_upbit_paper_place_order_simulated_locally() -> None:
+def _mock_quote(monkeypatch, last: float) -> None:
+    monkeypatch.setattr(up, "get_quote", lambda *a, **k: {"status": "ok", "quote": {"last": last}})
+
+
+def test_upbit_paper_market_order_fills_at_the_live_quote(monkeypatch) -> None:
+    _mock_quote(monkeypatch, 50_000_000)
     cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
-    result = up.place_order(cfg, symbol="KRW-BTC", side="buy", quantity=0.01, limit_price=50_000_000)
+    result = up.place_order(cfg, symbol="KRW-BTC", side="buy", quantity=0.01)
     assert result["status"] == "ok"
     assert result["is_paper"] is True
     assert result["order_status"] == "simulated_fill"
@@ -62,7 +67,45 @@ def test_upbit_paper_place_order_simulated_locally() -> None:
     assert result["fill_price"] == 50_000_000
 
 
-def test_upbit_paper_cancel_order_simulated() -> None:
+def test_upbit_market_order_refused_when_upbit_does_not_recognize_the_ticker(monkeypatch) -> None:
+    monkeypatch.setattr(up, "get_quote", lambda *a, **k: {"status": "error", "error": "not found"})
+    cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
+    result = up.place_order(cfg, symbol="KRW-NOSUCHCOIN", side="buy", quantity=1)
+    assert result["status"] == "error"
+
+
+def test_upbit_marketable_buy_limit_fills_at_the_better_of_limit_and_last(monkeypatch) -> None:
+    _mock_quote(monkeypatch, 100)
+    cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
+    result = up.place_order(cfg, symbol="KRW-BTC", side="buy", quantity=1, order_type="limit", limit_price=120)
+    assert result["status"] == "ok"
+    assert result["fill_price"] == 100  # min(limit, last)
+
+
+def test_upbit_non_marketable_buy_limit_is_refused(monkeypatch) -> None:
+    _mock_quote(monkeypatch, 100)
+    cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
+    result = up.place_order(cfg, symbol="KRW-BTC", side="buy", quantity=1, order_type="limit", limit_price=80)
+    assert result["status"] == "error"
+
+
+def test_upbit_marketable_sell_limit_fills_at_the_better_of_limit_and_last(monkeypatch) -> None:
+    _mock_quote(monkeypatch, 100)
+    cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
+    result = up.place_order(cfg, symbol="KRW-BTC", side="sell", quantity=1, order_type="limit", limit_price=80)
+    assert result["status"] == "ok"
+    assert result["fill_price"] == 100  # max(limit, last)
+
+
+def test_upbit_non_marketable_sell_limit_is_refused(monkeypatch) -> None:
+    _mock_quote(monkeypatch, 100)
+    cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
+    result = up.place_order(cfg, symbol="KRW-BTC", side="sell", quantity=1, order_type="limit", limit_price=120)
+    assert result["status"] == "error"
+
+
+def test_upbit_paper_cancel_order_simulated(monkeypatch) -> None:
+    _mock_quote(monkeypatch, 150_000_000)
     cfg = up.UpbitConfig(access_key="ak", secret_key="sk", profile="paper")
     placed = up.place_order(cfg, symbol="KRW-BTC", side="buy", quantity=1)
     result = up.cancel_order(cfg, placed["order_id"])

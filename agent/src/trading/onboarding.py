@@ -168,7 +168,7 @@ _BUILTIN: dict[str, ConnectorOnboarding] = {
             _field("secret_key", "Secret Key"),
         ),
         dependency="PyJWT",
-        install_command="pip install PyJWT keyring",
+        install_command='pip install "vibe-trading-ai[upbit]" keyring',
         setup_hint="Create a read-only key; do not grant withdrawal permission.",
     ),
 }
