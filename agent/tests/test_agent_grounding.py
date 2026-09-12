@@ -3747,3 +3747,70 @@ def test_crypto_pair_tables_match_the_resolver() -> None:
     # gold and forex are quoted in it too); grounding decides it by the base
     # whitelist instead, so it is the only permitted difference.
     assert set(g._CRYPTO_QUOTE_ASSETS) | {"USD"} == set(ss._CRYPTO_QUOTE_ASSETS)
+
+
+def _multi_metric_ledger(tmp_path: Path) -> GroundingLedger:
+    """A ledger whose backtest holds both volatility and drawdown evidence."""
+    run_dir = tmp_path / "runs" / "multi"
+    (run_dir / "artifacts").mkdir(parents=True)
+    (run_dir / "artifacts" / "metrics.csv").write_text(
+        "annualized_vol,max_drawdown\n0.23,-0.05\n",
+        encoding="utf-8",
+    )
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测策略的风险指标")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(run_dir)},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "exit_code": 0,
+                "run_dir": str(run_dir),
+                "artifacts": {
+                    "metrics.csv": str(run_dir / "artifacts" / "metrics.csv")
+                },
+            }
+        ),
+        call_id="bt-multi",
+        success=True,
+    )
+    return ledger
+
+
+def test_multi_metric_clause_validates_each_value_against_its_own_kind(
+    tmp_path: Path,
+) -> None:
+    """#1421: one clause, two metrics — each number is checked against the
+    metric it belongs to, not against a single clause-wide kind."""
+    ledger = _multi_metric_ledger(tmp_path)
+
+    good = ledger.validate_final_answer(
+        "Annualized volatility was 23% and max drawdown was -5%."
+    )
+    assert good.valid is True, good.issues
+
+    reversed_order = ledger.validate_final_answer(
+        "Max drawdown was -5% and annualized volatility was 23%."
+    )
+    assert reversed_order.valid is True, reversed_order.issues
+
+
+def test_multi_metric_clause_still_rejects_the_wrong_value(tmp_path: Path) -> None:
+    """Per-value kinds must not launder an unsupported figure either."""
+    ledger = _multi_metric_ledger(tmp_path)
+
+    bad = ledger.validate_final_answer(
+        "Annualized volatility was 23% and max drawdown was -9%."
+    )
+    assert bad.valid is False
+    by_value = {issue.get("value"): issue for issue in bad.issues}
+    assert "-9%" in by_value
+    assert by_value["-9%"]["kind"] == "drawdown"
+
+
+def test_single_metric_clause_behavior_is_unchanged(tmp_path: Path) -> None:
+    ledger = _multi_metric_ledger(tmp_path)
+
+    assert ledger.validate_final_answer("Annualized volatility was 23%.").valid is True
+    bad = ledger.validate_final_answer("Annualized volatility was 24%.")
+    assert bad.valid is False

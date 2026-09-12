@@ -2953,9 +2953,11 @@ class GroundingLedger:
                     continue
                 kind = _metric_kind_for_text(segment)
                 unsupported = [
-                    value
-                    for value in values
-                    if not self._analysis_value_observed(value, kind)
+                    (value, value_kind)
+                    for value, value_kind in GroundingLedger._measure_numbers_with_kinds(
+                        segment, kind
+                    )
+                    if not self._analysis_value_observed(value, value_kind)
                 ]
                 if not unsupported:
                     continue
@@ -2972,15 +2974,29 @@ class GroundingLedger:
                         line, price_records, line_symbol
                     )
                     if len(operands) >= 2 and self._return_derived_from_observed(
-                        unsupported, price_records, line_symbol, operands=operands
+                        [value for value, value_kind in unsupported if value_kind == "return"],
+                        price_records,
+                        line_symbol,
+                        operands=operands,
                     ):
-                        continue
+                        # the return figures derive from observed endpoints;
+                        # anything left belongs to another kind
+                        unsupported = [
+                            (value, value_kind)
+                            for value, value_kind in unsupported
+                            if value_kind != "return"
+                        ]
+                        if not unsupported:
+                            continue
+                if not unsupported:
+                    continue
+                value, issue_kind = unsupported[0]
                 issues.append(
                     {
                         "code": "analysis_claim_unavailable",
                         "claim": segment.strip()[:200],
-                        "value": unsupported[0],
-                        "kind": kind,
+                        "value": value,
+                        "kind": issue_kind,
                         "message": (
                             "No supporting analysis evidence (a completed "
                             "backtest result or observed risk metric) exists for "
@@ -3052,6 +3068,33 @@ class GroundingLedger:
             match.group(0).replace(" ", "").replace(",", "")
             for match in _MEASURE_NUMBER_RE.finditer(masked)
         ]
+
+    @staticmethod
+    def _measure_numbers_with_kinds(
+        text: str, clause_kind: str | None
+    ) -> list[tuple[str, str | None]]:
+        """Pair each measurement with the metric kind its own window names.
+
+        A clause can hold several metrics ("volatility was 23% and max
+        drawdown was -5%"), and validating every number against one
+        clause-wide kind rejects honest answers (#1421). Each value resolves
+        its kind from the text between the previous value and itself, using
+        the same ordered pattern priority as a whole clause; a window with no
+        metric word at all (or an ambiguous parallel listing) falls back to
+        the clause-level kind, which keeps single-metric behavior identical.
+        """
+        masked = _LOCALIZED_DATE_RE.sub(" ", text)
+        masked = _DATE_RE.sub(" ", masked)
+        masked = _SHORT_DATE_RE.sub(" ", masked)
+        masked = _DASH_DATE_RE.sub(" ", masked)
+        pairs: list[tuple[str, str | None]] = []
+        previous_end = 0
+        for match in _MEASURE_NUMBER_RE.finditer(masked):
+            window = masked[previous_end : match.end()]
+            kind = _metric_kind_for_text(window) or clause_kind
+            pairs.append((match.group(0).replace(" ", "").replace(",", ""), kind))
+            previous_end = match.end()
+        return pairs
 
     @staticmethod
     def _pipe_tables(
