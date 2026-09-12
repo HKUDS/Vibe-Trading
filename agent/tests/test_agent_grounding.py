@@ -18,6 +18,7 @@ from src.agent.grounding import (
     _JOINED_CRYPTO_RE,
     _normalize_symbol,
     _scan_symbols,
+    _split_clauses,
     _symbol_from_csv_filename,
     _timestamp_matches_claim_date,
 )
@@ -2521,6 +2522,63 @@ def test_a_clause_comma_still_separates_clauses(tmp_path: Path) -> None:
 
     assert result.valid is False
     assert "numeric_claim_conflict" in {issue["code"] for issue in result.issues}
+
+
+def test_spanish_decimal_commas_parse_as_one_number() -> None:
+    """#1418: "1,57%" / "−5,13%" are one measurement, not a clause boundary."""
+    clauses = _split_clauses("回撤为 −5,13%，年化 1,57%。")
+
+    assert clauses == ["回撤为 -5.13%", "年化 1.57%", ""]
+    numbers = GroundingLedger._measure_numbers("回撤为 −5,13%，年化 1,57%。")
+    assert "-5.13%" in numbers
+    assert "1.57%" in numbers
+
+
+def test_decimal_comma_document_reads_three_digit_groups_as_decimals() -> None:
+    """Once the text demonstrably speaks decimal-comma, even the ambiguous
+    `5,132` shape is a decimal, otherwise English thousands would win."""
+    numbers = GroundingLedger._measure_numbers("peor caso −5,132%, mejor 1,57%")
+
+    assert "-5.132%" in numbers
+    assert "1.57%" in numbers
+
+
+def test_zero_prefixed_decimal_comma_is_not_a_thousands_group() -> None:
+    """English never writes `0,188`, so a leading zero marks the decimal comma."""
+    numbers = GroundingLedger._measure_numbers("置信区间为 0,188")
+
+    assert "0.188" in numbers
+
+
+def test_unicode_minus_is_normalized_for_english_decimals_too() -> None:
+    numbers = GroundingLedger._measure_numbers("drawdown −5.13%")
+
+    assert "-5.13%" in numbers
+
+
+def test_english_thousands_grouping_still_wins_without_locale_signal() -> None:
+    """No decimal-comma marker anywhere: `5,132` and `1,309.22` stay English."""
+    assert GroundingLedger._measure_numbers("sampled 5,132 runs") == []
+    assert _split_clauses("收盘价 ¥1,309.22，数据来源：腾讯行情。") == [
+        "收盘价 ¥1309.22",
+        "数据来源：腾讯行情",
+        "",
+    ]
+
+
+def test_signed_decimal_comma_marks_the_locale_by_itself() -> None:
+    numbers = GroundingLedger._measure_numbers("peor caso −5,132%")
+
+    assert "-5.132%" in numbers
+
+
+def test_integer_list_prose_never_flips_to_decimal_comma() -> None:
+    """"steps 1,2 and 3" is a list, not 1.2 plus noise: no marker, no flip."""
+    assert _split_clauses("steps 1,2 and 3 are skipped") == [
+        "steps 1",
+        "2 and 3 are skipped",
+    ]
+    assert GroundingLedger._measure_numbers("置信区间为 2,237") == []
 
 
 @pytest.mark.parametrize("query", ["贵州茅台", "ZZZZ.V"])
