@@ -281,7 +281,12 @@ _ANALYSIS_METRIC_RE = re.compile(
     r"\bprob(?:ability)?\.?\s+of\b|\bvolatility\b|\bdrawdown\b|"
     r"\bannualiz\w*\b|\bwindow(?:s)?\b|\bregime(?:s)?\b|"
     r"\b(?:annual|cumulative|total)\s+return\b|"
-    r"夏普|回撤|波动率|胜率|命中率|概率|年化|回测|窗口|收益(?:率)?|回报(?:率)?)",
+    # tail-risk metrics (#1425): VaR/CVaR/expected shortfall. A bare "ES" is
+    # also the E-mini S&P ticker, so it only counts with a figure attached;
+    # "ES futures closed at ..." is a price claim, not a risk metric.
+    r"\bvar\b|\bcvar\b|expected\s+shortfall|\bes\b(?=\s*[-+]?\d)|"
+    r"夏普|回撤|波动率|胜率|命中率|概率|年化|回测|窗口|收益(?:率)?|回报(?:率)?|"
+    r"在险价值|风险价值|预期尾部损失)",
     re.IGNORECASE,
 )
 # Phrases that indicate a figure is attributed to an external source rather
@@ -353,11 +358,35 @@ _ANALYSIS_KIND_ALIASES = {
     "return": "return",
     "returns": "return",
     "ic_positive_ratio": "win_rate",
+    # tail-risk evidence leaves (#1425): quantlib's risk tools report var/cvar
+    # as positive loss magnitudes; CSV headers carry var_95/es_99 shapes.
+    "var": "tail_risk",
+    "cvar": "tail_risk",
+    "es": "tail_risk",
+    "expected_shortfall": "tail_risk",
+    "value_at_risk": "tail_risk",
+    "historical_var": "tail_risk",
+    "historical_cvar": "tail_risk",
+    "var_95": "tail_risk",
+    "var_99": "tail_risk",
+    "cvar_95": "tail_risk",
+    "cvar_99": "tail_risk",
+    "es_95": "tail_risk",
+    "es_99": "tail_risk",
 }
 
 # Order matters: 最大回撤 is drawdown before 收益/return, and 年化波动率 is vol
 # before the generic return branch.
 _ANALYSIS_KIND_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # tail risk first: "风险价值" carries no drawdown/return token, but the
+    # confidence frame ("VaR 95%") must classify before the % can wander.
+    (
+        re.compile(
+            r"(?:在险价值|风险价值|预期尾部损失|expected\s*shortfall|\bcvar\b|\bvar\b|\bes\b)",
+            re.IGNORECASE,
+        ),
+        "tail_risk",
+    ),
     (re.compile(r"(?:回撤|drawdown|maxdd|最大亏损)", re.IGNORECASE), "drawdown"),
     (
         re.compile(
@@ -518,6 +547,18 @@ _QUANTITY_WITH_UNIT_RE = re.compile(
     r"|(?:shares?|contracts?|lots?|units?|sessions?|bars?|periods?|"
     r"wks?|weeks?|months?|days?|years?|yrs?)\b"
     r")",
+    re.IGNORECASE,
+)
+# The confidence figure in a tail-risk frame is part of the metric's name,
+# not a measurement: in "VaR 95%: -1.57%" or "95% 置信水平下 VaR 为 -1.57%"
+# the 95% never reaches the evidence check, only the -1.57% does (#1425 —
+# mirrors _LABELLED_SCORE_RE, which does the same for "CONFIDENCE: 6").
+_TAIL_RISK_CONFIDENCE_RE = re.compile(
+    r"(?:\bvar\b|\bcvar\b|expected\s*shortfall|在险价值|风险价值|预期尾部损失)"
+    r"\s*[(（]?\s*[-+]?\d+(?:\.\d+)?\s*[%％]\s*[)）]?"
+    r"(?=\s*[:：=]?\s*[(（]?[-+]?\d)"  # a confidence is followed by the value; a bare "CVaR 2.1%" is the value
+    r"|"
+    r"[-+]?\d+(?:\.\d+)?\s*[%％]\s*(?:置信水平|置信度|confidence(?:\s+level)?)\s*[下上的]?",
     re.IGNORECASE,
 )
 # A conviction reading is on a labelled scale, not a price scale: the 6 in
@@ -3048,6 +3089,8 @@ class GroundingLedger:
         masked = _DATE_RE.sub(" ", masked)
         masked = _SHORT_DATE_RE.sub(" ", masked)
         masked = _DASH_DATE_RE.sub(" ", masked)
+        # The confidence in "VaR 95%: x" frames the measurement; it is not one.
+        masked = _TAIL_RISK_CONFIDENCE_RE.sub(" ", masked)
         return [
             match.group(0).replace(" ", "").replace(",", "")
             for match in _MEASURE_NUMBER_RE.finditer(masked)
@@ -3108,7 +3151,10 @@ class GroundingLedger:
                 continue
             observed.append(float(record.value))
         candidates = {value, value / 100.0}
-        if kind == "drawdown":
+        if kind in ("drawdown", "tail_risk"):
+            # Tail-risk sign conventions disagree the same way drawdown's do:
+            # quantlib reports VaR/CVaR as positive loss magnitudes while a
+            # report may write the same figure as -1.57%.
             candidates |= {abs(value), abs(value) / 100.0}
 
         def close(candidate: float, item: float) -> bool:
