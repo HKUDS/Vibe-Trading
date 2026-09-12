@@ -355,6 +355,11 @@ _ANALYSIS_KIND_ALIASES = {
     "ic_positive_ratio": "win_rate",
 }
 
+# Compound-leaf head nouns that mark a metadata/count field rather than a
+# metric value: return_observations is a sample size, not a return (#1420).
+# Exact alias leaves ("return", "total_return") never reach this check.
+_METADATA_HEAD_TOKENS = frozenset({"observation", "observations", "count", "counts"})
+
 # Order matters: 最大回撤 is drawdown before 收益/return, and 年化波动率 is vol
 # before the generic return branch.
 _ANALYSIS_KIND_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -1101,12 +1106,18 @@ def _metric_kind_for_path(path: str) -> str | None:
     kind = _ANALYSIS_KIND_ALIASES.get(leaf)
     if kind is not None:
         return kind
+    # Metadata leaves that merely contain a metric token: return_observations
+    # is a sample-size count, not a return (#1420). The head noun decides, and
+    # a denied head must not fall through to the text scan, which would match
+    # the same token all over again.
+    tokens = [token for token in re.split(r"[_.]", leaf) if token]
+    if tokens and tokens[-1] in _METADATA_HEAD_TOKENS:
+        return None
     # Compound leaves name the kind as a token ("reported_annualized_return",
     # "strategy_max_drawdown"). #1338 review: matching only the verbatim alias
     # table makes every other spelling silently ungroundable. Scan from the
     # right — English compounds put the head noun last, so "return_vol"
     # resolves to vol, never to return.
-    tokens = [token for token in re.split(r"[_.]", leaf) if token]
     for size in (2, 1):
         for start in range(len(tokens) - size, -1, -1):
             kind = _ANALYSIS_KIND_ALIASES.get("_".join(tokens[start : start + size]))
