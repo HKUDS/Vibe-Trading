@@ -89,7 +89,7 @@ Create and run quantitative strategies across 10 engines (ChinaA, GlobalEquity, 
 - **Premium cross-market data** via QVeris (optional API key)
 - **Premium US data** via optional-key finnhub / alphavantage / tiingo / fmp (graceful fallback to free sources)
 
-Factors: the Alpha101 and QLib158 zoos are tagged for the `equity_in` and `equity_kr` universes, so they compute on NSE/BSE and KRX bars (the GTJA191 zoo stays China-only). Live/paper India trading uses the Shoonya / Dhan connectors (paper + read-only live; live order placement is structurally disabled because those brokers expose no paper/live switch).
+Factors: the Alpha101 and QLib158 zoos are tagged for the `equity_in` and `equity_kr` universes, so they compute on NSE/BSE and KRX bars (the GTJA191 zoo stays China-only). Live/paper India trading uses the Shoonya / Dhan connectors (paper + read-only live; live order placement is structurally disabled because those brokers expose no paper/live switch). Live/paper Korea crypto trading uses the **Upbit** connector (KRW markets; paper + read-only live — no runtime paper/live discriminator, so live order placement is structurally disabled, same as Shoonya/Dhan).
 
 Example workflow:
 1. Use `list_skills()` to discover strategy patterns

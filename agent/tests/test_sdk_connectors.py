@@ -58,6 +58,7 @@ def test_sdk_profiles_registered() -> None:
         "shoonya-paper-sdk", "shoonya-live-sdk-readonly",
         "etoro-paper-sdk", "etoro-paper-trade",
         "etoro-live-sdk-readonly", "etoro-live-trade",
+        "upbit-paper-sdk", "upbit-paper-trade", "upbit-live-sdk-readonly",
     } <= ids
 
 
@@ -66,7 +67,7 @@ def test_no_discriminator_brokers_expose_no_live_trade_profile() -> None:
     Shoonya) must NOT register any live order-placing profile — the Longbridge
     precedent. A ``*-live-trade`` profile here would be a red-line regression."""
     ids = {p.id for p in profiles.list_profiles()}
-    for broker in ("longbridge", "dhan", "shoonya"):
+    for broker in ("longbridge", "dhan", "shoonya", "upbit"):
         assert f"{broker}-live-trade" not in ids
         # No live profile for these brokers may advertise an order capability.
         for p in profiles.list_profiles():

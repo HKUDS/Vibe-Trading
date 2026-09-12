@@ -129,6 +129,12 @@ zerodha = [
     # stays False (loader falls through to Shoonya/Dhan) until installed.
     "kiteconnect>=4.0.0",
 ]
+upbit = [
+    # Upbit (Korea, KRW crypto) broker connector JWT signing. Lazy-imported
+    # with a named error naming this extra; upbit_jwt_available() stays False
+    # until installed.
+    "PyJWT>=2.8.0",
+]
 deepseek = [
     "langchain-deepseek>=1.0.0,<2",
 ]

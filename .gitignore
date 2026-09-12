@@ -85,6 +85,7 @@ agent/uploads/
 /shoonya.json
 /tiger.json
 /trading212.json
+/upbit.json
 /zerodha.json
 agent/tests/*_result.json
 .ruff_cache/
