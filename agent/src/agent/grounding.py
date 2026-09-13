@@ -281,7 +281,12 @@ _ANALYSIS_METRIC_RE = re.compile(
     r"\bprob(?:ability)?\.?\s+of\b|\bvolatility\b|\bdrawdown\b|"
     r"\bannualiz\w*\b|\bwindow(?:s)?\b|\bregime(?:s)?\b|"
     r"\b(?:annual|cumulative|total)\s+return\b|"
-    r"夏普|回撤|波动率|胜率|命中率|概率|年化|回测|窗口|收益(?:率)?|回报(?:率)?)",
+    # tail-risk metrics (#1425): VaR/CVaR/expected shortfall. A bare "ES" is
+    # also the E-mini S&P ticker, so it only counts with a figure attached;
+    # "ES futures closed at ..." is a price claim, not a risk metric.
+    r"\bvar\b|\bcvar\b|expected\s+shortfall|\bes\b(?=\s*[-+]?\d)|"
+    r"夏普|回撤|波动率|胜率|命中率|概率|年化|回测|窗口|收益(?:率)?|回报(?:率)?|"
+    r"在险价值|风险价值|预期尾部损失)",
     re.IGNORECASE,
 )
 # Phrases that indicate a figure is attributed to an external source rather
@@ -353,11 +358,35 @@ _ANALYSIS_KIND_ALIASES = {
     "return": "return",
     "returns": "return",
     "ic_positive_ratio": "win_rate",
+    # tail-risk evidence leaves (#1425): quantlib's risk tools report var/cvar
+    # as positive loss magnitudes; CSV headers carry var_95/es_99 shapes.
+    "var": "tail_risk",
+    "cvar": "tail_risk",
+    "es": "tail_risk",
+    "expected_shortfall": "tail_risk",
+    "value_at_risk": "tail_risk",
+    "historical_var": "tail_risk",
+    "historical_cvar": "tail_risk",
+    "var_95": "tail_risk",
+    "var_99": "tail_risk",
+    "cvar_95": "tail_risk",
+    "cvar_99": "tail_risk",
+    "es_95": "tail_risk",
+    "es_99": "tail_risk",
 }
 
 # Order matters: 最大回撤 is drawdown before 收益/return, and 年化波动率 is vol
 # before the generic return branch.
 _ANALYSIS_KIND_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # tail risk first: "风险价值" carries no drawdown/return token, but the
+    # confidence frame ("VaR 95%") must classify before the % can wander.
+    (
+        re.compile(
+            r"(?:在险价值|风险价值|预期尾部损失|expected\s*shortfall|\bcvar\b|\bvar\b|\bes\b)",
+            re.IGNORECASE,
+        ),
+        "tail_risk",
+    ),
     (re.compile(r"(?:回撤|drawdown|maxdd|最大亏损)", re.IGNORECASE), "drawdown"),
     (
         re.compile(
@@ -520,6 +549,97 @@ _QUANTITY_WITH_UNIT_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+# The confidence figure in a tail-risk frame is part of the metric's name,
+# not a measurement: in "VaR 95%: -1.57%" or "95% 置信水平下 VaR 为 -1.57%"
+# the 95% never reaches the evidence check, only the -1.57% does (#1425 —
+# mirrors _LABELLED_SCORE_RE, which does the same for "CONFIDENCE: 6").
+_TAIL_RISK_CONFIDENCE_RE = re.compile(
+    r"(?:\bvar\b|\bcvar\b|\bes\b|expected\s*shortfall|在险价值|风险价值|预期尾部损失)"
+    r"\s*[(（]?\s*[-+]?\d+(?:\.\d+)?\s*[%％]\s*[)）]?"
+    r"(?=\s*(?:[:：=]|为|是|is\b)?\s*[(（]?[-+]?\d)"  # a confidence is followed by the value; a bare "CVaR 2.1%" is the value
+    r"|"
+    r"[-+]?\d+(?:\.\d+)?\s*[%％]\s*(?:置信水平|置信度|confidence(?:\s+level)?)\s*[下上的]?",
+    re.IGNORECASE,
+)
+# Identity inside the tail_risk family (#1427 review): the measure (var vs
+# es — CVaR/expected shortfall/预期尾部损失 are the es measure) and, when
+# named, the confidence. A 95% figure must not ground a 99% claim, and a VaR
+# figure must not ground an ES claim.
+_TAIL_RISK_ES_MEASURE_RE = re.compile(
+    r"\bcvar\b|\bes\b|expected\s*shortfall|预期尾部损失", re.IGNORECASE
+)
+_TAIL_RISK_CONFIDENCE_VALUE_RE = re.compile(
+    r"(?:\bvar\b|\bcvar\b|\bes\b|expected\s*shortfall|在险价值|风险价值|预期尾部损失)"
+    r"\s*[(（]?\s*(\d{2})(?:\.\d+)?\s*[%％]"
+    r"|"
+    r"(\d{2})(?:\.\d+)?\s*[%％]\s*(?:置信水平|置信度|confidence(?:\s+level)?)",
+    re.IGNORECASE,
+)
+
+
+def _tail_risk_identity_for_text(text: str) -> tuple[str | None, float | None]:
+    """(measure, confidence) a tail-risk claim names; either may be absent."""
+    measure: str | None = None
+    if _TAIL_RISK_ES_MEASURE_RE.search(text):
+        measure = "es"
+    elif re.search(r"\bvar\b|在险价值|风险价值", text, re.IGNORECASE):
+        measure = "var"
+    confidence: float | None = None
+    match = _TAIL_RISK_CONFIDENCE_VALUE_RE.search(text)
+    if match:
+        confidence = float(match.group(1) or match.group(2)) / 100.0
+    return measure, confidence
+
+
+def _tail_risk_identity_for_field(field: str) -> tuple[str | None, float | None]:
+    """(measure, confidence) an evidence field name carries, e.g. var_95."""
+    name = field.casefold()
+    measure: str | None = None
+    if (
+        "cvar" in name
+        or "expected_shortfall" in name
+        or re.search(r"(?:^|[^a-z])es(?:$|[^a-z])", name)
+    ):
+        measure = "es"
+    elif "var" in name:
+        measure = "var"
+    confidence: float | None = None
+    match = re.search(r"_(\d{2})(?:\D|$)", name)
+    if match:
+        confidence = float(match.group(1)) / 100.0
+    return measure, confidence
+
+
+_TAIL_RISK_VAR_MEASURE_RE = re.compile(r"\bvar\b|在险价值|风险价值", re.IGNORECASE)
+
+
+def _tail_risk_identity_at(
+    segment: str, raw: str, start: int = 0
+) -> tuple[str | None, float | None, int]:
+    """Identity of the claim whose value sits at ``raw`` in ``segment``.
+
+    A segment may carry several tail-risk claims with different identities
+    ("VaR 95%: -1.57%，99% 置信水平下 CVaR 为 -2.1%"), so identity is read from
+    the markers preceding THIS value, not from the whole segment. ``start`` is
+    the cursor for repeated values; the returned int is the next cursor.
+    """
+    pos = segment.find(raw, start)
+    head = segment if pos < 0 else segment[:pos]
+    measure: str | None = None
+    es_last: int | None = None
+    var_last: int | None = None
+    for match in _TAIL_RISK_ES_MEASURE_RE.finditer(head):
+        es_last = match.end()
+    for match in _TAIL_RISK_VAR_MEASURE_RE.finditer(head):
+        var_last = match.end()
+    if es_last is not None and (var_last is None or es_last > var_last):
+        measure = "es"
+    elif var_last is not None:
+        measure = "var"
+    confidence: float | None = None
+    for match in _TAIL_RISK_CONFIDENCE_VALUE_RE.finditer(head):
+        confidence = float(match.group(1) or match.group(2)) / 100.0
+    return measure, confidence, (pos + len(raw)) if pos >= 0 else start
 # A conviction reading is on a labelled scale, not a price scale: the 6 in
 # "CONFIDENCE: 6" is bounded by the label that introduces it. Only the value
 # bound to the label is masked, so a genuine quote elsewhere in the same
@@ -2952,11 +3072,23 @@ class GroundingLedger:
                 if _FORECAST_FRAME_RE.search(segment):
                     continue
                 kind = _metric_kind_for_text(segment)
-                unsupported = [
-                    value
-                    for value in values
-                    if not self._analysis_value_observed(value, kind)
-                ]
+                if kind == "tail_risk":
+                    unsupported = []
+                    cursor = 0
+                    for value in values:
+                        measure_, confidence_, cursor = _tail_risk_identity_at(
+                            segment, value, cursor
+                        )
+                        if not self._analysis_value_observed(
+                            value, kind, (measure_, confidence_)
+                        ):
+                            unsupported.append(value)
+                else:
+                    unsupported = [
+                        value
+                        for value in values
+                        if not self._analysis_value_observed(value, kind)
+                    ]
                 if not unsupported:
                     continue
                 # A return figure may be arithmetic on sourced inputs rather
@@ -3022,7 +3154,15 @@ class GroundingLedger:
         unsupported = [
             value
             for value in values
-            if not self._analysis_value_observed(value, kind)
+            if not self._analysis_value_observed(
+                value,
+                kind,
+                (
+                    _tail_risk_identity_for_text(f"{label} {cell}")
+                    if kind == "tail_risk"
+                    else None
+                ),
+            )
         ]
         if not unsupported:
             return
@@ -3048,6 +3188,8 @@ class GroundingLedger:
         masked = _DATE_RE.sub(" ", masked)
         masked = _SHORT_DATE_RE.sub(" ", masked)
         masked = _DASH_DATE_RE.sub(" ", masked)
+        # The confidence in "VaR 95%: x" frames the measurement; it is not one.
+        masked = _TAIL_RISK_CONFIDENCE_RE.sub(" ", masked)
         return [
             match.group(0).replace(" ", "").replace(",", "")
             for match in _MEASURE_NUMBER_RE.finditer(masked)
@@ -3082,7 +3224,12 @@ class GroundingLedger:
             tables.append((GroundingLedger._table_cells(block[0]), rows, row_indices))
         return tables
 
-    def _analysis_value_observed(self, raw: str, kind: str | None) -> bool:
+    def _analysis_value_observed(
+        self,
+        raw: str,
+        kind: str | None,
+        identity: tuple[str | None, float | None] | None = None,
+    ) -> bool:
         """Return True when a claim measurement matches kind-scoped evidence.
 
         Tools disagree on scale: ``compute_risk_xray`` returns fractions
@@ -3097,18 +3244,49 @@ class GroundingLedger:
             value = float(raw.replace("%", "").replace("％", "").replace(",", ""))
         except ValueError:
             return True
+        def identity_matches(field: str) -> bool:
+            # tail_risk only: one figure at 95% must not ground a 99% claim,
+            # and a VaR figure must not ground an ES claim. A side that names
+            # no measure/confidence never narrows the match (#1427 review).
+            if kind != "tail_risk" or identity is None:
+                return True
+            claim_measure, claim_confidence = identity
+            field_measure, field_confidence = _tail_risk_identity_for_field(field)
+            if (
+                claim_measure is not None
+                and field_measure is not None
+                and claim_measure != field_measure
+            ):
+                return False
+            if (
+                claim_confidence is not None
+                and field_confidence is not None
+                and abs(claim_confidence - field_confidence) > 1e-9
+            ):
+                return False
+            return True
+
         observed: list[float] = []
         for record in self._analysis_metrics:
-            if record.get("metric") == kind and record.get("value") is not None:
+            if (
+                record.get("metric") == kind
+                and record.get("value") is not None
+                and identity_matches(str(record.get("field") or ""))
+            ):
                 observed.append(float(record["value"]))
         for record in self._evidence:
             if record.status != "observed" or record.value is None:
                 continue
             if _metric_kind_for_path(record.field) != kind:
                 continue
+            if not identity_matches(record.field):
+                continue
             observed.append(float(record.value))
         candidates = {value, value / 100.0}
-        if kind == "drawdown":
+        if kind in ("drawdown", "tail_risk"):
+            # Tail-risk sign conventions disagree the same way drawdown's do:
+            # quantlib reports VaR/CVaR as positive loss magnitudes while a
+            # report may write the same figure as -1.57%.
             candidates |= {abs(value), abs(value) / 100.0}
 
         def close(candidate: float, item: float) -> bool:
