@@ -55,6 +55,7 @@ def test_es_futures_price_prose_is_not_tail_risk():
         ("VaR (99%) = 2.20%", ["2.20%"]),
         ("95% 置信水平下 VaR 为 -1.57%", ["-1.57%"]),
         ("99% confidence level CVaR 2.1%", ["2.1%"]),
+        ("ES 95%: -1.57%", ["-1.57%"]),
     ],
 )
 def test_confidence_figure_is_never_the_measurement(text, expected):
@@ -85,7 +86,7 @@ def test_grounded_tail_risk_claims_pass(tmp_path: Path):
     # evidence is a positive loss magnitude (0.0157); the claim writes it as a
     # signed percent (-1.57%) — both conventions must ground
     result = ledger.validate_final_answer(
-        "回测完成。VaR 95%: -1.57%，99% 置信水平下 CVaR 为 -2.1%。"
+        "回测完成。VaR 95%: -1.57%，95% 置信水平下 CVaR 为 -2.1%。"
     )
     assert all(i["code"] != "analysis_claim_unavailable" for i in result.issues)
 
@@ -114,3 +115,58 @@ def test_confidence_percentage_does_not_need_evidence(tmp_path: Path):
     result = ledger.validate_final_answer("VaR 95%: -1.57%。")
     unsupported = [i for i in result.issues if i["code"] == "analysis_claim_unavailable"]
     assert unsupported == []
+
+
+# Identity inside the family (#1427 review): measure (var vs es) and, when
+# named, confidence must match the evidence. var_95 evidence is in the fixture.
+
+
+def test_var95_evidence_grounds_var95_only(tmp_path: Path):
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    ok = ledger.validate_final_answer("回测完成。VaR 95%: -1.57%。")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
+
+
+def test_var95_evidence_does_not_ground_var99(tmp_path: Path):
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    result = ledger.validate_final_answer("回测完成。VaR 99%: -1.57%。")
+    assert any(
+        i["code"] == "analysis_claim_unavailable" and i.get("kind") == "tail_risk"
+        for i in result.issues
+    )
+
+
+def test_var95_evidence_does_not_ground_cvar99(tmp_path: Path):
+    # same number, different measure AND confidence: no ground
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    result = ledger.validate_final_answer("回测完成。CVaR 99%: -1.57%。")
+    assert any(
+        i["code"] == "analysis_claim_unavailable" and i.get("kind") == "tail_risk"
+        for i in result.issues
+    )
+
+
+def test_cvar95_evidence_grounds_es_and_cvar_but_not_var(tmp_path: Path):
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    ok = ledger.validate_final_answer("回测完成。ES 95%: -2.1%，CVaR 95% 为 -2.1%。")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
+    bad = ledger.validate_final_answer("回测完成。VaR 95%: -2.1%。")
+    assert any(
+        i["code"] == "analysis_claim_unavailable" and i.get("kind") == "tail_risk"
+        for i in bad.issues
+    )
+
+
+def test_confidence_free_evidence_grounds_any_confidence(tmp_path: Path):
+    """quantlib's bare `var` names no confidence; it must not become unusable."""
+    (tmp_path / "metrics.json").write_text('{"var": 0.0157}', encoding="utf-8")
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测并给出风险指标")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(tmp_path)},
+        result='{"status": "ok", "run_dir": "%s"}' % tmp_path,
+        call_id="bt1",
+        success=True,
+    )
+    ok = ledger.validate_final_answer("回测完成。VaR 99%: -1.57%。")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
