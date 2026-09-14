@@ -88,6 +88,9 @@ MAX_GROUNDING_RECOVERY_ROUNDS = 6
 MAX_SYMBOL_RESOLUTION_ATTEMPTS = 2
 MAX_PRICE_EVIDENCE_ATTEMPTS = 3
 _PRICE_FIELDS = {"open", "high", "low", "close", "adj_close", "price"}
+# Preference order when naming citable observations in a correction prompt:
+# the figure a report quotes first, then the rest (#1433).
+_CITABLE_HINT_FIELDS = ("close", "price", "adj_close", "open", "high", "low")
 _TIMESTAMP_FIELDS = ("trade_date", "date", "datetime", "timestamp", "time", "index")
 _MAX_GENERIC_EVIDENCE = 2_000
 _MAX_TRACKED_SYMBOLS = 5_000
@@ -1934,6 +1937,13 @@ class GroundingLedger:
                     + ". Repeating them in any form keeps failing; drop them, or show "
                     "the full derivation from the observed inputs."
                 )
+        hints = self._citable_price_hints(validation)
+        if hints:
+            lines.append(
+                "Verified observations the next draft may cite exactly (any other "
+                "figure needs its full derivation from observed inputs):"
+            )
+            lines.extend(f"- {hint}" for hint in hints)
         lines.extend(
             [
                 "If a value is a derived or prospective level (stop, target, entry, etc.), "
@@ -1971,6 +1981,54 @@ class GroundingLedger:
                 "exhausted, say so and ask for clarification; do not guess."
             )
         return "\n".join(lines)
+
+    def _citable_price_hints(self, validation: ValidationResult) -> list[str]:
+        """Recent observed quotes the next draft may cite verbatim (#1433).
+
+        A conflict rejection that only says "your figure matched nothing in
+        range min-max" leaves the model guessing inside a wide OHLC range;
+        every retry fails the same way until the run degrades to the
+        fallback. Name the citable values instead, newest two per symbol,
+        bounded at five symbols so the prompt stays small. Hints come from
+        the same comparable set the gate checks against, so every value
+        listed here is one the validator will accept.
+        """
+        price_codes = {"numeric_claim_conflict", "numeric_claim_unavailable"}
+        if not any(issue.get("code") in price_codes for issue in validation.issues):
+            return []
+        records = [
+            record
+            for record in self._comparable_price_records()
+            if record.symbol and record.value is not None
+        ]
+        if not records:
+            return []
+        involved = {
+            issue.get("symbol")
+            for issue in validation.issues
+            if issue.get("code") in price_codes and issue.get("symbol")
+        }
+        by_symbol: dict[str, list[tuple[int, EvidenceRecord]]] = {}
+        for position, record in enumerate(records):
+            if involved and record.symbol not in involved:
+                continue
+            by_symbol.setdefault(record.symbol, []).append((position, record))
+        hints: list[str] = []
+        for symbol in sorted(by_symbol)[:5]:
+            entries = by_symbol[symbol]
+            for field_name in _CITABLE_HINT_FIELDS:
+                preferred = [entry for entry in entries if entry[1].field == field_name]
+                if preferred:
+                    entries = preferred
+                    break
+            entries.sort(key=lambda entry: (entry[1].timestamp or "", entry[0]))
+            for _, record in entries[-2:]:
+                currency = f" {record.currency}" if record.currency else ""
+                stamp = f" ({record.timestamp})" if record.timestamp else ""
+                hints.append(
+                    f"{symbol} {record.field} {float(record.value):g}{currency}{stamp}"
+                )
+        return hints
 
     def recovery_action(self, validation: ValidationResult) -> str | None:
         """Decide the next safe read-only recovery step for a rejected draft.

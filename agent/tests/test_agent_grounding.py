@@ -3747,3 +3747,100 @@ def test_crypto_pair_tables_match_the_resolver() -> None:
     # gold and forex are quoted in it too); grounding decides it by the base
     # whitelist instead, so it is the only permitted difference.
     assert set(g._CRYPTO_QUOTE_ASSETS) | {"USD"} == set(ss._CRYPTO_QUOTE_ASSETS)
+
+
+def test_correction_prompt_names_citable_observed_values(tmp_path: Path) -> None:
+    """#1433: a conflict rejection must name what the next draft MAY cite.
+
+    Telling the model only "your figure matched nothing in range min-max"
+    leaves it guessing inside a wide OHLC range until the iteration budget
+    burns out into the fallback. The correction prompt must carry the exact
+    recent observations it can cite instead.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="请分析 562500.SS 并给出买入价",
+    )
+    ledger.ingest_tool_result(
+        tool_name="get_market_data",
+        arguments={"codes": ["562500.SS"], "source": "auto"},
+        result=_market_payload(),
+        call_id="prices",
+        success=True,
+    )
+
+    bad = ledger.validate_final_answer("建议重仓买入价为 0.881。")
+    assert any(issue["code"] == "numeric_claim_conflict" for issue in bad.issues)
+
+    prompt = ledger.correction_prompt(bad)
+
+    assert "may cite exactly" in prompt
+    # The ledger normalizes .SS onto the canonical .SH venue suffix.
+    assert "562500.SH close 1.171" in prompt
+    assert "2026-06-24" in prompt
+
+
+def test_correction_prompt_without_price_issues_has_no_citable_section(
+    tmp_path: Path,
+) -> None:
+    """Analysis-metric rejections do not sprout a price hint section."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+
+    bad = ledger.validate_final_answer("年化收益 81%。")
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+    prompt = ledger.correction_prompt(bad)
+
+    assert "may cite exactly" not in prompt
+
+
+def test_correction_prompt_hints_are_bounded_and_latest(tmp_path: Path) -> None:
+    """Hints stay prompt-sized: newest two closes per symbol, five symbols."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="对比这些基金",
+    )
+    symbols = [f"51000{index}.SS" for index in range(6)]
+    for symbol in symbols:
+        ledger._session_symbols.add(symbol)
+        ledger.ingest_tool_result(
+            tool_name="get_market_data",
+            arguments={"codes": [symbol], "source": "auto"},
+            result=json.dumps(
+                {
+                    symbol: [
+                        {"trade_date": "2026-06-22", "close": 1.01},
+                        {"trade_date": "2026-06-23", "close": 1.02},
+                        {"trade_date": "2026-06-24", "close": 1.03},
+                    ]
+                }
+            ),
+            call_id=f"prices-{symbol}",
+            success=True,
+        )
+
+    bad = ledger.validate_final_answer("最新收盘价是 2.5 元。")
+    assert bad.valid is False
+
+    prompt = ledger.correction_prompt(bad)
+    hint_lines = [
+        line
+        for line in prompt.splitlines()
+        if line.startswith("- ") and " close " in line
+    ]
+
+    assert 0 < len(hint_lines) <= 10
+    mentioned = {
+        symbol
+        for symbol in symbols
+        if any(symbol.replace(".SS", ".SH") in line for line in hint_lines)
+    }
+    assert len(mentioned) == 5
+    # The newest close is offered; the oldest is not.
+    assert any("close 1.03" in line for line in hint_lines)
+    assert not any("close 1.01" in line for line in hint_lines)
