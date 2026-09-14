@@ -670,6 +670,8 @@
     "noBacktestSummary": "暂无回测摘要记录。",
     "noReproducibilityHashes": "暂无可复现性哈希记录。",
     "noScalarMetrics": "暂无标量指标记录。",
+    "noStructuredMetrics": "未记录结构化指标。",
+    "structuredMetrics": "结构化指标",
     "noValidationPayload": "暂无验证数据记录。",
     "noArtifactChecksums": "暂无制品校验和记录。",
     "noCodeFiles": "暂无代码文件。",

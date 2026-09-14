@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   BarChart3,
+  Braces,
   CalendarRange,
   CheckCircle2,
   Code2,
@@ -468,6 +469,11 @@ function RunCardTab({ card }: { card: RunCard }) {
   const backtest = card.backtest || {};
   const reproducibility = card.reproducibility || {};
   const metrics = card.metrics || {};
+  // Rendered as JSON: a dict or list value would otherwise collapse - an empty
+  // list formats as a blank cell, which reads as "missing" rather than "none".
+  const structuredMetrics = Object.fromEntries(
+    Object.entries(card.structured_metrics || {}).map(([key, value]) => [key, JSON.stringify(value)]),
+  );
   const artifacts = card.artifacts || [];
   const warnings = card.warnings || [];
   const dataSources = card.data_sources || [];
@@ -520,6 +526,10 @@ function RunCardTab({ card }: { card: RunCard }) {
           )}
         </RunCardPanel>
       </div>
+
+      <RunCardPanel title={i18n.t("runDetail.structuredMetrics")} icon={Braces}>
+        <KeyValueTable data={structuredMetrics} empty={i18n.t("runDetail.noStructuredMetrics")} monospaceValues />
+      </RunCardPanel>
 
       <RunCardPanel title={i18n.t("runDetail.artifactChecksums")} icon={FileCheck2}>
         {artifacts.length > 0 ? (
@@ -753,7 +763,7 @@ function KeyValueTable({ data, empty, monospaceValues = false }: { data: Record<
         <tbody>
           {entries.map(([key, value]) => (
             <tr key={key} className="border-b last:border-0 hover:bg-muted/40">
-              <td className="w-36 py-2 ps-4 pr-4 align-top text-muted-foreground">{key}</td>
+              <td className="w-36 break-all py-2 ps-4 pr-4 align-top text-muted-foreground">{key}</td>
               <td className={cn("py-2 align-top", monospaceValues ? "break-all font-mono text-xs" : "break-words text-right tabular-nums")}>{formatRunCardValue(value)}</td>
             </tr>
           ))}

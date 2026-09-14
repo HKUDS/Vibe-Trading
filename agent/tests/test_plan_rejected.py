@@ -70,6 +70,12 @@ class _NoopHookEngine(_RecorderEngine):
         pass
 
 
+class _CountingEngine(_RecorderEngine):
+    """Keeps the base counter instead of the recorder, to test the real hook."""
+
+    _on_plan_rejected = BaseEngine._on_plan_rejected
+
+
 def _frame(open_price=100.0, ts=_TS):
     return pd.DataFrame({"open": [open_price], "close": [100.0]}, index=[ts])
 
@@ -301,3 +307,34 @@ def test_an_overriding_subclass_still_gets_the_default_counting():
     engine._plan_open_order("A", 0.5, _frame(), _TS, 1_000.0)
     assert engine.seen == [("A", "zero_size")]
     assert engine._plan_rejection_metrics()["unfilled_plan_rejections"] == 1
+
+
+def test_total_and_by_symbol_share_one_counter():
+    """#1235/#1274: the scalar count and the named map come from one counter.
+
+    A card reader may only ever see `unfilled_plan_rejections`. If the named map
+    could diverge from that scalar, the count would be unreconcilable with
+    anything - so a non-zero total must imply a matching, non-empty map, and a
+    zero total must imply no rows.
+    """
+    engine = _CountingEngine()
+    engine._on_plan_rejected("BIL", "zero_size", _TS)
+    engine._on_plan_rejected("BIL", "zero_size", _TS)
+    engine._on_plan_rejected("XLK", "no_bar", _TS)
+
+    metrics = engine._plan_rejection_metrics()
+    assert metrics["unfilled_plan_rejections"] == 3
+    assert metrics["unfilled_plan_rejections_by_symbol"] == {
+        "BIL": {"zero_size": 2},
+        "XLK": {"no_bar": 1},
+    }
+    named_total = sum(
+        count
+        for reasons in metrics["unfilled_plan_rejections_by_symbol"].values()
+        for count in reasons.values()
+    )
+    assert named_total == metrics["unfilled_plan_rejections"]
+
+    empty = _CountingEngine()._plan_rejection_metrics()
+    assert empty["unfilled_plan_rejections"] == 0
+    assert empty["unfilled_plan_rejections_by_symbol"] == {}

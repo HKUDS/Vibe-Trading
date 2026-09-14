@@ -276,6 +276,57 @@ describe("RunDetail page", () => {
     expect(screen.getByText("artifacts/result.json")).toHaveClass("ps-4");
   });
 
+  it("renders structured metrics that the scalar `metrics` block cannot hold", async () => {
+    // #1235/#1274: the sleeve a plan rejection dropped is dict-shaped, so it
+    // never reaches `metrics`. It must still be readable in the card, not just
+    // present in the JSON.
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "structured",
+      prompt: "Structured card",
+      run_card: {
+        metrics: { sharpe: 1.42 },
+        structured_metrics: {
+          unfilled_plan_rejections_by_symbol: { BIL: { zero_size: 12 } },
+          dropped_target_adjustments: [],
+          _omitted: ["by_symbol"],
+        },
+      } as NonNullable<RunData["run_card"]>,
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/structured");
+
+    await screen.findByText("Structured card");
+    fireEvent.click(screen.getByRole("tab", { name: "Run Card" }));
+
+    expect(
+      await screen.findByText("unfilled_plan_rejections_by_symbol"),
+    ).toBeInTheDocument();
+    expect(screen.getByText('{"BIL":{"zero_size":12}}')).toBeInTheDocument();
+    // an empty list must read as "none", not as a blank cell that looks missing
+    expect(screen.getByText("[]")).toBeInTheDocument();
+    // the record of what the block dropped is surfaced too, as JSON
+    expect(screen.getByText('["by_symbol"]')).toBeInTheDocument();
+  });
+
+  it("shows the structured-metrics empty state when the card carries none", async () => {
+    apiMock.getRun.mockResolvedValue({
+      status: "success",
+      run_id: "scalar-only",
+      prompt: "Scalar only",
+      run_card: { metrics: { sharpe: 1.42 } } as NonNullable<RunData["run_card"]>,
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+
+    renderRunDetail("/runs/scalar-only");
+
+    await screen.findByText("Scalar only");
+    fireEvent.click(screen.getByRole("tab", { name: "Run Card" }));
+
+    expect(await screen.findByText("No structured metrics recorded.")).toBeInTheDocument();
+  });
+
   it("renders the Factor Research tab from has_factor_artifacts and lazy-loads the report", async () => {
     apiMock.getRun.mockResolvedValue({
       status: "success",

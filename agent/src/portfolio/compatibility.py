@@ -134,7 +134,10 @@ def adapt_and_validate_payloads(
 
     account = dict(account_payload)
     positions = dict(positions_payload)
-    raw_rows = positions.get("positions", [])
+    # No default: a read that never produced a positions list (an unmapped MCP
+    # envelope, a text-only reply) is not an empty portfolio. Reading it as one
+    # would store a complete snapshot of a source that holds nothing.
+    raw_rows = positions.get("positions")
     if not isinstance(raw_rows, list):
         raise PortfolioContractError("positions payload must contain a list")
     rows = [dict(row) if isinstance(row, dict) else row for row in raw_rows]

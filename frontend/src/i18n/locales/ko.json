@@ -670,6 +670,8 @@
     "noBacktestSummary": "기록된 백테스트 요약이 없습니다.",
     "noReproducibilityHashes": "기록된 재현성 해시가 없습니다.",
     "noScalarMetrics": "기록된 스칼라 지표가 없습니다.",
+    "noStructuredMetrics": "기록된 구조화 지표가 없습니다.",
+    "structuredMetrics": "구조화된 지표",
     "noValidationPayload": "기록된 검증 페이로드가 없습니다.",
     "noArtifactChecksums": "기록된 아티팩트 체크섬이 없습니다.",
     "noCodeFiles": "코드 파일이 없습니다.",

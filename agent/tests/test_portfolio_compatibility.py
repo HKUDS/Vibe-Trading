@@ -60,6 +60,16 @@ def test_contract_rejects_position_rows_without_symbol_or_quantity():
         adapt_and_validate_payloads("sample", {"account": {}}, {"positions": [{"symbol": "DEMO"}]})
 
 
+def test_contract_rejects_a_positions_read_without_a_positions_list():
+    unmapped = {"status": "ok", "structured_content": {"holdings": [{"symbol": "DEMO", "quantity": 1}]}}
+    for payload in ({}, {"status": "ok"}, unmapped):
+        with pytest.raises(PortfolioContractError, match="must contain a list"):
+            adapt_and_validate_payloads("sample", {"account": {}}, payload)
+
+    _, positions = adapt_and_validate_payloads("sample", {"account": {}}, {"positions": []})
+    assert positions["positions"] == []
+
+
 def test_okx_account_details_are_adapted_to_spot_positions():
     account, positions = adapt_and_validate_payloads(
         "okx",

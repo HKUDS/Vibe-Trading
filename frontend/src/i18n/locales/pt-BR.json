@@ -675,6 +675,8 @@
     "noBacktestSummary": "Nenhum resumo de backtest registrado.",
     "noReproducibilityHashes": "Nenhum hashe de reprodutibilidade registrado.",
     "noScalarMetrics": "Nenhuma métrica escalar registrada.",
+    "noStructuredMetrics": "Nenhuma métrica estruturada registrada.",
+    "structuredMetrics": "Métricas estruturadas",
     "noValidationPayload": "Nenhuma carga útil de validação registrada.",
     "noArtifactChecksums": "Nenhuma soma de verificação de artefato registrada.",
     "noCodeFiles": "Nenhum arquivo de código.",

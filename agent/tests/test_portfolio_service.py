@@ -156,6 +156,38 @@ def test_partial_refresh_is_saved_and_marked_incomplete(tmp_path):
     assert any("longbridge" in warning.lower() for warning in snapshot["warnings"])
 
 
+def test_a_positions_read_without_a_positions_list_is_an_error_not_an_empty_source(tmp_path):
+    def get_positions(profile_id):
+        if profile_id.startswith("ibkr"):
+            return {"status": "ok", "structured_content": "positions table rendered as text"}
+        return {"positions": []}
+
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=_settings_store(tmp_path),
+        get_account=lambda profile_id: {"summary": []},
+        get_positions=get_positions,
+        get_quote=lambda *args, **kwargs: {},
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-08-09T00:00:00+00:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+
+    assert snapshot["complete"] is False
+    statuses = {row["broker"]: row["status"] for row in snapshot["accounts"]}
+    assert statuses["ibkr"] == "error"
+    assert {broker: status for broker, status in statuses.items() if broker != "ibkr"} == {
+        "longbridge": "ok",
+        "binance": "ok",
+    }
+    ibkr = next(row for row in snapshot["accounts"] if row["broker"] == "ibkr")
+    assert "must contain a list" in ibkr["error"]
+
+
 def test_failed_source_is_excluded_from_totals_and_reports_its_last_success(tmp_path):
     """A source that fails contributes nothing; only its last-healthy time survives."""
     offline = False
