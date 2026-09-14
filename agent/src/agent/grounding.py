@@ -1094,10 +1094,50 @@ def _price_field_for_path(path: str) -> str | None:
     return _GENERIC_PRICE_FIELD_ALIASES.get(leaf)
 
 
+# A leaf can measure *how many* of a metric there were instead of naming the
+# metric itself: "return_observations" is a count, "max_drawdown_duration" a
+# span in periods, "episode_count" a tally (#1420). English compounds put the
+# head noun last, so the head decides whether the leaf is a magnitude or an
+# extent — and an extent must never ground a percentage claim, because a count
+# of 81 observations is not an 81% return.
+_METADATA_HEAD_TOKENS = frozenset(
+    {
+        "bars",
+        "cnt",
+        "count",
+        "days",
+        "duration",
+        "episodes",
+        "length",
+        "lookback",
+        "n",
+        "num",
+        "number",
+        "obs",
+        "observations",
+        "period",
+        "periods",
+        "sample",
+        "samples",
+        "size",
+        "span",
+        "window",
+    }
+)
+# A leading count quantifier makes the leaf a count of the head noun whatever
+# the head noun is: "n_returns" counts returns, it is not a return.
+_COUNT_PREFIX_TOKENS = frozenset({"cnt", "count", "n", "nb", "nr", "num", "number"})
+
+
 def _metric_kind_for_path(path: str) -> str | None:
     """Map an evidence JSON path to an analysis metric kind."""
     leaf = re.sub(r"\[\d+\]$", "", str(path or "").rsplit(".", 1)[-1])
     leaf = leaf.strip().casefold()
+    tokens = [token for token in re.split(r"[_.]", leaf) if token]
+    if tokens and (
+        tokens[-1] in _METADATA_HEAD_TOKENS or tokens[0] in _COUNT_PREFIX_TOKENS
+    ):
+        return None
     kind = _ANALYSIS_KIND_ALIASES.get(leaf)
     if kind is not None:
         return kind
@@ -1106,13 +1146,15 @@ def _metric_kind_for_path(path: str) -> str | None:
     # table makes every other spelling silently ungroundable. Scan from the
     # right — English compounds put the head noun last, so "return_vol"
     # resolves to vol, never to return.
-    tokens = [token for token in re.split(r"[_.]", leaf) if token]
     for size in (2, 1):
         for start in range(len(tokens) - size, -1, -1):
             kind = _ANALYSIS_KIND_ALIASES.get("_".join(tokens[start : start + size]))
             if kind is not None:
                 return kind
-    return _metric_kind_for_text(path)
+    # The fallback gets the leaf, never the dotted path: a parent key that names
+    # a metric ("drawdown_distribution_analysis") would otherwise lend that kind
+    # to every descendant leaf it contains (#1420).
+    return _metric_kind_for_text(leaf)
 
 
 def _metric_kind_for_text(text: str) -> str | None:
