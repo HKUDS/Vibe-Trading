@@ -17,7 +17,7 @@ import html
 import re
 import string
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, Sequence
 
@@ -180,6 +180,11 @@ class Figure:
     extent: tuple[int, int] | None = None
     # The info string of the fenced block holding the figure, or None.
     fence: str | None = None
+    # The tail-risk frame the figure sits in ("VaR 95%: 1.57%"): the measured
+    # value carries (measure, confidence); the confidence figure itself is
+    # flagged instead and never checked as a measurement.
+    tail_risk: tuple[str, int | None] | None = None
+    tail_risk_confidence: bool = False
 
 
 @dataclass(frozen=True)
@@ -859,6 +864,97 @@ def _short_date_is_structural(content: str, match: re.Match[str], full_dates: Se
     return any(segment <= full.start() and full.end() <= match.start() for full in full_dates)
 
 
+# A tail-risk claim's prose frame: the measure word, then an optional
+# confidence level. VaR and ES/CVaR are different measurements at any
+# confidence, and a 95% and a 99% VaR are different ones.
+_TAIL_RISK_WORD_RE = re.compile(
+    r"(?<![A-Za-z])(?:C?VaR|ES)(?![A-Za-z])|(?i:expected shortfall)|在险价值|风险价值|预期损失|条件在险价值"
+)
+
+# The confidence sits right after the measure word ("VaR 95%", "VaR (95%)",
+# "ES at 99%") or right before it ("95% VaR", "95% 置信水平下的 VaR").
+_TAIL_RISK_CONFIDENCE_AFTER_RE = re.compile(
+    r"\s*[(（]?\s*(?:at|of)?\s*(\d{1,3}(?:\.\d+)?)\s*[%％]"
+)
+_TAIL_RISK_CONFIDENCE_BEFORE_RE = re.compile(
+    r"(\d{1,3}(?:\.\d+)?)\s*[%％]\s*(?:置信水平|置信度|confidence(?:\s+level)?)?\s*(?:下|中|的)?\s*[，,]?\s*$"
+)
+
+
+def _tail_risk_measure_of(word: str) -> str:
+    """The measure a tail-risk keyword reports: ES and CVaR are one family."""
+    return (
+        "es"
+        if word.casefold() == "expected shortfall" or word in ("ES", "CVaR", "预期损失", "条件在险价值")
+        else "var"
+    )
+
+
+def _tail_risk_frames(content: str, figures: list[Figure]) -> list[Figure]:
+    """Mark the tail-risk frame each percent figure sits in, when there is one.
+
+    The confidence level in "VaR 95%: 1.57%" is part of the frame, not a
+    measurement: it is flagged so the gate never checks it, while the value is
+    checked only against evidence of the same measure and confidence.
+    """
+    if not any(figure.percent for figure in figures):
+        return figures
+    lines = _lines_with_offsets(content)
+    out = list(figures)
+    for line_index, (line_text, line_start) in enumerate(lines):
+        line_figures = [
+            (index, figure)
+            for index, figure in enumerate(figures)
+            if figure.line == line_index and figure.percent
+        ]
+        if not line_figures:
+            continue
+        keywords = list(_TAIL_RISK_WORD_RE.finditer(line_text))
+        if not keywords:
+            continue
+        # A frame runs from its keyword to the next keyword or the clause end:
+        # "VaR 95%: 1,57%. Drawdown máximo −5,132%" keeps the drawdown out of
+        # the VaR frame entirely.
+        terminators = [
+            match.end()
+            for match in re.finditer(r"[。!！?？;；.]", line_text)
+        ]
+        regions: list[tuple[int, int]] = []
+        for pos, keyword in enumerate(keywords):
+            end = keywords[pos + 1].start() if pos + 1 < len(keywords) else len(line_text)
+            boundary = next((mark for mark in terminators if mark > keyword.end()), end)
+            regions.append((keyword.start(), min(end, boundary)))
+        # (measure, confidence, confidence digit start in source coords, region)
+        frames: list[tuple[str, int | None, int | None, tuple[int, int]]] = []
+        for keyword, region in zip(keywords, regions):
+            measure = _tail_risk_measure_of(keyword.group(0))
+            confidence: int | None = None
+            confidence_start: int | None = None
+            match = _TAIL_RISK_CONFIDENCE_AFTER_RE.match(line_text, keyword.end())
+            if match is None:
+                match = _TAIL_RISK_CONFIDENCE_BEFORE_RE.search(line_text, 0, keyword.start())
+            if match:
+                confidence = int(float(match.group(1)))
+                confidence_start = line_start + match.start(1)
+            frames.append((measure, confidence, confidence_start, region))
+        for index, figure in line_figures:
+            if figure.start in {frame[2] for frame in frames}:
+                out[index] = replace(figure, tail_risk_confidence=True)
+                continue
+            line_pos = figure.start - line_start
+            region = next(
+                (frame[3] for frame in frames if frame[3][0] <= line_pos < frame[3][1]),
+                None,
+            )
+            if region is None:
+                continue
+            measure, confidence, _, _ = next(
+                frame for frame in frames if frame[3] == region
+            )
+            out[index] = replace(figure, tail_risk=(measure, confidence))
+    return out
+
+
 def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
     """Locate and classify every number in the prose of a draft (spec §3).
 
@@ -959,4 +1055,4 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
                 ),
             )
         )
-    return figures
+    return _tail_risk_frames(content, figures)

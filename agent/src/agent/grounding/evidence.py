@@ -123,7 +123,11 @@ _ANALYSIS_KIND_ALIASES = {
     "var_95": "tail_risk",
     "var_99": "tail_risk",
     "cvar": "tail_risk",
+    "cvar_95": "tail_risk",
+    "cvar_99": "tail_risk",
     "es": "tail_risk",
+    "es_95": "tail_risk",
+    "es_99": "tail_risk",
     "expected_shortfall": "tail_risk",
     # Chinese TOOL FIELD NAMES from A-share tools, not answer prose.
     "最大回撤": "drawdown",
@@ -357,17 +361,16 @@ _QUALIFIER_SUFFIXES = frozenset(
 )
 
 
-def _metric_kind_for_path(path: str) -> str | None:
-    """Map an evidence JSON path to an analysis metric kind.
+def _metric_alias_key_for_path(path: str) -> str | None:
+    """The alias-table key an evidence JSON path resolves to, or None.
 
-    A metadata count leaf (:func:`_is_metadata_count_leaf`) has no kind.
+    A metadata count leaf (:func:`_is_metadata_count_leaf`) resolves to nothing.
     """
     if _is_metadata_count_leaf(path):
         return None
     leaf = _leaf_name(path)
-    kind = _ANALYSIS_KIND_ALIASES.get(leaf)
-    if kind is not None:
-        return kind
+    if leaf in _ANALYSIS_KIND_ALIASES:
+        return leaf
     # Compound leaves ("strategy_max_drawdown"): scan tokens from the right,
     # where English puts the head noun, so "return_vol" is vol, not return.
     # Only the head of a compound leaf says what it measures (#1426):
@@ -383,10 +386,58 @@ def _metric_kind_for_path(path: str) -> str | None:
             if len(candidate) < size:
                 continue
             key = "_".join(candidate[-size:])
-            kind = None if key in _EXACT_ONLY_ALIASES else _ANALYSIS_KIND_ALIASES.get(key)
-            if kind is not None:
-                return kind
+            if key in _EXACT_ONLY_ALIASES:
+                continue
+            if key in _ANALYSIS_KIND_ALIASES:
+                return key
     return None
+
+
+def _metric_kind_for_path(path: str) -> str | None:
+    """Map an evidence JSON path to an analysis metric kind.
+
+    A metadata count leaf (:func:`_is_metadata_count_leaf`) has no kind.
+    """
+    key = _metric_alias_key_for_path(path)
+    return _ANALYSIS_KIND_ALIASES.get(key) if key is not None else None
+
+
+# What a tail-risk measure word reports: an ES and a VaR are different
+# measurements even when they share a confidence level and a number.
+_TAIL_RISK_MEASURES = {
+    "var": "var",
+    "cvar": "es",
+    "es": "es",
+    "expected_shortfall": "es",
+}
+
+
+def _tail_risk_identity_for_path(path: str) -> tuple[str, int | None] | None:
+    """The ``(measure, confidence)`` a tail-risk evidence path reports.
+
+    ``var_95`` is a 95% VaR: not an ES, and not a 99% anything. A numeric token
+    right after the measure head is the confidence; names without one carry
+    ``None`` and can only ground a claim that states no confidence.
+    """
+    key = _metric_alias_key_for_path(path)
+    if key is None or _ANALYSIS_KIND_ALIASES.get(key) != "tail_risk":
+        return None
+    if key in _TAIL_RISK_MEASURES:
+        # A compound leaf can still carry the confidence after the head:
+        # "portfolio_cvar_95" resolves as "cvar", with 95 stripped as a
+        # qualifier. Recover it from the leaf itself.
+        tokens = [token for token in re.split(r"[_.]", _leaf_name(path)) if token]
+        for i in range(len(tokens) - 1, -1, -1):
+            head_len = 2 if "_".join(tokens[i : i + 2]) == key else 1 if tokens[i] == key else 0
+            if head_len:
+                following = tokens[i + head_len] if i + head_len < len(tokens) else ""
+                return _TAIL_RISK_MEASURES[key], int(following) if following.isdigit() else None
+        return _TAIL_RISK_MEASURES[key], None
+    head, _, tail = key.rpartition("_")
+    measure = _TAIL_RISK_MEASURES.get(head)
+    if measure is None or not tail.isdigit():
+        return None
+    return measure, int(tail)
 
 
 @dataclass(frozen=True)

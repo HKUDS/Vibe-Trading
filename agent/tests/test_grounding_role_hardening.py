@@ -544,6 +544,75 @@ def test_a_tail_risk_figure_a_tool_returned_is_grounded(tmp_path: Path) -> None:
     assert invented.valid is False
 
 
+@pytest.mark.parametrize(
+    ("leaf", "identity"),
+    [
+        ("var", ("var", None)),
+        ("var_95", ("var", 95)),
+        ("strategy_var_99", ("var", 99)),
+        ("cvar", ("es", None)),
+        ("cvar_95", ("es", 95)),
+        ("portfolio_cvar_95", ("es", 95)),
+        ("es_99", ("es", 99)),
+        ("expected_shortfall", ("es", None)),
+        ("sales_es", None),
+        ("var_2", None),
+        ("sharpe", None),
+    ],
+)
+def test_a_tail_risk_leaf_reports_measure_and_confidence(leaf: str, identity) -> None:
+    from src.agent.grounding.evidence import _tail_risk_identity_for_path
+
+    assert _tail_risk_identity_for_path(leaf) == identity
+
+
+def test_a_confident_var_claim_only_matches_that_confidence(tmp_path: Path) -> None:
+    var = ("quantlib_call", {"action": "call", "function": "var"}, {"ok": True, "result": {"var_95": -0.0234}}, "q1")
+
+    same = _ledger(tmp_path, MARKET_A, var).validate_final_answer(HDR + " VaR 95%: 2.34%。")
+    other_level = _ledger(tmp_path / "b", MARKET_A, var).validate_final_answer(HDR + " VaR 99%: 2.34%。")
+    other_measure = _ledger(tmp_path / "c", MARKET_A, var).validate_final_answer(HDR + " ES 95%: 2.34%。")
+
+    assert same.valid is True, same.issues
+    assert _reasons(other_level) == ["no_evidence"]
+    assert _reasons(other_measure) == ["no_evidence"]
+    # The confidence figure itself is part of the frame, never a measurement.
+    assert all(issue["value"] != "95%" for result in (same, other_level) for issue in result.issues)
+
+
+def test_an_es_claim_matches_es_evidence_at_its_own_confidence(tmp_path: Path) -> None:
+    cvar = ("quantlib_call", {"action": "call", "function": "cvar"}, {"ok": True, "result": {"cvar_99": -0.0311}}, "q2")
+
+    same = _ledger(tmp_path, MARKET_A, cvar).validate_final_answer(HDR + " CVaR 99%: 3.11%。")
+    alias = _ledger(tmp_path / "b", MARKET_A, cvar).validate_final_answer(HDR + " ES 99% 为 3.11%。")
+    other_level = _ledger(tmp_path / "c", MARKET_A, cvar).validate_final_answer(HDR + " CVaR 95%: 3.11%。")
+    var_claim = _ledger(tmp_path / "d", MARKET_A, cvar).validate_final_answer(HDR + " 单日 VaR 为 3.11%。")
+
+    assert same.valid is True, same.issues
+    assert alias.valid is True, alias.issues
+    assert _reasons(other_level) == ["no_evidence"]
+    assert var_claim.valid is False
+
+
+def test_a_tail_risk_frame_stops_at_the_clause_end(tmp_path: Path) -> None:
+    risk = (
+        "portfolio_risk_xray",
+        {},
+        {"ok": True, "var_95": -0.0157, "max_drawdown": -0.05132},
+        "risk",
+    )
+
+    both = _ledger(tmp_path, risk, message="Analiza el riesgo de la cartera").validate_final_answer(
+        "VaR 95%: 1,57%. Drawdown máximo −5,132%." + _block("95% | count | nivel de confianza")
+    )
+    wrong_drawdown = _ledger(tmp_path / "b", risk, message="Analiza el riesgo de la cartera").validate_final_answer(
+        "VaR 95%: 1,57%. Drawdown máximo −3,9%." + _block("95% | count | nivel de confianza")
+    )
+
+    assert both.valid is True, both.issues
+    assert wrong_drawdown.valid is False
+
+
 # ---------------------------------------------------------------------------
 # B11 — what a rejected figure is pointed at
 # ---------------------------------------------------------------------------
