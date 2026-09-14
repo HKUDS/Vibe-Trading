@@ -5570,6 +5570,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_placeholder": "sk-...",
     },
     {
+        "label": "OpenCode (Go / Zen)",
+        "provider": "opencode",
+        "key_env": "OPENCODE_API_KEY",
+        "base_env": "OPENCODE_BASE_URL",
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "model": "deepseek-v4.1-flash",
+        "key_prefix": "sk-",
+        "key_placeholder": "sk-...",
+    },
+    {
         "label": "SiliconFlow (CN)",
         "provider": "siliconflow-cn",
         "key_env": "SILICONFLOW_API_KEY",
