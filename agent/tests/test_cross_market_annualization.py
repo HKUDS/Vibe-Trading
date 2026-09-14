@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 
 from backtest.engines.options_portfolio import _calc_options_metrics
-from backtest.metrics import calc_metrics, effective_bars_per_year
+from backtest.metrics import calc_bars_per_year, calc_metrics, effective_bars_per_year
 from backtest.risk_xray import compute_risk_xray
 from backtest.validation import _sharpe, run_validation
 
@@ -110,3 +110,163 @@ class TestConsumersShareTheConvention:
         assert metrics["annual_return"] == pytest.approx(
             growth ** (self.expected_bpy / 120) - 1, rel=1e-6
         )
+
+
+class TestSingleMarketAnnualisationChecksTheServedData:
+    """The declared interval is a request, not a fact about what arrived.
+
+    A loader may legitimately serve coarser bars than asked for — the local
+    loader cannot upsample a daily file to ``1H`` and only logs a warning —
+    and annualising at the declared rate then scales CAGR, Sharpe and the
+    annualised volatility by the ratio between the two.
+
+    The comparison is on bar *spacing*, not on bars per calendar year: a
+    calendar-year count is a property of the window as much as of the data,
+    so it flags correctly served short runs (see the window-length tests).
+    """
+
+    @staticmethod
+    def _frame(index) -> dict:
+        return {"600519.SH": pd.DataFrame({"close": [10.0] * len(index)}, index=index)}
+
+    @staticmethod
+    def _session(days: int, per_day: int, freq: str, start: str = "2026-09-07") -> pd.DatetimeIndex:
+        """Intraday bars inside a trading session, so the index carries the
+        overnight gaps a real one does."""
+        stamps: list[pd.Timestamp] = []
+        for day in pd.bdate_range(start, periods=days):
+            stamps += list(
+                pd.date_range(day.replace(hour=9, minute=30), periods=per_day, freq=freq)
+            )
+        return pd.DatetimeIndex(stamps)
+
+    def test_matching_declaration_keeps_the_per_source_table(self):
+        """A correctly served run keeps the trading-day table it always had,
+        rather than drifting to a count measured off its own window."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2024-01-02", periods=654, freq="B"))
+        assert _annualisation_bars("1D", "tushare", data, ["600519.SH"]) == 252
+
+    def test_declared_intraday_against_daily_bars_uses_the_matched_interval(self):
+        """The corrected count still comes from the per-source table, looked up
+        with the interval the spacing actually matches."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2024-01-02", periods=654, freq="B"))
+        resolved = _annualisation_bars("1H", "tushare", data, ["600519.SH"])
+
+        assert calc_bars_per_year("1H", "tushare") > 1000   # the declaration is intraday
+        assert resolved == calc_bars_per_year("1D", "tushare") == 252
+
+    # --- window length must not decide the outcome (issue found in review) ---
+
+    def test_five_daily_bars_keep_the_declared_count(self):
+        """Five bars is a quick check, not a granularity change."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.bdate_range("2026-09-08", periods=5))
+        assert _annualisation_bars("1D", "yahoo", data, ["600519.SH"]) == 252
+
+    def test_five_daily_bars_starting_monday_keep_the_declared_count(self):
+        """Calendar alignment must not change the verdict: a Monday-start week
+        spans four calendar days and a Tuesday-start week spans six, so a
+        bars-per-calendar-year measurement flags one and not the other."""
+        from backtest.runner import _annualisation_bars
+
+        monday = pd.bdate_range("2026-09-07", periods=5)
+        assert monday[0].day_name() == "Monday"
+        assert (monday[-1] - monday[0]).days == 4
+
+        data = self._frame(monday)
+        assert _annualisation_bars("1D", "yahoo", data, ["600519.SH"]) == 252
+
+    def test_one_week_of_hourly_bars_keeps_the_declared_count(self):
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(self._session(days=5, per_day=7, freq="1h"))
+        declared = calc_bars_per_year("1H", "yahoo")
+        assert _annualisation_bars("1H", "yahoo", data, ["600519.SH"]) == declared
+
+    def test_one_session_of_minute_bars_keeps_the_declared_count(self):
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(self._session(days=1, per_day=390, freq="1min"))
+        declared = calc_bars_per_year("1m", "yahoo")
+        assert _annualisation_bars("1m", "yahoo", data, ["600519.SH"]) == declared
+
+    # --- session shapes that a spacing measurement must tolerate ---
+
+    def test_a_share_four_hour_session_keeps_the_declared_count(self):
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(self._session(days=5, per_day=4, freq="1h"))
+        assert _annualisation_bars("1H", "tushare", data, ["600519.SH"]) == \
+            calc_bars_per_year("1H", "tushare")
+
+    def test_a_trading_halt_does_not_change_the_verdict(self):
+        """The median reports the regular spacing; one long gap cannot outvote it."""
+        from backtest.runner import _annualisation_bars
+
+        index = pd.bdate_range("2025-01-06", periods=60).append(
+            pd.bdate_range("2025-08-01", periods=60)
+        )
+        assert _annualisation_bars("1D", "tushare", self._frame(index), ["600519.SH"]) == 252
+
+    def test_crypto_daily_is_not_tripped_by_the_check(self):
+        """365-day markets keep their own table entry."""
+        from backtest.runner import _annualisation_bars
+
+        n = 700
+        data = {"BTC-USDT": pd.DataFrame(
+            {"close": [10.0] * n}, index=pd.date_range("2024-01-02", periods=n, freq="D")
+        )}
+        assert _annualisation_bars("1D", "okx", data, ["BTC-USDT"]) == 365
+
+    # --- degenerate inputs ---
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {},
+            {"600519.SH": pd.DataFrame({"close": []})},
+            # Too few bars for a median that survives a weekend gap.
+            {"600519.SH": pd.DataFrame(
+                {"close": [1.0, 2.0]}, index=pd.to_datetime(["2026-09-11", "2026-09-14"])
+            )},
+        ],
+    )
+    def test_unmeasurable_data_falls_back_to_the_declaration(self, data):
+        from backtest.runner import _annualisation_bars
+
+        assert _annualisation_bars("1D", "tushare", data, ["600519.SH"]) == 252
+
+    def test_only_price_frames_are_measured(self):
+        """Injected fundamental panels must not decide the annualisation."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2024-01-02", periods=654, freq="B"))
+        data["_fundamentals"] = pd.DataFrame(
+            {"pe": [1.0] * 5}, index=pd.date_range("2024-01-02", periods=5, freq="YE")
+        )
+        assert _annualisation_bars("1D", "tushare", data, ["600519.SH"]) == 252
+
+    def test_unsupported_spacing_keeps_the_declaration_and_says_so(self, caplog):
+        """Weekly bars match no supported interval; naming a count would guess."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2024-01-05", periods=60, freq="W-FRI"))
+        with caplog.at_level("WARNING", logger="backtest.runner"):
+            resolved = _annualisation_bars("1D", "tushare", data, ["600519.SH"])
+
+        assert resolved == 252
+        assert any("matches no supported interval" in r.getMessage() for r in caplog.records)
+
+    def test_mismatch_is_logged(self, caplog):
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2024-01-02", periods=654, freq="B"))
+        with caplog.at_level("WARNING", logger="backtest.runner"):
+            _annualisation_bars("1H", "tushare", data, ["600519.SH"])
+
+        assert any("1H" in r.getMessage() for r in caplog.records)
