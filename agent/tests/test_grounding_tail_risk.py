@@ -170,3 +170,57 @@ def test_confidence_free_evidence_grounds_any_confidence(tmp_path: Path):
     )
     ok = ledger.validate_final_answer("回测完成。VaR 99%: -1.57%。")
     assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
+
+
+# Natural-wording edge cases from the #1427 review: a metric's proper name
+# must not read as forecast prose, `was`/`fue` separate the confidence from
+# the value, and bare connectives may sit between metric and confidence.
+
+
+def test_expected_shortfall_is_not_a_forecast_frame(tmp_path: Path):
+    """"Expected Shortfall" is the metric's proper name, not forecast prose:
+    an invented ES value must still hit the evidence check (#1427 review)."""
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    result = ledger.validate_final_answer("Expected Shortfall 95% was -99.9%.")
+    assert any(
+        i["code"] == "analysis_claim_unavailable" and i.get("kind") == "tail_risk"
+        for i in result.issues
+    )
+
+
+def test_generic_forecast_still_skips_the_gate(tmp_path: Path):
+    """Bare `expected` stays a forecast frame outside "Expected Shortfall"."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="what do you expect")
+    ok = ledger.validate_final_answer("We forecast an expected return of 4.2% next year.")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
+
+
+def test_past_tense_was_separates_confidence_from_value(tmp_path: Path):
+    """"VaR 95% was -1.57%": `was` separates the confidence from the value;
+    the 95% must not leak into the measurement list (#1427 review)."""
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    ok = ledger.validate_final_answer("回测完成。VaR 95% was -1.57%.")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
+
+
+def test_descriptive_words_between_metric_and_confidence(tmp_path: Path):
+    """Bare connectives between the metric and its confidence must not break
+    the identity link (#1427 review)."""
+    ledger = _ledger_with_tail_evidence(tmp_path)
+    ok = ledger.validate_final_answer("回测完成。historical daily VaR at 95% was -1.57%.")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in ok.issues)
+
+
+def test_spanish_confidence_frame_is_masked():
+    """Regex level: the Spanish confidence frame is consumed as the frame,
+    not measured; the decimal-comma value parse rides #1419 (#1427 review)."""
+    from src.agent.grounding import (
+        _TAIL_RISK_CONFIDENCE_RE,
+        _TAIL_RISK_CONFIDENCE_VALUE_RE,
+    )
+
+    text = "El VaR histórico diario al 95% fue 1,57%."
+    assert _TAIL_RISK_CONFIDENCE_RE.search(text), f"confidence not masked: {text!r}"
+    match = _TAIL_RISK_CONFIDENCE_VALUE_RE.search(text)
+    assert match, f"confidence not extracted: {text!r}"
+    assert float(match.group(1) or match.group(2)) == 95.0

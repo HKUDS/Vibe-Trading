@@ -324,8 +324,10 @@ _MEASURE_NUMBER_RE = re.compile(
 # A forward-looking frame means the figure is a forecast, not a claim that a
 # backtest/analysis measured it — the measurement gate only polices "measured
 # facts" (#1336), forecasts stay under the "analysis, not advice" prompt rule.
+# "Expected Shortfall" is a metric's proper name, not a forecast frame: bare
+# `expected` must not pull an ES claim out of validation (#1427 review).
 _FORECAST_FRAME_RE = re.compile(
-    r"(?:\b(?:forecast|expected|projected|predicted)\b|预计|预期|预测|估计|展望)",
+    r"(?:\b(?:forecast|expected(?!\s*shortfall)|projected|predicted)\b|预计|预期|预测|估计|展望)",
     re.IGNORECASE,
 )
 
@@ -549,14 +551,23 @@ _QUANTITY_WITH_UNIT_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+# Function words that may sit between a tail-risk metric's name and its
+# confidence without breaking the link: "VaR histórico diario al 95% fue
+# 1,57%", "historical daily VaR at 95% was -1.57%" (#1427 review). Only bare
+# connectives are allowed through — a second measure word in between still
+# breaks the chain, so identity cannot bleed across metrics.
+_TAIL_RISK_CONFIDENCE_CONNECTIVES = (
+    r"(?:\s+(?:hist[oó]rico|historical|diario|daily|al|at|el|la|fue|was|is)\b)*"
+)
 # The confidence figure in a tail-risk frame is part of the metric's name,
 # not a measurement: in "VaR 95%: -1.57%" or "95% 置信水平下 VaR 为 -1.57%"
 # the 95% never reaches the evidence check, only the -1.57% does (#1425 —
 # mirrors _LABELLED_SCORE_RE, which does the same for "CONFIDENCE: 6").
 _TAIL_RISK_CONFIDENCE_RE = re.compile(
     r"(?:\bvar\b|\bcvar\b|\bes\b|expected\s*shortfall|在险价值|风险价值|预期尾部损失)"
-    r"\s*[(（]?\s*[-+]?\d+(?:\.\d+)?\s*[%％]\s*[)）]?"
-    r"(?=\s*(?:[:：=]|为|是|is\b)?\s*[(（]?[-+]?\d)"  # a confidence is followed by the value; a bare "CVaR 2.1%" is the value
+    + _TAIL_RISK_CONFIDENCE_CONNECTIVES
+    + r"\s*[(（]?\s*[-+]?\d+(?:\.\d+)?\s*[%％]\s*[)）]?"
+    r"(?=\s*(?:[:：=]|为|是|is\b|was\b|fue\b)?\s*[(（]?[-+]?\d)"  # a confidence is followed by the value; a bare "CVaR 2.1%" is the value
     r"|"
     r"[-+]?\d+(?:\.\d+)?\s*[%％]\s*(?:置信水平|置信度|confidence(?:\s+level)?)\s*[下上的]?",
     re.IGNORECASE,
@@ -570,7 +581,8 @@ _TAIL_RISK_ES_MEASURE_RE = re.compile(
 )
 _TAIL_RISK_CONFIDENCE_VALUE_RE = re.compile(
     r"(?:\bvar\b|\bcvar\b|\bes\b|expected\s*shortfall|在险价值|风险价值|预期尾部损失)"
-    r"\s*[(（]?\s*(\d{2})(?:\.\d+)?\s*[%％]"
+    + _TAIL_RISK_CONFIDENCE_CONNECTIVES
+    + r"\s*[(（]?\s*(\d{2})(?:\.\d+)?\s*[%％]"
     r"|"
     r"(\d{2})(?:\.\d+)?\s*[%％]\s*(?:置信水平|置信度|confidence(?:\s+level)?)",
     re.IGNORECASE,
