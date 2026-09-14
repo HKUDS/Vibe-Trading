@@ -3747,3 +3747,265 @@ def test_crypto_pair_tables_match_the_resolver() -> None:
     # gold and forex are quoted in it too); grounding decides it by the base
     # whitelist instead, so it is the only permitted difference.
     assert set(g._CRYPTO_QUOTE_ASSETS) | {"USD"} == set(ss._CRYPTO_QUOTE_ASSETS)
+
+
+def test_declared_metrics_contract_grounds_only_declared_fields(
+    tmp_path: Path,
+) -> None:
+    """#1426: a tool that declares its metrics opts into the strict contract.
+
+    The payload below mirrors the portfolio-risk shape from the issue: real
+    metrics mixed with counts and window metadata. With a declaration present,
+    the declared field grounds its claim while every undeclared numeric leaf
+    (``inputs.return_observations`` here) stays generic and cannot ground.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "metrics": [
+                    {
+                        "field": "data.volatility.annualized_vol",
+                        "metric": "annualized_volatility",
+                        "unit": "return_fraction",
+                    },
+                    {
+                        "field": "data.drawdown.max_drawdown",
+                        "metric": "max_drawdown",
+                        "unit": "return_fraction",
+                    },
+                ],
+                "data": {
+                    "inputs": {"return_observations": 81, "aligned_days": 63},
+                    "volatility": {"annualized_vol": 0.2301},
+                    "drawdown": {"max_drawdown": -0.094},
+                },
+            }
+        ),
+        call_id="risk-declared",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer("组合年化波动率 23.0%，最大回撤 -9.4%。")
+    assert good.valid is True, good.issues
+
+    bad = ledger.validate_final_answer("年化收益 81%。")
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_undeclared_payload_keeps_legacy_inference(tmp_path: Path) -> None:
+    """The contract is opt-in: no ``metrics`` list, no behaviour change.
+
+    ``return_observations`` still classifying as return evidence here is the
+    known inference gap #1426 tracks; tightening that for undeclared tools is
+    the follow-up, not this change. Pin the current behaviour so the opt-in
+    boundary is explicit.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "data": {
+                    "inputs": {"return_observations": 81},
+                    "volatility": {"annualized_vol": 0.2301},
+                },
+            }
+        ),
+        call_id="risk-legacy",
+        success=True,
+    )
+
+    assert ledger.validate_final_answer("组合年化波动率 23.0%。").valid is True
+    assert ledger.validate_final_answer("年化收益 81%。").valid is True
+
+
+def test_declaration_with_unknown_metric_still_engages_strict_mode(
+    tmp_path: Path,
+) -> None:
+    """An unrecognised declared metric is not authoritative, and the
+    declaration still suppresses inference for the payload's other leaves."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "metrics": [
+                    {"field": "data.volatility.annualized_vol", "metric": "some_future_metric"}
+                ],
+                "data": {"volatility": {"annualized_vol": 0.2301}},
+            }
+        ),
+        call_id="risk-unknown",
+        success=True,
+    )
+
+    bad = ledger.validate_final_answer("组合年化波动率 23.0%。")
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_metrics_key_with_non_declaration_shape_stays_legacy(
+    tmp_path: Path,
+) -> None:
+    """A ``metrics`` key that is not a list of declarations is payload data.
+
+    Some tool will eventually return ``{"metrics": {...}}`` as its result
+    body; that must not look like an opt-in to the strict contract.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "metrics": {"sharpe": 1.21},
+                "data": {"volatility": {"annualized_vol": 0.2301}},
+            }
+        ),
+        call_id="risk-data-metrics",
+        success=True,
+    )
+
+    good = ledger.validate_final_answer("组合年化波动率 23.0%，夏普比率 1.21。")
+    assert good.valid is True, good.issues
+
+
+def test_declared_metrics_on_analysis_tool_payload(tmp_path: Path) -> None:
+    """quantlib_call's own payload can opt in: only the declared leaf grounds.
+
+    ``vol_lookback`` is a real ``risk.py`` output and a real false-acceptance
+    row from #1426 — under the declaration it is just a window size again.
+    """
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="quantlib_call",
+        arguments={"action": "call", "function": "drawdown_distribution_analysis"},
+        result=json.dumps(
+            {
+                "ok": True,
+                "metrics": [
+                    {"field": "result.annualized_vol", "metric": "annualized_volatility"}
+                ],
+                "result": {"annualized_vol": 0.182, "vol_lookback": 60},
+            }
+        ),
+        call_id="ql-declared",
+        success=True,
+    )
+
+    assert ledger.validate_final_answer("年化波动率 18.2%。").valid is True
+    bad = ledger.validate_final_answer("年化波动率 60%。")
+    assert bad.valid is False, bad.issues
+    assert any(
+        issue["code"] == "analysis_claim_unavailable" for issue in bad.issues
+    )
+
+
+def test_declared_field_path_resolution_with_list_indices(tmp_path: Path) -> None:
+    """Declared paths resolve through nested dicts and ``name[index]`` lists."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="分析组合风险",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "metrics": [
+                    {"field": "data.rows[1].annualized_vol", "metric": "annualized_vol"}
+                ],
+                "data": {
+                    "rows": [
+                        {"annualized_vol": 0.99},
+                        {"annualized_vol": 0.2301},
+                    ]
+                },
+            }
+        ),
+        call_id="risk-rows",
+        success=True,
+    )
+
+    assert ledger.validate_final_answer("年化波动率 23.0%。").valid is True
+    bad = ledger.validate_final_answer("年化波动率 99.0%。")
+    assert bad.valid is False, bad.issues
+
+
+def test_declared_contract_keeps_price_evidence_usable(tmp_path: Path) -> None:
+    """Strict mode scopes to analysis claims; prices in the same payload
+    remain ordinary observed price evidence."""
+    ledger = GroundingLedger(
+        run_dir=tmp_path,
+        user_message="AAPL.US 现价多少",
+    )
+    ledger.ingest_tool_result(
+        tool_name="portfolio_risk_xray",
+        arguments={"symbols": ["AAPL.US"]},
+        result=json.dumps(
+            {
+                "status": "ok",
+                "metrics": [
+                    {"field": "data.volatility.annualized_vol", "metric": "annualized_vol"}
+                ],
+                "data": {
+                    "last": 101.5,
+                    "volatility": {"annualized_vol": 0.2301},
+                },
+            }
+        ),
+        call_id="risk-with-price",
+        success=True,
+    )
+
+    price_records = [
+        record
+        for record in ledger._evidence
+        if record.field == "data.last" and record.value == 101.5
+    ]
+    assert price_records and price_records[0].status == "observed"
+
+    persisted = json.loads(
+        (tmp_path / "artifacts" / "grounding_evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted["declared_metric_calls"] == ["risk-with-price"]
+    declared_entries = [
+        entry
+        for entry in persisted["analysis_evidence"]
+        if entry.get("declared") is True
+    ]
+    assert [entry["field"] for entry in declared_entries] == [
+        "data.volatility.annualized_vol"
+    ]

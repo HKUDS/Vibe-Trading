@@ -1123,6 +1123,69 @@ def _metric_kind_for_text(text: str) -> str | None:
     return None
 
 
+def _parse_metric_declarations(
+    payload: Mapping[str, Any] | None,
+) -> list[dict[str, str]] | None:
+    """Parse a tool's explicit metric-evidence declaration (#1426).
+
+    A result may carry ``"metrics": [{"field": "volatility.annualized_vol",
+    "metric": "annualized_volatility"}, ...]`` naming the numeric leaves that
+    are authoritative analysis evidence. A returned list (even empty) means
+    the payload opted into the declared contract: only the named fields ground
+    analysis claims and every other numeric leaf stays generic. ``None`` means
+    no declaration, so the legacy name-inference path applies. A ``metrics``
+    key of any other shape is payload data, not a declaration.
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    raw = payload.get("metrics")
+    if not isinstance(raw, list):
+        return None
+    seen_declaration = False
+    entries: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        field = item.get("field")
+        metric = item.get("metric")
+        if not isinstance(field, str) or not isinstance(metric, str):
+            continue
+        if not field.strip() or not metric.strip():
+            continue
+        seen_declaration = True
+        kind = _ANALYSIS_KIND_ALIASES.get(metric.strip().casefold())
+        if kind is None:
+            # A metric name this build does not recognise cannot become
+            # authoritative, but the payload still opted into the contract.
+            continue
+        entries.append({"field": field.strip(), "metric": kind})
+    return entries if seen_declaration else None
+
+
+def _resolve_declared_field(container: Any, field: str) -> Any:
+    """Resolve a declared dot path (``a.b`` / ``a.b[0]``) inside one payload."""
+    current = container
+    for segment in str(field).split("."):
+        segment = segment.strip()
+        if not segment:
+            return None
+        index: int | None = None
+        bracket = re.fullmatch(r"(.*?)\[(\d+)\]", segment)
+        if bracket:
+            segment, index = bracket.group(1), int(bracket.group(2))
+        if isinstance(current, Mapping) and segment in current:
+            current = current[segment]
+        elif isinstance(current, list) and segment.isdigit() and int(segment) < len(current):
+            current = current[int(segment)]
+        else:
+            return None
+        if index is not None:
+            if not isinstance(current, list) or index >= len(current):
+                return None
+            current = current[index]
+    return current
+
+
 def _scan_symbols(text: str) -> set[str]:
     """Return the canonical symbols written anywhere in a blob of text."""
     return {
@@ -1381,6 +1444,9 @@ class GroundingLedger:
         self._tool_failures: list[dict[str, Any]] = []
         self._analysis_completed: list[dict[str, Any]] = []
         self._analysis_metrics: list[dict[str, Any]] = []
+        # Calls whose payload declared its authoritative metrics (#1426): their
+        # other numeric leaves never re-derive analysis kinds at check time.
+        self._declared_metric_call_ids: set[str] = set()
         self._validations: list[dict[str, Any]] = []
         self._recovery_rounds = 0
         self._symbol_resolution_attempts = 0
@@ -1671,14 +1737,27 @@ class GroundingLedger:
             return
 
         self._track_session_symbols(arguments, result)
+        declared = _parse_metric_declarations(payload)
+        if declared is not None:
+            self._declared_metric_call_ids.add(call_id)
         if tool_name in _ANALYSIS_TOOLS:
-            self._ingest_analysis_result(tool_name, arguments, payload, call_id)
+            self._ingest_analysis_result(
+                tool_name, arguments, payload, call_id, declared
+            )
         if tool_name == _RESOLVER_TOOL:
             self._ingest_resolution(arguments, payload, call_id)
         elif tool_name == "get_market_data":
             self._ingest_market_data(arguments, payload, call_id)
         elif payload is not None:
-            self._ingest_generic_numeric(tool_name, arguments, payload, call_id)
+            # Analysis tools record declared metrics in _ingest_analysis_result;
+            # passing the declaration here too would record every entry twice.
+            self._ingest_generic_numeric(
+                tool_name,
+                arguments,
+                payload,
+                call_id,
+                declared if tool_name not in _ANALYSIS_TOOLS else None,
+            )
         self.persist()
 
     def _ingest_analysis_result(
@@ -1687,6 +1766,7 @@ class GroundingLedger:
         arguments: Mapping[str, Any],
         payload: dict[str, Any] | None,
         call_id: str,
+        declared: list[dict[str, str]] | None = None,
     ) -> None:
         """Record metric numbers a completed analysis result actually produced.
 
@@ -1696,6 +1776,22 @@ class GroundingLedger:
         recognisable metric figure count as completed analysis.
         """
         if payload is None or payload.get("skipped"):
+            return
+        if declared is not None:
+            # The tool named its authoritative metrics (#1426); record exactly
+            # those and skip name inference for the rest of the payload. A
+            # payload-level failure must not mint declared evidence either.
+            if str(payload.get("status") or "ok").casefold() != "ok":
+                return
+            if payload.get("ok") is False:
+                return
+            recorded = self._record_declared_metrics(
+                payload, declared, call_id, tool_name
+            )
+            if recorded:
+                self._analysis_completed.append(
+                    {"call_id": call_id, "tool": tool_name, "recorded_at": _utc_now()}
+                )
             return
         if tool_name == "backtest":
             if str(payload.get("status") or "").casefold() != "ok" and payload.get(
@@ -1730,6 +1826,39 @@ class GroundingLedger:
             self._analysis_completed.append(
                 {"call_id": call_id, "tool": tool_name, "recorded_at": _utc_now()}
             )
+
+    def _record_declared_metrics(
+        self,
+        payload: Mapping[str, Any],
+        declared: list[dict[str, str]],
+        call_id: str,
+        tool_name: str,
+    ) -> int:
+        """Record only the metric fields a tool explicitly declared (#1426).
+
+        Declared paths are resolved against the payload as the tool emitted it
+        and stored verbatim, so the audit trail shows the tool's own words.
+        Entries whose field does not resolve to a number are skipped; the
+        payload stays in declared mode regardless, so a broken declaration
+        fails closed instead of falling back to name inference.
+        """
+        recorded = 0
+        for entry in declared:
+            value = _resolve_declared_field(payload, entry["field"])
+            if not _is_number(value):
+                continue
+            self._analysis_metrics.append(
+                {
+                    "metric": entry["metric"],
+                    "value": float(value),
+                    "tool": tool_name,
+                    "call_id": call_id,
+                    "field": entry["field"],
+                    "declared": True,
+                }
+            )
+            recorded += 1
+        return recorded
 
     def _record_leaf_metrics(
         self,
@@ -2110,6 +2239,7 @@ class GroundingLedger:
                 "tool_failures": list(self._tool_failures),
                 "analysis_completed": list(self._analysis_completed),
                 "analysis_evidence": list(self._analysis_metrics),
+                "declared_metric_calls": sorted(self._declared_metric_call_ids),
                 "validations": list(self._validations),
             }
             temp.write_text(
@@ -2594,8 +2724,15 @@ class GroundingLedger:
         arguments: Mapping[str, Any],
         payload: dict[str, Any],
         call_id: str,
+        declared: list[dict[str, str]] | None = None,
     ) -> None:
         """Flatten bounded numeric leaves from other market-sensitive tools."""
+        if declared is not None:
+            # A custom tool that declares its metrics gets them recorded
+            # verbatim; its other leaves still flatten below as generic
+            # evidence, but _analysis_value_observed skips re-deriving
+            # analysis kinds from this call.
+            self._record_declared_metrics(payload, declared, call_id, tool_name)
         symbols = self._extract_symbol_arguments(arguments)
         symbol = symbols[0] if len(symbols) == 1 else None
         if symbol:
@@ -3103,6 +3240,10 @@ class GroundingLedger:
                 observed.append(float(record["value"]))
         for record in self._evidence:
             if record.status != "observed" or record.value is None:
+                continue
+            if record.call_id in self._declared_metric_call_ids:
+                # The tool declared its authoritative metrics (#1426); its
+                # other numeric leaves stay generic and never ground claims.
                 continue
             if _metric_kind_for_path(record.field) != kind:
                 continue
