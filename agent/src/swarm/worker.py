@@ -651,8 +651,7 @@ def _run_worker_impl(
             summary = _best_summary(messages, last_assistant_content) or f"Worker timed out after {elapsed:.0f}s ({iteration} iterations)"
             summary = _resolve_summary(artifact_dir, summary)
             _emit(event_callback, "worker_timeout", agent_id, task_id, {"elapsed": elapsed})
-            _write_summary(artifact_dir, summary)
-            _persist_messages(artifact_dir, messages)
+            _finalize_run(artifact_dir, summary, messages)
             return WorkerResult(
                 status="timeout",
                 summary=summary,
@@ -671,8 +670,7 @@ def _run_worker_impl(
             cancelled_summary = last_assistant_content or f"Cancelled after {iteration} iterations"
             summary = _resolve_summary(artifact_dir, cancelled_summary)
             _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
-            _write_summary(artifact_dir, summary)
-            _persist_messages(artifact_dir, messages)
+            _finalize_run(artifact_dir, summary, messages)
             return WorkerResult(
                 status="cancelled",
                 summary=summary,
@@ -691,7 +689,7 @@ def _run_worker_impl(
             summary = last_assistant_content or f"Worker context too large (~{token_estimate} tokens, {iteration} iterations)"
             summary = _resolve_summary(artifact_dir, summary)
             _emit(event_callback, "worker_token_limit", agent_id, task_id, {"tokens": token_estimate})
-            _write_summary(artifact_dir, summary)
+            _finalize_run(artifact_dir, summary, messages)
             return WorkerResult(
                 status="token_limit",
                 summary=summary,
@@ -837,8 +835,7 @@ def _run_worker_impl(
                 cancelled_summary = last_assistant_content or f"Cancelled after {iteration} iterations"
                 summary = _resolve_summary(artifact_dir, cancelled_summary)
                 _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
-                _write_summary(artifact_dir, summary)
-                _persist_messages(artifact_dir, messages)
+                _finalize_run(artifact_dir, summary, messages)
                 return WorkerResult(
                     status="cancelled",
                     summary=summary,
@@ -890,7 +887,7 @@ def _run_worker_impl(
                     {"count": content_filter_count},
                 )
                 summary = _resolve_summary(artifact_dir, last_assistant_content or "")
-                _write_summary(artifact_dir, summary)
+                _finalize_run(artifact_dir, summary, messages)
                 return WorkerResult(
                     status="failed",
                     summary=summary,
@@ -926,7 +923,7 @@ def _run_worker_impl(
         if not response.has_tool_calls:
             summary = response.content or last_assistant_content or "(no summary)"
             summary = _resolve_summary(artifact_dir, summary)
-            _write_summary(artifact_dir, summary)
+            _finalize_run(artifact_dir, summary, messages)
             reason = _classify_deliverable(
                 summary,
                 is_data_agent=_is_data_agent(agent_spec),
@@ -1043,8 +1040,7 @@ def _run_worker_impl(
     # Hit iteration limit — use last meaningful content as summary
     summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
     summary = _resolve_summary(artifact_dir, summary)
-    _write_summary(artifact_dir, summary)
-    _persist_messages(artifact_dir, messages)
+    _finalize_run(artifact_dir, summary, messages)
     reason = _classify_deliverable(
         summary,
         is_data_agent=_is_data_agent(agent_spec),
@@ -1311,6 +1307,24 @@ def _resolve_summary(artifact_dir: Path, fallback: str) -> str:
     except Exception:
         logger.warning("Failed to read report.md from %s", artifact_dir, exc_info=True)
     return fallback
+
+
+def _finalize_run(artifact_dir: Path, summary: str, messages: list[dict]) -> None:
+    """Persist a worker's terminal summary and message log together.
+
+    Both files are written through one call, so a terminal path that reports a
+    summary cannot omit the message log: ``messages.json`` is the only record
+    of the arguments a model asked a tool for, which is what a post-mortem of a
+    bad tool call needs. The LLM-call-failure handler writes neither file and is
+    unchanged.
+
+    Args:
+        artifact_dir: Path to artifacts/{agent_id}/ directory.
+        summary: Final summary text for this worker run.
+        messages: Message history, including tool call arguments.
+    """
+    _write_summary(artifact_dir, summary)
+    _persist_messages(artifact_dir, messages)
 
 
 def _persist_messages(artifact_dir: Path, messages: list[dict]) -> None:
