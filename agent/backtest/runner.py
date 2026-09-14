@@ -26,6 +26,7 @@ from backtest.loaders.registry import (
     LOADER_REGISTRY,
     VALID_SOURCES,
     get_loader_cls_with_fallback,
+    is_no_network_fallback_source,
     mixed_caliber_warning,
     price_caliber,
     resolve_loader,
@@ -1583,7 +1584,14 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                 len(codes),
                 missing,
             )
-        if missing:
+        # ``is_no_network_fallback_source`` means "an explicit request for this
+        # source must never silently degrade." It used to be checked only when
+        # a loader was unavailable as a whole; per-symbol gaps still got filled
+        # from a network source — a source="local" request could return half
+        # its rows from a snapshot and half from Tencent, leaving only two log
+        # lines as a trace. Callers want snapshot provenance, not a padded row
+        # count.
+        if missing and not is_no_network_fallback_source(primary_source):
             market = _detect_market(codes[0])
             for fallback_source in FALLBACK_CHAINS.get(market, []):
                 if not missing:

@@ -216,3 +216,82 @@ class TestBenchmarkLoaderForwarding:
 
         assert result is not None
         assert fallback.fetched == ["SPY"]
+
+
+class TestNoNetworkFallbackIsPerSymbolToo:
+    """``_NO_NETWORK_FALLBACK_SOURCES`` 的文档说显式点名的源不可用时是用户必须
+    看到的配置问题，不该用 Yahoo/Tencent 的取数糊过去。但那个集合此前只在
+    loader *整体* 不可用时被查；按标的的回落循环对所有源一视同仁。"""
+
+    @staticmethod
+    def _config(**over):
+        cfg = {"codes": ["AAPL.US", "MSFT.US"], "start_date": "2023-01-03",
+               "end_date": "2023-01-04", "source": "local"}
+        cfg.update(over)
+        return cfg
+
+    def test_missing_symbol_raises_instead_of_reaching_the_network(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from backtest.loaders.base import NoAvailableSourceError
+        from backtest.runner import fetch_data_map
+
+        served = _FakeLoader([100.0, 101.0])
+
+        def _only_first(codes, *a, **k):
+            return {"AAPL.US": served.fetch(["AAPL.US"], *a, **k)["AAPL.US"]}
+
+        monkeypatch.setattr(
+            "backtest.runner._get_loader",
+            lambda source: lambda: type("L", (), {"name": "local", "fetch": staticmethod(_only_first)})(),
+        )
+        monkeypatch.setattr(
+            "backtest.runner.LOADER_REGISTRY",
+            {"yahoo": lambda: (_ for _ in ()).throw(AssertionError("must not fall back"))},
+        )
+
+        with pytest.raises(NoAvailableSourceError, match="MSFT.US"):
+            fetch_data_map(self._config())
+
+    def test_a_fallback_source_still_reaches_the_chain(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """不在名单里的源行为不变：缺票仍走回落链。
+
+        用一个可控的假 loader 顶替链上的 yahoo，绝不触网——断言的是「回落被
+        尝试了」，不是「网络能通」。
+        """
+        from backtest.runner import fetch_data_map
+
+        index = pd.date_range("2023-01-03", periods=2, freq="D")
+        bars = pd.DataFrame({"open": [1.0, 1.0], "high": [1.0, 1.0],
+                             "low": [1.0, 1.0], "close": [1.0, 1.0],
+                             "volume": [1.0, 1.0]}, index=index)
+        bars.index.name = "trade_date"
+
+        class _Primary:
+            name = "tencent"
+
+            def fetch(self, codes, *a, **k):
+                return {"AAPL.US": bars.copy()}
+
+        reached: list[str] = []
+
+        class _Fallback:
+            name = "yahoo"
+
+            def is_available(self):
+                return True
+
+            def fetch(self, codes, *a, **k):
+                reached.extend(codes)
+                return {c: bars.copy() for c in codes}
+
+        monkeypatch.setattr("backtest.runner._get_loader", lambda source: _Primary)
+        monkeypatch.setattr("backtest.runner.LOADER_REGISTRY", {"yahoo": _Fallback})
+        monkeypatch.setattr("backtest.runner.FALLBACK_CHAINS", {"us_equity": ["yahoo"]})
+
+        result = fetch_data_map(self._config(source="tencent"))
+
+        assert reached == ["MSFT.US"]
+        assert sorted(result.data_map) == ["AAPL.US", "MSFT.US"]
