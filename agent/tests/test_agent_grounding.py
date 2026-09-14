@@ -4009,3 +4009,29 @@ def test_declared_contract_keeps_price_evidence_usable(tmp_path: Path) -> None:
     assert [entry["field"] for entry in declared_entries] == [
         "data.volatility.annualized_vol"
     ]
+
+
+def test_declared_metric_names_resolve_through_the_alias_table() -> None:
+    """Pin the accepted declaration names (#1437 review).
+
+    A tool author declaring a name outside the alias table gets strict mode
+    with nothing authoritative — a clear, testable boundary rather than
+    silent inference. ``maxdrawdown`` deliberately fails while
+    ``max_drawdown``/``maxdd`` resolve, and the tail-risk aliases land with
+    #1427 (``var_95`` is unrecognised until then).
+    """
+    from src.agent.grounding import _ANALYSIS_KIND_ALIASES, _parse_metric_declarations
+
+    def declared_names(payload):
+        parsed = _parse_metric_declarations(payload)
+        return [entry["metric"] for entry in parsed] if parsed else []
+
+    assert declared_names({"metrics": [{"field": "a", "metric": "annualized_volatility"}]}) == ["vol"]
+    assert declared_names({"metrics": [{"field": "a", "metric": "max_drawdown"}]}) == ["drawdown"]
+    assert declared_names({"metrics": [{"field": "a", "metric": "maxdd"}]}) == ["drawdown"]
+    # Unrecognised spellings stay out of the authoritative set.
+    assert declared_names({"metrics": [{"field": "a", "metric": "maxdrawdown"}]}) == []
+    assert declared_names({"metrics": [{"field": "a", "metric": "var_95"}]}) == []
+    # Declared names resolve through the exact alias table only, never the
+    # fuzzy token scan used for undeclared inference.
+    assert all(kind in set(_ANALYSIS_KIND_ALIASES.values()) for kind in declared_names({"metrics": [{"field": "a", "metric": "annualized_return"}]}))
