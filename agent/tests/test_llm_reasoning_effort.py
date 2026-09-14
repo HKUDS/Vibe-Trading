@@ -281,7 +281,12 @@ class TestUnsupportedProviders:
         allowlisted = {
             name for name, caps in _PROVIDERS.items() if caps.top_level_reasoning_effort
         }
-        assert allowlisted == {"openai", "deepseek"}
+        # aimlapi joined on 2026-09-03: a chat-completions request carrying a
+        # top-level reasoning_effort was answered 200 by deepseek/deepseek-v4-pro,
+        # openai/gpt-5-5, anthropic/claude-sonnet-4.5, google/gemini-3.5-flash,
+        # alibaba/qwen3.5-plus and z-ai/glm-5.3-flash through that gateway —
+        # six upstream vendors, none of which rejected the field.
+        assert allowlisted == {"openai", "deepseek", "aimlapi"}
 
     def test_explicit_openai_provider_keeps_effort_for_deepseek_model(self) -> None:
         kwargs = _capture_kwargs(

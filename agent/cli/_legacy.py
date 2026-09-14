@@ -453,6 +453,7 @@ def _provider_key_env(provider: str | None) -> str | None:
         "iflytek": "SPARK_API_KEY",
         "zai": "ZAI_API_KEY",
         "modelscope": "MODELSCOPE_API_KEY",
+        "aimlapi": "AIMLAPI_API_KEY",
     }.get((provider or "").lower())
 
 
@@ -479,6 +480,7 @@ def _provider_base_env(provider: str | None) -> str | None:
         "iflytek": "SPARK_BASE_URL",
         "zai": "ZAI_BASE_URL",
         "modelscope": "MODELSCOPE_BASE_URL",
+        "aimlapi": "AIMLAPI_BASE_URL",
         "ollama": "OLLAMA_BASE_URL",
     }.get((provider or "").lower())
 
@@ -5596,6 +5598,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "base_env": "MODELSCOPE_BASE_URL",
         "base_url": "https://api-inference.modelscope.cn/v1",
         "model": "Qwen/Qwen3.5-27B",
+        "key_prefix": None,
+        "key_placeholder": "api-key...",
+    },
+    {
+        "label": "aimlapi.com",
+        "provider": "aimlapi",
+        "key_env": "AIMLAPI_API_KEY",
+        "base_env": "AIMLAPI_BASE_URL",
+        "base_url": "https://api.aimlapi.com/v1",
+        "model": "deepseek/deepseek-v4-pro",
         "key_prefix": None,
         "key_placeholder": "api-key...",
     },

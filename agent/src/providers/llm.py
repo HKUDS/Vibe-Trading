@@ -18,6 +18,8 @@ from pydantic import PrivateAttr
 
 from src.config.accessor import get_env_config, reset_env_config
 from src.providers.capabilities import (
+    AIMLAPI_ATTRIBUTION_HEADERS,
+    AIMLAPI_ATTRIBUTION_HOSTS,
     ProviderCapabilities,
     get_llm_credentials,
     get_provider_capabilities,
@@ -1345,6 +1347,35 @@ def _sends_top_level_reasoning_effort(caps: ProviderCapabilities) -> bool:
     return _supports_top_level_reasoning_effort(caps) and _openai_label_points_at_openai(caps)
 
 
+def _aimlapi_attribution_headers(
+    caps: ProviderCapabilities, base_url: str
+) -> dict[str, str]:
+    """Return AI/ML API attribution headers when the request really goes there.
+
+    Args:
+        caps: Resolved provider capabilities.
+        base_url: Base URL the request will actually be sent to.
+
+    Returns:
+        A fresh header dict for AI/ML API's own hosts, empty otherwise.
+
+    Notes:
+        The gate is the resolved *hostname*, not the provider label and not a
+        substring of the URL. ``AIMLAPI_BASE_URL`` (or an ambient
+        ``OPENAI_BASE_URL``) can point the label at a corporate proxy, and
+        ``api.aimlapi.com.example.net`` contains the real host as a prefix —
+        neither should receive an identifier meant for one vendor.
+    """
+    if caps.name != "aimlapi":
+        return {}
+    host = (
+        urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
+    )
+    if host.lower() not in AIMLAPI_ATTRIBUTION_HOSTS:
+        return {}
+    return dict(AIMLAPI_ATTRIBUTION_HEADERS)
+
+
 def uses_responses_api(
     provider: str,
     configured_responses_api: bool | None,
@@ -1608,12 +1639,15 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "vibe_provider": provider,
         "vibe_api_key": api_key,
     }
-    if caps.default_headers:
-        headers = dict(caps.default_headers)
-        if caps.name in {"moonshot", "kimi-coding"}:
-            custom_ua = get_env_config().llm.moonshot_user_agent.strip()
-            if custom_ua:
-                headers["User-Agent"] = custom_ua
+    headers = dict(caps.default_headers)
+    if caps.name in {"moonshot", "kimi-coding"}:
+        custom_ua = get_env_config().llm.moonshot_user_agent.strip()
+        if custom_ua:
+            headers["User-Agent"] = custom_ua
+    # Attribution goes underneath: anything the provider record already
+    # configures for this key wins, and the shared constant is never mutated.
+    headers = {**_aimlapi_attribution_headers(caps, creds["base_url"]), **headers}
+    if headers:
         _validate_explicit_headers(headers, source=f"{caps.name} provider configuration")
         kwargs["default_headers"] = headers
     if get_env_config().llm.vibe_trading_disable_http_proxy:

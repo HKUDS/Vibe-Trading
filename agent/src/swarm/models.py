@@ -19,6 +19,7 @@ _REDACTED_METADATA = "[redacted]"
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "max"})
 _PUBLIC_PROVIDERS = frozenset(
     {
+        "aimlapi",
         "anthropic",
         "dashscope",
         "deepseek",

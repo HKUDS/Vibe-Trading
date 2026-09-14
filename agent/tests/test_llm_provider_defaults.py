@@ -36,6 +36,7 @@ EXPECTED_PROVIDER_DEFAULTS = {
     "spark": "4.0Ultra",
     "zai": "glm-5.1",
     "modelscope": "Qwen/Qwen3.5-27B",
+    "aimlapi": "deepseek/deepseek-v4-pro",
 }
 
 
@@ -104,6 +105,7 @@ def test_interactive_onboard_suggests_current_primary_models() -> None:
     assert onboard_defaults["siliconflow-cn"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
     assert onboard_defaults["siliconflow-global"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
     assert onboard_defaults["modelscope"] == "Qwen/Qwen3.5-27B"
+    assert onboard_defaults["aimlapi"] == "deepseek/deepseek-v4-pro"
     assert onboard_defaults["nvidia"] == "nvidia/nemotron-3-ultra-550b-a55b"
 
 
