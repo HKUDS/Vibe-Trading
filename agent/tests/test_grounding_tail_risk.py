@@ -224,3 +224,61 @@ def test_spanish_confidence_frame_is_masked():
     match = _TAIL_RISK_CONFIDENCE_VALUE_RE.search(text)
     assert match, f"confidence not extracted: {text!r}"
     assert float(match.group(1) or match.group(2)) == 95.0
+
+
+def _ledger_with_var_and_drawdown(tmp_path: Path, *, drawdown: bool) -> GroundingLedger:
+    """Backtest evidence carrying VaR, optionally with a max drawdown."""
+    metrics = '{"final_value": 834141.8, "var_95": 0.0157'
+    if drawdown:
+        metrics += ', "max_drawdown": -0.05'
+    metrics += "}"
+    (tmp_path / "metrics.json").write_text(metrics, encoding="utf-8")
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测这个策略并给出风险指标")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(tmp_path)},
+        result='{"status": "ok", "run_dir": "%s"}' % tmp_path,
+        call_id="bt1",
+        success=True,
+    )
+    return ledger
+
+
+def test_mixed_tail_risk_and_drawdown_clause_grounds_each_by_its_kind(tmp_path: Path):
+    """#1427 review: a mixed clause measures each figure against its own metric.
+
+    Before the measurement function unified, the drawdown figure in this
+    clause was checked against the tail-risk evidence and rejected.
+    """
+    ledger = _ledger_with_var_and_drawdown(tmp_path, drawdown=True)
+    result = ledger.validate_final_answer("VaR 95%: -1.57% and max drawdown was -5%.")
+    assert all(i["code"] != "analysis_claim_unavailable" for i in result.issues)
+
+
+def test_mixed_clause_drawdown_figure_rejects_without_drawdown_evidence(tmp_path: Path):
+    ledger = _ledger_with_var_and_drawdown(tmp_path, drawdown=False)
+    result = ledger.validate_final_answer("VaR 95%: -1.57% and max drawdown was -5%.")
+    assert any(
+        i["code"] == "analysis_claim_unavailable" and i.get("kind") == "drawdown"
+        for i in result.issues
+    )
+
+
+def test_mixed_clause_tail_figure_rejects_without_tail_evidence(tmp_path: Path):
+    """The mirror: only drawdown evidence present, the VaR figure rejects."""
+    (tmp_path / "metrics.json").write_text(
+        '{"final_value": 834141.8, "max_drawdown": -0.05}', encoding="utf-8"
+    )
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测这个策略并给出风险指标")
+    ledger.ingest_tool_result(
+        tool_name="backtest",
+        arguments={"run_dir": str(tmp_path)},
+        result='{"status": "ok", "run_dir": "%s"}' % tmp_path,
+        call_id="bt1",
+        success=True,
+    )
+    result = ledger.validate_final_answer("VaR 95%: -1.57% and max drawdown was -5%.")
+    assert any(
+        i["code"] == "analysis_claim_unavailable" and i.get("kind") == "tail_risk"
+        for i in result.issues
+    )
