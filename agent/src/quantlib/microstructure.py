@@ -37,6 +37,8 @@ def roll_effective_spread(prices: Sequence[float] | np.ndarray | pd.Series) -> f
     p = np.asarray(prices, dtype=float)
     if len(p) < 4:
         raise ValueError("prices sequence must have at least 4 points to compute serial covariance")
+    if not np.isfinite(p).all():
+        raise ValueError("prices must contain only finite values")
     dp = np.diff(p)
     dp_t = dp[1:]
     dp_t_minus_1 = dp[:-1]
@@ -65,7 +67,7 @@ def amihud_illiquidity(
     v = np.asarray(dollar_volumes, dtype=float)
     if r.shape != v.shape or len(r) == 0:
         raise ValueError("returns and dollar_volumes must be non-empty and have matching shapes")
-    valid_mask = (v > 0.0) & ~np.isnan(r) & ~np.isnan(v)
+    valid_mask = (v > 0.0) & np.isfinite(r) & np.isfinite(v)
     if not np.any(valid_mask):
         return float("nan")
     ratios = np.abs(r[valid_mask]) / v[valid_mask]
@@ -91,6 +93,8 @@ def kyles_lambda(
     flow = np.asarray(signed_order_flow, dtype=float)
     if dp.shape != flow.shape or len(dp) < 2:
         raise ValueError("price_changes and signed_order_flow must match with >= 2 observations")
+    if not np.isfinite(dp).all() or not np.isfinite(flow).all():
+        raise ValueError("price_changes and signed_order_flow must contain only finite values")
     denom = float(np.sum(flow**2))
     if denom == 0.0:
         return 0.0
@@ -121,12 +125,15 @@ def vpin(
     vs = np.asarray(sell_volume, dtype=float)
     if vb.shape != vs.shape or len(vb) == 0:
         raise ValueError("buy_volume and sell_volume must have matching non-empty shapes")
-    if bucket_size <= 0.0:
+    if not np.isfinite(vb).all() or not np.isfinite(vs).all():
+        raise ValueError("buy_volume and sell_volume must contain only finite values")
+    if np.any(vb < 0.0) or np.any(vs < 0.0):
+        raise ValueError("buy_volume and sell_volume must be non-negative")
+    if not np.isfinite(bucket_size) or bucket_size <= 0.0:
         raise ValueError(f"bucket_size must be positive, got {bucket_size}")
     if n_buckets <= 0:
         raise ValueError(f"n_buckets must be positive, got {n_buckets}")
 
-    # Accumulate trades into constant-volume buckets of size V
     bucket_imbalances: list[float] = []
     curr_buy = 0.0
     curr_sell = 0.0
@@ -146,7 +153,6 @@ def vpin(
                 rem_b = 0.0
                 rem_s = 0.0
             else:
-                # Fill the remaining bucket space proportionally
                 frac_b = rem_b / total_bar
                 frac_s = rem_s / total_bar
                 take_b = space * frac_b
