@@ -27,8 +27,8 @@ def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 SUMD30 on the supplied OHLCV panel."""
     c = panel['close']
     diff = c - c.shift(1)
-    pos = diff.where(diff > 0, 0.0)
-    neg = (-diff).where(diff < 0, 0.0)
+    pos = diff.clip(lower=0.0)
+    neg = (-diff).clip(lower=0.0)
     absd = diff.abs()
     num_p = pos.rolling(window=30, min_periods=30).sum()
     num_n = neg.rolling(window=30, min_periods=30).sum()
