@@ -108,6 +108,7 @@ export interface PortfolioAccount {
   last_success_at?: string;
   total_usd?: number | null;
   total_cny?: number | null;
+  total_display?: number | null;
   priced_value_usd?: number;
   cash_usd?: number;
   unpriced_or_other_usd?: number;
@@ -132,15 +133,15 @@ export interface PortfolioSnapshot {
   created_at: string;
   /** False whenever any enabled source did not reach `status === "ok"`. */
   complete: boolean;
-  display_currency?: "USD" | "CNY";
-  totals: { usd: number; cny: number };
+  display_currency?: string;
+  totals: { usd: number; cny: number; display?: number };
   valuation?: {
     priced_usd: number;
     cash_usd: number;
     unpriced_or_other_usd: number;
     identified_coverage: number;
   };
-  fx: { usd_cny: number; usd_hkd: number; fetched_at: string; stale: boolean };
+  fx: { usd_cny: number; usd_hkd: number; rates?: Record<string, number>; fetched_at: string; stale: boolean };
   accounts: PortfolioAccount[];
   positions: PortfolioPosition[];
   combined_holdings?: Array<{
@@ -187,7 +188,7 @@ export interface PortfolioSourceSettings {
 }
 
 export interface PortfolioSettings {
-  display_currency: "USD" | "CNY";
+  display_currency: string;
   sources: PortfolioSourceSettings[];
 }
 

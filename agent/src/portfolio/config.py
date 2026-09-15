@@ -12,6 +12,7 @@ from typing import Any
 
 from src.config.paths import get_runtime_root
 from src.portfolio.compatibility import profile_compatibility
+from src.portfolio.iso4217 import is_iso_currency
 from src.trading.connections import (
     ConnectionStore,
     is_portfolio_connection_profile,
@@ -143,8 +144,8 @@ def parse_settings(
     """
     store = connection_store or ConnectionStore()
     currency = str(payload.get("display_currency") or "USD").strip().upper()
-    if currency not in {"USD", "CNY"}:
-        raise ValueError("display_currency must be USD or CNY")
+    if not is_iso_currency(currency):
+        raise ValueError(f"display_currency is not a valid ISO-4217 code: {currency}")
 
     raw_sources = payload.get("sources")
     if not isinstance(raw_sources, list):
