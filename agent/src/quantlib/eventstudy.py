@@ -96,6 +96,15 @@ MIN_ESTIMATION_OBSERVATIONS: int = 30
 #: ``mean_adjusted``   E[R] = mean of the estimation window. Ignores the market.
 NORMAL_RETURN_MODELS: tuple[str, ...] = ("market", "market_adjusted", "mean_adjusted")
 
+#: Parameters estimated by each normal-return model, i.e. the ``k`` in the
+#: Patell degrees of freedom ``n - k``. Must mirror the ``dof`` branches in
+#: :func:`estimate_market_model`.
+_MODEL_PARAMETER_COUNT: dict[str, int] = {
+    "market": 2,
+    "market_adjusted": 0,
+    "mean_adjusted": 1,
+}
+
 
 @dataclass(frozen=True)
 class MarketModelFit:
@@ -470,15 +479,14 @@ def event_study(
     # Patell: the standardised CARs are unit-variance under the null, up to the
     # t-distribution correction for having estimated the residual variance.
     if finite_scar.size:
-        corrections = np.array(
-            [
-                (o.fit.observations - 2) / (o.fit.observations - 4)
-                if o.fit.observations > 4
-                else np.nan
-                for o in event_outcomes
-                if np.isfinite(o.standardised_car)
-            ]
-        )
+        corrections = []
+        for o in event_outcomes:
+            if not np.isfinite(o.standardised_car):
+                continue
+            k = _MODEL_PARAMETER_COUNT[o.fit.model]
+            df = o.fit.observations - k
+            corrections.append(df / (df - 2) if df > 2 else np.nan)
+        corrections = np.array(corrections)
         variance = float(np.nansum(corrections))
         patell_z = float(finite_scar.sum() / np.sqrt(variance)) if variance > 0 else float("nan")
     else:

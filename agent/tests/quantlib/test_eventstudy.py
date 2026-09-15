@@ -209,6 +209,41 @@ def test_bmp_survives_event_induced_variance_where_patell_over_rejects():
     )
 
 
+def test_patell_variance_uses_each_models_own_degrees_of_freedom():
+    # The Patell correction is df/(df-2) with df = n - k, k being the
+    # parameters the fitted model actually estimated: 2 for "market", 0 for
+    # "market_adjusted", 1 for "mean_adjusted". Using the "market" k=2 for
+    # every model (the bug) understates the correction for "market_adjusted"
+    # and "mean_adjusted", so their patell_z must land strictly below what
+    # the k=2 formula would have produced.
+    returns, market = _panel(seed=42)
+    events = [(f"S{i:02d}", returns.index[300]) for i in range(returns.shape[1])]
+
+    for model, k in (("market_adjusted", 0), ("mean_adjusted", 1)):
+        result = event_study(
+            returns,
+            market,
+            events,
+            event_window=(-1, 1),
+            estimation_window=MIN_ESTIMATION_OBSERVATIONS,
+            model=model,
+        )
+        n = result.events[0].fit.observations
+        assert all(o.fit.observations == n for o in result.events)
+
+        df_correct = n - k
+        correction_correct = df_correct / (df_correct - 2)
+        correction_market_k = (n - 2) / (n - 4)
+        assert correction_correct != pytest.approx(correction_market_k)
+
+        scar_sum = sum(
+            o.standardised_car for o in result.events if np.isfinite(o.standardised_car)
+        )
+        n_scored = sum(1 for o in result.events if np.isfinite(o.standardised_car))
+        expected_patell_z = scar_sum / np.sqrt(n_scored * correction_correct)
+        assert result.patell_z == pytest.approx(expected_patell_z)
+
+
 # --- dropped events are reported, never silently skipped ---
 
 
