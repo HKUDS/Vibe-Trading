@@ -76,6 +76,16 @@ class TestScoreText:
         r = _score_text("123 456 !!! ???")
         assert r["score"] == 0.0
 
+    def test_lexicons_are_disjoint(self):
+        from src.tools.sentiment_tool import _NEGATIVE, _POSITIVE
+        assert _POSITIVE & _NEGATIVE == frozenset()
+
+    def test_new_low_is_bearish(self):
+        r = _score_text("shares tumbled to a new low today")
+        assert r["score"] < 0
+        assert r["negative"] == 1
+        assert r["positive"] == 0
+
 
 class TestSentimentTool:
     def test_missing_mode(self):
