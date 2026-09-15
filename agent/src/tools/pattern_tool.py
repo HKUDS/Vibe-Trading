@@ -183,7 +183,7 @@ def head_and_shoulders(close: pd.Series, window: int = 10) -> pd.Series:
         if hv <= lv or hv <= rv:
             continue
         avg = (lv + rv) / 2
-        if avg == 0 or abs(lv - rv) / avg > 0.05:
+        if avg == 0 or abs(lv - rv) / abs(avg) > 0.05:
             continue
         result.iloc[peaks[i + 1]] = 1
 
