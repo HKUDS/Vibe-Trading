@@ -1212,6 +1212,31 @@ def test_compute_rsi_is_causal_and_bounded() -> None:
 
 
 @pytest.mark.unit
+def test_compute_rsi_matches_wilder_recursive_smoothing() -> None:
+    """On a mixed gain/loss series, must match true Wilder recursive
+    smoothing, not pandas' default weight-normalized ewm (which diverges
+    materially from Wilder on short warmup-adjacent windows)."""
+    closes = [
+        100.0, 101.0, 99.5, 102.0, 101.0, 103.0, 100.0, 104.0, 101.5, 105.0,
+        102.0, 106.0, 103.0, 107.0, 104.5,
+    ]
+    close = pd.Series(closes)
+
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    period = 14
+    alpha = 1 / period
+    avg_gain, avg_loss = gains[0], losses[0]
+    for g, loss_val in zip(gains[1:], losses[1:]):
+        avg_gain = alpha * g + (1 - alpha) * avg_gain
+        avg_loss = alpha * loss_val + (1 - alpha) * avg_loss
+    expected = 100 - 100 / (1 + avg_gain / avg_loss)
+
+    assert float(_compute_rsi(close, period=period).iloc[-1]) == pytest.approx(expected)
+
+
+@pytest.mark.unit
 def test_price_features_as_of_reads_only_past_bars() -> None:
     dates = [f"2026-02-{d:02d}" for d in range(1, 21)]
     closes = [10.0 + 0.1 * i for i in range(20)]  # steadily rising
