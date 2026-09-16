@@ -283,6 +283,13 @@ def _shapes(text: str) -> dict[str, str]:
         "09-14 收盘",                           # zero-padded MM-DD alone
         "2026-10-11 / 10-14 两次盘中低点",       # unpadded MM-DD opened by a full date
         "| 价位 | 含义 |\n|---|---|\n| 近端支撑 | 2026-09-11 / 09-14 盘中低点 |",  # real run
+        "cierre el 31-12-2024",                 # day-month-year date, es-AR/es-ES (#GGAL-C1)
+        "resultado al 31-12-2024",               # day-month-year date, another sentence shape
+        "4Q2024 的业绩",                         # quarter label, digit-Q-year (#GGAL-C3)
+        "2024Q4 的业绩",                         # quarter label, year-Q-digit
+        "SEC Form 20-F fue presentado",         # SEC annual report form, ASCII hyphen
+        "SEC Form 20‑F fue presentado",    # SEC annual report form, U+2011
+        "SEC Form 20–F fue presentado",    # SEC annual report form, U+2013
     ],
 )
 def test_structural_shapes_need_no_declaration(text: str) -> None:
@@ -311,6 +318,34 @@ def test_structural_shapes_need_no_declaration(text: str) -> None:
 def test_measurement_shapes_must_be_declared(text: str) -> None:
     """§3: a decimal, a percent, a currency mark or a table cell is a claim."""
     assert "measured" in _shapes(text).values(), text
+
+
+def test_period_grouped_thousands_reads_as_one_figure() -> None:
+    """#GGAL-C2: an es-AR/es-ES thousands-by-period figure ("1.618.596") is
+    ONE measured figure with value 1618596, not two undeclared integers.
+    """
+    text = "Resultado neto atribuible de ARS 1.618.596 millones."
+    block = parse_figures_block(text)
+    figures = scan_figures(text, block)
+    measured = [figure for figure in figures if figure.shape == "measured"]
+
+    assert len(measured) == 1, figures
+    assert measured[0].text == "1.618.596"
+    assert measured[0].value == 1618596.0
+
+
+def test_a_single_period_group_still_reads_as_an_ordinary_decimal() -> None:
+    """The period-thousands fix is deliberately narrow: a lone period group
+    ("45.850") stays exactly as ambiguous as before — read as the decimal
+    45.85, never merged into a thousands figure.
+    """
+    text = "Ratio de capital 45.850."
+    block = parse_figures_block(text)
+    figures = scan_figures(text, block)
+    measured = [figure for figure in figures if figure.shape == "measured"]
+
+    assert len(measured) == 1, figures
+    assert measured[0].value == 45.85
 
 
 @pytest.mark.parametrize(
@@ -801,3 +836,39 @@ def test_an_untagged_fence_is_prose_and_a_tagged_one_is_code() -> None:
 
     assert measured == {"0.881", "0.800"}
     assert not [f for f in scan_figures(tagged, parse_figures_block(tagged)) if f.shape == "measured"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SEC Form 20-F fue presentado ante la SEC.",
+        "SEC Form 20‑F fue presentado ante la SEC.",  # U+2011 non-breaking hyphen
+        "SEC Form 20–F fue presentado ante la SEC.",  # U+2013 en dash
+    ],
+)
+def test_sec_form_20f_reads_as_a_structural_exempt_token(text: str) -> None:
+    """The SEC annual-report form name is structure, never a measurement.
+
+    "20" inside "20-F" may still be located by ``scan_figures``, but it must
+    read as ``exempt`` and never trip ``figure_undeclared``.
+    """
+    block = parse_figures_block(text)
+    figures = scan_figures(text, block)
+
+    assert [(figure.text, figure.shape) for figure in figures] == [("20", "exempt")]
+
+
+def test_sec_form_rule_does_not_hide_a_real_range_starting_at_20() -> None:
+    """"20–25%" is a real range/measurement — the SEC rule must never exempt it.
+
+    Only a literal "20-F" (any of the accepted dashes, "F" required and
+    word-bounded) is structure; "20" followed by a range dash and another
+    number is left completely alone.
+    """
+    text = "margen 20–25%."
+    block = parse_figures_block(text)
+    figures = scan_figures(text, block)
+    by_text = {figure.text: figure.shape for figure in figures}
+
+    assert by_text["25%"] == "measured"
+    assert by_text["20"] != "exempt"
