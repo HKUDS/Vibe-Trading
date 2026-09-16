@@ -143,8 +143,8 @@ def parse_settings(
     """
     store = connection_store or ConnectionStore()
     currency = str(payload.get("display_currency") or "USD").strip().upper()
-    if currency not in {"USD", "CNY"}:
-        raise ValueError("display_currency must be USD or CNY")
+    if currency not in {"USD", "CNY", "ARS"}:
+        raise ValueError("display_currency must be USD, CNY or ARS")
 
     raw_sources = payload.get("sources")
     if not isinstance(raw_sources, list):

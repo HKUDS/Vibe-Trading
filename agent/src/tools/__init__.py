@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 _SUBCLASSES_CACHE: list[type[BaseTool]] | None = None
 _DISCOVERY_FAILURES: dict[str, str] = {}
 _SHELL_TOOL_NAMES = {"bash", "background_run", "cancel_background"}
+# Asistente Casa portfolio data now enters through the native PortfolioService.
+# Keep the legacy module on disk for rollback, but do not expose its direct-HTTP
+# portfolio tool to the conversational agent. The dedicated risk tool remains.
+_DISABLED_LOCAL_TOOL_NAMES = {"asistente_casa_portfolio"}
 
 
 def _discover_subclasses() -> list[type[BaseTool]]:
@@ -153,6 +157,9 @@ def build_registry(
 
     for cls in classes:
         try:
+            if cls.name in _DISABLED_LOCAL_TOOL_NAMES:
+                logger.info("Tool %s disabled by local portfolio cutover policy", cls.name)
+                continue
             if cls.name in _SHELL_TOOL_NAMES and not include_shell_tools:
                 logger.info("Tool %s disabled by shell tool policy", cls.name)
                 continue
