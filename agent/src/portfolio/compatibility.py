@@ -19,6 +19,7 @@ from src.trading.types import TradingProfile
 CompatibilityLevel = Literal["native", "contract_tested", "experimental"]
 
 SUPPORTED_VALUE_CURRENCIES = frozenset({"USD", "HKD", "CNY"})
+NATIVE_CURRENCY_CONNECTORS: dict[str, str] = {"asistente-casa": "ARS"}
 _SYMBOL_FIELDS = ("symbol", "code", "ticker")
 _QUANTITY_FIELDS = (
     "quantity",
@@ -99,6 +100,12 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "Account totals and instrument quote resolution require verification.",
     ),
     "toss": PortfolioCompatibility("experimental", 1, "positions", "KRW valuation is not supported yet."),
+    "asistente-casa": PortfolioCompatibility(
+        "native",
+        1,
+        "ars_multi_asset",
+        "Canonical ARS-native valuation supplied by Asistente Casa; no ARS FX conversion.",
+    ),
     # No "scalable" entry: its profile does not declare account.read /
     # positions.read, so it is not a portfolio-eligible connection. The
     # holdings reply shape is unverified (no published tool argument schemas),
@@ -167,16 +174,26 @@ def adapt_and_validate_payloads(
     return account, positions
 
 
-def ensure_supported_currencies(rows: list[dict[str, Any]], account_payload: dict[str, Any] | None = None) -> None:
-    """Fail closed when the current portfolio FX model cannot value a source.
-
-    Account currency is checked as well as position currency so a cash-only
-    account cannot accidentally be reported as USD.
-    """
+def ensure_supported_currencies(
+    rows: list[dict[str, Any]],
+    account_payload: dict[str, Any] | None = None,
+    *,
+    connector: str | None = None,
+) -> None:
+    """Fail closed unless every value currency has an explicit valuation path."""
     currencies = {str(row.get("price_currency") or row.get("currency") or "USD").upper() for row in rows}
     account_currency = _account_currency(account_payload or {})
     if account_currency:
         currencies.add(account_currency)
+    native_currency = NATIVE_CURRENCY_CONNECTORS.get(str(connector or "").lower())
+    if native_currency is not None:
+        unexpected = sorted(currencies - {native_currency})
+        if unexpected:
+            raise PortfolioContractError(
+                f"native connector {connector} must report only {native_currency}; got: "
+                + ", ".join(unexpected)
+            )
+        return
     unsupported = sorted(currencies - SUPPORTED_VALUE_CURRENCIES)
     if unsupported:
         raise PortfolioContractError("portfolio FX conversion is not available for: " + ", ".join(unsupported))

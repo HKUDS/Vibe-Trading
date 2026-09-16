@@ -43,7 +43,7 @@ class PortfolioSourceRequest(BaseModel):
 
 
 class PortfolioSettingsRequest(BaseModel):
-    display_currency: str = Field(default="USD", pattern="^(USD|CNY)$")
+    display_currency: str = Field(default="USD", pattern="^(USD|CNY|ARS)$")
     sources: list[PortfolioSourceRequest] = Field(default_factory=list, max_length=50)
 
 

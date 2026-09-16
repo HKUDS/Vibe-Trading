@@ -119,6 +119,20 @@ _ANALYSIS_KIND_ALIASES = {
     "return": "return",
     "returns": "return",
     "ic_positive_ratio": "win_rate",
+    # Portfolio co-movement leaves a risk x-ray tool emits under its own
+    # field names (asistente_casa_portfolio_risk_xray's correlation/
+    # diversification block). Grouped as one kind since the ledger only
+    # needs "this is a legitimate risk metric", never a cross-kind identity
+    # check between e.g. beta and avg pairwise correlation.
+    "diversification_ratio": "diversification",
+    "avg_pairwise_abs": "correlation",
+    "avg_pairwise_correlation": "correlation",
+    "beta_to_equal_weight": "correlation",
+    "effective_n": "concentration",
+    "hhi": "concentration",
+    "top1_weight": "concentration",
+    "top3_weight": "concentration",
+    "downside_deviation_annualized": "vol",
     "var": "tail_risk",
     "var_95": "tail_risk",
     "var_99": "tail_risk",
@@ -350,6 +364,30 @@ def _is_registered_price_indicator(tool: str, path: str) -> bool:
 # as the whole leaf: "var_explained" and "sales_es" are not a VaR.
 _EXACT_ONLY_ALIASES = frozenset({"var", "es"})
 
+# Full-path metric kinds for leaves whose bare name is too generic to alias
+# globally. "corr" alone would admit any unrelated leaf named "corr", so
+# asistente_casa_portfolio_risk_xray's pairwise correlation reading is matched
+# by its exact path suffix instead.
+_METRIC_PATH_SUFFIXES: tuple[tuple[str, str], ...] = (
+    ("correlation.max_pair.corr", "correlation"),
+)
+
+
+def _metric_kind_for_registered_path(path: str) -> str | None:
+    """Path-specific metric kind for a leaf too generic to alias by name alone.
+
+    Args:
+        path: Recorded evidence field, e.g. ``"data.correlation.max_pair.corr"``.
+
+    Returns:
+        The matching kind, or None when no registered path suffix applies.
+    """
+    normalized = re.sub(r"\[\d+\]", "", str(path or "")).casefold()
+    for suffix, kind in _METRIC_PATH_SUFFIXES:
+        if normalized == suffix or normalized.endswith("." + suffix):
+            return kind
+    return None
+
 # Field-name qualifiers that follow a metric's head and do not change what it
 # measures ("hit_rate_daily", "vol_annualized"), like a numeric parameter.
 _QUALIFIER_SUFFIXES = frozenset(
@@ -364,6 +402,9 @@ def _metric_kind_for_path(path: str) -> str | None:
     """
     if _is_metadata_count_leaf(path):
         return None
+    registered = _metric_kind_for_registered_path(path)
+    if registered is not None:
+        return registered
     leaf = _leaf_name(path)
     kind = _ANALYSIS_KIND_ALIASES.get(leaf)
     if kind is not None:

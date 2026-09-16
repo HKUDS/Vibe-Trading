@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from src.portfolio.compatibility import PortfolioContractError
 from src.trading.types import TradingProfile
 
 STABLECOINS = frozenset({"USDT", "USDC", "FDUSD", "TUSD", "BUSD"})
@@ -102,7 +103,11 @@ def normalize_position(broker: str, row: dict[str, Any]) -> dict[str, Any]:
 
     symbol = str(row.get("symbol") or row.get("code") or row.get("ticker") or "").upper()
     source = str(row.get("source") or ("spot" if broker == "binance" else "account"))
-    market = str(row.get("market") or row.get("exchange") or broker).upper()
+    market = (
+        str(row.get("market") or "").upper()
+        if broker == "asistente-casa"
+        else str(row.get("market") or row.get("exchange") or broker).upper()
+    )
     currency = str(row.get("currency") or "").upper()
     if not currency:
         currency = (
@@ -184,48 +189,109 @@ def normalize_position(broker: str, row: dict[str, Any]) -> dict[str, Any]:
         "free": row.get("free"),
         "used": row.get("used"),
         "source": source,
+        "source_instrument_id": row.get("source_instrument_id"),
+        "source_instrument_type": row.get("source_instrument_type"),
+        "isin": row.get("isin"),
+        "venue": row.get("venue") or row.get("market"),
+        "exposure_currency": row.get("exposure_currency"),
+        "sector": row.get("sector"),
+        "industry": row.get("industry"),
+        "country": row.get("country"),
+        "source_asset_class": row.get("source_asset_class"),
+        "classification_source": row.get("classification_source"),
+        "sector_constraint_eligible": bool(row.get("sector_constraint_eligible")),
+        "sector_metadata_policy": row.get("sector_metadata_policy"),
+        "daily_change_pct": row.get("daily_change_pct"),
+        "daily_change_as_of": row.get("daily_change_as_of"),
+        "daily_change_source": row.get("daily_change_source"),
+        "daily_change_status": row.get("daily_change_status"),
         "updated_at": _now(),
     }
 
 
-def value_position(row: dict[str, Any], *, usd_hkd: Decimal, usd_cny: Decimal) -> dict[str, Any]:
-    """Calculate USD/CNY market value and unrealized P/L.
+def value_position(
+    row: dict[str, Any],
+    *,
+    usd_hkd: Decimal,
+    usd_cny: Decimal,
+    native_currency: str | None = None,
+) -> dict[str, Any]:
+    """Calculate market value and unrealized P/L.
 
     Args:
         row: A normalized position row; it is updated in place.
         usd_hkd: USD/HKD rate used to convert HKD-priced rows.
         usd_cny: USD/CNY rate used to convert CNY-priced rows.
+        native_currency: When set, the position is valued natively in this
+            currency (no FX conversion) instead of converted to USD/CNY.
+            Used for single-currency native sources such as Asistente Casa.
 
     Returns:
-        The same row, with ``priced``, ``market_value_usd``,
-        ``market_value_cny`` and ``unrealized_pnl_usd`` filled in and the
-        connector-only fields dropped.
+        The same row, with ``priced`` and either
+        (``market_value_usd``, ``market_value_cny``, ``unrealized_pnl_usd``)
+        or (``native_currency``, ``market_value_native``,
+        ``unrealized_pnl_native``) filled in, and the connector-only fields
+        dropped.
     """
     price = _decimal(row.get("market_price"))
     quantity = _decimal(row.get("quantity"))
     currency = str(row.get("price_currency") or row.get("currency") or "USD").upper()
-    fx_to_usd = Decimal("1")
-    if currency == "HKD":
-        fx_to_usd = Decimal("1") / usd_hkd
-    elif currency == "CNY":
-        fx_to_usd = Decimal("1") / usd_cny
     priced = price > 0
-    market_usd = quantity * price * fx_to_usd if priced else Decimal("0")
     cost = _decimal(row.get("cost_price"))
     source_pnl = row.get("source_unrealized_pnl")
-    pnl_usd = (
-        _decimal(source_pnl) * fx_to_usd
-        if priced and source_pnl is not None
-        else (price - cost) * quantity * fx_to_usd
-        if priced and cost > 0
-        else None
-    )
-    row.update(
-        priced=priced,
-        market_value_usd=_number(market_usd),
-        market_value_cny=_number(market_usd * usd_cny),
-        unrealized_pnl_usd=_number(pnl_usd) if pnl_usd is not None else None,
-    )
+    if native_currency is not None:
+        expected = str(native_currency).upper()
+        if currency != expected:
+            raise PortfolioContractError(
+                f"native valuation expected {expected}, got {currency}"
+            )
+        source_market_value = _decimal(row.get("source_market_value"))
+        market_native = (
+            source_market_value if priced and source_market_value > 0
+            else quantity * price if priced
+            else Decimal("0")
+        )
+        pnl_native = (
+            _decimal(source_pnl)
+            if priced and source_pnl is not None
+            else (price - cost) * quantity
+            if priced and cost > 0
+            else None
+        )
+        row.update(
+            priced=priced,
+            native_currency=expected,
+            market_value_native=_number(market_native),
+            unrealized_pnl_native=_number(pnl_native) if pnl_native is not None else None,
+            market_value_usd=None,
+            market_value_cny=None,
+            unrealized_pnl_usd=None,
+        )
+    else:
+        if currency == "USD":
+            fx_to_usd = Decimal("1")
+        elif currency == "HKD":
+            fx_to_usd = Decimal("1") / usd_hkd
+        elif currency == "CNY":
+            fx_to_usd = Decimal("1") / usd_cny
+        else:
+            raise PortfolioContractError(
+                f"no explicit portfolio valuation path for currency: {currency}"
+            )
+        market_usd = quantity * price * fx_to_usd if priced else Decimal("0")
+        pnl_usd = (
+            _decimal(source_pnl) * fx_to_usd
+            if priced and source_pnl is not None
+            else (price - cost) * quantity * fx_to_usd
+            if priced and cost > 0
+            else None
+        )
+        row.update(
+            priced=priced,
+            market_value_usd=_number(market_usd),
+            market_value_cny=_number(market_usd * usd_cny),
+            unrealized_pnl_usd=_number(pnl_usd) if pnl_usd is not None else None,
+        )
     for key in (
         "quote_symbol",
         "exchange",
@@ -238,11 +304,14 @@ def value_position(row: dict[str, Any], *, usd_hkd: Decimal, usd_cny: Decimal) -
 
 
 def _to_usd(value: Decimal, currency: str, usd_hkd: Decimal, usd_cny: Decimal) -> Decimal:
+    currency = str(currency or "").upper()
+    if currency == "USD":
+        return value
     if currency == "HKD":
         return value / usd_hkd
     if currency == "CNY":
         return value / usd_cny
-    return value
+    raise PortfolioContractError(f"no explicit USD conversion path for currency: {currency or '?'}")
 
 
 def account_total_usd(
@@ -365,6 +434,47 @@ def account_cash_usd(broker: str, account: dict[str, Any], usd_hkd: Decimal, usd
             Decimal("0"),
         ),
     )
+
+
+def account_total_native(
+    broker: str,
+    account: dict[str, Any],
+    *,
+    currency: str,
+    fallback: Decimal = Decimal("0"),
+) -> Decimal:
+    """Extract a single-currency account total without FX conversion."""
+    del broker
+    expected = str(currency).upper()
+    nested = account.get("account") if isinstance(account.get("account"), dict) else {}
+    observed = str(nested.get("currency") or "").upper()
+    if observed != expected:
+        raise PortfolioContractError(
+            f"native account expected {expected}, got {observed or '?'}"
+        )
+    for key in ("portfolio_value", "total_equity", "equity"):
+        value = _decimal(nested.get(key))
+        if value > 0:
+            return value
+    return fallback
+
+
+def account_cash_native(
+    broker: str,
+    account: dict[str, Any],
+    *,
+    currency: str,
+) -> Decimal:
+    """Return single-currency cash without FX conversion."""
+    del broker
+    expected = str(currency).upper()
+    nested = account.get("account") if isinstance(account.get("account"), dict) else {}
+    observed = str(nested.get("currency") or "").upper()
+    if observed != expected:
+        raise PortfolioContractError(
+            f"native account expected {expected}, got {observed or '?'}"
+        )
+    return max(Decimal("0"), _decimal(nested.get("cash")))
 
 
 def auth_metadata(profile: TradingProfile) -> dict[str, Any]:

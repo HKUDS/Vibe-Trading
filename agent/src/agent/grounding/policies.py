@@ -766,6 +766,28 @@ class _PolicyMixin:
             and (not money_only or _is_price_kind(record))
         ]
 
+    # Tools with a registered, citable count leaf (spec: position_count). Kept
+    # per-tool rather than opening every tool's raw counts to citation.
+    _COUNT_EVIDENCE_TOOLS = frozenset({"asistente_casa_portfolio_risk_xray"})
+
+    def _tool_count_pool(self, symbol: str | None) -> list[float]:
+        """Metadata-count leaves from tools with a registered count evidence path.
+
+        Mirrors :meth:`_row_pool`'s per-tool allowlist pattern: only a leaf that
+        already reads as a sample-size/count field (:func:`_is_metadata_count_leaf`)
+        from a tool in ``_COUNT_EVIDENCE_TOOLS`` counts, so a generic tool's counts
+        still cannot ground a claim.
+        """
+        return [
+            float(record.value)
+            for record in self._evidence
+            if record.status == "observed"
+            and record.value is not None
+            and record.tool in self._COUNT_EVIDENCE_TOOLS
+            and _is_metadata_count_leaf(record.field)
+            and (not symbol or not record.symbol or record.symbol == symbol)
+        ]
+
     @staticmethod
     def _nearest_prints(
         figure: Figure,
@@ -930,7 +952,8 @@ class _PolicyMixin:
         elif figure.currency:
             direct, scaled = prices + self._row_pool(symbol, money_only=True), []
         else:
-            direct, scaled = prices + self._row_pool(symbol), self._metric_pool(symbol)
+            direct = prices + self._row_pool(symbol) + self._tool_count_pool(symbol)
+            scaled = self._metric_pool(symbol)
         if not direct and not scaled:
             return [
                 self._figure_issue(

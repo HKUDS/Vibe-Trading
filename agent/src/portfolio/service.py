@@ -20,13 +20,16 @@ from src.portfolio.config import (
     source_catalog,
 )
 from src.portfolio.compatibility import (
+    NATIVE_CURRENCY_CONNECTORS,
     adapt_and_validate_payloads,
     ensure_supported_currencies,
     profile_compatibility,
 )
 from src.portfolio.normalization import (
     STABLECOINS,
+    account_cash_native,
     account_cash_usd,
+    account_total_native,
     account_total_usd,
     auth_metadata,
     normalize_position,
@@ -240,8 +243,18 @@ class PortfolioService:
         sources = [source for source in settings.sources if source.enabled]
         if not sources:
             raise RuntimeError("Add and enable at least one read-only account on the Portfolio page before refreshing")
-        usd_cny, usd_hkd, fx_at, fx_stale = self._rates()
         refreshed_at = _now()
+        needs_legacy_fx = any(
+            self._connection_profile(source)[1].connector not in NATIVE_CURRENCY_CONNECTORS
+            for source in sources
+        )
+        if needs_legacy_fx:
+            usd_cny, usd_hkd, fx_at, fx_stale = self._rates()
+        else:
+            usd_cny = Decimal("0")
+            usd_hkd = Decimal("0")
+            fx_at = refreshed_at
+            fx_stale = False
         results: dict[str, dict[str, Any]] = {}
         # The Longbridge Python SDK wraps a native runtime whose contexts are
         # not safe to create inside this refresh thread pool on macOS. Keep the
@@ -281,49 +294,110 @@ class PortfolioService:
             if result["status"] != "ok":
                 accounts.append(self._failed_account(source, connection.profile_id, profile, result))
                 continue
-            broker_positions = [value_position(row, usd_hkd=usd_hkd, usd_cny=usd_cny) for row in result["positions"]]
-            priced_total = sum(
-                (_decimal(row.get("market_value_usd")) for row in broker_positions),
-                Decimal("0"),
-            )
-            account_total = account_total_usd(
-                broker,
-                result["account"],
-                usd_hkd,
-                usd_cny,
-                priced_total,
-            )
-            if broker == "binance":
-                account_total = priced_total
-            cash_total = min(
-                account_total,
-                account_cash_usd(broker, result["account"], usd_hkd, usd_cny),
-            )
-            if not source.include_cash:
-                account_total = max(Decimal("0"), account_total - cash_total)
-                cash_total = Decimal("0")
-            unpriced_or_other = max(Decimal("0"), account_total - priced_total - cash_total)
-            priced_count = sum(1 for row in broker_positions if row.get("priced"))
-            accounts.append(
-                {
-                    "source_id": source.id,
-                    "profile_id": connection.profile_id,
-                    "label": source.label,
-                    "broker": broker,
-                    "status": "ok",
-                    "last_success_at": refreshed_at,
-                    "total_usd": _number(account_total),
-                    "total_cny": _number(account_total * usd_cny),
-                    "priced_value_usd": _number(priced_total),
-                    "cash_usd": _number(cash_total),
-                    "unpriced_or_other_usd": _number(unpriced_or_other),
-                    "position_count": len(broker_positions),
-                    "priced_position_count": priced_count,
-                    "unpriced_position_count": len(broker_positions) - priced_count,
-                    "auth": auth_metadata(profile),
-                    "portfolio_compatibility": profile_compatibility(profile),
-                }
-            )
+            native_currency = NATIVE_CURRENCY_CONNECTORS.get(broker)
+            if native_currency is not None:
+                broker_positions = [
+                    value_position(
+                        row,
+                        usd_hkd=usd_hkd,
+                        usd_cny=usd_cny,
+                        native_currency=native_currency,
+                    )
+                    for row in result["positions"]
+                ]
+                priced_total = sum(
+                    (_decimal(row.get("market_value_native")) for row in broker_positions),
+                    Decimal("0"),
+                )
+                account_total = account_total_native(
+                    broker,
+                    result["account"],
+                    currency=native_currency,
+                    fallback=priced_total,
+                )
+                cash_total = min(
+                    account_total,
+                    account_cash_native(broker, result["account"], currency=native_currency),
+                )
+                if not source.include_cash:
+                    account_total = max(Decimal("0"), account_total - cash_total)
+                    cash_total = Decimal("0")
+                unpriced_or_other = max(Decimal("0"), account_total - priced_total - cash_total)
+                priced_count = sum(1 for row in broker_positions if row.get("priced"))
+                accounts.append(
+                    {
+                        "source_id": source.id,
+                        "profile_id": connection.profile_id,
+                        "label": source.label,
+                        "broker": broker,
+                        "status": "ok",
+                        "last_success_at": refreshed_at,
+                        "total_usd": None,
+                        "total_cny": None,
+                        "native_currency": native_currency,
+                        "total_native": _number(account_total),
+                        "priced_value_native": _number(priced_total),
+                        "cash_native": _number(cash_total),
+                        "unpriced_or_other_native": _number(unpriced_or_other),
+                        "daily_change": (
+                            (result.get("account") or {}).get("account", {}).get("daily_change")
+                            if isinstance((result.get("account") or {}).get("account"), dict)
+                            else None
+                        ),
+                        "position_count": len(broker_positions),
+                        "priced_position_count": priced_count,
+                        "unpriced_position_count": len(broker_positions) - priced_count,
+                        "auth": auth_metadata(profile),
+                        "portfolio_compatibility": profile_compatibility(profile),
+                    }
+                )
+            else:
+                broker_positions = [
+                    value_position(row, usd_hkd=usd_hkd, usd_cny=usd_cny)
+                    for row in result["positions"]
+                ]
+                priced_total = sum(
+                    (_decimal(row.get("market_value_usd")) for row in broker_positions),
+                    Decimal("0"),
+                )
+                account_total = account_total_usd(
+                    broker,
+                    result["account"],
+                    usd_hkd,
+                    usd_cny,
+                    priced_total,
+                )
+                if broker == "binance":
+                    account_total = priced_total
+                cash_total = min(
+                    account_total,
+                    account_cash_usd(broker, result["account"], usd_hkd, usd_cny),
+                )
+                if not source.include_cash:
+                    account_total = max(Decimal("0"), account_total - cash_total)
+                    cash_total = Decimal("0")
+                unpriced_or_other = max(Decimal("0"), account_total - priced_total - cash_total)
+                priced_count = sum(1 for row in broker_positions if row.get("priced"))
+                accounts.append(
+                    {
+                        "source_id": source.id,
+                        "profile_id": connection.profile_id,
+                        "label": source.label,
+                        "broker": broker,
+                        "status": "ok",
+                        "last_success_at": refreshed_at,
+                        "total_usd": _number(account_total),
+                        "total_cny": _number(account_total * usd_cny),
+                        "priced_value_usd": _number(priced_total),
+                        "cash_usd": _number(cash_total),
+                        "unpriced_or_other_usd": _number(unpriced_or_other),
+                        "position_count": len(broker_positions),
+                        "priced_position_count": priced_count,
+                        "unpriced_position_count": len(broker_positions) - priced_count,
+                        "auth": auth_metadata(profile),
+                        "portfolio_compatibility": profile_compatibility(profile),
+                    }
+                )
             positions.extend(broker_positions)
 
         total_usd = sum((_decimal(row.get("total_usd")) for row in accounts), Decimal("0"))
@@ -337,19 +411,63 @@ class PortfolioService:
             Decimal("0"),
         )
         identified_usd = priced_usd + cash_usd
+        native_totals: dict[str, Decimal] = {}
+        native_valuation: dict[str, dict[str, Decimal]] = {}
+        for account in accounts:
+            currency = str(account.get("native_currency") or "").upper()
+            if not currency or account.get("status") != "ok":
+                continue
+            native_totals[currency] = native_totals.get(currency, Decimal("0")) + _decimal(account.get("total_native"))
+            bucket = native_valuation.setdefault(
+                currency,
+                {"priced": Decimal("0"), "cash": Decimal("0"), "unpriced_or_other": Decimal("0")},
+            )
+            bucket["priced"] += _decimal(account.get("priced_value_native"))
+            bucket["cash"] += _decimal(account.get("cash_native"))
+            bucket["unpriced_or_other"] += _decimal(account.get("unpriced_or_other_native"))
+        warnings = self._warnings(accounts, positions, fx_stale)
+        for currency, value in sorted(native_totals.items()):
+            warnings.append(
+                f"Portfolio includes {currency} { _number(value) } valued natively; "
+                "this amount is intentionally excluded from USD/CNY totals because no FX conversion was requested."
+            )
         payload = {
             "snapshot_id": uuid.uuid4().hex,
             "valuation_version": PORTFOLIO_VALUATION_VERSION,
             "created_at": refreshed_at,
             "complete": complete,
             "display_currency": settings.display_currency,
-            "totals": {"usd": _number(total_usd), "cny": _number(total_usd * usd_cny)},
+            "totals": {
+                "usd": _number(total_usd),
+                "cny": _number(total_usd * usd_cny),
+                "native_by_currency": {currency: _number(value) for currency, value in native_totals.items()},
+            },
             "valuation": {
                 "priced_usd": _number(priced_usd),
                 "cash_usd": _number(cash_usd),
                 "unpriced_or_other_usd": _number(unpriced_usd),
                 "identified_coverage": (_number(identified_usd / total_usd) if total_usd > 0 else 0.0),
+                "native_by_currency": {
+                    currency: {
+                        "priced": _number(bucket["priced"]),
+                        "cash": _number(bucket["cash"]),
+                        "unpriced_or_other": _number(bucket["unpriced_or_other"]),
+                        "identified_coverage": (
+                            _number((bucket["priced"] + bucket["cash"]) / native_totals[currency])
+                            if native_totals[currency] > 0 else 0.0
+                        ),
+                    }
+                    for currency, bucket in native_valuation.items()
+                },
             },
+            "daily_change": next(
+                (
+                    row.get("daily_change")
+                    for row in accounts
+                    if row.get("status") == "ok" and isinstance(row.get("daily_change"), dict)
+                ),
+                None,
+            ),
             "fx": {
                 "usd_cny": _number(usd_cny),
                 "usd_hkd": _number(usd_hkd),
@@ -359,11 +477,15 @@ class PortfolioService:
             "accounts": accounts,
             "positions": sorted(
                 positions,
-                key=lambda row: _decimal(row.get("market_value_usd")),
+                key=lambda row: _decimal(
+                    row.get("market_value_native")
+                    if row.get("native_currency")
+                    else row.get("market_value_usd")
+                ),
                 reverse=True,
             ),
             "combined_holdings": self._combine_holdings(positions),
-            "warnings": self._warnings(accounts, positions, fx_stale),
+            "warnings": warnings,
         }
         self.store.save_snapshot(payload)
         return payload
@@ -560,6 +682,14 @@ class PortfolioService:
             "market_value_usd",
             "market_value_cny",
             "unrealized_pnl_usd",
+            "native_currency",
+            "market_value_native",
+            "unrealized_pnl_native",
+            "exposure_currency",
+            "daily_change_pct",
+            "daily_change_as_of",
+            "daily_change_source",
+            "daily_change_status",
             "priced",
             "updated_at",
         ]
@@ -598,6 +728,40 @@ class PortfolioService:
                     "unrealized_pnl_usd": row["unrealized_pnl_usd"],
                 }
             )
+        holdings_native: dict[str, list[dict[str, Any]]] = {}
+        for row in snapshot.get("positions", []):
+            currency = str(row.get("native_currency") or "").upper()
+            if not currency or not row.get("priced"):
+                continue
+            total_native = _decimal(snapshot.get("totals", {}).get("native_by_currency", {}).get(currency))
+            market_value_native = _decimal(row.get("market_value_native"))
+            holdings_native.setdefault(currency, []).append(
+                {
+                    "source_instrument_id": row.get("source_instrument_id"),
+                    "symbol": row.get("symbol"),
+                    "isin": row.get("isin"),
+                    "name": row.get("name"),
+                    "asset_type": row.get("asset_type"),
+                    "source_instrument_type": row.get("source_instrument_type"),
+                    "market": row.get("market"),
+                    "venue": row.get("venue") or row.get("market"),
+                    "sector": row.get("sector"),
+                    "industry": row.get("industry"),
+                    "country": row.get("country"),
+                    "source_asset_class": row.get("source_asset_class"),
+                    "classification_source": row.get("classification_source"),
+                    "sector_constraint_eligible": bool(row.get("sector_constraint_eligible")),
+                    "sector_metadata_policy": row.get("sector_metadata_policy"),
+                    "market_value_native": row.get("market_value_native"),
+                    "native_currency": currency,
+                    "weight": _number(market_value_native / total_native) if total_native > 0 else 0.0,
+                    "exposure_currency": row.get("exposure_currency"),
+                    "daily_change_pct": row.get("daily_change_pct"),
+                    "daily_change_as_of": row.get("daily_change_as_of"),
+                    "daily_change_source": row.get("daily_change_source"),
+                    "daily_change_status": row.get("daily_change_status"),
+                }
+            )
         return {
             "as_of": snapshot["created_at"],
             "complete": snapshot["complete"],
@@ -608,10 +772,14 @@ class PortfolioService:
                     "asset_provider_type": row["broker"],
                     "status": row["status"],
                     "total_usd": row.get("total_usd"),
+                    "native_currency": row.get("native_currency"),
+                    "total_native": row.get("total_native"),
                 }
                 for index, row in enumerate(snapshot["accounts"])
             ],
             "holdings": holdings,
+            "holdings_native": holdings_native,
+            "daily_change": snapshot.get("daily_change"),
             "risk_xray_args": self._risk_xray_args(snapshot.get("positions", [])),
             "warnings": snapshot["warnings"],
             "privacy": "No account numbers, credentials, order IDs, names, or local paths included.",
@@ -637,6 +805,18 @@ class PortfolioService:
         symbol = str(position.get("symbol") or "").strip().upper()
         if not symbol:
             return None
+        if str(position.get("broker") or "").strip().lower() == "asistente-casa":
+            # asistente-casa canonical identity gate: never infer venue
+            # from ticker text and never turn a local symbol into .US.
+            instrument_id = str(position.get("source_instrument_id") or "").strip()
+            instrument_type = str(position.get("source_instrument_type") or "").strip().upper()
+            market = str(position.get("market") or "").strip().upper()
+            isin = str(position.get("isin") or "").strip().upper()
+            if not instrument_id or instrument_type not in {"ACCIONES", "CEDEARS", "BONOS", "FCI"}:
+                return None
+            if instrument_type == "FCI":
+                return symbol if not market and not isin else None
+            return symbol if market == "BYMA" and bool(isin) else None
         head, _, suffix = symbol.rpartition(".")
         if head and suffix in _LOADER_MARKET_SUFFIXES:
             return symbol
@@ -666,27 +846,57 @@ class PortfolioService:
             snapshot holds no priced equity position.
         """
         values: dict[str, Decimal] = {}
+        valuation_currency: str | None = None
+        data_source: str | None = None
         for position in positions:
             if str(position.get("asset_type") or "").lower() in _NON_EQUITY_ASSET_TYPES:
                 continue
             if not position.get("priced"):
                 continue
-            value = _decimal(position.get("market_value_usd"))
+            native_currency = str(position.get("native_currency") or "").strip().upper()
+            native_value = _decimal(position.get("market_value_native"))
+            if native_currency and native_value > 0:
+                row_valuation_currency = native_currency
+                value = native_value
+            else:
+                row_valuation_currency = "USD"
+                value = _decimal(position.get("market_value_usd"))
             if value <= 0:
                 continue
+            if valuation_currency is None:
+                valuation_currency = row_valuation_currency
+            elif valuation_currency != row_valuation_currency:
+                # Weights are only meaningful when every monetary value is
+                # expressed in one comparable base. Never mix ARS/EUR/etc.
+                # with legacy USD values without an explicit FX policy.
+                return {"symbols": [], "weights": {}}
             symbol = cls._risk_xray_symbol(position)
             if symbol is None:
                 continue
+            row_data_source = (
+                "asistente-casa"
+                if str(position.get("broker") or "").strip().lower() == "asistente-casa"
+                else "auto"
+            )
+            if data_source is None:
+                data_source = row_data_source
+            elif data_source != row_data_source:
+                # One risk panel must not silently combine canonical AC
+                # history with generic external market-data routing.
+                return {"symbols": [], "weights": {}}
             values[symbol] = values.get(symbol, Decimal("0")) + value
         ranked = sorted(values.items(), key=lambda item: (-item[1], item[0]))
         ranked = ranked[:_RISK_XRAY_MAX_SYMBOLS]
         total = sum((value for _, value in ranked), Decimal("0"))
         if total <= 0:
             return {"symbols": [], "weights": {}}
-        return {
+        result = {
             "symbols": [symbol for symbol, _ in ranked],
             "weights": {symbol: _number(value / total) for symbol, value in ranked},
         }
+        if data_source == "asistente-casa":
+            result["source"] = "asistente-casa"
+        return result
 
     @staticmethod
     def _combine_holdings(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -701,6 +911,8 @@ class PortfolioService:
         """
         grouped: dict[str, dict[str, Any]] = {}
         for row in positions:
+            if row.get("native_currency"):
+                continue
             symbol = str(row.get("symbol") or "").upper()
             currency = str(row.get("currency") or "").upper()
             market = str(row.get("market") or "").upper()
@@ -869,7 +1081,7 @@ class PortfolioService:
             except Exception as exc:
                 normalized["price_error"] = str(exc)[:160]
             rows.append(normalized)
-        ensure_supported_currencies(rows, account)
+        ensure_supported_currencies(rows, account, connector=broker)
         return {
             "source_id": source.id,
             "profile_id": connection.profile_id,
