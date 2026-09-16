@@ -12,6 +12,15 @@ carry a key in ``code/codes/symbol/symbols/ticker/tickers/underlying/
 underlyings``) and never touches the generic market-data fallback chain
 (``search_symbol``, ``fetch_market_data``/``get_market_data``, yfinance,
 tushare/tencent, ...).
+
+Local customization (2026-09-15, see
+``docs/investments/VIBE_TRADING_CUSTOMIZATIONS.md`` in the Asistente Casa
+repo): the 120-day default lookback is a Risk X-Ray convenience default, not
+a datastore boundary. There is no hard maximum lookback here anymore --
+availability is whatever Asistente Casa has actually persisted. Coverage
+questions ("since when do you have data") must go through
+``AsistenteCasaMarketHistoryCoverageTool`` / ``/market-history/coverage``
+below, never be inferred from a short history request's ``from`` date.
 """
 
 from __future__ import annotations
@@ -33,14 +42,22 @@ from src.agent.tools import BaseTool
 logger = logging.getLogger(__name__)
 
 _DEFAULT_LOOKBACK_DAYS = 120
-_MAX_LOOKBACK_DAYS = 730
 _SUPPORTED_ASSET_TYPES = {"ACCIONES", "CEDEARS"}
+_SUPPORTED_HORIZONS = {"1y", "ytd", "since_inception"}
 _TIMEOUT_SECONDS = 30.0
 _NUMERIC_FORMAT = "json_number"
 
 
 class ConnectorError(RuntimeError):
     """Raised when Asistente Casa cannot return a trustworthy payload."""
+
+
+def _env_credentials() -> tuple[str, str]:
+    base_url = str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
+    api_key = str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
+    if not base_url or not api_key:
+        raise ValueError("Asistente Casa environment is not configured")
+    return base_url, api_key
 
 
 def _get(base_url: str, api_key: str, path: str, params: Mapping[str, str]) -> dict[str, Any]:
@@ -65,6 +82,26 @@ def _get(base_url: str, api_key: str, path: str, params: Mapping[str, str]) -> d
         raise ConnectorError(f"Asistente Casa returned an unsuccessful payload for {path}")
     if payload.get("numeric_format") != _NUMERIC_FORMAT:
         raise ConnectorError(f"unexpected numeric_format for {path}; refusing localized numeric parsing")
+    return payload
+
+
+def _fetch_coverage(
+    base_url: str, api_key: str, *, symbols: list[str], asset_type: str
+) -> dict[str, Any]:
+    """Read persisted-only coverage metadata (no OHLC rows) for a basket.
+
+    This is the only sanctioned source for "since when do you have data"
+    answers -- it must never be approximated from a short history request's
+    ``from`` date.
+    """
+    payload = _get(
+        base_url,
+        api_key,
+        "/inversiones/vibe/market-history/coverage",
+        {"symbols": ",".join(symbols), "asset_type": asset_type},
+    )
+    if payload.get("policy") != "persisted_only":
+        raise ValueError("Asistente Casa coverage policy is not persisted_only")
     return payload
 
 
@@ -104,11 +141,30 @@ class AsistenteCasaPortfolioRiskXrayTool(BaseTool):
             },
             "start_date": {
                 "type": "string",
-                "description": "Optional YYYY-MM-DD start date. Defaults to 120 calendar days before end_date.",
+                "description": (
+                    "Optional YYYY-MM-DD start date. Defaults to 120 calendar days "
+                    "before end_date. Mutually exclusive with horizon. This default "
+                    "is a Risk X-Ray convenience window, not the start of persisted "
+                    "history -- use asistente_casa_market_history_coverage for "
+                    "'since when do you have data' questions."
+                ),
             },
             "end_date": {
                 "type": "string",
                 "description": "Optional YYYY-MM-DD end date. Defaults to today.",
+            },
+            "horizon": {
+                "type": "string",
+                "enum": ["1Y", "YTD", "since_inception"],
+                "description": (
+                    "Optional shorthand instead of start_date. '1Y' = trailing 365 "
+                    "calendar days. 'YTD' = January 1 of end_date's year. "
+                    "'since_inception' = this basket's earliest common persisted "
+                    "date (from the coverage endpoint), i.e. the earliest date for "
+                    "which every symbol in scope has an aligned observation -- use "
+                    "this for 'analyze since inception' portfolio-level requests. "
+                    "Mutually exclusive with start_date."
+                ),
             },
         },
         "required": [],
@@ -142,12 +198,16 @@ class AsistenteCasaPortfolioRiskXrayTool(BaseTool):
                 f"asset_type {asset_type!r} is not validated; currently supported: ACCIONES, CEDEARS"
             )
 
-        start_date, end_date = self._parse_dates(kwargs.get("start_date"), kwargs.get("end_date"))
+        start_raw = kwargs.get("start_date")
+        end_raw = kwargs.get("end_date")
+        horizon_raw = kwargs.get("horizon")
+        horizon = str(horizon_raw).strip().lower().replace("-", "_") if horizon_raw else None
+        if horizon and horizon not in _SUPPORTED_HORIZONS:
+            raise ValueError(f"horizon {horizon_raw!r} is not supported; use 1Y, YTD, or since_inception")
+        if horizon and start_raw:
+            raise ValueError("start_date and horizon are mutually exclusive")
 
-        base_url = str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
-        api_key = str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
-        if not base_url or not api_key:
-            raise ValueError("Asistente Casa environment is not configured")
+        base_url, api_key = _env_credentials()
 
         # ------------------------------------------------------------
         # Canonical portfolio, scoped to this asset_type
@@ -163,6 +223,20 @@ class AsistenteCasaPortfolioRiskXrayTool(BaseTool):
             str(position["symbol"]).strip().upper(): float(position["weight_scope"])
             for position in positions
         }
+
+        end = date.fromisoformat(str(end_raw)) if end_raw else date.today()
+        start = self._resolve_start(
+            start_raw=start_raw,
+            horizon=horizon,
+            end=end,
+            symbols=symbols,
+            asset_type=asset_type,
+            base_url=base_url,
+            api_key=api_key,
+        )
+        if start >= end:
+            raise ValueError("start_date must be before end_date")
+        start_date, end_date = start.isoformat(), end.isoformat()
 
         instrument_names: dict[str, str | None] = {}
         portfolio_positions: list[dict[str, Any]] = []
@@ -250,6 +324,7 @@ class AsistenteCasaPortfolioRiskXrayTool(BaseTool):
                 "position_snapshot_at": portfolio_payload.get("position_snapshot_at"),
                 "history_policy": history_payload.get("policy"),
                 "history_source_selection": history_payload.get("source_selection"),
+                "horizon": horizon or "default_120d",
                 "start_date": start_date,
                 "end_date": end_date,
                 "symbols": symbols,
@@ -269,16 +344,166 @@ class AsistenteCasaPortfolioRiskXrayTool(BaseTool):
         return json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
 
     @staticmethod
-    def _parse_dates(start_raw: Any, end_raw: Any) -> tuple[str, str]:
-        end = date.fromisoformat(str(end_raw)) if end_raw else date.today()
-        start = (
-            date.fromisoformat(str(start_raw))
-            if start_raw
-            else end - timedelta(days=_DEFAULT_LOOKBACK_DAYS)
+    def _resolve_start(
+        *,
+        start_raw: Any,
+        horizon: str | None,
+        end: date,
+        symbols: list[str],
+        asset_type: str,
+        base_url: str,
+        api_key: str,
+    ) -> date:
+        """Resolve the effective start date for the requested window.
+
+        No calendar-day maximum is enforced here: actual availability is
+        whatever Asistente Casa has persisted, and the strict basket
+        intersection downstream already fails closed instead of padding or
+        inventing observations when coverage falls short of what was asked.
+        """
+        if start_raw:
+            return date.fromisoformat(str(start_raw))
+        if horizon == "1y":
+            return end - timedelta(days=365)
+        if horizon == "ytd":
+            return date(end.year, 1, 1)
+        if horizon == "since_inception":
+            coverage = _fetch_coverage(base_url, api_key, symbols=symbols, asset_type=asset_type)
+            earliest_common = coverage.get("earliest_common_date")
+            if not earliest_common:
+                raise ValueError(
+                    "Asistente Casa coverage has no earliest_common_date for this basket"
+                )
+            return date.fromisoformat(str(earliest_common))
+        return end - timedelta(days=_DEFAULT_LOOKBACK_DAYS)
+
+
+class AsistenteCasaMarketHistoryCoverageTool(BaseTool):
+    """Report persisted historical coverage for the Asistente Casa portfolio.
+
+    This tool answers "since when do you have data" / "until when do you have
+    quotes" questions using ``/inversiones/vibe/market-history/coverage``
+    directly -- it never downloads OHLC rows and never infers datastore
+    inception from a Risk X-Ray short-window request. Like the risk tool
+    above, it resolves its own symbols from the current Asistente Casa
+    portfolio and never accepts a ``symbols`` argument from the model, so it
+    does not trip the generic instrument-identity gate.
+    """
+
+    name = "asistente_casa_market_history_coverage"
+
+    description = (
+        "Report persisted historical DATA COVERAGE (not risk metrics) for the "
+        "user's CURRENT Asistente Casa portfolio: since when data exists, "
+        "until when it is up to date, and how many observations are stored. "
+        "Use this INSTEAD of asistente_casa_portfolio_risk_xray whenever the "
+        "user asks 'since when', 'how far back', 'until when', 'how much "
+        "history do you have' -- for one asset_type scope (ACCIONES or "
+        "CEDEARS) or, if asset_type is omitted, for both. Do NOT answer "
+        "coverage questions from a Risk X-Ray result's start_date: that is "
+        "only a short default request window, not the start of the "
+        "datastore. The response distinguishes, per scope, the OLDEST "
+        "INDIVIDUAL persisted date across the basket (earliest_any_date, and "
+        "per-symbol first_date in series) from the COMMON basket date every "
+        "symbol shares (earliest_common_date) -- report both when the user "
+        "asks about a group ('mis acciones', 'mis CEDEARs') and only the "
+        "per-symbol first_date when the user asks about one instrument."
+    )
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "asset_type": {
+                "type": "string",
+                "enum": ["ACCIONES", "CEDEARS"],
+                "description": (
+                    "Optional portfolio scope. Omit to report coverage for both "
+                    "ACCIONES and CEDEARS."
+                ),
+            },
+        },
+        "required": [],
+    }
+
+    repeatable = True
+    is_readonly = True
+
+    @classmethod
+    def check_available(cls) -> bool:
+        return bool(
+            str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip()
+            and str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
         )
-        if start >= end:
-            raise ValueError("start_date must be before end_date")
-        lookback = (end - start).days
-        if lookback > _MAX_LOOKBACK_DAYS:
-            raise ValueError(f"maximum lookback is {_MAX_LOOKBACK_DAYS} calendar days")
-        return start.isoformat(), end.isoformat()
+
+    def execute(self, **kwargs: Any) -> str:
+        try:
+            return self._run(**kwargs)
+        except Exception as exc:  # noqa: BLE001 -- tool must always return JSON
+            logger.warning("asistente_casa_market_history_coverage failed: %s", exc)
+            return json.dumps(
+                {"status": "error", "error": str(exc), "source": "asistente-casa"},
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+
+    def _run(self, **kwargs: Any) -> str:
+        asset_type_raw = kwargs.get("asset_type")
+        if asset_type_raw:
+            asset_type = str(asset_type_raw).strip().upper()
+            if asset_type not in _SUPPORTED_ASSET_TYPES:
+                raise ValueError(
+                    f"asset_type {asset_type!r} is not validated; currently supported: "
+                    "ACCIONES, CEDEARS"
+                )
+            scopes = [asset_type]
+        else:
+            scopes = sorted(_SUPPORTED_ASSET_TYPES)
+
+        base_url, api_key = _env_credentials()
+
+        scope_results: dict[str, Any] = {}
+        for scope in scopes:
+            portfolio_payload = _get(base_url, api_key, "/inversiones/vibe/portfolio", {"asset_type": scope})
+            positions = portfolio_payload.get("portfolio", {}).get("positions", [])
+            if not positions:
+                continue
+            symbols = [str(position["symbol"]).strip().upper() for position in positions]
+            coverage_payload = _fetch_coverage(base_url, api_key, symbols=symbols, asset_type=scope)
+            scope_results[scope] = {
+                "symbols": symbols,
+                "earliest_any_date": coverage_payload.get("earliest_any_date"),
+                "earliest_common_date": coverage_payload.get("earliest_common_date"),
+                "latest_common_date": coverage_payload.get("latest_common_date"),
+                "complete": coverage_payload.get("complete"),
+                "unresolved_symbols": coverage_payload.get("unresolved_symbols"),
+                "symbols_without_history": coverage_payload.get("symbols_without_history"),
+                "series": coverage_payload.get("series"),
+            }
+
+        if not scope_results:
+            raise ValueError(f"Asistente Casa returned no positions for {scopes}")
+
+        all_first_dates = [
+            str(item["first_date"])
+            for scope in scope_results.values()
+            for item in scope["series"].values()
+            if item.get("first_date")
+        ]
+        all_last_dates = [
+            str(item["last_date"])
+            for scope in scope_results.values()
+            for item in scope["series"].values()
+            if item.get("last_date")
+        ]
+
+        result = {
+            "status": "ok",
+            "source": "asistente-casa",
+            "policy": "persisted_only",
+            "scopes": scope_results,
+            "overall": {
+                "earliest_any_date": min(all_first_dates) if all_first_dates else None,
+                "latest_any_date": max(all_last_dates) if all_last_dates else None,
+            },
+        }
+        return json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
