@@ -33,7 +33,7 @@ BLOCK_LANGUAGE = "figures"
 # an identifier's digits ("SMA20") out. The lookahead fences only digits, so
 # "3.6pp" reads as 3.6 rather than backtracking to a bare "3".
 #
-# The third alternative (#GGAL-C2) reads a period-grouped thousands figure
+# The third alternative reads a period-grouped thousands figure
 # ("1.618.596", the es-AR/es-ES convention) as ONE token. It requires at
 # least TWO period groups on purpose: a single group ("45.850") is exactly as
 # likely to be an ordinary one-decimal number, so it is left alone and still
@@ -59,8 +59,8 @@ _DATE_RE = re.compile(
     # Day-month-year ("31-12-2024", the es-AR/es-ES convention), anchored on
     # a trailing 4-digit year so it never competes with the year-FIRST
     # branch above. Day/month ranges mirror the ``short`` branch below.
-    # Without this, "31-12-2024" read as two bare integers "31"/"12" and
-    # both were flagged ``figure_undeclared`` (#GGAL-C1).
+    # Without this, "31-12-2024" reads as two bare integers "31"/"12" and
+    # both are flagged ``figure_undeclared``.
     r"|(?:0[1-9]|[12]\d|3[01])[-/](?:0[1-9]|1[0-2])[-/](?:19|20)\d{2})"
     # A year-less MM-DD / MM/DD; see _short_date_is_structural.
     r"|(?P<short>(?<![\d.])(?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])(?!\d|\.\d))"
@@ -72,11 +72,22 @@ _DATE_RE = re.compile(
     r"|(?P<soft>(?<![\d.])(?:19|20)\d{2}(?:(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))?(?!\d|\.\d))"
 )
 
-# A quarter label ("4Q2024", "2024Q4"): structure, never a measurement
-# (#GGAL-C3). Bounded to quarters 1-4 and a real 19xx/20xx year so it cannot
+# A quarter label ("4Q2024", "2024Q4"): structure, never a measurement.
+# Bounded to quarters 1-4 and a real 19xx/20xx year so it cannot
 # swallow an unrelated "4Q" abbreviation or a genuine figure.
 _QUARTER_LABEL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:[1-4][Qq](?:19|20)\d{2}|(?:19|20)\d{2}[Qq][1-4])(?![A-Za-z0-9_])"
+)
+
+# The SEC annual-report form name for a foreign private issuer ("20-F"):
+# structure, never a measurement. Only the "20" half is a number at all, and
+# it must never compete with a real range that happens to start at 20
+# ("20–25%"): the trailing "F" is required and word-bounded on both sides, so
+# this can only ever match the literal form name, in any dash a renderer or
+# filing might use for it.
+_SEC_FORM_RE = re.compile(
+    r"(?<![A-Za-z0-9_])20[-‐‑‒–−]F(?![A-Za-z0-9_])",
+    re.IGNORECASE,
 )
 
 # SHAPE 3 — a line-leading list marker or numbered heading. The punctuation is
@@ -95,10 +106,10 @@ _CURRENCY_CODES = frozenset(
     {
         "USD", "CNY", "CNH", "RMB", "HKD", "JPY", "EUR", "GBP", "KRW", "INR",
         "CAD", "AUD", "SGD", "TWD", "THB", "IRR", "IRT", "USDT", "USDC",
-        # ARS (#GGAL-C2 follow-on): without it, "ARS 361,58" carried no
-        # recognized currency mark, so the decimal-comma detector never saw
-        # unambiguous evidence and "361,58" split into two bare integers
-        # "361"/"58", each flagged undeclared.
+        # ARS: without it, "ARS 361,58" carries no recognized currency mark,
+        # so the decimal-comma detector never sees unambiguous evidence and
+        # "361,58" splits into two bare integers "361"/"58", each flagged
+        # undeclared.
         "ARS",
     }
 )
@@ -416,7 +427,7 @@ def _numbers(text: str) -> list[_Token]:
                 )
             ):
                 body, end = f"{body}.{fraction}", stop
-        # #GGAL-C2: an unambiguous period-grouped thousands figure ("1.618.596")
+        # An unambiguous period-grouped thousands figure ("1.618.596")
         # is ``_NUMBER_RE``'s own second alternative; strip the grouping dots
         # to read it as one number (1618596). Guarded by the same full-fullmatch
         # shape check the regex enforces, so a genuine one-decimal number
@@ -934,7 +945,7 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
             continue
         span = (view.start(match.start()), view.end(match.end()))
         (soft if match.group("soft") else hard).append(span)
-    for pattern in (_CANONICAL_SYMBOL_RE, _ORDINAL_RE, _QUARTER_LABEL_RE):
+    for pattern in (_CANONICAL_SYMBOL_RE, _ORDINAL_RE, _QUARTER_LABEL_RE, _SEC_FORM_RE):
         hard.extend(
             (view.start(match.start()), view.end(match.end()))
             for match in pattern.finditer(text)

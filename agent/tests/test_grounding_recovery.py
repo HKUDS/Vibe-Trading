@@ -896,3 +896,148 @@ def test_redacted_release_keeps_substantive_research_and_cuts_only_the_bad_figur
     assert "跟踪误差较小" in released
     assert "机构持仓占比上升" in released
     assert "9.999" not in released
+
+
+class TestFundamentalsGroundingRelease:
+    """Closing four fundamentals/GGAL follow-ups in the release path:
+
+    - ``safe_fallback`` narrates only the LAST validation's issues, so a
+      stale draft's price problem cannot color the final message once the
+      run has moved on to a purely fundamentals rejection;
+    - ``redacted_release`` is fail-closed *selectively*: with zero
+      ``price_records`` it can still redact a draft whose only relevant
+      issues are explicitly ``market_price is False`` (a known fundamental),
+      but still refuses when any relevant issue is ``True`` or unclassified
+      (missing/None).
+
+    ``market_price`` here is read exactly as ``policies.py`` produces it,
+    never re-derived from wording in these tests.
+    """
+
+    @staticmethod
+    def _ledger_ggal(tmp_path: Path) -> GroundingLedger:
+        """Identity-locked on "GGAL.US" from the user message alone, with no
+        resolver/market-data evidence — ``_price_records()`` stays empty.
+        """
+        return GroundingLedger(run_dir=tmp_path, user_message="GGAL.US fundamentals")
+
+    def test_a_last_validation_wins_over_a_stale_price_issue(self, tmp_path: Path) -> None:
+        """A. The first (rejected) draft carries a price issue; the second
+        (also rejected) draft carries only a fundamentals issue. The final
+        ``safe_fallback`` message must not mention price/prices/OHLC because
+        of the FIRST draft — only the LAST validation decides the wording.
+        """
+        ledger = self._ledger_ggal(tmp_path)
+        price_draft = "GGAL.US cerró en USD 52.30, con buen volumen en la sesión."
+        price_validation = ledger.validate_final_answer(price_draft)
+        assert price_validation.valid is False
+        assert any(
+            issue.get("market_price") is True for issue in price_validation.issues
+        )
+
+        fundamentals_draft = "GGAL.US ROE trimestral de 33.98%, estable frente al trimestre anterior."
+        fundamentals_validation = ledger.validate_final_answer(fundamentals_draft)
+        assert fundamentals_validation.valid is False
+        assert all(
+            issue.get("market_price") is not True
+            for issue in fundamentals_validation.issues
+        )
+
+        message = ledger.safe_fallback()
+
+        lowered = message.lower()
+        for word in ("price", "prices", "ohlc", "market price"):
+            assert word not in lowered, message
+        assert "价格" not in message
+        assert "行情" not in message
+
+    def test_b_fundamentals_redaction_without_price_records(self, tmp_path: Path) -> None:
+        """B. Identity locked, zero price_records, a substantive draft with one
+        invalid fundamentals figure (market_price=False). ``redacted_release``
+        must return substantive content with only the bad figure cut — not
+        None.
+        """
+        ledger = self._ledger_ggal(tmp_path)
+        draft = (
+            "GGAL.US ROE trimestral de 33.98%, en línea con el promedio del sector "
+            "bancario. La rentabilidad sobre activos también se mantuvo estable "
+            "durante el período bajo análisis."
+        )
+        validation = ledger.validate_final_answer(draft)
+        assert validation.valid is False
+        issue = next(
+            issue for issue in validation.issues if issue["code"] == "numeric_claim_unavailable"
+        )
+        assert issue.get("market_price") is False
+        assert not ledger._price_records()
+
+        released = ledger.redacted_release(draft, validation)
+
+        assert released is not None
+        assert "33.98" not in released
+        assert "rentabilidad sobre activos también se mantuvo estable" in released
+
+    def test_c_real_price_still_fails_closed_without_price_records(
+        self, tmp_path: Path
+    ) -> None:
+        """C. Identity locked, zero price_records, issue market_price=True.
+        ``redacted_release`` must return None: a real price claim has nothing
+        to stand on without any observed price anywhere in the run.
+        """
+        ledger = self._ledger_ggal(tmp_path)
+        draft = "GGAL.US cerró en USD 52.30, tras una sesión con buen volumen."
+        validation = ledger.validate_final_answer(draft)
+        assert validation.valid is False
+        issue = next(
+            issue for issue in validation.issues if issue["code"] == "numeric_claim_unavailable"
+        )
+        assert issue.get("market_price") is True
+        assert not ledger._price_records()
+
+        assert ledger.redacted_release(draft, validation) is None
+
+    def test_d_unclassified_market_price_still_fails_closed(self, tmp_path: Path) -> None:
+        """D. Identity locked, zero price_records, a relevant issue whose
+        market_price is missing/None (never classified by policies.py).
+        ``redacted_release`` must return None: an unclassified figure is
+        treated as a possible price, not a known fundamental.
+        """
+        ledger = self._ledger_ggal(tmp_path)
+        draft = (
+            "GGAL.US análisis fundamental: buen desempeño operativo con ratios "
+            "estables.\n\n```figures\n1 | count | placeholder | \n```\n\n"
+            "Además se observa un margen de 41.5% en el trimestre."
+        )
+        validation = ledger.validate_final_answer(draft)
+        assert validation.valid is False
+        issue = next(
+            issue for issue in validation.issues if issue["code"] == "figure_undeclared"
+        )
+        assert issue.get("market_price") is None
+        assert not ledger._price_records()
+
+        assert ledger.redacted_release(draft, validation) is None
+
+    def test_e_safe_fallback_wording_by_market_price(self, tmp_path: Path) -> None:
+        """E. ``safe_fallback`` wording follows the LAST validation's
+        market_price, not the issue code alone: a non-price
+        ``numeric_claim_unavailable``/``figure_undeclared`` gets neutral
+        wording, and an explicit ``market_price is True`` keeps price wording.
+        """
+        neutral_ledger = self._ledger_ggal(tmp_path)
+        neutral_draft = "GGAL.US ROE trimestral de 33.98%, estable frente al trimestre anterior."
+        neutral_validation = neutral_ledger.validate_final_answer(neutral_draft)
+        assert neutral_validation.valid is False
+        assert all(
+            issue.get("market_price") is not True for issue in neutral_validation.issues
+        )
+        neutral_message = neutral_ledger.safe_fallback().lower()
+        assert "price" not in neutral_message
+
+        price_ledger = self._ledger_ggal(tmp_path / "price")
+        price_draft = "GGAL.US cerró en USD 52.30, con buen volumen en la sesión."
+        price_validation = price_ledger.validate_final_answer(price_draft)
+        assert price_validation.valid is False
+        assert any(issue.get("market_price") is True for issue in price_validation.issues)
+        price_message = price_ledger.safe_fallback().lower()
+        assert "price" in price_message
