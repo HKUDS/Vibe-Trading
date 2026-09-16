@@ -99,6 +99,11 @@ class GroundingLedger(
         self._recovery_rounds = 0
         self._symbol_resolution_attempts = 0
         self._price_evidence_attempts = 0
+        # #GGAL-D: the rejected draft + validation a still-outstanding
+        # recovery request (search_symbol/get_market_data) was issued for.
+        # Set by ``record_recovery``, cleared here when that exact tool
+        # succeeds, or consumed once by ``pending_recovery_stub``.
+        self._pending_recovery: dict[str, Any] | None = None
         self._ingested_csvs: set[str] = set()
         self._identity_required = bool(_ACTIONABLE_MARKET_RE.search(user_message))
         self._buffer_output = self._identity_required
@@ -256,6 +261,11 @@ class GroundingLedger(
             self.persist()
             return
 
+        # #GGAL-D: the recovery this run was waiting on just happened —
+        # whatever the model answers next is a real revision attempt, not a
+        # stub standing in for one.
+        if self._pending_recovery is not None and tool_name == self._pending_recovery["action"]:
+            self._pending_recovery = None
         self._track_session_symbols(arguments, result)
         if tool_name in _ANALYSIS_TOOLS:
             self._ingest_analysis_result(tool_name, arguments, payload, call_id)

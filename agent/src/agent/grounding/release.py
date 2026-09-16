@@ -266,21 +266,103 @@ class _ReleaseMixin:
             if self._symbol_resolution_attempts < MAX_SYMBOL_RESOLUTION_ATTEMPTS:
                 return _RESOLVER_TOOL
             return None
+        # #GGAL-B: the issue CODE alone does not say whether the rejected
+        # figure was ever a market quote — ``numeric_claim_unavailable`` and
+        # ``unsourced_symbol_figures`` both fire just as readily on a
+        # fundamentals ratio (ROE, ROA, an efficiency/capital ratio, a YoY
+        # growth %) or a currency-marked fundamental (EPS, net income,
+        # revenue, assets, equity, capex, FCF) as on a genuine price.
+        # ``get_market_data`` can only ever satisfy the latter, so this is a
+        # POSITIVE condition, not "not a percent" and not "has currency":
+        # ``market_price`` is True only when the figure sat in a recognized
+        # OHLC table column, or an explicit price/quote/target/support/
+        # resistance signal was present in its clause or declared note (see
+        # ``_figure_is_market_price`` in ``policies.py``, and its aggregate
+        # in ``_validate_unsourced_symbols``). Uncertain cases (the flag
+        # missing entirely, or False) do NOT trigger — the correction/cited/
+        # redacted-release path handles those instead.
         if self.identity_status == "locked" and any(
             issue.get("code") in {"numeric_claim_unavailable", "unsourced_symbol_figures"}
+            and issue.get("market_price") is True
             for issue in validation.issues
         ):
             if self._price_evidence_attempts < MAX_PRICE_EVIDENCE_ATTEMPTS:
                 return "get_market_data"
         return None
 
-    def record_recovery(self, action: str) -> None:
-        """Account one bounded recovery attempt against its budget."""
+    def record_recovery(
+        self,
+        action: str,
+        *,
+        draft: str | None = None,
+        validation: ValidationResult | None = None,
+    ) -> None:
+        """Account one bounded recovery attempt against its budget.
+
+        Args:
+            action: The recovery tool requested (``search_symbol`` or
+                ``get_market_data``).
+            draft: The rejected draft this recovery was requested for.
+            validation: That draft's validation result.
+
+        When ``draft``/``validation`` are supplied they are tracked as a
+        pending recovery (#GGAL-D): if the model's next VALID answer turns
+        out to carry no measured figure at all and ``action`` was never
+        actually called since, that answer is an operational reply about the
+        recovery, not a revision of the rejected research — see
+        ``pending_recovery_stub``. Optional so existing callers that only
+        ever cared about the budget (tests included) are unaffected.
+        """
         self._recovery_rounds += 1
         if action == _RESOLVER_TOOL:
             self._symbol_resolution_attempts += 1
         elif action == "get_market_data":
             self._price_evidence_attempts += 1
+        if draft is not None and validation is not None:
+            self._pending_recovery = {
+                "action": action,
+                "draft": draft,
+                "validation": validation,
+            }
+
+    def pending_recovery_stub(self, content: str) -> tuple[str, ValidationResult] | None:
+        """Detect an operational reply silently standing in for declined recovery.
+
+        Consumes (resolves, one-shot) the recovery tracked by
+        :meth:`record_recovery`. Called once, right after the model's next
+        final answer has already validated: if a recovery was requested and
+        its tool was never actually called since (cleared in
+        ``GroundingLedger.ingest_tool_result``, which also lives in this
+        package), a validated answer with NO
+        measured figure at all cannot be a substantive revision of a
+        quantitative research draft — a real revision, even a much shorter
+        one, still carries the numbers the user asked for. This is a
+        structural (figure-count) signal, deliberately not a length or
+        natural-language-word heuristic — see ``figures.py``'s own "reads no
+        natural-language word" design note.
+
+        Args:
+            content: The new, already-VALID final answer to check.
+
+        Returns:
+            The pending ``(rejected_draft, its_validation)`` to release
+            instead (via ``redacted_release``/``safe_fallback``), or None
+            when there is no pending recovery, it was fulfilled, or
+            ``content`` itself carries a measured figure (a real revision).
+        """
+        pending = self._pending_recovery
+        self._pending_recovery = None
+        if pending is None:
+            return None
+        if self._has_measured_figures(content):
+            return None
+        return pending["draft"], pending["validation"]
+
+    @staticmethod
+    def _has_measured_figures(content: str) -> bool:
+        """Whether ``content`` carries at least one measured-shape figure."""
+        block = parse_figures_block(content)
+        return any(figure.shape == "measured" for figure in scan_figures(content, block))
 
     def recovery_prompt(self, action: str, validation: ValidationResult) -> str:
         """Build an executable next-step message for one bounded recovery turn."""
