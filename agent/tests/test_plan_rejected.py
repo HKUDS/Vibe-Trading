@@ -267,7 +267,9 @@ def test_wanted_but_unfillable_plans_are_counted_by_default():
             "execution_blocked": 1,
         }
     }
-    assert set(metrics["unfilled_plan_rejections_by_symbol"]["A"]) == set(
+    # The dict above pins which reasons this test triggered; every one of them
+    # must be a counted cause (the vocabulary itself may grow).
+    assert set(metrics["unfilled_plan_rejections_by_symbol"]["A"]) <= set(
         BaseEngine.UNFILLED_PLAN_REASONS
     )
 

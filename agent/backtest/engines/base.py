@@ -554,6 +554,9 @@ class BaseEngine(ABC):
         # (#1235); counting the causes is what makes that visible in the
         # metrics instead of only to a subclass that overrode the hook.
         self.plan_rejections: Counter = Counter()
+        #: Non-zero while a capital scale search is probing a basket; see
+        #: ``_reject_plan``.
+        self._plan_probe_depth: int = 0
         self._bar_idx: int = 0
         self._active_symbol: str = ""  # set by _rebalance/_close_position for subclass use
 
@@ -750,6 +753,7 @@ class BaseEngine(ABC):
         "no_bar",
         "execution_blocked",
         "invalid_price",
+        "insufficient_capital",
         "zero_size",
     )
 
@@ -807,10 +811,25 @@ class BaseEngine(ABC):
             symbol: Instrument the plan was for.
             reason: Machine-readable cause: ``no_target_weight``,
                 ``already_held``, ``no_data``, ``no_bar``,
-                ``execution_blocked``, ``invalid_price`` or ``zero_size``.
+                ``execution_blocked``, ``invalid_price``,
+                ``insufficient_capital`` or ``zero_size``.
             timestamp: Decision bar timestamp.
         """
         self.plan_rejections[(symbol, reason)] += 1
+
+    def _reject_plan(self, symbol: str, reason: str, timestamp: pd.Timestamp) -> None:
+        """Report a rejected plan, unless a scale search is only probing.
+
+        The hold-mode capital search re-plans the same basket up to 50 times, so
+        a leg it rounds away, or a cause no scale can change, would be recorded
+        once per probe: one cash-starved open was reported as 26 ``zero_size``
+        rejections (#1470). ``_plan_open_order`` reports through here so probes
+        stay silent, and the search records the legs it dropped once each when
+        it settles.
+        """
+        if self._plan_probe_depth:
+            return
+        self._on_plan_rejected(symbol, reason, timestamp)
 
     def execution_open(self, bar: pd.Series) -> float:
         """Return the normal market-fill price for a bar."""
@@ -1266,15 +1285,30 @@ class BaseEngine(ABC):
                 return result
 
             planned = _plans(1.0)
-            if sum(order.cost for order in planned) > self.capital + 1e-9:
-                low, high = 0.0, 1.0
-                for _ in range(50):
-                    mid = (low + high) / 2.0
-                    candidate = _plans(mid)
-                    if sum(order.cost for order in candidate) <= self.capital + 1e-9:
-                        low, planned = mid, candidate
-                    else:
-                        high = mid
+            budget = self.capital + 1e-9
+            if sum(order.cost for order in planned) > budget:
+                # Every probe re-plans the same basket, so a leg the search
+                # rounds away -- or a cause no scale can change, like a blocked
+                # market -- was recorded once per probe: one cash-starved open
+                # arrived as 26 ``zero_size`` rejections, a blocked leg as 51
+                # (#1470). Probes report nothing; the legs the final scale
+                # dropped are recorded once each when the search settles, as
+                # the rebalance path does it.
+                full_scale = {order.symbol for order in planned}
+                self._plan_probe_depth += 1
+                try:
+                    low, high = 0.0, 1.0
+                    for _ in range(50):
+                        mid = (low + high) / 2.0
+                        candidate = _plans(mid)
+                        if sum(order.cost for order in candidate) <= budget:
+                            low, planned = mid, candidate
+                        else:
+                            high = mid
+                finally:
+                    self._plan_probe_depth -= 1
+                for symbol in sorted(full_scale - {order.symbol for order in planned}):
+                    self._on_plan_rejected(symbol, "insufficient_capital", ts)
 
             for order in planned:
                 self._execute_open_order(order, ts)
@@ -1502,20 +1536,20 @@ class BaseEngine(ABC):
         self._active_symbol = symbol
         direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
         if direction == 0:
-            self._on_plan_rejected(symbol, "no_target_weight", ts)
+            self._reject_plan(symbol, "no_target_weight", ts)
             return None
         if symbol in self.positions and not allow_existing:
-            self._on_plan_rejected(symbol, "already_held", ts)
+            self._reject_plan(symbol, "already_held", ts)
             return None
         if df is None:
-            self._on_plan_rejected(symbol, "no_data", ts)
+            self._reject_plan(symbol, "no_data", ts)
             return None
         if ts not in df.index:
-            self._on_plan_rejected(symbol, "no_bar", ts)
+            self._reject_plan(symbol, "no_bar", ts)
             return None
         bar = df.loc[ts]
         if not self.can_execute(symbol, direction, bar):
-            self._on_plan_rejected(symbol, "execution_blocked", ts)
+            self._reject_plan(symbol, "execution_blocked", ts)
             return None
         open_price = self.execution_open(bar)
         if require_positive_price:
@@ -1524,7 +1558,7 @@ class BaseEngine(ABC):
         # negatives are rejected unless this engine opted into non-positive
         # prices, in which case abs()-based sizing/margin below handle them.
         elif open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
-            self._on_plan_rejected(symbol, "invalid_price", ts)
+            self._reject_plan(symbol, "invalid_price", ts)
             return None
         price = self.apply_slippage(open_price, direction)
         if require_positive_price:
@@ -1535,7 +1569,7 @@ class BaseEngine(ABC):
             self._calc_raw_size(symbol, target_notional, price), price
         )
         if size <= 0:
-            self._on_plan_rejected(symbol, "zero_size", ts)
+            self._reject_plan(symbol, "zero_size", ts)
             return None
         margin = self._calc_margin(symbol, size, price, leverage)
         commission = self.calc_commission(
