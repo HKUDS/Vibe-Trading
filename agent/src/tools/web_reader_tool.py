@@ -145,6 +145,11 @@ class WebReaderTool(BaseTool):
         "required": ["url"],
     }
     repeatable = True
+    # Normal repeated reads remain allowed while the prior payload is visible.
+    # If compaction removes an exact successful read, AgentLoop may restore the
+    # run-scoped result instead of hitting Jina/the origin again. ``no_cache``
+    # remains the explicit freshness escape hatch and bypasses that replay.
+    replay_after_compaction = True
 
     def execute(self, **kwargs) -> str:
         """Fetch web page."""

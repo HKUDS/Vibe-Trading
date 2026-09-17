@@ -118,28 +118,25 @@ def test_repeatable_query_executes_again_with_different_arguments(
     )
 
 
-def test_cleared_result_reopens_the_dedup_gate(monkeypatch, tmp_path: Path) -> None:
-    """#1343: a non-repeatable tool blocked by the dedup ledger must become
-    callable again once microcompact has cleared its only result.
+def test_cleared_result_replays_run_scoped_readonly_cache(monkeypatch, tmp_path: Path) -> None:
+    """A non-repeatable readonly result cleared by microcompact is restored
+    from this run's cache instead of repeating the external query.
 
-    This drives the real gate in ``_process_tool_calls`` rather than only the
-    return value of ``_microcompact``: the first call fills ``_called_ok``, the
-    second is correctly skipped while the result is still readable, and the
-    third must actually execute once the result has been cleared. Without the
-    ledger update at the call site the third call is skipped too, which is the
-    44-blocked-retries deadlock this fixes.
+    The result remains gated while readable. Once microcompact removes it, the
+    exact call is reopened and a subsequent request restores the successful
+    payload via ``tool_result_replayed``. This gives the model its evidence
+    back without another external fetch and without weakening write-tool
+    deduplication.
     """
     from src.agent.loop import KEEP_RECENT
 
     calls: list[dict[str, object]] = []
-    # One of the five tools #1343 actually saw blocked; GetFundamentalsTool
-    # above is repeatable and therefore has no gate to exercise.
     tool = FundFlowTool()
     assert not tool.repeatable, "test needs a non-repeatable tool to have a gate at all"
+    assert tool.is_readonly, "run-scoped replay is restricted to readonly tools"
 
     def _execute(**kwargs: object) -> str:
         calls.append(kwargs)
-        # Long enough that microcompact clears it (>100 chars).
         return json.dumps({"status": "ok", "rows": ["x" * 200]})
 
     monkeypatch.setattr(tool, "execute", _execute)
@@ -171,8 +168,6 @@ def test_cleared_result_reopens_the_dedup_gate(monkeypatch, tmp_path: Path) -> N
     _call("call_2", 2)
     assert len(calls) == 1, "second call must be skipped while the result is readable"
 
-    # Pad past KEEP_RECENT so the real result is old enough to be cleared, then
-    # run the actual production path rather than reaching into _called_ok.
     for i in range(KEEP_RECENT + 1):
         messages.append({
             "role": "tool",
@@ -186,11 +181,11 @@ def test_cleared_result_reopens_the_dedup_gate(monkeypatch, tmp_path: Path) -> N
     _call("call_3", 4)
     trace.close()
 
-    assert len(calls) == 2, (
-        "third call must execute: its only result was cleared from context, so "
-        "'use the previous result' points at [cleared]"
-    )
+    assert len(calls) == 1, "cleared readonly evidence must be restored without a second fetch"
     events = TraceWriter.read(run_dir)
     assert any(e["type"] == "microcompact_cleared" for e in events), (
-        "the clear must leave a trace event; this layer used to act silently"
+        "the clear must leave a trace event"
+    )
+    assert any(e["type"] == "tool_result_replayed" for e in events), (
+        "restoring compacted evidence must be explicit in the trace"
     )

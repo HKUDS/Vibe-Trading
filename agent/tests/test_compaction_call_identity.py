@@ -102,11 +102,12 @@ def test_microcompact_reopens_only_lost_argument_variant(harness):
 
     assert _is_cleared(income["content"])
     assert not _is_cleared(balance["content"])
-    h.call({"statement": "income"})
-    assert len(h.tool.calls) == 3, "lost income must execute despite readable balance"
+    result = h.call({"statement": "income"})
+    assert json.loads(result["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 2, "lost income must replay without another external query"
     result = h.call({"statement": "balance"})
     assert json.loads(result["content"])["skipped"] is True
-    assert len(h.tool.calls) == 3, "readable balance must remain gated"
+    assert len(h.tool.calls) == 2, "readable balance must remain gated"
 
 
 def test_variants_clear_separately_and_second_pass_is_idempotent(harness):
@@ -126,11 +127,11 @@ def test_variants_clear_separately_and_second_pass_is_idempotent(harness):
     assert income_call["function"]["arguments"] == "{}"
     # Layer 2's lossy arguments must not change the captured identity.
     h.agent._auto_compact(h.messages, h.run_dir, h.trace)
-    h.call(income_args)
-    h.call({"statement": "balance"})
-    assert len(h.tool.calls) == 4
+    assert json.loads(h.call(income_args)["content"])["status"] == "ok"
+    assert json.loads(h.call({"statement": "balance"})["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 2, "both compacted readonly variants must replay from run cache"
     assert json.loads(h.call(income_args)["content"])["skipped"] is True
-    assert len(h.tool.calls) == 4
+    assert len(h.tool.calls) == 2
 
 
 @pytest.mark.parametrize("compact", ["micro", "auto"])
@@ -166,10 +167,11 @@ def test_only_real_readable_duplicate_keeps_lock(
     result = h.call(args)
     if duplicate == "success":
         assert json.loads(result["content"])["skipped"] is True
-        assert len(h.tool.calls) == calls_before
     else:
         assert json.loads(result["content"])["status"] == "ok"
-        assert len(h.tool.calls) == calls_before + 1
+    assert len(h.tool.calls) == calls_before, (
+        "a lost successful readonly observation must replay even when the visible duplicate is skipped, failed, or stubbed"
+    )
 
 
 @pytest.mark.parametrize("compact", ["micro", "auto"])
@@ -197,11 +199,12 @@ def test_compaction_uses_same_run_dir_identity_as_gate(harness):
     h.call({"statement": "income"})
     h.pad()
     h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
-    h.call({"run_dir": ".", "statement": "income"})
-    assert len(h.tool.calls) == 2
+    result = h.call({"run_dir": ".", "statement": "income"})
+    assert json.loads(result["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 1, "normalized run_dir identity must replay rather than refetch"
     result = h.call({"statement": "income", "run_dir": str(h.run_dir)})
     assert json.loads(result["content"])["skipped"] is True
-    assert len(h.tool.calls) == 2
+    assert len(h.tool.calls) == 1
 
 
 def test_none_canonical_key_never_creates_lock(harness, monkeypatch):
@@ -274,8 +277,8 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
     assert balance in h.messages
     if degraded:
         assert "compaction degraded" in h.messages[1]["content"]
-    h.call({"statement": "income"})
-    assert len(h.tool.calls) == 3, "summary is not readable original income data"
+    assert json.loads(h.call({"statement": "income"})["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 2, "summary is not original income data; replay must restore it"
     result = h.call({"statement": "balance"})
     assert json.loads(result["content"])["skipped"] is True
-    assert len(h.tool.calls) == 3
+    assert len(h.tool.calls) == 2
