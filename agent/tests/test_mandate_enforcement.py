@@ -36,6 +36,7 @@ from src.live.mandate.model import (
     UniverseConstraint,
 )
 from src.tools.mcp import MCPRemoteToolSpec
+from tests import robinhood_mcp_helpers as rh
 
 
 # --------------------------------------------------------------------------- #
@@ -63,9 +64,9 @@ class _MockAdapter:
     def call_tool(self, remote_name: str, arguments: dict, *, local_name: str | None = None) -> dict:
         self.call_records.append({"remote": remote_name, "arguments": arguments})
         if remote_name == "get_equity_positions":
-            return {"positions": self._positions, "status": "ok"}
+            return rh.positions(self._positions)
         if remote_name == "get_portfolio":
-            return {"equity": self._balance, "status": "ok"}
+            return rh.portfolio(total_value=str(self._balance))
         # The order placement itself (super().execute forwards here).
         self.order_calls.append({"remote": remote_name, "arguments": arguments})
         return {"status": "ok", "order_id": "rh_test_1", "state": "accepted"}
@@ -475,9 +476,9 @@ class _FailingForwardAdapter:
 
     def call_tool(self, remote_name: str, arguments: dict, *, local_name: str | None = None) -> dict:
         if remote_name == "get_equity_positions":
-            return {"positions": [], "status": "ok"}
+            return rh.positions([])
         if remote_name == "get_portfolio":
-            return {"equity": 5000.0, "status": "ok"}
+            return rh.portfolio()
         # The order placement fails at the broker.
         self.order_calls.append({"remote": remote_name, "arguments": arguments})
         return {"status": "error", "error": "broker rejected", "error_type": "BrokerError"}
@@ -556,9 +557,9 @@ class _QuoteAdapter:
 
     def call_tool(self, remote_name: str, arguments: dict, *, local_name: str | None = None) -> dict:
         if remote_name == "get_equity_positions":
-            return {"positions": self._positions, "status": "ok"}
+            return rh.positions(self._positions)
         if remote_name == "get_portfolio":
-            return {"equity": self._balance, "status": "ok"}
+            return rh.portfolio(total_value=str(self._balance))
         if remote_name == "get_equity_quotes":
             self.quote_calls.append({"arguments": arguments})
             return {"status": "ok", "symbol": arguments.get("symbol"), "price": self._price}

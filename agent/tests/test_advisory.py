@@ -37,6 +37,7 @@ from src.live.mandate.model import (
 )
 from src.live.order_guard import LiveOrderGuardTool
 from src.tools.mcp import MCPRemoteToolSpec
+from tests import robinhood_mcp_helpers as rh
 
 
 @pytest.fixture
@@ -56,9 +57,9 @@ class _MockAdapter:
         self, remote_name: str, arguments: dict, *, local_name: str | None = None
     ) -> dict:
         if remote_name == "get_equity_positions":
-            return {"positions": self._positions, "status": "ok"}
+            return rh.positions(self._positions)
         if remote_name == "get_portfolio":
-            return {"equity": self._balance, "status": "ok"}
+            return rh.portfolio(total_value=str(self._balance))
         self.order_calls.append({"remote": remote_name, "arguments": arguments})
         return {"status": "ok", "order_id": "rh_test_1", "state": "accepted"}
 

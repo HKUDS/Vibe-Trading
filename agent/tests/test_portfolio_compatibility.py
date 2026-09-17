@@ -31,6 +31,7 @@ def test_every_builtin_portfolio_connector_has_an_explicit_compatibility_tier():
         "zerodha": "experimental",
         "upbit": "experimental",
         "toss": "experimental",
+        "robinhood": "experimental",
     }
 
     observed = {profile.connector: profile_compatibility(profile)["level"] for profile in eligible_profiles()}

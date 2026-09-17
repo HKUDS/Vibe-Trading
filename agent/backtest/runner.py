@@ -40,6 +40,7 @@ from backtest.engines._market_hooks import (  # noqa: F401  (re-exported)
     _detect_market,
     _detect_submarket,
     _is_china_futures,
+    strip_local_prefix,
 )
 from backtest.rebalance_mask import RebalanceMask, validate_rebalance_mask
 
@@ -1442,15 +1443,37 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         interval: Bar interval string.
 
     Returns:
-        Merged ``code -> DataFrame`` map.
+        Merged ``code -> DataFrame`` map, keyed by bare symbol: a ``local:``
+        code is served only by the local loader and keyed without the prefix.
     """
-    market_groups = _group_codes_by_market(codes)
     merged = {}
     served_by: set[str] = set()
     caliber_stamps: dict[str, tuple[str, str]] = {}
     start_date = config.get("start_date", "")
     end_date = config.get("end_date", "")
 
+    # A ``local:`` code names the user's own dataset. It is served by the local
+    # loader or not at all: routing it by market would send ``local:AAPL.US``
+    # down the US network chain, which the README promises never happens (#1467).
+    local_codes = [code for code in codes if strip_local_prefix(code) != code]
+    if local_codes:
+        # ``local`` never degrades to a network loader; an unconfigured Data
+        # Bridge raises here with its own hint.
+        local_loader = get_loader_cls_with_fallback("local")()
+        stripped = [strip_local_prefix(code) for code in local_codes]
+        local_result = local_loader.fetch(stripped, start_date, end_date, interval=interval)
+        missing_local = [code for code in local_codes if strip_local_prefix(code) not in local_result]
+        if missing_local:
+            raise NoAvailableSourceError(
+                f"incomplete data for source=local; missing symbols: {missing_local}"
+            )
+        local_name = str(getattr(local_loader, "name", "local") or "local")
+        served_by.add(local_name)
+        for code in local_result:
+            caliber_stamps[code] = (local_name, price_caliber(local_name, _detect_market(code)))
+        merged.update(local_result)
+
+    market_groups = _group_codes_by_market([code for code in codes if code not in set(local_codes)])
     for market, market_codes in market_groups.items():
         try:
             loader = resolve_loader(market)
@@ -1528,15 +1551,37 @@ def fetch_data_map(config: dict) -> DataFetchResult:
 
     Returns:
         Data and effective routing metadata. The input config is not mutated.
+        A ``local:`` code comes back as its bare symbol in both ``codes`` and
+        ``data_map``.
+
+    Raises:
+        ValueError: If a ``local:`` code is requested from a source other than
+            ``local`` / ``auto``, or one symbol is requested both with and
+            without the prefix.
+        NoAvailableSourceError: If a requested symbol cannot be served.
     """
     config = copy.deepcopy(config)
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
     interval = str(config.get("interval") or "1D")
 
+    # ``local:`` picks the loader; the instrument is the bare symbol. Everything
+    # downstream (engine, signals, artifacts, run card) sees the bare symbol, so
+    # a contradictory request is refused here rather than half-served.
+    prefixed = [code for code in codes if strip_local_prefix(code) != code]
+    if prefixed and source not in ("local", "auto"):
+        raise ValueError(
+            f"local: codes need source='local' or 'auto', not {source!r}: {prefixed}"
+        )
+    bare = [strip_local_prefix(code) for code in codes]
+    repeated = sorted({symbol for symbol in bare if bare.count(symbol) > 1})
+    if repeated:
+        raise ValueError(f"symbols requested more than once (with and without local:): {repeated}")
+
     caliber_stamps: dict[str, tuple[str, str]] = {}
     if source == "auto":
         data_map = _fetch_auto(codes, config, interval)
+        codes = bare
         loader: Any = _AutoLoader(data_map)
         # Prefer the loaders that actually served rows; the symbol-pattern guess
         # is only a fallback for a stubbed/patched fetcher that recorded nothing.
@@ -1568,6 +1613,10 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             fields=config.get("extra_fields") or None,
             interval=interval,
         )
+        # The local loader keys ``local:AAPL.US`` by ``AAPL.US``. Compare and
+        # continue with the bare symbol, or a served symbol is counted as
+        # missing and sent down a network chain (#1467).
+        codes = [strip_local_prefix(code) for code in codes]
         for code in data_map:
             caliber_stamps[code] = (
                 served_by,
@@ -1575,6 +1624,13 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             )
         used_sources = [served_by] if data_map else []
         missing = [code for code in codes if code not in data_map]
+        # With the prefix stripped, a network chain could serve the bare symbol
+        # as if the dataset held it. A ``local:`` code is the dataset's or nothing.
+        unserved_local = [code for code in prefixed if strip_local_prefix(code) in missing]
+        if unserved_local:
+            raise NoAvailableSourceError(
+                f"incomplete data for source=local; missing symbols: {unserved_local}"
+            )
         if missing:
             logger.warning(
                 "source=%s returned data for %d/%d symbols; missing: %s",

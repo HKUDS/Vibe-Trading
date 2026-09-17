@@ -32,9 +32,9 @@ WHY THREE TEST STATISTICS
     dominate the sample.
 
 ``patell_z``
-    Standardises each daily abnormal return by the standard error the estimation
-    window implies for it, including the prediction-error term that accounts for
-    the market return on that day sitting far from its estimation-window mean.
+    Standardises each event's CAR by the standard error the estimation window
+    implies for it, including the prediction error of the estimated parameters
+    and the covariance that error induces across the window's days.
     Corrects for cross-sectional differences in volatility, but still assumes
     event-window variance equals estimation-window variance.
 
@@ -135,7 +135,8 @@ class EventOutcome:
             day, ordered from the window's first day to its last.
         car: Cumulative abnormal return over the whole event window.
         car_std_error: Standard error of ``car`` implied by the estimation
-            window, including the Patell prediction-error term.
+            window, including the prediction error of the estimated parameters
+            and its covariance across the window's days.
         standardised_car: ``car / car_std_error``. This is the quantity BMP
             takes a cross-sectional variance of.
         fit: The normal-return model behind these numbers.
@@ -278,31 +279,40 @@ def estimate_market_model(
     )
 
 
-def _patell_scale(fit: MarketModelFit, market_window: np.ndarray) -> np.ndarray:
-    """Per-day standard error of an abnormal return, prediction error included.
+def _car_std_error(fit: MarketModelFit, market_window: np.ndarray) -> float:
+    """Standard error of a CAR, prediction error and its covariance included.
 
-    A forecast made far from the estimation window's average market return is
-    less certain than one made near it, and Patell's correction is exactly that
-    term. Dropping it understates the standard error and overstates significance.
+    Every day in the window is forecast with the same estimated parameters, so
+    one estimation error moves all of them the same way: the daily abnormal
+    returns are positively correlated, and a CAR's variance is not the sum of
+    the daily ones. With ``L`` window days, ``n`` estimation observations and
+    ``d_t`` the window market return minus its estimation mean, the variance
+    in units of the residual variance is ``L + L**2 / n + (sum d_t)**2 / S_mm``
+    for the market model and ``L + L**2 / n`` for the mean-adjusted model.
+    Summing daily variances gives ``L + L / n + sum(d_t**2) / S_mm``, which
+    left z-statistics about 8% too wide at ``n=120`` and 36% at ``n=30`` under
+    the null (#1466). The market-adjusted model estimates nothing, so its
+    variance is ``L``.
 
     Args:
         fit: The fitted normal-return model.
         market_window: Market returns over the event window.
 
     Returns:
-        Array of standard errors, one per event-window day.
+        The standard error of the event's CAR.
     """
+    days = market_window.size
     if fit.model == "market" and fit.market_sum_squares > 0.0:
-        prediction_error = (
-            1.0
-            + 1.0 / fit.observations
-            + (market_window - fit.market_mean) ** 2 / fit.market_sum_squares
+        units = (
+            days
+            + days**2 / fit.observations
+            + float(np.sum(market_window - fit.market_mean)) ** 2 / fit.market_sum_squares
         )
     elif fit.model == "mean_adjusted":
-        prediction_error = np.full(market_window.shape, 1.0 + 1.0 / fit.observations)
+        units = days + days**2 / fit.observations
     else:  # market_adjusted has no estimated parameter to project
-        prediction_error = np.ones(market_window.shape)
-    return fit.residual_std * np.sqrt(prediction_error)
+        units = float(days)
+    return float(fit.residual_std * np.sqrt(units))
 
 
 def event_study(
@@ -367,7 +377,6 @@ def event_study(
     market_aligned = market_returns.reindex(index)
 
     relative_days = list(range(start, end + 1))
-    window_len = len(relative_days)
 
     outcomes: list[EventOutcome] = []
     dropped: list[tuple[str, object, str]] = []
@@ -417,8 +426,7 @@ def event_study(
         abnormal = asset_window - expected
         car = float(abnormal.sum())
 
-        daily_se = _patell_scale(fit, market_window)
-        car_se = float(np.sqrt(np.sum(daily_se**2)))
+        car_se = _car_std_error(fit, market_window)
         standardised = car / car_se if car_se > 0 else float("nan")
 
         asset_est_arr = asset_estimation.to_numpy(dtype=float)

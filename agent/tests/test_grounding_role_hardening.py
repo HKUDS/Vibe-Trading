@@ -671,6 +671,30 @@ def test_a_referenced_table_cell_is_checked_against_its_own_column(tmp_path: Pat
     assert close.valid is True, close.issues
 
 
+@pytest.mark.parametrize("function", ["historical_var", "parametric_var", "historical_cvar"])
+def test_a_real_quantlib_tail_risk_result_grounds_its_own_figure(tmp_path: Path, function: str) -> None:
+    """#1464: the scalar result of a real ``quantlib_call`` is evidence for the figure it returned."""
+    from src.tools.quantlib_tool import QuantlibCallTool
+
+    returns = [0.01, -0.02, 0.003, -0.0157, 0.004, -0.01, 0.02, -0.005, 0.007, -0.012] * 3
+    arguments = {
+        "action": "call",
+        "module": "risk",
+        "function": function,
+        "kwargs": {"returns": returns, "confidence": 0.95},
+    }
+    raw = QuantlibCallTool().execute(**arguments)
+    quoted = f"{json.loads(raw)['result'] * 100:.2f}%"
+    ledger = _ledger(tmp_path, MARKET_A, ("quantlib_call", arguments, raw, "q1"))
+    confidence = _block(ROW, "95% | count | confidence level")
+
+    returned = ledger.validate_final_answer(HDR + f" 单日 95% 尾部损失为 {quoted}。" + confidence)
+    invented = ledger.validate_final_answer(HDR + " 单日 95% 尾部损失为 9.87%。" + confidence)
+
+    assert returned.valid is True, returned.issues
+    assert invented.valid is False
+
+
 @pytest.mark.parametrize(
     ("leaf", "kind"),
     [
@@ -679,8 +703,13 @@ def test_a_referenced_table_cell_is_checked_against_its_own_column(tmp_path: Pat
         ("strategy_var_95", "tail_risk"),
         ("cvar", "tail_risk"),
         ("es", "tail_risk"),
+        ("historical_var", "tail_risk"),
+        ("parametric_var", "tail_risk"),
         ("var_explained", None),
         ("sales_es", None),
+        # A variance is not a VaR: only the named quantlib VaR functions are added.
+        ("residual_var", None),
+        ("conditional_var", None),
     ],
 )
 def test_short_tail_risk_names_count_only_as_the_whole_leaf(leaf: str, kind: str | None) -> None:
@@ -764,3 +793,22 @@ def test_the_spanish_var_report_from_1418_grounds_once_its_confidence_is_declare
 
     assert declared.valid is True, declared.issues
     assert invented.valid is False
+
+
+def test_a_worded_cell_still_checks_an_integer_price_in_the_thousands(tmp_path: Path) -> None:
+    """#1471 reads "1520 (limit)" as prose, and prose checks an integer price of 600519.SH."""
+    head = "600519.SH（akshare，CNY）\n\n| 项目 | 说明 |\n|---|---|\n"
+
+    invented = _ledger(tmp_path / "bad", MARKET_B, message=f"分析 {B}").validate_final_answer(
+        head + "| 入场 | 1520 (limit) |\n"
+    )
+    observed = _ledger(tmp_path / "good", MARKET_B, message=f"分析 {B}").validate_final_answer(
+        head + "| 入场 | 1450 (last close) |\n"
+    )
+    horizon = _ledger(tmp_path / "horizon", MARKET_B, message=f"分析 {B}").validate_final_answer(
+        head + "| 周期 | 200 日均线 |\n"
+    )
+
+    assert invented.valid is False
+    assert observed.valid is True, observed.issues
+    assert horizon.valid is True, horizon.issues

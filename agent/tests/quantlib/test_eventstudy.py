@@ -113,6 +113,86 @@ def test_injected_event_day_jump_is_recovered_in_caar():
     assert result.t_p_value < 0.01
 
 
+def _clm_car_std_error(asset_est, market_est, market_window, model):
+    """CAR standard error from the full prediction-error covariance matrix.
+
+    Written as matrix algebra (Campbell, Lo & MacKinlay eq. 4.4.14), not the
+    closed-form sums the module uses, so it checks the formula independently:
+    ``Var(CAR) = s^2 * 1'(I + X*(X'X)^-1 X*')1`` with ``X`` the estimation
+    design matrix and ``X*`` the event-window one.
+    """
+    n, days = len(asset_est), len(market_window)
+    if model == "market":
+        design = np.column_stack([np.ones(n), market_est])
+        window = np.column_stack([np.ones(days), market_window])
+        dof = n - 2
+    elif model == "mean_adjusted":
+        design = np.ones((n, 1))
+        window = np.ones((days, 1))
+        dof = n - 1
+    else:
+        resid = asset_est - market_est
+        return float(np.sqrt(np.sum(resid**2) / n) * np.sqrt(days))
+    coef, *_ = np.linalg.lstsq(design, asset_est, rcond=None)
+    s2 = float(np.sum((asset_est - design @ coef) ** 2) / dof)
+    covariance = s2 * (np.eye(days) + window @ np.linalg.inv(design.T @ design) @ window.T)
+    return float(np.sqrt(np.ones(days) @ covariance @ np.ones(days)))
+
+
+@pytest.mark.parametrize("model", ["market", "mean_adjusted", "market_adjusted"])
+def test_car_std_error_includes_the_covariance_of_the_shared_prediction_error(model):
+    """#1466: the window's days share one estimation error, so their variances do not just add."""
+    returns, market = _panel(n_symbols=3, seed=31)
+    event_row = 300
+    result = event_study(
+        returns,
+        market,
+        [("S01", returns.index[event_row])],
+        event_window=(-5, 5),
+        estimation_window=40,
+        model=model,
+    )
+    outcome = result.events[0]
+    est_end = event_row - 5 - DEFAULT_ESTIMATION_GAP
+    expected = _clm_car_std_error(
+        returns["S01"].iloc[est_end - 40 : est_end].to_numpy(),
+        market.iloc[est_end - 40 : est_end].to_numpy(),
+        market.iloc[event_row - 5 : event_row + 6].to_numpy(),
+        model,
+    )
+    assert outcome.car_std_error == pytest.approx(expected, rel=1e-10)
+
+
+@pytest.mark.parametrize("model", ["market", "mean_adjusted"])
+def test_standardised_cars_are_unit_variance_under_the_null(model):
+    """With a short estimation window the missing covariance inflated Var(z) to ~1.4.
+
+    What remains is the t-distribution correction for an estimated residual
+    variance, (dof) / (dof - 2), about 1.08 at 30 observations.
+    """
+    rng = np.random.default_rng(1466)
+    n_rows, n_events, window = 120, 4000, 30
+    index = pd.date_range("2020-01-01", periods=n_rows, freq="B")
+    market = pd.Series(rng.normal(0.0, 0.012, n_rows), index=index)
+    returns = pd.DataFrame(
+        rng.normal(0.0, 0.01, (n_rows, n_events)),
+        index=index,
+        columns=[f"S{i}" for i in range(n_events)],
+    )
+    rows = rng.integers(window + DEFAULT_ESTIMATION_GAP + 5, n_rows - 6, n_events)
+    result = event_study(
+        returns,
+        market,
+        [(f"S{i}", index[row]) for i, row in enumerate(rows)],
+        event_window=(-5, 5),
+        estimation_window=window,
+        model=model,
+    )
+    z = np.array([o.standardised_car for o in result.events])
+    dof = window - (2 if model == "market" else 1)
+    assert np.var(z) == pytest.approx(dof / (dof - 2), abs=0.07)
+
+
 def test_car_is_exactly_the_sum_of_the_abnormal_returns():
     returns, market = _panel(seed=303)
     events = [(s, returns.index[250]) for s in returns.columns[:5]]

@@ -916,13 +916,25 @@ def test_rebalance_scaled_away_sleeve_is_recorded_as_plan_rejection():
     """#1274: a sleeve rounded to zero by scaling leaves an audit record.
 
     A fills 9 of its 10 target shares; B's one-lot fill scales below one lot
-    and vanishes — run-card diagnostics must see it as a zero_size rejection,
-    not silence.
+    and vanishes — run-card diagnostics must see it as an insufficient_capital
+    rejection (#1470: it was a real order at full scale), not silence and not
+    a lot-rounding failure.
     """
     engine = _SymbolRulesAdjustmentEngine()
-    _run_adjustments(engine, {"A": [1.0], "B": [0.003]})
+    _run_adjustments(engine, {"A": [1.0], "B": [0.025]})  # B: exactly one 0.25 lot
 
     sizes = _sizes(engine.bar_positions[0])
     assert sizes == {"A": 9.0}  # scaled to fit; B's leg dropped entirely
+    assert engine.plan_rejections[("B", "insufficient_capital")] == 1
+    assert ("B", "zero_size") not in engine.plan_rejections
+
+
+def test_rebalance_sleeve_below_one_lot_at_full_scale_is_the_lot_rule():
+    """A target that never reached one lot is zero_size, not a cash finding."""
+    engine = _SymbolRulesAdjustmentEngine()
+    _run_adjustments(engine, {"A": [1.0], "B": [0.003]})  # B: 0.03 shares, lot 0.25
+
+    assert _sizes(engine.bar_positions[0]) == {"A": 9.0}
     assert engine.plan_rejections[("B", "zero_size")] == 1
+    assert ("B", "insufficient_capital") not in engine.plan_rejections
     assert engine.bar_capitals[0] >= 0.0

@@ -194,6 +194,7 @@ def code_currency(code: str) -> str:
         than a guess, so a homogeneous set still compares equal while a mixed
         one cannot pass a same-currency check by accident.
     """
+    code = strip_local_prefix(code)
     market = _detect_market(code)
     if market in _MARKET_CURRENCY:
         return _MARKET_CURRENCY[market]
@@ -211,6 +212,22 @@ def code_currency(code: str) -> str:
         return _FUTURES_EXCHANGE_CURRENCY.get(exchange, "USD")
     return f"UNKNOWN:{market}"
 
+def strip_local_prefix(code: str) -> str:
+    """Return the instrument symbol behind a ``local:`` routing prefix.
+
+    ``local:AAPL.US`` asks for the user's own ``AAPL.US`` dataset. The prefix
+    chooses the loader; it is not part of the instrument, so market rules,
+    price caliber and result keys must all see ``AAPL.US``.
+
+    Args:
+        code: Ticker / symbol string, optionally prefixed with ``local:``.
+
+    Returns:
+        The symbol without the prefix, or ``code`` unchanged.
+    """
+    return code.split(":", 1)[1] if code[:6].lower() == "local:" else code
+
+
 def _detect_market(code: str) -> str:
     """Infer market type from symbol format.
 
@@ -227,8 +244,9 @@ def _detect_market(code: str) -> str:
         ``=F`` (futures) and ``=X`` (forex) notations are recognized;
         any other unknown format defaults to ``a_share``.
     """
+    symbol = strip_local_prefix(code)
     for pattern, market in _MARKET_PATTERNS:
-        if pattern.match(code):
+        if pattern.match(symbol):
             return market
     return "a_share"
 
@@ -248,7 +266,7 @@ def _is_china_futures(code: str) -> bool:
     Returns:
         True if it looks like a Chinese futures contract.
     """
-    parts = code.upper().split(".")
+    parts = strip_local_prefix(code).upper().split(".")
     if len(parts) == 2:
         # Has an exchange suffix — trust it. CN exchange = True, anything
         # else = False. Without this guard the product-code heuristic below
