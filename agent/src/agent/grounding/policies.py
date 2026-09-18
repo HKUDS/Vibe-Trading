@@ -333,7 +333,14 @@ def _evaluate_formula(expression: str) -> tuple[float, list[float], ast.Expressi
             return value
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = visit(node.operand)
-            return value if isinstance(node.op, ast.UAdd) else -value
+            if isinstance(node.op, ast.UAdd):
+                return value
+            # ``inputs`` is also the anchor list.  Preserve the sign of a
+            # directly negated observed operand (e.g. ``-0.093 × 100``),
+            # instead of anchoring only its positive magnitude.
+            if isinstance(node.operand, ast.Constant) and inputs:
+                inputs[-1] = -value
+            return -value
         if isinstance(node, ast.BinOp) and isinstance(
             node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)
         ):
@@ -385,6 +392,11 @@ def _formula_in_note(note: str) -> tuple[float, list[float], ast.Expression] | N
         if evaluated is not None:
             return evaluated
     return None
+
+
+def _has_explicit_percent_scale(note: str) -> bool:
+    """Whether a percentage formula explicitly converts a fraction by 100."""
+    return bool(re.search(r"(?:×|✕|\*)\s*100(?:\.0+)?\b", note))
 
 
 class _PolicyMixin:
@@ -746,20 +758,24 @@ class _PolicyMixin:
         Returns:
             ``(records, metric values)``, or None when ``ref`` names no call or tool.
         """
-        key = (ref or "").strip()
-        if not key:
+        keys = {
+            key.strip()
+            for key in re.split(r"[;,]", ref or "")
+            if key.strip()
+        }
+        if not keys:
             return None
         records = [
             record
             for record in self._evidence
-            if key in (record.call_id, record.tool)
+            if any(key in (record.call_id, record.tool) for key in keys)
             and record.status == "observed"
             and record.value is not None
         ]
         metrics = [
             float(entry["value"])
             for entry in self._analysis_metrics
-            if key in (entry.get("call_id"), entry.get("tool"))
+            if any(key in (entry.get("call_id"), entry.get("tool")) for key in keys)
             and entry.get("value") is not None
         ]
         if not records and not metrics:
@@ -1138,19 +1154,26 @@ class _PolicyMixin:
         return result, operands
 
     @staticmethod
-    def _result_matches(figure: Figure, result: float) -> bool:
+    def _result_matches(figure: Figure, result: float, note: str = "") -> bool:
         """Whether a formula's result is the value the prose figure states.
 
         The band is half a unit of the last digit the PROSE was written with
         ("约 37%" for 36.75%), so a coarser declaration cannot widen it. A "%"
-        figure is compared only in percentage points, since against the fraction
-        a half-unit band spans fifty points; a bare figure is tried both ways.
+        figure is compared in percentage points. A formula that explicitly
+        multiplies by 100 is already in those units; otherwise the observed
+        fraction is converted once. A bare figure is tried both ways.
         Magnitudes are compared, because a fall is noted either as
         ``(low − high) / high`` or as the drop, unless the prose wrote a sign.
         """
         # The normalized reading, so "0,666" is three decimals and "−5,13%" is signed.
         half_unit = _written_half_unit(figure.digits or figure.text)
-        targets = {result * 100.0} if figure.percent else {result, result * 100.0}
+        targets = (
+            {result}
+            if figure.percent and _has_explicit_percent_scale(note)
+            else {result * 100.0}
+            if figure.percent
+            else {result, result * 100.0}
+        )
         sign = _explicit_sign(figure.sign or figure.text)
         value = abs(figure.value)
         return any(
@@ -1186,10 +1209,16 @@ class _PolicyMixin:
                 )
             ]
         result, _ = derivation
-        if self._result_matches(figure, result):
+        if self._result_matches(figure, result, declaration.note):
             return []
         # Reported in the figure's own units, as ``_result_matches`` compares it.
-        scaled = result * 100.0 if figure.percent else result
+        scaled = (
+            result
+            if figure.percent and _has_explicit_percent_scale(declaration.note)
+            else result * 100.0
+            if figure.percent
+            else result
+        )
         shown = f"{scaled:.6g}%" if figure.percent else f"{scaled:.6g}"
         return [
             self._figure_issue(

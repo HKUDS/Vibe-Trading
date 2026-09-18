@@ -171,6 +171,76 @@ _METADATA_COUNT_TAILS = frozenset(
 # Money-denominated row fields a currency-marked figure may quote besides a price.
 _AMOUNT_FIELDS = frozenset({"amount", "turnover", "成交额"})
 
+# Generic tools do not share one schema, but a money value still has a stable
+# contract: an ISO-4217 code is carried by the surrounding object or by a
+# currency-keyed mapping, and the numeric path names a value/amount/total-like
+# quantity.  Keep this structural and currency-agnostic; connector-specific
+# fields belong in the connector adapter, not in grounding.
+_CURRENCY_CONTEXT_FIELDS = frozenset(
+    {
+        "currency",
+        "currency_code",
+        "native_currency",
+        "quote_currency",
+        "settlement_currency",
+        "denomination",
+        "unit_currency",
+    }
+)
+_MONEY_PATH_FIELDS = frozenset(
+    {
+        "amount",
+        "balance",
+        "cash",
+        "cost",
+        "equity",
+        "market_value",
+        "native",
+        "notional",
+        "proceeds",
+        "total",
+        "value",
+        "valuation",
+    }
+)
+_ISO_CURRENCY_CODE_RE = re.compile(r"^[A-Z]{3}$")
+
+
+def _currency_code(value: Any) -> str | None:
+    """Return an ISO-shaped currency code carried by generic tool data."""
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip().upper()
+    return candidate if _ISO_CURRENCY_CODE_RE.fullmatch(candidate) else None
+
+
+def _currency_from_path(path: str) -> str | None:
+    """Find a currency code embedded in a generic JSON path."""
+    for component in re.split(r"[.\[\]_]+", path):
+        currency = _currency_code(component)
+        if currency:
+            return currency
+    return None
+
+
+def _is_structured_money_field(path: str) -> bool:
+    """Whether a path names a value-like leaf or a currency-valued container."""
+    components = [
+        component.casefold()
+        for component in re.split(r"[.\[\]_]+", path)
+        if component
+    ]
+    if not components:
+        return False
+    leaf = components[-1]
+    if leaf in _MONEY_PATH_FIELDS or leaf in _AMOUNT_FIELDS:
+        return True
+    if leaf.endswith("value") or leaf.endswith("amount") or leaf.endswith("total"):
+        return True
+    return _currency_from_path(path) is not None and any(
+        component in _MONEY_PATH_FIELDS for component in components
+    )
+
 
 def _symbol_from_csv_filename(stem: str) -> str | None:
     """Map a run-dir CSV stem (``BYN_V`` -> ``BYN.V``) to a canonical symbol.
@@ -467,6 +537,10 @@ def _is_price_kind(record: EvidenceRecord) -> bool:
         or _price_field_for_path(record.field) is not None
         or _is_registered_price_indicator(record.tool, record.field)
         or _leaf_name(record.field) in _AMOUNT_FIELDS
+        or (
+            record.currency is not None
+            and _is_structured_money_field(record.field)
+        )
     )
 
 
@@ -765,11 +839,21 @@ class _EvidenceMixin:
         remaining = _MAX_GENERIC_EVIDENCE
         timestamp_fields = (*_TIMESTAMP_FIELDS, "as_of")
 
-        def visit(value: Any, path: str, timestamp: str | None = None) -> None:
+        def visit(
+            value: Any,
+            path: str,
+            timestamp: str | None = None,
+            currency: str | None = None,
+        ) -> None:
             nonlocal remaining
             if remaining <= 0:
                 return
             if _is_number(value):
+                evidence_currency = (
+                    currency
+                    or _currency_from_path(path)
+                    or _infer_currency(symbol or "")
+                )
                 self._evidence.append(
                     EvidenceRecord(
                         call_id=call_id,
@@ -780,7 +864,7 @@ class _EvidenceMixin:
                         field=path or "value",
                         value=value,
                         status="observed",
-                        currency=_infer_currency(symbol or ""),
+                        currency=evidence_currency,
                         venue=_infer_venue(symbol or ""),
                     )
                 )
@@ -795,17 +879,23 @@ class _EvidenceMixin:
                     ),
                     timestamp,
                 )
+                local_currency = currency or _currency_from_path(path)
+                for key, item in value.items():
+                    if str(key).casefold() in _CURRENCY_CONTEXT_FIELDS:
+                        local_currency = _currency_code(item) or local_currency
                 for key, item in value.items():
                     if str(key).casefold() in timestamp_fields:
                         continue
+                    child_path = f"{path}.{key}" if path else str(key)
                     visit(
                         item,
-                        f"{path}.{key}" if path else str(key),
+                        child_path,
                         local_timestamp,
+                        local_currency or _currency_from_path(child_path),
                     )
             elif isinstance(value, list):
                 for index, item in enumerate(value):
-                    visit(item, f"{path}[{index}]", timestamp)
+                    visit(item, f"{path}[{index}]", timestamp, currency)
 
         visit(payload, "")
 
