@@ -20,6 +20,7 @@ from src.agent.grounding.identity import (
     _normalize_symbol,
     _utc_now,
 )
+from src.portfolio.iso4217 import is_iso_currency
 
 _PRICE_FIELDS = {"open", "high", "low", "close", "adj_close", "price"}
 
@@ -203,15 +204,12 @@ _MONEY_PATH_FIELDS = frozenset(
         "valuation",
     }
 )
-_ISO_CURRENCY_CODE_RE = re.compile(r"^[A-Z]{3}$")
-
-
 def _currency_code(value: Any) -> str | None:
     """Return an ISO-shaped currency code carried by generic tool data."""
     if not isinstance(value, str):
         return None
     candidate = value.strip().upper()
-    return candidate if _ISO_CURRENCY_CODE_RE.fullmatch(candidate) else None
+    return candidate if is_iso_currency(candidate) else None
 
 
 def _currency_from_path(path: str) -> str | None:

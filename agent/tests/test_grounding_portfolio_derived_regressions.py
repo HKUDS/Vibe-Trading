@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 
 from src.agent.grounding import GroundingLedger
+from src.agent.grounding.evidence import _currency_code
+from src.portfolio.iso4217 import is_iso_currency
 
 pytestmark = pytest.mark.unit
 
@@ -103,6 +105,55 @@ def test_generic_structured_money_uses_currency_context_for_observed_claims(
     result = ledger.validate_final_answer(
         "The portfolio value is EUR 1234.5."
         + _figures("1234.5 | observed | totals.value | portfolio_summary")
+    )
+
+    assert result.valid is True, result.issues
+
+
+@pytest.mark.parametrize("code", ["ARS", "EUR", "USD", "KRW"])
+def test_iso_currency_contract_accepts_supported_codes(code: str) -> None:
+    assert is_iso_currency(code) is True
+    assert _currency_code(code.lower()) == code
+
+
+@pytest.mark.parametrize("code", ["NAV", "PNL", "AVG", "ABC"])
+def test_iso_currency_contract_rejects_non_currency_identifiers(code: str) -> None:
+    assert is_iso_currency(code) is False
+    assert _currency_code(code) is None
+
+
+def test_currency_keyed_totals_ground_an_ars_amount(tmp_path: Path) -> None:
+    ledger = _ledger(
+        tmp_path,
+        (
+            "portfolio_summary",
+            {"totals": {"native_by_currency": {"ARS": 224780341.158}}},
+            "summary-call",
+        ),
+    )
+
+    result = ledger.validate_final_answer(
+        "The portfolio value is ARS 224780341.158."
+        + _figures(
+            "224780341.158 | observed | totals.native_by_currency.ARS | "
+            "portfolio_summary"
+        )
+    )
+
+    assert result.valid is True, result.issues
+
+
+def test_nav_path_does_not_infer_nav_as_a_currency(tmp_path: Path) -> None:
+    ledger = _ledger(
+        tmp_path,
+        ("portfolio_summary", {"data": {"nav": {"total": 1234.5}}}, "summary-call"),
+    )
+
+    assert [record.currency for record in ledger._evidence] == [None]
+
+    result = ledger.validate_final_answer(
+        "The NAV total is 1234.5."
+        + _figures("1234.5 | observed | data.nav.total | portfolio_summary")
     )
 
     assert result.valid is True, result.issues
