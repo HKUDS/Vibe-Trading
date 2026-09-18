@@ -78,7 +78,12 @@ def kyles_lambda(
 ) -> float:
     """Estimate Kyle's (1985) price impact coefficient lambda from linear regression.
 
-    ΔP_t = lambda * OrderFlow_t + epsilon_t
+    ΔP_t = alpha + lambda * OrderFlow_t + epsilon_t
+
+    Fits with an intercept, per the estimation procedure this implements
+    (market-microstructure skill: "Regress ΔP = α + λ × OrderFlow"). Signed
+    order flow is rarely mean-zero over a real window, and forcing the fit
+    through the origin then biases the slope by alpha * mean(flow) / var(flow).
 
     Args:
         price_changes: Array of price differences ΔP_t.
@@ -91,10 +96,11 @@ def kyles_lambda(
     flow = np.asarray(signed_order_flow, dtype=float)
     if dp.shape != flow.shape or len(dp) < 2:
         raise ValueError("price_changes and signed_order_flow must match with >= 2 observations")
-    denom = float(np.sum(flow**2))
+    flow_centered = flow - flow.mean()
+    denom = float(np.sum(flow_centered**2))
     if denom == 0.0:
         return 0.0
-    return float(np.sum(dp * flow) / denom)
+    return float(np.sum(flow_centered * (dp - dp.mean())) / denom)
 
 
 def vpin(
