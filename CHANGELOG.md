@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`get_fund_nav`: NAV history for Chinese off-exchange funds (场外基金).**
+  Off-exchange funds publish no OHLCV bars — their series is the daily NAV —
+  so this lands as an agent tool (`NetFundUnitValueReport` behind the same
+  recall+cache machinery as the loader) instead of stretching the loader
+  contract. Serves unit NAV (单位净值), accumulated NAV (累计净值),
+  dividend-adjusted NAV (复权净值) and the daily growth rate, ascending,
+  most-recent `limit` rows, per-fund errors never abort the batch.
+  Exchange-listed ETF/LOF codes are rejected with a pointer to
+  `get_market_data`. Key-gated on `GILDATA_TOKEN`; exposed as MCP tool #75.
+
 - **Gildata (恒生聚源) now serves HK equities and CN indices too.** HK symbols
   (`00700.HK`) route to `HKStockDailyQuotes`, CN index codes (`000300.SH`,
   `399xxx.SZ` — exchange-specific, so `000001.SZ` stays Ping An Bank) route to

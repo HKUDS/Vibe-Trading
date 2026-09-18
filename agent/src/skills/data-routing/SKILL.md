@@ -69,6 +69,7 @@ is required only where listed (no key listed = free / no auth).
 | Market screen | `screen_market` | A-share | — |
 | Symbol search | `search_symbol` | A-share, US, HK, Canada, crypto/index/FX | — |
 | Macro / FRED series | `get_macro_series` | Macro (US/global) | `FRED_API_KEY` |
+| OTC fund NAV (场外基金净值) | `get_fund_nav` | CN off-exchange funds | `GILDATA_TOKEN` |
 | iWenCai NL search (问财) | `iwencai_search` | A-share | `VIBE_TRADING_IWENCAI_KEY` |
 
 Notes:

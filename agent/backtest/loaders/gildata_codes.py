@@ -28,10 +28,13 @@ from typing import Any, Callable, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # recall param -> tool wiring, keyed by the resolution kind.
-_RECALL_WIRING: Dict[str, tuple[str, str]] = {
+_RECALL_WIRING: dict[str, tuple[str, str]] = {
     # kind: (api_name, param_name the internal code belongs to)
     "hk_equity": ("HKStockDailyQuotes", "stockObject"),
     "cn_index": ("IndexDailyQuote", "indexObject"),
+    # OTC funds: the NetFundUnitValueReport NAV tool (agent-facing, not a
+    # loader — the loader protocol is OHLCV bars and NAV series are not).
+    "otc_fund": ("NetFundUnitValueReport", "fundObject"),
 }
 
 _CACHE_FILENAME = "gildata-codes.json"

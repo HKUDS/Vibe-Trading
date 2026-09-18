@@ -1880,6 +1880,7 @@ def _key_gated_tool_classes() -> dict[str, Any]:
         Mapping of MCP tool name to its ``BaseTool`` subclass.
     """
     from src.tools.fred_macro_tool import FredMacroTool
+    from src.tools.fund_nav_tool import GildataFundNavTool
     from src.tools.iwencai_tool import IWenCaiSearchTool
     from src.tools.qveris_tool import (
         QVerisExecuteTool,
@@ -1889,6 +1890,7 @@ def _key_gated_tool_classes() -> dict[str, Any]:
 
     return {
         "get_macro_series": FredMacroTool,
+        "get_fund_nav": GildataFundNavTool,
         "iwencai_search": IWenCaiSearchTool,
         "qveris_search": QVerisSearchTool,
         "qveris_inspect": QVerisInspectTool,
@@ -2286,6 +2288,37 @@ def get_macro_series(
     if end_date:
         params["end_date"] = end_date
     return _execute_key_gated("get_macro_series", params)
+
+@mcp.tool
+def get_fund_nav(
+    codes: _lenient_str_list,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 2000,
+) -> str:
+    """Fetch daily NAV history for Chinese off-exchange funds (场外基金).
+
+    Returns unit NAV (单位净值), accumulated NAV (累计净值), dividend-adjusted
+    NAV (复权净值) and the daily growth rate per fund, over an optional date
+    window. Codes are bare 6-digit ('110022') or '.OF'-suffixed
+    ('110022.OF'). Exchange-listed ETF/LOF are OHLCV instruments — use
+    get_market_data for those. Requires the commercial GILDATA_TOKEN; without
+    it the tool returns a not-available error.
+
+    Args:
+        codes: Fund codes, e.g. ["110022", "000198.OF"].
+        start_date: Inclusive window start, YYYY-MM-DD. Omit for the vendor's
+            default history window.
+        end_date: Inclusive window end, YYYY-MM-DD. Omit through the latest
+            published NAV.
+        limit: Maximum number of most-recent rows per fund.
+    """
+    params: dict[str, Any] = {"codes": codes, "limit": limit}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    return _execute_key_gated("get_fund_nav", params)
 
 
 @mcp.tool
