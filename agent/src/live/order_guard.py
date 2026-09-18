@@ -11,9 +11,13 @@ broker call:
 1. ``load_mandate`` — no valid mandate / unknown schema version → DENY.
 2. expiry — past ``consent.expires_at`` → DENY (routes to re-auth).
 3. ``halt_flag_set`` — kill switch tripped → DENY, NO remote call.
-4. ``extract_order_intent`` — unparseable order → DENY.
-5. read positions + balance via the broker's READ MCP tools (plain path).
-6. ``check_mandate`` — ALLOW (forward via ``super().execute``) / DENY
+4. account binding — for a broker whose login reaches several accounts
+   (Robinhood), a mandate bound to no account, or an order naming a different
+   account, → DENY; otherwise the mandate's account is stamped onto the order.
+5. ``extract_order_intent`` — unparseable order → DENY.
+6. read positions + balance via the broker's READ MCP tools (plain path),
+   scoped to the mandate's account.
+7. ``check_mandate`` — ALLOW (forward via ``super().execute``) / DENY
    (structural: universe|instrument) / PAUSE_FOR_REAUTH (quantitative).
 
 The daily ``trade_counter.json`` is incremented only on a confirmed ALLOW whose
@@ -61,7 +65,7 @@ from src.live.enforcement import (
 )
 from src.live.extractors import get_extractor
 from src.live.halt import halt_flag_set
-from src.live.mandate.model import MANDATE_SCHEMA_VERSION, Mandate
+from src.live.mandate.model import MANDATE_SCHEMA_VERSION, InstrumentType, Mandate
 from src.live.mandate.store import load_mandate
 from src.live.daily_count import (
     DailyOrderLockUnavailable,
@@ -161,6 +165,19 @@ class LiveOrderGuardTool(MCPRemoteTool):
                 mandate=mandate,
             )
 
+        account_ref, refusal = self._bind_account(mandate, kwargs)
+        if refusal is not None:
+            return self._deny(
+                reason=refusal,
+                checked=["mandate", "expiry", "halt_flag", "account"],
+                mandate=mandate,
+            )
+        if account_ref:
+            from src.trading.service import runner_arguments
+
+            kwargs = {key: value for key, value in kwargs.items() if key != "account"}
+            kwargs.update(runner_arguments(self.broker, "orders", account_ref))
+
         extractor = get_extractor(self.broker)
         intent = extractor(self.remote_name, kwargs) if extractor is not None else None
         if intent is None:
@@ -181,8 +198,8 @@ class LiveOrderGuardTool(MCPRemoteTool):
                 mandate=mandate,
             )
 
-        positions = self._read_first(self._read_tools("positions", _POSITIONS_TOOLS))
-        balance = self._read_first(self._read_tools("account", _BALANCE_TOOLS))
+        positions = self._read_first(self._read_tools("positions", _POSITIONS_TOOLS), "positions", account_ref)
+        balance = self._read_first(self._read_tools("account", _BALANCE_TOOLS), "account", account_ref)
 
         try:
             with daily_order_lock(self.broker):
@@ -277,6 +294,17 @@ class LiveOrderGuardTool(MCPRemoteTool):
     def _quote_price(self, intent: OrderIntent) -> float | None:
         """Return a live USD price for the intent's symbol, fail-closed.
 
+        Args:
+            intent: The order intent whose symbol is priced.
+
+        Returns:
+            A positive USD price, or ``None`` (→ fail-closed DENY upstream).
+        """
+        return self._symbol_price(intent.symbol, intent.instrument_type)
+
+    def _symbol_price(self, symbol: str, instrument_type: InstrumentType) -> float | None:
+        """Return a live USD price for one symbol, fail-closed.
+
         Prefers the broker's mapped READ quote tool so the price is the broker's
         own; falls back to Vibe-Trading's data loaders
         (:func:`src.live.enforcement.last_price_usd`, standard auto-fallback)
@@ -284,21 +312,22 @@ class LiveOrderGuardTool(MCPRemoteTool):
         yields a usable price.
 
         Args:
-            intent: The order intent whose symbol is priced.
+            symbol: Normalized upper-case symbol.
+            instrument_type: Instrument type selecting the loader asset class.
 
         Returns:
-            A positive USD price, or ``None`` (→ fail-closed DENY upstream).
+            A positive USD price, or ``None``.
         """
-        broker_price = self._broker_quote_price(intent.symbol)
+        broker_price = self._broker_quote_price(symbol)
         if broker_price is not None:
             return broker_price
-        asset_class = instrument_asset_class(intent.instrument_type)
+        asset_class = instrument_asset_class(instrument_type)
         if asset_class is None:
             return None
         try:
-            return last_price_usd(intent.symbol, asset_class)
+            return last_price_usd(symbol, asset_class)
         except Exception as exc:  # loader chain failure → fail-closed
-            logger.warning("loader quote failed for %s: %s", intent.symbol, exc)
+            logger.warning("loader quote failed for %s: %s", symbol, exc)
             return None
 
     def _broker_quote_price(self, symbol: str) -> float | None:
@@ -588,29 +617,117 @@ class LiveOrderGuardTool(MCPRemoteTool):
 
     # -- read snapshot ------------------------------------------------------
 
-    def _read_first(self, candidates: tuple[str, ...]) -> object:
+    def _bind_account(self, mandate: Mandate, kwargs: dict) -> tuple[str, str | None]:
+        """Resolve the account this order may trade, or the reason it may not.
+
+        A broker whose one login reaches several accounts (Robinhood) trades
+        only the account the user bound the mandate to at commit. There is no
+        fallback to a default account: an unbound mandate refuses every order,
+        and an order naming another account is refused rather than rerouted.
+
+        Args:
+            mandate: The loaded, unexpired mandate.
+            kwargs: The order-tool arguments from the agent loop.
+
+        Returns:
+            ``(account_ref, None)`` when the order may proceed (``account_ref``
+            is ``""`` for a broker that takes no account), else
+            ``("", reason)``.
+        """
+        try:
+            from src.trading.service import runner_requires_account
+
+            required = runner_requires_account(self.broker)
+        except Exception:  # pragma: no cover - fail closed on registry failure
+            return "", "could not determine whether this broker's orders need an account (fail-closed)"
+        if not required:
+            return "", None
+        bound = mandate.consent.account_ref.strip()
+        if not bound:
+            return "", "the mandate is not bound to an account — commit it again with an account"
+        for key in ("account_number", "account"):
+            named = str(kwargs.get(key) or "").strip()
+            if named and named != bound:
+                return "", "the order names a different account than the one the mandate is bound to"
+        return bound, None
+
+    def _read_first(self, candidates: tuple[str, ...], operation: str, account_ref: str = "") -> object:
         """Read the first responsive broker read tool, fail-closed.
 
         Routes through the plain ``MCPServerAdapter.call_tool`` path (NOT the
-        guard) so reads are never gated. Returns ``None`` on any error envelope
-        or exception so the downstream check fail-closes.
+        guard) so reads are never gated. The read is scoped to the mandate's
+        account. A connector with a mapped reply shape (Robinhood) is unwrapped
+        by that mapping, and its position rows, which carry no price, are
+        priced through :meth:`_symbol_price`. Returns ``None`` on any error
+        envelope, exception, unmappable reply or unpriceable position so the
+        downstream check fail-closes.
 
         Args:
             candidates: Ordered remote read-tool names to try.
+            operation: ``positions`` or ``account``.
+            account_ref: The mandate's account; ``""`` for a broker without one.
 
         Returns:
-            The first successful tool result payload, or ``None``.
+            The first successful read, or ``None``.
         """
+        from src.trading.service import runner_account_summary, runner_arguments, runner_records
+
         for remote in candidates:
             try:
-                result = self._adapter.call_tool(remote, {}, local_name=remote)
+                result = self._adapter.call_tool(
+                    remote, runner_arguments(self.broker, operation, account_ref), local_name=remote
+                )
             except Exception as exc:
                 logger.warning("live read tool %s failed: %s", remote, exc)
                 continue
             if isinstance(result, dict) and result.get("status") == "error":
                 continue
-            return result
+            try:
+                mapped = (
+                    runner_records(self.broker, operation, result)
+                    if operation == "positions"
+                    else runner_account_summary(self.broker, result)
+                )
+            except ValueError as exc:
+                logger.warning("live read tool %s reply could not be mapped: %s", remote, exc)
+                return None
+            if mapped is None:
+                return result
+            if operation == "positions":
+                return self._priced_rows(mapped)
+            return mapped
         return None
+
+    def _priced_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+        """Attach a market value to position rows the broker reports unpriced.
+
+        The exposure check needs each position's value. A row with no price is
+        priced the way a quantity order is, and a row that cannot be priced
+        makes the whole snapshot unreadable, so exposure fails closed instead
+        of counting that position as worth nothing.
+
+        Args:
+            rows: Mapped position rows (``symbol``, ``quantity``).
+
+        Returns:
+            The rows with ``market_price`` and ``market_value`` set, or ``None``
+            when any row cannot be priced.
+        """
+        priced = []
+        for row in rows:
+            try:
+                quantity = float(row["quantity"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            if quantity == 0:
+                priced.append({**row, "market_value": 0.0})
+                continue
+            price = self._symbol_price(str(row.get("symbol") or ""), InstrumentType.EQUITY)
+            if price is None or price != price or price <= 0:
+                logger.warning("position %s could not be priced; exposure fails closed", row.get("symbol"))
+                return None
+            priced.append({**row, "market_price": price, "market_value": abs(quantity) * price})
+        return priced
 
     def _read_tools(self, operation: str, fallback: tuple[str, ...]) -> tuple[str, ...]:
         """Return connector-specific read tools, falling back to legacy names."""

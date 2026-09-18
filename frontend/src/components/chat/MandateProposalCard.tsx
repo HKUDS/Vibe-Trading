@@ -1,8 +1,8 @@
 import i18n from '@/i18n';
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { ShieldCheck, ShieldAlert, Wallet, OctagonX, SlidersHorizontal, Check, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type MandateProfile, type MandateProposal } from "@/lib/api";
+import { api, type BrokerAccountChoice, type MandateProfile, type MandateProposal } from "@/lib/api";
 import { AgentAvatar } from "./AgentAvatar";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 
@@ -195,15 +195,43 @@ function ProfileTile({
  * never `api.sendMessage`. "Adjust" sends a natural-language message back to the agent
  * to re-render a fresh proposal. Once committed, the card collapses to a compact badge.
  */
+type AccountOptions =
+  | { status: "idle" | "loading" }
+  | { status: "ready"; required: boolean; accounts: BrokerAccountChoice[] }
+  | { status: "error"; error: string };
+
 export const MandateProposalCard = memo(function MandateProposalCard({ proposal, committed, onAdjust }: Props) {
   const [busyOrdinal, setBusyOrdinal] = useState<number | null>(null);
   const [adjustingOrdinal, setAdjustingOrdinal] = useState<number | null>(null);
   const [pendingOrdinal, setPendingOrdinal] = useState<number | null>(null);
+  const [accountOptions, setAccountOptions] = useState<AccountOptions>({ status: "idle" });
+  const [accountRef, setAccountRef] = useState("");
+  const broker = proposal.account?.broker?.trim().toLowerCase() ?? "";
+
+  // The account is chosen by the user in the confirm step, from the broker's own
+  // list. The proposal (written by the agent) never carries one, and nothing is
+  // preselected: a mandate must not silently bind to the broker's default account.
+  useEffect(() => {
+    if (pendingOrdinal == null || !broker || accountOptions.status !== "idle") return;
+    setAccountOptions({ status: "loading" });
+    api.getLiveAccounts(broker)
+      .then((result) => setAccountOptions({
+        status: "ready",
+        required: result.account_selection_required,
+        accounts: result.accounts,
+      }))
+      .catch((error) => setAccountOptions({
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      }));
+  }, [pendingOrdinal, broker, accountOptions.status]);
+
+  const accountRequired = accountOptions.status === "ready" && accountOptions.required;
+  const accountReady = accountOptions.status === "ready" && (!accountOptions.required || Boolean(accountRef));
 
   const handleCommit = useCallback(
-    async (ordinal: number) => {
+    async (ordinal: number, selectedAccount: string) => {
       if (busyOrdinal != null) return;
-      const broker = proposal.account?.broker?.trim().toLowerCase();
       if (!broker) {
         toast.error(i18n.t("mandate.noBroker"));
         return;
@@ -217,6 +245,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
           adjustments: null,
           consent_ack: true,
           session_id: proposal.session_id,
+          ...(selectedAccount ? { account_ref: selectedAccount } : {}),
         });
         // Card collapses to the active-mandate badge when the mandate.committed
         // SSE event arrives; no optimistic state-write here.
@@ -225,7 +254,7 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
         toast.error(error instanceof Error ? error.message : i18n.t("mandate.failedToCommit"));
       }
     },
-    [busyOrdinal, proposal.account?.broker, proposal.proposal_id, proposal.session_id],
+    [busyOrdinal, broker, proposal.proposal_id, proposal.session_id],
   );
 
   const pendingProfile = proposal.profiles.find((p) => p.ordinal === pendingOrdinal) ?? null;
@@ -350,13 +379,57 @@ export const MandateProposalCard = memo(function MandateProposalCard({ proposal,
         confirmLabel={i18n.t("mandate.confirmButton")}
         cancelLabel={i18n.t("mandate.cancel")}
         tone="destructive"
-        onCancel={() => setPendingOrdinal(null)}
+        confirmDisabled={!accountReady}
+        onCancel={() => {
+          setPendingOrdinal(null);
+          // A failed account read is retried the next time the dialog opens.
+          if (accountOptions.status === "error") setAccountOptions({ status: "idle" });
+        }}
         onConfirm={() => {
           const ordinal = pendingOrdinal;
+          if (ordinal == null || !accountReady) return;
           setPendingOrdinal(null);
-          if (ordinal != null) handleCommit(ordinal);
+          handleCommit(ordinal, accountRequired ? accountRef : "");
         }}
       >
+        {accountOptions.status === "loading" && (
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {i18n.t("mandate.accountLoading")}
+          </p>
+        )}
+        {accountOptions.status === "error" && (
+          <p role="alert" className="mb-2 break-words text-[11px] text-destructive">
+            {i18n.t("mandate.accountLoadFailed", { error: accountOptions.error })}
+          </p>
+        )}
+        {accountOptions.status === "ready" && accountOptions.required && (
+          <label className="mb-2 block text-[11px] text-muted-foreground">
+            {i18n.t("mandate.accountLabel")}
+            <select
+              value={accountRef}
+              onChange={(event) => setAccountRef(event.target.value)}
+              className="mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-xs text-foreground"
+            >
+              <option value="">{i18n.t("mandate.accountChoose")}</option>
+              {accountOptions.accounts.map((account) => {
+                const unusable = account.deactivated || !account.agentic_allowed;
+                return (
+                  <option key={account.account_ref} value={account.account_ref} disabled={unusable}>
+                    {account.label}
+                    {account.is_default ? i18n.t("mandate.accountDefault") : ""}
+                    {account.deactivated
+                      ? i18n.t("mandate.accountDeactivated")
+                      : !account.agentic_allowed
+                        ? i18n.t("mandate.accountNotAgentic")
+                        : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <span className="mt-1 block">{i18n.t("mandate.accountHint")}</span>
+          </label>
+        )}
         {pendingProfile && (
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg border bg-muted/20 p-2.5 text-[11px]">
             <div className="col-span-2">

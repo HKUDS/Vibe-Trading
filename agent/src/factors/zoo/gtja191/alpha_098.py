@@ -48,7 +48,8 @@ __alpha_meta__ = {
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
     ma = ts_mean(c, 30)
-    cond_a = safe_div(delta(ma, 30), c.shift(30)) <= 0.05
+    drift = safe_div(delta(ma, 30), c.shift(30))
     branch1 = -1.0 * (c - ts_min(c, 30))
     branch2 = -1.0 * delta(c, 3)
-    return branch1.where(cond_a, branch2)
+    # An unknown drift selects neither branch; a NaN comparison is False, which picked branch2 (#1463).
+    return branch1.where(drift <= 0.05, branch2).where(drift.notna())

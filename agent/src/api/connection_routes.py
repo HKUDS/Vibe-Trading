@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.security import require_auth, require_settings_write_auth
 from src.portfolio.compatibility import profile_compatibility
 from src.portfolio.config import PortfolioSettingsStore
+from src.trading.accounts import AccountListUnavailable, choose_account, connection_accounts
 from src.trading.connections import (
     ConnectionStore,
-    TradingConnection,
     credential_fields,
     readonly_profile_catalog,
 )
@@ -25,6 +27,12 @@ class ConnectionRequest(BaseModel):
     id: str = Field(min_length=1, max_length=80)
     profile_id: str = Field(min_length=1, max_length=80)
     label: str = Field(min_length=1, max_length=80)
+
+
+class AccountSelectionRequest(BaseModel):
+    """Payload selecting the broker account a connection reads; empty clears it."""
+
+    account_ref: str = Field("", max_length=128)
 
 
 class CredentialRequest(BaseModel):
@@ -100,18 +108,51 @@ def register_connection_routes(app: FastAPI) -> None:
             current = instance.get(connection_id)
             if payload.profile_id.strip().lower() != current.profile_id:
                 raise ValueError("connection profile cannot be changed")
-            updated = instance.save(
-                TradingConnection(
-                    id=current.id,
-                    profile_id=current.profile_id,
-                    label=payload.label,
-                    credential_ref=current.credential_ref,
-                    created_at=current.created_at,
-                )
-            )
+            # replace() keeps every field the rename does not name, including
+            # the selected account.
+            updated = instance.save(replace(current, label=payload.label))
             return {"status": "ok", "connection": updated.to_dict()}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get(
+        "/api/connections/{connection_id}/accounts",
+        dependencies=[Depends(require_auth)],
+    )
+    def list_connection_accounts(connection_id: str):
+        """List the broker accounts a connection's login can reach."""
+        try:
+            connection = store().get(connection_id)
+            accounts = connection_accounts(connection)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except AccountListUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {
+            "status": "ok",
+            "connection_id": connection.id,
+            "account_ref": connection.account_ref,
+            "accounts": accounts,
+        }
+
+    @app.put(
+        "/api/connections/{connection_id}/account",
+        dependencies=[Depends(require_settings_write_auth)],
+    )
+    def select_connection_account(connection_id: str, payload: AccountSelectionRequest):
+        """Scope a connection's reads to one account from the broker's own list."""
+        account_ref = payload.account_ref.strip()
+        try:
+            instance = store()
+            connection = instance.get(connection_id)
+            if account_ref:
+                choose_account(connection_accounts(connection), account_ref)
+            updated = instance.select_account(connection.id, account_ref)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except AccountListUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"status": "ok", "connection": updated.to_dict()}
 
     @app.post(
         "/api/connections/{connection_id}/credentials",

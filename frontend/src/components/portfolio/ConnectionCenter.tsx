@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, FolderCode, Loader2, PlugZap, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { CheckCircle2, FolderCode, Loader2, PlugZap, Plus, ShieldCheck, Trash2, Wallet, X } from "lucide-react";
 import { PortfolioCompatibilityBadge } from "@/components/portfolio/PortfolioCompatibilityBadge";
-import { api, type ConnectionsResponse, type LocalConnection } from "@/lib/api";
+import { api, type BrokerAccountChoice, type ConnectionsResponse, type LocalConnection } from "@/lib/api";
 
 interface Props {
   open: boolean;
@@ -186,11 +186,79 @@ function ConnectionCard({ connection, busy, testResult, onTest, onDelete, onSave
   return <article className="rounded-xl border bg-card p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="font-medium">{connection.label}</div><div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground"><span>{connection.connector.toUpperCase()}</span><span>·</span><span>{connection.environment === "live" ? t("portfolio.env.live") : t("portfolio.env.paper")}</span><span>·</span><span>{connection.transport}</span></div></div><div className="flex flex-col items-end gap-2"><span className="inline-flex items-center gap-1 rounded-full bg-positive/10 px-2 py-1 text-xs text-positive"><ShieldCheck className="h-3 w-3" />{t("portfolio.connections.readOnly")}</span><PortfolioCompatibilityBadge compatibility={connection.portfolio_compatibility} /></div></div>
     {connection.onboarding ? <SetupContract onboarding={connection.onboarding} /> : null}
+    {connection.account_selection_required ? <AccountSelector connection={connection} busy={busy} setBusy={setBusy} setMessage={setMessage} onSaved={onSaved} /> : null}
     {connection.credential_fields.length ? <div className="mt-4 grid gap-2 sm:grid-cols-2">{connection.credential_fields.map((field) => <label key={field.name} className="text-xs text-muted-foreground">{field.label}{field.required ? <span className="ml-1 text-danger">*</span> : <span className="ml-1">{t("portfolio.connections.optional")}</span>}{connection.credential_status[field.name] ? <span className="ml-1 text-positive">{t("portfolio.connections.credentialSaved")}</span> : null}<input type={field.secret ? "password" : "text"} value={values[field.name] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} className={`mt-1 ${fieldClass}`} placeholder={connection.credential_status[field.name] ? "••••••••" : ""} autoComplete="off" /></label>)}</div> : <p className="mt-3 text-xs text-muted-foreground">{connection.transport === "remote_mcp" ? t("portfolio.connections.oauthNote") : t("portfolio.connections.localNote")}</p>}
     <div className="mt-4 flex flex-wrap gap-2">{connection.credential_fields.length ? <button type="button" onClick={() => void saveCredentials()} disabled={busy === `credentials:${connection.id}` || !Object.values(values).some(Boolean)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs disabled:opacity-40"><ShieldCheck className="h-3.5 w-3.5" />{t("portfolio.connections.saveVault")}</button> : null}<button type="button" onClick={() => void onTest(connection)} disabled={busy === `test:${connection.id}`} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs">{busy === `test:${connection.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}{t("portfolio.connections.test")}</button><button type="button" onClick={() => void onDelete(connection)} disabled={busy === `delete:${connection.id}`} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" />{t("portfolio.connections.delete")}</button></div>
     {testResult ? <div role="status" className={`mt-3 rounded-md border px-3 py-2 text-xs ${testResult.ok ? "border-positive/30 bg-positive/5 text-positive" : "border-danger/30 bg-danger/5 text-danger"}`}>{testResult.message}</div> : null}
     {connection.credentials_configured ? <div className="mt-3 flex items-center gap-1.5 text-xs text-positive"><CheckCircle2 className="h-3.5 w-3.5" />{t("portfolio.connections.configured")}</div> : null}
   </article>;
+}
+
+/**
+ * Picks the one broker account an account-scoped connection (Robinhood) reads.
+ * The list comes from the broker; nothing is preselected, so a connection never
+ * silently reads the broker's default account.
+ */
+function AccountSelector({ connection, busy, setBusy, setMessage, onSaved }: { connection: LocalConnection; busy: string | null; setBusy: (value: string | null) => void; setMessage: (value: string | null) => void; onSaved: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const [accounts, setAccounts] = useState<BrokerAccountChoice[] | null>(null);
+  const [choice, setChoice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const loading = busy === `accounts:${connection.id}`;
+  const saving = busy === `account:${connection.id}`;
+
+  async function loadAccounts() {
+    setBusy(`accounts:${connection.id}`);
+    setError(null);
+    try {
+      const result = await api.getConnectionAccounts(connection.id);
+      setAccounts(result.accounts);
+      setChoice("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function save() {
+    if (!choice) return;
+    setBusy(`account:${connection.id}`);
+    setError(null);
+    setMessage(null);
+    try {
+      await api.selectConnectionAccount(connection.id, choice);
+      setAccounts(null);
+      setChoice("");
+      await onSaved();
+      setMessage(t("portfolio.connections.accountSaved"));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return <div className="mt-4 rounded-md border bg-muted/20 p-3 text-xs">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0">
+        <div className="font-medium text-foreground">{t("portfolio.connections.accountTitle")}</div>
+        <p className={`mt-1 ${connection.account_ref ? "text-muted-foreground" : "text-warning"}`}>{connection.account_ref ? t("portfolio.connections.accountCurrent", { last4: connection.account_ref.slice(-4) }) : t("portfolio.connections.accountNone")}</p>
+      </div>
+      <button type="button" onClick={() => void loadAccounts()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs disabled:opacity-40">{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wallet className="h-3.5 w-3.5" />}{connection.account_ref ? t("portfolio.connections.accountChange") : t("portfolio.connections.accountLoad")}</button>
+    </div>
+    {accounts && !accounts.length ? <p className="mt-3 text-muted-foreground">{t("portfolio.connections.accountEmpty")}</p> : null}
+    {accounts && accounts.length ? <div className="mt-3 flex flex-wrap items-end gap-2">
+      <label className="min-w-0 flex-1 text-muted-foreground">{t("portfolio.connections.accountPicker")}
+        <select value={choice} onChange={(event) => setChoice(event.target.value)} className={`mt-1 ${fieldClass}`}>
+          <option value="">{t("portfolio.connections.accountChoose")}</option>
+          {accounts.map((account) => <option key={account.account_ref} value={account.account_ref} disabled={account.deactivated}>{account.label}{account.is_default ? t("portfolio.connections.accountDefault") : ""}{account.deactivated ? t("portfolio.connections.accountDeactivated") : ""}</option>)}
+        </select>
+      </label>
+      <button type="button" onClick={() => void save()} disabled={!choice || saving} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-40">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}{t("portfolio.connections.accountSave")}</button>
+    </div> : null}
+    {error ? <div role="alert" className="mt-2 break-words text-danger">{error}</div> : null}
+  </div>;
 }
 
 function SetupContract({ onboarding }: { onboarding: NonNullable<LocalConnection["onboarding"]> }) {

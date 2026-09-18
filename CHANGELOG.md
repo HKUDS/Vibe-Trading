@@ -5,6 +5,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A Robinhood account can be a read-only portfolio source** (#1428). The new
+  `robinhood-live-mcp-readonly` profile uses the same MCP server and OAuth
+  grant as the trading profile. Its connection reads exactly one account,
+  picked from Robinhood's own `get_accounts` list in the connection center or
+  with `vibe-trading connector select-account <id>`. Nothing is preselected,
+  and a source with no account errors before any broker call. Holdings come
+  from `get_portfolio` and `get_equity_positions` and are mapped only from the
+  shapes the reporter posted. A second page of positions, a null list or item,
+  or an unknown field is an error, not a shorter account. Positions show
+  quantity and cost but no price until the quote reply is mapped. An account
+  that also holds options, crypto, futures, event contracts, mutual funds or
+  fixed income fails the source instead of showing an equity-only view.
+
 ### Changed
 
 - **The final-answer grounding gate no longer guesses what a number is from the
@@ -60,6 +75,82 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   arrives, in all eight locales.
 
 ### Fixed
+
+- **A redacted answer keeps its row numbers and its labels** (#1471). When the
+  grounding gate released a draft with its unverified figures cut, a ranked
+  table came back with `(omitted※)` in place of 1, 2, 3, of the `12m` in its
+  headers and of "3 names" in the prose. Every integer in a table cell was a
+  measurement, so the rank column was cut; and each cut figure's digits were
+  then swept out of the rest of the page, single digits included. Three shape
+  rules, no word list: a column whose numbered cells read 1, 2, 3 … in row
+  order is the table's index; a plain integer in a cell that also holds a
+  word (`12m mean return`, `Mean beta (9 reported)`) is read as it would be
+  in a sentence, while a cell that holds only a number, any decimal, percent
+  or currency figure, and every cell under an OHLC column stay measurements;
+  and the sweep never keys on a single digit. An integer price of an
+  instrument quoted in the thousands is still checked inside a worded cell.
+- **One cash-starved open is one rejection, not twenty-six** (#1470). In
+  `position_adjustment="hold"`, the search that scales a basket down to the
+  cash available re-planned every open on each step, and every step whose
+  size rounded to zero booked a `zero_size` rejection for the same symbol on
+  the same bar — one contract the cash could not hold read as 26 lot-rounding
+  failures. The trial plans are silent now; a sleeve that was a real order at
+  full scale and left the basket is reported once, after the search, as
+  `insufficient_capital`, which the rebalance path's dropped sleeves now use
+  too. `zero_size` means the lot rule and nothing else.
+- **A real VaR result grounds the VaR it returned** (#1464). `quantlib_call`
+  records a scalar result under the function name. For `historical_var` and
+  `parametric_var` that name reduces to `var`, which the grounding gate accepts
+  only as a whole field name, so the result recorded no evidence and a correct
+  answer quoting it was rejected. Both names are now tail-risk aliases.
+  Variances such as `residual_var` stay unmapped.
+- **Twenty alphas no longer fill a missing input with a constant** (#1463).
+  A halt left a comparison reading 0 or False, a `.where(cond, 0)` reading a
+  flat day, or an `np.fmax` returning the other side, and the value then fed
+  every rolling window that reached back to the gap. Those cells are NaN now.
+  On gap-free data every finite value is bit-identical to before. A
+  perturbation sweep over all 462 alphas counts 35 still carrying a missing
+  bar forward, down from 55, and every one of them is accounted for: 28 are
+  recursive statistics (the GTJA `SMA(A, n, m)` smoothers and one running
+  product), which by the policy set on #1463 skip a missing observation and
+  continue from their last state — the operator layer's header now states
+  that exception, and a test pins it; 3 declare their own partial window; 4
+  are the sweep's own rank-tie artifact. Nothing rewarms a smoother after a
+  gap, and the registry's look-back mask was measured and rejected: it hid
+  4,270 legitimate cells to remove 41% of the fabricated ones.
+- **A `local:` code in a backtest is served from your own dataset or not at
+  all** (#1467). The market-data tool and the README already treated
+  `local:AAPL.US` this way, but the backtest runner did not. With
+  `source="local"` it counted the served `AAPL.US` as missing and sent it down
+  the A-share network fallback chain. With `source="auto"` it ignored the
+  prefix and fetched the symbol from network loaders. The prefix now picks the
+  local loader only, a symbol the dataset lacks fails with
+  `incomplete data for source=local`, and the rest of the run sees the bare
+  symbol: market rules, artifacts (`ohlcv_AAPL.US.csv`, no colon in the file
+  name) and the run card. A `local:` code requested from a network source, or
+  one symbol requested both with and without the prefix, is refused up front.
+- **Event-study z-statistics no longer over-reject** (#1466). A CAR's standard
+  error summed each day's variance, ignoring that every day is forecast with
+  the same estimated parameters, so the days' abnormal returns are correlated.
+  On null data, the standardised CAR's variance was 1.11 with a 120-day
+  estimation window and 1.41–1.46 with a 30-day one. It is now 1.02 and 1.07,
+  which is only the t correction for an estimated residual variance. Patell and
+  BMP inherit the fix; `market_adjusted` was already right.
+- **Robinhood live trading reads and trades the account the mandate names**
+  (#1442). The runner, the pre-trade gate and the commit-time ceiling fetch
+  called Robinhood with no `account_number`, and read replies one level too
+  shallow (`data.positions` where Robinhood nests `data.data.positions`). So
+  every reconciliation aborted, and the gate refused every order because it
+  could not read positions. The tests stayed green only because their fake
+  replies had a shape Robinhood never sends. A Robinhood mandate is now bound
+  at commit to one account from `get_accounts`: listed, not deactivated, and
+  open to agentic trading. The Web confirm dialog and the CLI both ask for
+  it, and never take it from the agent-written proposal. Every runner and gate
+  call sends that account, and an order naming another account is refused.
+  Held positions, which Robinhood reports without a price, are priced the way
+  a quantity order already was, and one that cannot be priced fails the
+  exposure check closed. Existing Robinhood mandates must be committed again
+  with an account.
 
 - **Plain integers in prose are not price claims.** A list number ("输出原则
   4"), a window length or a count was checked like a quoted price and could be

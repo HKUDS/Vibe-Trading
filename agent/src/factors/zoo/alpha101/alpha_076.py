@@ -94,7 +94,8 @@ def compute(panel: dict) -> pd.DataFrame:
     ind_neutralize = _ind_neutralize
     a = rank(decay_linear(delta(vwap, 1), 12))
     b = ts_rank(decay_linear(ts_rank(ts_corr(ind_neutralize(low, panel), adv81, 8), 20), 17), 19)
+    # np.maximum / np.minimum propagate a missing side; np.fmax / np.fmin returned the other one (#1463).
     arr_a = a.to_numpy(dtype=np.float64, na_value=np.nan)
     arr_b = b.to_numpy(dtype=np.float64, na_value=np.nan)
-    out = pd.DataFrame(np.fmax(arr_a, arr_b), index=close.index, columns=close.columns) * -1.0
+    out = pd.DataFrame(np.maximum(arr_a, arr_b), index=close.index, columns=close.columns) * -1.0
     return out

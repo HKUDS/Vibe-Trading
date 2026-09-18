@@ -14,6 +14,7 @@ Covers SPEC.md §9 Decision 1 (CLI surface table) and Consent §2/§4:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 import json
 from pathlib import Path
 from typing import Any, Dict
@@ -467,6 +468,19 @@ class TestNumericPick:
 # ---------------------------------------------------------------------------
 
 
+class _AccountListing:
+    """Stands in for ``httpx.get`` on ``/live/accounts``."""
+
+    def __init__(self, payload: Dict[str, Any]) -> None:
+        self.payload = payload
+        self.calls: list[Dict[str, Any]] = []
+
+    def __call__(self, url: str, params: Dict[str, Any], headers: Dict[str, str], timeout: float):
+        assert url.endswith("/live/accounts")
+        self.calls.append(dict(params))
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: self.payload)
+
+
 def _proposal() -> Dict[str, Any]:
     return {
         "proposal_id": "mp_" + "3" * 32,
@@ -556,10 +570,12 @@ class TestProposalPickIntercept:
             return _Resp()
 
         monkeypatch.setenv("API_AUTH_KEY", "cli-secret")
-        with patch("httpx.post", _fake_post):
+        listing = _AccountListing({"account_selection_required": False, "accounts": []})
+        with patch("httpx.post", _fake_post), patch("httpx.get", listing):
             result = _commit_mandate(_proposal(), 2)
 
         assert result["mandate_id"] == "m1"
+        assert listing.calls == [{"broker": "robinhood"}]
         assert captured["url"].endswith("/mandate/commit")
         assert captured["body"]["selected_ordinal"] == 2
         assert captured["body"]["proposal_id"] == "mp_" + "3" * 32
@@ -573,12 +589,60 @@ class TestProposalPickIntercept:
         proposal = _proposal()
         proposal["account"] = {"type": "cash"}
 
-        with patch("httpx.post") as post:
+        with patch("httpx.post") as post, patch("httpx.get") as get:
             result = _commit_mandate(proposal, 1)
 
         assert result["status"] == "error"
         assert "broker" in result["error"]
         post.assert_not_called()
+        get.assert_not_called()
+
+    def test_an_account_bound_broker_commits_the_account_the_user_picks(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The account comes from the user's pick, never from the proposal."""
+        rows = [
+            {"account_ref": "5QR12345", "label": "Main ····2345", "is_default": True, "agentic_allowed": True, "deactivated": False},
+        ]
+        seen: Dict[str, Any] = {}
+        posted: Dict[str, Any] = {}
+        listing = _AccountListing({"account_selection_required": True, "accounts": rows})
+
+        def _choose(accounts: list) -> str:
+            seen["accounts"] = accounts
+            return "5QR12345"
+
+        def _fake_post(url, json, headers, timeout):  # noqa: A002, ANN001
+            posted.update(json)
+            return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"status": "ok", "mandate_id": "m2"})
+
+        monkeypatch.delenv("API_AUTH_KEY", raising=False)
+        with patch("httpx.post", _fake_post), patch("httpx.get", listing):
+            result = _commit_mandate(_proposal(), 1, choose_account=_choose)
+
+        assert result["mandate_id"] == "m2"
+        assert seen["accounts"] == rows
+        assert posted["account_ref"] == "5QR12345"  # not the proposal's "acct-demo"
+
+    def test_no_chosen_account_commits_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        listing = _AccountListing({"account_selection_required": True, "accounts": []})
+        with patch("httpx.post") as post, patch("httpx.get", listing):
+            result = _commit_mandate(_proposal(), 1, choose_account=lambda accounts: "")
+
+        assert result == {"status": "error", "error": "no account was chosen for this mandate"}
+        post.assert_not_called()
+
+    def test_the_default_chooser_offers_only_usable_accounts_and_preselects_nothing(self, monkeypatch) -> None:
+        rows = [
+            {"account_ref": "A1", "label": "Main", "is_default": True, "agentic_allowed": True, "deactivated": False},
+            {"account_ref": "A2", "label": "IRA", "is_default": False, "agentic_allowed": False, "deactivated": False},
+            {"account_ref": "A3", "label": "Old", "is_default": False, "agentic_allowed": True, "deactivated": True},
+            {"account_ref": "A4", "label": "Joint", "is_default": False, "agentic_allowed": True, "deactivated": False},
+        ]
+        replies = iter(["", "2", "9"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(replies))
+
+        assert main._choose_mandate_account(rows) == ""  # an empty reply is not the default
+        assert main._choose_mandate_account(rows) == "A4"  # [1] Main, [2] Joint
+        assert main._choose_mandate_account(rows) == ""  # out of range
 
 
 # ---------------------------------------------------------------------------

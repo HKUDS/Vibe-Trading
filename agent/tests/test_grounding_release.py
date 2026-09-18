@@ -2104,3 +2104,64 @@ def test_a_checked_measurement_streams_once_the_gate_passes(tmp_path: Path) -> N
 
     assert result["content"] == prose
     assert streamed == prose
+
+
+# ---------------------------------------------------------------------------
+# #1471 — a redaction cuts the invented figures, not the table's furniture
+# ---------------------------------------------------------------------------
+
+_SCREEN = (
+    "562500.SS (Yahoo, CNY) last close 1.171.\n\n"
+    "| # | Ticker | Sector | 9/16 Close | 12m | 6m | Fwd PE |\n"
+    "|---|---|---|---|---|---|---|\n"
+    "| 1 | 562500.SS | ETF (robotics) | 1.171 | +8.0% | +3.0% | 22.5 |\n"
+    "| 2 | 562500.SS | ETF (robotics) | 1.137 | +5.0% | +2.0% | 18.1 |\n"
+    "| 3 | 562500.SS | ETF (robotics) | 1.171 | +4.0% | +1.0% | 30.2 |\n\n"
+    "| Metric | Value |\n|---|---|\n| 12m mean return | +5.7% |\n| Mean beta (3 reported) | 1.35 |\n\n"
+    "1. Names 1 to 3 are up over 12m and 6m; the sleeve is 3 names in 1 sector.\n"
+    "2. Name 2 trades lower vs the 9/16 close.\n"
+)
+
+
+def test_a_redacted_screen_keeps_its_row_numbers_and_labels(tmp_path: Path) -> None:
+    """The reporter's table came back with its ranks, "12m" and "3 names" all omitted.
+
+    Every row number was a table cell, so a measurement, so cut; and each cut
+    digit was then swept out of the prose. Only the invented returns, multiples
+    and beta may go.
+    """
+    ledger = _ledger(tmp_path, message="Screen a few names and rank them")
+    validation = ledger.validate_final_answer(_SCREEN)
+    flagged = sorted(str(issue["value"]) for issue in validation.issues)
+    assert flagged == sorted(
+        ["+8.0%", "+3.0%", "22.5", "+5.0%", "+2.0%", "18.1", "+4.0%", "+1.0%", "30.2", "+5.7%", "1.35"]
+    )
+
+    released = ledger.redacted_release(_SCREEN, validation)
+
+    assert released is not None
+    for kept in (
+        "| 1 | 562500.SS", "| 2 | 562500.SS", "| 3 | 562500.SS", "| 9/16 Close | 12m | 6m |",
+        "| 12m mean return |", "| Mean beta (3 reported) |",
+        "Names 1 to 3 are up over 12m and 6m; the sleeve is 3 names in 1 sector.",
+        "Name 2 trades lower vs the 9/16 close.",
+    ):
+        assert kept in released, kept
+    for invented in ("8.0%", "22.5", "18.1", "30.2", "5.7%", "1.35"):
+        assert invented not in released, invented
+    assert "11 figure(s)" in released
+    assert ledger.validate_final_answer(released).valid is True
+
+
+def test_the_sweep_does_not_key_on_a_single_digit(tmp_path: Path) -> None:
+    """Cutting "5%" must not take every "5" on the page; two digits still sweep (37 above)."""
+    ledger = _ledger(tmp_path)
+    draft = HDR + " 较高点回撤 5%，跌破 5 日均线，关注 5 只同类基金。"
+    validation = ledger.validate_final_answer(draft)
+
+    released = ledger.redacted_release(draft, validation)
+
+    assert released is not None
+    assert "5%" not in released
+    assert "跌破 5 日均线，关注 5 只同类基金" in released
+    assert "※ 略去 1 处" in released

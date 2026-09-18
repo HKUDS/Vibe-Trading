@@ -31,6 +31,7 @@ from src.live.mandate.model import (
 )
 from src.trading.connectors.robinhood.classification import ROBINHOOD_TOOL_CLASS
 from src.tools.mcp import MCPRemoteToolSpec
+from tests import robinhood_mcp_helpers as rh
 
 
 # --------------------------------------------------------------------------- #
@@ -215,9 +216,9 @@ class _BrokerQuoteAdapter:
 
     def call_tool(self, remote_name: str, arguments: dict, *, local_name: str | None = None) -> dict:
         if remote_name == "get_equity_positions":
-            return {"positions": [], "status": "ok"}
+            return rh.positions([])
         if remote_name == "get_portfolio":
-            return {"equity": 100000.0, "status": "ok"}
+            return rh.portfolio(total_value="100000.00", cash="100000.00", buying_power="100000.00")
         if remote_name == "get_equity_quotes":
             self.quote_calls += 1
             return {"status": "ok", "results": [{"symbol": arguments.get("symbol"), "last_price": self._price}]}
@@ -234,9 +235,9 @@ class _NoBrokerQuoteAdapter:
 
     def call_tool(self, remote_name: str, arguments: dict, *, local_name: str | None = None) -> dict:
         if remote_name == "get_equity_positions":
-            return {"positions": [], "status": "ok"}
+            return rh.positions([])
         if remote_name == "get_portfolio":
-            return {"equity": 100000.0, "status": "ok"}
+            return rh.portfolio(total_value="100000.00", cash="100000.00", buying_power="100000.00")
         if remote_name == "get_equity_quotes":
             return {"status": "error", "error": "quotes unavailable"}
         self.order_calls.append({"remote": remote_name, "arguments": arguments})

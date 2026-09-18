@@ -50,4 +50,6 @@ def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]
     pc = c.shift(1)
     signed = v.where(c > pc, -v.where(c < pc, 0.0))
+    # A missing close, prior close or volume is not a flat day (#1463).
+    signed = signed.where(c.notna() & pc.notna() & v.notna())
     return signed.rolling(6, min_periods=6).sum()

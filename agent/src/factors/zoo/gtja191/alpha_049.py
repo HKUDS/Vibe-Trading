@@ -55,8 +55,10 @@ def compute(panel: dict) -> pd.DataFrame:
                    np.abs(l.to_numpy() - l.shift(1).to_numpy())),
         index=h.index, columns=h.columns,
     )
-    dn = move.where(hl < phl, 0.0)
-    up = move.where(hl > phl, 0.0)
+    # A missing high/low today or yesterday is neither an up nor a down move (#1463).
+    valid = hl.notna() & phl.notna() & move.notna()
+    dn = move.where(hl < phl, 0.0).where(valid)
+    up = move.where(hl > phl, 0.0).where(valid)
     s_dn = dn.rolling(12, min_periods=12).sum()
     s_up = up.rolling(12, min_periods=12).sum()
     return safe_div(s_dn, s_dn + s_up)

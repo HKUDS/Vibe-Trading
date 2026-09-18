@@ -6,7 +6,18 @@ contract returns a DataFrame of the same shape — raw scores, NaN preserved
 in warmup / missing data; +/- inf is forbidden (registry rejects it).
 
 NaN policy: every operator propagates NaN; no silent ``fillna(0)``. A constant
-window for ``ts_corr`` / ``ts_cov`` returns NaN, not zero.
+window for ``ts_corr`` / ``ts_cov`` returns NaN, not zero. A missing input is
+never replaced by a constant — not a comparison read as False, not
+``.where(cond, 0)``, not ``np.fmax`` returning the other side (#1463) — and a
+full-window operator (``min_periods`` equal to its window) is NaN on every bar
+whose window holds the gap. The one exception, decided on #1463 (2026-09-18):
+a recursive statistic skips a missing observation and continues from its last
+state — the GTJA ``SMA(A, n, m)`` written as ``.ewm(alpha=m/n, adjust=False)``,
+a running product — and so does a window that declares its own partial
+coverage (``min_periods`` below its length, or a coverage rule in its notes).
+Those emit a value on the bars after a gap, computed from the observations
+they did see. Nothing rewarms them, and nothing should: the registry already
+masks the gap bar itself.
 
 Lookahead ban: ``delta(df, d)`` requires ``d >= 1``; the negative-shift
 ``Ref(df, -n)`` form is intentionally absent.

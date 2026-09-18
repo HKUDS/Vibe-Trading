@@ -21,6 +21,7 @@ import src.live.sdk_order_gate as sdk_order_gate
 from src.live.enforcement import OrderIntent
 from src.live.mandate.model import AssetClass, InstrumentType, MANDATE_SCHEMA_VERSION
 from src.tools.mcp import MCPRemoteToolSpec
+from tests import robinhood_mcp_helpers as rh
 
 
 def _connector(last: float):
@@ -93,9 +94,9 @@ class _McpQuoteAdapter:
 
     def call_tool(self, remote_name: str, arguments: dict, *, local_name=None) -> dict:
         if remote_name == "get_equity_positions":
-            return {"positions": [], "status": "ok"}
+            return rh.positions([])
         if remote_name == "get_portfolio":
-            return {"equity": 5000.0, "status": "ok"}
+            return rh.portfolio()
         if remote_name == "get_equity_quotes":
             return {"status": "ok", "results": [{"symbol": arguments.get("symbol"), "last_price": self._price}]}
         self.order_calls.append({"remote": remote_name, "arguments": arguments})

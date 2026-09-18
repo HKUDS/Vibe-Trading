@@ -63,5 +63,6 @@ def compute(panel):
     v = panel["volume"]
     left = rank(ts_corr(o, ts_mean(v, 60).rolling(9).sum(), 6))
     right = rank(o - ts_min(o, 14))
-    out = (left < right).astype("float64") * -1.0
+    # A comparison with a missing side is missing, not False (#1463).
+    out = (left < right).astype("float64").where(left.notna() & right.notna()) * -1.0
     return out

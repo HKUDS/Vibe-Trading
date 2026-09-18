@@ -61,7 +61,8 @@ def compute(panel):
     """
     c = panel["close"]
     dc = c - c.shift(1)
-    up = dc.where(dc > 0, 0.0).rolling(12).sum()
-    down = (-dc).where(dc < 0, 0.0).rolling(12).sum()
+    # A missing close change is neither a gain nor a loss (#1463).
+    up = dc.where(dc > 0, 0.0).where(dc.notna()).rolling(12).sum()
+    down = (-dc).where(dc < 0, 0.0).where(dc.notna()).rolling(12).sum()
     out = safe_div(up - down, up + down) * 100.0
     return out

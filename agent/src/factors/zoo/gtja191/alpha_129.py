@@ -61,5 +61,6 @@ def compute(panel):
     """
     c = panel["close"]
     dc = c - c.shift(1)
-    out = (-dc).where(dc < 0, 0.0).rolling(12).sum()
+    # A missing close change is not a zero loss (#1463).
+    out = (-dc).where(dc < 0, 0.0).where(dc.notna()).rolling(12).sum()
     return out

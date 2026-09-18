@@ -94,7 +94,8 @@ def compute(panel: dict) -> pd.DataFrame:
     mix = close * 0.369701 + vwap * (1.0 - 0.369701)
     a = rank(decay_linear(delta(mix, 2), 3))
     b = ts_rank(decay_linear(ts_corr(ind_neutralize(adv81, panel), close, 13).abs(), 5), 14)
+    # np.maximum / np.minimum propagate a missing side; np.fmax / np.fmin returned the other one (#1463).
     arr_a = a.to_numpy(dtype=np.float64, na_value=np.nan)
     arr_b = b.to_numpy(dtype=np.float64, na_value=np.nan)
-    out = pd.DataFrame(np.fmax(arr_a, arr_b), index=close.index, columns=close.columns) * -1.0
+    out = pd.DataFrame(np.maximum(arr_a, arr_b), index=close.index, columns=close.columns) * -1.0
     return out
