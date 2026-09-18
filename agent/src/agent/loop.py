@@ -78,6 +78,13 @@ SUMMARY_CHUNK_CHARS = 80_000
 # retry once with a nudge before failing the run on a second consecutive one.
 MAX_CONSECUTIVE_EMPTY_RESPONSE_SKIPS = 1
 
+# Compaction recovery is a bounded reliability aid, not an alternate research
+# loop. This mirrors the grounding recovery design: once the run has restored
+# enough lost readonly payloads, later context loss keeps those exact calls
+# locked so the planner must continue from summaries/other evidence instead of
+# churning through replay forever.
+MAX_READONLY_REPLAY_RECOVERIES = 6
+
 
 def _override(name: str):
     """Return a monkeypatched module-level override if present."""
@@ -475,6 +482,35 @@ def _cleared_text(original_len: int) -> str:
 def _is_cleared(content: Any) -> bool:
     """True when ``content`` is a layer-1 cleared-result marker."""
     return isinstance(content, str) and content.startswith(_CLEARED_PREFIX)
+
+
+def _replay_context_result(result: str) -> str:
+    """Annotate a restored readonly result with planner guidance.
+
+    Replay exists to recover evidence that context compaction removed, not to
+    trigger another fetch under slightly different freshness arguments. Keep
+    the original payload intact and add a reserved metadata field when the
+    result is a JSON object; non-JSON results get a short textual suffix.
+    """
+    notice = (
+        "Exact prior successful result restored after context compaction. "
+        "Treat this payload as available evidence and continue the analysis. "
+        "Do not change cache/freshness arguments merely to bypass replay; "
+        "request a fresh fetch only when the evidence itself is stale/cached "
+        "or the task genuinely requires newer data."
+    )
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError):
+        return f"{result}\n\n[Replay notice: {notice}]"
+    if not isinstance(payload, dict):
+        return f"{result}\n\n[Replay notice: {notice}]"
+    replay_payload = dict(payload)
+    replay_payload["_vibe_replay"] = {
+        "restored": True,
+        "notice": notice,
+    }
+    return json.dumps(replay_payload, ensure_ascii=False)
 
 
 def _microcompact(messages: list) -> list:
@@ -1119,6 +1155,7 @@ class AgentLoop:
         self._readonly_replay_cache: dict[tuple[str, str], str] = {}
         self._readonly_replay_ready: set[tuple[str, str]] = set()
         self._readonly_replay_protected: set[tuple[str, str]] = set()
+        self._readonly_replay_recoveries = 0
         self._tool_progress = ToolProgress()
 
     def cancel(self) -> None:
@@ -1218,6 +1255,7 @@ class AgentLoop:
         self._readonly_replay_cache = {}
         self._readonly_replay_ready = set()
         self._readonly_replay_protected = set()
+        self._readonly_replay_recoveries = 0
         self._tool_progress = ToolProgress()
         run_started_wall = _time.time()
 
@@ -2428,22 +2466,21 @@ class AgentLoop:
             # this path, while repeatable calls must explicitly opt in.
             if (
                 dedup_key is not None
-                and (
-                    dedup_key in self._readonly_replay_ready
-                    or dedup_key in self._readonly_replay_protected
-                )
+                and dedup_key in self._readonly_replay_ready
                 and self._readonly_replay_allowed(tool_def, tc.arguments)
                 and dedup_key in self._readonly_replay_cache
             ):
                 cached = self._readonly_replay_cache[dedup_key]
+                restored = _replay_context_result(cached)
                 messages.append(
                     context.format_tool_result(
-                        tc.id, tc.name, truncate_tool_result(cached)
+                        tc.id, tc.name, truncate_tool_result(restored)
                     )
                 )
                 self._successful_call_keys[tc.id] = dedup_key
                 self._called_ok.add(dedup_key)
                 self._readonly_replay_ready.discard(dedup_key)
+                self._readonly_replay_recoveries += 1
                 # Restoring data that compaction removed is forward progress for
                 # the working context, but not a new external observation.
                 self._tool_progress.mark_context_restored()
@@ -2452,6 +2489,8 @@ class AgentLoop:
                     "iter": iteration,
                     "tool": tc.name,
                     "call_id": tc.id,
+                    "recovery_count": self._readonly_replay_recoveries,
+                    "recovery_limit": MAX_READONLY_REPLAY_RECOVERIES,
                 })
                 react_trace.append({"type": "tool_result_replayed", "tool": tc.name})
                 self._emit(
@@ -2477,7 +2516,16 @@ class AgentLoop:
                 )
             ):
                 logger.warning(f"Blocked duplicate call: {tc.name} (already succeeded)")
-                skip_msg = json.dumps({"skipped": True, "reason": f"{tc.name} already completed successfully. Use the previous result."})
+                replay_restored = dedup_key in self._readonly_replay_protected
+                reason = (
+                    f"{tc.name} was just restored from the run-scoped replay cache after "
+                    "compaction. The payload is already visible in context; use that "
+                    "result and continue the analysis instead of requesting the same "
+                    "call again."
+                    if replay_restored
+                    else f"{tc.name} already completed successfully. Use the previous result."
+                )
+                skip_msg = json.dumps({"skipped": True, "reason": reason})
                 messages.append(context.format_tool_result(tc.id, tc.name, skip_msg))
                 trace.write({"type": "tool_skipped", "iter": iteration, "tool": tc.name})
                 react_trace.append({"type": "tool_skipped", "tool": tc.name})
@@ -3082,9 +3130,13 @@ class AgentLoop:
     ) -> list[str]:
         """Recover only lost exact queries; context loss cannot replay writes."""
         lost = readable_before - self._readable_success_keys(messages)
-        reopened = {
+        candidates = {
             key for key in lost & self._called_ok if self._is_tool_readonly(key[0])
         }
+        replay_budget_available = (
+            self._readonly_replay_recoveries < MAX_READONLY_REPLAY_RECOVERIES
+        )
+        reopened = candidates if replay_budget_available else set()
         self._called_ok.difference_update(reopened)
         replayable = {key for key in reopened if key in self._readonly_replay_cache}
         self._readonly_replay_ready.update(replayable)

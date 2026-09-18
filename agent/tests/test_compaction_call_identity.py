@@ -234,6 +234,45 @@ def test_recovered_cached_result_restores_identical_call_gate(harness):
     assert len(h.tool.calls) == 1
 
 
+def test_replayable_repeatable_result_restores_gate_after_one_replay(harness):
+    """Match deterministic recovery semantics for mutable readonly replay.
+
+    One genuine context loss permits one run-scoped replay. Once that payload
+    is visible again, an immediate identical planner request is skipped rather
+    than replayed again or re-fetched. A later genuine context loss may reopen
+    the same exact identity once more.
+    """
+    h = harness
+    h.tool.repeatable = True
+    h.tool.replay_after_compaction = True
+    args = {"statement": "income"}
+
+    first = h.call(args)
+    assert len(h.tool.calls) == 1
+
+    h.pad()
+    h.agent._microcompact_and_unblock(h.messages, h.trace, 2)
+    assert _is_cleared(first["content"])
+
+    replay = h.call(args)
+    assert json.loads(replay["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 1, "lost readonly data must replay without refetch"
+
+    repeated = h.call(args)
+    repeated_payload = json.loads(repeated["content"])
+    assert repeated_payload.get("skipped") is True
+    assert "restored from the run-scoped replay cache" in repeated_payload["reason"]
+    assert len(h.tool.calls) == 1, "visible replay must restore the exact-call gate"
+
+    # Lose the restored copy in a later compaction: that is a new recovery
+    # event, so one more replay is allowed, still without an external fetch.
+    h.pad()
+    h.agent._microcompact_and_unblock(h.messages, h.trace, 3)
+    second_replay = h.call(args)
+    assert json.loads(second_replay["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 1
+
+
 def test_readable_cached_duplicate_keeps_exact_key_locked(harness):
     h = harness
     # A repeatable deterministic tool can have two successful readable copies,

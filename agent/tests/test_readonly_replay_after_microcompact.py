@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 
-from src.agent.loop import AgentLoop
+from src.agent.loop import AgentLoop, MAX_READONLY_REPLAY_RECOVERIES
 from src.agent.tool_progress import NO_PROGRESS_LIMIT, ToolProgress
 from src.tools.web_reader_tool import WebReaderTool
 
@@ -73,6 +73,7 @@ def _loop(registry=None):
     loop._readonly_replay_cache = {}
     loop._readonly_replay_ready = set()
     loop._readonly_replay_protected = set()
+    loop._readonly_replay_recoveries = 0
     loop._grounding = None
     loop._cancel_event = threading.Event()
     loop._event_callback = None
@@ -109,7 +110,12 @@ def test_replay_restores_result_without_external_execution():
     react_trace = []
     loop._process_tool_calls([tc], _Context(), messages, trace, react_trace, 22)
     assert registry.execute_calls == 0
-    assert messages[-1]["content"] == cached
+    replayed_payload = __import__("json").loads(messages[-1]["content"])
+    assert replayed_payload["status"] == "ok"
+    assert replayed_payload["body"] == "report"
+    assert replayed_payload["_vibe_replay"]["restored"] is True
+    assert "continue the analysis" in replayed_payload["_vibe_replay"]["notice"]
+    assert "freshness arguments" in replayed_payload["_vibe_replay"]["notice"]
     assert key in loop._called_ok
     assert key not in loop._readonly_replay_ready
     assert key in loop._readonly_replay_protected
@@ -175,20 +181,25 @@ def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_pro
     assert registry.execute_calls == 2
     assert key not in loop._readonly_replay_ready
 
-    # An immediate identical repeat must not escape to the external source just
-    # because the tool is repeatable; protection lasts for the rest of the run.
+    # An immediate identical repeat must not escape to the external source or
+    # replay the same payload again just because the tool is repeatable. The
+    # restored result is already visible, so the exact-call protection gate
+    # returns a synthetic skip and tells the planner to continue with it.
     tc4 = SimpleNamespace(name="read_url", arguments=args, id="call-4")
     loop._process_tool_calls([tc4], _Context(), messages, trace, react_trace, 4)
     assert registry.execute_calls == 2
-    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 2
+    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
+    assert messages[-1]["content"]
+    assert '"skipped": true' in messages[-1]["content"]
+    assert "restored from the run-scoped replay cache" in messages[-1]["content"]
 
-    # If compaction removes the replay again, the same key can be restored again
-    # without a network fetch.
+    # If compaction removes the replay again, the same key can be restored once
+    # more without a network fetch.
     loop._unblock_lost_readonly_results([], {key})
     tc5 = SimpleNamespace(name="read_url", arguments=args, id="call-5")
     loop._process_tool_calls([tc5], _Context(), messages, trace, react_trace, 5)
     assert registry.execute_calls == 2
-    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 3
+    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 2
 
 
 def test_no_cache_executes_externally_even_after_normal_read_is_protected():
@@ -249,3 +260,32 @@ def test_replay_only_iterations_remain_bounded_by_no_progress_limit():
     assert stopped is True
     assert progress.stalled_iterations == NO_PROGRESS_LIMIT
     assert iteration <= NO_PROGRESS_LIMIT
+
+
+def test_run_scoped_replay_recovery_budget_keeps_lost_calls_locked() -> None:
+    registry = _Registry(repeatable=True, replay_after_compaction=True)
+    loop = _loop(registry)
+    args = {"url": "https://example.test/report"}
+    key = loop._identical_call_key("read_url", args)
+    assert key is not None
+    loop._called_ok.add(key)
+    loop._readonly_replay_cache[key] = '{"status":"ok","body":"report"}'
+    loop._readonly_replay_protected.add(key)
+    loop._readonly_replay_recoveries = MAX_READONLY_REPLAY_RECOVERIES
+
+    reopened = loop._unblock_lost_readonly_results([], {key})
+
+    assert reopened == []
+    assert key in loop._called_ok
+    assert key not in loop._readonly_replay_ready
+
+    messages = []
+    trace = _Trace()
+    tc = SimpleNamespace(name="read_url", arguments=args, id="budget-exhausted")
+    loop._process_tool_calls([tc], _Context(), messages, trace, [], 9)
+
+    assert registry.execute_calls == 0
+    payload = __import__("json").loads(messages[-1]["content"])
+    assert payload["skipped"] is True
+    assert "restored from the run-scoped replay cache" in payload["reason"]
+    assert not any(e["type"] == "tool_result_replayed" for e in trace.events)

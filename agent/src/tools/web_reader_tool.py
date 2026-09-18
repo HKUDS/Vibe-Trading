@@ -140,7 +140,16 @@ class WebReaderTool(BaseTool):
         "type": "object",
         "properties": {
             "url": {"type": "string", "description": "URL of the web page to read"},
-            "no_cache": {"type": "boolean", "description": "Request a fresh (uncached) fetch", "default": False},
+            "no_cache": {
+                "type": "boolean",
+                "description": (
+                    "Request a fresh (uncached) fetch. Use only when the prior "
+                    "read explicitly reported cached=true or the task genuinely "
+                    "requires newer data. Never set no_cache merely because a "
+                    "previous result was compacted or replayed."
+                ),
+                "default": False,
+            },
         },
         "required": ["url"],
     }
