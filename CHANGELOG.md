@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Gildata (恒生聚源) now serves HK equities and CN indices too.** HK symbols
+  (`00700.HK`) route to `HKStockDailyQuotes`, CN index codes (`000300.SH`,
+  `399xxx.SZ` — exchange-specific, so `000001.SZ` stays Ping An Bank) route to
+  `IndexDailyQuote`; both tools take a 聚源内码, resolved through the
+  `ParamCandidateRecall` meta-tool with an exact `ref_code` match and cached
+  to `~/.vibe-trading/cache/gildata-codes.json` (one round-trip per symbol
+  per machine). HK bars are raw traded prices — stamped `raw` as a per-market
+  exception after measuring 00700.HK (the vendor's befadj/aftadj closes are
+  separate fields and ignored); HK volume already arrives in shares. The
+  loader joins the `hk_equity` chain's tail. US equities are deliberately
+  excluded: on this token `USStockDailyQuotes` history is sparse before ~2022
+  (12 rows for 2020, 134 for 2021, complete only from 2023), which would
+  silently corrupt backtests — revisit once the vendor confirms deeper US
+  entitlement.
+
 - **Gildata (恒生聚源) joins the A-share fallback chain as a token-gated
   source**. The new `gildata` loader talks to the vendor's raw-api MCP
   endpoint (one JSON-RPC POST per call, token on the URL query string) and

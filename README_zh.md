@@ -434,7 +434,7 @@ vibe-trading connector install /tmp/my-broker
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
-| `gildata` | A-share | token (Settings / `GILDATA_TOKEN`) | Hundsun Juyuan (恒生聚源) commercial feed — forward-adjusted dailies, joins the A-share chain tail |
+| `gildata` | A-share / HK / CN indices | token (Settings / `GILDATA_TOKEN`) | Hundsun Juyuan (恒生聚源) commercial feed — 前复权 A-share dailies, raw HK bars; tail of the a_share & HK chains |
 | `yahoo` | 美股 / 港股 / 加拿大 / 英国 | none | direct chart/quotes/options；TSX `.TO` / TSXV `.V`；LSE `.L` 按明示币种归一化 |
 | `sina` · `stooq` | 美股 | none | K-line to 1984 · EOD CSV |
 | `yfinance` | 美股 / 港股 / 加拿大 / 英国 | none | wrapper；TSX `.TO` / TSXV `.V`；LSE `.L` 遵守同一 GBP/GBp 合同 |
@@ -454,7 +454,7 @@ vibe-trading connector install /tmp/my-broker
 
 - **A股** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
-- **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
+- **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
 - **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **韩国（KOSPI/KOSDAQ）** → `pykrx` · `yahoo` · `yfinance` · `local`
 - **英国（LSE）** → `yahoo` · `yfinance` · `local` *（仅接受明示为 GBP/GBp 的报价）*

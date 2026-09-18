@@ -204,6 +204,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "yfinance",
         "tushare",
         "longbridge",
+        # Key-gated commercial vendor, same tail-of-chain rationale as the
+        # a_share chain (paid quota only spent when free sources cannot serve).
+        "gildata",
         "local",
     ],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
@@ -269,6 +272,9 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
 PRICE_CALIBER_BY_SOURCE_MARKET: dict[tuple[str, str], str] = {
     # Tushare publishes no HK adjustment-factor series, so its HK path is raw.
     ("tushare", "hk_equity"): "raw",
+    # Gildata's HKStockDailyQuotes serves raw traded prices (befadj/aftadj
+    # closes are separate fields, ignored) — measured on 00700.HK.
+    ("gildata", "hk_equity"): "raw",
 }
 
 #: Markets with no corporate-action adjustment concept. Their sources stamp

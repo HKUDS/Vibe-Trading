@@ -41,7 +41,7 @@ per-source skill.
 | alphavantage | US equities | Yes (`ALPHAVANTAGE_API_KEY`) | Unrestricted | data-routing |
 | tiingo | US equities | Yes (`TIINGO_API_KEY`) | Unrestricted | data-routing |
 | fmp | US equities | Yes (`FMP_API_KEY`) | Unrestricted | data-routing |
-| gildata | A-shares (Hundsun Juyuan commercial feed, forward-adjusted dailies) | Yes (`GILDATA_TOKEN` / Settings) | Gildata MCP API | data-routing |
+| gildata | A-shares (前复权 dailies), HK equities (raw), CN indices | Yes (`GILDATA_TOKEN` / Settings) | Gildata MCP API | data-routing |
 | qveris | Global multi-asset (paid, credits) | Yes (`QVERIS_API_KEY` / Settings) | QVeris API | qveris <!-- QVERIS-INTEGRATION --> |
 
 ## Capability → Tool Routing

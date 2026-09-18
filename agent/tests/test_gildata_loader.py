@@ -53,9 +53,12 @@ class TestRegistration:
 
     def test_metadata(self):
         assert DataLoader.name == "gildata"
-        assert DataLoader.markets == {"a_share"}
+        assert DataLoader.markets == {"a_share", "hk_equity"}
         assert DataLoader.requires_auth is True
-        assert DataLoader.volume_units == {"a_share": "shares"}
+        assert DataLoader.volume_units == {
+            "a_share": "shares",
+            "hk_equity": "shares",
+        }
 
 
 class TestIsAvailable:
@@ -203,10 +206,10 @@ class TestFetch:
         args = mock_post.call_args.kwargs["json_body"]["params"]["arguments"]
         assert args["stockObject"] == ["600519.SH"]
 
-    def test_non_a_share_symbols_skipped(self, monkeypatch):
+    def test_unsupported_symbols_skipped(self, monkeypatch):
         monkeypatch.setenv("GILDATA_TOKEN", "secret")
         with patch.object(gl, "throttled_post_json") as mock_post:
-            out = DataLoader().fetch(["AAPL.US", "00700.HK"], "2024-01-01", "2024-01-31")
+            out = DataLoader().fetch(["AAPL.US", "BTC-USDT"], "2024-01-01", "2024-01-31")
         assert out == {}
         mock_post.assert_not_called()
 
@@ -271,3 +274,128 @@ class TestFetch:
             DataLoader().fetch(["600519.SH"], "2024-01-01", "2024-01-31")
         url = mock_post.call_args[0][0]
         assert url.startswith("https://proxy.example/mcp?")
+
+
+
+def _recall_envelope(ref_code, code):
+    inner = {
+        "code": 0,
+        "results": [
+            {
+                "api_name": "ParamCandidateRecall",
+                "candidates": [
+                    {"caption": "wrong", "code": "999", "ref_code": "99999.HK"},
+                    {"caption": "right", "code": code, "ref_code": ref_code},
+                ],
+            }
+        ],
+    }
+    return {"jsonrpc": "2.0", "id": 1, "result": {"content": [
+        {"type": "text", "text": json.dumps(inner)}
+    ]}}
+
+
+# HK rows exactly as HKStockDailyQuotes sends them: bare OHLC keys, volume
+# already in shares, befadj/aftadj closes as separate (ignored) fields.
+_HK_ROWS = [
+    {"tradingday": "2024-05-14", "open": 371.0, "high": 380.0, "low": 369.0,
+     "close": 378.2, "volume": 20558084,
+     "befadjcloseprice": 367.4352, "aftadjcloseprice": 2103.93},
+    {"tradingday": "2024-05-13", "open": 368.6, "high": 380.0, "low": 368.0,
+     "close": 378.2, "volume": 16718452, "befadjcloseprice": 367.4352},
+]
+
+# Index rows use the openprice-style keys with turnovervolume in 万股.
+_INDEX_ROWS = [
+    {"tradingday": "2024-01-03", "openprice": 3380.0, "highprice": 3390.0,
+     "lowprice": 3360.0, "closeprice": 3380.5, "turnovervolume": 1100000.0},
+    {"tradingday": "2024-01-02", "openprice": 3426.27, "highprice": 3426.27,
+     "lowprice": 3386.35, "closeprice": 3386.35, "turnovervolume": 1161807.26},
+]
+
+
+class TestHkFetch:
+    """:HK symbols route to the HK tool with a resolved internal code."""
+
+    def test_fetch_hk_symbol(self, monkeypatch):
+        monkeypatch.setenv("GILDATA_TOKEN", "secret")
+        from backtest.loaders.gildata_codes import reset_code_cache
+        reset_code_cache()
+
+        def _side(url, **kwargs):
+            body = kwargs["json_body"]["params"]
+            if body["name"] == "ParamCandidateRecall":
+                return _recall_envelope("00700.HK", "1000546")
+            assert body["name"] == "HKStockDailyQuotes"
+            assert body["arguments"] == {
+                "stockObject": ["1000546"],
+                "beginDate": "2024-05-01",
+                "endDate": "2024-05-31",
+            }
+            return _envelope(_HK_ROWS)
+
+        with patch.object(gl, "throttled_post_json", side_effect=_side):
+            out = DataLoader().fetch(["00700.HK"], "2024-05-01", "2024-05-31")
+        assert set(out) == {"00700.HK"}
+        df = out["00700.HK"]
+        assert len(df) == 2
+        # Ascending: first row is 2024-05-13. Volume already in shares: no
+        # 万股 scaling.
+        assert df["volume"].iloc[0] == pytest.approx(16718452.0)
+        # Raw traded prices pass through untouched.
+        assert df["close"].iloc[0] == pytest.approx(378.2)
+        # befadj/aftadj closes never leak into any served column.
+        assert df["close"].max() < 400.0
+        reset_code_cache()
+
+    def test_unresolved_recall_omits_symbol(self, monkeypatch):
+        monkeypatch.setenv("GILDATA_TOKEN", "secret")
+        from backtest.loaders.gildata_codes import reset_code_cache
+        reset_code_cache()
+
+        def _side(url, **kwargs):
+            # Recall answers candidates that do not include 00700.HK.
+            return _recall_envelope("09999.HK", "424242")
+
+        with patch.object(gl, "throttled_post_json", side_effect=_side) as mock_post:
+            out = DataLoader().fetch(["00700.HK"], "2024-05-01", "2024-05-31")
+        assert out == {}
+        # Exactly one wire call: the recall — never the quote tool.
+        assert mock_post.call_count == 1
+        reset_code_cache()
+
+
+class TestIndexFetch:
+    """CN index codes route to the index tool with a resolved internal code."""
+
+    def test_fetch_cn_index(self, monkeypatch):
+        monkeypatch.setenv("GILDATA_TOKEN", "secret")
+        from backtest.loaders.gildata_codes import reset_code_cache
+        reset_code_cache()
+
+        def _side(url, **kwargs):
+            body = kwargs["json_body"]["params"]
+            if body["name"] == "ParamCandidateRecall":
+                return _recall_envelope("000300.SH", "3145")
+            assert body["name"] == "IndexDailyQuote"
+            assert body["arguments"] == {
+                "indexObject": ["3145"],
+                "beginDate": "2024-01-01",
+                "endDate": "2024-01-31",
+            }
+            return _envelope(_INDEX_ROWS)
+
+        with patch.object(gl, "throttled_post_json", side_effect=_side):
+            out = DataLoader().fetch(["000300.SH"], "2024-01-01", "2024-01-31")
+        assert set(out) == {"000300.SH"}
+        df = out["000300.SH"]
+        # Ascending: first row is 2024-01-02. Index volume is 万股 and scales
+        # to shares like the A-share tool.
+        assert df["volume"].iloc[0] == pytest.approx(1_161_807.26 * 10_000)
+        assert df["close"].iloc[0] == pytest.approx(3386.35)
+        reset_code_cache()
+
+    def test_index_detection_exchange_specific(self):
+        # 000001.SZ is Ping An Bank (an A-share), 000001.SH is the SSE index.
+        assert gl._is_cn_index("000001.SH") is True
+        assert gl._is_cn_index("000001.SZ") is False

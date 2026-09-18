@@ -418,7 +418,7 @@ Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de e
 | `eastmoney` | A / EE. UU. / HK | ninguna | OHLCV + herramientas de fundamentales y flujo profundas (limitada) |
 | `baostock` · `akshare` | A (+ EE. UU./HK/futuros/macro/fx) | ninguna | fallbacks gratuitos |
 | `tushare` | A / HK / futuros / fondos / macro | token | la más completa para A-share |
-| `gildata` | acciones A | token (Configuración / `GILDATA_TOKEN`) | fuente comercial Hundsun Juyuan (恒生聚源) — diarios ajustados hacia adelante, se une al final de la cadena de acciones A |
+| `gildata` | acciones A / HK / índices CN | token (Configuración / `GILDATA_TOKEN`) | fuente comercial Hundsun Juyuan (恒生聚源) — diarios de acciones A ajustados, HK en bruto; final de las cadenas a_share y HK |
 | `yahoo` | EE. UU. / HK / Canadá / Reino Unido | ninguna | gráfico/cotizaciones/opciones directos; TSX `.TO` / TSXV `.V`; LSE `.L` con normalización según la divisa declarada |
 | `sina` · `stooq` | EE. UU. | ninguna | velas hasta 1984 · CSV EOD |
 | `yfinance` | EE. UU. / HK / Canadá / Reino Unido | ninguna | wrapper; TSX `.TO` / TSXV `.V`; LSE `.L` bajo el mismo contrato GBP/GBp |
@@ -438,7 +438,7 @@ Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de e
 
 - **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **EE. UU.** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
-- **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
+- **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **Corea (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
 - **Reino Unido (LSE)** → `yahoo` · `yfinance` · `local` *(solo cotizaciones declaradas en GBP/GBp)*

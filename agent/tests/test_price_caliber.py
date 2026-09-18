@@ -66,6 +66,13 @@ def test_tushare_hk_override_is_raw() -> None:
     assert price_caliber("tushare", "a_share") == "split_dividend"
 
 
+def test_gildata_hk_override_is_raw() -> None:
+    """HKStockDailyQuotes serves raw traded prices (befadj/aftadj closes are
+    separate fields the loader ignores) — measured on 00700.HK."""
+    assert price_caliber("gildata", "hk_equity") == "raw"
+    assert price_caliber("gildata", "a_share") == "split_dividend"
+
+
 def test_non_equity_markets_stamp_na() -> None:
     assert price_caliber("binance", "crypto") == "na"
     # The market wins over the per-source table: yfinance serving BTC has
