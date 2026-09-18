@@ -118,3 +118,37 @@ class TestExecute:
         self._patch(monkeypatch, {"api_names": [], "rows": []})
         out = json.loads(GetCnAnnouncementsTool().execute(query="不存在的东西"))
         assert out["ok"] is True and out["rows"] == []
+
+
+class TestNumericCoercion:
+    """EDB value strings must land in the numeric evidence pool."""
+
+    def test_value_strings_coerced(self):
+        from src.tools.gildata_srv import _coerce_numeric_strings
+
+        rows = [{"indicatorname": "GDP同比", "value": "5.4", "unit": "%"},
+                {"indicatorname": "CPI同比", "value": "0.2"},
+                {"indicatorname": "缺口", "value": "."}]
+        _coerce_numeric_strings(rows)
+        assert rows[0]["value"] == 5.4
+        assert rows[1]["value"] == 0.2
+        assert rows[2]["value"] == "."  # non-numeric stays untouched
+
+    def test_coerced_values_land_in_generic_evidence(self, tmp_path):
+        from src.agent.grounding.ledger import GroundingLedger
+
+        ledger = GroundingLedger(run_dir=tmp_path, user_message="2024年GDP增速")
+        payload = {
+            "api_names": ["EDB取数"],
+            "rows": [{"indicatorcode": 110252269, "indicatorname": "GDP当季同比",
+                      "value": 5.4, "unit": "%", "date": "2024-12-31"}],
+        }
+        ledger._ingest_generic_numeric(
+            "get_cn_macro_series", {"query": "GDP"}, payload, call_id="edb",
+        )
+        leaves = {r.field: r.value for r in ledger._evidence}
+        # The measurement is a numeric leaf now (string "5.4" never indexed).
+        assert leaves.get("rows[0].value") == 5.4
+        # NOTE: whether percent claims VERIFY against these leaves is an
+        # upstream grounding question (the metric pool admits analysis
+        # metrics only) — tracked as an upstream issue, not asserted here.
