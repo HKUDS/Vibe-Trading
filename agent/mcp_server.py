@@ -2291,7 +2291,7 @@ def get_macro_series(
 
 @mcp.tool
 def get_fund_nav(
-    codes: _lenient_str_list,
+    funds: _lenient_str_list,
     start_date: str | None = None,
     end_date: str | None = None,
     limit: int = 2000,
@@ -2306,14 +2306,14 @@ def get_fund_nav(
     it the tool returns a not-available error.
 
     Args:
-        codes: Fund codes, e.g. ["110022", "000198.OF"].
+        funds: Fund codes, e.g. ["110022", "000198.OF"].
         start_date: Inclusive window start, YYYY-MM-DD. Omit for the vendor's
             default history window.
         end_date: Inclusive window end, YYYY-MM-DD. Omit through the latest
             published NAV.
         limit: Maximum number of most-recent rows per fund.
     """
-    params: dict[str, Any] = {"codes": codes, "limit": limit}
+    params: dict[str, Any] = {"funds": funds, "limit": limit}
     if start_date:
         params["start_date"] = start_date
     if end_date:

@@ -87,7 +87,7 @@ class TestExecute:
 
     def test_missing_token_error(self, monkeypatch):
         monkeypatch.delenv("GILDATA_TOKEN", raising=False)
-        out = json.loads(GildataFundNavTool().execute(codes=["110022"]))
+        out = json.loads(GildataFundNavTool().execute(funds=["110022"]))
         assert out["ok"] is False
         assert "GILDATA_TOKEN" in out["error"]
 
@@ -106,7 +106,7 @@ class TestExecute:
 
         self._patch_transport(monkeypatch, transport)
         out = json.loads(GildataFundNavTool().execute(
-            codes=["110022"], start_date="2024-01-01"))
+            funds=["110022"], start_date="2024-01-01"))
         assert out["ok"] is True and out["source"] == "gildata"
         fund = out["funds"]["110022.OF"]
         assert fund["ok"] is True
@@ -130,7 +130,7 @@ class TestExecute:
 
         self._patch_transport(monkeypatch, transport)
         out = json.loads(GildataFundNavTool().execute(
-            codes=["110022", "000198.OF"]))
+            funds=["110022", "000198.OF"]))
         # 110022 resolves and serves; 000198 does not resolve and reports.
         assert out["ok"] is True
         assert out["funds"]["110022.OF"]["ok"] is True
@@ -139,13 +139,13 @@ class TestExecute:
     def test_exchange_listed_code_reports_error(self, monkeypatch):
         self._patch_transport(monkeypatch, lambda tool, args: _tool_entry([]))
         out = json.loads(GildataFundNavTool().execute(
-            codes=["510300.SH", "110022"]))
+            funds=["510300.SH", "110022"]))
         assert out["ok"] is True
         assert out["funds"]["510300.SH"]["ok"] is False
 
     def test_all_invalid_codes_rejected_upfront(self, monkeypatch):
         monkeypatch.setenv("GILDATA_TOKEN", "secret")
-        out = json.loads(GildataFundNavTool().execute(codes=["AAPL", "00700.HK"]))
+        out = json.loads(GildataFundNavTool().execute(funds=["AAPL", "00700.HK"]))
         assert out["ok"] is False
 
     def test_limit_keeps_most_recent_rows(self, monkeypatch):
@@ -162,7 +162,7 @@ class TestExecute:
             return _tool_entry(rows)
 
         self._patch_transport(monkeypatch, transport)
-        out = json.loads(GildataFundNavTool().execute(codes=["110022"], limit=3))
+        out = json.loads(GildataFundNavTool().execute(funds=["110022"], limit=3))
         fund = out["funds"]["110022.OF"]
         assert fund["count"] == 3
         assert fund["rows"][-1]["date"] == "2024-01-10"  # newest kept
@@ -175,6 +175,22 @@ class TestExecute:
             return _tool_entry([])
 
         self._patch_transport(monkeypatch, transport)
-        out = json.loads(GildataFundNavTool().execute(codes=["110022"]))
+        out = json.loads(GildataFundNavTool().execute(funds=["110022"]))
         assert out["funds"]["110022.OF"]["ok"] is False
         assert "no NAV rows" in out["funds"]["110022.OF"]["error"]
+
+
+class TestIdentityGateBypass:
+    """The funds argument must not enroll the tool in the identity gate."""
+
+    def test_argument_key_outside_gate_regime(self):
+        # _SYMBOL_ARGUMENT_KEYS (codes/symbols/tickers/...) marks a tool as
+        # market-instrument-sensitive and demands a search_symbol lock the
+        # resolver cannot obtain for off-exchange codes. `funds` must stay
+        # outside that set, or the tool becomes uncallable in the agent loop
+        # (measured live: identity_required / identity_conflict loop).
+        from src.agent.grounding.identity import _SYMBOL_ARGUMENT_KEYS
+
+        param_names = set(GildataFundNavTool.parameters["properties"])
+        assert param_names & set(_SYMBOL_ARGUMENT_KEYS) == set()
+        assert "funds" in param_names

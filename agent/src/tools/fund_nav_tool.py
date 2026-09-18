@@ -89,13 +89,20 @@ class GildataFundNavTool(BaseTool):
         "(累计净值), dividend-adjusted NAV (复权净值) and the daily growth rate, "
         "over an optional date window. Exchange-listed ETF/LOF (510300.SH-style) "
         "are OHLCV instruments — use get_market_data for those. Requires the "
-        "commercial GILDATA_TOKEN. Example: {\"codes\": [\"110022\"], "
+        "commercial GILDATA_TOKEN. Example: {\"funds\": [\"110022\"], "
         "\"start_date\": \"2024-01-01\"}."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "codes": {
+            # Deliberately NOT named codes/symbols: those keys enroll a tool
+            # in the grounding identity gate (src/agent/grounding/identity.py
+            # _SYMBOL_ARGUMENT_KEYS), which demands a search_symbol lock the
+            # resolver cannot obtain for off-exchange fund codes. This tool
+            # self-resolves identities deterministically (exact ref_code match
+            # against the vendor) and echoes fund_name in every result, so the
+            # gate adds no safety here — it only made the tool uncallable.
+            "funds": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
@@ -126,7 +133,7 @@ class GildataFundNavTool(BaseTool):
                 "default": _DEFAULT_LIMIT,
             },
         },
-        "required": ["codes"],
+        "required": ["funds"],
     }
 
     @classmethod
@@ -138,7 +145,7 @@ class GildataFundNavTool(BaseTool):
         """Fetch NAV history for one or more funds and return a JSON envelope.
 
         Args:
-            **kwargs: ``codes`` (required list), optional ``start_date`` /
+            **kwargs: ``funds`` (required list), optional ``start_date`` /
                 ``end_date`` (inclusive YYYY-MM-DD) and ``limit``.
 
         Returns:
@@ -150,11 +157,11 @@ class GildataFundNavTool(BaseTool):
         if not get_env_config().data.gildata_token:
             return _error("GILDATA_TOKEN is not configured")
 
-        raw_codes = kwargs.get("codes")
+        raw_codes = kwargs.get("funds")
         if isinstance(raw_codes, str):
             raw_codes = [raw_codes]
         if not isinstance(raw_codes, list) or not raw_codes:
-            return _error("'codes' is required and must be a non-empty list")
+            return _error("'funds' is required and must be a non-empty list")
         codes = [_normalize_fund_code(item) for item in raw_codes]
         if all(code is None for code in codes):
             return _error(
