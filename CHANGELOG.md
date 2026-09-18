@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Three Gildata research tools over the vendor's 标准版 (srv-tool) NL
+  endpoint** — natural-language tools the agent itself queries, wrapping the
+  three vendor capabilities the project did not already cover (news,
+  screening and generic FinQuery are deliberately left to the existing
+  tools):
+  - `get_cn_macro_series` (`MacroIndustryData`): China macro / regional /
+    industry EDB time series — GDP, CPI, PMI, rates, 31 industry series —
+    complementing `get_macro_series` (FRED, US/global only until now).
+  - `get_cn_announcements` (`AnnouncementData`): A-share / HK / fund
+    announcement retrieval with highlighted excerpts (`get_sec_filings`
+    covers SEC filings only).
+  - `search_broker_reports` (`FinancialResearchReport`): broker-research
+    search over the Juyuan library — title, broker, industry, rating,
+    excerpt — coexisting with the eastmoney-backed `get_research_reports`.
+  All three share one thin client (`src/tools/gildata_srv.py`: JSON-RPC POST
+  + `format=json`, own throttle bucket), echo the routed `api_names` so a
+  mis-routed question is visible to the agent, cap rows via `limit`, and are
+  key-gated on `GILDATA_TOKEN` (optional `GILDATA_SRV_TOOL_URL` override).
+  MCP tool surface grows 75 → 78.
+
 - **`get_fund_nav`: NAV history for Chinese off-exchange funds (场外基金).**
   Off-exchange funds publish no OHLCV bars — their series is the daily NAV —
   so this lands as an agent tool (`NetFundUnitValueReport` behind the same

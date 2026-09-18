@@ -193,6 +193,8 @@ class DataConfig(_EnvBase):
         alias="GILDATA_BASE_URL",
         default="https://api.gildata.com/mcp-servers/aidata-assistant-srv-rawapi",
     )
+    # Standard-version (srv-tool) NL research endpoint — see src/tools/gildata_srv.py.
+    gildata_srv_tool_url: str = Field(alias="GILDATA_SRV_TOOL_URL", default="")
     fred_api_key: str = Field(alias="FRED_API_KEY", default="")
     vibe_trading_iwencai_key: str = Field(alias="VIBE_TRADING_IWENCAI_KEY", default="")
     vibe_trading_sec_ua: str = Field(alias="VIBE_TRADING_SEC_UA", default="")

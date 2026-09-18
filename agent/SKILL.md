@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (75)
+## Available MCP Tools (78)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -169,6 +169,9 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `search_symbol` | Symbol / ticker search across markets | None |
 | `get_macro_series` | FRED macroeconomic series | FRED_API_KEY |
 | `get_fund_nav` | Chinese off-exchange fund NAV history | GILDATA_TOKEN |
+| `get_cn_macro_series` | China macro/industry EDB series (NL query) | GILDATA_TOKEN |
+| `get_cn_announcements` | A-share/HK/fund announcement search (NL query) | GILDATA_TOKEN |
+| `search_broker_reports` | Broker research search over the Juyuan library (NL query) | GILDATA_TOKEN |
 | `iwencai_search` | A-share natural-language research search | IWENCAI_KEY |
 | `qveris_search` | Search QVeris premium data/tool marketplace (free discovery) | QVERIS_API_KEY + paid mode |
 | `qveris_inspect` | Inspect QVeris tool schemas before executing (free) | QVERIS_API_KEY + paid mode |
