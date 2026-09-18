@@ -178,28 +178,50 @@ def fetch_dragon_tiger(trade_date: str, code: str | None) -> dict[str, Any]:
     return data
 
 
+#: HKEX stopped publishing northbound daily net buy on this date; tushare's
+#: ``hgt``/``sgt``/``north_money`` carry turnover from then on (issue #1481).
+_NORTHBOUND_SEMANTICS_BOUNDARY = "2024-08-30"
+
+_NORTHBOUND_NOTE = (
+    "HKEX stopped publishing northbound daily net buy on "
+    f"{_NORTHBOUND_SEMANTICS_BOUNDARY}. From that date onward tushare's "
+    "hgt/sgt/north_money carry northbound TURNOVER (verified equal to the "
+    "HKEX official Stock Connect Daily Statistics Total Turnover to the "
+    "cent); rows before the boundary are NET BUY. Both eras are in million "
+    "CNY and are passed through unchanged."
+)
+
+
 def fetch_northbound_flow(*, lookback_days: int) -> dict[str, Any]:
+    """Fetch northbound Stock-Connect flow via tushare ``moneyflow_hsgt``.
+
+    Values are passed through in tushare's native unit (million CNY). The
+    legacy ×100 rescale to 10k CNY assumed every row was a net buy in
+    million CNY, but the field semantics changed at the 2024-08-30 HKEX
+    disclosure reform: post-boundary rows are turnover (cross-verified
+    against HKEX official daily statistics, see issue #1481), so a single
+    constant factor cannot serve both eras. The envelope therefore keeps
+    the raw values and documents the boundary in ``note`` instead.
+    """
     start_date, end_date = _date_window(lookback_days)
     rows = _records(_pro_api().moneyflow_hsgt(start_date=start_date, end_date=end_date))
     history: list[dict[str, Any]] = []
     for row in rows:
-        shanghai = _to_float(row.get("hgt"))
-        shenzhen = _to_float(row.get("sgt"))
-        total = _to_float(row.get("north_money"))
         history.append(
             {
                 "trade_date": _dashed_date(row.get("trade_date")),
-                "shanghai_connect": shanghai * 100 if shanghai is not None else None,
-                "shenzhen_connect": shenzhen * 100 if shenzhen is not None else None,
-                "total": total * 100 if total is not None else None,
+                "shanghai_connect": _to_float(row.get("hgt")),
+                "shenzhen_connect": _to_float(row.get("sgt")),
+                "total": _to_float(row.get("north_money")),
             }
         )
     history.sort(key=lambda item: item.get("trade_date") or "")
     history = history[-lookback_days:]
     latest = history[-1] if history else {}
     return {
-        "unit": "10k CNY",
+        "unit": "CNY million",
         "lookback_days": lookback_days,
+        "note": _NORTHBOUND_NOTE,
         "realtime": {
             "shanghai_connect": latest.get("shanghai_connect"),
             "shenzhen_connect": latest.get("shenzhen_connect"),

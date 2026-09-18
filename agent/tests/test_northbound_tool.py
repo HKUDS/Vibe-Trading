@@ -121,13 +121,115 @@ class TestErrorEnvelope:
         assert payload["data"]["history"][0]["trade_date"] == "2024-01-03"
         assert "used tushare fallback" in payload["warnings"][0]
 
-    def test_missing_data_block_yields_empty_history_and_null_realtime(self):
-        with patch.object(nb, "get_json", return_value={"data": None}):
+    def test_missing_data_block_is_dead_feed_and_falls_through(self):
+        """A structurally empty payload is the live post-reform state (#1481):
+        it must fall through to tushare, not pass as an empty success."""
+        fallback = {
+            "unit": "CNY million",
+            "lookback_days": 5,
+            "note": "HKEX stopped publishing northbound net buy on 2024-08-30...",
+            "realtime": {"total": 259865.83},
+            "history": [{"trade_date": "2026-09-17", "total": 259865.83}],
+        }
+        with patch.object(nb, "get_json", return_value={"data": None}), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            return_value=fallback,
+        ) as fallback_fetch:
             text = nb.NorthboundFlowTool().execute(lookback_days=5)
+
+        fallback_fetch.assert_called_once_with(lookback_days=5)
         payload = json.loads(text)
         assert payload["ok"] is True
-        assert payload["data"]["history"] == []
-        assert payload["data"]["realtime"]["total"] is None
+        assert payload["source"] == "tushare"
+        assert "used tushare fallback" in payload["warnings"][0]
+        assert payload["data"]["unit"] == "CNY million"
+
+
+class TestDeadFeedDetection:
+    """Eastmoney's northbound net feed died at the 2024-08-30 disclosure reform.
+
+    The HTTP calls still succeed with all-zero nets / a frozen cumulative (and
+    the payload shape drifted so the parsers find nothing), which used to pass
+    as an empty ok:true envelope and short-circuit the tushare fallback.
+    """
+
+    def test_all_zero_payload_falls_through_to_tushare(self):
+        dead_realtime = {
+            "data": {
+                "hk2sh": {"netBuyAmt": 0.0},
+                "hk2sz": {"netBuyAmt": 0.0},
+            }
+        }
+        dead_history = {
+            "data": {
+                "klines": [
+                    "2026-09-16,0.0,0.0",
+                    "2026-09-17,0.0,0.0",
+                ]
+            }
+        }
+
+        def fake(url: str, *, params: dict):
+            return dead_history if "kamt.kline" in url else dead_realtime
+
+        fallback = {
+            "unit": "CNY million",
+            "lookback_days": 5,
+            "note": "...2024-08-30...",
+            "realtime": {"total": 4.5},
+            "history": [{"trade_date": "2026-09-17", "total": 4.5}],
+        }
+        with patch.object(nb, "get_json", side_effect=fake), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            return_value=fallback,
+        ):
+            text = nb.NorthboundFlowTool().execute(lookback_days=5)
+
+        payload = json.loads(text)
+        assert payload["ok"] is True
+        assert payload["source"] == "tushare"
+        assert "2024-08-30" in payload["warnings"][0]
+
+    def test_dead_feed_without_tushare_returns_honest_error(self):
+        with patch.object(nb, "get_json", return_value={"data": None}), patch.object(
+            nb.tushare_fallbacks,
+            "fetch_northbound_flow",
+            side_effect=RuntimeError("TUSHARE_TOKEN not set"),
+        ):
+            text = nb.NorthboundFlowTool().execute(lookback_days=5)
+
+        payload = json.loads(text)
+        assert payload["ok"] is False
+        assert "2024-08-30" in payload["error"]
+        assert "tushare fallback failed" in payload["error"]
+
+    def test_healthy_payload_still_serves_eastmoney(self):
+        """Guard: detection must not swallow a live non-zero feed."""
+        with patch.object(nb, "get_json", side_effect=_fake_get_json):
+            text = nb.NorthboundFlowTool().execute(lookback_days=10)
+        payload = json.loads(text)
+        assert payload["ok"] is True
+        assert payload["source"] == "eastmoney"
+
+    def test_realtime_alive_history_dead_is_not_dead_feed(self):
+        """Both sides must be dead: a trimmed all-None history window with a
+        live realtime figure still serves the Eastmoney envelope."""
+        live_realtime = {
+            "data": {"hk2sh": {"netBuyAmt": 12.5}, "hk2sz": {"netBuyAmt": 0.0}}
+        }
+
+        def fake(url: str, *, params: dict):
+            if "kamt.kline" in url:
+                return {"data": {"klines": ["2026-09-17,0.0,0.0"]}}
+            return live_realtime
+
+        with patch.object(nb, "get_json", side_effect=fake):
+            text = nb.NorthboundFlowTool().execute(lookback_days=5)
+        payload = json.loads(text)
+        assert payload["source"] == "eastmoney"
+        assert payload["data"]["realtime"]["shanghai_connect"] == 12.5
 
 
 class TestToolMetadata:
