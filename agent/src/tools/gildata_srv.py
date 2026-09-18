@@ -62,7 +62,9 @@ def call_srv_tool(
     if not token:
         raise RuntimeError("GILDATA_TOKEN is not configured")
 
-    url = f"{_url()}&token={token}"
+    # Token rides the Authorization header, never the URL — request
+    # exceptions embed the full URL in their message (review of #1474).
+    url = _url()
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -76,7 +78,10 @@ def call_srv_tool(
             _MIN_INTERVAL_ENV, _DEFAULT_MIN_INTERVAL_S
         ),
         json_body=payload,
-        headers={"Accept": "application/json, text/event-stream"},
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "Authorization": f"Bearer {token}",
+        },
         timeout=timeout,
     )
 

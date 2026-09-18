@@ -152,3 +152,26 @@ class TestNumericCoercion:
         # NOTE: whether percent claims VERIFY against these leaves is an
         # upstream grounding question (the metric pool admits analysis
         # metrics only) — tracked as an upstream issue, not asserted here.
+
+
+class TestTokenTransport:
+    """The token must ride the Authorization header, never the URL."""
+
+    def test_call_srv_tool_sends_bearer_header(self, monkeypatch):
+        from unittest.mock import patch
+        from src.tools import gildata_srv
+
+        monkeypatch.setenv("GILDATA_TOKEN", "secret")
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured["headers"] = kwargs.get("headers")
+            return {"result": {"content": [{"type": "text", "text": '{"code":0,"results":[]}'}]}}
+
+        with patch.object(gildata_srv, "throttled_post_json", side_effect=fake_post):
+            gildata_srv.call_srv_tool("MacroIndustryData", "GDP")
+
+        assert "token=" not in captured["url"]
+        assert captured["headers"]["Authorization"] == "Bearer secret"
+        assert captured["headers"]["Accept"] == "application/json, text/event-stream"
