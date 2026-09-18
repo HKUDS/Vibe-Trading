@@ -26,7 +26,8 @@ Do not start a goal for a tiny one-shot answer unless the user explicitly asks.
 3. Before continuing an existing task, call `get_research_goal`.
 4. After a market-data lookup, backtest, document read, web source, or manual reasoning step, call `add_goal_evidence`.
 5. Link evidence to a criterion using `criterion_id` or `criterion_index`.
-6. When all required criteria have been audited, call `update_research_goal_status`.
+6. Immediately before completion, call `get_research_goal` and use its `completion_contract` as the canonical map of criterion/evidence ids.
+7. When all required criteria have been audited, call `update_research_goal_status`.
 
 ## Criteria Template
 
@@ -48,7 +49,9 @@ Use this shape when the user did not provide criteria:
 ## Completion Rules
 
 - Use `update_research_goal_status(status="complete")` only after every required criterion has an audit row.
-- Satisfied audit rows must cite verified `evidence_ids`.
+- Satisfied audit rows must cite verified `evidence_ids` from the same criterion in `completion_contract`.
+- Never use grounding-ledger evidence ids as goal-ledger evidence ids.
+- If completion returns a missing/mismatched audit error, use the returned `completion_contract` to repair the ledger/audit. Do not collect more web evidence unless that contract shows a required criterion actually lacks verified evidence.
 - Use `status="blocked"` or `status="insufficient_evidence"` when evidence is missing, stale, contradictory, or not verifiable.
 - Use `status="cancelled"` only when the user explicitly asks to end or discard the goal.
 

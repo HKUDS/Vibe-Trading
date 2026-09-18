@@ -55,7 +55,8 @@ def format_goal_context(snapshot: dict[str, Any]) -> str:
             "- Use get_research_goal before mutating if you need the freshest snapshot.",
             "- Add evidence with add_goal_evidence after tool-backed or concrete research steps.",
             "- Do not treat a normal answer as finished while the goal status is still active.",
-            "- If all criteria are covered, audit the ledger and use update_research_goal_status.",
+            "- If all criteria are covered, call get_research_goal and use its completion_contract to build the audit.",
+            "- If completion is rejected for missing/mismatched audit rows, repair the goal ledger/ids from completion_contract; do not start more web research unless a criterion actually lacks verified evidence.",
             "- Complete or block the goal with update_research_goal_status only after an audit.",
             "</current-research-goal>",
         ]
@@ -151,7 +152,8 @@ def format_goal_continuation_prompt(snapshot: dict[str, Any], previous_answer: s
             "- Prefer the highest-priority open criterion with zero evidence.",
             "- Use available tools when fresh or artifact-backed evidence is needed; reuse existing artifacts only when they answer the open criterion.",
             "- After concrete research progress, call add_goal_evidence and link the exact criterion_id.",
-            "- If the ledger is sufficient, call update_research_goal_status with a completion audit.",
+            "- If the ledger is sufficient, call get_research_goal immediately before completion and copy canonical ids from completion_contract into update_research_goal_status.",
+            "- A completion validation error about audit ids/evidence is a ledger-repair task, not a reason to search the web again.",
             "- If progress is impossible, set a blocker/insufficient-evidence status instead of stopping silently.",
             "</goal-continuation>",
         ]
