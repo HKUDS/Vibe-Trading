@@ -87,6 +87,20 @@ _GENERIC_PRICE_FIELD_ALIASES = {
     "settlement": "price",
     "settle_price": "price",
     "vwap": "price",
+    # Fund NAV leaves (get_fund_nav): a fund's NAV is its dated price
+    # observation — without these, every NAV figure in an answer was
+    # unverifiable and the run degraded after rejections (measured live).
+    "nav": "price",
+    "unit_nav": "price",
+    "unitnav": "price",
+    "accumulated_nav": "price",
+    "accumulatedunitnv": "price",
+    "accum_nav": "price",
+    "adjusted_nav": "price",
+    "单位净值": "price",
+    "累计净值": "price",
+    "复权净值": "price",
+    "净值": "price",
     "现价": "price",
     "最新价": "price",
 }

@@ -180,6 +180,42 @@ class TestExecute:
         assert "no NAV rows" in out["funds"]["110022.OF"]["error"]
 
 
+class TestGroundingEvidence:
+    """NAV figures must register as price evidence (live-measured regression).
+
+    A fund's NAV is its dated price observation; before the alias entries the
+    verifier left every unit_nav value unmatched, the answer gate rejected the
+    run twice, and the final answer shipped degraded with figures redacted.
+    """
+
+    def test_nav_leaves_map_to_price_fields(self):
+        from src.agent.grounding.evidence import _price_field_for_path
+
+        for leaf in ("unit_nav", "accumulated_nav", "adjusted_nav"):
+            assert _price_field_for_path(f"funds.110022.OF.rows[0].{leaf}") == "price"
+
+    def test_get_fund_nav_result_verifies_against_price_evidence(self, tmp_path):
+        from src.agent.grounding.ledger import GroundingLedger
+
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="查易方达消费行业基金最新净值",
+        )
+        payload = {
+            "ok": True, "source": "gildata",
+            "funds": {"110022.OF": {"ok": True, "fund_name": "易方达消费行业股票",
+                "rows": [{"date": "2026-09-17", "unit_nav": 1.4794,
+                          "accumulated_nav": 1.4794, "adjusted_nav": 1.4794,
+                          "daily_growth_pct": -0.6314}]}},
+        }
+        ledger._ingest_generic_numeric(
+            "get_fund_nav", {"funds": ["110022"]}, payload, call_id="nav_call",
+        )
+        comparable = ledger._comparable_price_records()
+        nav_values = [r.value for r in comparable if r.field == "price"]
+        assert 1.4794 in nav_values
+
+
 class TestIdentityGateBypass:
     """The funds argument must not enroll the tool in the identity gate."""
 
