@@ -6,10 +6,11 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 74 tools: skills, research goals, strategy discovery,
+Surfaces 75 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
-(get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
+(get_fund_flow / get_dragon_tiger / get_northbound_flow / get_southbound_flow /
+get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
 get_financial_statements / get_options_chain / get_stock_profile /
@@ -1973,6 +1974,26 @@ def get_northbound_flow(lookback_days: int = 30) -> str:
     """
     registry = _get_registry()
     return registry.execute("get_northbound_flow", {"lookback_days": lookback_days})
+
+
+@mcp.tool
+def get_southbound_flow(lookback_days: int = 30) -> str:
+    """Fetch Southbound (Stock-Connect) net capital flow into Hong Kong equities.
+
+    Returns the latest trading day's net buy plus recent daily history, split
+    into 港股通（沪） and 港股通（深） channels (units: 100M HKD, 亿) from the
+    Eastmoney datacenter — cross-verified against HKEX official daily
+    statistics — falling back to the HKEX official report (latest trading day
+    snapshot) when Eastmoney is unavailable. Southbound is the only
+    Stock-Connect direction whose daily net buy is still officially disclosed
+    (the northbound net ended 2024-08-30; see get_northbound_flow). Read-only,
+    no credentials; HK market only.
+
+    Args:
+        lookback_days: Trailing trading days of daily net-buy history to return.
+    """
+    registry = _get_registry()
+    return registry.execute("get_southbound_flow", {"lookback_days": lookback_days})
 
 
 @mcp.tool

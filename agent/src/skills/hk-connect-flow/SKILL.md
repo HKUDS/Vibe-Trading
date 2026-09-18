@@ -154,6 +154,19 @@ connect_score = {
 
 ## Data Access
 
+### Via agent tools (no code, throttled, envelope-standard)
+
+```python
+# Daily Southbound net buy — 港股通（沪）/（深） channels, unit 100M HKD (亿).
+# Eastmoney datacenter primary (cross-verified against HKEX official daily
+# statistics); HKEX official report as keyless fallback (latest day snapshot):
+get_southbound_flow(lookback_days=20)
+```
+
+> ⚠️ Do NOT read daily southbound flow from tushare `moneyflow_hsgt`:
+> its `ggt_ss`/`ggt_sz`/`south_money` fields now carry the **cumulative**
+> net-bought stock (万亿-scale, near-constant day to day), not daily flow.
+
 ### Via Tushare (A-share perspective)
 
 ```python
@@ -190,7 +203,7 @@ hsi = yf.download("^HSI", start="2025-01-01", end="2026-03-30", progress=False)
 |--------|--------|-----------|-----------|
 | Northbound daily net buy | Tushare / HKEX | Daily | >RMB 5B = significant |
 | Northbound 20-day cumulative | Calculated | Daily | >RMB 30B = trend |
-| Southbound daily net buy | Tushare / HKEX | Daily | >HKD 3B = significant |
+| Southbound daily net buy | get_southbound_flow (Eastmoney ↔ HKEX) | Daily | >HKD 3B = significant |
 | AH Premium Index | Hang Seng | Daily | >130 = H-share value |
 | Quota utilization | HKEX | Intraday | >50% = strong conviction |
 | NB Top 10 concentration | Tushare | Daily | Top 3 names >50% = concentrated bet |
