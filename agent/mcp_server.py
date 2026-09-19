@@ -1825,8 +1825,11 @@ def get_market_data(
     Price caliber: which source served a symbol decides what its prices mean
     (some adjust for splits and dividends, others serve raw quotes). Each
     symbol's ``_provenance.adjustment`` states the caliber ("raw" / "split" /
-    "split_dividend" / "na" / "unknown") — read it before comparing price
-    levels across symbols.
+    "split_dividend" / "split_dividend_additive" / "na" / "unknown") — read it
+    before comparing price levels across symbols. Note that
+    ``split_dividend_additive`` (Tencent's A-share qfq) adjusts dividends by
+    shifting the price level rather than scaling it, so it is not on the same
+    scale as ``split_dividend`` even though both account for dividends.
     """
     registry = _get_registry()
     return registry.execute(

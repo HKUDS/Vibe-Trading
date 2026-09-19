@@ -99,7 +99,10 @@ class MarketDataTool(BaseTool):
         "null=undeclared) before interpreting or comparing volume values. Price caliber "
         "is source-dependent too (some sources adjust for splits/dividends, others serve "
         "raw quotes); read _provenance.adjustment ('raw' / 'split' / 'split_dividend' / "
-        "'na' / 'unknown') before comparing price levels across symbols."
+        "'split_dividend_additive' / 'na' / 'unknown') before comparing price levels "
+        "across symbols. 'split_dividend_additive' (Tencent's A-share qfq) adjusts "
+        "dividends by shifting the price level rather than scaling it, so it is not on "
+        "the same scale as 'split_dividend'."
     )
     parameters = {
         "type": "object",

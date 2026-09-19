@@ -25,6 +25,7 @@ from backtest.loaders.registry import (
     FALLBACK_CHAINS,
     LOADER_REGISTRY,
     VALID_SOURCES,
+    additive_caliber_warning,
     get_loader_cls_with_fallback,
     is_no_network_fallback_source,
     mixed_caliber_warning,
@@ -1857,7 +1858,20 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     caliber_stamps = {
         code: stamp for code, stamp in caliber_stamps.items() if code in data_map
     }
-    caliber_warning = mixed_caliber_warning(caliber_stamps)
+    # Both warnings can apply at once (a tencent+baostock basket mixes calibers
+    # *and* serves an additive one), and each says something the other does not,
+    # so they are reported together rather than one shadowing the other.
+    caliber_warning = (
+        "\n".join(
+            warning
+            for warning in (
+                mixed_caliber_warning(caliber_stamps),
+                additive_caliber_warning(caliber_stamps),
+            )
+            if warning
+        )
+        or None
+    )
     if caliber_warning:
         logger.warning("%s", caliber_warning)
     return DataFetchResult(
