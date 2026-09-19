@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.portfolio import service as portfolio_service
+from src.portfolio.compatibility import PortfolioContractError
 from src.portfolio.config import PortfolioSettingsStore
 from src.portfolio.normalization import auth_metadata
 from src.portfolio.service import PortfolioService
@@ -186,6 +187,103 @@ def test_a_positions_read_without_a_positions_list_is_an_error_not_an_empty_sour
     }
     ibkr = next(row for row in snapshot["accounts"] if row["broker"] == "ibkr")
     assert "must contain a list" in ibkr["error"]
+
+
+def test_a_position_currency_without_a_rate_fails_that_source_closed(tmp_path):
+    def get_positions(profile_id):
+        if profile_id.startswith("ibkr"):
+            return {
+                "positions": [
+                    {
+                        "symbol": "005930.KS",
+                        "sec_type": "STK",
+                        "exchange": "KRX",
+                        "currency": "KRW",
+                        "position": 10,
+                        "avg_cost": 50000,
+                    }
+                ]
+            }
+        return {"positions": []}
+
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=_settings_store(tmp_path),
+        get_account=lambda profile_id: {"summary": []},
+        get_positions=get_positions,
+        get_quote=lambda *args, **kwargs: {"quote": {"last": 60000}},
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-08-09T00:00:00+00:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+
+    assert snapshot["complete"] is False
+    ibkr = next(row for row in snapshot["accounts"] if row["broker"] == "ibkr")
+    assert ibkr["status"] == "error"
+    assert "KRW" in ibkr["error"]
+    # The KRW lot is excluded, not priced as if KRW were USD.
+    assert snapshot["positions"] == []
+
+
+def test_a_display_currency_without_a_rate_fails_the_whole_refresh_closed(tmp_path):
+    store = PortfolioSettingsStore(tmp_path / "portfolio.json")
+    store.connection_store.ensure("ibkr", "ibkr-live-local-readonly", "IBKR")
+    store.save(
+        {
+            "display_currency": "EUR",
+            "sources": [{"connection_id": "ibkr", "label": "IBKR", "order": 0}],
+        }
+    )
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=store,
+        get_account=lambda profile_id: {"summary": []},
+        get_positions=lambda profile_id: {"positions": []},
+        get_quote=lambda *args, **kwargs: {},
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-08-09T00:00:00+00:00",
+        ),
+    )
+
+    with pytest.raises(PortfolioContractError, match="EUR"):
+        service.refresh()
+
+
+def test_display_fields_follow_the_configured_display_currency(tmp_path):
+    store = PortfolioSettingsStore(tmp_path / "portfolio.json")
+    store.connection_store.ensure("ibkr", "ibkr-live-local-readonly", "IBKR")
+    store.save(
+        {
+            "display_currency": "CNY",
+            "sources": [{"connection_id": "ibkr", "label": "IBKR", "order": 0}],
+        }
+    )
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=store,
+        get_account=lambda profile_id: {
+            "summary": [{"tag": "NetLiquidation", "value": "1000", "currency": "USD"}]
+        },
+        get_positions=lambda profile_id: {"positions": []},
+        get_quote=lambda *args, **kwargs: {},
+        fx_fetcher=lambda: (
+            Decimal("7"),
+            Decimal("8"),
+            "2026-08-09T00:00:00+00:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+
+    assert snapshot["totals"] == {"usd": 1000.0, "cny": 7000.0, "display": 7000.0}
+    assert snapshot["accounts"][0]["total_display"] == snapshot["accounts"][0]["total_cny"]
+    assert snapshot["fx"]["rates"] == {"CNY": 7.0, "HKD": 8.0, "USD": 1.0}
 
 
 def test_failed_source_is_excluded_from_totals_and_reports_its_last_success(tmp_path):

@@ -6,7 +6,7 @@ import pytest
 
 from src.portfolio.config import PortfolioSettingsStore
 from src.portfolio.normalization import normalize_position
-from src.portfolio.service import PortfolioService
+from src.portfolio.service import PORTFOLIO_VALUATION_VERSION, PortfolioService
 from src.portfolio.store import PortfolioStore
 from src.trading.connectors.futu import sdk as futu_sdk
 
@@ -150,7 +150,7 @@ def test_legacy_valuation_snapshots_do_not_mix_with_current_history(tmp_path) ->
 
     current = service.refresh()
 
-    assert current["valuation_version"] == 2
+    assert current["valuation_version"] == PORTFOLIO_VALUATION_VERSION
     assert [row["id"] for row in service.history()] == [current["snapshot_id"]]
     assert [row["id"] for row in store.history()] == [
         "legacy-v1",

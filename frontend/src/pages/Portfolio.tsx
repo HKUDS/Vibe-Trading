@@ -57,12 +57,12 @@ function uiLocale(): string {
   return i18n.language || "en";
 }
 
-function money(value: number | null | undefined, currency: "USD" | "CNY" = "USD") {
+function money(value: number | null | undefined, currency: string = "USD") {
   if (value == null || !Number.isFinite(value)) return "—";
   return new Intl.NumberFormat(uiLocale(), {
     style: "currency",
     currency,
-    maximumFractionDigits: currency === "USD" ? 2 : 0,
+    maximumFractionDigits: currency === "CNY" ? 0 : 2,
   }).format(value);
 }
 
@@ -312,7 +312,7 @@ export function Portfolio() {
     return (snapshot.positions ?? []).reduce((sum, row) => sum + (row.priced ? row.market_value_usd : 0), 0) / snapshot.totals.usd;
   })();
   const displayCurrency = portfolioSettings?.display_currency ?? snapshot?.display_currency ?? "USD";
-  const totalDisplay = displayCurrency === "CNY" ? snapshot?.totals.cny : snapshot?.totals.usd;
+  const totalDisplay = snapshot?.totals.display ?? (displayCurrency === "CNY" ? snapshot?.totals.cny : snapshot?.totals.usd);
 
   return (
     <div className="min-h-screen p-4 sm:p-6 lg:p-8">
@@ -508,7 +508,7 @@ function RefreshProgress({ state, settings }: { state: PortfolioRefreshState; se
  * it renders the failure, the error text and the last successful read time
  * instead of a value, so nothing on the card suggests it is part of the total.
  */
-function AccountCard({ account, active, displayCurrency, onClick, onReconnect, onRetry, busy, actionsDisabled }: { account: PortfolioAccount; active: boolean; displayCurrency: "USD" | "CNY"; onClick: () => void; onReconnect?: () => void; onRetry?: () => void; busy: boolean; actionsDisabled: boolean }) {
+function AccountCard({ account, active, displayCurrency, onClick, onReconnect, onRetry, busy, actionsDisabled }: { account: PortfolioAccount; active: boolean; displayCurrency: string; onClick: () => void; onReconnect?: () => void; onRetry?: () => void; busy: boolean; actionsDisabled: boolean }) {
   const { t } = useTranslation();
   const failed = account.status === "error";
   return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClick(); }} className={`cursor-pointer rounded-xl border bg-card p-5 transition ${active ? "border-primary ring-1 ring-primary/20" : "hover:border-primary/40"}`}>
@@ -523,8 +523,8 @@ function AccountCard({ account, active, displayCurrency, onClick, onReconnect, o
       </>
     ) : (
       <>
-        <div className="mt-4 text-2xl font-semibold">{displayCurrency === "CNY" ? money(account.total_cny, "CNY") : money(account.total_usd)}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{displayCurrency === "CNY" ? money(account.total_usd) : money(account.total_cny, "CNY")} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
+        <div className="mt-4 text-2xl font-semibold">{money(account.total_display ?? (displayCurrency === "CNY" ? account.total_cny : account.total_usd), displayCurrency)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{displayCurrency === "USD" ? money(account.total_cny, "CNY") : money(account.total_usd)} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
         <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs"><span className="text-positive">{t("portfolio.accounts.fresh")}</span><span className="text-muted-foreground">{dateTime(account.last_success_at)}</span></div>
       </>
     )}

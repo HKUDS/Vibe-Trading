@@ -12,13 +12,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
+from src.portfolio.iso4217 import is_iso_currency
 from src.trading.types import TradingProfile
 
 CompatibilityLevel = Literal["native", "contract_tested", "experimental"]
-
-SUPPORTED_VALUE_CURRENCIES = frozenset({"USD", "HKD", "CNY"})
 _SYMBOL_FIELDS = ("symbol", "code", "ticker")
 _QUANTITY_FIELDS = (
     "quantity",
@@ -211,8 +210,18 @@ def _require_equity_only_robinhood_account(account_payload: dict[str, Any]) -> N
         )
 
 
-def ensure_supported_currencies(rows: list[dict[str, Any]], account_payload: dict[str, Any] | None = None) -> None:
-    """Fail closed when the current portfolio FX model cannot value a source.
+def ensure_supported_currencies(
+    rows: list[dict[str, Any]],
+    account_payload: dict[str, Any] | None = None,
+    rates: Mapping[str, Decimal] | None = None,
+) -> None:
+    """Validate the portfolio's currencies before any valuation runs.
+
+    Two distinct checks the old three-item allowlist conflated: every position
+    and account currency must be a valid ISO-4217 code, and every non-USD
+    currency must have an FX rate when a conversion is about to happen. A
+    valid-but-unconvertible portfolio still fails closed here, with the gap
+    named, instead of silently pricing KRW as USD.
 
     Account currency is checked as well as position currency so a cash-only
     account cannot accidentally be reported as USD.
@@ -221,9 +230,13 @@ def ensure_supported_currencies(rows: list[dict[str, Any]], account_payload: dic
     account_currency = _account_currency(account_payload or {})
     if account_currency:
         currencies.add(account_currency)
-    unsupported = sorted(currencies - SUPPORTED_VALUE_CURRENCIES)
-    if unsupported:
-        raise PortfolioContractError("portfolio FX conversion is not available for: " + ", ".join(unsupported))
+    invalid = sorted(currency for currency in currencies if not is_iso_currency(currency))
+    if invalid:
+        raise PortfolioContractError("portfolio currency is not a valid ISO-4217 code: " + ", ".join(invalid))
+    if rates is not None:
+        missing = sorted(currency for currency in currencies - {"USD"} if rates.get(currency) is None)
+        if missing:
+            raise PortfolioContractError("portfolio FX conversion is not available for: " + ", ".join(missing))
 
 
 def _account_currency(payload: dict[str, Any]) -> str | None:
