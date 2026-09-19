@@ -49,22 +49,36 @@ def _appearance_payload() -> dict[str, Any]:
     }
 
 
-def _seat_payload() -> dict[str, Any]:
-    """A datacenter seat payload with one buy seat."""
+def _seat_payload(side: str) -> dict[str, Any]:
+    """A live Eastmoney buy- or sell-side seat payload."""
     return {
+        "success": True,
         "result": {
             "data": [
                 {
                     "OPERATEDEPT_NAME": "机构专用",
-                    "SIDE": "BUY",
                     "BUY": 2.0e8,
                     "SELL": 0.0,
                     "NET": 2.0e8,
-                    "RANK": 1,
+                    "EXPLANATION": "日涨幅偏离值达7%",
+                    "TRADE_ID": "trade-1",
                 }
             ]
-        }
+        },
     }
+
+
+def _rejected_payload() -> dict[str, Any]:
+    return {
+        "success": False,
+        "result": None,
+        "code": 9501,
+        "message": "报表配置不存在,RPT_BILLBOARD_TRADEDETAIL",
+    }
+
+
+def _empty_payload() -> dict[str, Any]:
+    return {"success": False, "result": None, "code": 9201, "message": "返回数据为空"}
 
 
 class TestHelpers:
@@ -115,18 +129,27 @@ class TestExecuteSuccess:
 
     def test_with_code_adds_seats(self) -> None:
         tool = DragonTigerTool()
-        payloads = [_appearance_payload(), _seat_payload()]
+        payloads = [_appearance_payload(), _seat_payload("BUY"), _seat_payload("SELL")]
         with patch.object(
             eastmoney_client, "throttled_get_json", side_effect=payloads
         ) as http:
             out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
 
-        assert http.call_count == 2
+        assert http.call_count == 3
         assert out["ok"] is True
         assert out["data"]["code"] == "600519"
-        assert len(out["data"]["seats"]) == 1
-        assert out["data"]["seats"][0]["seat"] == "机构专用"
-        assert out["data"]["seats"][0]["net"] == pytest.approx(2.0e8)
+        assert len(out["data"]["seats"]) == 2
+        assert out["data"]["seats"][0]["side"] == "BUY"
+        assert out["data"]["seats"][0]["rank"] == 1
+        assert out["data"]["seats"][0]["trade_id"] == "trade-1"
+        assert out["data"]["seats"][1]["side"] == "SELL"
+        assert out["data"]["seats"][1]["net"] == pytest.approx(2.0e8)
+
+        requests = [call.kwargs["params"] for call in http.call_args_list]
+        assert requests[1]["reportName"] == "RPT_BILLBOARD_DAILYDETAILSBUY"
+        assert requests[1]["sortColumns"] == "BUY"
+        assert requests[2]["reportName"] == "RPT_BILLBOARD_DAILYDETAILSSELL"
+        assert requests[2]["sortColumns"] == "SELL"
 
 
 class TestExecuteError:
@@ -142,13 +165,16 @@ class TestExecuteError:
 
     def test_http_failure_returns_error_envelope(self) -> None:
         tool = DragonTigerTool()
-        with patch.object(
-            eastmoney_client,
-            "throttled_get_json",
-            side_effect=RuntimeError("eastmoney banned"),
-        ), patch(
-            "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
-            side_effect=RuntimeError("no fallback"),
+        with (
+            patch.object(
+                eastmoney_client,
+                "throttled_get_json",
+                side_effect=RuntimeError("eastmoney banned"),
+            ),
+            patch(
+                "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+                side_effect=RuntimeError("no fallback"),
+            ),
         ):
             out = json.loads(tool.execute(date="2024-01-02"))
 
@@ -162,14 +188,17 @@ class TestExecuteError:
             "appearances": [{"code": "600519", "net_buy": 1.0}],
         }
         tool = DragonTigerTool()
-        with patch.object(
-            eastmoney_client,
-            "throttled_get_json",
-            side_effect=RuntimeError("eastmoney banned"),
-        ), patch(
-            "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
-            return_value=fallback,
-        ) as fallback_fetch:
+        with (
+            patch.object(
+                eastmoney_client,
+                "throttled_get_json",
+                side_effect=RuntimeError("eastmoney banned"),
+            ),
+            patch(
+                "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
             out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
 
         fallback_fetch.assert_called_once_with("2024-01-02", "600519")
@@ -177,3 +206,70 @@ class TestExecuteError:
         assert out["source"] == "tushare"
         assert out["data"]["appearances"][0]["code"] == "600519"
         assert "used tushare fallback" in out["warnings"][0]
+
+    def test_rejected_report_uses_tushare_fallback(self) -> None:
+        fallback = {
+            "date": "2024-01-02",
+            "count": 1,
+            "appearances": [{"code": "600519", "net_buy": 1.0}],
+        }
+        tool = DragonTigerTool()
+        with (
+            patch.object(
+                eastmoney_client,
+                "throttled_get_json",
+                side_effect=[_appearance_payload(), _rejected_payload()],
+            ),
+            patch(
+                "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
+            out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
+
+        fallback_fetch.assert_called_once_with("2024-01-02", "600519")
+        assert out["ok"] is True
+        assert out["source"] == "tushare"
+        assert "9501" in out["warnings"][0]
+
+    def test_empty_report_remains_empty(self) -> None:
+        tool = DragonTigerTool()
+        with patch.object(
+            eastmoney_client,
+            "throttled_get_json",
+            side_effect=[_appearance_payload(), _empty_payload(), _empty_payload()],
+        ):
+            out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
+
+        assert out["ok"] is True
+        assert out["source"] == "eastmoney"
+        assert out["data"]["seats"] == []
+
+    def test_sell_report_rejection_uses_tushare_fallback(self) -> None:
+        fallback = {
+            "date": "2024-01-02",
+            "count": 1,
+            "appearances": [{"code": "600519", "net_buy": 1.0}],
+        }
+        tool = DragonTigerTool()
+        with (
+            patch.object(
+                eastmoney_client,
+                "throttled_get_json",
+                side_effect=[
+                    _appearance_payload(),
+                    _seat_payload("BUY"),
+                    _rejected_payload(),
+                ],
+            ),
+            patch(
+                "src.tools.dragon_tiger_tool.tushare_fallbacks.fetch_dragon_tiger",
+                return_value=fallback,
+            ) as fallback_fetch,
+        ):
+            out = json.loads(tool.execute(date="2024-01-02", code="600519.SH"))
+
+        fallback_fetch.assert_called_once_with("2024-01-02", "600519")
+        assert out["ok"] is True
+        assert out["source"] == "tushare"
+        assert "9501" in out["warnings"][0]

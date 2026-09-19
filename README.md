@@ -516,7 +516,7 @@ For a backtest, set `source` in `config.json`:
 
 In an Agent conversation, ask explicitly: **"Use Longbridge to fetch QQQ.US historical data."** The explicit source request is separate from `source: "auto"`; `auto` keeps the normal per-market fallback chain.
 
-Beyond OHLCV, **22 read-only data tools** reach into fundamentals & flow — fund flow, dragon-tiger, northbound, margin, block trades, shareholder count, lockup, sector, research reports, news, SEC filings, financial statements, options chains, stock profile, market screening, symbol search, macro, iwencai, institutional holdings (13F), ETF look-through, prediction markets, and research papers — all exposed over MCP. An explicit `local:` symbol never silently falls back to a network source.
+Beyond OHLCV, **22 read-only data tools** reach into fundamentals & flow — fund flow, dragon-tiger, northbound, margin, block trades, shareholder count, lockup, sector, research reports, news, SEC filings, financial statements, options chains, stock profile, market screening, symbol search, macro, iwencai, institutional holdings (13F), ETF look-through, prediction markets, and research papers — all exposed over MCP. `get_dragon_tiger` returns separate ranked buy- and sell-side seat reports for a specified security and surfaces provider rejections instead of treating them as empty data. An explicit `local:` symbol never silently falls back to a network source.
 
 <!-- QVERIS-START -->
 ### 💎 Optional premium data — QVeris

@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 # Eastmoney datacenter report endpoint and the two report names this tool reads.
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _APPEARANCE_REPORT = "RPT_DAILYBILLBOARD_DETAILS"
-_SEAT_REPORT = "RPT_BILLBOARD_TRADEDETAIL"
+_SEAT_BUY_REPORT = "RPT_BILLBOARD_DAILYDETAILSBUY"
+_SEAT_SELL_REPORT = "RPT_BILLBOARD_DAILYDETAILSSELL"
 
 # Per-symbol caps so a wide market day never returns an unbounded payload.
 _MAX_APPEARANCES = 200
@@ -69,10 +70,10 @@ def _bare_code(code: str) -> str:
 def _fetch_report(
     report_name: str, *, filter_expr: str, sort_columns: str, sort_types: str
 ) -> list[dict[str, Any]]:
-    """Pull one page of datacenter rows for a report, tolerating empty results.
+    """Pull one page of datacenter rows for a report.
 
     Args:
-        report_name: Eastmoney ``reportName`` (e.g. ``RPT_DAILYBILLBOARD_DETAILS``).
+        report_name: Eastmoney ``reportName``.
         filter_expr: The datacenter ``filter`` predicate string.
         sort_columns: Column name to sort by.
         sort_types: Sort direction (``"1"`` ascending, ``"-1"`` descending).
@@ -81,9 +82,7 @@ def _fetch_report(
         The list of row dicts under ``result.data``; empty when none.
 
     Raises:
-        requests.RequestException: Network failure, propagated to the caller.
-        requests.HTTPError: Non-2xx response status.
-        ValueError: Body is not valid JSON.
+        RuntimeError: The provider rejects the report request.
     """
     payload = eastmoney_client.get_json(
         _DATACENTER_URL,
@@ -101,6 +100,12 @@ def _fetch_report(
     )
     if not isinstance(payload, dict):
         return []
+    if payload.get("success") is False:
+        code = payload.get("code")
+        message = payload.get("message", "unknown provider error")
+        if code == 9201 or message == "返回数据为空":
+            return []
+        raise RuntimeError(f"Eastmoney rejected {report_name} ({code}): {message}")
     result = payload.get("result")
     if not isinstance(result, dict):
         return []
@@ -132,22 +137,26 @@ def _appearance_row(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _seat_row(raw: dict[str, Any]) -> dict[str, Any]:
+def _seat_row(raw: dict[str, Any], *, side: str, rank: int) -> dict[str, Any]:
     """Project a raw seat row to a compact, named record.
 
     Args:
-        raw: One ``RPT_BILLBOARD_TRADEDETAIL`` row.
+        raw: One live Eastmoney buy- or sell-side seat row.
+        side: The side represented by the report that returned ``raw``.
+        rank: One-based position in the report's descending order.
 
     Returns:
         A flat dict describing one brokerage seat's buy/sell footprint.
     """
     return {
         "seat": raw.get("OPERATEDEPT_NAME"),
-        "side": raw.get("SIDE"),
+        "side": side,
         "buy": raw.get("BUY"),
         "sell": raw.get("SELL"),
         "net": raw.get("NET"),
-        "rank": raw.get("RANK"),
+        "rank": rank,
+        "reason": raw.get("EXPLANATION"),
+        "trade_id": raw.get("TRADE_ID"),
     }
 
 
@@ -203,15 +212,25 @@ class DragonTigerTool(BaseTool):
             return self._error(str(exc))
 
         code_arg = kwargs.get("code")
-        code = _bare_code(code_arg) if isinstance(code_arg, str) and code_arg.strip() else None
+        code = (
+            _bare_code(code_arg)
+            if isinstance(code_arg, str) and code_arg.strip()
+            else None
+        )
 
         try:
             data = self._collect(trade_date, code)
-        except Exception as exc:  # noqa: BLE001 - surface any fetch failure as an envelope
-            logger.warning("dragon-tiger fetch failed for %s/%s: %s", trade_date, code, exc)
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - surface any fetch failure as an envelope
+            logger.warning(
+                "dragon-tiger fetch failed for %s/%s: %s", trade_date, code, exc
+            )
             try:
                 data = tushare_fallbacks.fetch_dragon_tiger(trade_date, code)
-            except Exception as fallback_exc:  # noqa: BLE001 - return both provider failures
+            except (
+                Exception
+            ) as fallback_exc:  # noqa: BLE001 - return both provider failures
                 return self._error(
                     "eastmoney dragon-tiger fetch failed: "
                     f"{exc}; tushare fallback failed: {fallback_exc}"
@@ -245,7 +264,7 @@ class DragonTigerTool(BaseTool):
         """
         appear_filter = f"(TRADE_DATE='{trade_date}')"
         if code:
-            appear_filter += f"(SECURITY_CODE=\"{code}\")"
+            appear_filter += f'(SECURITY_CODE="{code}")'
         appearances_raw = _fetch_report(
             _APPEARANCE_REPORT,
             filter_expr=appear_filter,
@@ -261,13 +280,28 @@ class DragonTigerTool(BaseTool):
         }
         if code:
             data["code"] = code
-            seats_raw = _fetch_report(
-                _SEAT_REPORT,
-                filter_expr=f"(TRADE_DATE='{trade_date}')(SECURITY_CODE=\"{code}\")",
-                sort_columns="NET",
+            seat_filter = f"(TRADE_DATE='{trade_date}')(SECURITY_CODE=\"{code}\")"
+            buy_rows = _fetch_report(
+                _SEAT_BUY_REPORT,
+                filter_expr=seat_filter,
+                sort_columns="BUY",
                 sort_types="-1",
             )
-            data["seats"] = [_seat_row(r) for r in seats_raw[:_MAX_SEATS]]
+            sell_rows = _fetch_report(
+                _SEAT_SELL_REPORT,
+                filter_expr=seat_filter,
+                sort_columns="SELL",
+                sort_types="-1",
+            )
+            seats = [
+                _seat_row(row, side="BUY", rank=rank)
+                for rank, row in enumerate(buy_rows, start=1)
+            ]
+            seats.extend(
+                _seat_row(row, side="SELL", rank=rank)
+                for rank, row in enumerate(sell_rows, start=1)
+            )
+            data["seats"] = seats[:_MAX_SEATS]
         return data
 
     @staticmethod
