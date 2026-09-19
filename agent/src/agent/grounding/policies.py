@@ -650,13 +650,16 @@ class _PolicyMixin:
         symbol: str | None,
         figure: Figure | None,
     ) -> tuple[list[EvidenceRecord], list[float]] | None:
-        """The evidence one call, or every call of one tool, produced.
+        """The evidence named by an exact field, call+field, one call, or one tool.
 
-        A ``ref`` naming a call id or a tool name is the tightest scoping, and the
-        only one that can ground a non-price figure (revenue, IC, volume). Records
-        of another symbol are dropped when the figure's symbol is known; a
-        currency-marked figure keeps only money-denominated records, a percent
-        only the others, less metadata counts.
+        An exact evidence-field ref is accepted only when that field occurs in
+        one call. When it repeats across calls, ``call_id::field`` is the
+        unambiguous tightest scope. Otherwise a ``ref`` naming a call id or a
+        tool name keeps the existing call/tool scope, and the only one that can
+        ground a non-price figure (revenue, IC, volume). Records of another
+        symbol are dropped when the figure's symbol is known; a currency-marked
+        figure keeps only money-denominated records, a percent only the others,
+        less metadata counts.
 
         Args:
             ref: The declaration's ``ref``.
@@ -665,26 +668,79 @@ class _PolicyMixin:
                 operands of a derivation.
 
         Returns:
-            ``(records, metric values)``, or None when ``ref`` names no call or tool.
+            ``(records, metric values)``, or None when ``ref`` names no field,
+            call, or tool.
         """
         key = (ref or "").strip()
         if not key:
             return None
-        records = [
-            record
-            for record in self._evidence
-            if key in (record.call_id, record.tool)
-            and record.status == "observed"
-            and record.value is not None
-        ]
-        metrics = [
-            float(entry["value"])
-            for entry in self._analysis_metrics
-            if key in (entry.get("call_id"), entry.get("tool"))
-            and entry.get("value") is not None
-        ]
-        if not records and not metrics:
-            return None
+
+        # A composite ref names one exact field from one exact call. This is
+        # the unambiguous form when the same analysis field appears in more
+        # than one tool call during a run.
+        if "::" in key:
+            call_id, field = (part.strip() for part in key.split("::", 1))
+            if not call_id or not field:
+                return [], []
+            records = [
+                record
+                for record in self._evidence
+                if record.call_id == call_id
+                and record.field == field
+                and record.status == "observed"
+                and record.value is not None
+            ]
+            metrics = [
+                float(entry["value"])
+                for entry in self._analysis_metrics
+                if entry.get("call_id") == call_id
+                and entry.get("field") == field
+                and entry.get("value") is not None
+            ]
+        else:
+            field_records = [
+                record
+                for record in self._evidence
+                if record.field == key
+                and record.status == "observed"
+                and record.value is not None
+            ]
+            field_metric_entries = [
+                entry
+                for entry in self._analysis_metrics
+                if entry.get("field") == key and entry.get("value") is not None
+            ]
+            field_call_ids = {record.call_id for record in field_records if record.call_id} | {
+                str(entry.get("call_id")) for entry in field_metric_entries if entry.get("call_id")
+            }
+            field_scoped = bool(field_records or field_metric_entries)
+            if field_scoped and len(field_call_ids) > 1:
+                # A field-only ref that occurs in multiple calls is ambiguous.
+                # Fail closed rather than pooling values from different runs.
+                return [], []
+            if field_scoped:
+                records = field_records
+                metrics = [float(entry["value"]) for entry in field_metric_entries]
+            else:
+                records = [
+                    record
+                    for record in self._evidence
+                    if key in (record.call_id, record.tool)
+                    and record.status == "observed"
+                    and record.value is not None
+                ]
+                metrics = [
+                    float(entry["value"])
+                    for entry in self._analysis_metrics
+                    if key in (entry.get("call_id"), entry.get("tool"))
+                    and entry.get("value") is not None
+                ]
+                if not records and not metrics:
+                    # Preserve the legacy loose-ref contract: a ref such as a
+                    # symbol that names no field/call/tool falls back to the
+                    # ordinary evidence path. Ambiguous or composite field
+                    # refs return earlier as an explicit empty scope instead.
+                    return None
         if symbol:
             records = [
                 record for record in records if not record.symbol or record.symbol == symbol
@@ -932,6 +988,7 @@ class _PolicyMixin:
         else:
             direct, scaled = prices + self._row_pool(symbol), self._metric_pool(symbol)
         if not direct and not scaled:
+            detail = "no matching tool evidence"
             return [
                 self._figure_issue(
                     "numeric_claim_unavailable",
@@ -939,8 +996,8 @@ class _PolicyMixin:
                     "observed",
                     symbol,
                     "no_evidence",
-                    "is declared observed but this session holds no matching tool "
-                    "evidence to check it against",
+                    f"is declared observed but this session holds {detail} "
+                    "to check it against",
                     field=figure.column,
                     date=figure.date,
                 )

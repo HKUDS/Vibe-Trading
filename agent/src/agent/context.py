@@ -192,7 +192,11 @@ Decide which workflow to use based on the request:
   tagged `figures` at the end of the answer, one line per figure:
   `value | role | note | ref`. Roles:
   `observed` — a tool value that is not a price or volume of the symbol, e.g. a
-  PE ratio (`ref`: the tool name such as `get_fundamentals`, or its call id);
+  PE ratio (`ref`: the tool name such as `get_fundamentals`, or its call id). For
+  structured analysis metrics whose field identity matters (for example VaR/ES
+  confidence), use the exact evidence field path as `ref` (for example
+  `var.var_95`). If the same field was produced by more than one call, qualify
+  it as `call_id::field` (for example `q1::var.var_95`) instead of pooling calls;
   `derived` — arithmetic on observed values (`note`: the formula; every number
   added or subtracted must itself be an observed value);
   `proposed` — a price level you suggest, such as an entry, stop or target: inside

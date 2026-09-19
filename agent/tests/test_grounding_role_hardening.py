@@ -544,6 +544,124 @@ def test_a_tail_risk_figure_a_tool_returned_is_grounded(tmp_path: Path) -> None:
     assert invented.valid is False
 
 
+def test_an_exact_metric_field_ref_is_tighter_than_a_call_ref(tmp_path: Path) -> None:
+    risk = (
+        "quantlib_call",
+        {"action": "call", "function": "var"},
+        {"ok": True, "result": {"var_95": -0.0157, "var_99": -0.0263}},
+        "q1",
+    )
+    prose = HDR + " VaR 95%: 1.57%。"
+    confidence = "95% | count | confidence"
+
+    exact = _ledger(tmp_path / "exact", MARKET_A, risk).validate_final_answer(
+        prose + _block(ROW, confidence, "1.57% | observed | VaR 95% | var.var_95")
+    )
+    wrong_field = _ledger(tmp_path / "wrong", MARKET_A, risk).validate_final_answer(
+        prose + _block(ROW, confidence, "1.57% | observed | VaR 95% | var.var_99")
+    )
+    call_scope = _ledger(tmp_path / "call", MARKET_A, risk).validate_final_answer(
+        prose + _block(ROW, confidence, "1.57% | observed | VaR 95% | q1")
+    )
+
+    assert exact.valid is True, exact.issues
+    assert _reasons(wrong_field) == ["not_in_referenced_call"]
+    assert call_scope.valid is True, call_scope.issues
+
+
+def test_es_and_var_fields_do_not_borrow_each_others_values(tmp_path: Path) -> None:
+    risk = (
+        "quantlib_call",
+        {"action": "call", "function": "var"},
+        {"ok": True, "result": {"var_95": -0.0157, "cvar_95": -0.0211}},
+        "q1",
+    )
+    prose = HDR + " ES 95%: 2.11%。"
+    block_head = (ROW, "95% | count | confidence")
+
+    es = _ledger(tmp_path / "es", MARKET_A, risk).validate_final_answer(
+        prose + _block(*block_head, "2.11% | observed | ES 95% | var.cvar_95")
+    )
+    wrong_measure = _ledger(tmp_path / "var", MARKET_A, risk).validate_final_answer(
+        prose + _block(*block_head, "2.11% | observed | ES 95% | var.var_95")
+    )
+
+    assert es.valid is True, es.issues
+    assert _reasons(wrong_measure) == ["not_in_referenced_call"]
+
+
+def test_repeated_field_refs_require_call_qualification(tmp_path: Path) -> None:
+    first = (
+        "quantlib_call",
+        {"action": "call", "function": "var"},
+        {"ok": True, "result": {"var_95": -0.0157}},
+        "q1",
+    )
+    second = (
+        "quantlib_call",
+        {"action": "call", "function": "var"},
+        {"ok": True, "result": {"var_95": -0.0999}},
+        "q2",
+    )
+    prose = HDR + " VaR 95%: 1.57%。"
+    confidence = "95% | count | confidence"
+
+    ambiguous = _ledger(
+        tmp_path / "ambiguous", MARKET_A, first, second
+    ).validate_final_answer(
+        prose + _block(ROW, confidence, "1.57% | observed | VaR 95% | var.var_95")
+    )
+    q1 = _ledger(tmp_path / "q1", MARKET_A, first, second).validate_final_answer(
+        prose
+        + _block(
+            ROW,
+            confidence,
+            "1.57% | observed | VaR 95% | q1::var.var_95",
+        )
+    )
+    wrong_call = _ledger(
+        tmp_path / "wrong", MARKET_A, first, second
+    ).validate_final_answer(
+        prose
+        + _block(
+            ROW,
+            confidence,
+            "1.57% | observed | VaR 95% | q2::var.var_95",
+        )
+    )
+
+    assert _reasons(ambiguous) == ["not_in_referenced_call"]
+    assert q1.valid is True, q1.issues
+    assert _reasons(wrong_call) == ["not_in_referenced_call"]
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "CVaR 9.99%。",
+        "VaR 9.99%。",
+        "ES 9.99%。",
+        "VaR 37.2%: 1.57%。",
+        "VaR 12% higher than last month.",
+        "| Tail | VaR 9.99% |",
+        "VaR 95%: 1.57%, ES 9.99%。",
+        "VaR (99.9%) = 2.63%。",
+        "预期损失 2.3%。",
+    ],
+)
+def test_tail_risk_prose_does_not_skip_undeclared_numbers(
+    tmp_path: Path, claim: str
+) -> None:
+    risk = (
+        "quantlib_call",
+        {"action": "call", "function": "var"},
+        {"ok": True, "result": {"var_95": -0.0157, "var_99": -0.0263}},
+        "q1",
+    )
+    result = _ledger(tmp_path, MARKET_A, risk).validate_final_answer(HDR + " " + claim)
+    assert result.valid is False
+
+
 # ---------------------------------------------------------------------------
 # B11 — what a rejected figure is pointed at
 # ---------------------------------------------------------------------------
