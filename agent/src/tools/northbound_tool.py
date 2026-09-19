@@ -153,6 +153,32 @@ def _parse_history(payload: Any, lookback_days: int) -> list[dict[str, Any]]:
     return rows[-lookback_days:]
 
 
+def _is_dead_feed(
+    realtime: dict[str, float | None], history: list[dict[str, Any]]
+) -> bool:
+    """True when the Eastmoney payload carries no live northbound signal.
+
+    HKEX stopped publishing northbound daily net buy on 2024-08-30; the
+    Eastmoney ``kamt`` feed has returned all-zero nets with a frozen
+    cumulative ever since, and its payload shape drifted (``netBuyAmt`` →
+    ``dayNetAmtIn``, ``klines`` → per-channel arrays), so the parsed
+    envelope comes back empty or all-zero while the HTTP calls succeed
+    (issue #1481). Treat that state as provider failure so the tushare
+    fallback serves the turnover-era values instead of a silent empty
+    success. Both sides must be dead: a genuine trading halt can zero one
+    side, but a live feed always carries either a realtime figure or a
+    non-zero recent history row.
+    """
+    realtime_dead = all(
+        realtime.get(key) in (None, 0.0)
+        for key in ("shanghai_connect", "shenzhen_connect", "total")
+    )
+    history_dead = not history or all(
+        row.get("total") in (None, 0.0) for row in history
+    )
+    return realtime_dead and history_dead
+
+
 def _clamp_lookback(value: Any) -> int:
     """Clamp a requested lookback to ``[1, _MAX_LOOKBACK_DAYS]``.
 
@@ -181,8 +207,10 @@ class NorthboundFlowTool(BaseTool):
         "MARKET-WIDE Northbound (Stock-Connect / 北向) net capital flow for the "
         "whole mainland China A-share market: the aggregate net inflow from Hong "
         "Kong, split into Shanghai-Connect (沪股通) and Shenzhen-Connect (深股通) "
-        "channels (units: 10k CNY), as the latest realtime figure plus a recent "
-        "daily history. This is a market-level total, NOT per-stock flow (for a "
+        "channels, as the latest realtime figure plus a recent daily history "
+        "(units: 10k CNY from Eastmoney; the tushare fallback reports CNY "
+        "million and documents the 2024-08-30 net-buy→turnover disclosure "
+        "boundary in data.note). This is a market-level total, NOT per-stock flow (for a "
         "given symbol's order-bucket inflow use get_fund_flow). Read-only; China "
         "A-share market only. Example: get_northbound_flow(lookback_days=10)."
     )
@@ -231,34 +259,23 @@ class NorthboundFlowTool(BaseTool):
             )
         except Exception as exc:  # noqa: BLE001 - surface as error envelope
             logger.warning("northbound flow fetch failed: %s", exc)
-            try:
-                fallback_data = tushare_fallbacks.fetch_northbound_flow(
-                    lookback_days=lookback_days
-                )
-            except Exception as fallback_exc:  # noqa: BLE001 - return both provider failures
-                return json.dumps(
-                    {
-                        "ok": False,
-                        "error": f"{exc}; tushare fallback failed: {fallback_exc}",
-                    },
-                    ensure_ascii=False,
-                )
-            return json.dumps(
-                {
-                    "ok": True,
-                    "market": "China A",
-                    "source": "tushare",
-                    "warnings": [
-                        "eastmoney failed "
-                        f"({exc}); used tushare fallback with latest daily data"
-                    ],
-                    "data": fallback_data,
-                },
-                ensure_ascii=False,
+            return self._tushare_fallback_envelope(
+                lookback_days, f"eastmoney failed ({exc})"
             )
 
         realtime = _parse_realtime(realtime_payload)
         history = _parse_history(history_payload, lookback_days)
+
+        if _is_dead_feed(realtime, history):
+            logger.warning(
+                "eastmoney northbound feed is dead (empty/all-zero payload); "
+                "falling through to tushare"
+            )
+            return self._tushare_fallback_envelope(
+                lookback_days,
+                "eastmoney northbound net-flow feed is dead (empty/all-zero "
+                "since the 2024-08-30 HKEX disclosure change)",
+            )
 
         envelope = {
             "ok": True,
@@ -272,3 +289,39 @@ class NorthboundFlowTool(BaseTool):
             },
         }
         return json.dumps(envelope, ensure_ascii=False)
+
+    def _tushare_fallback_envelope(self, lookback_days: int, reason: str) -> str:
+        """Build the tushare-fallback envelope, or an honest error without it.
+
+        Args:
+            lookback_days: Clamped history window forwarded to the fallback.
+            reason: Human-readable cause ("eastmoney failed (...)" / "feed is
+                dead (...)") embedded in the warning or error text.
+
+        Returns:
+            A JSON string: ``ok: true`` with ``source: "tushare"`` and a
+            warning when the fallback serves data, or ``ok: false`` naming
+            both failures when it cannot.
+        """
+        try:
+            fallback_data = tushare_fallbacks.fetch_northbound_flow(
+                lookback_days=lookback_days
+            )
+        except Exception as fallback_exc:  # noqa: BLE001 - both failures surface
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": f"{reason}; tushare fallback failed: {fallback_exc}",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "ok": True,
+                "market": "China A",
+                "source": "tushare",
+                "warnings": [f"{reason}; used tushare fallback with latest daily data"],
+                "data": fallback_data,
+            },
+            ensure_ascii=False,
+        )
