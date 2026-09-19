@@ -276,6 +276,8 @@ class ChannelManager:
         message_id = metadata.get("message_id")
         if isinstance(message_id, str) and message_id:
             key = (msg.channel, msg.chat_id, message_id)
+            if self._origin_reply_fingerprints.get(key) == fingerprint:
+                return True
             self._origin_reply_fingerprints[key] = fingerprint
 
         return False

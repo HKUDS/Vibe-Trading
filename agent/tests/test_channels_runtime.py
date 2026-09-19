@@ -83,6 +83,31 @@ def test_channel_manager_can_construct_websocket_with_default_gateway() -> None:
     assert manager.channels["websocket"].name == "websocket"
 
 
+def test_should_suppress_outbound_rejects_duplicate_reply_to_same_message() -> None:
+    """A second byte-identical reply carrying the same inbound message_id
+    must be suppressed, matching the log line's documented contract."""
+    bus = MessageBus()
+    manager = ChannelManager(
+        {"websocket": {"enabled": True, "host": "127.0.0.1", "port": 0, "allow_from": ["*"]}},
+        bus,
+    )
+    msg1 = OutboundMessage(
+        channel="telegram",
+        chat_id="123",
+        content="Here is your answer.",
+        metadata={"message_id": "inbound-42"},
+    )
+    msg2 = OutboundMessage(
+        channel="telegram",
+        chat_id="123",
+        content="Here is your answer.",
+        metadata={"message_id": "inbound-42"},
+    )
+
+    assert manager._should_suppress_outbound(msg1) is False
+    assert manager._should_suppress_outbound(msg2) is True
+
+
 def test_registry_reports_all_built_in_channels_with_dependency_recovery() -> None:
     expected = {
         "dingtalk",
