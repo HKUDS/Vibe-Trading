@@ -168,6 +168,16 @@ def accrued_interest(
     if not last_coupon <= settlement <= next_coupon:
         raise ValueError("settlement must fall inside [last_coupon, next_coupon]")
 
+    # 30/360 and 30E/360 clip the day-of-month, so distinct calendar dates
+    # (e.g. Jan 30 -> Jan 31) can still year_fraction to 0.0. last_coupon <
+    # next_coupon is already guaranteed above, so that can never mean a
+    # true zero-length period -- checking settlement's own position against
+    # the coupon dates keeps the endpoints correct regardless.
+    if settlement == last_coupon:
+        return 0.0
+    if settlement == next_coupon:
+        return face * coupon_rate / freq
+
     period = year_fraction(last_coupon, next_coupon, day_count)
     if period == 0.0:
         return 0.0

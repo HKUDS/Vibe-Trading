@@ -322,6 +322,16 @@ def test_accrued_interest_is_linear_in_elapsed_time_under_30_360():
     ) == pytest.approx(1.25)
 
 
+def test_accrued_interest_full_at_next_coupon_despite_30_360_day_of_month_clipping():
+    # Jan 30 -> Jan 31 clips to the same 30/360 day-of-month, so
+    # year_fraction is 0.0 even though the dates are distinct and ordered.
+    # Settlement at next_coupon must still return the full period coupon.
+    last, nxt = dt.date(2024, 1, 30), dt.date(2024, 1, 31)
+    assert year_fraction(last, nxt, "30/360") == 0.0
+    assert accrued_interest(100, 0.06, 2, last, nxt, nxt, day_count="30/360") == pytest.approx(3.0)
+    assert accrued_interest(100, 0.06, 2, last, last, nxt, day_count="30/360") == pytest.approx(0.0)
+
+
 def test_accrued_interest_rejects_settlement_outside_the_period():
     last, nxt = dt.date(2024, 1, 15), dt.date(2024, 7, 15)
     with pytest.raises(ValueError, match="settlement must fall inside"):
