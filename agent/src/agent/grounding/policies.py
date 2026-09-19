@@ -740,8 +740,8 @@ class _PolicyMixin:
         ref: str,
         symbol: str | None,
         figure: Figure | None,
-    ) -> tuple[list[EvidenceRecord], list[float]] | None:
-        """The evidence one call, or every call of one tool, produced.
+    ) -> tuple[list[EvidenceRecord], list[float], str] | None:
+        """The evidence one call, tool, or handled symbol produced.
 
         A ``ref`` naming a call id or a tool name is the tightest scoping, and the
         only one that can ground a non-price figure (revenue, IC, volume). Records
@@ -756,7 +756,10 @@ class _PolicyMixin:
                 operands of a derivation.
 
         Returns:
-            ``(records, metric values)``, or None when ``ref`` names no call or tool.
+            ``(records, metric values, scope_kind)``, where ``scope_kind`` is
+            ``"symbol"`` only for a pure canonical-symbol ref and
+            ``"provenance"`` for tool/call refs (including mixed refs); or
+            None when any ref token is invalid for this session.
         """
         keys = {
             key.strip()
@@ -765,10 +768,54 @@ class _PolicyMixin:
         }
         if not keys:
             return None
+
+        # A declared ref is a fail-closed provenance scope, not a hint. Every
+        # token must exactly identify a tool name or call id that contributed
+        # numeric evidence in this session. Previously one invalid/decorated
+        # token (or an entirely unknown ref) fell through to the global
+        # evidence pool, allowing the same numeric value to validate despite a
+        # false provenance declaration.
+        known_refs = {
+            identifier
+            for record in self._evidence
+            for identifier in (record.call_id, record.tool)
+            if identifier
+        }
+        known_refs.update(
+            identifier
+            for entry in self._analysis_metrics
+            for identifier in (entry.get("call_id"), entry.get("tool"))
+            if identifier
+        )
+
+        # Historical figures declarations may scope directly to a canonical
+        # instrument symbol (for example `159516.SZ`). Keep that contract,
+        # but only when the symbol was actually handled by successful evidence
+        # in this session. This is still fail-closed: arbitrary/decorated refs
+        # do not become aliases for the global evidence pool.
+        known_symbols = {
+            record.symbol
+            for record in self._evidence
+            if record.status == "observed" and record.symbol
+        }
+        symbol_keys = {
+            key
+            for key in keys
+            if _normalize_symbol(key) in known_symbols
+        }
+        provenance_keys = keys & known_refs
+        invalid_keys = keys - provenance_keys - symbol_keys
+        if invalid_keys:
+            return None
+        scope_kind = "symbol" if symbol_keys and not provenance_keys else "provenance"
+
         records = [
             record
             for record in self._evidence
-            if any(key in (record.call_id, record.tool) for key in keys)
+            if (
+                any(key in (record.call_id, record.tool) for key in keys)
+                or any(_normalize_symbol(key) == record.symbol for key in symbol_keys)
+            )
             and record.status == "observed"
             and record.value is not None
         ]
@@ -797,7 +844,7 @@ class _PolicyMixin:
         elif figure is not None and figure.currency:
             records = [record for record in records if _is_price_kind(record)]
             metrics = []
-        return records, metrics
+        return records, metrics, scope_kind
 
     def _price_pool(
         self,
@@ -1023,12 +1070,52 @@ class _PolicyMixin:
         ``get_market_data`` could never answer either way.
         """
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
+        if declaration is not None and declaration.ref.strip() and scoped is None:
+            return [
+                self._figure_issue(
+                    "numeric_claim_conflict",
+                    figure,
+                    "observed",
+                    symbol,
+                    "not_in_referenced_call",
+                    f"is declared observed from {declaration.ref}, but that ref does not "
+                    "exactly identify evidence from this session",
+                    source_tool_call_ids=[declaration.ref],
+                    market_price=market_price,
+                )
+            ]
         if scoped is not None:
-            scoped_records, metric_values = scoped
+            scoped_records, metric_values, scope_kind = scoped
             values = [float(record.value) for record in scoped_records] + metric_values
             money = figure.currency and not figure.percent
             if self._matches_evidence(figure, values, [] if money else values):
                 return []
+            if scope_kind == "symbol":
+                observed = sorted(values)
+                return [
+                    self._figure_issue(
+                        "numeric_claim_conflict" if observed else "numeric_claim_unavailable",
+                        figure,
+                        "observed",
+                        symbol,
+                        "value_mismatch" if observed else "no_evidence",
+                        (
+                            "is declared observed for a handled symbol but conflicts with "
+                            f"that symbol's evidence {observed[0]:g}–{observed[-1]:g}"
+                            if observed
+                            else "is declared observed for a handled symbol but this "
+                            "session holds no matching evidence of that kind"
+                        ),
+                        observed_min=observed[0] if observed else None,
+                        observed_max=observed[-1] if observed else None,
+                        observed_nearest=self._nearest_prints(
+                            figure, scoped_records, observed
+                        )
+                        if observed
+                        else [],
+                        market_price=market_price,
+                    )
+                ]
             return [
                 self._figure_issue(
                     "numeric_claim_conflict",
@@ -1133,6 +1220,8 @@ class _PolicyMixin:
         if not money:
             anchors += self._metric_pool(symbol)
         scoped = self._referenced(declaration.ref, symbol, None)
+        if declaration.ref.strip() and scoped is None:
+            return "no_evidence"
         if scoped is not None:
             anchors.extend(
                 float(record.value)

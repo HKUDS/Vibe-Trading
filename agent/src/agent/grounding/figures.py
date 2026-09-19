@@ -436,12 +436,20 @@ def _numbers(text: str) -> list[_Token]:
             ):
                 body, end = f"{body}.{fraction}", stop
         # An unambiguous period-grouped thousands figure ("1.618.596")
-        # is ``_NUMBER_RE``'s own second alternative; strip the grouping dots
-        # to read it as one number (1618596). Guarded by the same full-fullmatch
-        # shape check the regex enforces, so a genuine one-decimal number
-        # ("45.850", one group) is never touched here.
+        # is ``_NUMBER_RE``'s own second alternative. es-AR/es-ES may append
+        # a decimal comma ("123.456.789,125"); consume that fraction before
+        # stripping grouping dots so the whole rendered amount stays one token.
+        # The two-or-more grouping requirement keeps genuine one-decimal values
+        # such as "45.850" out of this path.
         if _PERIOD_THOUSANDS_RE.fullmatch(body):
+            fraction = ""
+            if text[end : end + 1] == ",":
+                fraction = _digit_run(text, end + 1)
+                if fraction:
+                    end += 1 + len(fraction)
             body = body.replace(".", "")
+            if fraction:
+                body = f"{body}.{fraction}"
         tokens.append(_Token(match.start(), end, sign, body.replace(",", "")))
         cursor = end
     return tokens
