@@ -254,7 +254,7 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "yahoo": "split_dividend",  # quote series split-adjusted at origin, scaled to adjclose
     "yfinance": "split_dividend",  # auto_adjust=True
     "eastmoney": "split_dividend",  # fqt=1 (forward-adjusted) on every kline call
-    "tencent": "split_dividend",  # fqkline qfq
+    "tencent": "split_dividend_additive",  # fqkline qfq; cash dividends are additive
     "akshare": "split_dividend",  # adjust="qfq", including the stock_us_hist path
     "baostock": "split_dividend",  # adjustflag="2"
     "tushare": "split_dividend",  # adj_factor applied via cn_adjust (A-share/fund)
@@ -272,6 +272,9 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
 PRICE_CALIBER_BY_SOURCE_MARKET: dict[tuple[str, str], str] = {
     # Tushare publishes no HK adjustment-factor series, so its HK path is raw.
     ("tushare", "hk_equity"): "raw",
+    # The Tencent HK fixture uses the unadjusted ``day`` fallback when no
+    # ``qfqday`` series is returned.
+    ("tencent", "hk_equity"): "raw",
 }
 
 #: Markets with no corporate-action adjustment concept. Their sources stamp
@@ -280,20 +283,18 @@ _NA_CALIBER_MARKETS = frozenset({"crypto", "forex", "futures", "macro"})
 
 #: Calibers that participate in mixed-caliber comparison. "unknown" and "na"
 #: never do: the first is unmeasured, the second has nothing to adjust for.
-_COMPARABLE_CALIBERS = frozenset({"raw", "split", "split_dividend"})
+_COMPARABLE_CALIBERS = frozenset({"raw", "split", "split_dividend", "split_dividend_additive"})
 
 
 def price_caliber(source: str, market: str | None = None) -> str:
     """Return the adjustment caliber of ``source``'s served prices.
 
-    One of "raw", "split", "split_dividend", "na" (a market without
-    corporate actions), or "unknown" (an unmeasured source).
+    One of "raw", "split", "split_dividend", "split_dividend_additive", "na"
+    (a market without corporate actions), or "unknown" (an unmeasured source).
     """
     if market in _NA_CALIBER_MARKETS:
         return "na"
-    return PRICE_CALIBER_BY_SOURCE_MARKET.get(
-        (source, market), PRICE_CALIBER_BY_SOURCE.get(source, "unknown")
-    )
+    return PRICE_CALIBER_BY_SOURCE_MARKET.get((source, market), PRICE_CALIBER_BY_SOURCE.get(source, "unknown"))
 
 
 def mixed_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
@@ -340,9 +341,7 @@ _SOURCE_ORDER_ENV_PREFIX = "MARKET_DATA_ORDER_"
 # Snapshot of the chains as written above. refresh_source_order_overrides()
 # restores from here; entries must never leak into FALLBACK_CHAINS by
 # aliasing (always copy on restore), or a restore would mutate the snapshot.
-_DEFAULT_CHAINS: dict[str, list[str]] = {
-    market: chain[:] for market, chain in FALLBACK_CHAINS.items()
-}
+_DEFAULT_CHAINS: dict[str, list[str]] = {market: chain[:] for market, chain in FALLBACK_CHAINS.items()}
 
 # market -> override currently in effect. Populated only by
 # refresh_source_order_overrides(); absent key = default chain in effect.
@@ -416,8 +415,7 @@ def refresh_source_order_overrides() -> None:
     from src.config.accessor import get_env_value
 
     snapshot = {
-        source_order_env_var(market): get_env_value(source_order_env_var(market), "")
-        for market in _DEFAULT_CHAINS
+        source_order_env_var(market): get_env_value(source_order_env_var(market), "") for market in _DEFAULT_CHAINS
     }
     if snapshot == _LAST_ORDER_ENV_SNAPSHOT:
         return
@@ -432,8 +430,7 @@ def refresh_source_order_overrides() -> None:
             continue
         if order:  # non-empty but invalid — warn, keep default order
             logger.warning(
-                "Ignoring invalid %s=%r: value must be a permutation of the"
-                " default chain %s; keeping default order",
+                "Ignoring invalid %s=%r: value must be a permutation of the" " default chain %s; keeping default order",
                 source_order_env_var(market),
                 raw,
                 default,
@@ -530,8 +527,7 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
             "to api.wallex.ir.",
         }.get(source, "")
         raise NoAvailableSourceError(
-            f"Data source '{source}' is unavailable and does not fall back to a "
-            f"network source. {hint}".rstrip()
+            f"Data source '{source}' is unavailable and does not fall back to a " f"network source. {hint}".rstrip()
         )
 
     # Source unavailable — try same-market fallback
@@ -548,6 +544,4 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
         except NoAvailableSourceError:
             continue
 
-    raise NoAvailableSourceError(
-        f"Data source '{source}' is unavailable and no fallback found."
-    )
+    raise NoAvailableSourceError(f"Data source '{source}' is unavailable and no fallback found.")

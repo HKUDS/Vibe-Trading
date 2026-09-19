@@ -60,6 +60,7 @@ class MarketDataTool(BaseTool):
         "null=undeclared) before interpreting or comparing volume values. Price caliber "
         "is source-dependent too (some sources adjust for splits/dividends, others serve "
         "raw quotes); read _provenance.adjustment ('raw' / 'split' / 'split_dividend' / "
+        "'split_dividend_additive' / "
         "'na' / 'unknown') before comparing price levels across symbols."
     )
     parameters = {
@@ -68,10 +69,7 @@ class MarketDataTool(BaseTool):
             "codes": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": (
-                    'Symbols such as ["AAPL.US"], ["700.HK"], ["TD.TO"], '
-                    '["PNG.V"], or ["BTC-USDT"].'
-                ),
+                "description": ('Symbols such as ["AAPL.US"], ["700.HK"], ["TD.TO"], ' '["PNG.V"], or ["BTC-USDT"].'),
             },
             "start_date": {
                 "type": "string",
@@ -150,9 +148,7 @@ class MarketDataTool(BaseTool):
         if not _valid_iso_date(start_date) or not _valid_iso_date(end_date):
             return _error("start_date and end_date must be valid YYYY-MM-DD dates")
         if start_date > end_date:
-            return _error(
-                f"start_date ({start_date}) must not be after end_date ({end_date})"
-            )
+            return _error(f"start_date ({start_date}) must not be after end_date ({end_date})")
 
         source = kwargs.get("source", "auto")
         if source not in _SOURCE_ENUM:
@@ -164,8 +160,7 @@ class MarketDataTool(BaseTool):
         normalized_interval = _INTERVAL_CANON.get(interval.strip().upper())
         if normalized_interval is None:
             return _error(
-                f"interval must be one of {sorted(_VALID_INTERVALS)} "
-                f"(case-insensitive); got {interval!r}"
+                f"interval must be one of {sorted(_VALID_INTERVALS)} " f"(case-insensitive); got {interval!r}"
             )
 
         max_rows = kwargs.get("max_rows", DEFAULT_MAX_ROWS)

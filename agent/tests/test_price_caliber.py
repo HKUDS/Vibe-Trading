@@ -38,7 +38,7 @@ def _df() -> pd.DataFrame:
         ("yahoo", "split_dividend"),
         ("yfinance", "split_dividend"),
         ("eastmoney", "split_dividend"),
-        ("tencent", "split_dividend"),
+        ("tencent", "split_dividend_additive"),
         ("akshare", "split_dividend"),
         ("baostock", "split_dividend"),
         ("tushare", "split_dividend"),
@@ -65,6 +65,11 @@ def test_tushare_hk_override_is_raw() -> None:
     assert price_caliber("tushare", "a_share") == "split_dividend"
 
 
+def test_tencent_hk_fallback_is_raw() -> None:
+    assert price_caliber("tencent", "hk_equity") == "raw"
+    assert price_caliber("tencent", "a_share") == "split_dividend_additive"
+
+
 def test_non_equity_markets_stamp_na() -> None:
     assert price_caliber("binance", "crypto") == "na"
     # The market wins over the per-source table: yfinance serving BTC has
@@ -80,6 +85,7 @@ def test_every_chain_source_resolves() -> None:
                 "raw",
                 "split",
                 "split_dividend",
+                "split_dividend_additive",
                 "na",
                 "unknown",
             }
@@ -114,6 +120,18 @@ def test_warning_silent_on_single_caliber() -> None:
     )
 
 
+def test_warning_fires_for_additive_and_multiplicative_dividend_calibers() -> None:
+    msg = mixed_caliber_warning(
+        {
+            "600519.SH": ("tencent", "split_dividend_additive"),
+            "000001.SZ": ("baostock", "split_dividend"),
+        }
+    )
+    assert msg is not None
+    assert "split_dividend_additive" in msg
+    assert "split_dividend" in msg
+
+
 def test_warning_ignores_unknown_and_na() -> None:
     assert (
         mixed_caliber_warning(
@@ -146,7 +164,7 @@ def test_provenance_stamps_adjustment_for_adjusted_source() -> None:
         loader_resolver=lambda src: _StubLoader,
         include_provenance=True,
     )
-    assert out["_provenance"]["600519.SH"]["adjustment"] == "split_dividend"
+    assert out["_provenance"]["600519.SH"]["adjustment"] == "split_dividend_additive"
 
 
 def test_provenance_stamps_adjustment_for_raw_source() -> None:
