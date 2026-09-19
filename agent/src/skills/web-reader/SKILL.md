@@ -46,7 +46,11 @@ Returns JSON:
   private/internal addresses — they would leave this host.
 - **Caching/staleness:** results may be a cached snapshot, not live data.
   When stale, the JSON includes `"cached": true`; pass `no_cache=true` to
-  force a fresh fetch (slower — use only when freshness matters).
+  force a fresh fetch (slower). Use `no_cache=true` only when a prior result
+  explicitly reported `"cached": true` or the task genuinely requires newer
+  data. Do **not** use it merely because context compaction removed a prior
+  payload or because that payload was restored by replay; in that case consume
+  the restored evidence and continue the analysis.
 - **Bash fallback caveat:** if a site blocks the reader (e.g. HTTP 451) a
   manual `bash + requests` fetch is possible, but it **bypasses this
   tool's URL safety guard and the Jina layer** — use sparingly and never

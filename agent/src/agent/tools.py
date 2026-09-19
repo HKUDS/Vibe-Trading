@@ -18,6 +18,11 @@ class BaseTool(ABC):
         description: Tool description shown to the LLM.
         parameters: Parameter definition in JSON Schema format.
         repeatable: Whether the tool may be called more than once.
+        replay_after_compaction: Whether an exact successful readonly call may
+            restore its run-scoped result after compaction removed the visible
+            payload, even when the tool is otherwise repeatable. Tools opting
+            in must provide an explicit freshness argument when a caller needs
+            to bypass replay (for example ``no_cache=True``).
     """
 
     name: str = ""
@@ -29,6 +34,11 @@ class BaseTool(ABC):
     # same result, so the loop may serve repeated identical calls from cache
     # instead of re-executing them (financial_rigor calc/verify, etc.).
     deterministic: bool = False
+    # Mutable/read-through tools can stay repeatable during normal operation
+    # while opting into replay only when compaction has removed an exact prior
+    # successful result. The loop still bypasses replay for explicit freshness
+    # requests such as ``no_cache=True``.
+    replay_after_compaction: bool = False
 
     @classmethod
     def check_available(cls) -> bool:
