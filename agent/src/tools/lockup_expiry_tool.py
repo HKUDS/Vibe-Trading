@@ -9,7 +9,7 @@ calendar when no code is given.
 All requests reuse the shared, per-host-throttled Eastmoney client
 (:mod:`backtest.loaders.eastmoney_client`); Eastmoney rate-limits by source IP
 and temporarily bans bursting callers, so this module never issues an
-un-throttled GET. It only knows Eastmoney's ``RPT_LIFT_STOCK`` report layout,
+un-throttled GET. It only knows Eastmoney's ``RPT_LIFT_STAGE`` report layout,
 not any loader's DataFrame conventions.
 """
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Eastmoney datacenter report endpoint + the restricted-share unlock report.
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-_REPORT_NAME = "RPT_LIFT_STOCK"
+_REPORT_NAME = "RPT_LIFT_STAGE"
 
 # Per-bar columns requested from the report, in our display order.
 _COLUMNS = (
@@ -156,6 +156,22 @@ def _shape_record(raw: Any) -> dict[str, Any] | None:
     }
 
 
+_EMPTY_RESULT_MESSAGES = ("返回数据为空",)
+
+
+def _upstream_rejection(payload: Any) -> str | None:
+    if not isinstance(payload, dict) or payload.get("success") is not False:
+        return None
+    message = payload.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return "request rejected without a message"
+    message = message.strip()
+    code = payload.get("code")
+    if code == 9201 and message in _EMPTY_RESULT_MESSAGES:
+        return None
+    return f"code={code} message={message}" if code is not None else message
+
+
 def _extract_rows(payload: Any) -> list[dict]:
     """Pull the ``result.data`` list out of a datacenter payload.
 
@@ -208,6 +224,10 @@ def _fetch_lockups(code: str | None, horizon_days: int) -> list[dict]:
             "client": "WEB",
         },
     )
+
+    rejection = _upstream_rejection(payload)
+    if rejection is not None:
+        raise ValueError(f"eastmoney datacenter rejected the request: {rejection}")
 
     records: list[dict] = []
     for raw in _extract_rows(payload):
