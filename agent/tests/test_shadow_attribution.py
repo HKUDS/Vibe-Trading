@@ -103,3 +103,26 @@ def test_short_loser_is_noise_only() -> None:
     assert breakdown.noise_trades_pnl == pytest.approx(30.0)
     assert breakdown.early_exit_pnl == 0.0
     assert breakdown.late_exit_pnl == 0.0
+
+
+def test_early_exit_trade_not_also_counted_as_overtrading() -> None:
+    # trade 1 is an early-exit winner (hold=1d < the 3d rule): its pnl is
+    # already fully explained by early_exit_pnl. Trades 2-4 hold exactly the
+    # rule's 3 days, so with expected == 1.0 (low budget) and actual == 4,
+    # _overtrading_pnl must draw its "extra" candidates only from trades not
+    # already booked into early_exit_pnl.
+    roundtrips = [
+        _rt("AAPL.US", 30.0, 1.0),
+        _rt("AAPL.US", 40.0, 3.0),
+        _rt("AAPL.US", 50.0, 3.0),
+        _rt("AAPL.US", 60.0, 3.0),
+    ]
+    breakdown, _, _ = _compute_attribution(
+        profile=_profile(), roundtrips=roundtrips, shadow_pnl=0.0,
+    )
+    assert breakdown.early_exit_pnl == pytest.approx(30.0 * (3 - 1) / 3)
+    # Trade 1's pnl (30.0) must not also be folded into overtrading_pnl: the
+    # buggy version summed the three cheapest of ALL four trades (30+40+50 =
+    # 120), double-counting trade 1; the fix draws from the three trades not
+    # already explained (40+50+60 = 150).
+    assert breakdown.overtrading_pnl == pytest.approx(-150.0)
