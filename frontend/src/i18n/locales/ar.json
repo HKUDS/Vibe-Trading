@@ -452,7 +452,9 @@
       }
     },
     "tushareToken": "رمز Tushare",
+    "gildataToken": "رمز Gildata",
     "clearTushareToken": "مسح رمز Tushare المحفوظ",
+    "clearGildataToken": "مسح رمز Gildata المحفوظ",
     "saveDataSourceSettings": "حفظ إعدادات مصادر البيانات",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "فشل تحميل إعدادات LLM: {{message}}",
@@ -484,7 +486,8 @@
     "oauth": "OAuth",
     "authentication": "المصادقة",
     "apiKey": "مفتاح API",
-    "tushareTokenDesc": "يُستخدم لبيانات الأسهم الصينية (فئة A) والعقود الآجلة والصناديق والاقتصاد الكلي. إذا لم يُضبط، يتراجع المشروع إلى AKShare حيثما توفر."
+    "tushareTokenDesc": "يُستخدم لبيانات الأسهم الصينية (فئة A) والعقود الآجلة والصناديق والاقتصاد الكلي. إذا لم يُضبط، يتراجع المشروع إلى AKShare حيثما توفر.",
+    "gildataTokenDesc": "مصدر اختياري من Gildata (هينغشنغ جويوان) للأسهم الصينية فئة A. عند تعيينه، ينضم إلى نهاية سلسلة التراجع للأسهم A ببيانات يومية معدّلة."
   },
   "qveris": {
     "title": "سوق أدوات QVeris",

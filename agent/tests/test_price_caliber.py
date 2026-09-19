@@ -45,6 +45,7 @@ def _df() -> pd.DataFrame:
         ("pykrx", "split"),
         ("tiingo", "split_dividend"),
         ("fmp", "split_dividend"),
+        ("gildata", "split_dividend"),
         ("sina", "raw"),
         ("alphavantage", "raw"),
         ("longbridge", "raw"),
@@ -63,6 +64,13 @@ def test_tushare_hk_override_is_raw() -> None:
     A-share/fund paths are adjusted."""
     assert price_caliber("tushare", "hk_equity") == "raw"
     assert price_caliber("tushare", "a_share") == "split_dividend"
+
+
+def test_gildata_hk_override_is_raw() -> None:
+    """HKStockDailyQuotes serves raw traded prices (befadj/aftadj closes are
+    separate fields the loader ignores) — measured on 00700.HK."""
+    assert price_caliber("gildata", "hk_equity") == "raw"
+    assert price_caliber("gildata", "a_share") == "split_dividend"
 
 
 def test_non_equity_markets_stamp_na() -> None:
@@ -277,3 +285,26 @@ def test_tiingo_loader_serves_the_caliber_the_table_claims() -> None:
     assert df["close"].iloc[0] == pytest.approx(50.0)
     assert df["open"].iloc[0] == pytest.approx(50.0)
     assert df["volume"].iloc[0] == pytest.approx(1000.0)
+
+
+def test_gildata_loader_serves_the_caliber_the_table_claims() -> None:
+    from backtest.loaders.gildata_loader import _RESTORATION_QFQ, _parse_daily_rows
+
+    assert price_caliber("gildata", "a_share") == "split_dividend"
+    # The caliber is pinned by the request parameter, not by any local
+    # scaling: restorationStatus=1 asks the vendor for 前复权 bars, and the
+    # parser must pass that OHLC through untouched (volume keeps its own
+    # unit conversion).
+    assert _RESTORATION_QFQ == "1"
+    df = _parse_daily_rows(
+        [
+            {
+                "tradingday": "2024-01-03",
+                "openprice": 1.0, "highprice": 2.0, "lowprice": 0.5,
+                "closeprice": 1.5, "turnovervolume": 100.0,
+            }
+        ]
+    )
+    assert df is not None
+    assert df["close"].iloc[0] == pytest.approx(1.5)
+    assert df["open"].iloc[0] == pytest.approx(1.0)

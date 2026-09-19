@@ -457,7 +457,9 @@
       }
     },
     "tushareToken": "Token de Tushare",
+    "gildataToken": "Token de Gildata",
     "clearTushareToken": "Borrar token de Tushare guardado",
+    "clearGildataToken": "Borrar token de Gildata guardado",
     "saveDataSourceSettings": "Guardar configuración de fuentes de datos",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "Error al cargar la configuración del LLM: {{message}}",
@@ -489,7 +491,8 @@
     "oauth": "OAuth",
     "authentication": "Autenticación",
     "apiKey": "Clave de API",
-    "tushareTokenDesc": "Usado para datos de acciones A, futuros, fondos y macro de China. Si no se configura, el proyecto recurre a AKShare cuando está disponible."
+    "tushareTokenDesc": "Usado para datos de acciones A, futuros, fondos y macro de China. Si no se configura, el proyecto recurre a AKShare cuando está disponible.",
+    "gildataTokenDesc": "Fuente opcional de Gildata (Hundsun Juyuan) para acciones A de China. Si se configura, se une al final de la cadena de respaldo de acciones A con barras diarias ajustadas."
   },
   "qveris": {
     "title": "Mercado de herramientas QVeris",

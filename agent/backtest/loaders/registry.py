@@ -53,6 +53,7 @@ VALID_SOURCES: set[str] = {
     "alphavantage",
     "tiingo",
     "fmp",
+    "gildata",
     "qveris",  # QVERIS-INTEGRATION
     "india_broker",
     "pykrx",
@@ -114,6 +115,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.alphavantage_loader",
             "backtest.loaders.tiingo_loader",
             "backtest.loaders.fmp_loader",
+            "backtest.loaders.gildata_loader",
             "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
             "backtest.loaders.india_broker_loader",
             "backtest.loaders.pykrx_loader",
@@ -180,6 +182,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "baostock",
         "akshare",
         "tushare",
+        # Key-gated commercial vendor (恒生聚源): trails the free sources so
+        # paid quota is only spent when the public endpoints cannot serve.
+        "gildata",
         "local",
     ],
     "us_equity": [
@@ -208,6 +213,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "yfinance",
         "tushare",
         "longbridge",
+        # Key-gated commercial vendor, same tail-of-chain rationale as the
+        # a_share chain (paid quota only spent when free sources cannot serve).
+        "gildata",
         "local",
     ],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
@@ -260,6 +268,7 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "tushare": "split_dividend",  # adj_factor applied via cn_adjust (A-share/fund)
     "tiingo": "split_dividend",  # prefers adjOpen/High/Low/Close, else adjClose/close
     "fmp": "split_dividend",  # Stable historical-price-eod/full, scaled by adjClose/close
+    "gildata": "split_dividend",  # StockDailyQuote restorationStatus=1 (前复权), measured vs live payload
     # Split-adjusted only.
     "pykrx": "split",  # get_market_ohlcv_by_date(adjusted=True), Naver-backed
     # Unadjusted.
@@ -272,6 +281,9 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
 PRICE_CALIBER_BY_SOURCE_MARKET: dict[tuple[str, str], str] = {
     # Tushare publishes no HK adjustment-factor series, so its HK path is raw.
     ("tushare", "hk_equity"): "raw",
+    # Gildata's HKStockDailyQuotes serves raw traded prices (befadj/aftadj
+    # closes are separate fields, ignored) — measured on 00700.HK.
+    ("gildata", "hk_equity"): "raw",
 }
 
 #: Markets with no corporate-action adjustment concept. Their sources stamp

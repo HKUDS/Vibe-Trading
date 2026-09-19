@@ -41,6 +41,7 @@ per-source skill.
 | alphavantage | US equities | Yes (`ALPHAVANTAGE_API_KEY`) | Unrestricted | data-routing |
 | tiingo | US equities | Yes (`TIINGO_API_KEY`) | Unrestricted | data-routing |
 | fmp | US equities | Yes (`FMP_API_KEY`) | Unrestricted | data-routing |
+| gildata | A-shares (前复权 dailies), HK equities (raw), CN indices | Yes (`GILDATA_TOKEN` / Settings) | Gildata MCP API | data-routing |
 | qveris | Global multi-asset (paid, credits) | Yes (`QVERIS_API_KEY` / Settings) | QVeris API | qveris <!-- QVERIS-INTEGRATION --> |
 
 ## Capability → Tool Routing
@@ -68,6 +69,10 @@ is required only where listed (no key listed = free / no auth).
 | Market screen | `screen_market` | A-share | — |
 | Symbol search | `search_symbol` | A-share, US, HK, Canada, crypto/index/FX | — |
 | Macro / FRED series | `get_macro_series` | Macro (US/global) | `FRED_API_KEY` |
+| OTC fund NAV (场外基金净值) | `get_fund_nav` | CN off-exchange funds | `GILDATA_TOKEN` |
+| China macro / industry EDB (宏观行业) | `get_cn_macro_series` | CN macro/regional/industry | `GILDATA_TOKEN` |
+| CN announcements (公告检索) | `get_cn_announcements` | A-share / HK / fund | `GILDATA_TOKEN` |
+| Broker research (券商研报) | `search_broker_reports` | A-share / HK | `GILDATA_TOKEN` |
 | iWenCai NL search (问财) | `iwencai_search` | A-share | `VIBE_TRADING_IWENCAI_KEY` |
 
 Notes:

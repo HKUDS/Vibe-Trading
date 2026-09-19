@@ -452,7 +452,9 @@
       }
     },
     "tushareToken": "Tushare Token",
+    "gildataToken": "聚源（Gildata）Token",
     "clearTushareToken": "清除已保存的 Tushare Token",
+    "clearGildataToken": "清除已保存的聚源 Token",
     "saveDataSourceSettings": "保存数据源设置",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "加载 LLM 设置失败: {{message}}",
@@ -484,7 +486,8 @@
     "oauth": "OAuth",
     "authentication": "身份验证",
     "apiKey": "API 密钥",
-    "tushareTokenDesc": "用于中国 A 股、期货、基金和宏观数据。没填的话会自动改用 AKShare 的免费数据。"
+    "tushareTokenDesc": "用于中国 A 股、期货、基金和宏观数据。没填的话会自动改用 AKShare 的免费数据。",
+    "gildataTokenDesc": "可选的恒生聚源 A 股数据源。配置后会以日线前复权数据加入 A 股回退链末尾。"
   },
   "qveris": {
     "title": "QVeris 工具市场",

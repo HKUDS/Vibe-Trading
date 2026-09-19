@@ -7,6 +7,71 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Three Gildata research tools over the vendor's 标准版 (srv-tool) NL
+  endpoint** — natural-language tools the agent itself queries, wrapping the
+  three vendor capabilities the project did not already cover (news,
+  screening and generic FinQuery are deliberately left to the existing
+  tools):
+  - `get_cn_macro_series` (`MacroIndustryData`): China macro / regional /
+    industry EDB time series — GDP, CPI, PMI, rates, 31 industry series —
+    complementing `get_macro_series` (FRED, US/global only until now).
+  - `get_cn_announcements` (`AnnouncementData`): A-share / HK / fund
+    announcement retrieval with highlighted excerpts (`get_sec_filings`
+    covers SEC filings only).
+  - `search_broker_reports` (`FinancialResearchReport`): broker-research
+    search over the Juyuan library — title, broker, industry, rating,
+    excerpt — coexisting with the eastmoney-backed `get_research_reports`.
+  All three share one thin client (`src/tools/gildata_srv.py`: JSON-RPC POST
+  + `format=json`, own throttle bucket), echo the routed `api_names` so a
+  mis-routed question is visible to the agent, cap rows via `limit`, and are
+  key-gated on `GILDATA_TOKEN` (optional `GILDATA_SRV_TOOL_URL` override).
+  MCP tool surface grows 75 → 78.
+
+- **`get_fund_nav`: NAV history for Chinese off-exchange funds (场外基金).**
+  Off-exchange funds publish no OHLCV bars — their series is the daily NAV —
+  so this lands as an agent tool (`NetFundUnitValueReport` behind the same
+  recall+cache machinery as the loader) instead of stretching the loader
+  contract. Serves unit NAV (单位净值), accumulated NAV (累计净值),
+  dividend-adjusted NAV (复权净值) and the daily growth rate, ascending,
+  most-recent `limit` rows, per-fund errors never abort the batch.
+  Exchange-listed ETF/LOF codes are rejected with a pointer to
+  `get_market_data`. Key-gated on `GILDATA_TOKEN`; exposed as MCP tool #75.
+
+- **Gildata (恒生聚源) now serves HK equities and CN indices too.** HK symbols
+  (`00700.HK`) route to `HKStockDailyQuotes`, CN index codes (`000300.SH`,
+  `399xxx.SZ` — exchange-specific, so `000001.SZ` stays Ping An Bank) route to
+  `IndexDailyQuote`; both tools take a 聚源内码, resolved through the
+  `ParamCandidateRecall` meta-tool with an exact `ref_code` match and cached
+  to `~/.vibe-trading/cache/gildata-codes.json` (one round-trip per symbol
+  per machine). HK bars are raw traded prices — stamped `raw` as a per-market
+  exception after measuring 00700.HK (the vendor's befadj/aftadj closes are
+  separate fields and ignored); HK volume already arrives in shares. The
+  loader joins the `hk_equity` chain's tail. US equities are deliberately
+  excluded: on this token `USStockDailyQuotes` history is sparse before ~2022
+  (12 rows for 2020, 134 for 2021, complete only from 2023), which would
+  silently corrupt backtests — revisit once the vendor confirms deeper US
+  entitlement.
+
+- **Gildata (恒生聚源) joins the A-share fallback chain as a token-gated
+  source**. The new `gildata` loader talks to the vendor's raw-api MCP
+  endpoint (one JSON-RPC POST per call, token on the URL query string) and
+  serves A-share daily OHLCV through the `StockDailyQuote` tool with
+  `restorationStatus=1` — forward, split-AND-dividend adjusted bars, stamped
+  `split_dividend` in the price-caliber table after being measured against a
+  live payload. Volume arrives in 万股 and is converted to shares
+  (`volume_units: shares`); `avgprice`/`prevcloseprice` are ignored because
+  the vendor keeps them on a different adjustment basis than the adjusted
+  OHLC. An unresolvable symbol answers `rows: []` (never an error), so the
+  chain keeps walking. Auth is `GILDATA_TOKEN` (Settings page field or env;
+  `GILDATA_BASE_URL` overrides the endpoint, `VIBE_TRADING_GILDATA_MIN_INTERVAL`
+  the 0.3s default spacing). Without a token the loader reports unavailable
+  and the chain skips it — no behavior change for existing users beyond one
+  reorderable entry at the chain's tail. One migration note: a
+  `MARKET_DATA_ORDER_A_SHARE` value saved before this change is a permutation
+  of the old 7-source chain, so it stops validating once `gildata` joins —
+  the Settings card flags it and the default order applies until the saved
+  order is re-saved (one click) with the new source included.
+
 - **A Robinhood account can be a read-only portfolio source** (#1428). The new
   `robinhood-live-mcp-readonly` profile uses the same MCP server and OAuth
   grant as the trading profile. Its connection reads exactly one account,

@@ -1880,6 +1880,12 @@ def _key_gated_tool_classes() -> dict[str, Any]:
         Mapping of MCP tool name to its ``BaseTool`` subclass.
     """
     from src.tools.fred_macro_tool import FredMacroTool
+    from src.tools.fund_nav_tool import GildataFundNavTool
+    from src.tools.gildata_research_tools import (
+        GetCnAnnouncementsTool,
+        GetCnMacroSeriesTool,
+        SearchBrokerReportsTool,
+    )
     from src.tools.iwencai_tool import IWenCaiSearchTool
     from src.tools.qveris_tool import (
         QVerisExecuteTool,
@@ -1889,6 +1895,10 @@ def _key_gated_tool_classes() -> dict[str, Any]:
 
     return {
         "get_macro_series": FredMacroTool,
+        "get_fund_nav": GildataFundNavTool,
+        "get_cn_macro_series": GetCnMacroSeriesTool,
+        "get_cn_announcements": GetCnAnnouncementsTool,
+        "search_broker_reports": SearchBrokerReportsTool,
         "iwencai_search": IWenCaiSearchTool,
         "qveris_search": QVerisSearchTool,
         "qveris_inspect": QVerisInspectTool,
@@ -2286,6 +2296,89 @@ def get_macro_series(
     if end_date:
         params["end_date"] = end_date
     return _execute_key_gated("get_macro_series", params)
+
+@mcp.tool
+def get_fund_nav(
+    funds: _lenient_str_list,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 2000,
+) -> str:
+    """Fetch daily NAV history for Chinese off-exchange funds (场外基金).
+
+    Returns unit NAV (单位净值), accumulated NAV (累计净值), dividend-adjusted
+    NAV (复权净值) and the daily growth rate per fund, over an optional date
+    window. Codes are bare 6-digit ('110022') or '.OF'-suffixed
+    ('110022.OF'). Exchange-listed ETF/LOF are OHLCV instruments — use
+    get_market_data for those. Requires the commercial GILDATA_TOKEN; without
+    it the tool returns a not-available error.
+
+    Args:
+        funds: Fund codes, e.g. ["110022", "000198.OF"].
+        start_date: Inclusive window start, YYYY-MM-DD. Omit for the vendor's
+            default history window.
+        end_date: Inclusive window end, YYYY-MM-DD. Omit through the latest
+            published NAV.
+        limit: Maximum number of most-recent rows per fund.
+    """
+    params: dict[str, Any] = {"funds": funds, "limit": limit}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    return _execute_key_gated("get_fund_nav", params)
+
+
+@mcp.tool
+def get_cn_macro_series(query: str, limit: int = 50) -> str:
+    """Fetch China macro / regional / industry economic indicator series (宏观 EDB).
+
+    GDP, CPI, PPI, PMI, money supply, rates, trade, 31 industry series and
+    regional data — dated observations with unit and frequency, asked for in
+    natural language. Complements get_macro_series (FRED, US/global).
+    Requires GILDATA_TOKEN; without it the tool returns a not-available error.
+
+    Args:
+        query: Natural-language indicator request, e.g. "2024年中国月度CPI同比".
+        limit: Maximum rows returned.
+    """
+    return _execute_key_gated(
+        "get_cn_macro_series", {"query": query, "limit": limit}
+    )
+
+
+@mcp.tool
+def get_cn_announcements(query: str, limit: int = 50) -> str:
+    """Search Chinese-market announcements (公告): A-share, HK and fund filings.
+
+    Annual reports, earnings, dividends, buybacks, restructuring, inquiry
+    letters — with title, publish date and a highlighted excerpt. For US
+    filings use get_sec_filings. Requires GILDATA_TOKEN.
+
+    Args:
+        query: Natural-language announcement request, e.g. "贵州茅台2024年年度分红公告".
+        limit: Maximum rows returned.
+    """
+    return _execute_key_gated(
+        "get_cn_announcements", {"query": query, "limit": limit}
+    )
+
+
+@mcp.tool
+def search_broker_reports(query: str, limit: int = 50) -> str:
+    """Search sell-side broker research (券商研报) over the Juyuan library.
+
+    Title, broker, industry, rating and a highlighted excerpt of the argument
+    — for company deep-dives, industry views and macro commentary. Coexists
+    with get_research_reports (eastmoney-backed). Requires GILDATA_TOKEN.
+
+    Args:
+        query: Natural-language research request, e.g. "最近三个月白酒行业的券商研报观点".
+        limit: Maximum rows returned.
+    """
+    return _execute_key_gated(
+        "search_broker_reports", {"query": query, "limit": limit}
+    )
 
 
 @mcp.tool
