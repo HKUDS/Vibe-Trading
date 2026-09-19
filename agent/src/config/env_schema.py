@@ -188,6 +188,11 @@ class DataConfig(_EnvBase):
     alphavantage_api_key: str = Field(alias="ALPHAVANTAGE_API_KEY", default="")
     tiingo_api_key: str = Field(alias="TIINGO_API_KEY", default="")
     fmp_api_key: str = Field(alias="FMP_API_KEY", default="")
+    gildata_token: str = Field(alias="GILDATA_TOKEN", default="")
+    gildata_base_url: str = Field(
+        alias="GILDATA_BASE_URL",
+        default="https://api.gildata.com/mcp-servers/aidata-assistant-srv-rawapi",
+    )
     fred_api_key: str = Field(alias="FRED_API_KEY", default="")
     vibe_trading_iwencai_key: str = Field(alias="VIBE_TRADING_IWENCAI_KEY", default="")
     vibe_trading_sec_ua: str = Field(alias="VIBE_TRADING_SEC_UA", default="")

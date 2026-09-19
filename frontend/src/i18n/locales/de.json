@@ -457,7 +457,9 @@
       }
     },
     "tushareToken": "Tushare-Token",
+    "gildataToken": "Gildata-Token",
     "clearTushareToken": "Gespeicherten Tushare-Token löschen",
+    "clearGildataToken": "Gespeicherten Gildata-Token löschen",
     "saveDataSourceSettings": "Datenquellen-Einstellungen speichern",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "LLM-Einstellungen konnten nicht geladen werden: {{message}}",
@@ -489,7 +491,8 @@
     "oauth": "OAuth",
     "authentication": "Authentifizierung",
     "apiKey": "API-Schlüssel",
-    "tushareTokenDesc": "Verwendet für China-A-Aktien, Futures, Fonds und Makrodaten. Falls nicht gesetzt, greift das Projekt auf AKShare zurück, sofern verfügbar."
+    "tushareTokenDesc": "Verwendet für China-A-Aktien, Futures, Fonds und Makrodaten. Falls nicht gesetzt, greift das Projekt auf AKShare zurück, sofern verfügbar.",
+    "gildataTokenDesc": "Optionale Gildata-Quelle (Hundsun Juyuan) für chinesische A-Aktien. Wenn gesetzt, reiht sie sich mit vorwärts bereinigten Tagesbalken ans Ende der A-Aktien-Fallback-Kette ein."
   },
   "qveris": {
     "title": "QVeris-Tool-Marktplatz",

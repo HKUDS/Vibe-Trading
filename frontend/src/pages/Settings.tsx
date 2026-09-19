@@ -50,6 +50,8 @@ export function Settings() {
   const [clearApiKey, setClearApiKey] = useState(false);
   const [tushareToken, setTushareToken] = useState("");
   const [clearTushareToken, setClearTushareToken] = useState(false);
+  const [gildataToken, setGildataToken] = useState("");
+  const [clearGildataToken, setClearGildataToken] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dataSaving, setDataSaving] = useState(false);
@@ -260,6 +262,8 @@ export function Settings() {
       const updated = await api.updateDataSourceSettings({
         tushare_token: isDesktop ? undefined : tushareToken.trim() || undefined,
         clear_tushare_token: isDesktop ? false : clearTushareToken,
+        gildata_token: isDesktop ? undefined : gildataToken.trim() || undefined,
+        clear_gildata_token: isDesktop ? false : clearGildataToken,
       });
       if (desktop && (tushareToken.trim() || clearTushareToken)) {
         await desktop.setCredential(
@@ -267,9 +271,17 @@ export function Settings() {
           clearTushareToken ? null : tushareToken.trim(),
         );
       }
+      if (desktop && (gildataToken.trim() || clearGildataToken)) {
+        await desktop.setCredential(
+          "GILDATA_TOKEN",
+          clearGildataToken ? null : gildataToken.trim(),
+        );
+      }
       setDataSettings(updated);
       setTushareToken("");
       setClearTushareToken(false);
+      setGildataToken("");
+      setClearGildataToken(false);
       toast.success(t("settings.dataSourceSettingsSaved"));
       if (desktop && (tushareToken.trim() || clearTushareToken)) {
         toast.info(t("settings.desktopCredentialRestarting"));
@@ -358,6 +370,9 @@ export function Settings() {
         : t("settings.noApiKeyRequired");
   const apiKeyDisabled = !selectedProvider?.api_key_required || clearApiKey;
   const tushareStatus = dataSettings.tushare_token_configured
+    ? t("settings.configured")
+    : t("settings.keepCurrentToken");
+  const gildataStatus = dataSettings.gildata_token_configured
     ? t("settings.configured")
     : t("settings.keepCurrentToken");
   const channelRows = channelStatus
@@ -738,6 +753,41 @@ export function Settings() {
                     className="h-3.5 w-3.5 accent-primary"
                   />
                   {t("settings.clearTushareToken")}
+                </label>
+              </div>
+            </label>
+
+            <label className="grid gap-2">
+              <span className={labelClass}>{t("settings.gildataToken")}</span>
+              <div className="relative">
+                <KeyRound className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  type="password"
+                  value={gildataToken}
+                  onChange={(event) => setGildataToken(event.target.value)}
+                  className={`${fieldClass} ps-9`}
+                  placeholder={gildataStatus}
+                  autoComplete="current-password"
+                  disabled={clearGildataToken}
+                />
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <span className={hintClass}>
+                  {t("settings.gildataTokenDesc", {
+                    defaultValue: "Optional Gildata (Hundsun Juyuan) A-share feed. When set, it joins the tail of the A-share fallback chain.",
+                  })}
+                </span>
+                <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={clearGildataToken}
+                    onChange={(event) => {
+                      setClearGildataToken(event.target.checked);
+                      if (event.target.checked) setGildataToken("");
+                    }}
+                    className="h-3.5 w-3.5 accent-primary"
+                  />
+                  {t("settings.clearGildataToken")}
                 </label>
               </div>
             </label>

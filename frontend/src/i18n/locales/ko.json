@@ -452,7 +452,9 @@
       }
     },
     "tushareToken": "Tushare 토큰",
+    "gildataToken": "Gildata 토큰",
     "clearTushareToken": "저장된 Tushare 토큰 삭제",
+    "clearGildataToken": "저장된 Gildata 토큰 삭제",
     "saveDataSourceSettings": "데이터 소스 설정 저장",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "LLM 설정 로드 실패: {{message}}",
@@ -484,7 +486,8 @@
     "oauth": "OAuth",
     "authentication": "인증",
     "apiKey": "API 키",
-    "tushareTokenDesc": "중국 A주·선물·펀드·거시 데이터에 사용됩니다. 설정하지 않으면 가능한 경우 AKShare로 대체됩니다."
+    "tushareTokenDesc": "중국 A주·선물·펀드·거시 데이터에 사용됩니다. 설정하지 않으면 가능한 경우 AKShare로 대체됩니다.",
+    "gildataTokenDesc": "선택 사항: 헝성쥐위안(Gildata) 중국 A주 데이터 소스. 설정하면 전방 조정 일봉으로 A주 폴백 체인 끝에 추가됩니다."
   },
   "qveris": {
     "title": "QVeris 도구 마켓플레이스",

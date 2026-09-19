@@ -800,6 +800,8 @@ export interface SourceOrderUpdate {
 export interface DataSourceSettings {
   tushare_token_configured: boolean;
   tushare_token_hint?: string | null;
+  gildata_token_configured: boolean;
+  gildata_token_hint?: string | null;
   baostock_supported: boolean;
   baostock_installed: boolean;
   baostock_message: string;
@@ -810,6 +812,8 @@ export interface DataSourceSettings {
 export interface UpdateDataSourceSettingsRequest {
   tushare_token?: string;
   clear_tushare_token?: boolean;
+  gildata_token?: string;
+  clear_gildata_token?: boolean;
   source_orders?: SourceOrderUpdate[];
 }
 

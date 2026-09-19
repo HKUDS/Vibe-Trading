@@ -198,3 +198,32 @@ def throttled_get_json(
     )
     response.raise_for_status()
     return response.json()
+
+
+def throttled_post_json(
+    url: str,
+    *,
+    host_key: str,
+    min_interval: float,
+    json_body: Any,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 15.0,
+) -> Any:
+    """Throttled POST of a JSON body that decodes the response as JSON.
+
+    POST twin of :func:`throttled_get_json` for JSON-RPC style providers
+    (e.g. MCP-over-HTTP endpoints): same throttle/session bucketing, plus
+    ``raise_for_status()`` and ``.json()``. A non-2xx status or undecodable
+    body raises for the caller's retry policy to classify.
+    """
+    merged_headers = {"User-Agent": DEFAULT_USER_AGENT}
+    if headers:
+        merged_headers.update(headers)
+    _THROTTLE.wait(host_key, min_interval)
+    session = _session_for(host_key)
+    response = session.post(
+        url, json=json_body, params=params, headers=merged_headers, timeout=timeout
+    )
+    response.raise_for_status()
+    return response.json()

@@ -457,7 +457,9 @@
       }
     },
     "tushareToken": "Tushare token",
+    "gildataToken": "Gildata token",
     "clearTushareToken": "Clear saved Tushare token",
+    "clearGildataToken": "Clear saved Gildata token",
     "saveDataSourceSettings": "Save data source settings",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "Failed to load LLM settings: {{message}}",
@@ -489,7 +491,8 @@
     "oauth": "OAuth",
     "authentication": "Authentication",
     "apiKey": "API key",
-    "tushareTokenDesc": "Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available."
+    "tushareTokenDesc": "Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available.",
+    "gildataTokenDesc": "Optional Gildata (Hundsun Juyuan) feed for China A-shares. When set, it joins the tail of the A-share fallback chain with forward-adjusted daily bars."
   },
   "qveris": {
     "title": "QVeris Tool Marketplace",

@@ -242,6 +242,7 @@ class TestFallbackChains:
             "baostock",
             "akshare",
             "tushare",
+            "gildata",
             "local",
         ]
         assert FALLBACK_CHAINS["us_equity"] == [

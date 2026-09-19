@@ -53,6 +53,7 @@ VALID_SOURCES: set[str] = {
     "alphavantage",
     "tiingo",
     "fmp",
+    "gildata",
     "qveris",  # QVERIS-INTEGRATION
     "india_broker",
     "pykrx",
@@ -114,6 +115,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.alphavantage_loader",
             "backtest.loaders.tiingo_loader",
             "backtest.loaders.fmp_loader",
+            "backtest.loaders.gildata_loader",
             "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
             "backtest.loaders.india_broker_loader",
             "backtest.loaders.pykrx_loader",
@@ -180,6 +182,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "baostock",
         "akshare",
         "tushare",
+        # Key-gated commercial vendor (恒生聚源): trails the free sources so
+        # paid quota is only spent when the public endpoints cannot serve.
+        "gildata",
         "local",
     ],
     "us_equity": [
@@ -260,6 +265,7 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "tushare": "split_dividend",  # adj_factor applied via cn_adjust (A-share/fund)
     "tiingo": "split_dividend",  # prefers adjOpen/High/Low/Close, else adjClose/close
     "fmp": "split_dividend",  # Stable historical-price-eod/full, scaled by adjClose/close
+    "gildata": "split_dividend",  # StockDailyQuote restorationStatus=1 (前复权), measured vs live payload
     # Split-adjusted only.
     "pykrx": "split",  # get_market_ohlcv_by_date(adjusted=True), Naver-backed
     # Unadjusted.

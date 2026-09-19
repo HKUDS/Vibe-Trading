@@ -412,7 +412,7 @@ La mayoría de las ejecuciones siguen la misma ruta de evidencia: enrutar la sol
 
 ## 📡 Fuentes de Datos y Fallback Inteligente
 
-Una sola llamada `get_market_data`, **27 fuentes de datos de mercado**, una de ellas el mercado premium opcional **QVeris** (además del mercado premium opcional **QVeris**). Establece `source: "auto"`: el cargador elige según el símbolo y luego recorre una cadena por mercado ordenada por **riesgo de bloqueo de IP**: primero las fuentes públicas que nunca se bloquean, al final las limitadas o que requieren clave. Cero configuración, sin punto único de fallo.
+Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de ellas el mercado premium opcional **QVeris** (además del mercado premium opcional **QVeris**). Establece `source: "auto"`: el cargador elige según el símbolo y luego recorre una cadena por mercado ordenada por **riesgo de bloqueo de IP**: primero las fuentes públicas que nunca se bloquean, al final las limitadas o que requieren clave. Cero configuración, sin punto único de fallo.
 
 | Fuente | Mercados | Autenticación | Rol |
 |--------|---------|------|------|
@@ -420,6 +420,7 @@ Una sola llamada `get_market_data`, **27 fuentes de datos de mercado**, una de e
 | `eastmoney` | A / EE. UU. / HK | ninguna | OHLCV + herramientas de fundamentales y flujo profundas (limitada) |
 | `baostock` · `akshare` | A (+ EE. UU./HK/futuros/macro/fx) | ninguna | fallbacks gratuitos |
 | `tushare` | A / HK / futuros / fondos / macro | token | la más completa para A-share |
+| `gildata` | acciones A | token (Configuración / `GILDATA_TOKEN`) | fuente comercial Hundsun Juyuan (恒生聚源) — diarios ajustados hacia adelante, se une al final de la cadena de acciones A |
 | `yahoo` | EE. UU. / HK / Canadá / Reino Unido | ninguna | gráfico/cotizaciones/opciones directos; TSX `.TO` / TSXV `.V`; LSE `.L` con normalización según la divisa declarada |
 | `sina` · `stooq` | EE. UU. | ninguna | velas hasta 1984 · CSV EOD |
 | `yfinance` | EE. UU. / HK / Canadá / Reino Unido | ninguna | wrapper; TSX `.TO` / TSXV `.V`; LSE `.L` bajo el mismo contrato GBP/GBp |
@@ -437,7 +438,7 @@ Una sola llamada `get_market_data`, **27 fuentes de datos de mercado**, una de e
 
 **Cadenas de fallback (por riesgo de bloqueo de IP):**
 
-- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **EE. UU.** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`

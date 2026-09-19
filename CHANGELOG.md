@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Gildata (恒生聚源) joins the A-share fallback chain as a token-gated
+  source**. The new `gildata` loader talks to the vendor's raw-api MCP
+  endpoint (one JSON-RPC POST per call, token on the URL query string) and
+  serves A-share daily OHLCV through the `StockDailyQuote` tool with
+  `restorationStatus=1` — forward, split-AND-dividend adjusted bars, stamped
+  `split_dividend` in the price-caliber table after being measured against a
+  live payload. Volume arrives in 万股 and is converted to shares
+  (`volume_units: shares`); `avgprice`/`prevcloseprice` are ignored because
+  the vendor keeps them on a different adjustment basis than the adjusted
+  OHLC. An unresolvable symbol answers `rows: []` (never an error), so the
+  chain keeps walking. Auth is `GILDATA_TOKEN` (Settings page field or env;
+  `GILDATA_BASE_URL` overrides the endpoint, `VIBE_TRADING_GILDATA_MIN_INTERVAL`
+  the 0.3s default spacing). Without a token the loader reports unavailable
+  and the chain skips it — no behavior change for existing users beyond one
+  reorderable entry at the chain's tail. One migration note: a
+  `MARKET_DATA_ORDER_A_SHARE` value saved before this change is a permutation
+  of the old 7-source chain, so it stops validating once `gildata` joins —
+  the Settings card flags it and the default order applies until the saved
+  order is re-saved (one click) with the new source included.
+
 - **A Robinhood account can be a read-only portfolio source** (#1428). The new
   `robinhood-live-mcp-readonly` profile uses the same MCP server and OAuth
   grant as the trading profile. Its connection reads exactly one account,

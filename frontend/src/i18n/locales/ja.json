@@ -452,7 +452,9 @@
       }
     },
     "tushareToken": "Tushare トークン",
+    "gildataToken": "Gildata トークン",
     "clearTushareToken": "保存済み Tushare トークンをクリア",
+    "clearGildataToken": "保存済み Gildata トークンをクリア",
     "saveDataSourceSettings": "データソース設定を保存",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "LLM 設定の読み込みに失敗: {{message}}",
@@ -484,7 +486,8 @@
     "oauth": "OAuth",
     "authentication": "認証",
     "apiKey": "APIキー",
-    "tushareTokenDesc": "中国A株・先物・ファンド・マクロデータに使用します。未設定の場合、利用可能なところではAKShareにフォールバックします。"
+    "tushareTokenDesc": "中国A株・先物・ファンド・マクロデータに使用します。未設定の場合、利用可能なところではAKShareにフォールバックします。",
+    "gildataTokenDesc": "オプションの恒生聚源（Gildata）中国A株データソース。設定すると、日足（前調整）でA株フォールバックチェーンの末尾に加わります。"
   },
   "qveris": {
     "title": "QVeris ツールマーケットプレイス",
