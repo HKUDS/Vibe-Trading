@@ -13,6 +13,7 @@ import pytest
 from backtest import runner
 from backtest.loaders.registry import (
     FALLBACK_CHAINS,
+    additive_caliber_warning,
     mixed_caliber_warning,
     price_caliber,
 )
@@ -38,7 +39,9 @@ def _df() -> pd.DataFrame:
         ("yahoo", "split_dividend"),
         ("yfinance", "split_dividend"),
         ("eastmoney", "split_dividend"),
-        ("tencent", "split_dividend"),
+        # Measured in #1493: Tencent's qfq adds cash dividends back as a
+        # flat offset, it is not a total-return series.
+        ("tencent", "split_dividend_additive"),
         ("akshare", "split_dividend"),
         ("baostock", "split_dividend"),
         ("tushare", "split_dividend"),
@@ -80,6 +83,7 @@ def test_every_chain_source_resolves() -> None:
                 "raw",
                 "split",
                 "split_dividend",
+                "split_dividend_additive",
                 "na",
                 "unknown",
             }
@@ -128,6 +132,47 @@ def test_warning_ignores_unknown_and_na() -> None:
 
 
 # --------------------------------------------------------------------------
+# additive_caliber_warning (#1493)
+# --------------------------------------------------------------------------
+
+
+def test_additive_caliber_is_comparable_for_mixing() -> None:
+    """Tencent (additive) and baostock (multiplicative) used to share one
+    label, so a basket mixing them never fired. They must now read as two
+    calibers."""
+    msg = mixed_caliber_warning(
+        {
+            "600519.SH": ("tencent", "split_dividend_additive"),
+            "300750.SZ": ("baostock", "split_dividend"),
+        }
+    )
+    assert msg is not None
+    assert "split_dividend_additive" in msg and "split_dividend" in msg
+
+
+def test_additive_warning_fires_on_single_source() -> None:
+    msg = additive_caliber_warning(
+        {"600519.SH": ("tencent", "split_dividend_additive")}
+    )
+    assert msg is not None
+    assert "600519.SH" in msg and "tencent" in msg
+    assert "not total returns" in msg
+
+
+def test_additive_warning_silent_without_additive_sources() -> None:
+    assert (
+        additive_caliber_warning(
+            {
+                "600519.SH": ("baostock", "split_dividend"),
+                "AAPL.US": ("yahoo", "split_dividend"),
+                "0700.HK": ("sina", "raw"),
+            }
+        )
+        is None
+    )
+
+
+# --------------------------------------------------------------------------
 # _provenance stamp in fetch_market_data
 # --------------------------------------------------------------------------
 
@@ -146,7 +191,9 @@ def test_provenance_stamps_adjustment_for_adjusted_source() -> None:
         loader_resolver=lambda src: _StubLoader,
         include_provenance=True,
     )
-    assert out["_provenance"]["600519.SH"]["adjustment"] == "split_dividend"
+    assert (
+        out["_provenance"]["600519.SH"]["adjustment"] == "split_dividend_additive"
+    )
 
 
 def test_provenance_stamps_adjustment_for_raw_source() -> None:
@@ -231,6 +278,36 @@ def test_fetch_data_map_silent_on_single_caliber(
 
     assert result.caliber_warning is None
     assert "mixed price calibers" not in caplog.text
+
+
+def test_fetch_data_map_warns_on_additive_caliber(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A single-source tencent run mixes nothing, but the served series is
+    additive: the run must still say so."""
+    class _TencentStub:
+        name = "tencent"
+
+        def fetch(self, codes, start, end, fields=None, interval="1D"):  # noqa: ANN001, ANN201
+            return {code: _df() for code in codes}
+
+    monkeypatch.setattr(runner, "resolve_loader", lambda market: _TencentStub())
+    monkeypatch.setattr(runner, "LOADER_REGISTRY", {})
+
+    result = runner.fetch_data_map(
+        {
+            "source": "auto",
+            "codes": ["600519.SH"],
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-03",
+            "interval": "1D",
+        }
+    )
+
+    assert result.caliber_warning is not None
+    assert "additive price adjustment" in result.caliber_warning
+    assert "600519.SH" in result.caliber_warning
+    assert "additive price adjustment" in caplog.text
 
 
 # --------------------------------------------------------------------------

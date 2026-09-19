@@ -254,7 +254,11 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "yahoo": "split_dividend",  # quote series split-adjusted at origin, scaled to adjclose
     "yfinance": "split_dividend",  # auto_adjust=True
     "eastmoney": "split_dividend",  # fqt=1 (forward-adjusted) on every kline call
-    "tencent": "split_dividend",  # fqkline qfq
+    # fqkline qfq — measured in #1493: Tencent adjusts cash dividends
+    # additively (hfq = k*raw + c between corporate actions), not
+    # multiplicatively, so its daily moves are not total returns and old
+    # qfq prices can even cross below zero. Splits are still multiplicative.
+    "tencent": "split_dividend_additive",
     "akshare": "split_dividend",  # adjust="qfq", including the stock_us_hist path
     "baostock": "split_dividend",  # adjustflag="2"
     "tushare": "split_dividend",  # adj_factor applied via cn_adjust (A-share/fund)
@@ -280,14 +284,24 @@ _NA_CALIBER_MARKETS = frozenset({"crypto", "forex", "futures", "macro"})
 
 #: Calibers that participate in mixed-caliber comparison. "unknown" and "na"
 #: never do: the first is unmeasured, the second has nothing to adjust for.
-_COMPARABLE_CALIBERS = frozenset({"raw", "split", "split_dividend"})
+_COMPARABLE_CALIBERS = frozenset(
+    {"raw", "split", "split_dividend", "split_dividend_additive"}
+)
+
+#: Calibers whose daily moves are not total returns: cash dividends are
+#: added back as a flat offset instead of being reinvested multiplicatively,
+#: so period returns and volatilities computed off them are distorted (and
+#: old prices can go negative). Serving one is fine for price charts, but a
+#: backtest must say what it is getting.
+_ADDITIVE_CALIBERS = frozenset({"split_dividend_additive"})
 
 
 def price_caliber(source: str, market: str | None = None) -> str:
     """Return the adjustment caliber of ``source``'s served prices.
 
-    One of "raw", "split", "split_dividend", "na" (a market without
-    corporate actions), or "unknown" (an unmeasured source).
+    One of "raw", "split", "split_dividend", "split_dividend_additive"
+    (additive cash dividends; returns are not total returns), "na" (a market
+    without corporate actions), or "unknown" (an unmeasured source).
     """
     if market in _NA_CALIBER_MARKETS:
         return "na"
@@ -320,6 +334,36 @@ def mixed_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
         "Prices are not on the same scale across calibers, so cross-symbol "
         "comparisons (momentum ranks, relative performance) are biased. "
         "See the adjustment field of each symbol's provenance entry."
+    )
+
+
+def additive_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
+    """Build the served-additive-caliber warning for a run, or None.
+
+    ``stamps`` maps each served symbol to the (source, caliber) pair that
+    served it. Fires whenever at least one symbol is served on an additive
+    cash-dividend caliber (#1493): the series suits price charts, but its
+    daily moves are not total returns, so return/volatility math off it is
+    distorted and old prices can even be negative.
+    """
+    additive = {
+        symbol: source
+        for symbol, (source, caliber) in stamps.items()
+        if caliber in _ADDITIVE_CALIBERS
+    }
+    if not additive:
+        return None
+    shown = ", ".join(
+        f"{symbol} ({source})" for symbol, source in sorted(additive.items())[:4]
+    )
+    if len(additive) > 4:
+        shown += f", +{len(additive) - 4} more"
+    return (
+        "additive price adjustment in this run: " + shown + ". "
+        "Cash dividends are added back as a flat offset rather than "
+        "reinvested, so period returns and volatilities are not total "
+        "returns and long-horizon backtests are distorted (old prices can "
+        "go negative). Prefer a multiplicative source for return math."
     )
 
 

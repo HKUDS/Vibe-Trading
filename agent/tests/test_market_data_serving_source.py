@@ -62,7 +62,13 @@ def test_real_registry_substitution_reports_serving_source(monkeypatch, requeste
     assert provenance["requested_source"] == requested
     assert provenance["fallback_used"] is (not available)
     assert provenance["volume_unit"] == ("lots" if available else "shares")
-    assert provenance["adjustment"] == ("raw" if available and requested == "sina" else "split_dividend")
+    assert provenance["adjustment"] == (
+        "raw"
+        if available and requested == "sina"
+        else "split_dividend"
+        if available
+        else "split_dividend_additive"  # tencent serves (#1493)
+    )
 
 
 def test_substituted_partial_batch_keeps_each_serving_source():
@@ -94,5 +100,5 @@ def test_substituted_partial_batch_keeps_each_serving_source():
     )
     assert calls == [("tencent", ["600519.SH", "000001.SZ"]), ("sina", ["000001.SZ"])]
     first, second = (out["_provenance"][code] for code in ["600519.SH", "000001.SZ"])
-    assert (first["source"], first["adjustment"], first["fallback_used"]) == ("tencent", "split_dividend", True)
+    assert (first["source"], first["adjustment"], first["fallback_used"]) == ("tencent", "split_dividend_additive", True)
     assert (second["source"], second["adjustment"], second["fallback_used"]) == ("sina", "raw", True)

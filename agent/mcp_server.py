@@ -1825,8 +1825,11 @@ def get_market_data(
     Price caliber: which source served a symbol decides what its prices mean
     (some adjust for splits and dividends, others serve raw quotes). Each
     symbol's ``_provenance.adjustment`` states the caliber ("raw" / "split" /
-    "split_dividend" / "na" / "unknown") — read it before comparing price
-    levels across symbols.
+    "split_dividend" / "split_dividend_additive" / "na" / "unknown") — read
+    it before comparing price levels across symbols. The additive variant
+    adds cash dividends back as a flat offset: fine for price charts, but
+    its daily moves are not total returns, so do not run return or
+    volatility math on it.
     """
     registry = _get_registry()
     return registry.execute(
