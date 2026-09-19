@@ -360,9 +360,17 @@ class PortfolioService:
             positions.extend(broker_positions)
 
         total_usd = sum((_decimal(row.get("total_usd")) for row in accounts), Decimal("0"))
-        # Every enabled source produces exactly one account row, so a snapshot
-        # is complete only when none of them failed.
-        complete = all(row["status"] == "ok" for row in accounts)
+        # Binance derives its account total from priced positions. Other
+        # connectors report an independent broker account total, so an
+        # unpriced position there does not make the account total incomplete.
+        complete = all(
+            row["status"] == "ok"
+            and not (
+                row.get("broker") == "binance"
+                and int(row.get("unpriced_position_count") or 0) > 0
+            )
+            for row in accounts
+        )
         priced_usd = sum((_decimal(row.get("priced_value_usd")) for row in accounts), Decimal("0"))
         cash_usd = sum((_decimal(row.get("cash_usd")) for row in accounts), Decimal("0"))
         unpriced_usd = sum(
@@ -1042,7 +1050,21 @@ class PortfolioService:
             )
         unpriced = [f"{row['broker']}:{row['symbol']}" for row in positions if not row.get("priced")]
         if unpriced:
-            warnings.append("No price available for these positions: " + ", ".join(unpriced[:20]))
+            warnings.append(
+                "No price available for these positions: "
+                + ", ".join(unpriced[:20])
+            )
+        incomplete_unpriced = [
+            f"{row['broker']}:{row['symbol']}"
+            for row in positions
+            if row.get("broker") == "binance" and not row.get("priced")
+        ]
+        if incomplete_unpriced:
+            warnings.append(
+                "Binance account totals are built from priced positions; these "
+                "holdings are excluded, so this snapshot is incomplete: "
+                + ", ".join(incomplete_unpriced[:20])
+            )
         experimental = [
             str(row.get("label") or row.get("broker"))
             for row in accounts

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import urlparse
 from urllib.request import getproxies
 
@@ -277,7 +278,7 @@ def get_account_snapshot(config: BinanceConfig | None = None) -> dict[str, Any]:
     ex = _exchange(cfg)
     if cfg.market_type == "usdm":
         return _get_usdm_observation(cfg, ex)
-    balance = ex.fetch_balance()
+    balance = _read_with_clock_retry(ex, ex.fetch_balance)
     rows = _nonzero_balances(balance)
     return {
         "status": "ok",
@@ -304,14 +305,16 @@ def get_positions(config: BinanceConfig | None = None) -> dict[str, Any]:
     ex = _exchange(cfg)
     if cfg.market_type == "usdm":
         return _get_usdm_observation(cfg, ex)
-    balance = ex.fetch_balance()
+    balance = _read_with_clock_retry(ex, ex.fetch_balance)
     spot_balances = _nonzero_balances(balance)
     earn_rows: list[dict[str, Any]] = []
     earn_wrappers: set[str] = set()
     earn_note: str | None = None
     if not cfg.is_testnet:
         try:
-            payload = ex.sapi_get_simple_earn_flexible_position({"size": 100})
+            payload = _read_with_clock_retry(
+                ex, lambda: ex.sapi_get_simple_earn_flexible_position({"size": 100})
+            )
             for item in payload.get("rows", []) if isinstance(payload, Mapping) else []:
                 asset = str(_obj_get(item, "asset", "")).strip().upper()
                 quantity = _to_float(_obj_get(item, "totalAmount"))
@@ -397,7 +400,7 @@ def get_quote(symbol: str, *, config: BinanceConfig | None = None, **_: Any) -> 
     cfg = config or load_config()
     _reject_unsupported_usdm_surface(cfg)
     _assert_host(cfg)
-    ex = _exchange(cfg)
+    ex = _public_exchange(cfg)
     clean = normalize_symbol(symbol)
     ticker = ex.fetch_ticker(clean)
     return {
@@ -441,7 +444,7 @@ def search_instruments(
     except (TypeError, ValueError, OverflowError):
         bounded_limit = 10
 
-    markets = _exchange(cfg).load_markets()
+    markets = _public_exchange(cfg).load_markets()
     if not isinstance(markets, Mapping):
         raise BinanceConfigError("Binance load_markets returned a non-mapping payload")
 
@@ -494,7 +497,7 @@ def get_historical_bars(
     cfg = config or load_config()
     _reject_unsupported_usdm_surface(cfg)
     _assert_host(cfg)
-    ex = _exchange(cfg)
+    ex = _public_exchange(cfg)
     clean = normalize_symbol(symbol)
     timeframe = _TIMEFRAME_MAP.get(period.strip(), "1d")
     bars = ex.fetch_ohlcv(clean, timeframe=timeframe, limit=int(limit))
@@ -760,6 +763,37 @@ def _get_usdm_observation(cfg: BinanceConfig, exchange: Any) -> dict[str, Any]:
         )
     except UsdMObservationError as exc:
         raise BinanceConfigError(str(exc)) from None
+
+
+def _read_with_clock_retry(exchange: Any, read: Callable[[], Any]) -> Any:
+    """Retry one rejected signed read after refreshing Binance's clock offset.
+
+    Binance rejects timestamps more than one second ahead regardless of the
+    configured recvWindow. CCXT calibrates on market loading, but a sleeping
+    laptop or inconsistent network timing can still invalidate a later read.
+    The extra one-second cushion applies only after that specific rejection.
+    """
+    try:
+        return read()
+    except Exception as exc:
+        message = str(exc)
+        if not (
+            re.search(r'["\']?code["\']?\s*:\s*-1021\b', message)
+            and "ahead of the server" in message.lower()
+        ):
+            raise
+        exchange.load_time_difference()
+        exchange.options["timeDifference"] += 1_000
+        return read()
+
+
+def _public_exchange(cfg: BinanceConfig):
+    """Use the selected Binance host without credentials for public market data.
+
+    CCXT otherwise loads Binance currencies through a signed SAPI request when
+    market loading sees an API key, even for an ordinary public ticker.
+    """
+    return _exchange(replace(cfg, api_key="", api_secret=""))
 
 
 def _exchange(cfg: BinanceConfig):
