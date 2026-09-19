@@ -24,7 +24,7 @@ _POSITIVE: frozenset[str] = frozenset({
     "beat", "beats", "bullish", "buy", "cheap", "crush", "crushed",
     "crushing", "gain", "gained", "gaining", "gains", "green",
     "growth", "high", "higher", "hit", "improve", "improved",
-    "jump", "jumped", "lead", "leading", "leads", "long", "low",
+    "jump", "jumped", "lead", "leading", "leads", "long",
     "opportunity", "outperform", "outperformed", "profit", "profitable",
     "profits", "raise", "raised", "raises", "rally", "rallied",
     "rebound", "record", "rise", "rises", "rising", "rose",

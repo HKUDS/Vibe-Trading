@@ -1213,7 +1213,15 @@
     "maxPerOrder": "≤{{amount}}/Order",
     "expiresOn": "läuft ab {{date}}",
     "accountSummary": "{{broker}} · {{type}}-Konto · finanziert von {{fundedBy}}",
-    "adjustRequestMessage": "Für Mandatsvorschlag \"{{label}}\" (Option {{ordinal}}): {{text}}"
+    "adjustRequestMessage": "Für Mandatsvorschlag \"{{label}}\" (Option {{ordinal}}): {{text}}",
+    "accountLoading": "Konten des Brokers werden geladen…",
+    "accountLoadFailed": "Die Konten des Brokers konnten nicht geladen werden: {{error}}",
+    "accountLabel": "Konto, auf dem dieses Mandat handeln darf",
+    "accountChoose": "Konto auswählen",
+    "accountDefault": " · Broker-Standard",
+    "accountDeactivated": " · deaktiviert",
+    "accountNotAgentic": " · Agenten-Trading nicht erlaubt",
+    "accountHint": "Der Agent handelt nur auf diesem Konto. Es wird nichts für Sie vorausgewählt."
   },
   "messageBubble": {
     "elapsedTime": "Gesamte Antwortzeit",
@@ -1623,7 +1631,19 @@
       "testFailed": "Test für {{label}} fehlgeschlagen: {{error}}",
       "unknownTestError": "Der Connector hat einen unbekannten Fehler zurückgegeben.",
       "delete": "Löschen",
-      "configured": "Erforderliche Zugangsdaten konfiguriert"
+      "configured": "Erforderliche Zugangsdaten konfiguriert",
+      "accountTitle": "Konto",
+      "accountCurrent": "Liest das Konto mit der Endung ····{{last4}}",
+      "accountNone": "Kein Konto ausgewählt. Diese Verbindung liest nichts, bis Sie eines auswählen.",
+      "accountLoad": "Konto auswählen",
+      "accountChange": "Konto wechseln",
+      "accountEmpty": "Mit dieser Anmeldung ist kein Konto erreichbar.",
+      "accountPicker": "Konten, die diese Anmeldung erreicht",
+      "accountChoose": "Konto auswählen",
+      "accountDefault": " · Broker-Standard",
+      "accountDeactivated": " · deaktiviert",
+      "accountSave": "Dieses Konto verwenden",
+      "accountSaved": "Konto gespeichert."
     }
   }
 }

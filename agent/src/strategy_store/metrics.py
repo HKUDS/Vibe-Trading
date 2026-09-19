@@ -7,6 +7,7 @@ bench-history list.
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any
 
 _DECAY_INPUT_KEYS = ("ic_ratio", "rolling_ir", "ic_positive_ratio", "rolling_sharpe")
@@ -35,7 +36,8 @@ def compute_decay_metrics(
     Returns:
         Dict with keys: ``baseline_ic_mean``, ``rolling_ic_mean``, ``ic_ratio``,
         ``rolling_ir``, ``ic_positive_ratio``, ``rolling_sharpe``, ``baseline_sharpe``.
-        Values are ``None`` when insufficient data (< 3 non-None entries).
+        Values are ``None`` when insufficient data (< 3 finite entries).
+        NaN and infinities are treated as missing observations, like ``None``.
     """
     result: dict[str, float | None] = {
         "baseline_ic_mean": None,
@@ -49,8 +51,14 @@ def compute_decay_metrics(
 
     chronological = list(reversed(bench_history))
 
-    ic_values = [r.ic_mean for r in chronological if r.ic_mean is not None]
-    sharpe_values = [r.sharpe for r in chronological if r.sharpe is not None]
+    ic_values = [
+        r.ic_mean
+        for r in chronological
+        if r.ic_mean is not None and isfinite(r.ic_mean)
+    ]
+    sharpe_values = [
+        r.sharpe for r in chronological if r.sharpe is not None and isfinite(r.sharpe)
+    ]
 
     has_ic = len(ic_values) >= 3
     has_sharpe = len(sharpe_values) >= 3

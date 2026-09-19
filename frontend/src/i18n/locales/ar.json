@@ -1208,7 +1208,15 @@
     "maxPerOrder": "بحد أقصى {{amount}} لكل أمر",
     "expiresOn": "ينتهي في {{date}}",
     "accountSummary": "{{broker}} · حساب {{type}} · ممول من {{fundedBy}}",
-    "adjustRequestMessage": "لطلب تعديل اقتراح التفويض «{{label}}» (الخيار {{ordinal}}): {{text}}"
+    "adjustRequestMessage": "لطلب تعديل اقتراح التفويض «{{label}}» (الخيار {{ordinal}}): {{text}}",
+    "accountLoading": "جارٍ تحميل حسابات الوسيط…",
+    "accountLoadFailed": "تعذّر تحميل حسابات الوسيط: {{error}}",
+    "accountLabel": "الحساب الذي يمكن لهذا التفويض التداول فيه",
+    "accountChoose": "اختر حسابًا",
+    "accountDefault": " · الافتراضي لدى الوسيط",
+    "accountDeactivated": " · معطّل",
+    "accountNotAgentic": " · لا يُسمح بتداول الوكيل",
+    "accountHint": "يتداول الوكيل في هذا الحساب فقط، ولن يُختار أي حساب نيابةً عنك."
   },
   "messageBubble": {
     "elapsedTime": "إجمالي وقت الاستجابة",
@@ -1623,7 +1631,19 @@
       "testFailed": "فشل اختبار {{label}}: {{error}}",
       "unknownTestError": "أرجع الموصل خطأ غير معروف.",
       "delete": "حذف",
-      "configured": "بيانات الاعتماد المطلوبة مضبوطة"
+      "configured": "بيانات الاعتماد المطلوبة مضبوطة",
+      "accountTitle": "الحساب",
+      "accountCurrent": "يقرأ الحساب المنتهي بـ ····{{last4}}",
+      "accountNone": "لم يتم اختيار حساب. لن يقرأ هذا الاتصال أي بيانات حتى تختار حسابًا.",
+      "accountLoad": "اختيار الحساب",
+      "accountChange": "تغيير الحساب",
+      "accountEmpty": "لا يصل تسجيل الدخول هذا إلى أي حساب.",
+      "accountPicker": "الحسابات التي يصل إليها تسجيل الدخول هذا",
+      "accountChoose": "اختر حسابًا",
+      "accountDefault": " · الافتراضي لدى الوسيط",
+      "accountDeactivated": " · معطّل",
+      "accountSave": "استخدام هذا الحساب",
+      "accountSaved": "تم حفظ الحساب."
     }
   }
 }

@@ -1213,7 +1213,15 @@
     "maxPerOrder": "≤{{amount}}/orden",
     "expiresOn": "vence {{date}}",
     "accountSummary": "{{broker}} · cuenta {{type}} · financiada por {{fundedBy}}",
-    "adjustRequestMessage": "Para la propuesta de mandato \"{{label}}\" (opción {{ordinal}}): {{text}}"
+    "adjustRequestMessage": "Para la propuesta de mandato \"{{label}}\" (opción {{ordinal}}): {{text}}",
+    "accountLoading": "Cargando las cuentas del bróker…",
+    "accountLoadFailed": "No se pudieron cargar las cuentas del bróker: {{error}}",
+    "accountLabel": "Cuenta en la que este mandato puede operar",
+    "accountChoose": "Elige una cuenta",
+    "accountDefault": " · predeterminada del bróker",
+    "accountDeactivated": " · desactivada",
+    "accountNotAgentic": " · no permite trading con agentes",
+    "accountHint": "El agente solo opera en esta cuenta. No se elige ninguna por ti."
   },
   "messageBubble": {
     "elapsedTime": "Tiempo total de respuesta",
@@ -1623,7 +1631,19 @@
       "testFailed": "Falló la prueba de {{label}}: {{error}}",
       "unknownTestError": "El conector devolvió un error desconocido.",
       "delete": "Eliminar",
-      "configured": "Credenciales necesarias configuradas"
+      "configured": "Credenciales necesarias configuradas",
+      "accountTitle": "Cuenta",
+      "accountCurrent": "Lee la cuenta terminada en ····{{last4}}",
+      "accountNone": "No hay ninguna cuenta seleccionada. Esta conexión no lee nada hasta que elijas una.",
+      "accountLoad": "Elegir cuenta",
+      "accountChange": "Cambiar cuenta",
+      "accountEmpty": "Este inicio de sesión no tiene acceso a ninguna cuenta.",
+      "accountPicker": "Cuentas a las que accede este inicio de sesión",
+      "accountChoose": "Elige una cuenta",
+      "accountDefault": " · predeterminada del bróker",
+      "accountDeactivated": " · desactivada",
+      "accountSave": "Usar esta cuenta",
+      "accountSaved": "Cuenta guardada."
     }
   }
 }

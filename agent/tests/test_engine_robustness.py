@@ -122,10 +122,10 @@ class TestSymbolIsolation:
         # Patch the opening-plan boundary to throw for BAD only.
         original_plan = ChinaAEngine._plan_open_order
 
-        def _exploding_plan(self, symbol, target_weight, df, ts, equity):
+        def _exploding_plan(self, symbol, target_weight, df, ts, equity, **kwargs):
             if symbol == "BAD":
                 raise RuntimeError("Simulated failure for BAD")
-            return original_plan(self, symbol, target_weight, df, ts, equity)
+            return original_plan(self, symbol, target_weight, df, ts, equity, **kwargs)
 
         with patch.object(ChinaAEngine, "_plan_open_order", _exploding_plan):
             # Should NOT raise — exception is caught internally

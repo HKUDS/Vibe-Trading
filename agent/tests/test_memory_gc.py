@@ -227,6 +227,84 @@ class TestRunGC:
         assert after != before
         assert "compression_level: daily" in after
 
+    def test_gc_archived_entry_is_not_also_compressed(
+        self, tmp_path: Path, monkeypatch, caplog
+    ) -> None:
+        """An entry archived by Tier 1 must not be handed to Tier 2 compression.
+
+        Old + low quality makes Tier 1 archive it; also stale-since-access
+        makes it Tier-2-compression-eligible. Tier 2 must skip it instead of
+        trying to compress a file Tier 1 already moved away.
+        """
+        monkeypatch.setenv("VT_MEMORY_GC", "1")
+        monkeypatch.setenv("VT_MEMORY_DECAY", "1")
+        monkeypatch.setenv("VT_MEMORY_COMPRESSION", "1")
+        now = time.time()
+        created_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 30 * 86400))
+        accessed_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 30 * 86400))
+        _create_memory_file(
+            tmp_path,
+            "old-and-stale",
+            quality_score=0.01,
+            access_count=0,
+            created_at=created_iso,
+            last_accessed=accessed_iso,
+        )
+        pm = PersistentMemory(memory_dir=tmp_path)
+        lc = MemoryLifecycle(pm)
+        with caplog.at_level("WARNING"):
+            actions = lc.run_gc(dry_run=False)
+        assert actions[0]["action"] == "archive"
+        assert (tmp_path / "archive" / "project_old-and-stale.md").exists()
+        assert not (tmp_path / "project_old-and-stale.md").exists()
+        assert "Cannot archive non-existent file" not in caplog.text
+        assert "_write_compressed" not in caplog.text
+
+    def test_gc_compresses_a_healthy_entry_that_shares_an_archived_entrys_id(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The Tier 2 skip is keyed on the file, not on the entry id (#1450).
+
+        Ids are a six-hex hash (``sha256(...)[:6]`` when the frontmatter has
+        none), so two files can carry the same one. Skipping by id would leave
+        the healthy file uncompressed because its twin was archived.
+        """
+        monkeypatch.setenv("VT_MEMORY_GC", "1")
+        monkeypatch.setenv("VT_MEMORY_DECAY", "1")
+        monkeypatch.setenv("VT_MEMORY_COMPRESSION", "1")
+        now = time.time()
+        old_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 30 * 86400))
+        _create_memory_file(
+            tmp_path,
+            "old-and-stale",
+            quality_score=0.01,
+            access_count=0,
+            created_at=old_iso,
+            last_accessed=old_iso,
+            entry_id="ab12cd",
+        )
+        healthy = _create_memory_file(
+            tmp_path,
+            "young-but-unread",
+            content=" ".join(
+                f"Sentence number {i} discusses trading topic {i} in detail." for i in range(12)
+            ),
+            keywords=["alpha", "momentum"],
+            created_at=time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 2 * 86400)),
+            last_accessed=time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now - 9 * 86400)),
+            entry_id="ab12cd",
+        )
+        before = healthy.read_text(encoding="utf-8")
+        lc = MemoryLifecycle(PersistentMemory(memory_dir=tmp_path))
+
+        actions = lc.run_gc(dry_run=False)
+
+        assert [a["action"] for a in actions] == ["archive"]
+        assert (tmp_path / "archive" / "project_old-and-stale.md").exists()
+        after = healthy.read_text(encoding="utf-8")
+        assert after != before, "the healthy twin was skipped because it shares the archived id"
+        assert "compression_level: daily" in after
+
 
 # ---------------------------------------------------------------------------
 # 2. find_relevant importance weighting

@@ -112,6 +112,9 @@ class PortfolioRiskXrayTool(BaseTool):
             end_date=end_date,
             source=source,
             interval=interval,
+            # Volatility, VaR/ES and drawdown need consecutive bars; the
+            # shared row cap would sample the series down on longer windows.
+            max_rows=0,
         )
         closes = self._closes_frame(raw, symbols)
         unresolved = raw.get("_unresolved") if isinstance(raw, Mapping) else None

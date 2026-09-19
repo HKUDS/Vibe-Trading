@@ -378,18 +378,23 @@ class Registry:
         if not self._use_filesystem_loader:
             return importlib.import_module(alpha.module_path)
         py_file = self._py_paths[alpha.id]
-        cached = sys.modules.get(alpha.module_path)
+        # A custom zoo_root reuses the bundled module names, so the import cache
+        # is keyed by root as well as by module path: under the bare module path
+        # this module replaced the bundled one process-wide, and the bundled
+        # registry's own import_module then returned the custom code (#1465).
+        cache_key = f"{alpha.module_path}@{self._zoo_root}"
+        cached = sys.modules.get(cache_key)
         if cached is not None and getattr(cached, "__file__", None) == str(py_file):
             return cached
         spec = importlib.util.spec_from_file_location(alpha.module_path, py_file)
         if spec is None or spec.loader is None:
             raise RegistryError(f"{alpha.id}: could not build import spec for {py_file}")
         module = importlib.util.module_from_spec(spec)
-        sys.modules[alpha.module_path] = module
+        sys.modules[cache_key] = module
         try:
             spec.loader.exec_module(module)
         except Exception:
-            sys.modules.pop(alpha.module_path, None)
+            sys.modules.pop(cache_key, None)
             raise
         return module
 

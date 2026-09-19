@@ -14,6 +14,7 @@ Tool execution:
 from __future__ import annotations
 
 import concurrent.futures
+import contextvars
 import copy
 import json
 import logging
@@ -43,6 +44,7 @@ from src.goal.context import (
     goal_progress_tuple,
 )
 from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError
+from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
@@ -1181,6 +1183,27 @@ class AgentLoop:
 
     def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
+
+        Binds ``session_id`` as the active LLM session for the whole run so
+        provider adapters that need a stable per-conversation identity
+        (OpenCode Go's ``x-opencode-session``) can read it at request time.
+
+        Args:
+            user_message: User message.
+            history: Prior conversation messages.
+            session_id: Session ID.
+
+        Returns:
+            Execution result dict.
+        """
+        token = bind_llm_session_id(session_id)
+        try:
+            return self._run_bound(user_message, history, session_id)
+        finally:
+            reset_llm_session_id(token)
+
+    def _run_bound(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
+        """Run the ReAct loop with the LLM session already bound.
 
         Args:
             user_message: User message.
@@ -3165,8 +3188,12 @@ class AgentLoop:
                     _compact_error.append(exc)
 
             if _compact_timeout > 0:
+                # A new thread starts with an empty context, so the session
+                # bound by run() (x-opencode-session, #1416) would not reach
+                # this call: run it inside a copy of the caller's context.
                 worker = threading.Thread(
-                    target=_run_compact_summary,
+                    target=contextvars.copy_context().run,
+                    args=(_run_compact_summary,),
                     name="compact-summary",
                     daemon=True,
                 )

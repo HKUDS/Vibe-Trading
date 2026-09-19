@@ -19,11 +19,13 @@ __alpha_meta__ = {
     'frequency': ['1d'],
     'decay_horizon': 5,
     'min_warmup_bars': 5,
+    'notes': 'A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~40% missing bars).',
 }
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 CNTN5 on the supplied OHLCV panel."""
     c = panel['close']
-    dn = (c < c.shift(1)).astype('float64')
+    prev = c.shift(1)
+    dn = (c < prev).astype('float64').where(c.notna() & prev.notna())  # a missing close is not a down day
     return dn.rolling(window=5, min_periods=5).mean()

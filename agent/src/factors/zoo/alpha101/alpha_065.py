@@ -68,5 +68,6 @@ def compute(panel: dict) -> pd.DataFrame:
     mix = open_ * 0.00817205 + vwap * (1.0 - 0.00817205)
     lhs = rank(ts_corr(mix, rolling_sum(adv60, 9), 6))
     rhs = rank(open_ - ts_min(open_, 14))
-    out = (lhs < rhs).astype(float) * -1.0
+    # A comparison with a missing side is missing, not False (#1463).
+    out = (lhs < rhs).astype(float).where(lhs.notna() & rhs.notna()) * -1.0
     return out

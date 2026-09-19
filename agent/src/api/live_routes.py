@@ -12,6 +12,7 @@ These are the privileged SURFACE actions of the live-trading channel
 - ``POST /live/authorize``  — discover-only OAuth bootstrap on-ramp (C2)
 - ``POST /live/runner/start`` — start the persistent §7.5 runner
 - ``POST /live/runner/stop``  — stop the persistent §7.5 runner
+- ``GET /live/accounts``      — the broker accounts a mandate can be bound to
 
 Each best-effort relays a ``mandate.committed`` / ``live.halted`` / ``live.action``
 event through the EXISTING session EventBus, so the frontend's already-wired
@@ -382,11 +383,40 @@ def _live_broker_adapter(broker: str) -> Any:
     raise LiveRunnerUnavailable(f"no MCP server configured for live broker {broker!r}")
 
 
-def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
+def _mandate_account_ref(broker: str) -> str:
+    """Return the account the broker's committed mandate is bound to, or ``""``."""
+    from src.live.mandate.store import load_mandate
+
+    mandate = load_mandate(broker)
+    return mandate.consent.account_ref.strip() if mandate is not None else ""
+
+
+def _live_account_choices(broker: str) -> List[Dict[str, Any]]:
+    """Read the accounts a live broker's login can reach, as picker rows.
+
+    Raises:
+        LiveRunnerUnavailable: When the broker channel is not configured.
+        ValueError: When the broker lists no accounts, the read failed, or the
+            reply could not be mapped.
+    """
+    from src.trading.service import runner_account_choices, runner_tool_name
+
+    accounts_tool = runner_tool_name(broker, "accounts")
+    if accounts_tool is None:
+        raise ValueError(f"{broker} does not list accounts")
+    adapter = _host()._live_broker_adapter(broker)
+    choices = runner_account_choices(broker, adapter.call_tool(accounts_tool, {}))
+    if choices is None:
+        raise ValueError(f"{broker} does not list accounts")
+    return choices
+
+
+def _fetch_broker_ceilings(broker: str, account_ref: str = "") -> Optional[Dict[str, Any]]:
     """Best-effort fetch of broker-side account ceilings for the commit re-check.
 
-    Returns ``None`` on any failure so the caller falls back to the proposal's
-    own snapshot — a commit is never blocked on a broker read.
+    The read is scoped to the account the mandate is being bound to. Returns
+    ``None`` on any failure so the caller falls back to the proposal's own
+    snapshot — a commit is never blocked on a broker read.
     """
     h = _host()
     try:
@@ -394,16 +424,24 @@ def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
     except LiveRunnerUnavailable:
         return None
     try:
-        from src.trading.service import runner_tool_name
+        from src.trading.service import runner_account_summary, runner_arguments, runner_tool_name
 
         account_tool = runner_tool_name(broker, "account") or "get_account"
-        result = adapter.call_tool(account_tool, {})
+        result = adapter.call_tool(account_tool, runner_arguments(broker, "account", account_ref))
     except Exception:  # pragma: no cover - status/commit must never raise here
         logger.debug("broker ceiling fetch failed for %s", broker, exc_info=True)
         return None
     if not isinstance(result, dict) or result.get("status") == "error":
         return None
-    payload = result.get("result") if isinstance(result.get("result"), dict) else result
+    try:
+        summary = runner_account_summary(broker, result)
+    except ValueError:
+        logger.debug("broker ceiling reply for %s could not be mapped", broker, exc_info=True)
+        return None
+    if summary is not None:
+        payload: Any = summary
+    else:
+        payload = result.get("result") if isinstance(result.get("result"), dict) else result
     funding: Optional[float] = None
     for key in ("account_funding_usd", "buying_power", "cash", "portfolio_value", "equity"):
         raw = payload.get(key) if isinstance(payload, dict) else None
@@ -546,7 +584,33 @@ def _build_live_runner(broker: str) -> Any:
     from src.live.runtime.runner import LiveRunner
     from src.live.runtime.scheduler import Scheduler
     from src.live.runtime.triggers import Trigger
-    from src.trading.service import runner_tool_name
+    from src.trading.service import (
+        runner_account_summary,
+        runner_arguments,
+        runner_records,
+        runner_requires_account,
+        runner_tool_name,
+    )
+
+    requires_account = runner_requires_account(broker)
+    if requires_account and not h._mandate_account_ref(broker):
+        raise LiveRunnerUnavailable(
+            f"the {broker} mandate is not bound to an account; commit it again with an account"
+        )
+
+    def _account() -> str:
+        """Resolve the mandate's account on every broker call.
+
+        Re-reading it per call means a mandate re-committed to another account
+        is followed at once, and one whose account disappeared stops the
+        runner's broker calls instead of falling back to a default account.
+        """
+        if not requires_account:
+            return ""
+        account_ref = h._mandate_account_ref(broker)
+        if not account_ref:
+            raise RuntimeError(f"the {broker} mandate is not bound to an account")
+        return account_ref
 
     def _tool(operation: str) -> str:
         remote_tool = runner_tool_name(broker, operation)
@@ -565,7 +629,7 @@ def _build_live_runner(broker: str) -> Any:
     # _live_broker_adapter is monkeypatched on host by tests
     adapter = h._live_broker_adapter(broker)
 
-    def _read(remote_tool: str, record_key: str | None = None):
+    def _read(remote_tool: str, operation: str, record_key: str | None = None):
         """Wrap adapter.call_tool into a READ callable with a normalized payload.
 
         The MCP adapter returns ``{"status": "error", ...}`` envelopes instead
@@ -575,17 +639,27 @@ def _build_live_runner(broker: str) -> Any:
         envelopes: error envelopes raise, success payloads unwrap to ``data``
         (with the pinned ``record_key`` extracted for positions/orders record
         reads, e.g. ``data.positions`` / ``data.orders``). Bare values pass
-        through unchanged.
+        through unchanged. A connector with a mapped reply shape (Robinhood,
+        whose records sit under ``data.data``) is unwrapped by that mapping
+        instead, and a reply that does not match it raises.
         """
         def read() -> Any:
-            payload = adapter.call_tool(remote_tool, {})
+            payload = adapter.call_tool(remote_tool, runner_arguments(broker, operation, _account()))
             if isinstance(payload, list):
                 return payload  # injected/legacy bare response
+            if isinstance(payload, dict) and payload.get("status") == "error":
+                raise RuntimeError(str(payload.get("error") or "broker read failed"))
+            try:
+                mapped = (
+                    runner_records(broker, operation, payload)
+                    if record_key is not None
+                    else runner_account_summary(broker, payload)
+                )
+            except ValueError as exc:
+                raise RuntimeError(f"{remote_tool}: {exc}") from exc
+            if mapped is not None:
+                return mapped
             if not isinstance(payload, dict) or payload.get("status") != "ok":
-                if isinstance(payload, dict) and payload.get("status") == "error":
-                    raise RuntimeError(
-                        str(payload.get("error") or "broker read failed")
-                    )
                 return payload
             data = payload.get("data")
             if record_key is None:
@@ -603,9 +677,11 @@ def _build_live_runner(broker: str) -> Any:
         return read
 
     def _submit(order: Dict[str, Any]) -> Dict[str, Any]:
+        # The mandate's account wins over anything the order dict carries.
+        bound = {**order, **runner_arguments(broker, "orders", _account())}
         if order.get("action") == "cancel":
-            return adapter.call_tool(cancel_order_tool, order)
-        return adapter.call_tool(submit_order_tool, order)
+            return adapter.call_tool(cancel_order_tool, bound)
+        return adapter.call_tool(submit_order_tool, bound)
 
     svc = h._get_session_service()
     session = svc.create_session(title=f"live-runner:{broker}")
@@ -633,9 +709,9 @@ def _build_live_runner(broker: str) -> Any:
         broker,
         agent_caller=_agent_caller,
         reconcile_fn=reconcile,
-        read_positions=_read(positions_tool, "positions"),
-        read_balance=_read(balance_tool),
-        read_open_orders=_read(open_orders_tool, "orders"),
+        read_positions=_read(positions_tool, "positions", "positions"),
+        read_balance=_read(balance_tool, "account"),
+        read_open_orders=_read(open_orders_tool, "orders", "orders"),
         submit_fn=_submit,
         write_audit_fn=_audit_with_bus,
         scheduler=scheduler,
@@ -688,8 +764,33 @@ def register_live_routes(
             raise HTTPException(status_code=400, detail="consent_ack must be true to commit a mandate")
 
         from src.live.mandate.commit import CommitError, commit_mandate
+        from src.trading.accounts import choose_account
+        from src.trading.service import runner_requires_account
 
-        broker_ceilings = _host()._fetch_broker_ceilings(payload.broker)
+        account_ref = payload.account_ref.strip()
+        if runner_requires_account(payload.broker):
+            # A live broker whose login reaches several accounts trades only the
+            # one the user picked here, checked against the broker's own list.
+            if not account_ref:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"choose the {payload.broker} account this mandate may trade",
+                )
+            try:
+                choices = _host()._live_account_choices(payload.broker)
+            except LiveRunnerUnavailable as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except (RuntimeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"the {payload.broker} account list could not be read: {exc}",
+                ) from exc
+            try:
+                choose_account(choices, account_ref, require_agentic=True)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        broker_ceilings = _host()._fetch_broker_ceilings(payload.broker, account_ref)
 
         try:
             result = commit_mandate(
@@ -698,7 +799,7 @@ def register_live_routes(
                 adjustments=payload.adjustments,
                 consent_ack=payload.consent_ack,
                 broker=payload.broker,
-                account_ref=payload.account_ref,
+                account_ref=account_ref,
                 session_id=payload.session_id,
                 ceilings_ref=broker_ceilings,
                 lifetime_days=payload.lifetime_days,
@@ -715,6 +816,27 @@ def register_live_routes(
             {"kind": "mandate_committed", "broker": result["broker"], "mandate_id": result["mandate_id"]},
         )
         return result
+
+    @app.get("/live/accounts", dependencies=[Depends(require_auth)])
+    async def list_live_accounts_endpoint(broker: str = Query(..., min_length=1, max_length=64)):
+        """List the accounts a live broker's login can reach, for binding a mandate."""
+        from src.trading.service import runner_requires_account
+
+        key = broker.strip().lower()
+        if not runner_requires_account(key):
+            return {"status": "ok", "broker": key, "account_selection_required": False, "accounts": []}
+        try:
+            choices = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: _host()._live_account_choices(key)
+            )
+        except LiveRunnerUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"the {key} account list could not be read: {exc}",
+            ) from exc
+        return {"status": "ok", "broker": key, "account_selection_required": True, "accounts": choices}
 
     @app.post("/live/halt", dependencies=[Depends(require_auth)])
     async def halt_live_endpoint(payload: LiveHaltRequest):

@@ -255,9 +255,11 @@ def test_wanted_but_unfillable_plans_are_counted_by_default():
     )  # execution_blocked
     # Benign causes must not be counted as findings.
     assert engine._plan_open_order("A", 0.0, _frame(), _TS, 1_000.0) is None
+    # The capital fit, not the planner, reports a sleeve the cash could not hold.
+    engine._on_plan_rejected("A", "insufficient_capital", _TS)
 
     metrics = engine._plan_rejection_metrics()
-    assert metrics["unfilled_plan_rejections"] == 5
+    assert metrics["unfilled_plan_rejections"] == 6
     assert metrics["unfilled_plan_rejections_by_symbol"] == {
         "A": {
             "no_data": 1,
@@ -265,6 +267,7 @@ def test_wanted_but_unfillable_plans_are_counted_by_default():
             "invalid_price": 1,
             "zero_size": 1,
             "execution_blocked": 1,
+            "insufficient_capital": 1,
         }
     }
     assert set(metrics["unfilled_plan_rejections_by_symbol"]["A"]) == set(
@@ -338,3 +341,68 @@ def test_total_and_by_symbol_share_one_counter():
     empty = _CountingEngine()._plan_rejection_metrics()
     assert empty["unfilled_plan_rejections"] == 0
     assert empty["unfilled_plan_rejections_by_symbol"] == {}
+
+
+# ---------------------------------------------------------------------------
+# #1470: the hold path's capital fit reports a starved sleeve once, not per step
+# ---------------------------------------------------------------------------
+
+_DATES = pd.date_range("2026-01-02", periods=2)
+
+
+def _hold_run(engine, prices: dict[str, float], targets: dict[str, list[float]]) -> None:
+    """Two bars in hold mode: bar 1 opens what bar 0 did not hold."""
+    data_map = {
+        symbol: pd.DataFrame({"open": [price, price], "close": [price, price]}, index=_DATES)
+        for symbol, price in prices.items()
+    }
+    close_df = pd.DataFrame({symbol: [price, price] for symbol, price in prices.items()}, index=_DATES)
+    engine._execute_bars(_DATES, data_map, close_df, pd.DataFrame(targets, index=_DATES), list(prices))
+
+
+def _opens(engine) -> list[tuple[str, int, float]]:
+    """Opening fills as ``(symbol, bar, quantity)``; the run closes the book on its last bar."""
+    return [(f.symbol, f.bar_idx, f.signed_quantity) for f in engine.fill_records if f.signed_quantity > 0]
+
+
+def test_a_cash_starved_open_in_hold_mode_is_reported_once():
+    """One open that no scale can fund is one insufficient_capital, never 26 zero_size.
+
+    A holds 9 contracts of 100 and leaves 100 of cash; B's full-scale plan is a
+    real 2-contract order at 150, and no scaled size clears the cash. Every
+    bisection step used to book a zero_size rejection for B.
+    """
+    engine = _FuturesLotEngine(position_adjustment="hold")
+    _hold_run(engine, {"A": 100.0, "B": 150.0}, {"A": [0.9, 0.9], "B": [0.0, 0.305]})
+
+    assert _opens(engine) == [("A", 0, 9.0)]
+    assert engine.rejections == [("B", "insufficient_capital", _DATES[1])]
+
+
+def test_a_trial_plan_inside_the_capital_fit_is_not_a_finding():
+    """A sleeve the search scales down to a fill leaves no rejection at all."""
+    engine = _FuturesLotEngine(position_adjustment="hold")
+    _hold_run(engine, {"A": 100.0, "B": 100.0}, {"A": [0.9, 0.9], "B": [0.0, 0.305]})
+
+    assert _opens(engine) == [("A", 0, 9.0), ("B", 1, 1.0)]  # 3 wanted, 1 affordable
+    assert engine.rejections == []
+
+
+def test_lot_truncation_in_hold_mode_is_still_one_zero_size():
+    """A target below one lot at full scale is the lot rule, not the cash."""
+    engine = _FuturesLotEngine(position_adjustment="hold")
+    _hold_run(engine, {"A": 100.0, "B": 150.0}, {"A": [0.9, 0.9], "B": [0.0, 0.0005]})
+
+    assert engine.rejections == [("B", "zero_size", _DATES[1])]
+
+
+def test_insufficient_capital_is_counted_as_unfilled():
+    class _CountingLots(_FuturesLotEngine):
+        _on_plan_rejected = BaseEngine._on_plan_rejected
+
+    engine = _CountingLots(position_adjustment="hold")
+    _hold_run(engine, {"A": 100.0, "B": 150.0}, {"A": [0.9, 0.9], "B": [0.0, 0.305]})
+
+    metrics = engine._plan_rejection_metrics()
+    assert metrics["unfilled_plan_rejections"] == 1
+    assert metrics["unfilled_plan_rejections_by_symbol"] == {"B": {"insufficient_capital": 1}}

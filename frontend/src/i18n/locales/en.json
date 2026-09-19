@@ -1213,7 +1213,15 @@
     "maxPerOrder": "≤{{amount}}/order",
     "expiresOn": "expires {{date}}",
     "accountSummary": "{{broker}} · {{type}} account · funded by {{fundedBy}}",
-    "adjustRequestMessage": "For mandate proposal \"{{label}}\" (option {{ordinal}}): {{text}}"
+    "adjustRequestMessage": "For mandate proposal \"{{label}}\" (option {{ordinal}}): {{text}}",
+    "accountLoading": "Loading the broker's accounts…",
+    "accountLoadFailed": "Could not load the broker's accounts: {{error}}",
+    "accountLabel": "Account this mandate may trade",
+    "accountChoose": "Choose an account",
+    "accountDefault": " · broker default",
+    "accountDeactivated": " · deactivated",
+    "accountNotAgentic": " · agentic trading not allowed",
+    "accountHint": "The agent trades only this account. Nothing is chosen for you."
   },
   "messageBubble": {
     "elapsedTime": "Total response time",
@@ -1623,7 +1631,19 @@
       "testFailed": "{{label}} check failed: {{error}}",
       "unknownTestError": "The connector returned an unknown error.",
       "delete": "Delete",
-      "configured": "Required credentials configured"
+      "configured": "Required credentials configured",
+      "accountTitle": "Account",
+      "accountCurrent": "Reads the account ending ····{{last4}}",
+      "accountNone": "No account selected. This connection reads nothing until you choose one.",
+      "accountLoad": "Choose account",
+      "accountChange": "Change account",
+      "accountEmpty": "This login reaches no accounts.",
+      "accountPicker": "Accounts this login can reach",
+      "accountChoose": "Choose an account",
+      "accountDefault": " · broker default",
+      "accountDeactivated": " · deactivated",
+      "accountSave": "Use this account",
+      "accountSaved": "Account saved."
     }
   }
 }

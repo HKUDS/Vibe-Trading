@@ -35,6 +35,7 @@ from src.portfolio.normalization import (
     value_position,
 )
 from src.portfolio.store import PortfolioStore
+from src.trading.connections import requires_account_selection
 from src.trading.profiles import profile_by_id
 from src.trading.types import TradingProfile
 
@@ -801,6 +802,15 @@ class PortfolioService:
                 # A dashboard refresh must never open a browser. reconnect_source()
                 # is the one explicit interactive path.
                 read_options["interactive_oauth"] = False
+                if requires_account_selection(profile):
+                    # Checked before any call: one OAuth grant serves every
+                    # account, so a read without one must not fall back to the
+                    # broker's default account.
+                    if not connection.account_ref:
+                        raise RuntimeError(
+                            f"Select a {broker} account for this connection before refreshing"
+                        )
+                    read_options["account"] = connection.account_ref
             elif profile.transport in {"broker_sdk", "local_plugin"} and (
                 profile.transport == "local_plugin" or self._use_connection_scoped_reads
             ):
@@ -867,6 +877,10 @@ class PortfolioService:
                     )
                     if not price and longbridge_price_error:
                         normalized["price_error"] = longbridge_price_error
+                elif profile.transport == "remote_mcp" and "quotes.read" not in profile.capabilities:
+                    normalized["market_price"] = None
+                    normalized["price_currency"] = normalized["currency"]
+                    normalized["price_error"] = f"{broker} quotes are not mapped for this connection"
                 else:
                     quote_symbol = normalized["quote_symbol"]
                     quote = self._get_quote(

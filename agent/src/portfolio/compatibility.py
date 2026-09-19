@@ -98,6 +98,12 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "Account totals and instrument quote resolution require verification.",
     ),
     "toss": PortfolioCompatibility("experimental", 1, "positions", "KRW valuation is not supported yet."),
+    "robinhood": PortfolioCompatibility(
+        "experimental",
+        1,
+        "stocks_etfs",
+        "Equity positions for one selected account, unpriced until the quote reply is mapped.",
+    ),
     # No "scalable" entry: its profile does not declare account.read /
     # positions.read, so it is not a portfolio-eligible connection. The
     # holdings reply shape is unverified (no published tool argument schemas),
@@ -137,8 +143,13 @@ def adapt_and_validate_payloads(
     if not isinstance(positions_payload, dict):
         raise PortfolioContractError("positions read must return an object")
 
+    for label, payload in (("account", account_payload), ("positions", positions_payload)):
+        if payload.get("mapping_error"):
+            raise PortfolioContractError(f"{label} read could not be mapped: {payload['mapping_error']}")
     account = dict(account_payload)
     positions = dict(positions_payload)
+    if connector == "robinhood":
+        _require_equity_only_robinhood_account(account)
     # No default: a read that never produced a positions list (an unmapped MCP
     # envelope, a text-only reply) is not an empty portfolio. Reading it as one
     # would store a complete snapshot of a source that holds nothing.
@@ -164,6 +175,39 @@ def adapt_and_validate_payloads(
         validated.append(row)
     positions["positions"] = validated
     return account, positions
+
+
+def _require_equity_only_robinhood_account(account_payload: dict[str, Any]) -> None:
+    """Refuse a Robinhood account whose holdings reach beyond equities.
+
+    ``get_equity_positions`` lists equities only, while ``get_portfolio`` reports
+    options, crypto, futures, event contracts, mutual funds and fixed income as
+    separate values. Showing the equity rows for an account that also holds any
+    of those would be a quietly shorter portfolio, so the source fails instead,
+    naming what it cannot list. An omitted value is unknown, not zero.
+
+    Args:
+        account_payload: The mapped ``get_portfolio`` read.
+
+    Raises:
+        PortfolioContractError: If the mapped summary is missing, or any
+            non-equity value is non-zero or not reported.
+    """
+    summary = account_payload.get("account")
+    values = summary.get("non_equity_values") if isinstance(summary, dict) else None
+    if not isinstance(values, dict):
+        raise PortfolioContractError("Robinhood account read carries no mapped portfolio summary")
+    unreported = sorted(field for field, value in values.items() if value is None)
+    held = sorted(field for field, value in values.items() if value is not None and _decimal(value) != 0)
+    if unreported:
+        raise PortfolioContractError(
+            "Robinhood did not report " + ", ".join(unreported) + ", so an equity-only view cannot be shown as complete"
+        )
+    if held:
+        raise PortfolioContractError(
+            "this Robinhood account holds " + ", ".join(held) + ", which equity positions do not cover; "
+            "an equity-only view would be incomplete"
+        )
 
 
 def ensure_supported_currencies(

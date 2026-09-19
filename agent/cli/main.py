@@ -1126,7 +1126,43 @@ def _handle_scheduled_proposal_reply(text: str, ctx: InteractiveContext) -> bool
     return True
 
 
-def _commit_mandate(proposal: Dict[str, Any], selected_ordinal: int) -> Dict[str, Any]:
+def _choose_mandate_account(accounts: List[Dict[str, Any]]) -> str:
+    """Ask the user which broker account a mandate may trade.
+
+    Only accounts the broker lists as active and open to agentic trading are
+    offered, and nothing is preselected: an empty reply commits nothing.
+
+    Args:
+        accounts: Picker rows from ``GET /live/accounts``.
+
+    Returns:
+        The chosen ``account_ref``, or ``""`` when the user chose none or no
+        account is usable.
+    """
+    console = get_console()
+    usable = [row for row in accounts if not row.get("deactivated") and row.get("agentic_allowed")]
+    if not usable:
+        console.print("[yellow]The broker lists no active account that allows agentic trading.[/yellow]")
+        return ""
+    console.print("[bold]Which account may this mandate trade?[/bold]")
+    for index, row in enumerate(usable, start=1):
+        default = " [dim](broker default)[/dim]" if row.get("is_default") else ""
+        console.print(f"  [{index}] {row.get('label')}{default}")
+    try:
+        raw = input("account > ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return ""
+    if not raw.isdigit() or not 1 <= int(raw) <= len(usable):
+        return ""
+    return str(usable[int(raw) - 1]["account_ref"])
+
+
+def _commit_mandate(
+    proposal: Dict[str, Any],
+    selected_ordinal: int,
+    *,
+    choose_account: Any = None,
+) -> Dict[str, Any]:
     """Commit a mandate selection via the surface commit endpoint.
 
     This is the single privileged write that activates a mandate. The pick is a
@@ -1142,6 +1178,10 @@ def _commit_mandate(proposal: Dict[str, Any], selected_ordinal: int) -> Dict[str
         proposal: The outstanding ``mandate.proposal`` payload (binds the commit
             to the exact rendered options via ``proposal_id``).
         selected_ordinal: The 1-based profile the user picked.
+        choose_account: Account chooser taking the ``/live/accounts`` rows;
+            defaults to :func:`_choose_mandate_account`. Used only for a broker
+            whose mandate must be bound to one account, and never fed an
+            account the proposal carries: the agent does not choose it.
 
     Returns:
         The decoded commit response (``mandate_id`` / ``consent_record_id`` on
@@ -1170,6 +1210,20 @@ def _commit_mandate(proposal: Dict[str, Any], selected_ordinal: int) -> Dict[str
                 "consent_ack": True,
             }
         ).model_dump(mode="json")
+
+        listing = httpx.get(
+            f"{base}/live/accounts",
+            params={"broker": body["broker"]},
+            headers=headers,
+            timeout=30.0,
+        )
+        listing.raise_for_status()
+        accounts = listing.json()
+        if accounts.get("account_selection_required"):
+            chooser = choose_account or _choose_mandate_account
+            body["account_ref"] = chooser(list(accounts.get("accounts") or []))
+            if not body["account_ref"]:
+                return {"status": "error", "error": "no account was chosen for this mandate"}
 
         response = httpx.post(
             f"{base}/mandate/commit",

@@ -56,6 +56,12 @@ _DATE_RE = re.compile(
 # required, so a line opening with a figure ("1.171 元是收盘价") is untouched.
 _ORDINAL_RE = re.compile(r"(?m)^[^\S\n]*(?:#{1,6}[^\S\n]*)?\d{1,3}[.)、][^\S\n]+")
 
+# SHAPE 5 — a table cell that only numbers its row ("1", "2.", "3)"), and a word
+# inside a cell: two or more letters of any script ("12m mean return", "12个月").
+# A glued unit letter ("25x", "25 倍") is not a word (#1471).
+_INDEX_CELL_RE = re.compile(r"\d{1,3}[.)]?")
+_CELL_WORD_RE = re.compile(r"[^\W\d_]{2,}")
+
 # SHAPE 4 — a CommonMark fence line: at most three spaces of indent, a run of
 # backticks or tildes, and the info string.
 _FENCE_RE = re.compile(r"(?m)^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -191,6 +197,8 @@ class TableRow:
     columns: dict[int, str]
     date_column: int | None
     symbol_column: int | None
+    # Which table of the document the row belongs to, in document order.
+    table: int = 0
 
 
 @dataclass(frozen=True)
@@ -660,6 +668,7 @@ def table_rows(content: str) -> list[TableRow]:
     positions = _lines_with_offsets(content)
     rows: list[TableRow] = []
     index = 0
+    table = 0
     while index < len(positions):
         if positions[index][0].count("|") < 2:
             index += 1
@@ -687,8 +696,9 @@ def table_rows(content: str) -> list[TableRow]:
             if not cells or _is_separator_row(cells):
                 continue
             rows.append(
-                TableRow(line_index, tuple(cells), columns, date_column, symbol_column)
+                TableRow(line_index, tuple(cells), columns, date_column, symbol_column, table)
             )
+        table += 1
     return rows
 
 
@@ -859,16 +869,54 @@ def _short_date_is_structural(content: str, match: re.Match[str], full_dates: Se
     return any(segment <= full.start() and full.end() <= match.start() for full in full_dates)
 
 
+def _index_cells(rows: Sequence[TableRow]) -> set[tuple[int, int]]:
+    """Spans of the cells of a column that only numbers its table's rows (#1471).
+
+    A column whose numbered cells read 1, 2, 3 … in row order is the table's
+    index. No price or metric takes that shape, and cutting it turned a ranking
+    into a column of omission marks. A cell without a digit ("—", "Total") is
+    skipped; one numbered row proves no sequence, so it takes two. A column the
+    header binds to an OHLC field is never an index.
+
+    Args:
+        rows: Every table row of the document.
+
+    Returns:
+        ``(start, end)`` of each index cell.
+    """
+    tables: dict[int, list[TableRow]] = {}
+    for row in rows:
+        tables.setdefault(row.table, []).append(row)
+    spans: set[tuple[int, int]] = set()
+    for body in tables.values():
+        for position in range(max(len(row.cells) for row in body)):
+            if position in body[0].columns:
+                continue
+            numbered = [
+                row.cells[position]
+                for row in body
+                if position < len(row.cells) and any(char.isdigit() for char in row.cells[position][0])
+            ]
+            if len(numbered) < 2 or not all(_INDEX_CELL_RE.fullmatch(text) for text, _, _ in numbered):
+                continue
+            if [int(text.rstrip(".)")) for text, _, _ in numbered] == list(range(1, len(numbered) + 1)):
+                spans.update((start, end) for _, start, end in numbered)
+    return spans
+
+
 def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
     """Locate and classify every number in the prose of a draft (spec §3).
 
-    * ``exempt`` — a date, time, security-code digits, line-leading ordinal or
-      anything fenced; a bare year, compact date or a table date/symbol cell
-      only while it carries no decimal point, percent or currency mark (and a
-      year not under a price column).
+    * ``exempt`` — a date, time, security-code digits, line-leading ordinal,
+      a table's row-number column or anything fenced; a bare year, compact date
+      or a table date/symbol cell only while it carries no decimal point,
+      percent or currency mark (and a year not under a price column).
     * ``measured`` — a decimal point, percent / pp / bp, touching currency mark
-      or table cell: the shape a fabricated price or metric takes.
-    * ``bare`` — a plain integer (counts, horizons, window lengths): unchecked.
+      or a table cell that holds a number and no word: the shape a fabricated
+      price or metric takes.
+    * ``bare`` — a plain integer (counts, horizons, window lengths), in prose or
+      beside words in a table cell ("12m mean return"): unchecked. A cell under
+      an OHLC column stays measured whatever else it holds.
 
     Args:
         content: The candidate answer.
@@ -900,11 +948,13 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
             (view.start(match.start()), view.end(match.end()))
             for match in pattern.finditer(text)
         )
+    rows = table_rows(content)
     cells = [
         (start, end, row, position)
-        for row in table_rows(content)
+        for row in rows
         for position, (_, start, end) in enumerate(row.cells)
     ]
+    index_cells = _index_cells(rows)
 
     figures: list[Figure] = []
     for token in _numbers(text):
@@ -919,12 +969,19 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
         structural = row is not None and position in (row.date_column, row.symbol_column)
         currency = _currency_before(text, token.start) or _currency_after(text, token.end)
         marked = percent or currency or "." in token.digits
-        if _within((start, digits_end), hard):
+        # A cell that also holds a word is prose set in a table: its plain
+        # integer is a count or a horizon, as it would be in a sentence (#1471).
+        worded = (
+            row is not None
+            and position not in row.columns
+            and _CELL_WORD_RE.search(row.cells[position][0]) is not None
+        )
+        if _within((start, digits_end), hard) or (cell is not None and cell[:2] in index_cells):
             shape = "exempt"
         elif structural or _within((start, digits_end), soft):
             priced = row is not None and not structural and position in row.columns
             shape = "measured" if marked or priced else "exempt"
-        elif marked or row is not None:
+        elif marked or (row is not None and not worded):
             shape = "measured"
         else:
             shape = "bare"

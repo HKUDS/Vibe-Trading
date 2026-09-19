@@ -4264,9 +4264,18 @@ def cmd_portfolio_sources(service: Any | None = None) -> int:
     table.add_column("Transport")
     table.add_column("Credentials", justify="center")
     for row in rows:
+        connection_cell = (
+            f"[cyan]{rich_escape(str(row.get('connection_id') or row.get('id')))}[/cyan]"
+            f"\n[dim]{rich_escape(str(row.get('label') or ''))}[/dim]"
+        )
+        account_ref = str(row.get("account_ref") or "")
+        if account_ref:
+            connection_cell += f"\n[dim]account ····{rich_escape(account_ref[-4:])}[/dim]"
+        elif row.get("account_selection_required"):
+            connection_cell += "\n[yellow]no account selected[/yellow]"
         table.add_row(
             "[green]*[/green]" if row.get("selected") else "",
-            f"[cyan]{rich_escape(str(row.get('connection_id') or row.get('id')))}[/cyan]\n[dim]{rich_escape(str(row.get('label') or ''))}[/dim]",
+            connection_cell,
             rich_escape(str(row.get("connector") or "")),
             rich_escape(str(row.get("environment") or "")),
             rich_escape(str(row.get("transport") or "")),
@@ -4455,12 +4464,27 @@ def cmd_connector_setup(
     connection_id: str | None = None,
     label: str | None = None,
     skip_check: bool = False,
+    account: str | None = None,
 ) -> int:
-    """Create a local read-only connection and collect secrets outside AI prompts."""
+    """Create a local read-only connection and collect secrets outside AI prompts.
+
+    Args:
+        profile_id: Read-only portfolio profile to connect through.
+        connection_id: Local id; defaults to ``<connector>-<environment>``.
+        label: Display name; defaults to the profile label.
+        skip_check: Skip the connectivity check (and, for an account-scoped
+            profile, the account selection that needs the broker).
+        account: Account to scope an account-scoped connection to; without it
+            the user picks from the broker's account list.
+
+    Returns:
+        The process exit code.
+    """
     from src.trading.connections import (
         ConnectionStore,
         credential_field_catalog,
         is_portfolio_connection_profile,
+        requires_account_selection,
     )
     from src.trading.profiles import profile_by_id
     from src.trading.service import check_connection
@@ -4504,7 +4528,13 @@ def cmd_connector_setup(
         f"[green]Local read-only connection ready[/green] "
         f"{connection.id} [dim]({connection.profile_id})[/dim]"
     )
+    needs_account = requires_account_selection(profile)
     if skip_check:
+        if needs_account and not connection.account_ref:
+            console.print(
+                f"[yellow]Select the account this connection reads:[/yellow] "
+                f"vibe-trading connector select-account {connection.id}"
+            )
         return EXIT_SUCCESS
     try:
         report = check_connection(profile.id, connection_id=connection.id)
@@ -4518,6 +4548,69 @@ def cmd_connector_setup(
         )
         return EXIT_RUN_FAILED
     console.print("[green]Connection test passed.[/green]")
+    if needs_account and (account is not None or not connection.account_ref):
+        return cmd_connector_select_account(connection.id, account=account)
+    return EXIT_SUCCESS
+
+
+def cmd_connector_select_account(
+    connection_id: str,
+    *,
+    account: str | None = None,
+    clear: bool = False,
+) -> int:
+    """Scope an account-scoped connection to one account from the broker's list.
+
+    There is no default: without ``account`` the user picks from the list, and
+    an account the broker does not list is refused.
+
+    Args:
+        connection_id: Connection to update.
+        account: Account reference to select; prompts when omitted.
+        clear: Remove the selection instead.
+
+    Returns:
+        The process exit code.
+    """
+    from src.trading.accounts import AccountListUnavailable, choose_account, connection_accounts
+    from src.trading.connections import ConnectionStore
+
+    store = ConnectionStore()
+    try:
+        connection = store.get(connection_id)
+        if clear:
+            store.select_account(connection.id, "")
+            console.print(f"[green]Cleared the account selection of[/green] {connection.id}")
+            return EXIT_SUCCESS
+        choices = connection_accounts(connection)
+        if account is None:
+            usable = [row for row in choices if not row.get("deactivated")]
+            if not usable:
+                raise ValueError("this login reaches no active account")
+            table = Table(title="Accounts", box=box.SIMPLE_HEAVY)
+            table.add_column("#", justify="right")
+            table.add_column("Account")
+            table.add_column("Broker default", justify="center")
+            table.add_column("Agentic trading", justify="center")
+            for index, row in enumerate(usable, start=1):
+                table.add_row(
+                    str(index),
+                    rich_escape(str(row.get("label") or "")),
+                    "yes" if row.get("is_default") else "",
+                    "allowed" if row.get("agentic_allowed") else "[dim]not allowed[/dim]",
+                )
+            console.print(table)
+            pick = Prompt.ask("Account", choices=[str(index) for index in range(1, len(usable) + 1)])
+            account = str(usable[int(pick) - 1]["account_ref"])
+        chosen = choose_account(choices, account.strip())
+        store.select_account(connection.id, str(chosen["account_ref"]))
+    except AccountListUnavailable as exc:
+        console.print(f"[red]Could not read the account list:[/red] {rich_escape(str(exc))}")
+        return EXIT_RUN_FAILED
+    except (RuntimeError, ValueError) as exc:
+        console.print(f"[red]Account selection failed:[/red] {rich_escape(str(exc))}")
+        return EXIT_USAGE_ERROR
+    console.print(f"[green]{connection.id} now reads[/green] {rich_escape(str(chosen.get('label') or ''))}")
     return EXIT_SUCCESS
 
 
@@ -5120,6 +5213,13 @@ def _dispatch_connector(args: argparse.Namespace) -> int:
             connection_id=args.connection_id,
             label=args.label,
             skip_check=args.skip_check,
+            account=args.account,
+        )
+    if sub == "select-account":
+        return cmd_connector_select_account(
+            args.connection_id,
+            account=args.account,
+            clear=args.clear,
         )
     if sub == "check":
         options = {
@@ -5438,6 +5538,19 @@ def _build_parser() -> argparse.ArgumentParser:
     connector_setup.add_argument("--connection-id", default=None)
     connector_setup.add_argument("--label", default=None)
     connector_setup.add_argument("--skip-check", action="store_true")
+    connector_setup.add_argument(
+        "--account",
+        default=None,
+        help="Account to scope an account-scoped connection (Robinhood) to; prompts when omitted",
+    )
+
+    connector_select_account = connector_subparsers.add_parser(
+        "select-account",
+        help="Choose the broker account an account-scoped connection reads",
+    )
+    connector_select_account.add_argument("connection_id", help="Local connection id")
+    connector_select_account.add_argument("--account", default=None, help="Account reference; prompts when omitted")
+    connector_select_account.add_argument("--clear", action="store_true", help="Remove the selection")
 
     connector_check = connector_subparsers.add_parser("check", help="Check selected connector readiness")
     _add_connector_profile_arg(connector_check)
@@ -5566,6 +5679,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "base_env": "DEEPSEEK_BASE_URL",
         "base_url": "https://api.deepseek.com/v1",
         "model": "deepseek-v4-pro",
+        "key_prefix": "sk-",
+        "key_placeholder": "sk-...",
+    },
+    {
+        "label": "OpenCode (Go / Zen)",
+        "provider": "opencode",
+        "key_env": "OPENCODE_API_KEY",
+        "base_env": "OPENCODE_BASE_URL",
+        "base_url": "https://opencode.ai/zen/go/v1",
+        "model": "deepseek-v4.1-flash",
         "key_prefix": "sk-",
         "key_placeholder": "sk-...",
     },

@@ -628,7 +628,8 @@ class _ReleaseMixin:
         "37", and a code fence can still print it. Figures compare by normalized
         digits, so an escaped spelling is the same restatement. Measured prose
         survivors were checked and grounded, and the figures block is not
-        answer text, so neither is swept.
+        answer text, so neither is swept. A single-digit figure is never a
+        sweep key.
 
         Args:
             text: The already-cut document.
@@ -637,6 +638,9 @@ class _ReleaseMixin:
         Returns:
             ``(rewritten text, normalized digits of each figure swept)``.
         """
+        # One digit restates nothing: every "2" and "3" on the page shares it, and
+        # sweeping them took list references and counts with the figure (#1471).
+        keys = {key for key in keys if len(key) > 1}
         if not keys:
             return text, []
         stale = [

@@ -60,6 +60,18 @@ def test_non_finite_final_equity_is_json_safe(terminal: float) -> None:
     json.dumps(metrics, allow_nan=False)
 
 
+def test_annual_return_exponent_uses_elapsed_bars_not_bars_minus_one() -> None:
+    """annual_return must annualise over len(equity) elapsed bars, matching
+    backtest.metrics.calc_metrics's convention, not len(equity) - 1."""
+    equity = pd.Series([100.5, 101.0])
+    metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=252)
+
+    total_ret = equity.iloc[-1] / 100.0 - 1
+    expected = (1 + total_ret) ** (252 / len(equity)) - 1
+
+    assert metrics["annual_return"] == pytest.approx(expected)
+
+
 def test_normal_positive_equity_metrics_remain_finite() -> None:
     metrics = _calc_options_metrics(
         pd.Series([100.0, 110.0, 104.5, 115.0, 103.5, 120.0]),

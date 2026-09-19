@@ -1208,7 +1208,15 @@
     "maxPerOrder": "每笔 ≤{{amount}}",
     "expiresOn": "到期日：{{date}}",
     "accountSummary": "{{broker}} · {{type}} 账户 · 资金来源：{{fundedBy}}",
-    "adjustRequestMessage": "针对授权提案「{{label}}」（选项 {{ordinal}}）的调整：{{text}}"
+    "adjustRequestMessage": "针对授权提案「{{label}}」（选项 {{ordinal}}）的调整：{{text}}",
+    "accountLoading": "正在读取券商账户…",
+    "accountLoadFailed": "无法读取券商账户：{{error}}",
+    "accountLabel": "该授权可交易的账户",
+    "accountChoose": "选择账户",
+    "accountDefault": " · 券商默认",
+    "accountDeactivated": " · 已停用",
+    "accountNotAgentic": " · 不允许智能体交易",
+    "accountHint": "智能体只会交易这个账户，系统不会替你预选。"
   },
   "messageBubble": {
     "elapsedTime": "本次回复总耗时",
@@ -1623,7 +1631,19 @@
       "testFailed": "{{label}} 测试失败：{{error}}",
       "unknownTestError": "连接器返回了未知错误。",
       "delete": "删除",
-      "configured": "所需凭证已配置"
+      "configured": "所需凭证已配置",
+      "accountTitle": "账户",
+      "accountCurrent": "读取尾号 ····{{last4}} 的账户",
+      "accountNone": "尚未选择账户。选择之前，这个连接不会读取任何数据。",
+      "accountLoad": "选择账户",
+      "accountChange": "更换账户",
+      "accountEmpty": "这个登录下没有可用账户。",
+      "accountPicker": "这个登录可访问的账户",
+      "accountChoose": "选择账户",
+      "accountDefault": " · 券商默认",
+      "accountDeactivated": " · 已停用",
+      "accountSave": "使用这个账户",
+      "accountSaved": "账户已保存。"
     }
   }
 }

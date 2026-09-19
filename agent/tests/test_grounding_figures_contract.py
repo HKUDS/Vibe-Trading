@@ -801,3 +801,77 @@ def test_an_untagged_fence_is_prose_and_a_tagged_one_is_code() -> None:
 
     assert measured == {"0.881", "0.800"}
     assert not [f for f in scan_figures(tagged, parse_figures_block(tagged)) if f.shape == "measured"]
+
+
+# ---------------------------------------------------------------------------
+# #1471 — a table's row numbers and the words in its cells are not measurements
+# ---------------------------------------------------------------------------
+
+_RANKED = (
+    "| # | 代码 | 市盈率 |\n|---|---|---|\n"
+    "| 1 | 159516.SZ | 45 |\n| 2 | 159516.SZ | 38 |\n| 3 | 159516.SZ | 52 |\n"
+)
+
+
+def test_a_column_that_numbers_its_rows_is_structure() -> None:
+    """1, 2, 3 down a column is the table's index; the metric beside it is still checked."""
+    shapes = {figure.text: figure.shape for figure in scan_figures(_RANKED, parse_figures_block(_RANKED))}
+
+    assert [shapes[number] for number in ("1", "2", "3")] == ["exempt"] * 3
+    assert [shapes[metric] for metric in ("45", "38", "52")] == ["measured"] * 3
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "| 序号 | 值 |\n|---|---|\n| 1. | 45 |\n| 2. | 38 |\n",          # numbered with a dot
+        "| 序号 | 值 |\n|---|---|\n| 1) | 45 |\n| — | 40 |\n| 2) | 38 |\n",  # a row without a number
+        "| 值 | 名次 |\n|---|---|\n| 45 | 1 |\n| 38 | 2 |\n",              # the index need not be first
+    ],
+)
+def test_an_index_column_is_recognised_by_its_sequence(table: str) -> None:
+    measured = {f.text for f in scan_figures(table, parse_figures_block(table)) if f.shape == "measured"}
+    assert measured <= {"45", "40", "38"} and {"45", "38"} <= measured
+
+
+@pytest.mark.parametrize(
+    ("table", "still_measured"),
+    [
+        ("| # | 值 |\n|---|---|\n| 1 | 45 |\n", {"1", "45"}),                       # one row proves no sequence
+        ("| 手数 | 值 |\n|---|---|\n| 1 | 45 |\n| 2 | 38 |\n| 4 | 52 |\n", {"1", "2", "4"}),   # not consecutive
+        ("| 手数 | 值 |\n|---|---|\n| 2 | 45 |\n| 3 | 38 |\n", {"2", "3"}),          # does not start at 1
+        ("| 手数 | 值 |\n|---|---|\n| 3 | 45 |\n| 2 | 38 |\n| 1 | 52 |\n", {"3", "2", "1"}),   # descending
+        ("| 收盘 | 值 |\n|---|---|\n| 1 | 45 |\n| 2 | 38 |\n", {"1", "2"}),          # a price column is never an index
+    ],
+)
+def test_a_column_that_is_not_a_plain_sequence_is_still_checked(table: str, still_measured: set[str]) -> None:
+    measured = {f.text for f in scan_figures(table, parse_figures_block(table)) if f.shape == "measured"}
+    assert still_measured <= measured
+
+
+@pytest.mark.parametrize(
+    ("cell", "figure", "shape"),
+    [
+        ("12m mean return", "12", "bare"),          # a horizon inside a label
+        ("Mean beta (9 reported)", "9", "bare"),    # a count inside a label
+        ("30 days", "30", "bare"),
+        ("12个月平均收益", "12", "bare"),
+        ("45", "45", "measured"),                    # a number alone is the table's data
+        ("25x", "25", "measured"),                   # a glued unit letter is not a word
+        ("25 倍", "25", "measured"),
+        ("1.35 (est.)", "1.35", "measured"),         # a decimal is a measurement wherever it stands
+        ("up 37% YoY", "37%", "measured"),
+        ("$950 consensus", "950", "measured"),
+    ],
+)
+def test_a_cell_is_read_as_prose_only_where_it_holds_words(cell: str, figure: str, shape: str) -> None:
+    table = f"| Metric | Value |\n|---|---|\n| {cell} | n/a |\n"
+    shapes = {f.text: f.shape for f in scan_figures(table, parse_figures_block(table))}
+    assert shapes[figure] == shape, shapes
+
+
+def test_words_in_a_price_column_cell_do_not_unbind_it() -> None:
+    """The header bound the column to a close; "300 est" under it is still a close."""
+    table = "| 代码 | 收盘 |\n|---|---|\n| 159516.SZ | 300 est |\n"
+    shapes = {f.text: f.shape for f in scan_figures(table, parse_figures_block(table))}
+    assert shapes["300"] == "measured"

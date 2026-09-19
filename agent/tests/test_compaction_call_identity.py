@@ -279,3 +279,37 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
     result = h.call({"statement": "balance"})
     assert json.loads(result["content"])["skipped"] is True
     assert len(h.tool.calls) == 3
+
+
+def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypatch):
+    """The compaction thread inherits the run's session binding (#1416).
+
+    ``AgentLoop.run()`` binds the session id in a ``ContextVar``. A fresh
+    thread starts with an empty context, so the summary call used to go out
+    unbound and OpenCode Go saw a second conversation id for the same session.
+    """
+    from src.providers.session_context import (
+        bind_llm_session_id,
+        current_llm_session_id,
+        reset_llm_session_id,
+    )
+
+    h = harness
+    h.call({"statement": "income"})
+    h.call({"statement": "balance"})
+    seen: list[str] = []
+
+    def chat(*args, **kwargs):
+        seen.append(current_llm_session_id())
+        return SimpleNamespace(content="summary")
+
+    monkeypatch.setattr(h.agent.llm, "chat", chat)
+    monkeypatch.setattr("src.agent.loop._llm_timeout_seconds", lambda: 1)
+    token = bind_llm_session_id("vibe-session-42")
+    try:
+        h.agent._auto_compact(h.messages, h.run_dir, h.trace)
+    finally:
+        reset_llm_session_id(token)
+
+    assert seen, "the compaction made no summary call"
+    assert seen == ["vibe-session-42"] * len(seen)

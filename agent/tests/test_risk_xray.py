@@ -489,3 +489,28 @@ def test_run_backtest_with_bars_per_year_none_does_not_crash(tmp_path):
         bars_per_year=None,
     )
     assert metrics["risk_xray_annualized_vol"] is not None
+
+
+def test_long_window_requests_full_history_without_sampling():
+    """Over the shared 250-row cap the fetch would sample the series down and
+    break consecutive-return math; the tool must ask for every row (#1461)."""
+    import math
+
+    n = 300
+    prices = [100.0 + i * 0.1 for i in range(n)]
+    idx = pd.date_range("2026-01-01", periods=n, freq="D")
+
+    def capped_fetch(*, codes, start_date, end_date, source, interval, max_rows=250, **kwargs):
+        rows = [{"date": str(idx[i].date()), "close": price} for i, price in enumerate(prices)]
+        if max_rows and len(rows) > max_rows:
+            step = math.ceil(len(rows) / max_rows)
+            rows = rows[::step]
+        return {codes[0]: rows, "_unresolved": []}
+
+    tool = PortfolioRiskXrayTool(data_fetcher=capped_fetch)
+    payload = json.loads(tool.execute(symbols=["AAA"], interval="1D"))
+
+    assert payload["status"] == "ok"
+    assert payload["data"]["inputs"]["aligned_days"] == n
+    assert payload["data"]["inputs"]["return_observations"] == n - 1
+    _assert_strict_json(payload)

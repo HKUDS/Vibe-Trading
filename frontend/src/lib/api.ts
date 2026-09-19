@@ -234,6 +234,10 @@ export interface LocalConnection {
   id: string;
   profile_id: string;
   label: string;
+  /** Broker account the reads are scoped to; empty until the user selects one. */
+  account_ref: string;
+  /** True when this connection reads nothing until an account is selected. */
+  account_selection_required: boolean;
   connector: string;
   environment: "paper" | "live";
   transport: "local_tws" | "remote_mcp" | "broker_sdk" | "local_plugin";
@@ -260,10 +264,20 @@ export interface ReadonlyConnectionProfile {
   credential_fields: CredentialField[];
   onboarding?: ConnectorOnboarding;
   supports_reconnect: boolean;
+  account_selection_required: boolean;
   portfolio_compatibility: PortfolioConnectorCompatibility;
   invalid_plugin?: boolean;
   directory?: string;
   error?: string;
+}
+
+/** One account a broker login can reach, as the backend maps it for a picker. */
+export interface BrokerAccountChoice {
+  account_ref: string;
+  label: string;
+  is_default: boolean;
+  agentic_allowed: boolean;
+  deactivated: boolean;
 }
 
 export interface ConnectionsResponse {
@@ -382,6 +396,15 @@ export const api = {
     request<{ status: string; connection_id: string; report: Record<string, unknown> }>(
       `/api/connections/${encodeURIComponent(connectionId)}/check`,
       { method: "POST" },
+    ),
+  getConnectionAccounts: (connectionId: string) =>
+    request<{ status: string; connection_id: string; account_ref: string; accounts: BrokerAccountChoice[] }>(
+      `/api/connections/${encodeURIComponent(connectionId)}/accounts`,
+    ),
+  selectConnectionAccount: (connectionId: string, accountRef: string) =>
+    request<{ status: string; connection: LocalConnection }>(
+      `/api/connections/${encodeURIComponent(connectionId)}/account`,
+      { method: "PUT", body: JSON.stringify({ account_ref: accountRef }) },
     ),
   deleteConnection: (connectionId: string) =>
     request<{ status: string; deleted: string }>(
@@ -545,6 +568,10 @@ export const api = {
 
   // Connector runtime channel — privileged surface actions (NOT agent tools).
   // commit is the ONLY action that writes a mandate; halt trips the kill switch.
+  getLiveAccounts: (broker: string) =>
+    request<{ status: string; broker: string; account_selection_required: boolean; accounts: BrokerAccountChoice[] }>(
+      `/live/accounts?broker=${encodeURIComponent(broker)}`,
+    ),
   commitMandate: (body: CommitMandateRequest) =>
     request<CommitMandateResponse>("/mandate/commit", {
       method: "POST",

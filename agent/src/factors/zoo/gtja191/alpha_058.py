@@ -47,5 +47,6 @@ __alpha_meta__ = {
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
-    up = (c > c.shift(1)).astype(float)
+    # A missing close or prior close is not a down day (#1463).
+    up = (c > c.shift(1)).astype(float).where(c.notna() & c.shift(1).notna())
     return up.rolling(20, min_periods=20).sum() / 20.0 * 100.0

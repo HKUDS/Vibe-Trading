@@ -1208,7 +1208,15 @@
     "maxPerOrder": "주문당 {{amount}} 이하",
     "expiresOn": "{{date}} 만료",
     "accountSummary": "{{broker}} · {{type}} 계정 · 자금 제공: {{fundedBy}}",
-    "adjustRequestMessage": "운용 권한 제안 \"{{label}}\"(옵션 {{ordinal}})에 대한 조정 요청: {{text}}"
+    "adjustRequestMessage": "운용 권한 제안 \"{{label}}\"(옵션 {{ordinal}})에 대한 조정 요청: {{text}}",
+    "accountLoading": "브로커 계좌를 불러오는 중…",
+    "accountLoadFailed": "브로커 계좌를 불러오지 못했습니다: {{error}}",
+    "accountLabel": "이 mandate로 거래할 계좌",
+    "accountChoose": "계좌 선택",
+    "accountDefault": " · 브로커 기본값",
+    "accountDeactivated": " · 비활성화됨",
+    "accountNotAgentic": " · 에이전트 거래 허용 안 됨",
+    "accountHint": "에이전트는 이 계좌에서만 거래합니다. 자동으로 선택되지 않습니다."
   },
   "messageBubble": {
     "elapsedTime": "총 응답 시간",
@@ -1623,7 +1631,19 @@
       "testFailed": "{{label}} 테스트 실패: {{error}}",
       "unknownTestError": "커넥터가 알 수 없는 오류를 반환했습니다.",
       "delete": "삭제",
-      "configured": "필요한 자격 증명이 설정되었습니다"
+      "configured": "필요한 자격 증명이 설정되었습니다",
+      "accountTitle": "계좌",
+      "accountCurrent": "끝자리 ····{{last4}} 계좌를 읽습니다",
+      "accountNone": "선택된 계좌가 없습니다. 계좌를 선택하기 전까지 이 연결은 아무것도 읽지 않습니다.",
+      "accountLoad": "계좌 선택",
+      "accountChange": "계좌 변경",
+      "accountEmpty": "이 로그인으로 접근할 수 있는 계좌가 없습니다.",
+      "accountPicker": "이 로그인으로 접근할 수 있는 계좌",
+      "accountChoose": "계좌 선택",
+      "accountDefault": " · 브로커 기본값",
+      "accountDeactivated": " · 비활성화됨",
+      "accountSave": "이 계좌 사용",
+      "accountSaved": "계좌를 저장했습니다."
     }
   }
 }

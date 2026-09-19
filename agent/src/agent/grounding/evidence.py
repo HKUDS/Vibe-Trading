@@ -122,6 +122,11 @@ _ANALYSIS_KIND_ALIASES = {
     "var": "tail_risk",
     "var_95": "tail_risk",
     "var_99": "tail_risk",
+    # quantlib_call records a scalar result under the function name, and "var"
+    # alone matches only a whole leaf (_EXACT_ONLY_ALIASES), so these two need
+    # their own entries or a real VaR result grounds nothing (#1464).
+    "historical_var": "tail_risk",
+    "parametric_var": "tail_risk",
     "cvar": "tail_risk",
     "es": "tail_risk",
     "expected_shortfall": "tail_risk",

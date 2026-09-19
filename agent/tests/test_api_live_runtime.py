@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 import api_server
+from tests import robinhood_mcp_helpers as rh
 
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
@@ -353,6 +354,7 @@ def test_build_live_runner_wires_a_real_runner(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
     monkeypatch.setattr(api_server, "_get_session_service", lambda: _StubSvc())
+    monkeypatch.setattr(api_server, "_mandate_account_ref", lambda broker: "5QR00001")
 
     runner = api_server._build_live_runner("robinhood")
     # Constructs without TypeError and exposes the R2 contract.
@@ -427,13 +429,18 @@ def test_live_action_relay_ignores_non_live_results(tmp_path: Path, monkeypatch)
 
 
 def test_fetch_broker_ceilings_derives_from_account(tmp_path, monkeypatch) -> None:
+    calls: list[tuple[str, dict]] = []
+
     class _StubAdapter:
         def call_tool(self, name, args):
-            assert name == "get_portfolio"
-            return {"status": "ok", "result": {"buying_power": 4200.0}}
+            calls.append((name, args))
+            return rh.portfolio(total_value="9000.00", cash="1000.00", buying_power="4200.00")
 
     monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
-    ceilings = api_server._fetch_broker_ceilings("robinhood")
+    ceilings = api_server._fetch_broker_ceilings("robinhood", "5QR00001")
+    # The read is scoped to the account being bound, and the value comes from
+    # Robinhood's nested buying_power.buying_power, not a top-level key.
+    assert calls == [("get_portfolio", {"account_number": "5QR00001"})]
     assert ceilings == {
         "account_funding_usd": 4200.0,
         "max_order_notional_usd": 4200.0,
@@ -464,11 +471,11 @@ def test_build_live_runner_reads_normalize_adapter_payloads(tmp_path, monkeypatc
         def call_tool(self, name, args):
             self.calls.append((name, args))
             if name.endswith("positions"):
-                return {"status": "ok", "data": {"positions": [{"symbol": "NVDA", "qty": 3}]}}
+                return rh.positions([rh.position("NVDA", "3")])
             if name.endswith("orders"):
-                return {"status": "ok", "data": {"orders": [{"order_id": "o1"}]}}
+                return rh.envelope("get_equity_orders", {"orders": [{"order_id": "o1"}]})
             if name.endswith("portfolio"):
-                return {"status": "ok", "data": {"buying_power": 4200.0}}
+                return rh.portfolio(buying_power="4200.00")
             raise AssertionError(f"unexpected tool {name}")
 
     class _StubSvc:
@@ -484,11 +491,15 @@ def test_build_live_runner_reads_normalize_adapter_payloads(tmp_path, monkeypatc
     adapter = _StubAdapter()
     monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: adapter)
     monkeypatch.setattr(api_server, "_get_session_service", lambda: _StubSvc())
+    monkeypatch.setattr(api_server, "_mandate_account_ref", lambda broker: "5QR00001")
 
     runner = api_server._build_live_runner("robinhood")
-    assert runner._read_positions() == [{"symbol": "NVDA", "qty": 3}]
+    assert runner._read_positions() == [
+        {"symbol": "NVDA", "quantity": "3", "average_cost": "100.00", "broker_type": "unobserved", "qty": "3"}
+    ]
     assert runner._read_open_orders() == [{"order_id": "o1"}]
-    assert runner._read_balance() == {"buying_power": 4200.0}
+    assert runner._read_balance()["buying_power"] == "4200.00"
+    assert {args.get("account_number") for _, args in adapter.calls} == {"5QR00001"}
 
 
 def test_build_live_runner_read_error_envelope_raises(tmp_path, monkeypatch) -> None:
@@ -521,6 +532,7 @@ def test_build_live_runner_read_error_envelope_raises(tmp_path, monkeypatch) -> 
 
     monkeypatch.setattr(api_server, "_live_broker_adapter", lambda broker: _StubAdapter())
     monkeypatch.setattr(api_server, "_get_session_service", lambda: _StubSvc())
+    monkeypatch.setattr(api_server, "_mandate_account_ref", lambda broker: "5QR00001")
 
     runner = api_server._build_live_runner("robinhood")
     with pytest.raises(RuntimeError, match="connection reset while reading positions"):

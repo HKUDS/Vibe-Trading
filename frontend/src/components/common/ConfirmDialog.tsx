@@ -11,6 +11,8 @@ interface ConfirmDialogProps {
   tone?: "primary" | "destructive";
   onConfirm: () => void;
   onCancel: () => void;
+  /** Keeps the confirm button disabled until the dialog's content is complete. */
+  confirmDisabled?: boolean;
   /** Extra summary content rendered between the description and the action buttons. */
   children?: ReactNode;
 }
@@ -29,6 +31,7 @@ export function ConfirmDialog({
   tone = "primary",
   onConfirm,
   onCancel,
+  confirmDisabled = false,
   children,
 }: ConfirmDialogProps) {
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -110,8 +113,9 @@ export function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
+            disabled={confirmDisabled}
             className={[
-              "rounded-lg px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90",
+              "rounded-lg px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-40",
               tone === "destructive"
                 ? "bg-destructive text-destructive-foreground"
                 : "bg-primary text-primary-foreground",

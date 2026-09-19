@@ -1208,7 +1208,15 @@
     "maxPerOrder": "1注文あたり {{amount}} 以下",
     "expiresOn": "有効期限: {{date}}",
     "accountSummary": "{{broker}}・{{type}}口座・資金提供元: {{fundedBy}}",
-    "adjustRequestMessage": "マンデート案「{{label}}」（選択肢 {{ordinal}}）への調整依頼: {{text}}"
+    "adjustRequestMessage": "マンデート案「{{label}}」（選択肢 {{ordinal}}）への調整依頼: {{text}}",
+    "accountLoading": "ブローカーの口座を読み込んでいます…",
+    "accountLoadFailed": "ブローカーの口座を読み込めませんでした: {{error}}",
+    "accountLabel": "このマンデートで取引できる口座",
+    "accountChoose": "口座を選択",
+    "accountDefault": "・ブローカーの既定",
+    "accountDeactivated": "・無効化済み",
+    "accountNotAgentic": "・エージェント取引は許可されていません",
+    "accountHint": "エージェントはこの口座だけで取引します。自動では選択されません。"
   },
   "messageBubble": {
     "elapsedTime": "合計応答時間",
@@ -1623,7 +1631,19 @@
       "testFailed": "{{label}} のテストに失敗しました: {{error}}",
       "unknownTestError": "コネクターが不明なエラーを返しました。",
       "delete": "削除",
-      "configured": "必要な認証情報は設定済みです"
+      "configured": "必要な認証情報は設定済みです",
+      "accountTitle": "口座",
+      "accountCurrent": "末尾 ····{{last4}} の口座を読み取ります",
+      "accountNone": "口座が選択されていません。選択するまで、この接続は何も読み取りません。",
+      "accountLoad": "口座を選択",
+      "accountChange": "口座を変更",
+      "accountEmpty": "このログインで利用できる口座はありません。",
+      "accountPicker": "このログインで利用できる口座",
+      "accountChoose": "口座を選択",
+      "accountDefault": "・ブローカーの既定",
+      "accountDeactivated": "・無効化済み",
+      "accountSave": "この口座を使う",
+      "accountSaved": "口座を保存しました。"
     }
   }
 }

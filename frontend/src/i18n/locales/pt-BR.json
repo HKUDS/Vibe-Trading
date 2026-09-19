@@ -1213,7 +1213,15 @@
     "maxPerOrder": "≤{{amount}}/ordem",
     "expiresOn": "expira {{date}}",
     "accountSummary": "{{broker}} · Conta {{type}} · financiado por {{fundedBy}}",
-    "adjustRequestMessage": "Para proposta de mandato \"{{label}}\" (opção {{ordinal}}): {{text}}"
+    "adjustRequestMessage": "Para proposta de mandato \"{{label}}\" (opção {{ordinal}}): {{text}}",
+    "accountLoading": "Carregando as contas da corretora…",
+    "accountLoadFailed": "Não foi possível carregar as contas da corretora: {{error}}",
+    "accountLabel": "Conta em que este mandato pode negociar",
+    "accountChoose": "Escolha uma conta",
+    "accountDefault": " · padrão da corretora",
+    "accountDeactivated": " · desativada",
+    "accountNotAgentic": " · negociação por agente não permitida",
+    "accountHint": "O agente negocia apenas nesta conta. Nenhuma conta é escolhida por você."
   },
   "messageBubble": {
     "elapsedTime": "Tempo total de resposta",
@@ -1623,7 +1631,19 @@
       "testFailed": "Falha na verificação {{label}}: {{error}}",
       "unknownTestError": "O conector retornou um erro desconhecido.",
       "delete": "Excluir",
-      "configured": "Credenciais necessárias configuradas"
+      "configured": "Credenciais necessárias configuradas",
+      "accountTitle": "Conta",
+      "accountCurrent": "Lê a conta com final ····{{last4}}",
+      "accountNone": "Nenhuma conta selecionada. Esta conexão não lê nada até você escolher uma.",
+      "accountLoad": "Escolher conta",
+      "accountChange": "Trocar conta",
+      "accountEmpty": "Este login não acessa nenhuma conta.",
+      "accountPicker": "Contas que este login acessa",
+      "accountChoose": "Escolha uma conta",
+      "accountDefault": " · padrão da corretora",
+      "accountDeactivated": " · desativada",
+      "accountSave": "Usar esta conta",
+      "accountSaved": "Conta salva."
     }
   }
 }
