@@ -328,6 +328,35 @@ class _VentureOnlyLoader:
         return out
 
 
+class _TencentFallbackLoader:
+    name = "tencent"
+
+    def fetch(self, codes, start_date, end_date, interval="1D"):
+        idx = pd.to_datetime(["2026-01-01"])
+        idx.name = "trade_date"
+        return {
+            code: pd.DataFrame({"close": [1.0], "volume": [100]}, index=idx)
+            for code in codes
+        }
+
+
+def test_fetch_provenance_uses_loader_name_when_requested_loader_is_unavailable() -> None:
+    out = fetch_market_data(
+        codes=["688208.SH"],
+        start_date="2026-01-01",
+        end_date="2026-01-02",
+        source="baostock",
+        loader_resolver=lambda src: _TencentFallbackLoader,
+        fallback_chain_provider=lambda src: ["baostock"],
+        include_provenance=True,
+    )
+
+    provenance = out["_provenance"]["688208.SH"]
+    assert provenance["source"] == "tencent"
+    assert provenance["fallback_used"] is True
+    assert provenance["adjustment"] == "split_dividend"
+
+
 def test_fetch_explicit_source_normalizes_rows() -> None:
     out = fetch_market_data(
         codes=["AAPL.US"],
