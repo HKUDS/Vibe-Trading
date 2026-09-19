@@ -324,12 +324,13 @@ def fetch_market_data(
                 continue
             if not partial:
                 continue
+            serving_source = str(getattr(loader_cls, "name", "") or attempt_src)
             if used_source is None:
-                used_source = attempt_src
+                used_source = serving_source
                 provider_cls = loader_cls
             for symbol, df in partial.items():
                 data_map[symbol] = df
-                symbol_sources[symbol] = (attempt_src, loader_cls)
+                symbol_sources[symbol] = (serving_source, loader_cls)
             remaining = [symbol for symbol in remaining if symbol not in partial]
 
         if used_source and used_source != src:
