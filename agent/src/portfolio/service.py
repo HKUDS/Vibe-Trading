@@ -328,9 +328,11 @@ class PortfolioService:
             positions.extend(broker_positions)
 
         total_usd = sum((_decimal(row.get("total_usd")) for row in accounts), Decimal("0"))
-        # Every enabled source produces exactly one account row, so a snapshot
-        # is complete only when none of them failed.
-        complete = all(row["status"] == "ok" for row in accounts)
+        # A successful read can still leave a holding without a price. Its
+        # value is absent from the totals, so that snapshot is incomplete too.
+        complete = all(row["status"] == "ok" for row in accounts) and all(
+            row.get("priced") for row in positions
+        )
         priced_usd = sum((_decimal(row.get("priced_value_usd")) for row in accounts), Decimal("0"))
         cash_usd = sum((_decimal(row.get("cash_usd")) for row in accounts), Decimal("0"))
         unpriced_usd = sum(
@@ -999,7 +1001,11 @@ class PortfolioService:
             )
         unpriced = [f"{row['broker']}:{row['symbol']}" for row in positions if not row.get("priced")]
         if unpriced:
-            warnings.append("No price available for these positions: " + ", ".join(unpriced[:20]))
+            warnings.append(
+                "No price available for these positions; their value is excluded "
+                "from the totals, so this snapshot is incomplete: "
+                + ", ".join(unpriced[:20])
+            )
         experimental = [
             str(row.get("label") or row.get("broker"))
             for row in accounts

@@ -10,6 +10,11 @@ from typing import Any
 from src.config.paths import get_runtime_root
 
 
+def _all_positions_priced(payload: dict[str, Any]) -> bool:
+    """Exclude older snapshots that were marked complete despite missing prices."""
+    return all(bool(row.get("priced")) for row in payload.get("positions", []))
+
+
 class PortfolioStore:
     """SQLite-backed history of immutable portfolio snapshots plus an FX cache."""
 
@@ -88,11 +93,17 @@ class PortfolioStore:
             The snapshot envelope, or ``None`` when nothing matches.
         """
         where = "WHERE complete = 1" if complete_only else ""
+        limit = 2000 if complete_only else 1
         with self._connect() as db:
-            row = db.execute(
-                f"SELECT payload FROM portfolio_snapshots {where} ORDER BY created_at DESC LIMIT 1"
-            ).fetchone()
-        return json.loads(row["payload"]) if row else None
+            rows = db.execute(
+                f"SELECT payload FROM portfolio_snapshots {where} ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        for row in rows:
+            payload = json.loads(row["payload"])
+            if not complete_only or _all_positions_priced(payload):
+                return payload
+        return None
 
     def history(
         self,
@@ -126,13 +137,15 @@ class PortfolioStore:
                 {where}
                 ORDER BY created_at DESC LIMIT ?
                 """,
-                (2000 if valuation_version is not None else row_limit,),
+                (2000 if valuation_version is not None or complete_only else row_limit,),
             ).fetchall()
         history = []
         for row in rows:
-            if valuation_version is not None:
+            if valuation_version is not None or complete_only:
                 payload = json.loads(row["payload"])
-                if payload.get("valuation_version") != valuation_version:
+                if valuation_version is not None and payload.get("valuation_version") != valuation_version:
+                    continue
+                if complete_only and not _all_positions_priced(payload):
                     continue
             history.append(
                 {

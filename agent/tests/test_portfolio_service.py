@@ -108,6 +108,54 @@ def test_refresh_aggregates_three_readonly_connectors(tmp_path):
     assert "quantity" not in context["holdings"][0]
 
 
+def test_unpriced_binance_btc_marks_snapshot_incomplete(tmp_path):
+    settings = _settings_store(tmp_path)
+    settings.save(
+        {
+            "display_currency": "USD",
+            "sources": [{"connection_id": "binance", "label": "Binance", "order": 0}],
+        }
+    )
+
+    def failed_quote(*_args, **_kwargs):
+        raise RuntimeError('binance {"code":-1021,"msg":"Timestamp was ahead of the server"}')
+
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=settings,
+        get_account=lambda _profile_id: {"balances": []},
+        get_positions=lambda _profile_id: {
+            "positions": [
+                {"symbol": "BTC", "quantity": 0.08601717, "source": "simple_earn_flexible"}
+            ]
+        },
+        get_quote=failed_quote,
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-09-17T00:00:00+08:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+
+    assert snapshot["complete"] is False
+    assert snapshot["accounts"][0]["status"] == "ok"
+    assert snapshot["positions"][0]["symbol"] == "BTC"
+    assert snapshot["positions"][0]["priced"] is False
+    assert snapshot["totals"]["usd"] == 0.0
+    assert any("value is excluded" in warning and "binance:BTC" in warning for warning in snapshot["warnings"])
+    assert service.history() == []
+
+    # Older versions stored this exact shape with complete=true. Do not use
+    # such a row as a valid history point after upgrading.
+    service.store.save_snapshot(
+        {**snapshot, "snapshot_id": "old-mislabeled-row", "complete": True}
+    )
+    assert service.history() == []
+    assert service.store.latest(complete_only=True) is None
+
+
 def test_latest_enriches_legacy_snapshot_with_current_compatibility(tmp_path):
     store = PortfolioStore(tmp_path / "portfolio.sqlite3")
     settings = _settings_store(tmp_path)
