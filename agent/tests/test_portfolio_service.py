@@ -188,6 +188,66 @@ def test_a_positions_read_without_a_positions_list_is_an_error_not_an_empty_sour
     assert "must contain a list" in ibkr["error"]
 
 
+def test_unrated_balance_currency_fails_only_that_source(tmp_path):
+    """A missing FX rate must not discard healthy sources in the same refresh."""
+
+    def get_account(profile_id):
+        if profile_id.startswith("ibkr"):
+            return {
+                "summary": [
+                    {
+                        "tag": "NetLiquidation",
+                        "value": "1000",
+                        "currency": "USD",
+                    }
+                ]
+            }
+        if profile_id.startswith("longbridge"):
+            return {
+                "balances": [
+                    {
+                        "net_assets": "5000",
+                        "total_cash": "1000",
+                        "currency": "SGD",
+                    }
+                ]
+            }
+        return {"balances": []}
+
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=_settings_store(tmp_path),
+        get_account=get_account,
+        get_positions=lambda profile_id: {"positions": []},
+        get_quote=lambda *args, **kwargs: {},
+        fx_fetcher=lambda: (
+            Decimal("7.2"),
+            Decimal("7.8"),
+            "2026-08-09T00:00:00+00:00",
+        ),
+    )
+
+    snapshot = service.refresh()
+
+    assert snapshot["complete"] is False
+    ibkr = next(row for row in snapshot["accounts"] if row["broker"] == "ibkr")
+    longbridge = next(
+        row for row in snapshot["accounts"] if row["broker"] == "longbridge"
+    )
+    assert ibkr["status"] == "ok"
+    assert ibkr["total_usd"] == 1000.0
+    assert longbridge["status"] == "error"
+    assert longbridge["total_usd"] is None
+    assert "SGD" in longbridge["error"]
+    assert snapshot["totals"]["usd"] == 1000.0
+
+
+def test_display_currency_without_production_rate_is_rejected_on_save(tmp_path):
+    store = PortfolioSettingsStore(tmp_path / "portfolio.json")
+    with pytest.raises(ValueError, match="EUR.*no production FX rate"):
+        store.save({"display_currency": "EUR", "sources": []})
+
+
 def test_failed_source_is_excluded_from_totals_and_reports_its_last_success(tmp_path):
     """A source that fails contributes nothing; only its last-healthy time survives."""
     offline = False
