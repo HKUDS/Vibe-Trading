@@ -829,19 +829,24 @@ class EmailChannel(BaseChannel):
 
     @staticmethod
     def _check_authentication_results(parsed_msg: Any) -> tuple[bool, bool]:
-        """Parse Authentication-Results headers for SPF and DKIM verdicts.
+        """Parse the Authentication-Results header for SPF and DKIM verdicts.
+
+        Only the topmost such header is trusted. Each receiving mail server
+        prepends its own Authentication-Results header on delivery, so the
+        first one in the parsed message is the one our own mailbox provider
+        stamped; anything below it sat in the message as it arrived at that
+        server and could be an attacker-forged header of the same name,
+        which an OR-across-every-occurrence check would wrongly honour.
 
         Returns:
             A tuple of (spf_pass, dkim_pass) booleans.
         """
-        spf_pass = False
-        dkim_pass = False
-        for ar_header in parsed_msg.get_all("Authentication-Results") or []:
-            ar_lower = ar_header.lower()
-            if re.search(r"\bspf\s*=\s*pass\b", ar_lower):
-                spf_pass = True
-            if re.search(r"\bdkim\s*=\s*pass\b", ar_lower):
-                dkim_pass = True
+        headers = parsed_msg.get_all("Authentication-Results")
+        if not headers:
+            return False, False
+        ar_lower = str(headers[0]).lower()
+        spf_pass = bool(re.search(r"\bspf\s*=\s*pass\b", ar_lower))
+        dkim_pass = bool(re.search(r"\bdkim\s*=\s*pass\b", ar_lower))
         return spf_pass, dkim_pass
 
     @classmethod
