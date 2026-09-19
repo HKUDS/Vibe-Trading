@@ -279,3 +279,62 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
     assert "Attempt 2" in result.summary
     assert "Attempt 1" not in result.summary
     assert result.artifact_paths == ["artifacts/analyst/report.md"]
+
+
+def test_stale_report_not_leaked_from_earlier_task_sharing_the_same_agent(
+    tmp_path: Path,
+) -> None:
+    """agent_artifact_dir is keyed by agent_id alone, so a preset where one
+    agent handles two sequential tasks (task-2 depends_on task-1) reuses the
+    same directory. task-1's report.md must not survive to be read back as
+    task-2's result."""
+    runtime = _make_runtime(tmp_path)
+    agent_spec = _make_agent_spec(max_retries=0)
+    run_dir = tmp_path / "run-shared-agent"
+    run_dir.mkdir()
+    artifact_dir = agent_artifact_dir(run_dir, "analyst")
+
+    def fake_run_worker(**kwargs):
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        task = kwargs["task"]
+        if task.id == "task-1":
+            (artifact_dir / "report.md").write_text(
+                "# Task 1 report\nTASK-1 CONTENT.", encoding="utf-8"
+            )
+        return WorkerResult(
+            status="completed",
+            summary=_resolve_summary(artifact_dir, f"{task.id} raw fallback"),
+            artifact_paths=_collect_artifacts(artifact_dir),
+        )
+
+    task1 = SwarmTask(id="task-1", agent_id="analyst", prompt_template="do x")
+    task2 = SwarmTask(id="task-2", agent_id="analyst", prompt_template="do y")
+
+    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
+        result1 = runtime._run_worker_with_retries(
+            agent_spec=agent_spec,
+            task=task1,
+            upstream_summaries={},
+            user_vars={},
+            run_dir=run_dir,
+            event_callback=None,
+            run_id="run-shared-agent",
+            include_shell_tools=False,
+            grounding_block="",
+        )
+        result2 = runtime._run_worker_with_retries(
+            agent_spec=agent_spec,
+            task=task2,
+            upstream_summaries={},
+            user_vars={},
+            run_dir=run_dir,
+            event_callback=None,
+            run_id="run-shared-agent",
+            include_shell_tools=False,
+            grounding_block="",
+        )
+
+    assert "Task 1 report" in result1.summary
+    assert result2.summary == "task-2 raw fallback"
+    assert "Task 1" not in result2.summary
+    assert result2.artifact_paths == []
