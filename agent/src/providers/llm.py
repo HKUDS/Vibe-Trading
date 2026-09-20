@@ -34,7 +34,10 @@ try:
     from langchain_openai import ChatOpenAI
 except ImportError:
     ChatOpenAI = None  # type: ignore
-
+try:
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA
+except ImportError:
+    ChatNVIDIA = None  # type: ignore
 try:
     from openai import Omit as OpenAIOmit
 except ImportError:
