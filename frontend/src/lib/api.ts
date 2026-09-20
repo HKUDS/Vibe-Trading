@@ -520,6 +520,20 @@ export const api = {
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
   startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
   stopChannels: () => request<ChannelRuntimeActionResponse>("/channels/stop", { method: "POST" }),
+  getChannelsConfigSchema: () => request<ChannelsConfigSchemaResponse>("/channels/config-schema"),
+  getChannelsConfig: () => request<ChannelsConfigResponse>("/channels/config"),
+  updateChannelConfig: (name: string, values: Record<string, unknown>) =>
+    request<ChannelConfigEntryResponse>(`/channels/config/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ values }),
+    }),
+  testChannelConfig: (name: string) =>
+    request<ChannelTestResponse>(`/channels/config/${encodeURIComponent(name)}/test`, { method: "POST" }),
+  toggleChannelConfig: (name: string, enabled?: boolean) =>
+    request<ChannelConfigEntryResponse>(`/channels/config/${encodeURIComponent(name)}/toggle`, {
+      method: "POST",
+      body: JSON.stringify(enabled === undefined ? {} : { enabled }),
+    }),
   runChannelPairingCommand: (body: ChannelPairingCommandRequest) =>
     request<ChannelPairingCommandResponse>("/channels/pairing/command", {
       method: "POST",
@@ -845,6 +859,46 @@ export interface ChannelPairingCommandRequest {
 export interface ChannelPairingCommandResponse {
   channel: string;
   reply: string;
+}
+
+export interface ChannelConfigField {
+  key: string;
+  type: string;
+  secret: boolean;
+  required: boolean;
+  description: string;
+}
+
+export interface ChannelConfigSchemaEntry {
+  name: string;
+  display_name: string;
+  available: boolean;
+  enabled: boolean;
+  install_hint: string;
+  fields: ChannelConfigField[];
+}
+
+export interface ChannelsConfigSchemaResponse {
+  channels: ChannelConfigSchemaEntry[];
+}
+
+export interface ChannelsConfigResponse {
+  channels: Record<string, Record<string, unknown>>;
+}
+
+export interface ChannelConfigEntryResponse {
+  name: string;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  applied: boolean;
+  status?: Record<string, unknown> | null;
+}
+
+export interface ChannelTestResponse {
+  name: string;
+  ok: boolean;
+  reason: string;
+  detail: string;
 }
 
 // --- Types matching backend API contracts ---

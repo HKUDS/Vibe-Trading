@@ -7,6 +7,8 @@ const apiMock = vi.hoisted(() => ({
   getLLMSettings: vi.fn(),
   getDataSourceSettings: vi.fn(),
   getChannelStatus: vi.fn(),
+  getChannelsConfigSchema: vi.fn(),
+  getChannelsConfig: vi.fn(),
   startChannels: vi.fn(),
   stopChannels: vi.fn(),
   updateLLMSettings: vi.fn(),
@@ -148,6 +150,8 @@ describe("Settings QVeris card", () => {
     apiMock.getLLMSettings.mockResolvedValue(llmSettings());
     apiMock.getDataSourceSettings.mockResolvedValue(dataSourceSettings());
     apiMock.getChannelStatus.mockResolvedValue(channelStatus());
+    apiMock.getChannelsConfigSchema.mockResolvedValue({ channels: [] });
+    apiMock.getChannelsConfig.mockResolvedValue({ channels: {} });
     apiMock.startChannels.mockResolvedValue(channelStatus());
     apiMock.stopChannels.mockResolvedValue(channelStatus());
   });

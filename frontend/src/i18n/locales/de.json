@@ -421,7 +421,42 @@
       "stoppedToast": "IM-Kanäle gestoppt",
       "refreshFailed": "IM-Kanäle konnten nicht aktualisiert werden",
       "startFailed": "IM-Kanäle konnten nicht gestartet werden",
-      "stopFailed": "IM-Kanäle konnten nicht gestoppt werden"
+      "stopFailed": "IM-Kanäle konnten nicht gestoppt werden",
+      "config": {
+        "title": "Kanalkonfiguration",
+        "description": "Adapter-Zugangsdaten bearbeiten und Kanäle aktivieren. Das Speichern wird sofort auf die laufende IM-Laufzeit angewendet; kein Prozessneustart nötig.",
+        "configure": "Konfigurieren",
+        "collapse": "Einklappen",
+        "save": "Zugangsdaten speichern",
+        "saved": "{{channel}}-Konfiguration gespeichert",
+        "saveFailed": "{{channel}}-Konfiguration konnte nicht gespeichert werden",
+        "testConnection": "Verbindung testen",
+        "testUsesSaved": "Testet die auf dem Server gespeicherten Zugangsdaten, nicht ungespeicherte Änderungen.",
+        "testOk": "Verbindung erfolgreich",
+        "testFailed": "Verbindung fehlgeschlagen",
+        "enabledToggle": "Aktiviert",
+        "enabledToast": "{{channel}} aktiviert",
+        "disabledToast": "{{channel}} deaktiviert",
+        "toggleFailed": "{{channel}} konnte nicht aktualisiert werden",
+        "secretPlaceholder": "Aktuelles Secret beibehalten",
+        "secretHint": "Leer lassen, um das gespeicherte Secret zu behalten.",
+        "fields": {
+          "dingtalk": {
+            "client_id": "Client ID (AppKey) deiner internen DingTalk-Unternehmens-App",
+            "client_secret": "Client Secret (AppSecret) derselben App"
+          }
+        },
+        "guide": {
+          "dingtalk": "Einrichtung: Erstelle auf open-dev.dingtalk.com eine interne Unternehmens-App, füge die Roboter-Funktion hinzu, aktiviere den Stream-Modus, veröffentliche die App und füge dann Client ID und Client Secret hier ein."
+        },
+        "reasons": {
+          "missing_credentials": "Speichere zuerst Client ID und Client Secret",
+          "invalid_credentials": "DingTalk hat diese Zugangsdaten abgelehnt",
+          "network": "Netzwerkfehler beim Kontakt zu DingTalk",
+          "error": "Unerwartete Antwort von DingTalk",
+          "unsupported": "Der Verbindungstest ist bisher nur für DingTalk verfügbar"
+        }
+      }
     },
     "generation": "Generierung",
     "dataSourceSettings": "Datenquellen-Einstellungen",

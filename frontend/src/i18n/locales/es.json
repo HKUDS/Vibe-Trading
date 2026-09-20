@@ -421,7 +421,42 @@
       "stoppedToast": "Canales de mensajería detenidos",
       "refreshFailed": "Error al actualizar los canales de mensajería",
       "startFailed": "Error al iniciar los canales de mensajería",
-      "stopFailed": "Error al detener los canales de mensajería"
+      "stopFailed": "Error al detener los canales de mensajería",
+      "config": {
+        "title": "Configuración de canales",
+        "description": "Edita las credenciales del adaptador y activa canales. Al guardar se aplica al runtime de IM en ejecución de inmediato, sin reiniciar el proceso.",
+        "configure": "Configurar",
+        "collapse": "Contraer",
+        "save": "Guardar credenciales",
+        "saved": "Configuración de {{channel}} guardada",
+        "saveFailed": "No se pudo guardar la configuración de {{channel}}",
+        "testConnection": "Probar conexión",
+        "testUsesSaved": "Prueba las credenciales guardadas en el servidor, no los cambios sin guardar.",
+        "testOk": "Conexión correcta",
+        "testFailed": "La conexión falló",
+        "enabledToggle": "Activado",
+        "enabledToast": "{{channel}} activado",
+        "disabledToast": "{{channel}} desactivado",
+        "toggleFailed": "No se pudo actualizar {{channel}}",
+        "secretPlaceholder": "Mantener el secreto actual",
+        "secretHint": "Déjalo vacío para conservar el secreto guardado.",
+        "fields": {
+          "dingtalk": {
+            "client_id": "Client ID (AppKey) de tu aplicación interna empresarial de DingTalk",
+            "client_secret": "Client Secret (AppSecret) de la misma aplicación"
+          }
+        },
+        "guide": {
+          "dingtalk": "Configuración: crea una aplicación interna empresarial en open-dev.dingtalk.com, añade la capacidad de robot, activa el modo Stream, publica la aplicación y luego pega aquí el Client ID y el Client Secret."
+        },
+        "reasons": {
+          "missing_credentials": "Guarda primero el Client ID y el Client Secret",
+          "invalid_credentials": "DingTalk rechazó estas credenciales",
+          "network": "Error de red al contactar con DingTalk",
+          "error": "Respuesta inesperada de DingTalk",
+          "unsupported": "La prueba de conexión solo está disponible para DingTalk por ahora"
+        }
+      }
     },
     "generation": "Generación",
     "dataSourceSettings": "Configuración de fuentes de datos",

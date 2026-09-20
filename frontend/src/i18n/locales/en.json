@@ -421,7 +421,42 @@
       "stoppedToast": "IM channels stopped",
       "refreshFailed": "Failed to refresh IM channels",
       "startFailed": "Failed to start IM channels",
-      "stopFailed": "Failed to stop IM channels"
+      "stopFailed": "Failed to stop IM channels",
+      "config": {
+        "title": "Channel configuration",
+        "description": "Edit adapter credentials and enable channels. Saving applies to the running IM runtime immediately; no process restart needed.",
+        "configure": "Configure",
+        "collapse": "Collapse",
+        "save": "Save credentials",
+        "saved": "{{channel}} configuration saved",
+        "saveFailed": "Failed to save {{channel}} configuration",
+        "testConnection": "Test connection",
+        "testUsesSaved": "Tests the credentials saved on the server, not unsaved edits.",
+        "testOk": "Connection succeeded",
+        "testFailed": "Connection failed",
+        "enabledToggle": "Enabled",
+        "enabledToast": "{{channel}} enabled",
+        "disabledToast": "{{channel}} disabled",
+        "toggleFailed": "Failed to update {{channel}}",
+        "secretPlaceholder": "Keep current secret",
+        "secretHint": "Leave empty to keep the saved secret.",
+        "fields": {
+          "dingtalk": {
+            "client_id": "Client ID (AppKey) of your DingTalk enterprise internal app",
+            "client_secret": "Client Secret (AppSecret) of the same app"
+          }
+        },
+        "guide": {
+          "dingtalk": "Setup: create an enterprise internal app at open-dev.dingtalk.com, add the robot capability, enable Stream Mode, publish the app, then paste the Client ID and Client Secret here."
+        },
+        "reasons": {
+          "missing_credentials": "Save the client ID and secret first",
+          "invalid_credentials": "DingTalk rejected these credentials",
+          "network": "Network error while contacting DingTalk",
+          "error": "Unexpected response from DingTalk",
+          "unsupported": "Connection test is only available for DingTalk so far"
+        }
+      }
     },
     "generation": "Generation",
     "dataSourceSettings": "Data Source Settings",

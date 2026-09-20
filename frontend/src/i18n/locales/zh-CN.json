@@ -416,7 +416,42 @@
       "stoppedToast": "IM 通道已停止",
       "refreshFailed": "刷新 IM 通道失败",
       "startFailed": "启动 IM 通道失败",
-      "stopFailed": "停止 IM 通道失败"
+      "stopFailed": "停止 IM 通道失败",
+      "config": {
+        "title": "通道配置",
+        "description": "编辑适配器凭证并启用通道。保存后立即应用到运行中的 IM 运行时，无需重启进程。",
+        "configure": "配置",
+        "collapse": "收起",
+        "save": "保存凭证",
+        "saved": "{{channel}} 配置已保存",
+        "saveFailed": "保存 {{channel}} 配置失败",
+        "testConnection": "测试连接",
+        "testUsesSaved": "测试的是服务端已保存的凭证，不包含未保存的修改。",
+        "testOk": "连接成功",
+        "testFailed": "连接失败",
+        "enabledToggle": "启用",
+        "enabledToast": "{{channel}} 已启用",
+        "disabledToast": "{{channel}} 已禁用",
+        "toggleFailed": "更新 {{channel}} 失败",
+        "secretPlaceholder": "保留当前密钥",
+        "secretHint": "留空则保留已保存的密钥。",
+        "fields": {
+          "dingtalk": {
+            "client_id": "钉钉企业内部应用的 Client ID（AppKey）",
+            "client_secret": "同一应用的 Client Secret（AppSecret）"
+          }
+        },
+        "guide": {
+          "dingtalk": "配置步骤：在 open-dev.dingtalk.com 创建企业内部应用，添加机器人能力，启用 Stream 模式，发布应用后把 Client ID 和 Client Secret 填到这里。"
+        },
+        "reasons": {
+          "missing_credentials": "请先保存 Client ID 和 Client Secret",
+          "invalid_credentials": "钉钉拒绝了这组凭证",
+          "network": "连接钉钉时发生网络错误",
+          "error": "钉钉返回了意外响应",
+          "unsupported": "目前仅支持钉钉的连接测试"
+        }
+      }
     },
     "generation": "生成设置",
     "dataSourceSettings": "数据源设置",

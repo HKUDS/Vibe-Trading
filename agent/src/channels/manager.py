@@ -16,6 +16,7 @@ from src.channels.bus.queue import MessageBus
 from src.channels.registry import (
     discover_channel_names,
     discover_plugins,
+    inspect_channel,
     inspect_channels,
     load_channel_class,
 )
@@ -56,6 +57,8 @@ class ChannelManager:
         self._cron_service = cron_service
         self.channels: dict[str, BaseChannel] = {}
         self._dispatch_task: asyncio.Task | None = None
+        self._started = False
+        self._start_tasks: set[asyncio.Task] = set()
         self._origin_reply_fingerprints: dict[tuple[str, str, str], str] = {}
         self._status: dict[str, dict[str, Any]] = {}
 
@@ -212,6 +215,7 @@ class ChannelManager:
 
     async def start_all(self) -> None:
         """Start all channels and the outbound dispatcher."""
+        self._started = True
         if not self.channels:
             logger.warning("No channels enabled")
             return
@@ -230,12 +234,19 @@ class ChannelManager:
 
     async def stop_all(self) -> None:
         """Stop all channels and the dispatcher."""
+        self._started = False
         logger.info("Stopping all channels...")
 
         if self._dispatch_task:
             self._dispatch_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._dispatch_task
+
+        for task in list(self._start_tasks):
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        self._start_tasks.clear()
 
         for name, channel in self.channels.items():
             try:
@@ -452,6 +463,110 @@ class ChannelManager:
                     raise
 
     # --- Public API ---
+
+    async def reconfigure_channel(self, name: str) -> dict[str, Any]:
+        """Rebuild a single channel from the latest on-disk channels config.
+
+        Reads fresh config, stops and drops the old instance of *name* (if
+        any), then re-runs the same construction path as ``_init_channels``
+        for that one channel. Other channel instances and the outbound
+        dispatcher are left alone. When the manager is started (dispatcher
+        alive), a freshly enabled channel is started as well.
+
+        Returns:
+            The updated status entry for *name*.
+        """
+        from src.channels.config import load_channels_config
+
+        config = load_channels_config()
+        self.config = config
+        section = config.get(name)
+        enabled = isinstance(section, dict) and section.get("enabled") is True
+
+        old = self.channels.pop(name, None)
+        if old is not None:
+            try:
+                await old.stop()
+            except Exception:
+                logger.exception("Error stopping %s during reconfigure", name)
+
+        availability = inspect_channel(name)
+        status = self._status.setdefault(name, {})
+        status.update(
+            {
+                "available": availability.available,
+                "configured": section is not None,
+                "enabled": enabled,
+                "display_name": availability.display_name,
+                "error": availability.error,
+                "install_hint": availability.install_hint,
+            }
+        )
+
+        if section is None or not enabled or not availability.available:
+            status.update({"loaded": False, "running": False})
+            if section is not None and enabled and not availability.available:
+                logger.warning("%s channel not available: %s", name, availability.error)
+            return dict(status)
+
+        try:
+            cls = (
+                load_channel_class(name)
+                if name in set(discover_channel_names())
+                else discover_plugins({name})[name]
+            )
+            kwargs = self._build_channel_kwargs(name)
+            channel = cls(section, self.bus, **kwargs)
+            channel.send_progress = self._resolve_bool_override(
+                section, "send_progress", self._global_bool("send_progress", True),
+            )
+            channel.send_tool_hints = self._resolve_bool_override(
+                section, "send_tool_hints", self._global_bool("send_tool_hints", False),
+            )
+            channel.show_reasoning = self._resolve_bool_override(
+                section, "show_reasoning", self._global_bool("show_reasoning", True),
+            )
+            self.channels[name] = channel
+            status.update(
+                {
+                    "available": True,
+                    "loaded": True,
+                    "running": channel.is_running,
+                    "display_name": getattr(cls, "display_name", name),
+                    "error": "",
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - status endpoint must explain startup gaps
+            status.update(
+                {
+                    "loaded": False,
+                    "running": False,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            logger.warning("%s channel not available", name, exc_info=True)
+            return dict(status)
+
+        dispatcher_alive = self._dispatch_task is not None and not self._dispatch_task.done()
+        if dispatcher_alive:
+            # Channel.start() may be a long-running reconnect loop (dingtalk);
+            # awaiting it inline would hang the caller, so start it detached.
+            task = asyncio.create_task(self._start_channel(name, channel))
+            self._start_tasks.add(task)
+            task.add_done_callback(self._start_tasks.discard)
+            await asyncio.sleep(0)
+            status["running"] = channel.is_running
+        elif self._started:
+            # The manager was started with zero channels: no dispatcher yet,
+            # so hot-enabling the first channel must bring the whole
+            # dispatcher loop up, not just build the instance.
+            self._dispatch_task = asyncio.create_task(self._dispatch_outbound())
+            task = asyncio.create_task(self._start_channel(name, channel))
+            self._start_tasks.add(task)
+            task.add_done_callback(self._start_tasks.discard)
+            await asyncio.sleep(0)
+            status["running"] = channel.is_running
+        return dict(status)
 
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""

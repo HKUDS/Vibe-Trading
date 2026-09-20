@@ -446,7 +446,7 @@ class WebSocketChannel(BaseChannel):
 
     async def start(self) -> None:
         # (stdlib logging handles websockets SDK output via propagation)
-        ws_logger = websockets_server_logger()
+        ws_logger = websockets_server_logger
 
         self._running = True
         self._stop_event = asyncio.Event()

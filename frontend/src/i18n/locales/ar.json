@@ -416,7 +416,42 @@
       "stoppedToast": "تم إيقاف قنوات IM",
       "refreshFailed": "فشل تحديث قنوات IM",
       "startFailed": "فشل بدء قنوات IM",
-      "stopFailed": "فشل إيقاف قنوات IM"
+      "stopFailed": "فشل إيقاف قنوات IM",
+      "config": {
+        "title": "إعداد القناة",
+        "description": "حرّر بيانات اعتماد المحوّل وفعّل القنوات. يُطبَّق الحفظ على وقت تشغيل IM الجاري فورًا دون الحاجة إلى إعادة تشغيل العملية.",
+        "configure": "إعداد",
+        "collapse": "طي",
+        "save": "حفظ بيانات الاعتماد",
+        "saved": "تم حفظ إعدادات {{channel}}",
+        "saveFailed": "فشل حفظ إعدادات {{channel}}",
+        "testConnection": "اختبار الاتصال",
+        "testUsesSaved": "يختبر بيانات الاعتماد المحفوظة على الخادم، وليس التعديلات غير المحفوظة.",
+        "testOk": "نجح الاتصال",
+        "testFailed": "فشل الاتصال",
+        "enabledToggle": "مفعّل",
+        "enabledToast": "تم تفعيل {{channel}}",
+        "disabledToast": "تم تعطيل {{channel}}",
+        "toggleFailed": "فشل تحديث {{channel}}",
+        "secretPlaceholder": "الاحتفاظ بالسر الحالي",
+        "secretHint": "اتركه فارغًا للاحتفاظ بالسر المحفوظ.",
+        "fields": {
+          "dingtalk": {
+            "client_id": "معرّف العميل (AppKey) لتطبيق DingTalk الداخلي للمؤسسة",
+            "client_secret": "سر العميل (AppSecret) لنفس التطبيق"
+          }
+        },
+        "guide": {
+          "dingtalk": "خطوات الإعداد: أنشئ تطبيقًا داخليًا للمؤسسة في open-dev.dingtalk.com، وأضف قدرة الروبوت، وفعّل وضع Stream، وانشر التطبيق، ثم الصق معرّف العميل وسر العميل هنا."
+        },
+        "reasons": {
+          "missing_credentials": "احفظ معرّف العميل والسر أولًا",
+          "invalid_credentials": "رفض DingTalk بيانات الاعتماد هذه",
+          "network": "خطأ في الشبكة أثناء الاتصال بـ DingTalk",
+          "error": "استجابة غير متوقعة من DingTalk",
+          "unsupported": "اختبار الاتصال متاح حاليًا لـ DingTalk فقط"
+        }
+      }
     },
     "generation": "إعدادات التوليد",
     "dataSourceSettings": "إعدادات مصادر البيانات",

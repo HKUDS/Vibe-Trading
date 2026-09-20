@@ -416,7 +416,42 @@
       "stoppedToast": "IM 채널이 중지되었습니다",
       "refreshFailed": "IM 채널 새로 고침 실패",
       "startFailed": "IM 채널 시작 실패",
-      "stopFailed": "IM 채널 중지 실패"
+      "stopFailed": "IM 채널 중지 실패",
+      "config": {
+        "title": "채널 설정",
+        "description": "어댑터 자격 증명을 편집하고 채널을 활성화합니다. 저장하면 실행 중인 IM 런타임에 즉시 적용되며 프로세스 재시작이 필요 없습니다.",
+        "configure": "구성",
+        "collapse": "접기",
+        "save": "자격 증명 저장",
+        "saved": "{{channel}} 설정이 저장되었습니다",
+        "saveFailed": "{{channel}} 설정 저장에 실패했습니다",
+        "testConnection": "연결 테스트",
+        "testUsesSaved": "서버에 저장된 자격 증명을 테스트하며, 저장되지 않은 편집 내용은 포함되지 않습니다.",
+        "testOk": "연결에 성공했습니다",
+        "testFailed": "연결에 실패했습니다",
+        "enabledToggle": "활성화됨",
+        "enabledToast": "{{channel}} 활성화됨",
+        "disabledToast": "{{channel}} 비활성화됨",
+        "toggleFailed": "{{channel}} 업데이트에 실패했습니다",
+        "secretPlaceholder": "현재 시크릿 유지",
+        "secretHint": "비워 두면 저장된 시크릿이 유지됩니다.",
+        "fields": {
+          "dingtalk": {
+            "client_id": "DingTalk 기업 내부 앱의 Client ID(AppKey)",
+            "client_secret": "동일한 앱의 Client Secret(AppSecret)"
+          }
+        },
+        "guide": {
+          "dingtalk": "설정 방법: open-dev.dingtalk.com에서 기업 내부 앱을 만들고, 로봇 기능을 추가하고, Stream 모드를 활성화하고, 앱을 게시한 후 Client ID와 Client Secret을 여기에 붙여넣으세요."
+        },
+        "reasons": {
+          "missing_credentials": "먼저 Client ID와 Client Secret을 저장하세요",
+          "invalid_credentials": "DingTalk이 이 자격 증명을 거부했습니다",
+          "network": "DingTalk에 연결하는 동안 네트워크 오류가 발생했습니다",
+          "error": "DingTalk에서 예기치 않은 응답이 반환되었습니다",
+          "unsupported": "연결 테스트는 현재 DingTalk만 지원합니다"
+        }
+      }
     },
     "generation": "생성 설정",
     "dataSourceSettings": "데이터 소스 설정",

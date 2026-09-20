@@ -416,7 +416,42 @@
       "stoppedToast": "IM チャンネルを停止しました",
       "refreshFailed": "IM チャンネルの更新に失敗しました",
       "startFailed": "IM チャンネルの開始に失敗しました",
-      "stopFailed": "IM チャンネルの停止に失敗しました"
+      "stopFailed": "IM チャンネルの停止に失敗しました",
+      "config": {
+        "title": "チャンネル設定",
+        "description": "アダプターの認証情報を編集してチャンネルを有効化します。保存すると実行中の IM ランタイムに即時反映され、プロセスの再起動は不要です。",
+        "configure": "設定",
+        "collapse": "折りたたむ",
+        "save": "認証情報を保存",
+        "saved": "{{channel}} の設定を保存しました",
+        "saveFailed": "{{channel}} の設定の保存に失敗しました",
+        "testConnection": "接続をテスト",
+        "testUsesSaved": "サーバーに保存済みの認証情報をテストします。未保存の編集は含まれません。",
+        "testOk": "接続に成功しました",
+        "testFailed": "接続に失敗しました",
+        "enabledToggle": "有効",
+        "enabledToast": "{{channel}} を有効化しました",
+        "disabledToast": "{{channel}} を無効化しました",
+        "toggleFailed": "{{channel}} の更新に失敗しました",
+        "secretPlaceholder": "現在のシークレットを保持",
+        "secretHint": "空のままにすると保存済みのシークレットを保持します。",
+        "fields": {
+          "dingtalk": {
+            "client_id": "DingTalk 企業内部アプリの Client ID（AppKey）",
+            "client_secret": "同じアプリの Client Secret（AppSecret）"
+          }
+        },
+        "guide": {
+          "dingtalk": "設定手順: open-dev.dingtalk.com で企業内部アプリを作成し、ロボット機能を追加して Stream モードを有効化し、アプリを公開してから Client ID と Client Secret をここに貼り付けます。"
+        },
+        "reasons": {
+          "missing_credentials": "先に Client ID と Client Secret を保存してください",
+          "invalid_credentials": "DingTalk がこの認証情報を拒否しました",
+          "network": "DingTalk への接続中にネットワークエラーが発生しました",
+          "error": "DingTalk から予期しない応答が返されました",
+          "unsupported": "接続テストは現在 DingTalk のみ利用できます"
+        }
+      }
     },
     "generation": "生成設定",
     "dataSourceSettings": "データソース設定",

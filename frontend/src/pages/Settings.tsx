@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Database, KeyRound, Loader2, MessageSquareMore, Play, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal, Square } from "lucide-react";
+import { Database, KeyRound, Loader2, MessageSquareMore, Play, PlugZap, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal, Square } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ModelPicker } from "@/components/settings/ModelPicker";
 import { QVerisSettings } from "@/components/settings/QVerisSettings"; // QVERIS-INTEGRATION
 import { SourcePrioritySettings } from "@/components/settings/SourcePrioritySettings";
-import { api, isAuthRequiredError, type ChannelRuntimeStatus, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
+import { api, isAuthRequiredError, type ChannelConfigSchemaEntry, type ChannelRuntimeStatus, type ChannelTestResponse, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 
 interface LLMFormState {
@@ -55,6 +55,14 @@ export function Settings() {
   const [dataSaving, setDataSaving] = useState(false);
   const [channelRefreshing, setChannelRefreshing] = useState(false);
   const [channelAction, setChannelAction] = useState<"start" | "stop" | null>(null);
+  const [channelSchema, setChannelSchema] = useState<ChannelConfigSchemaEntry[] | null>(null);
+  const [channelConfig, setChannelConfig] = useState<Record<string, Record<string, unknown>> | null>(null);
+  const [channelForms, setChannelForms] = useState<Record<string, Record<string, string>>>({});
+  const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
+  const [channelSaving, setChannelSaving] = useState<string | null>(null);
+  const [channelToggling, setChannelToggling] = useState<string | null>(null);
+  const [channelTesting, setChannelTesting] = useState<string | null>(null);
+  const [channelTestResults, setChannelTestResults] = useState<Record<string, ChannelTestResponse>>({});
   const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,8 +72,10 @@ export function Settings() {
       api.getLLMSettings(),
       api.getDataSourceSettings(),
       api.getChannelStatus(),
+      api.getChannelsConfigSchema(),
+      api.getChannelsConfig(),
     ])
-      .then(([llmResult, dataSourceResult, channelResult]) => {
+      .then(([llmResult, dataSourceResult, channelResult, schemaResult, configResult]) => {
         if (!alive) return;
 
         if (llmResult.status === "fulfilled") {
@@ -110,6 +120,11 @@ export function Settings() {
           toast.error(`${t("settings.channels.refreshFailed")}: ${message}`);
           setChannelStatus(null);
         }
+
+        if (schemaResult.status === "fulfilled" && configResult.status === "fulfilled") {
+          setChannelSchema(schemaResult.value.channels);
+          applyChannelsConfig(configResult.value.channels);
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -141,6 +156,92 @@ export function Settings() {
       toast.error(`${action === "start" ? t("settings.channels.startFailed") : t("settings.channels.stopFailed")}: ${error instanceof Error ? error.message : t("settings.unknownError", { defaultValue: "Unknown error" })}`);
     } finally {
       setChannelAction(null);
+    }
+  };
+
+  const applyChannelsConfig = (channels: Record<string, Record<string, unknown>>) => {
+    setChannelConfig(channels);
+    setChannelForms((prev) => {
+      const next = { ...prev };
+      for (const [name, values] of Object.entries(channels)) {
+        const existing = next[name] ?? {};
+        const formValues: Record<string, string> = {};
+        for (const [key, value] of Object.entries(values)) {
+          if (key === "enabled") continue;
+          // Secrets arrive masked ("****xxxx"); keep whatever the user typed.
+          if (typeof value === "string" && !value.startsWith("****")) {
+            formValues[key] = value;
+          } else {
+            formValues[key] = existing[key] ?? "";
+          }
+        }
+        next[name] = formValues;
+      }
+      return next;
+    });
+  };
+
+  const saveChannelConfig = async (entry: ChannelConfigSchemaEntry) => {
+    setChannelSaving(entry.name);
+    try {
+      const formValues = channelForms[entry.name] ?? {};
+      const values: Record<string, unknown> = {};
+      for (const field of entry.fields) {
+        if (field.key === "enabled") continue;
+        const raw = (formValues[field.key] ?? "").trim();
+        if (field.secret && !raw) continue; // empty secret input keeps the stored value
+        values[field.key] = raw;
+      }
+      const updated = await api.updateChannelConfig(entry.name, values);
+      setChannelConfig((prev) => ({ ...(prev ?? {}), [entry.name]: updated.config }));
+      setChannelForms((prev) => ({
+        ...prev,
+        [entry.name]: Object.fromEntries(
+          Object.entries(prev[entry.name] ?? {}).map(([key, value]) => [
+            key,
+            entry.fields.find((field) => field.key === key)?.secret ? "" : value,
+          ]),
+        ),
+      }));
+      toast.success(t("settings.channels.config.saved", { channel: entry.display_name }));
+      api.getChannelStatus().then(setChannelStatus).catch(() => undefined);
+    } catch (error) {
+      toast.error(`${t("settings.channels.config.saveFailed", { channel: entry.display_name })}: ${error instanceof Error ? error.message : t("settings.unknownError", { defaultValue: "Unknown error" })}`);
+    } finally {
+      setChannelSaving(null);
+    }
+  };
+
+  const testChannelConfig = async (entry: ChannelConfigSchemaEntry) => {
+    setChannelTesting(entry.name);
+    try {
+      const result = await api.testChannelConfig(entry.name);
+      setChannelTestResults((prev) => ({ ...prev, [entry.name]: result }));
+      if (result.ok) {
+        toast.success(t("settings.channels.config.testOk"));
+      } else {
+        toast.error(`${t("settings.channels.config.testFailed")}: ${t(`settings.channels.config.reasons.${result.reason}`, { defaultValue: result.detail || result.reason })}`);
+      }
+    } catch (error) {
+      toast.error(`${t("settings.channels.config.testFailed")}: ${error instanceof Error ? error.message : t("settings.unknownError", { defaultValue: "Unknown error" })}`);
+    } finally {
+      setChannelTesting(null);
+    }
+  };
+
+  const toggleChannel = async (entry: ChannelConfigSchemaEntry, enabled: boolean) => {
+    setChannelToggling(entry.name);
+    try {
+      const updated = await api.toggleChannelConfig(entry.name, enabled);
+      setChannelConfig((prev) => ({ ...(prev ?? {}), [entry.name]: updated.config }));
+      toast.success(
+        t(updated.enabled ? "settings.channels.config.enabledToast" : "settings.channels.config.disabledToast", { channel: entry.display_name }),
+      );
+      api.getChannelStatus().then(setChannelStatus).catch(() => undefined);
+    } catch (error) {
+      toast.error(`${t("settings.channels.config.toggleFailed", { channel: entry.display_name })}: ${error instanceof Error ? error.message : t("settings.unknownError", { defaultValue: "Unknown error" })}`);
+    } finally {
+      setChannelToggling(null);
     }
   };
 
@@ -471,6 +572,125 @@ export function Settings() {
       ) : (
         <div className="rounded-md border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
           {t("settings.channels.refreshFailed")}
+        </div>
+      )}
+
+      {channelSchema && channelConfig && (
+        <div className="mt-6 space-y-3">
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold">{t("settings.channels.config.title")}</h3>
+            <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.channels.config.description")}</p>
+          </div>
+          <div className="divide-y rounded-md border">
+            {channelSchema.map((entry) => {
+              const values = channelConfig[entry.name] ?? {};
+              const enabled = values.enabled === true;
+              const credentialFields = entry.fields.filter((field) => field.key !== "enabled");
+              const expanded = expandedChannel === entry.name;
+              const testResult = channelTestResults[entry.name];
+              const guide = t(`settings.channels.config.guide.${entry.name}`, { defaultValue: "" });
+              return (
+                <div key={entry.name} className="px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{entry.display_name}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {credentialFields.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedChannel(expanded ? null : entry.name)}
+                          className="inline-flex items-center justify-center gap-1 rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                        >
+                          {expanded ? t("settings.channels.config.collapse") : t("settings.channels.config.configure")}
+                        </button>
+                      )}
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          disabled={channelToggling === entry.name}
+                          onChange={(event) => void toggleChannel(entry, event.target.checked)}
+                          className="h-4 w-4 accent-primary"
+                          aria-label={`${entry.display_name} ${t("settings.channels.config.enabledToggle")}`}
+                        />
+                        {t("settings.channels.config.enabledToggle")}
+                      </label>
+                    </div>
+                  </div>
+
+                  {expanded && credentialFields.length > 0 && (
+                    <form
+                      className="mt-3 space-y-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveChannelConfig(entry);
+                      }}
+                    >
+                      {credentialFields.map((field) => {
+                        const stored = values[field.key];
+                        const masked = typeof stored === "string" && stored.startsWith("****") ? stored : "";
+                        return (
+                          <label key={field.key} className="grid gap-2">
+                            <span className={labelClass}>{field.key}</span>
+                            <input
+                              type={field.secret ? "password" : "text"}
+                              aria-label={field.key}
+                              value={channelForms[entry.name]?.[field.key] ?? ""}
+                              onChange={(event) => setChannelForms((prev) => ({
+                                ...prev,
+                                [entry.name]: { ...(prev[entry.name] ?? {}), [field.key]: event.target.value },
+                              }))}
+                              className={fieldClass}
+                              placeholder={field.secret ? masked || t("settings.channels.config.secretPlaceholder") : undefined}
+                              autoComplete="off"
+                              disabled={channelSaving === entry.name}
+                            />
+                            <span className={hintClass}>
+                              {t(`settings.channels.config.fields.${entry.name}.${field.key}`, { defaultValue: field.description })}
+                              {field.secret && masked ? ` ${t("settings.channels.config.secretHint")}` : ""}
+                            </span>
+                          </label>
+                        );
+                      })}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={channelSaving === entry.name}
+                          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {channelSaving === entry.name ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          {t("settings.channels.config.save")}
+                        </button>
+                        {entry.name === "dingtalk" && (
+                          <button
+                            type="button"
+                            onClick={() => void testChannelConfig(entry)}
+                            disabled={channelTesting === entry.name}
+                            className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {channelTesting === entry.name ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlugZap className="h-4 w-4" />}
+                            {t("settings.channels.config.testConnection")}
+                          </button>
+                        )}
+                      </div>
+                      {entry.name === "dingtalk" && (
+                        <p className={hintClass}>{t("settings.channels.config.testUsesSaved")}</p>
+                      )}
+                      {testResult && (
+                        <div className={`rounded-md border px-3 py-2 text-xs ${testResult.ok ? "border-success/40 bg-success/10 text-success" : "border-destructive/40 bg-destructive/10 text-destructive"}`}>
+                          {testResult.ok
+                            ? t("settings.channels.config.testOk")
+                            : `${t("settings.channels.config.testFailed")}: ${t(`settings.channels.config.reasons.${testResult.reason}`, { defaultValue: testResult.detail || testResult.reason })}${testResult.detail ? ` (${testResult.detail})` : ""}`}
+                        </div>
+                      )}
+                      {guide && <p className={hintClass}>{guide}</p>}
+                    </form>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </section>

@@ -5,6 +5,11 @@ const apiMock = vi.hoisted(() => ({
   getLLMSettings: vi.fn(),
   getDataSourceSettings: vi.fn(),
   getChannelStatus: vi.fn(),
+  getChannelsConfigSchema: vi.fn(),
+  getChannelsConfig: vi.fn(),
+  updateChannelConfig: vi.fn(),
+  testChannelConfig: vi.fn(),
+  toggleChannelConfig: vi.fn(),
   listLLMModels: vi.fn(),
   startChannels: vi.fn(),
   stopChannels: vi.fn(),
@@ -99,11 +104,71 @@ function channelStatus(overrides = {}) {
   };
 }
 
+function channelsConfigSchema() {
+  return {
+    channels: [
+      {
+        name: "dingtalk",
+        display_name: "DingTalk",
+        available: true,
+        enabled: false,
+        install_hint: "",
+        fields: [
+          { key: "enabled", type: "boolean", secret: false, required: false, description: "Run this channel" },
+          { key: "client_id", type: "string", secret: false, required: true, description: "Client ID (AppKey)" },
+          { key: "client_secret", type: "string", secret: true, required: true, description: "Client Secret (AppSecret)" },
+        ],
+      },
+      {
+        name: "telegram",
+        display_name: "Telegram",
+        available: false,
+        enabled: false,
+        install_hint: "pip install 'vibe-trading-ai[telegram]'",
+        fields: [
+          { key: "enabled", type: "boolean", secret: false, required: false, description: "Run this channel" },
+        ],
+      },
+    ],
+  };
+}
+
+function channelsConfig() {
+  return {
+    channels: {
+      dingtalk: { enabled: false, client_id: "", client_secret: "" },
+      telegram: { enabled: false },
+    },
+  };
+}
+
 describe("Settings IM channels panel", () => {
   beforeEach(() => {
     apiMock.getLLMSettings.mockResolvedValue(llmSettings());
     apiMock.getDataSourceSettings.mockResolvedValue(dataSourceSettings());
     apiMock.getChannelStatus.mockResolvedValue(channelStatus());
+    apiMock.getChannelsConfigSchema.mockResolvedValue(channelsConfigSchema());
+    apiMock.getChannelsConfig.mockResolvedValue(channelsConfig());
+    apiMock.updateChannelConfig.mockResolvedValue({
+      name: "dingtalk",
+      enabled: false,
+      config: { enabled: false, client_id: "dingid123", client_secret: "****t123" },
+      applied: false,
+      status: null,
+    });
+    apiMock.testChannelConfig.mockResolvedValue({
+      name: "dingtalk",
+      ok: false,
+      reason: "invalid_credentials",
+      detail: "HTTP 400: InvalidParameter",
+    });
+    apiMock.toggleChannelConfig.mockResolvedValue({
+      name: "telegram",
+      enabled: true,
+      config: { enabled: true },
+      applied: true,
+      status: { enabled: true, running: false },
+    });
     apiMock.listLLMModels.mockResolvedValue({
       provider: "openrouter",
       models: ["deepseek/deepseek-v3.2"],
@@ -193,5 +258,52 @@ describe("Settings IM channels panel", () => {
     expect(await screen.findByText(
       "Enter or save this provider's API key to load its available models.",
     )).toBeInTheDocument();
+  });
+
+  it("saves DingTalk credentials from the channel config form", async () => {
+    render(<Settings />);
+
+    expect(await screen.findByText("Channel configuration")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
+
+    fireEvent.change(screen.getByLabelText("client_id"), { target: { value: "dingid123" } });
+    fireEvent.change(screen.getByLabelText("client_secret"), { target: { value: "dingsecret123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save credentials" }));
+
+    await waitFor(() => expect(apiMock.updateChannelConfig).toHaveBeenCalledWith("dingtalk", {
+      client_id: "dingid123",
+      client_secret: "dingsecret123",
+    }));
+  });
+
+  it("keeps the stored secret when the secret field is left empty", async () => {
+    render(<Settings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Configure" }));
+    fireEvent.change(screen.getByLabelText("client_id"), { target: { value: "dingid123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save credentials" }));
+
+    await waitFor(() => expect(apiMock.updateChannelConfig).toHaveBeenCalledWith("dingtalk", {
+      client_id: "dingid123",
+    }));
+  });
+
+  it("shows the honest failure reason from a DingTalk connection test", async () => {
+    render(<Settings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Configure" }));
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => expect(apiMock.testChannelConfig).toHaveBeenCalledWith("dingtalk"));
+    expect(await screen.findByText(/DingTalk rejected these credentials/)).toBeInTheDocument();
+  });
+
+  it("toggles a channel without touching its credentials", async () => {
+    render(<Settings />);
+
+    expect(await screen.findByText("Channel configuration")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Telegram Enabled" }));
+
+    await waitFor(() => expect(apiMock.toggleChannelConfig).toHaveBeenCalledWith("telegram", true));
   });
 });
