@@ -16,10 +16,18 @@ import src.api.channels_config_routes as config_routes
 
 @pytest.fixture()
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from src.api import state as _state
+
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
     monkeypatch.setattr(api_server, "_channel_runtime", None)
     monkeypatch.setattr(api_server, "_channel_bus", None)
     monkeypatch.setattr(api_server, "_channel_manager", None)
+    # The routes also consult the second runtime global in src.api.state;
+    # reset it too, or a runtime built by an earlier test in the full suite
+    # leaks in and makes hot-apply look applied.
+    monkeypatch.setattr(_state, "_channel_runtime", None)
+    monkeypatch.setattr(_state, "_channel_bus", None)
+    monkeypatch.setattr(_state, "_channel_manager", None)
     return TestClient(api_server.app, client=("127.0.0.1", 50000))
 
 
