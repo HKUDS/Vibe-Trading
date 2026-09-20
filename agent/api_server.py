@@ -77,7 +77,12 @@ from src.api.models import (  # noqa: F401, E402
     RunInfo,
     RunResponse,
 )
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
+llm = ChatNVIDIA(
+    api_key=os.getenv("NVIDIA_API_KEY"),
+    model="nvidia/chat-gpt"
+)
 from src.api.helpers import (  # noqa: F401, E402
     AGENT_DIR,
     ENV_EXAMPLE_PATH,
