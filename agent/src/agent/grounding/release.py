@@ -200,6 +200,21 @@ class _ReleaseMixin:
                 "the arithmetic itself, with one operand this session observed; "
                 "proposed must be derived or lie inside the observed price range; "
                 "cited needs a source in its note; count is not checked.",
+                "For observed/derived refs, use ONLY exact literal tool names or exact "
+                "call ids from this session. Do not append labels, scopes, parentheses "
+                "or prose to a ref. If a formula uses operands from multiple calls, its "
+                "ref must include every operand source separated by `; `; when one tool "
+                "was called multiple times for different scopes, prefer exact call ids.",
+                "Return the FULL revised answer, not just corrected prose. Preserve or "
+                "rebuild the final figures block on every revision; do not drop it after "
+                "fixing precision, wording, or refs. Every measured figure that remains "
+                "in the prose must still have a valid declaration in that block.",
+                "In each figures declaration, write the value as a normalized raw number "
+                "without a currency prefix or thousands separators and with a dot decimal "
+                "(for example 123456789.125, not ARS 123.456.789,125). Derived notes must "
+                "use raw tool-result operands and plain arithmetic only. If a derived "
+                "figure previously needed multiple refs, preserve ALL of those refs in "
+                "the corrected declaration; never collapse it back to the calculator alone.",
                 "Reuse the exact locked symbol and venue.",
                 "Do not attach figures to a symbol no tool call in this session handled; "
                 "report it as not retrieved instead.",
@@ -266,21 +281,103 @@ class _ReleaseMixin:
             if self._symbol_resolution_attempts < MAX_SYMBOL_RESOLUTION_ATTEMPTS:
                 return _RESOLVER_TOOL
             return None
+        # The issue CODE alone does not say whether the rejected
+        # figure was ever a market quote — ``numeric_claim_unavailable`` and
+        # ``unsourced_symbol_figures`` both fire just as readily on a
+        # fundamentals ratio (ROE, ROA, an efficiency/capital ratio, a YoY
+        # growth %) or a currency-marked fundamental (EPS, net income,
+        # revenue, assets, equity, capex, FCF) as on a genuine price.
+        # ``get_market_data`` can only ever satisfy the latter, so this is a
+        # POSITIVE condition, not "not a percent" and not "has currency":
+        # ``market_price`` is True only when the figure sat in a recognized
+        # OHLC table column, or an explicit price/quote/target/support/
+        # resistance signal was present in its clause or declared note (see
+        # ``_figure_is_market_price`` in ``policies.py``, and its aggregate
+        # in ``_validate_unsourced_symbols``). Uncertain cases (the flag
+        # missing entirely, or False) do NOT trigger — the correction/cited/
+        # redacted-release path handles those instead.
         if self.identity_status == "locked" and any(
             issue.get("code") in {"numeric_claim_unavailable", "unsourced_symbol_figures"}
+            and issue.get("market_price") is True
             for issue in validation.issues
         ):
             if self._price_evidence_attempts < MAX_PRICE_EVIDENCE_ATTEMPTS:
                 return "get_market_data"
         return None
 
-    def record_recovery(self, action: str) -> None:
-        """Account one bounded recovery attempt against its budget."""
+    def record_recovery(
+        self,
+        action: str,
+        *,
+        draft: str | None = None,
+        validation: ValidationResult | None = None,
+    ) -> None:
+        """Account one bounded recovery attempt against its budget.
+
+        Args:
+            action: The recovery tool requested (``search_symbol`` or
+                ``get_market_data``).
+            draft: The rejected draft this recovery was requested for.
+            validation: That draft's validation result.
+
+        When ``draft``/``validation`` are supplied they are tracked as a
+        pending recovery: if the model's next VALID answer turns
+        out to carry no measured figure at all and ``action`` was never
+        actually called since, that answer is an operational reply about the
+        recovery, not a revision of the rejected research — see
+        ``pending_recovery_stub``. Optional so existing callers that only
+        ever cared about the budget (tests included) are unaffected.
+        """
         self._recovery_rounds += 1
         if action == _RESOLVER_TOOL:
             self._symbol_resolution_attempts += 1
         elif action == "get_market_data":
             self._price_evidence_attempts += 1
+        if draft is not None and validation is not None:
+            self._pending_recovery = {
+                "action": action,
+                "draft": draft,
+                "validation": validation,
+            }
+
+    def pending_recovery_stub(self, content: str) -> tuple[str, ValidationResult] | None:
+        """Detect an operational reply silently standing in for declined recovery.
+
+        Consumes (resolves, one-shot) the recovery tracked by
+        :meth:`record_recovery`. Called once, right after the model's next
+        final answer has already validated: if a recovery was requested and
+        its tool was never actually called since (cleared in
+        ``GroundingLedger.ingest_tool_result``, which also lives in this
+        package), a validated answer with NO
+        measured figure at all cannot be a substantive revision of a
+        quantitative research draft — a real revision, even a much shorter
+        one, still carries the numbers the user asked for. This is a
+        structural (figure-count) signal, deliberately not a length or
+        natural-language-word heuristic — see ``figures.py``'s own "reads no
+        natural-language word" design note.
+
+        Args:
+            content: The new, already-VALID final answer to check.
+
+        Returns:
+            The pending ``(rejected_draft, its_validation)`` to release
+            instead (via ``redacted_release``/``safe_fallback``), or None
+            when there is no pending recovery, it was fulfilled, or
+            ``content`` itself carries a measured figure (a real revision).
+        """
+        pending = self._pending_recovery
+        self._pending_recovery = None
+        if pending is None:
+            return None
+        if self._has_measured_figures(content):
+            return None
+        return pending["draft"], pending["validation"]
+
+    @staticmethod
+    def _has_measured_figures(content: str) -> bool:
+        """Whether ``content`` carries at least one measured-shape figure."""
+        block = parse_figures_block(content)
+        return any(figure.shape == "measured" for figure in scan_figures(content, block))
 
     def recovery_prompt(self, action: str, validation: ValidationResult) -> str:
         """Build an executable next-step message for one bounded recovery turn."""
@@ -321,23 +418,27 @@ class _ReleaseMixin:
                 "I will not invent an entry price without a visible derivation or refreshed evidence."
             )
         # No observed price: tell unresolved identity apart from a draft citing
-        # prices this session never observed.
-        issue_codes = {
-            code
-            for validation in self._validations
-            for code in (issue.get("code") for issue in validation.get("issues", []))
-        }
-        if issue_codes & _REDACTABLE_CODES:
+        # unverified figures. The narrative is decided from the LAST validation
+        # only (a stale draft's price issue must not color the final message
+        # once the run has moved on to a purely fundamentals rejection).
+        last_issues = self._validations[-1]["issues"] if self._validations else []
+        redactable_issues = [
+            issue for issue in last_issues if issue.get("code") in _REDACTABLE_CODES
+        ]
+        if redactable_issues:
+            is_price = any(issue.get("market_price") is True for issue in redactable_issues)
             if is_zh:
+                subject = "价格数字" if is_price else "数值"
                 return (
-                    "我的回答被安全门槛拒绝:草稿引用了本会话未通过工具获取的价格数字,无法核验。"
-                    "请重新发起任务,让模型先调用行情工具获取数据,或要求它去掉这些价格引用后重试。"
+                    f"我的回答被安全门槛拒绝:草稿引用了本会话未通过工具获取的{subject},无法核验。"
+                    "请重新发起任务,让模型先调用相应工具获取数据,或要求它去掉这些引用后重试。"
                 )
+            subject = "price figures" if is_price else "numeric claim(s)"
             return (
-                "My previous answer was rejected by the verification gate: it cited price "
-                "figures that this session never obtained through a tool, so they could not "
-                "be verified. Re-run the task and let the agent fetch the market data first, "
-                "or ask it to answer without the unverified prices."
+                f"My previous answer was rejected by the verification gate: it cited {subject} "
+                "that this session never obtained through a tool, so they could not "
+                "be verified. Re-run the task and let the agent fetch the data first, "
+                "or ask it to answer without the unverified figures."
             )
         if is_zh:
             return (
@@ -461,6 +562,30 @@ class _ReleaseMixin:
             return None
         return content.rstrip() + "\n\n" + note
 
+    @staticmethod
+    def _redaction_needs_price_evidence(issues: Sequence[dict[str, Any]]) -> bool:
+        """Whether a redaction with no price evidence anywhere must fail closed.
+
+        ``market_price`` is produced by ``policies.py`` and consumed here as-is
+        — this reads no additional wording of its own. False explicitly means a
+        known fundamental (redactable without ever needing a quote); True means
+        a real price; missing or None means the figure was never classified.
+        Fail-closed by default: price evidence is required unless there is at
+        least one redactable issue and every one of them is explicitly False.
+
+        Args:
+            issues: This validation's issues (not history from prior drafts).
+
+        Returns:
+            True when price evidence is required (no redactable issue, or one
+            whose ``market_price`` is True or unclassified); False when every
+            redactable issue is a known-explicit fundamental.
+        """
+        redactable = [issue for issue in issues if issue.get("code") in _REDACTABLE_CODES]
+        if not redactable:
+            return True
+        return any(issue.get("market_price") is not False for issue in redactable)
+
     def redacted_release(self, content: str, validation: ValidationResult) -> str | None:
         """Release the last rejected draft with its unverified figures cut out.
 
@@ -483,9 +608,18 @@ class _ReleaseMixin:
             The redacted, re-validated answer without its declaration block and
             with a note stating how many figures were removed, or None.
         """
-        # A market answer with no observed price has nothing to stand on once its
-        # figures are cut; a general answer (no instrument asked about) does.
-        if self._identity_required and not self._price_records():
+        # A market answer with no observed price has nothing to stand on once
+        # its figures are cut UNLESS every one of this validation's redactable
+        # issues is explicitly known to be a non-price (fundamentals) figure:
+        # cutting those never needed a quote in the first place. Any issue
+        # whose market_price is True, or missing/None (never classified), is
+        # treated as a possible price and fails closed — see
+        # ``_redaction_needs_price_evidence``.
+        if (
+            self._identity_required
+            and not self._price_records()
+            and self._redaction_needs_price_evidence(validation.issues)
+        ):
             return None
         text = _strip_release_markers(content)
         # Stripping shifts offsets and the cuts anchor on issue spans, so the
