@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from src.agent.tools import BaseTool
+from src.config.env import get_env
 
 _TIMEOUT_SECONDS = 10.0
 _EXPECTED_SCHEMA = "asistente-casa.investor-policy.v1"
@@ -34,8 +34,8 @@ class AsistenteCasaInvestorPolicyTool(BaseTool):
 
     @staticmethod
     def _settings() -> tuple[str, str]:
-        base_url = str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
-        api_key = str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
+        base_url = str(get_env("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
+        api_key = str(get_env("ASISTENTE_CASA_API_KEY") or "").strip()
         if not base_url:
             raise RuntimeError("ASISTENTE_CASA_BASE_URL is not configured")
         if not api_key:
