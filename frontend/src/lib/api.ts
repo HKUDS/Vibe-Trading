@@ -77,8 +77,16 @@ export interface PortfolioPosition {
   quantity: number;
   cost_price?: number | null;
   market_price?: number | null;
-  market_value_usd: number;
-  market_value_cny: number;
+  market_value_usd: number | null;
+  market_value_cny: number | null;
+  native_currency?: string | null;
+  market_value_native?: number | null;
+  unrealized_pnl_native?: number | null;
+  exposure_currency?: string | null;
+  daily_change_pct?: number | null;
+  daily_change_as_of?: string | null;
+  daily_change_source?: string | null;
+  daily_change_status?: "ready" | "unavailable" | string | null;
   unrealized_pnl_usd?: number | null;
   priced: boolean;
   updated_at: string;
@@ -111,6 +119,11 @@ export interface PortfolioAccount {
   total_usd?: number | null;
   total_cny?: number | null;
   total_display?: number | null;
+  native_currency?: string | null;
+  total_native?: number | null;
+  priced_value_native?: number | null;
+  cash_native?: number | null;
+  unpriced_or_other_native?: number | null;
   priced_value_usd?: number;
   cash_usd?: number;
   unpriced_or_other_usd?: number;
@@ -136,13 +149,23 @@ export interface PortfolioSnapshot {
   /** False whenever any enabled source did not reach `status === "ok"`. */
   complete: boolean;
   display_currency?: string;
-  totals: { usd: number; cny: number; display?: number };
+  totals: { usd: number; cny: number; display?: number | null; native_by_currency?: Record<string, number> };
   valuation?: {
     priced_usd: number;
     cash_usd: number;
     unpriced_or_other_usd: number;
     identified_coverage: number;
+    native_by_currency?: Record<string, { priced: number; cash: number; unpriced_or_other: number; identified_coverage: number }>;
   };
+  daily_change?: {
+    pct: number | null;
+    as_of?: string | null;
+    status?: "ready" | "unavailable" | string;
+    source?: string | null;
+    method?: string | null;
+    coverage_pct?: number | null;
+    trading_date?: string | null;
+  } | null;
   fx: { usd_cny: number; usd_hkd: number; rates?: Record<string, number>; fetched_at: string; stale: boolean };
   accounts: PortfolioAccount[];
   positions: PortfolioPosition[];
