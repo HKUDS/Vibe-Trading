@@ -43,4 +43,3 @@ ROBINHOOD_PROFILES: tuple[TradingProfile, ...] = (
         ),
     ),
 )
-
