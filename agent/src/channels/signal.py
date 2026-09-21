@@ -65,6 +65,22 @@ def _utf16_len(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
+def _utf16_offset_to_index(text: str, utf16_offset: int) -> int:
+    """Convert a Signal BodyRange UTF-16 code-unit offset to a Python
+    (code-point) string index.
+
+    Any character outside the Basic Multilingual Plane (most emoji) takes 2
+    UTF-16 units but 1 Python index, so a raw ``start``/``length`` from a
+    mention payload must be translated before it can be used to slice ``text``.
+    """
+    units = 0
+    for index, ch in enumerate(text):
+        if units >= utf16_offset:
+            return index
+        units += 2 if ord(ch) > 0xFFFF else 1
+    return len(text)
+
+
 def _sig_strip_cell(s: str) -> str:
     """Strip inline markdown from a table cell for plain-text rendering."""
     for pattern, repl in _SIG_CELL_STRIP_PATTERNS:
@@ -1159,17 +1175,27 @@ class SignalChannel(BaseChannel):
         return list(dict.fromkeys(ids))
 
     @staticmethod
-    def _mention_span(mention: dict[str, Any]) -> tuple[int, int] | None:
-        """Extract a safe (start, length) span from a mention."""
+    def _mention_span(text: str, mention: dict[str, Any]) -> tuple[int, int] | None:
+        """Extract a safe (start, length) span from a mention, in Python
+        (code-point) indices.
+
+        ``start``/``length`` on the mention payload are UTF-16 code-unit
+        offsets (Signal BodyRange semantics), so they must be translated via
+        ``_utf16_offset_to_index`` before being used to slice ``text``.
+        """
         try:
-            start = int(mention.get("start", 0))
-            length = int(mention.get("length", 0))
+            utf16_start = int(mention.get("start", 0))
+            utf16_length = int(mention.get("length", 0))
         except (TypeError, ValueError):
             return None
 
-        if start < 0 or length <= 0:
+        if utf16_start < 0 or utf16_length <= 0:
             return None
-        return (start, length)
+        start = _utf16_offset_to_index(text, utf16_start)
+        end = _utf16_offset_to_index(text, utf16_start + utf16_length)
+        if end <= start:
+            return None
+        return (start, end - start)
 
     @staticmethod
     def _leading_placeholder_span(text: str | None) -> tuple[int, int] | None:
@@ -1230,7 +1256,7 @@ class SignalChannel(BaseChannel):
                 continue
             if self._mention_id_candidates(mention):
                 continue
-            span = self._mention_span(mention)
+            span = self._mention_span(message_text or "", mention)
             if not span:
                 continue
             start, _ = span
@@ -1275,7 +1301,7 @@ class SignalChannel(BaseChannel):
             if not isinstance(mention, dict):
                 continue
             mention_ids = self._mention_id_candidates(mention)
-            span = self._mention_span(mention)
+            span = self._mention_span(text, mention)
             if not span:
                 continue
 

@@ -13,11 +13,50 @@ from src.market_data import DEFAULT_MAX_ROWS, fetch_market_data_json
 from backtest.loaders.registry import VALID_SOURCES
 from backtest.runner import _VALID_INTERVALS
 
-# Canonical-case lookup: `_VALID_INTERVALS` mixes cases ("1m" minutes vs "1H"
-# hours), so a plain `.upper()` would turn valid "1m"/"5m"/"15m"/"30m" into
-# "1M"/"5M"/… which loaders reject. Map any case spelling to the canonical
-# form the loaders expect ("1d" -> "1D", "30M" -> "30m").
+# Canonical-case lookup. ``_VALID_INTERVALS`` mixes cases ("1m" minutes vs
+# "1H" hours), so a plain ``.upper()`` fold is unsafe: it maps the universal
+# monthly spelling "1M" onto "1m" (one minute), silently answering a monthly
+# question with minute bars (#1480). ``_canonicalize_interval`` resolves a
+# case-exact match first and only then falls back to this fold for the
+# unambiguous case variants ("1d" -> "1D", "30M" -> "30m").
 _INTERVAL_CANON = {v.upper(): v for v in _VALID_INTERVALS}
+
+# Spellings that read as a request for a bar size this tool does not serve and
+# must never be case-folded onto a minute interval. "1M" is the near-universal
+# monthly convention (pandas ``resample('1M')``, ccxt / TradingView "1M"); "1W"
+# is weekly. Folding "1M" -> "1m" (one minute) is the #1480 footgun: the caller
+# receives minute bars labelled as the answer to a monthly question. These are
+# rejected with a pointed message instead of being silently mis-served. The
+# minute spellings "5M" / "15M" / "30M" deliberately keep folding to "5m" /
+# "15m" / "30m" — multi-month bars are not a convention anyone requests, and
+# that fold is the documented behaviour pinned by the regression tests.
+_UNSUPPORTED_PERIOD_SPELLINGS = {"1M": "one month", "1W": "one week"}
+
+
+def _canonicalize_interval(raw: str) -> str | None:
+    """Resolve a user interval spelling to the canonical loader form.
+
+    A case-exact match against ``_VALID_INTERVALS`` wins first, so the minute
+    interval ``"1m"`` and the monthly spelling ``"1M"`` are never conflated by
+    the case fold (#1480). Falls back to ``_INTERVAL_CANON`` for unambiguous
+    case variants (``"1d"`` -> ``"1D"``, ``"30M"`` -> ``"30m"``). Month/week
+    spellings that are not served resolve to ``None`` rather than folding onto
+    a minute interval.
+
+    Args:
+        raw: Interval string as supplied by the caller.
+
+    Returns:
+        The canonical interval token, or ``None`` when not served.
+    """
+    token = raw.strip()
+    if token in _VALID_INTERVALS:
+        return token
+    folded = token.upper()
+    if folded in _UNSUPPORTED_PERIOD_SPELLINGS:
+        return None
+    return _INTERVAL_CANON.get(folded)
+
 
 # Source allow-list derived from the shared loader registry (the same set the
 # backtest tool validates against), so the MCP/agent-facing surface can never
@@ -161,7 +200,23 @@ class MarketDataTool(BaseTool):
         interval = kwargs.get("interval", "1D")
         if not isinstance(interval, str):
             return _error("interval must be a string like '1D', '1H', '4H', '30m'")
-        normalized_interval = _INTERVAL_CANON.get(interval.strip().upper())
+        interval_token = interval.strip()
+        # Reject the month/week spellings the case fold would otherwise map onto
+        # a minute interval: "1M" (one month) must never silently become "1m"
+        # (one minute) (#1480). A case-exact served spelling is allowed through
+        # first, so this stays correct if monthly/weekly bars are ever added to
+        # ``_VALID_INTERVALS`` (#1479).
+        folded = interval_token.upper()
+        if (
+            interval_token not in _VALID_INTERVALS
+            and folded in _UNSUPPORTED_PERIOD_SPELLINGS
+        ):
+            return _error(
+                f"interval {interval_token!r} ({_UNSUPPORTED_PERIOD_SPELLINGS[folded]}) "
+                f"is not supported; supported: {sorted(_VALID_INTERVALS)}. "
+                f"Note '1m' (lowercase) is one minute."
+            )
+        normalized_interval = _canonicalize_interval(interval_token)
         if normalized_interval is None:
             return _error(
                 f"interval must be one of {sorted(_VALID_INTERVALS)} "

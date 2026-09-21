@@ -100,6 +100,36 @@ describe("WelcomeScreen", () => {
     expect(onExample).toHaveBeenCalledTimes(4);
   });
 
+  it("marks the clicked quick action as selected and moves the selection", async () => {
+    const user = userEvent.setup();
+    render(<WelcomeScreen onExample={onExample} />);
+
+    const quickActions = screen.getByRole("group", { name: "Quick actions" });
+    const buttons = within(quickActions).getAllByRole("button");
+    for (const button of buttons) {
+      expect(button).toHaveAttribute("aria-pressed", "false");
+      expect(button).not.toHaveClass("text-primary");
+    }
+
+    const committee = within(quickActions).getByRole("button", {
+      name: "Buy or sell? Let a committee debate",
+    });
+    await user.click(committee);
+    expect(committee).toHaveAttribute("aria-pressed", "true");
+    expect(committee).toHaveClass("text-primary");
+    expect(onExample).toHaveBeenCalledTimes(1);
+
+    const valuation = within(quickActions).getByRole("button", {
+      name: "Check if a stock is expensive",
+    });
+    await user.click(valuation);
+    expect(committee).toHaveAttribute("aria-pressed", "false");
+    expect(committee).not.toHaveClass("text-primary");
+    expect(valuation).toHaveAttribute("aria-pressed", "true");
+    expect(valuation).toHaveClass("text-primary");
+    expect(onExample).toHaveBeenCalledTimes(2);
+  });
+
   it("reveals eight category tabs and switches example cards from the disclosure", async () => {
     const user = userEvent.setup();
     render(<WelcomeScreen onExample={onExample} />);

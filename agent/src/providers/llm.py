@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from copy import copy
 from urllib.parse import urlparse
 import re
@@ -17,6 +18,7 @@ from urllib.parse import urlsplit
 from pydantic import PrivateAttr
 
 from src.config.accessor import get_env_config, reset_env_config
+from src.providers.session_context import current_llm_session_id
 from src.providers.capabilities import (
     ProviderCapabilities,
     get_llm_credentials,
@@ -68,6 +70,27 @@ def _build_proxy_free_http_clients() -> tuple[Any, Any]:
         httpx.Client(transport=sync_transport),
         httpx.AsyncClient(transport=async_transport),
     )
+
+
+_OPENCODE_PROVIDER_NAMES = frozenset({"opencode", "opencode-go", "opencode-zen"})
+_OPENCODE_SESSION_HEADER = "x-opencode-session"
+
+
+def _targets_opencode(provider: str | None, base_url: str | None) -> bool:
+    """Report whether requests go to the OpenCode relay.
+
+    True for the ``opencode*`` provider names and for any provider whose base
+    URL points at ``opencode.ai`` (e.g. ``deepseek`` re-pointed at the Go
+    endpoint), so the session header follows the endpoint, not the label.
+    """
+    normalized = (provider or "").strip().lower().replace("_", "-")
+    if normalized in _OPENCODE_PROVIDER_NAMES:
+        return True
+    raw = (base_url or "").strip()
+    if not raw:
+        return False
+    host = (urlparse(raw if "//" in raw else f"https://{raw}").hostname or "").lower()
+    return host == "opencode.ai" or host.endswith(".opencode.ai")
 
 
 _AMBIENT_OPENAI_HEADER_ENV_VARS = (
@@ -266,6 +289,7 @@ if ChatOpenAI is not None:
         _vibe_ambient_header_names: tuple[str, ...] = PrivateAttr(default=())
         _vibe_has_explicit_authorization: bool = PrivateAttr(default=False)
         _vibe_owned_http_clients: tuple[Any, ...] = PrivateAttr(default=())
+        _vibe_fallback_session_id: str = PrivateAttr(default="")
 
         def __init__(
             self,
@@ -290,12 +314,31 @@ if ChatOpenAI is not None:
             self._vibe_provider = vibe_provider
             self._vibe_api_key = vibe_api_key or ""
             self._vibe_owned_http_clients = tuple(vibe_owned_http_clients or ())
+            # One id per adapter: outside a bound Vibe session (swarm workers,
+            # scheduled research, CLI) every request from this adapter still
+            # shares a stable conversation identity.
+            self._vibe_fallback_session_id = uuid.uuid4().hex
             self._vibe_ambient_header_names = tuple(
                 name for name in ambient_names if name not in explicit_names
             )
             self._vibe_has_explicit_authorization = (
                 "authorization" in explicit_names_lower
             )
+
+        def _opencode_session_headers(self) -> dict[str, str]:
+            """Return the ``x-opencode-session`` header for opencode.ai relays.
+
+            OpenCode Go rejects requests without a stable per-conversation id
+            (400 ``MissingSessionID``) and uses it for routing and prompt
+            caching. The agent loop binds the active Vibe session id via
+            ``src.providers.session_context``; the per-adapter fallback keeps
+            one conversation stable when no session is bound.
+            """
+            base_url = getattr(self, "openai_api_base", None)
+            if not _targets_opencode(self._vibe_provider, base_url):
+                return {}
+            session_id = current_llm_session_id() or self._vibe_fallback_session_id
+            return {_OPENCODE_SESSION_HEADER: session_id} if session_id else {}
 
         def _provider_scoped_extra_headers(self) -> dict[str, Any]:
             """Remove ambient OpenAI-only headers from named relay requests."""
@@ -528,7 +571,7 @@ if ChatOpenAI is not None:
             try:
                 return super()._generate(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-                if not self._remember_temperature_unsupported(exc):
+                if not self._recoverable_rejection(exc):
                     raise
                 return super()._generate(*args, **kwargs)
 
@@ -536,7 +579,7 @@ if ChatOpenAI is not None:
             try:
                 return await super()._agenerate(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-                if not self._remember_temperature_unsupported(exc):
+                if not self._recoverable_rejection(exc):
                     raise
                 return await super()._agenerate(*args, **kwargs)
 
@@ -562,6 +605,47 @@ if ChatOpenAI is not None:
                 _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(model)
             return True
 
+        def _use_responses_api(self, payload: dict) -> bool:  # type: ignore[override]
+            """Route a model whose chat endpoint refused tools to /v1/responses."""
+            if str(self.model_name) in _RESPONSES_REQUIRED:
+                return True
+            return super()._use_responses_api(payload)
+
+        def _remember_responses_required(self, exc: BaseException) -> bool:
+            """Record a chat-completions refusal naming /v1/responses; report a one-shot retry.
+
+            OpenAI's gpt-5.6-* reject function tools on ``/v1/chat/completions``
+            unless ``reasoning_effort`` is 'none', which would run the model
+            without its reasoning; the same request on ``/v1/responses`` is
+            accepted with the effort under ``reasoning.effort`` (issue #1473).
+            The model is remembered in ``_RESPONSES_REQUIRED`` so later requests
+            take that route up front. A model that already failed there is not
+            retried again.
+            """
+            if not _is_responses_required_error(exc):
+                return False
+            model = str(self.model_name)
+            if model in _RESPONSES_REQUIRED or self.use_responses_api is True:
+                return False
+            logger.warning(
+                "Model %s refuses function tools on /v1/chat/completions with a "
+                "reasoning effort; retrying on /v1/responses and using it for "
+                "subsequent calls. Set LANGCHAIN_USE_RESPONSES_API=true to select "
+                "it up front.",
+                model,
+            )
+            _RESPONSES_REQUIRED.add(model)
+            return True
+
+        def _recoverable_rejection(self, exc: BaseException) -> bool:
+            """Report whether a failed request should be sent once more.
+
+            Each branch records what the endpoint rejected so the retry, and
+            every later request, is shaped differently: without ``temperature``
+            (#1223) or on ``/v1/responses`` (#1473).
+            """
+            return self._remember_temperature_unsupported(exc) or self._remember_responses_required(exc)
+
         def _stream(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
             """Route Responses streams through the mapping-compatible adapter."""
             if self._use_responses_api({**kwargs, **self.model_kwargs}):
@@ -581,7 +665,7 @@ if ChatOpenAI is not None:
                     emitted = True
                     yield chunk
             except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-                if emitted or not self._remember_temperature_unsupported(exc):
+                if emitted or not self._recoverable_rejection(exc):
                     raise
                 yield from self._stream(*args, **kwargs)
 
@@ -653,7 +737,7 @@ if ChatOpenAI is not None:
                     emitted = True
                     yield chunk
             except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-                if emitted or not self._remember_temperature_unsupported(exc):
+                if emitted or not self._recoverable_rejection(exc):
                     raise
                 async for chunk in self._astream(*args, **kwargs):
                     yield chunk
@@ -720,6 +804,17 @@ if ChatOpenAI is not None:
                 if isinstance(existing_headers, Mapping):
                     scoped_headers.update(existing_headers)
                 payload["extra_headers"] = scoped_headers
+            session_headers = self._opencode_session_headers()
+            if session_headers:
+                existing_headers = payload.get("extra_headers")
+                merged: dict[str, Any] = (
+                    dict(existing_headers) if isinstance(existing_headers, Mapping) else {}
+                )
+                present = {str(name).lower() for name in merged}
+                for name, value in session_headers.items():
+                    if name.lower() not in present:
+                        merged[name] = value
+                payload["extra_headers"] = merged
             return payload
 
 else:
@@ -958,6 +1053,34 @@ def _is_stream_usage_unsupported_error(exc: BaseException) -> bool:
         or "not a valid" in message
         or "not allowed" in message
     )
+
+# Models whose Chat Completions endpoint refused function tools and named
+# /v1/responses as the way out (issue #1473). OpenAI's gpt-5.6-* answer HTTP 400
+# "Function tools with reasoning_effort are not supported for <model> in
+# /v1/chat/completions. To use function tools, use /v1/responses or set
+# reasoning_effort to 'none'" whenever the request carries tools and the effort
+# is anything but 'none' -- the model's own default when none is configured
+# included. Setting 'none' would run the model without its reasoning, so the
+# request is retried on /v1/responses instead, where the effort travels as
+# ``reasoning.effort``. Membership is populated on that first refusal and reused
+# process-wide so later calls skip the failed request.
+_RESPONSES_REQUIRED: set[str] = set()
+
+
+def _is_responses_required_error(exc: BaseException) -> bool:
+    """Return True when an endpoint refused tools and pointed at /v1/responses.
+
+    Matches the endpoint's own instruction, not a model name: the message has
+    to name ``reasoning_effort``, say it is not supported, and offer
+    ``/v1/responses``. A gateway that merely rejects ``reasoning_effort`` as an
+    unknown field does not match, because nothing says its Responses route
+    would fare better.
+    """
+    message = str(getattr(exc, "message", "") or exc).lower()
+    if "reasoning_effort" not in message or "/v1/responses" not in message:
+        return False
+    return "not supported" in message or "unsupported" in message
+
 
 # Cache of base ChatAnthropic class -> temperature-safe subclass, so the dynamic
 # subclass is built once per resolved base class (keyed to support test doubles).

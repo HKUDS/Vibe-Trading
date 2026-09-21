@@ -240,6 +240,7 @@ export function WelcomeScreen({ onExample }: Props) {
   const [greetingKey] = useState(() => pickGreetingKey());
   const [isExamplesOpen, setIsExamplesOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(0);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
   const examplesTriggerRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -262,21 +263,28 @@ export function WelcomeScreen({ onExample }: Props) {
           role="group"
           aria-label={t("welcome.quickActions" as any)}
         >
-          {QUICK_ACTIONS.map((action, index) => (
-            <button
-              key={action.titleKey}
-              type="button"
-              onClick={() => onExample(t(action.promptKey as any))}
-              className={
-                index === 0
-                  ? "inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/[0.08] px-4 py-2 text-sm text-primary transition-colors hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                  : "inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              }
-            >
-              {action.icon}
-              <span>{t(action.titleKey as any)}</span>
-            </button>
-          ))}
+          {QUICK_ACTIONS.map((action) => {
+            const isActive = action.titleKey === activeAction;
+            return (
+              <button
+                key={action.titleKey}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  setActiveAction(action.titleKey);
+                  onExample(t(action.promptKey as any));
+                }}
+                className={
+                  isActive
+                    ? "inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/[0.08] px-4 py-2 text-sm text-primary transition-colors hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    : "inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                }
+              >
+                {action.icon}
+                <span>{t(action.titleKey as any)}</span>
+              </button>
+            );
+          })}
         </div>
 
         <button

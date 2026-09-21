@@ -33,10 +33,16 @@ def roll_effective_spread(prices: Sequence[float] | np.ndarray | pd.Series) -> f
 
     Returns:
         Estimated effective dollar spread (non-negative float).
+
+    Raises:
+        ValueError: Fewer than 4 prices, or a price that is NaN or infinite.
+            A non-finite price used to come back as a ``0.0`` spread.
     """
     p = np.asarray(prices, dtype=float)
     if len(p) < 4:
         raise ValueError("prices sequence must have at least 4 points to compute serial covariance")
+    if not np.isfinite(p).all():
+        raise ValueError("prices must contain only finite values")
     dp = np.diff(p)
     dp_t = dp[1:]
     dp_t_minus_1 = dp[:-1]
@@ -59,13 +65,18 @@ def amihud_illiquidity(
         dollar_volumes: Array of traded dollar volumes (> 0).
 
     Returns:
-        Amihud illiquidity metric (positive float).
+        Amihud illiquidity metric (positive float). Rows whose return or volume
+        is NaN or infinite, or whose volume is not positive, are dropped; NaN
+        when no row is left.
+
+    Raises:
+        ValueError: Empty inputs or mismatched shapes.
     """
     r = np.asarray(returns, dtype=float)
     v = np.asarray(dollar_volumes, dtype=float)
     if r.shape != v.shape or len(r) == 0:
         raise ValueError("returns and dollar_volumes must be non-empty and have matching shapes")
-    valid_mask = (v > 0.0) & ~np.isnan(r) & ~np.isnan(v)
+    valid_mask = (v > 0.0) & np.isfinite(r) & np.isfinite(v)
     if not np.any(valid_mask):
         return float("nan")
     ratios = np.abs(r[valid_mask]) / v[valid_mask]
@@ -85,12 +96,18 @@ def kyles_lambda(
         signed_order_flow: Array of signed trade volumes (+ for buy, - for sell).
 
     Returns:
-        Kyle's lambda price impact slope.
+        Kyle's lambda price impact slope; ``0.0`` when the order flow is all zero.
+
+    Raises:
+        ValueError: Mismatched shapes, fewer than 2 observations, or a value
+            that is NaN or infinite.
     """
     dp = np.asarray(price_changes, dtype=float)
     flow = np.asarray(signed_order_flow, dtype=float)
     if dp.shape != flow.shape or len(dp) < 2:
         raise ValueError("price_changes and signed_order_flow must match with >= 2 observations")
+    if not np.isfinite(dp).all() or not np.isfinite(flow).all():
+        raise ValueError("price_changes and signed_order_flow must contain only finite values")
     denom = float(np.sum(flow**2))
     if denom == 0.0:
         return 0.0
@@ -116,17 +133,25 @@ def vpin(
 
     Returns:
         1-D ndarray of VPIN values in [0, 1] for completed volume buckets.
+
+    Raises:
+        ValueError: Mismatched or empty volumes, a volume that is negative, NaN
+            or infinite, or a ``bucket_size`` / ``n_buckets`` that is not
+            positive.
     """
     vb = np.asarray(buy_volume, dtype=float)
     vs = np.asarray(sell_volume, dtype=float)
     if vb.shape != vs.shape or len(vb) == 0:
         raise ValueError("buy_volume and sell_volume must have matching non-empty shapes")
-    if bucket_size <= 0.0:
+    if not np.isfinite(vb).all() or not np.isfinite(vs).all():
+        raise ValueError("buy_volume and sell_volume must contain only finite values")
+    if np.any(vb < 0.0) or np.any(vs < 0.0):
+        raise ValueError("buy_volume and sell_volume must be non-negative")
+    if not np.isfinite(bucket_size) or bucket_size <= 0.0:
         raise ValueError(f"bucket_size must be positive, got {bucket_size}")
     if n_buckets <= 0:
         raise ValueError(f"n_buckets must be positive, got {n_buckets}")
 
-    # Accumulate trades into constant-volume buckets of size V
     bucket_imbalances: list[float] = []
     curr_buy = 0.0
     curr_sell = 0.0
@@ -146,7 +171,6 @@ def vpin(
                 rem_b = 0.0
                 rem_s = 0.0
             else:
-                # Fill the remaining bucket space proportionally
                 frac_b = rem_b / total_bar
                 frac_s = rem_s / total_bar
                 take_b = space * frac_b

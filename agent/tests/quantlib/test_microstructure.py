@@ -57,3 +57,38 @@ class TestMicrostructureMetrics:
             roll_effective_spread([10.0, 11.0])
         with pytest.raises(ValueError, match="matching shapes"):
             amihud_illiquidity([0.01], [100.0, 200.0])
+
+
+class TestTheGateStillAcceptsFiniteEdgeCases:
+    """Rejections alone cannot show that a gate did not start rejecting everything (#1451)."""
+
+    def test_constant_prices_are_a_zero_spread_not_an_error(self) -> None:
+        assert roll_effective_spread([100.0] * 8) == 0.0
+
+    def test_finite_prices_keep_their_spread(self) -> None:
+        prices = [100.0, 101.0, 100.0, 101.0, 100.0, 101.0, 100.0, 101.0]
+        assert roll_effective_spread(prices) == pytest.approx(2.0, abs=0.2)
+
+    def test_zero_order_flow_is_a_zero_lambda_not_an_error(self) -> None:
+        assert kyles_lambda([0.5, -1.0, 1.5], [0.0, 0.0, 0.0]) == 0.0
+
+    def test_zero_volume_bars_are_accepted_and_change_nothing(self) -> None:
+        buy = np.array([100.0, 200.0, 300.0, 100.0])
+        sell = np.array([100.0, 100.0, 100.0, 100.0])
+        with_gaps = vpin(
+            np.insert(buy, [1, 3], 0.0), np.insert(sell, [1, 3], 0.0), bucket_size=200.0, n_buckets=3
+        )
+        np.testing.assert_allclose(with_gaps, vpin(buy, sell, bucket_size=200.0, n_buckets=3))
+
+    def test_amihud_drops_non_finite_rows_instead_of_returning_them(self) -> None:
+        # Before #1451 only NaN rows were dropped; an infinite return or volume
+        # went into the mean and came back as inf or nan.
+        finite = amihud_illiquidity([0.01, -0.02], [1_000_000, 2_000_000])
+        assert finite == pytest.approx(1e-8)
+        assert amihud_illiquidity(
+            [0.01, np.inf, -0.02, 0.03], [1_000_000, 1_000_000, 2_000_000, np.inf]
+        ) == pytest.approx(finite)
+        assert amihud_illiquidity([0.01, np.nan], [1_000_000, np.nan]) == pytest.approx(1e-8)
+
+    def test_amihud_with_no_usable_row_is_nan(self) -> None:
+        assert np.isnan(amihud_illiquidity([np.inf, 0.01], [1_000_000, 0.0]))

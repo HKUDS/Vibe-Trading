@@ -497,6 +497,21 @@ def test_spread_term_structure_rounding_is_controllable():
     ] == pytest.approx(50.123)
 
 
+def test_spread_term_structure_merges_int_and_float_tenor_keys():
+    issuers = {
+        "IssuerA": {5: 0.045, 10: 0.052},
+        "IssuerB": {5.0: 0.048, 10.0: 0.055},
+    }
+    curve = {5: 0.03, 10: 0.035}
+    out = spread_term_structure(issuers, curve)
+
+    assert list(out.columns) == ["5Y_spread_bp", "10Y_spread_bp"]
+    assert out.loc["IssuerA", "5Y_spread_bp"] == pytest.approx(150.0)
+    assert out.loc["IssuerB", "5Y_spread_bp"] == pytest.approx(180.0)
+    assert out.loc["IssuerA", "10Y_spread_bp"] == pytest.approx(170.0)
+    assert out.loc["IssuerB", "10Y_spread_bp"] == pytest.approx(200.0)
+
+
 def test_spread_term_structure_validates_its_inputs():
     with pytest.raises(ValueError, match="at least one entry"):
         spread_term_structure({}, {1: 0.02})

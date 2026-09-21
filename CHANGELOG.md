@@ -76,6 +76,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **OpenAI's gpt-5.6 models run with their reasoning on the agent's default
+  configuration** (#1473). `/v1/chat/completions` refuses function tools for
+  `gpt-5.6-terra` and `gpt-5.6-luna` unless `reasoning_effort` is `none`,
+  including when no effort is configured and the model applies its own
+  default, so a plain `LANGCHAIN_PROVIDER=openai` setup failed on its first
+  tool call with `Function tools with reasoning_effort are not supported`.
+  The adapter now treats that refusal the way it treats a rejected
+  `temperature` or `stream_options`: the request is retried on
+  `/v1/responses`, where the effort travels as `reasoning.effort`, and the
+  model is remembered for the rest of the process so later calls go there
+  first. Nothing changes for a model whose chat endpoint accepts tools, and
+  `LANGCHAIN_USE_RESPONSES_API=true` still selects the route up front and
+  skips the one failed request.
 - **A redacted answer keeps its row numbers and its labels** (#1471). When the
   grounding gate released a draft with its unverified figures cut, a ranked
   table came back with `(omitted※)` in place of 1, 2, 3, of the `12m` in its
