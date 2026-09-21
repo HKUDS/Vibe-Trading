@@ -1635,7 +1635,8 @@
       "coverage": "تغطية التقييم",
       "coverageNote": "مُسعَّر {{priced}} · نقد {{cash}}",
       "lastComplete": "آخر تحديث كامل",
-      "excluded": "تعذّرت قراءة {{count}} حسابات، وهي مستثناة من هذا الإجمالي"
+      "excluded": "تعذّرت قراءة {{count}} حسابات، وهي مستثناة من هذا الإجمالي",
+      "changeCanonicalNote": "التغيّر اليومي القياسي للمحفظة من Asistente Casa"
     },
     "allocation": {
       "byAccount": "التوزيع حسب الحساب",
@@ -1672,7 +1673,8 @@
       "colPnl": "أرباح/خسائر غير محققة",
       "colData": "البيانات",
       "priced": "مُسعَّر",
-      "unpriced": "غير مُسعَّر"
+      "unpriced": "غير مُسعَّر",
+      "colToday": "اليوم"
     },
     "history": {
       "title": "تاريخ الأصول",
