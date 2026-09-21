@@ -13,12 +13,78 @@ from src.goal.context import default_goal_criteria
 from src.tools.path_utils import safe_run_dir
 
 
-def _json_error(error: str, *, error_type: str = "validation") -> str:
-    """Return a standard JSON error envelope."""
-    return json.dumps(
-        {"status": "error", "error_type": error_type, "error": error},
-        ensure_ascii=False,
-    )
+def _json_error(
+    error: str,
+    *,
+    error_type: str = "validation",
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """Return a standard JSON error envelope with optional repair context."""
+    payload: dict[str, Any] = {
+        "status": "error",
+        "error_type": error_type,
+        "error": error,
+    }
+    if extra:
+        payload.update(extra)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _completion_contract(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Build a canonical criterion/evidence map for completion audits.
+
+    Goal completion is intentionally strict, but the model should not have to
+    reconstruct opaque criterion/evidence ids from separate tool responses.
+    This compact contract is returned by all goal tools so completion repairs
+    use the exact current ids instead of stale or grounding-ledger ids.
+    """
+    if snapshot is None:
+        return None
+    evidence = snapshot.get("evidence") or []
+    rows: list[dict[str, Any]] = []
+    for index, criterion in enumerate(snapshot.get("criteria") or [], start=1):
+        criterion_id = str(criterion.get("criterion_id") or "")
+        criterion_evidence = [
+            item for item in evidence if item.get("criterion_id") == criterion_id
+        ]
+        rows.append(
+            {
+                "criterion_index": index,
+                "criterion_id": criterion_id,
+                "text": criterion.get("text"),
+                "required": bool(criterion.get("required", True)),
+                "status": criterion.get("status"),
+                "evidence_ids": [
+                    str(item.get("evidence_id"))
+                    for item in criterion_evidence
+                    if item.get("evidence_id")
+                ],
+                "verified_evidence_ids": [
+                    str(item.get("evidence_id"))
+                    for item in criterion_evidence
+                    if item.get("evidence_id")
+                    and item.get("verification_status") == "verified"
+                ],
+            }
+        )
+    return {
+        "goal_id": (snapshot.get("goal") or {}).get("goal_id"),
+        "criteria": rows,
+        "instructions": (
+            "For status=complete, submit one audit row per required criterion. "
+            "Use these exact criterion_id values (or criterion_index) and cite "
+            "goal-ledger evidence_ids from the same criterion. Grounding evidence "
+            "ids are not goal evidence ids."
+        ),
+    }
+
+
+def _goal_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a goal tool payload with one canonical completion contract."""
+    return {
+        "snapshot": snapshot,
+        "completion_contract": _completion_contract(snapshot),
+    }
 
 
 def _coerce_string_list(value: Any) -> list[str]:
@@ -32,8 +98,12 @@ def _coerce_string_list(value: Any) -> list[str]:
     return []
 
 
-def _coerce_audit_rows(value: Any) -> list[AuditRow]:
-    """Coerce model/API-style audit rows into dataclasses."""
+def _coerce_audit_rows(
+    value: Any,
+    *,
+    snapshot: dict[str, Any] | None = None,
+) -> list[AuditRow]:
+    """Coerce model/API-style audit rows and resolve canonical criterion ids."""
     if value in (None, ""):
         return []
     if isinstance(value, str):
@@ -46,9 +116,26 @@ def _coerce_audit_rows(value: Any) -> list[AuditRow]:
         if not isinstance(item, dict):
             raise ValueError("audit rows must be objects")
         criterion_id = str(item.get("criterion_id") or "").strip()
+        criterion_index = item.get("criterion_index")
+        if criterion_index is not None:
+            if snapshot is None:
+                raise ValueError("criterion_index requires a current goal snapshot")
+            criteria = snapshot.get("criteria") or []
+            try:
+                index = int(criterion_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("criterion_index must be an integer") from exc
+            if index < 1 or index > len(criteria):
+                raise ValueError(f"criterion_index out of range: {index}")
+            canonical_id = str(criteria[index - 1].get("criterion_id") or "")
+            if criterion_id and criterion_id != canonical_id:
+                raise ValueError(
+                    f"criterion_id does not match criterion_index {index}: {criterion_id}"
+                )
+            criterion_id = canonical_id
         result = str(item.get("result") or "").strip()
         if not criterion_id or not result:
-            raise ValueError("audit rows require criterion_id and result")
+            raise ValueError("audit rows require criterion_id (or criterion_index) and result")
         rows.append(
             AuditRow(
                 criterion_id=criterion_id,
@@ -210,7 +297,7 @@ class StartResearchGoalTool(_GoalToolBase):
             snapshot = self._store.get_goal_snapshot(goal.goal_id)
             if snapshot is not None:
                 self._emit("goal.created", {"goal": snapshot["goal"]})
-            return json.dumps({"status": "ok", "snapshot": snapshot}, ensure_ascii=False)
+            return json.dumps({"status": "ok", **_goal_payload(snapshot)}, ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             return _json_error(str(exc))
 
@@ -247,7 +334,14 @@ class UpdateResearchGoalStatusTool(_GoalToolBase):
                 "items": {
                     "type": "object",
                     "properties": {
-                        "criterion_id": {"type": "string"},
+                        "criterion_id": {
+                            "type": "string",
+                            "description": "Exact criterion_id from completion_contract.",
+                        },
+                        "criterion_index": {
+                            "type": "integer",
+                            "description": "1-based criterion index from completion_contract; may be used instead of criterion_id.",
+                        },
                         "result": {
                             "type": "string",
                             "enum": [
@@ -260,9 +354,13 @@ class UpdateResearchGoalStatusTool(_GoalToolBase):
                         "evidence_ids": {"type": "array", "items": {"type": "string"}},
                         "notes": {"type": "string"},
                     },
-                    "required": ["criterion_id", "result"],
+                    "required": ["result"],
                 },
-                "description": "Criterion audit rows, required when status is complete.",
+                "description": (
+                    "Criterion audit rows, required when status is complete. "
+                    "Use exact ids from get_research_goal.completion_contract; "
+                    "do not use grounding-ledger ids."
+                ),
             },
             "recap": {"type": "string", "description": "Optional concise status recap."},
         },
@@ -295,24 +393,32 @@ class UpdateResearchGoalStatusTool(_GoalToolBase):
                 goal_id=goal_id,
                 expected_goal_id=expected_goal_id,
                 status=status,
-                audit=_coerce_audit_rows(kwargs.get("audit")),
+                audit=_coerce_audit_rows(kwargs.get("audit"), snapshot=snapshot),
                 recap=str(kwargs.get("recap") or "").strip() or None,
             )
             updated = self._store.get_goal_snapshot(goal_id)
             if updated is not None:
                 self._emit("goal.updated", {"goal": updated["goal"], "snapshot": updated})
-            return json.dumps({"status": "ok", "snapshot": updated}, ensure_ascii=False)
+            return json.dumps({"status": "ok", **_goal_payload(updated)}, ensure_ascii=False)
         except StaleGoalError as exc:
             return _json_error(str(exc), error_type="stale_goal")
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            return _json_error(str(exc))
+            repair_snapshot = self._store.get_current_snapshot(session_id)
+            return _json_error(
+                str(exc),
+                extra=_goal_payload(repair_snapshot),
+            )
 
 
 class GetResearchGoalTool(_GoalToolBase):
     """Read the current research goal snapshot."""
 
     name = "get_research_goal"
-    description = "Read the current finance research goal, criteria, claims, and latest evidence."
+    description = (
+        "Read the current finance research goal, criteria, latest evidence, and "
+        "canonical completion_contract. Call immediately before completion or "
+        "after a completion validation error."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -342,7 +448,7 @@ class GetResearchGoalTool(_GoalToolBase):
             return _json_error(str(exc))
         if snapshot is None:
             return _json_error("no current goal for this session", error_type="not_found")
-        return json.dumps({"status": "ok", "snapshot": snapshot}, ensure_ascii=False)
+        return json.dumps({"status": "ok", **_goal_payload(snapshot)}, ensure_ascii=False)
 
 
 class AddGoalEvidenceTool(_GoalToolBase):
@@ -461,7 +567,7 @@ class AddGoalEvidenceTool(_GoalToolBase):
                 {"evidence": record.__dict__, "goal_id": goal_id},
             )
             return json.dumps(
-                {"status": "ok", "evidence": record.__dict__, "snapshot": updated},
+                {"status": "ok", "evidence": record.__dict__, **_goal_payload(updated)},
                 ensure_ascii=False,
             )
         except StaleGoalError as exc:
