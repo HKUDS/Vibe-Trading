@@ -18,6 +18,11 @@ from src.portfolio.iso4217 import is_iso_currency
 from src.trading.types import TradingProfile
 
 CompatibilityLevel = Literal["native", "contract_tested", "experimental"]
+
+# Temporary fork capability: a connector may supply a complete portfolio already
+# valued in one canonical ISO currency. This does not create an FX rate and must
+# never be used to compare or aggregate unlike currencies.
+NATIVE_CURRENCY_CONNECTORS: dict[str, str] = {"asistente-casa": "ARS"}
 _SYMBOL_FIELDS = ("symbol", "code", "ticker")
 _QUANTITY_FIELDS = (
     "quantity",
