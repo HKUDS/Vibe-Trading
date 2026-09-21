@@ -9,7 +9,7 @@ calendar when no code is given.
 All requests reuse the shared, per-host-throttled Eastmoney client
 (:mod:`backtest.loaders.eastmoney_client`); Eastmoney rate-limits by source IP
 and temporarily bans bursting callers, so this module never issues an
-un-throttled GET. It only knows Eastmoney's ``RPT_LIFT_STOCK`` report layout,
+un-throttled GET. It only knows Eastmoney's ``RPT_LIFT_STAGE`` report layout,
 not any loader's DataFrame conventions.
 """
 
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Eastmoney datacenter report endpoint + the restricted-share unlock report.
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-_REPORT_NAME = "RPT_LIFT_STOCK"
+_REPORT_NAME = "RPT_LIFT_STAGE"
 
 # Per-bar columns requested from the report, in our display order.
 _COLUMNS = (
@@ -148,12 +148,42 @@ def _shape_record(raw: Any) -> dict[str, Any] | None:
         "name": raw.get("SECURITY_NAME_ABBR"),
         "free_date": str(free_date)[:10],
         "share_type": raw.get("FREE_SHARES_TYPE"),
-        "free_shares": _to_float(raw.get("FREE_SHARES")),
+        # RPT_LIFT_STAGE's FREE_SHARES is the float the unlock is measured
+        # against (FREE_RATIO = CURRENT_FREE_SHARES / FREE_SHARES), not the
+        # unlock: 603162 on 2026-09-21 unlocked 232.88 of 42,489.17 (万股).
+        "free_shares": _to_float(raw.get("CURRENT_FREE_SHARES")),
         "able_free_shares": _to_float(raw.get("ABLE_FREE_SHARES")),
+        "float_shares": _to_float(raw.get("FREE_SHARES")),
         "lift_market_cap": _to_float(raw.get("LIFT_MARKET_CAP")),
         "free_ratio": _to_float(raw.get("FREE_RATIO")),
         "total_ratio": _to_float(raw.get("TOTAL_RATIO")),
     }
+
+
+# Eastmoney reports share counts in 万股 and market value in 万元.
+_UNITS = {
+    "free_shares": "10k shares (万股)",
+    "able_free_shares": "10k shares (万股)",
+    "float_shares": "10k shares (万股)",
+    "lift_market_cap": "10k CNY (万元)",
+    "free_ratio": "fraction of float_shares",
+    "total_ratio": "fraction of total shares",
+}
+
+_EMPTY_RESULT_MESSAGES = ("返回数据为空",)
+
+
+def _upstream_rejection(payload: Any) -> str | None:
+    if not isinstance(payload, dict) or payload.get("success") is not False:
+        return None
+    message = payload.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return "request rejected without a message"
+    message = message.strip()
+    code = payload.get("code")
+    if code == 9201 and message in _EMPTY_RESULT_MESSAGES:
+        return None
+    return f"code={code} message={message}" if code is not None else message
 
 
 def _extract_rows(payload: Any) -> list[dict]:
@@ -208,6 +238,10 @@ def _fetch_lockups(code: str | None, horizon_days: int) -> list[dict]:
             "client": "WEB",
         },
     )
+
+    rejection = _upstream_rejection(payload)
+    if rejection is not None:
+        raise ValueError(f"eastmoney datacenter rejected the request: {rejection}")
 
     records: list[dict] = []
     for raw in _extract_rows(payload):
@@ -264,6 +298,7 @@ def get_lockup_expiry(code: str | None, horizon_days: int) -> str:
         "scope": scope,
         "count": len(records),
         "records": records,
+        "units": _UNITS,
     }
     if bare_code is not None:
         data["code"] = bare_code

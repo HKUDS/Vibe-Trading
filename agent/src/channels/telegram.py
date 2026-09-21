@@ -589,13 +589,13 @@ class TelegramChannel(BaseChannel):
         bot_info = await self._app.bot.get_me()
         self._bot_user_id = getattr(bot_info, "id", None)
         self._bot_username = getattr(bot_info, "username", None)
-        self.logger.info("bot @{} connected", bot_info.username)
+        self.logger.info("bot @%s connected", bot_info.username)
 
         try:
             await self._app.bot.set_my_commands(self.BOT_COMMANDS)
             self.logger.debug("bot commands registered")
         except Exception as e:
-            self.logger.warning("Failed to register bot commands: {}", e)
+            self.logger.warning("Failed to register bot commands: %s", e)
 
         if self.config.mode == "webhook":
             # ``url_path`` is the local HTTP route. ``webhook_url`` is the
@@ -719,7 +719,7 @@ class TelegramChannel(BaseChannel):
                 self.logger.debug("sendRichMessage not available, disabling")
                 self._rich_send_disabled = True
             else:
-                self.logger.debug("sendRichMessage rejected: {}", exc)
+                self.logger.debug("sendRichMessage rejected: %s", exc)
             return False
         except Exception as exc:
             err_str = str(exc).lower()
@@ -727,7 +727,7 @@ class TelegramChannel(BaseChannel):
             if is_timeout:
                 self.logger.debug("sendRichMessage timeout, falling back to legacy path")
                 return False
-            self.logger.debug("sendRichMessage failed: {}", exc)
+            self.logger.debug("sendRichMessage failed: %s", exc)
             return False
 
     async def send(self, msg: OutboundMessage) -> None:
@@ -746,7 +746,7 @@ class TelegramChannel(BaseChannel):
         try:
             chat_id = int(msg.chat_id)
         except ValueError:
-            self.logger.exception("Invalid chat_id: {}", msg.chat_id)
+            self.logger.exception("Invalid chat_id: %s", msg.chat_id)
             return
         reply_to_message_id = msg.metadata.get("message_id")
         message_thread_id = msg.metadata.get("message_thread_id")
@@ -812,7 +812,7 @@ class TelegramChannel(BaseChannel):
                 )
             except Exception:
                 filename = media_path.rsplit("/", 1)[-1]
-                self.logger.exception("Failed to send media {}", media_path)
+                self.logger.exception("Failed to send media %s", media_path)
                 await self._app.bot.send_message(
                     chat_id=chat_id,
                     text=f"[Failed to send: {filename}]",
@@ -865,7 +865,7 @@ class TelegramChannel(BaseChannel):
                     raise
                 delay = _SEND_RETRY_BASE_DELAY * (2 ** (attempt - 1))
                 self.logger.warning(
-                    "timeout (attempt {}/{}), retrying in {:.1f}s",
+                    "timeout (attempt %s/%s), retrying in %.1fs",
                     attempt, _SEND_MAX_RETRIES, delay,
                 )
                 await asyncio.sleep(delay)
@@ -874,7 +874,7 @@ class TelegramChannel(BaseChannel):
                     raise
                 delay = float(e.retry_after)
                 self.logger.warning(
-                    "Flood Control (attempt {}/{}), retrying in {:.1f}s",
+                    "Flood Control (attempt %s/%s), retrying in %.1fs",
                     attempt, _SEND_MAX_RETRIES, delay,
                 )
                 await asyncio.sleep(delay)
@@ -899,7 +899,7 @@ class TelegramChannel(BaseChannel):
                 **(thread_kwargs or {}),
             )
         except BadRequest as e:
-            self.logger.warning("HTML parse failed, falling back to plain text: {}", e)
+            self.logger.warning("HTML parse failed, falling back to plain text: %s", e)
             try:
                 await self._call_with_retry(
                     self._app.bot.send_message,
@@ -978,10 +978,10 @@ class TelegramChannel(BaseChannel):
                 # Network errors (TimedOut, NetworkError) should propagate immediately
                 # to avoid doubling connection demand during pool exhaustion.
                 if self._is_not_modified_error(e):
-                    self.logger.debug("Final stream edit already applied for {}", chat_id)
+                    self.logger.debug("Final stream edit already applied for %s", chat_id)
                     self._stream_bufs.pop(chat_id, None)
                     return
-                self.logger.debug("Final stream edit failed (HTML), trying plain: {}", e)
+                self.logger.debug("Final stream edit failed (HTML), trying plain: %s", e)
                 # Fall back to raw markdown (not HTML) so users don't see raw tags.
                 primary_plain = split_message(raw_text, TELEGRAM_MAX_MESSAGE_LEN)[0] if len(raw_text) > TELEGRAM_MAX_MESSAGE_LEN else raw_text
                 try:
@@ -992,9 +992,9 @@ class TelegramChannel(BaseChannel):
                     )
                 except Exception as e2:
                     if self._is_not_modified_error(e2):
-                        self.logger.debug("Final stream plain edit already applied for {}", chat_id)
+                        self.logger.debug("Final stream plain edit already applied for %s", chat_id)
                     else:
-                        self.logger.warning("Final stream edit failed: {}", e2)
+                        self.logger.warning("Final stream edit failed: %s", e2)
                         raise  # Let ChannelManager handle retry
             for extra_html_chunk in extra_html_chunks:
                 try:
@@ -1036,7 +1036,7 @@ class TelegramChannel(BaseChannel):
                 buf.message_id = sent.message_id
                 buf.last_edit = now
             except Exception as e:
-                self.logger.warning("Stream initial send failed: {}", e)
+                self.logger.warning("Stream initial send failed: %s", e)
                 raise  # Let ChannelManager handle retry
         elif (now - buf.last_edit) >= self.config.stream_edit_interval:
             if len(buf.text) > TELEGRAM_MAX_MESSAGE_LEN:
@@ -1055,7 +1055,7 @@ class TelegramChannel(BaseChannel):
                 if self._is_not_modified_error(e):
                     buf.last_edit = now
                     return
-                self.logger.warning("Stream edit failed: {}", e)
+                self.logger.warning("Stream edit failed: %s", e)
                 raise  # Let ChannelManager handle retry
 
     async def _flush_stream_overflow(
@@ -1081,7 +1081,7 @@ class TelegramChannel(BaseChannel):
             )
         except Exception as e:
             if not self._is_not_modified_error(e):
-                self.logger.warning("Stream overflow edit failed: {}", e)
+                self.logger.warning("Stream overflow edit failed: %s", e)
                 raise
         for chunk in chunks[1:-1]:
             await self._call_with_retry(
@@ -1231,12 +1231,12 @@ class TelegramChannel(BaseChannel):
             if media_type in ("voice", "audio"):
                 transcription = await self.transcribe_audio(file_path)
                 if transcription:
-                    self.logger.info("Transcribed {}: {}...", media_type, transcription[:50])
+                    self.logger.info("Transcribed %s: %s...", media_type, transcription[:50])
                     return [path_str], [f"[transcription: {transcription}]"]
                 return [path_str], [f"[{media_type}: {path_str}]"]
             return [path_str], [f"[{media_type}: {path_str}]"]
         except Exception as e:
-            self.logger.warning("Failed to download message media: {}", e)
+            self.logger.warning("Failed to download message media: %s", e)
             if add_failure_content:
                 return [], [f"[{media_type}: download failed]"]
             return [], []
@@ -1369,7 +1369,7 @@ class TelegramChannel(BaseChannel):
                             await self._process_message_update(item.update, item.context)
                     except Exception as e:
                         self.logger.warning(
-                            "Telegram queued update handling failed for {}: {}",
+                            "Telegram queued update handling failed for %s: %s",
                             key,
                             e,
                         )
@@ -1378,7 +1378,7 @@ class TelegramChannel(BaseChannel):
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            self.logger.warning("Telegram ordered update worker failed for {}: {}", key, e)
+            self.logger.warning("Telegram ordered update worker failed for %s: %s", key, e)
         finally:
             if not self._inbound_buffers.get(key):
                 self._inbound_workers.pop(key, None)
@@ -1469,7 +1469,7 @@ class TelegramChannel(BaseChannel):
         media_paths.extend(current_media_paths)
         content_parts.extend(current_media_parts)
         if current_media_paths:
-            self.logger.debug("Downloaded message media to {}", current_media_paths[0])
+            self.logger.debug("Downloaded message media to %s", current_media_paths[0])
 
         # Reply context: text and/or media from the replied-to message
         reply = getattr(message, "reply_to_message", None)
@@ -1478,13 +1478,13 @@ class TelegramChannel(BaseChannel):
             reply_media, reply_media_parts = await self._download_message_media(reply)
             if reply_media:
                 media_paths = reply_media + media_paths
-                self.logger.debug("Attached replied-to media: {}", reply_media[0])
+                self.logger.debug("Attached replied-to media: %s", reply_media[0])
             tag = reply_ctx or (f"[Reply to: {reply_media_parts[0]}]" if reply_media_parts else None)
             if tag:
                 content_parts.insert(0, tag)
         content = "\n".join(content_parts) if content_parts else "[empty message]"
 
-        self.logger.debug("message from {}: {}...", sender_id, content[:50])
+        self.logger.debug("message from %s: %s...", sender_id, content[:50])
 
         str_chat_id = str(chat_id)
         metadata = self._build_message_metadata(message, user)
@@ -1563,7 +1563,7 @@ class TelegramChannel(BaseChannel):
                 reaction=[ReactionTypeEmoji(emoji=emoji)],
             )
         except Exception as e:
-            self.logger.debug("reaction failed: {}", e)
+            self.logger.debug("reaction failed: %s", e)
 
     async def _remove_reaction(self, chat_id: str, message_id: int) -> None:
         """Remove emoji reaction from a message (best-effort, non-blocking)."""
@@ -1576,7 +1576,7 @@ class TelegramChannel(BaseChannel):
                 reaction=[],
             )
         except Exception as e:
-            self.logger.debug("reaction removal failed: {}", e)
+            self.logger.debug("reaction removal failed: %s", e)
 
     async def _typing_loop(self, chat_id: str) -> None:
         """Repeatedly send 'typing' action until cancelled."""
@@ -1586,7 +1586,7 @@ class TelegramChannel(BaseChannel):
                     await self._app.bot.send_chat_action(chat_id=int(chat_id), action="typing")
                     await asyncio.sleep(4)
         except Exception as e:
-            self.logger.debug("Typing indicator stopped for {}: {}", chat_id, e)
+            self.logger.debug("Typing indicator stopped for %s: %s", chat_id, e)
 
     @staticmethod
     def _format_telegram_error(exc: Exception) -> str:
@@ -1606,18 +1606,18 @@ class TelegramChannel(BaseChannel):
         """Keep long-polling network failures to a single readable line."""
         summary = self._format_telegram_error(exc)
         if isinstance(exc, (NetworkError, TimedOut)):
-            self.logger.warning("polling network issue: {}", summary)
+            self.logger.warning("polling network issue: %s", summary)
         else:
-            self.logger.error("polling error: {}", summary)
+            self.logger.error("polling error: %s", summary)
 
     async def _on_error(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log polling / handler errors instead of silently swallowing them."""
         summary = self._format_telegram_error(context.error)
 
         if isinstance(context.error, (NetworkError, TimedOut)):
-            self.logger.warning("network issue: {}", summary)
+            self.logger.warning("network issue: %s", summary)
         else:
-            self.logger.error("error: {}", summary)
+            self.logger.error("error: %s", summary)
 
     def _get_extension(
         self,
@@ -1687,7 +1687,7 @@ class TelegramChannel(BaseChannel):
         if query.message:
             with suppress(Exception):
                 await query.message.edit_reply_markup(reply_markup=None)
-        self.logger.debug("Inline button tap from {}: {}", sender_id, button_label)
+        self.logger.debug("Inline button tap from %s: %s", sender_id, button_label)
         self._start_typing(str(chat_id))
         await self._handle_message(
             sender_id=sender_id,

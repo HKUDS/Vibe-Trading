@@ -638,7 +638,7 @@ def a_share_tushare_first():
     from backtest.loaders import registry
 
     os.environ["MARKET_DATA_ORDER_A_SHARE"] = (
-        "tushare,tencent,mootdx,eastmoney,baostock,akshare,local"
+        "tushare,tencent,mootdx,eastmoney,baostock,akshare,gildata,local"
     )
     registry.refresh_source_order_overrides()
     try:

@@ -136,3 +136,21 @@ def _get_channel_runtime():
     _set_host_attr("_channel_bus", _channel_bus)
     _set_host_attr("_channel_manager", _channel_manager)
     return _channel_runtime
+
+
+def reset_channel_runtime() -> None:
+    """Drop the cached IM channel runtime so the next access rebuilds from disk.
+
+    ``_get_channel_runtime`` caches its singletons in this module's globals
+    *and* on the ``api_server`` host attrs; clearing both — with ``None``,
+    which is what makes the next call rebuild — is what lets an edited channel
+    config apply without a process restart.
+    """
+    global _channel_runtime, _channel_bus, _channel_manager
+
+    _channel_runtime = None
+    _channel_bus = None
+    _channel_manager = None
+    _set_host_attr("_channel_runtime", None)
+    _set_host_attr("_channel_bus", None)
+    _set_host_attr("_channel_manager", None)

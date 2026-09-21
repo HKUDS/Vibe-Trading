@@ -188,7 +188,7 @@ def test_empty_string_resets_to_default(
 ) -> None:
     monkeypatch.setenv(
         "MARKET_DATA_ORDER_A_SHARE",
-        "tushare,tencent,mootdx,eastmoney,baostock,akshare,local",
+        "tushare,tencent,mootdx,eastmoney,baostock,akshare,gildata,local",
     )
     refresh_source_order_overrides()
     assert registry.FALLBACK_CHAINS["a_share"][0] == "tushare"

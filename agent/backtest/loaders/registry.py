@@ -53,6 +53,7 @@ VALID_SOURCES: set[str] = {
     "alphavantage",
     "tiingo",
     "fmp",
+    "gildata",
     "qveris",  # QVERIS-INTEGRATION
     "india_broker",
     "pykrx",
@@ -114,6 +115,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.alphavantage_loader",
             "backtest.loaders.tiingo_loader",
             "backtest.loaders.fmp_loader",
+            "backtest.loaders.gildata_loader",
             "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
             "backtest.loaders.india_broker_loader",
             "backtest.loaders.pykrx_loader",
@@ -180,6 +182,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "baostock",
         "akshare",
         "tushare",
+        # Key-gated commercial vendor (恒生聚源): trails the free sources so
+        # paid quota is only spent when the public endpoints cannot serve.
+        "gildata",
         "local",
     ],
     "us_equity": [
@@ -254,12 +259,18 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "yahoo": "split_dividend",  # quote series split-adjusted at origin, scaled to adjclose
     "yfinance": "split_dividend",  # auto_adjust=True
     "eastmoney": "split_dividend",  # fqt=1 (forward-adjusted) on every kline call
-    "tencent": "split_dividend",  # fqkline qfq
+    # Tencent's qfq subtracts cash dividends from the price level instead of
+    # scaling by a ratio: between corporate actions qfq = raw + c, and c steps by
+    # the dividend at each ex-date (#1493, measured on 600519.SH where five
+    # constant offsets cover 500 bars). The level is therefore not on the same
+    # scale as the multiplicative sources above, so it gets its own caliber.
+    "tencent": "split_dividend_additive",  # fqkline qfq, additive in dividends
     "akshare": "split_dividend",  # adjust="qfq", including the stock_us_hist path
     "baostock": "split_dividend",  # adjustflag="2"
     "tushare": "split_dividend",  # adj_factor applied via cn_adjust (A-share/fund)
     "tiingo": "split_dividend",  # prefers adjOpen/High/Low/Close, else adjClose/close
     "fmp": "split_dividend",  # Stable historical-price-eod/full, scaled by adjClose/close
+    "gildata": "split_dividend",  # StockDailyQuote restorationStatus=1 (前复权), measured vs live payload
     # Split-adjusted only.
     "pykrx": "split",  # get_market_ohlcv_by_date(adjusted=True), Naver-backed
     # Unadjusted.
@@ -272,6 +283,21 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
 PRICE_CALIBER_BY_SOURCE_MARKET: dict[tuple[str, str], str] = {
     # Tushare publishes no HK adjustment-factor series, so its HK path is raw.
     ("tushare", "hk_equity"): "raw",
+    # Tencent serves no adjusted series for HK at all: its fqkline reply carries
+    # only "day" (never "qfqday"/"hfqday") for HK symbols, so the loader's
+    # ``qfqday or day`` fallback silently serves unadjusted bars and the `,qfq`
+    # request parameter changes nothing. Checked on 00939.HK and 00700.HK against
+    # eastmoney, whose adjusted HK series does differ from its raw one, so the
+    # actions exist and are simply not served here (#1493).
+    ("tencent", "hk_equity"): "raw",
+    # Eastmoney's A-share fqt=1 is additive in the same way, with the same
+    # offsets: 600519.SH fqt=1 - fqt=0 takes five values (-103.46 / -79.58 /
+    # -51.98 / -28.02 / 0) over 500 bars against 367 distinct ratios, and
+    # 601398.SH five against 253 (measured 2026-09-21). akshare's
+    # stock_zh_a_hist(adjust="qfq") requests that endpoint with fqt=1. Their HK
+    # and US series are not measured and keep the per-source label.
+    ("eastmoney", "a_share"): "split_dividend_additive",
+    ("akshare", "a_share"): "split_dividend_additive",
 }
 
 #: Markets with no corporate-action adjustment concept. Their sources stamp
@@ -280,14 +306,27 @@ _NA_CALIBER_MARKETS = frozenset({"crypto", "forex", "futures", "macro"})
 
 #: Calibers that participate in mixed-caliber comparison. "unknown" and "na"
 #: never do: the first is unmeasured, the second has nothing to adjust for.
-_COMPARABLE_CALIBERS = frozenset({"raw", "split", "split_dividend"})
+#: "split_dividend_additive" does participate — it is the whole point of the
+#: caliber: an additive level and a multiplicative one are two different scales,
+#: so a basket holding both must be warned about (#1493).
+_COMPARABLE_CALIBERS = frozenset(
+    {"raw", "split", "split_dividend", "split_dividend_additive"}
+)
+
+#: Calibers whose daily moves cannot be read as returns at all. Cash dividends
+#: enter the price *level* as an offset rather than scaling the series, so a
+#: window return is not a total return and an old level can even go negative.
+#: Unlike a mixed basket, this is a defect of the series itself: it needs a
+#: warning even when every symbol in the run came from the one source.
+_ADDITIVE_CALIBERS = frozenset({"split_dividend_additive"})
 
 
 def price_caliber(source: str, market: str | None = None) -> str:
     """Return the adjustment caliber of ``source``'s served prices.
 
-    One of "raw", "split", "split_dividend", "na" (a market without
-    corporate actions), or "unknown" (an unmeasured source).
+    One of "raw", "split", "split_dividend", "split_dividend_additive" (dividend
+    adjustment applied to the level rather than by a ratio), "na" (a market
+    without corporate actions), or "unknown" (an unmeasured source).
     """
     if market in _NA_CALIBER_MARKETS:
         return "na"
@@ -320,6 +359,37 @@ def mixed_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
         "Prices are not on the same scale across calibers, so cross-symbol "
         "comparisons (momentum ranks, relative performance) are biased. "
         "See the adjustment field of each symbol's provenance entry."
+    )
+
+
+def additive_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
+    """Build the served-additive-caliber warning for a run, or None.
+
+    ``stamps`` maps each served symbol to the (source, caliber) pair that
+    served it. Unlike :func:`mixed_caliber_warning` this fires on a *single*
+    additive source, because the problem is the series rather than the basket:
+    a run that mixes nothing is still computing returns off levels that have
+    dividends added back as a flat offset. That is the common A-share case,
+    since ``tencent`` heads the chain (#1493).
+    """
+    additive = {
+        symbol: source
+        for symbol, (source, caliber) in stamps.items()
+        if caliber in _ADDITIVE_CALIBERS
+    }
+    if not additive:
+        return None
+    shown = ", ".join(
+        f"{symbol} ({source})" for symbol, source in sorted(additive.items())[:4]
+    )
+    if len(additive) > 4:
+        shown += f", +{len(additive) - 4} more"
+    return (
+        "additive price adjustment in this run: " + shown + ". "
+        "Cash dividends are added back as a flat offset rather than "
+        "reinvested, so period returns and volatilities are not total "
+        "returns and long-horizon backtests are distorted (old prices can "
+        "go negative). Prefer a multiplicative source for return math."
     )
 
 

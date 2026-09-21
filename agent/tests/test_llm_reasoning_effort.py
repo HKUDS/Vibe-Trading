@@ -2,7 +2,7 @@
 
 The setting has two mutually exclusive delivery paths:
 
-* Relays that require an opt-in (OpenRouter, Requesty) receive
+* Relays that require an opt-in (OpenRouter) receive
   ``extra_body={"reasoning": {"effort": ...}}``.
 * ChatOpenAI-compatible providers receive a top-level ``reasoning_effort``. Its ``gpt-5.6-*``
   models reject function tools on ``/v1/chat/completions`` without one::
@@ -478,7 +478,7 @@ class TestAnthropicNativeProvider:
 
 
 class TestRelayOptIn:
-    """OpenRouter/Requesty keep the pre-existing extra_body opt-in."""
+    """OpenRouter keeps the pre-existing extra_body opt-in."""
 
     def test_openrouter_keeps_extra_body_and_no_top_level_field(self) -> None:
         kwargs = _capture_kwargs(
@@ -493,21 +493,6 @@ class TestRelayOptIn:
         )
 
         assert kwargs["extra_body"] == {"reasoning": {"effort": "high"}}
-        assert kwargs["reasoning_effort"] is None
-
-    def test_requesty_keeps_extra_body_and_no_top_level_field(self) -> None:
-        kwargs = _capture_kwargs(
-            {
-                "LANGCHAIN_PROVIDER": "requesty",
-                "REQUESTY_API_KEY": "rq-test",
-                "REQUESTY_BASE_URL": "https://router.requesty.ai/v1",
-                "LANGCHAIN_MODEL_NAME": "openai/gpt-4o-mini",
-                "LANGCHAIN_REASONING_EFFORT": "medium",
-                "LANGCHAIN_USE_RESPONSES_API": "false",
-            }
-        )
-
-        assert kwargs["extra_body"] == {"reasoning": {"effort": "medium"}}
         assert kwargs["reasoning_effort"] is None
 
 

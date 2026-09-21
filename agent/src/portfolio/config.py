@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from src.config.paths import get_runtime_root
-from src.portfolio.compatibility import profile_compatibility
+from src.portfolio.compatibility import NATIVE_CURRENCY_CONNECTORS, profile_compatibility
+from src.portfolio.fx import DISPLAY_RATE_CURRENCIES
+from src.portfolio.iso4217 import is_iso_currency
 from src.trading.connections import (
     ConnectionStore,
     is_portfolio_connection_profile,
@@ -143,8 +145,15 @@ def parse_settings(
     """
     store = connection_store or ConnectionStore()
     currency = str(payload.get("display_currency") or "USD").strip().upper()
-    if currency not in {"USD", "CNY", "ARS"}:
-        raise ValueError("display_currency must be USD, CNY or ARS")
+    if not is_iso_currency(currency):
+        raise ValueError(f"display_currency is not a valid ISO-4217 code: {currency}")
+    native_display_currencies = frozenset(NATIVE_CURRENCY_CONNECTORS.values())
+    if currency not in DISPLAY_RATE_CURRENCIES and currency not in native_display_currencies:
+        supported = ", ".join(sorted(DISPLAY_RATE_CURRENCIES | native_display_currencies))
+        raise ValueError(
+            f"display_currency {currency} has neither a production FX rate nor a native valuation path; "
+            f"choose one of: {supported}"
+        )
 
     raw_sources = payload.get("sources")
     if not isinstance(raw_sources, list):

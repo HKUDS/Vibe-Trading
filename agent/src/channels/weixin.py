@@ -375,7 +375,7 @@ class WeixinChannel(BaseChannel):
                             self.config.base_url = base_url
                         self._save_state()
                         self.logger.info(
-                            "login successful! bot_id={} user_id={}",
+                            "login successful! bot_id=%s user_id=%s",
                             bot_id,
                             user_id,
                         )
@@ -396,7 +396,7 @@ class WeixinChannel(BaseChannel):
                     refresh_count += 1
                     if refresh_count > MAX_QR_REFRESH_COUNT:
                         self.logger.warning(
-                            "QR code expired too many times ({}/{}), giving up.",
+                            "QR code expired too many times (%s/%s), giving up.",
                             refresh_count - 1,
                             MAX_QR_REFRESH_COUNT,
                         )
@@ -563,7 +563,7 @@ class WeixinChannel(BaseChannel):
                 self._pause_session()
                 remaining = self._session_pause_remaining_s()
                 self.logger.warning(
-                    "session expired (errcode {}). Pausing {} min.",
+                    "session expired (errcode %s). Pausing %s min.",
                     errcode,
                     max((remaining + 59) // 60, 1),
                 )
@@ -630,7 +630,7 @@ class WeixinChannel(BaseChannel):
 
             if not ctx_token:
                 self.logger.warning(
-                    "Access denied for sender {}; cannot send WeChat pairing code without context_token",
+                    "Access denied for sender %s; cannot send WeChat pairing code without context_token",
                     from_user_id,
                 )
                 return
@@ -814,7 +814,7 @@ class WeixinChannel(BaseChannel):
             return
 
         self.logger.info(
-            "inbound: from={} items={} bodyLen={}",
+            "inbound: from=%s items=%s bodyLen=%s",
             from_user_id,
             ",".join(str(i.get("type", 0)) for i in item_list),
             len(content),
@@ -898,7 +898,7 @@ class WeixinChannel(BaseChannel):
                     )
                     if should_fallback:
                         self.logger.warning(
-                            "media download failed via full_url, falling back to encrypt_query_param: type={} err={}",
+                            "media download failed via full_url, falling back to encrypt_query_param: type=%s err=%s",
                             media_type,
                             e,
                         )
@@ -989,7 +989,7 @@ class WeixinChannel(BaseChannel):
             return context_token
 
         self.logger.debug(
-            "WeChat context_token for {} is {:.0f}s old; refreshing via getconfig",
+            "WeChat context_token for %s is %.0fs old; refreshing via getconfig",
             chat_id,
             age,
         )
@@ -1002,12 +1002,12 @@ class WeixinChannel(BaseChannel):
         try:
             data = await self._api_post("ilink/bot/getconfig", body)
         except Exception as e:
-            self.logger.warning("WeChat getconfig failed for {}: {}", chat_id, e)
+            self.logger.warning("WeChat getconfig failed for %s: %s", chat_id, e)
             return context_token
 
         if data.get("ret", 0) != 0:
             self.logger.warning(
-                "WeChat getconfig returned ret={} for {}: {}",
+                "WeChat getconfig returned ret=%s for %s: %s",
                 data.get("ret"),
                 chat_id,
                 data.get("errmsg", ""),
@@ -1017,7 +1017,7 @@ class WeixinChannel(BaseChannel):
         new_token = str(data.get("context_token", "") or "")
         if new_token and new_token != context_token:
             self.logger.info(
-                "WeChat context_token refreshed for {} (age {:.0f}s -> fresh)",
+                "WeChat context_token refreshed for %s (age %.0fs -> fresh)",
                 chat_id,
                 age,
             )
@@ -1040,7 +1040,7 @@ class WeixinChannel(BaseChannel):
             return
 
         self.logger.info(
-            "Flushing {} buffered tool hint(s) for {}",
+            "Flushing %s buffered tool hint(s) for %s",
             len(hints),
             chat_id,
         )
@@ -1049,7 +1049,7 @@ class WeixinChannel(BaseChannel):
         ctx_token = await self._refresh_context_token_if_stale(chat_id, ctx_token)
         if not ctx_token:
             self.logger.warning(
-                "Dropped {} buffered tool hint(s) for {}: no context_token",
+                "Dropped %s buffered tool hint(s) for %s: no context_token",
                 len(hints),
                 chat_id,
             )
@@ -1059,7 +1059,7 @@ class WeixinChannel(BaseChannel):
             await self._send_text(chat_id, "\n\n".join(hints), ctx_token)
         except Exception:
             self.logger.exception(
-                "Failed to flush buffered tool hints for {}", chat_id
+                "Failed to flush buffered tool hints for %s", chat_id
             )
 
     async def _send_typing(self, user_id: str, typing_ticket: str, status: int) -> None:
@@ -1099,7 +1099,7 @@ class WeixinChannel(BaseChannel):
                 return
             self._pending_tool_hints.setdefault(msg.chat_id, []).append(msg.content)
             self.logger.debug(
-                "Buffered tool hint for {} (count={})",
+                "Buffered tool hint for %s (count=%s)",
                 msg.chat_id,
                 len(self._pending_tool_hints[msg.chat_id]),
             )
@@ -1109,7 +1109,7 @@ class WeixinChannel(BaseChannel):
         # UI).  Skip them entirely — do not send and do not flush buffer.
         if is_progress and (msg.metadata or {}).get("_reasoning_delta"):
             self.logger.debug(
-                "Dropped invisible reasoning delta for {}", msg.chat_id
+                "Dropped invisible reasoning delta for %s", msg.chat_id
             )
             return
 
@@ -1119,7 +1119,7 @@ class WeixinChannel(BaseChannel):
         # NOT act as separators — they have no visible content.
         if is_progress and not content and not (msg.media or []):
             self.logger.debug(
-                "Skipped empty progress message for {} (no visible content)",
+                "Skipped empty progress message for %s (no visible content)",
                 msg.chat_id,
             )
             return
@@ -1161,9 +1161,10 @@ class WeixinChannel(BaseChannel):
                     # Network/transport errors: do NOT fall back to text —
                     # the text send would also likely fail, and the outer
                     # except will re-raise so ChannelManager retries properly.
-                    self.logger.opt(exception=True).warning(
-                        "Network error sending media {}",
+                    self.logger.warning(
+                        "Network error sending media %s",
                         media_path,
+                        exc_info=True,
                     )
                     raise
                 except httpx.HTTPStatusError as http_err:
@@ -1175,7 +1176,7 @@ class WeixinChannel(BaseChannel):
                     if status_code >= 500:
                         # Server-side / retryable HTTP error — same as network.
                         self.logger.exception(
-                            "Server error ({} {}) sending media {}",
+                            "Server error (%s %s) sending media %s",
                             status_code,
                             http_err.response.reason_phrase
                             if http_err.response is not None
@@ -1185,7 +1186,7 @@ class WeixinChannel(BaseChannel):
                         raise
                     # 4xx client errors are NOT retryable — fall back to text.
                     filename = Path(media_path).name
-                    self.logger.exception("Failed to send media {}", media_path)
+                    self.logger.exception("Failed to send media %s", media_path)
                     await self._send_text(
                         msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
                     )
@@ -1193,7 +1194,7 @@ class WeixinChannel(BaseChannel):
                     # Non-network errors (format, file-not-found, etc.):
                     # notify the user via text fallback.
                     filename = Path(media_path).name
-                    self.logger.exception("Failed to send media {}", media_path)
+                    self.logger.exception("Failed to send media %s", media_path)
                     # Notify user about failure via text
                     await self._send_text(
                         msg.chat_id, f"[Failed to send: {filename}]", ctx_token,
@@ -1243,7 +1244,7 @@ class WeixinChannel(BaseChannel):
                 return
             await self._send_typing(chat_id, ticket, TYPING_STATUS_TYPING)
         except Exception as e:
-            self.logger.debug("typing indicator start failed for {}: {}", chat_id, e)
+            self.logger.debug("typing indicator start failed for %s: %s", chat_id, e)
             return
 
         stop_event = asyncio.Event()
@@ -1282,7 +1283,7 @@ class WeixinChannel(BaseChannel):
         try:
             await self._send_typing(chat_id, ticket, TYPING_STATUS_CANCEL)
         except Exception as e:
-            self.logger.debug("typing clear failed for {}: {}", chat_id, e)
+            self.logger.debug("typing clear failed for %s: %s", chat_id, e)
 
     async def _send_text(
         self,
@@ -1506,7 +1507,7 @@ def _encrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
     try:
         key = _parse_aes_key(aes_key_b64)
     except Exception as e:
-        logger.warning("Failed to parse AES key for encryption, sending raw: {}", e)
+        logger.warning("Failed to parse AES key for encryption, sending raw: %s", e)
         return data
 
     # PKCS7 padding
@@ -1538,7 +1539,7 @@ def _decrypt_aes_ecb(data: bytes, aes_key_b64: str) -> bytes:
     try:
         key = _parse_aes_key(aes_key_b64)
     except Exception as e:
-        logger.warning("Failed to parse AES key, returning raw data: {}", e)
+        logger.warning("Failed to parse AES key, returning raw data: %s", e)
         return data
 
     decrypted: bytes | None = None

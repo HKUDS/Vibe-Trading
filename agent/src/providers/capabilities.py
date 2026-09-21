@@ -183,16 +183,6 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
         capture_reasoning=True,
         openrouter_reasoning_body=True,
     ),
-    # Requesty is an OpenAI-compatible LLM gateway using the same
-    # ``provider/model`` naming and the same opt-in ``extra_body.reasoning``
-    # request option as OpenRouter, so it shares OpenRouter's capability shape.
-    "requesty": ProviderCapabilities(
-        "requesty",
-        "REQUESTY_API_KEY",
-        "REQUESTY_BASE_URL",
-        capture_reasoning=True,
-        openrouter_reasoning_body=True,
-    ),
     # Verified live against DeepSeek Flash in #1025: a chat-completions request
     # carrying top-level ``reasoning_effort`` came back with reasoning content
     # and non-zero reasoning usage.
@@ -294,7 +284,7 @@ def get_provider_capabilities(
     Notes:
         Model-name inference (``_infer_from_model``) activates for the default
         ``"openai"`` provider and empty/None providers. Explicit non-OpenAI
-        providers (OpenRouter, Requesty, DeepSeek, etc.) are never inferred —
+        providers (OpenRouter, DeepSeek, etc.) are never inferred —
         the explicit provider choice always wins.
     """
     normalized = (provider or "").strip().lower().replace("_", "-")

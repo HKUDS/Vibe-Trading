@@ -94,7 +94,6 @@ class TestProviderCapabilityAliases:
         [
             # Gateway providers — explicit choice must never be overridden.
             ("openrouter", "deepseek/deepseek-v4-pro", "openrouter"),
-            ("requesty", "deepseek/deepseek-v4-pro", "requesty"),
             ("openrouter", "gemini-3.5-flash", "openrouter"),
             ("openrouter", "glm-4.6", "openrouter"),
         ],
@@ -102,7 +101,7 @@ class TestProviderCapabilityAliases:
     def test_gateway_provider_not_inferred_from_model(
         self, provider: str, model: str, expected: str
     ) -> None:
-        """Gateway providers (OpenRouter/Requesty) must never be overridden. (#549)
+        """Gateway providers (OpenRouter) must never be overridden. (#549)
 
         Their model names contain direct-provider prefixes like ``deepseek/``
         that would trigger inference, but the explicit gateway choice must win.

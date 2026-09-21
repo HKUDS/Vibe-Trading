@@ -1420,8 +1420,8 @@ def _supports_top_level_reasoning_effort(caps: ProviderCapabilities) -> bool:
     strictly rejects the unknown key outright — so the default is off and the
     consequence of that default is a no-op, not a failed call.
 
-    Relays that take the effort inside ``extra_body.reasoning`` (OpenRouter,
-    Requesty) use that path instead and are excluded here.
+    Relays that take the effort inside ``extra_body.reasoning`` (OpenRouter)
+    use that path instead and are excluded here.
 
     Args:
         caps: Canonical capabilities resolved for the provider and model. Note

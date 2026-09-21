@@ -147,29 +147,34 @@ def walk_forward_predict(
             X_train = X_train[valid]
             y_train = y_train[valid]
 
-            if len(X_train) < 50:
-                continue
+            # Too few rows, or a single class (a sustained one-directional
+            # trend, which crashes fit()/predict_proba() on every model type
+            # below): skip the retrain. The previous model keeps serving; before
+            # the first model there is no prediction.
+            if len(X_train) >= 50 and len(np.unique(y_train)) >= 2:
+                # Standardization: fit only on training set
+                scaler = StandardScaler()
+                X_train = scaler.fit_transform(X_train)
 
-            # Standardization: fit only on training set
-            scaler = StandardScaler()
-            X_train = scaler.fit_transform(X_train)
+                # Build the model
+                if model_type == "random_forest":
+                    model = RandomForestClassifier(
+                        n_estimators=100, max_depth=5, random_state=42,
+                    )
+                elif model_type == "gradient_boosting":
+                    model = GradientBoostingClassifier(
+                        n_estimators=100, max_depth=3, learning_rate=0.05,
+                        random_state=42,
+                    )
+                elif model_type == "ridge":
+                    model = LogisticRegression(penalty="l2", C=1.0, random_state=42)
+                else:
+                    raise ValueError(f"Unsupported model_type: {model_type}")
 
-            # Build the model
-            if model_type == "random_forest":
-                model = RandomForestClassifier(
-                    n_estimators=100, max_depth=5, random_state=42,
-                )
-            elif model_type == "gradient_boosting":
-                model = GradientBoostingClassifier(
-                    n_estimators=100, max_depth=3, learning_rate=0.05,
-                    random_state=42,
-                )
-            elif model_type == "ridge":
-                model = LogisticRegression(penalty="l2", C=1.0, random_state=42)
-            else:
-                raise ValueError(f"Unsupported model_type: {model_type}")
+                model.fit(X_train, y_train)
 
-            model.fit(X_train, y_train)
+        if model is None:
+            continue
 
         # Predict today
         X_today = features.iloc[i : i + 1].values

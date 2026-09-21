@@ -19,6 +19,12 @@ Those emit a value on the bars after a gap, computed from the observations
 they did see. Nothing rewarms them, and nothing should: the registry already
 masks the gap bar itself.
 
+A comparison gate or ``np.fmin`` / ``np.fmax`` over operands that can be
+undefined on complete data (a constant window's correlation) masks on its
+inputs' reach with :func:`observed_over`, not on its operands' NaN: a gap
+inside the reach is NaN, and a correlation that is undefined without any gap
+keeps the verdict it always had (#1452).
+
 Lookahead ban: ``delta(df, d)`` requires ``d >= 1``; the negative-shift
 ``Ref(df, -n)`` form is intentionally absent.
 """
@@ -312,6 +318,33 @@ def signed_power(df: pd.DataFrame, p: float) -> pd.DataFrame:
     arr = df.to_numpy(dtype=np.float64, na_value=np.nan)
     out = np.sign(arr) * np.power(np.abs(arr), p)
     return pd.DataFrame(out, index=df.index, columns=df.columns)
+
+
+def observed_over(*inputs: tuple[pd.DataFrame, int]) -> pd.DataFrame:
+    """Mask of the cells whose every input was observed on each of its last ``n`` bars.
+
+    A comparison or ``np.fmin`` turns an operand that is missing because its
+    window holds a missing input into a verdict — a NaN comparison is False —
+    so those cells must be NaN (#1463). An operand that is undefined on complete
+    data, a constant window's correlation, keeps the alpha's existing verdict
+    (#1452). Masking on the inputs' presence rather than on the operand's NaN is
+    what separates the two. ``n`` is how far back the input reaches through the
+    alpha's nested windows, so the first ``n - 1`` bars (warmup) are masked too.
+
+    Args:
+        *inputs: ``(frame, n)`` pairs, one per input the alpha reads across
+            bars, each with that input's reach in bars.
+
+    Returns:
+        Boolean frame, True where every input was observed throughout its reach.
+    """
+    present = None
+    for frame, n in inputs:
+        seen = frame.notna().astype(float).rolling(n, min_periods=n).min().eq(1.0)
+        present = seen if present is None else present & seen
+    if present is None:
+        raise ValueError("observed_over needs at least one (frame, n) pair")
+    return present
 
 
 def safe_div(a: pd.DataFrame, b: pd.DataFrame, eps: float = 1e-12) -> pd.DataFrame:

@@ -7,6 +7,43 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **IM channels are configured from the Web UI** (#1520, #1529; #1519, #1530).
+  The Settings panel renders each built-in channel's fields from backend
+  metadata, masks secrets (`****` plus the last four characters, never sent
+  back), tests the unsaved form against the provider (`ok` /
+  `invalid_credentials` / `network` / `unsupported`), and hot-swaps only the
+  saved channel with no restart. DingTalk and QQ have guided setups; a shared
+  token probe backs both. Saves write `channels.<name>` in
+  `~/.vibe-trading/agent.json` atomically at mode 0600; a YAML config is shown
+  read-only. Reloads of one channel are serialized in `ChannelManager`, and
+  `stop_all` cancels a reload's start that is still connecting.
+- **Bahasa Indonesia** UI locale and `README_id.md` (#1482). The README count
+  tests cover it, and `MANIFEST.in` now ships `README_es.md` and
+  `README_id.md`.
+- **Portfolio valuation accepts any ISO-4217 currency** (#1510). A source whose
+  currency has no FX rate fails with the currency named and is excluded from
+  the totals; the healthy sources stay in.
+
+- **Gildata (恒生聚源) joins the A-share fallback chain as a token-gated
+  source**. The new `gildata` loader talks to the vendor's raw-api MCP
+  endpoint (one JSON-RPC POST per call, token in the Authorization header) and
+  serves A-share daily OHLCV through the `StockDailyQuote` tool with
+  `restorationStatus=1` — forward, split-AND-dividend adjusted bars, stamped
+  `split_dividend` in the price-caliber table after being measured against a
+  live payload. Volume arrives in 万股 and is converted to shares
+  (`volume_units: shares`); `avgprice`/`prevcloseprice` are ignored because
+  the vendor keeps them on a different adjustment basis than the adjusted
+  OHLC. An unresolvable symbol answers `rows: []` (never an error), so the
+  chain keeps walking. Auth is `GILDATA_TOKEN` (Settings page field or env;
+  `GILDATA_BASE_URL` overrides the endpoint, `VIBE_TRADING_GILDATA_MIN_INTERVAL`
+  the 0.3s default spacing). Without a token the loader reports unavailable
+  and the chain skips it — no behavior change for existing users beyond one
+  reorderable entry at the chain's tail. One migration note: a
+  `MARKET_DATA_ORDER_A_SHARE` value saved before this change is a permutation
+  of the old 7-source chain, so it stops validating once `gildata` joins —
+  the Settings card flags it and the default order applies until the saved
+  order is re-saved (one click) with the new source included.
+
 - **A Robinhood account can be a read-only portfolio source** (#1428). The new
   `robinhood-live-mcp-readonly` profile uses the same MCP server and OAuth
   grant as the trading profile. Its connection reads exactly one account,
@@ -21,6 +58,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   fixed income fails the source instead of showing an equity-only view.
 
 ### Changed
+
+- **Portfolio valuation version 3** (#1510): snapshots stored under version 2
+  are no longer read, so portfolio history starts again after upgrading.
+- **Tencent, Eastmoney and AKShare A-share prices are labelled
+  `split_dividend_additive`** (#1497, #1493). Their forward adjustment
+  subtracts cash dividends from the level instead of scaling by a ratio (on
+  600519.SH, qfq minus raw takes five values over 500 bars against 367
+  distinct ratios), so a basket mixing them with multiplicative sources warns,
+  and a run served only by them warns that its returns are not total returns.
+  Tencent's HK series is labelled `raw`: it serves no adjusted HK bars. The
+  prices themselves are unchanged.
+- `connector account` renders Binance spot balances as Asset / Free / Locked /
+  Total, Futu's per-currency `assets`, and Trading 212's `cash` and `metadata`
+  (#1539); before, Binance printed blank rows and the other two printed "No
+  account summary returned."
 
 - **The final-answer grounding gate no longer guesses what a number is from the
   words around it.** Only a number's SHAPE is inferred — a decimal point, a
@@ -74,7 +126,55 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   page shows "Checking the figures in this answer (round N)…" until answer text
   arrives, in all eight locales.
 
+### Removed
+
+- **The Requesty built-in provider.** Its capabilities were OpenRouter's, with
+  no adapter of its own. Same request shape: `LANGCHAIN_PROVIDER=openrouter`,
+  `OPENROUTER_BASE_URL=https://router.requesty.ai/v1`, and the Requesty key as
+  `OPENROUTER_API_KEY`.
+
 ### Fixed
+
+- **24 alphas emitted a value computed from a missing bar** (#1463, #1523,
+  #1534, #1452). A comparison over an operand that is NaN because its window
+  holds the gap is False, and the #1463 sweep, which nudged the bar by a tick,
+  could not see that. A second oracle compares the gapped run with the gap-free
+  one. Comparison gates and `np.fmin`/`np.fmax` now mask on their inputs' reach
+  (`factors.base.observed_over`) rather than on their operands' NaN, so a
+  correlation undefined on complete data keeps its old verdict; the six
+  fmax/fmin alphas converted on 2026-09-18 had lost up to 87% of their
+  post-warmup values in a 5-symbol universe that way and are restored. On
+  gap-free data no finite value changed.
+- Lockup expiry: `free_shares` is the unlocking quantity
+  (`CURRENT_FREE_SHARES`), not the float; units are stated (万股 / 万元) (#1513,
+  #1501). The report is `RPT_LIFT_STAGE`; the old one rejected six columns.
+- Dragon-tiger seats come from the buy/sell detail reports, surface a provider
+  rejection, and rank within each listing reason (#1512, #1502).
+- Shareholder-count history returns real periods from `RPT_HOLDERNUM_DET`,
+  states each row's previous period, and warns when the average-holding join
+  fails (#1518, #1503).
+- QVeris resolves adjusted fields as a complete set, one family per response,
+  and no longer gives an unadjusted bar the adjusted volume (#1527, #1494).
+- Channel adapters log through stdlib again: `{}` placeholders, napcat's 17
+  sites and loguru-only `.opt()` calls lost their messages (signal's
+  `_safe_handle` raised instead of swallowing) (#1533, #1531). Slack DMs from
+  unapproved senders get a pairing code (#1524); Discord no longer pings
+  `@everyone` or roles (#1537); duplicate-reply suppression covers integer
+  message ids and is bounded (#1476); the WebSocket channel starts again (from
+  #1521).
+- Shadow account: an `other`-market rule no longer matches every symbol
+  (#1538), and overtrading PnL no longer double-counts trades already
+  explained (#1475).
+- Quantlib: comps refuses negative bridge magnitudes like the DCF bridge
+  (#1535); accrued interest is exact on coupon dates under 30/360 and rejects
+  an unknown day count there too (#1509); Kyle's lambda fits an intercept
+  (#1477).
+- ML strategy: a single-class training window is skipped and the previous
+  model keeps predicting (#1522). Memory: two entries with one title and
+  different types keep separate index rows, and `forget` names the type when
+  ambiguous (#1525). Swarm run and task files use unique temp names (#1536).
+- `/agent.json`, `/agent.yaml` and `/agent.yml` are gitignored at the runtime
+  root; the Feishu QR login already wrote channel credentials there.
 
 - **OpenAI's gpt-5.6 models run with their reasoning on the agent's default
   configuration** (#1473). `/v1/chat/completions` refuses function tools for

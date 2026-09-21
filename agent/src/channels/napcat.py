@@ -98,7 +98,7 @@ class NapcatChannel(BaseChannel):
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.warning("napcat: connection lost: {}", e)
+                logger.warning("napcat: connection lost: %s", e)
             if self._running:
                 await asyncio.sleep(next(backoff, 30))
 
@@ -107,7 +107,7 @@ class NapcatChannel(BaseChannel):
         if self.config.access_token:
             headers.append(("Authorization", f"Bearer {self.config.access_token}"))
 
-        logger.info("napcat: connecting to {}", self.config.ws_url)
+        logger.info("napcat: connecting to %s", self.config.ws_url)
         async with ws_connect(self.config.ws_url, additional_headers=headers) as ws:
             self._ws = ws
             logger.info("napcat: connected")
@@ -135,7 +135,7 @@ class NapcatChannel(BaseChannel):
                     if isinstance(payload, dict) and payload.get("echo") == echo:
                         data = payload.get("data") or {}
                         logger.info(
-                            "napcat: logged in as {} (user_id={})",
+                            "napcat: logged in as %s (user_id=%s)",
                             data.get("nickname"),
                             data.get("user_id"),
                         )
@@ -221,7 +221,7 @@ class NapcatChannel(BaseChannel):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                logger.warning("napcat: {} handler failed: {}", kind, e)
+                logger.warning("napcat: %s handler failed: %s", kind, e)
 
         task.add_done_callback(_done)
 
@@ -334,7 +334,7 @@ class NapcatChannel(BaseChannel):
                         }
                     )
                 else:
-                    logger.warning("napcat: received invalid image url: {}", url)
+                    logger.warning("napcat: received invalid image url: %s", url)
             elif stype == "at":
                 qq = str(data.get("qq", ""))
                 if self_id_str and qq == self_id_str:
@@ -393,7 +393,7 @@ class NapcatChannel(BaseChannel):
             group_id_int = int(group_id)
             user_id_int = int(user_id)
         except (TypeError, ValueError):
-            logger.warning("napcat: invalid group_increase ids group_id={} user_id={}", group_id, user_id)
+            logger.warning("napcat: invalid group_increase ids group_id=%s user_id=%s", group_id, user_id)
             return
 
         nickname = await self._lookup_member_name(group_id_int, user_id_int)
@@ -422,7 +422,7 @@ class NapcatChannel(BaseChannel):
             # logger.debug("get_group_member_info: {}", resp)
             return data.get("card") or data.get("nickname") or str(user_id)
         except Exception as e:
-            logger.warning("napcat: get_group_member_info failed: {}", e)
+            logger.warning("napcat: get_group_member_info failed: %s", e)
             return str(user_id)
 
     # ------------------------------------------------------------------
@@ -436,7 +436,7 @@ class NapcatChannel(BaseChannel):
 
         kind, _, target = msg.chat_id.partition(":")
         if kind not in ("private", "group") or not target:
-            logger.error("napcat: invalid chat_id '{}'", msg.chat_id)
+            logger.error("napcat: invalid chat_id '%s'", msg.chat_id)
             return
 
         segments: list[dict[str, Any]] = []
@@ -468,14 +468,14 @@ class NapcatChannel(BaseChannel):
         if ref.startswith(("http://", "https://")):
             ok, err = validate_url_target(ref)
             if not ok:
-                logger.warning("napcat: rejected remote image '{}': {}", ref, err)
+                logger.warning("napcat: rejected remote image '%s': %s", ref, err)
                 return None
             return {"type": "image", "data": {"file": ref}}
         # Local path → base64 so it works even when napcat runs on a
         # different host/container than vibe-trading.
         path = Path(os.path.expanduser(ref)).resolve()
         if not path.is_file():
-            logger.warning("napcat: local image not found: {}", path)
+            logger.warning("napcat: local image not found: %s", path)
             return None
         data = await asyncio.to_thread(path.read_bytes)
         return {"type": "image", "data": {"file": "base64://" + base64.b64encode(data).decode()}}
@@ -520,7 +520,7 @@ class NapcatChannel(BaseChannel):
             return None
         ok, err = validate_url_target(url)
         if not ok:
-            logger.warning("napcat: skip image '{}': {}", url, err)
+            logger.warning("napcat: skip image '%s': %s", url, err)
             return None
         max_bytes = self.config.max_image_bytes
 
@@ -529,7 +529,7 @@ class NapcatChannel(BaseChannel):
             declared_size = int(info["file_size"])
             if declared_size > max_bytes:
                 logger.warning(
-                    "napcat: image declared size={} exceeds max_image_bytes={} url={}",
+                    "napcat: image declared size=%s exceeds max_image_bytes=%s url=%s",
                     declared_size,
                     max_bytes,
                     url,
@@ -541,10 +541,10 @@ class NapcatChannel(BaseChannel):
         try:
             async with self._http.get(url, allow_redirects=False) as resp:
                 if 300 <= resp.status < 400:
-                    logger.warning("napcat: image download redirect rejected url={}", url)
+                    logger.warning("napcat: image download redirect rejected url=%s", url)
                     return None
                 if resp.status >= 400:
-                    logger.warning("napcat: image download status={} url={}", resp.status, url)
+                    logger.warning("napcat: image download status=%s url=%s", resp.status, url)
                     return None
                 # Stream until EOF, capping memory at max_bytes. Don't use
                 # content.read(max_bytes+1) — it returns only what's currently
@@ -558,12 +558,12 @@ class NapcatChannel(BaseChannel):
                         break
                 if truncated:
                     logger.warning(
-                        "napcat: image exceeds max_image_bytes={} url={}", max_bytes, url
+                        "napcat: image exceeds max_image_bytes=%s url=%s", max_bytes, url
                     )
                     return None
                 data = bytes(buf)
         except Exception as e:
-            logger.warning("napcat: image download error url={} err={}", url, e)
+            logger.warning("napcat: image download error url=%s err=%s", url, e)
             return None
 
         filename_hint = info.get("file")
@@ -575,6 +575,6 @@ class NapcatChannel(BaseChannel):
         try:
             await asyncio.to_thread(path.write_bytes, data)
         except OSError as e:
-            logger.warning("napcat: failed to save image: {}", e)
+            logger.warning("napcat: failed to save image: %s", e)
             return None
         return str(path)

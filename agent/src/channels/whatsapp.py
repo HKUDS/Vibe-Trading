@@ -283,7 +283,7 @@ class WhatsAppChannel(BaseChannel):
         super().__init__(config, bus)
         if legacy_bridge_fields:
             self.logger.warning(
-                "Ignoring deprecated WhatsApp bridge config fields: {}. "
+                "Ignoring deprecated WhatsApp bridge config fields: %s. "
                 "Run 'vibe-trading channels login whatsapp' to create a neonize session.",
                 ", ".join(legacy_bridge_fields),
             )
@@ -329,7 +329,7 @@ class WhatsAppChannel(BaseChannel):
             self.logger.info("WhatsApp login complete")
             return True
         except Exception as exc:
-            self.logger.error("WhatsApp login failed: {}", exc)
+            self.logger.error("WhatsApp login failed: %s", exc)
             return False
         finally:
             with suppress(Exception):
@@ -465,7 +465,7 @@ class WhatsAppChannel(BaseChannel):
                 login_result.set_exception(
                     RuntimeError(f"WhatsApp disconnected before login completed: {event}")
                 )
-            self.logger.warning("WhatsApp disconnected: {}", event)
+            self.logger.warning("WhatsApp disconnected: %s", event)
 
         @client.event(api.PairStatusEv)
         async def _on_pair_status(_: Any, event: Any) -> None:
@@ -475,7 +475,7 @@ class WhatsAppChannel(BaseChannel):
                 if login_result is not None and not login_result.done():
                     login_result.set_exception(exc)
                 raise exc
-            self.logger.info("WhatsApp pair status: {}", event)
+            self.logger.info("WhatsApp pair status: %s", event)
 
         if not handle_messages:
             return
@@ -558,8 +558,8 @@ class WhatsAppChannel(BaseChannel):
         }
         if not self.is_allowed(sender_id):
             self.logger.info(
-                "Passing unauthorized WhatsApp sender {} to pairing flow "
-                "(phone={}, lid={}, chat={})",
+                "Passing unauthorized WhatsApp sender %s to pairing flow "
+                "(phone=%s, lid=%s, chat=%s)",
                 sender_id,
                 phone_id or "",
                 lid_id or "",

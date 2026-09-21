@@ -18,6 +18,7 @@ import pandas as pd
 from src.factors.base import (
     decay_linear,
     delta,
+    observed_over,
     rank,
     safe_div,
     scale,
@@ -64,4 +65,6 @@ def compute(panel: dict) -> pd.DataFrame:
     mix = close * 0.518371 + low * (1.0 - 0.518371)
     rhs = rank(delta(mix, 1))
     out = (lhs < rhs).astype(float) * -1.0
-    return out
+    # Reach of each input through the nested windows; a gap inside it is not a verdict (#1463).
+    # volume: adv15 + corr 9 + ts_rank 14; high: corr 9 + ts_rank 14; close/low: delta 1.
+    return out.where(observed_over((volume, 36), (high, 22), (close, 2), (low, 2)))

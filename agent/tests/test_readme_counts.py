@@ -52,6 +52,7 @@ READMES = (
     "README_ko.md",
     "README_ar.md",
     "README_es.md",
+    "README_id.md",
 )
 
 # Feature badges in the order they appear in every README. Each entry is the

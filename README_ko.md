@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> | <a href="README_zh.md">中文</a> | <a href="README_ja.md">日本語</a> | <b>한국어</b> | <a href="README_ar.md">العربية</a> | <a href="README_es.md">Español</a>
+  <a href="README.md">English</a> | <a href="README_zh.md">中文</a> | <a href="README_ja.md">日本語</a> | <b>한국어</b> | <a href="README_ar.md">العربية</a> | <a href="README_es.md">Español</a> | <a href="README_id.md">Bahasa Indonesia</a>
 </p>
 
 <p align="center">
@@ -52,14 +52,16 @@
 
 > ⚠️ **보안 경고:** X 계정 `VibeTrading_HKU`, Virtuals 프로젝트 `101845`, 토큰 컨트랙트 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4`는 모두 Vibe-Trading 공식과 무관합니다. Vibe-Trading은 어떠한 토큰이나 밈코인도 발행하거나 공식적으로 지지한 적이 없습니다. 해당 토큰을 구매하거나 지갑을 연결하거나 어떠한 서명도 하지 마세요. [자세히 보기](SECURITY.md#official-channels--impersonation).
 
+- **2026-09-21** 🔌 **Web UI에서 IM 채널 설정, 누락된 봉으로 값을 내던 알파 24개 수정**: Settings에서 IM 채널을 하나씩 편집할 수 있습니다. 시크릿은 마스킹되고, 저장 전 폼 값으로 연결을 테스트할 수 있으며, 저장 시 해당 채널만 재시작 없이 핫스왑됩니다. DingTalk과 QQ는 단계별 설정 가이드를 제공합니다([#1520](https://github.com/HKUDS/Vibe-Trading/pull/1520), [#1529](https://github.com/HKUDS/Vibe-Trading/pull/1529)). 모든 어댑터가 다시 stdlib 로깅을 사용해 `{}` 플레이스홀더에 묻히던 진단이 로그에 남습니다([#1533](https://github.com/HKUDS/Vibe-Trading/pull/1533)). Alpha Zoo에서는 윈도우에 누락된 봉이 있어 NaN이 된 피연산자와의 비교가 False가 되어 상수를 출력했습니다. 봉을 1틱 움직여 보던 #1463 스윕으로는 보이지 않던 문제입니다. 결측 유무 비교로 24개를 더 찾았고, 이제 입력의 참조 범위로 마스킹하며 완전한 데이터에서 정의되지 않는 상관계수는 기존 판정을 유지합니다([#1523](https://github.com/HKUDS/Vibe-Trading/pull/1523), [#1534](https://github.com/HKUDS/Vibe-Trading/pull/1534), [#1463](https://github.com/HKUDS/Vibe-Trading/issues/1463)). **데이터:** 보호예수 `free_shares`는 유통주식 수가 아니라 실제 해제 수량([#1513](https://github.com/HKUDS/Vibe-Trading/pull/1513)), 룽후방 좌석은 상장 사유별 순위([#1512](https://github.com/HKUDS/Vibe-Trading/pull/1512)), 주주 수는 실제 과거 기간 반환([#1518](https://github.com/HKUDS/Vibe-Trading/pull/1518)), Tencent·Eastmoney·AKShare A주 전방 수정주가는 배당 가산 조정으로 표기([#1497](https://github.com/HKUDS/Vibe-Trading/pull/1497)), Gildata를 토큰 기반 A주 소스로 추가([#1474](https://github.com/HKUDS/Vibe-Trading/pull/1474)), 포트폴리오는 모든 ISO-4217 통화를 지원하고 환율이 없으면 해당 소스만 실패 처리([#1510](https://github.com/HKUDS/Vibe-Trading/pull/1510)), `connector account`가 Binance·Futu·Trading 212 잔고를 표시([#1539](https://github.com/HKUDS/Vibe-Trading/issues/1539)). **신규:** 인도네시아어 UI와 README([#1482](https://github.com/HKUDS/Vibe-Trading/pull/1482)). **제거:** Requesty provider — `openrouter`에 해당 base URL을 지정하세요. [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Shizoqua](https://github.com/Shizoqua), [@lorenzozanee](https://github.com/lorenzozanee), [@cgycorey](https://github.com/cgycorey), [@zeus229](https://github.com/zeus229), [@sambazhu](https://github.com/sambazhu), [@Yoruxyv](https://github.com/Yoruxyv) and [@jastincheis](https://github.com/jastincheis)에게 감사드립니다!
+
 - **2026-09-20** 🛠️ **명확한 데이터 요청과 일상 기능 수정**: 월봉을 뜻하는 `1M` 요청은 이제 1분봉을 조용히 반환하는 대신 미지원 오류를 명시합니다 ([#1487](https://github.com/HKUDS/Vibe-Trading/pull/1487)). 주봉·월봉 지원은 [#1479](https://github.com/HKUDS/Vibe-Trading/issues/1479)에서 계속 추적합니다. 환영 화면은 실제 선택한 빠른 작업을 강조하고 ([#1500](https://github.com/HKUDS/Vibe-Trading/pull/1500)), DingTalk은 다운로드 파일명의 경로 문자를 정리합니다 ([#1506](https://github.com/HKUDS/Vibe-Trading/pull/1506)). Signal은 이모지 뒤 멘션 주변의 텍스트를 보존하며 ([#1478](https://github.com/HKUDS/Vibe-Trading/pull/1478)), 신용 스프레드 표는 `5` / `5.0`처럼 같은 만기의 열을 합칩니다 ([#1507](https://github.com/HKUDS/Vibe-Trading/pull/1507)).
 
 - **2026-09-19** 🛠️ **공시 누락이나 잘못된 출처로 표시되던 데이터 오류 수정**: 제공처의 필드명 변경에 대응해 A주 주주 수 조회를 복구했습니다. 요청이 거부되면 공시가 없다고 표시하는 대신 제공처의 오류를 전달합니다([#1490](https://github.com/HKUDS/Vibe-Trading/pull/1490)). 요청한 SDK를 사용할 수 없어 대체 소스로 전환해도 종목별 실제 데이터 출처와 그에 맞는 대체 여부·가격 조정 정보를 기록합니다([#1491](https://github.com/HKUDS/Vibe-Trading/issues/1491)). QVeris가 `indicators`를 종료일로 덮어쓰는 문제도 수정했습니다([#1496](https://github.com/HKUDS/Vibe-Trading/pull/1496)). 가격 조정 선택, 조정된 응답 파싱 및 과금 문제는 [#1494](https://github.com/HKUDS/Vibe-Trading/issues/1494)에서 계속 추적합니다. [@cgycorey](https://github.com/cgycorey), [@lorenzozanee](https://github.com/lorenzozanee) 님께 감사드립니다!
 
-- **2026-09-18** ✂️ **행 번호까지 가려진 채 공개된 답변, 그리고 26건의 거부로 집계된 자금 부족 주문 1건**: grounding 게이트가 검증되지 않은 수치를 잘라내고 답변을 공개할 때, 순위표의 1, 2, 3과 헤더의 `12m`, 본문의 "3 names"까지 `(omitted※)`로 바뀌어 나왔습니다. 표 셀 안의 모든 정수가 측정값으로 취급됐고, 잘린 수치와 같은 숫자열이 페이지 나머지에서도 함께 지워졌기 때문입니다. 이제 행에 번호를 매기는 열은 구조로 보고, 셀 안에서 단어와 함께 있는 일반 정수는 문장 속에서처럼 읽으며, 한 자리 숫자는 지우기의 기준이 되지 않습니다. 지어낸 수익률과 배수는 여전히 잘립니다 ([#1471](https://github.com/HKUDS/Vibe-Trading/issues/1471)). `hold` 모드에서는 바스켓을 가용 현금에 맞춰 줄이는 탐색이 단계마다 `zero_size` 거부를 기록해서, 현금으로 살 수 없는 계약 1개가 로트 반올림 실패 26건으로 보고됐습니다. 이제는 `insufficient_capital` 1건만 기록됩니다 ([#1470](https://github.com/HKUDS/Vibe-Trading/issues/1470)). **수정:** 백테스트의 `local:` 코드는 사용자의 데이터셋에서만 읽고, 없으면 거부하며 네트워크 데이터 소스로 채우지 않습니다 ([#1467](https://github.com/HKUDS/Vibe-Trading/issues/1467)); 이벤트 스터디의 CAR 표준오차에 추정 파라미터를 공유하는 일별 예측 간의 공분산을 포함했습니다. 추정 구간이 30일일 때 귀무 사건에서 표준화 CAR의 분산은 1.41~1.46이었고 지금은 1.07~1.08입니다 ([#1466](https://github.com/HKUDS/Vibe-Trading/issues/1466)); 실제 `historical_var` / `parametric_var` 결과가 자신이 반환한 VaR의 근거가 됩니다 ([#1464](https://github.com/HKUDS/Vibe-Trading/issues/1464)); 알파 20개가 누락된 봉을 상수로 채우지 않으며, 재귀 평활은 명문화되고 테스트된 규칙에 따라 공백을 건너뛰고 계산을 이어갑니다 ([#1463](https://github.com/HKUDS/Vibe-Trading/issues/1463)). **같은 날 추가:** 기본 설정(`LANGCHAIN_PROVIDER=openai`)으로 `gpt-5.6-terra`를 쓰면 첫 도구 호출에서 실패했습니다. Chat Completions는 `gpt-5.6` 계열에 대해 reasoning effort가 `none`이 아니면 function tools를 거부하기 때문입니다. 어댑터는 이제 그런 요청을 `/v1/responses`로 한 번 재시도하고(추론은 유지), 그 모델의 경로로 기억합니다 ([#1473](https://github.com/HKUDS/Vibe-Trading/issues/1473)). **신규:** OpenCode Go / Zen이 내장 `opencode` 프로바이더가 되어 릴레이가 요구하는 `x-opencode-session`을 보내며, compaction 스레드에서도 마찬가지입니다 ([#1416](https://github.com/HKUDS/Vibe-Trading/pull/1416), [#1415](https://github.com/HKUDS/Vibe-Trading/issues/1415) 종료). **병합:** 메모리 GC가 보관 처리한 항목을 압축에도 넘기지 않습니다 ([#1450](https://github.com/HKUDS/Vibe-Trading/pull/1450)); Patell z는 정상 수익 모델별 자유도를 사용합니다 ([#1449](https://github.com/HKUDS/Vibe-Trading/pull/1449)); 시장 미시구조 추정량은 NaN이나 무한대 입력을 스프레드 0으로 돌려주는 대신 거부합니다 ([#1451](https://github.com/HKUDS/Vibe-Trading/pull/1451)); 네트워크로 절대 대체하지 않는다고 선언한 소스는 종목별 보충에서도 그 약속을 지킵니다 ([#1441](https://github.com/HKUDS/Vibe-Trading/pull/1441)); 백테스트는 연율화 전에 선언한 간격과 실제 받은 봉 간격을 대조하므로, `1H`로 선언한 일봉 파일이 시간봉 빈도로 연율화되지 않고 주봉 파일은 52로 연율화됩니다 ([#1432](https://github.com/HKUDS/Vibe-Trading/pull/1432)). 제보해 주신 [@5gaLbt](https://github.com/5gaLbt), [@turtle696966969696](https://github.com/turtle696966969696) 님과 수정해 주신 [@tonydo](https://github.com/tonydo), [@Shizoqua](https://github.com/Shizoqua), [@chiww](https://github.com/chiww) 님께 감사드립니다!
-
 <details>
 <summary>이전 뉴스</summary>
+
+- **2026-09-18** ✂️ **행 번호까지 가려진 채 공개된 답변, 그리고 26건의 거부로 집계된 자금 부족 주문 1건**: grounding 게이트가 검증되지 않은 수치를 잘라내고 답변을 공개할 때, 순위표의 1, 2, 3과 헤더의 `12m`, 본문의 "3 names"까지 `(omitted※)`로 바뀌어 나왔습니다. 표 셀 안의 모든 정수가 측정값으로 취급됐고, 잘린 수치와 같은 숫자열이 페이지 나머지에서도 함께 지워졌기 때문입니다. 이제 행에 번호를 매기는 열은 구조로 보고, 셀 안에서 단어와 함께 있는 일반 정수는 문장 속에서처럼 읽으며, 한 자리 숫자는 지우기의 기준이 되지 않습니다. 지어낸 수익률과 배수는 여전히 잘립니다 ([#1471](https://github.com/HKUDS/Vibe-Trading/issues/1471)). `hold` 모드에서는 바스켓을 가용 현금에 맞춰 줄이는 탐색이 단계마다 `zero_size` 거부를 기록해서, 현금으로 살 수 없는 계약 1개가 로트 반올림 실패 26건으로 보고됐습니다. 이제는 `insufficient_capital` 1건만 기록됩니다 ([#1470](https://github.com/HKUDS/Vibe-Trading/issues/1470)). **수정:** 백테스트의 `local:` 코드는 사용자의 데이터셋에서만 읽고, 없으면 거부하며 네트워크 데이터 소스로 채우지 않습니다 ([#1467](https://github.com/HKUDS/Vibe-Trading/issues/1467)); 이벤트 스터디의 CAR 표준오차에 추정 파라미터를 공유하는 일별 예측 간의 공분산을 포함했습니다. 추정 구간이 30일일 때 귀무 사건에서 표준화 CAR의 분산은 1.41~1.46이었고 지금은 1.07~1.08입니다 ([#1466](https://github.com/HKUDS/Vibe-Trading/issues/1466)); 실제 `historical_var` / `parametric_var` 결과가 자신이 반환한 VaR의 근거가 됩니다 ([#1464](https://github.com/HKUDS/Vibe-Trading/issues/1464)); 알파 20개가 누락된 봉을 상수로 채우지 않으며, 재귀 평활은 명문화되고 테스트된 규칙에 따라 공백을 건너뛰고 계산을 이어갑니다 ([#1463](https://github.com/HKUDS/Vibe-Trading/issues/1463)). **같은 날 추가:** 기본 설정(`LANGCHAIN_PROVIDER=openai`)으로 `gpt-5.6-terra`를 쓰면 첫 도구 호출에서 실패했습니다. Chat Completions는 `gpt-5.6` 계열에 대해 reasoning effort가 `none`이 아니면 function tools를 거부하기 때문입니다. 어댑터는 이제 그런 요청을 `/v1/responses`로 한 번 재시도하고(추론은 유지), 그 모델의 경로로 기억합니다 ([#1473](https://github.com/HKUDS/Vibe-Trading/issues/1473)). **신규:** OpenCode Go / Zen이 내장 `opencode` 프로바이더가 되어 릴레이가 요구하는 `x-opencode-session`을 보내며, compaction 스레드에서도 마찬가지입니다 ([#1416](https://github.com/HKUDS/Vibe-Trading/pull/1416), [#1415](https://github.com/HKUDS/Vibe-Trading/issues/1415) 종료). **병합:** 메모리 GC가 보관 처리한 항목을 압축에도 넘기지 않습니다 ([#1450](https://github.com/HKUDS/Vibe-Trading/pull/1450)); Patell z는 정상 수익 모델별 자유도를 사용합니다 ([#1449](https://github.com/HKUDS/Vibe-Trading/pull/1449)); 시장 미시구조 추정량은 NaN이나 무한대 입력을 스프레드 0으로 돌려주는 대신 거부합니다 ([#1451](https://github.com/HKUDS/Vibe-Trading/pull/1451)); 네트워크로 절대 대체하지 않는다고 선언한 소스는 종목별 보충에서도 그 약속을 지킵니다 ([#1441](https://github.com/HKUDS/Vibe-Trading/pull/1441)); 백테스트는 연율화 전에 선언한 간격과 실제 받은 봉 간격을 대조하므로, `1H`로 선언한 일봉 파일이 시간봉 빈도로 연율화되지 않고 주봉 파일은 52로 연율화됩니다 ([#1432](https://github.com/HKUDS/Vibe-Trading/pull/1432)). 제보해 주신 [@5gaLbt](https://github.com/5gaLbt), [@turtle696966969696](https://github.com/turtle696966969696) 님과 수정해 주신 [@tonydo](https://github.com/tonydo), [@Shizoqua](https://github.com/Shizoqua), [@chiww](https://github.com/chiww) 님께 감사드립니다!
 
 - **2026-09-17** 🔐 **로그인 하나로 여러 계좌에 닿는 Robinhood, 그리고 테스트는 통과했지만 실거래에서는 모든 주문을 거부하던 게이트**: 이제 Robinhood를 읽기 전용 포트폴리오 소스로 쓸 수 있습니다. Robinhood의 계좌 목록에서 직접 고른 계좌 하나만 읽으며, 미리 선택되는 계좌는 없습니다 ([#1428](https://github.com/HKUDS/Vibe-Trading/issues/1428)). 실거래도 같은 방식으로 각 mandate를 계좌 하나에 묶습니다 ([#1442](https://github.com/HKUDS/Vibe-Trading/issues/1442)). 지금까지 runner와 주문 전 게이트는 계좌 없이 Robinhood를 호출하고 응답도 한 단계 얕게 읽어서, 대사는 매번 중단되고 모든 주문이 거부됐습니다. 테스트 픽스처는 Robinhood가 보내지 않는 응답 형태를 써서 계속 통과했습니다. 포지션은 시세 응답이 매핑될 때까지 평가액 없이 표시됩니다. **수정:** swarm 워커는 요약을 쓰는 모든 종료 경로에서 메시지 로그를 저장합니다 ([#1439](https://github.com/HKUDS/Vibe-Trading/pull/1439)); qlib158 상승일·하락일 카운트는 누락된 종가를 보합일로 세지 않습니다 ([#1459](https://github.com/HKUDS/Vibe-Trading/pull/1459)); 전략 성능 저하 점검은 무한대 Sharpe를 건강하다고 판정하지 않습니다 ([#1447](https://github.com/HKUDS/Vibe-Trading/pull/1447)); 사용자 지정 alpha zoo 경로가 같은 이름의 내장 알파를 프로세스 전체에서 대체하지 않습니다 ([#1468](https://github.com/HKUDS/Vibe-Trading/pull/1468)). 응답 형태를 제공해 준 [@balu1866](https://github.com/balu1866), 그리고 [@cgycorey](https://github.com/cgycorey), [@0xouzm](https://github.com/0xouzm) 님께 감사드립니다!
 
@@ -415,7 +417,7 @@ vibe-trading connector install /tmp/my-broker
 
 ## 📡 데이터 소스 & 스마트 폴백
 
-`get_market_data` 한 번의 호출, **27개 시장 데이터 소스**(그중 **QVeris**는 선택형 유료 마켓플레이스). `source: "auto"`로 설정하면 로더가 심볼에 따라 소스를 고르고, 시장별 체인을 **IP 차단 위험** 순으로 따라갑니다: 절대 차단되지 않는 공개 소스를 먼저, 속도 제한 / 키 기반 소스를 마지막에 둡니다. 설정 불필요, 단일 장애 지점 없음.
+`get_market_data` 한 번의 호출, **28개 시장 데이터 소스**(그중 **QVeris**는 선택형 유료 마켓플레이스). `source: "auto"`로 설정하면 로더가 심볼에 따라 소스를 고르고, 시장별 체인을 **IP 차단 위험** 순으로 따라갑니다: 절대 차단되지 않는 공개 소스를 먼저, 속도 제한 / 키 기반 소스를 마지막에 둡니다. 설정 불필요, 단일 장애 지점 없음.
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -423,6 +425,7 @@ vibe-trading connector install /tmp/my-broker
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
+| `gildata` | A-share | token (Settings / `GILDATA_TOKEN`) | Hundsun Juyuan (恒生聚源) commercial feed — forward-adjusted dailies, joins the A-share chain tail |
 | `yahoo` | US / HK / 캐나다 / 영국 | none | direct chart/quotes/options; TSX `.TO` / TSXV `.V`; LSE `.L`은 명시 통화로 정규화 |
 | `sina` · `stooq` | US | none | K-line to 1984 · EOD CSV |
 | `yfinance` | US / HK / 캐나다 / 영국 | none | wrapper; TSX `.TO` / TSXV `.V`; LSE `.L`은 동일한 GBP/GBp 계약 준수 |
@@ -440,7 +443,7 @@ vibe-trading connector install /tmp/my-broker
 
 **폴백 체인 (IP 차단 위험 순):**
 
-- **A주** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **A주** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **미국** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **홍콩** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **인도 (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -803,7 +806,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 - 경로 A용 **Docker**
 - OpenAI Codex도 ChatGPT OAuth로 사용할 수 있습니다. `LANGCHAIN_PROVIDER=openai-codex`를 설정한 뒤 `vibe-trading provider login openai-codex`를 실행하세요. 이 방식은 `OPENAI_API_KEY`를 사용하지 않습니다.
 
-> **지원 LLM provider:** OpenRouter, Requesty, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama(local). `*_BASE_URL`이 설정되지 않으면 각 provider는 canonical endpoint로 폴백하므로 key만 있으면 충분합니다. 설정은 `.env.example`을 참고하세요.
+> **지원 LLM provider:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama(local). `*_BASE_URL`이 설정되지 않으면 각 provider는 canonical endpoint로 폴백하므로 key만 있으면 충분합니다. 설정은 `.env.example`을 참고하세요.
 
 > **팁:** 자동 fallback 덕분에 모든 시장은 API key 없이도 작동합니다. yfinance/Yahoo(HK/US/캐나다/영국), OKX(crypto), mootdx(A주, TCP 직결, IP 제한 없음), AKShare(A주, US, HK, futures, forex)는 모두 무료입니다. LSE `.L` 호가는 GBP 또는 GBp로 명시되어야 하며, GBP 회계 전에 펜스를 정규화합니다. Tushare token은 선택 사항이며, mootdx가 권장 no-token A주 fallback이고 AKShare는 더 넓은 커버리지의 백업입니다.
 
@@ -1025,6 +1028,10 @@ Built-in adapters는 `websocket`, `telegram`, `slack`, `discord`, `matrix`, `wha
 | `/pairing list` | 대기 중인 sender pairing 요청 표시 |
 
 명령어는 대소문자를 구분하지 않으며, 전체 메시지로 전송해야 합니다 (예: `hello /new`은 초기화가 아닌 일반 메시지로 처리됩니다).
+
+**Web UI에서 설정**: Settings 페이지의 **IM Channels** 패널에서는 파일을 직접 편집하지 않고도 채널을 설정할 수 있습니다. 채널을 펼치면 설정 패널이 열립니다. 필드는 백엔드 메타데이터에서 렌더링되고, secret 값은 브라우저에 절대 반환되지 않으며 마스킹된 형태(`****` + 마지막 4자리)로만 표시됩니다. DingTalk이 첫 번째로 완전한 가이드를 제공하는 채널입니다: [open-dev.dingtalk.com](https://open-dev.dingtalk.com/)에서 앱 생성 → 봇 기능 추가 후 Stream Mode 활성화(공개 콜백 URL 불필요) → AppKey를 Client ID에, AppSecret을 Client Secret에 복사 → 앱 게시. QQ도 이제 완전한 가이드를 제공하는 채널입니다: QQ 오픈 플랫폼([q.qq.com](https://q.qq.com/))에서 봇을 등록하고 AppID와 AppSecret을 폼에 입력한 뒤, 저장 전에 **Test connection**으로 검증하고 활성화하면 됩니다(공개 콜백 URL 불필요, 공식 botpy SDK를 통한 WebSocket 연결). **Test connection**은 저장 전에 폼의 현재 입력값만으로 연결을 시도하고 정확한 결과 코드(`ok`, `invalid_credentials`, `network`, `unsupported`)를 반환합니다. **Enable**은 즉시 적용됩니다: 실행 중인 채널 런타임은 프로세스 재시작 없이 해당 어댑터만 핫 스왑하며, 활성화 시 자격 증명을 자동 검증합니다(검증 실패 후 명시적으로 **Enable anyway**를 선택한 경우에만 스킵). 비활성화해도 저장된 자격 증명은 유지되므로 재활성화 시 재입력이 필요 없습니다. 여기에는 내장 어댑터만 표시되며, entry points로 추가된 플러그인 채널은 계속 파일에서 설정합니다.
+
+저장은 `~/.vibe-trading/agent.json`의 `channels.<name>` 섹션을 원자적으로 업데이트합니다. YAML 설정 파일은 Web UI에서 읽기 전용입니다(브라우저 편집에는 JSON이 필요하며, 패널은 오류 대신 그 사실을 표시합니다). 전용 가이드가 없는 채널은 기본 설정에서 파생된 일반 폼을 렌더링합니다.
 
 </details>
 
@@ -1665,7 +1672,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # Cross-session persistent memory
 │   │   │   └── persistent.py       #   file-based memory (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 110 auto-discovered agent tools
+│   │   ├── tools/                  # 107 auto-discovered agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── remember_tool.py    #   cross-session memory (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)
@@ -1691,7 +1698,7 @@ Vibe-Trading/
 │   │
 │   └── backtest/                   # Backtest engines
 │       ├── engines/                #   9 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   27 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall
+│       ├── loaders/                #   28 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity

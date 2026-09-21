@@ -15,7 +15,6 @@ from src.providers.capabilities import (
 
 EXPECTED_PROVIDER_DEFAULTS = {
     "openrouter": "deepseek/deepseek-v4-pro",
-    "requesty": "openai/gpt-4o-mini",
     "openai": "gpt-5.5",
     "anthropic": "claude-sonnet-4-6",
     "openai-codex": "openai-codex/gpt-5.4",

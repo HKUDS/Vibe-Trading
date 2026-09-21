@@ -195,6 +195,48 @@ class TestAdd:
         index = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
         assert index.count("[dup-check]") == 1
 
+    def test_same_title_different_types_keep_separate_index_rows(
+        self, tmp_path: Path
+    ) -> None:
+        # Same title, different memory_type: add() writes two distinct
+        # files ("reference_kb-entry.md", "user_kb-entry.md"), so the index
+        # must keep two rows rather than the second add() clobbering the
+        # first entry's row just because the title matches.
+        pm = PersistentMemory(memory_dir=tmp_path)
+        pm.add(
+            "kb-entry", "raw material notes", "reference", description="reference doc"
+        )
+        pm.add("kb-entry", "user preference notes", "user", description="user pref")
+
+        assert (tmp_path / "reference_kb-entry.md").exists()
+        assert (tmp_path / "user_kb-entry.md").exists()
+
+        index = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        assert index.count("[kb-entry]") == 2
+        assert "reference_kb-entry.md" in index
+        assert "user_kb-entry.md" in index
+
+    def test_remove_names_the_type_when_a_title_is_shared(self, tmp_path: Path) -> None:
+        # Sibling of the index fix: remove(title) used to delete whichever
+        # same-title entry it scanned first.
+        pm = PersistentMemory(memory_dir=tmp_path)
+        pm.add("kb-entry", "raw material notes", "reference", description="reference doc")
+        pm.add("kb-entry", "user preference notes", "user", description="user pref")
+
+        with pytest.raises(ValueError, match="reference, user"):
+            pm.remove("kb-entry")
+        assert (tmp_path / "reference_kb-entry.md").exists()
+        assert (tmp_path / "user_kb-entry.md").exists()
+
+        assert pm.remove("kb-entry", "user") is True
+        assert not (tmp_path / "user_kb-entry.md").exists()
+        assert (tmp_path / "reference_kb-entry.md").exists()
+        index = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
+        assert "reference_kb-entry.md" in index and "user_kb-entry.md" not in index
+
+        assert pm.remove("kb-entry") is True  # no longer ambiguous
+        assert pm.remove("kb-entry") is False
+
     def test_cjk_names_get_distinct_filenames(self, tmp_path: Path) -> None:
         # Regression: previously every non-ASCII char was replaced with `_`, so
         # any two CJK-only names of the same length collapsed to the same slug

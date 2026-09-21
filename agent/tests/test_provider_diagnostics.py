@@ -66,18 +66,6 @@ def test_provider_capabilities_are_provider_specific() -> None:
     assert openrouter.send_reasoning_content is False
 
 
-def test_requesty_capabilities_mirror_openrouter() -> None:
-    """Requesty is an OpenAI-compatible gateway wired like OpenRouter."""
-    requesty = get_provider_capabilities("requesty", "openai/gpt-4o-mini")
-
-    assert requesty.name == "requesty"
-    assert requesty.api_key_env == "REQUESTY_API_KEY"
-    assert requesty.base_url_env == "REQUESTY_BASE_URL"
-    assert requesty.capture_reasoning is True
-    assert requesty.openrouter_reasoning_body is True
-    assert requesty.send_reasoning_content is False
-
-
 def test_spark_capabilities_use_generic_openai_path() -> None:
     """iFlytek Spark rides the plain OpenAI-compatible path; iflytek is an alias."""
     spark = get_provider_capabilities("spark", "4.0Ultra")

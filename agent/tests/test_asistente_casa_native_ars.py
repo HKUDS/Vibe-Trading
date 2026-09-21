@@ -3,15 +3,27 @@ from decimal import Decimal
 import pytest
 
 from src.portfolio.compatibility import PortfolioContractError, ensure_supported_currencies
+from src.portfolio.fx import build_rates
 from src.portfolio.normalization import account_cash_native, account_total_native, value_position
 
 
-def test_asistente_casa_allows_only_ars():
+def _rates():
+    return build_rates(Decimal("7.2"), Decimal("7.8"))
+
+
+def test_iso_currency_identity_accepts_ars_without_fx_and_rejects_invalid_code():
     account = {"account": {"currency": "ARS", "portfolio_value": 1000.0, "cash": 100.0}}
     rows = [{"currency": "ARS", "price_currency": "ARS"}]
-    ensure_supported_currencies(rows, account, connector="asistente-casa")
-    with pytest.raises(PortfolioContractError):
-        ensure_supported_currencies([{"currency": "USD", "price_currency": "USD"}], account, connector="asistente-casa")
+
+    # #1510 separates currency identity from FX availability: ARS is valid
+    # metadata even though the production rates map has no ARS conversion.
+    ensure_supported_currencies(rows, account)
+
+    with pytest.raises(PortfolioContractError, match="valid ISO-4217"):
+        ensure_supported_currencies(
+            [{"currency": "ZZZ", "price_currency": "ZZZ"}],
+            {"account": {"currency": "ZZZ"}},
+        )
 
 
 def test_native_ars_position_uses_canonical_source_market_value():
@@ -22,17 +34,17 @@ def test_native_ars_position_uses_canonical_source_market_value():
         "market_price": 8835.0,
         "source_market_value": 47797350.0,
     }
-    valued = value_position(row, usd_hkd=Decimal("0"), usd_cny=Decimal("0"), native_currency="ARS")
+    valued = value_position(row, native_currency="ARS")
     assert valued["native_currency"] == "ARS"
     assert valued["market_value_native"] == 47797350.0
     assert valued["market_value_usd"] is None
     assert valued["market_value_cny"] is None
 
 
-def test_unknown_currency_fails_inside_valuation():
+def test_unrated_iso_currency_fails_inside_converted_valuation():
     row = {"currency": "BRL", "price_currency": "BRL", "quantity": 1, "market_price": 10}
-    with pytest.raises(PortfolioContractError):
-        value_position(row, usd_hkd=Decimal("7.8"), usd_cny=Decimal("7.2"))
+    with pytest.raises(PortfolioContractError, match="BRL"):
+        value_position(row, rates=_rates())
 
 
 def test_native_account_total_and_cash_do_not_use_fx():
@@ -49,7 +61,7 @@ def test_legacy_usd_position_unaffected_by_native_path():
         "market_price": 100,
         "cost_price": 90,
     }
-    valued = value_position(row, usd_hkd=Decimal("7.8"), usd_cny=Decimal("7.2"))
+    valued = value_position(row, rates=_rates())
     assert valued["market_value_usd"] == 1000.0
     assert "native_currency" not in valued
 
@@ -61,5 +73,5 @@ def test_legacy_hkd_position_still_converts_via_fx():
         "quantity": 100,
         "market_price": 78,
     }
-    valued = value_position(row, usd_hkd=Decimal("7.8"), usd_cny=Decimal("7.2"))
+    valued = value_position(row, rates=_rates())
     assert valued["market_value_usd"] == 1000.0

@@ -536,3 +536,196 @@ def test_explicit_unavailable_qveris_does_not_fallback_to_network():
     with pytest.raises(NoAvailableSourceError) as excinfo:
         get_loader_cls_with_fallback("qveris")
     assert "qveris" in str(excinfo.value).lower()
+
+
+def test_adjusted_only_records_become_bars():
+    """A capability publishing only ``adj_*`` fields must still yield bars.
+
+    ``qveris_finance.mkt_bars_adjusted`` returns ``adj_open``/``adj_high``/
+    ``adj_low``/``adj_close`` plus ``adj_factor`` and no unadjusted price
+    fields, so every row failed the OHLC check and a billed call produced "no
+    parseable bars" (#1494).
+    """
+    result = {
+        "data": [
+            {
+                "date": "2024-01-02",
+                "adj_open": 1.0,
+                "adj_high": 1.2,
+                "adj_low": 0.9,
+                "adj_close": 1.1,
+                "adj_volume": 100,
+                "adj_factor": 1.0,
+            },
+            {
+                "date": "2024-01-03",
+                "adj_open": 1.1,
+                "adj_high": 1.3,
+                "adj_low": 1.0,
+                "adj_close": 1.25,
+                "adj_volume": 120,
+                "adj_factor": 1.0,
+            },
+        ]
+    }
+
+    frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
+
+    assert frame is not None
+    assert list(frame["close"]) == pytest.approx([1.1, 1.25])
+    assert list(frame["volume"]) == pytest.approx([100.0, 120.0])
+
+
+def test_a_bar_never_mixes_unadjusted_and_adjusted_levels():
+    """Unadjusted open/high/low with only ``adj_close`` is not a bar.
+
+    Accepting that record assembles raw price levels against an adjusted close
+    in a single bar, silently, under whatever caliber the source declares
+    (#1494).
+    """
+    result = {
+        "data": [
+            {
+                "date": "2024-01-02",
+                "open": 1.0,
+                "high": 1.2,
+                "low": 0.9,
+                "adj_close": 1.1,
+            }
+        ]
+    }
+
+    assert qv._result_to_frame(result, "2024-01-01", "2024-01-05") is None
+
+
+def test_unadjusted_fields_win_when_both_sets_are_present():
+    """A record carrying both sets keeps resolving to the unadjusted quartet."""
+    result = {
+        "data": [
+            {
+                "date": "2024-01-02",
+                "open": 1.0,
+                "high": 1.2,
+                "low": 0.9,
+                "close": 1.1,
+                "adj_open": 10.0,
+                "adj_high": 12.0,
+                "adj_low": 9.0,
+                "adj_close": 11.0,
+            }
+        ]
+    }
+
+    frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
+
+    assert frame is not None
+    assert float(frame["close"].iloc[0]) == pytest.approx(1.1)
+
+
+@pytest.mark.parametrize("volume_key", ["volume", "vol", "v", "5. volume", "6. volume"])
+def test_adjusted_bars_keep_volume_under_a_plain_volume_key(volume_key):
+    """Volume is not a price level, so an adjusted bar keeps a plain volume.
+
+    Splitting the alias tables on price *levels* made the table a unit for every
+    column, so an adjusted-price record naming its volume ``volume`` — the most
+    natural key, and ``6. volume`` is how Alpha Vantage labels its adjusted
+    series — resolved a complete price quartet and then silently reported a NaN
+    volume. ``_result_to_frame`` only drops NaN price rows, so the NaN reached
+    the frame and the loader cache.
+    """
+    result = {
+        "data": [
+            {
+                "date": "2024-01-02",
+                "adj_open": 1.0,
+                "adj_high": 1.2,
+                "adj_low": 0.9,
+                "adj_close": 1.1,
+                volume_key: 100,
+            }
+        ]
+    }
+
+    frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
+
+    assert frame is not None
+    assert float(frame["volume"].iloc[0]) == pytest.approx(100.0)
+
+
+def test_adjusted_volume_wins_over_a_plain_volume_key():
+    """When the adjusted family names its own volume, that one still wins."""
+    result = {
+        "data": [
+            {
+                "date": "2024-01-02",
+                "adj_open": 1.0,
+                "adj_high": 1.2,
+                "adj_low": 0.9,
+                "adj_close": 1.1,
+                "adj_volume": 200,
+                "volume": 100,
+            }
+        ]
+    }
+
+    frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
+
+    assert frame is not None
+    assert float(frame["volume"].iloc[0]) == pytest.approx(200.0)
+
+def test_an_unadjusted_bar_does_not_take_the_adjusted_volume():
+    """Split-adjusted volume is not on the scale of unadjusted prices.
+
+    With both price families present and only ``adj_volume`` named, the
+    unadjusted quartet wins (the documented preference) and its volume stays
+    NaN instead of borrowing the adjusted family's (#1527 follow-up).
+    """
+    result = {
+        "data": [
+            {
+                "date": "2024-01-02",
+                "open": 1.0,
+                "high": 1.2,
+                "low": 0.9,
+                "close": 1.1,
+                "adj_open": 2.0,
+                "adj_high": 2.2,
+                "adj_low": 1.9,
+                "adj_close": 2.1,
+                "adj_volume": 200,
+            }
+        ]
+    }
+
+    frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
+
+    assert frame is not None
+    assert float(frame["close"].iloc[0]) == pytest.approx(1.1)
+    assert frame["volume"].isna().all()
+
+
+def test_a_response_mixing_families_yields_no_bars():
+    """Per-record choice built one series from an unadjusted row and an
+    adjusted-only row: closes 11.0 then 1.1, two price levels in one series."""
+    result = {
+        "data": [
+            {"date": "2024-01-02", "open": 10.0, "high": 11.5, "low": 9.5, "close": 11.0, "volume": 5},
+            {"date": "2024-01-03", "adj_open": 1.0, "adj_high": 1.2, "adj_low": 0.9, "adj_close": 1.1},
+        ]
+    }
+
+    assert qv._result_to_frame(result, "2024-01-01", "2024-01-05") is None
+
+
+def test_a_response_whose_rows_carry_both_families_uses_the_unadjusted_one():
+    result = {
+        "data": [
+            {"date": d, "open": 10.0, "high": 11.0, "low": 9.0, "close": c,
+             "adj_open": 1.0, "adj_high": 1.1, "adj_low": 0.9, "adj_close": c / 10}
+            for d, c in (("2024-01-02", 10.5), ("2024-01-03", 10.7))
+        ]
+    }
+
+    frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
+
+    assert list(frame["close"]) == pytest.approx([10.5, 10.7])

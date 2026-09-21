@@ -358,7 +358,7 @@ class WebSocketChannel(BaseChannel):
         except ConnectionClosed:
             self._cleanup_connection(connection)
         except Exception as e:
-            self.logger.warning("failed to send {} event: {}", event, e)
+            self.logger.warning("failed to send %s event: %s", event, e)
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
@@ -446,7 +446,7 @@ class WebSocketChannel(BaseChannel):
 
     async def start(self) -> None:
         # (stdlib logging handles websockets SDK output via propagation)
-        ws_logger = websockets_server_logger()
+        ws_logger = websockets_server_logger
 
         self._running = True
         self._stop_event = asyncio.Event()
@@ -464,7 +464,7 @@ class WebSocketChannel(BaseChannel):
             await self._connection_loop(connection)
 
         self.logger.info(
-            "WebSocket server listening on {}",
+            "WebSocket server listening on %s",
             (
                 f"unix:{self.config.unix_socket_path}{self.config.path}"
                 if self.config.unix_socket_path
@@ -473,7 +473,7 @@ class WebSocketChannel(BaseChannel):
         )
         if self.config.token_issue_path:
             self.logger.info(
-                "WebSocket token issue route: {}",
+                "WebSocket token issue route: %s",
                 (
                     f"unix:{self.config.unix_socket_path}{_normalize_config_path(self.config.token_issue_path)}"
                     if self.config.unix_socket_path
@@ -536,7 +536,7 @@ class WebSocketChannel(BaseChannel):
         if not client_id:
             client_id = f"anon-{uuid.uuid4().hex[:12]}"
         elif len(client_id) > 128:
-            self.logger.warning("client_id too long ({} chars), truncating", len(client_id))
+            self.logger.warning("client_id too long (%s chars), truncating", len(client_id))
             client_id = client_id[:128]
 
         default_chat_id = str(uuid.uuid4())
@@ -584,7 +584,7 @@ class WebSocketChannel(BaseChannel):
                     is_dm=False,
                 )
         except Exception as e:
-            self.logger.debug("connection ended: {}", e)
+            self.logger.debug("connection ended: %s", e)
         finally:
             self._cleanup_connection(connection)
 
@@ -627,7 +627,7 @@ class WebSocketChannel(BaseChannel):
                     Path(p).unlink(missing_ok=True)
                 except OSError as exc:
                     self.logger.warning(
-                        "failed to unlink partial media {}: {}", p, exc
+                        "failed to unlink partial media %s: %s", p, exc
                     )
             return [], reason
 
@@ -651,7 +651,7 @@ class WebSocketChannel(BaseChannel):
             except FileSizeExceeded:
                 return _abort("size")
             except Exception as exc:
-                self.logger.warning("media decode failed: {}", exc)
+                self.logger.warning("media decode failed: %s", exc)
                 return _abort("decode")
             if saved is None:
                 return _abort("decode")
@@ -852,7 +852,7 @@ class WebSocketChannel(BaseChannel):
                     raise
                 self.logger.debug("server task was already cancelled during shutdown")
             except Exception as e:
-                self.logger.warning("server task error during shutdown: {}", e)
+                self.logger.warning("server task error during shutdown: %s", e)
             self._server_task = None
         self._subs.clear()
         self._conn_chats.clear()
@@ -865,9 +865,9 @@ class WebSocketChannel(BaseChannel):
             await connection.send(raw)
         except ConnectionClosed:
             self._cleanup_connection(connection)
-            self.logger.warning("connection gone{}", label)
+            self.logger.warning("connection gone%s", label)
         except Exception:
-            self.logger.exception("send failed{}", label)
+            self.logger.exception("send failed%s", label)
             raise
 
     async def send(self, msg: OutboundMessage) -> None:
@@ -889,9 +889,9 @@ class WebSocketChannel(BaseChannel):
                 or msg.metadata.get("_goal_status")
                 or msg.metadata.get("_goal_state_sync")
             ):
-                self.logger.debug("no active subscribers for chat_id={}", msg.chat_id)
+                self.logger.debug("no active subscribers for chat_id=%s", msg.chat_id)
             else:
-                self.logger.warning("no active subscribers for chat_id={}", msg.chat_id)
+                self.logger.warning("no active subscribers for chat_id=%s", msg.chat_id)
         if msg.metadata.get("_goal_state_sync"):
             if conns:
                 blob = msg.metadata.get("goal_state")

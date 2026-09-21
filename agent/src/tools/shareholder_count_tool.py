@@ -1,11 +1,12 @@
-"""Read-only tool: A-share quarterly shareholder count via Eastmoney datacenter.
+"""Read-only tool: A-share shareholder count history via Eastmoney datacenter.
 
-Eastmoney's datacenter report API publishes the periodic "股东户数" (number of
-registered shareholders) disclosure for mainland A-shares: the holder count per
-report period, the quarter-over-quarter change, and the average holding value
-per account. This tool wraps that report behind the project's BaseTool contract
-and the frozen, IP-throttled Eastmoney client so the agent never hits the host
-un-throttled and never re-implements provider plumbing.
+Eastmoney's datacenter report API publishes the "股东户数" (number of
+registered shareholders) disclosure for mainland A-shares. The history comes
+from the per-period detail report: one row per disclosure, each with the change
+against the previous disclosed period (the interval varies — quarterly reports,
+plus intra-quarter ad-hoc disclosures — and each row states its own
+``prev_period_end``). Average holding value per account exists only on the
+latest-only report, so it is joined onto the newest row when the two agree.
 
 Only mainland A-shares (``.SH`` / ``.SZ`` / ``.BJ``) carry this disclosure;
 other markets return an error envelope.
@@ -19,17 +20,20 @@ from typing import Any
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
 from src.agent.tools import BaseTool
 
-# Eastmoney datacenter report endpoint + the shareholder-number report id.
+# Eastmoney datacenter report endpoint + the two shareholder-number reports:
+# the per-period detail report (one row per disclosure, what max_periods pages
+# over) and the latest-only report (one row per symbol, the only carrier of the
+# average-holding and market-cap columns).
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-_REPORT_NAME = "RPT_HOLDERNUMLATEST"
+_DETAIL_REPORT = "RPT_HOLDERNUM_DET"
+_LATEST_REPORT = "RPT_HOLDERNUMLATEST"
 
-# Report columns we surface, mapped to the API's field names.
-#
+_DETAIL_COLUMNS = "SECUCODE,END_DATE,HOLDER_NUM,HOLDER_NUM_CHANGE,HOLDER_NUM_RATIO"
 # Per-account market value is ``AVG_MARKET_CAP``; the older ``AVG_HOLD_AMT`` name
 # no longer exists upstream, and asking for it makes the datacenter reject the
 # whole request (HTTP 200, ``success: false``, ``result: null``).
-_COLUMNS = (
-    "SECUCODE,SECURITY_CODE,END_DATE,HOLDER_NUM,HOLDER_NUM_CHANGE,"
+_LATEST_COLUMNS = (
+    "SECUCODE,SECURITY_CODE,END_DATE,PRE_END_DATE,HOLDER_NUM,HOLDER_NUM_CHANGE,"
     "HOLDER_NUM_RATIO,AVG_MARKET_CAP,AVG_HOLD_NUM,TOTAL_MARKET_CAP"
 )
 
@@ -46,14 +50,16 @@ _EMPTY_RESULT_MESSAGES = ("返回数据为空",)
 
 
 class ShareholderCountTool(BaseTool):
-    """Fetch A-share quarterly shareholder counts with QoQ change and avg holding."""
+    """Fetch A-share shareholder count history with per-period change and avg holding."""
 
     name = "get_shareholder_count"
     description = (
-        "Fetch mainland A-share quarterly shareholder count (股东户数) from the "
-        "Eastmoney datacenter: holder count per report period, quarter-over-quarter "
-        "change (absolute and percent), and average holding (shares and market value) "
-        "per account. Markets: China A-shares only (.SH / .SZ / .BJ). "
+        "Fetch mainland A-share shareholder count history (股东户数) from the "
+        "Eastmoney datacenter: holder count per disclosed period, the change "
+        "against the previous disclosed period (absolute and percent; the "
+        "interval varies and each row states its own prev_period_end), and "
+        "average holding (shares and market value) per account on the newest "
+        "row. Markets: China A-shares only (.SH / .SZ / .BJ). "
         'Example: {"code": "600519.SH"}.'
     )
     parameters = {
@@ -107,16 +113,18 @@ class ShareholderCountTool(BaseTool):
         limit = _clamp_periods(kwargs.get("max_periods", _MAX_PERIODS))
 
         try:
-            payload = get_json(
+            detail_payload = get_json(
                 _DATACENTER_URL,
                 params={
-                    "reportName": _REPORT_NAME,
-                    "columns": _COLUMNS,
+                    "reportName": _DETAIL_REPORT,
+                    "columns": _DETAIL_COLUMNS,
                     "filter": f'(SECUCODE="{code}")',
                     "sortColumns": "END_DATE",
                     "sortTypes": "-1",
                     "pageNumber": "1",
-                    "pageSize": str(limit),
+                    # One row past the limit: the oldest returned period's
+                    # prev_period_end comes from the row after it.
+                    "pageSize": str(limit + 1),
                     "source": "WEB",
                     "client": "WEB",
                 },
@@ -124,21 +132,39 @@ class ShareholderCountTool(BaseTool):
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
             return _error(f"eastmoney datacenter request failed: {exc}")
 
-        rejection = _upstream_rejection(payload)
+        rejection = _upstream_rejection(detail_payload)
         if rejection is not None:
             return _error(f"eastmoney datacenter rejected the request: {rejection}")
 
-        periods = _parse_periods(payload)
-        if not periods:
-            return _error(f"no shareholder-count disclosure found for '{code}'")
+        periods = _parse_periods(detail_payload)
+        warnings: list[str] = []
+        if periods:
+            # The per-period report has no average-holding or market-cap
+            # columns; the latest-only report carries them, so join its row
+            # onto the newest period when the two agree on the end date.
+            latest, problem = _fetch_latest_row(code)
+            if problem is not None:
+                warnings.append(
+                    f"average holding and market cap unavailable: latest-only report {problem}"
+                )
+            if latest is not None and periods[0]["end_date"] == latest["end_date"]:
+                for key in ("avg_hold_shares", "avg_hold_amount", "total_market_cap"):
+                    periods[0][key] = latest.get(key)
+        else:
+            # Some symbols only surface on the latest-only report; answer the
+            # single latest period rather than nothing.
+            latest, problem = _fetch_latest_row(code)
+            if problem is not None:
+                return _error(f"eastmoney latest-only report {problem}")
+            if latest is None:
+                return _error(f"no shareholder-count disclosure found for '{code}'")
+            periods = [latest]
 
+        data: dict[str, Any] = {"code": code, "periods": periods[:limit]}
+        if warnings:
+            data["warnings"] = warnings
         return json.dumps(
-            {
-                "ok": True,
-                "market": "CN",
-                "source": "eastmoney",
-                "data": {"code": code, "periods": periods[:limit]},
-            },
+            {"ok": True, "market": "CN", "source": "eastmoney", "data": data},
             ensure_ascii=False,
         )
 
@@ -205,6 +231,17 @@ def _parse_periods(payload: Any) -> list[dict]:
         record = _normalize_row(row)
         if record is not None:
             periods.append(record)
+    # Each row's change columns are measured against the previous disclosed
+    # period; state that interval per row instead of calling it
+    # quarter-over-quarter (#1503 measured PRE_END_DATE drifting to nine
+    # months or nine years on the latest-only report).
+    for i, record in enumerate(periods):
+        # the detail report carries no PRE_END_DATE; the latest-only fallback
+        # row already carries its own, so only fill the gap
+        if record.get("prev_period_end") is None:
+            record["prev_period_end"] = (
+                periods[i + 1]["end_date"] if i + 1 < len(periods) else None
+            )
     return periods
 
 
@@ -235,7 +272,44 @@ def _normalize_row(row: Any) -> dict | None:
         "avg_hold_shares": _to_number(row.get("AVG_HOLD_NUM")),
         "avg_hold_amount": _to_number(row.get("AVG_MARKET_CAP")),
         "total_market_cap": _to_number(row.get("TOTAL_MARKET_CAP")),
+        "prev_period_end": _clean_date(row.get("PRE_END_DATE")),
     }
+
+
+def _fetch_latest_row(code: str) -> tuple[dict | None, str | None]:
+    """Fetch the latest-only report's single row for ``code``.
+
+    Used for the average-holding / market-cap columns the detail report does
+    not carry, and as the single-period answer when the detail report has no
+    rows for the symbol. A failure is returned, not raised, so the caller can
+    keep the history it has and say what is missing.
+
+    Returns:
+        ``(row, None)`` on success, ``(None, None)`` when the report has no
+        row, or ``(None, problem)`` when the request failed or was rejected.
+    """
+    try:
+        payload = get_json(
+            _DATACENTER_URL,
+            params={
+                "reportName": _LATEST_REPORT,
+                "columns": _LATEST_COLUMNS,
+                "filter": f'(SECUCODE="{code}")',
+                "sortColumns": "END_DATE",
+                "sortTypes": "-1",
+                "pageNumber": "1",
+                "pageSize": "1",
+                "source": "WEB",
+                "client": "WEB",
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - reported to the caller, never raised
+        return None, f"request failed: {exc}"
+    rejection = _upstream_rejection(payload)
+    if rejection is not None:
+        return None, f"rejected the request: {rejection}"
+    periods = _parse_periods(payload)
+    return (periods[0] if periods else None), None
 
 
 def _clean_date(value: Any) -> str | None:

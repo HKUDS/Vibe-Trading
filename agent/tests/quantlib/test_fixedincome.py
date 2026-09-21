@@ -322,10 +322,29 @@ def test_accrued_interest_is_linear_in_elapsed_time_under_30_360():
     ) == pytest.approx(1.25)
 
 
+def test_accrued_interest_full_at_next_coupon_despite_30_360_day_of_month_clipping():
+    # Jan 30 -> Jan 31 clips to the same 30/360 day-of-month, so
+    # year_fraction is 0.0 even though the dates are distinct and ordered.
+    # Settlement at next_coupon must still return the full period coupon.
+    last, nxt = dt.date(2024, 1, 30), dt.date(2024, 1, 31)
+    assert year_fraction(last, nxt, "30/360") == 0.0
+    assert accrued_interest(100, 0.06, 2, last, nxt, nxt, day_count="30/360") == pytest.approx(3.0)
+    assert accrued_interest(100, 0.06, 2, last, last, nxt, day_count="30/360") == pytest.approx(0.0)
+
+
 def test_accrued_interest_rejects_settlement_outside_the_period():
     last, nxt = dt.date(2024, 1, 15), dt.date(2024, 7, 15)
     with pytest.raises(ValueError, match="settlement must fall inside"):
         accrued_interest(100, 0.05, 2, last, dt.date(2024, 8, 1), nxt)
+
+
+@pytest.mark.parametrize("settlement", [dt.date(2024, 1, 15), dt.date(2024, 4, 1), dt.date(2024, 7, 15)])
+def test_accrued_interest_rejects_an_unknown_day_count_at_every_settlement(settlement):
+    # The coupon-date shortcuts return before year_fraction; they must not
+    # accept a convention year_fraction would reject mid-period (#1509).
+    last, nxt = dt.date(2024, 1, 15), dt.date(2024, 7, 15)
+    with pytest.raises(ValueError, match="unknown day_count"):
+        accrued_interest(100, 0.05, 2, last, settlement, nxt, day_count="bogus")
 
 
 def test_accrued_interest_rejects_unordered_coupon_dates():

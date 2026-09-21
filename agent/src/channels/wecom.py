@@ -164,11 +164,11 @@ class WecomChannel(BaseChannel):
     async def _on_disconnected(self, frame: Any) -> None:
         """Handle WebSocket disconnected event."""
         reason = frame.body if hasattr(frame, 'body') else str(frame)
-        self.logger.warning("WebSocket disconnected: {}", reason)
+        self.logger.warning("WebSocket disconnected: %s", reason)
 
     async def _on_error(self, frame: Any) -> None:
         """Handle error event."""
-        self.logger.error("error: {}", frame)
+        self.logger.error("error: %s", frame)
 
     async def _on_text_message(self, frame: Any) -> None:
         """Handle text message."""
@@ -227,7 +227,7 @@ class WecomChannel(BaseChannel):
 
             # Ensure body is a dict
             if not isinstance(body, dict):
-                self.logger.warning("Invalid body type: {}", type(body))
+                self.logger.warning("Invalid body type: %s", type(body))
                 return
 
             # Extract message info
@@ -375,7 +375,7 @@ class WecomChannel(BaseChannel):
 
             if len(data) > WECOM_UPLOAD_MAX_BYTES:
                 self.logger.warning(
-                    "inbound media too large: {} bytes (max {})",
+                    "inbound media too large: %s bytes (max %s)",
                     len(data),
                     WECOM_UPLOAD_MAX_BYTES,
                 )
@@ -388,7 +388,7 @@ class WecomChannel(BaseChannel):
 
             file_path = media_dir / filename
             await asyncio.to_thread(file_path.write_bytes, data)
-            self.logger.debug("Downloaded {} to {}", media_type, file_path)
+            self.logger.debug("Downloaded %s to %s", media_type, file_path)
             return str(file_path)
 
         except Exception:
@@ -445,7 +445,7 @@ class WecomChannel(BaseChannel):
                 "md5": md5_hash,
             }, "aibot_upload_media_init")
             if resp.errcode != 0:
-                self.logger.warning("upload init failed ({}): {}", resp.errcode, resp.errmsg)
+                self.logger.warning("upload init failed (%s): %s", resp.errcode, resp.errmsg)
                 return None, None
             upload_id = resp.body.get("upload_id") if resp.body else None
             if not upload_id:
@@ -461,7 +461,7 @@ class WecomChannel(BaseChannel):
                     "base64_data": base64.b64encode(chunk).decode(),
                 }, "aibot_upload_media_chunk")
                 if resp.errcode != 0:
-                    self.logger.warning("upload chunk {} failed ({}): {}", i, resp.errcode, resp.errmsg)
+                    self.logger.warning("upload chunk %s failed (%s): %s", i, resp.errcode, resp.errmsg)
                     return None, None
 
             # Step 3: finish
@@ -470,23 +470,23 @@ class WecomChannel(BaseChannel):
                 "upload_id": upload_id,
             }, "aibot_upload_media_finish")
             if resp.errcode != 0:
-                self.logger.warning("upload finish failed ({}): {}", resp.errcode, resp.errmsg)
+                self.logger.warning("upload finish failed (%s): %s", resp.errcode, resp.errmsg)
                 return None, None
 
             media_id = resp.body.get("media_id") if resp.body else None
             if not media_id:
-                self.logger.warning("upload finish: no media_id in response body={}", resp.body)
+                self.logger.warning("upload finish: no media_id in response body=%s", resp.body)
                 return None, None
 
             suffix = "..." if len(media_id) > 16 else ""
-            self.logger.debug("uploaded {} ({}) → media_id={}", fname, media_type, media_id[:16] + suffix)
+            self.logger.debug("uploaded %s (%s) → media_id=%s", fname, media_type, media_id[:16] + suffix)
             return media_id, media_type
 
         except ValueError as e:
-            self.logger.warning("upload skipped for {}: {}", file_path, e)
+            self.logger.warning("upload skipped for %s: %s", file_path, e)
             return None, None
         except Exception:
-            self.logger.exception("_upload_media_ws error for {}", file_path)
+            self.logger.exception("_upload_media_ws error for %s", file_path)
             return None, None
 
     async def send(self, msg: OutboundMessage) -> None:
@@ -505,7 +505,7 @@ class WecomChannel(BaseChannel):
             # Send media files via WebSocket upload
             for file_path in msg.media or []:
                 if not os.path.isfile(file_path):
-                    self.logger.warning("media file not found: {}", file_path)
+                    self.logger.warning("media file not found: %s", file_path)
                     continue
                 media_id, media_type = await self._upload_media_ws(self._client, file_path)
                 if media_id:
@@ -519,7 +519,7 @@ class WecomChannel(BaseChannel):
                             "msgtype": media_type,
                             media_type: {"media_id": media_id},
                         })
-                    self.logger.debug("sent {} → {}", media_type, msg.chat_id)
+                    self.logger.debug("sent %s → %s", media_type, msg.chat_id)
                 else:
                     content += f"\n[file upload failed: {os.path.basename(file_path)}]"
 
@@ -538,7 +538,7 @@ class WecomChannel(BaseChannel):
                     finish=not is_progress,
                 )
                 self.logger.debug(
-                    "{} sent to {}",
+                    "%s sent to %s",
                     "progress" if is_progress else "message",
                     msg.chat_id,
                 )
@@ -548,7 +548,7 @@ class WecomChannel(BaseChannel):
                     "msgtype": "markdown",
                     "markdown": {"content": content},
                 })
-                self.logger.info("proactive send to {}", msg.chat_id)
+                self.logger.info("proactive send to %s", msg.chat_id)
 
         except Exception:
-            self.logger.exception("Error sending message to chat_id={}", msg.chat_id)
+            self.logger.exception("Error sending message to chat_id=%s", msg.chat_id)

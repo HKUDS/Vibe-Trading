@@ -384,14 +384,10 @@ def _bridge_delta(
         `(delta, omitted_components)`.
     """
     omitted: list[str] = []
-    if not math.isfinite(total_debt):
-        raise ValuationError(
-            f"comps: total_debt must be a finite number, got {total_debt!r}"
-        )
-    if not math.isfinite(cash_and_equivalents):
-        raise ValuationError(
-            f"comps: cash_and_equivalents must be a finite number, got {cash_and_equivalents!r}"
-        )
+    total_debt = _require_nonnegative(total_debt, "total_debt")
+    cash_and_equivalents = _require_nonnegative(
+        cash_and_equivalents, "cash_and_equivalents"
+    )
     total = total_debt - cash_and_equivalents
     for name, value in (
         ("minority_interest", minority_interest),
@@ -401,13 +397,26 @@ def _bridge_delta(
         if value is None:
             omitted.append(name)
             continue
-        if not math.isfinite(value):
-            raise ValuationError(
-                f"comps: {name} must be a finite number, got {value!r}"
-            )
+        value = _require_nonnegative(value, name)
         sign = -1.0 if name == "investments_in_associates" else 1.0
         total += sign * value
     return total, tuple(omitted)
+
+
+def _require_nonnegative(value: float, name: str) -> float:
+    """Check a value that is a signed bridge formula's magnitude, so must be >= 0.
+
+    A negative magnitude here would silently flip the sign the bridge
+    formula already applies (e.g. negative cash would be ADDED to EV
+    instead of subtracted) -- the same guard `dcf.equity_bridge` applies
+    to these identical fields.
+    """
+    if not math.isfinite(value) or value < 0.0:
+        raise ValuationError(
+            f"comps: {name} must be supplied as a non-negative magnitude "
+            f"(its sign is applied by the bridge formula), got {value!r}"
+        )
+    return value
 
 
 def enterprise_value(

@@ -1,7 +1,5 @@
 """Regression gates for canonical instrument identity transport (ported patch 006)."""
 
-from decimal import Decimal
-
 from src.portfolio.normalization import normalize_position, value_position
 
 
@@ -23,12 +21,7 @@ def test_asistente_casa_identity_survives_normalization_and_native_valuation():
         "exposure_currency": "ARS",
     }
     normalized = normalize_position("asistente-casa", raw)
-    valued = value_position(
-        normalized,
-        usd_hkd=Decimal("7.8"),
-        usd_cny=Decimal("7.2"),
-        native_currency="ARS",
-    )
+    valued = value_position(normalized, native_currency="ARS")
 
     assert valued["source_instrument_id"] == "accion:YPFD"
     assert valued["source_instrument_type"] == "ACCIONES"

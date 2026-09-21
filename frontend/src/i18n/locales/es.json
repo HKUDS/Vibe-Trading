@@ -421,7 +421,134 @@
       "stoppedToast": "Canales de mensajería detenidos",
       "refreshFailed": "Error al actualizar los canales de mensajería",
       "startFailed": "Error al iniciar los canales de mensajería",
-      "stopFailed": "Error al detener los canales de mensajería"
+      "stopFailed": "Error al detener los canales de mensajería",
+      "config": {
+        "toggleConfig": "Configurar {{name}}",
+        "keepCurrent": "Mantener el valor actual ({{masked}})",
+        "secretNotSet": "Sin definir",
+        "clearSecret": "Borrar",
+        "required": "Obligatorio",
+        "listPlaceholder": "Escribe un valor y pulsa Intro para añadirlo",
+        "removeValue": "Quitar {{value}}",
+        "save": "Guardar configuración",
+        "hotApply": "Guardar se aplica al instante: no hace falta reiniciar.",
+        "saved": "Configuración del canal guardada",
+        "saveFailed": "No se pudo guardar la configuración del canal: {{message}}",
+        "test": "Probar conexión",
+        "testing": "Probando…",
+        "testOk": "Conexión verificada",
+        "testFailed": "La prueba de conexión falló: {{message}}",
+        "testCodeOk": "El proveedor aceptó estas credenciales.",
+        "testCodeInvalidCredentials": "El proveedor rechazó estas credenciales.",
+        "testCodeNetwork": "No se pudo contactar con el proveedor.",
+        "testCodeUnsupported": "Este canal no admite pruebas de conexión.",
+        "testedSavedConfig": "Se probó la configuración guardada.",
+        "testedDraftConfig": "Se probaron los valores actuales del formulario (aún sin guardar).",
+        "enable": "Activar canal",
+        "enableHint": "Desactivarlo conserva las credenciales guardadas: puedes volver a activarlo cuando quieras.",
+        "enabledToast": "Canal activado",
+        "disabledToast": "Canal desactivado",
+        "enableFailed": "No se pudo activar el canal: {{message}}",
+        "disableFailed": "No se pudo desactivar el canal: {{message}}",
+        "enableRejected": "El proveedor rechazó estas credenciales, así que el canal no se activó.",
+        "enableRejectedDetail": "Respuesta del proveedor: {{detail}}",
+        "enableAnyway": "Activar igualmente",
+        "enableAnywayHint": "Activar igualmente omite la verificación de credenciales; el canal podría no conectarse.",
+        "notWritable": "La configuración del canal se guarda en un archivo YAML ({{path}}), que la interfaz web no puede editar. Edita ese archivo directamente para cambiar las credenciales.",
+        "notWritableChip": "Solo lectura (YAML)",
+        "sdkMissing": "SDK de ejecución no instalado — {{hint}}",
+        "sdkMissingNoHint": "El SDK de ejecución no está instalado; el canal se puede configurar, pero podría no iniciarse.",
+        "noFields": "Este canal no tiene campos configurables.",
+        "loadFailed": "No se pudo cargar la configuración del canal."
+      },
+      "fields": {
+        "dingtalk": {
+          "client_id": {
+            "label": "Client ID (AppKey)",
+            "help": "El AppKey de la app, en la página de credenciales de la consola de desarrolladores de DingTalk."
+          },
+          "client_secret": {
+            "label": "Client Secret (AppSecret)",
+            "help": "El AppSecret de la app. Se guarda en el servidor y nunca se devuelve al navegador."
+          },
+          "allow_from": {
+            "label": "Remitentes permitidos",
+            "help": "Lista opcional de IDs de remitente de DingTalk autorizados a hablar con el agente (\"*\" permite a todos). Los remitentes no emparejados reciben un código de emparejamiento por mensaje directo."
+          },
+          "allow_remote_media_redirects": {
+            "label": "Permitir redirecciones de medios",
+            "help": "Seguir las redirecciones del proveedor al descargar medios de los mensajes. Desactivado por defecto."
+          },
+          "remote_media_redirect_allowed_hosts": {
+            "label": "Hosts de redirección permitidos",
+            "help": "Hosts permitidos cuando se activan las redirecciones de medios. Una lista vacía bloquea todas las redirecciones entre hosts."
+          },
+          "group_user_isolation": {
+            "label": "Sesiones por usuario en grupos",
+            "help": "Dar a cada miembro del grupo su propia sesión del agente en lugar de una compartida."
+          },
+          "force_ipv4": {
+            "label": "Forzar IPv4",
+            "help": "Vincula las llamadas a la API de DingTalk a IPv4. Útil cuando la lista blanca de IP de salida tiene una IPv4 estable pero el prefijo IPv6 cambia constantemente."
+          }
+        },
+        "qq": {
+          "app_id": {
+            "label": "AppID",
+            "help": "El AppID del bot, en la configuración de la app en la QQ Open Platform (q.qq.com)."
+          },
+          "secret": {
+            "label": "AppSecret",
+            "help": "El AppSecret del bot. Se guarda en el servidor y nunca se devuelve al navegador."
+          },
+          "allow_from": {
+            "label": "Remitentes permitidos",
+            "help": "Lista opcional de openids de remitentes de QQ autorizados a hablar con el agente (\"*\" permite a todos). Los remitentes no emparejados reciben un código de emparejamiento por mensaje directo."
+          },
+          "msg_format": {
+            "label": "Formato de mensaje",
+            "help": "Formato de respuesta: plain o markdown."
+          },
+          "ack_message": {
+            "label": "Mensaje de confirmación",
+            "help": "Confirmación inmediata que se envía al recibir un mensaje. Déjalo vacío para desactivarla."
+          },
+          "media_dir": {
+            "label": "Directorio de medios",
+            "help": "Dónde se guardan los archivos adjuntos entrantes. Si está vacío, se usa ~/.vibe-trading/media/qq."
+          },
+          "download_chunk_size": {
+            "label": "Tamaño de bloque de descarga",
+            "help": "Bytes por bloque al descargar archivos adjuntos (predeterminado 262144)."
+          },
+          "download_max_bytes": {
+            "label": "Tamaño máximo de descarga (bytes)",
+            "help": "Límite de seguridad para la descarga de un solo archivo adjunto (predeterminado 209715200 = 200 MB)."
+          }
+        }
+      },
+      "guides": {
+        "dingtalk": {
+          "title": "Guía de configuración de DingTalk",
+          "intro": "Los bots de DingTalk usan el modo Stream, así que no hace falta una URL de callback pública.",
+          "step1": "Crea una app en la consola de desarrolladores de DingTalk (open-dev.dingtalk.com).",
+          "step2": "Añade la capacidad de bot a la app y activa el modo Stream.",
+          "step3": "Copia el AppKey de la app en Client ID y su AppSecret en Client Secret.",
+          "step4": "Publica la app para que esté disponible en tu organización.",
+          "step5": "Vuelve aquí, pulsa «Probar conexión» y activa el canal.",
+          "docsLabel": "Abrir la consola de desarrolladores de DingTalk"
+        },
+        "qq": {
+          "title": "Guía de configuración de QQ",
+          "intro": "Los bots de QQ se conectan por WebSocket mediante el SDK oficial botpy, así que no hace falta una URL de callback pública.",
+          "step1": "Regístrate en la QQ Open Platform (q.qq.com) y crea un bot.",
+          "step2": "Copia el AppID y el AppSecret desde la página de configuración de desarrollo del bot.",
+          "step3": "Pégalos en los campos AppID y AppSecret de arriba.",
+          "step4": "Añade el bot a un grupo de QQ o chatea con él en privado, siguiendo las reglas de sandbox/publicación de la plataforma.",
+          "step5": "Vuelve aquí, pulsa «Probar conexión» y activa el canal.",
+          "docsLabel": "Abrir la QQ Open Platform"
+        }
+      }
     },
     "generation": "Generación",
     "dataSourceSettings": "Configuración de fuentes de datos",
@@ -457,7 +584,9 @@
       }
     },
     "tushareToken": "Token de Tushare",
+    "gildataToken": "Token de Gildata",
     "clearTushareToken": "Borrar token de Tushare guardado",
+    "clearGildataToken": "Borrar token de Gildata guardado",
     "saveDataSourceSettings": "Guardar configuración de fuentes de datos",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "Error al cargar la configuración del LLM: {{message}}",
@@ -489,7 +618,8 @@
     "oauth": "OAuth",
     "authentication": "Autenticación",
     "apiKey": "Clave de API",
-    "tushareTokenDesc": "Usado para datos de acciones A, futuros, fondos y macro de China. Si no se configura, el proyecto recurre a AKShare cuando está disponible."
+    "tushareTokenDesc": "Usado para datos de acciones A, futuros, fondos y macro de China. Si no se configura, el proyecto recurre a AKShare cuando está disponible.",
+    "gildataTokenDesc": "Fuente opcional de Gildata (Hundsun Juyuan) para acciones A de China. Si se configura, se une al final de la cadena de respaldo de acciones A con barras diarias ajustadas."
   },
   "qveris": {
     "title": "Mercado de herramientas QVeris",
@@ -1502,11 +1632,11 @@
       "total": "Activos totales",
       "change": "Variación de hoy",
       "changeNote": "Incluye movimientos de mercado y entradas y salidas de efectivo",
-      "changeCanonicalNote": "Variación diaria canónica de Asistente Casa",
       "coverage": "Cobertura de valoración",
       "coverageNote": "Valorado {{priced}} · efectivo {{cash}}",
       "lastComplete": "Última actualización completa",
-      "excluded": "No se pudieron leer {{count}} cuentas y quedan fuera de este total"
+      "excluded": "No se pudieron leer {{count}} cuentas y quedan fuera de este total",
+      "changeCanonicalNote": "Variación diaria canónica de Asistente Casa"
     },
     "allocation": {
       "byAccount": "Distribución por cuenta",
@@ -1540,11 +1670,11 @@
       "colCostPrice": "Coste / Precio",
       "colValue": "Valor",
       "colWeight": "Peso",
-      "colToday": "Hoy",
       "colPnl": "P/G no realizada",
       "colData": "Datos",
       "priced": "Con precio",
-      "unpriced": "Sin precio"
+      "unpriced": "Sin precio",
+      "colToday": "Hoy"
     },
     "history": {
       "title": "Histórico de activos",

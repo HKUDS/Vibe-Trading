@@ -416,7 +416,134 @@
       "stoppedToast": "IM チャンネルを停止しました",
       "refreshFailed": "IM チャンネルの更新に失敗しました",
       "startFailed": "IM チャンネルの開始に失敗しました",
-      "stopFailed": "IM チャンネルの停止に失敗しました"
+      "stopFailed": "IM チャンネルの停止に失敗しました",
+      "config": {
+        "toggleConfig": "{{name}} を設定",
+        "keepCurrent": "現在の値を使用（{{masked}}）",
+        "secretNotSet": "未設定",
+        "clearSecret": "クリア",
+        "required": "必須",
+        "listPlaceholder": "値を入力して Enter で追加",
+        "removeValue": "{{value}} を削除",
+        "save": "設定を保存",
+        "hotApply": "保存するとすぐに反映されます。再起動は不要です。",
+        "saved": "チャンネル設定を保存しました",
+        "saveFailed": "チャンネル設定の保存に失敗しました: {{message}}",
+        "test": "接続テスト",
+        "testing": "テスト中…",
+        "testOk": "接続を確認しました",
+        "testFailed": "接続テストに失敗しました: {{message}}",
+        "testCodeOk": "プロバイダーがこの認証情報を受け付けました。",
+        "testCodeInvalidCredentials": "プロバイダーがこの認証情報を拒否しました。",
+        "testCodeNetwork": "プロバイダーに接続できませんでした。",
+        "testCodeUnsupported": "このチャンネルは接続テストに対応していません。",
+        "testedSavedConfig": "保存済みの設定をテストしました。",
+        "testedDraftConfig": "フォーム上の値（未保存）をテストしました。",
+        "enable": "チャンネルを有効化",
+        "enableHint": "無効化しても認証情報は保持され、いつでも再有効化できます。",
+        "enabledToast": "チャンネルを有効化しました",
+        "disabledToast": "チャンネルを無効化しました",
+        "enableFailed": "チャンネルの有効化に失敗しました: {{message}}",
+        "disableFailed": "チャンネルの無効化に失敗しました: {{message}}",
+        "enableRejected": "プロバイダーが認証情報を拒否したため、チャンネルは有効化されませんでした。",
+        "enableRejectedDetail": "プロバイダーの応答: {{detail}}",
+        "enableAnyway": "それでも有効化",
+        "enableAnywayHint": "それでも有効化すると認証情報の検証をスキップします。接続に失敗する可能性があります。",
+        "notWritable": "チャンネル設定は YAML ファイル（{{path}}）に保存されているため、Web UI からは編集できません。認証情報を変更するにはファイルを直接編集してください。",
+        "notWritableChip": "読み取り専用（YAML）",
+        "sdkMissing": "ランタイム SDK が未インストール — {{hint}}",
+        "sdkMissingNoHint": "ランタイム SDK が未インストールです。設定はできますが、起動できない場合があります。",
+        "noFields": "このチャンネルに設定可能な項目はありません。",
+        "loadFailed": "チャンネル設定を読み込めませんでした。"
+      },
+      "fields": {
+        "dingtalk": {
+          "client_id": {
+            "label": "Client ID（AppKey）",
+            "help": "DingTalk 開発者コンソールの「認証情報」ページにあるアプリの AppKey です。"
+          },
+          "client_secret": {
+            "label": "Client Secret（AppSecret）",
+            "help": "アプリの AppSecret。サーバー側に保存され、ブラウザーには返されません。"
+          },
+          "allow_from": {
+            "label": "許可する送信者",
+            "help": "エージェントと対話できる DingTalk 送信者 ID の許可リスト（「*」で全員許可）。未ペアの送信者には DM でペアリングコードが送られます。"
+          },
+          "allow_remote_media_redirects": {
+            "label": "メディアのリダイレクトを許可",
+            "help": "メッセージのメディアをダウンロードする際にプロバイダーのリダイレクトを追跡します（既定はオフ）。"
+          },
+          "remote_media_redirect_allowed_hosts": {
+            "label": "許可するリダイレクト先ホスト",
+            "help": "メディアリダイレクトを有効にしたときに許可するホスト。空の場合、クロスホストのリダイレクトはすべて拒否されます。"
+          },
+          "group_user_isolation": {
+            "label": "グループでユーザーごとにセッション分離",
+            "help": "グループチャットの各メンバーに個別のエージェントセッションを割り当てます。"
+          },
+          "force_ipv4": {
+            "label": "IPv4 を強制",
+            "help": "DingTalk API 呼び出しを IPv4 にバインドします。送信元 IP ホワイトリストがあり、IPv6 プレフィックスは変動するが IPv4 は安定している場合に有効にします。"
+          }
+        },
+        "qq": {
+          "app_id": {
+            "label": "AppID",
+            "help": "QQ 公式プラットフォーム（q.qq.com）のアプリ設定にあるボットの AppID です。"
+          },
+          "secret": {
+            "label": "AppSecret",
+            "help": "ボットの AppSecret。サーバー側に保存され、ブラウザーには返されません。"
+          },
+          "allow_from": {
+            "label": "許可する送信者",
+            "help": "エージェントと対話できる QQ 送信者 openid の許可リスト（「*」で全員許可）。未ペアの送信者には DM でペアリングコードが送られます。"
+          },
+          "msg_format": {
+            "label": "メッセージ形式",
+            "help": "返信形式：plain または markdown。"
+          },
+          "ack_message": {
+            "label": "確認メッセージ",
+            "help": "メッセージ受信時にすぐ送信する確認応答。空欄にすると送信しません。"
+          },
+          "media_dir": {
+            "label": "メディアディレクトリ",
+            "help": "受信した添付ファイルの保存先。空欄の場合は ~/.vibe-trading/media/qq を使用します。"
+          },
+          "download_chunk_size": {
+            "label": "ダウンロードチャンクサイズ",
+            "help": "添付ファイルをダウンロードする際の 1 チャンクあたりのバイト数（既定 262144）。"
+          },
+          "download_max_bytes": {
+            "label": "最大ダウンロードサイズ（バイト）",
+            "help": "1 つの添付ファイルのダウンロードに対する安全上限（既定 209715200＝200 MB）。"
+          }
+        }
+      },
+      "guides": {
+        "dingtalk": {
+          "title": "DingTalk セットアップガイド",
+          "intro": "DingTalk ボットは Stream モードを使うため、公開コールバック URL は不要です。",
+          "step1": "DingTalk 開発者コンソール（open-dev.dingtalk.com）でアプリを作成します。",
+          "step2": "アプリにボット機能を追加し、Stream モードを有効にします。",
+          "step3": "アプリの AppKey を Client ID に、AppSecret を Client Secret に貼り付けます。",
+          "step4": "アプリを公開して、組織内で利用できるようにします。",
+          "step5": "ここに戻って「接続テスト」をクリックし、チャンネルを有効化します。",
+          "docsLabel": "DingTalk 開発者コンソールを開く"
+        },
+        "qq": {
+          "title": "QQ セットアップガイド",
+          "intro": "QQ ボットは公式 botpy SDK を介して WebSocket で接続するため、公開コールバック URL は不要です。",
+          "step1": "QQ 公式プラットフォーム（q.qq.com）に登録し、ボットを作成します。",
+          "step2": "ボットの開発設定ページで AppID と AppSecret をコピーします。",
+          "step3": "それらを上の AppID と AppSecret のフィールドに貼り付けます。",
+          "step4": "プラットフォームのサンドボックス／公開ルールに従って、ボットを QQ グループに追加するか、個別にチャットします。",
+          "step5": "ここに戻って「接続テスト」をクリックし、チャンネルを有効化します。",
+          "docsLabel": "QQ 公式プラットフォームを開く"
+        }
+      }
     },
     "generation": "生成設定",
     "dataSourceSettings": "データソース設定",
@@ -452,7 +579,9 @@
       }
     },
     "tushareToken": "Tushare トークン",
+    "gildataToken": "Gildata トークン",
     "clearTushareToken": "保存済み Tushare トークンをクリア",
+    "clearGildataToken": "保存済み Gildata トークンをクリア",
     "saveDataSourceSettings": "データソース設定を保存",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "LLM 設定の読み込みに失敗: {{message}}",
@@ -484,7 +613,8 @@
     "oauth": "OAuth",
     "authentication": "認証",
     "apiKey": "APIキー",
-    "tushareTokenDesc": "中国A株・先物・ファンド・マクロデータに使用します。未設定の場合、利用可能なところではAKShareにフォールバックします。"
+    "tushareTokenDesc": "中国A株・先物・ファンド・マクロデータに使用します。未設定の場合、利用可能なところではAKShareにフォールバックします。",
+    "gildataTokenDesc": "オプションの恒生聚源（Gildata）中国A株データソース。設定すると、日足（前調整）でA株フォールバックチェーンの末尾に加わります。"
   },
   "qveris": {
     "title": "QVeris ツールマーケットプレイス",
@@ -1502,11 +1632,11 @@
       "total": "総資産",
       "change": "本日の資産変動",
       "changeNote": "相場変動と入出金を含みます",
-      "changeCanonicalNote": "Asistente Casa による正規の本日のポートフォリオ変動",
       "coverage": "評価カバレッジ",
       "coverageNote": "評価済み {{priced}} · 現金 {{cash}}",
       "lastComplete": "最後の完全更新",
-      "excluded": "{{count}} 件の口座を読み取れなかったため、この合計から除外しています"
+      "excluded": "{{count}} 件の口座を読み取れなかったため、この合計から除外しています",
+      "changeCanonicalNote": "Asistente Casa による正規の本日のポートフォリオ変動"
     },
     "allocation": {
       "byAccount": "口座別の構成",
@@ -1540,11 +1670,11 @@
       "colCostPrice": "取得単価 / 現在値",
       "colValue": "評価額",
       "colWeight": "構成比",
-      "colToday": "本日",
       "colPnl": "評価損益",
       "colData": "データ",
       "priced": "評価済み",
-      "unpriced": "未評価"
+      "unpriced": "未評価",
+      "colToday": "本日"
     },
     "history": {
       "title": "資産推移",

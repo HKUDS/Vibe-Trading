@@ -50,6 +50,8 @@ def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]
     pc = c.shift(1)
     up = c > pc
-    up_v = v.where(up, 0.0).rolling(26, min_periods=26).sum()
-    dn_v = v.where(~up, 0.0).rolling(26, min_periods=26).sum()
+    # A bar whose close or prior close is missing is neither an up nor a down day (#1463).
+    valid = c.notna() & pc.notna()
+    up_v = v.where(up, 0.0).where(valid).rolling(26, min_periods=26).sum()
+    dn_v = v.where(~up, 0.0).where(valid).rolling(26, min_periods=26).sum()
     return safe_div(up_v, dn_v) * 100.0

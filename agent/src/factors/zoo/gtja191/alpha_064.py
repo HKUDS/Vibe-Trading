@@ -50,7 +50,12 @@ def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]
     vw = safe_div(panel["amount"], v * 100.0 + 1.0)
     p1 = rank(decay_linear(ts_corr(rank(vw), rank(v), 4), 4))
-    inner = ts_corr(rank(c), rank(ts_mean(v, 10)), 4).fillna(0.0)
+    x = rank(c)
+    y = rank(ts_mean(v, 10))
+    # fillna(0.0) reads a constant window's undefined correlation as no co-movement;
+    # a window that holds a missing input is not that, so it stays missing (#1452, #1463).
+    present = (x.notna() & y.notna()).astype(float).rolling(4, min_periods=4).min() == 1.0
+    inner = ts_corr(x, y, 4).fillna(0.0).where(present)
     p2 = rank(decay_linear(ts_max(inner, 4), 6))
     return -1.0 * pd.DataFrame(np.maximum(p1.to_numpy(), p2.to_numpy()),
                                index=c.index, columns=c.columns)

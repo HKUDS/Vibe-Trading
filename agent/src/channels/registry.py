@@ -19,16 +19,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_INTERNAL = frozenset({"base", "bus", "config", "manager", "pairing", "registry", "runtime", "utils"})
+_INTERNAL = frozenset(
+    {
+        "base",
+        "bus",
+        "config",
+        "config_meta",
+        "dingtalk_media",
+        "dingtalk_probe",
+        "manager",
+        "pairing",
+        "qq_probe",
+        "registry",
+        "runtime",
+        "targets",
+        "token_probe",
+        "utils",
+    }
+)
 _LEGACY_GLOBAL_CONFIG_KEYS = frozenset(
     {"restrictToWorkspace", "restrict_to_workspace", "showReasoning", "show_reasoning"}
 )
-_GLOBAL_CONFIG_KEYS = frozenset(
-    key
-    for name, field in ChannelsConfig.model_fields.items()
-    for key in (name, field.alias)
-    if key
-) | _LEGACY_GLOBAL_CONFIG_KEYS
+_GLOBAL_CONFIG_KEYS = (
+    frozenset(
+        key
+        for name, field in ChannelsConfig.model_fields.items()
+        for key in (name, field.alias)
+        if key
+    )
+    | _LEGACY_GLOBAL_CONFIG_KEYS
+)
 
 _INSTALL_HINTS: dict[str, str] = {
     "dingtalk": "pip install 'vibe-trading-ai[dingtalk]'",
@@ -95,7 +115,9 @@ def discover_channel_names() -> list[str]:
     ]
 
 
-def _channel_class_from_module(module: ModuleType, module_name: str) -> type[BaseChannel]:
+def _channel_class_from_module(
+    module: ModuleType, module_name: str
+) -> type[BaseChannel]:
     """Return the first BaseChannel subclass defined in *module*."""
     from src.channels.base import BaseChannel as _Base
 
@@ -147,7 +169,9 @@ def inspect_channel(name: str) -> ChannelAvailability:
                 available=False,
                 display_name=str(display),
                 error=missing,
-                install_hint=_INSTALL_HINTS.get(name, f"pip install 'vibe-trading-ai[{name}]'"),
+                install_hint=_INSTALL_HINTS.get(
+                    name, f"pip install 'vibe-trading-ai[{name}]'"
+                ),
             )
         return ChannelAvailability(name=name, available=True, display_name=str(display))
     except Exception as exc:  # noqa: BLE001 - status API must report every adapter
@@ -156,7 +180,9 @@ def inspect_channel(name: str) -> ChannelAvailability:
             available=False,
             display_name=name.replace("_", " ").title(),
             error=f"{type(exc).__name__}: {exc}",
-            install_hint=_INSTALL_HINTS.get(name, f"pip install 'vibe-trading-ai[{name}]'"),
+            install_hint=_INSTALL_HINTS.get(
+                name, f"pip install 'vibe-trading-ai[{name}]'"
+            ),
         )
 
 
@@ -176,7 +202,9 @@ def _config_section(config: Any, name: str) -> Any:
 
 def _configured_channel_names(config: Any) -> set[str]:
     if isinstance(config, Mapping):
-        return {str(key) for key in config.keys() if str(key) not in _GLOBAL_CONFIG_KEYS}
+        return {
+            str(key) for key in config.keys() if str(key) not in _GLOBAL_CONFIG_KEYS
+        }
     model_dump = getattr(config, "model_dump", None)
     if callable(model_dump):
         return _configured_channel_names(model_dump(mode="json", by_alias=False))
@@ -234,7 +262,9 @@ def discover_plugins(
             cls = ep.load()
             plugins[ep.name] = cls
         except Exception:
-            logger.warning("Failed to load channel plugin '%s': %s", ep.name, exc_info=True)
+            logger.warning(
+                "Failed to load channel plugin '%s': %s", ep.name, exc_info=True
+            )
     return plugins
 
 
@@ -263,12 +293,18 @@ def discover_enabled(
     external = discover_plugins(None if _include_all_external else enabled_names)
     shadowed = set(external) & set(result)
     if shadowed:
-        logger.warning("Plugin(s) shadowed by built-in channels (ignored): %s", shadowed)
+        logger.warning(
+            "Plugin(s) shadowed by built-in channels (ignored): %s", shadowed
+        )
     if _include_all_external:
         result.update({k: v for k, v in external.items() if k not in shadowed})
     else:
         result.update(
-            {k: v for k, v in external.items() if k not in shadowed and k in enabled_names}
+            {
+                k: v
+                for k, v in external.items()
+                if k not in shadowed and k in enabled_names
+            }
         )
 
     return result

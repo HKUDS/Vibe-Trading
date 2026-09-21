@@ -594,34 +594,58 @@ class PersistentMemory:
                     logger.debug("FTS5 index_entry failed", exc_info=True)
         return path
 
-    def remove(self, name: str) -> bool:
-        """Remove a memory entry by name. Returns True if found and removed."""
+    def remove(self, name: str, memory_type: str | None = None) -> bool:
+        """Remove a memory entry by name.
+
+        One title can exist under several memory types, each in its own file
+        (``{memory_type}_{slug}.md``, #1525), so a bare title can be ambiguous.
+
+        Args:
+            name: Title of the entry to remove.
+            memory_type: The entry's type; needed only when the title exists
+                under more than one type.
+
+        Returns:
+            True if an entry was found and removed, False if none matched.
+
+        Raises:
+            ValueError: The title exists under several types and ``memory_type``
+                was not given.
+        """
         from src.config.accessor import get_env_config
 
-        for entry in self._scan_entries():
-            if entry.title == name:
-                with memory_lock(self._dir) as acquired:
-                    if not acquired:
-                        logger.warning("remove(%s): lock timeout", name)
-                    entry.path.unlink(missing_ok=True)
-                    self._rebuild_index()
+        matches = [
+            entry
+            for entry in self._scan_entries()
+            if entry.title == name and (memory_type is None or entry.memory_type == memory_type)
+        ]
+        if not matches:
+            return False
+        if len(matches) > 1:
+            types = ", ".join(sorted(entry.memory_type for entry in matches))
+            raise ValueError(f"memory {name!r} exists as {types}; name the memory_type to remove")
+        entry = matches[0]
+        with memory_lock(self._dir) as acquired:
+            if not acquired:
+                logger.warning("remove(%s): lock timeout", name)
+            entry.path.unlink(missing_ok=True)
+            self._rebuild_index()
 
-                if get_env_config().memory.fts_index_enabled:
-                    try:
-                        from src.memory.search_index import get_shared_index
-                        get_shared_index().remove_entry(entry.id)
-                    except Exception:
-                        logger.debug("FTS5 remove_entry failed", exc_info=True)
+        if get_env_config().memory.fts_index_enabled:
+            try:
+                from src.memory.search_index import get_shared_index
+                get_shared_index().remove_entry(entry.id)
+            except Exception:
+                logger.debug("FTS5 remove_entry failed", exc_info=True)
 
-                if get_env_config().memory.links_enabled:
-                    try:
-                        from src.memory.semantic_links import SemanticLinker
-                        SemanticLinker(self._dir).remove_relations(entry.path)
-                    except Exception:
-                        logger.debug("Failed to remove relations for %s", entry.path, exc_info=True)
+        if get_env_config().memory.links_enabled:
+            try:
+                from src.memory.semantic_links import SemanticLinker
+                SemanticLinker(self._dir).remove_relations(entry.path)
+            except Exception:
+                logger.debug("Failed to remove relations for %s", entry.path, exc_info=True)
 
-                return True
-        return False
+        return True
 
     def _update_index(self, title: str, filename: str, description: str) -> None:
         """Append or update an entry in MEMORY.md."""
@@ -630,7 +654,12 @@ class PersistentMemory:
         if self._index_path.exists():
             lines = self._index_path.read_text(encoding="utf-8").split("\n")
             updated = False
-            target_prefix = f"- [{title}]("
+            # Match on the filename, not just the title: two different
+            # memory_types produce two different files for the same title
+            # (add() names the file "{memory_type}_{slug}.md"), and matching
+            # on title alone made the second add() silently clobber the
+            # first entry's index row even though both files exist on disk.
+            target_prefix = f"- [{title}]({filename})"
             for i, line in enumerate(lines):
                 if line.startswith(target_prefix):
                     lines[i] = new_line

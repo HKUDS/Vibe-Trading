@@ -9,15 +9,6 @@
     "api_key_required": true
   },
   {
-    "name": "requesty",
-    "label": "Requesty",
-    "api_key_env": "REQUESTY_API_KEY",
-    "base_url_env": "REQUESTY_BASE_URL",
-    "default_model": "openai/gpt-4o-mini",
-    "default_base_url": "https://router.requesty.ai/v1",
-    "api_key_required": true
-  },
-  {
     "name": "openai",
     "label": "OpenAI",
     "api_key_env": "OPENAI_API_KEY",
