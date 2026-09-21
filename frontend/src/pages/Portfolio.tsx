@@ -625,7 +625,7 @@ function CredentialCard({ account }: { account: PortfolioAccount }) {
 
 type AllocationDatum = { id?: string; name: string; value: number; connector?: string };
 
-function AllocationPie({ title, data, centerLabel, currency = "USD", onSelect }: { title: string; data: AllocationDatum[]; centerLabel: string; currency?: PortfolioCurrency; onSelect?: (id: string) => void }) {
+function AllocationPie({ title, data, centerLabel, currency = "USD", onSelect }: { title: string; data: AllocationDatum[]; centerLabel: string; currency?: string; onSelect?: (id: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const { i18n: instance } = useTranslation();
   const dark = useThemeDark();
