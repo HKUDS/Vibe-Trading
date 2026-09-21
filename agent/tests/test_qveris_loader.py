@@ -357,6 +357,42 @@ class TestFetch:
             qv.DataLoader().fetch(["AAPL"], "2024-02-01", "2024-01-01")
 
 
+class TestParameterMapping:
+    def test_does_not_treat_indicators_as_end_date(self):
+        capability = {
+            "params": [
+                {"name": "startdate", "type": "string"},
+                {"name": "enddate", "type": "string"},
+                {"name": "interval", "type": "string", "enum": ["D", "daily"]},
+                {"name": "cps", "type": "string"},
+                {"name": "indicators", "type": "string"},
+                {"name": "metadata_to", "type": "string"},
+            ],
+            "examples": {
+                "sample_parameters": {
+                    "cps": "1",
+                    "indicators": "close",
+                    "metadata_to": "raw",
+                }
+            },
+        }
+
+        parameters = qv._build_parameters(
+            capability,
+            "600519.SH",
+            "2019-01-02",
+            "2019-12-31",
+            "1D",
+        )
+
+        assert parameters["startdate"] == "2019-01-02"
+        assert parameters["enddate"] == "2019-12-31"
+        assert parameters["interval"] == "D"
+        assert parameters["cps"] == "1"
+        assert parameters["indicators"] == "close"
+        assert parameters["metadata_to"] == "raw"
+
+
 class TestHttpClient:
     """429 backoff is local and mockable."""
 

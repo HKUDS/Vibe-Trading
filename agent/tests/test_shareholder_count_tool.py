@@ -22,7 +22,7 @@ _SAMPLE_PAYLOAD = {
                 "HOLDER_NUM_CHANGE": -2000,
                 "HOLDER_NUM_RATIO": -1.05,
                 "AVG_HOLD_NUM": 6680.0,
-                "AVG_HOLD_AMT": 12345678.0,
+                "AVG_MARKET_CAP": 12345678.0,
                 "TOTAL_MARKET_CAP": 2.1e12,
             },
             {
@@ -32,7 +32,7 @@ _SAMPLE_PAYLOAD = {
                 "HOLDER_NUM_CHANGE": 1500,
                 "HOLDER_NUM_RATIO": 0.80,
                 "AVG_HOLD_NUM": 6610.0,
-                "AVG_HOLD_AMT": 12000000.0,
+                "AVG_MARKET_CAP": 12000000.0,
                 "TOTAL_MARKET_CAP": 2.0e12,
             },
         ]
@@ -65,6 +65,8 @@ def test_success_envelope_parses_periods_newest_first():
     # SECUCODE filter flows through to the datacenter request.
     _, kwargs = mock_get.call_args
     assert kwargs["params"]["filter"] == '(SECUCODE="600519.SH")'
+    # The retired AVG_HOLD_AMT spelling makes the datacenter reject the request.
+    assert "AVG_MARKET_CAP" in kwargs["params"]["columns"]
 
 
 def test_max_periods_caps_returned_rows():
@@ -94,6 +96,43 @@ def test_empty_disclosure_returns_error_envelope():
     payload = json.loads(out)
     assert payload["ok"] is False
     assert "no shareholder-count" in payload["error"]
+
+
+def test_upstream_rejection_is_surfaced_not_reported_as_missing_data():
+    """A stale request must not be reported as a symbol without a disclosure.
+
+    The datacenter answers HTTP 200 with ``success: false`` and a message naming an
+    unknown column when the requested column list drifts; the envelope has to carry
+    that message rather than the empty-disclosure error.
+    """
+    drift = {
+        "success": False,
+        "message": "AVG_HOLD_AMT参数不存在",
+        "result": None,
+    }
+    with patch.object(sct, "get_json", return_value=drift):
+        out = ShareholderCountTool().execute(code="600519.SH")
+
+    payload = json.loads(out)
+    assert payload["ok"] is False
+    assert "AVG_HOLD_AMT参数不存在" in payload["error"]
+    assert "no shareholder-count" not in payload["error"]
+
+
+def test_empty_result_message_is_reported_as_no_disclosure():
+    """The datacenter's no-rows answer is not a rejection of the request.
+
+    An empty match arrives with the same ``success: false`` flags as a schema
+    complaint, so it has to stay on the empty-disclosure path.
+    """
+    empty = {"success": False, "message": "返回数据为空", "result": None}
+    with patch.object(sct, "get_json", return_value=empty):
+        out = ShareholderCountTool().execute(code="999999.SH")
+
+    payload = json.loads(out)
+    assert payload["ok"] is False
+    assert "no shareholder-count" in payload["error"]
+    assert "rejected" not in payload["error"]
 
 
 def test_request_failure_is_caught_as_error_envelope():

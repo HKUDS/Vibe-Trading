@@ -24,9 +24,13 @@ _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _REPORT_NAME = "RPT_HOLDERNUMLATEST"
 
 # Report columns we surface, mapped to the API's field names.
+#
+# Per-account market value is ``AVG_MARKET_CAP``; the older ``AVG_HOLD_AMT`` name
+# no longer exists upstream, and asking for it makes the datacenter reject the
+# whole request (HTTP 200, ``success: false``, ``result: null``).
 _COLUMNS = (
     "SECUCODE,SECURITY_CODE,END_DATE,HOLDER_NUM,HOLDER_NUM_CHANGE,"
-    "HOLDER_NUM_RATIO,AVG_HOLD_AMT,AVG_HOLD_NUM,TOTAL_MARKET_CAP"
+    "HOLDER_NUM_RATIO,AVG_MARKET_CAP,AVG_HOLD_NUM,TOTAL_MARKET_CAP"
 )
 
 # Hard cap on returned periods so a long history cannot bloat the payload.
@@ -34,6 +38,11 @@ _MAX_PERIODS = 24
 
 # A-share exchange suffixes this disclosure covers.
 _A_SHARE_SUFFIXES = ("SH", "SZ", "BJ")
+
+# The datacenter answers a filter that matches nothing with the same ``success:
+# false`` shape it uses to reject a request, so this message means "no rows" and is
+# not a complaint about the request itself.
+_EMPTY_RESULT_MESSAGES = ("返回数据为空",)
 
 
 class ShareholderCountTool(BaseTool):
@@ -115,6 +124,10 @@ class ShareholderCountTool(BaseTool):
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
             return _error(f"eastmoney datacenter request failed: {exc}")
 
+        rejection = _upstream_rejection(payload)
+        if rejection is not None:
+            return _error(f"eastmoney datacenter rejected the request: {rejection}")
+
         periods = _parse_periods(payload)
         if not periods:
             return _error(f"no shareholder-count disclosure found for '{code}'")
@@ -137,6 +150,35 @@ def _clamp_periods(value: Any) -> int:
     except (TypeError, ValueError, OverflowError):
         return _MAX_PERIODS
     return max(1, min(n, _MAX_PERIODS))
+
+
+def _upstream_rejection(payload: Any) -> str | None:
+    """Return the datacenter's own complaint when it rejected the request.
+
+    The datacenter answers HTTP 200 with ``success: false``, ``result: null`` and a
+    ``message`` naming the offending parameter (typically a report column that no
+    longer exists). Without this check the payload is indistinguishable from a
+    symbol that carries no disclosure, so a changed report schema would reach the
+    caller as "no data for this stock" instead of "our query is stale".
+
+    An empty result uses the same flags, so its message is passed through to the
+    caller's empty-disclosure path instead of being reported as a rejection.
+
+    Args:
+        payload: Decoded datacenter JSON.
+
+    Returns:
+        The upstream message, or ``None`` when the request was not rejected.
+    """
+    if not isinstance(payload, dict) or payload.get("success") is not False:
+        return None
+    message = payload.get("message")
+    if not (isinstance(message, str) and message.strip()):
+        return "request rejected without a message"
+    message = message.strip()
+    if message in _EMPTY_RESULT_MESSAGES:
+        return None
+    return message
 
 
 def _parse_periods(payload: Any) -> list[dict]:
@@ -191,7 +233,7 @@ def _normalize_row(row: Any) -> dict | None:
         "holder_count_change": _to_number(row.get("HOLDER_NUM_CHANGE")),
         "holder_count_change_pct": _to_number(row.get("HOLDER_NUM_RATIO")),
         "avg_hold_shares": _to_number(row.get("AVG_HOLD_NUM")),
-        "avg_hold_amount": _to_number(row.get("AVG_HOLD_AMT")),
+        "avg_hold_amount": _to_number(row.get("AVG_MARKET_CAP")),
         "total_market_cap": _to_number(row.get("TOTAL_MARKET_CAP")),
     }
 

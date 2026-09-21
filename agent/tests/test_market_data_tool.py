@@ -463,3 +463,38 @@ def test_market_data_tool_accepts_minute_intervals():
             )
             assert json.loads(out) == {}
     assert [c["interval"] for c in calls] == ["1m", "5m", "15m", "30m", "30m", "1H", "1D"]
+
+
+def test_market_data_tool_rejects_month_and_week_spellings():
+    """'1M' (one month) must never case-fold to '1m' (one minute) (#1480)."""
+    import src.tools.market_data_tool as mod
+    from unittest import mock
+
+    with mock.patch.object(mod, "fetch_market_data_json", return_value="{}") as fetch:
+        for interval, meaning in (("1M", "one month"), ("1W", "one week")):
+            out = json.loads(
+                mod.MarketDataTool().execute(
+                    codes=["AAPL.US"],
+                    start_date="2026-08-20",
+                    end_date="2026-08-21",
+                    interval=interval,
+                )
+            )
+            assert out["ok"] is False
+            assert meaning in out["error"]
+            assert "one minute" in out["error"]
+            assert interval in out["error"]
+        # Silence is the failure mode (#1480): the fold must never reach a loader.
+        fetch.assert_not_called()
+
+
+def test_canonicalize_interval_keeps_minute_and_refuses_month():
+    """_canonicalize_interval resolves '1m' but refuses '1M'/'1W' (#1480)."""
+    from src.tools.market_data_tool import _canonicalize_interval
+
+    assert _canonicalize_interval("1m") == "1m"
+    assert _canonicalize_interval("1M") is None
+    assert _canonicalize_interval("1W") is None
+    assert _canonicalize_interval("1d") == "1D"
+    assert _canonicalize_interval("30M") == "30m"
+    assert _canonicalize_interval("1h") == "1H"

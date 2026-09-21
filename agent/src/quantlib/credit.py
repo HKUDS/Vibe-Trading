@@ -695,11 +695,19 @@ def spread_term_structure(
         for tenor, yld in tenor_curve.items():
             reference = curve.get(tenor, np.nan)
             spread = (yld - reference) * multiplier
-            row[f"{tenor}Y_spread_bp"] = (
+            row[f"{_format_tenor(tenor)}Y_spread_bp"] = (
                 spread if decimals is None else round(spread, decimals)
             )
         records.append(pd.Series(row, name=issuer))
     return pd.DataFrame(records)
+
+
+def _format_tenor(tenor: float) -> str:
+    """Canonical column-name spelling for a tenor, so ``5`` and ``5.0`` from
+    different issuers land in the same column instead of silently splitting
+    the grid into duplicate NaN-filled columns."""
+    value = float(tenor)
+    return str(int(value)) if value.is_integer() else str(value)
 
 
 def hazard_rate_to_survival_probability(hazard_rate: float, tenor_years: float) -> float:

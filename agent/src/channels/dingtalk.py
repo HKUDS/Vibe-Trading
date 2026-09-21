@@ -17,6 +17,7 @@ from pydantic import Field
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
+from src.channels.utils import safe_filename
 from pydantic import BaseModel
 from src.security.network import validate_resolved_url, validate_url_target
 
@@ -761,10 +762,15 @@ class DingTalkChannel(BaseChannel):
                 self.logger.error("file download failed: status={}", file_resp.status_code)
                 return None
 
-            # Save to media directory (accessible under workspace)
+            # Save to media directory (accessible under workspace). filename
+            # comes straight from the inbound payload, so it must be
+            # sanitized the same way every other adapter sanitizes remote
+            # filenames before joining it: an unsanitized "../../etc/x" (or
+            # an absolute path, which Path.__truediv__ would substitute for
+            # the whole intended path) would write outside download_dir.
             download_dir = get_media_dir("dingtalk") / sender_id
             download_dir.mkdir(parents=True, exist_ok=True)
-            file_path = download_dir / filename
+            file_path = download_dir / safe_filename(filename)
             await asyncio.to_thread(file_path.write_bytes, file_resp.content)
             self.logger.info("file saved: {}", file_path)
             return str(file_path)

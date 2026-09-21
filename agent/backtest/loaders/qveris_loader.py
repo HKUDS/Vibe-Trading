@@ -536,7 +536,16 @@ def _is_start_param(name: str) -> bool:
 
 
 def _is_end_param(name: str) -> bool:
-    return any(token in name for token in ("end", "to", "until"))
+    normalized = name.replace("-", "_")
+    return normalized in {
+        "end",
+        "end_date",
+        "enddate",
+        "to",
+        "to_date",
+        "until",
+        "until_date",
+    }
 
 
 def _is_interval_param(name: str) -> bool:
