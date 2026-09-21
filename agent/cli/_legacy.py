@@ -4640,13 +4640,19 @@ def _print_connector_balances(result: dict[str, Any]) -> int:
     table.add_column("Init Margin", justify="right")
     table.add_column("Maint Margin", justify="right")
     for row in result.get("balances", []):
+        # ccxt-backed connectors (Binance) return asset/free/used/total rows,
+        # not the currency/net_assets/... shape this table was written for
+        # (Longbridge/IBKR-style). Every field below read None for those
+        # rows, rendering fully blank lines — indistinguishable from a hang
+        # on an account with hundreds of non-zero balances (e.g. a Testnet
+        # faucet dump). Fall back to the ccxt keys so real data shows up.
         table.add_row(
-            cell(row.get("currency")),
-            cell(row.get("net_assets")),
-            cell(row.get("total_cash")),
+            cell(row.get("currency") if row.get("currency") is not None else row.get("asset")),
+            cell(row.get("net_assets") if row.get("net_assets") is not None else row.get("total")),
+            cell(row.get("total_cash") if row.get("total_cash") is not None else row.get("free")),
             cell(row.get("buy_power")),
             cell(row.get("init_margin")),
-            cell(row.get("maintenance_margin")),
+            cell(row.get("maintenance_margin") if row.get("maintenance_margin") is not None else row.get("used")),
         )
     console.print(table)
     return EXIT_SUCCESS
