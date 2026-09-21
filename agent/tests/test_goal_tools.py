@@ -211,3 +211,116 @@ def test_research_goal_skill_is_bundled() -> None:
 
     assert "start_research_goal" in content
     assert "add_goal_evidence" in content
+
+
+def test_goal_tools_expose_canonical_completion_contract(tmp_path: Path) -> None:
+    """All goal reads expose canonical criterion ids and criterion-local evidence ids."""
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    get = GetResearchGoalTool(default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+
+    created = json.loads(
+        start.execute(
+            objective="Evaluate NVDA momentum as a research-only thesis.",
+            criteria=["Define thesis", "Check price action"],
+        )
+    )
+    contract = created["completion_contract"]
+    assert [row["criterion_index"] for row in contract["criteria"]] == [1, 2]
+    assert [row["criterion_id"] for row in contract["criteria"]] == [
+        item["criterion_id"] for item in created["snapshot"]["criteria"]
+    ]
+
+    evidence = json.loads(
+        add.execute(
+            criterion_index=2,
+            text="Concrete price-action evidence.",
+        )
+    )
+    evidence_id = evidence["evidence"]["evidence_id"]
+    row = evidence["completion_contract"]["criteria"][1]
+    assert row["criterion_id"] == created["snapshot"]["criteria"][1]["criterion_id"]
+    assert row["evidence_ids"] == [evidence_id]
+
+    fetched = json.loads(get.execute())
+    assert fetched["completion_contract"] == evidence["completion_contract"]
+
+
+def test_completion_error_returns_repair_contract(tmp_path: Path) -> None:
+    """A rejected completion points the model at canonical ids instead of more research."""
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    update = UpdateResearchGoalStatusTool(default_session_id="session-1", store=store)
+
+    created = json.loads(
+        start.execute(
+            objective="Evaluate NVDA momentum as a research-only thesis.",
+            criteria=["Define thesis", "Check price action"],
+        )
+    )
+    result = json.loads(
+        update.execute(
+            status="complete",
+            audit=[
+                {
+                    "criterion_index": 1,
+                    "result": "satisfied",
+                    "evidence_ids": [],
+                }
+            ],
+        )
+    )
+
+    assert result["status"] == "error"
+    assert "completion_contract" in result
+    assert result["completion_contract"]["goal_id"] == created["snapshot"]["goal"]["goal_id"]
+    assert len(result["completion_contract"]["criteria"]) == 2
+    assert "criterion" in result["error"].lower() or "verified evidence" in result["error"].lower()
+
+
+def test_completion_audit_accepts_canonical_criterion_index(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """criterion_index resolves to the current canonical criterion id for completion."""
+    run_root = tmp_path / "runs"
+    run_dir = run_root / "goal-tool-run"
+    run_dir.mkdir(parents=True)
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(run_root))
+
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    update = UpdateResearchGoalStatusTool(default_session_id="session-1", store=store)
+
+    created = json.loads(
+        start.execute(
+            objective="Evaluate NVDA momentum as a research-only thesis.",
+            criteria=["Check price action"],
+        )
+    )
+    evidence = json.loads(
+        add.execute(
+            criterion_index=1,
+            text="Verified evidence from the current run.",
+            run_dir=str(run_dir),
+        )
+    )
+    evidence_id = evidence["evidence"]["evidence_id"]
+
+    completed = json.loads(
+        update.execute(
+            status="complete",
+            audit=[
+                {
+                    "criterion_index": 1,
+                    "result": "satisfied",
+                    "evidence_ids": [evidence_id],
+                }
+            ],
+        )
+    )
+
+    assert completed["status"] == "ok"
+    assert completed["snapshot"]["goal"]["status"] == "complete"
