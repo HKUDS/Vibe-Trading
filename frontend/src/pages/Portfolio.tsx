@@ -21,6 +21,7 @@ import {
   api,
   type PortfolioAccount,
   type PortfolioHistoryPoint,
+  type PortfolioPosition,
   type PortfolioRefreshState,
   type PortfolioSettings,
   type PortfolioSnapshot,
@@ -86,6 +87,16 @@ function percentage(value: number | null | undefined) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(value);
+}
+
+/** Asistente Casa daily-change values arrive in percentage points (1.42 = +1.42%). */
+function percentagePoints(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const rendered = new Intl.NumberFormat(uiLocale(), {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+  return `${value > 0 ? "+" : ""}${rendered} %`;
 }
 
 /** ECharts reports slice shares as 0-100; `percentage` expects a 0-1 ratio. */
@@ -258,13 +269,30 @@ export function Portfolio() {
 
   useEffect(() => { void load(); }, []);
 
+  const displayCurrency = portfolioSettings?.display_currency ?? snapshot?.display_currency ?? "USD";
+  const nativeDisplay = Boolean(snapshot?.totals.native_by_currency?.[displayCurrency] != null);
+  const positionDisplayValue = (row: PortfolioPosition) =>
+    row.native_currency === displayCurrency
+      ? (row.market_value_native ?? 0)
+      : displayCurrency === "CNY"
+        ? (row.market_value_cny ?? 0)
+        : (row.market_value_usd ?? 0);
+  const accountDisplayValue = (row: PortfolioAccount) =>
+    row.total_display != null
+      ? row.total_display
+      : row.native_currency === displayCurrency
+        ? (row.total_native ?? 0)
+        : displayCurrency === "CNY"
+          ? (row.total_cny ?? 0)
+          : (row.total_usd ?? 0);
+
   const positions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return [...(snapshot?.positions ?? [])]
       .filter((row) => sourceFilter === "all" || (row.source_id ?? row.broker) === sourceFilter)
       .filter((row) => !needle || [row.broker, row.symbol, row.name, row.asset_type, row.market]
         .join(" ").toLowerCase().includes(needle))
-      .sort((a, b) => (b.market_value_usd ?? 0) - (a.market_value_usd ?? 0));
+      .sort((a, b) => positionDisplayValue(b) - positionDisplayValue(a));
   }, [snapshot, query, sourceFilter]);
 
   const failedAccounts = useMemo(
@@ -273,15 +301,26 @@ export function Portfolio() {
   );
 
   const brokerAllocation = useMemo(() => (snapshot?.accounts ?? [])
-    .filter((row) => row.status !== "error" && (row.total_usd ?? 0) > 0)
+    .filter((row) => row.status !== "error" && accountDisplayValue(row) > 0)
     .map((row) => ({
       id: row.source_id ?? row.broker,
       name: row.label ?? row.broker.toUpperCase(),
-      value: row.total_usd ?? 0,
+      value: accountDisplayValue(row),
       connector: row.broker,
-    })), [snapshot]);
+    })), [snapshot, displayCurrency]);
 
   const holdingAllocation = useMemo(() => {
+    if (nativeDisplay) {
+      const rows = [...(snapshot?.positions ?? [])]
+        .filter((row) => row.native_currency === displayCurrency && (row.market_value_native ?? 0) > 0)
+        .sort((a, b) => (b.market_value_native ?? 0) - (a.market_value_native ?? 0));
+      const shown = rows.slice(0, 7).map((row) => ({ name: row.symbol, value: row.market_value_native ?? 0 }));
+      const other = rows.slice(7).reduce((sum, row) => sum + (row.market_value_native ?? 0), 0);
+      if (other > 0) shown.push({ name: t("portfolio.allocation.other"), value: other });
+      const nativeValuation = snapshot?.valuation?.native_by_currency?.[displayCurrency];
+      if ((nativeValuation?.cash ?? 0) > 0.01) shown.push({ name: t("portfolio.allocation.cash"), value: nativeValuation?.cash ?? 0 });
+      return shown;
+    }
     const rows = [...(snapshot?.combined_holdings ?? [])]
       .filter((row) => row.market_value_usd > 0)
       .sort((a, b) => b.market_value_usd - a.market_value_usd);
@@ -297,22 +336,31 @@ export function Portfolio() {
       if (residual > 0.01) shown.push({ name: t("portfolio.allocation.cashUnpriced"), value: residual });
     }
     return shown;
-  }, [snapshot, t]);
+  }, [snapshot, t, displayCurrency]);
 
   const dailyChange = useMemo(() => {
-    if (!snapshot || !history.length) return null;
+    if (!snapshot || !history.length || nativeDisplay) return null;
     const sameDay = history.filter((row) => dayKey(row.created_at) === dayKey(snapshot.created_at));
     if (!sameDay.length) return null;
     return snapshot.totals.usd - Number(sameDay[0].total_usd);
-  }, [snapshot, history]);
+  }, [snapshot, history, displayCurrency]);
+  const canonicalDailyChangePct = nativeDisplay
+    && snapshot?.daily_change?.status === "ready"
+    ? snapshot.daily_change.pct
+    : null;
 
   const latestCompleteAt = history.length ? history[history.length - 1].created_at : undefined;
-  const coverage = snapshot?.valuation?.identified_coverage ?? (() => {
-    if (!snapshot?.totals.usd) return 0;
-    return (snapshot.positions ?? []).reduce((sum, row) => sum + (row.priced ? row.market_value_usd : 0), 0) / snapshot.totals.usd;
-  })();
-  const displayCurrency = portfolioSettings?.display_currency ?? snapshot?.display_currency ?? "USD";
-  const totalDisplay = snapshot?.totals.display ?? (displayCurrency === "CNY" ? snapshot?.totals.cny : snapshot?.totals.usd);
+  const coverage = nativeDisplay
+    ? (snapshot?.valuation?.native_by_currency?.[displayCurrency]?.identified_coverage ?? 0)
+    : (snapshot?.valuation?.identified_coverage ?? (() => {
+        if (!snapshot?.totals.usd) return 0;
+        return (snapshot.positions ?? []).reduce((sum, row) => sum + (row.priced ? (row.market_value_usd ?? 0) : 0), 0) / snapshot.totals.usd;
+      })());
+  const totalDisplay = snapshot?.totals.display !== undefined
+    ? snapshot.totals.display
+    : nativeDisplay
+      ? (snapshot?.totals.native_by_currency?.[displayCurrency] ?? null)
+      : displayCurrency === "CNY" ? snapshot?.totals.cny : snapshot?.totals.usd;
 
   return (
     <div className="min-h-screen p-4 sm:p-6 lg:p-8">
@@ -325,7 +373,7 @@ export function Portfolio() {
             </div>
             <h1 className="text-3xl font-semibold tracking-tight">{t("portfolio.page.title")}</h1>
             <p className="mt-2 text-sm text-muted-foreground">{t("portfolio.page.subtitle")}</p>
-            {snapshot ? (
+            {snapshot && !nativeDisplay ? (
               <p className="mt-2 text-xs text-muted-foreground">
                 {t(snapshot.fx.stale ? "portfolio.page.fxCached" : "portfolio.page.fxFresh", { rate: snapshot.fx.usd_cny.toFixed(4) })}
               </p>
@@ -364,21 +412,25 @@ export function Portfolio() {
               <Metric
                 label={t("portfolio.metrics.total")}
                 value={money(totalDisplay, displayCurrency)}
-                note={displayCurrency === "USD" ? money(snapshot.totals.cny, "CNY") : money(snapshot.totals.usd)}
+                note={nativeDisplay ? undefined : displayCurrency === "USD" ? money(snapshot.totals.cny, "CNY") : money(snapshot.totals.usd)}
                 warningNote={failedAccounts.length ? t("portfolio.metrics.excluded", { count: failedAccounts.length }) : undefined}
                 icon={<WalletCards className="h-4 w-4" />}
               />
               <Metric
                 label={t("portfolio.metrics.change")}
-                value={dailyChange == null ? "—" : `${dailyChange >= 0 ? "+" : ""}${money(dailyChange)}`}
-                note={t("portfolio.metrics.changeNote")}
-                tone={dailyChange == null ? undefined : dailyChange >= 0 ? "positive" : "danger"}
+                value={nativeDisplay
+                  ? percentagePoints(canonicalDailyChangePct)
+                  : dailyChange == null ? "—" : `${dailyChange >= 0 ? "+" : ""}${money(dailyChange, displayCurrency)}`}
+                note={nativeDisplay ? t("portfolio.metrics.changeCanonicalNote") : t("portfolio.metrics.changeNote")}
+                tone={(nativeDisplay ? canonicalDailyChangePct : dailyChange) == null
+                  ? undefined
+                  : (nativeDisplay ? canonicalDailyChangePct! : dailyChange!) >= 0 ? "positive" : "danger"}
                 icon={<Clock3 className="h-4 w-4" />}
               />
               <Metric
                 label={t("portfolio.metrics.coverage")}
                 value={percentage(coverage)}
-                note={t("portfolio.metrics.coverageNote", { priced: money(snapshot.valuation?.priced_usd), cash: money(snapshot.valuation?.cash_usd) })}
+                note={t("portfolio.metrics.coverageNote", { priced: money(nativeDisplay ? snapshot.valuation?.native_by_currency?.ARS?.priced : snapshot.valuation?.priced_usd, displayCurrency), cash: money(nativeDisplay ? snapshot.valuation?.native_by_currency?.ARS?.cash : snapshot.valuation?.cash_usd, displayCurrency) })}
                 icon={<Database className="h-4 w-4" />}
               />
               <Metric
@@ -391,8 +443,8 @@ export function Portfolio() {
             </section>
 
             <section className="grid gap-4 xl:grid-cols-2">
-              <AllocationPie title={t("portfolio.allocation.byAccount")} data={brokerAllocation} centerLabel={money(totalDisplay, displayCurrency)} onSelect={(id) => setSourceFilter(id)} />
-              <AllocationPie title={t("portfolio.allocation.byHolding")} data={holdingAllocation} centerLabel={t("portfolio.allocation.center")} />
+              <AllocationPie title={t("portfolio.allocation.byAccount")} data={brokerAllocation} centerLabel={money(totalDisplay, displayCurrency)} currency={displayCurrency} onSelect={(id) => setSourceFilter(id)} />
+              <AllocationPie title={t("portfolio.allocation.byHolding")} data={holdingAllocation} centerLabel={t("portfolio.allocation.center")} currency={displayCurrency} />
             </section>
 
             {snapshot.warnings.length ? (
@@ -421,18 +473,20 @@ export function Portfolio() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1050px] text-sm">
-                  <thead className="bg-muted/40 text-left text-xs text-muted-foreground"><tr><Th>{t("portfolio.holdings.colBroker")}</Th><Th>{t("portfolio.holdings.colSymbol")}</Th><Th>{t("portfolio.holdings.colType")}</Th><Th>{t("portfolio.holdings.colQuantity")}</Th><Th>{t("portfolio.holdings.colCostPrice")}</Th><Th>{t("portfolio.holdings.colValue")}</Th><Th>{t("portfolio.holdings.colWeight")}</Th><Th>{t("portfolio.holdings.colPnl")}</Th><Th>{t("portfolio.holdings.colData")}</Th></tr></thead>
+                  <thead className="bg-muted/40 text-left text-xs text-muted-foreground"><tr><Th>{t("portfolio.holdings.colBroker")}</Th><Th>{t("portfolio.holdings.colSymbol")}</Th><Th>{t("portfolio.holdings.colType")}</Th><Th>{t("portfolio.holdings.colQuantity")}</Th><Th>{t("portfolio.holdings.colCostPrice")}</Th><Th>{t("portfolio.holdings.colValue")}</Th><Th>{t("portfolio.holdings.colWeight")}</Th><Th>{t("portfolio.holdings.colToday")}</Th><Th>{t("portfolio.holdings.colPnl")}</Th><Th>{t("portfolio.holdings.colData")}</Th></tr></thead>
                   <tbody className="divide-y">
                     {positions.map((row) => {
-                      const weight = snapshot.totals.usd > 0 ? row.market_value_usd / snapshot.totals.usd : 0;
-                      return <tr key={`${row.source_id ?? row.broker}-${row.symbol}`} className="hover:bg-muted/20"><Td><div className="font-medium">{row.source_label ?? row.broker.toUpperCase()}</div><div className="mt-1 text-xs"><BrokerBadge broker={row.broker} /></div></Td><Td><div className="font-medium">{row.symbol}</div><div className="max-w-52 truncate text-xs text-muted-foreground">{row.name}</div></Td><Td><span className="capitalize text-muted-foreground">{row.asset_type}</span></Td><Td>{quantity(row.quantity)}</Td><Td><div>{price(row.cost_price)}</div><div className="text-xs text-muted-foreground">{price(row.market_price)}</div></Td><Td><div className="font-medium">{row.priced ? money(row.market_value_usd) : "—"}</div><div className="text-xs text-muted-foreground">{row.priced ? money(row.market_value_cny, "CNY") : t("portfolio.holdings.unpriced")}</div></Td><Td>{row.priced ? percentage(weight) : "—"}</Td><Td><span className={row.unrealized_pnl_usd == null ? "text-muted-foreground" : row.unrealized_pnl_usd >= 0 ? "text-positive" : "text-danger"}>{row.unrealized_pnl_usd == null ? "—" : money(row.unrealized_pnl_usd)}</span></Td><Td><DataBadge priced={row.priced} /></Td></tr>;
+                      const displayedValue = positionDisplayValue(row);
+                      const weight = (totalDisplay ?? 0) > 0 ? displayedValue / (totalDisplay ?? 1) : 0;
+                      const pnl = nativeDisplay && row.native_currency === displayCurrency ? row.unrealized_pnl_native : row.unrealized_pnl_usd;
+                      return <tr key={`${row.source_id ?? row.broker}-${row.symbol}`} className="hover:bg-muted/20"><Td><div className="font-medium">{row.source_label ?? row.broker.toUpperCase()}</div><div className="mt-1 text-xs"><BrokerBadge broker={row.broker} /></div></Td><Td><div className="font-medium">{row.symbol}</div><div className="max-w-52 truncate text-xs text-muted-foreground">{row.name}</div></Td><Td><span className="capitalize text-muted-foreground">{row.asset_type}</span></Td><Td>{quantity(row.quantity)}</Td><Td><div>{price(row.cost_price)}</div><div className="text-xs text-muted-foreground">{price(row.market_price)}</div></Td><Td><div className="font-medium">{row.priced ? money(displayedValue, displayCurrency) : "—"}</div><div className="text-xs text-muted-foreground">{row.priced ? (row.native_currency ?? row.currency) : t("portfolio.holdings.unpriced")}</div></Td><Td>{row.priced ? percentage(weight) : "—"}</Td><Td><span className={row.daily_change_pct == null ? "text-muted-foreground" : row.daily_change_pct >= 0 ? "text-positive" : "text-danger"}>{percentagePoints(row.daily_change_pct)}</span></Td><Td><span className={pnl == null ? "text-muted-foreground" : pnl >= 0 ? "text-positive" : "text-danger"}>{pnl == null ? "—" : money(pnl, displayCurrency)}</span></Td><Td><DataBadge priced={row.priced} /></Td></tr>;
                     })}
                   </tbody>
                 </table>
               </div>
             </section>
 
-            <HistoryChart history={history} />
+            {nativeDisplay ? null : <HistoryChart history={history} />}
 
             <section className="rounded-xl border bg-card p-5">
               <div className="mb-4 flex items-center gap-2"><KeyRound className="h-4 w-4 text-muted-foreground" /><h2 className="font-semibold">{t("portfolio.credentials.title")}</h2></div>
@@ -511,11 +565,6 @@ function RefreshProgress({ state, settings }: { state: PortfolioRefreshState; se
 function AccountCard({ account, active, displayCurrency, onClick, onReconnect, onRetry, busy, actionsDisabled }: { account: PortfolioAccount; active: boolean; displayCurrency: string; onClick: () => void; onReconnect?: () => void; onRetry?: () => void; busy: boolean; actionsDisabled: boolean }) {
   const { t } = useTranslation();
   const failed = account.status === "error";
-  const displayValue = account.total_display ?? (
-    displayCurrency === "USD" ? account.total_usd :
-    displayCurrency === "CNY" ? account.total_cny :
-    null
-  );
   return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClick(); }} className={`cursor-pointer rounded-xl border bg-card p-5 transition ${active ? "border-primary ring-1 ring-primary/20" : "hover:border-primary/40"}`}>
     <div className="flex items-center justify-between gap-3">
       <div><div className="font-medium">{account.label ?? account.broker.toUpperCase()}</div><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><BrokerBadge broker={account.broker} /><PortfolioCompatibilityBadge compatibility={account.portfolio_compatibility} /></div></div>
@@ -528,8 +577,8 @@ function AccountCard({ account, active, displayCurrency, onClick, onReconnect, o
       </>
     ) : (
       <>
-        <div className="mt-4 text-2xl font-semibold">{money(displayValue, displayCurrency)}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{displayCurrency === "USD" ? money(account.total_cny, "CNY") : money(account.total_usd)} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
+        <div className="mt-4 text-2xl font-semibold">{nativeDisplay && account.native_currency === "ARS" ? money(account.total_native, displayCurrency) : displayCurrency === "CNY" ? money(account.total_cny, "CNY") : money(account.total_usd)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{nativeDisplay ? account.native_currency ?? "ARS" : displayCurrency === "CNY" ? money(account.total_usd) : money(account.total_cny, "CNY")} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
         <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs"><span className="text-positive">{t("portfolio.accounts.fresh")}</span><span className="text-muted-foreground">{dateTime(account.last_success_at)}</span></div>
       </>
     )}
@@ -570,7 +619,7 @@ function CredentialCard({ account }: { account: PortfolioAccount }) {
 
 type AllocationDatum = { id?: string; name: string; value: number; connector?: string };
 
-function AllocationPie({ title, data, centerLabel, onSelect }: { title: string; data: AllocationDatum[]; centerLabel: string; onSelect?: (id: string) => void }) {
+function AllocationPie({ title, data, centerLabel, currency = "USD", onSelect }: { title: string; data: AllocationDatum[]; centerLabel: string; currency?: PortfolioCurrency; onSelect?: (id: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const { i18n: instance } = useTranslation();
   const dark = useThemeDark();
@@ -588,7 +637,7 @@ function AllocationPie({ title, data, centerLabel, onSelect }: { title: string; 
         backgroundColor: theme.tooltipBg,
         borderColor: theme.tooltipBorder,
         textStyle: { color: theme.tooltipText },
-        formatter: (params: { name: string; value: number; percent: number }) => `${params.name}<br/>${money(params.value)} · ${slicePercentage(params.percent)}`,
+        formatter: (params: { name: string; value: number; percent: number }) => `${params.name}<br/>${money(params.value, currency)} · ${slicePercentage(params.percent)}`,
       },
       legend: { type: "scroll", bottom: 0, left: "center", textStyle: { color: theme.textColor }, pageTextStyle: { color: theme.textColor } },
       series: [{ type: "pie", radius: ["46%", "70%"], center: ["50%", "43%"], avoidLabelOverlap: true, padAngle: 2, itemStyle: { borderRadius: 5 }, label: { show: true, color: theme.textColor, formatter: (params: { name: string; percent: number }) => params.percent >= 2 ? `${params.name}\n${slicePercentage(params.percent)}` : "", fontSize: 12 }, labelLine: { length: 10, length2: 7, lineStyle: { color: theme.gridColor } }, labelLayout: { hideOverlap: true }, data }],
@@ -599,7 +648,7 @@ function AllocationPie({ title, data, centerLabel, onSelect }: { title: string; 
     chart.on("click", select);
     window.addEventListener("resize", resize);
     return () => { window.removeEventListener("resize", resize); chart.off("click", select); chart.dispose(); };
-  }, [data, centerLabel, onSelect, dark, instance.language]);
+  }, [data, centerLabel, currency, onSelect, dark, instance.language]);
   return <div className="rounded-xl border bg-card p-5"><h2 className="font-semibold">{title}</h2><div ref={ref} className="h-80 w-full" /></div>;
 }
 
