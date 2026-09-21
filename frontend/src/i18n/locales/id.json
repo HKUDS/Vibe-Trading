@@ -1635,7 +1635,8 @@
       "coverage": "Cakupan valuasi",
       "coverageNote": "Harga tersedia {{priced}} · kas {{cash}}",
       "lastComplete": "Pembaruan lengkap terakhir",
-      "excluded": "{{count}} akun tidak dapat dibaca dan tidak disertakan dalam total ini"
+      "excluded": "{{count}} akun tidak dapat dibaca dan tidak disertakan dalam total ini",
+      "changeCanonicalNote": "Perubahan portofolio harian kanonis dari Asistente Casa"
     },
     "allocation": {
       "byAccount": "Alokasi berdasarkan akun",
@@ -1669,6 +1670,7 @@
       "colCostPrice": "Biaya / Harga",
       "colValue": "Nilai",
       "colWeight": "Bobot",
+      "colToday": "Hari ini",
       "colPnl": "P/L Belum Terealisasi",
       "colData": "Data",
       "priced": "Harga tersedia",
