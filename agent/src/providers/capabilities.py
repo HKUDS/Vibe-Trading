@@ -258,6 +258,9 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "opencode-go": ProviderCapabilities(
         "opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"
     ),
+    "api-route": ProviderCapabilities(
+        "api-route", "API_ROUTE_API_KEY", "API_ROUTE_BASE_URL"
+    ),
 }
 
 

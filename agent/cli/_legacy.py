@@ -5843,6 +5843,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_placeholder": "api-key...",
     },
     {
+        "label": "API Route (multi-model gateway)",
+        "provider": "api-route",
+        "key_env": "API_ROUTE_API_KEY",
+        "base_env": "API_ROUTE_BASE_URL",
+        "base_url": "https://global.api-route.com/v1",
+        "model": "gpt-5.4-mini",
+        "key_prefix": None,
+        "key_placeholder": "api-key...",
+    },
+    {
         "label": "Ollama (local, free)",
         "provider": "ollama",
         "key_env": None,

@@ -244,5 +244,14 @@
     "api_key_required": false,
     "auth_type": "gh_cli",
     "login_command": "gh auth login"
+  },
+  {
+    "name": "api-route",
+    "label": "API Route",
+    "api_key_env": "API_ROUTE_API_KEY",
+    "base_url_env": "API_ROUTE_BASE_URL",
+    "default_model": "gpt-5.4-mini",
+    "default_base_url": "https://global.api-route.com/v1",
+    "api_key_required": true
   }
 ]
