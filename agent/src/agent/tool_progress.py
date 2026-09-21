@@ -17,8 +17,8 @@ NO_PROGRESS_LIMIT = 8
 FAILURE_BLOCK_THRESHOLD = 2
 RECOVERY_MESSAGE = (
     "I stopped because repeated tool attempts did not produce new information. "
-    "I cannot reliably answer from the previous summary alone. Please provide "
-    "the artifact path or confirm that you want to rerun the missing research step."
+    "I cannot reliably answer from the available evidence. Please ask me to "
+    "continue with a different source or rerun the missing research step."
 )
 
 
@@ -29,6 +29,8 @@ class ToolProgress:
         self.failed: dict[tuple[str, str], int] = {}
         self._observations: set[tuple[str, str | None, str]] = set()
         self._new_observation = False
+        self._context_restored = False
+        self._context_restore_grace_used = False
         self.stalled_iterations = 0
 
     def record(
@@ -63,6 +65,21 @@ class ToolProgress:
             self._observations.add(observation)
             self._new_observation = True
 
+    def mark_context_restored(self) -> None:
+        """Grant one run-scoped grace iteration after compaction restores evidence.
+
+        Replaying a cached readonly result is not a new external observation, so
+        it must never reset the no-progress history indefinitely. The first
+        restoration in a run may hold the current stall count for one iteration
+        so the model gets a chance to consume the restored payload; later
+        restorations do not extend the budget. A genuinely new observation still
+        resets the stall chain through :meth:`record`.
+        """
+        if self._context_restore_grace_used:
+            return
+        self._context_restore_grace_used = True
+        self._context_restored = True
+
     def is_blocked(self, key: tuple[str, str]) -> bool:
         """Whether this exact call failed often enough to refuse a repeat.
 
@@ -77,8 +94,15 @@ class ToolProgress:
 
     def finish_iteration(self) -> bool:
         """Return whether the run exhausted its consecutive no-progress budget."""
-        self.stalled_iterations = (
-            0 if self._new_observation else self.stalled_iterations + 1
-        )
+        if self._new_observation:
+            self.stalled_iterations = 0
+        elif self._context_restored:
+            # One grace iteration: preserve, but do not erase, prior stall
+            # history. This lets the next model turn see the restored evidence
+            # without allowing replay-only loops to run forever.
+            pass
+        else:
+            self.stalled_iterations += 1
         self._new_observation = False
+        self._context_restored = False
         return self.stalled_iterations >= NO_PROGRESS_LIMIT
