@@ -316,11 +316,11 @@ def test_auto_compact_reopens_head_but_preserves_tail_gate(
     assert balance in h.messages
     if degraded:
         assert "compaction degraded" in h.messages[1]["content"]
-    h.call({"statement": "income"})
-    assert len(h.tool.calls) == 3, "summary is not readable original income data"
+    assert json.loads(h.call({"statement": "income"})["content"])["status"] == "ok"
+    assert len(h.tool.calls) == 2, "summary is not original income data; replay must restore it"
     result = h.call({"statement": "balance"})
     assert json.loads(result["content"])["skipped"] is True
-    assert len(h.tool.calls) == 3
+    assert len(h.tool.calls) == 2
 
 
 def test_auto_compact_summary_call_sees_the_bound_llm_session(harness, monkeypatch):
