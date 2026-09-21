@@ -271,20 +271,19 @@ export function Portfolio() {
 
   const displayCurrency = portfolioSettings?.display_currency ?? snapshot?.display_currency ?? "USD";
   const nativeDisplay = Boolean(snapshot?.totals.native_by_currency?.[displayCurrency] != null);
-  const positionDisplayValue = (row: PortfolioPosition) =>
-    row.native_currency === displayCurrency
-      ? (row.market_value_native ?? 0)
-      : displayCurrency === "CNY"
-        ? (row.market_value_cny ?? 0)
-        : (row.market_value_usd ?? 0);
-  const accountDisplayValue = (row: PortfolioAccount) =>
-    row.total_display != null
-      ? row.total_display
-      : row.native_currency === displayCurrency
-        ? (row.total_native ?? 0)
-        : displayCurrency === "CNY"
-          ? (row.total_cny ?? 0)
-          : (row.total_usd ?? 0);
+  const positionDisplayValue = (row: PortfolioPosition) => {
+    if (nativeDisplay) {
+      return row.native_currency === displayCurrency ? (row.market_value_native ?? 0) : 0;
+    }
+    return displayCurrency === "CNY" ? (row.market_value_cny ?? 0) : (row.market_value_usd ?? 0);
+  };
+  const accountDisplayValue = (row: PortfolioAccount) => {
+    if (row.total_display != null) return row.total_display;
+    if (nativeDisplay) {
+      return row.native_currency === displayCurrency ? (row.total_native ?? 0) : 0;
+    }
+    return displayCurrency === "CNY" ? (row.total_cny ?? 0) : (row.total_usd ?? 0);
+  };
 
   const positions = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -476,10 +475,13 @@ export function Portfolio() {
                   <thead className="bg-muted/40 text-left text-xs text-muted-foreground"><tr><Th>{t("portfolio.holdings.colBroker")}</Th><Th>{t("portfolio.holdings.colSymbol")}</Th><Th>{t("portfolio.holdings.colType")}</Th><Th>{t("portfolio.holdings.colQuantity")}</Th><Th>{t("portfolio.holdings.colCostPrice")}</Th><Th>{t("portfolio.holdings.colValue")}</Th><Th>{t("portfolio.holdings.colWeight")}</Th><Th>{t("portfolio.holdings.colToday")}</Th><Th>{t("portfolio.holdings.colPnl")}</Th><Th>{t("portfolio.holdings.colData")}</Th></tr></thead>
                   <tbody className="divide-y">
                     {positions.map((row) => {
+                      const comparable = !nativeDisplay || row.native_currency === displayCurrency;
                       const displayedValue = positionDisplayValue(row);
-                      const weight = (totalDisplay ?? 0) > 0 ? displayedValue / (totalDisplay ?? 1) : 0;
-                      const pnl = nativeDisplay && row.native_currency === displayCurrency ? row.unrealized_pnl_native : row.unrealized_pnl_usd;
-                      return <tr key={`${row.source_id ?? row.broker}-${row.symbol}`} className="hover:bg-muted/20"><Td><div className="font-medium">{row.source_label ?? row.broker.toUpperCase()}</div><div className="mt-1 text-xs"><BrokerBadge broker={row.broker} /></div></Td><Td><div className="font-medium">{row.symbol}</div><div className="max-w-52 truncate text-xs text-muted-foreground">{row.name}</div></Td><Td><span className="capitalize text-muted-foreground">{row.asset_type}</span></Td><Td>{quantity(row.quantity)}</Td><Td><div>{price(row.cost_price)}</div><div className="text-xs text-muted-foreground">{price(row.market_price)}</div></Td><Td><div className="font-medium">{row.priced ? money(displayedValue, displayCurrency) : "—"}</div><div className="text-xs text-muted-foreground">{row.priced ? (row.native_currency ?? row.currency) : t("portfolio.holdings.unpriced")}</div></Td><Td>{row.priced ? percentage(weight) : "—"}</Td><Td><span className={row.daily_change_pct == null ? "text-muted-foreground" : row.daily_change_pct >= 0 ? "text-positive" : "text-danger"}>{percentagePoints(row.daily_change_pct)}</span></Td><Td><span className={pnl == null ? "text-muted-foreground" : pnl >= 0 ? "text-positive" : "text-danger"}>{pnl == null ? "—" : money(pnl, displayCurrency)}</span></Td><Td><DataBadge priced={row.priced} /></Td></tr>;
+                      const weight = comparable && (totalDisplay ?? 0) > 0 ? displayedValue / (totalDisplay ?? 1) : 0;
+                      const pnl = nativeDisplay
+                        ? (row.native_currency === displayCurrency ? row.unrealized_pnl_native : null)
+                        : row.unrealized_pnl_usd;
+                      return <tr key={`${row.source_id ?? row.broker}-${row.symbol}`} className="hover:bg-muted/20"><Td><div className="font-medium">{row.source_label ?? row.broker.toUpperCase()}</div><div className="mt-1 text-xs"><BrokerBadge broker={row.broker} /></div></Td><Td><div className="font-medium">{row.symbol}</div><div className="max-w-52 truncate text-xs text-muted-foreground">{row.name}</div></Td><Td><span className="capitalize text-muted-foreground">{row.asset_type}</span></Td><Td>{quantity(row.quantity)}</Td><Td><div>{price(row.cost_price)}</div><div className="text-xs text-muted-foreground">{price(row.market_price)}</div></Td><Td><div className="font-medium">{row.priced && comparable ? money(displayedValue, displayCurrency) : "—"}</div><div className="text-xs text-muted-foreground">{row.priced ? (row.native_currency ?? row.currency) : t("portfolio.holdings.unpriced")}</div></Td><Td>{row.priced && comparable ? percentage(weight) : "—"}</Td><Td><span className={row.daily_change_pct == null ? "text-muted-foreground" : row.daily_change_pct >= 0 ? "text-positive" : "text-danger"}>{percentagePoints(row.daily_change_pct)}</span></Td><Td><span className={pnl == null ? "text-muted-foreground" : pnl >= 0 ? "text-positive" : "text-danger"}>{pnl == null ? "—" : money(pnl, displayCurrency)}</span></Td><Td><DataBadge priced={row.priced} /></Td></tr>;
                     })}
                   </tbody>
                 </table>
@@ -568,8 +570,9 @@ function AccountCard({ account, active, displayCurrency, onClick, onReconnect, o
   const nativeDisplay = account.native_currency === displayCurrency;
   const displayValue = account.total_display ?? (
     nativeDisplay ? account.total_native :
+    displayCurrency === "USD" ? account.total_usd :
     displayCurrency === "CNY" ? account.total_cny :
-    account.total_usd
+    null
   );
   return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClick(); }} className={`cursor-pointer rounded-xl border bg-card p-5 transition ${active ? "border-primary ring-1 ring-primary/20" : "hover:border-primary/40"}`}>
     <div className="flex items-center justify-between gap-3">
@@ -584,7 +587,7 @@ function AccountCard({ account, active, displayCurrency, onClick, onReconnect, o
     ) : (
       <>
         <div className="mt-4 text-2xl font-semibold">{money(displayValue, displayCurrency)}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{nativeDisplay ? account.native_currency ?? displayCurrency : displayCurrency === "CNY" ? money(account.total_usd) : money(account.total_cny, "CNY")} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{nativeDisplay ? account.native_currency ?? displayCurrency : displayCurrency === "CNY" ? money(account.total_usd) : displayCurrency === "USD" ? money(account.total_cny, "CNY") : "—"} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
         <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs"><span className="text-positive">{t("portfolio.accounts.fresh")}</span><span className="text-muted-foreground">{dateTime(account.last_success_at)}</span></div>
       </>
     )}
