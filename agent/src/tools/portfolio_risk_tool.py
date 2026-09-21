@@ -21,7 +21,7 @@ import pandas as pd
 
 from backtest.risk_xray import compute_risk_xray
 from src.agent.tools import BaseTool
-from src.config.env import get_env
+from src.config.accessor import get_env_value
 from src.market_data import fetch_market_data
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,8 @@ def _fetch_asistente_casa_history(
     """
     if str(interval).upper() not in {"1D", "D", "1DAY"}:
         raise ValueError("Asistente Casa risk history supports daily EOD bars only")
-    base_url = str(get_env("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
-    api_key = str(get_env("ASISTENTE_CASA_API_KEY") or "").strip()
+    base_url = str(get_env_value("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
+    api_key = str(get_env_value("ASISTENTE_CASA_API_KEY") or "").strip()
     if not base_url or not api_key:
         raise ValueError("Asistente Casa market-history environment is not configured")
     query = urlencode({"symbols": ",".join(codes), "from": start_date, "to": end_date})
