@@ -98,7 +98,7 @@ export function PortfolioSourceEditor({ open, settings, catalog, saving, onClose
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
-        <fieldset><legend className="text-sm font-medium">{t("portfolio.editor.currency")}</legend><div className="mt-2 grid grid-cols-2 gap-2">{(["USD", "CNY"] as const).map((currency) => <button key={currency} type="button" onClick={() => setDraft({ ...draft, display_currency: currency })} className={`rounded-md border px-3 py-2 text-sm ${draft.display_currency === currency ? "border-primary bg-primary/5 text-primary" : "bg-card"}`}>{currency}</button>)}</div></fieldset>
+        <fieldset><legend className="text-sm font-medium">{t("portfolio.editor.currency")}</legend><div className="mt-2 grid grid-cols-3 gap-2">{(["USD", "CNY", "ARS"] as const).map((currency) => <button key={currency} type="button" onClick={() => setDraft({ ...draft, display_currency: currency })} className={`rounded-md border px-3 py-2 text-sm ${draft.display_currency === currency ? "border-primary bg-primary/5 text-primary" : "bg-card"}`}>{currency}</button>)}</div></fieldset>
 
         <section>
           <div className="flex items-end justify-between gap-3"><div><h3 className="text-sm font-medium">{t("portfolio.editor.selected")}</h3><p className="mt-1 text-xs text-muted-foreground">{t("portfolio.editor.selectedHint")}</p></div><span className="text-xs text-muted-foreground">{draft.sources.length}</span></div>
