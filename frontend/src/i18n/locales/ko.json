@@ -416,7 +416,134 @@
       "stoppedToast": "IM 채널이 중지되었습니다",
       "refreshFailed": "IM 채널 새로 고침 실패",
       "startFailed": "IM 채널 시작 실패",
-      "stopFailed": "IM 채널 중지 실패"
+      "stopFailed": "IM 채널 중지 실패",
+      "config": {
+        "toggleConfig": "{{name}} 설정",
+        "keepCurrent": "현재 값 유지({{masked}})",
+        "secretNotSet": "설정되지 않음",
+        "clearSecret": "지우기",
+        "required": "필수",
+        "listPlaceholder": "값을 입력하고 Enter로 추가",
+        "removeValue": "{{value}} 제거",
+        "save": "설정 저장",
+        "hotApply": "저장하면 즉시 적용됩니다. 재시작이 필요하지 않습니다.",
+        "saved": "채널 설정을 저장했습니다",
+        "saveFailed": "채널 설정 저장 실패: {{message}}",
+        "test": "연결 테스트",
+        "testing": "테스트 중…",
+        "testOk": "연결이 확인되었습니다",
+        "testFailed": "연결 테스트 실패: {{message}}",
+        "testCodeOk": "공급자가 이 자격 증명을 수락했습니다.",
+        "testCodeInvalidCredentials": "공급자가 이 자격 증명을 거부했습니다.",
+        "testCodeNetwork": "공급자에 연결할 수 없습니다.",
+        "testCodeUnsupported": "이 채널은 연결 테스트를 지원하지 않습니다.",
+        "testedSavedConfig": "저장된 설정을 테스트했습니다.",
+        "testedDraftConfig": "양식의 현재 값(아직 저장되지 않음)을 테스트했습니다.",
+        "enable": "채널 사용",
+        "enableHint": "사용을 중지해도 저장된 자격 증명은 유지되며 언제든 다시 사용할 수 있습니다.",
+        "enabledToast": "채널을 사용하도록 설정했습니다",
+        "disabledToast": "채널을 사용 중지했습니다",
+        "enableFailed": "채널 사용 설정 실패: {{message}}",
+        "disableFailed": "채널 사용 중지 실패: {{message}}",
+        "enableRejected": "공급자가 자격 증명을 거부하여 채널을 사용하도록 설정하지 않았습니다.",
+        "enableRejectedDetail": "공급자 응답: {{detail}}",
+        "enableAnyway": "그래도 사용",
+        "enableAnywayHint": "그래도 사용하면 자격 증명 검사를 건너뛰므로 채널이 연결되지 않을 수 있습니다.",
+        "notWritable": "채널 설정이 YAML 파일({{path}})에 저장되어 있어 웹 UI에서 편집할 수 없습니다. 자격 증명을 변경하려면 해당 파일을 직접 편집하세요.",
+        "notWritableChip": "읽기 전용(YAML)",
+        "sdkMissing": "런타임 SDK가 설치되지 않음 — {{hint}}",
+        "sdkMissingNoHint": "런타임 SDK가 설치되어 있지 않습니다. 설정은 가능하지만 시작하지 못할 수 있습니다.",
+        "noFields": "이 채널에는 구성할 수 있는 필드가 없습니다.",
+        "loadFailed": "채널 설정을 불러오지 못했습니다."
+      },
+      "fields": {
+        "dingtalk": {
+          "client_id": {
+            "label": "Client ID(AppKey)",
+            "help": "DingTalk 개발자 콘솔의 자격 증명 페이지에 있는 앱 AppKey입니다."
+          },
+          "client_secret": {
+            "label": "Client Secret(AppSecret)",
+            "help": "앱의 AppSecret입니다. 서버에 저장되며 브라우저로 다시 전송되지 않습니다."
+          },
+          "allow_from": {
+            "label": "허용된 발신자",
+            "help": "에이전트와 대화할 수 있는 DingTalk 발신자 ID 허용 목록입니다(\"*\"는 모두 허용). 페어링되지 않은 발신자는 DM으로 페어링 코드를 받습니다."
+          },
+          "allow_remote_media_redirects": {
+            "label": "미디어 리디렉션 허용",
+            "help": "메시지 미디어를 내려받을 때 공급자 리디렉션을 따릅니다. 기본값은 꺼짐입니다."
+          },
+          "remote_media_redirect_allowed_hosts": {
+            "label": "허용된 리디렉션 호스트",
+            "help": "미디어 리디렉션을 켰을 때 허용할 호스트입니다. 비어 있으면 모든 교차 호스트 리디렉션이 차단됩니다."
+          },
+          "group_user_isolation": {
+            "label": "그룹에서 사용자별 세션 분리",
+            "help": "그룹 채팅의 각 멤버에게 별도의 에이전트 세션을 제공합니다."
+          },
+          "force_ipv4": {
+            "label": "IPv4 강제",
+            "help": "DingTalk API 호출을 IPv4에 바인딩합니다. 발신 IP 화이트리스트를 사용 중이고 IPv6 접두사는 자주 바뀌지만 IPv4는 안정적일 때 활성화하세요."
+          }
+        },
+        "qq": {
+          "app_id": {
+            "label": "AppID",
+            "help": "QQ 오픈 플랫폼(q.qq.com) 앱 설정에 있는 봇의 AppID입니다."
+          },
+          "secret": {
+            "label": "AppSecret",
+            "help": "봇의 AppSecret입니다. 서버에 저장되며 브라우저로 다시 전송되지 않습니다."
+          },
+          "allow_from": {
+            "label": "허용된 발신자",
+            "help": "에이전트와 대화할 수 있는 QQ 발신자 openid 허용 목록입니다(\"*\"는 모두 허용). 페어링되지 않은 발신자는 DM으로 페어링 코드를 받습니다."
+          },
+          "msg_format": {
+            "label": "메시지 형식",
+            "help": "응답 형식: plain 또는 markdown."
+          },
+          "ack_message": {
+            "label": "확인 메시지",
+            "help": "메시지가 도착했을 때 즉시 보내는 확인 응답입니다. 비워 두면 전송하지 않습니다."
+          },
+          "media_dir": {
+            "label": "미디어 디렉터리",
+            "help": "수신한 첨부 파일을 저장할 위치입니다. 비워 두면 ~/.vibe-trading/media/qq를 사용합니다."
+          },
+          "download_chunk_size": {
+            "label": "다운로드 청크 크기",
+            "help": "첨부 파일을 내려받을 때 청크당 바이트 수(기본 262144)."
+          },
+          "download_max_bytes": {
+            "label": "최대 다운로드 크기(바이트)",
+            "help": "첨부 파일 하나 다운로드의 안전 상한(기본 209715200 = 200 MB)."
+          }
+        }
+      },
+      "guides": {
+        "dingtalk": {
+          "title": "DingTalk 설정 가이드",
+          "intro": "DingTalk 봇은 Stream 모드를 사용하므로 공개 콜백 URL이 필요하지 않습니다.",
+          "step1": "DingTalk 개발자 콘솔(open-dev.dingtalk.com)에서 앱을 만듭니다.",
+          "step2": "앱에 봇 기능을 추가하고 Stream 모드를 사용 설정합니다.",
+          "step3": "앱의 AppKey를 Client ID에, AppSecret을 Client Secret에 붙여 넣습니다.",
+          "step4": "앱을 게시하여 조직에서 사용할 수 있게 합니다.",
+          "step5": "여기로 돌아와 '연결 테스트'를 클릭한 다음 채널을 사용 설정합니다.",
+          "docsLabel": "DingTalk 개발자 콘솔 열기"
+        },
+        "qq": {
+          "title": "QQ 설정 가이드",
+          "intro": "QQ 봇은 공식 botpy SDK를 통해 WebSocket으로 연결되므로 공개 콜백 URL이 필요하지 않습니다.",
+          "step1": "QQ 오픈 플랫폼(q.qq.com)에 등록하고 봇을 만듭니다.",
+          "step2": "봇의 개발 설정 페이지에서 AppID와 AppSecret을 복사합니다.",
+          "step3": "위의 AppID 및 AppSecret 필드에 붙여 넣습니다.",
+          "step4": "플랫폼의 샌드박스/게시 규칙에 따라 봇을 QQ 그룹에 추가하거나 개인 채팅을 시작합니다.",
+          "step5": "여기로 돌아와 '연결 테스트'를 클릭한 다음 채널을 사용 설정합니다.",
+          "docsLabel": "QQ 오픈 플랫폼 열기"
+        }
+      }
     },
     "generation": "생성 설정",
     "dataSourceSettings": "데이터 소스 설정",
@@ -452,7 +579,9 @@
       }
     },
     "tushareToken": "Tushare 토큰",
+    "gildataToken": "Gildata 토큰",
     "clearTushareToken": "저장된 Tushare 토큰 삭제",
+    "clearGildataToken": "저장된 Gildata 토큰 삭제",
     "saveDataSourceSettings": "데이터 소스 설정 저장",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "LLM 설정 로드 실패: {{message}}",
@@ -484,7 +613,8 @@
     "oauth": "OAuth",
     "authentication": "인증",
     "apiKey": "API 키",
-    "tushareTokenDesc": "중국 A주·선물·펀드·거시 데이터에 사용됩니다. 설정하지 않으면 가능한 경우 AKShare로 대체됩니다."
+    "tushareTokenDesc": "중국 A주·선물·펀드·거시 데이터에 사용됩니다. 설정하지 않으면 가능한 경우 AKShare로 대체됩니다.",
+    "gildataTokenDesc": "선택 사항: 헝성쥐위안(Gildata) 중국 A주 데이터 소스. 설정하면 전방 조정 일봉으로 A주 폴백 체인 끝에 추가됩니다."
   },
   "qveris": {
     "title": "QVeris 도구 마켓플레이스",
@@ -1502,11 +1632,11 @@
       "total": "총자산",
       "change": "오늘의 자산 변동",
       "changeNote": "시세 변동과 입출금이 포함됩니다",
-      "changeCanonicalNote": "Asistente Casa의 표준 일일 포트폴리오 변동",
       "coverage": "평가 커버리지",
       "coverageNote": "평가 완료 {{priced}} · 현금 {{cash}}",
       "lastComplete": "마지막 완전 업데이트",
-      "excluded": "{{count}}개 계좌를 읽지 못해 이 합계에서 제외했습니다"
+      "excluded": "{{count}}개 계좌를 읽지 못해 이 합계에서 제외했습니다",
+      "changeCanonicalNote": "Asistente Casa의 표준 일일 포트폴리오 변동"
     },
     "allocation": {
       "byAccount": "계좌별 비중",
@@ -1540,11 +1670,11 @@
       "colCostPrice": "평단가 / 현재가",
       "colValue": "평가금액",
       "colWeight": "비중",
-      "colToday": "오늘",
       "colPnl": "미실현 손익",
       "colData": "데이터",
       "priced": "평가 완료",
-      "unpriced": "미평가"
+      "unpriced": "미평가",
+      "colToday": "오늘"
     },
     "history": {
       "title": "자산 추이",

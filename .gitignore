@@ -43,6 +43,12 @@ agent/uploads/
 # The per-broker config files below were missing until 2026-09-11 even though
 # this comment already claimed them; agent/tests/test_gitignore_runtime_files.py
 # now derives the filename constants from the code and fails on any gap.
+# The structured config (agent.json and its YAML twins) was missed the same
+# way until 2026-09-21: it holds IM channel credentials that the Feishu QR
+# login and the channel settings routes write here.
+/agent.json
+/agent.yaml
+/agent.yml
 /sessions.db
 /sessions.db-shm
 /sessions.db-wal

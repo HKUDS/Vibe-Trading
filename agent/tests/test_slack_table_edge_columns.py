@@ -3,39 +3,10 @@
 from __future__ import annotations
 
 import re
-import sys
-import types
 
+from tests.slack_stubs import install_slack_stubs
 
-def _stub_slack_deps() -> None:
-    """Install minimal stubs so slack.py imports without slack_sdk/slackify."""
-
-    def _mod(name: str) -> types.ModuleType:
-        mod = types.ModuleType(name)
-        sys.modules[name] = mod
-        return mod
-
-    for name in (
-        "slack_sdk",
-        "slack_sdk.socket_mode",
-        "slack_sdk.socket_mode.request",
-        "slack_sdk.socket_mode.response",
-        "slack_sdk.socket_mode.websockets",
-        "slack_sdk.web",
-        "slack_sdk.web.async_client",
-    ):
-        _mod(name)
-
-    sys.modules["slack_sdk.socket_mode.request"].SocketModeRequest = object
-    sys.modules["slack_sdk.socket_mode.response"].SocketModeResponse = object
-    sys.modules["slack_sdk.socket_mode.websockets"].SocketModeClient = object
-    sys.modules["slack_sdk.web.async_client"].AsyncWebClient = object
-
-    sm = _mod("slackify_markdown")
-    sm.slackify_markdown = lambda text: text
-
-
-_stub_slack_deps()
+install_slack_stubs()
 
 from src.channels.slack import SlackChannel  # noqa: E402
 

@@ -43,7 +43,6 @@ _PUBLIC_PROVIDERS = frozenset(
         "opencode-zen",
         "openrouter",
         "qwen",
-        "requesty",
         "siliconflow-cn",
         "siliconflow-global",
         "spark",

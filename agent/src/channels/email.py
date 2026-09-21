@@ -184,7 +184,7 @@ class EmailChannel(BaseChannel):
                             metadata=item.get("metadata", {}),
                         )
                     except Exception:
-                        self.logger.exception("Error delivering email from {}", sender)
+                        self.logger.exception("Error delivering email from %s", sender)
                         continue
 
                     uid = str((item.get("metadata") or {}).get("uid") or "")
@@ -219,7 +219,7 @@ class EmailChannel(BaseChannel):
 
         # Skip progress messages to prevent sending an empty email after each tool call
         if (msg.metadata or {}).get("_progress"):
-            self.logger.debug("Skip progress message to {}", msg.chat_id)
+            self.logger.debug("Skip progress message to %s", msg.chat_id)
             return
 
         to_addr = msg.chat_id.strip()
@@ -233,7 +233,7 @@ class EmailChannel(BaseChannel):
 
         # autoReplyEnabled only controls automatic replies, not proactive sends
         if is_reply and not self.config.auto_reply_enabled and not force_send:
-            self.logger.info("Skip automatic reply to {}: auto_reply_enabled is false", to_addr)
+            self.logger.info("Skip automatic reply to %s: auto_reply_enabled is false", to_addr)
             return
 
         base_subject = self._last_subject_by_chat.get(to_addr, "vibe-trading reply")
@@ -252,18 +252,18 @@ class EmailChannel(BaseChannel):
             filename = path.name or "attachment"
             if len(attachments) >= max_attachment_count:
                 failed_attachments.append(f"[attachment: {filename} - too many attachments]")
-                self.logger.warning("Attachment count limit reached, skipping: {}", media_path)
+                self.logger.warning("Attachment count limit reached, skipping: %s", media_path)
                 continue
             if not path.is_file():
                 failed_attachments.append(f"[attachment: {filename} - send failed]")
-                self.logger.warning("Attachment not found, skipping: {}", media_path)
+                self.logger.warning("Attachment not found, skipping: %s", media_path)
                 continue
             try:
                 size = path.stat().st_size
                 if max_attachment_size <= 0 or size > max_attachment_size:
                     failed_attachments.append(f"[attachment: {filename} - too large]")
                     self.logger.warning(
-                        "Attachment too large, skipping: {} ({} > {} bytes)",
+                        "Attachment too large, skipping: %s (%s > %s bytes)",
                         media_path,
                         size,
                         max_attachment_size,
@@ -275,10 +275,10 @@ class EmailChannel(BaseChannel):
                     ctype = "application/octet-stream"
                 maintype, subtype = ctype.split("/", 1)
                 attachments.append((data, maintype, subtype, filename))
-                self.logger.info("Attached file: {}", filename)
+                self.logger.info("Attached file: %s", filename)
             except Exception:
                 failed_attachments.append(f"[attachment: {filename} - send failed]")
-                self.logger.exception("Failed to attach file {}", media_path)
+                self.logger.exception("Failed to attach file %s", media_path)
 
         content = msg.content or ""
         if failed_attachments:
@@ -307,7 +307,7 @@ class EmailChannel(BaseChannel):
         try:
             await asyncio.to_thread(self._smtp_send, email_msg)
         except Exception:
-            self.logger.exception("Error sending to {}", to_addr)
+            self.logger.exception("Error sending to %s", to_addr)
             raise
 
     def _validate_config(self) -> bool:
@@ -329,7 +329,7 @@ class EmailChannel(BaseChannel):
             missing.append("post_action_move_mailbox")
 
         if missing:
-            self.logger.error("Channel not configured, missing: {}", ', '.join(missing))
+            self.logger.error("Channel not configured, missing: %s", ', '.join(missing))
             return False
         return True
 
@@ -413,7 +413,7 @@ class EmailChannel(BaseChannel):
             except Exception as exc:
                 if attempt == 1 or not self._is_stale_imap_error(exc):
                     raise
-                self.logger.warning("IMAP connection went stale, retrying once: {}", exc)
+                self.logger.warning("IMAP connection went stale, retrying once: %s", exc)
 
         return messages, skipped_uids
 
@@ -462,7 +462,7 @@ class EmailChannel(BaseChannel):
                 if not sender:
                     continue
                 if self._is_self_address(sender):
-                    self.logger.info("From {} ignored: matches bot-owned address", sender)
+                    self.logger.info("From %s ignored: matches bot-owned address", sender)
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
                     if mark_seen:
                         client.store(imap_id, "+FLAGS", "\\Seen")
@@ -474,7 +474,7 @@ class EmailChannel(BaseChannel):
                 spf_pass, dkim_pass = self._check_authentication_results(parsed)
                 if self.config.verify_spf and not spf_pass:
                     self.logger.warning(
-                        "From {} rejected: SPF verification failed "
+                        "From %s rejected: SPF verification failed "
                         "(no 'spf=pass' in Authentication-Results header)",
                         sender,
                     )
@@ -484,7 +484,7 @@ class EmailChannel(BaseChannel):
                     continue
                 if self.config.verify_dkim and not dkim_pass:
                     self.logger.warning(
-                        "From {} rejected: DKIM verification failed "
+                        "From %s rejected: DKIM verification failed "
                         "(no 'dkim=pass' in Authentication-Results header)",
                         sender,
                     )
@@ -569,13 +569,13 @@ class EmailChannel(BaseChannel):
                 status, _ = client.select(mailbox)
             except Exception as exc:
                 if missing_mailbox_ok and self._is_missing_mailbox_error(exc):
-                    self.logger.warning("Mailbox unavailable, skipping poll for {}: {}", mailbox, exc)
+                    self.logger.warning("Mailbox unavailable, skipping poll for %s: %s", mailbox, exc)
                     self._close_imap_client(client)
                     return None
                 raise
 
             if status != "OK":
-                self.logger.warning("Mailbox select returned {}, skipping poll for {}", status, mailbox)
+                self.logger.warning("Mailbox select returned %s, skipping poll for %s", status, mailbox)
                 self._close_imap_client(client)
                 return None
         except Exception:
@@ -675,12 +675,12 @@ class EmailChannel(BaseChannel):
             if features.move:
                 status, _ = client.uid("MOVE", uid, target)
                 if status != "OK":
-                    self.logger.warning("Post-action move failed (UID MOVE) for UID {} to mailbox {}", uid, target)
+                    self.logger.warning("Post-action move failed (UID MOVE) for UID %s to mailbox %s", uid, target)
                 return
 
             status, _ = client.uid("COPY", uid, target)
             if status != "OK":
-                self.logger.warning("Post-action move failed (UID COPY) for UID {} to mailbox {}", uid, target)
+                self.logger.warning("Post-action move failed (UID COPY) for UID %s to mailbox %s", uid, target)
                 return
             if not self._uid_store_deleted(client, uid, features):
                 return
@@ -725,12 +725,12 @@ class EmailChannel(BaseChannel):
         # unreliable: resolve the current sequence number from UID and use STORE.
         imap_id = self._lookup_imap_id_by_uid(client, uid)
         if not imap_id:
-            self.logger.warning("Post-action skipped: UID {} not found", uid)
+            self.logger.warning("Post-action skipped: UID %s not found", uid)
             return False
 
         status, _ = client.store(imap_id, "+FLAGS", "\\Deleted")
         if status != "OK":
-            self.logger.warning("Post-action failed: could not mark UID {} as deleted", uid)
+            self.logger.warning("Post-action failed: could not mark UID %s as deleted", uid)
             return False
         return True
 
@@ -741,7 +741,7 @@ class EmailChannel(BaseChannel):
             status, _ = client.uid("EXPUNGE", uid)
             if status == "OK":
                 return
-            self.logger.warning("UID EXPUNGE failed for UID {}, falling back to EXPUNGE", uid)
+            self.logger.warning("UID EXPUNGE failed for UID %s, falling back to EXPUNGE", uid)
         if self.config.post_action_expunge:
             client.expunge()
 
@@ -872,7 +872,7 @@ class EmailChannel(BaseChannel):
 
             content_type = part.get_content_type()
             if not any(fnmatch(content_type, pat) for pat in allowed_types):
-                logger.debug("Attachment skipped (type {}): not in allowed list", content_type)
+                logger.debug("Attachment skipped (type %s): not in allowed list", content_type)
                 continue
 
             payload = part.get_payload(decode=True)
@@ -880,7 +880,7 @@ class EmailChannel(BaseChannel):
                 continue
             if len(payload) > max_size:
                 logger.warning(
-                    "Attachment skipped: size {} exceeds limit {}",
+                    "Attachment skipped: size %s exceeds limit %s",
                     len(payload),
                     max_size,
                 )
@@ -893,9 +893,9 @@ class EmailChannel(BaseChannel):
             try:
                 dest.write_bytes(payload)
                 saved.append(dest)
-                logger.info("Attachment saved: {}", dest)
+                logger.info("Attachment saved: %s", dest)
             except Exception as exc:
-                logger.warning("Failed to save attachment {}: {}", dest, exc)
+                logger.warning("Failed to save attachment %s: %s", dest, exc)
 
         return saved
 

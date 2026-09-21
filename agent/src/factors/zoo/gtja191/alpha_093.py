@@ -51,5 +51,6 @@ def compute(panel: dict) -> pd.DataFrame:
     po = o.shift(1)
     move = pd.DataFrame(np.maximum((o - l).to_numpy(), (o - po).to_numpy()),
                         index=o.index, columns=o.columns)
-    keep = move.where(o < po, 0.0)
+    # A missing open, prior open or low is neither a down move nor a zero (#1463).
+    keep = move.where(o < po, 0.0).where(o.notna() & po.notna() & l.notna())
     return keep.rolling(20, min_periods=20).sum()

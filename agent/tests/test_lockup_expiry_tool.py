@@ -8,6 +8,8 @@ this tool's parsing both run while nothing hits the network.
 
 from __future__ import annotations
 
+import pytest
+
 import json
 from datetime import date
 from unittest.mock import patch
@@ -19,17 +21,18 @@ from src.tools.lockup_expiry_tool import LockupExpiryTool
 
 def _payload(rows: list[dict]) -> dict:
     """Wrap report rows in the datacenter ``result.data`` envelope."""
-    return {"result": {"data": rows, "count": len(rows)}}
+    return {"success": True, "result": {"data": rows, "count": len(rows)}}
 
 
 def _row(code: str, free_date: str) -> dict:
-    """One RPT_LIFT_STOCK-shaped record."""
+    """One RPT_LIFT_STAGE-shaped record."""
     return {
         "SECURITY_CODE": code,
         "SECURITY_NAME_ABBR": "贵州茅台",
         "FREE_DATE": f"{free_date} 00:00:00",
         "FREE_SHARES_TYPE": "首发原股东限售股份",
         "FREE_SHARES": 1000000.0,
+        "CURRENT_FREE_SHARES": 900000.0,
         "ABLE_FREE_SHARES": 900000.0,
         "LIFT_MARKET_CAP": 1.7e9,
         "FREE_RATIO": 0.8,
@@ -65,15 +68,13 @@ class TestToolContract:
 class TestSuccess:
     def test_single_code_returns_history(self) -> None:
         rows = [_row("600519", "2024-06-01"), _row("600519", "2023-06-01")]
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_payload(rows)
-        ) as get_json:
+        with patch.object(eastmoney_client, "get_json", return_value=_payload(rows)) as get_json:
             out = json.loads(LockupExpiryTool().execute(code="600519.SH"))
 
         # Single-code path keys on the bare numeric code, newest-first.
         _, kwargs = get_json.call_args
         params = kwargs["params"]
-        assert params["reportName"] == "RPT_LIFT_STOCK"
+        assert params["reportName"] == "RPT_LIFT_STAGE"
         assert 'SECURITY_CODE="600519"' in params["filter"]
         assert params["sortTypes"] == "-1"
 
@@ -89,11 +90,10 @@ class TestSuccess:
 
     def test_market_calendar_uses_horizon_window(self) -> None:
         rows = [_row("000001", "2026-07-01")]
-        with patch.object(
-            lockup_expiry_tool, "_today", return_value=date(2026, 6, 19)
-        ), patch.object(
-            eastmoney_client, "get_json", return_value=_payload(rows)
-        ) as get_json:
+        with (
+            patch.object(lockup_expiry_tool, "_today", return_value=date(2026, 6, 19)),
+            patch.object(eastmoney_client, "get_json", return_value=_payload(rows)) as get_json,
+        ):
             out = json.loads(LockupExpiryTool().execute(horizon_days=30))
 
         _, kwargs = get_json.call_args
@@ -108,17 +108,13 @@ class TestSuccess:
         assert out["data"]["as_of"] == "2026-06-19"
 
     def test_horizon_clamped_to_max(self) -> None:
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_payload([])
-        ):
+        with patch.object(eastmoney_client, "get_json", return_value=_payload([])):
             out = json.loads(LockupExpiryTool().execute(horizon_days=99999))
         assert out["data"]["horizon_days"] == 365
 
     def test_payload_capped(self) -> None:
         rows = [_row(f"6005{i:02d}", "2026-07-01") for i in range(250)]
-        with patch.object(
-            eastmoney_client, "get_json", return_value=_payload(rows)
-        ):
+        with patch.object(eastmoney_client, "get_json", return_value=_payload(rows)):
             out = json.loads(LockupExpiryTool().execute(horizon_days=90))
         assert out["data"]["count"] == 200
         assert out["data"]["truncated"] is True
@@ -136,12 +132,48 @@ class TestErrors:
         assert "unrecognized" in out["error"]
 
     def test_upstream_failure_returns_error_envelope(self) -> None:
-        with patch.object(
-            eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")
-        ):
+        with patch.object(eastmoney_client, "get_json", side_effect=RuntimeError("eastmoney boom")):
             out = json.loads(LockupExpiryTool().execute(code="600519"))
         assert out["ok"] is False
         assert "eastmoney boom" in out["error"]
+
+    def test_provider_rejection_is_not_reported_as_empty(self) -> None:
+        rejected = {
+            "success": False,
+            "code": 9501,
+            "message": "FREE_SHARES_TYPE返回字段不存在",
+            "result": None,
+        }
+        with patch.object(eastmoney_client, "get_json", return_value=rejected):
+            out = json.loads(LockupExpiryTool().execute(code="600519"))
+        assert out["ok"] is False
+        assert "9501" in out["error"]
+        assert "FREE_SHARES_TYPE返回字段不存在" in out["error"]
+
+    def test_empty_provider_result_remains_successful_empty_schedule(self) -> None:
+        empty = {
+            "success": False,
+            "code": 9201,
+            "message": "返回数据为空",
+            "result": None,
+        }
+        with patch.object(eastmoney_client, "get_json", return_value=empty):
+            out = json.loads(LockupExpiryTool().execute(code="600519"))
+        assert out["ok"] is True
+        assert out["data"]["count"] == 0
+        assert out["data"]["records"] == []
+
+    def test_empty_message_with_rejection_code_is_not_reported_as_empty(self) -> None:
+        rejected = {
+            "success": False,
+            "code": 9501,
+            "message": "返回数据为空",
+            "result": None,
+        }
+        with patch.object(eastmoney_client, "get_json", return_value=rejected):
+            out = json.loads(LockupExpiryTool().execute(code="600519"))
+        assert out["ok"] is False
+        assert "9501" in out["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -152,14 +184,39 @@ class TestErrors:
 class TestEndToEndHttpMocked:
     def test_single_code_through_real_client(self) -> None:
         rows = [_row("600519", "2024-06-01")]
-        with patch.object(
-            eastmoney_client, "throttled_get_json", return_value=_payload(rows)
-        ) as http:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=_payload(rows)) as http:
             out = json.loads(LockupExpiryTool().execute(code="600519"))
 
         http.assert_called_once()
         _, kwargs = http.call_args
         assert kwargs["host_key"] == "eastmoney"
-        assert kwargs["params"]["reportName"] == "RPT_LIFT_STOCK"
+        assert kwargs["params"]["reportName"] == "RPT_LIFT_STAGE"
         assert out["ok"] is True
         assert out["data"]["records"][0]["name"] == "贵州茅台"
+
+
+def test_free_shares_is_the_unlock_not_the_float() -> None:
+    """RPT_LIFT_STAGE's FREE_SHARES is the float FREE_RATIO divides by (#1513).
+
+    Row as served live for 603162 on 2026-09-21.
+    """
+    from src.tools.lockup_expiry_tool import _shape_record
+
+    record = _shape_record(
+        {
+            "SECURITY_CODE": "603162",
+            "SECURITY_NAME_ABBR": "海通发展",
+            "FREE_DATE": "2026-09-21 00:00:00",
+            "FREE_SHARES_TYPE": "股权激励限售股份",
+            "FREE_SHARES": 42489.1666,
+            "CURRENT_FREE_SHARES": 232.8832,
+            "ABLE_FREE_SHARES": 232.8832,
+            "LIFT_MARKET_CAP": 3355.846912,
+            "FREE_RATIO": 0.005481001833,
+            "TOTAL_RATIO": 0.001693562627,
+        }
+    )
+
+    assert record["free_shares"] == 232.8832
+    assert record["float_shares"] == 42489.1666
+    assert record["free_ratio"] == pytest.approx(record["free_shares"] / record["float_shares"], rel=1e-6)

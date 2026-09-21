@@ -71,7 +71,12 @@ class SignalEngine:
     def _pick_rule(self, code: str) -> dict | None:
         market = _market_of(code)
         for rule in RULES:
-            if rule["market"] == market or rule["market"] == "other":
+            # This checked the RULE's own market literally being "other",
+            # not the code's computed market -- any rule tagged "other" (a
+            # symbol whose market couldn't be resolved during extraction)
+            # matched every code unconditionally, regardless of that code's
+            # real market.
+            if rule["market"] == market:
                 return rule
         return None
 

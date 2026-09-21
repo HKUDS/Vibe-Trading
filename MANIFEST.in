@@ -5,6 +5,8 @@ include README_zh.md
 include README_ja.md
 include README_ko.md
 include README_ar.md
+include README_es.md
+include README_id.md
 include pyproject.toml
 include Dockerfile
 include docker-compose.yml

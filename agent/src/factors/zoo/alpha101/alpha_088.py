@@ -18,6 +18,7 @@ import pandas as pd
 from src.factors.base import (
     decay_linear,
     delta,
+    observed_over,
     rank,
     safe_div,
     scale,
@@ -66,4 +67,7 @@ def compute(panel: dict) -> pd.DataFrame:
     arr_a = a.to_numpy(dtype=np.float64, na_value=np.nan)
     arr_b = b.to_numpy(dtype=np.float64, na_value=np.nan)
     out = pd.DataFrame(np.fmin(arr_a, arr_b), index=close.index, columns=close.columns)
+    # np.fmin returns the other side when one is missing; mask where a gap sits
+    # inside an input's reach (#1463). volume: adv60 + ts_rank 20 + corr 8 + decay 7 + ts_rank 3; close: ts_rank 8 + corr 8 + decay 7 + ts_rank 3; open/high/low: decay 8.
+    out = out.where(observed_over((volume, 94), (close, 23), (open_, 8), (high, 8), (low, 8)))
     return out

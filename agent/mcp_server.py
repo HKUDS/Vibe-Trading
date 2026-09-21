@@ -1825,8 +1825,11 @@ def get_market_data(
     Price caliber: which source served a symbol decides what its prices mean
     (some adjust for splits and dividends, others serve raw quotes). Each
     symbol's ``_provenance.adjustment`` states the caliber ("raw" / "split" /
-    "split_dividend" / "na" / "unknown") — read it before comparing price
-    levels across symbols.
+    "split_dividend" / "split_dividend_additive" / "na" / "unknown") — read it
+    before comparing price levels across symbols. Note that
+    ``split_dividend_additive`` (the A-share qfq of Tencent, Eastmoney and AKShare) adjusts dividends by
+    shifting the price level rather than scaling it, so it is not on the same
+    scale as ``split_dividend`` even though both account for dividends.
     """
     registry = _get_registry()
     return registry.execute(
@@ -2010,11 +2013,13 @@ def get_block_trades(code: str, days: int = 30) -> str:
 
 @mcp.tool
 def get_shareholder_count(code: str, max_periods: int = 24) -> str:
-    """Fetch mainland A-share quarterly shareholder count (股东户数) (Eastmoney).
+    """Fetch mainland A-share shareholder count history (股东户数) (Eastmoney).
 
-    Returns holder count per report period, quarter-over-quarter change
-    (absolute and percent), and average holding (shares and market value) per
-    account. Markets: China A-shares only (.SH/.SZ/.BJ).
+    Returns holder count per disclosed period, the change against the previous
+    disclosed period (absolute and percent; each row states its own
+    prev_period_end since intervals vary), and average holding (shares and
+    market value) per account on the newest row. Markets: China A-shares only
+    (.SH/.SZ/.BJ).
 
     Args:
         code: A-share symbol in <code>.<exchange> form (SH/SZ/BJ).

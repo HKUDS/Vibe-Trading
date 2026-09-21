@@ -7,6 +7,7 @@ Provides DAG algorithms: dependency resolution, cycle detection, and topological
 from __future__ import annotations
 
 import threading
+import uuid
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -51,7 +52,10 @@ class TaskStore:
             task: SwarmTask instance.
         """
         path = self._task_path(task.id)
-        tmp_path = path.with_suffix(".tmp")
+        # self._lock is per instance, and resolve_dependencies() writes the same
+        # files without it; a shared ".tmp" name let one writer's rename consume
+        # another's unwritten temp file (#1536).
+        tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         with self._lock:
             tmp_path.write_text(task.model_dump_json(indent=2), encoding="utf-8")
             tmp_path.replace(path)
@@ -140,7 +144,7 @@ def resolve_dependencies(tasks_dir: Path, completed_task_id: str) -> list[str]:
             newly_unblocked.append(task.id)
 
         updated_task = SwarmTask.model_validate(updated_data)
-        tmp_path = path.with_suffix(".tmp")
+        tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         tmp_path.write_text(updated_task.model_dump_json(indent=2), encoding="utf-8")
         tmp_path.replace(path)
 

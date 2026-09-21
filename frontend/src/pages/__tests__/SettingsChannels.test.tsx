@@ -5,9 +5,12 @@ const apiMock = vi.hoisted(() => ({
   getLLMSettings: vi.fn(),
   getDataSourceSettings: vi.fn(),
   getChannelStatus: vi.fn(),
+  getChannelsConfig: vi.fn(),
   listLLMModels: vi.fn(),
   startChannels: vi.fn(),
   stopChannels: vi.fn(),
+  putChannelConfig: vi.fn(),
+  testChannel: vi.fn(),
   updateLLMSettings: vi.fn(),
   updateDataSourceSettings: vi.fn(),
 }));
@@ -99,11 +102,34 @@ function channelStatus(overrides = {}) {
   };
 }
 
+function channelsConfig() {
+  return {
+    config_path: "agent/agent.json",
+    writable: true,
+    runtime_running: false,
+    channels: {
+      dingtalk: {
+        display_name: "DingTalk",
+        available: true,
+        loaded: true,
+        install_hint: "",
+        error: "",
+        supports_test: true,
+        sdk_available: true,
+        fields: [],
+        values: { enabled: false },
+        secrets: {},
+      },
+    },
+  };
+}
+
 describe("Settings IM channels panel", () => {
   beforeEach(() => {
     apiMock.getLLMSettings.mockResolvedValue(llmSettings());
     apiMock.getDataSourceSettings.mockResolvedValue(dataSourceSettings());
     apiMock.getChannelStatus.mockResolvedValue(channelStatus());
+    apiMock.getChannelsConfig.mockResolvedValue(channelsConfig());
     apiMock.listLLMModels.mockResolvedValue({
       provider: "openrouter",
       models: ["deepseek/deepseek-v3.2"],
@@ -118,7 +144,7 @@ describe("Settings IM channels panel", () => {
     render(<Settings />);
 
     expect(await screen.findByText("IM Channels")).toBeInTheDocument();
-    expect(screen.getByText("websocket")).toBeInTheDocument();
+    expect(await screen.findByText("websocket")).toBeInTheDocument();
     expect(screen.getByText("telegram")).toBeInTheDocument();
     expect(screen.getByText("pip install 'vibe-trading-ai[telegram]'")).toBeInTheDocument();
 
@@ -129,7 +155,9 @@ describe("Settings IM channels panel", () => {
 
   it("starts channels from the settings control surface", async () => {
     render(<Settings />);
-    await screen.findByText("IM Channels");
+    // Start stays disabled until the runtime status lands, so wait for the row
+    // the status request renders before clicking.
+    await screen.findByText("websocket");
 
     fireEvent.click(screen.getByRole("button", { name: "Start channels" }));
 

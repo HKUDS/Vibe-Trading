@@ -19,6 +19,7 @@ import pandas as pd
 from src.factors.base import (
     decay_linear,
     delta,
+    observed_over,
     rank,
     safe_div,
     scale,
@@ -65,4 +66,6 @@ def compute(panel):
     left = rank(ts_corr(c, ts_mean(v, 30).rolling(37).sum(), 15))
     right = rank(ts_corr(rank(h), rank(ts_mean(v, 10)), 11))
     out = (left < right).astype("float64") * -1.0
-    return out
+    # Reach of each input through the nested windows; a gap inside it is not a verdict (#1463).
+    # v: mean 30 + sum 37 + corr 15; c: corr 15; h: corr 11.
+    return out.where(observed_over((v, 80), (c, 15), (h, 11)))

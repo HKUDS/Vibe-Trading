@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -559,7 +560,15 @@ class SwarmStore:
             path: Target file path.
             content: File content.
         """
-        tmp_path = path.with_suffix(".tmp")
+        # self._write_lock only serializes callers on this SwarmStore
+        # instance; mcp_server._get_swarm_store() builds a fresh instance
+        # per tool call, so two concurrent pollers of the same run each get
+        # their own lock. A shared ".tmp" name let one writer's rename
+        # consume the other's still-unwritten temp file, silently losing an
+        # update or raising FileNotFoundError. A per-write unique name keeps
+        # each writer's temp file private regardless of how many SwarmStore
+        # instances are racing.
+        tmp_path = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
         with self._write_lock:
             tmp_path.write_text(content, encoding="utf-8")
             _replace_with_retry(tmp_path, path)

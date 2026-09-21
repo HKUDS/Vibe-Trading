@@ -825,6 +825,36 @@ def test_enterprise_value_finite_bridge_is_unchanged():
     assert result.enterprise_value == pytest.approx(280.0, abs=EXACT)
 
 
+def test_enterprise_value_refuses_negative_bridge_magnitudes():
+    # A negative magnitude here would silently flip the sign the bridge
+    # applies (e.g. negative cash gets ADDED to EV instead of subtracted).
+    with pytest.raises(ValuationError):
+        enterprise_value(market_cap=1000.0, total_debt=200.0, cash_and_equivalents=-150.0)
+    with pytest.raises(ValuationError):
+        enterprise_value(market_cap=1000.0, total_debt=-200.0, cash_and_equivalents=150.0)
+    with pytest.raises(ValuationError):
+        enterprise_value(
+            market_cap=1000.0,
+            total_debt=200.0,
+            cash_and_equivalents=150.0,
+            minority_interest=-50.0,
+        )
+    with pytest.raises(ValuationError):
+        enterprise_value(
+            market_cap=1000.0,
+            total_debt=200.0,
+            cash_and_equivalents=150.0,
+            preferred_stock=-50.0,
+        )
+    with pytest.raises(ValuationError):
+        enterprise_value(
+            market_cap=1000.0,
+            total_debt=200.0,
+            cash_and_equivalents=150.0,
+            investments_in_associates=-50.0,
+        )
+
+
 def test_calendarise_metric_refuses_non_finite_period_values():
     with pytest.raises(ValuationError):
         calendarise_metric(

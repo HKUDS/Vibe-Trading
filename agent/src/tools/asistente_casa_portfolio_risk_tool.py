@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import date, timedelta
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
@@ -38,6 +37,7 @@ import pandas as pd
 
 from backtest.risk_xray import compute_risk_xray
 from src.agent.tools import BaseTool
+from src.config.accessor import get_env_value
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ class ConnectorError(RuntimeError):
 
 
 def _env_credentials() -> tuple[str, str]:
-    base_url = str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
-    api_key = str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
+    base_url = str(get_env_value("ASISTENTE_CASA_BASE_URL") or "").strip().rstrip("/")
+    api_key = str(get_env_value("ASISTENTE_CASA_API_KEY") or "").strip()
     if not base_url or not api_key:
         raise ValueError("Asistente Casa environment is not configured")
     return base_url, api_key
@@ -176,8 +176,8 @@ class AsistenteCasaPortfolioRiskXrayTool(BaseTool):
     @classmethod
     def check_available(cls) -> bool:
         return bool(
-            str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip()
-            and str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
+            str(get_env_value("ASISTENTE_CASA_BASE_URL") or "").strip()
+            and str(get_env_value("ASISTENTE_CASA_API_KEY") or "").strip()
         )
 
     def execute(self, **kwargs: Any) -> str:
@@ -431,8 +431,8 @@ class AsistenteCasaMarketHistoryCoverageTool(BaseTool):
     @classmethod
     def check_available(cls) -> bool:
         return bool(
-            str(os.environ.get("ASISTENTE_CASA_BASE_URL") or "").strip()
-            and str(os.environ.get("ASISTENTE_CASA_API_KEY") or "").strip()
+            str(get_env_value("ASISTENTE_CASA_BASE_URL") or "").strip()
+            and str(get_env_value("ASISTENTE_CASA_API_KEY") or "").strip()
         )
 
     def execute(self, **kwargs: Any) -> str:

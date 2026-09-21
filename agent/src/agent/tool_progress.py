@@ -17,8 +17,8 @@ NO_PROGRESS_LIMIT = 8
 FAILURE_BLOCK_THRESHOLD = 2
 RECOVERY_MESSAGE = (
     "I stopped because repeated tool attempts did not produce new information. "
-    "I cannot reliably answer from the available evidence. Please ask me to "
-    "continue with a different source or rerun the missing research step."
+    "I cannot reliably answer from the previous summary alone. Please provide "
+    "the artifact path or confirm that you want to rerun the missing research step."
 )
 
 

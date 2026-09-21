@@ -421,7 +421,134 @@
       "stoppedToast": "IM channels stopped",
       "refreshFailed": "Failed to refresh IM channels",
       "startFailed": "Failed to start IM channels",
-      "stopFailed": "Failed to stop IM channels"
+      "stopFailed": "Failed to stop IM channels",
+      "config": {
+        "toggleConfig": "Configure {{name}}",
+        "keepCurrent": "Keep current ({{masked}})",
+        "secretNotSet": "Not set",
+        "clearSecret": "Clear",
+        "required": "Required",
+        "listPlaceholder": "Type a value and press Enter",
+        "removeValue": "Remove {{value}}",
+        "save": "Save configuration",
+        "hotApply": "Saving applies immediately — no restart needed.",
+        "saved": "Channel configuration saved",
+        "saveFailed": "Failed to save the channel configuration: {{message}}",
+        "test": "Test connection",
+        "testing": "Testing…",
+        "testOk": "Connection verified",
+        "testFailed": "Connection test failed: {{message}}",
+        "testCodeOk": "The provider accepted these credentials.",
+        "testCodeInvalidCredentials": "The provider rejected these credentials.",
+        "testCodeNetwork": "The provider could not be reached.",
+        "testCodeUnsupported": "This channel does not support connection tests.",
+        "testedSavedConfig": "Tested the saved configuration.",
+        "testedDraftConfig": "Tested the values currently in the form (not saved yet).",
+        "enable": "Enable channel",
+        "enableHint": "Disabling keeps the stored credentials — you can re-enable at any time.",
+        "enabledToast": "Channel enabled",
+        "disabledToast": "Channel disabled",
+        "enableFailed": "Failed to enable the channel: {{message}}",
+        "disableFailed": "Failed to disable the channel: {{message}}",
+        "enableRejected": "The provider rejected these credentials, so the channel was not enabled.",
+        "enableRejectedDetail": "Provider response: {{detail}}",
+        "enableAnyway": "Enable anyway",
+        "enableAnywayHint": "Enabling anyway skips the credential check — the channel may fail to connect.",
+        "notWritable": "Channel configuration is stored in a YAML file ({{path}}), which the web UI cannot edit. Edit that file directly to change credentials.",
+        "notWritableChip": "Read-only (YAML)",
+        "sdkMissing": "Runtime SDK not installed — {{hint}}",
+        "sdkMissingNoHint": "Runtime SDK not installed; the channel can be configured but may not start.",
+        "noFields": "This channel has no configurable fields.",
+        "loadFailed": "Could not load channel configuration."
+      },
+      "fields": {
+        "dingtalk": {
+          "client_id": {
+            "label": "Client ID (AppKey)",
+            "help": "The app's AppKey from the Credentials page of the DingTalk developer console."
+          },
+          "client_secret": {
+            "label": "Client Secret (AppSecret)",
+            "help": "The app's AppSecret. Stored server-side and never sent back to the browser."
+          },
+          "allow_from": {
+            "label": "Allowed senders",
+            "help": "Optional allowlist of DingTalk sender IDs that may talk to the agent (\"*\" allows everyone). Unpaired senders receive a pairing code in a direct message."
+          },
+          "allow_remote_media_redirects": {
+            "label": "Allow remote media redirects",
+            "help": "Follow provider redirects when downloading message media. Off by default."
+          },
+          "remote_media_redirect_allowed_hosts": {
+            "label": "Allowed redirect hosts",
+            "help": "Hosts allowed when remote media redirects are enabled. An empty list blocks every cross-host redirect."
+          },
+          "group_user_isolation": {
+            "label": "Per-user group sessions",
+            "help": "Give each member of a group chat their own agent session instead of sharing one."
+          },
+          "force_ipv4": {
+            "label": "Force IPv4",
+            "help": "Bind DingTalk API calls to IPv4. Useful when the app's egress-IP whitelist holds a stable IPv4 address while the IPv6 prefix keeps rotating."
+          }
+        },
+        "qq": {
+          "app_id": {
+            "label": "AppID",
+            "help": "The bot's AppID from the QQ Open Platform (q.qq.com) app settings."
+          },
+          "secret": {
+            "label": "AppSecret",
+            "help": "The bot's AppSecret. Stored server-side and never sent back to the browser."
+          },
+          "allow_from": {
+            "label": "Allowed senders",
+            "help": "Optional allowlist of QQ sender openids that may talk to the agent (\"*\" allows everyone). Unpaired senders receive a pairing code in a direct message."
+          },
+          "msg_format": {
+            "label": "Message format",
+            "help": "Reply format: plain or markdown."
+          },
+          "ack_message": {
+            "label": "Ack message",
+            "help": "Immediate acknowledgement sent when a message arrives. Leave empty to disable."
+          },
+          "media_dir": {
+            "label": "Media directory",
+            "help": "Where inbound attachments are saved. Empty uses ~/.vibe-trading/media/qq."
+          },
+          "download_chunk_size": {
+            "label": "Download chunk size",
+            "help": "Bytes per chunk when downloading attachments (default 262144)."
+          },
+          "download_max_bytes": {
+            "label": "Max download size (bytes)",
+            "help": "Safety cap for a single attachment download (default 209715200 = 200 MB)."
+          }
+        }
+      },
+      "guides": {
+        "dingtalk": {
+          "title": "DingTalk setup guide",
+          "intro": "DingTalk bots use Stream Mode, so no public callback URL is needed.",
+          "step1": "Create an app in the DingTalk developer console (open-dev.dingtalk.com).",
+          "step2": "Add the bot capability to the app and enable Stream Mode for it.",
+          "step3": "Copy the app's AppKey into Client ID and its AppSecret into Client Secret.",
+          "step4": "Publish the app so it is available to your organization.",
+          "step5": "Return here, click Test connection, then enable the channel.",
+          "docsLabel": "Open the DingTalk developer console"
+        },
+        "qq": {
+          "title": "QQ setup guide",
+          "intro": "QQ bots connect over WebSocket via the official botpy SDK, so no public callback URL is needed.",
+          "step1": "Register on the QQ Open Platform (q.qq.com) and create a bot.",
+          "step2": "Copy the AppID and AppSecret from the bot's development settings page.",
+          "step3": "Paste them into the AppID and AppSecret fields above.",
+          "step4": "Add the bot to a QQ group or chat with it privately, following the platform's sandbox/publish rules.",
+          "step5": "Return here, click Test connection, then enable the channel.",
+          "docsLabel": "Open the QQ Open Platform"
+        }
+      }
     },
     "generation": "Generation",
     "dataSourceSettings": "Data Source Settings",
@@ -457,7 +584,9 @@
       }
     },
     "tushareToken": "Tushare token",
+    "gildataToken": "Gildata token",
     "clearTushareToken": "Clear saved Tushare token",
+    "clearGildataToken": "Clear saved Gildata token",
     "saveDataSourceSettings": "Save data source settings",
     "baostock": "BaoStock",
     "loadLlmSettingsFailed": "Failed to load LLM settings: {{message}}",
@@ -489,7 +618,8 @@
     "oauth": "OAuth",
     "authentication": "Authentication",
     "apiKey": "API key",
-    "tushareTokenDesc": "Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available."
+    "tushareTokenDesc": "Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available.",
+    "gildataTokenDesc": "Optional Gildata (Hundsun Juyuan) feed for China A-shares. When set, it joins the tail of the A-share fallback chain with forward-adjusted daily bars."
   },
   "qveris": {
     "title": "QVeris Tool Marketplace",
@@ -1502,11 +1632,11 @@
       "total": "Total assets",
       "change": "Today's asset change",
       "changeNote": "Includes market moves and cash flows",
-      "changeCanonicalNote": "Canonical daily portfolio change from Asistente Casa",
       "coverage": "Valuation coverage",
       "coverageNote": "Priced {{priced}} · cash {{cash}}",
       "lastComplete": "Last complete update",
-      "excluded": "{{count}} accounts could not be read and are excluded from this total"
+      "excluded": "{{count}} accounts could not be read and are excluded from this total",
+      "changeCanonicalNote": "Canonical daily portfolio change from Asistente Casa"
     },
     "allocation": {
       "byAccount": "Allocation by account",
@@ -1540,11 +1670,11 @@
       "colCostPrice": "Cost / Price",
       "colValue": "Value",
       "colWeight": "Weight",
-      "colToday": "Today",
       "colPnl": "Unrealized P/L",
       "colData": "Data",
       "priced": "Priced",
-      "unpriced": "Unpriced"
+      "unpriced": "Unpriced",
+      "colToday": "Today"
     },
     "history": {
       "title": "Asset history",

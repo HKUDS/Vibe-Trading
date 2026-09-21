@@ -44,7 +44,10 @@ class RememberTool(BaseTool):
             "memory_type": {
                 "type": "string",
                 "enum": ["user", "feedback", "project", "reference"],
-                "description": "Memory category (default: project)",
+                "description": (
+                    "Memory category (save: default project; forget: needed only when the "
+                    "title exists under more than one category)"
+                ),
             },
             "query": {
                 "type": "string",
@@ -155,7 +158,10 @@ class RememberTool(BaseTool):
         title = kwargs.get("title", "")
         if not title:
             return json.dumps({"status": "error", "error": "title required"})
-        removed = self._memory.remove(title)
+        try:
+            removed = self._memory.remove(title, kwargs.get("memory_type"))
+        except ValueError as exc:
+            return json.dumps({"status": "error", "error": str(exc)})
         msg = f"Removed: {title}" if removed else f"Not found: {title}"
         return json.dumps({"status": "ok" if removed else "not_found", "message": msg})
 

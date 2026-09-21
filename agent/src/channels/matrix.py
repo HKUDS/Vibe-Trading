@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import mimetypes
 import time
 from contextlib import suppress
@@ -55,7 +56,6 @@ from src.channels.utils import get_media_dir, get_runtime_subdir
 from src.config.paths import get_data_dir
 from pydantic import BaseModel
 from src.channels.utils import safe_filename
-from src.utils.logging_bridge import redirect_lib_logging
 
 TYPING_NOTICE_TIMEOUT_MS = 30_000
 # Must stay below TYPING_NOTICE_TIMEOUT_MS so the indicator doesn't expire mid-processing.
@@ -255,7 +255,8 @@ class MatrixChannel(BaseChannel):
         """Start Matrix client and begin sync loop."""
         self._running = True
         self._started_at_ms = int(time.time() * 1000)
-        redirect_lib_logging("nio", level="WARNING")
+        # Keep the chatty nio SDK loggers at WARNING+ during the sync loop.
+        logging.getLogger("nio").setLevel(logging.WARNING)
 
         # The nio E2E store + session.json hold credentials, so they live under
         # the runtime dir (NOT the agent-readable uploads root that
@@ -297,7 +298,7 @@ class MatrixChannel(BaseChannel):
 
             create_new_session = True
             if self.session_path.exists():
-                self.logger.info("Found session.json at {}; attempting to use existing session...", self.session_path)
+                self.logger.info("Found session.json at %s; attempting to use existing session...", self.session_path)
                 try:
                     with open(self.session_path, "r", encoding="utf-8") as f:
                         session = json.load(f)
@@ -308,7 +309,7 @@ class MatrixChannel(BaseChannel):
                     self.logger.info("Successfully loaded from existing session")
                     create_new_session = False
                 except Exception as e:
-                    self.logger.warning("Failed to load from existing session: {}", e)
+                    self.logger.warning("Failed to load from existing session: %s", e)
                     self.logger.info("Falling back to password login...")
 
             if create_new_session:
@@ -318,7 +319,7 @@ class MatrixChannel(BaseChannel):
                     self.logger.info("Logged in using a password; saving details to disk")
                     self._write_session_to_disk(resp)
                 else:
-                    self.logger.error("Failed to log in: {}", resp)
+                    self.logger.error("Failed to log in: %s", resp)
                     return
 
         elif self.config.access_token and self.config.device_id:
@@ -329,7 +330,7 @@ class MatrixChannel(BaseChannel):
                 self.client.load_store()
                 self.logger.info("Successfully loaded from existing session")
             except Exception as e:
-                self.logger.warning("Failed to load from existing session: {}", e)
+                self.logger.warning("Failed to load from existing session: %s", e)
 
         else:
             self.logger.warning("Unable to load a session due to missing password, access_token, or device_id; encryption may not work")
@@ -364,9 +365,9 @@ class MatrixChannel(BaseChannel):
         try:
             with open(self.session_path, "w", encoding="utf-8") as f:
                 json.dump(session, f, indent=2)
-            self.logger.info("Session saved to {}", self.session_path)
+            self.logger.info("Session saved to %s", self.session_path)
         except Exception as e:
-            self.logger.warning("Failed to save session: {}", e)
+            self.logger.warning("Failed to save session: %s", e)
 
     def _is_workspace_path_allowed(self, path: Path) -> bool:
         """Check path is inside workspace (when restriction enabled)."""
@@ -627,36 +628,36 @@ class MatrixChannel(BaseChannel):
         if isinstance(event, KeyVerificationStart):
             if "emoji" not in (getattr(event, "short_authentication_string", None) or []):
                 self.logger.info(
-                    "Ignoring Matrix SAS verification from {} without emoji support",
+                    "Ignoring Matrix SAS verification from %s without emoji support",
                     sender,
                 )
                 return
 
             response = await self.client.accept_key_verification(transaction_id)
             if isinstance(response, ToDeviceError):
-                self.logger.warning("Matrix SAS accept failed for {}: {}", sender, response)
+                self.logger.warning("Matrix SAS accept failed for %s: %s", sender, response)
             return
 
         if isinstance(event, KeyVerificationKey):
             responses = await self.client.send_to_device_messages()
             if any(isinstance(response, ToDeviceError) for response in responses):
-                self.logger.warning("Matrix SAS key share failed for {}", sender)
+                self.logger.warning("Matrix SAS key share failed for %s", sender)
                 return
 
             response = await self.client.confirm_short_auth_string(transaction_id)
             if isinstance(response, ToDeviceError):
-                self.logger.warning("Matrix SAS confirm failed for {}: {}", sender, response)
+                self.logger.warning("Matrix SAS confirm failed for %s: %s", sender, response)
             return
 
         if isinstance(event, KeyVerificationMac):
             sas = getattr(self.client, "key_verifications", {}).get(transaction_id)
             if sas is not None and getattr(sas, "verified", False):
-                self.logger.info("Matrix SAS verification completed for {}", sender)
+                self.logger.info("Matrix SAS verification completed for %s", sender)
             return
 
         if isinstance(event, KeyVerificationCancel):
             self.logger.info(
-                "Matrix SAS verification cancelled by {}: {}",
+                "Matrix SAS verification cancelled by %s: %s",
                 sender,
                 getattr(event, "reason", ""),
             )
@@ -696,7 +697,7 @@ class MatrixChannel(BaseChannel):
             response = await self.client.room_typing(room_id=room_id, typing_state=typing,
                                                      timeout=TYPING_NOTICE_TIMEOUT_MS)
             if isinstance(response, RoomTypingError):
-                self.logger.debug("typing failed for {}: {}", room_id, response)
+                self.logger.debug("typing failed for %s: %s", room_id, response)
 
     async def _start_typing_keepalive(self, room_id: str) -> None:
         """Start periodic typing refresh (spec-recommended keepalive)."""
@@ -883,7 +884,7 @@ class MatrixChannel(BaseChannel):
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                 async with session.get(media_url, params={"allow_remote": "true"}) as response:
                     if response.status >= 400:
-                        self.logger.warning("download failed for {}: HTTP {}", mxc_url, response.status)
+                        self.logger.warning("download failed for %s: HTTP %s", mxc_url, response.status)
                         return None
                     content_length = response.headers.get("Content-Length")
                     if content_length is not None:
@@ -902,7 +903,7 @@ class MatrixChannel(BaseChannel):
         except _MediaTooLargeError:
             raise
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
-            self.logger.warning("download failed for {}", mxc_url, exc_info=True)
+            self.logger.warning("download failed for %s", mxc_url, exc_info=True)
             return None
 
     def _decrypt_media_bytes(self, event: MatrixMediaEvent, ciphertext: bytes) -> bytes | None:
@@ -914,7 +915,7 @@ class MatrixChannel(BaseChannel):
         try:
             return decrypt_attachment(ciphertext, key, sha256, iv)
         except (EncryptionError, ValueError, TypeError):
-            self.logger.warning("decrypt failed for event {}", getattr(event, "event_id", ""))
+            self.logger.warning("decrypt failed for event %s", getattr(event, "event_id", ""))
             return None
 
     async def _fetch_media_attachment(

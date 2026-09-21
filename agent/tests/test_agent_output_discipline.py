@@ -173,7 +173,7 @@ def _ledger(tmp_path: Path, *, tool: str = "get_market_data", result: str = _MAR
     ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
     arguments = {"symbols": ["AAPL.US"], "source": "yahoo"} if tool == "get_market_data" else {"symbol": "AAPL.US"}
     ledger.ingest_tool_result(
-        tool_name=tool, arguments=arguments, result=result, call_id="quote", success=True
+        tool_name=tool, arguments=arguments, result=result, call_id="q1", success=True
     )
     return ledger
 

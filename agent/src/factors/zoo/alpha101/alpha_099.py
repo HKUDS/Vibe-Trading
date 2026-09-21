@@ -18,6 +18,7 @@ import pandas as pd
 from src.factors.base import (
     decay_linear,
     delta,
+    observed_over,
     rank,
     safe_div,
     scale,
@@ -68,4 +69,6 @@ def compute(panel: dict) -> pd.DataFrame:
     lhs = rank(ts_corr(rolling_sum((high + low) / 2.0, 20), rolling_sum(adv60, 20), 9))
     rhs = rank(ts_corr(low, volume, 6))
     out = (lhs < rhs).astype(float) * -1.0
-    return out
+    # Reach of each input through the nested windows; a gap inside it is not a verdict (#1463).
+    # volume: adv60 + sum 20 + corr 9; high/low: sum 20 + corr 9.
+    return out.where(observed_over((volume, 87), (high, 28), (low, 28)))

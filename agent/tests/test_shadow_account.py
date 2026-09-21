@@ -1969,6 +1969,74 @@ def test_generated_engine_keeps_unmatched_markets_flat() -> None:
 
 
 @pytest.mark.unit
+def test_generated_engine_other_market_rule_is_not_a_wildcard() -> None:
+    """A rule whose own market is "other" must only fire for codes that
+    themselves resolve to "other" -- it must not shadow a more specific
+    rule for every other code."""
+    import importlib.util
+    import tempfile
+
+    rule_other = ShadowRule(
+        rule_id="R1",
+        human_text="low-support unresolved-market rule",
+        entry_condition={"market": "other", "entry_hour": {"min": 0, "max": 23}},
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=5,
+        coverage_rate=0.1,
+        sample_trades=("XYZ@2026-01-10",),
+    )
+    rule_us = ShadowRule(
+        rule_id="R2",
+        human_text="high-support US rule",
+        entry_condition={"market": "us", "entry_hour": {"min": 0, "max": 23}},
+        exit_condition={"holding_days": {"min": 2, "max": 5}},
+        holding_days_range=(3, 3),
+        support_count=50,
+        coverage_rate=0.9,
+        sample_trades=("AAPL@2026-01-10",),
+    )
+    profile = ShadowProfile(
+        shadow_id="shadow_other_wildcard",
+        created_at="2026-01-01T00:00:00",
+        journal_hash="test",
+        source_market="us",
+        profitable_roundtrips=55,
+        total_roundtrips=60,
+        date_range=("2025-01-01", "2026-01-01"),
+        profile_text="test",
+        rules=(rule_other, rule_us),
+        preferred_markets=("us", "other"),
+        typical_holding_days=(3.0,),
+    )
+
+    source = render_signal_engine(profile)
+    ok, err = validate_generated(source)
+    assert ok, f"generated source failed validation: {err}"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "signal_engine.py"
+        path.write_text(source, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("gen_se_other_wildcard", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        engine = module.SignalEngine()
+
+        picked = engine._pick_rule("AAPL")
+        assert picked is not None
+        assert picked["rule_id"] == "R2", (
+            "AAPL resolves to market 'us' and must pick the market-specific "
+            "rule R2, not fall through to R1 just because R1's market "
+            "literal happens to be 'other'"
+        )
+
+        picked_other = engine._pick_rule("123456")
+        assert picked_other is not None
+        assert picked_other["rule_id"] == "R1"
+
+
+@pytest.mark.unit
 def test_conditional_entry_emits_signal_when_rsi_in_range() -> None:
     """RSI in [25, 45] → signal fires."""
     rule = _rule_with_rsi(25.0, 45.0)

@@ -8,9 +8,12 @@ or the alpha formula transcription.
 Note on panel size: the task spec calls for a 30-row × 5-column panel, but
 ``gtja191_130`` requires a 40-day rolling volume mean (warmup ≥ 60 bars by
 the registry's ``min_warmup_bars`` field), so a 30-row panel returns >95 %
-NaN and fails the registry's sanity check. We use ``N=80`` here as the
-minimum row count that lets all five sample alphas produce a non-trivial
-output. The seed (``np.random.RandomState(42)``) is unchanged.
+NaN and fails the registry's sanity check. ``N=80`` was the first size that
+passed, but only because ``gtja191_101`` compared its operands during their
+own warmup and emitted a verdict there: its volume input reaches back 80 bars
+(mean 30 + sum 37 + corr 15), so on 80 rows it has one defined row. Since that
+warmup is NaN (#1463) the panel is 160 rows. The seed
+(``np.random.RandomState(42)``) is unchanged.
 """
 
 from __future__ import annotations
@@ -35,9 +38,9 @@ SAMPLED_ALPHAS = (
 
 
 def _build_panel() -> dict[str, pd.DataFrame]:
-    """Reproducible 80-row × 5-symbol OHLCV+amount+benchmark panel (seed=42)."""
+    """Reproducible 160-row × 5-symbol OHLCV+amount+benchmark panel (seed=42)."""
     rng = np.random.RandomState(42)
-    n_rows, n_syms = 80, 5
+    n_rows, n_syms = 160, 5
     idx = pd.date_range("2024-01-01", periods=n_rows, freq="D")
     cols = [f"SYM{i}" for i in range(n_syms)]
     close = (

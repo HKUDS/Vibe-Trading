@@ -18,6 +18,7 @@ import pandas as pd
 from src.factors.base import (
     decay_linear,
     delta,
+    observed_over,
     rank,
     safe_div,
     scale,
@@ -63,4 +64,6 @@ def compute(panel: dict) -> pd.DataFrame:
     lhs = rank(ts_corr(vwap, volume, 4))
     rhs = rank(ts_corr(rank(low), rank(adv50), 12))
     out = (lhs < rhs).astype(float)
-    return out
+    # Reach of each input through the nested windows; a gap inside it is not a verdict (#1463).
+    # volume: adv50 + corr 12; low: corr 12; vwap: corr 4.
+    return out.where(observed_over((volume, 61), (low, 12), (vwap, 4)))

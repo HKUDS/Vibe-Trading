@@ -18,6 +18,7 @@ import pandas as pd
 from src.factors.base import (
     decay_linear,
     delta,
+    observed_over,
     rank,
     safe_div,
     scale,
@@ -94,8 +95,11 @@ def compute(panel: dict) -> pd.DataFrame:
     mix = close * 0.369701 + vwap * (1.0 - 0.369701)
     a = rank(decay_linear(delta(mix, 2), 3))
     b = ts_rank(decay_linear(ts_corr(ind_neutralize(adv81, panel), close, 13).abs(), 5), 14)
-    # np.maximum / np.minimum propagate a missing side; np.fmax / np.fmin returned the other one (#1463).
+    # np.fmax returns the other side when one is missing; mask where a gap sits
+    # inside an input's reach (#1463). A side that is undefined on complete data (a
+    # constant window's correlation) keeps the other side, as before (#1452).
+    # volume: adv81 + corr 13 + decay 5 + ts_rank 14; close: corr 13 + decay 5 + ts_rank 14; vwap: delta 2 + decay 3.
     arr_a = a.to_numpy(dtype=np.float64, na_value=np.nan)
     arr_b = b.to_numpy(dtype=np.float64, na_value=np.nan)
-    out = pd.DataFrame(np.maximum(arr_a, arr_b), index=close.index, columns=close.columns) * -1.0
-    return out
+    out = pd.DataFrame(np.fmax(arr_a, arr_b), index=close.index, columns=close.columns) * -1.0
+    return out.where(observed_over((volume, 110), (close, 30), (vwap, 5)))

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from src.portfolio.compatibility import (
@@ -125,7 +127,7 @@ def test_okx_account_details_are_adapted_to_spot_positions():
     ]
 
 
-def test_contract_propagates_account_currency_and_rejects_unsupported_fx():
+def test_contract_propagates_account_currency_and_decouples_iso_from_fx():
     account, positions = adapt_and_validate_payloads(
         "dhan",
         {"account": {"currency": "INR"}},
@@ -133,13 +135,21 @@ def test_contract_propagates_account_currency_and_rejects_unsupported_fx():
     )
     assert positions["positions"][0]["currency"] == "INR"
 
+    ensure_supported_currencies(positions["positions"], account)
+    rates = {"USD": Decimal("1"), "CNY": Decimal("7"), "HKD": Decimal("8")}
     with pytest.raises(PortfolioContractError, match="INR"):
-        ensure_supported_currencies(positions["positions"], account)
+        ensure_supported_currencies(positions["positions"], account, rates)
 
 
-def test_cash_only_unsupported_currency_fails_closed() -> None:
+def test_cash_only_currency_without_rate_fails_closed() -> None:
+    rates = {"USD": Decimal("1"), "CNY": Decimal("7"), "HKD": Decimal("8")}
     with pytest.raises(PortfolioContractError, match="INR"):
-        ensure_supported_currencies([], {"account": {"currency": "INR"}})
+        ensure_supported_currencies([], {"account": {"currency": "INR"}}, rates)
+
+
+def test_non_iso_currency_is_rejected_before_fx_lookup() -> None:
+    with pytest.raises(PortfolioContractError, match="not a valid ISO-4217"):
+        ensure_supported_currencies([{"symbol": "BTC", "currency": "USDT"}])
 
 
 @pytest.mark.parametrize(

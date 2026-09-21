@@ -12,13 +12,16 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
+from src.portfolio.iso4217 import is_iso_currency
 from src.trading.types import TradingProfile
 
 CompatibilityLevel = Literal["native", "contract_tested", "experimental"]
 
-SUPPORTED_VALUE_CURRENCIES = frozenset({"USD", "HKD", "CNY"})
+# Temporary fork capability: a connector may supply a complete portfolio already
+# valued in one canonical ISO currency. This does not create an FX rate and must
+# never be used to compare or aggregate unlike currencies.
 NATIVE_CURRENCY_CONNECTORS: dict[str, str] = {"asistente-casa": "ARS"}
 _SYMBOL_FIELDS = ("symbol", "code", "ticker")
 _QUANTITY_FIELDS = (
@@ -100,12 +103,6 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "Account totals and instrument quote resolution require verification.",
     ),
     "toss": PortfolioCompatibility("experimental", 1, "positions", "KRW valuation is not supported yet."),
-    "asistente-casa": PortfolioCompatibility(
-        "native",
-        1,
-        "ars_multi_asset",
-        "Canonical ARS-native valuation supplied by Asistente Casa; no ARS FX conversion.",
-    ),
     "robinhood": PortfolioCompatibility(
         "experimental",
         1,
@@ -221,30 +218,34 @@ def _require_equity_only_robinhood_account(account_payload: dict[str, Any]) -> N
 def ensure_supported_currencies(
     rows: list[dict[str, Any]],
     account_payload: dict[str, Any] | None = None,
-    *,
-    connector: str | None = None,
+    rates: Mapping[str, Decimal] | None = None,
 ) -> None:
-    """Fail closed when the current portfolio FX model cannot value a source.
+    """Validate currency identity separately from current FX availability.
 
-    Account currency is checked as well as position currency so a cash-only
-    account cannot accidentally be reported as USD.
+    A real ISO-4217 currency is valid portfolio metadata even when the current
+    rates map cannot convert it. Valuation callers pass a rates map to fail
+    closed on such gaps instead of silently assuming a 1:1 USD rate.
     """
-    currencies = {str(row.get("price_currency") or row.get("currency") or "USD").upper() for row in rows}
+    currencies = {
+        str(row.get("price_currency") or row.get("currency") or "USD").upper()
+        for row in rows
+    }
     account_currency = _account_currency(account_payload or {})
     if account_currency:
         currencies.add(account_currency)
-    native_currency = NATIVE_CURRENCY_CONNECTORS.get(str(connector or "").lower())
-    if native_currency is not None:
-        unexpected = sorted(currencies - {native_currency})
-        if unexpected:
+
+    invalid = sorted(code for code in currencies if not is_iso_currency(code))
+    if invalid:
+        raise PortfolioContractError(
+            "portfolio currency is not a valid ISO-4217 code: " + ", ".join(invalid)
+        )
+
+    if rates is not None:
+        missing = sorted(code for code in currencies if rates.get(code) is None)
+        if missing:
             raise PortfolioContractError(
-                f"native connector {connector} must report only {native_currency}; got: "
-                + ", ".join(unexpected)
+                "portfolio FX conversion is not available for: " + ", ".join(missing)
             )
-        return
-    unsupported = sorted(currencies - SUPPORTED_VALUE_CURRENCIES)
-    if unsupported:
-        raise PortfolioContractError("portfolio FX conversion is not available for: " + ", ".join(unsupported))
 
 
 def _account_currency(payload: dict[str, Any]) -> str | None:

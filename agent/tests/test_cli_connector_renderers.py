@@ -78,6 +78,90 @@ def test_connector_account_renders_balances_table(capsys) -> None:
     assert "12" in out and "345" in out  # net_assets 12,345 rendered
 
 
+def test_connector_account_renders_ccxt_asset_balances(capsys) -> None:
+    """#1539: Binance spot rows are asset/free/used/total, not Longbridge's keys."""
+    from src.trading.connectors.binance.shaping import nonzero_balances
+
+    ccxt_balance = {
+        "info": {},
+        "BTC": {"free": 0.5, "used": 0.125, "total": 0.625},
+        "USDT": {"free": 1000.0, "used": 0.0, "total": 1000.0},
+        "DUST": {"free": 0.0, "used": 0.0, "total": 0.0},
+        "free": {}, "used": {}, "total": {},
+    }
+    binance_account = {
+        "status": "ok",
+        "profile": "paper",
+        "profile_id": "binance-paper-trade",
+        "is_testnet": True,
+        "balances": nonzero_balances(ccxt_balance),
+    }
+
+    rc = _legacy._print_connector_account(binance_account)
+
+    assert rc == _legacy.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "Net Assets" not in out, "a coin quantity must not be labelled net assets"
+    btc = next(line for line in out.splitlines() if "BTC" in line)
+    assert "0.5" in btc and "0.125" in btc and "0.625" in btc
+    assert any("USDT" in line and "1000.0" in line for line in out.splitlines())
+    assert "DUST" not in out
+    assert "2 non-zero balances" in out
+
+
+def test_connector_account_renders_futu_assets(capsys) -> None:
+    """#1539: Futu's accinfo_query rows arrive as ``assets``, not ``balances``."""
+    from src.trading.connectors.futu.sdk import _account_to_dict
+
+    futu_account = {
+        "status": "ok",
+        "profile_id": "futu-paper-trade",
+        "trd_env": "SIMULATE",
+        "acc_id": 1,
+        "assets": [
+            _account_to_dict(
+                {
+                    "power": 250000.0,
+                    "total_assets": 123456.0,
+                    "cash": 23456.0,
+                    "market_val": 100000.0,
+                    "available_funds": 20000.0,
+                    "securities_assets": 123456.0,
+                    "currency": "hkd",
+                }
+            )
+        ],
+    }
+
+    rc = _legacy._print_connector_account(futu_account)
+
+    assert rc == _legacy.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "No account summary returned." not in out
+    row = next(line for line in out.splitlines() if "HKD" in line)
+    for value in ("123456.0", "23456.0", "100000.0", "20000.0", "250000.0"):
+        assert value in row
+
+
+def test_connector_account_renders_trading212_cash_and_metadata(capsys) -> None:
+    """#1539: Trading 212 splits the account into ``cash`` and ``metadata`` mappings."""
+    trading212_account = {
+        "status": "ok",
+        "profile_id": "trading212-live-readonly",
+        "cash": {"free": 1000.5, "total": 1500.25, "invested": 499.75, "ppl": 12.5, "blocked": 0.0},
+        "metadata": {"currencyCode": "EUR", "id": 4242},
+    }
+
+    rc = _legacy._print_connector_account(trading212_account)
+
+    assert rc == _legacy.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "No account summary returned." not in out
+    assert "cash.free" in out and "1000.5" in out
+    assert "cash.total" in out and "1500.25" in out
+    assert "metadata.currencyCode" in out and "EUR" in out
+
+
 def test_connector_account_still_handles_ibkr_summary(capsys) -> None:
     ibkr_account = {
         "status": "ok",

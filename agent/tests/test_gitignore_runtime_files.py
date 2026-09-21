@@ -17,6 +17,9 @@ from pathlib import Path
 _AGENT_ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = _AGENT_ROOT.parent
 _FILENAME_CONSTANT = re.compile(r"(^|_)(CONFIG_FILENAME|DB_FILENAME)$")
+# A tuple of candidate names, e.g. ``paths._DEFAULT_FILENAMES`` for agent.json
+# and its YAML twins, which the single-name pattern above never saw.
+_FILENAMES_CONSTANT = re.compile(r"(^|_)FILENAMES$")
 
 
 def _runtime_root_filenames() -> dict[str, str]:
@@ -30,13 +33,23 @@ def _runtime_root_filenames() -> dict[str, str]:
             if not isinstance(node, ast.Assign) or len(node.targets) != 1:
                 continue
             target = node.targets[0]
+            if not isinstance(target, ast.Name):
+                continue
+            module = str(path.relative_to(_REPO_ROOT))
             if (
-                isinstance(target, ast.Name)
-                and _FILENAME_CONSTANT.search(target.id)
+                _FILENAME_CONSTANT.search(target.id)
                 and isinstance(node.value, ast.Constant)
                 and isinstance(node.value.value, str)
             ):
-                found[node.value.value] = str(path.relative_to(_REPO_ROOT))
+                found[node.value.value] = module
+            elif _FILENAMES_CONSTANT.search(target.id) and isinstance(
+                node.value, (ast.Tuple, ast.List)
+            ):
+                for element in node.value.elts:
+                    if isinstance(element, ast.Constant) and isinstance(
+                        element.value, str
+                    ):
+                        found[element.value] = module
     return found
 
 
@@ -50,7 +63,8 @@ def test_discovery_sees_the_broker_config_files() -> None:
     names = _runtime_root_filenames()
 
     assert {"alpaca.json", "zerodha.json", "connections.json"} <= set(names)
-    assert len(names) >= 17
+    assert {"agent.json", "agent.yaml", "agent.yml"} <= set(names)
+    assert len(names) >= 20
 
 
 def test_every_runtime_root_file_is_gitignored() -> None:

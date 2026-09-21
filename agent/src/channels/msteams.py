@@ -207,7 +207,7 @@ class MSTeamsChannel(BaseChannel):
                 )
                 if length_error is not None:
                     channel.logger.warning(
-                        "Rejecting inbound activity: Content-Length {!r} -> {}",
+                        "Rejecting inbound activity: Content-Length %r -> %s",
                         self.headers.get("Content-Length"),
                         length_error,
                     )
@@ -221,7 +221,7 @@ class MSTeamsChannel(BaseChannel):
                     raw = self.rfile.read(length) if length > 0 else b"{}"
                     payload = json.loads(raw.decode("utf-8"))
                 except Exception as e:
-                    channel.logger.warning("Invalid request body: {}", e)
+                    channel.logger.warning("Invalid request body: %s", e)
                     self.send_response(400)
                     self.end_headers()
                     return
@@ -235,7 +235,7 @@ class MSTeamsChannel(BaseChannel):
                         )
                         fut.result(timeout=15)
                     except Exception as e:
-                        channel.logger.warning("Inbound auth validation failed: {}", e)
+                        channel.logger.warning("Inbound auth validation failed: %s", e)
                         self.send_response(401)
                         self.send_header("Content-Type", "application/json")
                         self.end_headers()
@@ -248,7 +248,7 @@ class MSTeamsChannel(BaseChannel):
                     )
                     fut.result(timeout=15)
                 except Exception as e:
-                    channel.logger.warning("Activity handling failed: {}", e)
+                    channel.logger.warning("Activity handling failed: %s", e)
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -267,7 +267,7 @@ class MSTeamsChannel(BaseChannel):
         self._server_thread.start()
 
         self.logger.info(
-            "Webhook listening on http://{}:{}{}",
+            "Webhook listening on http://%s:%s%s",
             self.config.host,
             self.config.port,
             self.config.path,
@@ -321,7 +321,7 @@ class MSTeamsChannel(BaseChannel):
         try:
             resp = await self._http.post(base_url, headers=headers, json=payload)
             resp.raise_for_status()
-            self.logger.info("Message sent to {}", ref.conversation_id)
+            self.logger.info("Message sent to %s", ref.conversation_id)
             self._touch_conversation_ref(str(msg.chat_id), persist=True)
         except Exception:
             self.logger.exception("Send failed")
@@ -348,7 +348,7 @@ class MSTeamsChannel(BaseChannel):
 
         if not self._is_trusted_service_url(service_url):
             self.logger.warning(
-                "Ignoring MSTeams activity with untrusted serviceUrl host: {}",
+                "Ignoring MSTeams activity with untrusted serviceUrl host: %s",
                 service_url,
             )
             return
@@ -358,7 +358,7 @@ class MSTeamsChannel(BaseChannel):
 
         # DM-only MVP: ignore group/channel traffic for now
         if conversation_type and conversation_type not in ("personal", ""):
-            self.logger.debug("Ignoring non-DM conversation {}", conversation_type)
+            self.logger.debug("Ignoring non-DM conversation %s", conversation_type)
             return
 
         text = self._sanitize_inbound_text(activity)
@@ -370,7 +370,7 @@ class MSTeamsChannel(BaseChannel):
 
         if not self.is_allowed(sender_id):
             self.logger.warning(
-                "Access denied for sender {} on channel {}. "
+                "Access denied for sender %s on channel %s. "
                 "Add them to allowFrom list in config to grant access.",
                 sender_id, self.name,
             )
@@ -621,7 +621,7 @@ class MSTeamsChannel(BaseChannel):
                 if isinstance(loaded, dict):
                     main_data = loaded
             except Exception as e:
-                self.logger.warning("Failed to load conversation refs: {}", e)
+                self.logger.warning("Failed to load conversation refs: %s", e)
 
         if meta_exists:
             try:
@@ -629,7 +629,7 @@ class MSTeamsChannel(BaseChannel):
                 if isinstance(loaded_meta, dict):
                     meta_data = loaded_meta
             except Exception as e:
-                self.logger.warning("Failed to load conversation refs metadata: {}", e)
+                self.logger.warning("Failed to load conversation refs metadata: %s", e)
 
         return main_data, meta_data, meta_exists
 
@@ -755,7 +755,7 @@ class MSTeamsChannel(BaseChannel):
         for key in keys_to_drop:
             self._conversation_refs.pop(key, None)
         self.logger.info(
-            "Pruned {} stale/unsupported conversation refs (ttl={} days)",
+            "Pruned %s stale/unsupported conversation refs (ttl=%s days)",
             len(keys_to_drop),
             ttl_days,
         )
@@ -836,7 +836,7 @@ class MSTeamsChannel(BaseChannel):
                 self._write_json_atomically(self._refs_path, refs_data)
                 self._write_json_atomically(self._refs_meta_path, refs_meta)
         except Exception as e:
-            self.logger.warning("Failed to save conversation refs: {}", e)
+            self.logger.warning("Failed to save conversation refs: %s", e)
 
     def _save_refs(self, *, prune: bool = True) -> None:
         """Persist conversation references."""

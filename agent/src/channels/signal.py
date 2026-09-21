@@ -477,7 +477,7 @@ class SignalChannel(BaseChannel):
 
         while self._running:
             try:
-                self.logger.info("Connecting to signal-cli daemon at {}...", base_url)
+                self.logger.info("Connecting to signal-cli daemon at %s...", base_url)
 
                 # Create HTTP client
                 self._http = httpx.AsyncClient(
@@ -513,15 +513,15 @@ class SignalChannel(BaseChannel):
                 break
             except ConnectionRefusedError as e:
                 self.logger.error(
-                    "{}. Make sure signal-cli daemon is running: "
-                    "signal-cli -a {} daemon --http {}:{}",
+                    "%s. Make sure signal-cli daemon is running: "
+                    "signal-cli -a %s daemon --http %s:%s",
                     e,
                     self.config.phone_number,
                     self.config.daemon_host,
                     self.config.daemon_port,
                 )
             except Exception as e:
-                self.logger.error("Signal channel error: {}", e)
+                self.logger.error("Signal channel error: %s", e)
             finally:
                 if self._sse_task:
                     if not self._sse_task.done():
@@ -539,7 +539,7 @@ class SignalChannel(BaseChannel):
 
             if self._running:
                 self.logger.info(
-                    "Reconnecting to signal-cli daemon in {:.0f} seconds...", reconnect_delay_s
+                    "Reconnecting to signal-cli daemon in %.0f seconds...", reconnect_delay_s
                 )
                 await asyncio.sleep(reconnect_delay_s)
                 reconnect_delay_s = min(reconnect_delay_s * 2, max_reconnect_delay_s)
@@ -587,7 +587,7 @@ class SignalChannel(BaseChannel):
                 response = await self._send_request("send", params)
 
                 if "error" in response:
-                    self.logger.error("Error sending Signal message: {}", response['error'])
+                    self.logger.error("Error sending Signal message: %s", response['error'])
                     raise RuntimeError(f"signal-cli send failed: {response['error']}")
                 else:
                     self.logger.debug(
@@ -629,7 +629,7 @@ class SignalChannel(BaseChannel):
 
                     # Debug: log raw SSE lines (except keepalive pings)
                     if line and line != ":":
-                        self.logger.debug("SSE line received: {}", line[:200])
+                        self.logger.debug("SSE line received: %s", line[:200])
 
                     # SSE format handling
                     if isinstance(line, str):
@@ -641,11 +641,11 @@ class SignalChannel(BaseChannel):
                                 try:
                                     data_str = "\n".join(event_buffer)
                                     data = json.loads(data_str)
-                                    self.logger.debug("SSE event parsed: {}", data)
+                                    self.logger.debug("SSE event parsed: %s", data)
                                     await self._handle_receive_notification(data)
                                 except json.JSONDecodeError as e:
                                     self.logger.warning(
-                                        "Invalid JSON in SSE buffer: {}, data: {}",
+                                        "Invalid JSON in SSE buffer: %s, data: %s",
                                         e,
                                         data_str[:200],
                                     )
@@ -668,7 +668,7 @@ class SignalChannel(BaseChannel):
             self.logger.info("SSE receive loop cancelled")
             raise
         except Exception as e:
-            self.logger.error("Error in SSE receive loop: {}", e)
+            self.logger.error("Error in SSE receive loop: %s", e)
             raise
 
     @asynccontextmanager
@@ -686,16 +686,16 @@ class SignalChannel(BaseChannel):
             text = f"Error in {action}: {e}"
             if snippet:
                 text += f" | payload={snippet}"
-            self.logger.opt(exception=True).error(text)
+            self.logger.error("%s", text, exc_info=True)
 
     async def _handle_receive_notification(self, params: dict[str, Any]) -> None:
         """Handle incoming message notification from signal-cli."""
-        self.logger.debug("_handle_receive_notification called with: {}", params)
+        self.logger.debug("_handle_receive_notification called with: %s", params)
         async with self._safe_handle("receive notification", params):
             # Extract envelope from SSE notification: {"envelope": {...}}
             envelope = params.get("envelope", {})
 
-            self.logger.debug("Extracted envelope: {}", envelope)
+            self.logger.debug("Extracted envelope: %s", envelope)
 
             if not envelope:
                 self.logger.debug("No envelope found in params")
@@ -737,7 +737,7 @@ class SignalChannel(BaseChannel):
                 destination = sent_msg.get("destination") or sent_msg.get("destinationNumber")
                 if destination:
                     self.logger.debug(
-                        "Sync message sent to {}: {}", destination, sent_msg.get("message", "")[:50]
+                        "Sync message sent to %s: %s", destination, sent_msg.get("message", "")[:50]
                     )
 
             # Handle typing indicators (silently ignore)
@@ -758,7 +758,7 @@ class SignalChannel(BaseChannel):
         timestamp = data_message.get("timestamp")
 
         self.logger.info(
-            "Data message from {}: groupInfo={}, groupV2={}, keys={}",
+            "Data message from %s: groupInfo=%s, groupV2=%s, keys=%s",
             sender_number,
             data_message.get("groupInfo"),
             data_message.get("groupV2"),
@@ -767,11 +767,11 @@ class SignalChannel(BaseChannel):
 
         if data_message.get("reaction"):
             self.logger.debug(
-                "Ignoring reaction message from {}: {}", sender_number, data_message["reaction"]
+                "Ignoring reaction message from %s: %s", sender_number, data_message["reaction"]
             )
             return
         if not message_text and not attachments:
-            self.logger.debug("Ignoring empty message from {}", sender_number)
+            self.logger.debug("Ignoring empty message from %s", sender_number)
             return
 
         group_info = data_message.get("groupInfo")
@@ -812,7 +812,7 @@ class SignalChannel(BaseChannel):
             chat_id=chat_id,
         )
 
-        self.logger.debug("Signal message from {}: {}...", sender_number, content[:50])
+        self.logger.debug("Signal message from %s: %s...", sender_number, content[:50])
 
         await self._start_typing(chat_id)
         try:
@@ -855,14 +855,14 @@ class SignalChannel(BaseChannel):
         if is_group_message:
             chat_id = group_id or sender_number
             if not self.config.group.enabled:
-                self.logger.info("Ignoring group message from {} (groups disabled)", chat_id)
+                self.logger.info("Ignoring group message from %s (groups disabled)", chat_id)
                 return False, chat_id
             if (
                 self.config.group.policy == "allowlist"
                 and chat_id not in self.config.group.allow_from
             ):
                 self.logger.info(
-                    "Ignoring group message from {} (policy: {})",
+                    "Ignoring group message from %s (policy: %s)",
                     chat_id,
                     self.config.group.policy,
                 )
@@ -889,7 +889,7 @@ class SignalChannel(BaseChannel):
                 # asymmetry vs other channels.
                 if not self.is_allowed(sender_id):
                     self.logger.info(
-                        "Ignoring group control-plane command from unauthorized sender {} in {}",
+                        "Ignoring group control-plane command from unauthorized sender %s in %s",
                         sender_id,
                         chat_id,
                     )
@@ -897,7 +897,7 @@ class SignalChannel(BaseChannel):
                 return True, chat_id
             if not is_command and not self._should_respond_in_group(message_text, mentions):
                 self.logger.info(
-                    "Ignoring group message (require_mention: {})",
+                    "Ignoring group message (require_mention: %s)",
                     self.config.group.require_mention,
                 )
                 return False, chat_id
@@ -906,12 +906,12 @@ class SignalChannel(BaseChannel):
         # Direct message
         chat_id = sender_number
         if not self.config.dm.enabled:
-            self.logger.debug("Ignoring DM from {} (DMs disabled)", sender_id)
+            self.logger.debug("Ignoring DM from %s (DMs disabled)", sender_id)
             return False, chat_id
         if self.config.dm.policy == "allowlist":
             if not self._sender_matches_allowlist(sender_id, self.config.dm.allow_from):
                 self.logger.debug(
-                    "Ignoring DM from {} (policy: {})", sender_id, self.config.dm.policy
+                    "Ignoring DM from %s (policy: %s)", sender_id, self.config.dm.policy
                 )
                 return False, chat_id
         return True, chat_id
@@ -966,12 +966,12 @@ class SignalChannel(BaseChannel):
                         if media_type not in ("image", "audio", "video"):
                             media_type = "file"
                         content_parts.append(f"[{media_type}: {dest_path}]")
-                        self.logger.debug("Downloaded attachment: {} -> {}", filename, dest_path)
+                        self.logger.debug("Downloaded attachment: %s -> %s", filename, dest_path)
                     else:
-                        self.logger.warning("Attachment not found: {}", source_path)
+                        self.logger.warning("Attachment not found: %s", source_path)
                         content_parts.append(f"[attachment: {filename} - not found]")
                 except Exception as e:
-                    self.logger.warning("Failed to process attachment {}: {}", filename, e)
+                    self.logger.warning("Failed to process attachment %s: %s", filename, e)
                     content_parts.append(f"[attachment: {filename} - error]")
 
         content = "\n".join(content_parts) if content_parts else "[empty message]"
@@ -1010,7 +1010,7 @@ class SignalChannel(BaseChannel):
         )
 
         self.logger.debug(
-            "Added message to group buffer {}: {}/{}",
+            "Added message to group buffer %s: %s/%s",
             group_id,
             len(self._group_buffers[group_id]),
             self.config.group_message_buffer_size,
@@ -1374,7 +1374,7 @@ class SignalChannel(BaseChannel):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.logger.debug("Typing indicator loop stopped for {}: {}", chat_id, e)
+            self.logger.debug("Typing indicator loop stopped for %s: %s", chat_id, e)
 
     async def _send_typing(
         self, chat_id: str, stop: bool = False, quiet_success: bool = False
@@ -1409,13 +1409,13 @@ class SignalChannel(BaseChannel):
 
             if "error" not in response:
                 if not quiet_success:
-                    self.logger.info("Signal typing {} sent for {}", action, chat_id)
+                    self.logger.info("Signal typing %s sent for %s", action, chat_id)
                 return
 
             last_error = response["error"]
 
         self.logger.warning(
-            "Failed to send Signal typing {} for {}: {}", action, chat_id, last_error
+            "Failed to send Signal typing %s for %s: %s", action, chat_id, last_error
         )
 
     async def _ensure_typing_indicators_enabled(self) -> None:
@@ -1423,7 +1423,7 @@ class SignalChannel(BaseChannel):
         response = await self._send_request("updateConfiguration", {"typingIndicators": True})
         if "error" in response:
             self.logger.warning(
-                "Failed to enable Signal typing indicators: {}", response["error"]
+                "Failed to enable Signal typing indicators: %s", response["error"]
             )
         else:
             self.logger.info("Signal typing indicators enabled on account configuration")
@@ -1454,5 +1454,5 @@ class SignalChannel(BaseChannel):
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            self.logger.error("HTTP request failed: {}", e)
+            self.logger.error("HTTP request failed: %s", e)
             return {"error": {"message": str(e)}}

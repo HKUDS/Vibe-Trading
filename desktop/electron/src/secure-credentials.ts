@@ -11,7 +11,6 @@ type CredentialFile = {
 
 const ENV_CREDENTIALS = new Set([
   "OPENROUTER_API_KEY",
-  "REQUESTY_API_KEY",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "DEEPSEEK_API_KEY",
