@@ -430,7 +430,7 @@ export function Portfolio() {
               <Metric
                 label={t("portfolio.metrics.coverage")}
                 value={percentage(coverage)}
-                note={t("portfolio.metrics.coverageNote", { priced: money(nativeDisplay ? snapshot.valuation?.native_by_currency?.ARS?.priced : snapshot.valuation?.priced_usd, displayCurrency), cash: money(nativeDisplay ? snapshot.valuation?.native_by_currency?.ARS?.cash : snapshot.valuation?.cash_usd, displayCurrency) })}
+                note={t("portfolio.metrics.coverageNote", { priced: money(nativeDisplay ? snapshot.valuation?.native_by_currency?.[displayCurrency]?.priced : snapshot.valuation?.priced_usd, displayCurrency), cash: money(nativeDisplay ? snapshot.valuation?.native_by_currency?.[displayCurrency]?.cash : snapshot.valuation?.cash_usd, displayCurrency) })}
                 icon={<Database className="h-4 w-4" />}
               />
               <Metric
@@ -565,6 +565,12 @@ function RefreshProgress({ state, settings }: { state: PortfolioRefreshState; se
 function AccountCard({ account, active, displayCurrency, onClick, onReconnect, onRetry, busy, actionsDisabled }: { account: PortfolioAccount; active: boolean; displayCurrency: string; onClick: () => void; onReconnect?: () => void; onRetry?: () => void; busy: boolean; actionsDisabled: boolean }) {
   const { t } = useTranslation();
   const failed = account.status === "error";
+  const nativeDisplay = account.native_currency === displayCurrency;
+  const displayValue = account.total_display ?? (
+    nativeDisplay ? account.total_native :
+    displayCurrency === "CNY" ? account.total_cny :
+    account.total_usd
+  );
   return <div role="button" tabIndex={0} onClick={onClick} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClick(); }} className={`cursor-pointer rounded-xl border bg-card p-5 transition ${active ? "border-primary ring-1 ring-primary/20" : "hover:border-primary/40"}`}>
     <div className="flex items-center justify-between gap-3">
       <div><div className="font-medium">{account.label ?? account.broker.toUpperCase()}</div><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><BrokerBadge broker={account.broker} /><PortfolioCompatibilityBadge compatibility={account.portfolio_compatibility} /></div></div>
@@ -577,8 +583,8 @@ function AccountCard({ account, active, displayCurrency, onClick, onReconnect, o
       </>
     ) : (
       <>
-        <div className="mt-4 text-2xl font-semibold">{nativeDisplay && account.native_currency === "ARS" ? money(account.total_native, displayCurrency) : displayCurrency === "CNY" ? money(account.total_cny, "CNY") : money(account.total_usd)}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{nativeDisplay ? account.native_currency ?? "ARS" : displayCurrency === "CNY" ? money(account.total_usd) : money(account.total_cny, "CNY")} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
+        <div className="mt-4 text-2xl font-semibold">{money(displayValue, displayCurrency)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{nativeDisplay ? account.native_currency ?? displayCurrency : displayCurrency === "CNY" ? money(account.total_usd) : money(account.total_cny, "CNY")} · {t("portfolio.accounts.positions", { count: account.position_count ?? 0 })}</div>
         <div className="mt-4 flex items-center justify-between border-t pt-3 text-xs"><span className="text-positive">{t("portfolio.accounts.fresh")}</span><span className="text-muted-foreground">{dateTime(account.last_success_at)}</span></div>
       </>
     )}
