@@ -1635,7 +1635,8 @@
       "coverage": "Bewertungsabdeckung",
       "coverageNote": "Bewertet {{priced}} · Bargeld {{cash}}",
       "lastComplete": "Letzte vollständige Aktualisierung",
-      "excluded": "{{count}} Konten konnten nicht gelesen werden und fehlen in dieser Summe"
+      "excluded": "{{count}} Konten konnten nicht gelesen werden und fehlen in dieser Summe",
+      "changeCanonicalNote": "Kanonische tägliche Portfolioänderung von Asistente Casa"
     },
     "allocation": {
       "byAccount": "Aufteilung nach Konto",
@@ -1672,7 +1673,8 @@
       "colPnl": "Nicht realisierte G/V",
       "colData": "Daten",
       "priced": "Bewertet",
-      "unpriced": "Ohne Kurs"
+      "unpriced": "Ohne Kurs",
+      "colToday": "Heute"
     },
     "history": {
       "title": "Vermögensverlauf",
