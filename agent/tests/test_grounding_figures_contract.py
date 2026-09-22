@@ -211,6 +211,39 @@ def test_every_role_in_the_contract_is_accepted() -> None:
     assert parse_figures_block("t\n\n```figures\n1.5 | guess | n | c1\n```").malformed
 
 
+def test_separated_percentage_point_words_keep_a_bare_numeric_shape() -> None:
+    """A textual/separated pp unit is prose, not part of the numeric token.
+
+    This pins the real E2E failure from 2026-09-22: the figures declaration must
+    match the scanner's numeric shape, so "17.6351 puntos porcentuales" and
+    "17.6351 pp" with whitespace are declared as bare 17.6351, not percent.
+    """
+    prose = (
+        "La brecha es 17.6351 puntos porcentuales; "
+        "37.6351% - 20.0% = 17.6351 pp."
+    )
+    content = (
+        prose
+        + "\n\n```figures\n"
+        + "17.6351 | derived | 37.6351 - 20.0 | risk; policy\n"
+        + "37.6351% | observed | top1 | risk\n"
+        + "20.0% | observed | policy max | policy\n"
+        + "```"
+    )
+    block = parse_figures_block(content)
+    body = [figure for figure in scan_figures(content, block) if figure.text == "17.6351"]
+
+    assert len(body) == 2
+    assert all(figure.percent is False for figure in body)
+    assert block.match(17.6351, False) is not None
+    assert block.match(17.6351, True) is None
+    assert parse_figures_block(
+        "t\n\n```figures\n"
+        "17.6351 puntos porcentuales | derived | 37.6351 - 20.0 | risk; policy\n"
+        "```"
+    ).malformed
+
+
 # ---------------------------------------------------------------------------
 # §2 — stripping
 # ---------------------------------------------------------------------------
