@@ -219,6 +219,12 @@ class _ReleaseMixin:
                 "`17.6351`; do not put `puntos porcentuales` or separated unit text in "
                 "the value field. A textual/separated unit does not change the scanner's "
                 "percent shape.",
+                "The prose and declaration must use the SAME percent shape for every "
+                "measured occurrence. If a value is a percentage, keep the '%' attached "
+                "every time it appears in prose, including inside displayed formulas: write "
+                "`37.6351% - 20.0% = 17.6351 pp`, not `37.6351% - 20.0 = 17.6351 pp`. "
+                "A bare decimal such as `20.0` is scanned as non-percent and cannot be "
+                "covered by a `20.0%` declaration.",
                 "Derived notes must use raw tool-result operands and plain arithmetic only. "
                 "If a derived figure previously needed multiple refs, preserve ALL of those "
                 "refs in the corrected declaration; never collapse it back to the calculator alone.",
