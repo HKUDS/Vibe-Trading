@@ -248,6 +248,39 @@ def test_separated_percentage_point_words_keep_a_bare_numeric_shape() -> None:
     ).malformed
 
 
+def test_percentage_operand_in_prose_must_keep_percent_shape() -> None:
+    """A percentage declaration cannot cover a bare decimal occurrence in prose."""
+    broken = (
+        "37.6351% - 20.0 = 17.6351 pp."
+        "\n\n```figures\n"
+        "37.6351% | observed | top1 | risk\n"
+        "20.0% | observed | policy max | policy\n"
+        "17.6351 | derived | 37.6351 - 20.0 | risk; policy\n"
+        "```"
+    )
+    broken_block = parse_figures_block(broken)
+    broken_twenty = [
+        figure
+        for figure in scan_figures(broken, broken_block)
+        if figure.fence is None and figure.text == "20.0"
+    ]
+    assert len(broken_twenty) == 1
+    assert broken_twenty[0].percent is False
+    assert broken_block.match(20.0, False) is None
+    assert broken_block.match(20.0, True) is not None
+
+    fixed = broken.replace("37.6351% - 20.0 = 17.6351 pp.", "37.6351% - 20.0% = 17.6351 pp.")
+    fixed_block = parse_figures_block(fixed)
+    fixed_twenty = [
+        figure
+        for figure in scan_figures(fixed, fixed_block)
+        if figure.fence is None and figure.text == "20.0%"
+    ]
+    assert len(fixed_twenty) == 1
+    assert fixed_twenty[0].percent is True
+    assert fixed_block.match(20.0, True) is not None
+
+
 # ---------------------------------------------------------------------------
 # §2 — stripping
 # ---------------------------------------------------------------------------
