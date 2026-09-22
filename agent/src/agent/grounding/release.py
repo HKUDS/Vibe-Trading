@@ -202,6 +202,26 @@ class _ReleaseMixin:
                 "the arithmetic itself, with one operand this session observed; "
                 "proposed must be derived or lie inside the observed price range; "
                 "cited needs a source in its note; count is not checked.",
+                "For observed/derived refs, use ONLY exact literal tool names or exact "
+                "call ids from this session. Do not append labels, scopes, parentheses "
+                "or prose to a ref. If a formula uses operands from multiple calls, its "
+                "ref must include every operand source separated by `; `; when one tool "
+                "was called multiple times for different scopes, prefer exact call ids.",
+                "Return the FULL revised answer, not just corrected prose. Preserve or "
+                "rebuild the final figures block on every revision; do not drop it after "
+                "fixing precision, wording, or refs. Every measured figure that remains "
+                "in the prose must still have a valid declaration in that block.",
+                "In each figures declaration, the value field must be ONLY the normalized "
+                "numeric token the scanner sees: no currency prefix, no thousands separators, "
+                "no explanatory words, and a dot for decimals. For example use `123456789.125`, "
+                "not `ARS 123.456.789,125`. If prose says `17.6351 puntos porcentuales` "
+                "or writes a separated unit such as `17.6351 pp`, declare the bare "
+                "`17.6351`; do not put `puntos porcentuales` or separated unit text in "
+                "the value field. A textual/separated unit does not change the scanner's "
+                "percent shape.",
+                "Derived notes must use raw tool-result operands and plain arithmetic only. "
+                "If a derived figure previously needed multiple refs, preserve ALL of those "
+                "refs in the corrected declaration; never collapse it back to the calculator alone.",
                 "Reuse the exact locked symbol and venue.",
                 "Do not attach figures to a symbol no tool call in this session handled; "
                 "report it as not retrieved instead.",
