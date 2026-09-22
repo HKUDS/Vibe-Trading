@@ -684,6 +684,7 @@ class _PolicyMixin:
         return None
 
     def _figure_is_market_price(
+        self,
         content: str,
         figure: Figure,
         declaration: Declaration | None,
