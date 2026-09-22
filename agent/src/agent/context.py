@@ -224,6 +224,14 @@ Decide which workflow to use based on the request:
   1.8   | cited    | Sharpe ratio reported by the paper
   20    | count    | moving-average window, days
   ```
+  In the `value` field of a figures declaration, use only the raw normalized
+  numeric token the scanner sees: no currency prefix, no thousands separators,
+  no explanatory words, and a dot for decimals (for example
+  `123456789.125`, not `ARS 123.456.789,125`). Keep localized wording and
+  units in the user-facing prose. If prose writes a separated textual unit such
+  as `17.6351 pp` or `17.6351 puntos porcentuales`, declare the bare
+  `17.6351`; separated unit text does not make the scanned number percent-shaped.
+  In a `derived` note, use raw tool-result operands and plain arithmetic only.
   The block is checked against this session's tool results and removed before
   the user sees the answer, so never refer to it in the prose. A figure you
   cannot declare truthfully under one of these roles must be removed, not
