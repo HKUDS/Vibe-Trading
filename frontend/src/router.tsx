@@ -34,6 +34,9 @@ const AlphaZoo = lazy(() =>
 const OptionsLab = lazy(() =>
   import("@/pages/OptionsLab").then((m) => ({ default: m.OptionsLab })),
 );
+const PixelOffice = lazy(() =>
+  import("@/pages/PixelOffice").then((m) => ({ default: m.PixelOffice })),
+);
 
 function PageLoader() {
   return (
@@ -58,6 +61,7 @@ export const router = createBrowserRouter([
       { path: "/", element: wrap(Agent) },
       { path: "/about", element: wrap(Home) },
       { path: "/agent", element: wrap(Agent) },
+      { path: "/pixel-office", element: wrap(PixelOffice) },
       { path: "/runtime", element: wrap(Runtime) },
       { path: "/scheduled", element: wrap(Scheduled) },
       { path: "/reports", element: wrap(Reports) },

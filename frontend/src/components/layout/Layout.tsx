@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router";
-import { Activity, BarChart3, Bot, CalendarClock, CandlestickChart, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, WalletCards } from "lucide-react";
+import { Activity, BarChart3, Bot, CalendarClock, CandlestickChart, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, WalletCards, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -21,6 +21,7 @@ export function Layout() {
   // matches both "/" and legacy "/agent" deep links.
   const NAV = [
     { to: "/", icon: Bot, label: t('layout.agent') },
+    { to: "/pixel-office", icon: Building2, label: "Pixel Office" },
     { to: "/runtime", icon: Activity, label: t('layout.runtime') },
     { to: "/scheduled", icon: CalendarClock, label: t('layout.scheduled') },
     { to: "/reports", icon: FileText, label: t('layout.reports') },
