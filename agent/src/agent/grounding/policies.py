@@ -46,6 +46,42 @@ _PRIVATE_ASSERTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# #GGAL-B follow-up: NOT a grounding/role signal (this module still reads no
+# prose word to decide whether a figure is valid — that stays entirely on
+# declared role + evidence). This is consulted ONLY to tag whether a
+# rejected figure's own clause is genuinely about a market quote, so
+# ``recovery_action`` (release.py) can decide whether ``get_market_data``
+# could plausibly ever answer it. A currency mark alone is not enough — EPS,
+# net income, revenue, assets, equity, capex and FCF are all currency-marked
+# and none of them is a quote.
+#
+# Deliberately conservative (#GGAL-B follow-up round 2): a bare word here
+# ("cierre", "objetivo", "máximo", "mínimo", "open", "high", "low") also
+# reads a fundamentals sentence — "Ratio de capital al CIERRE de FY2024",
+# "OBJETIVO de eficiencia: 45%", "Capital MÍNIMO requerido: 11,5%" all
+# contain one of those words with no quote in sight. Every alternative below
+# is therefore a full bursátil PHRASE (closing/opening PRICE, closed/opened
+# AT a value, intraday high/low, price TARGET, ...) or an unambiguous
+# market-only term (cotización). On any doubt this must return False; the
+# correction/cited/redacted-release path handles the rest.
+_MARKET_PRICE_CONTEXT_RE = re.compile(
+    r"(?:"
+    r"\bprice\s+target\b|\btarget\s+price\b|"
+    r"\bclosing\s+price\b|\bopening\s+price\b|"
+    r"\bclos(?:e|ed)\s+at\b|\bopen(?:ed)?\s+at\b|"
+    r"\bintraday\s+high\b|\bintraday\s+low\b|"
+    r"\bprice\s+support\b|\bprice\s+resistance\b|"
+    r"precio\s+de\s+cierre|precio\s+de\s+apertura|precio\s+objetivo|"
+    r"cerr[oó]\s+en|abri[oó]\s+en|"
+    r"cotizaci[oó]n|cotiz[oó]\b|"
+    r"m[aá]ximo\s+intradiario|m[ií]nimo\s+intradiario|"
+    r"soporte\s+de\s+precio|resistencia\s+de\s+precio|"
+    r"nivel\s+de\s+soporte|nivel\s+de\s+resistencia|"
+    r"开盘价|收盘价|最高价|最低价|现价|目标价|止损价|支撑位|阻力位|报价"
+    r")",
+    re.IGNORECASE,
+)
+
 # Loader ids are ASCII but the answer follows the user's language, so a source
 # is surfaced by any alias ("数据来源：腾讯财经" for ``tencent``).
 _SOURCE_ALIASES = {
@@ -469,6 +505,7 @@ class _PolicyMixin:
             symbol = self._figure_symbol(
                 content, figure, declaration, line_symbols, document_symbol, records
             )
+            market_price = self._figure_is_market_price(content, figure, declaration)
             if figure.shape == "bare" and not self._poses_as_price(
                 figure, self._price_band(symbol, records)
             ):
@@ -490,7 +527,7 @@ class _PolicyMixin:
                     )
                     continue
             if declaration is None:
-                found = self._check_observed(figure, None, symbol, records)
+                found = self._check_observed(figure, None, symbol, records, market_price)
                 if block.present and found:
                     issues.append(
                         self._figure_issue(
@@ -592,6 +629,8 @@ class _PolicyMixin:
             "reason": reason,
             "claim": figure.text,
             "message": f"{figure.text} {message}.",
+            "percent": figure.percent,
+            "currency": figure.currency,
         }
         issue.update(extra)
         return issue
@@ -643,6 +682,35 @@ class _PolicyMixin:
         if 0 <= figure.line < len(line_symbols) and line_symbols[figure.line]:
             return line_symbols[figure.line]
         return None
+
+    def _figure_is_market_price(
+        content: str,
+        figure: Figure,
+        declaration: Declaration | None,
+    ) -> bool:
+        """Whether a figure is genuinely about a market quote, not a fundamental.
+
+        A POSITIVE condition (#GGAL-B follow-up), not "has a currency mark":
+        EPS, net income, revenue, assets, equity, capex and FCF are all
+        currency-marked and none of them is a price. True only when a
+        concrete OHLC/price/target/support/resistance signal is present —
+        the figure sits in a recognized OHLC table column, or that
+        vocabulary appears in the figure's own clause or its declared note.
+        Uncertain cases return False on purpose: this must never make
+        ``recovery_action`` suggest ``get_market_data`` on a guess.
+
+        This does NOT affect whether the figure is valid — only whether a
+        rejected figure could plausibly be resolved by fetching a quote; see
+        ``recovery_action`` in ``release.py``, its only reader.
+        """
+        if figure.column:
+            return True
+        left, right = segment_bounds(content, figure.start, figure.end)
+        if _MARKET_PRICE_CONTEXT_RE.search(content[left:right]):
+            return True
+        if declaration is not None and _MARKET_PRICE_CONTEXT_RE.search(declaration.note):
+            return True
+        return False
 
     def _referenced(
         self,
@@ -846,6 +914,28 @@ class _PolicyMixin:
             and (not money_only or _is_price_kind(record))
         ]
 
+    _COUNT_EVIDENCE_TOOLS = frozenset({"asistente_casa_portfolio_risk_xray"})
+
+    def _tool_count_pool(self, symbol: str | None) -> list[float]:
+        """Metadata-count leaves from tools with a registered count evidence path.
+
+        Mirrors :meth:`_row_pool`'s per-tool allowlist pattern: only a leaf that
+        already reads as a sample-size/count field (:func:`_is_metadata_count_leaf`)
+        from a tool in ``_COUNT_EVIDENCE_TOOLS`` counts, so a generic tool's counts
+        still cannot ground a claim.
+        """
+        return [
+            float(record.value)
+            for record in self._evidence
+            if record.status == "observed"
+            and record.value is not None
+            and record.tool in self._COUNT_EVIDENCE_TOOLS
+            and _is_metadata_count_leaf(record.field)
+            and (not symbol or not record.symbol or record.symbol == symbol)
+        ]
+
+    @staticmethod
+
     @staticmethod
     def _nearest_prints(
         figure: Figure,
@@ -884,11 +974,12 @@ class _PolicyMixin:
         declaration: Declaration,
         symbol: str | None,
         records: Sequence[EvidenceRecord],
+        market_price: bool = False,
         *,
         why: str = "a count cannot carry a currency mark",
     ) -> list[dict[str, Any]]:
         """Check a ``count`` that looks like a price as the observation it claims to be."""
-        found = self._check_observed(figure, declaration, symbol, records)
+        found = self._check_observed(figure, declaration, symbol, records, market_price)
         for issue in found:
             issue["role"] = "count"
             issue["message"] = (
@@ -1020,6 +1111,7 @@ class _PolicyMixin:
         declaration: Declaration | None,
         symbol: str | None,
         records: Sequence[EvidenceRecord],
+        market_price: bool = False,
     ) -> list[dict[str, Any]]:
         """An observed figure must appear in evidence of its own kind.
 
@@ -1027,6 +1119,20 @@ class _PolicyMixin:
         and a percent only by the rest; a table cell only by its column's field.
         """
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
+        if declaration is not None and declaration.ref.strip() and scoped is None:
+            return [
+                self._figure_issue(
+                    "numeric_claim_conflict",
+                    figure,
+                    "observed",
+                    symbol,
+                    "not_in_referenced_call",
+                    f"is declared observed from {declaration.ref}, but that ref does not "
+                    "exactly identify evidence from this session",
+                    source_tool_call_ids=[declaration.ref],
+                    market_price=market_price,
+                )
+            ]
         if scoped is not None:
             scoped_records, metric_values = scoped
             values = [float(record.value) for record in scoped_records] + metric_values
@@ -1059,6 +1165,7 @@ class _PolicyMixin:
                     f"{'for ' + symbol + ' ' if symbol else ''}do not contain it",
                     source_tool_call_ids=[declaration.ref],
                     observed_nearest=self._nearest_prints(figure, scoped_records, values),
+                market_price=market_price,
                 )
             ]
         candidates = self._price_candidates(
@@ -1074,7 +1181,8 @@ class _PolicyMixin:
         elif figure.currency:
             direct, scaled = prices + self._row_pool(symbol, money_only=True), []
         else:
-            direct, scaled = prices + self._row_pool(symbol), self._metric_pool(symbol)
+            direct = prices + self._row_pool(symbol) + self._tool_count_pool(symbol)
+            scaled = self._metric_pool(symbol)
         if not direct and not scaled:
             return [
                 self._figure_issue(
@@ -1087,6 +1195,7 @@ class _PolicyMixin:
                     "evidence to check it against",
                     field=figure.column,
                     date=figure.date,
+                market_price=market_price,
                 )
             ]
         if self._matches_evidence(figure, direct, scaled, legacy_direct=True):
@@ -1114,6 +1223,7 @@ class _PolicyMixin:
                     if attributable
                     else []
                 ),
+            market_price=market_price,
             )
         ]
 
@@ -1399,6 +1509,21 @@ class _PolicyMixin:
                 for figure in carried
             ):
                 continue
+            # #GGAL-B follow-up: positive aggregate over every figure this
+            # line carries — ``market_price`` is True only when AT LEAST ONE
+            # of them is genuinely about a quote (OHLC column, or price/
+            # target/support/resistance context in its clause or note), not
+            # merely currency-marked. A line of pure fundamentals (EPS,
+            # net income, revenue, ...) attached to an unhandled peer stays
+            # ineligible for ``get_market_data`` recovery.
+            line_percent = all(figure.percent for figure in carried)
+            line_currency = any(figure.currency for figure in carried)
+            line_market_price = any(
+                self._figure_is_market_price(
+                    content, figure, block.match(figure.value, figure.percent)
+                )
+                for figure in carried
+            )
             for symbol in unknown:
                 reported.add(symbol)
                 issues.append(
@@ -1410,6 +1535,9 @@ class _PolicyMixin:
                         "reason": "symbol_never_handled",
                         "claim": line.strip()[:200],
                         "span": [offset, offset + len(line)],
+                        "percent": line_percent,
+                        "currency": line_currency,
+                        "market_price": line_market_price,
                         "message": (
                             f"No tool call in this session passed in or returned {symbol}, "
                             "yet the answer attaches figures to it. Retrieve it, or report "
