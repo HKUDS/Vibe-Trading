@@ -37,15 +37,19 @@ BLOCK_LANGUAGE = "figures"
 # an identifier's digits ("SMA20") out. The lookahead fences only digits, so
 # "3.6pp" reads as 3.6 rather than backtracking to a bare "3".
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z0-9_])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?!\d)"
+    r"(?<![A-Za-z0-9_])[-+]?(?:\d{1,3}(?:,\d{3})+|\d{1,3}(?:\.\d{3}){2,}|\d+)(?:\.\d+)?(?!\d)"
 )
+
+_PERIOD_THOUSANDS_RE = re.compile(r"^\d{1,3}(?:\.\d{3}){2,}$")
 
 # SHAPE 2 — dates, times and years: structure, never a measurement (spec §3).
 # A year-less "08-10" is two bare integers and needs no mask.
 _DATE_RE = re.compile(
     r"(?P<full>(?:19|20)\d{2}(?:\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*[日号]?"
     # A dotted date has both dots and no spacing: "2001.5 - 2002.5" is a range.
-    r"|\.\d{1,2}\.\d{1,2}(?!\d|\.\d)))"
+    r"|\.\d{1,2}\.\d{1,2}(?!\d|\.\d))"
+    r"|(?:0[1-9]|[12]\d|3[01])[-/](?:0[1-9]|1[0-2])[-/](?:19|20)\d{2})"
+    r")"
     # A year-less MM-DD / MM/DD; see _short_date_is_structural.
     r"|(?P<short>(?<![\d.])(?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])(?!\d|\.\d))"
     r"|(?<![\d.:])(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?![\d:]|\.\d)"
@@ -59,6 +63,15 @@ _DATE_RE = re.compile(
 # SHAPE 3 — a line-leading list marker or numbered heading. The punctuation is
 # required, so a line opening with a figure ("1.171 元是收盘价") is untouched.
 _ORDINAL_RE = re.compile(r"(?m)^[^\S\n]*(?:#{1,6}[^\S\n]*)?\d{1,3}[.)、][^\S\n]+")
+
+_QUARTER_LABEL_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:[1-4][Qq](?:19|20)\d{2}|(?:19|20)\d{2}[Qq][1-4])(?![A-Za-z0-9_])"
+)
+
+_SEC_FORM_RE = re.compile(
+    r"(?<![A-Za-z0-9_])20[-‐‑‒–−]F(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
 
 # SHAPE 5 — a table cell that only numbers its row ("1", "2.", "3)"), and a word
 # inside a cell: two or more letters of any script ("12m mean return", "12个月").
@@ -444,6 +457,15 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
                 )
             ):
                 body, end = f"{body}.{fraction}", stop
+        if _PERIOD_THOUSANDS_RE.fullmatch(body):
+            fraction = ""
+            if text[end : end + 1] == ",":
+                fraction = _digit_run(text, end + 1)
+                if fraction:
+                    end += 1 + len(fraction)
+            body = body.replace(".", "")
+            if fraction:
+                body = f"{body}.{fraction}"
         tokens.append(_Token(match.start(), end, sign, body.replace(",", "")))
         cursor = end
     return sorted(tokens + dotted, key=lambda token: token.start)
@@ -1004,7 +1026,7 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
             continue
         span = (view.start(match.start()), view.end(match.end()))
         (soft if match.group("soft") else hard).append(span)
-    for pattern in (_CANONICAL_SYMBOL_RE, _ORDINAL_RE):
+    for pattern in (_CANONICAL_SYMBOL_RE, _ORDINAL_RE, _QUARTER_LABEL_RE, _SEC_FORM_RE):
         hard.extend(
             (view.start(match.start()), view.end(match.end()))
             for match in pattern.finditer(text)
