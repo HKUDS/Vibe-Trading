@@ -20,6 +20,7 @@ import urllib.request
 import certifi
 import pandas as pd
 
+from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
@@ -102,6 +103,36 @@ class DataLoader:
                     fields=None,
                     fetch=lambda code=code: self._fetch_one(code, start_date, end_date),
                 )
+                if df is not None and not df.empty and _is_a_share(code):
+                    # #1541: the additive qfq cannot serve returns; convert to
+                    # the multiplicative convention when the raw companion
+                    # supports it, keeping the additive series otherwise.
+                    raw_df = None
+                    try:
+                        raw_df = cached_loader_fetch(
+                            source=self.name,
+                            symbol=code,
+                            timeframe=interval,
+                            start_date=start_date,
+                            end_date=end_date,
+                            fields=["raw"],
+                            fetch=lambda code=code: self._fetch_one(
+                                code, start_date, end_date, forward_adjusted=False
+                            ),
+                        )
+                    except Exception as exc:  # noqa: BLE001 - degrade to additive
+                        logger.warning(
+                            "tencent raw companion fetch failed for %s, serving additive: %s",
+                            code, exc,
+                        )
+                    converted = convert_additive_to_multiplicative(raw_df, df)
+                    if converted is not None:
+                        converted.attrs = {
+                            **getattr(df, "attrs", {}),
+                            "adjustment": "split_dividend",
+                        }
+                        result[code] = converted
+                        continue
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:
@@ -110,6 +141,7 @@ class DataLoader:
 
     def _request_page(
         self, code: str, start_date: str, end_date: str,
+        forward_adjusted: bool = True,
     ) -> Optional[pd.DataFrame]:
         """Fetch up to `_PAGE_SIZE` bars in [start_date, end_date]."""
         if not _is_a_share(code) and not _is_hk_equity(code):
@@ -131,7 +163,8 @@ class DataLoader:
 
         url = (
             f"{_BASE_URL}?param={tencent_code},day,"
-            f"{start_date},{end_date},{_PAGE_SIZE},qfq"
+            f"{start_date},{end_date},{_PAGE_SIZE}"
+            f"{',qfq' if forward_adjusted else ''}"
         )
 
         req = urllib.request.Request(url, headers={
@@ -158,7 +191,10 @@ class DataLoader:
             return None
 
         # Try "day" first, then "qfqday" (forward-adjusted)
-        klines = stock_data[stock_key].get("qfqday") or stock_data[stock_key].get("day")
+        if forward_adjusted:
+            klines = stock_data[stock_key].get("qfqday") or stock_data[stock_key].get("day")
+        else:
+            klines = stock_data[stock_key].get("day")
         if not klines:
             return None
 
@@ -188,6 +224,7 @@ class DataLoader:
 
     def _fetch_one(
         self, code: str, start_date: str, end_date: str,
+        forward_adjusted: bool = True,
     ) -> Optional[pd.DataFrame]:
         """Paginate [start_date, end_date] in `_PAGE_SIZE`-bar windows.
 
@@ -222,7 +259,9 @@ class DataLoader:
             last_error: Optional[Exception] = None
             for attempt in range(_PAGE_RETRIES):
                 try:
-                    page = self._request_page(code, start_date, cursor_end)
+                    page = self._request_page(
+                        code, start_date, cursor_end, forward_adjusted
+                    )
                     last_error = None
                     break
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
@@ -247,7 +286,9 @@ class DataLoader:
                 # empty and terminates the walk.
                 time.sleep(_PAGE_BACKOFF)
                 try:
-                    page = self._request_page(code, start_date, cursor_end)
+                    page = self._request_page(
+                        code, start_date, cursor_end, forward_adjusted
+                    )
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     raise ValueError(
                         f"incomplete tencent history: {code} re-request at "

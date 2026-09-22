@@ -380,6 +380,12 @@ def fetch_market_data(
             currency_conversion = frame_attrs.get("currency_conversion")
             if not isinstance(currency_conversion, str) or not currency_conversion:
                 currency_conversion = "none"
+            # A loader that converted its series reports the caliber it actually
+            # served on the frame; the static (source, market) table is the
+            # fallback for unconverted data (#1541).
+            adjustment = frame_attrs.get("adjustment")
+            if not isinstance(adjustment, str) or not adjustment:
+                adjustment = price_caliber(used_source or src, market, symbol)
             entry: dict[str, Any] = {
                 "source": used_source or src,
                 "requested_source": source,
@@ -387,7 +393,7 @@ def fetch_market_data(
                 "fallback_used": bool(used_source and used_source != src),
                 "currency_conversion": currency_conversion,
                 "volume_unit": volume_units.get(market),
-                "adjustment": price_caliber(used_source or src, market, symbol),
+                "adjustment": adjustment,
             }
             quote_currency = frame_attrs.get("quote_currency")
             if isinstance(quote_currency, str) and quote_currency:
