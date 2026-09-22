@@ -29,3 +29,7 @@ def test_correction_prompt_requires_literal_refs_and_full_figures_block(tmp_path
     assert "17.6351 pp" in prompt
     assert "declare the bare `17.6351`" in prompt
     assert "does not change the scanner's percent shape" in prompt
+    assert "SAME percent shape" in prompt
+    assert "37.6351% - 20.0% = 17.6351 pp" in prompt
+    assert "37.6351% - 20.0 = 17.6351 pp" in prompt
+    assert "cannot be covered by a `20.0%` declaration" in prompt
