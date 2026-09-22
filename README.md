@@ -358,6 +358,20 @@ vibe-trading --upload trades_export.csv
 vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, and compare it with my actual trades"
 ```
 
+### Pixel Office management
+
+If you want a local office-level agent board that delegates research, risk, and execution work to specialist Pixel Agents, use the bundled starter workspace:
+
+```bash
+PYTHONPATH=agent python -m src.pixel_agents.cli init --storage ./pixel-office/office_state.json
+PYTHONPATH=agent python -m src.pixel_agents.cli agent --storage ./pixel-office/office_state.json --id research-analyst --name "Research Analyst" --role research --specialties macro crypto risk
+PYTHONPATH=agent python -m src.pixel_agents.cli task --storage ./pixel-office/office_state.json --id task-001 --title "Research BTC" --description "Assess the BTC thesis and risk profile" --workstream research --priority high
+PYTHONPATH=agent python -m src.pixel_agents.cli assign --storage ./pixel-office/office_state.json --task-id task-001
+PYTHONPATH=agent python -m src.pixel_agents.cli dashboard --storage ./pixel-office/office_state.json
+```
+
+This management layer is intentionally lightweight and can be extended later with a web dashboard, live broker hooks, or direct handoff to a workspace agent.
+
 ---
 
 ## 👥 Shadow Account
