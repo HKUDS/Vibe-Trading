@@ -45,10 +45,11 @@ _PERIOD_THOUSANDS_RE = re.compile(r"^\d{1,3}(?:\.\d{3}){2,}$")
 # SHAPE 2 — dates, times and years: structure, never a measurement (spec §3).
 # A year-less "08-10" is two bare integers and needs no mask.
 _DATE_RE = re.compile(
-    r"(?P<full>(?:19|20)\d{2}(?:\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*[日号]?"
+    r"(?P<full>(?:(?:19|20)\d{2}(?:\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*[日号]?"
     # A dotted date has both dots and no spacing: "2001.5 - 2002.5" is a range.
     r"|\.\d{1,2}\.\d{1,2}(?!\d|\.\d))"
-    r"|(?:0[1-9]|[12]\d|3[01])[-/](?:0[1-9]|1[0-2])[-/](?:19|20)\d{2})"
+    # Day-month-year, used by es-AR/es-ES prose.
+    r"|(?:0[1-9]|[12]\d|3[01])[-/](?:0[1-9]|1[0-2])[-/](?:19|20)\d{2}))"
     r")"
     # A year-less MM-DD / MM/DD; see _short_date_is_structural.
     r"|(?P<short>(?<![\d.])(?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])(?!\d|\.\d))"
