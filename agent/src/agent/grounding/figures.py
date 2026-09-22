@@ -45,12 +45,9 @@ _PERIOD_THOUSANDS_RE = re.compile(r"^\d{1,3}(?:\.\d{3}){2,}$")
 # SHAPE 2 — dates, times and years: structure, never a measurement (spec §3).
 # A year-less "08-10" is two bare integers and needs no mask.
 _DATE_RE = re.compile(
-    r"(?P<full>(?:(?:19|20)\d{2}(?:\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*[日号]?"
+    r"(?P<full>(?:19|20)\d{2}(?:\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*[日号]?"
     # A dotted date has both dots and no spacing: "2001.5 - 2002.5" is a range.
-    r"|\.\d{1,2}\.\d{1,2}(?!\d|\.\d))"
-    # Day-month-year, used by es-AR/es-ES prose.
-    r"|(?:0[1-9]|[12]\d|3[01])[-/](?:0[1-9]|1[0-2])[-/](?:19|20)\d{2}))"
-    r")"
+    r"|\.\d{1,2}\.\d{1,2}(?!\d|\.\d)))"
     # A year-less MM-DD / MM/DD; see _short_date_is_structural.
     r"|(?P<short>(?<![\d.])(?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])(?!\d|\.\d))"
     r"|(?<![\d.:])(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?![\d:]|\.\d)"
@@ -59,6 +56,11 @@ _DATE_RE = re.compile(
     r"|(?:19|20)\d{2}\s*年"
     # A bare year or compact YYYYMMDD loses to a measurement mark ("$2050").
     r"|(?P<soft>(?<![\d.])(?:19|20)\d{2}(?:(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))?(?!\d|\.\d))"
+)
+
+# Day-month-year structural dates used by es-AR/es-ES prose.
+_DMY_DATE_RE = re.compile(
+    r"(?<![\d.])(?:0[1-9]|[12]\d|3[01])[-/](?:0[1-9]|1[0-2])[-/](?:19|20)\d{2}(?!\d)"
 )
 
 # SHAPE 3 — a line-leading list marker or numbered heading. The punctuation is
@@ -1027,7 +1029,13 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
             continue
         span = (view.start(match.start()), view.end(match.end()))
         (soft if match.group("soft") else hard).append(span)
-    for pattern in (_CANONICAL_SYMBOL_RE, _ORDINAL_RE, _QUARTER_LABEL_RE, _SEC_FORM_RE):
+    for pattern in (
+        _CANONICAL_SYMBOL_RE,
+        _ORDINAL_RE,
+        _DMY_DATE_RE,
+        _QUARTER_LABEL_RE,
+        _SEC_FORM_RE,
+    ):
         hard.extend(
             (view.start(match.start()), view.end(match.end()))
             for match in pattern.finditer(text)
