@@ -231,6 +231,12 @@ Decide which workflow to use based on the request:
   units in the user-facing prose. If prose writes a separated textual unit such
   as `17.6351 pp` or `17.6351 puntos porcentuales`, declare the bare
   `17.6351`; separated unit text does not make the scanned number percent-shaped.
+  The prose and declaration must keep the same percent shape for every measured
+  occurrence. If a value is a percentage, keep `%` attached every time it
+  appears in prose, including inside displayed formulas: write
+  `37.6351% - 20.0% = 17.6351 pp`, not
+  `37.6351% - 20.0 = 17.6351 pp`. A bare decimal such as `20.0` is
+  non-percent and cannot be covered by a `20.0%` declaration.
   In a `derived` note, use raw tool-result operands and plain arithmetic only.
   The block is checked against this session's tool results and removed before
   the user sees the answer, so never refer to it in the prose. A figure you
