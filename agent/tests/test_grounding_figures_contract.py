@@ -231,10 +231,14 @@ def test_separated_percentage_point_words_keep_a_bare_numeric_shape() -> None:
         + "```"
     )
     block = parse_figures_block(content)
-    body = [figure for figure in scan_figures(content, block) if figure.text == "17.6351"]
+    scanned = [figure for figure in scan_figures(content, block) if figure.text == "17.6351"]
+    body = [figure for figure in scanned if figure.fence is None]
+    declaration_token = [figure for figure in scanned if figure.fence == "figures"]
 
     assert len(body) == 2
-    assert all(figure.percent is False for figure in body)
+    assert all(figure.shape == "measured" and figure.percent is False for figure in body)
+    assert len(declaration_token) == 1
+    assert declaration_token[0].shape == "exempt"
     assert block.match(17.6351, False) is not None
     assert block.match(17.6351, True) is None
     assert parse_figures_block(
