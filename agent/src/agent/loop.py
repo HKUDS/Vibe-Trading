@@ -1346,6 +1346,12 @@ class AgentLoop:
         empty_model_response_iter: int | None = None
         consecutive_empty_responses = 0
         grounding_revisions = 0
+        # A rejected draft whose only defects are numeric conflicts gets one
+        # correction-only turn with tools withheld. Those conflicts already
+        # carry evidence (for example a derivation_result_mismatch), so
+        # re-fetching the same read-only data cannot repair them; ToolProgress
+        # would eventually abort the redundant loop as no_progress.
+        grounding_correction_text_only = False
         llm_usage_summary = _new_llm_usage_summary(self.llm)
         last_response_model: str | None = None
         goal_continuations = 0
@@ -1529,11 +1535,27 @@ class AgentLoop:
                         reasoning_event["tail"] = reasoning_tail
                     self._emit("reasoning_delta", reasoning_event)
 
-                # On last iteration, drop tool definitions to force text output
+                # On the last iteration, or on a numeric-conflict correction
+                # turn whose evidence is already sufficient, drop tool
+                # definitions and force the model to revise using the evidence
+                # already in context. Missing/unsourced evidence and other
+                # rejection classes keep the ordinary tool surface available.
                 is_last_iteration = (iteration == self.max_iterations)
-                tool_defs = None if is_last_iteration else self.registry.get_definitions()
+                correction_text_only = grounding_correction_text_only
+                tool_defs = (
+                    None
+                    if is_last_iteration or correction_text_only
+                    else self.registry.get_definitions()
+                )
                 if is_last_iteration:
                     trace.write({"type": "forced_text_only", "iter": current_iter})
+                elif correction_text_only:
+                    trace.write(
+                        {
+                            "type": "grounding_correction_text_only",
+                            "iter": current_iter,
+                        }
+                    )
 
                 _llm_timeout_s = _llm_timeout_seconds()
                 llm_timeout = _llm_timeout_s if _llm_timeout_s > 0 else None
@@ -1739,6 +1761,11 @@ class AgentLoop:
                         continue
                     # A real response resets the consecutive-empty counter.
                     consecutive_empty_responses = 0
+                    # The correction-only constraint is consumed only by a
+                    # non-empty text response. Content-filter and empty-response
+                    # retries above keep it armed for the next iteration.
+                    if correction_text_only:
+                        grounding_correction_text_only = False
                     # A model can answer the forced-text final iteration with its
                     # native tool-call DSL as prose (see _looks_like_tool_call_syntax).
                     # That is not an answer: retry once with a plain-text instruction,
@@ -1893,6 +1920,18 @@ class AgentLoop:
                                 iteration < self.max_iterations
                                 and grounding_revisions < MAX_GROUNDING_REVISIONS
                             ):
+                                # A numeric conflict means the gate already
+                                # has evidence and rejected how the draft used
+                                # it. Do not let that correction turn re-fetch
+                                # the same observations. Other rejection classes
+                                # may still need research tools, so keep this
+                                # deliberately narrow.
+                                grounding_correction_text_only = bool(
+                                    validation.issues
+                                ) and all(
+                                    issue.get("code") == "numeric_claim_conflict"
+                                    for issue in validation.issues
+                                )
                                 self._emit(
                                     "grounding_status",
                                     {
