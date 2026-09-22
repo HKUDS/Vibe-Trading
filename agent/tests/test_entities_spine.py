@@ -666,7 +666,9 @@ def test_spine_does_not_widen_the_bar_price_panel():
 
     assert _PRICE_PANEL_COLUMNS == ("open", "high", "low", "close", "volume", "vwap", "amount")
     assert "nav" not in _PRICE_PANEL_COLUMNS
-    assert _VALID_INTERVALS == {"1m", "5m", "15m", "30m", "1H", "4H", "1D"}
+    # 1W / 1M are bar sizes the runner builds from daily bars (#1479); this
+    # path still adds no interval of its own.
+    assert _VALID_INTERVALS == {"1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"}
 
 
 def test_series_is_not_a_dataframe_and_exposes_no_bar_fields():
@@ -1051,4 +1053,6 @@ def test_panel_path_does_not_touch_the_bar_price_panel_gate():
 
     assert _PRICE_PANEL_COLUMNS == ("open", "high", "low", "close", "volume", "vwap", "amount")
     assert "nav" not in _PRICE_PANEL_COLUMNS
-    assert _VALID_INTERVALS == {"1m", "5m", "15m", "30m", "1H", "4H", "1D"}
+    # 1W / 1M are bar sizes the runner builds from daily bars (#1479); this
+    # path still adds no interval of its own.
+    assert _VALID_INTERVALS == {"1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"}

@@ -143,7 +143,11 @@ _ANALYSIS_KIND_ALIASES = {
     "historical_var": "tail_risk",
     "parametric_var": "tail_risk",
     "cvar": "tail_risk",
+    "cvar_95": "tail_risk",
+    "cvar_99": "tail_risk",
     "es": "tail_risk",
+    "es_95": "tail_risk",
+    "es_99": "tail_risk",
     "expected_shortfall": "tail_risk",
     # Chinese TOOL FIELD NAMES from A-share tools, not answer prose.
     "最大回撤": "drawdown",

@@ -192,21 +192,13 @@ Decide which workflow to use based on the request:
   tagged `figures` at the end of the answer, one line per figure:
   `value | role | note | ref`. Roles:
   `observed` — a tool value that is not a price or volume of the symbol, e.g. a
-  PE ratio (`ref`: the tool name such as `get_fundamentals`, or its call id);
-  `derived` — arithmetic on observed values (`note`: the formula; every numeric
-  operand must itself be an observed value). The `ref` must name EVERY source
-  that supplied an operand used by the formula, not only a calculator that
-  evaluated it. A ref key must be an EXACT literal tool name or an EXACT call id
-  from this session. Never decorate a tool name with scope labels or prose
-  (WRONG: `asistente_casa_portfolio_risk_xray (ACCIONES)`; RIGHT:
-  `asistente_casa_portfolio_risk_xray`). Separate multiple exact refs with
-  `; ` (preferred) or `, `. If the same tool was called more than once for
-  different scopes, prefer the exact call id(s) that supplied the operands.
-  For example, if `financial_rigor` computes a percentage from values returned
-  by `portfolio_summary`, use `financial_rigor; portfolio_summary` when those
-  exact tool-name refs are unambiguous, otherwise use the exact call ids. A
-  calculator result does not make its input operands observed under the
-  calculator ref;
+  PE ratio (`ref`: the tool name such as `get_fundamentals`, or its call id). For
+  a metric whose identity matters (VaR vs ES, 95% vs 99%), use the result field
+  as `ref`: `data.tail_risk.var_95` or just `var_95` from `portfolio_risk_xray`,
+  `historical_var` from `quantlib_call`. When more than one call returned that
+  field (historical_var at 95% and at 99%), name the call: `q1::historical_var`;
+  `derived` — arithmetic on observed values (`note`: the formula; every number
+  added or subtracted must itself be an observed value);
   `proposed` — a price level you suggest, such as an entry, stop or target: inside
   the observed price range, or with a formula over observed values in `note`; a
   percentage is not a level, so state the price it implies;
@@ -228,13 +220,6 @@ Decide which workflow to use based on the request:
   1.8   | cited    | Sharpe ratio reported by the paper
   20    | count    | moving-average window, days
   ```
-  In the `value` field of a figures declaration, prefer the raw normalized
-  numeric spelling from the tool result: no currency prefix, no thousands
-  separators, and a dot for decimals (for example `123456789.125`, not
-  `ARS 123.456.789,125`). Keep currency and localized formatting only in the
-  user-facing prose. In a `derived` note, likewise use raw numeric operands
-  exactly as returned by tools and plain arithmetic only; do not use localized
-  number formatting or explanatory prose inside the formula.
   The block is checked against this session's tool results and removed before
   the user sees the answer, so never refer to it in the prose. A figure you
   cannot declare truthfully under one of these roles must be removed, not

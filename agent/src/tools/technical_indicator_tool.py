@@ -16,6 +16,7 @@ import pandas as pd
 
 from src.agent.tools import BaseTool
 from src.market_data import fetch_market_data
+from src.tools.market_data_tool import _canonicalize_interval
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ _SMA_PERIODS = (20, 50, 200)
 _EMA_PERIOD = 20
 _DEFAULT_LOOKBACK = 200
 _MAX_LOOKBACK = 500
+#: Calendar days fetched per requested bar. Two covers weekends and holidays
+#: for daily bars; a weekly or monthly bar needs its whole period, or 200
+#: weekly bars would be asked for over 400 days and come back as 57 (#1479).
+_CALENDAR_DAYS_PER_BAR = {"1W": 7, "1M": 31}
 
 
 _CLOSE_KEYS = ("close", "Close", "CLOSE", "adj_close")
@@ -206,11 +211,18 @@ class TechnicalIndicatorTool(BaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         symbol = str(kwargs.get("symbol", "")).strip()
-        interval = str(kwargs.get("interval", "1d")).strip()
+        requested_interval = str(kwargs.get("interval", "1d")).strip()
         lookback_raw = kwargs.get("lookback", _DEFAULT_LOOKBACK)
 
         if not symbol:
             return json.dumps({"ok": False, "error": "symbol is required"})
+        # The documented 1d / 1wk / 1mo spellings used to reach the loaders
+        # verbatim, and most of them know neither weekly spelling.
+        interval = _canonicalize_interval(requested_interval)
+        if interval is None:
+            return json.dumps(
+                {"ok": False, "error": f"unsupported interval {requested_interval!r}; use 1d, 1wk or 1mo"}
+            )
 
         try:
             lookback = int(lookback_raw)
@@ -220,7 +232,8 @@ class TechnicalIndicatorTool(BaseTool):
 
         # Fetch enough bars to cover the longest indicator window + buffer.
         end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=lookback * 2)).strftime("%Y-%m-%d")
+        days = lookback * _CALENDAR_DAYS_PER_BAR.get(interval, 2)
+        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
         try:
             data = fetch_market_data(

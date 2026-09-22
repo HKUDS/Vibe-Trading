@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,12 +26,14 @@ from typing import Any, Dict, Iterable, List, Optional
 import pandas as pd
 import requests
 
+from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.base import (
+    NoAvailableSourceError,
     cached_loader_fetch,
     validate_date_range,
     validate_ohlc,
 )
-from backtest.loaders.registry import register
+from backtest.loaders.registry import market_has_corporate_actions, register
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,14 @@ _DATE_KEYS = (
     "time",
     "period",
 )
+#: A quote bounds the bill only when it is a flat price per call: "24.2
+#: credits", "1 credits/call", or a bare number. ``cn_financial_pro.
+#: history_quotation.v1`` quoted "1 credits/result" and billed 9.66 credits for
+#: one stock-year, 244 rows x 30 fields at 0.00132 credits a value (#1494), so
+#: a quote priced per any other unit, or in a shape not listed here, reserves
+#: nothing that caps the charge and prices as unknown.
+_FLAT_QUOTE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:credits?)?\s*(?:(?:/|per)\s*(call|request))?")
+
 #: The four fields that must all be present for a record to become a bar.
 _PRICE_QUARTET = ("open", "high", "low", "close")
 
@@ -290,7 +301,7 @@ class DataLoader:
     """QVeris OHLCV loader, available only when explicitly configured."""
 
     name = "qveris"
-    markets = {"us_equity", "hk_equity", "a_share", "crypto", "forex", "fund", "macro"}
+    markets = {"crypto", "forex", "macro"}
     requires_auth = True
 
     def __init__(self) -> None:
@@ -326,9 +337,30 @@ class DataLoader:
 
         Raises:
             ValueError: If ``start_date`` > ``end_date``.
+            NoAvailableSourceError: If a symbol belongs to a market with
+                corporate actions, whose price adjustment this loader cannot
+                establish (#1494). Nothing is fetched or billed.
         """
         del fields
         validate_date_range(start_date, end_date)
+        # A market with splits and dividends would be served by whichever
+        # capability ranks first in search, and the ranking ignores adjustment:
+        # for 600519.SH the top pick was FMP's non_split_adjusted EOD, and
+        # mkt_bars_adjusted routed to a tool whose adj_close equalled the raw
+        # closes (#1494). No capability is pinned to a measured adjustment, so
+        # such a bar has no caliber anyone can state, and "unknown" stays out of
+        # every run-level caliber check. Refused before anything is billed.
+        refused = {code: _detect_market(code) for code in codes}
+        refused = {code: market for code, market in refused.items() if market_has_corporate_actions(market)}
+        if refused:
+            raise NoAvailableSourceError(
+                "source='qveris' does not serve markets with splits and dividends: it "
+                "picks a capability by search rank, which ignores price adjustment, so "
+                "these bars would reach the run at an adjustment nobody can state "
+                "(#1494). Refused: "
+                + ", ".join(f"{code} ({market})" for code, market in refused.items())
+                + ". Use a source with a measured price caliber for these symbols."
+            )
         if not self.is_available():
             logger.warning("qveris fetch skipped: disabled or %s not set", _API_KEY_ENV)
             return {}
@@ -377,12 +409,16 @@ class DataLoader:
             if not tool_id:
                 continue
             quoted_cost = _expected_cost(capability.get("expected_cost"))
-            if (
-                not math.isfinite(quoted_cost)
-                or quoted_cost < 0.0
-                or budget_state["spent"] + quoted_cost
-                > self._config.budget_credits_per_session
-            ):
+            if not math.isfinite(quoted_cost):
+                logger.warning(
+                    "QVeris capability %s skipped for %s: quote %r is not a flat "
+                    "price per call, so no reservation bounds its bill",
+                    tool_id,
+                    code,
+                    capability.get("expected_cost"),
+                )
+                continue
+            if budget_state["spent"] + quoted_cost > self._config.budget_credits_per_session:
                 logger.warning(
                     "QVeris paid capability skipped for %s: credit budget exceeded",
                     code,
@@ -496,20 +532,28 @@ def _success_rate(stats: Any) -> float:
     return parsed / 100.0 if parsed > 1.0 else parsed
 
 
+def quoted_call_cost(value: Any) -> float | None:
+    """Return the credits one call can cost under ``value``, or None.
+
+    Args:
+        value: A capability's ``expected_cost`` quote.
+
+    Returns:
+        The flat per-call price, or None when the quote does not bound the
+        bill: absent, negative, priced per result/row/value, or in any shape
+        ``_FLAT_QUOTE`` does not describe.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if math.isfinite(value) and value >= 0 else None
+    match = _FLAT_QUOTE.fullmatch(str(value).strip().lower())
+    return float(match.group(1)) if match else None
+
+
 def _expected_cost(value: Any) -> float:
-    if value is None:
-        return float("inf")
-    text = str(value)
-    number = ""
-    for char in text:
-        if char.isdigit() or char == ".":
-            number += char
-        elif number:
-            break
-    try:
-        return float(number)
-    except ValueError:
-        return float("inf")
+    cost = quoted_call_cost(value)
+    return float("inf") if cost is None else cost
 
 
 def _build_parameters(
@@ -529,7 +573,7 @@ def _build_parameters(
             continue
         lower = name.lower()
         if _is_symbol_param(lower):
-            parameters[name] = _provider_symbol(code)
+            parameters[name] = code.strip().upper()
         elif _is_start_param(lower):
             parameters[name] = start_date
         elif _is_end_param(lower):
@@ -545,14 +589,6 @@ def _sample_parameters(capability: dict[str, Any]) -> dict[str, Any]:
         return {}
     sample = examples.get("sample_parameters")
     return dict(sample) if isinstance(sample, dict) else {}
-
-
-def _provider_symbol(code: str) -> str:
-    """Normalize common project US suffixes while preserving other markets."""
-    upper = code.strip().upper()
-    if upper.endswith(".US"):
-        return upper[: -len(".US")]
-    return upper
 
 
 def _is_symbol_param(name: str) -> bool:

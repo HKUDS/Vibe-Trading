@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
 import tempfile
 import threading
 import time
@@ -16,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from backtest.loaders.qveris_loader import quoted_call_cost
 from src.agent.tools import BaseTool
 
 SIGNUP_URL = "https://qveris.ai/?ref=Vyjjo5G_1cAHJA"
@@ -176,15 +176,13 @@ def _unconfigured_message(config: QVerisConfig | None = None) -> str:
 
 
 def _parse_expected_cost(value: Any) -> float | None:
-    """Extract a numeric expected-cost hint from QVeris metadata."""
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    match = re.search(r"-?\d+(?:\.\d+)?", str(value))
-    if not match:
-        return None
-    return float(match.group(0))
+    """Return the flat per-call price a QVeris quote states, or None.
+
+    The leading number of a quote is not a price when the quote is per result:
+    "1 credits/result" billed 9.66 credits for one stock-year (#1494). Shared
+    with the bar loader so the two budget gates read a quote the same way.
+    """
+    return quoted_call_cost(value)
 
 
 def _quote_from_tool(tool: dict[str, Any] | None) -> dict[str, Any]:
@@ -539,8 +537,12 @@ class QVerisExecuteTool(_QVerisBaseTool):
             server_quote = _quote_from_tool(first)
             server_cost = _parse_expected_cost(server_quote.get("expected_cost"))
 
+        # A marketplace quote that is not a flat per-call price bounds nothing,
+        # and a caller hint must not stand in for it: a written number would
+        # then buy a call whose bill the budget cannot cap.
+        server_unbounded = server_quote.get("expected_cost") is not None and server_cost is None
         candidates = [cost for cost in (supplied, server_cost) if cost is not None]
-        effective = max(candidates) if candidates else None
+        effective = None if server_unbounded else (max(candidates) if candidates else None)
 
         quote = dict(server_quote)
         quote["tool_id"] = tool_id
@@ -550,7 +552,9 @@ class QVerisExecuteTool(_QVerisBaseTool):
         )
         quote["server_attested"] = server_cost is not None
         quote["caller_supplied_cost"] = supplied
-        if server_cost is not None and supplied is not None and supplied < server_cost:
+        if server_unbounded:
+            quote["quote_source"] = "server_quote_not_per_call"
+        elif server_cost is not None and supplied is not None and supplied < server_cost:
             quote["quote_source"] = "server_overrode_lower_caller_quote"
         elif server_cost is not None:
             quote["quote_source"] = "server"
@@ -608,6 +612,20 @@ class QVerisExecuteTool(_QVerisBaseTool):
                 and math.isfinite(expected)
                 and (expected > 0.0 or (expected == 0.0 and quote.get("server_attested")))
             )
+            if expected is None and (
+                quote.get("quote_source") == "server_quote_not_per_call"
+                or kwargs.get("expected_cost") is not None
+            ):
+                return _json_response(
+                    {
+                        "ok": False,
+                        "status": "quote_not_bounded",
+                        "error": "the quote is not a flat price per call, so the "
+                        "session credit budget cannot bound this call's bill (#1494)",
+                        "budget_credits_per_session": budget,
+                        "quote": quote,
+                    }
+                )
             if (
                 not valid_quote
                 or spent >= budget

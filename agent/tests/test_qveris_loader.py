@@ -148,14 +148,14 @@ class TestFetch:
 
     def test_returns_empty_without_availability_and_makes_no_http(self, monkeypatch):
         session = _install_session(monkeypatch, [])
-        assert qv.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31") == {}
+        assert qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31") == {}
         assert session.calls == []
 
     def test_free_mode_keeps_qveris_loader_unavailable(self, monkeypatch):
         _write_config(qv._CONFIG_PATH, enabled=True, api_key="sk_test", mode="free")
         session = _install_session(monkeypatch, [])
 
-        assert qv.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31") == {}
+        assert qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31") == {}
         assert session.calls == []
 
     def test_zero_budget_allows_search_but_blocks_paid_execute(self, monkeypatch):
@@ -166,7 +166,7 @@ class TestFetch:
         )
 
         result = qv.DataLoader().fetch(
-            ["AAPL.US"], "2024-01-01", "2024-01-31"
+            ["BTC-USDT"], "2024-01-01", "2024-01-31"
         )
 
         assert result == {}
@@ -197,10 +197,10 @@ class TestFetch:
         )
 
         result = qv.DataLoader().fetch(
-            ["AAPL.US", "MSFT.US"], "2024-01-01", "2024-01-31"
+            ["BTC-USDT", "ETH-USDT"], "2024-01-01", "2024-01-31"
         )
 
-        assert list(result) == ["AAPL.US"]
+        assert list(result) == ["BTC-USDT"]
         execute_calls = [call for call in session.calls if "/tools/execute" in call["url"]]
         assert len(execute_calls) == 1
 
@@ -239,10 +239,10 @@ class TestFetch:
             ],
         )
 
-        out = qv.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")
+        out = qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31")
 
-        assert list(out) == ["AAPL.US"]
-        df = out["AAPL.US"]
+        assert list(out) == ["BTC-USDT"]
+        df = out["BTC-USDT"]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
         assert isinstance(df.index, pd.DatetimeIndex)
@@ -255,7 +255,7 @@ class TestFetch:
         assert session.calls[1]["url"].endswith("/tools/execute?tool_id=cheap")
         execute_body = session.calls[1]["kwargs"]["json"]
         assert execute_body["search_id"] == "s_123"
-        assert execute_body["parameters"]["symbol"] == "AAPL"
+        assert execute_body["parameters"]["symbol"] == "BTC-USDT"
         assert execute_body["parameters"]["start_date"] == "2024-01-01"
         assert execute_body["parameters"]["end_date"] == "2024-01-31"
         assert execute_body["parameters"]["adjusted"] is True
@@ -290,10 +290,10 @@ class TestFetch:
             ],
         )
 
-        out = qv.DataLoader().fetch(["MSFT"], "2024-01-01", "2024-01-31")
+        out = qv.DataLoader().fetch(["ETH-USDT"], "2024-01-01", "2024-01-31")
 
-        assert list(out) == ["MSFT"]
-        assert pd.isna(out["MSFT"].loc["2024-01-02", "volume"])
+        assert list(out) == ["ETH-USDT"]
+        assert pd.isna(out["ETH-USDT"].loc["2024-01-02", "volume"])
         assert session.calls[2]["method"] == "get"
         assert session.calls[2]["url"] == "https://oss.qveris.cn/full.json"
         assert "Authorization" not in session.calls[2]["kwargs"]["headers"]
@@ -320,7 +320,7 @@ class TestFetch:
             ],
         )
 
-        assert qv.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31") == {}
+        assert qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31") == {}
         assert len(session.calls) == 1
 
     def test_date_filtering_and_ohlc_validation(self, monkeypatch):
@@ -345,7 +345,7 @@ class TestFetch:
             ],
         )
 
-        df = qv.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31")["AAPL"]
+        df = qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31")["BTC-USDT"]
 
         assert [d.strftime("%Y-%m-%d") for d in df.index] == ["2024-01-02"]
         assert df.loc["2024-01-02", "open"] == 2.0
@@ -354,7 +354,7 @@ class TestFetch:
     def test_invalid_date_range_raises(self):
         _write_config(qv._CONFIG_PATH)
         with pytest.raises(ValueError):
-            qv.DataLoader().fetch(["AAPL"], "2024-02-01", "2024-01-01")
+            qv.DataLoader().fetch(["BTC-USDT"], "2024-02-01", "2024-01-01")
 
 
 class TestParameterMapping:
@@ -449,9 +449,9 @@ class TestCapabilitySelection:
             ],
         )
 
-        data = qv.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31")
+        data = qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31")
 
-        assert "AAPL" in data
+        assert "BTC-USDT" in data
         execute_url = session.calls[1]["url"]
         assert "tiingo.core.eod.v1" in execute_url
 
@@ -485,9 +485,9 @@ class TestCapabilitySelection:
             ],
         )
 
-        data = qv.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31")
+        data = qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31")
 
-        assert "AAPL" in data
+        assert "BTC-USDT" in data
         assert "daily_bad" in session.calls[1]["url"]
         assert "daily_good" in session.calls[2]["url"]
 
@@ -518,10 +518,10 @@ class TestCapabilitySelection:
             ],
         )
 
-        data = qv.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31")
+        data = qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31")
 
-        assert "AAPL" in data
-        assert float(data["AAPL"]["close"].iloc[0]) == 1.5
+        assert "BTC-USDT" in data
+        assert float(data["BTC-USDT"]["close"].iloc[0]) == 1.5
         assert len(session.calls) == 2
 
 
@@ -729,3 +729,101 @@ def test_a_response_whose_rows_carry_both_families_uses_the_unadjusted_one():
     frame = qv._result_to_frame(result, "2024-01-01", "2024-01-05")
 
     assert list(frame["close"]) == pytest.approx([10.5, 10.7])
+
+
+class TestMarketsWithCorporateActions:
+    """Search rank ignores adjustment, so those markets are refused (#1494)."""
+
+    @pytest.mark.parametrize(
+        "code", ["600519.SH", "600519", "AAPL.US", "AAPL", "00700.HK", "RELIANCE.NS", "510300.SH"]
+    )
+    def test_refused_before_any_request(self, monkeypatch, code):
+        _write_config(qv._CONFIG_PATH)
+        session = _install_session(monkeypatch, [])
+
+        with pytest.raises(NoAvailableSourceError, match="#1494") as excinfo:
+            qv.DataLoader().fetch([code], "2024-01-01", "2024-01-31")
+
+        assert code in str(excinfo.value)
+        assert session.calls == []
+
+    def test_one_refused_symbol_refuses_the_request(self, monkeypatch):
+        _write_config(qv._CONFIG_PATH)
+        session = _install_session(monkeypatch, [])
+
+        with pytest.raises(NoAvailableSourceError) as excinfo:
+            qv.DataLoader().fetch(["BTC-USDT", "600519.SH"], "2024-01-01", "2024-01-31")
+
+        assert "600519.SH (a_share)" in str(excinfo.value)
+        assert "BTC-USDT" not in str(excinfo.value)
+        assert session.calls == []
+
+    @pytest.mark.parametrize("code", ["BTC-USDT", "EURUSD", "RB2410.SHFE", "^GSPC"])
+    def test_markets_with_nothing_to_adjust_still_search(self, monkeypatch, code):
+        _write_config(qv._CONFIG_PATH)
+        session = _install_session(monkeypatch, [_FakeResponse({"search_id": "s", "results": []})])
+
+        assert qv.DataLoader().fetch([code], "2024-01-01", "2024-01-31") == {}
+        assert [call["url"] for call in session.calls] == ["https://qveris.test/api/v1/search"]
+
+
+class TestQuotedCallCost:
+    """Only a flat per-call quote bounds a bill (#1494)."""
+
+    @pytest.mark.parametrize(
+        ("quote", "cost"),
+        [
+            ("24.2 credits", 24.2),
+            ("1 credits/call", 1.0),
+            ("5 credits per call", 5.0),
+            ("0.5 credit", 0.5),
+            ("1", 1.0),
+            ("0 credits", 0.0),
+            (3, 3.0),
+        ],
+    )
+    def test_a_flat_quote_is_its_price(self, quote, cost):
+        assert qv.quoted_call_cost(quote) == cost
+
+    @pytest.mark.parametrize(
+        "quote",
+        ["1 credits/result", "0.00132 credits/value", "1 credit per row", "1-24.2 credits/call", "-1", "free", None, True, float("nan")],
+    )
+    def test_any_other_quote_prices_as_unknown(self, quote):
+        assert qv.quoted_call_cost(quote) is None
+
+    def test_a_per_result_quote_is_skipped_and_a_flat_one_runs(self, monkeypatch, caplog):
+        _write_config(qv._CONFIG_PATH)
+        rows = {"data": [{"date": "2024-01-02", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 5}]}
+        session = _install_session(
+            monkeypatch,
+            [
+                _FakeResponse(
+                    {
+                        "search_id": "s",
+                        "results": [
+                            _capability("per_result", expected_cost="0.1 credits/result"),
+                            _capability("flat", expected_cost="5 credits/call"),
+                        ],
+                    }
+                ),
+                _FakeResponse({"success": True, "cost": 5.0, "result": rows}),
+            ],
+        )
+
+        out = qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31")
+
+        assert list(out) == ["BTC-USDT"]
+        executed = [call["url"] for call in session.calls if "/tools/execute" in call["url"]]
+        assert executed == ["https://qveris.test/api/v1/tools/execute?tool_id=flat"]
+
+    def test_a_lone_per_result_quote_bills_nothing(self, monkeypatch, caplog):
+        _write_config(qv._CONFIG_PATH)
+        session = _install_session(
+            monkeypatch,
+            [_FakeResponse({"search_id": "s", "results": [_capability("per_result", expected_cost="1 credits/result")]})],
+        )
+
+        assert qv.DataLoader().fetch(["BTC-USDT"], "2024-01-01", "2024-01-31") == {}
+        assert len(session.calls) == 1
+        assert "not a flat price per call" in caplog.text

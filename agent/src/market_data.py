@@ -203,7 +203,7 @@ def fetch_market_data(
     consumers must read this field instead of assuming a unit.
     """
     from backtest.engines._market_hooks import _detect_market
-    from backtest.loaders.base import NoAvailableSourceError
+    from backtest.loaders.base import NoAvailableSourceError, resample_bars, source_interval
     from backtest.loaders.registry import (
         FALLBACK_CHAINS,
         _NO_NETWORK_FALLBACK_SOURCES,
@@ -315,7 +315,14 @@ def fetch_market_data(
                 continue
             try:
                 loader = loader_cls()
-                partial = loader.fetch(remaining, start_date, end_date, interval=interval)
+                # Weekly and monthly bars are built from daily ones (#1479).
+                partial = loader.fetch(
+                    remaining, start_date, end_date, interval=source_interval(interval)
+                )
+                partial = {
+                    code: resample_bars(frame, interval) if hasattr(frame, "groupby") else frame
+                    for code, frame in (partial or {}).items()
+                }
             except Exception as exc:  # noqa: BLE001 — contained per-symbol fallback
                 logger.error(
                     "market-data loader %r failed for %s; trying next source in chain: %s",
@@ -380,7 +387,7 @@ def fetch_market_data(
                 "fallback_used": bool(used_source and used_source != src),
                 "currency_conversion": currency_conversion,
                 "volume_unit": volume_units.get(market),
-                "adjustment": price_caliber(used_source or src, market),
+                "adjustment": price_caliber(used_source or src, market, symbol),
             }
             quote_currency = frame_attrs.get("quote_currency")
             if isinstance(quote_currency, str) and quote_currency:
@@ -441,7 +448,7 @@ def fetch_market_data(
                         "fallback_used": True,
                         "currency_conversion": "none",
                         "volume_unit": base.get("volume_unit"),
-                        "adjustment": base.get("adjustment", price_caliber(src, market)),
+                        "adjustment": base.get("adjustment", price_caliber(src, market, code)),
                         "venue_fallback": True,
                         "resolved_symbol": sibling,
                     }

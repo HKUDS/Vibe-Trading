@@ -251,14 +251,14 @@ class TestSingleMarketAnnualisationChecksTheServedData:
         )
         assert _annualisation_bars("1D", "tushare", data, ["600519.SH"]) == 252
 
-    # --- spacing wider than any supported interval (review point 2) ---
+    # --- weekly / monthly files, and spacing wider than any supported interval ---
 
     @pytest.mark.parametrize("declared", ["1D", "1H"])
-    def test_weekly_bars_are_annualised_from_the_calendar(self, declared, caplog):
-        """A weekly file has no trading-day table and needs none: 52 a year.
+    def test_a_weekly_file_is_annualised_as_weekly(self, declared, caplog):
+        """A weekly file declared finer is read as ``1W``: 52 a year.
 
-        Keeping the declaration was the same bug one step coarser -- a weekly
-        file declared ``1H`` annualised at 1,764 bars a year.
+        Keeping the declaration was the bug -- a weekly file declared ``1H``
+        annualised at 1,764 bars a year.
         """
         from backtest.runner import _annualisation_bars
 
@@ -267,13 +267,50 @@ class TestSingleMarketAnnualisationChecksTheServedData:
             resolved = _annualisation_bars(declared, "tushare", data, ["600519.SH"])
 
         assert resolved == 52
-        assert any("wider than any supported interval" in r.getMessage() for r in caplog.records)
+        assert any("annualising as 1W (52 bars/year)" in r.getMessage() for r in caplog.records)
 
     def test_monthly_bars_are_twelve_a_year(self):
         from backtest.runner import _annualisation_bars
 
         data = self._frame(pd.date_range("2020-01-01", periods=48, freq="MS"))
         assert _annualisation_bars("1D", "yahoo", data, ["600519.SH"]) == 12
+
+    @pytest.mark.parametrize(("declared", "freq"), [("1W", "W-FRI"), ("1M", "BME")])
+    def test_a_declared_weekly_or_monthly_run_keeps_its_count_silently(self, declared, freq, caplog):
+        """Weekly and monthly are intervals now (#1479): no mismatch report."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2020-01-01", periods=60, freq=freq))
+        with caplog.at_level("WARNING", logger="backtest.runner"):
+            resolved = _annualisation_bars(declared, "tushare", data, ["600519.SH"])
+
+        assert resolved == {"1W": 52, "1M": 12}[declared]
+        assert caplog.records == []
+
+    @pytest.mark.parametrize("declared", ["1W", "1M"])
+    def test_a_period_run_served_daily_bars_is_caught(self, declared, caplog):
+        """The spacing check covers the new intervals too: daily bars under a
+        weekly or monthly declaration annualise as daily, and say so."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.bdate_range("2024-01-01", periods=120))
+        with caplog.at_level("WARNING", logger="backtest.runner"):
+            resolved = _annualisation_bars(declared, "tushare", data, ["600519.SH"])
+
+        assert resolved == 252
+        assert any("annualising as 1D (252 bars/year)" in r.getMessage() for r in caplog.records)
+
+    def test_a_quarterly_file_is_annualised_from_the_calendar(self, caplog):
+        """Wider than every supported interval: four bars a year, from the
+        spacing, since no interval has a count to look up."""
+        from backtest.runner import _annualisation_bars
+
+        data = self._frame(pd.date_range("2015-03-31", periods=40, freq="QE"))
+        with caplog.at_level("WARNING", logger="backtest.runner"):
+            resolved = _annualisation_bars("1D", "tushare", data, ["600519.SH"])
+
+        assert resolved == 4
+        assert any("wider than any supported interval" in r.getMessage() for r in caplog.records)
 
     def test_a_daily_series_over_a_holiday_week_is_not_read_as_weekly(self, caplog):
         """Five daily bars around Christmas measure a two-day median: the

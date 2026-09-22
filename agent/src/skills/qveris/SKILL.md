@@ -75,7 +75,15 @@ choosing among paid options.
 - `mode="free"` means the original free public-data path stays active and
   QVeris is hidden from agent/tool/backtest routing.
 - `mode="paid"` permits QVeris discovery, inspect, and execute calls, bounded by
-  `budget_credits_per_session`.
+  `budget_credits_per_session`. Only a flat per-call quote (`24.2 credits`,
+  `1 credits/call`) can be reserved against that budget. A quote priced per
+  result, row or value is refused as `quote_not_bounded`, because its leading
+  number is not the bill: `1 credits/result` charged 9.66 credits for one
+  stock-year.
+- `source: "qveris"` in a backtest or `get_market_data` serves crypto, forex,
+  futures and macro bars only. Stocks, ETFs and other markets with splits and
+  dividends are refused: the loader picks a capability by search rank, which
+  ignores price adjustment, so it could not say how the bars were adjusted.
 - Never hide cost: every successful execute result should preserve `cost` and
   `remaining_credits` for the user.
 

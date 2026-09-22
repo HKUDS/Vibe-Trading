@@ -36,7 +36,12 @@ class _Registry:
 class _Context:
     @staticmethod
     def format_tool_result(call_id, name, result):
-        return {"role": "tool", "tool_call_id": call_id, "name": name, "content": result}
+        return {
+            "role": "tool",
+            "tool_call_id": call_id,
+            "name": name,
+            "content": result,
+        }
 
 
 class _Trace:
@@ -46,7 +51,9 @@ class _Trace:
     def write(self, event):
         self.events.append(event)
 
-    def write_tool_result(self, *, call_id, result, tool_name, status, elapsed_ms, iteration):
+    def write_tool_result(
+        self, *, call_id, result, tool_name, status, elapsed_ms, iteration
+    ):
         self.events.append(
             {
                 "type": "tool_result",
@@ -173,13 +180,15 @@ def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_pro
     reopened = loop._unblock_lost_readonly_results([], {key})
     assert reopened == ["read_url"]
     assert key in loop._readonly_replay_ready
-    assert key in loop._readonly_replay_protected
+    assert key not in loop._readonly_replay_protected
 
-    # First exact call after loss is restored from the run-scoped cache.
+    # First exact call after loss is restored from the run-scoped cache, and
+    # only a restored key is protected against an immediate re-fetch.
     tc3 = SimpleNamespace(name="read_url", arguments=args, id="call-3")
     loop._process_tool_calls([tc3], _Context(), messages, trace, react_trace, 3)
     assert registry.execute_calls == 2
     assert key not in loop._readonly_replay_ready
+    assert key in loop._readonly_replay_protected
 
     # An immediate identical repeat must not escape to the external source or
     # replay the same payload again just because the tool is repeatable. The
@@ -262,7 +271,10 @@ def test_replay_only_iterations_remain_bounded_by_no_progress_limit():
     assert iteration <= NO_PROGRESS_LIMIT
 
 
-def test_run_scoped_replay_recovery_budget_keeps_lost_calls_locked() -> None:
+def test_past_the_replay_budget_a_lost_call_runs_again() -> None:
+    """The budget bounds replay, not access to evidence: once it is spent, a
+    lost call runs again as it does without replay, instead of being refused
+    with "use the previous result" for a payload the model cannot see."""
     registry = _Registry(repeatable=True, replay_after_compaction=True)
     loop = _loop(registry)
     args = {"url": "https://example.test/report"}
@@ -275,17 +287,111 @@ def test_run_scoped_replay_recovery_budget_keeps_lost_calls_locked() -> None:
 
     reopened = loop._unblock_lost_readonly_results([], {key})
 
-    assert reopened == []
-    assert key in loop._called_ok
-    assert key not in loop._readonly_replay_ready
+    assert reopened == ["read_url"]
+    assert key not in loop._called_ok
+    assert key not in loop._readonly_replay_protected
 
     messages = []
     trace = _Trace()
     tc = SimpleNamespace(name="read_url", arguments=args, id="budget-exhausted")
     loop._process_tool_calls([tc], _Context(), messages, trace, [], 9)
 
-    assert registry.execute_calls == 0
-    payload = __import__("json").loads(messages[-1]["content"])
-    assert payload["skipped"] is True
-    assert "restored from the run-scoped replay cache" in payload["reason"]
+    assert registry.execute_calls == 1
+    assert "skipped" not in messages[-1]["content"]
     assert not any(e["type"] == "tool_result_replayed" for e in trace.events)
+    assert key not in loop._readonly_replay_ready
+
+
+def test_a_first_loss_after_the_budget_is_spent_elsewhere_runs_again() -> None:
+    """A non-repeatable call lost for the first time, after other calls used
+    the budget, used to stay in the success set and come back as "already
+    completed successfully. Use the previous result." (#1488 review)."""
+    registry = _Registry()
+    loop = _loop(registry)
+    args = {"symbol": "600519.SH"}
+    loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id="n1")], _Context(), [], _Trace(), [], 1)
+    key = loop._identical_call_key("get_stock_news", args)
+    loop._readonly_replay_recoveries = MAX_READONLY_REPLAY_RECOVERIES
+
+    assert loop._unblock_lost_readonly_results([], {key}) == ["get_stock_news"]
+    messages = []
+    loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id="n2")], _Context(), messages, _Trace(), [], 2)
+
+    assert registry.execute_calls == 2
+    assert "skipped" not in messages[-1]["content"]
+
+
+def test_one_compaction_cannot_replay_past_the_budget() -> None:
+    """The cap is checked when a call is restored, not when keys are reopened:
+    with one recovery left, four lost keys give one replay and three re-runs."""
+    registry = _Registry()
+    loop = _loop(registry)
+    calls = [{"symbol": f"S{i}"} for i in range(4)]
+    for i, args in enumerate(calls):
+        loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id=f"s{i}")], _Context(), [], _Trace(), [], 1)
+    loop._readonly_replay_recoveries = MAX_READONLY_REPLAY_RECOVERIES - 1
+    loop._unblock_lost_readonly_results([], {loop._identical_call_key("get_stock_news", a) for a in calls})
+
+    trace = _Trace()
+    for i, args in enumerate(calls):
+        loop._process_tool_calls([SimpleNamespace(name="get_stock_news", arguments=args, id=f"r{i}")], _Context(), [], trace, [], 2)
+
+    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
+    assert registry.execute_calls == 4 + 3
+    assert loop._readonly_replay_recoveries == MAX_READONLY_REPLAY_RECOVERIES
+
+
+class _ReadAndWriteRegistry:
+    """factor_analysis reads a file that a bash call rewrites."""
+
+    def __init__(self):
+        self.version = "v1"
+        self.execute_calls = 0
+
+    def get(self, name):
+        return SimpleNamespace(
+            is_readonly=name != "bash", repeatable=False, deterministic=False, replay_after_compaction=False
+        )
+
+    def execute(self, name, args):
+        self.execute_calls += 1
+        if name == "bash":
+            self.version = "v2"
+            return '{"status":"ok"}'
+        return '{"status":"ok","version":"%s"}' % self.version
+
+
+def test_a_write_makes_earlier_readonly_results_unreplayable() -> None:
+    """A result cached before a write may describe a file the write changed:
+    after the write, a lost call runs again and reads the new file."""
+    registry = _ReadAndWriteRegistry()
+    loop = _loop(registry)
+    read = {"factor_csv": "factor.csv"}
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), [], 1)
+    loop._process_tool_calls(
+        [SimpleNamespace(name="bash", arguments={"command": "python make_factor.py > factor.csv"}, id="w1")],
+        _Context(), [], _Trace(), [], 2,
+    )
+    key = loop._identical_call_key("factor_analysis", read)
+    loop._unblock_lost_readonly_results([], {key})
+
+    messages = []
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), [], 3)
+
+    assert '"version":"v2"' in messages[-1]["content"]
+    assert "_vibe_replay" not in messages[-1]["content"]
+
+
+def test_without_a_write_the_lost_result_is_restored() -> None:
+    """The other side of the write rule: nothing written, so no re-run."""
+    registry = _ReadAndWriteRegistry()
+    loop = _loop(registry)
+    read = {"factor_csv": "factor.csv"}
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f1")], _Context(), [], _Trace(), [], 1)
+    loop._unblock_lost_readonly_results([], {loop._identical_call_key("factor_analysis", read)})
+
+    messages = []
+    loop._process_tool_calls([SimpleNamespace(name="factor_analysis", arguments=read, id="f2")], _Context(), messages, _Trace(), [], 2)
+
+    assert registry.execute_calls == 1
+    assert "_vibe_replay" in messages[-1]["content"]
