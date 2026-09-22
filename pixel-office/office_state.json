@@ -6,13 +6,9 @@
       "id": "research-analyst",
       "name": "Research Analyst",
       "role": "research",
-      "status": "busy",
-      "load": 1,
-      "specialities": [
-        "macro",
-        "crypto",
-        "risk"
-      ],
+      "status": "idle",
+      "load": 0,
+      "specialities": ["macro", "equity", "crypto", "news"],
       "office": "trading-floor"
     },
     {
@@ -21,12 +17,8 @@
       "role": "risk",
       "status": "idle",
       "load": 0,
-      "specialities": [
-        "risk",
-        "drawdown",
-        "execution"
-      ],
-      "office": "trading-floor"
+      "specialities": ["risk", "drawdown", "execution"],
+      "office": "trade-ops"
     },
     {
       "id": "execution-agent",
@@ -34,40 +26,9 @@
       "role": "execution",
       "status": "idle",
       "load": 0,
-      "specialities": [
-        "broker",
-        "orders",
-        "routing"
-      ],
-      "office": "trading-floor"
+      "specialities": ["broker", "orders", "routing"],
+      "office": "live-trading"
     }
   ],
-  "tasks": [
-    {
-      "id": "task-001",
-      "title": "Research BTC",
-      "description": "BTC thesis and risk review",
-      "workstream": "research",
-      "priority": "high",
-      "owner": "ops",
-      "status": "assigned",
-      "assigned_to": "research-analyst",
-      "created_at": "2026-09-22T11:56:19Z",
-      "updated_at": "2026-09-22T11:59:00Z",
-      "result": ""
-    },
-    {
-      "id": "task-001",
-      "title": "Research BTC",
-      "description": "BTC thesis and risk review",
-      "workstream": "research",
-      "priority": "high",
-      "owner": "ops",
-      "status": "queued",
-      "assigned_to": null,
-      "created_at": "2026-09-22T11:58:51Z",
-      "updated_at": "2026-09-22T11:58:51Z",
-      "result": ""
-    }
-  ]
+  "tasks": []
 }
