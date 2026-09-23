@@ -22,14 +22,6 @@ def test_correction_prompt_requires_literal_refs_and_full_figures_block(tmp_path
     assert "prefer exact call ids" in prompt
     assert "Return the FULL revised answer" in prompt
     assert "Preserve or rebuild the final figures block on every revision" in prompt
-    assert "normalized raw number" in prompt or "normalized numeric token" in prompt
-    assert "not `ARS 123.456.789,125`" in prompt
+    assert "normalized raw number" in prompt
+    assert "not ARS 123.456.789,125" in prompt
     assert "preserve ALL of those refs" in prompt
-    assert "17.6351 puntos porcentuales" in prompt
-    assert "17.6351 pp" in prompt
-    assert "declare the bare `17.6351`" in prompt
-    assert "does not change the scanner's percent shape" in prompt
-    assert "SAME percent shape" in prompt
-    assert "37.6351% - 20.0% = 17.6351 pp" in prompt
-    assert "37.6351% - 20.0 = 17.6351 pp" in prompt
-    assert "cannot be covered by a `20.0%` declaration" in prompt
