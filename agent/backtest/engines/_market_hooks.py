@@ -63,6 +63,9 @@ _MARKET_PATTERNS = [
     # Canada equities: Toronto Stock Exchange (TD.TO) and TSX Venture
     # (PNG.V). Yahoo carries both suffixes verbatim.
     (re.compile(r"^[A-Z0-9&.\-]+\.(TO|V)$", re.I), "ca_equity"),
+    # Argentina: BYMA listings use Yahoo's canonical .BA suffix. Keep this
+    # as a distinct market so ARS can never be mixed with USD/CNY accounting.
+    (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "ar_equity"),
     # UK equities: London Stock Exchange (VOD.L, SHEL.L). Yahoo carries the
     # suffix verbatim.
     (re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I), "uk_equity"),
@@ -164,6 +167,7 @@ _MARKET_CURRENCY = {
     "india_equity": "INR",
     "kr_equity": "KRW",
     "ca_equity": "CAD",
+    "ar_equity": "ARS",
     "uk_equity": "GBP",
     "vietnam_equity": "VND",
     # Every crypto pattern in _MARKET_PATTERNS is USDT-quoted, and USDT is
@@ -236,7 +240,7 @@ def _detect_market(code: str) -> str:
 
     Returns:
         Market type (a_share/us_equity/hk_equity/india_equity/kr_equity/
-        ca_equity/crypto/futures/forex).
+        ca_equity/ar_equity/crypto/futures/forex).
         Bare 1-5 letter alphabetic tickers resolve to ``us_equity``;
         bare 6-letter codes that start with a precious-metal or G10
         currency code (whitelist) resolve to ``forex``; concatenated

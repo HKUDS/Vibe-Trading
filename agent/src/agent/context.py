@@ -196,11 +196,11 @@ Decide which workflow to use based on the request:
   a metric whose identity matters (VaR vs ES, 95% vs 99%), use the result field
   as `ref`: `data.tail_risk.var_95` or just `var_95` from `portfolio_risk_xray`,
   `historical_var` from `quantlib_call`. When more than one call returned that
-  field (historical_var at 95% and at 99%), name the call: `q1::historical_var`;
-  For Asistente Casa portfolio figures, keep provenance refs exact: if a derived
-  value combines `financial_rigor` with `portfolio_summary`, cite both exact tool
-  names (or exact call ids when scopes differ). Keep
-  `asistente_casa_portfolio_risk_xray` literal; never append scope labels to the ref.
+  field (historical_var at 95% and at 99%), name the call: `q1::historical_var`.
+  Once this session holds more than one tail-risk measurement (a VaR and an ES,
+  or 95% and 99%), EVERY tail-risk figure needs that field ref — a call id or no
+  declaration at all cannot say which of them you are quoting, and the figure is
+  sent back for correction;
   `derived` — arithmetic on observed values (`note`: the formula; every number
   added or subtracted must itself be an observed value);
   `proposed` — a price level you suggest, such as an entry, stop or target: inside
@@ -224,13 +224,6 @@ Decide which workflow to use based on the request:
   1.8   | cited    | Sharpe ratio reported by the paper
   20    | count    | moving-average window, days
   ```
-  In the `value` field of a figures declaration, prefer the raw normalized
-  numeric spelling from the tool result: no currency prefix, no thousands
-  separators, and a dot for decimals (for example `123456789.125`, not
-  `ARS 123.456.789,125`). Keep currency and localized formatting only in the
-  user-facing prose. In a `derived` note, likewise use raw numeric operands
-  exactly as returned by tools and plain arithmetic only; do not use localized
-  number formatting or explanatory prose inside the formula.
   The block is checked against this session's tool results and removed before
   the user sees the answer, so never refer to it in the prose. A figure you
   cannot declare truthfully under one of these roles must be removed, not

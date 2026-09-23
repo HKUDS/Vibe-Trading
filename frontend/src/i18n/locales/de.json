@@ -576,6 +576,9 @@
         "kr_equity": "Korea-Aktien",
         "ca_equity": "Kanada-Aktien",
         "vietnam_equity": "Vietnam-Aktien",
+        "ar_equity": "Argentinien-Aktien",
+        "uk_equity": "UK-Aktien",
+        "index": "Indizes",
         "crypto": "Krypto",
         "futures": "Futures",
         "fund": "Fonds",
@@ -875,6 +878,9 @@
         "crypto": "Krypto",
         "futures": "Futures",
         "forex": "Devisen",
+        "ar_equity": "Argentinien-Aktien",
+        "uk_equity": "UK-Aktien",
+        "vietnam_equity": "Vietnam-Aktien",
         "other": "Sonstige"
       }
     },
@@ -1635,8 +1641,7 @@
       "coverage": "Bewertungsabdeckung",
       "coverageNote": "Bewertet {{priced}} · Bargeld {{cash}}",
       "lastComplete": "Letzte vollständige Aktualisierung",
-      "excluded": "{{count}} Konten konnten nicht gelesen werden und fehlen in dieser Summe",
-      "changeCanonicalNote": "Kanonische tägliche Portfolioänderung von Asistente Casa"
+      "excluded": "{{count}} Konten konnten nicht gelesen werden und fehlen in dieser Summe"
     },
     "allocation": {
       "byAccount": "Aufteilung nach Konto",
@@ -1673,8 +1678,7 @@
       "colPnl": "Nicht realisierte G/V",
       "colData": "Daten",
       "priced": "Bewertet",
-      "unpriced": "Ohne Kurs",
-      "colToday": "Heute"
+      "unpriced": "Ohne Kurs"
     },
     "history": {
       "title": "Vermögensverlauf",

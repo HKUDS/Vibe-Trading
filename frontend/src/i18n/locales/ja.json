@@ -571,6 +571,9 @@
         "kr_equity": "韓国株",
         "ca_equity": "カナダ株",
         "vietnam_equity": "ベトナム株",
+        "ar_equity": "アルゼンチン株",
+        "uk_equity": "英国株",
+        "index": "指数",
         "crypto": "暗号資産",
         "futures": "先物",
         "fund": "ファンド",
@@ -870,6 +873,9 @@
         "crypto": "暗号資産",
         "futures": "先物",
         "forex": "外国為替",
+        "ar_equity": "アルゼンチン株",
+        "uk_equity": "英国株",
+        "vietnam_equity": "ベトナム株",
         "other": "その他"
       }
     },
@@ -1635,8 +1641,7 @@
       "coverage": "評価カバレッジ",
       "coverageNote": "評価済み {{priced}} · 現金 {{cash}}",
       "lastComplete": "最後の完全更新",
-      "excluded": "{{count}} 件の口座を読み取れなかったため、この合計から除外しています",
-      "changeCanonicalNote": "Asistente Casa による正規の本日のポートフォリオ変動"
+      "excluded": "{{count}} 件の口座を読み取れなかったため、この合計から除外しています"
     },
     "allocation": {
       "byAccount": "口座別の構成",
@@ -1673,8 +1678,7 @@
       "colPnl": "評価損益",
       "colData": "データ",
       "priced": "評価済み",
-      "unpriced": "未評価",
-      "colToday": "本日"
+      "unpriced": "未評価"
     },
     "history": {
       "title": "資産推移",

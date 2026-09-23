@@ -576,6 +576,9 @@
         "kr_equity": "Acciones de Corea",
         "ca_equity": "Acciones de Canadá",
         "vietnam_equity": "Acciones de Vietnam",
+        "ar_equity": "Acciones de Argentina",
+        "uk_equity": "Acciones del Reino Unido",
+        "index": "Índices",
         "crypto": "Cripto",
         "futures": "Futuros",
         "fund": "Fondos",
@@ -875,6 +878,9 @@
         "crypto": "Criptomonedas",
         "futures": "Futuros",
         "forex": "Divisas",
+        "ar_equity": "Renta variable Argentina",
+        "uk_equity": "Renta variable Reino Unido",
+        "vietnam_equity": "Renta variable Vietnam",
         "other": "Otros"
       }
     },
@@ -1635,8 +1641,7 @@
       "coverage": "Cobertura de valoración",
       "coverageNote": "Valorado {{priced}} · efectivo {{cash}}",
       "lastComplete": "Última actualización completa",
-      "excluded": "No se pudieron leer {{count}} cuentas y quedan fuera de este total",
-      "changeCanonicalNote": "Variación diaria canónica de Asistente Casa"
+      "excluded": "No se pudieron leer {{count}} cuentas y quedan fuera de este total"
     },
     "allocation": {
       "byAccount": "Distribución por cuenta",
@@ -1673,8 +1678,7 @@
       "colPnl": "P/G no realizada",
       "colData": "Datos",
       "priced": "Con precio",
-      "unpriced": "Sin precio",
-      "colToday": "Hoy"
+      "unpriced": "Sin precio"
     },
     "history": {
       "title": "Histórico de activos",

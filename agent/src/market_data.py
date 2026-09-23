@@ -28,6 +28,8 @@ _SOURCE_PATTERNS = [
     (re.compile(r"^[A-Z0-9&.\-]+\.(NS|BO)$", re.I), "yahoo"),
     # Canada: Toronto Stock Exchange (TD.TO) / TSX Venture (PNG.V).
     (re.compile(r"^[A-Z0-9&.\-]+\.(TO|V)$", re.I), "yahoo"),
+    # Argentina: BYMA equities and CEDEARs use Yahoo's canonical .BA suffix.
+    (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "yahoo"),
     # UK: London Stock Exchange (VOD.L, SHEL.L). Yahoo serves the suffix
     # verbatim; without this they fell through to the tushare default and were
     # routed to China-market loaders that cannot resolve them.

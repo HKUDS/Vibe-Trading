@@ -576,6 +576,9 @@
         "kr_equity": "Korea Equities",
         "ca_equity": "Canada Equities",
         "vietnam_equity": "Vietnam Equities",
+        "ar_equity": "Argentina Equities",
+        "uk_equity": "UK Equities",
+        "index": "Indices",
         "crypto": "Crypto",
         "futures": "Futures",
         "fund": "Funds",
@@ -875,6 +878,9 @@
         "crypto": "Crypto",
         "futures": "Futures",
         "forex": "Forex",
+        "ar_equity": "Argentina equity",
+        "uk_equity": "UK equity",
+        "vietnam_equity": "Vietnam equity",
         "other": "Other"
       }
     },
@@ -1635,8 +1641,7 @@
       "coverage": "Valuation coverage",
       "coverageNote": "Priced {{priced}} · cash {{cash}}",
       "lastComplete": "Last complete update",
-      "excluded": "{{count}} accounts could not be read and are excluded from this total",
-      "changeCanonicalNote": "Canonical daily portfolio change from Asistente Casa"
+      "excluded": "{{count}} accounts could not be read and are excluded from this total"
     },
     "allocation": {
       "byAccount": "Allocation by account",
@@ -1673,8 +1678,7 @@
       "colPnl": "Unrealized P/L",
       "colData": "Data",
       "priced": "Priced",
-      "unpriced": "Unpriced",
-      "colToday": "Today"
+      "unpriced": "Unpriced"
     },
     "history": {
       "title": "Asset history",

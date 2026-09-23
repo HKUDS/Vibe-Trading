@@ -47,6 +47,28 @@ def test_missing_ic_does_not_discard_finite_sharpe():
     assert metrics["rolling_sharpe"] == 0.0
 
 
+def test_ic_ratio_is_none_for_a_negative_baseline():
+    """Dividing two negative IC means gives a positive ratio, so a rolling
+    IC that got MUCH more negative than an already-negative baseline (real
+    decay) would otherwise produce a large positive ic_ratio that reads as
+    healthy improvement instead of decay."""
+    history_newest_first = [BenchResult(ic_mean=v) for v in [-0.05] * 5 + [-0.001] * 5]
+
+    metrics = compute_decay_metrics(history_newest_first)
+
+    assert metrics["baseline_ic_mean"] == pytest.approx(-0.001)
+    assert metrics["rolling_ic_mean"] == pytest.approx(-0.05)
+    assert metrics["ic_ratio"] is None
+
+
+def test_ic_ratio_still_computed_for_a_positive_baseline():
+    history_newest_first = [BenchResult(ic_mean=v) for v in [0.02] * 5 + [0.04] * 5]
+
+    metrics = compute_decay_metrics(history_newest_first)
+
+    assert metrics["ic_ratio"] == pytest.approx(0.5)
+
+
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
 @pytest.mark.parametrize("field", ["ic_mean", "sharpe"])
 @pytest.mark.parametrize("invalid", [math.nan, math.inf, -math.inf])

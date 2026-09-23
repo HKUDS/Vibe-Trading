@@ -849,6 +849,7 @@ _MARKET_TO_SOURCE = {
     "india_equity": "yahoo",
     "kr_equity": "pykrx",
     "ca_equity": "yahoo",
+    "ar_equity": "yahoo",
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
     "crypto": "okx",
@@ -1531,6 +1532,15 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
         return VietnamEquityEngine(config)
+    # Argentina market-data routing is supported, but BYMA execution rules
+    # are not modeled yet. Fail closed instead of silently applying US/crypto
+    # commissions, lot sizes, settlement, or short-selling assumptions.
+    if "ar_equity" in markets:
+        raise ValueError(
+            "Argentina .BA market data is supported, but Argentina backtest "
+            "execution rules are not modeled yet"
+        )
+
     # Index symbols (^SPX, ^FTSE, ...) — priced like a US/global-listed
     # instrument (GlobalEquityEngine, US rules) and never the China/crypto
     # default the source-based fallback would pick.

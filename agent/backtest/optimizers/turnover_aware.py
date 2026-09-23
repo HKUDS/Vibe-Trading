@@ -95,7 +95,14 @@ class TurnoverAwareOptimizer(BaseOptimizer):
     def _build_context(
         self, window: pd.DataFrame, active: List[str]
     ) -> "Dict[str, Any] | None":
-        """Mean vector, covariance, and active codes for the current window."""
+        """Mean vector, covariance, and active codes for the current window.
+
+        ``window`` arrives in position space (see ``BaseOptimizer.optimize``),
+        so ``mu`` is the position's expected return and ``cov`` the position
+        covariance -- this optimizer's ``objective`` has the same ``w @ mu``
+        term and the same ``w @ cov @ w`` variance term as the mean-variance
+        one, and needs both in the same space.
+        """
         mu = window.mean().values
         cov = window.cov().values
         if np.isnan(cov).any() or np.isnan(mu).any():

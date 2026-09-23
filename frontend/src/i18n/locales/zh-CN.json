@@ -571,6 +571,9 @@
         "kr_equity": "韩国股票",
         "ca_equity": "加拿大股票",
         "vietnam_equity": "越南股票",
+        "ar_equity": "阿根廷股票",
+        "uk_equity": "英国股票",
+        "index": "指数",
         "crypto": "加密货币",
         "futures": "期货",
         "fund": "基金",
@@ -870,6 +873,9 @@
         "crypto": "加密货币",
         "futures": "期货",
         "forex": "外汇",
+        "ar_equity": "阿根廷股",
+        "uk_equity": "英股",
+        "vietnam_equity": "越股",
         "other": "其他"
       }
     },
@@ -1635,8 +1641,7 @@
       "coverage": "估值覆盖率",
       "coverageNote": "已定价 {{priced}} · 现金 {{cash}}",
       "lastComplete": "最后一次完整更新",
-      "excluded": "{{count}} 个账户读取失败，未计入该合计",
-      "changeCanonicalNote": "来自 Asistente Casa 的规范每日投资组合变动"
+      "excluded": "{{count}} 个账户读取失败，未计入该合计"
     },
     "allocation": {
       "byAccount": "按账户分布",
@@ -1673,8 +1678,7 @@
       "colPnl": "未实现盈亏",
       "colData": "数据状态",
       "priced": "已定价",
-      "unpriced": "未定价",
-      "colToday": "今日"
+      "unpriced": "未定价"
     },
     "history": {
       "title": "资产历史",

@@ -73,7 +73,11 @@ def compute_decay_metrics(
         result["baseline_ic_mean"] = round(baseline_mean, 6)
         result["rolling_ic_mean"] = round(rolling_mean, 6)
 
-        if baseline_mean != 0:
+        # baseline_mean > 0, not != 0: with a negative baseline, dividing
+        # two negatives gives a positive ratio, so a rolling IC that got
+        # much MORE negative (real decay) produces a large ic_ratio that
+        # the healthy/warning/decayed thresholds read as improvement.
+        if baseline_mean > 0:
             result["ic_ratio"] = round(rolling_mean / baseline_mean, 4)
 
         if len(rolling_ics) > 1:
