@@ -1641,7 +1641,8 @@
       "coverage": "Cobertura de valoración",
       "coverageNote": "Valorado {{priced}} · efectivo {{cash}}",
       "lastComplete": "Última actualización completa",
-      "excluded": "No se pudieron leer {{count}} cuentas y quedan fuera de este total"
+      "excluded": "No se pudieron leer {{count}} cuentas y quedan fuera de este total",
+      "changeCanonicalNote": "Variación diaria canónica de Asistente Casa"
     },
     "allocation": {
       "byAccount": "Distribución por cuenta",
@@ -1678,7 +1679,8 @@
       "colPnl": "P/G no realizada",
       "colData": "Datos",
       "priced": "Con precio",
-      "unpriced": "Sin precio"
+      "unpriced": "Sin precio",
+      "colToday": "Hoy"
     },
     "history": {
       "title": "Histórico de activos",
