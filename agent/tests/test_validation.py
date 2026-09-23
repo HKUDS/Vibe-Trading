@@ -121,6 +121,22 @@ class TestMonteCarlo:
         r2 = monte_carlo_test(trades, 1_000_000, n_simulations=100, seed=42)
         assert r1["p_value_sharpe"] == r2["p_value_sharpe"]
 
+    def test_actual_sharpe_respects_bars_per_year(self) -> None:
+        # actual_sharpe must annualise with the caller's bars_per_year, not a
+        # hardcoded 252 -- otherwise it silently disagrees with
+        # bootstrap_sharpe_ci's Sharpe on a crypto (365) or forex (260) run
+        # in the same validation report.
+        trades = _make_trades([100, -50, 200, -30, 150, -80, 120, -40, 90, -20])
+        default = monte_carlo_test(trades, 1_000_000, n_simulations=50, seed=1)
+        crypto = monte_carlo_test(
+            trades, 1_000_000, n_simulations=50, seed=1, bars_per_year=365
+        )
+        assert default["actual_sharpe"] != crypto["actual_sharpe"]
+        expected_ratio = (365 / 252) ** 0.5
+        assert crypto["actual_sharpe"] == pytest.approx(
+            default["actual_sharpe"] * expected_ratio, abs=1e-3
+        )
+
 
 # ---------------------------------------------------------------------------
 # Bootstrap Sharpe CI
@@ -290,6 +306,20 @@ class TestRunValidation:
         result = run_validation(config, eq, trades, 1_000_000)
         assert "bootstrap" in result
         assert "monte_carlo" not in result
+
+    def test_monte_carlo_respects_run_validations_bars_per_year(self) -> None:
+        # run_validation resolves bars_per_year once and threads it into
+        # bootstrap/walk_forward already; monte_carlo must receive the same
+        # value instead of silently annualising at a hardcoded 252.
+        eq = _make_equity(100)
+        trades = _make_trades([100, -50, 200, -30, 150, -80, 120, -40, 90, -20])
+        config = {"validation": {"monte_carlo": {"n_simulations": 50, "seed": 1}}}
+        default = run_validation(config, eq, trades, 1_000_000, bars_per_year=252)
+        crypto = run_validation(config, eq, trades, 1_000_000, bars_per_year=365)
+        expected_ratio = (365 / 252) ** 0.5
+        assert crypto["monte_carlo"]["actual_sharpe"] == pytest.approx(
+            default["monte_carlo"]["actual_sharpe"] * expected_ratio, abs=1e-3
+        )
 
     @pytest.mark.parametrize(
         ("section", "field", "value"),

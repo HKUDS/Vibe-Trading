@@ -74,6 +74,7 @@ _CORRECTION_REASONS = {
     "value_mismatch": "the observed evidence is {range}",
     "not_in_referenced_call": "call {ref} returned no such value",
     "ambiguous_field_ref": "{ref} names {sources}, which hold different values; use the one quoted as the ref",
+    "tail_risk_needs_field_ref": "this session holds {sources}, which are different measurements; declare the figure with a ref naming the field it quotes (data.tail_risk.var_99, var_99, or q1::historical_var)",
     "no_formula": "its note states no arithmetic",
     "formula_not_evaluable": "its note is not an arithmetic expression over two or more operands",
     "formula_not_anchored": "no operand of its note is a value this session observed",

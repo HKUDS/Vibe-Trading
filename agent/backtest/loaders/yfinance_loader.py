@@ -255,7 +255,7 @@ class DataLoader:
     name = "yfinance"
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
-        "vietnam_equity", "uk_equity", "crypto",
+        "vietnam_equity", "uk_equity", "ar_equity", "crypto",
     }
     # yfinance volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00

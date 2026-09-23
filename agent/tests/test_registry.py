@@ -202,6 +202,7 @@ class TestFallbackChains:
             "india_equity",
             "kr_equity",
             "ca_equity",
+            "ar_equity",
             "uk_equity",
             "vietnam_equity",
             "crypto",
@@ -215,6 +216,9 @@ class TestFallbackChains:
 
     def test_canada_chain_uses_only_compatible_sources(self) -> None:
         assert FALLBACK_CHAINS["ca_equity"] == ["yahoo", "yfinance", "local"]
+
+    def test_argentina_chain_uses_only_compatible_sources(self) -> None:
+        assert FALLBACK_CHAINS["ar_equity"] == ["yahoo", "yfinance", "local"]
 
     def test_vietnam_chain_uses_only_compatible_sources(self) -> None:
         assert FALLBACK_CHAINS["vietnam_equity"] == ["yahoo", "yfinance", "local"]

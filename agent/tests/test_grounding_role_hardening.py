@@ -577,11 +577,94 @@ def _pct(value: float) -> str:
     return f"{abs(value) * 100:.2f}%"
 
 
-@pytest.mark.parametrize("ref", ["data.tail_risk.var_95", "tail_risk.var_95", "var_95", "x1"])
+@pytest.mark.parametrize("ref", ["data.tail_risk.var_95", "tail_risk.var_95", "var_95"])
 def test_a_tail_risk_ref_grounds_its_own_value(tmp_path: Path, ref: str) -> None:
     result = _ledger(tmp_path, MARKET_A, XRAY).validate_final_answer(
         HDR + " VaR 95%: 1.57%。" + _block(ROW, "95% | count | confidence", f"1.57% | observed | VaR 95% | {ref}")
     )
+    assert result.valid is True, result.issues
+
+
+#: One tail-risk identity in the whole session: nothing to choose between.
+XRAY_ONE = (
+    "portfolio_risk_xray",
+    {"symbols": [A]},
+    {"status": "ok", "data": {"tail_risk": {"var_95": 0.0157}}},
+    "x1",
+)
+
+
+def test_a_call_scoped_ref_does_not_choose_a_tail_risk_identity(tmp_path: Path) -> None:
+    """#1425's remaining half: ``ref x1`` pools every tail-risk field that call
+    returned, so it cannot say whether 1.57% is the VaR 95% or the ES 95%.
+
+    This is the policy the owner decided on 2026-09-23 rather than a patch: when
+    a session holds more than one tail-risk identity, the figure has to name its
+    field. It costs a correction round on an answer that reads correctly today,
+    which is the price of the gate not reading the words "VaR 95%" beside it.
+    """
+    result = _ledger(tmp_path, MARKET_A, XRAY).validate_final_answer(
+        HDR + " VaR 95%: 1.57%。" + _block(ROW, "95% | count | confidence", "1.57% | observed | VaR 95% | x1")
+    )
+
+    assert result.valid is False
+    assert _reasons(result) == ["tail_risk_needs_field_ref"]
+    # The correction names every identity the call returned, so the model can
+    # pick one, not just the one the number happened to match.
+    assert result.issues[0]["ambiguous_sources"] == ["es_95", "es_99", "var_95", "var_99"]
+
+
+def test_an_undeclared_tail_risk_percent_needs_a_field_ref(tmp_path: Path) -> None:
+    """The undeclared half of the same rule: a percent a tool returned needs no
+    declaration, so it was matched against every tail-risk value in the session.
+    """
+    result = _ledger(tmp_path, MARKET_A, XRAY).validate_final_answer(HDR + " 单日 VaR 为 1.57%。")
+
+    assert result.valid is False
+    assert _reasons(result) == ["tail_risk_needs_field_ref"]
+
+
+def test_one_tail_risk_identity_still_grounds_without_a_ref(tmp_path: Path) -> None:
+    """The other side of the guard: the rule fires on ambiguity, not on tail risk.
+
+    Same claim, same prose, a session holding only ``var_95`` -- no ref needed,
+    and an invented value is still rejected.
+    """
+    grounded = _ledger(tmp_path, MARKET_A, XRAY_ONE).validate_final_answer(
+        HDR + " 单日 VaR 为 1.57%。"
+    )
+    invented = _ledger(tmp_path, MARKET_A, XRAY_ONE).validate_final_answer(
+        HDR + " 单日 VaR 为 3.10%。"
+    )
+
+    assert grounded.valid is True, grounded.issues
+    assert invented.valid is False
+
+
+def test_an_invented_value_is_a_mismatch_not_a_missing_ref(tmp_path: Path) -> None:
+    """The rule keys on the value the figure matches, not on the session merely
+    holding tail risk: 2.11% is the ES 95% and needs a ref, while 3.10% is in no
+    tail-risk field and must keep saying so -- a fabricated number told to "add a
+    ref" would send the model looking for a field that holds it."""
+    ambiguous = _ledger(tmp_path / "a", MARKET_A, XRAY).validate_final_answer(
+        HDR + " 单日 VaR 为 2.11%。"
+    )
+    invented = _ledger(tmp_path / "b", MARKET_A, XRAY).validate_final_answer(
+        HDR + " 单日 VaR 为 3.10%。"
+    )
+
+    assert _reasons(ambiguous) == ["tail_risk_needs_field_ref"]
+    assert _reasons(invented) == ["value_mismatch"]
+
+
+def test_a_non_tail_risk_figure_is_untouched_by_the_ref_rule(tmp_path: Path) -> None:
+    """A sharpe from another call still grounds off a call-scoped ref while the
+    session holds four tail-risk identities -- the rule keys on the value the
+    figure matches, not on the session having tail risk in it."""
+    result = _ledger(tmp_path, MARKET_A, XRAY, FACTOR_A).validate_final_answer(
+        HDR + " 夏普 0.888。" + _block(ROW, "0.888 | observed | sharpe | fa")
+    )
+
     assert result.valid is True, result.issues
 
 

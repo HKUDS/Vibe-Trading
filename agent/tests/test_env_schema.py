@@ -127,12 +127,15 @@ class TestEnvConfigDefaults:
         assert c.data.longbridge_app_secret == ""
         assert c.data.longbridge_access_token == ""
         # Per-market source-order overrides default to unset (default chains).
-        for market in (
-            "a_share", "us_equity", "hk_equity", "india_equity", "kr_equity",
-            "ca_equity", "vietnam_equity", "crypto", "futures", "fund",
-            "macro", "forex", "index",
-        ):
-            assert getattr(c.data, f"market_data_order_{market}") == ""
+        # Derived from the chains, not hand-listed: the hand-written list here
+        # and the field block it guarded both missed uk_equity for as long as
+        # that market existed, so a new market shipped without its typed field.
+        from backtest.loaders.registry import FALLBACK_CHAINS
+
+        for market in FALLBACK_CHAINS:
+            field = f"market_data_order_{market}"
+            assert hasattr(c.data, field), f"{field} missing from EnvConfig.data"
+            assert getattr(c.data, field) == ""
 
     def test_api_defaults(self) -> None:
         c = EnvConfig()

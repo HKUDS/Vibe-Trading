@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Argentina (BYMA) market data** (#1543). A `.BA` symbol — a BYMA listing or a
+  locally traded CEDEAR — is its own market `ar_equity`, quoted in ARS, served
+  by `yahoo` → `yfinance` → `local`, and reported as market `ar` by
+  `get_stock_profile`. Execution is deliberately not modelled: an Argentine
+  backtest raises instead of borrowing US or crypto commissions, lot sizes,
+  settlement and short-selling rules. The Web UI carries the market too —
+  Settings source priority, the positions asset-class grouping and the sector
+  union — and with it `uk_equity`, `vietnam_equity` and `index`, which had been
+  missing from one or more of those three since they landed. `EnvConfig.data`'s
+  per-market `MARKET_DATA_ORDER_*` fields are now guarded against
+  `FALLBACK_CHAINS` instead of a hand-written list, which is why `uk_equity`
+  never had one.
+
 - **Weekly and monthly bars** (#1479). `get_market_data` and backtests take
   `1W` and `1M` (and `1w` / `1wk` / `1mo`). Loaders are still asked for daily
   bars; `loaders.base.resample_bars` builds the period bar at the three fetch
@@ -162,6 +175,50 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `OPENROUTER_API_KEY`.
 
 ### Fixed
+
+- **A tail-risk figure names its own field once a session holds more than one**
+  (#1425, after #1444). A call- or tool-scoped ref (`ref x1`) pooled every
+  tail-risk field that call returned, and an undeclared tail-risk percent pooled
+  every tail-risk value in the session, so an ES 95% could quote the VaR 95%
+  value and pass. The rule is read off the evidence, never off prose:
+  `tail_risk_identity()` takes (measure, confidence) from the field name a tool
+  returned, so `var_95` and `es_95` are two identities while `cvar_99` and
+  `es_99` are one. When a scope holds two or more and the figure's value matches
+  one of them, it is refused with `tail_risk_needs_field_ref`, whose correction
+  names every identity the session holds; a figure matching no tail-risk value
+  keeps its old reason, so a fabricated number is still a mismatch rather than a
+  missing ref. Accepted cost, stated in the issue: an undeclared VaR 95% beside a
+  VaR 99% is correct today and now costs one correction round. The system prompt
+  states the rule so a risk report declares the ref on its first attempt.
+- **Mean-variance style optimizers size a short by its own expected return**
+  (#1548). The optimizers scored every position as if it were held long, so the
+  strongest shorts (most negative drift) looked worst and got the least capital.
+  `BaseOptimizer.optimize` now negates a short's column before building the
+  context, so `mu` is the position's expected return AND `cov` is the position
+  covariance `D Σ D`: a long and a short of two +0.92 correlated names hedge
+  instead of reading as correlated (the old objective put the whole book on the
+  long, the new one splits it 0.514 / -0.486). Risk-parity and
+  max-diversification contexts get the position covariance with it;
+  volatility-only contexts are unchanged, since std(-r) == std(r).
+- **Monte-Carlo validation annualises at the venue's bars per year** (#1546). It
+  hardcoded 252 while `bootstrap_sharpe_ci` and `walk_forward_analysis` in the
+  same report used the resolved value, so a crypto (365) or forex (260) run
+  published two disagreeing Sharpes.
+- **A futures order on a negative-price bar is no longer rejected outright**
+  (#1547). `FuturesBaseEngine` dropped the `abs(price)` its base class relies on
+  under `allow_nonpositive_prices`, so size came out negative and the caller's
+  `size <= 0` guard refused every order.
+- **A factor's IC ratio is unset for a negative baseline** (#1549). Dividing two
+  negative IC means gives a positive ratio, so a rolling IC that got further
+  below zero reported as improvement. The signal itself took the worst of the
+  available metrics and was not fooled; the published number was.
+- **Two memories sharing a title keep separate index rows and links** (#1545).
+  Under `VT_MEMORY_HIERARCHY` an entry lives at `{memory_type}/{slug}.md`, so
+  two entries with one title had the same `path.name`: the second `add()`
+  overwrote the first's `MEMORY.md` row, and the semantic-link block beside it
+  excluded the other entry as "self" and wrote an ambiguous target. Both key on
+  the path relative to the memory dir now; a sidecar written earlier, with a
+  bare filename or an absolute path, is still read.
 
 - **Read-only results lost to context compaction are restored, not refetched**
   (#1488). A successful read-only call whose payload compaction removed is

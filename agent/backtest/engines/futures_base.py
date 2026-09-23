@@ -46,11 +46,17 @@ class FuturesBaseEngine(BaseEngine):
     def _calc_margin(
         self, symbol: str, size: float, price: float, leverage: float,
     ) -> float:
+        # abs(price): BaseEngine's allow_nonpositive_prices opts an engine
+        # into opening on a negative-price bar with abs()-based sizing and
+        # margin; this override must keep the same invariant or collateral
+        # goes negative for those bars.
         cm = self.get_contract_multiplier(symbol)
-        return size * price * cm / leverage
+        return size * abs(price) * cm / leverage
 
     def _calc_raw_size(
         self, symbol: str, target_notional: float, price: float,
     ) -> float:
+        # abs(price): a negative entry price must not flip size negative,
+        # which the caller's `size <= 0` guard would then reject outright.
         cm = self.get_contract_multiplier(symbol)
-        return target_notional / (price * cm)
+        return target_notional / (abs(price) * cm)

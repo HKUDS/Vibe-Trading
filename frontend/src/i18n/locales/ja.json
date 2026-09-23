@@ -571,6 +571,9 @@
         "kr_equity": "韓国株",
         "ca_equity": "カナダ株",
         "vietnam_equity": "ベトナム株",
+        "ar_equity": "アルゼンチン株",
+        "uk_equity": "英国株",
+        "index": "指数",
         "crypto": "暗号資産",
         "futures": "先物",
         "fund": "ファンド",
@@ -870,6 +873,9 @@
         "crypto": "暗号資産",
         "futures": "先物",
         "forex": "外国為替",
+        "ar_equity": "アルゼンチン株",
+        "uk_equity": "英国株",
+        "vietnam_equity": "ベトナム株",
         "other": "その他"
       }
     },

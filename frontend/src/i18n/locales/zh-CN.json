@@ -571,6 +571,9 @@
         "kr_equity": "韩国股票",
         "ca_equity": "加拿大股票",
         "vietnam_equity": "越南股票",
+        "ar_equity": "阿根廷股票",
+        "uk_equity": "英国股票",
+        "index": "指数",
         "crypto": "加密货币",
         "futures": "期货",
         "fund": "基金",
@@ -870,6 +873,9 @@
         "crypto": "加密货币",
         "futures": "期货",
         "forex": "外汇",
+        "ar_equity": "阿根廷股",
+        "uk_equity": "英股",
+        "vietnam_equity": "越股",
         "other": "其他"
       }
     },

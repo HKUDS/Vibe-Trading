@@ -576,6 +576,9 @@
         "kr_equity": "Acciones de Corea",
         "ca_equity": "Acciones de Canadá",
         "vietnam_equity": "Acciones de Vietnam",
+        "ar_equity": "Acciones de Argentina",
+        "uk_equity": "Acciones del Reino Unido",
+        "index": "Índices",
         "crypto": "Cripto",
         "futures": "Futuros",
         "fund": "Fondos",
@@ -875,6 +878,9 @@
         "crypto": "Criptomonedas",
         "futures": "Futuros",
         "forex": "Divisas",
+        "ar_equity": "Renta variable Argentina",
+        "uk_equity": "Renta variable Reino Unido",
+        "vietnam_equity": "Renta variable Vietnam",
         "other": "Otros"
       }
     },

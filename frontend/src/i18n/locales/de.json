@@ -576,6 +576,9 @@
         "kr_equity": "Korea-Aktien",
         "ca_equity": "Kanada-Aktien",
         "vietnam_equity": "Vietnam-Aktien",
+        "ar_equity": "Argentinien-Aktien",
+        "uk_equity": "UK-Aktien",
+        "index": "Indizes",
         "crypto": "Krypto",
         "futures": "Futures",
         "fund": "Fonds",
@@ -875,6 +878,9 @@
         "crypto": "Krypto",
         "futures": "Futures",
         "forex": "Devisen",
+        "ar_equity": "Argentinien-Aktien",
+        "uk_equity": "UK-Aktien",
+        "vietnam_equity": "Vietnam-Aktien",
         "other": "Sonstige"
       }
     },

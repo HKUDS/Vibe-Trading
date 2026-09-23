@@ -472,6 +472,47 @@ _QUALIFIER_SUFFIXES = frozenset(
 )
 
 
+#: Tail-risk measure per field-name token, scanned right to left like every
+#: other head-noun rule in this module. VaR and ES/CVaR are different
+#: measurements of the same family, and 95% and 99% are different numbers of
+#: either, so the family alone cannot say which value a figure quotes (#1425).
+_TAIL_RISK_MEASURE_TOKENS = {
+    "var": "var",
+    "cvar": "es",
+    "es": "es",
+    "shortfall": "es",
+}
+
+
+def tail_risk_identity(path: str) -> str | None:
+    """The tail-risk identity an evidence field names, e.g. ``var_95``.
+
+    Read off the FIELD NAME a tool returned — never off answer prose, which the
+    gate does not interpret. ``data.tail_risk.var_95`` and ``historical_var``
+    are ``var_95`` and ``var``; ``cvar_99`` and ``es_99`` are both ``es_99``,
+    which is the point: they are the same measurement under two names.
+
+    Args:
+        path: Evidence JSON path or leaf name.
+
+    Returns:
+        ``"<measure>"`` or ``"<measure>_<confidence>"``, or None when the field
+        is not a tail-risk value at all.
+    """
+    if _metric_kind_for_path(path) != "tail_risk":
+        return None
+    tokens = [token for token in re.split(r"[_.]", _leaf_name(path)) if token]
+    confidence = tokens[-1] if tokens and tokens[-1].isdigit() else ""
+    measure = None
+    for token in reversed([token for token in tokens if not token.isdigit()]):
+        measure = _TAIL_RISK_MEASURE_TOKENS.get(token)
+        if measure is not None:
+            break
+    if measure is None:
+        return None
+    return f"{measure}_{confidence}" if confidence else measure
+
+
 def _metric_kind_for_path(path: str) -> str | None:
     """Map an evidence JSON path to an analysis metric kind.
 

@@ -32,6 +32,7 @@ def monte_carlo_test(
     initial_capital: float,
     n_simulations: int = 1000,
     seed: int = 42,
+    bars_per_year: int = 252,
 ) -> Dict[str, Any]:
     """Shuffle trade PnL order to test path significance.
 
@@ -43,6 +44,8 @@ def monte_carlo_test(
         initial_capital: Starting capital.
         n_simulations: Number of random permutations.
         seed: Random seed for reproducibility.
+        bars_per_year: Annualisation factor (must match bootstrap_sharpe_ci
+            and walk_forward_analysis so the report's Sharpe figures agree).
 
     Returns:
         Dict with actual_sharpe, p_value_sharpe, actual_max_dd,
@@ -59,7 +62,7 @@ def monte_carlo_test(
         return {"error": "need at least 3 trades", "p_value_sharpe": 1.0}
 
     pnls = np.array([t.pnl for t in trades])
-    actual = _path_metrics(pnls, initial_capital)
+    actual = _path_metrics(pnls, initial_capital, bars_per_year)
 
     rng = np.random.default_rng(seed)
     sharpe_count = 0
@@ -74,7 +77,7 @@ def monte_carlo_test(
         shuffled = rng.permutation(pnls)
         if sim_equities is not None:
             sim_equities[i] = initial_capital + np.cumsum(shuffled)
-        sim = _path_metrics(shuffled, initial_capital)
+        sim = _path_metrics(shuffled, initial_capital, bars_per_year)
         sim_sharpes.append(sim["sharpe"])
         if sim["sharpe"] >= actual["sharpe"]:
             sharpe_count += 1
@@ -114,7 +117,9 @@ def monte_carlo_test(
     return result
 
 
-def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, float]:
+def _path_metrics(
+    pnls: np.ndarray, initial_capital: float, bars_per_year: int = 252
+) -> Dict[str, float]:
     """Compute Sharpe and max drawdown from a PnL sequence."""
     equity = initial_capital + np.cumsum(pnls)
     if len(equity) > 1:
@@ -124,7 +129,7 @@ def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, float]:
     else:
         returns = np.array([0.0])
     std = returns.std()
-    sharpe = float(returns.mean() / (std + 1e-10) * np.sqrt(252))
+    sharpe = float(returns.mean() / (std + 1e-10) * np.sqrt(bars_per_year))
     peak = np.maximum.accumulate(equity)
     dd = (equity - peak) / np.where(peak > 0, peak, 1.0)
     max_dd = float(dd.min())
@@ -330,6 +335,7 @@ def run_validation(
             initial_capital,
             n_simulations=mc_cfg.get("n_simulations", 1000),
             seed=mc_cfg.get("seed", 42),
+            bars_per_year=bars_per_year,
         )
 
     if "bootstrap" in v_cfg:

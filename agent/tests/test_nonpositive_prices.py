@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 
 from backtest.engines.base import BaseEngine
+from backtest.engines.futures_base import FuturesBaseEngine
 from backtest.loaders.base import validate_ohlc
 
 FIXTURE = Path(__file__).parent / "fixtures" / "negative_close_bars.csv"
@@ -194,3 +195,53 @@ def test_raw_size_positive_for_negative_price() -> None:
     eng = _engine(allow=True)
     size = eng._calc_raw_size("POWER-DA-DELU", target_notional=500_000.0, price=-5.0)
     assert size == pytest.approx(100_000.0)  # not -100_000
+
+
+# ---------------------------------------------------------------------------
+# FuturesBaseEngine: same abs()-based invariant, with a contract multiplier
+# ---------------------------------------------------------------------------
+
+
+class _PlainFuturesEngine(FuturesBaseEngine):
+    """Minimal concrete futures engine: fixed multiplier, isolates
+    FuturesBaseEngine's price handling."""
+
+    def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
+        return True
+
+    def round_size(self, raw_size: float, price: float) -> float:
+        return raw_size
+
+    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
+        return 0.0
+
+    def apply_slippage(self, price: float, direction: int) -> float:
+        return price
+
+    def get_contract_multiplier(self, symbol: str) -> float:
+        return 10.0
+
+
+def _futures_engine(*, allow: bool) -> _PlainFuturesEngine:
+    return _PlainFuturesEngine({"initial_cash": 1_000_000, "allow_nonpositive_prices": allow})
+
+
+def test_futures_raw_size_positive_for_negative_price() -> None:
+    eng = _futures_engine(allow=True)
+    size = eng._calc_raw_size("CU2406.SHF", target_notional=500_000.0, price=-5.0)
+    assert size == pytest.approx(10_000.0)  # not -10_000 (500_000 / (5.0 * 10))
+
+
+def test_futures_margin_positive_for_negative_price() -> None:
+    eng = _futures_engine(allow=True)
+    margin = eng._calc_margin("CU2406.SHF", size=1_000.0, price=-5.0, leverage=1.0)
+    assert margin == pytest.approx(50_000.0)  # not -50_000
+
+
+def test_futures_opens_on_negative_price_bar_when_allowed() -> None:
+    eng = _futures_engine(allow=True)
+    df, ts = _bar_df(-5.0)
+    order = eng._plan_open_order("CU2406.SHF", 0.5, df, ts, equity=1_000_000)
+    assert order is not None
+    assert order.size > 0
+    assert order.margin > 0
