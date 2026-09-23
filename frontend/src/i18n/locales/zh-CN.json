@@ -1641,7 +1641,8 @@
       "coverage": "估值覆盖率",
       "coverageNote": "已定价 {{priced}} · 现金 {{cash}}",
       "lastComplete": "最后一次完整更新",
-      "excluded": "{{count}} 个账户读取失败，未计入该合计"
+      "excluded": "{{count}} 个账户读取失败，未计入该合计",
+      "changeCanonicalNote": "来自 Asistente Casa 的规范每日投资组合变动"
     },
     "allocation": {
       "byAccount": "按账户分布",
@@ -1678,7 +1679,8 @@
       "colPnl": "未实现盈亏",
       "colData": "数据状态",
       "priced": "已定价",
-      "unpriced": "未定价"
+      "unpriced": "未定价",
+      "colToday": "今日"
     },
     "history": {
       "title": "资产历史",
