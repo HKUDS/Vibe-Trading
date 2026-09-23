@@ -1641,7 +1641,8 @@
       "coverage": "Valuation coverage",
       "coverageNote": "Priced {{priced}} · cash {{cash}}",
       "lastComplete": "Last complete update",
-      "excluded": "{{count}} accounts could not be read and are excluded from this total"
+      "excluded": "{{count}} accounts could not be read and are excluded from this total",
+      "changeCanonicalNote": "Canonical daily portfolio change from Asistente Casa"
     },
     "allocation": {
       "byAccount": "Allocation by account",
@@ -1678,7 +1679,8 @@
       "colPnl": "Unrealized P/L",
       "colData": "Data",
       "priced": "Priced",
-      "unpriced": "Unpriced"
+      "unpriced": "Unpriced",
+      "colToday": "Today"
     },
     "history": {
       "title": "Asset history",
