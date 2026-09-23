@@ -26,6 +26,7 @@ from src.agent.grounding.evidence import (
     _metric_kind_for_path,
     _price_field_for_path,
     _timestamp_matches_claim_date,
+    tail_risk_identity,
 )
 from src.agent.grounding.figures import (
     Declaration,
@@ -884,6 +885,41 @@ class _PolicyMixin:
         if len({(call, path) for call, path, _ in sources}) < 2 or len({value for *_, value in sources}) < 2:
             return []
         return sorted({f"{call}::{path}" for call, path, _ in sources})
+
+    def _tail_risk_sources(
+        self,
+        records: Sequence[EvidenceRecord],
+        entries: Iterable[Mapping[str, Any]] = (),
+    ) -> list[tuple[str, float]]:
+        """Return (identity, value) pairs for observed tail-risk fields."""
+        sources: list[tuple[str, float]] = []
+        for record in records:
+            identity = tail_risk_identity(record.field)
+            if identity and record.status == "observed" and record.value is not None:
+                sources.append((identity, float(record.value)))
+        for entry in entries:
+            identity = tail_risk_identity(str(entry.get("field") or ""))
+            if identity and entry.get("value") is not None:
+                sources.append((identity, float(entry["value"])))
+        return sources
+
+    def _tail_risk_ref_required(
+        self,
+        figure: Figure,
+        records: Sequence[EvidenceRecord],
+        entries: Iterable[Mapping[str, Any]] = (),
+    ) -> list[str]:
+        """Return matching tail-risk identities when a field ref is required."""
+        sources = self._tail_risk_sources(records, entries)
+        if len({identity for identity, _ in sources}) < 2:
+            return []
+        return sorted(
+            {
+                identity
+                for identity, value in sources
+                if self._matches_evidence(figure, [value], [value])
+            }
+        )
 
     def _price_pool(
         self,
