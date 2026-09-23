@@ -211,23 +211,12 @@ class _ReleaseMixin:
                 "rebuild the final figures block on every revision; do not drop it after "
                 "fixing precision, wording, or refs. Every measured figure that remains "
                 "in the prose must still have a valid declaration in that block.",
-                "In each figures declaration, the value field must be ONLY the normalized "
-                "numeric token the scanner sees: no currency prefix, no thousands separators, "
-                "no explanatory words, and a dot for decimals. For example use `123456789.125`, "
-                "not `ARS 123.456.789,125`. If prose says `17.6351 puntos porcentuales` "
-                "or writes a separated unit such as `17.6351 pp`, declare the bare "
-                "`17.6351`; do not put `puntos porcentuales` or separated unit text in "
-                "the value field. A textual/separated unit does not change the scanner's "
-                "percent shape.",
-                "The prose and declaration must use the SAME percent shape for every "
-                "measured occurrence. If a value is a percentage, keep the '%' attached "
-                "every time it appears in prose, including inside displayed formulas: write "
-                "`37.6351% - 20.0% = 17.6351 pp`, not `37.6351% - 20.0 = 17.6351 pp`. "
-                "A bare decimal such as `20.0` is scanned as non-percent and cannot be "
-                "covered by a `20.0%` declaration.",
-                "Derived notes must use raw tool-result operands and plain arithmetic only. "
-                "If a derived figure previously needed multiple refs, preserve ALL of those "
-                "refs in the corrected declaration; never collapse it back to the calculator alone.",
+                "In each figures declaration, write the value as a normalized raw number "
+                "without a currency prefix or thousands separators and with a dot decimal "
+                "(for example 123456789.125, not ARS 123.456.789,125). Derived notes must "
+                "use raw tool-result operands and plain arithmetic only. If a derived "
+                "figure previously needed multiple refs, preserve ALL of those refs in "
+                "the corrected declaration; never collapse it back to the calculator alone.",
                 "Reuse the exact locked symbol and venue.",
                 "Do not attach figures to a symbol no tool call in this session handled; "
                 "report it as not retrieved instead.",
