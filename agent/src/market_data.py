@@ -70,7 +70,6 @@ def detect_source(code: str) -> str:
     return "tushare"
 
 
-
 def get_loader(source: str):
     """Get loader class via registry with fallback support."""
     from backtest.loaders.registry import get_loader_cls_with_fallback
@@ -87,10 +86,46 @@ def get_loader(source: str):
 #: search, fetch and grounding all agree.
 FIAT_CODES = frozenset(
     {
-        "USD", "EUR", "GBP", "JPY", "CHF", "CNY", "CNH", "HKD", "AUD", "NZD",
-        "CAD", "KRW", "INR", "SGD", "SEK", "NOK", "DKK", "MXN", "BRL", "ZAR",
-        "TRY", "RUB", "PLN", "THB", "MYR", "IDR", "PHP", "VND", "ILS", "AED",
-        "SAR", "EGP", "CZK", "HUF", "RON", "CLP", "COP", "PEN", "TWD", "CUP",
+        "USD",
+        "EUR",
+        "GBP",
+        "JPY",
+        "CHF",
+        "CNY",
+        "CNH",
+        "HKD",
+        "AUD",
+        "NZD",
+        "CAD",
+        "KRW",
+        "INR",
+        "SGD",
+        "SEK",
+        "NOK",
+        "DKK",
+        "MXN",
+        "BRL",
+        "ZAR",
+        "TRY",
+        "RUB",
+        "PLN",
+        "THB",
+        "MYR",
+        "IDR",
+        "PHP",
+        "VND",
+        "ILS",
+        "AED",
+        "SAR",
+        "EGP",
+        "CZK",
+        "HUF",
+        "RON",
+        "CLP",
+        "COP",
+        "PEN",
+        "TWD",
+        "CUP",
     }
 )
 
@@ -208,6 +243,7 @@ def fetch_market_data(
         FALLBACK_CHAINS,
         _NO_NETWORK_FALLBACK_SOURCES,
         get_source_order_override,
+        frame_caliber,
         price_caliber,
         refresh_source_order_overrides,
     )
@@ -219,12 +255,7 @@ def fetch_market_data(
 
     results: dict[str, Any] = {}
     provenance: dict[str, dict[str, Any]] = {}
-    result_aliases = {
-        code: code.split(":", 1)[1]
-        if code.lower().startswith("local:")
-        else code
-        for code in codes
-    }
+    result_aliases = {code: code.split(":", 1)[1] if code.lower().startswith("local:") else code for code in codes}
 
     groups: dict[tuple[str, str], list[str]] = {}
     for code in codes:
@@ -280,16 +311,9 @@ def fetch_market_data(
             override = None
         else:
             override = (
-                get_source_order_override(market)
-                if source == "auto"
-                and fallback_chain_provider is None
-                else None
+                get_source_order_override(market) if source == "auto" and fallback_chain_provider is None else None
             )
-            candidates = (
-                list(override)
-                if override is not None and src in override
-                else [src, *chain]
-            )
+            candidates = list(override) if override is not None and src in override else [src, *chain]
         # Deduplicate (preserving order), then cap the attempt budget.
         attempts: list[str] = []
         for candidate in candidates:
@@ -316,9 +340,7 @@ def fetch_market_data(
             try:
                 loader = loader_cls()
                 # Weekly and monthly bars are built from daily ones (#1479).
-                partial = loader.fetch(
-                    remaining, start_date, end_date, interval=source_interval(interval)
-                )
+                partial = loader.fetch(remaining, start_date, end_date, interval=source_interval(interval))
                 partial = {
                     code: resample_bars(frame, interval) if hasattr(frame, "groupby") else frame
                     for code, frame in (partial or {}).items()
@@ -326,7 +348,9 @@ def fetch_market_data(
             except Exception as exc:  # noqa: BLE001 — contained per-symbol fallback
                 logger.error(
                     "market-data loader %r failed for %s; trying next source in chain: %s",
-                    attempt_src, remaining, exc,
+                    attempt_src,
+                    remaining,
+                    exc,
                 )
                 continue
             if not partial:
@@ -345,15 +369,16 @@ def fetch_market_data(
         if used_source and used_source != src:
             logger.info(
                 "market-data source %r unavailable for %s; fell back to %r",
-                src, src_codes, used_source,
+                src,
+                src_codes,
+                used_source,
             )
-        served_elsewhere = sorted(
-            {serve_src for serve_src, _ in symbol_sources.values()} - {used_source}
-        )
+        served_elsewhere = sorted({serve_src for serve_src, _ in symbol_sources.values()} - {used_source})
         if served_elsewhere:
             logger.info(
                 "market-data per-symbol fallback: %s served the remaining symbols %r could not",
-                served_elsewhere, src,
+                served_elsewhere,
+                src,
             )
         return data_map, used_source, provider_cls, symbol_sources
 
@@ -383,9 +408,7 @@ def fetch_market_data(
             # A loader that converted its series reports the caliber it actually
             # served on the frame; the static (source, market) table is the
             # fallback for unconverted data (#1541).
-            adjustment = frame_attrs.get("adjustment")
-            if not isinstance(adjustment, str) or not adjustment:
-                adjustment = price_caliber(used_source or src, market, symbol)
+            adjustment = frame_caliber(df, used_source or src, market, symbol)
             entry: dict[str, Any] = {
                 "source": used_source or src,
                 "requested_source": source,
@@ -403,24 +426,19 @@ def fetch_market_data(
             provenance[symbol] = entry
 
     for (src, market), src_codes in groups.items():
-        data_map, used_source, provider_cls, symbol_sources = _fetch_via_chain(
-            src, market, src_codes
-        )
+        data_map, used_source, provider_cls, symbol_sources = _fetch_via_chain(src, market, src_codes)
         for symbol, df in data_map.items():
-            symbol_source, symbol_provider_cls = symbol_sources.get(
-                symbol, (used_source, provider_cls)
-            )
+            symbol_source, symbol_provider_cls = symbol_sources.get(symbol, (used_source, provider_cls))
             _emit(
-                symbol, df,
-                src=src, used_source=symbol_source, provider_cls=symbol_provider_cls,
+                symbol,
+                df,
+                src=src,
+                used_source=symbol_source,
+                provider_cls=symbol_provider_cls,
                 market=market,
             )
 
-    unresolved = [
-        code
-        for code in codes
-        if code not in results and result_aliases[code] not in results
-    ]
+    unresolved = [code for code in codes if code not in results and result_aliases[code] not in results]
 
     # Canadian venue-alias fallback: TSX (.TO) <-> TSX Venture (.V).
     #
@@ -459,21 +477,25 @@ def fetch_market_data(
                         "resolved_symbol": sibling,
                     }
                 logger.info(
-                    "market-data venue alias %s -> %s (source=%s)", code, sibling, src,
+                    "market-data venue alias %s -> %s (source=%s)",
+                    code,
+                    sibling,
+                    src,
                 )
                 unresolved.remove(code)
                 continue
             # Sibling not already resolved — targeted re-fetch of just that
             # symbol through the same market's source chain.
-            sibling_data, used_source, provider_cls, _ = _fetch_via_chain(
-                src, market, [sibling]
-            )
+            sibling_data, used_source, provider_cls, _ = _fetch_via_chain(src, market, [sibling])
             if sibling_data:
                 df = next(iter(sibling_data.values()))
                 if df is not None and not df.empty:
                     _emit(
-                        code, df,
-                        src=src, used_source=used_source, provider_cls=provider_cls,
+                        code,
+                        df,
+                        src=src,
+                        used_source=used_source,
+                        provider_cls=provider_cls,
                         market=market,
                         extra_provenance={
                             "venue_fallback": True,
@@ -482,7 +504,9 @@ def fetch_market_data(
                     )
                     logger.info(
                         "market-data venue fallback %s -> %s (source=%s)",
-                        code, sibling, src,
+                        code,
+                        sibling,
+                        src,
                     )
                     unresolved.remove(code)
 

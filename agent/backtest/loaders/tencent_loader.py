@@ -20,6 +20,7 @@ import urllib.request
 import certifi
 import pandas as pd
 
+from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
@@ -27,6 +28,10 @@ from backtest.loaders.registry import register
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+# The raw companion lives on the non-fq endpoint: fqkline without the qfq
+# suffix serves no bars at all, while kline/kline returns the unadjusted
+# "day" series (verified live 2026-09-23).
+_RAW_BASE_URL = "https://web.ifzq.gtimg.cn/appstock/app/kline/kline"
 
 # Tencent fqkline caps a single response at `_PAGE_SIZE` bars and serves the
 # LAST bars of the requested window (ending at the `end` parameter), not the
@@ -43,6 +48,7 @@ _PAGE_RETRIES = 3
 _PAGE_BACKOFF = 0.6
 
 _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+
 
 def _is_a_share(code: str) -> bool:
     return code.upper().endswith((".SZ", ".SH"))
@@ -103,7 +109,7 @@ class DataLoader:
                     fields=None,
                     fetch=lambda code=code: self._fetch_one(code, start_date, end_date),
                 )
-                if df is not None and not df.empty and _is_a_share(code):
+                if df is not None and not df.empty and _is_a_share(code) and not _is_etf_listed(code):
                     # #1541: the additive qfq cannot serve returns; convert to
                     # the multiplicative convention when the raw companion
                     # supports it, keeping the additive series otherwise.
@@ -116,14 +122,13 @@ class DataLoader:
                             start_date=start_date,
                             end_date=end_date,
                             fields=["raw"],
-                            fetch=lambda code=code: self._fetch_one(
-                                code, start_date, end_date, forward_adjusted=False
-                            ),
+                            fetch=lambda code=code: self._fetch_one(code, start_date, end_date, forward_adjusted=False),
                         )
                     except Exception as exc:  # noqa: BLE001 - degrade to additive
                         logger.warning(
                             "tencent raw companion fetch failed for %s, serving additive: %s",
-                            code, exc,
+                            code,
+                            exc,
                         )
                     converted = convert_additive_to_multiplicative(raw_df, df)
                     if converted is not None:
@@ -140,7 +145,10 @@ class DataLoader:
         return result
 
     def _request_page(
-        self, code: str, start_date: str, end_date: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
         forward_adjusted: bool = True,
     ) -> Optional[pd.DataFrame]:
         """Fetch up to `_PAGE_SIZE` bars in [start_date, end_date]."""
@@ -162,15 +170,18 @@ class DataLoader:
             return None
 
         url = (
-            f"{_BASE_URL}?param={tencent_code},day,"
+            f"{_BASE_URL if forward_adjusted else _RAW_BASE_URL}?param={tencent_code},day,"
             f"{start_date},{end_date},{_PAGE_SIZE}"
             f"{',qfq' if forward_adjusted else ''}"
         )
 
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://web.ifzq.gtimg.cn/",
-        })
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Referer": "https://web.ifzq.gtimg.cn/",
+            },
+        )
         with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
             raw = resp.read().decode("utf-8")
 
@@ -202,14 +213,16 @@ class DataLoader:
         rows = []
         for k in klines:
             if len(k) >= 6:
-                rows.append({
-                    "trade_date": k[0],
-                    "open": float(k[1]),
-                    "close": float(k[2]),
-                    "high": float(k[3]),
-                    "low": float(k[4]),
-                    "volume": float(k[5]),
-                })
+                rows.append(
+                    {
+                        "trade_date": k[0],
+                        "open": float(k[1]),
+                        "close": float(k[2]),
+                        "high": float(k[3]),
+                        "low": float(k[4]),
+                        "volume": float(k[5]),
+                    }
+                )
 
         if not rows:
             return None
@@ -217,13 +230,14 @@ class DataLoader:
         df = pd.DataFrame(rows)
         df["trade_date"] = pd.to_datetime(df["trade_date"])
         df = df.set_index("trade_date").sort_index()
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return df
 
     def _fetch_one(
-        self, code: str, start_date: str, end_date: str,
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
         forward_adjusted: bool = True,
     ) -> Optional[pd.DataFrame]:
         """Paginate [start_date, end_date] in `_PAGE_SIZE`-bar windows.
@@ -250,8 +264,7 @@ class DataLoader:
         for _ in range(_MAX_PAGES):
             if cursor_end in seen_ends:
                 raise ValueError(
-                    f"incomplete tencent history: {code} stopped advancing at "
-                    f"{cursor_end} before reaching {start_date}"
+                    f"incomplete tencent history: {code} stopped advancing at {cursor_end} before reaching {start_date}"
                 )
             seen_ends.add(cursor_end)
 
@@ -259,15 +272,13 @@ class DataLoader:
             last_error: Optional[Exception] = None
             for attempt in range(_PAGE_RETRIES):
                 try:
-                    page = self._request_page(
-                        code, start_date, cursor_end, forward_adjusted
-                    )
+                    page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                     last_error = None
                     break
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     last_error = exc
                     if attempt < _PAGE_RETRIES - 1:
-                        time.sleep(_PAGE_BACKOFF * (2 ** attempt))
+                        time.sleep(_PAGE_BACKOFF * (2**attempt))
             if last_error is not None:
                 # Partial pages already collected would read as a complete
                 # history downstream; a failed page is an error, not a series.
@@ -286,13 +297,10 @@ class DataLoader:
                 # empty and terminates the walk.
                 time.sleep(_PAGE_BACKOFF)
                 try:
-                    page = self._request_page(
-                        code, start_date, cursor_end, forward_adjusted
-                    )
+                    page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     raise ValueError(
-                        f"incomplete tencent history: {code} re-request at "
-                        f"{cursor_end} failed: {exc}"
+                        f"incomplete tencent history: {code} re-request at {cursor_end} failed: {exc}"
                     ) from exc
                 if page is None or page.empty:
                     break
@@ -307,10 +315,7 @@ class DataLoader:
                 break
             cursor_end = next_end
         else:
-            raise ValueError(
-                f"incomplete tencent history: {code} hit {_MAX_PAGES} pages "
-                f"without reaching {start_date}"
-            )
+            raise ValueError(f"incomplete tencent history: {code} hit {_MAX_PAGES} pages without reaching {start_date}")
 
         if not chunks:
             return None

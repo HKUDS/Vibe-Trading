@@ -52,9 +52,14 @@ class TestConvertAdditiveToMultiplicative:
         f1 = 100.0 / 102.0
         f2 = 99.0 / 101.0
         expected = [
-            100.0 * f1 * f2, 101.0 * f1 * f2, 102.0 * f1 * f2,
-            99.0 * f2, 100.0 * f2, 101.0 * f2,
-            98.0, 99.0,
+            100.0 * f1 * f2,
+            101.0 * f1 * f2,
+            102.0 * f1 * f2,
+            99.0 * f2,
+            100.0 * f2,
+            101.0 * f2,
+            98.0,
+            99.0,
         ]
         assert converted["close"].tolist() == pytest.approx(expected, rel=1e-9)
 
@@ -78,12 +83,35 @@ class TestConvertAdditiveToMultiplicative:
         assert converted["volume"].iloc[-1] == 1000.0
         assert converted["volume"].iloc[0] == pytest.approx(1000.0 / (f1 * f2), rel=1e-9)
 
-    def test_no_actions_is_identity_on_raw(self):
+    def test_no_actions_keeps_todays_series(self):
         raw = _frame([10.0, 11.0, 12.0])
         additive = _frame([10.0, 11.0, 12.0])
+        # No in-window corporate action means nothing to convert; the caller
+        # keeps the served series and its static stamp rather than relabeling
+        # an identical frame as multiplicative.
+        assert convert_additive_to_multiplicative(raw, additive) is None
+
+    def test_wobble_bar_folds_into_its_level(self):
+        # One quote-glitch bar sits inside an otherwise constant offset: the
+        # structural rule folds it and the two real dividends still convert.
+        raw, additive = _two_action_series()
+        additive.iloc[4, additive.columns.get_loc("close")] += 0.03
+        for col in ("open", "high", "low"):
+            additive.iloc[4, additive.columns.get_loc(col)] += 0.03
         converted = convert_additive_to_multiplicative(raw, additive)
         assert converted is not None
-        assert converted["close"].tolist() == raw["close"].tolist()
+        f1 = 100.0 / 102.0
+        f2 = 99.0 / 101.0
+        assert converted["close"].iloc[0] == pytest.approx(100.0 * f1 * f2, rel=1e-9)
+        assert converted["close"].iloc[-1] == pytest.approx(99.0, rel=1e-9)
+
+    def test_unclassifiable_one_bar_plateau_refuses(self):
+        # A one-bar plateau whose neighbors disagree with each other is a step
+        # pair we cannot classify as noise or dividend; the window is refused
+        # rather than shipped as a clean multiplicative series.
+        raw = _frame([100.0, 100.0, 100.0, 100.0, 100.0])
+        additive = _frame([95.0, 95.0, 98.0, 96.0, 96.0])
+        assert convert_additive_to_multiplicative(raw, additive) is None
 
     def test_misaligned_calendars_fail_closed(self):
         raw, additive = _two_action_series()
@@ -96,12 +124,10 @@ class TestConvertAdditiveToMultiplicative:
         assert convert_additive_to_multiplicative(raw, additive) is None
 
     def test_dividend_at_or_above_price_fails_closed(self):
-        raw = _frame([2.0, 2.0, 1.0, 1.0])
-        additive = _frame([0.5, 0.5, 1.0, 1.0])  # implies a 1.5 dividend on a 2.0 close? actually -0.5->? keep shape
-        # offsets: -1.5, -1.5, 0, 0 -> dividend 1.5 < 2.0, valid. Force invalid:
-        raw2 = _frame([1.0, 1.0, 0.5, 0.5])
-        additive2 = _frame([-0.6, -0.6, 0.5, 0.5])  # dividend 1.1 >= price 1.0
-        assert convert_additive_to_multiplicative(raw2, additive2) is None
+        # dividend 1.1 >= price 1.0
+        raw = _frame([1.0, 1.0, 0.5, 0.5])
+        additive = _frame([-0.6, -0.6, 0.5, 0.5])
+        assert convert_additive_to_multiplicative(raw, additive) is None
 
     def test_empty_or_missing_inputs_fail_closed(self):
         raw, additive = _two_action_series()
@@ -117,7 +143,8 @@ class TestLoaderWiring:
 
     def _patch_fetch_pair(self, monkeypatch, loader_mod, raw, additive):
         monkeypatch.setattr(
-            loader_mod, "cached_loader_fetch",
+            loader_mod,
+            "cached_loader_fetch",
             lambda source, symbol, timeframe, start_date, end_date, fields, fetch: (
                 raw if fields == ["raw"] else additive
             ),
@@ -167,6 +194,22 @@ class TestLoaderWiring:
         self._patch_fetch_pair(monkeypatch, akshare_loader, None, additive)
         out = akshare_loader.DataLoader().fetch(["510300.SH"], "2024-01-01", "2024-01-10")
         # ETF path is not converted; the additive frame passes through.
+        assert out["510300.SH"]["close"].tolist() == additive["close"].tolist()
+
+    def test_tencent_skips_etf_codes(self, monkeypatch):
+        from backtest.loaders import tencent_loader
+
+        _, additive = _two_action_series()
+        self._patch_fetch_pair(monkeypatch, tencent_loader, None, additive)
+        out = tencent_loader.DataLoader().fetch(["510300.SH"], "2024-01-01", "2024-01-10")
+        assert out["510300.SH"]["close"].tolist() == additive["close"].tolist()
+
+    def test_eastmoney_skips_etf_codes(self, monkeypatch):
+        from backtest.loaders import eastmoney_loader
+
+        _, additive = _two_action_series()
+        self._patch_fetch_pair(monkeypatch, eastmoney_loader, None, additive)
+        out = eastmoney_loader.DataLoader().fetch(["510300.SH"], "2024-01-01", "2024-01-10")
         assert out["510300.SH"]["close"].tolist() == additive["close"].tolist()
 
 
