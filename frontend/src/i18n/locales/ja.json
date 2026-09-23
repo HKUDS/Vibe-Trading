@@ -1641,7 +1641,8 @@
       "coverage": "評価カバレッジ",
       "coverageNote": "評価済み {{priced}} · 現金 {{cash}}",
       "lastComplete": "最後の完全更新",
-      "excluded": "{{count}} 件の口座を読み取れなかったため、この合計から除外しています"
+      "excluded": "{{count}} 件の口座を読み取れなかったため、この合計から除外しています",
+      "changeCanonicalNote": "Asistente Casa による正規の本日のポートフォリオ変動"
     },
     "allocation": {
       "byAccount": "口座別の構成",
@@ -1678,7 +1679,8 @@
       "colPnl": "評価損益",
       "colData": "データ",
       "priced": "評価済み",
-      "unpriced": "未評価"
+      "unpriced": "未評価",
+      "colToday": "本日"
     },
     "history": {
       "title": "資産推移",
