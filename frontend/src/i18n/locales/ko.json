@@ -1641,7 +1641,8 @@
       "coverage": "평가 커버리지",
       "coverageNote": "평가 완료 {{priced}} · 현금 {{cash}}",
       "lastComplete": "마지막 완전 업데이트",
-      "excluded": "{{count}}개 계좌를 읽지 못해 이 합계에서 제외했습니다"
+      "excluded": "{{count}}개 계좌를 읽지 못해 이 합계에서 제외했습니다",
+      "changeCanonicalNote": "Asistente Casa의 표준 일일 포트폴리오 변동"
     },
     "allocation": {
       "byAccount": "계좌별 비중",
@@ -1678,7 +1679,8 @@
       "colPnl": "미실현 손익",
       "colData": "데이터",
       "priced": "평가 완료",
-      "unpriced": "미평가"
+      "unpriced": "미평가",
+      "colToday": "오늘"
     },
     "history": {
       "title": "자산 추이",
