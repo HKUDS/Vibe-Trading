@@ -205,6 +205,7 @@ class TestFallbackChains:
             "ar_equity",
             "uk_equity",
             "vietnam_equity",
+            "kenya_equity",
             "crypto",
             "futures",
             "fund",
@@ -222,6 +223,10 @@ class TestFallbackChains:
 
     def test_vietnam_chain_uses_only_compatible_sources(self) -> None:
         assert FALLBACK_CHAINS["vietnam_equity"] == ["yahoo", "yfinance", "local"]
+
+    def test_kenya_chain_uses_only_compatible_sources(self) -> None:
+        # No global vendor carries Nairobi: the exchange's own list, then local files.
+        assert FALLBACK_CHAINS["kenya_equity"] == ["nse_ke", "local"]
 
     def test_uk_chain_uses_only_compatible_sources(self) -> None:
         assert FALLBACK_CHAINS["uk_equity"] == ["yahoo", "yfinance", "local"]

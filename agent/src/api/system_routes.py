@@ -221,6 +221,13 @@ def register_system_routes(
     require_auth = host.require_auth
     _app_version = app_version if app_version is not None else host.APP_VERSION
 
+    # Market boards (GET /markets/kenya/board) sit with the other market-data
+    # utility routes (/correlation) instead of growing api_server.py, which is
+    # held to a thin-assembler line budget.
+    from src.api.markets_routes import register_markets_routes
+
+    register_markets_routes(app)
+
     def _get_terminate_process():
         """Late-access _terminate_current_process for test monkeypatch compat."""
         h = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")

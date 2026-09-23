@@ -852,6 +852,7 @@ _MARKET_TO_SOURCE = {
     "ar_equity": "yahoo",
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
+    "kenya_equity": "nse_ke",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1532,6 +1533,12 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
         return VietnamEquityEngine(config)
+
+    # Kenya equity routing — same reason again: its effective source
+    # (``nse_ke``) has no Wave-1 branch and would fall through to the default.
+    if "kenya_equity" in markets:
+        from backtest.engines.kenya_equity import KenyaEquityEngine
+        return KenyaEquityEngine(config)
     # Argentina market-data routing is supported, but BYMA execution rules
     # are not modeled yet. Fail closed instead of silently applying US/crypto
     # commissions, lot sizes, settlement, or short-selling assumptions.

@@ -157,6 +157,12 @@ openbb = [
     # when this import succeeds, so a base install stays unaffected.
     "openbb-ai>=2.0.0,<3",
 ]
+nse-ke = [
+    # Kenya (Nairobi Securities Exchange, .NR) daily bars parsed from the
+    # exchange's free Daily Equity Price List PDFs. Without this extra the
+    # kenya_equity chain falls back to local files only.
+    "pdfplumber>=0.10",
+]
 krx = [
     # Free, no-auth Korea (KRX: KOSPI/KOSDAQ) EOD OHLCV. Without this extra
     # the kr_equity chain falls back to yahoo/yfinance (.KS/.KQ suffixes).

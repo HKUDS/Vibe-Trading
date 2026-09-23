@@ -18,6 +18,8 @@ const PROXY_PATHS = [
   "/shadow-reports",
   "/scheduled-runs",
   "/options",
+  // API only: the SPA page lives at /markets/kenya, which must NOT proxy.
+  "/markets/kenya/board",
 ];
 
 export default defineConfig(({ mode }) => {

@@ -50,6 +50,9 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
         elif market == "vietnam_equity":
             from backtest.engines.vietnam_equity import VietnamEquityEngine
             engines["vietnam_equity"] = VietnamEquityEngine(config)
+        elif market == "kenya_equity":
+            from backtest.engines.kenya_equity import KenyaEquityEngine
+            engines["kenya_equity"] = KenyaEquityEngine(config)
         elif market == "ar_equity":
             raise ValueError(
                 "Argentina .BA market data is supported, but Argentina backtest "
@@ -197,6 +200,13 @@ class CompositeEngine(BaseEngine):
                 from backtest.engines.vietnam_equity import hose_can_execute
 
                 return hose_can_execute(self, sub, symbol, direction, bar)
+
+        if market == "kenya_equity":
+            sub = self._rule_engines.get("kenya_equity")
+            if sub is not None:
+                from backtest.engines.kenya_equity import nse_can_execute
+
+                return nse_can_execute(self, sub, symbol, direction, bar)
 
         if market == "a_share":
             sub = self._rule_engines.get("a_share")

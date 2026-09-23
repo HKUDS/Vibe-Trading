@@ -58,6 +58,7 @@ VALID_SOURCES: set[str] = {
     "qveris",  # QVERIS-INTEGRATION
     "india_broker",
     "pykrx",
+    "nse_ke",
     "longbridge",
     "mt5",
     "tickerall",
@@ -120,6 +121,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
             "backtest.loaders.india_broker_loader",
             "backtest.loaders.pykrx_loader",
+            "backtest.loaders.nse_ke_loader",
             "backtest.loaders.longbridge",
             "backtest.loaders.mt5_loader",
             "backtest.loaders.tickerall_loader",
@@ -227,6 +229,9 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     # Vietnam (.VN): Yahoo lists HOSE only — HNX and UPCOM are unsupported,
     # so those two are reachable only through the user's local files.
     "vietnam_equity": ["yahoo", "yfinance", "local"],
+    # Kenya (NSE .NR): the exchange's own daily price list (free PDF, no key).
+    # No global vendor carries Nairobi, so local files are the only fallback.
+    "kenya_equity": ["nse_ke", "local"],
     # OKX first (native), then dedicated Binance, then generic CCXT / Yahoo.
     "crypto": ["okx", "binance", "ccxt", "yfinance", "local"],
     # tushare led this chain while implementing no futures endpoint at all
@@ -280,6 +285,7 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "sina": "raw",
     "alphavantage": "raw",  # TIME_SERIES_DAILY, not the _ADJUSTED endpoint
     "longbridge": "raw",  # pins AdjustType.NoAdjust
+    "nse_ke": "raw",  # the exchange's own daily price list: unadjusted session VWAPs
 }
 
 #: Per-(source, market) exceptions to the per-source table.
