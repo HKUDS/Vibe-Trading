@@ -65,3 +65,54 @@ class TestPortfolioAllocation:
             hierarchical_risk_parity(np.array([1.0, 2.0]))
         with pytest.raises(ValueError, match="strictly positive"):
             hierarchical_risk_parity(np.array([[0.0, 0.0], [0.0, 0.04]]))
+
+    def test_hrp_rejects_a_corr_reordered_relative_to_cov(self) -> None:
+        # corr is positionally aligned with cov internally; a caller-supplied
+        # corr in a different row/column order is silently wrong data, not a
+        # cosmetic difference, and must be rejected rather than producing a
+        # plausible-looking wrong allocation.
+        tickers = ["AAPL", "MSFT", "GOOGL", "TLT"]
+        std = np.array([0.30, 0.28, 0.32, 0.08])
+        corr_vals = np.array(
+            [
+                [1.00, 0.70, 0.65, -0.10],
+                [0.70, 1.00, 0.60, -0.05],
+                [0.65, 0.60, 1.00, -0.08],
+                [-0.10, -0.05, -0.08, 1.00],
+            ]
+        )
+        cov = pd.DataFrame(
+            corr_vals * np.outer(std, std), index=tickers, columns=tickers
+        )
+        corr_full = pd.DataFrame(corr_vals, index=tickers, columns=tickers)
+        reordered = ["TLT", "AAPL", "MSFT", "GOOGL"]
+        corr_reordered = corr_full.loc[reordered, reordered]
+
+        with pytest.raises(ValueError, match="same row/column labels and order"):
+            hierarchical_risk_parity(cov, corr=corr_reordered)
+
+    def test_hrp_rejects_a_corr_shaped_differently_from_cov(self) -> None:
+        cov = np.eye(4) * 0.04
+        corr = np.eye(3)
+
+        with pytest.raises(ValueError, match="same shape"):
+            hierarchical_risk_parity(cov, corr=corr)
+
+    def test_hrp_accepts_a_correctly_aligned_corr(self) -> None:
+        tickers = ["AAPL", "MSFT", "GOOGL", "TLT"]
+        std = np.array([0.30, 0.28, 0.32, 0.08])
+        corr_vals = np.array(
+            [
+                [1.00, 0.70, 0.65, -0.10],
+                [0.70, 1.00, 0.60, -0.05],
+                [0.65, 0.60, 1.00, -0.08],
+                [-0.10, -0.05, -0.08, 1.00],
+            ]
+        )
+        cov = pd.DataFrame(
+            corr_vals * np.outer(std, std), index=tickers, columns=tickers
+        )
+        corr = pd.DataFrame(corr_vals, index=tickers, columns=tickers)
+
+        weights = hierarchical_risk_parity(cov, corr=corr)
+        assert np.sum(weights) == pytest.approx(1.0)

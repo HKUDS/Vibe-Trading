@@ -134,7 +134,18 @@ def hierarchical_risk_parity(
         std = np.sqrt(diag)
         corr_mat = cov_mat / np.outer(std, std)
     else:
+        # A supplied corr is positionally aligned with cov below (clustering
+        # runs on corr_mat, cluster variance on cov_mat, both indexed 0..n-1)
+        # -- silently misaligned row/column order or a mismatched shape
+        # produces a plausible-looking but wrong allocation with no error.
+        if is_df and isinstance(corr, pd.DataFrame):
+            if corr.index.tolist() != labels or corr.columns.tolist() != labels:
+                raise ValueError(
+                    "corr must have the same row/column labels and order as cov"
+                )
         corr_mat = np.asarray(corr, dtype=float)
+        if corr_mat.shape != cov_mat.shape:
+            raise ValueError("corr and cov must have the same shape")
 
     dist = correlation_distance(corr_mat)
     # Scipy linkage expects condensed distance or observation matrix
