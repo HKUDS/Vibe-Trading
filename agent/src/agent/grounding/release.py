@@ -73,6 +73,7 @@ _CORRECTION_REASONS = {
     "no_evidence": "this session holds no evidence of that kind to check it against",
     "value_mismatch": "the observed evidence is {range}",
     "not_in_referenced_call": "call {ref} returned no such value",
+    "ambiguous_field_ref": "{ref} names {sources}, which hold different values; use the one quoted as the ref",
     "no_formula": "its note states no arithmetic",
     "formula_not_evaluable": "its note is not an arithmetic expression over two or more operands",
     "formula_not_anchored": "no operand of its note is a value this session observed",
@@ -116,6 +117,7 @@ def _correction_line(issue: dict[str, Any]) -> str:
     evidence = template.format(
         range=span,
         ref=issue.get("source_tool_call_ids", [""])[0] if issue.get("source_tool_call_ids") else "",
+        sources=", ".join(str(source) for source in issue.get("ambiguous_sources") or []),
         result=result if result else "a different value",
     )
     nearest = issue.get("observed_nearest") or []

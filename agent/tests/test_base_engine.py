@@ -938,3 +938,50 @@ def test_rebalance_sleeve_below_one_lot_at_full_scale_is_the_lot_rule():
     assert engine.plan_rejections[("B", "zero_size")] == 1
     assert ("B", "insufficient_capital") not in engine.plan_rejections
     assert engine.bar_capitals[0] >= 0.0
+
+
+class _FundingDebitAdjustmentEngine(_AdjustmentEngine):
+    """Debits a fee after every bar, as CompositeEngine's crypto funding does."""
+
+    def __init__(self, **overrides):
+        super().__init__(**overrides)
+        self.rejected: list[tuple[str, str]] = []
+
+    def after_rebalance_bar(self, timestamp, data_map, codes):
+        self.capital -= float(self.config.get("debit", 0.0))
+        return super().after_rebalance_bar(timestamp, data_map, codes)
+
+    def _on_plan_rejected(self, symbol, reason, timestamp):
+        self.rejected.append((symbol, reason))
+
+
+def test_rebalance_with_negative_cash_drops_the_opens_and_keeps_running():
+    """#1542's rebalance sibling: when even an empty open sleeve does not fit
+    (cash below zero, nothing reduced to release it), the run used to abort with
+    'insufficient capital for position rebalance'. The opens are dropped and
+    reported; the rest of the bar and the run go on.
+
+    A takes all 1,000 of cash on bar 0 and the debit leaves -30. A's weight on
+    the later bars keeps it at exactly 10 shares, so nothing is released.
+    """
+    engine = _FundingDebitAdjustmentEngine(debit=30.0)
+    keep_a = 1_000.0 / 970.0
+    _run_adjustments(engine, {"A": [1.0, keep_a, keep_a], "B": [0.0, 0.2, 0.2]})
+
+    assert engine.bar_capitals[0] == pytest.approx(-30.0)
+    assert _sizes(engine.bar_positions[1]) == {"A": 10.0}
+    assert ("B", "insufficient_capital") in engine.rejected
+    assert len(engine.bar_positions) == 3  # the run reached its last bar
+
+
+def test_rebalance_with_negative_cash_still_executes_its_reductions():
+    """Dropping the opens must not drop the reductions: they only release cash.
+
+    Cash is -300 after bar 0 (equity 700); trimming A to 9 shares releases 100,
+    not enough to bring cash to zero, so no open sleeve fits. The trim happens.
+    """
+    engine = _FundingDebitAdjustmentEngine(debit=300.0)
+    _run_adjustments(engine, {"A": [1.0, 900.0 / 700.0], "B": [0.0, 0.1]})
+
+    assert _sizes(engine.bar_positions[1]) == {"A": 9.0}
+    assert ("B", "insufficient_capital") in engine.rejected

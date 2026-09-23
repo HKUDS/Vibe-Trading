@@ -335,9 +335,6 @@ def _evaluate_formula(expression: str) -> tuple[float, list[float], ast.Expressi
             value = visit(node.operand)
             if isinstance(node.op, ast.UAdd):
                 return value
-            # ``inputs`` is also the anchor list.  Preserve the sign of a
-            # directly negated observed operand (e.g. ``-0.093 × 100``),
-            # instead of anchoring only its positive magnitude.
             if isinstance(node.operand, ast.Constant) and inputs:
                 inputs[-1] = -value
             return -value
@@ -513,7 +510,7 @@ class _PolicyMixin:
         for figure in figures:
             if figure.shape not in ("measured", "bare"):
                 continue
-            declaration = block.match(figure.value, figure.percent)
+            declaration = block.match(figure.value, figure.percent, figure.digits)
             symbol = self._figure_symbol(
                 content, figure, declaration, line_symbols, document_symbol, records
             )
@@ -585,7 +582,6 @@ class _PolicyMixin:
                             declaration,
                             symbol,
                             records,
-                            market_price,
                             why=(
                                 "it sits in the instrument's observed price range and no "
                                 "declared derivation uses it"
@@ -616,9 +612,7 @@ class _PolicyMixin:
                     self._check_proposed(figure, declaration, symbol, records)
                 )
                 continue
-            issues.extend(
-                self._check_observed(figure, declaration, symbol, records, market_price)
-            )
+            issues.extend(self._check_observed(figure, declaration, symbol, records))
         market_records = self._price_records()
         if checked_price and market_records:
             issues.extend(self._validate_price_provenance(content, market_records))
@@ -634,14 +628,7 @@ class _PolicyMixin:
         message: str,
         **extra: Any,
     ) -> dict[str, Any]:
-        """Build one figure-scoped issue with value, role, span, symbol and reason.
-
-        ``percent``/``currency`` are carried through from the figure itself
-        (#GGAL-B): a ratio like ROE/ROA is always ``percent=True``, which is
-        what ``recovery_action`` uses to tell a fundamentals figure apart
-        from a market quote it could plausibly recover with
-        ``get_market_data`` — never the issue *code* name alone.
-        """
+        """Build one figure-scoped issue with value, role, span, symbol and reason."""
         issue = {
             "code": code,
             "value": figure.text,
@@ -705,8 +692,8 @@ class _PolicyMixin:
             return line_symbols[figure.line]
         return None
 
-    @staticmethod
     def _figure_is_market_price(
+        self,
         content: str,
         figure: Figure,
         declaration: Declaration | None,
@@ -741,40 +728,11 @@ class _PolicyMixin:
         symbol: str | None,
         figure: Figure | None,
     ) -> tuple[list[EvidenceRecord], list[float], str] | None:
-        """The evidence one call, tool, or handled symbol produced.
-
-        A ``ref`` naming a call id or a tool name is the tightest scoping, and the
-        only one that can ground a non-price figure (revenue, IC, volume). Records
-        of another symbol are dropped when the figure's symbol is known; a
-        currency-marked figure keeps only money-denominated records, a percent
-        only the others, less metadata counts.
-
-        Args:
-            ref: The declaration's ``ref``.
-            symbol: The figure's resolved symbol, or None.
-            figure: The figure whose shape narrows the kind, or None for the
-                operands of a derivation.
-
-        Returns:
-            ``(records, metric values, scope_kind)``, where ``scope_kind`` is
-            ``"symbol"`` only for a pure canonical-symbol ref and
-            ``"provenance"`` for tool/call refs (including mixed refs); or
-            None when any ref token is invalid for this session.
-        """
-        keys = {
-            key.strip()
-            for key in re.split(r"[;,]", ref or "")
-            if key.strip()
-        }
+        """Resolve exact field/call/tool/symbol refs, including multiple sources."""
+        keys = [key.strip() for key in re.split(r"[;,]", ref or "") if key.strip()]
         if not keys:
             return None
 
-        # A declared ref is a fail-closed provenance scope, not a hint. Every
-        # token must exactly identify a tool name or call id that contributed
-        # numeric evidence in this session. Previously one invalid/decorated
-        # token (or an entirely unknown ref) fell through to the global
-        # evidence pool, allowing the same numeric value to validate despite a
-        # false provenance declaration.
         known_refs = {
             identifier
             for record in self._evidence
@@ -787,52 +745,80 @@ class _PolicyMixin:
             for identifier in (entry.get("call_id"), entry.get("tool"))
             if identifier
         )
-
-        # Historical figures declarations may scope directly to a canonical
-        # instrument symbol (for example `159516.SZ`). Keep that contract,
-        # but only when the symbol was actually handled by successful evidence
-        # in this session. This is still fail-closed: arbitrary/decorated refs
-        # do not become aliases for the global evidence pool.
         known_symbols = {
             record.symbol
             for record in self._evidence
             if record.status == "observed" and record.symbol
         }
-        symbol_keys = {
-            key
-            for key in keys
-            if _normalize_symbol(key) in known_symbols
-        }
-        provenance_keys = keys & known_refs
-        invalid_keys = keys - provenance_keys - symbol_keys
-        if invalid_keys:
-            return None
-        scope_kind = "symbol" if symbol_keys and not provenance_keys else "provenance"
 
-        records = [
-            record
-            for record in self._evidence
-            if (
-                any(key in (record.call_id, record.tool) for key in keys)
-                or any(_normalize_symbol(key) == record.symbol for key in symbol_keys)
-            )
-            and record.status == "observed"
-            and record.value is not None
-        ]
-        metrics = [
-            float(entry["value"])
-            for entry in self._analysis_metrics
-            if any(key in (entry.get("call_id"), entry.get("tool")) for key in keys)
-            and entry.get("value") is not None
-        ]
-        if not records and not metrics:
-            return None
+        records: list[EvidenceRecord] = []
+        metrics: list[float] = []
+        saw_symbol = False
+        saw_provenance = False
+
+        for key in keys:
+            key_records: list[EvidenceRecord] = []
+            key_metrics: list[float] = []
+            if "::" in key:
+                call_id, field = (part.strip() for part in key.split("::", 1))
+                if not call_id or not field:
+                    return [], [], "provenance"
+                field_records, entries = self._field_sources(field, symbol)
+                key_records = [
+                    record for record in field_records if record.call_id == call_id
+                ]
+                key_metrics = [
+                    float(entry["value"])
+                    for entry in entries
+                    if entry.get("call_id") == call_id
+                ]
+                saw_provenance = True
+            else:
+                field_records, entries = self._field_sources(key, symbol)
+                if field_records or entries:
+                    if self._ambiguous_field_sources(key, symbol):
+                        return [], [], "provenance"
+                    key_records = field_records
+                    key_metrics = [float(entry["value"]) for entry in entries]
+                    saw_provenance = True
+                elif key in known_refs:
+                    key_records = [
+                        record
+                        for record in self._evidence
+                        if key in (record.call_id, record.tool)
+                        and record.status == "observed"
+                        and record.value is not None
+                    ]
+                    key_metrics = [
+                        float(entry["value"])
+                        for entry in self._analysis_metrics
+                        if key in (entry.get("call_id"), entry.get("tool"))
+                        and entry.get("value") is not None
+                    ]
+                    saw_provenance = True
+                elif _normalize_symbol(key) in known_symbols:
+                    normalized = _normalize_symbol(key)
+                    key_records = [
+                        record
+                        for record in self._evidence
+                        if record.status == "observed"
+                        and record.value is not None
+                        and record.symbol == normalized
+                    ]
+                    saw_symbol = True
+                else:
+                    return None
+
+            if not key_records and not key_metrics:
+                return None
+            records.extend(key_records)
+            metrics.extend(key_metrics)
+
         if symbol:
             records = [
                 record for record in records if not record.symbol or record.symbol == symbol
             ]
         if figure is not None and figure.column:
-            # A table cell quotes its own column, not whatever else the call returned.
             records = [record for record in records if record.field == figure.column]
             metrics = []
         if figure is not None and figure.percent:
@@ -844,7 +830,60 @@ class _PolicyMixin:
         elif figure is not None and figure.currency:
             records = [record for record in records if _is_price_kind(record)]
             metrics = []
+
+        scope_kind = "symbol" if saw_symbol and not saw_provenance else "provenance"
         return records, metrics, scope_kind
+
+    def _field_sources(
+        self, field: str, symbol: str | None
+    ) -> tuple[list[EvidenceRecord], list[dict[str, Any]]]:
+        """Observed values of the evidence field ``field`` names, for ``symbol``.
+
+        ``field`` is a full path (``data.tail_risk.var_95``) or its trailing
+        part (``var_95``, ``tail_risk.var_95``): a short ref used to fall
+        through to the whole evidence pool, where a VaR 99% claim quoting the
+        95% value found its match (#1444 review). Another symbol's records are
+        dropped here, before any count of calls, so two instruments' closes do
+        not make ``close`` ambiguous.
+        """
+        def named(path: Any) -> bool:
+            return isinstance(path, str) and (path == field or path.endswith("." + field))
+
+        records = [
+            record
+            for record in self._evidence
+            if named(record.field)
+            and record.status == "observed"
+            and record.value is not None
+            and (not symbol or not record.symbol or record.symbol == symbol)
+        ]
+        entries = [
+            entry
+            for entry in self._analysis_metrics
+            if named(entry.get("field")) and entry.get("value") is not None
+        ]
+        return records, entries
+
+    def _ambiguous_field_sources(self, field: str, symbol: str | None) -> list[str]:
+        """The ``call::path`` sources a field-only ref cannot choose between.
+
+        Ambiguous means more than one (call, path) source AND more than one
+        value among them: two runs of one call returning the same number leave
+        nothing to choose. Each source is written as the ref that names it.
+
+        Returns:
+            Sorted ``call::path`` refs, or an empty list when the ref is exact.
+        """
+        if not field or "::" in field:
+            return []
+        records, entries = self._field_sources(field, symbol)
+        sources = {(record.call_id, record.field, float(record.value)) for record in records}
+        sources |= {
+            (str(entry.get("call_id")), entry.get("field"), float(entry["value"])) for entry in entries
+        }
+        if len({(call, path) for call, path, _ in sources}) < 2 or len({value for *_, value in sources}) < 2:
+            return []
+        return sorted({f"{call}::{path}" for call, path, _ in sources})
 
     def _price_pool(
         self,
@@ -908,8 +947,6 @@ class _PolicyMixin:
             and (not money_only or _is_price_kind(record))
         ]
 
-    # Tools with a registered, citable count leaf (spec: position_count). Kept
-    # per-tool rather than opening every tool's raw counts to citation.
     _COUNT_EVIDENCE_TOOLS = frozenset({"asistente_casa_portfolio_risk_xray"})
 
     def _tool_count_pool(self, symbol: str | None) -> list[float]:
@@ -929,6 +966,8 @@ class _PolicyMixin:
             and _is_metadata_count_leaf(record.field)
             and (not symbol or not record.symbol or record.symbol == symbol)
         ]
+
+    @staticmethod
 
     @staticmethod
     def _nearest_prints(
@@ -1036,19 +1075,68 @@ class _PolicyMixin:
         figure: Figure,
         direct: Sequence[float],
         scaled: Sequence[float],
+        *,
+        legacy_direct: bool = False,
     ) -> bool:
         """Whether a figure equals evidence, at its own scale or a metric's.
 
         ``direct`` is compared literally. ``scaled`` absorbs fraction vs percent
         (0.182 vs 18.2%) and the sign of a fall (drawdown -0.094 quoted as 9.4%).
+        Both are held to the digits the figure was written with
+        (:meth:`_within_written_precision`); ``legacy_direct`` keeps the flat evidence
+        band for ``direct`` when it is an undeclared price checked against prints.
         """
-        if _close_any(figure.value, direct):
+        if legacy_direct:
+            if _close_any(figure.value, direct):
+                return True
+            if figure.scale != 1.0 and _close_any(figure.value * figure.scale, direct):
+                return True
+        elif any(
+            self._within_written_precision(figure, figure.value, target)
+            for target in direct
+        ):
             return True
-        if figure.scale != 1.0 and _close_any(figure.value * figure.scale, direct):
+        elif figure.scale != 1.0 and any(
+            self._within_written_precision(
+                figure, figure.value * figure.scale, target, figure.scale
+            )
+            for target in direct
+        ):
             return True
-        candidates = {abs(figure.value), abs(figure.value) / 100.0}
         magnitudes = [abs(target) for target in scaled]
-        return any(_close_any(candidate, magnitudes) for candidate in candidates)
+        return any(
+            self._within_written_precision(figure, candidate, target, unit)
+            for candidate, unit in (
+                (abs(figure.value), 1.0),
+                (abs(figure.value) / 100.0, 0.01),
+            )
+            for target in magnitudes
+        )
+
+    @staticmethod
+    def _within_written_precision(
+        figure: Figure, candidate: float, target: float, unit: float = 1.0
+    ) -> bool:
+        """Whether a figure is ``target`` correctly rounded to the digits it was written with.
+
+        The evidence band is relative (:data:`_TOLERANCE`). A figure written with
+        decimals is held to half a unit of its last decimal as well, so "38,50" no
+        longer passes for 38.6784 (0.46% away) while "38,68" still does. A figure
+        written without decimals keeps the relative band alone: an integer's
+        precision is not known ("6,700" may be rounded to hundreds).
+
+        Args:
+            figure: The prose figure.
+            candidate: The figure's value in the units being compared.
+            target: The evidence value.
+            unit: How many compared units one written unit is (0.01 when a percent
+                is compared as a fraction).
+        """
+        band = abs(target) * _TOLERANCE
+        written = figure.digits or figure.text
+        if "." in written:
+            band = min(band, _written_half_unit(written) * unit * (1 + 1e-9))
+        return abs(candidate - target) <= max(band, 1e-9)
 
     def _check_observed(
         self,
@@ -1062,12 +1150,6 @@ class _PolicyMixin:
 
         A currency-marked figure is answered only by money-denominated values
         and a percent only by the rest; a table cell only by its column's field.
-
-        ``market_price`` (#GGAL-B follow-up) never changes whether the figure
-        passes — it only rides along on a resulting issue so
-        ``recovery_action`` can tell a genuine missing quote apart from a
-        currency-marked fundamental (EPS, net income, revenue, ...) that
-        ``get_market_data`` could never answer either way.
         """
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
         if declaration is not None and declaration.ref.strip() and scoped is None:
@@ -1088,7 +1170,12 @@ class _PolicyMixin:
             scoped_records, metric_values, scope_kind = scoped
             values = [float(record.value) for record in scoped_records] + metric_values
             money = figure.currency and not figure.percent
-            if self._matches_evidence(figure, values, [] if money else values):
+            if self._matches_evidence(
+                figure,
+                values,
+                [] if money else values,
+                legacy_direct=figure.scale != 1.0,
+            ):
                 return []
             if scope_kind == "symbol":
                 observed = sorted(values)
@@ -1116,6 +1203,25 @@ class _PolicyMixin:
                         market_price=market_price,
                     )
                 ]
+            ambiguous = (
+                self._ambiguous_field_sources(declaration.ref, symbol)
+                if ";" not in declaration.ref and "," not in declaration.ref
+                else []
+            )
+            if ambiguous:
+                return [
+                    self._figure_issue(
+                        "numeric_claim_conflict",
+                        figure,
+                        "observed",
+                        symbol,
+                        "ambiguous_field_ref",
+                        f"is declared observed from {declaration.ref}, which names "
+                        f"{', '.join(ambiguous)}, and they hold different values",
+                        source_tool_call_ids=[declaration.ref],
+                        ambiguous_sources=ambiguous,
+                    )
+                ]
             return [
                 self._figure_issue(
                     "numeric_claim_conflict",
@@ -1127,7 +1233,7 @@ class _PolicyMixin:
                     f"{'for ' + symbol + ' ' if symbol else ''}do not contain it",
                     source_tool_call_ids=[declaration.ref],
                     observed_nearest=self._nearest_prints(figure, scoped_records, values),
-                    market_price=market_price,
+                market_price=market_price,
                 )
             ]
         candidates = self._price_candidates(
@@ -1157,10 +1263,10 @@ class _PolicyMixin:
                     "evidence to check it against",
                     field=figure.column,
                     date=figure.date,
-                    market_price=market_price,
+                market_price=market_price,
                 )
             ]
-        if self._matches_evidence(figure, direct, scaled):
+        if self._matches_evidence(figure, direct, scaled, legacy_direct=True):
             return []
         observed = sorted(direct or scaled)
         attributable = symbol is not None or len(
@@ -1185,7 +1291,7 @@ class _PolicyMixin:
                     if attributable
                     else []
                 ),
-                market_price=market_price,
+            market_price=market_price,
             )
         ]
 
@@ -1248,9 +1354,8 @@ class _PolicyMixin:
 
         The band is half a unit of the last digit the PROSE was written with
         ("约 37%" for 36.75%), so a coarser declaration cannot widen it. A "%"
-        figure is compared in percentage points. A formula that explicitly
-        multiplies by 100 is already in those units; otherwise the observed
-        fraction is converted once. A bare figure is tried both ways.
+        figure is compared only in percentage points, since against the fraction
+        a half-unit band spans fifty points; a bare figure is tried both ways.
         Magnitudes are compared, because a fall is noted either as
         ``(low − high) / high`` or as the drop, unless the prose wrote a sign.
         """
@@ -1478,7 +1583,10 @@ class _PolicyMixin:
             if not carried:
                 continue
             if all(
-                (block.match(figure.value, figure.percent) or _NO_DECLARATION).role
+                (
+                    block.match(figure.value, figure.percent, figure.digits)
+                    or _NO_DECLARATION
+                ).role
                 == "cited"
                 for figure in carried
             ):

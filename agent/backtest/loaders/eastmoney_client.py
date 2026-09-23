@@ -73,6 +73,37 @@ _JSONP_WRAPPER = re.compile(
 )
 
 
+def datacenter_rejection(payload: Any) -> str | None:
+    """Return the datacenter's complaint when it rejected a report query.
+
+    The datacenter answers HTTP 200 with ``success: false`` both for a query it
+    rejects (a report or column that no longer exists, code 9501) and for a query
+    with no rows (code 9201, ``返回数据为空``). Only the first is an error; read as
+    an empty result it turns a stale query into "no data for this stock" (#1489,
+    #1501, #1502). The empty answer is recognised only as that message with
+    code 9201 (or no code); anything else is a rejection.
+
+    Args:
+        payload: Decoded datacenter JSON.
+
+    Returns:
+        ``"code=<code> message=<message>"`` for a rejection, ``None`` for an
+        accepted query, including one with no rows.
+    """
+    if not isinstance(payload, dict) or payload.get("success") is not False:
+        return None
+    code = payload.get("code")
+    message = payload.get("message")
+    message = message.strip() if isinstance(message, str) else ""
+    # Live empty answers are code 9201 with exactly this message; the same
+    # message under a rejection code (9501) is still a rejection.
+    if message == "返回数据为空" and code in (9201, None):
+        return None
+    if not message:
+        message = "request rejected without a message"
+    return f"code={code} message={message}" if code is not None else message
+
+
 def _min_interval() -> float:
     """Resolve the per-call minimum Eastmoney request spacing in seconds."""
     return resolve_min_interval(_MIN_INTERVAL_ENV, _DEFAULT_MIN_INTERVAL)

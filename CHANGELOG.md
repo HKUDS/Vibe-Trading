@@ -7,6 +7,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Weekly and monthly bars** (#1479). `get_market_data` and backtests take
+  `1W` and `1M` (and `1w` / `1wk` / `1mo`). Loaders are still asked for daily
+  bars; `loaders.base.resample_bars` builds the period bar at the three fetch
+  boundaries (runner, market data, benchmark), so a weekly bar is the same
+  whichever source served the days, at that source's daily caliber. A week
+  runs Monday to Sunday, a month is a calendar month, and each bar is dated on
+  the last trading day inside it: first open, highest high, lowest low, last
+  close, summed volume and amount, volume-weighted vwap, mean funding rate.
+  Annualisation is 52 / 12; a weekly perpetual bar settles 21 funding periods.
+  `1M` is matched before any case fold, which read it as one minute in
+  strict-100x validation and in attribution (98,280 bars a year). The
+  technical-indicator tool canonicalises its documented `1wk` / `1mo` and
+  fetches whole periods instead of two days per bar.
+
 - **IM channels are configured from the Web UI** (#1520, #1529; #1519, #1530).
   The Settings panel renders each built-in channel's fields from backend
   metadata, masks secrets (`****` plus the last four characters, never sent
@@ -59,6 +73,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`source="qveris"` refuses markets with splits and dividends** (#1494). It
+  picks a capability by search rank, which ignores adjustment: for 600519.SH
+  the top pick was FMP's non-split-adjusted EOD, and a tool named adjusted
+  returned raw closes. Stocks and ETFs are refused before anything is searched
+  or billed; crypto, forex, futures, macro and index bars are served as before.
+  Both QVeris budget gates reserve only a flat per-call quote now:
+  `1 credits/result` had reserved 1 credit for a call that billed 9.66, and
+  `qveris_execute` returns `quote_not_bounded` for any other shape.
+- **A price index is stamped `raw`** (#1541). Eastmoney's fqt=1 equals fqt=0
+  on every bar of the A-share indices measured, Tencent serves only `day` for
+  the SSE/SZSE ones, and Yahoo's adjclose equals close on ^GSPC / ^NDX / ^HSI, but the
+  per-source table stamped an A-share index additive and a Yahoo index
+  dividend-adjusted. `price_caliber` takes the symbol; A-share index codes are
+  matched per exchange, since 000001.SZ is Ping An Bank.
 - **Portfolio valuation version 3** (#1510): snapshots stored under version 2
   are no longer read, so portfolio history starts again after upgrading.
 - **Tencent, Eastmoney and AKShare A-share prices are labelled
@@ -135,6 +163,37 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Read-only results lost to context compaction are restored, not refetched**
+  (#1488). A successful read-only call whose payload compaction removed is
+  replayed from the run's own cache, at most six times a run; past the cap it
+  runs again, as it did before, instead of being refused with "use the
+  previous result" for a payload the model cannot see. The cap is checked per
+  restore, and any successful write empties the cache, so a regenerated file
+  is read afresh. `read_url` opts in; `no_cache=true` always fetches.
+- **Tail-risk figures keep their identity under a field ref** (#1444). A
+  declared `ref` may name an evidence field by its full path
+  (`data.tail_risk.var_95`) or trailing part (`var_95`), or one call's field
+  (`q1::historical_var`); a VaR 99% quoting the 95% value, or ES quoting VaR,
+  is rejected under such a ref. A field two calls returned with different
+  values is ambiguous and the correction names the refs to choose from. A
+  claim scoped to a whole call or not declared is still matched against every
+  tail-risk value it can see (#1425 stays open).
+- **A backtest aborted when a funding debit left cash below zero** (#1542).
+  CompositeEngine and CryptoEngine subtract crypto funding from capital with
+  no floor, and the next open then fitted at no scale, not even an empty plan:
+  the open-basket search kept the full-scale plan and the run died with
+  "planned order … exceeds available capital", and a rebalance raised
+  "insufficient capital for position rebalance". Such an open is now skipped
+  and reported once as `insufficient_capital`, the bar's reductions still
+  run, and a close whose loss exceeds its margin still aborts the bar (#1274).
+- The grounding gate reads decimal commas (#1517): `17,93 %` and
+  `1.410,00 CNY` ground against tool results, two unspaced numbers such as
+  `1400,1777` stay two numbers, and a written figure must match its evidence
+  within half a unit of its last written digit (a truncated `30.20%` for
+  30.2052% is now sent back for correction). One shape regex added (14 → 15).
+- Block trades, margin trading and financial statements no longer read
+  Eastmoney rejecting a stale query (code 9501) as an empty result; all six
+  datacenter callers share `eastmoney_client.datacenter_rejection`.
 - **24 alphas emitted a value computed from a missing bar** (#1463, #1523,
   #1534, #1452). A comparison over an operand that is NaN because its window
   holds the gap is False, and the #1463 sweep, which nudged the bar by a tick,

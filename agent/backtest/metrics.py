@@ -140,6 +140,10 @@ _BARS_PER_DAY = {
             },
 }
 
+# Weekly and monthly bars count calendar periods, whatever the market's
+# trading days: every week and every month holds one bar (#1479).
+_CALENDAR_BARS_PER_YEAR = {"1W": 52, "1M": 12}
+
 # Runner/loaders also emit these aliases; map them onto the table keys above.
 _SOURCE_ALIASES = {"yahoo": "yfinance", "binance": "ccxt"}
 
@@ -149,10 +153,15 @@ def _normalize_interval(interval: str) -> str:
 
     Minute bars stay lowercase (``1m``); hour/day use the uppercase keys the
     table already stores (``1H`` / ``4H`` / ``1D``). Loaders accept both cases
-    after the interval-map fixes; annualisation must too.
+    after the interval-map fixes; annualisation must too. ``1M`` is a month and
+    is matched before the case fold, which would read it as a minute (#1479).
     """
     token = str(interval or "1D").strip()
+    if token == "1M":
+        return token
     lower = token.lower()
+    if lower == "1w":
+        return "1W"
     if lower in ("1m", "5m", "15m", "30m"):
         return lower
     if lower in ("1h", "4h", "1d"):
@@ -164,8 +173,9 @@ def calc_bars_per_year(interval: str = "1D", source: str = "tushare") -> int:
     """Number of bars per year for annualisation.
 
     Args:
-        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D), case-insensitive
-            like loaders accept (``1h`` → ``1H``, ``4h`` → ``4H``, ``1d`` → ``1D``).
+        interval: Bar size (1m / 5m / 15m / 30m / 1H / 4H / 1D / 1W / 1M),
+            case-insensitive like loaders accept (``1h`` → ``1H``, ``4h`` →
+            ``4H``, ``1d`` → ``1D``) except ``1M``, which is a month.
         source: Data source (any VALID_SOURCES entry). Defaults to 252 days, 1 bar/day
             when source is missing from the table.
 
@@ -173,6 +183,8 @@ def calc_bars_per_year(interval: str = "1D", source: str = "tushare") -> int:
         Bars per year.
     """
     interval_key = _normalize_interval(interval)
+    if interval_key in _CALENDAR_BARS_PER_YEAR:
+        return _CALENDAR_BARS_PER_YEAR[interval_key]
     source_key = str(source or "").strip().lower()
     source_key = _SOURCE_ALIASES.get(source_key, source_key)
     trading_days = _TRADING_DAYS.get(source_key, 252)

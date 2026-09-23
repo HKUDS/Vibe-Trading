@@ -413,3 +413,76 @@ def test_an_honest_caller_quote_is_still_honoured(monkeypatch):
 
     assert payload["ok"] is True
     assert qt._SESSION_SPEND["honest"] == pytest.approx(1.0)
+
+
+def _paid(budget: float) -> None:
+    qt.save_qveris_config(
+        qt.QVerisConfig(enabled=True, api_key="sk-live", mode="paid", budget_credits_per_session=budget)
+    )
+
+
+class _QuotedClient:
+    def __init__(self, quote):
+        self.quote = quote
+        self.executed = 0
+
+    def inspect(self, *args, **kwargs):
+        del args, kwargs
+        return {"results": [{"tool_id": "tool_1", "expected_cost": self.quote}]}
+
+    def execute(self, *args, **kwargs):
+        del args, kwargs
+        self.executed += 1
+        return {"success": True, "cost": 1.0, "result": {}}
+
+
+def test_a_per_result_server_quote_is_refused_whatever_the_caller_writes(monkeypatch):
+    """ "1 credits/result" billed 9.66 credits for one stock-year (#1494): its
+    leading number is not a price, and a caller-written flat quote must not
+    stand in for it."""
+    _paid(50.0)
+    client = _QuotedClient("1 credits/result")
+    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: client)
+
+    for hint in (None, "2 credits"):
+        kwargs = {"tool_id": "tool_1", "parameters": {}, "session_id": "per_result"}
+        if hint is not None:
+            kwargs["expected_cost"] = hint
+        payload = json.loads(qt.QVerisExecuteTool().execute(**kwargs))
+        assert payload["status"] == "quote_not_bounded"
+        assert payload["quote"]["quote_source"] == "server_quote_not_per_call"
+
+    assert client.executed == 0
+    assert qt._SESSION_SPEND.get("per_result", 0.0) == 0.0
+
+
+def test_a_per_result_caller_quote_without_a_server_quote_is_refused(monkeypatch):
+    _paid(50.0)
+
+    class _Offline(_QuotedClient):
+        def inspect(self, *args, **kwargs):
+            raise RuntimeError("marketplace unreachable")
+
+    client = _Offline(None)
+    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: client)
+
+    payload = json.loads(
+        qt.QVerisExecuteTool().execute(
+            tool_id="tool_1", parameters={}, session_id="s", expected_cost="1 credits/result"
+        )
+    )
+
+    assert payload["status"] == "quote_not_bounded"
+    assert client.executed == 0
+
+
+def test_a_flat_per_call_server_quote_still_runs(monkeypatch):
+    _paid(50.0)
+    client = _QuotedClient("24.2 credits/call")
+    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: client)
+
+    payload = json.loads(qt.QVerisExecuteTool().execute(tool_id="tool_1", parameters={}, session_id="flat"))
+
+    assert payload["ok"] is True
+    assert client.executed == 1
+    assert qt._SESSION_SPEND["flat"] == pytest.approx(1.0)

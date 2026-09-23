@@ -10,6 +10,7 @@ of import order.
 from __future__ import annotations
 
 import logging
+import re
 from threading import Lock
 from typing import Any, Type
 
@@ -304,6 +305,20 @@ PRICE_CALIBER_BY_SOURCE_MARKET: dict[tuple[str, str], str] = {
 #: "na" and stay out of mixed-caliber comparisons.
 _NA_CALIBER_MARKETS = frozenset({"crypto", "forex", "futures", "macro"})
 
+#: A price index has no corporate actions, so every source serves the one
+#: unadjusted level, whatever it does to a stock: eastmoney fqt=1 equals fqt=0
+#: on every bar of 000300.SH, 000001.SH, 000016.SH, 000905.SH, 399001.SZ,
+#: 399006.SZ and 899050.BJ, Tencent's fqkline returns only "day" for the six
+#: SSE/SZSE ones (nothing at all for 899050.BJ), and Yahoo's adjclose equals
+#: close on ^GSPC, ^NDX and ^HSI (measured 2026-09-22).
+#: The per-source table stamped them by what the source does to a stock, so an
+#: A-share index read as additive and a Yahoo index as dividend-adjusted (#1541).
+#: Indices stay comparable: a price index beside a dividend-adjusted stock is a
+#: real caliber mix. A-share index codes are exchange-specific: 000001.SH is
+#: the SSE Composite, 000001.SZ is Ping An Bank.
+_INDEX_CALIBER_MARKETS = frozenset({"index"})
+_A_SHARE_INDEX_CODE = re.compile(r"^(?:000\d{3}\.SH|399\d{3}\.SZ|899\d{3}\.BJ)$", re.I)
+
 #: Calibers that participate in mixed-caliber comparison. "unknown" and "na"
 #: never do: the first is unmeasured, the second has nothing to adjust for.
 #: "split_dividend_additive" does participate — it is the whole point of the
@@ -321,15 +336,39 @@ _COMPARABLE_CALIBERS = frozenset(
 _ADDITIVE_CALIBERS = frozenset({"split_dividend_additive"})
 
 
-def price_caliber(source: str, market: str | None = None) -> str:
+def market_has_corporate_actions(market: str) -> bool:
+    """Whether prices in ``market`` depend on a split/dividend adjustment.
+
+    Args:
+        market: A market name as ``_detect_market`` returns it.
+
+    Returns:
+        False for the markets stamped "na" and for price indices, True for
+        every other market, so an unrecognized one is assumed to need it.
+    """
+    return market not in _NA_CALIBER_MARKETS and market not in _INDEX_CALIBER_MARKETS
+
+
+def price_caliber(source: str, market: str | None = None, symbol: str | None = None) -> str:
     """Return the adjustment caliber of ``source``'s served prices.
 
-    One of "raw", "split", "split_dividend", "split_dividend_additive" (dividend
-    adjustment applied to the level rather than by a ratio), "na" (a market
-    without corporate actions), or "unknown" (an unmeasured source).
+    Args:
+        source: Loader that served the prices.
+        market: Market the symbol belongs to.
+        symbol: The served symbol, needed to tell an A-share index from a stock.
+
+    Returns:
+        One of "raw", "split", "split_dividend", "split_dividend_additive"
+        (dividend adjustment applied to the level rather than by a ratio),
+        "na" (a market without corporate actions), or "unknown" (an
+        unmeasured source).
     """
     if market in _NA_CALIBER_MARKETS:
         return "na"
+    if market in _INDEX_CALIBER_MARKETS or (
+        market == "a_share" and symbol is not None and _A_SHARE_INDEX_CODE.match(symbol)
+    ):
+        return "raw"
     return PRICE_CALIBER_BY_SOURCE_MARKET.get(
         (source, market), PRICE_CALIBER_BY_SOURCE.get(source, "unknown")
     )

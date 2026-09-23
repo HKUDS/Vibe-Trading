@@ -30,7 +30,7 @@ from typing import Any
 
 from backtest.loaders import sec_frames
 from backtest.loaders import yahoo_client
-from backtest.loaders.eastmoney_client import get_json, resolve_secid
+from backtest.loaders.eastmoney_client import datacenter_rejection, get_json, resolve_secid
 from backtest.loaders.sec_edgar_client import cik_for, get_company_facts
 from src.agent.tools import BaseTool
 from src.tools._result_paging import fit_records
@@ -286,6 +286,10 @@ def _fetch_eastmoney_statement(
         logger.warning("eastmoney statement fetch failed for %s: %s", code, exc)
         return {"error": str(exc)}
 
+    rejection = datacenter_rejection(payload)
+    if rejection is not None:
+        # A stale report or column reads as a rejection, not as no filings (#1502).
+        return {"error": f"eastmoney rejected the request: {rejection}"}
     periods = _filter_by_period(_parse_eastmoney_periods(payload), period)
     return {"periods": _cap_periods(periods)}
 

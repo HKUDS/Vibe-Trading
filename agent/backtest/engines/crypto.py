@@ -87,8 +87,9 @@ class CryptoEngine(BaseEngine):
     def _validate_strict_resolution(self, config: dict[str, Any]) -> None:
         if not self.perpetual_strict or self.default_leverage < 100:
             return
-        interval = str(config.get("interval", "1D")).strip().lower()
-        if interval not in {"1m", "5m", "15m", "30m", "1h"}:
+        # Compared case-exact: lowercasing would read the monthly "1M" as "1m".
+        interval = str(config.get("interval", "1D")).strip()
+        if interval not in {"1m", "5m", "15m", "30m", "1H", "1h"}:
             raise ValueError(
                 "strict 100x requires a supported interval <= 1H "
                 "(1m/5m/15m/30m/1H); 1H is only a resolution boundary, "

@@ -20,7 +20,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from backtest.loaders.eastmoney_client import get_json, resolve_secid
+from backtest.loaders.eastmoney_client import datacenter_rejection, get_json, resolve_secid
 from src.agent.tools import BaseTool
 from src.tools.trade_journal_parsers import _qualify_a_share
 
@@ -262,6 +262,12 @@ class BlockTradesTool(BaseTool):
                 ensure_ascii=False,
             )
 
+        rejection = datacenter_rejection(payload)
+        if rejection is not None:
+            return json.dumps(
+                {"ok": False, "error": f"eastmoney datacenter rejected the request: {rejection}"},
+                ensure_ascii=False,
+            )
         rows = _extract_rows(payload)
         records = [_normalize_record(row) for row in rows[:_MAX_RECORDS]]
 

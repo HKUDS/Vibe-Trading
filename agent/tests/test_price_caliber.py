@@ -179,6 +179,34 @@ def test_non_equity_markets_stamp_na() -> None:
     assert price_caliber("mt5", "forex") == "na"
 
 
+@pytest.mark.parametrize("source", ["tencent", "eastmoney", "akshare", "tushare", "baostock"])
+@pytest.mark.parametrize("code", ["000300.SH", "000001.SH", "399001.SZ", "399006.SZ", "899050.BJ"])
+def test_an_a_share_index_is_raw_on_every_source(source: str, code: str) -> None:
+    """An index has no corporate actions: eastmoney's fqt=1 equals its fqt=0 on
+    every bar and Tencent serves only "day", so the additive stamp a stock gets
+    from these sources is wrong for it (#1541)."""
+    assert price_caliber(source, "a_share", code) == "raw"
+
+
+@pytest.mark.parametrize("code", ["000001.SZ", "600519.SH", "510300.SH", "399001.SH", "000300.SZ", "830799.BJ"])
+def test_an_a_share_stock_or_fund_keeps_its_source_caliber(code: str) -> None:
+    """The index codes are exchange-specific: 000001.SZ is Ping An Bank, not
+    the SSE Composite, and 510300.SH is an ETF that pays distributions."""
+    assert price_caliber("tencent", "a_share", code) == "split_dividend_additive"
+    assert price_caliber("tushare", "a_share", code) == "split_dividend"
+
+
+def test_a_yahoo_index_is_raw() -> None:
+    """Yahoo's adjclose equals close on ^GSPC / ^NDX / ^HSI: nothing was adjusted."""
+    assert price_caliber("yahoo", "index", "^GSPC") == "raw"
+    assert price_caliber("yfinance", "index") == "raw"
+    assert price_caliber("yahoo", "us_equity", "AAPL.US") == "split_dividend"
+
+
+def test_without_a_symbol_the_market_default_applies() -> None:
+    assert price_caliber("tencent", "a_share") == "split_dividend_additive"
+
+
 def test_every_chain_source_resolves() -> None:
     for market, chain in FALLBACK_CHAINS.items():
         for source in chain:
@@ -268,6 +296,19 @@ def test_provenance_marks_tencent_hk_as_unadjusted() -> None:
         include_provenance=True,
     )
     assert out["_provenance"]["00939.HK"]["adjustment"] == "raw"
+
+
+def test_provenance_marks_an_a_share_index_as_unadjusted() -> None:
+    out = fetch_market_data(
+        codes=["000300.SH", "600519.SH"],
+        start_date="2024-01-01",
+        end_date="2024-01-03",
+        source="tencent",
+        loader_resolver=lambda src: _StubLoader,
+        include_provenance=True,
+    )
+    assert out["_provenance"]["000300.SH"]["adjustment"] == "raw"
+    assert out["_provenance"]["600519.SH"]["adjustment"] == "split_dividend_additive"
 
 
 def test_provenance_stamps_adjustment_for_raw_source() -> None:
@@ -386,6 +427,30 @@ def test_fetch_data_map_warns_on_additive_caliber(
     assert "not total returns" in result.caliber_warning
     assert "mixed price calibers" not in result.caliber_warning
     assert "additive price adjustment" in caplog.text
+
+
+def test_fetch_data_map_does_not_call_an_index_additive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tencent run over an index and a stock warns about the stock only."""
+
+    class _TencentBoth:
+        name = "tencent"
+
+        def fetch(self, codes, start, end, fields=None, interval="1D"):  # noqa: ANN001, ANN201
+            return {code: _df() for code in codes}
+
+    monkeypatch.setattr(runner, "resolve_loader", lambda market: _TencentBoth())
+    monkeypatch.setattr(runner, "LOADER_REGISTRY", {})
+    config = {"source": "auto", "start_date": "2024-01-01", "end_date": "2024-01-03", "interval": "1D"}
+
+    index_only = runner.fetch_data_map({**config, "codes": ["000300.SH"]})
+    assert index_only.caliber_warning is None
+
+    both = runner.fetch_data_map({**config, "codes": ["000300.SH", "600519.SH"]})
+    assert both.caliber_warning is not None
+    assert "additive price adjustment in this run: 600519.SH (tencent)." in both.caliber_warning
+    assert "mixed price calibers" in both.caliber_warning
 
 
 def test_fetch_data_map_reports_both_warnings_when_they_apply(

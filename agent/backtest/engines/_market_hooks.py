@@ -316,13 +316,21 @@ _TIER_TABLE = [
 FUNDING_HOURS = {0, 8, 16}
 
 
+#: Spans of the calendar-period bars the runner builds from daily ones
+#: (#1479). A month is the mean one, 365.25 / 12 days, so a monthly bar settles
+#: 91 funding periods whether the month has 28 days or 31.
+_PERIOD_SPAN_HOURS = {"1W": 168.0, "1M": 730.5}
+
+
 def _interval_span_hours(interval: str) -> float | None:
     """Bar span in hours for a runner interval token, ``None`` when unknown.
 
-    The runner accepts only 1m/5m/15m/30m/1H/4H/1D, so ``m`` is minutes here
-    (there is no monthly token to confuse it with).
+    ``1M`` is a month and ``1m`` a minute; the period tokens are looked up
+    whole before any suffix is read, so the two never meet.
     """
     token = str(interval).strip()
+    if token in _PERIOD_SPAN_HOURS:
+        return _PERIOD_SPAN_HOURS[token]
     for suffix, scale in (("m", 1 / 60), ("H", 1.0), ("D", 24.0)):
         if token.endswith(suffix) and token[: -len(suffix)].isdigit():
             return int(token[: -len(suffix)]) * scale

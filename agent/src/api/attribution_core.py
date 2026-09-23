@@ -51,6 +51,7 @@ _ATTRIBUTION_BARS_PER_YEAR_BY_INTERVAL = {
     "1d": 252,
     "d": 252,
     "daily": 252,
+    "1w": 52,
     "1wk": 52,
     "w": 52,
     "weekly": 52,
@@ -95,9 +96,11 @@ def _attribution_bars_per_year(interval: Any) -> int:
     """Infer the annualization factor from the run's bar interval label."""
     if not interval:
         return _ATTRIBUTION_DEFAULT_BARS_PER_YEAR
-    return _ATTRIBUTION_BARS_PER_YEAR_BY_INTERVAL.get(
-        str(interval).strip().lower(), _ATTRIBUTION_DEFAULT_BARS_PER_YEAR
-    )
+    label = str(interval).strip()
+    # The runner's monthly token; lower-cased it would read as one minute.
+    if label == "1M":
+        return 12
+    return _ATTRIBUTION_BARS_PER_YEAR_BY_INTERVAL.get(label.lower(), _ATTRIBUTION_DEFAULT_BARS_PER_YEAR)
 
 
 def _attribution_downsample(

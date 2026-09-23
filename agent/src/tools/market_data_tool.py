@@ -14,34 +14,26 @@ from backtest.loaders.registry import VALID_SOURCES
 from backtest.runner import _VALID_INTERVALS
 
 # Canonical-case lookup. ``_VALID_INTERVALS`` mixes cases ("1m" minutes vs
-# "1H" hours), so a plain ``.upper()`` fold is unsafe: it maps the universal
-# monthly spelling "1M" onto "1m" (one minute), silently answering a monthly
-# question with minute bars (#1480). ``_canonicalize_interval`` resolves a
-# case-exact match first and only then falls back to this fold for the
-# unambiguous case variants ("1d" -> "1D", "30M" -> "30m").
-_INTERVAL_CANON = {v.upper(): v for v in _VALID_INTERVALS}
-
-# Spellings that read as a request for a bar size this tool does not serve and
-# must never be case-folded onto a minute interval. "1M" is the near-universal
-# monthly convention (pandas ``resample('1M')``, ccxt / TradingView "1M"); "1W"
-# is weekly. Folding "1M" -> "1m" (one minute) is the #1480 footgun: the caller
-# receives minute bars labelled as the answer to a monthly question. These are
-# rejected with a pointed message instead of being silently mis-served. The
-# minute spellings "5M" / "15M" / "30M" deliberately keep folding to "5m" /
-# "15m" / "30m" — multi-month bars are not a convention anyone requests, and
-# that fold is the documented behaviour pinned by the regression tests.
-_UNSUPPORTED_PERIOD_SPELLINGS = {"1M": "one month", "1W": "one week"}
+# "1M" months, "1H" hours), so a plain ``.upper()`` fold is unsafe: it maps
+# "1m" and "1M" onto one key, and before monthly bars existed it answered a
+# monthly question with minute bars (#1480). A case-exact match wins first in
+# ``_canonicalize_interval``; this fold only serves the unambiguous variants
+# ("1d" -> "1D", "30M" -> "30m", "1w" -> "1W"), and a minute token whose upper
+# case is itself an interval ("1m" -> "1M") is left out of it.
+_INTERVAL_CANON = {
+    v.upper(): v for v in _VALID_INTERVALS if v.upper() == v or v.upper() not in _VALID_INTERVALS
+}
+# The yfinance spellings the technical-indicator tool has always documented.
+_INTERVAL_CANON.update({"1WK": "1W", "1MO": "1M"})
 
 
 def _canonicalize_interval(raw: str) -> str | None:
     """Resolve a user interval spelling to the canonical loader form.
 
     A case-exact match against ``_VALID_INTERVALS`` wins first, so the minute
-    interval ``"1m"`` and the monthly spelling ``"1M"`` are never conflated by
-    the case fold (#1480). Falls back to ``_INTERVAL_CANON`` for unambiguous
-    case variants (``"1d"`` -> ``"1D"``, ``"30M"`` -> ``"30m"``). Month/week
-    spellings that are not served resolve to ``None`` rather than folding onto
-    a minute interval.
+    interval ``"1m"`` and the monthly ``"1M"`` are never conflated by the case
+    fold (#1480). Falls back to ``_INTERVAL_CANON`` for unambiguous case
+    variants (``"1d"`` -> ``"1D"``, ``"30M"`` -> ``"30m"``, ``"1wk"`` -> ``"1W"``).
 
     Args:
         raw: Interval string as supplied by the caller.
@@ -52,10 +44,7 @@ def _canonicalize_interval(raw: str) -> str | None:
     token = raw.strip()
     if token in _VALID_INTERVALS:
         return token
-    folded = token.upper()
-    if folded in _UNSUPPORTED_PERIOD_SPELLINGS:
-        return None
-    return _INTERVAL_CANON.get(folded)
+    return _INTERVAL_CANON.get(token.upper())
 
 
 # Source allow-list derived from the shared loader registry (the same set the
@@ -148,7 +137,10 @@ class MarketDataTool(BaseTool):
             },
             "interval": {
                 "type": "string",
-                "description": "Bar size, e.g. 1D, 1H, 4H, 30m.",
+                "description": (
+                    "Bar size: 1m/5m/15m/30m/1H/4H/1D, or 1W/1M for weekly/monthly "
+                    "bars built from daily ones (1M is a month, 1m a minute)."
+                ),
                 "default": "1D",
             },
             "max_rows": {
@@ -204,26 +196,11 @@ class MarketDataTool(BaseTool):
         if not isinstance(interval, str):
             return _error("interval must be a string like '1D', '1H', '4H', '30m'")
         interval_token = interval.strip()
-        # Reject the month/week spellings the case fold would otherwise map onto
-        # a minute interval: "1M" (one month) must never silently become "1m"
-        # (one minute) (#1480). A case-exact served spelling is allowed through
-        # first, so this stays correct if monthly/weekly bars are ever added to
-        # ``_VALID_INTERVALS`` (#1479).
-        folded = interval_token.upper()
-        if (
-            interval_token not in _VALID_INTERVALS
-            and folded in _UNSUPPORTED_PERIOD_SPELLINGS
-        ):
-            return _error(
-                f"interval {interval_token!r} ({_UNSUPPORTED_PERIOD_SPELLINGS[folded]}) "
-                f"is not supported; supported: {sorted(_VALID_INTERVALS)}. "
-                f"Note '1m' (lowercase) is one minute."
-            )
         normalized_interval = _canonicalize_interval(interval_token)
         if normalized_interval is None:
             return _error(
-                f"interval must be one of {sorted(_VALID_INTERVALS)} "
-                f"(case-insensitive); got {interval!r}"
+                f"interval must be one of {sorted(_VALID_INTERVALS)} (case-insensitive, "
+                f"except that 1m is one minute and 1M one month); got {interval!r}"
             )
 
         max_rows = kwargs.get("max_rows", DEFAULT_MAX_ROWS)

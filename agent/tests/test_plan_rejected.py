@@ -406,3 +406,34 @@ def test_insufficient_capital_is_counted_as_unfilled():
     metrics = engine._plan_rejection_metrics()
     assert metrics["unfilled_plan_rejections"] == 1
     assert metrics["unfilled_plan_rejections_by_symbol"] == {"B": {"insufficient_capital": 1}}
+
+
+# ---------------------------------------------------------------------------
+# #1542: an open that no scale can fund when cash is already negative
+# ---------------------------------------------------------------------------
+
+
+class _FundingDebitEngine(_FuturesLotEngine):
+    """Debits a fee after every bar, as CompositeEngine's crypto funding does."""
+
+    def __init__(self, fee: float, **overrides):
+        super().__init__(**overrides)
+        self.fee = fee
+
+    def on_bar(self, symbol, bar, timestamp):
+        self.capital -= self.fee
+
+
+def test_an_open_with_negative_cash_is_skipped_and_reported_in_hold_mode():
+    """With cash below zero no scale fits, not even the empty plan.
+
+    The search only replaced the full-scale plan when a candidate fitted, so the
+    full-scale plan fell through to _execute_open_order and the run aborted with
+    'planned order for B exceeds available capital'.
+    """
+    engine = _FundingDebitEngine(fee=60.0, position_adjustment="hold")
+    # A takes 10 of 1,000 cash; the per-symbol debit after bar 0 leaves -120.
+    _hold_run(engine, {"A": 100.0, "B": 100.0}, {"A": [1.0, 1.0], "B": [0.0, 0.3]})
+
+    assert _opens(engine) == [("A", 0, 10.0)]
+    assert engine.rejections == [("B", "insufficient_capital", _DATES[1])]

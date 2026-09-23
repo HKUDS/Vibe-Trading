@@ -1281,14 +1281,20 @@ class BaseEngine(ABC):
                 # bisection step (#1470). The sleeve that leaves the basket is
                 # reported once, after the search, as the rebalance path does.
                 wanted = [order.symbol for order in planned]
+                # Nothing fits until a candidate proves it does: with cash below
+                # zero (a funding debit leaves it there) not even the empty plan
+                # fits, and the full-scale plan used to fall through to
+                # _execute_open_order and abort the run (#1542).
+                fitting: list[_OpenOrder] = []
                 low, high = 0.0, 1.0
                 for _ in range(50):
                     mid = (low + high) / 2.0
                     candidate = _plans(mid, observe=False)
                     if sum(order.cost for order in candidate) <= self.capital + 1e-9:
-                        low, planned = mid, candidate
+                        low, fitting = mid, candidate
                     else:
                         high = mid
+                planned = fitting
                 fitted = {order.symbol for order in planned}
                 for symbol in wanted:
                     if symbol not in fitted:
@@ -1757,7 +1763,23 @@ class BaseEngine(ABC):
         if projected_capital < -1e-9:
             fitted = self._fit_rebalance_opens(opens, reductions, ts)
             if fitted is None:
-                raise ValueError("insufficient capital for position rebalance")
+                if sum(order.capital_credit for order in reductions) < 0:
+                    # The reductions themselves consume cash (a close whose loss
+                    # exceeds its margin): no dropping of opens repairs that, so
+                    # the bar aborts atomically as #1274 decided.
+                    raise ValueError("insufficient capital for position rebalance")
+                # Cash was already below zero (a funding debit can leave it
+                # there) and the reductions only release it: drop every open,
+                # still run the reductions, and report each open (#1542).
+                for order in opens:
+                    self._on_plan_rejected(order.symbol, "insufficient_capital", ts)
+                if opens:
+                    logger.warning(
+                        "Cash below zero at %s; no open or increase fits, dropped: %s",
+                        ts,
+                        ", ".join(sorted({order.symbol for order in opens})),
+                    )
+                fitted = []
             opens = fitted
 
         for order in reductions:
@@ -1793,8 +1815,10 @@ class BaseEngine(ABC):
         diagnostics see the dropped leg.
 
         Returns the fitted orders, or ``None`` when no scale fits — not even
-        an empty open sleeve — which the caller must treat as an atomic
-        abort (nothing has been committed at that point).
+        an empty open sleeve; nothing has been committed at that point. The
+        caller aborts atomically when the reductions themselves consume cash
+        (#1274), and otherwise — cash was already below zero — drops every
+        open and still runs the reductions (#1542).
         """
         released = sum(order.capital_credit for order in reductions)
 

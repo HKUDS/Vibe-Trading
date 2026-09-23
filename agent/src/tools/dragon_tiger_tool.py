@@ -100,12 +100,9 @@ def _fetch_report(
     )
     if not isinstance(payload, dict):
         return []
-    if payload.get("success") is False:
-        code = payload.get("code")
-        message = payload.get("message", "unknown provider error")
-        if code == 9201 or message == "返回数据为空":
-            return []
-        raise RuntimeError(f"Eastmoney rejected {report_name} ({code}): {message}")
+    rejection = eastmoney_client.datacenter_rejection(payload)
+    if rejection is not None:
+        raise RuntimeError(f"Eastmoney rejected {report_name} ({rejection})")
     result = payload.get("result")
     if not isinstance(result, dict):
         return []

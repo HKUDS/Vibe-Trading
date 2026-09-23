@@ -214,14 +214,21 @@ class MarginTradingTool(BaseTool):
                 ensure_ascii=False,
             )
 
+        rejection = eastmoney_client.datacenter_rejection(payload)
         result = payload.get("result") if isinstance(payload, dict) else None
         data = result.get("data") if isinstance(result, dict) else None
-        if not isinstance(data, list) or not data:
+        if rejection is not None or not isinstance(data, list) or not data:
+            # A rejected query is named as one, not read as "no rows" (#1502).
+            eastmoney_said = (
+                f"eastmoney rejected the request ({rejection})"
+                if rejection is not None
+                else "eastmoney returned no rows"
+            )
             try:
                 fallback_data = tushare_fallbacks.fetch_margin_trading(code, days=days)
             except Exception as fallback_exc:  # noqa: BLE001 - preserve the original empty-data error
                 return _err(
-                    f"No margin-trading data returned for {code}. "
+                    f"No margin-trading data returned for {code}: {eastmoney_said}. "
                     f"Tushare fallback failed: {fallback_exc}"
                 )
             return json.dumps(
@@ -229,7 +236,7 @@ class MarginTradingTool(BaseTool):
                     "ok": True,
                     "market": "a_share",
                     "source": "tushare",
-                    "warnings": ["eastmoney returned no rows; used tushare fallback"],
+                    "warnings": [f"{eastmoney_said}; used tushare fallback"],
                     "data": fallback_data,
                 },
                 ensure_ascii=False,

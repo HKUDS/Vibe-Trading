@@ -170,22 +170,6 @@ _UNITS = {
     "total_ratio": "fraction of total shares",
 }
 
-_EMPTY_RESULT_MESSAGES = ("返回数据为空",)
-
-
-def _upstream_rejection(payload: Any) -> str | None:
-    if not isinstance(payload, dict) or payload.get("success") is not False:
-        return None
-    message = payload.get("message")
-    if not isinstance(message, str) or not message.strip():
-        return "request rejected without a message"
-    message = message.strip()
-    code = payload.get("code")
-    if code == 9201 and message in _EMPTY_RESULT_MESSAGES:
-        return None
-    return f"code={code} message={message}" if code is not None else message
-
-
 def _extract_rows(payload: Any) -> list[dict]:
     """Pull the ``result.data`` list out of a datacenter payload.
 
@@ -239,7 +223,7 @@ def _fetch_lockups(code: str | None, horizon_days: int) -> list[dict]:
         },
     )
 
-    rejection = _upstream_rejection(payload)
+    rejection = eastmoney_client.datacenter_rejection(payload)
     if rejection is not None:
         raise ValueError(f"eastmoney datacenter rejected the request: {rejection}")
 

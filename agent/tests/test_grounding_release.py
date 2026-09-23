@@ -643,6 +643,101 @@ class _ScriptedLLM:
         return _Response()
 
 
+class _CorrectionRetryLLM:
+    """Re-fetches unchanged evidence whenever tools remain available after rejection.
+
+    This models the live failure reproduced on GGAL.BA: the grounding gate has
+    enough evidence to explain a derivation mismatch, but the model responds by
+    calling the same read-only market-data tool again. A correction-only round
+    must therefore withhold tools and make the model revise the draft instead
+    of letting ToolProgress eventually terminate the run as no_progress.
+    """
+
+    model_name = "offline"
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.tools_history: list[list[Any] | None] = []
+        self.messages_history: list[list[dict[str, Any]]] = []
+
+    def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[Any] | None = None,
+        on_text_chunk: Callable[[str], None] | None = None,
+        on_reasoning_chunk: Callable[[str], None] | None = None,
+        timeout: int | None = None,
+        idle_timeout_s: float | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> _Response:
+        self.calls += 1
+        self.tools_history.append(tools)
+        self.messages_history.append(list(messages))
+
+        if self.calls == 1:
+            return _Response(
+                tool_calls=[_tool_call("resolve", "search_symbol", query="机器人ETF")]
+            )
+        if self.calls == 2:
+            return _Response(
+                tool_calls=[
+                    _tool_call(
+                        "prices",
+                        "get_market_data",
+                        codes=[SYMBOL],
+                        start_date="2026-06-23",
+                        end_date="2026-06-24",
+                        source="auto",
+                    )
+                ]
+            )
+        if self.calls == 3:
+            draft = (
+                HDR
+                + " 最低价 1.110 元，较高点 1.180 元已回撤约 8%。"
+                + _block(
+                    HDR_ROW,
+                    "1.110 | observed | low | prices",
+                    "1.180 | observed | high | prices",
+                    "8% | derived | (1.110 - 1.180) / 1.180 | prices",
+                )
+            )
+            if on_text_chunk:
+                on_text_chunk(draft)
+            return _Response(content=draft)
+
+        if tools is None:
+            corrected = (
+                HDR
+                + " 最低价 1.110 元，较高点 1.180 元已回撤约 5.9%。"
+                + _block(
+                    HDR_ROW,
+                    "1.110 | observed | low | prices",
+                    "1.180 | observed | high | prices",
+                    "5.9% | derived | (1.110 - 1.180) / 1.180 | prices",
+                )
+            )
+            if on_text_chunk:
+                on_text_chunk(corrected)
+            return _Response(content=corrected)
+
+        return _Response(
+            tool_calls=[
+                _tool_call(
+                    f"prices-repeat-{self.calls}",
+                    "get_market_data",
+                    codes=[SYMBOL],
+                    start_date="2026-06-23",
+                    end_date="2026-06-24",
+                    source="auto",
+                )
+            ]
+        )
+
+    def chat(self, messages: list[dict[str, Any]], **kwargs: Any) -> _Response:
+        return _Response()
+
+
 def _tool_call(call_id: str, tool_name: str, **arguments: Any) -> SimpleNamespace:
     return SimpleNamespace(id=call_id, name=tool_name, arguments=arguments)
 
@@ -719,6 +814,38 @@ def test_loop_releases_the_redacted_draft_instead_of_the_canned_refusal(tmp_path
     assert [status["stage"] for status in statuses] == ["revising", "released_redacted"]
     assert statuses[0]["round"] == 1 and statuses[0]["issues"] >= 1
     assert statuses[1]["removed"] == 1
+    assert_system_messages_only_lead(llm.messages_history)
+
+
+def test_grounding_conflict_forces_revision_before_more_readonly_research(
+    tmp_path: Path,
+) -> None:
+    """A derivation mismatch with sufficient evidence must revise, not re-fetch.
+
+    Before this regression guard, the post-rejection turn still exposed every
+    tool. A model that chose to re-run get_market_data received the same bars,
+    so ToolProgress saw no new observation and eventually killed the otherwise
+    recoverable run with no_progress.
+    """
+    llm = _CorrectionRetryLLM()
+
+    result, _, _ = _run(tmp_path, llm, max_iterations=16)
+
+    assert result["status"] == "success"
+    assert result.get("degraded") is None
+    assert llm.calls == 4
+    assert llm.tools_history[3] is None
+    assert "5.9%" in result["content"]
+    assert "8%" not in result["content"]
+
+    trace = TraceWriter.read(tmp_path / "run")
+    rejected = [entry for entry in trace if entry.get("type") == "answer_rejected"]
+    assert len(rejected) == 1
+    assert any(
+        issue.get("reason") == "derivation_result_mismatch"
+        for issue in rejected[0].get("issues", [])
+    )
+    assert not [entry for entry in trace if entry.get("type") == "no_progress"]
     assert_system_messages_only_lead(llm.messages_history)
 
 

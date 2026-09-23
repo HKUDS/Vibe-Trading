@@ -557,7 +557,8 @@ class TestHistoricalFundingRate:
 
 
 class TestStrictPerpetualLifecycle:
-    @pytest.mark.parametrize("interval", ["3m", "60m", "4H", "1D"])
+    # "1M" is a month: the old lower-cased comparison read it as "1m" (#1479).
+    @pytest.mark.parametrize("interval", ["3m", "60m", "4H", "1D", "1W", "1M"])
     def test_strict_100x_rejects_unsupported_or_coarse_intervals(
         self, interval: str
     ) -> None:

@@ -1809,7 +1809,7 @@ def get_market_data(
         end_date: End date (YYYY-MM-DD).
         source: Data source. Prefer ``auto``; ``yahoo``/``yfinance`` serve
             Canada, US, and HK equities.
-        interval: Bar size (1m/5m/15m/30m/1H/4H/1D, default "1D").
+        interval: Bar size (1m/5m/15m/30m/1H/4H/1D/1W/1M, default "1D"; 1W and 1M are built from daily bars).
         max_rows: Per-symbol row cap (default 250) so the response stays
             within the MCP token budget. A symbol exceeding it returns an
             even-stride downsample (every step-th bar, last bar pinned)
