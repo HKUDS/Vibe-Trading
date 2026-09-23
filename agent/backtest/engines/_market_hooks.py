@@ -72,6 +72,11 @@ _MARKET_PATTERNS = [
     # Vietnam equities: HOSE (VIC.VN). Tickers are three letters in practice;
     # the class stays broad to admit fund certificates and ETF codes.
     (re.compile(r"^[A-Z0-9]+\.VN$", re.I), "vietnam_equity"),
+    # Kenya equities: Nairobi Securities Exchange, Reuters-style ``.NR``
+    # suffix (SCOM.NR). The class admits '-' for preference lines
+    # (KPLC-P4.NR) and ISIN-form symbols (KE0000000281.NR). ``.NR`` cannot
+    # collide with India's ``.NS``.
+    (re.compile(r"^[A-Z0-9\-]+\.NR$", re.I), "kenya_equity"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
     # yfinance's native crypto spelling (BTC-USD, ETH-USD). Distinct from
@@ -170,6 +175,7 @@ _MARKET_CURRENCY = {
     "ar_equity": "ARS",
     "uk_equity": "GBP",
     "vietnam_equity": "VND",
+    "kenya_equity": "KES",
     # Every crypto pattern in _MARKET_PATTERNS is USDT-quoted, and USDT is
     # carried at its USD peg. This is the one approximation in the table: a
     # depeg would make a crypto+US book wrong by the depeg amount, which is

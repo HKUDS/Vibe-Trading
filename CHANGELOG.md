@@ -7,6 +7,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Kenya (Nairobi Securities Exchange) market support.** A `.NR` symbol
+  (`SCOM.NR`, `KPLC-P4.NR`, or an ISIN such as `KE0000000281.NR`) is its own
+  market `kenya_equity`, quoted in KES.
+  - **Data: `nse_ke`**, the 29th source. It reads the exchange's own free
+    Daily Equity Price List PDFs, anchoring each row on its ISIN so digits in a
+    security name cannot shift the columns. `close` is the session VWAP — the
+    NSE's official close — and `pre_close` the prior VWAP, so the band
+    reference is the exchange's own. Needs the new `nse-ke` extra
+    (`pdfplumber`); without it the chain falls through to `local`.
+  - **Execution: `KenyaEquityEngine`**, under the NSE Equity Trading Rules as
+    amended July 2025: long-only, T+3 settlement hold (from the newest opening
+    fill), ±10% band on the Rule 5.9 tiered tick grid, 1-share board lots
+    (`ke_lot_size=100` for the pre-August-2025 regime), and a per-side cost
+    stack of tiered brokerage plus 0.34% statutory levies. Composite runs apply
+    the same rules to their Kenya leg.
+  - **Web UI: an NSE board** at `/markets/kenya`, served by
+    `GET /markets/kenya/board`: breadth, movers, a turnover treemap grouped by
+    the list's own sectors, and a sortable table, for the latest session or any
+    past date. Settings source priority, the positions asset-class grouping and
+    the sector union carry `kenya_equity` in all nine locales.
+
 - **Argentina (BYMA) market data** (#1543). A `.BA` symbol — a BYMA listing or a
   locally traded CEDEAR — is its own market `ar_equity`, quoted in ARS, served
   by `yahoo` → `yfinance` → `local`, and reported as market `ar` by

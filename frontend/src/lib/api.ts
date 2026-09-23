@@ -369,8 +369,46 @@ function appendQueryParam(url: string, key: string, value: string): string {
   return `${url}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 }
 
+/** One counter on the NSE daily price list (``GET /markets/kenya/board``). */
+export interface KenyaBoardRow {
+  code: string | null;
+  name: string;
+  isin: string;
+  sector: string | null;
+  /** Session VWAP — the NSE's official close. The previous close when untraded. */
+  close: number | null;
+  prev: number | null;
+  change: number | null;
+  change_pct: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number;
+  turnover: number;
+  hi52: number | null;
+  lo52: number | null;
+  traded: boolean;
+}
+
+export interface KenyaBoardResponse {
+  as_of: string;
+  source: string;
+  source_url: string;
+  rows: KenyaBoardRow[];
+  breadth: {
+    listed: number;
+    traded: number;
+    advancers: number;
+    decliners: number;
+    unchanged: number;
+  };
+}
+
 export const api = {
   uploadFile,
+  getKenyaBoard: (date?: string) =>
+    request<KenyaBoardResponse>(
+      date ? `/markets/kenya/board?date=${encodeURIComponent(date)}` : "/markets/kenya/board",
+    ),
   getCorrelation: (codes: string, days: number, method: "pearson" | "spearman") =>
     request<CorrelationResponse>(
       `/correlation?codes=${encodeURIComponent(codes)}&days=${encodeURIComponent(String(days))}&method=${encodeURIComponent(method)}`,
@@ -1230,6 +1268,7 @@ export type SectorAssetClass =
   | "ar_equity"
   | "uk_equity"
   | "vietnam_equity"
+  | "kenya_equity"
   | "index"
   | "crypto"
   | "futures"

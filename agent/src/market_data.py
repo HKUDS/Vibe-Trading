@@ -34,6 +34,9 @@ _SOURCE_PATTERNS = [
     # verbatim; without this they fell through to the tushare default and were
     # routed to China-market loaders that cannot resolve them.
     (re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I), "yahoo"),
+    # Kenya: Nairobi Securities Exchange (SCOM.NR, KPLC-P4.NR, or an ISIN such
+    # as KE0000000281.NR). Served by the exchange's own daily price list.
+    (re.compile(r"^[A-Z0-9\-]+\.NR$", re.I), "nse_ke"),
     # Yahoo futures (GC=F, CL=F) and forex (EURUSD=X) suffix conventions —
     # served verbatim by Yahoo's public chart endpoint (#718). Without these,
     # such symbols fell through to the ``tushare`` default and were routed to
@@ -91,7 +94,7 @@ FIAT_CODES = frozenset(
     {
         "USD", "EUR", "GBP", "JPY", "CHF", "CNY", "CNH", "HKD", "AUD", "NZD",
         "CAD", "KRW", "INR", "SGD", "SEK", "NOK", "DKK", "MXN", "BRL", "ZAR",
-        "TRY", "RUB", "PLN", "THB", "MYR", "IDR", "PHP", "VND", "ILS", "AED",
+        "TRY", "RUB", "PLN", "THB", "MYR", "IDR", "PHP", "VND", "ILS", "AED", "KES",
         "SAR", "EGP", "CZK", "HUF", "RON", "CLP", "COP", "PEN", "TWD", "CUP",
     }
 )

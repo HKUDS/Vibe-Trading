@@ -423,7 +423,7 @@ vibe-trading connector install /tmp/my-broker
 
 ## 📡 مصادر البيانات والتراجع الذكي
 
-استدعاء واحد لـ `get_market_data`، **28 مصدر بيانات سوقية**، أحدها سوق **QVeris** المدفوع الاختياري (إضافة إلى سوق مدفوع اختياري **QVeris**). اضبط `source: "auto"` — يختار المُحمّل حسب الرمز، ثم يسير عبر سلسلة لكل سوق مرتبة بحسب **خطر حظر عنوان IP**: المصادر العامة التي لا تُحظر أبداً أولاً، والمصادر المُقيّدة أو المحمية بمفتاح أخيراً. بلا أي إعداد، ولا نقطة فشل واحدة.
+استدعاء واحد لـ `get_market_data`، **29 مصدر بيانات سوقية**، أحدها سوق **QVeris** المدفوع الاختياري (إضافة إلى سوق مدفوع اختياري **QVeris**). اضبط `source: "auto"` — يختار المُحمّل حسب الرمز، ثم يسير عبر سلسلة لكل سوق مرتبة بحسب **خطر حظر عنوان IP**: المصادر العامة التي لا تُحظر أبداً أولاً، والمصادر المُقيّدة أو المحمية بمفتاح أخيراً. بلا أي إعداد، ولا نقطة فشل واحدة.
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -444,6 +444,7 @@ vibe-trading connector install /tmp/my-broker
 | `mt5` | الفوركس / المعادن | طرفية MT5 | طرفية MetaTrader 5 محلية اختيارية (Windows) — تغذية وسيطك الفعلية كما هي، مع حلّ لواحق الرموز بأسلوب Exness تلقائياً |
 | `tickerall` | الفوركس / المعادن | مفتاح + حساب (للقراءة فقط) | تغذية MT5 لنفس الوسيط لكن **مستضافة** — دون طرفية محلية وعلى أي نظام تشغيل (بالاختيار الصريح فقط، ولا تدخل سلسلة auto أبدًا) |
 | `pykrx` | كوريا (KRX: KOSPI/KOSDAQ) | لا شيء | أشرطة يومية لـ KOSPI / KOSDAQ لرموز `.KS` / `.KQ` (إضافة `krx` اختيارية) |
+| `nse_ke` | كينيا (بورصة نيروبي NSE) | لا شيء | قائمة الأسعار اليومية الرسمية للبورصة (PDF مجاني): أشرطة يومية لـ `.NR`، والإغلاق هو VWAP الجلسة؛ إضافة `nse-ke` الاختيارية |
 | `india_broker` | الهند (NSE/BSE) | تسجيل دخول الوسيط | قراءة فقط لأشرطة Zerodha / Shoonya / Dhan لرموز `.NS` / `.BO` (ذيل سلسلة التراجع) |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
@@ -454,6 +455,7 @@ vibe-trading connector install /tmp/my-broker
 - **أسهم HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **أسهم الهند (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **كوريا (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
+- **كينيا (بورصة نيروبي NSE)** → `nse_ke` · `local`
 - **المملكة المتحدة (LSE)** → `yahoo` · `yfinance` · `local` *(الأسعار المعلنة بـ GBP/GBp فقط)*
 - **الكريبتو** → `okx` · `ccxt` · `binance` · `yfinance` · `local`
 - **الفوركس / المعادن** → `mt5` · `yfinance` · `akshare` · `local` &nbsp;·&nbsp; *(العقود الآجلة / الصناديق / الاقتصاد الكلي → `tushare`/`akshare` → `local`)*
@@ -642,7 +644,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>محرّكات الاختبار الرجعي</b> <sub>10 محرّكات + محفظة خيارات، ومركّب عبر الأسواق</sub></summary>
+<summary><b>محرّكات الاختبار الرجعي</b> <sub>11 محرّكات + محفظة خيارات، ومركّب عبر الأسواق</sub></summary>
 
 | المحرّك | السوق | ملاحظات |
 |--------|-------|---------|
@@ -651,6 +653,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 | **IndiaEquity** | الهند (NSE/BSE) | T+1، ونطاقات القاطع (circuit)، وحزمة تكاليف STT / الدمغة / SEBI / GST قابلة للتهيئة |
 | **KoreaEquity** | كوريا (KRX: KOSPI/KOSDAQ) | شراء فقط، ونطاق ±30% يُحكم عليه لحظة التنفيذ على شبكة الخطوة السعرية الموحّدة، وضريبة تداول 0.20% لعام 2026 |
 | **VietnamEquity** | فيتنام (HOSE) | شراء فقط، واحتجاز تسوية T+2، ونطاق ±7% على شبكة الخطوة السعرية 10/50/100 دونغ، ولوت 100 سهم، وضريبة 0.1% على البيع |
+| **KenyaEquity** | كينيا (NSE) | شراء فقط، واحتجاز تسوية T+3، ونطاق ±10% من VWAP الجلسة السابقة على شبكة خطوات سعرية متدرجة بالشلن الكيني، ووحدة تداول من سهم واحد (100 قبل أغسطس 2025)، وتكلفة 1.84–2.10% لكل جانب |
 | **Crypto** | crypto فوري / عقود USD-M الدائمة | تسويات التمويل، وفصل سعر التنفيذ عن سعر العلامة |
 | **ChinaFutures** · **GlobalFutures** | العقود الآجلة | الهامش، ومضاعِفات العقد |
 | **Forex** | FX / المعادن | عبر مُحمّل `mt5` |
@@ -1698,8 +1701,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider abstraction
 │   │
 │   └── backtest/                   # Backtest engines
-│       ├── engines/                #   9 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   28 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata
+│       ├── engines/                #   10 engines + composite cross-market engine + options_portfolio
+│       ├── loaders/                #   29 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, nse_ke, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity
