@@ -166,6 +166,7 @@ class TestVolume:
         assert result["sma_20"] is None
         assert result["ratio_20"] is None
 
+
 class TestMACD:
     def test_macd_normal(self):
         close = pd.Series(range(1, 101), dtype=float)
@@ -256,6 +257,11 @@ class TestTechnicalIndicatorToolIntegration:
         assert result["indicators"]["ema_20"] is not None
         assert result["latest_close"] == 349.0
         assert result["latest_date"] == str(sample_df.index[-1].date())
+        assert result["indicators"]["volume"] == {
+            "latest": None,
+            "sma_20": None,
+            "ratio_20": None,
+        }
 
     def test_execute_dataframe_with_adj_close(self, monkeypatch, sample_close):
         """Loader returns 'adj_close' instead of 'close'."""
