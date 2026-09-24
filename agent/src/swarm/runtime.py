@@ -1089,15 +1089,10 @@ class SwarmRuntime:
         cumulative_output_tokens = 0
         result: WorkerResult | None = None
 
-        # agent_artifact_dir is keyed by agent_id alone, so a preset where
-        # one agent handles multiple sequential tasks reuses the same
-        # directory across tasks. Clear it before this task's first attempt
-        # too, not just before a retry: otherwise a prior task's report.md
-        # (or any other tool-written file) is still there when this task's
-        # own _resolve_summary/_report_written/_collect_artifacts read the
-        # directory back, silently attributing it to this task instead.
-        clear_agent_artifacts(agent_artifact_dir(run_dir, agent_spec.id))
-
+        # agent_artifact_dir is keyed by (agent_id, task_id), so this task's
+        # first attempt always starts from a directory no other task has
+        # ever written to. Nothing to clear before it; only a retry of this
+        # same task needs clearing, below.
         for attempt in range(max_retries + 1):
             if attempt > 0:
                 retry_delay_s = _worker_retry_delay_s(attempt)
@@ -1138,7 +1133,9 @@ class SwarmRuntime:
                 # there when the retried attempt reads the directory back,
                 # silently substituting stale content for the new attempt's
                 # real result.
-                clear_agent_artifacts(agent_artifact_dir(run_dir, agent_spec.id))
+                clear_agent_artifacts(
+                    agent_artifact_dir(run_dir, agent_spec.id, task.id)
+                )
 
             result = run_worker(
                 agent_spec=agent_spec,

@@ -412,7 +412,7 @@ def test_collect_artifacts_recurses_and_returns_sorted_run_relative_paths(
     (artifact_dir / "nested" / "report.json").write_text("{}", encoding="utf-8")
     (artifact_dir / "other" / "report.json").write_text("{}", encoding="utf-8")
 
-    assert _collect_artifacts(artifact_dir) == [
+    assert _collect_artifacts(tmp_path / "run", artifact_dir) == [
         "artifacts/analyst/nested/report.json",
         "artifacts/analyst/other/report.json",
         "artifacts/analyst/summary.md",
@@ -430,7 +430,7 @@ def test_collect_artifacts_rejects_symlink_escape(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are not available on this platform")
 
-    assert _collect_artifacts(artifact_dir) == []
+    assert _collect_artifacts(tmp_path / "run", artifact_dir) == []
 
 
 # ---------------------------------------------------------------------------

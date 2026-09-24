@@ -1,16 +1,27 @@
 """Regression tests: a retried worker attempt must not inherit stale
 artifacts (report.md, or any other tool-written file) from a prior failed
-attempt for the same task.
+attempt for the same task, and two different tasks must never share an
+artifact directory.
 
 ``_run_worker_with_retries`` re-invokes ``run_worker`` against the *same*
-``artifact_dir`` on every attempt (``mkdir(parents=True, exist_ok=True)``,
-no cleanup). ``_resolve_summary``/``_report_written``/``_collect_artifacts``
-all read whatever is currently sitting in that directory, with no way to
-tell which attempt wrote it. Without isolation, a worker that fails after
-writing report.md, followed by a retry that fails immediately (a realistic
-sequence of two ordinary transient LLM/provider errors), silently returns
-the discarded first attempt's stale content as the retried attempt's real
-result.
+``artifact_dir`` on every retry of one task (``mkdir(parents=True,
+exist_ok=True)``, no cleanup in between). ``_resolve_summary``/
+``_report_written``/``_collect_artifacts`` all read whatever is currently
+sitting in that directory, with no way to tell which attempt wrote it.
+Without per-attempt isolation, a worker that fails after writing report.md,
+followed by a retry that fails immediately (a realistic sequence of two
+ordinary transient LLM/provider errors), silently returns the discarded
+first attempt's stale content as the retried attempt's real result.
+
+``agent_artifact_dir`` is keyed by ``(agent_id, task_id)``, not ``agent_id``
+alone: an earlier design cleared the agent's single shared directory before
+every fresh task dispatch, which fixed the sequential-task leak above but
+traded it for two worse failure modes a reviewer caught before merge: (1) a
+prior task's artifacts, needed after the agent moved on, were deleted
+outright instead of just not being reread, and (2) two tasks assigned to the
+same agent and dispatched concurrently would have one task's retry delete
+the other's in-flight output out from under it. Per-task directories have
+neither problem.
 
 The real ``_resolve_summary``/``_report_written``/``_collect_artifacts``
 are exercised for real inside the mocked ``run_worker`` below (only the
@@ -55,12 +66,12 @@ def _make_agent_spec(max_retries: int) -> SwarmAgentSpec:
     )
 
 
-def _make_task() -> SwarmTask:
-    return SwarmTask(id="task-1", agent_id="analyst", prompt_template="do x")
+def _make_task(task_id: str = "task-1") -> SwarmTask:
+    return SwarmTask(id=task_id, agent_id="analyst", prompt_template="do x")
 
 
 # --------------------------------------------------------------------------- #
-# Unit tests: the two new helpers themselves
+# Unit tests: the two shared helpers themselves
 # --------------------------------------------------------------------------- #
 
 
@@ -68,33 +79,41 @@ def test_agent_artifact_dir_matches_run_worker_construction(tmp_path: Path) -> N
     """The shared helper must resolve to the exact path run_worker() writes
     to, or the retry loop would clear the wrong directory entirely."""
     run_dir = tmp_path / "run-x"
-    assert agent_artifact_dir(run_dir, "analyst") == run_dir / "artifacts" / "analyst"
+    assert agent_artifact_dir(run_dir, "analyst", "task-1") == (
+        run_dir / "artifacts" / "analyst" / "task-1"
+    )
 
 
-@pytest.mark.parametrize(
-    "agent_id", ["..", "/abs/path", "", ".", "a/b", r"a\\b"]
-)
-def test_agent_artifact_dir_rejects_path_shaped_ids(
+@pytest.mark.parametrize("agent_id", ["..", "/abs/path", "", ".", "a/b", r"a\\b"])
+def test_agent_artifact_dir_rejects_path_shaped_agent_ids(
     tmp_path: Path, agent_id: str
 ) -> None:
     with pytest.raises(ValueError, match="agent id"):
-        agent_artifact_dir(tmp_path / "run-x", agent_id)
+        agent_artifact_dir(tmp_path / "run-x", agent_id, "task-1")
+
+
+@pytest.mark.parametrize("task_id", ["..", "/abs/path", "", ".", "a/b", r"a\\b"])
+def test_agent_artifact_dir_rejects_path_shaped_task_ids(
+    tmp_path: Path, task_id: str
+) -> None:
+    with pytest.raises(ValueError, match="task id"):
+        agent_artifact_dir(tmp_path / "run-x", "analyst", task_id)
 
 
 def test_agent_artifact_dir_rejects_canonical_symlink_escape(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-x"
     artifact_root = run_dir / "artifacts"
-    artifact_root.mkdir(parents=True)
+    (artifact_root / "analyst").mkdir(parents=True)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (artifact_root / "analyst").symlink_to(outside, target_is_directory=True)
+    (artifact_root / "analyst" / "task-1").symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(ValueError, match="agent id"):
-        agent_artifact_dir(run_dir, "analyst")
+    with pytest.raises(ValueError, match="agent/task id"):
+        agent_artifact_dir(run_dir, "analyst", "task-1")
 
 
 def test_clear_agent_artifacts_removes_nested_files_and_dirs(tmp_path: Path) -> None:
-    artifact_dir = tmp_path / "artifacts" / "analyst"
+    artifact_dir = tmp_path / "artifacts" / "analyst" / "task-1"
     (artifact_dir / "charts").mkdir(parents=True)
     (artifact_dir / "report.md").write_text("stale", encoding="utf-8")
     (artifact_dir / "charts" / "plot.png").write_text("stale-binary", encoding="utf-8")
@@ -106,7 +125,7 @@ def test_clear_agent_artifacts_removes_nested_files_and_dirs(tmp_path: Path) -> 
 
 def test_clear_agent_artifacts_is_noop_when_directory_absent(tmp_path: Path) -> None:
     """Nothing to clean up before the very first attempt — must not raise."""
-    artifact_dir = tmp_path / "artifacts" / "analyst"
+    artifact_dir = tmp_path / "artifacts" / "analyst" / "task-1"
     assert not artifact_dir.exists()
     clear_agent_artifacts(artifact_dir)  # must not raise
     assert not artifact_dir.exists()
@@ -125,7 +144,7 @@ def test_stale_report_not_returned_after_retry(tmp_path: Path) -> None:
     task = _make_task()
     run_dir = tmp_path / "run-stale-report"
     run_dir.mkdir()
-    artifact_dir = agent_artifact_dir(run_dir, "analyst")
+    artifact_dir = agent_artifact_dir(run_dir, "analyst", task.id)
 
     calls = {"n": 0}
 
@@ -178,7 +197,7 @@ def test_stale_non_report_artifact_not_leaked_after_retry(tmp_path: Path) -> Non
     task = _make_task()
     run_dir = tmp_path / "run-stale-artifact"
     run_dir.mkdir()
-    artifact_dir = agent_artifact_dir(run_dir, "analyst")
+    artifact_dir = agent_artifact_dir(run_dir, "analyst", task.id)
 
     calls = {"n": 0}
 
@@ -192,13 +211,13 @@ def test_stale_non_report_artifact_not_leaked_after_retry(tmp_path: Path) -> Non
             return WorkerResult(
                 status="failed",
                 summary="attempt 1 raw fallback",
-                artifact_paths=_collect_artifacts(artifact_dir),
+                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
                 error="attempt 1: tool error",
             )
         return WorkerResult(
             status="failed",
             summary="attempt 2 real fallback",
-            artifact_paths=_collect_artifacts(artifact_dir),
+            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
             error="attempt 2: provider error",
         )
 
@@ -232,7 +251,7 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
     task = _make_task()
     run_dir = tmp_path / "run-successful-retry"
     run_dir.mkdir()
-    artifact_dir = agent_artifact_dir(run_dir, "analyst")
+    artifact_dir = agent_artifact_dir(run_dir, "analyst", task.id)
 
     calls = {"n": 0}
 
@@ -249,7 +268,7 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
             return WorkerResult(
                 status="failed",
                 summary=_resolve_summary(artifact_dir, "attempt 1 raw fallback"),
-                artifact_paths=_collect_artifacts(artifact_dir),
+                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
                 error="attempt 1: provider error",
             )
         (artifact_dir / "report.md").write_text(
@@ -258,7 +277,7 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
         return WorkerResult(
             status="completed",
             summary=_resolve_summary(artifact_dir, "attempt 2 raw fallback"),
-            artifact_paths=_collect_artifacts(artifact_dir),
+            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
         )
 
     with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
@@ -278,25 +297,26 @@ def test_successful_retry_only_reflects_current_attempt_artifacts(
     assert result.status == "completed"
     assert "Attempt 2" in result.summary
     assert "Attempt 1" not in result.summary
-    assert result.artifact_paths == ["artifacts/analyst/report.md"]
+    assert result.artifact_paths == ["artifacts/analyst/task-1/report.md"]
 
 
-def test_stale_report_not_leaked_from_earlier_task_sharing_the_same_agent(
+def test_earlier_task_artifacts_survive_a_later_task_on_the_same_agent(
     tmp_path: Path,
 ) -> None:
-    """agent_artifact_dir is keyed by agent_id alone, so a preset where one
-    agent handles two sequential tasks (task-2 depends_on task-1) reuses the
-    same directory. task-1's report.md must not survive to be read back as
-    task-2's result."""
+    """agent_artifact_dir is keyed by (agent_id, task_id): a preset where one
+    agent handles two sequential tasks (task-2 depends_on task-1) must give
+    each its own directory. task-1's report.md must still be there, readable
+    under its own task_id, after task-2 runs — not deleted, and not visible
+    to task-2 either."""
     runtime = _make_runtime(tmp_path)
     agent_spec = _make_agent_spec(max_retries=0)
     run_dir = tmp_path / "run-shared-agent"
     run_dir.mkdir()
-    artifact_dir = agent_artifact_dir(run_dir, "analyst")
 
     def fake_run_worker(**kwargs):
-        artifact_dir.mkdir(parents=True, exist_ok=True)
         task = kwargs["task"]
+        artifact_dir = agent_artifact_dir(run_dir, "analyst", task.id)
+        artifact_dir.mkdir(parents=True, exist_ok=True)
         if task.id == "task-1":
             (artifact_dir / "report.md").write_text(
                 "# Task 1 report\nTASK-1 CONTENT.", encoding="utf-8"
@@ -304,7 +324,7 @@ def test_stale_report_not_leaked_from_earlier_task_sharing_the_same_agent(
         return WorkerResult(
             status="completed",
             summary=_resolve_summary(artifact_dir, f"{task.id} raw fallback"),
-            artifact_paths=_collect_artifacts(artifact_dir),
+            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
         )
 
     task1 = SwarmTask(id="task-1", agent_id="analyst", prompt_template="do x")
@@ -338,3 +358,63 @@ def test_stale_report_not_leaked_from_earlier_task_sharing_the_same_agent(
     assert result2.summary == "task-2 raw fallback"
     assert "Task 1" not in result2.summary
     assert result2.artifact_paths == []
+
+    # task-1's artifact is not just absent from task-2's result — it is
+    # still on disk, under its own task directory, after task-2 completed.
+    task1_dir = agent_artifact_dir(run_dir, "analyst", "task-1")
+    assert (task1_dir / "report.md").read_text(encoding="utf-8") == (
+        "# Task 1 report\nTASK-1 CONTENT."
+    )
+
+
+def test_retrying_one_task_does_not_touch_a_concurrent_sibling_tasks_output(
+    tmp_path: Path,
+) -> None:
+    """Two tasks assigned to the same agent, dispatched concurrently (e.g.
+    two branches of the DAG with no dependency between them): retrying one
+    must not delete the other's in-flight output, since a shared directory
+    would make a retry-triggered clear race with a sibling task's writes."""
+    runtime = _make_runtime(tmp_path)
+    agent_spec = _make_agent_spec(max_retries=1)
+    run_dir = tmp_path / "run-concurrent-siblings"
+    run_dir.mkdir()
+
+    task_a = SwarmTask(id="task-a", agent_id="analyst", prompt_template="do a")
+
+    # task-b's worker is "in flight": its directory already carries a
+    # partial write, as if a concurrent worker thread wrote it moments ago.
+    sibling_dir = agent_artifact_dir(run_dir, "analyst", "task-b")
+    sibling_dir.mkdir(parents=True)
+    (sibling_dir / "partial.csv").write_text("in-flight", encoding="utf-8")
+
+    calls = {"n": 0}
+
+    def fake_run_worker(**kwargs):
+        calls["n"] += 1
+        artifact_dir = agent_artifact_dir(run_dir, "analyst", "task-a")
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        if calls["n"] == 1:
+            return WorkerResult(status="failed", summary="", error="transient error")
+        (artifact_dir / "report.md").write_text("task-a result", encoding="utf-8")
+        return WorkerResult(
+            status="completed",
+            summary=_resolve_summary(artifact_dir, "task-a fallback"),
+            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+        )
+
+    with patch("src.swarm.runtime.run_worker", side_effect=fake_run_worker):
+        runtime._run_worker_with_retries(
+            agent_spec=agent_spec,
+            task=task_a,
+            upstream_summaries={},
+            user_vars={},
+            run_dir=run_dir,
+            event_callback=None,
+            run_id="run-concurrent-siblings",
+            include_shell_tools=False,
+            grounding_block="",
+        )
+
+    assert calls["n"] == 2
+    # task-a's own retry cleared task-a's own directory, never task-b's.
+    assert (sibling_dir / "partial.csv").read_text(encoding="utf-8") == "in-flight"
