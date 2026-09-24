@@ -296,7 +296,7 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
         )
 
     assert result.status == "completed"
-    report_path = tmp_path / "artifacts" / "kb_analyst" / "report.md"
+    report_path = tmp_path / "artifacts" / "kb_analyst" / "t1" / "report.md"
     assert report_path.is_file()
     contents = report_path.read_text(encoding="utf-8")
     assert canned_payload["answer"] in contents
