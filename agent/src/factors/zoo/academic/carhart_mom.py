@@ -21,13 +21,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.factors.base import delta, safe_div
+from src.factors.base import safe_div
 
 __alpha_meta__ = {
     'id': 'academic_carhart_mom',
     'nickname': 'Carhart 1997 momentum — 12m-1m return',
     'theme': ['momentum'],
-    'formula_latex': r'\mathrm{zscore}_{x}\bigl((\mathrm{close}_t - \mathrm{close}_{t-252})/\mathrm{close}_{t-252} - (\mathrm{close}_t - \mathrm{close}_{t-21})/\mathrm{close}_{t-21}\bigr)',
+    'formula_latex': r'\mathrm{zscore}_{x}\bigl((\mathrm{close}_{t-21} - \mathrm{close}_{t-252})/\mathrm{close}_{t-252}\bigr)',
     'columns_required': ['close'],
     'universe': ['equity_us', 'equity_cn', 'equity_hk'],
     'frequency': ['1d'],
@@ -53,13 +53,17 @@ def _cross_sectional_zscore(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Return 252-day minus 21-day return z-score (Carhart UMD).
+    """Return skip-month (12m-1m) return z-score (Carhart UMD).
+
+    The return is measured from 252 trading days ago to 21 trading days ago,
+    so today's price never enters the calculation -- that is what "skipping"
+    the most recent month means, and it is what keeps short-term reversal out
+    of an intermediate-term momentum signal.
 
     Uses canonical (252, 21) windows without silent shrink on short panels.
     Short panels produce all-NaN; the registry surfaces this as >95% NaN
     (RegistryError) rather than returning a misleading shrunk-window value.
     """
     close = panel['close']
-    ret_long = safe_div(delta(close, 252), close.shift(252))
-    ret_short = safe_div(delta(close, 21), close.shift(21))
-    return _cross_sectional_zscore(ret_long - ret_short)
+    skip_month_return = safe_div(close.shift(21) - close.shift(252), close.shift(252))
+    return _cross_sectional_zscore(skip_month_return)
