@@ -28,6 +28,7 @@ _INTERNAL = frozenset(
         "dingtalk_media",
         "dingtalk_probe",
         "email_probe",
+        "feishu_probe",
         "manager",
         "pairing",
         "qq_probe",

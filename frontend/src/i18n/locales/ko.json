@@ -712,6 +712,60 @@
             "label": "TLS 키 경로",
             "help": "WSS용 서버의 PEM 개인 키 경로입니다. 인증서와 키를 모두 설정하거나 모두 비워 두세요. 업로드 자료가 아니라 서버의 파일 경로입니다."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "Feishu / Lark 개발자 콘솔의 앱 App ID(cli_ 로 시작)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "앱의 App Secret. 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "이벤트 구독 설정의 Encrypt Key. 롱커넥션 모드에서는 선택 사항입니다."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "이벤트 구독 설정의 Verification Token. 롱커넥션 모드에서는 선택 사항입니다."
+          },
+          "allow_from": {
+            "label": "허용된 발신자",
+            "help": "에이전트와 대화할 수 있는 Feishu 발신자 ID 허용 목록. 비워 두면 봇이 볼 수 있는 모든 사용자에게 허용됩니다."
+          },
+          "react_emoji": {
+            "label": "작업 중 이모지",
+            "help": "에이전트가 작업하는 동안 들어온 메시지에 붙이는 이모지(기본값 THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "완료 이모지",
+            "help": "작업이 끝났을 때 붙이는 이모지. 비우면 붙이지 않습니다."
+          },
+          "tool_hint_prefix": {
+            "label": "도구 힌트 접두사",
+            "help": "답변의 인라인 도구 힌트 앞에 표시되는 접두사."
+          },
+          "group_policy": {
+            "label": "그룹 정책",
+            "help": "\"mention\"은 그룹에서 @ 멘션될 때만 답변하고, \"open\"은 모든 그룹 메시지에 답변합니다."
+          },
+          "reply_to_message": {
+            "label": "원문 인용 답변",
+            "help": "답변할 때 원문 메시지를 인용합니다."
+          },
+          "streaming": {
+            "label": "스트리밍 답변",
+            "help": "CardKit 라이브 편집으로 답변을 스트리밍합니다."
+          },
+          "domain": {
+            "label": "도메인",
+            "help": "중국용은 \"feishu\"(open.feishu.cn), 국제용 Lark는 \"lark\"(open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "토픽별 세션",
+            "help": "그룹의 각 토픽에 별도 에이전트 세션을 할당합니다."
+          }
         }
       },
       "guides": {
@@ -754,6 +808,16 @@
           "step4": "채널 실행 중에 저장하면 서버가 핫 스왑됩니다. 연결된 클라이언트(이 웹 UI 채팅 포함)는 잠시 끊겼다가 자동으로 다시 연결됩니다.",
           "step5": "‘연결 테스트’를 클릭하면 SSL 인증서/키 자료와 주소 사용 가능 여부를 로컬에서 검증합니다.",
           "docsLabel": "Vibe-Trading 문서 열기"
+        },
+        "feishu": {
+          "title": "Feishu / Lark 봇 설정 가이드",
+          "intro": "Feishu 봇은 WebSocket 롱커넥션으로 연결되므로 공개 IP나 웹훅이 필요 없습니다.",
+          "step1": "Feishu 오픈 플랫폼(open.feishu.cn)에서 사용자 지정 앱을 만드세요. 터미널에서 vibe-trading channels login feishu 로 QR 스캔 생성을 사용하면 App ID와 App Secret이 자동 저장됩니다.",
+          "step2": "앱에 봇 기능을 추가하세요.",
+          "step3": "이벤트 구독에서 '메시지 받기 im.message.receive_v1'를 구독하고 롱커넥션 모드를 선택하세요.",
+          "step4": "'자격 증명 및 기본 정보'에서 App ID와 App Secret을 복사해 위 입력칸에 붙여넣으세요.",
+          "step5": "버전을 만들어 앱을 게시(테넌트에 따라 관리자 승인 필요)한 뒤 여기서 채널을 활성화하면 재시작 없이 즉시 적용됩니다. 국제 Lark 테넌트는 도메인을 lark로 설정하세요.",
+          "docsLabel": "Feishu 오픈 플랫폼 열기"
         }
       }
     },
@@ -1995,3 +2059,4 @@
     }
   }
 }
+

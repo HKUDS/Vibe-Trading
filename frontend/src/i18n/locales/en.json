@@ -717,6 +717,60 @@
             "label": "TLS key path",
             "help": "PEM private key path on the server for WSS. Set both certificate and key, or neither; these are file paths on the server, not uploaded material."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "The app's App ID from the Feishu / Lark developer console (starts with cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "The app's App Secret. Stored server-side and never sent back to the browser."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "The Encrypt Key from the Event Subscription settings. Optional for long-connection mode."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "The Verification Token from the Event Subscription settings. Optional for long-connection mode."
+          },
+          "allow_from": {
+            "label": "Allowed senders",
+            "help": "Optional allowlist of Feishu sender IDs that may talk to the agent. Leave empty to allow everyone the bot can see."
+          },
+          "react_emoji": {
+            "label": "Working emoji",
+            "help": "Emoji reacted on an incoming message while the agent works (default THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Done emoji",
+            "help": "Emoji reacted when the task completes. Leave empty for none."
+          },
+          "tool_hint_prefix": {
+            "label": "Tool hint prefix",
+            "help": "Prefix shown before inline tool hints in the reply."
+          },
+          "group_policy": {
+            "label": "Group policy",
+            "help": "\"mention\" replies only when the bot is @mentioned in groups, \"open\" replies to all group messages."
+          },
+          "reply_to_message": {
+            "label": "Quote the original message",
+            "help": "Quote-reply to the original message when answering."
+          },
+          "streaming": {
+            "label": "Streaming replies",
+            "help": "Stream the reply with CardKit live card edits."
+          },
+          "domain": {
+            "label": "Domain",
+            "help": "\"feishu\" for Feishu China (open.feishu.cn), \"lark\" for international Lark (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Per-topic sessions",
+            "help": "Give each group topic its own agent session instead of sharing one session per group."
+          }
         }
       },
       "guides": {
@@ -759,6 +813,16 @@
           "step4": "Saving while the channel is running hot-swaps the server: connected clients (including this Web UI chat) briefly disconnect and reconnect.",
           "step5": "Click Test connection — it validates the SSL certificate/key material and the address availability locally.",
           "docsLabel": "Open the Vibe-Trading docs"
+        },
+        "feishu": {
+          "title": "Feishu / Lark bot setup",
+          "intro": "Feishu bots connect over a WebSocket long connection, so no public IP or webhook URL is needed.",
+          "step1": "Create a Custom App on the Feishu Open Platform (open.feishu.cn), or scan-to-create it from the terminal with vibe-trading channels login feishu, which saves the App ID and App Secret automatically.",
+          "step2": "Add the Bot capability to the app.",
+          "step3": "Under Event Subscription, subscribe to receiving messages (im.message.receive_v1) and choose Long Connection mode.",
+          "step4": "Copy the App ID and App Secret from Credentials & Basic Info and paste them into the fields above.",
+          "step5": "Create a version and publish the app (admin approval if your tenant requires it), then enable the channel here — it hot-applies with no restart. For international Lark tenants, set domain to \"lark\".",
+          "docsLabel": "Open the Feishu Open Platform"
         }
       }
     },
@@ -1995,3 +2059,4 @@
     }
   }
 }
+

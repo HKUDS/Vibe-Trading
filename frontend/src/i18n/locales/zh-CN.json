@@ -712,6 +712,60 @@
             "label": "TLS 私钥路径",
             "help": "WSS 使用的服务端 PEM 私钥路径。证书与私钥需成对设置或同时留空；这里是服务器上的文件路径，不是上传的材料。"
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "飞书 / Lark 开放平台开发者后台中应用的 App ID（以 cli_ 开头）。"
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "应用的 App Secret，保存在服务端，绝不会回传到浏览器。"
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key（加密密钥）",
+            "help": "事件订阅设置中的 Encrypt Key；使用长连接模式时可不填。"
+          },
+          "verification_token": {
+            "label": "Verification Token（验证令牌）",
+            "help": "事件订阅设置中的 Verification Token；使用长连接模式时可不填。"
+          },
+          "allow_from": {
+            "label": "允许的发送者",
+            "help": "允许与智能体对话的飞书发送者 ID 白名单；留空表示机器人可见范围内的所有人都可对话。"
+          },
+          "react_emoji": {
+            "label": "处理中表情",
+            "help": "智能体处理期间对收到的消息附加的表情（默认 THUMBSUP）。"
+          },
+          "done_emoji": {
+            "label": "完成表情",
+            "help": "任务完成时附加的表情；留空表示不附加。"
+          },
+          "tool_hint_prefix": {
+            "label": "工具提示前缀",
+            "help": "回复中内联工具提示前显示的前缀。"
+          },
+          "group_policy": {
+            "label": "群聊策略",
+            "help": "“mention”表示群聊中仅在被 @ 提及时回复；“open”表示回复所有群消息。"
+          },
+          "reply_to_message": {
+            "label": "引用原消息",
+            "help": "回复时引用（quote-reply）原消息。"
+          },
+          "streaming": {
+            "label": "流式回复",
+            "help": "通过 CardKit 实时编辑卡片，将回复以流式方式输出。"
+          },
+          "domain": {
+            "label": "域名",
+            "help": "中国版飞书填“feishu”（open.feishu.cn），国际版 Lark 填“lark”（open.larksuite.com）。"
+          },
+          "topic_isolation": {
+            "label": "按话题隔离会话",
+            "help": "群聊中每个话题使用独立的智能体会话，而不是整群共享一个会话。"
+          }
         }
       },
       "guides": {
@@ -754,6 +808,16 @@
           "step4": "渠道运行中保存会热切换服务：已连接的客户端（包括本 Web UI 聊天）会短暂断开并自动重连。",
           "step5": "点击“测试连接”，它会在本地校验 SSL 证书/私钥与地址可用性。",
           "docsLabel": "打开 Vibe-Trading 文档"
+        },
+        "feishu": {
+          "title": "飞书 / Lark 机器人配置指南",
+          "intro": "飞书机器人通过 WebSocket 长连接接入，无需公网 IP 或回调地址。",
+          "step1": "在飞书开放平台（open.feishu.cn）创建企业自建应用；也可在终端运行 vibe-trading channels login feishu 扫码创建，App ID 与 App Secret 会自动保存。",
+          "step2": "为应用添加机器人能力。",
+          "step3": "在事件订阅中订阅“接收消息 im.message.receive_v1”，并选择长连接模式。",
+          "step4": "在“凭证与基础信息”页面复制 App ID 与 App Secret，填入上方字段。",
+          "step5": "创建版本并发布应用（若租户要求，需管理员审批），然后回到这里启用渠道——即时生效、无需重启；国际版 Lark 租户请将域名设为“lark”。",
+          "docsLabel": "打开飞书开放平台"
         }
       }
     },
@@ -1995,3 +2059,4 @@
     }
   }
 }
+

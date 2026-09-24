@@ -717,6 +717,60 @@
             "label": "Path kunci TLS",
             "help": "Path kunci privat PEM di server untuk WSS. Atur sertifikat dan kunci bersamaan, atau kosongkan keduanya; ini path berkas di server, bukan materi yang diunggah."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "App ID aplikasi dari konsol pengembang Feishu / Lark (diawali cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "App Secret aplikasi. Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "Encrypt Key dari pengaturan langganan event; opsional untuk mode long connection."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "Verification Token dari pengaturan langganan event; opsional untuk mode long connection."
+          },
+          "allow_from": {
+            "label": "Pengirim yang diizinkan",
+            "help": "Daftar putih opsional ID pengirim Feishu yang boleh berbicara dengan agen; kosong berarti semua yang terlihat oleh bot."
+          },
+          "react_emoji": {
+            "label": "Emoji saat bekerja",
+            "help": "Emoji yang direaksikan ke pesan masuk sementara agen bekerja (bawaan THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Emoji saat selesai",
+            "help": "Emoji yang direaksikan saat tugas selesai; kosongkan jika tidak ada."
+          },
+          "tool_hint_prefix": {
+            "label": "Prefiks petunjuk tool",
+            "help": "Prefiks yang tampil di depan petunjuk tool inline pada balasan."
+          },
+          "group_policy": {
+            "label": "Kebijakan grup",
+            "help": "\"mention\" hanya membalas saat bot disebut (@mention) di grup, \"open\" membalas semua pesan grup."
+          },
+          "reply_to_message": {
+            "label": "Kutip pesan asli",
+            "help": "Balas dengan mengutip pesan asli."
+          },
+          "streaming": {
+            "label": "Balasan streaming",
+            "help": "Mengalirkan balasan dengan penyuntingan kartu langsung melalui CardKit."
+          },
+          "domain": {
+            "label": "Domain",
+            "help": "\"feishu\" untuk Feishu China (open.feishu.cn) atau \"lark\" untuk Lark internasional (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Sesi per topik",
+            "help": "Beri setiap topik grup sesi agennya sendiri, bukan satu sesi untuk seluruh grup."
+          }
         }
       },
       "guides": {
@@ -759,6 +813,16 @@
           "step4": "Menyimpan saat kanal berjalan akan menukar server secara panas: klien yang terhubung (termasuk obrolan Web UI ini) sempat terputus lalu tersambung kembali.",
           "step5": "Klik «Uji koneksi»; pengujian memvalidasi materi sertifikat/kunci SSL dan ketersediaan alamat secara lokal.",
           "docsLabel": "Buka dokumentasi Vibe-Trading"
+        },
+        "feishu": {
+          "title": "Penyiapan bot Feishu / Lark",
+          "intro": "Bot Feishu memakai long connection WebSocket, jadi tidak perlu IP publik maupun webhook.",
+          "step1": "Buat Custom App di Feishu Open Platform (open.feishu.cn), atau buat lewat pindaian QR dari terminal dengan vibe-trading channels login feishu — App ID dan App Secret tersimpan otomatis.",
+          "step2": "Tambahkan kemampuan Bot ke aplikasi.",
+          "step3": "Di Langganan Event, berlangganan «Menerima pesan im.message.receive_v1» dan pilih mode Long Connection.",
+          "step4": "Salin App ID dan App Secret dari halaman Kredensial & Info Dasar, lalu tempel di kolom di atas.",
+          "step5": "Buat versi dan publikasikan aplikasi (perlu persetujuan admin jika tenant Anda mensyaratkannya), lalu aktifkan kanal di sini — berlaku seketika tanpa restart. Untuk tenant Lark internasional, set domain ke lark.",
+          "docsLabel": "Buka Feishu Open Platform"
         }
       }
     },
@@ -1995,3 +2059,4 @@
     }
   }
 }
+
