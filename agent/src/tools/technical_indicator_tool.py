@@ -77,10 +77,12 @@ def _extract_close_series(payload: Any) -> pd.Series | None:
         dates = pd.to_datetime(frame[date_key], errors="coerce")
     elif isinstance(frame.index, pd.DatetimeIndex):
         dates = pd.Series(frame.index, index=frame.index)
-    elif not isinstance(frame.index, pd.RangeIndex) and not pd.api.types.is_integer_dtype(
-        frame.index.dtype
-    ):
-        dates = pd.Series(pd.to_datetime(frame.index, errors="coerce"), index=frame.index)
+    elif not isinstance(
+        frame.index, pd.RangeIndex
+    ) and not pd.api.types.is_integer_dtype(frame.index.dtype):
+        dates = pd.Series(
+            pd.to_datetime(frame.index, errors="coerce"), index=frame.index
+        )
     else:
         return close.dropna().reset_index(drop=True).astype(float)
 
@@ -127,10 +129,12 @@ def _extract_volume_series(payload: Any) -> pd.Series | None:
         dates = pd.to_datetime(frame[date_key], errors="coerce")
     elif isinstance(frame.index, pd.DatetimeIndex):
         dates = pd.Series(frame.index, index=frame.index)
-    elif not isinstance(frame.index, pd.RangeIndex) and not pd.api.types.is_integer_dtype(
-        frame.index.dtype
-    ):
-        dates = pd.Series(pd.to_datetime(frame.index, errors="coerce"), index=frame.index)
+    elif not isinstance(
+        frame.index, pd.RangeIndex
+    ) and not pd.api.types.is_integer_dtype(frame.index.dtype):
+        dates = pd.Series(
+            pd.to_datetime(frame.index, errors="coerce"), index=frame.index
+        )
     else:
         return volume.reset_index(drop=True).astype(float)
 
@@ -298,7 +302,10 @@ class TechnicalIndicatorTool(BaseTool):
         interval = _canonicalize_interval(requested_interval)
         if interval is None:
             return json.dumps(
-                {"ok": False, "error": f"unsupported interval {requested_interval!r}; use 1d, 1wk or 1mo"}
+                {
+                    "ok": False,
+                    "error": f"unsupported interval {requested_interval!r}; use 1d, 1wk or 1mo",
+                }
             )
 
         try:
