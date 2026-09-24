@@ -1,7 +1,7 @@
 """Read-only technical indicator tool.
 
-Computes RSI, MACD, Bollinger Bands, SMA, and EMA for a given symbol using the
-existing market-data pipeline. All computation is pure Python (numpy/pandas);
+Computes RSI, MACD, Bollinger Bands, SMA, EMA, and volume statistics for a given
+symbol using the existing market-data pipeline. All computation is pure Python (numpy/pandas);
 no new dependencies.
 """
 
@@ -164,6 +164,7 @@ def _compute_volume_stats(volume: pd.Series, period: int = 20) -> dict[str, floa
 
     return {"latest": latest, "sma_20": sma, "ratio_20": ratio}
 
+
 def _compute_sma(close: pd.Series, period: int) -> float | None:
     """Simple moving average over the last *period* bars."""
     if len(close) < period:
@@ -242,14 +243,16 @@ class TechnicalIndicatorTool(BaseTool):
     """Compute common technical indicators for a symbol.
 
     Fetches OHLCV data through the existing loader pipeline, then computes
-    RSI, MACD, Bollinger Bands, SMA, and EMA. All math is pure Python; no
-    new dependencies, no network calls beyond what the loaders already do.
+    RSI, MACD, Bollinger Bands, SMA, EMA, and volume statistics. All math is
+    pure Python; no new dependencies, no network calls beyond what the loaders
+    already do.
     """
 
     name = "technical_indicators"
     description = (
         "Compute common technical indicators (RSI, MACD, Bollinger Bands, "
-        "SMA, EMA) for a trading symbol. Uses the project's data loaders "
+        "SMA, EMA) plus latest/20-bar volume statistics for a trading symbol. "
+        "Uses the project's data loaders "
         "to fetch price history, then computes indicators locally."
     )
     parameters = {
