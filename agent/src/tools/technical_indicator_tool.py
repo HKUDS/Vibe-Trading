@@ -143,7 +143,9 @@ def _extract_volume_series(payload: Any) -> pd.Series | None:
     return normalized.sort_index(kind="stable")
 
 
-def _compute_volume_stats(volume: pd.Series, period: int = 20) -> dict[str, float | None]:
+def _compute_volume_stats(
+    volume: pd.Series, period: int = 20
+) -> dict[str, float | None]:
     """Return latest volume, its trailing mean, and latest/mean ratio.
 
     The trailing mean is reported only when the latest period bars all carry
