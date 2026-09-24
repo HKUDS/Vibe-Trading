@@ -369,11 +369,17 @@ def _coerce_position_rows(positions: object) -> list[dict] | None:
 def _position_market_value(row: dict) -> float | None:
     """Extract one position's USD market value, fail-closed.
 
-    Prefers an explicit ``market_value`` field; otherwise derives it from
-    ``quantity`` × (``price`` | ``last_price`` | ``mark_price``). Returns
-    ``None`` if neither is parseable.
+    Prefers an explicit market-value field (including Futu's ``market_val``);
+    otherwise derives it from ``quantity`` × a current-price field. The price
+    keys include ``current_price``/``ltp`` alongside ``price``/``last_price``/
+    ``mark_price``/``market_price`` because several direct-SDK connectors
+    (Toss, Dhan, KIS, Zerodha, Shoonya) report the live quote under one of
+    those names rather than the generic ones -- without them, every position
+    from those brokers was unpriceable, and one unpriceable position fails
+    the whole mandate exposure check closed, blocking every subsequent order
+    regardless of size. Returns ``None`` if neither is parseable.
     """
-    for key in ("market_value", "marketValue", "value_usd", "value"):
+    for key in ("market_value", "marketValue", "value_usd", "value", "market_val"):
         if key in row:
             parsed = _as_float(row[key])
             return parsed  # may be None → fail-closed upstream
@@ -383,7 +389,14 @@ def _position_market_value(row: dict) -> float | None:
             qty = _as_float(row[key])
             break
     price = None
-    for key in ("price", "last_price", "mark_price", "market_price"):
+    for key in (
+        "price",
+        "last_price",
+        "mark_price",
+        "market_price",
+        "current_price",
+        "ltp",
+    ):
         if key in row:
             price = _as_float(row[key])
             break
