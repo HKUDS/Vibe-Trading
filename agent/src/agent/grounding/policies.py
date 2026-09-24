@@ -460,7 +460,11 @@ class _PolicyMixin:
             and record.value is not None
             and record.symbol
         ]
-        document_symbol = self._symbol_for_claim(content, symbol_records)
+        # Preserve the existing price-derived document fallback. A report may
+        # mention a secondary instrument only for fundamentals; that should make
+        # explicit claims about the secondary resolvable without making otherwise
+        # unattributed primary-listing figures ambiguous.
+        document_symbol = self._symbol_for_claim(content, records)
         positions = _lines_with_offsets(content)
         line_symbols = [
             self._symbol_for_claim(line, symbol_records) for line, _ in positions
