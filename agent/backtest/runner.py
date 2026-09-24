@@ -39,7 +39,6 @@ from backtest.loaders.base import (
     source_interval,
     validate_ohlc,
 )
-
 # Symbol classification lives in ``_market_hooks`` so runner.py and
 # composite.py share a single source of truth (audit-2026-05-18 B1+C1+C2).
 # ``_detect_market`` is also re-exported here for back-compat with
@@ -138,7 +137,9 @@ class BacktestConfigSchema(BaseModel):
         try:
             pd.Timestamp(v)
         except Exception:
-            raise ValueError(f"invalid evaluation_start_date: {v!r} (expected YYYY-MM-DD)") from None
+            raise ValueError(
+                f"invalid evaluation_start_date: {v!r} (expected YYYY-MM-DD)"
+            ) from None
         return v
 
     @field_validator("rebalance_mask")
@@ -189,7 +190,9 @@ class BacktestConfigSchema(BaseModel):
             return v
         for entry in v:
             if not isinstance(entry, dict):
-                raise ValueError("each event_feeds entry must be an object with name/route_template/event_type")
+                raise ValueError(
+                    "each event_feeds entry must be an object with name/route_template/event_type"
+                )
             for key in ("name", "route_template", "event_type"):
                 if not str(entry.get(key, "")).strip():
                     raise ValueError(f"event_feeds entry missing required field: {key}")
@@ -198,9 +201,13 @@ class BacktestConfigSchema(BaseModel):
     @model_validator(mode="after")
     def start_before_end(self) -> "BacktestConfigSchema":
         if self.rebalance_mask is not None and self.position_adjustment != "rebalance":
-            raise ValueError("rebalance_mask requires position_adjustment='rebalance'")
+            raise ValueError(
+                "rebalance_mask requires position_adjustment='rebalance'"
+            )
         if pd.Timestamp(self.start_date) > pd.Timestamp(self.end_date):
-            raise ValueError(f"start_date ({self.start_date}) must be <= end_date ({self.end_date})")
+            raise ValueError(
+                f"start_date ({self.start_date}) must be <= end_date ({self.end_date})"
+            )
         return self
 
 
@@ -308,7 +315,9 @@ def _validate_class_body(node: ast.ClassDef) -> None:
             continue
         if isinstance(child, ast.Pass):
             continue
-        raise ValueError(f"Executable class-level statement {type(child).__name__} is not allowed")
+        raise ValueError(
+            f"Executable class-level statement {type(child).__name__} is not allowed"
+        )
 
 
 # --- Runtime-reachable operation scrubber (VT-001 defense-in-depth) ---
@@ -420,9 +429,10 @@ def _is_forbidden_module_path(name: str) -> bool:
         return False
     if name.split(".")[0] in _FORBIDDEN_IMPORT_MODULES:
         return True
-    return any(name == prefix or name.startswith(prefix + ".") for prefix in _FORBIDDEN_IMPORT_PREFIXES)
-
-
+    return any(
+        name == prefix or name.startswith(prefix + ".")
+        for prefix in _FORBIDDEN_IMPORT_PREFIXES
+    )
 # ``os`` itself is allowed (os.path etc.), but these attributes shell out, spawn,
 # or read the process environment — none has a place in a signal engine.
 _FORBIDDEN_OS_ATTRS = frozenset(
@@ -487,7 +497,9 @@ _FORBIDDEN_DUNDER_ATTRS = frozenset(
         "__subclasshook__",
     }
 )
-_FORBIDDEN_BUILTINS = frozenset({"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint"})
+_FORBIDDEN_BUILTINS = frozenset(
+    {"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint"}
+)
 # getattr/setattr/delattr can indirect around the attribute scanner
 # (``getattr(os, "system")("id")``). We reject them ONLY when the target object
 # is ``os`` or a forbidden module — keyed off the target, not the attribute
@@ -742,8 +754,14 @@ def _scan_runtime_reachable(tree: ast.Module) -> None:
     if engine_cls is None:
         return
 
-    module_funcs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    worklist: list[ast.AST] = [m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    module_funcs = {
+        n.name: n
+        for n in tree.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    worklist: list[ast.AST] = [
+        m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
     aliases = _module_level_forbidden_aliases(tree)
     visited: set[int] = set()
     while worklist:
@@ -754,7 +772,10 @@ def _scan_runtime_reachable(tree: ast.Module) -> None:
         for node in ast.walk(fn):
             _reject_forbidden_node(node)
             if isinstance(node, ast.Name) and node.id in aliases:
-                raise ValueError(f"Use of {node.id!r}, bound at module level to {aliases[node.id]!r}, {_SCRUB_MSG}")
+                raise ValueError(
+                    f"Use of {node.id!r}, bound at module level to "
+                    f"{aliases[node.id]!r}, {_SCRUB_MSG}"
+                )
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 target = module_funcs.get(node.func.id)
                 if target is not None:
@@ -786,7 +807,9 @@ def _validate_signal_engine_source(file_path: Path) -> None:
             continue
         if _is_safe_constant_assignment(node):
             continue
-        raise ValueError(f"Executable top-level statement {type(node).__name__} is not allowed")
+        raise ValueError(
+            f"Executable top-level statement {type(node).__name__} is not allowed"
+        )
 
     # Deep pass: the structural loop above only guards import-time execution;
     # this walks the code that runs on SignalEngine().generate() (VT-001).
@@ -797,10 +820,8 @@ def _validate_signal_engine_class(engine_cls) -> None:
     """Pre-flight check: SignalEngine can be instantiated with no args and has generate()."""
     sig = inspect.signature(engine_cls.__init__)
     required = [
-        p.name
-        for p in sig.parameters.values()
-        if p.name != "self"
-        and p.default is inspect.Parameter.empty
+        p.name for p in sig.parameters.values()
+        if p.name != "self" and p.default is inspect.Parameter.empty
         and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
     if required:
@@ -1027,7 +1048,11 @@ def _build_price_panel(data_map: dict[str, pd.DataFrame]) -> dict[str, pd.DataFr
     """
     panel: dict[str, pd.DataFrame] = {}
     for column in _PRICE_PANEL_COLUMNS:
-        series_by_symbol = {symbol: frame[column] for symbol, frame in data_map.items() if column in frame.columns}
+        series_by_symbol = {
+            symbol: frame[column]
+            for symbol, frame in data_map.items()
+            if column in frame.columns
+        }
         if series_by_symbol:
             panel[column] = pd.DataFrame(series_by_symbol)
     return panel
@@ -1069,7 +1094,7 @@ def _inject_fundamental_panel(
     Returns:
         The same panel dictionary with ``fund:<field>`` frames added.
     """
-    fields = [column[len(_FUND_PREFIX) :] for column in fund_columns if column.startswith(_FUND_PREFIX)]
+    fields = [column[len(_FUND_PREFIX):] for column in fund_columns if column.startswith(_FUND_PREFIX)]
     fields = list(dict.fromkeys(fields))
     if not fields:
         return panel
@@ -1161,7 +1186,6 @@ def _maybe_inject_fundamentals_for_factor_panel(
 
 # --- Main entry ---
 
-
 def main(run_dir: Path) -> None:
     """Load config, fetch data, run the selected backtest engine.
 
@@ -1194,7 +1218,6 @@ def main(run_dir: Path) -> None:
     # below blocks executable top-level statements but a method body still
     # runs on instantiation. See ``safe_run_dir`` for the policy.
     from src.tools.path_utils import safe_run_dir
-
     try:
         run_dir = safe_run_dir(str(run_dir))
     except ValueError as exc:
@@ -1286,7 +1309,6 @@ def main(run_dir: Path) -> None:
 
     if engine_type == "options":
         from backtest.engines.options_portfolio import run_options_backtest
-
         run_options_backtest(config, loader, signal_engine, run_dir, bars_per_year=bars_per_year)
     else:
         market_engine = _create_market_engine(effective_source, config, codes)
@@ -1341,7 +1363,9 @@ def _observed_spacing(data_map: dict, codes: List[str]) -> float | None:
     fundamental panel cannot decide the annualisation.
     """
     indexes = [
-        data_map[code].index for code in codes if code in data_map and len(data_map[code]) >= _MIN_BARS_FOR_SPACING
+        data_map[code].index
+        for code in codes
+        if code in data_map and len(data_map[code]) >= _MIN_BARS_FOR_SPACING
     ]
     if not indexes:
         return None
@@ -1416,7 +1440,8 @@ def _annualisation_bars(
 
     matched = min(
         _INTERVAL_SECONDS,
-        key=lambda name: max(_INTERVAL_SECONDS[name], observed) / min(_INTERVAL_SECONDS[name], observed),
+        key=lambda name: max(_INTERVAL_SECONDS[name], observed)
+        / min(_INTERVAL_SECONDS[name], observed),
     )
     matched_spacing = _INTERVAL_SECONDS[matched]
     if max(matched_spacing, observed) / min(matched_spacing, observed) >= _SPACING_MISMATCH_RATIO:
@@ -1471,7 +1496,6 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     # Cross-market -> CompositeEngine
     if len(markets) > 1:
         from backtest.engines.composite import CompositeEngine
-
         return CompositeEngine(config, codes)
 
     # Futures routing (Wave 2)
@@ -1479,16 +1503,13 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         # Distinguish China vs global futures by exchange suffix
         if any(_is_china_futures(c) for c in codes):
             from backtest.engines.china_futures import ChinaFuturesEngine
-
             return ChinaFuturesEngine(config)
         from backtest.engines.global_futures import GlobalFuturesEngine
-
         return GlobalFuturesEngine(config)
 
     # Forex routing (Wave 2)
     if "forex" in markets:
         from backtest.engines.forex import ForexEngine
-
         return ForexEngine(config)
 
     # India equity routing — must precede source-based routing because India's
@@ -1496,14 +1517,12 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     # otherwise fall through to the crypto default.
     if "india_equity" in markets:
         from backtest.engines.india_equity import IndiaEquityEngine
-
         return IndiaEquityEngine(config)
 
     # Korea equity routing — same reason as India: its effective source
     # (``pykrx``) has no Wave-1 branch and would fall through to the default.
     if "kr_equity" in markets:
         from backtest.engines.korea_equity import KoreaEquityEngine
-
         return KoreaEquityEngine(config)
 
     # Vietnam equity routing — same reason as India and Korea: its effective
@@ -1511,29 +1530,24 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     # default.
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
-
         return VietnamEquityEngine(config)
     # Index symbols (^SPX, ^FTSE, ...) — priced like a US/global-listed
     # instrument (GlobalEquityEngine, US rules) and never the China/crypto
     # default the source-based fallback would pick.
     if "index" in markets:
         from backtest.engines.global_equity import GlobalEquityEngine
-
         return GlobalEquityEngine(config, market=_detect_submarket(codes))
 
     # Original routing (Wave 1)
     if source in ("okx", "ccxt"):
         from backtest.engines.crypto import CryptoEngine
-
         return CryptoEngine(config)
     elif source in ("tushare", "akshare"):
         if markets & {"us_equity", "hk_equity", "ca_equity", "uk_equity"}:
             from backtest.engines.global_equity import GlobalEquityEngine
-
             market = _detect_submarket(codes)
             return GlobalEquityEngine(config, market=market)
         from backtest.engines.china_a import ChinaAEngine
-
         return ChinaAEngine(config)
     elif source == "yfinance":
         # yfinance serves crypto pairs (BTC-USDT, BTC-USD) next to equities,
@@ -1543,10 +1557,8 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         # in the config, and nothing warns.
         if "crypto" in markets:
             from backtest.engines.crypto import CryptoEngine
-
             return CryptoEngine(config)
         from backtest.engines.global_equity import GlobalEquityEngine
-
         market = _detect_submarket(codes)
         return GlobalEquityEngine(config, market=market)
     else:
@@ -1555,7 +1567,6 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         # local AAPL.US dataset gets US-equity execution rules instead of crypto.
         if markets & {"us_equity", "hk_equity", "ca_equity", "uk_equity"}:
             from backtest.engines.global_equity import GlobalEquityEngine
-
             market = _detect_submarket(codes)
             return GlobalEquityEngine(config, market=market)
         # A-shares need the same treatment. Every branchless source that serves
@@ -1566,10 +1577,8 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
         # position. The run still succeeds, which is what makes it dangerous.
         if "a_share" in markets:
             from backtest.engines.china_a import ChinaAEngine
-
             return ChinaAEngine(config)
         from backtest.engines.crypto import CryptoEngine
-
         return CryptoEngine(config)
 
 
@@ -1627,7 +1636,9 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         local_result = local_loader.fetch(stripped, start_date, end_date, interval=interval)
         missing_local = [code for code in local_codes if strip_local_prefix(code) not in local_result]
         if missing_local:
-            raise NoAvailableSourceError(f"incomplete data for source=local; missing symbols: {missing_local}")
+            raise NoAvailableSourceError(
+                f"incomplete data for source=local; missing symbols: {missing_local}"
+            )
         local_name = str(getattr(local_loader, "name", "local") or "local")
         served_by.add(local_name)
         for code in local_result:
@@ -1658,7 +1669,9 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             fields=fields,
             interval=interval,
         )
-        market_result = _restore_original_codes(result, market_codes, normalized_codes)
+        market_result = _restore_original_codes(
+            result, market_codes, normalized_codes
+        )
         if market_result:
             served_by.add(src_name)
             for code in market_result:
@@ -1676,7 +1689,9 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
             if not fb_loader.is_available():
                 continue
             fb_codes = _normalize_codes(missing, fb_name)
-            fallback_result = fb_loader.fetch(fb_codes, start_date, end_date, interval=interval)
+            fallback_result = fb_loader.fetch(
+                fb_codes, start_date, end_date, interval=interval
+            )
             mapped = _restore_original_codes(fallback_result, missing, fb_codes)
             if mapped:
                 market_result.update(mapped)
@@ -1685,10 +1700,14 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 served_by.add(fb_served_by)
                 for code in mapped:
                     caliber_stamps[code] = (fb_served_by, frame_caliber(mapped[code], fb_served_by, market, code))
-                logger.info("Runtime fallback: %s -> %s for %s", src_name, fb_name, market)
+                logger.info(
+                    "Runtime fallback: %s -> %s for %s", src_name, fb_name, market
+                )
 
         if missing:
-            raise NoAvailableSourceError(f"incomplete data for {market}; missing symbols: {missing}")
+            raise NoAvailableSourceError(
+                f"incomplete data for {market}; missing symbols: {missing}"
+            )
         merged.update(market_result)
 
     config["_actual_sources"] = sorted(served_by)
@@ -1729,7 +1748,9 @@ def fetch_data_map(config: dict) -> DataFetchResult:
     # a contradictory request is refused here rather than half-served.
     prefixed = [code for code in codes if strip_local_prefix(code) != code]
     if prefixed and source not in ("local", "auto"):
-        raise ValueError(f"local: codes need source='local' or 'auto', not {source!r}: {prefixed}")
+        raise ValueError(
+            f"local: codes need source='local' or 'auto', not {source!r}: {prefixed}"
+        )
     bare = [strip_local_prefix(code) for code in codes]
     repeated = sorted({symbol for symbol in bare if bare.count(symbol) > 1})
     if repeated:
@@ -1744,9 +1765,9 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         # is only a fallback for a stubbed/patched fetcher that recorded nothing.
         recorded = config.pop("_actual_sources", None)
         caliber_stamps = config.pop("_caliber_stamps", None) or {}
-        used_sources: list[str] = [str(name) for name in recorded or [] if str(name).strip()] or sorted(
-            _group_codes_by_source(codes)
-        )
+        used_sources: list[str] = [
+            str(name) for name in recorded or [] if str(name).strip()
+        ] or sorted(_group_codes_by_source(codes))
     else:
         codes = _normalize_codes(codes, source)
         primary_source = source
@@ -1785,7 +1806,9 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         # as if the dataset held it. A ``local:`` code is the dataset's or nothing.
         unserved_local = [code for code in prefixed if strip_local_prefix(code) in missing]
         if unserved_local:
-            raise NoAvailableSourceError(f"incomplete data for source=local; missing symbols: {unserved_local}")
+            raise NoAvailableSourceError(
+                f"incomplete data for source=local; missing symbols: {unserved_local}"
+            )
         if missing:
             logger.warning(
                 "source=%s returned data for %d/%d symbols; missing: %s",
@@ -1806,7 +1829,10 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             for fallback_source in FALLBACK_CHAINS.get(market, []):
                 if not missing:
                     break
-                if fallback_source == primary_source or fallback_source not in LOADER_REGISTRY:
+                if (
+                    fallback_source == primary_source
+                    or fallback_source not in LOADER_REGISTRY
+                ):
                     continue
                 fallback_loader = LOADER_REGISTRY[fallback_source]()
                 if not fallback_loader.is_available():
@@ -1818,11 +1844,16 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                     config.get("end_date", ""),
                     interval=interval,
                 )
-                mapped = _restore_original_codes(fallback_result, missing, fallback_codes)
+                mapped = _restore_original_codes(
+                    fallback_result, missing, fallback_codes
+                )
                 if mapped:
                     data_map.update(mapped)
                     missing = [code for code in missing if code not in mapped]
-                    fb_served_by = str(getattr(fallback_loader, "name", fallback_source) or fallback_source)
+                    fb_served_by = str(
+                        getattr(fallback_loader, "name", fallback_source)
+                        or fallback_source
+                    )
                     for code in mapped:
                         caliber_stamps[code] = (
                             fb_served_by,
@@ -1832,13 +1863,22 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                         source = fb_served_by
                         loader = fallback_loader
                     used_sources.append(fb_served_by)
-                    logger.info("Runtime fallback: %s -> %s", primary_source, fb_served_by)
+                    logger.info(
+                        "Runtime fallback: %s -> %s", primary_source, fb_served_by
+                    )
 
         if missing:
-            raise NoAvailableSourceError(f"incomplete data for source={primary_source}; missing symbols: {missing}")
+            raise NoAvailableSourceError(
+                f"incomplete data for source={primary_source}; missing symbols: {missing}"
+            )
 
-    data_map = {code: resample_bars(frame, requested_interval) for code, frame in _sanitize_data_map(data_map).items()}
-    caliber_stamps = {code: stamp for code, stamp in caliber_stamps.items() if code in data_map}
+    data_map = {
+        code: resample_bars(frame, requested_interval)
+        for code, frame in _sanitize_data_map(data_map).items()
+    }
+    caliber_stamps = {
+        code: stamp for code, stamp in caliber_stamps.items() if code in data_map
+    }
     # Both warnings can apply at once (a tencent+baostock basket mixes calibers
     # *and* serves an additive one), and each says something the other does not,
     # so they are reported together rather than one shadowing the other.

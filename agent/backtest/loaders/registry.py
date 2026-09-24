@@ -324,7 +324,9 @@ _A_SHARE_INDEX_CODE = re.compile(r"^(?:000\d{3}\.SH|399\d{3}\.SZ|899\d{3}\.BJ)$"
 #: "split_dividend_additive" does participate — it is the whole point of the
 #: caliber: an additive level and a multiplicative one are two different scales,
 #: so a basket holding both must be warned about (#1493).
-_COMPARABLE_CALIBERS = frozenset({"raw", "split", "split_dividend", "split_dividend_additive"})
+_COMPARABLE_CALIBERS = frozenset(
+    {"raw", "split", "split_dividend", "split_dividend_additive"}
+)
 
 #: Calibers whose daily moves cannot be read as returns at all. Cash dividends
 #: enter the price *level* as an offset rather than scaling the series, so a
@@ -332,20 +334,6 @@ _COMPARABLE_CALIBERS = frozenset({"raw", "split", "split_dividend", "split_divid
 #: Unlike a mixed basket, this is a defect of the series itself: it needs a
 #: warning even when every symbol in the run came from the one source.
 _ADDITIVE_CALIBERS = frozenset({"split_dividend_additive"})
-
-
-def frame_caliber(frame: object, source: str, market: str | None = None, symbol: str | None = None) -> str:
-    """Caliber of one served frame, honoring what the loader actually served.
-
-    A loader that converted its series (e.g. the additive-to-multiplicative
-    path from #1541) reports the caliber on the frame itself; the static
-    (source, market) table is the fallback for unconverted data.
-    """
-    attrs = getattr(frame, "attrs", None)
-    adjustment = attrs.get("adjustment") if isinstance(attrs, dict) else None
-    if isinstance(adjustment, str) and adjustment:
-        return adjustment
-    return price_caliber(source, market, symbol)
 
 
 def market_has_corporate_actions(market: str) -> bool:
@@ -359,6 +347,19 @@ def market_has_corporate_actions(market: str) -> bool:
         every other market, so an unrecognized one is assumed to need it.
     """
     return market not in _NA_CALIBER_MARKETS and market not in _INDEX_CALIBER_MARKETS
+
+
+def frame_caliber(frame: object, source: str, market: str | None = None, symbol: str | None = None) -> str:
+    """Caliber of one served frame, honoring what the loader actually served.
+    A loader that converted its series (e.g. the additive-to-multiplicative
+    path from #1541) reports the caliber on the frame itself; the static
+    (source, market) table is the fallback for unconverted data.
+    """
+    attrs = getattr(frame, "attrs", None)
+    adjustment = attrs.get("adjustment") if isinstance(attrs, dict) else None
+    if isinstance(adjustment, str) and adjustment:
+        return adjustment
+    return price_caliber(source, market, symbol)
 
 
 def price_caliber(source: str, market: str | None = None, symbol: str | None = None) -> str:
@@ -381,7 +382,9 @@ def price_caliber(source: str, market: str | None = None, symbol: str | None = N
         market == "a_share" and symbol is not None and _A_SHARE_INDEX_CODE.match(symbol)
     ):
         return "raw"
-    return PRICE_CALIBER_BY_SOURCE_MARKET.get((source, market), PRICE_CALIBER_BY_SOURCE.get(source, "unknown"))
+    return PRICE_CALIBER_BY_SOURCE_MARKET.get(
+        (source, market), PRICE_CALIBER_BY_SOURCE.get(source, "unknown")
+    )
 
 
 def mixed_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
@@ -421,10 +424,16 @@ def additive_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
     dividends added back as a flat offset. That is the common A-share case,
     since ``tencent`` heads the chain (#1493).
     """
-    additive = {symbol: source for symbol, (source, caliber) in stamps.items() if caliber in _ADDITIVE_CALIBERS}
+    additive = {
+        symbol: source
+        for symbol, (source, caliber) in stamps.items()
+        if caliber in _ADDITIVE_CALIBERS
+    }
     if not additive:
         return None
-    shown = ", ".join(f"{symbol} ({source})" for symbol, source in sorted(additive.items())[:4])
+    shown = ", ".join(
+        f"{symbol} ({source})" for symbol, source in sorted(additive.items())[:4]
+    )
     if len(additive) > 4:
         shown += f", +{len(additive) - 4} more"
     return (
@@ -453,7 +462,9 @@ _SOURCE_ORDER_ENV_PREFIX = "MARKET_DATA_ORDER_"
 # Snapshot of the chains as written above. refresh_source_order_overrides()
 # restores from here; entries must never leak into FALLBACK_CHAINS by
 # aliasing (always copy on restore), or a restore would mutate the snapshot.
-_DEFAULT_CHAINS: dict[str, list[str]] = {market: chain[:] for market, chain in FALLBACK_CHAINS.items()}
+_DEFAULT_CHAINS: dict[str, list[str]] = {
+    market: chain[:] for market, chain in FALLBACK_CHAINS.items()
+}
 
 # market -> override currently in effect. Populated only by
 # refresh_source_order_overrides(); absent key = default chain in effect.
@@ -527,7 +538,8 @@ def refresh_source_order_overrides() -> None:
     from src.config.accessor import get_env_value
 
     snapshot = {
-        source_order_env_var(market): get_env_value(source_order_env_var(market), "") for market in _DEFAULT_CHAINS
+        source_order_env_var(market): get_env_value(source_order_env_var(market), "")
+        for market in _DEFAULT_CHAINS
     }
     if snapshot == _LAST_ORDER_ENV_SNAPSHOT:
         return
@@ -542,7 +554,8 @@ def refresh_source_order_overrides() -> None:
             continue
         if order:  # non-empty but invalid — warn, keep default order
             logger.warning(
-                "Ignoring invalid %s=%r: value must be a permutation of the default chain %s; keeping default order",
+                "Ignoring invalid %s=%r: value must be a permutation of the"
+                " default chain %s; keeping default order",
                 source_order_env_var(market),
                 raw,
                 default,
@@ -589,7 +602,8 @@ def resolve_loader(market: str) -> Any:
         if loader.is_available():
             return loader
     raise NoAvailableSourceError(
-        f"No available data source for market '{market}'. Tried: {tried or chain}. Check network and API token config."
+        f"No available data source for market '{market}'. "
+        f"Tried: {tried or chain}. Check network and API token config."
     )
 
 
@@ -638,7 +652,8 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
             "to api.wallex.ir.",
         }.get(source, "")
         raise NoAvailableSourceError(
-            f"Data source '{source}' is unavailable and does not fall back to a network source. {hint}".rstrip()
+            f"Data source '{source}' is unavailable and does not fall back to a "
+            f"network source. {hint}".rstrip()
         )
 
     # Source unavailable — try same-market fallback
@@ -655,4 +670,6 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
         except NoAvailableSourceError:
             continue
 
-    raise NoAvailableSourceError(f"Data source '{source}' is unavailable and no fallback found.")
+    raise NoAvailableSourceError(
+        f"Data source '{source}' is unavailable and no fallback found."
+    )

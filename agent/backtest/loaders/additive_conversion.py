@@ -36,20 +36,23 @@ import pandas as pd
 # one corporate-action segment into two.
 _OFFSET_TOL = 1e-6
 
-# A one-bar plateau inside (or at the edge of) a longer level is a quote
-# wobble, not a dividend: fold it only when the neighboring level(s) match
-# within this tolerance. Anything else that short cannot be classified and
-# refuses the window (a wrong series with a clean stamp is the worst outcome).
+# A one-bar plateau strictly inside a longer level is a quote wobble, not a
+# dividend: fold it only when both neighboring levels match within this
+# tolerance. At the window edge a lone bar cannot be told from a dividend
+# landing on the first or last bar, so it refuses the window instead (a wrong
+# series with a clean stamp is the worst outcome).
 _WOBBLE_TOL = 0.05
 
 
 def _plateau_spans(offset: pd.Series) -> list[tuple[int, int, float]] | None:
     """Group the offset series into [start, end) spans of one constant value.
 
-    One-bar spans are folded into a matching neighbor within ``_WOBBLE_TOL``
-    (quote wobble); a one-bar span that cannot be classified that way returns
-    None, since dropping a step we cannot classify would mint a wrong series
-    with a clean stamp.
+    One-bar spans are folded into a matching level when both neighbors agree
+    within ``_WOBBLE_TOL`` (quote wobble). A one-bar span at either window
+    edge has only one neighbor and cannot be told from a dividend landing on
+    the first or last bar, and any other one-bar span that cannot be
+    classified returns None, since dropping a step we cannot classify would
+    mint a wrong series with a clean stamp.
     """
     spans: list[tuple[int, int, float]] = []
     start = 0
@@ -77,13 +80,6 @@ def _plateau_spans(offset: pd.Series) -> list[tuple[int, int, float]] | None:
                 and abs(prev_value - next_value) <= _WOBBLE_TOL
                 and abs(value - prev_value) <= _WOBBLE_TOL
             ):
-                foldable_idx = i
-                break
-            # Edge wobble: the lone bar at either end matches its neighbor.
-            if i == 0 and next_value is not None and abs(value - next_value) <= _WOBBLE_TOL:
-                foldable_idx = i
-                break
-            if i == len(spans) - 1 and prev_value is not None and abs(value - prev_value) <= _WOBBLE_TOL:
                 foldable_idx = i
                 break
         if foldable_idx is None:

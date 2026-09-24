@@ -34,7 +34,9 @@ _DAILY_ONLY_ALIASES = frozenset({"1d", "d", "day", "daily"})
 
 def _require_daily_interval(interval: str, market: str) -> None:
     if str(interval).strip().lower() not in _DAILY_ONLY_ALIASES:
-        raise ValueError(f"Unsupported interval {interval!r}; akshare {market} supports daily bars only")
+        raise ValueError(
+            f"Unsupported interval {interval!r}; akshare {market} supports daily bars only"
+        )
 
 
 def _is_a_share(code: str) -> bool:
@@ -63,6 +65,9 @@ def _sina_contract(code: str) -> str:
 
 
 _CN_FUTURES_MAIN_RE = re.compile(r"^[A-Z]{1,2}0$")
+
+
+
 
 
 def _is_forex(code: str) -> bool:
@@ -98,7 +103,6 @@ class DataLoader:
         """Available if akshare is installed."""
         try:
             import akshare  # noqa: F401
-
             return True
         except ImportError:
             return False
@@ -177,11 +181,7 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self,
-        code: str,
-        start_date: str,
-        end_date: str,
-        interval: str,
+        self, code: str, start_date: str, end_date: str, interval: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch a single symbol."""
         import akshare as ak
@@ -209,25 +209,23 @@ class DataLoader:
             # Returning None hands the symbol to the next link in the chain;
             # letting it reach the A-share default below priced a USD-quoted
             # global contract off ``stock_zh_a_hist`` without erroring (#1395).
-            logger.warning("akshare serves Chinese futures only; %s has no akshare source", code)
+            logger.warning(
+                "akshare serves Chinese futures only; %s has no akshare source", code
+            )
             return None
         # Default: try A-share
         return self._fetch_a_share(ak, code, start_date, end_date, interval)
 
     def _fetch_a_share(
-        self,
-        ak,
-        code: str,
-        start_date: str,
-        end_date: str,
-        interval: str,
+        self, ak, code: str, start_date: str, end_date: str, interval: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch A-share via stock_zh_a_hist."""
         symbol = code.split(".")[0]
         period = _INTERVAL_MAP_DAILY.get(interval)
         if period is None:
             raise ValueError(
-                f"Unsupported interval {interval!r}; akshare a-share supports {sorted(_INTERVAL_MAP_DAILY)}"
+                f"Unsupported interval {interval!r}; akshare a-share supports "
+                f"{sorted(_INTERVAL_MAP_DAILY)}"
             )
         sd = start_date.replace("-", "")
         ed = end_date.replace("-", "")
@@ -256,7 +254,8 @@ class DataLoader:
         period = _INTERVAL_MAP_DAILY.get(interval)
         if period is None:
             raise ValueError(
-                f"Unsupported interval {interval!r}; akshare a-share supports {sorted(_INTERVAL_MAP_DAILY)}"
+                f"Unsupported interval {interval!r}; akshare a-share supports "
+                f"{sorted(_INTERVAL_MAP_DAILY)}"
             )
         df = ak.stock_zh_a_hist(
             symbol=symbol,
@@ -315,21 +314,21 @@ class DataLoader:
         df = ak.forex_hist_em(symbol=symbol)
         if df is None or df.empty:
             return None
-        df = df.rename(
-            columns={
-                "日期": "trade_date",
-                "今开": "open",
-                "最新价": "close",
-                "最高": "high",
-                "最低": "low",
-            }
-        )
+        df = df.rename(columns={
+            "日期": "trade_date",
+            "今开": "open",
+            "最新价": "close",
+            "最高": "high",
+            "最低": "low",
+        })
         df["trade_date"] = pd.to_datetime(df["trade_date"])
         df = df.set_index("trade_date").sort_index()
         df["volume"] = 0.0
         for col in ("open", "high", "low", "close"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
+        df = df[["open", "high", "low", "close", "volume"]].dropna(
+            subset=["open", "high", "low", "close"]
+        )
         return df.loc[start_date:end_date]
 
     def _fetch_hk(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
@@ -347,11 +346,7 @@ class DataLoader:
         return self._normalize(df, date_col="日期")
 
     def _fetch_china_futures(
-        self,
-        ak,
-        code: str,
-        start_date: str,
-        end_date: str,
+        self, ak, code: str, start_date: str, end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch a Chinese futures contract from Sina's token-free endpoints.
 
@@ -386,14 +381,10 @@ class DataLoader:
                 )
                 if raw is None or raw.empty:
                     return None
-                raw = raw.rename(
-                    columns={
-                        "开盘价": "开盘",
-                        "最高价": "最高",
-                        "最低价": "最低",
-                        "收盘价": "收盘",
-                    }
-                )
+                raw = raw.rename(columns={
+                    "开盘价": "开盘", "最高价": "最高",
+                    "最低价": "最低", "收盘价": "收盘",
+                })
                 return self._normalize(raw, date_col="日期")
 
             raw = ak.futures_zh_daily_sina(symbol=symbol)
@@ -409,7 +400,7 @@ class DataLoader:
         df = self._normalize(raw, date_col="date")
         # The dated endpoint ignores the window, so slice it here; without this
         # a one-month request came back with the contract's entire history.
-        return df.loc[str(start_date) : str(end_date)]
+        return df.loc[str(start_date):str(end_date)]
 
     @staticmethod
     def _normalize(df: pd.DataFrame, date_col: str = "日期") -> pd.DataFrame:
@@ -419,14 +410,7 @@ class DataLoader:
         AKShare English column names: date, open, high, low, close, volume
         """
         col_map_cn = {"开盘": "open", "最高": "high", "最低": "low", "收盘": "close", "成交量": "volume"}
-        col_map_en = {
-            "date": "trade_date",
-            "open": "open",
-            "high": "high",
-            "low": "low",
-            "close": "close",
-            "volume": "volume",
-        }
+        col_map_en = {"date": "trade_date", "open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume"}
 
         if date_col in df.columns:
             df = df.rename(columns={date_col: "trade_date"})

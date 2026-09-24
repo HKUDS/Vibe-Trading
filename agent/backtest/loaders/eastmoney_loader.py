@@ -107,7 +107,9 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
-                    fetch=lambda code=code: self._fetch_one(code, start_date, end_date, interval),
+                    fetch=lambda code=code: self._fetch_one(
+                        code, start_date, end_date, interval
+                    ),
                 )
                 if df is not None and not df.empty and _is_a_share(code) and not _is_etf_listed(code):
                     # #1541: fqt=1 is dividend-additive and cannot serve
@@ -122,7 +124,9 @@ class DataLoader:
                             start_date=start_date,
                             end_date=end_date,
                             fields=["raw"],
-                            fetch=lambda code=code: self._fetch_one(code, start_date, end_date, interval, fqt=0),
+                            fetch=lambda code=code: self._fetch_one(
+                                code, start_date, end_date, interval, fqt=0
+                            ),
                         )
                     except Exception as exc:  # noqa: BLE001 - degrade to additive
                         logger.warning(
@@ -145,12 +149,7 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self,
-        code: str,
-        start_date: str,
-        end_date: str,
-        interval: str,
-        fqt: int = 1,
+        self, code: str, start_date: str, end_date: str, interval: str, fqt: int = 1,
     ) -> Optional[pd.DataFrame]:
         """Resolve one symbol and build its OHLCV frame, or ``None`` on a miss.
 

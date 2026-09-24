@@ -113,6 +113,22 @@ class TestConvertAdditiveToMultiplicative:
         additive = _frame([95.0, 95.0, 98.0, 96.0, 96.0])
         assert convert_additive_to_multiplicative(raw, additive) is None
 
+    def test_dividend_on_the_last_bar_refuses_the_window(self):
+        # Dividends of 0.30 at bar 50 and 0.03 on the final bar of a flat
+        # 10.00 series. The final bar is its own offset plateau, and with no
+        # successor to classify it against the fold cannot tell it from a
+        # wobble; converting would silently drop the 0.03.
+        raw = _frame([10.0] * 50 + [9.7] * 49 + [9.67])
+        additive = _frame([9.67] * 100)
+        assert convert_additive_to_multiplicative(raw, additive) is None
+
+    def test_dividend_on_the_second_bar_refuses_the_window(self):
+        # The mirror at the window start: dividends of 0.03 at bar 1 and 0.30
+        # at bar 50 leave bar 0 as a one-bar plateau with no predecessor.
+        raw = _frame([10.0] + [9.97] * 49 + [9.67] * 50)
+        additive = _frame([9.67] * 100)
+        assert convert_additive_to_multiplicative(raw, additive) is None
+
     def test_misaligned_calendars_fail_closed(self):
         raw, additive = _two_action_series()
         converted = convert_additive_to_multiplicative(raw.iloc[:-1], additive)
