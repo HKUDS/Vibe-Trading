@@ -65,6 +65,15 @@ class EmailConfig(BaseModel):
     # Email authentication verification (anti-spoofing)
     verify_dkim: bool = True   # Require Authentication-Results with dkim=pass
     verify_spf: bool = True    # Require Authentication-Results with spf=pass
+    # authserv-id of the mail server this deployment's own inbox provider
+    # stamps on delivery (the token right after "Authentication-Results:",
+    # e.g. "mx.google.com") -- required to trust any spf=pass/dkim=pass
+    # verdict at all. Without it there is no way to tell that header apart
+    # from one an attacker forged in the message before it ever reached a
+    # real authenticating server, so verification fails closed until it is
+    # set. Find it by looking at the Authentication-Results header on any
+    # genuine email already in the inbox.
+    trusted_authserv_id: str = ""
 
     # Attachment handling — set allowed types to enable (e.g. ["application/pdf", "image/*"], or ["*"] for all)
     allowed_attachment_types: list[str] = Field(default_factory=list)
@@ -156,6 +165,18 @@ class EmailChannel(BaseChannel):
                 "DKIM and SPF verification are both DISABLED. "
                 "Emails with spoofed From headers will be accepted. "
                 "Set verify_dkim=true and verify_spf=true for anti-spoofing protection."
+            )
+        elif not self.config.trusted_authserv_id:
+            self.logger.warning(
+                "verify_spf/verify_dkim are on but trusted_authserv_id is not "
+                "set, so no Authentication-Results header can be trusted "
+                "(there is no way to tell your provider's real header apart "
+                "from one an attacker forged before the message ever reached "
+                "an authenticating server). Every inbound email will be "
+                "rejected until you set trusted_authserv_id to the "
+                "authserv-id your provider stamps -- copy it from the "
+                "Authentication-Results header on any genuine email already "
+                "in this inbox."
             )
         self.logger.info("Starting Email channel (IMAP polling mode)...")
 
@@ -471,11 +492,13 @@ class EmailChannel(BaseChannel):
                     continue
 
                 # --- Anti-spoofing: verify Authentication-Results ---
-                spf_pass, dkim_pass = self._check_authentication_results(parsed)
+                spf_pass, dkim_pass = self._check_authentication_results(
+                    parsed, self.config.trusted_authserv_id
+                )
                 if self.config.verify_spf and not spf_pass:
                     self.logger.warning(
-                        "From {} rejected: SPF verification failed "
-                        "(no 'spf=pass' in Authentication-Results header)",
+                        "From {} rejected: SPF verification failed (no aligned "
+                        "'spf=pass' in a trusted Authentication-Results header)",
                         sender,
                     )
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
@@ -484,8 +507,8 @@ class EmailChannel(BaseChannel):
                     continue
                 if self.config.verify_dkim and not dkim_pass:
                     self.logger.warning(
-                        "From {} rejected: DKIM verification failed "
-                        "(no 'dkim=pass' in Authentication-Results header)",
+                        "From {} rejected: DKIM verification failed (no aligned "
+                        "'dkim=pass' in a trusted Authentication-Results header)",
                         sender,
                     )
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
@@ -827,26 +850,156 @@ class EmailChannel(BaseChannel):
             return cls._html_to_text(payload).strip()
         return payload.strip()
 
-    @staticmethod
-    def _check_authentication_results(parsed_msg: Any) -> tuple[bool, bool]:
-        """Parse the Authentication-Results header for SPF and DKIM verdicts.
+    # One ";"-separated resinfo clause: optional leading comment, the
+    # method (optionally "/version"), "=", and the result token.
+    _AR_CLAUSE_METHOD_RE = re.compile(
+        r"(?:\(.*?\)\s*)?([a-zA-Z][a-zA-Z0-9_.-]*)(?:/[\d.]+)?\s*=\s*([a-zA-Z0-9_-]+)"
+    )
+    # A "ptype.property=value" pair inside a clause, e.g. smtp.mailfrom=...,
+    # header.d=..., header.from=....
+    _AR_PROPERTY_RE = re.compile(
+        r"\b([a-zA-Z][a-zA-Z0-9_-]*)\.([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*([^\s;()]+)"
+    )
 
-        Only the topmost such header is trusted. Each receiving mail server
-        prepends its own Authentication-Results header on delivery, so the
-        first one in the parsed message is the one our own mailbox provider
-        stamped; anything below it sat in the message as it arrived at that
-        server and could be an attacker-forged header of the same name,
-        which an OR-across-every-occurrence check would wrongly honour.
+    @classmethod
+    def _select_trusted_authentication_results(
+        cls, parsed_msg: Any, trusted_authserv_id: str
+    ) -> str | None:
+        """Return the one Authentication-Results header this deployment trusts.
+
+        Requires ``trusted_authserv_id`` and returns the header whose leading
+        authserv-id token matches it (case-insensitively); ``None`` when
+        unconfigured or no header matches. An attacker cannot forge that
+        match without already controlling the named server -- unlike
+        trusting "whichever header is on top", which a message that never
+        passed through a real authenticating server has no legitimate
+        instance of at all, letting a forged one stand in for it.
+
+        Args:
+            parsed_msg: Parsed email message.
+            trusted_authserv_id: This deployment's own mail server's
+                authserv-id, or empty when not configured.
+
+        Returns:
+            The trusted header's raw value, or ``None``.
+        """
+        if not trusted_authserv_id:
+            return None
+        headers = parsed_msg.get_all("Authentication-Results") or []
+        wanted = trusted_authserv_id.strip().lower()
+        for header in headers:
+            authserv_id = str(header).split(";", 1)[0].strip().lower()
+            if authserv_id == wanted:
+                return str(header)
+        return None
+
+    @staticmethod
+    def _parse_authentication_results_clauses(
+        header_value: str,
+    ) -> list[dict[str, Any]]:
+        """Split one Authentication-Results header into its per-method clauses.
+
+        Args:
+            header_value: One raw ``Authentication-Results`` header value.
+
+        Returns:
+            A list of ``{"method": str, "result": str, "properties":
+            {(ptype, property): value}}`` dicts, one per ``;``-separated
+            resinfo segment after the authserv-id. A segment with no
+            parseable ``method=result`` is skipped rather than raising, so
+            one garbled clause does not lose the other, well-formed ones.
+        """
+        _, _, rest = header_value.partition(";")
+        clauses: list[dict[str, Any]] = []
+        for segment in rest.split(";"):
+            match = EmailChannel._AR_CLAUSE_METHOD_RE.search(segment)
+            if not match:
+                continue
+            properties: dict[tuple[str, str], str] = {}
+            for prop_match in EmailChannel._AR_PROPERTY_RE.finditer(segment):
+                ptype = prop_match.group(1).lower()
+                prop = prop_match.group(2).lower()
+                properties[(ptype, prop)] = prop_match.group(3)
+            clauses.append(
+                {
+                    "method": match.group(1).lower(),
+                    "result": match.group(2).lower(),
+                    "properties": properties,
+                }
+            )
+        return clauses
+
+    @staticmethod
+    def _domains_align(candidate: str, from_domain: str) -> bool:
+        """Conservative same-or-subdomain check, relaxed-alignment style.
+
+        Not a full RFC 7489 organizational-domain computation (that needs a
+        public suffix list this module does not carry) -- a same-or-subdomain
+        match in either direction, which is the common case for a single
+        organization's mail infrastructure and never accepts an unrelated
+        domain.
+        """
+        candidate = candidate.strip().lower().rstrip(".")
+        from_domain = from_domain.strip().lower().rstrip(".")
+        if not candidate or not from_domain:
+            return False
+        return (
+            candidate == from_domain
+            or candidate.endswith("." + from_domain)
+            or from_domain.endswith("." + candidate)
+        )
+
+    @classmethod
+    def _check_authentication_results(
+        cls, parsed_msg: Any, trusted_authserv_id: str = ""
+    ) -> tuple[bool, bool]:
+        """Parse the trusted Authentication-Results header for SPF/DKIM verdicts.
+
+        A ``pass`` result alone is not enough: it only says the named
+        SPF/DKIM domain is legitimate, not that it is the domain the message
+        claims to be from. An attacker can pass SPF/DKIM for their own
+        domain while spoofing the visible From: header to look like someone
+        else's. Each mechanism therefore also requires either an explicit
+        ``dmarc=pass`` in the same trusted header (DMARC evaluation already
+        performs this alignment check) or the mechanism's own authenticated
+        domain to align with the message's From: domain.
+
+        Args:
+            parsed_msg: Parsed email message.
+            trusted_authserv_id: This deployment's own mail server's
+                authserv-id. Verification fails closed (returns
+                ``(False, False)``) without it -- see
+                :meth:`_select_trusted_authentication_results`.
 
         Returns:
             A tuple of (spf_pass, dkim_pass) booleans.
         """
-        headers = parsed_msg.get_all("Authentication-Results")
-        if not headers:
+        header = cls._select_trusted_authentication_results(
+            parsed_msg, trusted_authserv_id
+        )
+        if header is None:
             return False, False
-        ar_lower = str(headers[0]).lower()
-        spf_pass = bool(re.search(r"\bspf\s*=\s*pass\b", ar_lower))
-        dkim_pass = bool(re.search(r"\bdkim\s*=\s*pass\b", ar_lower))
+
+        from_domain = parseaddr(parsed_msg.get("From", ""))[1].rsplit("@", 1)[-1]
+        clauses = cls._parse_authentication_results_clauses(header)
+        dmarc_pass = any(
+            c["method"] == "dmarc" and c["result"] == "pass" for c in clauses
+        )
+
+        spf_pass = False
+        dkim_pass = False
+        for clause in clauses:
+            if clause["method"] == "spf" and clause["result"] == "pass":
+                candidate = clause["properties"].get(("smtp", "mailfrom")) or clause[
+                    "properties"
+                ].get(("smtp", "helo"), "")
+                candidate_domain = candidate.rsplit("@", 1)[-1] if candidate else ""
+                if dmarc_pass or cls._domains_align(candidate_domain, from_domain):
+                    spf_pass = True
+            elif clause["method"] == "dkim" and clause["result"] == "pass":
+                candidate_domain = clause["properties"].get(("header", "d"), "")
+                if dmarc_pass or cls._domains_align(candidate_domain, from_domain):
+                    dkim_pass = True
         return spf_pass, dkim_pass
 
     @classmethod
