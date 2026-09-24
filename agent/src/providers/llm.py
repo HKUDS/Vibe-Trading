@@ -318,8 +318,15 @@ if ChatOpenAI is not None:
             # scheduled research, CLI) every request from this adapter still
             # shares a stable conversation identity.
             self._vibe_fallback_session_id = uuid.uuid4().hex
+            # Header names are case-insensitive: an ambient name differing
+            # only in case from an explicit default_header is the same header,
+            # so the explicit value must win — omitting it would strip the
+            # provider's own header (langchain-openai >= 1.6.5 applies
+            # per-request omits over client default_headers).
             self._vibe_ambient_header_names = tuple(
-                name for name in ambient_names if name not in explicit_names
+                name
+                for name in ambient_names
+                if name.lower() not in explicit_names_lower
             )
             self._vibe_has_explicit_authorization = (
                 "authorization" in explicit_names_lower
