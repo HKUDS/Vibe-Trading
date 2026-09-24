@@ -80,6 +80,12 @@ INDICATORS_A = (
     "ind",
 )
 FACTOR_A = ("factor_analysis", {"symbol": A}, {"status": "ok", "sharpe": 0.888, "win_rate": 0.573}, "fa")
+PROFILE_US = (
+    "get_stock_profile",
+    {"ticker": "AAPL.US"},
+    {"ok": True, "data": {"sections": {"key_stats": {"forwardPE": 22.920343}}}},
+    "profile_us",
+)
 
 HDR = f"{A}（akshare，CNY）最新收盘 0.666 元。"
 ROW = "0.666 | observed | close 2026-09-09 | c1"
@@ -419,6 +425,46 @@ def test_a_ref_may_name_the_tool(tmp_path: Path) -> None:
 
     assert right_tool.valid is True, right_tool.issues
     assert _reasons(wrong_tool) == ["not_in_referenced_call"]
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "get_stock_profile",
+        "profile_us",
+        "profile_us::data.sections.key_stats.forwardPE",
+    ],
+)
+def test_an_explicit_symbol_may_be_resolved_from_non_price_evidence(
+    tmp_path: Path, ref: str
+) -> None:
+    """A secondary instrument need not have a quote before its own fundamentals can ground it."""
+    ledger = _ledger(tmp_path, MARKET_A, PROFILE_US)
+    result = ledger.validate_final_answer(
+        HDR
+        + "\nAAPL.US forward P/E is 22.920343."
+        + _block(ROW, f"22.920343 | observed | forward P/E | {ref}")
+    )
+
+    assert result.valid is True, result.issues
+
+
+def test_non_price_symbol_resolution_keeps_other_symbols_evidence_isolated(
+    tmp_path: Path,
+) -> None:
+    """Recognising the secondary symbol must not let its value ground the primary instrument."""
+    ledger = _ledger(tmp_path, MARKET_A, PROFILE_US)
+    result = ledger.validate_final_answer(
+        HDR
+        + f"\n{A} forward P/E is 22.920343."
+        + _block(
+            ROW,
+            "22.920343 | observed | forward P/E | "
+            "profile_us::data.sections.key_stats.forwardPE",
+        )
+    )
+
+    assert _reasons(result) == ["not_in_referenced_call"]
 
 
 def test_a_symbol_the_declaration_names_outranks_the_prose(tmp_path: Path) -> None:
