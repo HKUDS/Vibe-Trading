@@ -362,9 +362,7 @@ class TestLoaderPayloadShapes:
         assert result["latest_close"] == 129.0
         assert result["latest_date"] == "2026-01-30"
         assert result["indicators"]["volume"]["latest"] == 1_000_029.0
-        assert result["indicators"]["volume"]["sma_20"] == pytest.approx(
-            1_000_019.5
-        )
+        assert result["indicators"]["volume"]["sma_20"] == pytest.approx(1_000_019.5)
         assert result["indicators"]["volume"]["ratio_20"] == pytest.approx(
             1_000_029.0 / 1_000_019.5
         )
