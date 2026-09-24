@@ -446,10 +446,24 @@ class _PolicyMixin:
             for line_no, raw in block.malformed
         ]
         records = self._comparable_price_records()
-        document_symbol = self._symbol_for_claim(content, records)
+        # Symbol resolution is broader than price comparison. A session may hold
+        # quotes for the primary listing and only non-price evidence for another
+        # explicitly named instrument (for example issuer fundamentals). If claim
+        # identity only sees price-comparable records, that second symbol becomes
+        # invisible and its referenced evidence is later filtered under the
+        # primary symbol. Keep numeric matching fail-closed, but let any observed
+        # numeric evidence contribute its explicit symbol to claim resolution.
+        symbol_records = [
+            record
+            for record in self._evidence
+            if record.status == "observed"
+            and record.value is not None
+            and record.symbol
+        ]
+        document_symbol = self._symbol_for_claim(content, symbol_records)
         positions = _lines_with_offsets(content)
         line_symbols = [
-            self._symbol_for_claim(line, records) for line, _ in positions
+            self._symbol_for_claim(line, symbol_records) for line, _ in positions
         ]
         declared_observed = {
             declaration.value
@@ -471,14 +485,21 @@ class _PolicyMixin:
                 continue
             declaration = block.match(figure.value, figure.percent, figure.digits)
             symbol = self._figure_symbol(
-                content, figure, declaration, line_symbols, document_symbol, records
+                content,
+                figure,
+                declaration,
+                line_symbols,
+                document_symbol,
+                symbol_records,
             )
             if figure.shape == "bare" and not self._poses_as_price(
                 figure, self._price_band(symbol, records)
             ):
                 continue
             if declaration is not None:
-                written = self._written_symbol(content, figure, line_symbols, records)
+                written = self._written_symbol(
+                    content, figure, line_symbols, symbol_records
+                )
                 if written and symbol and written != symbol:
                     # A declaration names where a number came from; it cannot
                     # move a figure the sentence attaches to another instrument.
