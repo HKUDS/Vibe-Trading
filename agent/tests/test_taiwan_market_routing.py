@@ -2,9 +2,10 @@
 
 These tests are deterministic and make no network requests: every Yahoo call is
 mocked at the loader's ``yahoo_client.get_chart`` import site.  They pin the
-data-path contract only.  ``.TW`` / ``.TWO`` symbols are deliberately not
-auto-detected yet, so the market is reached through an explicit ``yahoo`` /
-``yfinance`` source rather than symbol detection.
+data-path contract only: chain registration, the source mapping and the Yahoo
+loaders' handling of the ``.TW`` / ``.TWO`` suffixes.  Symbol detection and the
+engine are covered in ``test_market_detection.py`` and
+``test_taiwan_backtest_smoke.py``.
 """
 
 from __future__ import annotations

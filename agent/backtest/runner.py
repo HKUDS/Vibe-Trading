@@ -1815,6 +1815,12 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
         return VietnamEquityEngine(config)
+    # Taiwan equity routing — same reason as India, Korea and Vietnam: its
+    # effective source (``yahoo``) has no Wave-1 branch and would fall through
+    # to the default.
+    if "taiwan_equity" in markets:
+        from backtest.engines.taiwan_equity import TaiwanEquityEngine
+        return TaiwanEquityEngine(config)
     # Brazil (B3) routing — same reason as India: ``yahoo`` has no Wave-1
     # branch and would otherwise fall through to the crypto default.
     if "br_equity" in markets:

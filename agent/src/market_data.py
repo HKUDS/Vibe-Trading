@@ -36,6 +36,10 @@ _SOURCE_PATTERNS = [
     # verbatim; without this they fell through to the tushare default and were
     # routed to China-market loaders that cannot resolve them.
     (re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I), "yahoo"),
+    # Taiwan: TWSE (2330.TW) / TPEx (6488.TWO). Yahoo serves both suffixes
+    # verbatim; without this they fell through to the tushare default and were
+    # routed to China-market loaders that cannot resolve them.
+    (re.compile(r"^[A-Z0-9]+\.TWO?$", re.I), "yahoo"),
     # Yahoo futures (GC=F, CL=F) and forex (EURUSD=X) suffix conventions —
     # served verbatim by Yahoo's public chart endpoint (#718). Without these,
     # such symbols fell through to the ``tushare`` default and were routed to
