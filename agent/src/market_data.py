@@ -210,6 +210,7 @@ def fetch_market_data(
         FALLBACK_CHAINS,
         _NO_NETWORK_FALLBACK_SOURCES,
         get_source_order_override,
+        frame_caliber,
         price_caliber,
         refresh_source_order_overrides,
     )
@@ -389,7 +390,10 @@ def fetch_market_data(
                 "fallback_used": bool(used_source and used_source != src),
                 "currency_conversion": currency_conversion,
                 "volume_unit": volume_units.get(market),
-                "adjustment": price_caliber(used_source or src, market, symbol),
+                # A loader that converted its series reports the caliber it
+                # actually served on the frame; the static (source, market)
+                # table is the fallback for unconverted data (#1541).
+                "adjustment": frame_caliber(df, used_source or src, market, symbol),
             }
             quote_currency = frame_attrs.get("quote_currency")
             if isinstance(quote_currency, str) and quote_currency:

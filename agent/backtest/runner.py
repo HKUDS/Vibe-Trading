@@ -30,7 +30,7 @@ from backtest.loaders.registry import (
     get_loader_cls_with_fallback,
     is_no_network_fallback_source,
     mixed_caliber_warning,
-    price_caliber,
+    frame_caliber,
     resolve_loader,
 )
 from backtest.loaders.base import (
@@ -1668,7 +1668,10 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         local_name = str(getattr(local_loader, "name", "local") or "local")
         served_by.add(local_name)
         for code in local_result:
-            caliber_stamps[code] = (local_name, price_caliber(local_name, _detect_market(code), code))
+            caliber_stamps[code] = (
+                local_name,
+                frame_caliber(local_result[code], local_name, _detect_market(code), code),
+            )
         merged.update(local_result)
 
     market_groups = _group_codes_by_market([code for code in codes if code not in set(local_codes)])
@@ -1698,7 +1701,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
         if market_result:
             served_by.add(src_name)
             for code in market_result:
-                caliber_stamps[code] = (src_name, price_caliber(src_name, market, code))
+                caliber_stamps[code] = (src_name, frame_caliber(market_result[code], src_name, market, code))
         missing = [code for code in market_codes if code not in market_result]
 
         # Retry only missing symbols so a partial primary response does not
@@ -1722,7 +1725,7 @@ def _fetch_auto(codes: List[str], config: dict, interval: str = "1D") -> dict:
                 fb_served_by = str(getattr(fb_loader, "name", fb_name) or fb_name)
                 served_by.add(fb_served_by)
                 for code in mapped:
-                    caliber_stamps[code] = (fb_served_by, price_caliber(fb_served_by, market, code))
+                    caliber_stamps[code] = (fb_served_by, frame_caliber(mapped[code], fb_served_by, market, code))
                 logger.info(
                     "Runtime fallback: %s -> %s for %s", src_name, fb_name, market
                 )
@@ -1821,7 +1824,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         for code in data_map:
             caliber_stamps[code] = (
                 served_by,
-                price_caliber(served_by, _detect_market(code), code),
+                frame_caliber(data_map[code], served_by, _detect_market(code), code),
             )
         used_sources = [served_by] if data_map else []
         missing = [code for code in codes if code not in data_map]
@@ -1880,7 +1883,7 @@ def fetch_data_map(config: dict) -> DataFetchResult:
                     for code in mapped:
                         caliber_stamps[code] = (
                             fb_served_by,
-                            price_caliber(fb_served_by, _detect_market(code), code),
+                            frame_caliber(mapped[code], fb_served_by, _detect_market(code), code),
                         )
                     if not used_sources:
                         source = fb_served_by
