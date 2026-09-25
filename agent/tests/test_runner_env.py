@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -183,6 +184,44 @@ def test_prepare_sandbox_home_reexposes_only_loader_paths(tmp_path: Path) -> Non
     # Cleanup removes the ephemeral home; symlink targets (real cache) survive.
     assert not sandbox.exists()
     assert (vt / "cache").exists()
+
+
+def test_prepare_sandbox_home_reexposes_mt5_config_without_credentials(tmp_path: Path) -> None:
+    """The backtest sandbox must reach the already-running MT5 terminal without
+    ever shipping broker credentials to strategy code (#1589).
+
+    The full mt5.json carries login/password/server, so it can never join the
+    generic re-expose list; the sandbox gets a secret-free subset
+    (terminal_path, timeout) instead.
+    """
+    real_home = tmp_path / "home"
+    vt = real_home / ".vibe-trading"
+    vt.mkdir(parents=True)
+    (vt / "mt5.json").write_text(
+        json.dumps(
+            {
+                "terminal_path": "C:/MT5/terminal64.exe",
+                "timeout": 60,
+                "login": 12345678,
+                "password": "broker-secret",
+                "server": "Exness-Demo",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sandbox = _prepare_sandbox_home(real_home)
+    try:
+        sandbox_cfg = sandbox / ".vibe-trading" / "mt5.json"
+        assert sandbox_cfg.exists()
+        subset = json.loads(sandbox_cfg.read_text(encoding="utf-8"))
+        assert subset == {"terminal_path": "C:/MT5/terminal64.exe", "timeout": 60}
+        for secret in ("login", "password", "server"):
+            assert secret not in subset
+    finally:
+        import shutil
+
+        shutil.rmtree(sandbox, ignore_errors=True)
 
 
 def test_prepare_sandbox_home_copy_fallback_when_symlink_privileges_missing(
