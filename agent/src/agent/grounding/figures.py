@@ -497,11 +497,15 @@ def _writes_decimal_commas(text: str) -> bool:
         elif body.isdigit() and text[match.end() : match.end() + 1] == ",":
             fraction = _digit_run(text, match.end() + 1)
             stop = match.end() + 1 + len(fraction)
-            if _percent_mark(text, stop)[0] > 0 or (
-                1 <= len(fraction) <= 2
-                and (
-                    _currency_before(text, match.start())
-                    or _currency_after(text, stop)
+            if (
+                body == "0"
+                or _percent_mark(text, stop)[0] > 0
+                or (
+                    1 <= len(fraction) <= 2
+                    and (
+                        _currency_before(text, match.start())
+                        or _currency_after(text, stop)
+                    )
                 )
             ):
                 decimal = True
