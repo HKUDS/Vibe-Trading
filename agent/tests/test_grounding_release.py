@@ -621,6 +621,7 @@ class _ScriptedLLM:
         self.responses = list(responses)
         self.calls = 0
         self.messages_history: list[list[dict[str, Any]]] = []
+        self.tools_history: list[list[Any] | None] = []
 
     def stream_chat(
         self,
@@ -634,6 +635,7 @@ class _ScriptedLLM:
     ) -> _Response:
         self.calls += 1
         self.messages_history.append(list(messages))
+        self.tools_history.append(tools)
         response = self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
         if response.content and on_text_chunk:
             on_text_chunk(response.content)
@@ -720,6 +722,80 @@ def test_loop_releases_the_redacted_draft_instead_of_the_canned_refusal(tmp_path
     assert statuses[0]["round"] == 1 and statuses[0]["issues"] >= 1
     assert statuses[1]["removed"] == 1
     assert_system_messages_only_lead(llm.messages_history)
+
+
+def test_grounding_revision_turn_is_text_only(tmp_path: Path) -> None:
+    """A rejected numeric draft is revised without opening another research loop."""
+    rejected = (
+        "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
+        "建议买入价为 0.881。"
+    )
+    corrected = "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
+    llm = _ScriptedLLM(
+        _SCRIPT_HEAD + [_Response(content=rejected), _Response(content=corrected)]
+    )
+
+    result, _events, _agent = _run(tmp_path, llm, max_iterations=8)
+
+    assert result["status"] == "success"
+    assert llm.calls == len(_SCRIPT_HEAD) + 2
+    # The original drafting turn still has the registry. Once grounding rejects
+    # it without requesting explicit recovery, the next turn receives no tools.
+    assert llm.tools_history[len(_SCRIPT_HEAD)] is not None
+    assert llm.tools_history[len(_SCRIPT_HEAD) + 1] is None
+    trace = TraceWriter.read(tmp_path / "run")
+    assert [
+        event
+        for event in trace
+        if event.get("type") == "grounding_correction_text_only"
+    ]
+
+
+def test_grounding_revision_blocks_unoffered_tool_calls(tmp_path: Path) -> None:
+    """A provider cannot escape correction-only mode by emitting a tool call anyway."""
+    rejected = (
+        "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
+        "建议买入价为 0.881。"
+    )
+    corrected = "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
+    llm = _ScriptedLLM(
+        _SCRIPT_HEAD
+        + [
+            _Response(content=rejected),
+            _Response(
+                tool_calls=[
+                    _tool_call(
+                        "refetch",
+                        "get_market_data",
+                        codes=[SYMBOL],
+                        start_date="2026-06-23",
+                        end_date="2026-06-24",
+                        source="auto",
+                    )
+                ]
+            ),
+            _Response(content=corrected),
+        ]
+    )
+
+    result, _events, _agent = _run(tmp_path, llm, max_iterations=8)
+
+    assert result["status"] == "success"
+    trace = TraceWriter.read(tmp_path / "run")
+    assert [
+        event
+        for event in trace
+        if event.get("type") == "grounding_correction_tool_call_blocked"
+    ]
+    # The attempted recovery call was never executed/recorded as a tool result.
+    assert not [
+        event
+        for event in trace
+        if event.get("type") == "tool_result" and event.get("call_id") == "refetch"
+    ]
+    # Correction-only survives the blocked attempt and remains text-only.
+    assert llm.tools_history[len(_SCRIPT_HEAD) + 1] is None
+    assert llm.tools_history[len(_SCRIPT_HEAD) + 2] is None
 
 
 def test_loop_repairs_a_missing_source_word_without_another_model_round(tmp_path: Path) -> None:
