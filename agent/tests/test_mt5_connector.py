@@ -246,6 +246,55 @@ class TestNormalizeBase:
         assert normalize_base("  ") == ""
 
 
+@pytest.mark.parametrize("query", ["XAUUSD", "XAU/USD", "XAUUSD=X", "XAUUSD.FX"])
+def test_symbol_search_uses_selected_terminal_without_account_or_write_calls(
+    fake_mt5: FakeMT5, query: str
+) -> None:
+    from src.trading.connectors.mt5 import sdk
+
+    def forbidden_account_read() -> Any:
+        raise AssertionError("symbol search must not read account information")
+
+    def forbidden_write(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("symbol search must not call trading operations")
+
+    fake_mt5.account_info = forbidden_account_read  # type: ignore[method-assign]
+    fake_mt5.symbol_select = forbidden_write  # type: ignore[method-assign]
+    fake_mt5.order_check = forbidden_write  # type: ignore[method-assign]
+    fake_mt5.order_send = forbidden_write  # type: ignore[method-assign]
+    result = sdk.search_instruments(
+        query,
+        config=_paper_config(terminal_path="C:/mt5/terminal64.exe"),
+    )
+
+    assert result["status"] == "ok"
+    assert result["instruments"] == [
+        {
+            "symbol": "XAUUSDm",
+            "native_symbol": "XAUUSDm",
+            "market": "mt5",
+            "type": "cfd",
+            "exchange": "Exness-MT5Trial8",
+            "venue": "Exness-MT5Trial8",
+        }
+    ]
+    assert fake_mt5.initialize_calls[-1] == {
+        "args": ("C:/mt5/terminal64.exe",),
+        "kwargs": {"timeout": 15_000},
+    }
+    assert fake_mt5.shutdown_calls == 1
+
+
+def test_symbol_search_without_terminal_path_fails_closed(fake_mt5: FakeMT5) -> None:
+    from src.trading.connectors.mt5 import sdk
+
+    result = sdk.search_instruments("XAUUSD", config=_paper_config())
+
+    assert result["status"] == "error"
+    assert result["instruments"] == []
+    assert fake_mt5.initialize_calls == []
+
+
 class TestSplitSuffix:
     def test_splits_broker_suffix(self) -> None:
         assert split_suffix("EURUSDM") == ("EURUSD", "M")

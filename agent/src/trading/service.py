@@ -377,6 +377,16 @@ def search_instruments(
                 limit=limit,
             ),
         )
+    if profile.connector == "mt5" and profile.transport == "broker_sdk":
+        module = _sdk_module(profile.connector)
+        return _with_profile(
+            profile,
+            module.search_instruments(
+                query,
+                config=_sdk_config(profile, module, overrides),
+                limit=limit,
+            ),
+        )
     if profile.connector != "etoro":
         return _unsupported_etoro(profile, "instruments.search")
     module = _sdk_module(profile.connector)

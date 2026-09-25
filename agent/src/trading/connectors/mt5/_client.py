@@ -2,9 +2,9 @@
 
 The ``MetaTrader5`` Python API is process-global and stateful: one
 ``initialize()`` per process, module-level functions, ``shutdown()`` to
-detach. Every operation therefore runs inside :func:`_session` — a lock,
-initialize, bidirectional profile/identity verification, work, shutdown —
-so no read or write can ever execute against the wrong account class.
+detach. Account-bound operations run inside :func:`_session` with profile
+identity verification. Symbol search uses a separate terminal-path-only
+session and reads symbol metadata without account or trading operations.
 """
 
 from __future__ import annotations
@@ -270,6 +270,23 @@ def _session(cfg: MT5Config) -> Iterator[Any]:
                 mt5.shutdown()
             except Exception:  # noqa: BLE001 - detach must never mask the result
                 pass
+
+
+@contextmanager
+def _catalog_session(cfg: MT5Config) -> Iterator[Any]:
+    """Attach by terminal path for symbol metadata without account access."""
+    if not cfg.terminal_path:
+        raise MT5ConfigError("terminal_path is required for MT5 symbol search")
+    mt5 = _require_mt5()
+    with _MT5_LOCK:
+        if not mt5.initialize(cfg.terminal_path, timeout=int(cfg.timeout * 1000)):
+            raise MT5ConnectionError(
+                f"MT5 initialize failed ({_last_error(mt5)})"
+            )
+        try:
+            yield mt5
+        finally:
+            mt5.shutdown()
 
 
 def _assert_profile(cfg: MT5Config, account: Any, mt5: Any) -> None:

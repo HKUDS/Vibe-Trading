@@ -21,6 +21,7 @@ from src.trading.connectors.alpaca import sdk as al
 from src.trading.connectors.alpaca.classification import ALPACA_TOOL_CLASS
 from src.trading.connectors.binance import sdk as bn
 from src.trading.connectors.binance.classification import BINANCE_TOOL_CLASS
+from src.trading.connectors.mt5 import sdk as mt5
 from src.trading.connectors.dhan import sdk as dh
 from src.trading.connectors.dhan.classification import DHAN_TOOL_CLASS
 from src.trading.connectors.futu import sdk as ft
@@ -604,6 +605,26 @@ def test_service_routes_instrument_search_to_selected_binance_profile(monkeypatc
     assert captured == {"query": "ETH-USDT", "profile": "paper", "limit": 3}
     assert result["profile_id"] == "binance-paper-trade"
     assert result["connector"] == "binance"
+
+
+def test_service_routes_instrument_search_to_selected_mt5_profile(monkeypatch) -> None:
+    captured = {}
+
+    def _build_config(profile_config, overrides):
+        return SimpleNamespace(profile=profile_config["profile"])
+
+    def _search(query, *, config, limit):
+        captured.update(query=query, profile=config.profile, limit=limit)
+        return {"status": "ok", "instruments": [{"symbol": "XAUUSDm"}]}
+
+    monkeypatch.setattr(mt5, "build_config", _build_config)
+    monkeypatch.setattr(mt5, "search_instruments", _search)
+
+    result = service.search_instruments("XAUUSD", "mt5-paper-sdk", limit=3)
+
+    assert captured == {"query": "XAUUSD", "profile": "paper", "limit": 3}
+    assert result["profile_id"] == "mt5-paper-sdk"
+    assert result["connector"] == "mt5"
 
 
 def test_binance_service_unconfigured(monkeypatch, tmp_path) -> None:
