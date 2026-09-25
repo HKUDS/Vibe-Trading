@@ -594,7 +594,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 | Broker | 市场 | 能力 |
 |--------|------|------|
 | **IBKR** | global | 本地 TWS / Gateway，只读 |
-| **Robinhood** | US | Agentic MCP（桌面 OAuth）——读取 + 受约束实盘 |
+| **Robinhood** | US | Agentic MCP（桌面 OAuth）——读取股票 + 受约束股票实盘下单；不支持期权下单 |
 | **Scalable Capital** | DE / EU | Agentic MCP（桌面 OAuth）——完全只读；没有模拟盘账户 |
 | **Tiger** | US / HK / A | 读取 + 模拟盘 + 受约束实盘 |
 | **Alpaca** | US | 读取 + 模拟盘 + 受约束实盘（+ TAP 密钥隔离模式） |

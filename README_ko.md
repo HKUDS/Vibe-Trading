@@ -581,7 +581,7 @@ connector-first 프로필. 대부분의 브로커가 read + 페이퍼 계정 주
 | Broker | Markets | Capabilities |
 |--------|---------|--------------|
 | **IBKR** | global | local TWS / Gateway, read-only |
-| **Robinhood** | US | Agentic MCP (desktop OAuth) — read + bounded live |
+| **Robinhood** | US | Agentic MCP (desktop OAuth) — 주식 조회 + 제한된 실거래 주문; 옵션 주문은 지원하지 않음 |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — 완전 읽기 전용, 페이퍼 계정 없음 |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |

@@ -620,7 +620,7 @@ Connector-first profiles. Most do read + paper-account order placement — IBKR 
 | Broker | Markets | Capabilities |
 |--------|---------|--------------|
 | **IBKR** | global | local TWS / Gateway, read-only |
-| **Robinhood** | US | Agentic MCP (desktop OAuth) — read + bounded live |
+| **Robinhood** | US | Agentic MCP (desktop OAuth) — equity read + bounded live; options order placement is not supported |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — fully read-only; no paper account exists |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |

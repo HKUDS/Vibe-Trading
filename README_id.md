@@ -745,7 +745,7 @@ Profil berorientasi connector. Sebagian besar mendukung read + penempatan order 
 | Broker | Market | Kapabilitas |
 |--------|---------|--------------|
 | **IBKR** | global | local TWS / Gateway, read-only |
-| **Robinhood** | US | Agentic MCP (desktop OAuth) — read + bounded live |
+| **Robinhood** | US | Agentic MCP (desktop OAuth) — baca saham + order saham live terbatas; order opsi belum didukung |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — fully read-only; no paper account exists |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |
@@ -2279,4 +2279,3 @@ Lisensi MIT — lihat [LICENSE](LICENSE)
 <p align="center">
   <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&style=flat" alt="pengunjung"/>
 </p>
-

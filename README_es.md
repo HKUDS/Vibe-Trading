@@ -585,7 +585,7 @@ Perfiles centrados en el conector. La mayoría hace lectura + colocación de ór
 | Broker | Mercados | Capacidades |
 |--------|---------|--------------|
 | **IBKR** | global | TWS / Gateway local, solo lectura |
-| **Robinhood** | EE. UU. | MCP agéntico (OAuth de escritorio) — lectura + live acotado |
+| **Robinhood** | EE. UU. | MCP agéntico (OAuth de escritorio) — lectura de acciones + órdenes de acciones en vivo limitadas; las opciones no están admitidas |
 | **Scalable Capital** | DE / UE | MCP agéntico (OAuth de escritorio) — totalmente de solo lectura; no existe cuenta paper |
 | **Tiger** | EE. UU. / HK / A | lectura + paper + live acotado |
 | **Alpaca** | EE. UU. | lectura + paper + live acotado (+ modo TAP de aislamiento de credenciales) |
