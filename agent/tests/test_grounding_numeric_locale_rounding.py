@@ -18,7 +18,14 @@ from pathlib import Path
 import pytest
 
 from src.agent.grounding import GroundingLedger
-from src.agent.grounding.figures import Declaration, FiguresBlock, _numbers
+from src.agent.grounding.figures import (
+    Declaration,
+    FiguresBlock,
+    _numbers,
+    _writes_decimal_commas,
+    parse_figures_block,
+    scan_figures,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -121,6 +128,37 @@ def test_decimal_comma_document_disambiguates_dotted_grouped_integers(
     text: str, expected: list[str]
 ) -> None:
     assert _digits(text) == expected
+
+
+def test_zero_decimal_comma_sets_document_locale() -> None:
+    assert _writes_decimal_commas("ratio 0,82") is True
+    assert _writes_decimal_commas("ratio 0,8246699017713774") is True
+
+
+def test_live_shape_links_localized_prose_to_precise_declarations() -> None:
+    content = (
+        "PAMP.BA (Yahoo, ARS): cierre AR$5.165; volumen 502.408; "
+        "ratio de volumen 0,82."
+        + _figures(
+            "5165.0 | observed | latest_close | technical_indicators",
+            "502408.0 | observed | indicators.volume.latest | technical_indicators",
+            "0.8246699017713774 | observed | indicators.volume.ratio_20 | technical_indicators",
+        )
+    )
+    block = parse_figures_block(content)
+    claims = {
+        figure.text: figure
+        for figure in scan_figures(content, block)
+        if figure.text in {"5.165", "502.408", "0,82"}
+    }
+
+    assert set(claims) == {"5.165", "502.408", "0,82"}
+    assert claims["5.165"].value == 5165.0
+    assert claims["502.408"].value == 502408.0
+    assert claims["0,82"].value == 0.82
+    assert block.match(5165.0, False, claims["5.165"].digits) is not None
+    assert block.match(502408.0, False, claims["502.408"].digits) is not None
+    assert block.match(0.82, False, claims["0,82"].digits) is not None
 
 
 def test_spanish_grouped_tool_values_survive_the_grounding_gate(tmp_path: Path) -> None:
