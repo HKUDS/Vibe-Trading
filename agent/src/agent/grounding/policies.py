@@ -29,6 +29,7 @@ from src.agent.grounding.evidence import (
     tail_risk_identity,
 )
 from src.agent.grounding.figures import (
+    ROUNDED_BAND,
     Declaration,
     Figure,
     FiguresBlock,
@@ -1054,11 +1055,13 @@ class _PolicyMixin:
     ) -> bool:
         """Whether a figure is ``target`` correctly rounded to the digits it was written with.
 
-        The evidence band is relative (:data:`_TOLERANCE`). A figure written with
-        decimals is held to half a unit of its last decimal as well, so "38,50" no
-        longer passes for 38.6784 (0.46% away) while "38,68" still does. A figure
-        written without decimals keeps the relative band alone: an integer's
-        precision is not known ("6,700" may be rounded to hundreds).
+        Raw evidence uses the relative :data:`_TOLERANCE` band. A figure written
+        with decimals uses the slightly wider presentation-rounding
+        :data:`figures.ROUNDED_BAND`, then is narrowed to half a unit of its last
+        written decimal. This lets a correct two-decimal rendering such as
+        0.82467 -> 0.82 survive without admitting materially coarse renderings.
+        A figure written without decimals keeps the raw relative band alone: an
+        integer's precision is not known ("6,700" may be rounded to hundreds).
 
         Args:
             figure: The prose figure.
@@ -1067,8 +1070,8 @@ class _PolicyMixin:
             unit: How many compared units one written unit is (0.01 when a percent
                 is compared as a fraction).
         """
-        band = abs(target) * _TOLERANCE
         written = figure.digits or figure.text
+        band = abs(target) * (ROUNDED_BAND if "." in written else _TOLERANCE)
         if "." in written:
             band = min(band, _written_half_unit(written) * unit * (1 + 1e-9))
         return abs(candidate - target) <= max(band, 1e-9)
