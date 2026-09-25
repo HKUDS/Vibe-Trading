@@ -1120,7 +1120,7 @@ Salin `agent/.env.example` ke `agent/.env` lalu uncomment block provider yang An
 | `LANGCHAIN_PROVIDER` | Ya | Nama provider (`openrouter`, `deepseek`, `groq`, `ollama`, dll.) |
 | `<PROVIDER>_API_KEY` | Ya* | API key (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, dll.) |
 | `<PROVIDER>_BASE_URL` | Ya | URL endpoint API |
-| `LANGCHAIN_MODEL_NAME` | Ya | Nama model (mis. `deepseek-v4-pro`) |
+| `LANGCHAIN_MODEL_NAME` | Ya | Nama model (mis. `deepseek-flash`) |
 | `LANGCHAIN_REASONING_EFFORT` | Tidak | Tingkat reasoning (`none`, `low`, `medium`, `high`, atau `max`) |
 | `LANGCHAIN_USE_RESPONSES_API` | Tidak | Override transport Responses: literal `true` memakai `/v1/responses` jika endpoint mendukung; native adapter mempertahankan transport sendiri; nilai lain memakai Chat Completions |
 | `TUSHARE_TOKEN` | Tidak | Token Tushare Pro untuk data A-share (fallback ke AKShare) |
@@ -1144,10 +1144,10 @@ Vibe-Trading adalah agent yang sangat bergantung pada tool — skill, backtest, 
 | Tier | Contoh | Kapan digunakan |
 |------|----------|-------------|
 | **Terbaik** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5-pro`, `google/gemini-3.5-flash` | Swarm kompleks (3+ agent), sesi riset panjang, analisis setara paper |
-| **Sweet spot** (default) | `deepseek-v4-pro`, `deepseek/deepseek-v4-pro`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | Daily driver — tool-calling andal dengan biaya sekitar 1/10 |
+| **Sweet spot** (default) | `deepseek-flash`, `deepseek/deepseek-v4.1-flash`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | Daily driver — tool-calling andal dengan biaya sekitar 1/10 |
 | **Hindari untuk penggunaan agent** | `*-nano`, `*-flash-lite`, `*-coder-next`, varian kecil / distilled | Tool-calling tidak andal — agent akan terlihat "menjawab dari memory" alih-alih memuat skill atau menjalankan backtest |
 
-Default `agent/.env.example` menggunakan API resmi DeepSeek + `deepseek-v4-pro`; pengguna OpenRouter dapat memakai `deepseek/deepseek-v4-pro`.
+Default `agent/.env.example` menggunakan OpenRouter + `deepseek/deepseek-v4.1-flash`; pengguna DeepSeek langsung dapat memakai `deepseek-flash` tanpa prefiks.
 
 ---
 

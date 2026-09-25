@@ -14,7 +14,7 @@ env:
     description: "OpenAI-compatible API key — only needed for run_swarm (multi-agent teams). All other tools work without it."
     required: false
   - name: LANGCHAIN_MODEL_NAME
-    description: "LLM model name for run_swarm (e.g. deepseek/deepseek-v4-pro). Only needed if using run_swarm."
+    description: "LLM model name for run_swarm (e.g. deepseek/deepseek-v4.1-flash). Only needed if using run_swarm."
     required: false
 mcp:
   command: vibe-trading-mcp

@@ -687,7 +687,7 @@ class TestChatOpenAIWithReasoningOutboundPayload:
         """DeepSeek reasoning traces are inbound progress, not next-turn payload."""
         from langchain_core.messages import AIMessage, HumanMessage
 
-        instance = self._instance(model="deepseek-v4-pro")
+        instance = self._instance(model="deepseek-v4.1-flash")
         history = [
             HumanMessage(content="hi"),
             AIMessage(

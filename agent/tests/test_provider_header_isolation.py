@@ -20,7 +20,7 @@ def _stream_response(text: str) -> httpx.Response:
         "id": "chatcmpl-header-test",
         "object": "chat.completion.chunk",
         "created": 0,
-        "model": "deepseek/deepseek-v4-pro",
+        "model": "deepseek/deepseek-v4.1-flash",
         "choices": [
             {
                 "index": 0,
@@ -60,7 +60,7 @@ def test_openrouter_ignores_non_ascii_ambient_openai_headers() -> None:
     with patch.dict(os.environ, env, clear=True):
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             llm = ChatOpenAIWithReasoning(
-                model="deepseek/deepseek-v4-pro",
+                model="deepseek/deepseek-v4.1-flash",
                 api_key="sk-or-test",
                 base_url="https://openrouter.invalid/api/v1",
                 default_headers={
@@ -139,7 +139,7 @@ def test_openrouter_async_stream_ignores_non_ascii_ambient_headers() -> None:
         ):
             async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
                 llm = ChatOpenAIWithReasoning(
-                    model="deepseek/deepseek-v4-pro",
+                    model="deepseek/deepseek-v4.1-flash",
                     api_key="sk-or-test",
                     base_url="https://openrouter.invalid/api/v1",
                     http_async_client=client,
@@ -209,7 +209,7 @@ def test_build_rejects_non_ascii_openrouter_api_key_before_transport() -> None:
 
     env = {
         "LANGCHAIN_PROVIDER": "openrouter",
-        "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4-pro",
+        "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4.1-flash",
         "OPENROUTER_API_KEY": f"{'x' * 3062}à",
         "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
     }
@@ -236,7 +236,7 @@ def test_build_passes_openrouter_credentials_explicitly() -> None:
 
     env = {
         "LANGCHAIN_PROVIDER": "openrouter",
-        "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4-pro",
+        "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4.1-flash",
         "OPENROUTER_API_KEY": "sk-or-test",
         "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
     }
@@ -260,7 +260,7 @@ def test_provider_doctor_reports_header_safety_without_values() -> None:
 
     env = {
         "LANGCHAIN_PROVIDER": "openrouter",
-        "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4-pro",
+        "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4.1-flash",
         "OPENROUTER_API_KEY": "sk-or-secret-value",
         "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
         "OPENAI_CUSTOM_HEADERS": "X-Debug: private-à",

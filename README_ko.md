@@ -902,7 +902,7 @@ skill + MCP config가 agent의 skills directory에 다운로드됩니다. 자세
 | `LANGCHAIN_PROVIDER` | Yes | Provider name(`openrouter`, `deepseek`, `groq`, `ollama` 등) |
 | `<PROVIDER>_API_KEY` | Yes* | API key(`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY` 등) |
 | `<PROVIDER>_BASE_URL` | Yes | API endpoint URL |
-| `LANGCHAIN_MODEL_NAME` | Yes | Model name(예: `deepseek-v4-pro`) |
+| `LANGCHAIN_MODEL_NAME` | Yes | Model name(예: `deepseek-flash`) |
 | `TUSHARE_TOKEN` | No | A주 data용 Tushare Pro token(AKShare로 fallback) |
 | `TIMEOUT_SECONDS` | No | LLM call timeout, 기본 120s |
 | `API_AUTH_KEY` | 네트워크 배포 권장 | API가 non-local client에서 접근 가능할 때 필요한 Bearer token |
@@ -924,10 +924,10 @@ Vibe-Trading은 tool-heavy agent입니다. skills, backtests, memory, swarms가 
 | 등급 | 예시 | 사용 시점 |
 |------|------|-----------|
 | **Best** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5-pro`, `google/gemini-3.5-flash` | 복잡한 swarms(3+ agents), 긴 리서치 세션, 논문급 분석 |
-| **Sweet spot**(기본값) | `deepseek-v4-pro`, `deepseek/deepseek-v4-pro`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | Daily driver — 약 1/10 비용으로 안정적인 tool-calling |
+| **Sweet spot**(기본값) | `deepseek-flash`, `deepseek/deepseek-v4.1-flash`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | Daily driver — 약 1/10 비용으로 안정적인 tool-calling |
 | **Agent 사용 시 피할 것** | `*-nano`, `*-flash-lite`, `*-coder-next`, small / distilled variants | tool-calling이 불안정합니다. agent가 skills를 로드하거나 backtest를 실행하는 대신 "기억에서 답하는" 것처럼 보일 수 있습니다. |
 
-기본 `agent/.env.example`은 DeepSeek official API + `deepseek-v4-pro`를 포함합니다. OpenRouter 사용자는 `deepseek/deepseek-v4-pro`를 사용할 수 있습니다.
+기본 `agent/.env.example`은 OpenRouter + `deepseek/deepseek-v4.1-flash`를 포함합니다. DeepSeek를 직접 사용하는 사용자는 접두사 없는 `deepseek-flash`를 사용할 수 있습니다.
 
 ---
 

@@ -250,7 +250,7 @@ def test_model_metadata_redacts_credential_shaped_values(model: str) -> None:
         "reasoning-model",
         "openai/gpt-5",
         "openai-codex/gpt-5.4",
-        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4.1-flash",
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         "Qwen/Qwen3.5-27B",
         "qwen2.5:32b",

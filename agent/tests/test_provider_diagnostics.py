@@ -17,7 +17,7 @@ def test_provider_diagnostics_redacts_secrets_and_proxy_values() -> None:
     llm_mod._dotenv_loaded = True
     env = {
         "LANGCHAIN_PROVIDER": "deepseek",
-        "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
+        "LANGCHAIN_MODEL_NAME": "deepseek-flash",
         "DEEPSEEK_API_KEY": "sk-super-secret",
         "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1?token=secret",
         "HTTPS_PROXY": "http://user:pass@proxy.local:8888",
@@ -31,7 +31,7 @@ def test_provider_diagnostics_redacts_secrets_and_proxy_values() -> None:
 
     encoded = json.dumps(diagnostics, sort_keys=True)
     assert diagnostics["provider"] == "deepseek"
-    assert diagnostics["model"] == "deepseek-v4-pro"
+    assert diagnostics["model"] == "deepseek-flash"
     assert diagnostics["base_url"] == "https://api.deepseek.com"
     assert diagnostics["timeout_seconds"] == 7
     assert diagnostics["max_retries"] == 5
@@ -46,10 +46,10 @@ def test_provider_diagnostics_redacts_secrets_and_proxy_values() -> None:
 
 def test_provider_capabilities_are_provider_specific() -> None:
     """DeepSeek, Kimi, Gemini, and OpenRouter should not share one mutation bag."""
-    deepseek = get_provider_capabilities("deepseek", "deepseek-v4-pro")
+    deepseek = get_provider_capabilities("deepseek", "deepseek-flash")
     kimi = get_provider_capabilities("moonshot", "kimi-k2.6")
     gemini = get_provider_capabilities("gemini", "gemini-3.5-flash")
-    openrouter = get_provider_capabilities("openrouter", "deepseek/deepseek-v4-pro")
+    openrouter = get_provider_capabilities("openrouter", "deepseek/deepseek-v4.1-flash")
 
     assert deepseek.capture_reasoning is True
     assert deepseek.send_reasoning_content is False
@@ -106,7 +106,7 @@ def test_reasoning_effort_extra_body_is_openrouter_only() -> None:
         "LANGCHAIN_PROVIDER": "deepseek",
         "DEEPSEEK_API_KEY": "ds-test",
         "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1",
-        "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
+        "LANGCHAIN_MODEL_NAME": "deepseek-flash",
         "LANGCHAIN_REASONING_EFFORT": "high",
         "VIBE_TRADING_DEEPSEEK_ADAPTER": "openai-compatible",
     }
@@ -251,13 +251,13 @@ def test_deepseek_native_adapter_is_used_when_available(monkeypatch) -> None:
         "LANGCHAIN_PROVIDER": "deepseek",
         "DEEPSEEK_API_KEY": "ds-test",
         "DEEPSEEK_BASE_URL": "https://api.deepseek.com/v1",
-        "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
+        "LANGCHAIN_MODEL_NAME": "deepseek-flash",
     }
 
     with patch.dict(os.environ, env, clear=True):
         llm = build_llm()
 
     assert isinstance(llm, _FakeChatDeepSeek)
-    assert captured["model"] == "deepseek-v4-pro"
+    assert captured["model"] == "deepseek-flash"
     assert captured["api_key"] == "ds-test"
     assert captured["base_url"] == "https://api.deepseek.com/v1"

@@ -21,7 +21,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         "\n".join(
             [
                 "LANGCHAIN_PROVIDER=openrouter",
-                "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v4-pro",
+                "LANGCHAIN_MODEL_NAME=deepseek/deepseek-v4.1-flash",
                 "OPENROUTER_BASE_URL=https://openrouter.ai/api/v1",
                 "OPENROUTER_API_KEY=sk-or-v1-your-key-here",
                 "LANGCHAIN_TEMPERATURE=0.2",
@@ -51,7 +51,7 @@ def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
     assert response.status_code == 200
     body = response.json()
     assert body["provider"] == "openrouter"
-    assert body["model_name"] == "deepseek/deepseek-v4-pro"
+    assert body["model_name"] == "deepseek/deepseek-v4.1-flash"
     assert body["api_key_configured"] is False
     assert body["api_key_hint"] is None
     assert not Path(body["env_path"]).is_absolute()
@@ -106,7 +106,7 @@ def test_list_llm_models_uses_unsaved_form_values(
         observed.update(provider=provider.name, base_url=base_url, api_key=api_key)
         return settings_routes.LLMModelsResponse(
             provider=provider.name,
-            models=[provider.default_model, "deepseek-v4-flash"],
+            models=[provider.default_model, "deepseek-v4-pro"],
             source="provider",
         )
 
@@ -121,7 +121,7 @@ def test_list_llm_models_uses_unsaved_form_values(
     )
 
     assert response.status_code == 200
-    assert response.json()["models"] == ["deepseek-v4-pro", "deepseek-v4-flash"]
+    assert response.json()["models"] == ["deepseek-flash", "deepseek-v4-pro"]
     assert observed == {
         "provider": "deepseek",
         "base_url": "https://api.deepseek.com/v1",
@@ -138,7 +138,7 @@ def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
         "\n".join(
             [
                 "LANGCHAIN_PROVIDER=deepseek",
-                "LANGCHAIN_MODEL_NAME=deepseek-v4-pro",
+                "LANGCHAIN_MODEL_NAME=deepseek-flash",
                 "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1",
                 "DEEPSEEK_API_KEY=stored-secret-key",
             ]
@@ -153,7 +153,7 @@ def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
         observed.append((base_url, api_key))
         return settings_routes.LLMModelsResponse(
             provider="deepseek",
-            models=["deepseek-v4-pro"],
+            models=["deepseek-flash"],
             source="provider",
         )
 
@@ -184,7 +184,7 @@ def test_llm_settings_treat_documented_key_placeholders_as_unconfigured(
         "\n".join(
             [
                 "LANGCHAIN_PROVIDER=deepseek",
-                "LANGCHAIN_MODEL_NAME=deepseek-v4-pro",
+                "LANGCHAIN_MODEL_NAME=deepseek-flash",
                 f"DEEPSEEK_API_KEY={placeholder}",
                 "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1",
             ]
@@ -209,7 +209,7 @@ def test_update_llm_settings_persists_project_env(
         "/settings/llm",
         json={
             "provider": "openrouter",
-            "model_name": "deepseek/deepseek-v4-pro",
+            "model_name": "deepseek/deepseek-v4.1-flash",
             "base_url": "https://openrouter.ai/api/v1",
             "api_key": "or-secret-value",
             "temperature": 0.1,
@@ -241,7 +241,7 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
         "/settings/llm",
         json={
             "provider": "deepseek",
-            "model_name": "deepseek-v4-pro",
+            "model_name": "deepseek-flash",
             "base_url": "https://api.deepseek.com/v1",
             "api_key": "sk-deepseek-test",
             "temperature": 0.0,
@@ -338,7 +338,7 @@ def test_settings_write_migrates_legacy_env_to_canonical_path(
         "/settings/llm",
         json={
             "provider": "deepseek",
-            "model_name": "deepseek-v4-pro",
+            "model_name": "deepseek-flash",
             "base_url": "https://api.deepseek.com/v1",
             "api_key": "sk-deepseek-test",
         },
@@ -364,7 +364,7 @@ def test_settings_write_permission_error_is_actionable(
         "/settings/llm",
         json={
             "provider": "deepseek",
-            "model_name": "deepseek-v4-pro",
+            "model_name": "deepseek-flash",
             "base_url": "https://api.deepseek.com/v1",
             "api_key": "sk-deepseek-test",
         },

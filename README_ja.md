@@ -904,7 +904,7 @@ skill + MCP config が agent の skills directory にダウンロードされま
 | `LANGCHAIN_PROVIDER` | Yes | Provider name（`openrouter`, `deepseek`, `groq`, `ollama` など） |
 | `<PROVIDER>_API_KEY` | Yes* | API key（`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY` など） |
 | `<PROVIDER>_BASE_URL` | Yes | API endpoint URL |
-| `LANGCHAIN_MODEL_NAME` | Yes | Model name（例: `deepseek-v4-pro`） |
+| `LANGCHAIN_MODEL_NAME` | Yes | Model name（例: `deepseek-flash`） |
 | `TUSHARE_TOKEN` | No | A-share data 用 Tushare Pro token（AKShare に fallback） |
 | `TIMEOUT_SECONDS` | No | LLM call timeout、既定 120s |
 | `API_AUTH_KEY` | Recommended for network deployments | API が非ローカル client から到達可能な場合に必要な Bearer token |
@@ -926,10 +926,10 @@ Vibe-Trading は tool-heavy agent です。skills、backtests、memory、swarms 
 | Tier | Examples | When to use |
 |------|----------|-------------|
 | **Best** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5-pro`, `google/gemini-3.5-flash` | 複雑な swarms（3+ agents）、長い research sessions、paper-grade analysis |
-| **Sweet spot** (default) | `deepseek-v4-pro`, `deepseek/deepseek-v4-pro`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | 日常使い。信頼できる tool-calling を約 1/10 の cost で |
+| **Sweet spot** (default) | `deepseek-flash`, `deepseek/deepseek-v4.1-flash`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | 日常使い。信頼できる tool-calling を約 1/10 の cost で |
 | **agent 用途では避ける** | `*-nano`, `*-flash-lite`, `*-coder-next`, small / distilled variants | Tool-calling が不安定です。agent は skills 読み込みや backtests 実行ではなく「記憶から答えている」ように見えます |
 
-既定の `agent/.env.example` は DeepSeek official API + `deepseek-v4-pro` で出荷されています。OpenRouter users は `deepseek/deepseek-v4-pro` を利用できます。
+既定の `agent/.env.example` は OpenRouter + `deepseek/deepseek-v4.1-flash` で出荷されています。DeepSeek を直接利用する場合は接頭辞なしの `deepseek-flash` を利用できます。
 
 ---
 

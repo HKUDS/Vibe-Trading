@@ -88,7 +88,7 @@ def _transient_error() -> ProviderStreamError:
     """
     return ProviderStreamError(
         provider="deepseek",
-        model="deepseek-v4-pro",
+        model="deepseek-v4.1-flash",
         original=ConnectionResetError("connection reset by peer"),
     )
 
@@ -170,7 +170,7 @@ def test_transient_stream_failure_is_retried_and_run_succeeds(
     assert reset["reason"] == "provider_stream_retry"
     assert reset["iter"] == 1
     assert reset["provider"] == "deepseek"
-    assert reset["model"] == "deepseek-v4-pro"
+    assert reset["model"] == "deepseek-v4.1-flash"
 
 
 def test_double_stream_failure_fails_run(monkeypatch, tmp_path: Path) -> None:

@@ -4,11 +4,11 @@ import { useState } from "react";
 import { ModelPicker } from "../ModelPicker";
 
 function Harness() {
-  const [value, setValue] = useState("deepseek-v4-pro");
+  const [value, setValue] = useState("deepseek-v4.1-flash");
   return (
     <ModelPicker
       value={value}
-      options={["deepseek-v4-pro", "deepseek-v4-flash"]}
+      options={["deepseek-v4.1-flash", "deepseek-v4-flash"]}
       onChange={setValue}
       ariaLabel="Model"
       optionsAriaLabel="Available models"
@@ -25,7 +25,7 @@ describe("ModelPicker", () => {
     await user.clear(input);
     await user.type(input, "vendor/custom-model");
 
-    expect(screen.getByRole("option", { name: "deepseek-v4-pro" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "deepseek-v4.1-flash" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "deepseek-v4-flash" })).toBeInTheDocument();
   });
 
@@ -48,7 +48,7 @@ describe("ModelPicker", () => {
     await user.type(input, "vendor/custom-model");
     await user.keyboard("{ArrowDown}{Enter}");
 
-    expect(input).toHaveValue("deepseek-v4-pro");
+    expect(input).toHaveValue("deepseek-v4.1-flash");
   });
 
   it("uses the translated options label without appending English prose", async () => {
@@ -60,11 +60,11 @@ describe("ModelPicker", () => {
   });
 
   it("renders the full long model slug (not truncated) so the dropdown stays readable", async () => {
-    const long = "openrouter/deepseek/deepseek-v4-pro-provider-vertex-200k-context-weekly-multimodal";
+    const long = "openrouter/deepseek/deepseek-v4.1-flash-provider-vertex-200k-context-weekly-multimodal";
     render(
       <ModelPicker
         value={long}
-        options={[long, "deepseek-v4-pro"]}
+        options={[long, "deepseek-v4.1-flash"]}
         onChange={() => {}}
         ariaLabel="Model"
         optionsAriaLabel="Available models"
