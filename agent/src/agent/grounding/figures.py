@@ -643,12 +643,12 @@ def parse_figures_block(content: str) -> FiguresBlock:
         stripped = line.strip().replace("｜", "|")
         if not stripped:
             continue
-        parts = stripped.split("|")
+        # Four logical columns; a literal pipe may belong to the ref itself.
         if stripped.startswith("|"):
-            parts = parts[1:]
-        if len(parts) > 1 and stripped.endswith("|"):
-            parts = parts[:-1]
-        parts = [part.strip() for part in parts]
+            stripped = stripped[1:].lstrip()
+        if stripped.endswith("|"):
+            stripped = stripped[:-1].rstrip()
+        parts = [part.strip() for part in stripped.split("|", 3)]
         if _is_header_or_rule(parts):
             continue
         parsed = _parse_value(parts[0], document_reading) if parts else None

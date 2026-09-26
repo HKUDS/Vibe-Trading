@@ -810,6 +810,54 @@ class _PolicyMixin:
                 sources.append((identity, float(entry["value"])))
         return sources
 
+    @staticmethod
+    def _tail_risk_field_refs(
+        records: Sequence[EvidenceRecord],
+        entries: Iterable[Mapping[str, Any]] = (),
+    ) -> list[str]:
+        """Exact call_id::field refs available for tail-risk evidence."""
+        refs = {
+            f"{record.call_id}::{record.field}"
+            for record in records
+            if record.call_id
+            and record.field
+            and record.status == "observed"
+            and record.value is not None
+            and tail_risk_identity(record.field)
+        }
+        refs |= {
+            f"{entry.get('call_id')}::{entry.get('field')}"
+            for entry in entries
+            if entry.get("call_id")
+            and entry.get("field")
+            and entry.get("value") is not None
+            and tail_risk_identity(str(entry.get("field") or ""))
+        }
+        return sorted(refs)
+
+    def _tool_field_ref_candidates(
+        self, ref: str, symbol: str | None
+    ) -> list[str]:
+        """Exact call refs for a mistaken tool_name::field declaration."""
+        key = (ref or "").strip()
+        if "::" not in key:
+            return []
+        scope, field = (part.strip() for part in key.split("::", 1))
+        if not scope or not field:
+            return []
+        records, entries = self._field_sources(field, symbol)
+        refs = {
+            f"{record.call_id}::{record.field}"
+            for record in records
+            if record.tool == scope and record.call_id and record.field
+        }
+        refs |= {
+            f"{entry.get('call_id')}::{entry.get('field')}"
+            for entry in entries
+            if entry.get("tool") == scope and entry.get("call_id") and entry.get("field")
+        }
+        return sorted(refs)
+
     def _tail_risk_ref_required(
         self,
         figure: Figure,
@@ -1088,6 +1136,29 @@ class _PolicyMixin:
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
         if scoped is not None:
             scoped_records, metric_values = scoped
+            if (
+                declaration is not None
+                and not scoped_records
+                and not metric_values
+            ):
+                call_field_candidates = self._tool_field_ref_candidates(
+                    declaration.ref, symbol
+                )
+                if call_field_candidates:
+                    return [
+                        self._figure_issue(
+                            "numeric_claim_conflict",
+                            figure,
+                            "observed",
+                            symbol,
+                            "field_ref_needs_call_id",
+                            f"is declared observed from {declaration.ref}, whose left side is "
+                            "a tool name rather than one exact call id",
+                            source_tool_call_ids=[declaration.ref],
+                            ambiguous_sources=call_field_candidates,
+                            field_ref_candidates=call_field_candidates,
+                        )
+                    ]
             values = [float(record.value) for record in scoped_records] + metric_values
             money = figure.currency and not figure.percent
             # A call- or tool-scoped ref pools every field that call returned,
@@ -1125,6 +1196,9 @@ class _PolicyMixin:
                         "field it quotes",
                         source_tool_call_ids=[declaration.ref],
                         ambiguous_sources=scoped_identities,
+                        field_ref_candidates=self._tail_risk_field_refs(
+                            scoped_records, scoped_entries
+                        ),
                     )
                 ]
             ambiguous = self._ambiguous_field_sources(declaration.ref, symbol)
@@ -1140,6 +1214,7 @@ class _PolicyMixin:
                         f"{', '.join(ambiguous)}, and they hold different values",
                         source_tool_call_ids=[declaration.ref],
                         ambiguous_sources=ambiguous,
+                        field_ref_candidates=ambiguous,
                     )
                 ]
             return [
@@ -1219,6 +1294,9 @@ class _PolicyMixin:
                     f"{', '.join(session_identities)}, so the figure has to name "
                     "the field it quotes",
                     ambiguous_sources=session_identities,
+                    field_ref_candidates=self._tail_risk_field_refs(
+                        session_records, self._analysis_metrics
+                    ),
                 )
             ]
         observed = sorted(direct or scaled)
