@@ -9,7 +9,10 @@
 Formula (verbatim from the report):
     ((20-LOWDAY(low,20))/20)*100
 
-Notes: LOWDAY -> ts_argmin (0-based); (20 - argmin)/20 * 100.
+Notes: this repo's LOWDAY convention (see gtja191/LICENSE.md) rebases the
+0-based ts_argmin index to the report's day-count via ``n - ts_argmin``, so
+substituting that into the formula's own ``n - LOWDAY`` term cancels back to
+the raw index: ``(n - (n - ts_argmin)) / n * 100 == ts_argmin / n * 100``.
 """
 from __future__ import annotations
 
@@ -46,7 +49,7 @@ __alpha_meta__ = {
     'frequency': ['1d'],
     'decay_horizon': 20,
     'min_warmup_bars': 20,
-    'notes': 'LOWDAY -> ts_argmin (0-based); (20 - argmin)/20 * 100.',
+    'notes': 'LOWDAY rebase cancels against the formula\'s own (20-LOWDAY) term, leaving ts_argmin/20*100.',
 }
 
 
@@ -61,5 +64,5 @@ def compute(panel):
     """
     l = panel["low"]
     am = ts_argmin(l, 20)
-    out = (20.0 - am) / 20.0 * 100.0
+    out = am / 20.0 * 100.0
     return out

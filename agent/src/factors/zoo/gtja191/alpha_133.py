@@ -9,7 +9,10 @@
 Formula (verbatim from the report):
     ((20-HIGHDAY(HIGH,20))/20)*100 - ((20-LOWDAY(LOW,20))/20)*100
 
-Notes: 
+Notes: this repo's HIGHDAY/LOWDAY convention (see gtja191/LICENSE.md) rebases
+the 0-based ts_argmax/ts_argmin index to the report's day-count via
+``n - ts_argmax``, so substituting that into each term's own ``n - HIGHDAY``
+(or LOWDAY) cancels back to the raw index: ``ts_argmax/n*100 - ts_argmin/n*100``.
 """
 from __future__ import annotations
 
@@ -46,7 +49,7 @@ __alpha_meta__ = {
     'frequency': ['1d'],
     'decay_horizon': 20,
     'min_warmup_bars': 20,
-    'notes': '',
+    'notes': 'HIGHDAY/LOWDAY rebase cancels against each term\'s own (20-x) wrapper, leaving ts_argmax/20*100 - ts_argmin/20*100.',
 }
 
 
@@ -61,5 +64,5 @@ def compute(panel):
     """
     h = panel["high"]
     l = panel["low"]
-    out = (20.0 - ts_argmax(h, 20)) / 20.0 * 100.0 - (20.0 - ts_argmin(l, 20)) / 20.0 * 100.0
+    out = ts_argmax(h, 20) / 20.0 * 100.0 - ts_argmin(l, 20) / 20.0 * 100.0
     return out

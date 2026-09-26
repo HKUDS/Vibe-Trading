@@ -9,7 +9,10 @@
 Formula (verbatim from the report):
     ((20-HIGHDAY(HIGH,20))/20)*100
 
-Notes: 
+Notes: this repo's HIGHDAY convention (see gtja191/LICENSE.md) rebases the
+0-based ts_argmax index to the report's day-count via ``n - ts_argmax``, so
+substituting that into the formula's own ``n - HIGHDAY`` term cancels back to
+the raw index: ``(n - (n - ts_argmax)) / n * 100 == ts_argmax / n * 100``.
 """
 from __future__ import annotations
 
@@ -46,7 +49,7 @@ __alpha_meta__ = {
     'frequency': ['1d'],
     'decay_horizon': 20,
     'min_warmup_bars': 20,
-    'notes': '',
+    'notes': 'HIGHDAY rebase cancels against the formula\'s own (20-HIGHDAY) term, leaving ts_argmax/20*100.',
 }
 
 
@@ -60,5 +63,5 @@ def compute(panel):
         pd.DataFrame with index = panel["close"].index, columns = panel["close"].columns.
     """
     h = panel["high"]
-    out = (20.0 - ts_argmax(h, 20)) / 20.0 * 100.0
+    out = ts_argmax(h, 20) / 20.0 * 100.0
     return out
