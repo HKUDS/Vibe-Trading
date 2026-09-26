@@ -18,7 +18,14 @@ from pathlib import Path
 import pytest
 
 from src.agent.grounding import GroundingLedger
-from src.agent.grounding.figures import Declaration, FiguresBlock, _numbers
+from src.agent.grounding.figures import (
+    Declaration,
+    FiguresBlock,
+    _numbers,
+    _writes_decimal_commas,
+    parse_figures_block,
+    scan_figures,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -104,6 +111,91 @@ def test_a_lone_list_like_cell_does_not_flip_the_document_to_decimal_commas() ->
     assert _digits(text) == ["5", "20", "234567", "1410"]
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Cierre ARS 5.165; ratio 0,82.", ["5165", "0.82"]),
+        ("Volumen 502.408; ratio 0,82.", ["502408", "0.82"]),
+        ("Total 1.234.567; ratio 0,82.", ["1234567", "0.82"]),
+        # Without independent decimal-comma evidence, the dotted spelling is
+        # ambiguous and keeps its decimal reading.
+        ("Cierre 5.165.", ["5.165"]),
+        # Leading zero is never a thousands group.
+        ("Ratio técnico 0.824; referencia 0,82.", ["0.824", "0.82"]),
+    ],
+)
+def test_decimal_comma_document_disambiguates_dotted_grouped_integers(
+    text: str, expected: list[str]
+) -> None:
+    assert _digits(text) == expected
+
+
+def test_zero_decimal_comma_sets_document_locale() -> None:
+    assert _writes_decimal_commas("ratio 0,82") is True
+    assert _writes_decimal_commas("ratio 0,8246699017713774") is True
+
+
+def test_live_shape_links_localized_prose_to_precise_declarations() -> None:
+    content = (
+        "PAMP.BA (Yahoo, ARS): cierre AR$5.165; volumen 502.408; "
+        "ratio de volumen 0,82."
+        + _figures(
+            "5165.0 | observed | latest_close | technical_indicators",
+            "502408.0 | observed | indicators.volume.latest | technical_indicators",
+            "0.8246699017713774 | observed | indicators.volume.ratio_20 | technical_indicators",
+        )
+    )
+    block = parse_figures_block(content)
+    claims = {
+        figure.text: figure
+        for figure in scan_figures(content, block)
+        if figure.text in {"5.165", "502.408", "0,82"}
+    }
+
+    assert set(claims) == {"5.165", "502.408", "0,82"}
+    assert claims["5.165"].value == 5165.0
+    assert claims["502.408"].value == 502408.0
+    assert claims["0,82"].value == 0.82
+    assert block.match(5165.0, False, claims["5.165"].digits) is not None
+    assert block.match(502408.0, False, claims["502.408"].digits) is not None
+    assert block.match(0.82, False, claims["0,82"].digits) is not None
+
+
+def test_spanish_grouped_tool_values_survive_the_grounding_gate(tmp_path: Path) -> None:
+    """The live Argentina-report shape: localized grouping plus a rounded ratio."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analizá PAMP.BA")
+    ledger.ingest_tool_result(
+        tool_name="technical_indicators",
+        arguments={"symbol": "PAMP.BA"},
+        result=json.dumps(
+            {
+                "ok": True,
+                "symbol": "PAMP.BA",
+                "source": "yahoo",
+                "latest_close": 5165.0,
+                "latest_date": "2026-09-23",
+                "indicators": {
+                    "volume": {
+                        "latest": 502408.0,
+                        "ratio_20": 0.8246699017713774,
+                    }
+                },
+            }
+        ),
+        call_id="indicators",
+        success=True,
+    )
+    result = ledger.validate_final_answer(
+        "PAMP.BA (Yahoo, ARS): cierre AR$5.165; volumen 502.408; "
+        "ratio de volumen 0,82."
+        + _figures(
+            "5165.0 | observed | latest_close | technical_indicators",
+            "502408.0 | observed | indicators.volume.latest | technical_indicators",
+            "0.8246699017713774 | observed | indicators.volume.ratio_20 | technical_indicators",
+        )
+    )
+
+    assert result.valid is True, result.issues
 
 
 def test_a_long_precision_spanish_percentage_is_verified_not_fragmented(
@@ -240,6 +332,12 @@ def test_an_undeclared_figure_is_grounded_only_within_its_own_rounding(
         (38.68005857871268, False, 38.50, "38.50", False, False),
         (38.68005857871268, False, 39.0, "39", False, False),
         (2.63949965, False, 2.64, "2.64", False, True),
+        # A mathematically correct two-decimal rendering below 1 may move by
+        # slightly more than the raw 0.5% evidence tolerance.
+        (0.8246699017713774, False, 0.82, "0.82", False, True),
+        # The widened presentation band remains bounded: this coarse rendering
+        # loses 28% of the value and must not borrow the declaration.
+        (0.014, False, 0.01, "0.01", False, False),
         (2.6395, False, 2.50, "2.50", False, False),
         (38.543109, True, 38.54, "38.54", True, True),
         (

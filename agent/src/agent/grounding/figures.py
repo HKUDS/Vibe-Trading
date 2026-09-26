@@ -23,9 +23,12 @@ from typing import Iterable, Sequence
 
 from src.agent.grounding.identity import _CANONICAL_SYMBOL_RE
 
-#: Widest relative gap between a written figure and the value it rounds. Same band as the
-#: evidence tolerance (``policies._TOLERANCE``); the digits written narrow it further.
-ROUNDED_BAND = 0.005
+#: Widest relative gap between a written figure and the precise value it rounds.
+#: This is a presentation-precision guard, not the raw evidence tolerance: two-decimal
+#: rendering of values below 1 can legitimately move by more than 0.5% while still
+#: rounding correctly. The written half-unit narrows this further, and materially coarse
+#: renderings such as 0.014 -> 0.01 remain outside this 1% band.
+ROUNDED_BAND = 0.01
 
 #: The five roles a declaration may carry (spec §2).
 ROLES = ("observed", "derived", "proposed", "cited", "count")
@@ -244,12 +247,15 @@ class _Normalized:
 
 @dataclass(frozen=True)
 class _Token:
-    """One number in normalized text: its span, sign and digits as written."""
+    """One number in normalized text: its span, sign and normalized digits."""
 
     start: int
     end: int
     sign: str
     digits: str
+    # A visible thousands separator made this an explicitly formatted numeric
+    # figure even though its normalized digits are an integer.
+    grouped: bool = False
 
 
 # Header spellings binding a table column to an OHLC field: the table's own
@@ -386,6 +392,13 @@ _DOTTED_DECIMAL_RE = re.compile(
     r"(?<![\d.,])[+-]?[1-9]\d{0,2}(?:\.\d{3})+,\d+(?!\d|\.\d)"
 )
 
+# A dot-only grouped integer ("5.165", "502.408", "1.234.567") is ambiguous on its
+# own because the same spelling can be a decimal. It is grouping only after the
+# surrounding document has independently established decimal-comma notation.
+_DOTTED_GROUPING_RE = re.compile(
+    r"(?<![\d.,])[+-]?[1-9]\d{0,2}(?:\.\d{3})+(?![\d.,])"
+)
+
 
 def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
     """Every number in normalized text, with a decimal comma read as one (#1418).
@@ -398,11 +411,14 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
     "−5,132%" beside "1,57%" are 2.237 and −5.132%, not 2237 and −5132%.
 
     Dotted thousands followed by a decimal comma ("1.234,56") are unambiguous.
-    Long comma fractions are only decimal when the number itself carries a local
-    marker (for example "17,9318145214327%"); an unmarked "1400,1777" remains two
-    numbers rather than being guessed as 1400.1777. ``decimal_commas`` lets a caller
-    that parses a fragment of a larger document (a declaration cell) pass the reading
-    of the whole document instead of re-deriving it from the fragment.
+    Once the document independently establishes decimal-comma notation, dot-only
+    grouped integers ("5.165", "502.408", "1.234.567") are read as thousands too;
+    without that document evidence they keep their decimal reading. Long comma
+    fractions are only decimal when the number itself carries a local marker (for
+    example "17,9318145214327%"); an unmarked "1400,1777" remains two numbers rather
+    than being guessed as 1400.1777. ``decimal_commas`` lets a caller that parses
+    a fragment of a larger document (a declaration cell) pass the reading of the
+    whole document instead of re-deriving it from the fragment.
     """
     comma_decimals = (
         _writes_decimal_commas(text) if decimal_commas is None else decimal_commas
@@ -416,12 +432,23 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
         )
         for match in _DOTTED_DECIMAL_RE.finditer(text)
     ]
+    dotted_grouped = [
+        _Token(
+            match.start(),
+            match.end(),
+            match.group(0)[0] if match.group(0)[0] in "+-" else "",
+            match.group(0).lstrip("+-").replace(".", ""),
+            True,
+        )
+        for match in _DOTTED_GROUPING_RE.finditer(text)
+    ] if comma_decimals else []
+    protected = dotted + dotted_grouped
     tokens: list[_Token] = []
     cursor = 0
     for match in _NUMBER_RE.finditer(text):
         if match.start() < cursor:
             continue
-        if any(token.start <= match.start() < token.end for token in dotted):
+        if any(token.start <= match.start() < token.end for token in protected):
             continue
         raw = match.group(0)
         sign = raw[0] if raw[0] in "+-" else ""
@@ -446,7 +473,7 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
                 body, end = f"{body}.{fraction}", stop
         tokens.append(_Token(match.start(), end, sign, body.replace(",", "")))
         cursor = end
-    return sorted(tokens + dotted, key=lambda token: token.start)
+    return sorted(tokens + protected, key=lambda token: token.start)
 
 
 def _writes_decimal_commas(text: str) -> bool:
@@ -470,11 +497,15 @@ def _writes_decimal_commas(text: str) -> bool:
         elif body.isdigit() and text[match.end() : match.end() + 1] == ",":
             fraction = _digit_run(text, match.end() + 1)
             stop = match.end() + 1 + len(fraction)
-            if _percent_mark(text, stop)[0] > 0 or (
-                1 <= len(fraction) <= 2
-                and (
-                    _currency_before(text, match.start())
-                    or _currency_after(text, stop)
+            if (
+                body == "0"
+                or _percent_mark(text, stop)[0] > 0
+                or (
+                    1 <= len(fraction) <= 2
+                    and (
+                        _currency_before(text, match.start())
+                        or _currency_after(text, stop)
+                    )
                 )
             ):
                 decimal = True
@@ -1029,7 +1060,7 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
         row, position = (cell[2], cell[3]) if cell else (None, None)
         structural = row is not None and position in (row.date_column, row.symbol_column)
         currency = _currency_before(text, token.start) or _currency_after(text, token.end)
-        marked = percent or currency or "." in token.digits
+        marked = percent or currency or "." in token.digits or token.grouped
         # A cell that also holds a word is prose set in a table: its plain
         # integer is a count or a horizon, as it would be in a sentence (#1471).
         worded = (
