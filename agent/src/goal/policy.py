@@ -15,6 +15,12 @@ _EXECUTION_PATTERNS = (
         r"\b(buy|sell|short|long)\b.{0,40}\b(now|immediately|right away|market order|limit order)\b",
         re.I,
     ),
+    # Same cue, reversed order ("immediately buy TSLA", "right away sell
+    # AAPL"): the pattern above only fires when the verb comes first.
+    re.compile(
+        r"\b(now|immediately|right away)\b.{0,40}\b(buy|sell|short|long)\b",
+        re.I,
+    ),
     re.compile(r"(下单|市价单|限价单|马上买|立即买|现在买|马上卖|立即卖|现在卖)"),
     # What the asset-noun list above used to catch, without its false
     # positives: an objective that IS an order -- it opens with the verb
