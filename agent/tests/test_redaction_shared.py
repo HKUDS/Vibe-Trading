@@ -175,6 +175,47 @@ def test_redact_payload_keeps_account_ref_provenance() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        "token_budget",
+        "token_usage",
+        "total_input_tokens",
+        "total_output_tokens",
+        "clob_token_id",
+    ],
+)
+def test_is_sensitive_arg_preserves_benign_token_fields(key: str) -> None:
+    """The ``"token"`` credential marker is a substring match (to catch
+    ``access_token``, ``refresh_token`` …), so token counts/budgets and the
+    public CLOB outcome-token id need an explicit exemption to avoid being
+    over-redacted."""
+    assert is_sensitive_arg(key) is False
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["api_key", "access_token", "refresh_token", "bearer_token", "token", "api_token"],
+)
+def test_is_sensitive_arg_still_catches_token_credentials(key: str) -> None:
+    assert is_sensitive_arg(key) is True
+
+
+def test_redact_payload_keeps_token_budget_and_usage_readable() -> None:
+    out = redact_payload(
+        {
+            "token_budget": 50000,
+            "objective": "research NVDA",
+            "access_token": "sekret",
+        }
+    )
+    assert out == {
+        "token_budget": 50000,
+        "objective": "research NVDA",
+        "access_token": "[redacted]",
+    }
+
+
 def test_redact_payload_scrubs_top_level_sensitive_keys() -> None:
     out = redact_payload(
         {"symbol": "NVDA", "authorization": "Bearer rh-oauth-token", "qty": 3}

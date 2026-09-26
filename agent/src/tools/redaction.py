@@ -113,6 +113,24 @@ _SENSITIVE_ARG_MARKERS = ("api_key", "authorization", "password", "secret", "tok
 #: (an env dump in a result leaks exactly what an env argument would).
 _RESULT_SAFE_KEYS = {"content"}
 
+#: Curated EXACT-MATCH fields that legitimately contain the substring
+#: "token" without holding a credential (token counts/budgets, and
+#: Polymarket's public CLOB outcome-token id). The "token" marker below has
+#: to stay a substring match to catch arbitrary credential-key spellings
+#: (``access_token``, ``refresh_token``, ``bearer_token`` …), so — mirroring
+#: how :data:`_PII_EXACT_KEYS` keeps ``account_ref`` from being caught by an
+#: ``"account"`` substring — these known-benign fields are exempted by exact
+#: name instead of being carved out of the marker itself. Unlike
+#: :data:`_RESULT_SAFE_KEYS`, this exemption is not sink-dependent: none of
+#: these hold a secret in the arguments sink or the live audit ledger either.
+_BENIGN_TOKEN_FIELD_KEYS = {
+    "token_budget",
+    "token_usage",
+    "total_input_tokens",
+    "total_output_tokens",
+    "clob_token_id",
+}
+
 
 def _fold_key(name: str) -> str:
     """Fold a key to its alphanumeric core (lower-case, separators stripped).
@@ -139,6 +157,11 @@ _SENSITIVE_ARG_MARKERS_FOLDED = tuple(_fold_key(m) for m in _SENSITIVE_ARG_MARKE
 #: Folded form of :data:`_RESULT_SAFE_KEYS`. Exact (folded) match only, so
 #: ``secret_content`` / ``content_token`` keep redacting everywhere.
 _RESULT_SAFE_KEYS_FOLDED = frozenset(_fold_key(k) for k in _RESULT_SAFE_KEYS)
+#: Folded form of :data:`_BENIGN_TOKEN_FIELD_KEYS`. Exact (folded) match
+#: only, so ``access_token`` / ``token_secret`` keep redacting everywhere.
+_BENIGN_TOKEN_FIELD_KEYS_FOLDED = frozenset(
+    _fold_key(k) for k in _BENIGN_TOKEN_FIELD_KEYS
+)
 
 
 @lru_cache(maxsize=8)
@@ -257,7 +280,11 @@ def is_sensitive_arg(name: str, *, sink: str = ARGUMENTS_SINK) -> bool:
     Account/PII matching is intentionally exact-only — never a broad
     ``"account"`` substring — so benign fields are not over-redacted and the
     audit record's opaque ``account_ref`` provenance field (the
-    mandate→consent accountability chain, SPEC §5) is preserved.
+    mandate→consent accountability chain, SPEC §5) is preserved. The same
+    reasoning exempts :data:`_BENIGN_TOKEN_FIELD_KEYS` (``token_budget``,
+    ``token_usage`` totals, ``clob_token_id`` …) from the ``"token"``
+    credential marker, which otherwise over-redacts any key merely
+    containing that substring.
 
     Args:
         name: Argument or payload key name to classify.
@@ -274,6 +301,8 @@ def is_sensitive_arg(name: str, *, sink: str = ARGUMENTS_SINK) -> bool:
     """
     normalized = name.strip().lower()
     folded = _fold_key(name)
+    if folded in _BENIGN_TOKEN_FIELD_KEYS_FOLDED:
+        return False
     if sink == RESULT_SINK and folded in _RESULT_SAFE_KEYS_FOLDED:
         return False
     if normalized in _SENSITIVE_ARG_KEYS or any(
