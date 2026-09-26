@@ -1212,6 +1212,58 @@ def test_compute_rsi_is_causal_and_bounded() -> None:
 
 
 @pytest.mark.unit
+def test_compute_rsi_matches_wilder_recursive_smoothing() -> None:
+    """On a mixed gain/loss series, must match true Wilder recursive
+    smoothing: the first average is a simple mean of the first `period`
+    gains/losses (the seed), and every bar after that applies the recursive
+    update ``avg[t] = (avg[t-1] * (period - 1) + x[t]) / period``. Seeding
+    from the single first observation instead (pandas' ewm with
+    adjust=False, taken alone) diverges materially from this on the bars
+    right after warmup, even though the two converge much later."""
+    closes = [
+        100.0, 101.0, 99.5, 102.0, 101.0, 103.0, 100.0, 104.0, 101.5, 105.0,
+        102.0, 106.0, 103.0, 107.0, 104.5, 106.0, 108.0, 103.5, 107.0, 109.0,
+    ]
+    close = pd.Series(closes)
+
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    period = 14
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    for g, loss_val in zip(gains[period:], losses[period:]):
+        avg_gain = (avg_gain * (period - 1) + g) / period
+        avg_loss = (avg_loss * (period - 1) + loss_val) / period
+    expected = 100 - 100 / (1 + avg_gain / avg_loss)
+
+    assert float(_compute_rsi(close, period=period).iloc[-1]) == pytest.approx(expected)
+
+
+@pytest.mark.unit
+def test_compute_rsi_seed_is_a_simple_average_not_first_value() -> None:
+    """At exactly `period` valid deltas (the boundary case), the seed value
+    itself is the whole answer: a simple mean of every gain/loss so far, not
+    the single-observation seed pandas' ewm(adjust=False) would use."""
+    closes = [
+        100.0, 101.0, 99.5, 102.0, 101.0, 103.0, 100.0, 104.0, 101.5, 105.0,
+        102.0, 106.0, 103.0, 107.0, 104.5,
+    ]
+    close = pd.Series(closes)
+
+    deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [max(-d, 0.0) for d in deltas]
+    period = 14
+    assert len(gains) == period
+
+    expected = 100 - 100 / (1 + (sum(gains) / period) / (sum(losses) / period))
+
+    assert float(_compute_rsi(close, period=period).iloc[-1]) == pytest.approx(expected)
+
+
+@pytest.mark.unit
 def test_price_features_as_of_reads_only_past_bars() -> None:
     dates = [f"2026-02-{d:02d}" for d in range(1, 21)]
     closes = [10.0 + 0.1 * i for i in range(20)]  # steadily rising
