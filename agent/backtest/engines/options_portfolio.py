@@ -838,8 +838,14 @@ def _calc_options_metrics(
     losses = [p for p in closed_pnl if p < 0]
     win_rate = len(wins) / len(closed_pnl) if closed_pnl else 0.0
     avg_win = np.mean(wins) if wins else 0.0
-    avg_loss = abs(np.mean(losses)) if losses else 1e-10
-    pl_ratio = avg_win / avg_loss if avg_loss > 1e-10 else 0.0
+    avg_loss = abs(np.mean(losses)) if losses else 0.0
+    # Closed trades with no loss leave the ratio without a denominator: None,
+    # as in backtest.metrics.win_rate_and_stats, since 0.0 would rank the run
+    # below every other one. No closed trade at all keeps 0.0.
+    if avg_loss > 1e-10:
+        pl_ratio = avg_win / avg_loss
+    else:
+        pl_ratio = None if closed_pnl else 0.0
 
     return {
         "final_value": final_value,
@@ -853,6 +859,6 @@ def _calc_options_metrics(
         # options_rejected_opens and must not inflate the trade count.
         "trade_count": sum(1 for t in trades if t.get("side") != "reject"),
         "win_rate": round(win_rate, 4),
-        "profit_loss_ratio": round(pl_ratio, 4),
+        "profit_loss_ratio": round(pl_ratio, 4) if pl_ratio is not None else None,
         "warnings": warnings,
     }
