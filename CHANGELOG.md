@@ -127,6 +127,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The shipped default model moves to the current DeepSeek Flash tier**
+  (#1603). DeepSeek's current API model names are `deepseek-flash`
+  (DeepSeek-V4.1-Flash) and `deepseek-v4-pro`; `deepseek-v4-flash` is a
+  deprecated alias whose model has been taken offline. Nothing was broken —
+  both defaults this repo shipped, `deepseek-v4-pro` for the direct API and
+  `deepseek/deepseek-v4-pro` on OpenRouter, are still served — but they name
+  the previous generation's premium tier, and the onboard wizard was still
+  offering the deprecated flash alias. `agent/.env.example` now ships
+  OpenRouter with `deepseek/deepseek-v4.1-flash` and the direct-DeepSeek block
+  with `deepseek-flash`, `llm_providers.json` matches, the wizard defaults to
+  `deepseek-flash` and suggests `deepseek-flash` / `deepseek-v4-pro`, and the
+  `LANGCHAIN_MODEL_NAME` examples in all seven READMEs follow. The Flash tier
+  is listed at 1/4.5 the input and 1/3.4 the output price of V4-Pro with 5x
+  the concurrency and image understanding; `deepseek-v4-pro` remains available.
+  A test now pins `agent/.env.example` to the registry so it cannot drift
+  again. Existing installs keep whatever they saved: a stored
+  `LANGCHAIN_MODEL_NAME=deepseek-v4-pro` still works.
+
 - **`source="qveris"` refuses markets with splits and dividends** (#1494). It
   picks a capability by search rank, which ignores adjustment: for 600519.SH
   the top pick was FMP's non-split-adjusted EOD, and a tool named adjusted

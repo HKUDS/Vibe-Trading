@@ -51,7 +51,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
     apiMock.getSessionMessages.mockResolvedValue([]);
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
-      model_name: "deepseek-v4-pro",
+      model_name: "deepseek-flash",
       base_url: "https://api.deepseek.com/v1",
       api_key_configured: true,
       api_key_required: true,
@@ -187,7 +187,7 @@ describe("Agent activity finished while the page was away", () => {
     apiMock.getRun.mockResolvedValue({});
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
-      model_name: "deepseek-v4-pro",
+      model_name: "deepseek-flash",
       base_url: "https://api.deepseek.com/v1",
       api_key_configured: true,
       api_key_required: true,
@@ -289,7 +289,7 @@ describe("Agent completion trusts the backend's attempt start", () => {
     apiMock.getSessionMessages.mockResolvedValue([]);
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
-      model_name: "deepseek-v4-pro",
+      model_name: "deepseek-flash",
       base_url: "https://api.deepseek.com/v1",
       api_key_configured: true,
       api_key_required: true,

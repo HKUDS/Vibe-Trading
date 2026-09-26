@@ -14,11 +14,12 @@ from src.providers.capabilities import (
 
 
 EXPECTED_PROVIDER_DEFAULTS = {
-    "openrouter": "deepseek/deepseek-v4-pro",
+    "openrouter": "deepseek/deepseek-v4.1-flash",
     "openai": "gpt-5.5",
     "anthropic": "claude-sonnet-4-6",
     "openai-codex": "openai-codex/gpt-5.4",
-    "deepseek": "deepseek-v4-pro",
+    "deepseek": "deepseek-flash",
+    "opencode": "deepseek-v4.1-flash",
     "siliconflow-cn": "deepseek-ai/DeepSeek-V3.1-Terminus",
     "siliconflow-global": "deepseek-ai/DeepSeek-V3.1-Terminus",
     "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
@@ -30,11 +31,14 @@ EXPECTED_PROVIDER_DEFAULTS = {
     "zhipu": "glm-5.1",
     "glm": "glm-5.1",
     "moonshot": "kimi-k2.6",
+    "kimi-coding": "kimi-for-coding",
     "minimax": "MiniMax-M3",
     "mimo": "MiMo-72B-A27B",
     "spark": "4.0Ultra",
     "zai": "glm-5.1",
     "modelscope": "Qwen/Qwen3.5-27B",
+    "ollama": "qwen2.5:32b",
+    "copilot": "claude-sonnet-5",
 }
 
 
@@ -47,6 +51,58 @@ def test_llm_provider_registry_uses_current_default_models() -> None:
         assert defaults[provider] == model
 
     assert defaults["openai"] != "gpt-5.5-instant"
+
+
+def _env_example_shipped_pair(lines: list[str]) -> tuple[str, str]:
+    """The single uncommented provider/model pair `.env.example` actually ships.
+
+    Counting rather than taking the first match keeps a duplicated default from
+    passing, and reading the provider keeps a deliberate switch of the shipped
+    block from failing as if it were a regression.
+    """
+    providers = [
+        line.split("=", 1)[1].strip() for line in lines if line.startswith("LANGCHAIN_PROVIDER=")
+    ]
+    models = [
+        line.split("=", 1)[1].strip() for line in lines if line.startswith("LANGCHAIN_MODEL_NAME=")
+    ]
+    assert len(providers) == 1, f"expected one live LANGCHAIN_PROVIDER, found {providers}"
+    assert len(models) == 1, f"expected one live LANGCHAIN_MODEL_NAME, found {models}"
+    return providers[0], models[0]
+
+
+def _env_example_block_default(lines: list[str], header: str) -> str | None:
+    """The single commented ``LANGCHAIN_MODEL_NAME`` inside one
+    ``# --- <header> ---`` block, so two blocks carrying the same id cannot
+    satisfy each other and a stale duplicate inside one block cannot hide."""
+    marker = f"# --- {header} ---"
+    starts = [i for i, line in enumerate(lines) if line.strip() == marker]
+    if len(starts) != 1:
+        return None
+    body: list[str] = []
+    for line in lines[starts[0] + 1 :]:
+        if line.strip().startswith("# --- "):
+            break
+        body.append(line)
+    found = [
+        line.split("=", 1)[1].strip()
+        for line in body
+        if line.startswith("# LANGCHAIN_MODEL_NAME=")
+    ]
+    return found[0] if len(found) == 1 else None
+
+
+def test_env_example_ships_a_current_default_model() -> None:
+    """`agent/.env.example` is the file a fresh install is told to copy and the
+    fallback the Web UI displays, so both of its uncommented entries and the
+    DeepSeek block have to track the registry."""
+    text = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    provider, model = _env_example_shipped_pair(lines)
+    assert model == EXPECTED_PROVIDER_DEFAULTS[provider.lower()]
+
+    assert _env_example_block_default(lines, "DeepSeek") == EXPECTED_PROVIDER_DEFAULTS["deepseek"]
 
 
 def test_minimax_provider_lists_regional_endpoints() -> None:
@@ -95,11 +151,11 @@ def test_legacy_cli_provider_choices_match_registry_defaults() -> None:
 def test_interactive_onboard_suggests_current_primary_models() -> None:
     onboard_defaults = {provider.key: provider.default_model for provider in ONBOARD_PROVIDERS}
 
-    assert onboard_defaults["openrouter"] == "deepseek/deepseek-v4-pro"
+    assert onboard_defaults["openrouter"] == "deepseek/deepseek-v4.1-flash"
     assert onboard_defaults["openai"] == "gpt-5.5"
     assert onboard_defaults["anthropic"] == "claude-sonnet-4-6"
     assert onboard_defaults["openai-codex"] == "openai-codex/gpt-5.4"
-    assert onboard_defaults["deepseek"] == "deepseek-v4-pro"
+    assert onboard_defaults["deepseek"] == "deepseek-flash"
     assert onboard_defaults["siliconflow-cn"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
     assert onboard_defaults["siliconflow-global"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
     assert onboard_defaults["modelscope"] == "Qwen/Qwen3.5-27B"

@@ -60,7 +60,7 @@ class _EchoProbeTool(BaseTool):
 
 def _chat_llm(fake_llm: _ScriptedStreamingLLM) -> ChatLLM:
     client = ChatLLM.__new__(ChatLLM)
-    client.model_name = "deepseek-v4-pro"
+    client.model_name = "deepseek-v4.1-flash"
     client._llm = fake_llm
     return client
 

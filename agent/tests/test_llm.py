@@ -93,7 +93,7 @@ class TestProviderCapabilityAliases:
         "provider,model,expected",
         [
             # Gateway providers — explicit choice must never be overridden.
-            ("openrouter", "deepseek/deepseek-v4-pro", "openrouter"),
+            ("openrouter", "deepseek/deepseek-v4.1-flash", "openrouter"),
             ("openrouter", "gemini-3.5-flash", "openrouter"),
             ("openrouter", "glm-4.6", "openrouter"),
         ],
@@ -1000,13 +1000,13 @@ class TestGetLlmCredentials:
 
     def test_openrouter_with_deepseek_model_returns_openrouter_key(self) -> None:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "or-test-key"}, clear=True):
-            creds = get_llm_credentials("openrouter", "deepseek/deepseek-v4-pro")
+            creds = get_llm_credentials("openrouter", "deepseek/deepseek-v4.1-flash")
             assert creds["api_key"] == "or-test-key"
             assert creds["provider"] == "openrouter"
 
     def test_empty_provider_with_deepseek_model_infers_deepseek(self) -> None:
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "ds-test-key"}, clear=True):
-            creds = get_llm_credentials("", "deepseek/deepseek-v4-pro")
+            creds = get_llm_credentials("", "deepseek/deepseek-v4.1-flash")
             assert creds["api_key"] == "ds-test-key"
 
     def test_explicit_openai_with_glm_model_uses_openai_key(self) -> None:
@@ -1074,21 +1074,21 @@ class TestGetLlmCredentials:
             {"OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1"},
             clear=True,
         ):
-            creds = get_llm_credentials("openrouter", "deepseek/deepseek-v4-pro")
+            creds = get_llm_credentials("openrouter", "deepseek/deepseek-v4.1-flash")
             assert creds["base_url"] == "https://openrouter.ai/api/v1"
 
     def test_base_url_falls_back_to_openai_base_url(self) -> None:
         with patch.dict(
             os.environ, {"OPENAI_BASE_URL": "https://fallback.example/v1"}, clear=True
         ):
-            creds = get_llm_credentials("deepseek", "deepseek-v4-pro")
+            creds = get_llm_credentials("deepseek", "deepseek-flash")
             assert creds["base_url"] == "https://fallback.example/v1"
 
     def test_base_url_falls_back_to_openai_api_base(self) -> None:
         with patch.dict(
             os.environ, {"OPENAI_API_BASE": "https://legacy.example/v1"}, clear=True
         ):
-            creds = get_llm_credentials("deepseek", "deepseek-v4-pro")
+            creds = get_llm_credentials("deepseek", "deepseek-flash")
             assert creds["base_url"] == "https://legacy.example/v1"
 
 

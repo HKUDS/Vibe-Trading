@@ -67,7 +67,7 @@ describe("Agent background stream completion reconciliation", () => {
     apiMock.getGoal.mockResolvedValue(null);
     apiMock.getLLMSettings.mockResolvedValue({
       provider: "deepseek",
-      model_name: "deepseek-v4-pro",
+      model_name: "deepseek-flash",
       base_url: "https://api.deepseek.com/v1",
       api_key_configured: true,
       api_key_required: true,

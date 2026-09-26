@@ -992,7 +992,7 @@ Copy `agent/.env.example` to `agent/.env` and uncomment the provider block you w
 | `LANGCHAIN_PROVIDER` | Yes | Provider name (`openrouter`, `deepseek`, `groq`, `ollama`, etc.) |
 | `<PROVIDER>_API_KEY` | Yes* | API key (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, etc.) |
 | `<PROVIDER>_BASE_URL` | Yes | API endpoint URL |
-| `LANGCHAIN_MODEL_NAME` | Yes | Model name (e.g. `deepseek-v4-pro`) |
+| `LANGCHAIN_MODEL_NAME` | Yes | Model name (e.g. `deepseek-flash`) |
 | `LANGCHAIN_REASONING_EFFORT` | No | Reasoning effort (`none`, `low`, `medium`, `high`, or `max`) |
 | `LANGCHAIN_USE_RESPONSES_API` | No | Responses transport override: literal `true` uses `/v1/responses` when the endpoint supports it; native adapters retain their own transport; all other values use Chat Completions |
 | `TUSHARE_TOKEN` | No | Tushare Pro token for A-share data (falls back to AKShare) |
@@ -1016,10 +1016,10 @@ Vibe-Trading is a tool-heavy agent — skills, backtests, memory, and swarms all
 | Tier | Examples | When to use |
 |------|----------|-------------|
 | **Best** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5-pro`, `google/gemini-3.5-flash` | Complex swarms (3+ agents), long research sessions, paper-grade analysis |
-| **Sweet spot** (default) | `deepseek-v4-pro`, `deepseek/deepseek-v4-pro`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | Daily driver — reliable tool-calling at ~1/10 the cost |
+| **Sweet spot** (default) | `deepseek-flash`, `deepseek/deepseek-v4.1-flash`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | Daily driver — reliable tool-calling at ~1/10 the cost |
 | **Avoid for agent use** | `*-nano`, `*-flash-lite`, `*-coder-next`, small / distilled variants | Tool-calling is unreliable — the agent will appear to "answer from memory" instead of loading skills or running backtests |
 
-The default `agent/.env.example` ships with DeepSeek official API + `deepseek-v4-pro`; OpenRouter users can use `deepseek/deepseek-v4-pro`.
+The default `agent/.env.example` ships with OpenRouter + `deepseek/deepseek-v4.1-flash`; DeepSeek-direct users can use the bare `deepseek-flash`.
 
 ---
 

@@ -36,7 +36,7 @@ class WriteFileTool(BaseTool):
         Returns:
             JSON string with bytes_written or an error.
         """
-        # DeepSeek-v4-pro (and some other models) sometimes emit write_file
+        # DeepSeek (and some other models) sometimes emit write_file
         # with the path under an aliased key, or omit it entirely. Accept the
         # common aliases and return a correctable error instead of raising a
         # hard KeyError the model can't recover from.

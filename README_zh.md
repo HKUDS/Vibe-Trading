@@ -909,7 +909,7 @@ skill + MCP config 会下载到你的智能体 skills 目录。详情见 [ClawHu
 | `LANGCHAIN_PROVIDER` | Yes | Provider 名称（`openrouter`, `deepseek`, `groq`, `ollama` 等） |
 | `<PROVIDER>_API_KEY` | Yes* | API key（`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY` 等） |
 | `<PROVIDER>_BASE_URL` | Yes | API endpoint URL |
-| `LANGCHAIN_MODEL_NAME` | Yes | 模型名称（例如 `deepseek-v4-pro`） |
+| `LANGCHAIN_MODEL_NAME` | Yes | 模型名称（例如 `deepseek-flash`） |
 | `TUSHARE_TOKEN` | No | A 股数据的 Tushare Pro token（会 fallback 到 AKShare） |
 | `TIMEOUT_SECONDS` | No | LLM 调用超时，默认 120s |
 | `API_AUTH_KEY` | 网络部署推荐 | API 可被非本地客户端访问时要求的 Bearer token |
@@ -931,10 +931,10 @@ Vibe-Trading 是高度依赖工具的智能体：skills、backtests、memory 和
 | 档位 | 示例 | 使用场景 |
 |------|------|----------|
 | **Best** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5-pro`, `google/gemini-3.5-flash` | 复杂 swarms（3+ agents）、长研究 sessions、论文级分析 |
-| **Sweet spot**（默认） | `deepseek-v4-pro`, `deepseek/deepseek-v4-pro`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | 日常主力，约 1/10 成本下具备可靠工具调用 |
+| **Sweet spot**（默认） | `deepseek-flash`, `deepseek/deepseek-v4.1-flash`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | 日常主力，约 1/10 成本下具备可靠工具调用 |
 | **避免用于 agent** | `*-nano`, `*-flash-lite`, `*-coder-next`, 小型 / 蒸馏变体 | 工具调用不可靠，智能体会看起来像是在“凭记忆回答”，而不是加载 skills 或运行回测 |
 
-默认 `agent/.env.example` 使用 DeepSeek 官方 API + `deepseek-v4-pro`；OpenRouter 用户可以使用 `deepseek/deepseek-v4-pro`。
+默认 `agent/.env.example` 使用 OpenRouter + `deepseek/deepseek-v4.1-flash`；直连 DeepSeek 的用户可以使用裸模型名 `deepseek-flash`。
 
 ---
 

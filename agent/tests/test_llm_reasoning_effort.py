@@ -288,7 +288,7 @@ class TestUnsupportedProviders:
             {
                 "LANGCHAIN_PROVIDER": "openai",
                 "OPENAI_API_KEY": "sk-test",
-                "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
+                "LANGCHAIN_MODEL_NAME": "deepseek-v4.1-flash",
                 "LANGCHAIN_REASONING_EFFORT": "high",
                 "VIBE_TRADING_DEEPSEEK_ADAPTER": "openai-compatible",
                 "LANGCHAIN_USE_RESPONSES_API": "false",
@@ -486,7 +486,7 @@ class TestRelayOptIn:
                 "LANGCHAIN_PROVIDER": "openrouter",
                 "OPENROUTER_API_KEY": "or-test",
                 "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
-                "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4-pro",
+                "LANGCHAIN_MODEL_NAME": "deepseek/deepseek-v4.1-flash",
                 "LANGCHAIN_REASONING_EFFORT": "high",
                 "LANGCHAIN_USE_RESPONSES_API": "false",
             }

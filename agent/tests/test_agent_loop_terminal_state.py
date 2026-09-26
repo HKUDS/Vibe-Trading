@@ -368,7 +368,7 @@ class _StubLLMStreamFailure:
     ) -> _StubLLMResponse:
         raise ProviderStreamError(
             provider="deepseek",
-            model="deepseek-v4-pro",
+            model="deepseek-v4.1-flash",
             original=RuntimeError("stream exploded"),
         )
 

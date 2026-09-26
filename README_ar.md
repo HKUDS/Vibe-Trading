@@ -899,7 +899,7 @@ npx clawhub@latest install vibe-trading --force
 | `LANGCHAIN_PROVIDER` | نعم | اسم المزود (`openrouter`, `deepseek`, `groq`, `ollama`, إلخ) |
 | `<PROVIDER>_API_KEY` | نعم* | مفتاح API (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, إلخ) |
 | `<PROVIDER>_BASE_URL` | نعم | عنوان URL لنقطة نهاية API |
-| `LANGCHAIN_MODEL_NAME` | نعم | اسم النموذج (مثل `deepseek-v4-pro`) |
+| `LANGCHAIN_MODEL_NAME` | نعم | اسم النموذج (مثل `deepseek-flash`) |
 | `TUSHARE_TOKEN` | لا | رمز Tushare Pro لبيانات أسهم A (يرجع إلى AKShare عند الحاجة) |
 | `TIMEOUT_SECONDS` | لا | مهلة استدعاء LLM، الافتراضي 120s |
 | `API_AUTH_KEY` | موصى به للنشر الشبكي | Bearer token مطلوب عندما يكون API قابلاً للوصول من عملاء غير محليين |
@@ -921,10 +921,10 @@ Vibe-Trading وكيل كثيف الأدوات؛ المهارات والاختب�
 | المستوى | أمثلة | متى تستخدمه |
 |------|----------|-------------|
 | **الأفضل** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.5-pro`, `google/gemini-3.5-flash` | أسراب معقدة (3+ وكلاء)، جلسات بحث طويلة، تحليل بمستوى ورقة علمية |
-| **النقطة المثلى** (افتراضي) | `deepseek-v4-pro`, `deepseek/deepseek-v4-pro`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | الاستخدام اليومي، tool-calling موثوق بنحو عُشر التكلفة |
+| **النقطة المثلى** (افتراضي) | `deepseek-flash`, `deepseek/deepseek-v4.1-flash`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.6`, `qwen/qwen3-max-thinking` | الاستخدام اليومي، tool-calling موثوق بنحو عُشر التكلفة |
 | **تجنبها لاستخدام الوكيل** | `*-nano`, `*-flash-lite`, `*-coder-next`, small / distilled variants | tool-calling غير موثوق؛ سيبدو الوكيل وكأنه "يجيب من الذاكرة" بدلاً من تحميل المهارات أو تشغيل الاختبارات الرجعية |
 
-يأتي `agent/.env.example` افتراضياً مع DeepSeek official API + `deepseek-v4-pro`; ويمكن لمستخدمي OpenRouter استخدام `deepseek/deepseek-v4-pro`.
+يأتي `agent/.env.example` افتراضياً مع OpenRouter + `deepseek/deepseek-v4.1-flash`; ويمكن لمستخدمي DeepSeek المباشر استخدام `deepseek-flash` بدون بادئة.
 
 ---
 

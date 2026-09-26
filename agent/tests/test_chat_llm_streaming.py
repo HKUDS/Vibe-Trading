@@ -58,7 +58,7 @@ class _FakeStreamingLLM:
 
 def _client(fake_llm: _FakeStreamingLLM) -> ChatLLM:
     client = ChatLLM.__new__(ChatLLM)
-    client.model_name = "deepseek-v4-pro"
+    client.model_name = "deepseek-v4.1-flash"
     client._llm = fake_llm
     return client
 
@@ -215,14 +215,14 @@ def test_stream_failure_raises_provider_error_without_silent_fallback() -> None:
 
     with patch.dict(
         os.environ,
-        {"LANGCHAIN_PROVIDER": "deepseek", "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro"},
+        {"LANGCHAIN_PROVIDER": "deepseek", "LANGCHAIN_MODEL_NAME": "deepseek-flash"},
         clear=True,
     ):
         with pytest.raises(ProviderStreamError) as excinfo:
             _client(fake).stream_chat([{"role": "user", "content": "hi"}])
 
     assert "provider=deepseek" in str(excinfo.value)
-    assert "model=deepseek-v4-pro" in str(excinfo.value)
+    assert "model=deepseek-v4.1-flash" in str(excinfo.value)
     assert fake.invoke_called is False
 
 
@@ -233,7 +233,7 @@ def test_stream_error_redacts_configured_secret_values() -> None:
         os.environ,
         {
             "LANGCHAIN_PROVIDER": "deepseek",
-            "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
+            "LANGCHAIN_MODEL_NAME": "deepseek-flash",
             "DEEPSEEK_API_KEY": "sk-live-secret-123456",
         },
         clear=True,

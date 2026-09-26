@@ -353,7 +353,7 @@ def get_llm_credentials(
 
     Args:
         provider: Configured provider name (e.g. ``"openrouter"``).
-        model: Configured model name (e.g. ``"deepseek/deepseek-v4-pro"``).
+        model: Configured model name (e.g. ``"deepseek/deepseek-v4.1-flash"``).
 
     Returns:
         Dict with ``"provider"``, ``"api_key"``, ``"base_url"``, ``"model"``
