@@ -36,6 +36,7 @@ from src.trading.connectors.mt5.reads import (
     get_open_orders,
     get_positions,
     get_quote,
+    search_instruments,
 )
 
 __all__ = [
@@ -62,4 +63,5 @@ __all__ = [
     "get_open_orders",
     "get_positions",
     "get_quote",
+    "search_instruments",
 ]

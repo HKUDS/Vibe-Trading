@@ -113,6 +113,8 @@ def _metal_or_fx_legs(value: str) -> tuple[str, str] | None:
     clean = str(value or "").strip().upper()
     if clean.endswith("=X"):
         clean = clean[:-2]
+    if clean.endswith(".FX"):
+        clean = clean[:-3]
     if "-" in clean or "/" in clean:
         base, _, quote = (
             clean.partition("-") if "-" in clean else clean.partition("/")
@@ -289,6 +291,10 @@ class SymbolSearchTool(BaseTool):
                 }
             )
             sources["fx_normalizer"] = "ok"
+
+        if connector_source == "mt5":
+            # The selected terminal must confirm an MT5 identity.
+            candidates = [c for c in candidates if c.get("source") == "mt5"]
 
         if crypto_pair is not None:
             # A pair query is an exact instrument assertion. Near-string Yahoo
@@ -511,7 +517,9 @@ def _search_selected_connector(
     limit: int,
 ) -> tuple[List[Dict[str, Any]], str | None, str | None]:
     """Resolve an explicit pair against the active crypto connector, if supported."""
-    if _canonical_crypto_pair(query) is None:
+    crypto_pair = _canonical_crypto_pair(query)
+    mt5_pair = _metal_or_fx_legs(query)
+    if crypto_pair is None and mt5_pair is None:
         return [], None, None
 
     # Lazy imports keep the generic symbol tool usable when optional connector
@@ -526,7 +534,11 @@ def _search_selected_connector(
         logger.debug("selected connector lookup failed for %r: %s", query, exc)
         return [], None, None
 
-    if profile.connector != "binance":
+    if profile.connector == "binance" and crypto_pair is None:
+        return [], None, None
+    if profile.connector == "mt5" and mt5_pair is None:
+        return [], None, None
+    if profile.connector not in {"binance", "mt5"}:
         return [], None, None
 
     source = profile.connector
@@ -551,6 +563,34 @@ def _search_selected_connector(
     rows = payload.get("instruments")
     rows = rows if isinstance(rows, list) else []
     candidates: List[Dict[str, Any]] = []
+    if profile.connector == "mt5" and mt5_pair is not None:
+        requested_base = "".join(mt5_pair)
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            native_symbol = str(
+                row.get("native_symbol") or row.get("symbol") or ""
+            ).strip()
+            resolved_base = native_symbol.upper()
+            if resolved_base.endswith(".FX"):
+                resolved_base = resolved_base[:-3]
+            if not resolved_base.startswith(requested_base):
+                continue
+            candidates.append(
+                {
+                    "symbol": query.strip().upper(),
+                    "name": str(row.get("name") or native_symbol).strip() or None,
+                    "market": str(row.get("market") or "forex"),
+                    "type": str(row.get("type") or "cfd"),
+                    "exchange": str(row.get("exchange") or row.get("venue") or "MT5"),
+                    "venue": str(row.get("venue") or row.get("exchange") or "MT5"),
+                    "source": source,
+                    "profile_id": profile.id,
+                    "native_symbol": native_symbol,
+                }
+            )
+        return candidates, source, "ok"
+
     for row in rows:
         if not isinstance(row, dict):
             continue

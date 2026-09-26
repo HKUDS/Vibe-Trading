@@ -1576,6 +1576,12 @@ Configure `~/.vibe-trading/mt5.json` (create it yourself; `chmod 600` where supp
 }
 ```
 
+For broker-confirmed `search_symbol` results, set `terminal_path` in this file
+to the selected terminal executable. Symbol search reads only `symbol_info`
+and `symbols_get`, passes no login credentials, and does not read account or
+position data or alter Market Watch. Without an explicit path it returns no
+MT5 candidate.
+
 Then:
 
 ```bash

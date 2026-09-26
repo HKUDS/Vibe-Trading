@@ -1,7 +1,8 @@
 """MT5 read operations: status, account, positions, orders, quote, history.
 
-Every read runs through :func:`_client._session` (identity guard included)
-and returns a fail-closed ``{"status": "error", ...}`` envelope instead of
+Account-bound reads use :func:`_client._session` and its identity guard.
+Symbol search reads only metadata through :func:`_client._catalog_session`.
+Both return a fail-closed ``{"status": "error", ...}`` envelope instead of
 raising, so tools and CLI degrade cleanly when the SDK/terminal is absent.
 """
 
@@ -23,6 +24,7 @@ from src.trading.connectors.mt5._client import (
     _resolve_symbol,
     _usd_contract_value,
 )
+from src.trading.connectors.mt5.symbols import classify_mt5_symbol
 
 _MT5_ERRORS = (MT5DependencyError, MT5ConfigError, MT5ConnectionError, MT5ProfileMismatchError)
 
@@ -236,6 +238,70 @@ def get_quote(symbol: str, *, config: MT5Config | None = None, **_: Any) -> dict
     except _MT5_ERRORS as exc:
         return _error(cfg, str(exc), symbol=clean)
     return _envelope(cfg, symbol=clean, resolved_symbol=name, quote=quote)
+
+
+def search_instruments(
+    query: str,
+    *,
+    config: MT5Config | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Resolve one explicit symbol against the configured terminal catalog."""
+    cfg = config or _client.load_config()
+    raw = str(query or "").strip().upper()
+    base = raw[:-2] if raw.endswith("=X") else raw
+    base = _client.normalize_base(base)
+    if not base or not base.isalnum():
+        return _error(cfg, "symbol search requires an explicit symbol", instruments=[])
+
+    try:
+        bounded_limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError, OverflowError):
+        bounded_limit = 10
+
+    try:
+        with _client._catalog_session(cfg) as mt5:
+            candidates = []
+            if cfg.symbol_suffix:
+                candidates.append(base + cfg.symbol_suffix)
+            candidates.append(base)
+            info = None
+            for name in candidates:
+                info = mt5.symbol_info(name)
+                if info is not None:
+                    break
+            if info is None:
+                matches = sorted(
+                    (
+                        item
+                        for item in (mt5.symbols_get(group=f"{base}*") or ())
+                        if str(getattr(item, "name", "")).upper().startswith(base)
+                    ),
+                    key=lambda item: (
+                        len(str(getattr(item, "name", ""))),
+                        str(getattr(item, "name", "")),
+                    ),
+                )
+                info = matches[0] if matches else None
+    except _MT5_ERRORS as exc:
+        return _error(cfg, str(exc), instruments=[])
+
+    instruments = []
+    if info is not None:
+        name = str(getattr(info, "name", "") or "").strip()
+        if name:
+            instrument_type, _ = classify_mt5_symbol(name)
+            instruments.append(
+                {
+                    "symbol": name,
+                    "native_symbol": name,
+                    "market": "fx" if instrument_type.value == "forex" else "mt5",
+                    "type": instrument_type.value,
+                    "exchange": cfg.server or "MT5",
+                    "venue": cfg.server or "MT5",
+                }
+            )
+    return _envelope(cfg, query=query, instruments=instruments[:bounded_limit])
 
 
 def get_historical_bars(

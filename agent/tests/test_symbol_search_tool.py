@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from src.agent.grounding.ledger import GroundingLedger
 from src.trading import profiles as trading_profiles
 from src.trading import service as trading_service
 from src.tools import symbol_search_tool as ss
@@ -807,6 +808,102 @@ class TestFxPairAlignment:
         assert ss._canonical_crypto_pair("ETH/USD") == "ETH-USD"
         assert ss._canonical_crypto_pair("BTC/USDT") == "BTC-USDT"
         assert ss._canonical_crypto_pair("BTCUSDT") == "BTC-USDT"
+
+    @pytest.mark.parametrize("query", ["XAUUSD", "XAU/USD", "XAUUSD=X", "XAUUSD.FX"])
+    def test_selected_mt5_profile_resolves_broker_confirmed_metal(
+        self, monkeypatch, tmp_path, query: str
+    ) -> None:
+        monkeypatch.setattr(
+            trading_profiles, "load_selected_profile_id", lambda: "mt5-paper-sdk"
+        )
+        monkeypatch.setattr(
+            trading_service,
+            "search_instruments",
+            lambda query, profile_id, *, limit: {
+                "status": "ok",
+                "instruments": [
+                    {
+                        "symbol": "XAUUSD",
+                        "native_symbol": "XAUUSDm",
+                        "market": "mt5",
+                        "type": "cfd",
+                        "exchange": "Exness-MT5Trial8",
+                    }
+                ],
+            },
+        )
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client,
+            "search",
+            return_value=[
+                {
+                    "symbol": "XAUUSD=X",
+                    "shortname": "Gold",
+                    "exchange": "CCY",
+                    "quoteType": "CURRENCY",
+                }
+            ],
+        ):
+            result = ss.SymbolSearchTool().execute(query=query)
+        data = json.loads(result)["data"]
+
+        assert data["sources"]["mt5"] == "ok"
+        assert data["count"] == 1
+        candidate = data["candidates"][0]
+        assert candidate["symbol"] == query.upper()
+        assert candidate["native_symbol"] == "XAUUSDm"
+        assert candidate["venue"] == "Exness-MT5Trial8"
+        assert candidate["profile_id"] == "mt5-paper-sdk"
+
+        ledger = GroundingLedger(run_dir=tmp_path, user_message=f"Quote {query}")
+        ledger.ingest_tool_result(
+            tool_name="search_symbol",
+            arguments={"query": query},
+            result=result,
+            call_id="resolve-mt5-symbol",
+            success=True,
+        )
+        assert ledger.identity_status == "locked"
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            {"status": "ok", "instruments": []},
+            {"status": "error", "error": "terminal unavailable", "instruments": []},
+        ],
+    )
+    def test_mt5_no_match_does_not_create_candidate(
+        self, monkeypatch, response: dict
+    ) -> None:
+        monkeypatch.setattr(
+            trading_profiles, "load_selected_profile_id", lambda: "mt5-paper-sdk"
+        )
+        monkeypatch.setattr(
+            trading_service, "search_instruments", lambda *args, **kwargs: response
+        )
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(
+            ss.yahoo_client,
+            "search",
+            return_value=[
+                {
+                    "symbol": "XAUUSD=X",
+                    "shortname": "Gold",
+                    "exchange": "CCY",
+                    "quoteType": "CURRENCY",
+                }
+            ],
+        ):
+            data = json.loads(ss.SymbolSearchTool().execute(query="XAUUSD"))["data"]
+
+        assert data["candidates"] == []
 
     def test_fx_query_returns_canonical_candidate_when_yahoo_unavailable(self) -> None:
         """A throttled/failed Yahoo must not turn a canonical pair into nothing."""
