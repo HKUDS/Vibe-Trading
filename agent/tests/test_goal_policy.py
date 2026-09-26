@@ -43,6 +43,10 @@ def test_ordinary_research_objectives_are_accepted(objective: str) -> None:
         "Please buy AAPL",
         "Research the setup, then sell 50 TSLA",
         "买入100股贵州茅台",
+        # Reversed word order: the immediacy cue comes before the verb.
+        "Immediately buy TSLA",
+        "Right away sell my AAPL position",
+        "Now sell GOOGL",
     ],
 )
 def test_genuine_execution_requests_are_still_rejected(objective: str) -> None:
