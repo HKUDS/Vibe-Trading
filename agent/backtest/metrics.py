@@ -318,7 +318,7 @@ def buy_and_hold_return(close: Any) -> Optional[float]:
     return last / first - 1.0
 
 
-def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
+def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, Optional[float]]:
     """Win rate and P&L statistics from completed trades.
 
     Args:
@@ -326,7 +326,8 @@ def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
 
     Returns:
         Dict with win_rate, profit_loss_ratio, max_consecutive_loss,
-        avg_holding_bars, profit_factor.
+        avg_holding_bars, profit_factor. profit_loss_ratio and profit_factor
+        are ``None`` when no trade lost, since both divide by the losses.
     """
     if not trades:
         return {
@@ -342,13 +343,16 @@ def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
 
     win_rate = len(wins) / len(trades)
 
+    # With no losing trade both ratios have no denominator. 0.0 would read as
+    # "no profit at all" and rank a run that never lost below every other run,
+    # so they are None: an empty metrics.csv cell and null in JSON.
     avg_win = float(np.mean(wins)) if wins else 0.0
-    avg_loss = abs(float(np.mean(losses))) if losses else 1e-10
-    profit_loss_ratio = avg_win / avg_loss if avg_loss > 1e-10 else 0.0
+    avg_loss = abs(float(np.mean(losses))) if losses else 0.0
+    profit_loss_ratio = avg_win / avg_loss if avg_loss > 1e-10 else None
 
     gross_profit = sum(wins) if wins else 0.0
-    gross_loss = abs(sum(losses)) if losses else 1e-10
-    profit_factor = gross_profit / gross_loss if gross_loss > 1e-10 else 0.0
+    gross_loss = abs(sum(losses)) if losses else 0.0
+    profit_factor = gross_profit / gross_loss if gross_loss > 1e-10 else None
 
     max_consec = 0
     cur_consec = 0
@@ -364,10 +368,12 @@ def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
 
     return {
         "win_rate": win_rate,
-        "profit_loss_ratio": round(profit_loss_ratio, 4),
+        "profit_loss_ratio": (
+            round(profit_loss_ratio, 4) if profit_loss_ratio is not None else None
+        ),
         "max_consecutive_loss": max_consec,
         "avg_holding_bars": round(avg_holding, 1),
-        "profit_factor": round(profit_factor, 4),
+        "profit_factor": round(profit_factor, 4) if profit_factor is not None else None,
     }
 
 

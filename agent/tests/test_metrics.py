@@ -9,6 +9,9 @@ Validates:
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import math
 
 import numpy as np
@@ -249,6 +252,23 @@ class TestWinRateAndStats:
         stats = win_rate_and_stats(trades)
         assert stats["profit_loss_ratio"] == pytest.approx(2.0)
 
+    def test_ratios_undefined_when_no_trade_lost(self) -> None:
+        # Both ratios divide by the losses. 0.0 here used to rank a run that
+        # never lost below one that lost money.
+        stats = win_rate_and_stats([_trade(pnl=100), _trade(pnl=200), _trade(pnl=50)])
+        assert stats["profit_factor"] is None
+        assert stats["profit_loss_ratio"] is None
+
+    def test_ratios_undefined_for_breakeven_trades(self) -> None:
+        stats = win_rate_and_stats([_trade(pnl=0.0), _trade(pnl=0.0)])
+        assert stats["profit_factor"] is None
+        assert stats["profit_loss_ratio"] is None
+
+    def test_ratios_zero_when_no_trade_won(self) -> None:
+        stats = win_rate_and_stats([_trade(pnl=-100), _trade(pnl=-200)])
+        assert stats["profit_factor"] == 0.0
+        assert stats["profit_loss_ratio"] == 0.0
+
     def test_empty_trades(self) -> None:
         stats = win_rate_and_stats([])
         assert stats["win_rate"] == 0.0
@@ -374,6 +394,18 @@ class TestCalcMetrics:
         m = calc_metrics(eq, trades, 1_000_000, 252)
         assert m["trade_count"] == 2
         assert m["win_rate"] == 0.5
+
+    def test_ratios_undefined_when_no_trade_lost(self) -> None:
+        eq = self._growing_equity()
+        m = calc_metrics(eq, [_trade(pnl=100), _trade(pnl=200)], 1_000_000, 252)
+        assert m["win_rate"] == 1.0
+        assert m["profit_factor"] is None
+        assert m["profit_loss_ratio"] is None
+        # null in the runner's strict JSON, an empty cell in metrics.csv
+        json.dumps(m, allow_nan=False)
+        row = next(csv.DictReader(io.StringIO(pd.DataFrame([m]).to_csv(index=False))))
+        assert row["profit_factor"] == ""
+        assert row["profit_loss_ratio"] == ""
 
     def test_benchmark_comparison(self) -> None:
         eq = self._growing_equity()
