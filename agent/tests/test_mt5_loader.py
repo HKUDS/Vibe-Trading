@@ -238,6 +238,29 @@ class TestAvailability:
         assert call["args"] == ()
         assert "login" not in call["kwargs"]
 
+    def test_bare_attach_warns_about_terminal_picking(
+        self, fake_mod: _FakeMT5Module, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # A path-less initialize() lets the SDK pick any terminal on the host,
+        # which can be a different installation on a different account (#1589).
+        # The attach itself is the documented primary path; the warning is the
+        # hint that pins it down for multi-install users.
+        with caplog.at_level("WARNING", logger="backtest.loaders.mt5_loader"):
+            DataLoader().is_available()
+        assert any("terminal_path" in r.message for r in caplog.records)
+
+    def test_terminal_path_attaches_without_the_warning(
+        self, fake_mod: _FakeMT5Module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        config = tmp_path / "mt5.json"
+        config.write_text(json.dumps({"terminal_path": "C:/MT5/terminal64.exe"}), encoding="utf-8")
+        monkeypatch.setattr(mt5_loader, "_MT5_CONFIG_PATH", config)
+        with caplog.at_level("WARNING", logger="backtest.loaders.mt5_loader"):
+            DataLoader().is_available()
+        call = fake_mod.initialize_calls[0]
+        assert call["args"] == ("C:/MT5/terminal64.exe",)
+        assert not any("picks a terminal" in r.message for r in caplog.records)
+
 
 # --------------------------------------------------------------------------- #
 # Registry + routing                                                           #

@@ -94,6 +94,13 @@ def _ensure_initialized() -> bool:
     if config.get("timeout"):
         kwargs["timeout"] = int(float(config["timeout"]) * 1000)
     args = (str(config["terminal_path"]),) if config.get("terminal_path") else ()
+    if not args:
+        logger.warning(
+            "mt5: no terminal_path configured, so the SDK picks a terminal "
+            "itself; on hosts with several MT5 installations that can be a "
+            "different installation logged into a different account. Set "
+            "terminal_path in mt5.json to pin the attach (#1589)."
+        )
     try:
         ok = bool(mt5.initialize(*args, **kwargs))
     except Exception as exc:  # noqa: BLE001 - availability probe must not raise
