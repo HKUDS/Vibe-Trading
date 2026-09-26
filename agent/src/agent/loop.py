@@ -1353,6 +1353,10 @@ class AgentLoop:
         empty_model_response_iter: int | None = None
         consecutive_empty_responses = 0
         grounding_revisions = 0
+        # A normal grounding correction is a text revision, not a new research
+        # turn. Explicit grounding recovery (identity / missing price evidence)
+        # keeps tools available; ordinary correction turns do not.
+        grounding_correction_text_only = False
         llm_usage_summary = _new_llm_usage_summary(self.llm)
         last_response_model: str | None = None
         goal_continuations = 0
@@ -1536,11 +1540,26 @@ class AgentLoop:
                         reasoning_event["tail"] = reasoning_tail
                     self._emit("reasoning_delta", reasoning_event)
 
-                # On last iteration, drop tool definitions to force text output
+                # The final iteration is always text-only. A grounding correction
+                # whose validator requested no explicit recovery is text-only too:
+                # the model must revise from evidence already gathered instead of
+                # starting another research/refetch loop merely to reformat a draft.
                 is_last_iteration = (iteration == self.max_iterations)
-                tool_defs = None if is_last_iteration else self.registry.get_definitions()
+                correction_text_only = grounding_correction_text_only
+                tool_defs = (
+                    None
+                    if is_last_iteration or correction_text_only
+                    else self.registry.get_definitions()
+                )
                 if is_last_iteration:
                     trace.write({"type": "forced_text_only", "iter": current_iter})
+                elif correction_text_only:
+                    trace.write(
+                        {
+                            "type": "grounding_correction_text_only",
+                            "iter": current_iter,
+                        }
+                    )
 
                 _llm_timeout_s = _llm_timeout_seconds()
                 llm_timeout = _llm_timeout_s if _llm_timeout_s > 0 else None
@@ -1713,6 +1732,29 @@ class AgentLoop:
                 # Not filtered — reset the consecutive-skip counter.
                 consecutive_content_filter_count = 0
 
+                if correction_text_only and response.has_tool_calls:
+                    # Tools were deliberately not offered on this correction turn.
+                    # Defensive handling keeps a provider/model that nevertheless
+                    # emits a tool call from escaping the bounded revision path.
+                    trace.write(
+                        {
+                            "type": "grounding_correction_tool_call_blocked",
+                            "iter": current_iter,
+                        }
+                    )
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "[SYSTEM] This is a grounding correction turn. "
+                                "Do not call tools. Revise the previous draft using "
+                                "the evidence already gathered, or remove claims "
+                                "that cannot be supported."
+                            ),
+                        }
+                    )
+                    continue
+
                 if not response.has_tool_calls:
                     final_content = response.content or ""
                     syntax_fallback_emitted = False
@@ -1853,6 +1895,9 @@ class AgentLoop:
                             )
                             recovery = self._grounding.recovery_action(validation)
                             if recovery is not None and iteration < self.max_iterations:
+                                # Explicit bounded recovery is the one case where
+                                # the next turn is allowed to research again.
+                                grounding_correction_text_only = False
                                 self._grounding.record_recovery(recovery)
                                 trace.write(
                                     {
@@ -1900,6 +1945,7 @@ class AgentLoop:
                                 iteration < self.max_iterations
                                 and grounding_revisions < MAX_GROUNDING_REVISIONS
                             ):
+                                grounding_correction_text_only = True
                                 self._emit(
                                     "grounding_status",
                                     {
