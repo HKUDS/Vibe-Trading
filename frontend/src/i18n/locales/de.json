@@ -717,6 +717,60 @@
             "label": "TLS-Schlüsselpfad",
             "help": "PEM-Schlüsselpfad auf dem Server für WSS. Zertifikat und Schlüssel gemeinsam setzen oder beide leer lassen; es sind Dateipfade auf dem Server, kein hochgeladenes Material."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "Die App ID der Anwendung aus der Feishu-/Lark-Entwicklerkonsole (beginnt mit cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "Das App Secret der Anwendung. Wird serverseitig gespeichert und nie an den Browser zurückgegeben."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "Der Encrypt Key aus den Einstellungen zum Ereignisabo; im Long-Connection-Modus optional."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "Der Verification Token aus den Einstellungen zum Ereignisabo; im Long-Connection-Modus optional."
+          },
+          "allow_from": {
+            "label": "Erlaubte Absender",
+            "help": "Optionale Allowlist von Feishu-Absender-IDs, die mit dem Agenten sprechen dürfen; leer bedeutet alle, die der Bot sehen kann."
+          },
+          "react_emoji": {
+            "label": "Arbeits-Emoji",
+            "help": "Emoji-Reaktion auf eingehende Nachrichten, während der Agent arbeitet (Standard: THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Fertig-Emoji",
+            "help": "Emoji-Reaktion nach Abschluss der Aufgabe; leer bedeutet keine."
+          },
+          "tool_hint_prefix": {
+            "label": "Präfix für Tool-Hinweise",
+            "help": "Präfix vor den inline angezeigten Tool-Hinweisen in der Antwort."
+          },
+          "group_policy": {
+            "label": "Gruppenrichtlinie",
+            "help": "\"mention\" antwortet nur bei @-Erwähnung in Gruppen, \"open\" antwortet auf alle Gruppennachrichten."
+          },
+          "reply_to_message": {
+            "label": "Originalnachricht zitieren",
+            "help": "Als Antwort die Originalnachricht zitieren."
+          },
+          "streaming": {
+            "label": "Streaming-Antworten",
+            "help": "Antwort per Live-Bearbeitung der CardKit-Karte streamen."
+          },
+          "domain": {
+            "label": "Domain",
+            "help": "\"feishu\" für Feishu China (open.feishu.cn), \"lark\" für das internationale Lark (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Sitzungen pro Thread",
+            "help": "Jedem Gruppen-Thread eine eigene Agent-Sitzung geben, statt einer gemeinsamen pro Gruppe."
+          }
         }
       },
       "guides": {
@@ -759,6 +813,16 @@
           "step4": "Speichern im laufenden Betrieb tauscht den Server live aus: Verbundene Clients (einschließlich dieses Web-UI-Chats) verlieren kurz die Verbindung und verbinden sich neu.",
           "step5": "Klicke auf „Verbindung testen“ – Zertifikat/Schlüssel für SSL und die Verfügbarkeit der Adresse werden lokal geprüft.",
           "docsLabel": "Vibe-Trading-Dokumentation öffnen"
+        },
+        "feishu": {
+          "title": "Feishu-/Lark-Bot einrichten",
+          "intro": "Feishu-Bots nutzen die WebSocket-Long-Connection; eine öffentliche IP oder ein Webhook ist nicht nötig.",
+          "step1": "Erstelle eine benutzerdefinierte App in der Feishu Open Platform (open.feishu.cn) — oder per QR-Scan im Terminal mit vibe-trading channels login feishu; App ID und App Secret werden dabei automatisch gespeichert.",
+          "step2": "Füge der App die Bot-Funktion hinzu.",
+          "step3": "Abonniere im Ereignisabo »Nachrichten empfangen im.message.receive_v1« und wähle den Long-Connection-Modus.",
+          "step4": "Kopiere App ID und App Secret aus „Anmeldedaten & Basisinformationen“ und füge sie oben ein.",
+          "step5": "Erstelle eine Version und veröffentliche die App (je nach Tenant mit Admin-Freigabe), dann aktiviere den Kanal hier — er wird ohne Neustart heiß übernommen. Für internationale Lark-Tenants die Domain auf lark setzen.",
+          "docsLabel": "Feishu Open Platform öffnen"
         }
       }
     },
@@ -1995,3 +2059,4 @@
     }
   }
 }
+

@@ -22,6 +22,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   shares on the Yahoo family, `null` when undeclared), because the two are
   100x apart and nothing in the numbers tells them apart.
 
+- **Feishu joins the guided Web UI channel setup** (#1569). The Feishu
+  panel gets hand-written field hints and a guided setup guide in all nine
+  locales; its **Test connection** is a standalone probe that exchanges a
+  tenant access token, domain-aware across feishu.cn and larksuite.com.
+  `stop()` is hot-swap safe: it terminates the lark WebSocket thread so a
+  live reload cannot leave a zombie connection answering messages twice
+  (a follow-up to #1519).
+
 - **Argentina (BYMA) market data** (#1543). A `.BA` symbol — a BYMA listing or a
   locally traded CEDEAR — is its own market `ar_equity`, quoted in ARS, served
   by `yahoo` → `yfinance` → `local`, and reported as market `ar` by

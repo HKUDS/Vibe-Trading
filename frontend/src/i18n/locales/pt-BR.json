@@ -717,6 +717,60 @@
             "label": "Caminho da chave TLS",
             "help": "Caminho da chave privada PEM no servidor para WSS. Defina certificado e chave juntos ou nenhum dos dois; são caminhos de arquivo no servidor, não material enviado por upload."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "O App ID do aplicativo no console de desenvolvedores da Feishu / Lark (começa com cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "O App Secret do aplicativo. Armazenado no servidor e nunca devolvido ao navegador."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "O Encrypt Key das configurações de assinatura de eventos; opcional no modo de conexão contínua."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "O Verification Token das configurações de assinatura de eventos; opcional no modo de conexão contínua."
+          },
+          "allow_from": {
+            "label": "Remetentes permitidos",
+            "help": "Lista de permissão opcional com IDs de remetentes do Feishu autorizados a falar com o agente; vazia permite todos que o bot consegue ver."
+          },
+          "react_emoji": {
+            "label": "Emoji de processamento",
+            "help": "Emoji reagido à mensagem recebida enquanto o agente trabalha (padrão THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Emoji de conclusão",
+            "help": "Emoji reagido quando a tarefa é concluída; vazio para nenhum."
+          },
+          "tool_hint_prefix": {
+            "label": "Prefixo das dicas de ferramentas",
+            "help": "Prefixo exibido antes das dicas de ferramentas em linha na resposta."
+          },
+          "group_policy": {
+            "label": "Política de grupos",
+            "help": "\"mention\" responde apenas quando o bot é mencionado em grupos; \"open\" responde a todas as mensagens do grupo."
+          },
+          "reply_to_message": {
+            "label": "Citar a mensagem original",
+            "help": "Responder citando a mensagem original."
+          },
+          "streaming": {
+            "label": "Respostas em streaming",
+            "help": "Transmitir a resposta com edições ao vivo do cartão via CardKit."
+          },
+          "domain": {
+            "label": "Domínio",
+            "help": "\"feishu\" para Feishu China (open.feishu.cn), \"lark\" para o Lark internacional (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Sessões por tópico",
+            "help": "Dar a cada tópico do grupo sua própria sessão do agente."
+          }
         }
       },
       "guides": {
@@ -759,6 +813,16 @@
           "step4": "Salvar com o canal em execução troca o servidor a quente: os clientes conectados (incluindo este chat da interface web) caem por um instante e se reconectam.",
           "step5": "Clique em «Testar conexão»: ele valida localmente o certificado e a chave SSL e a disponibilidade do endereço.",
           "docsLabel": "Abrir a documentação do Vibe-Trading"
+        },
+        "feishu": {
+          "title": "Configuração do bot Feishu / Lark",
+          "intro": "Bots do Feishu usam a conexão contínua por WebSocket, então não é preciso IP público nem webhook.",
+          "step1": "Crie um aplicativo personalizado na plataforma de desenvolvedores do Feishu (open.feishu.cn) — ou crie por leitura de QR no terminal com vibe-trading channels login feishu, que salva o App ID e o App Secret automaticamente.",
+          "step2": "Adicione a capacidade de bot ao aplicativo.",
+          "step3": "Em Assinatura de eventos, assine «Receber mensagens im.message.receive_v1» e escolha o modo de conexão contínua.",
+          "step4": "Copie o App ID e o App Secret em Credenciais e informações básicas e cole-os nos campos acima.",
+          "step5": "Crie uma versão e publique o aplicativo (com aprovação do administrador se o seu tenant exigir); em seguida, ative o canal aqui — a aplicação é imediata, sem reiniciar. Em tenants internacionais do Lark, defina o domínio como lark.",
+          "docsLabel": "Abrir a plataforma de desenvolvedores do Feishu"
         }
       }
     },
@@ -1995,3 +2059,4 @@
     }
   }
 }
+

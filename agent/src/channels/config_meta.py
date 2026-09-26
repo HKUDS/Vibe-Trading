@@ -86,6 +86,41 @@ def _dingtalk_hints() -> list[FieldHint]:
     ]
 
 
+def _feishu_hints() -> list[FieldHint]:
+    """Return the hand-written Feishu field hints (``enabled`` excluded).
+
+    ``app_id``/``app_secret`` are required because
+    :meth:`FeishuChannel.start` refuses to connect without them; the
+    ``encrypt_key``/``verification_token`` pair stays optional because the
+    WebSocket long-connection mode works without them for most apps.
+    """
+    specs = (
+        ("app_id", "text", False, True),
+        ("app_secret", "password", True, True),
+        ("encrypt_key", "password", True, False),
+        ("verification_token", "password", True, False),
+        ("allow_from", "list", False, False),
+        ("react_emoji", "text", False, False),
+        ("done_emoji", "text", False, False),
+        ("tool_hint_prefix", "text", False, False),
+        ("group_policy", "text", False, False),
+        ("reply_to_message", "bool", False, False),
+        ("streaming", "bool", False, False),
+        ("domain", "text", False, False),
+        ("topic_isolation", "bool", False, False),
+    )
+    return [
+        {
+            "key": key,
+            "type": widget,
+            "secret": secret,
+            "required": required,
+            "help_key": f"{_HELP_KEY_PREFIX}.feishu.{key}",
+        }
+        for key, widget, secret, required in specs
+    ]
+
+
 def _qq_hints() -> list[FieldHint]:
     """Return the hand-written QQ field hints (``enabled`` excluded)."""
     specs = (
@@ -206,6 +241,7 @@ def _websocket_hints() -> list[FieldHint]:
 FIELD_HINTS: dict[str, list[FieldHint]] = {
     "dingtalk": _dingtalk_hints(),
     "email": _email_hints(),
+    "feishu": _feishu_hints(),
     "qq": _qq_hints(),
     "websocket": _websocket_hints(),
 }

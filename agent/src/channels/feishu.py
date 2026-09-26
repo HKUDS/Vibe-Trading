@@ -24,6 +24,7 @@ from rich.text import Text
 
 from src.channels.bus.events import DeliveryReceipt, OutboundMessage
 from src.channels.bus.queue import MessageBus
+from src.channels import feishu_probe
 from src.channels.base import BaseChannel
 from src.channels.utils import get_media_dir
 from pydantic import BaseModel
@@ -614,8 +615,10 @@ class FeishuChannel(BaseChannel):
 
     name = "feishu"
     display_name = "Feishu"
+    supports_connection_test = True
 
     _STREAM_EDIT_INTERVAL = 0.5  # throttle between CardKit streaming updates
+    _WS_CLOSE_TIMEOUT_S = 3.0  # bound for the best-effort socket close in stop()
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
@@ -629,6 +632,7 @@ class FeishuChannel(BaseChannel):
         self._client: Any = None
         self._ws_client: Any = None
         self._ws_thread: threading.Thread | None = None
+        self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()  # Ordered dedup cache
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stream_bufs: dict[str, _FeishuStreamBuf] = {}
@@ -791,6 +795,7 @@ class FeishuChannel(BaseChannel):
             asyncio.set_event_loop(ws_loop)
             # Patch the module-level loop used by lark's ws Client.start()
             _lark_ws_client.loop = ws_loop
+            self._ws_loop = ws_loop
             try:
                 while self._running:
                     try:
@@ -800,6 +805,7 @@ class FeishuChannel(BaseChannel):
                     if self._running:
                         time.sleep(5)
             finally:
+                self._ws_loop = None
                 if getattr(_lark_ws_client, "loop", None) is ws_loop:
                     _lark_ws_client.loop = previous_loop
                 with suppress(Exception):
@@ -826,15 +832,46 @@ class FeishuChannel(BaseChannel):
             await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """
-        Stop the Feishu bot.
+        """Stop the Feishu bot and terminate the lark WebSocket thread.
 
-        Notice: lark.ws.Client does not expose stop method， simply exiting the program will close the client.
-
-        Reference: https://github.com/larksuite/oapi-sdk-python/blob/v2_main/lark_oapi/ws/client.py#L86
+        ``lark.ws.Client`` exposes no stop method (see
+        https://github.com/larksuite/oapi-sdk-python/blob/v2_main/lark_oapi/ws/client.py#L86),
+        and its ``start()`` blocks inside ``run_until_complete`` on the
+        dedicated loop created by ``run_ws`` while the SDK receive loop runs
+        with ``auto_reconnect=True``. Merely clearing ``_running`` therefore
+        left a zombie WebSocket after a hot swap, with the old and the
+        replacement adapter both answering events. Instead, best-effort close
+        the SDK connection so no socket lingers, then stop the dedicated loop:
+        that unwinds ``run_until_complete``, kills the receive/ping/reconnect
+        tasks so auto-reconnect cannot resurrect them, and the thread exits
+        because ``_running`` is already False. Idempotent, and safe when the
+        channel was never started.
         """
         self._running = False
+        ws_loop = self._ws_loop
+        if ws_loop is not None and ws_loop.is_running():
+            conn = getattr(self._ws_client, "_conn", None)
+            if conn is not None:
+                with suppress(Exception):
+                    await asyncio.wait_for(
+                        asyncio.wrap_future(
+                            asyncio.run_coroutine_threadsafe(conn.close(), ws_loop)
+                        ),
+                        timeout=self._WS_CLOSE_TIMEOUT_S,
+                    )
+            with suppress(Exception):
+                ws_loop.call_soon_threadsafe(ws_loop.stop)
         self.logger.info("bot stopped")
+
+    async def test_connection(self) -> dict[str, Any]:
+        """Validate the Feishu credentials with a standalone token request.
+
+        Delegates to :func:`src.channels.feishu_probe.test_connection`; see
+        that function for the full contract (codes, scrubbing, token discard).
+        """
+        return await feishu_probe.test_connection(
+            self.config, sdk_available=FEISHU_AVAILABLE
+        )
 
     def _fetch_bot_open_id(self) -> str | None:
         """Fetch the bot's own open_id via GET /open-apis/bot/v3/info."""

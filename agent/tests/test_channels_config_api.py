@@ -34,6 +34,8 @@ EMAIL_IMAP_PASSWORD = "email-imap-password-987654321"
 EMAIL_SMTP_PASSWORD = "email-smtp-password-123456789"
 WS_TOKEN = "ws-token-secret-abcdefghij"
 WS_ISSUE_SECRET = "ws-issue-secret-987654321"
+FEISHU_APP_ID = "cli_feishu_app_id_1234567890"
+FEISHU_STORED_SECRET = "feishu-stored-secret-abcdefghij"
 
 # Captured before any test monkeypatches httpx, so repeated injections in a
 # single test still wrap the real client (test_dingtalk_connection_test idiom).
@@ -153,6 +155,16 @@ def _email_section(**overrides: Any) -> dict[str, Any]:
     return section
 
 
+def _feishu_section(**overrides: Any) -> dict[str, Any]:
+    section: dict[str, Any] = {
+        "enabled": False,
+        "app_id": FEISHU_APP_ID,
+        "app_secret": FEISHU_STORED_SECRET,
+    }
+    section.update(overrides)
+    return section
+
+
 def _free_port() -> int:
     """Return a loopback port the OS just handed out (free at bind time)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -217,6 +229,30 @@ def test_get_masks_secrets_and_reports_writable(tmp_path: Path, monkeypatch) -> 
     assert STORED_SECRET not in response.text
     # GET is read-only: it must not build the runtime singleton.
     assert api_server._channel_runtime is None
+
+
+def test_get_feishu_masks_secrets_and_reports_test_support(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client, _ = _client(tmp_path, monkeypatch, channels={"feishu": _feishu_section()})
+
+    response = client.get("/channels/config")
+
+    assert response.status_code == 200
+    entry = response.json()["channels"]["feishu"]
+    assert entry["display_name"] == "Feishu"
+    assert entry["supports_test"] is True
+    assert entry["values"]["app_id"] == FEISHU_APP_ID
+    assert entry["values"]["enabled"] is False
+    assert "app_secret" not in entry["values"]
+    assert entry["secrets"]["app_secret"] == {"set": True, "masked": "****ghij"}
+    keys = [field["key"] for field in entry["fields"]]
+    assert keys[:2] == ["app_id", "app_secret"]
+    assert "enabled" not in keys
+    app_id_hint = next(f for f in entry["fields"] if f["key"] == "app_id")
+    assert app_id_hint["help_key"] == "settings.channels.fields.feishu.app_id"
+    assert app_id_hint["secret"] is False
+    assert FEISHU_STORED_SECRET not in response.text
 
 
 def test_get_excludes_non_channel_helper_modules(tmp_path: Path, monkeypatch) -> None:
@@ -325,6 +361,47 @@ def test_pristine_form_roundtrip_validates_for_typed_fields(
     assert "form-typed-secret-xyz987654321" not in response.text
 
 
+def test_feishu_pristine_form_roundtrip_validates_for_typed_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Same roundtrip for Feishu's typed fields (Literal domain/group_policy,
+    ``None``-default done_emoji, bools) through the ``tenant_access_token`` probe."""
+    client, _ = _client(tmp_path, monkeypatch, channels={})
+    entry = client.get("/channels/config").json()["channels"]["feishu"]
+
+    patch: dict[str, Any] = {}
+    for field in entry["fields"]:
+        if field["secret"]:
+            continue
+        value = entry["values"].get(field["key"])
+        if field["type"] == "list":
+            patch[field["key"]] = value if isinstance(value, list) else []
+        elif field["type"] == "bool":
+            patch[field["key"]] = bool(value)
+        else:
+            patch[field["key"]] = "" if value is None else str(value)
+    patch["app_id"] = "cli_round_trip_app"
+    patch["app_secret"] = "form-typed-feishu-secret-xyz987654321"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "open.feishu.cn" in str(request.url)
+        return httpx.Response(
+            200, json={"tenant_access_token": "probe-token-do-not-leak"}
+        )
+
+    requests = _inject_mock_transport(monkeypatch, handler)
+
+    response = client.post("/channels/feishu/test", json={"config": patch})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True, body
+    assert body["code"] == "ok"
+    assert len(requests) == 1
+    assert "form-typed-feishu-secret-xyz987654321" not in response.text
+    assert "probe-token-do-not-leak" not in response.text
+
+
 def test_display_config_path_relativizes_home() -> None:
     home = Path.home()
 
@@ -403,6 +480,54 @@ def test_put_enable_with_bad_credentials_is_blocked_before_write(
     assert path.read_bytes() == before
     assert api_server._channel_runtime is None
     assert STORED_SECRET not in response.text
+
+
+def test_put_feishu_merge_patch_writes_section(tmp_path: Path, monkeypatch) -> None:
+    client, path = _client(
+        tmp_path, monkeypatch, channels={"feishu": _feishu_section()}
+    )
+
+    response = client.put(
+        "/channels/config/feishu",
+        json={"config": {"domain": "lark", "react_emoji": "OK"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied"] == "deferred"
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["feishu"]
+    assert on_disk["domain"] == "lark"
+    assert on_disk["react_emoji"] == "OK"
+    # A secret absent from the patch keeps its stored value.
+    assert on_disk["app_secret"] == FEISHU_STORED_SECRET
+    assert FEISHU_STORED_SECRET not in response.text
+
+
+def test_put_feishu_enable_with_bad_credentials_is_blocked_before_write(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Feishu rejects bad credentials with HTTP 200 + an error body; the
+    enable-transition probe must still block the write with 422."""
+    client, path = _client(
+        tmp_path, monkeypatch, channels={"feishu": _feishu_section()}
+    )
+    before = path.read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"code": 10014, "msg": "app secret invalid"})
+
+    requests = _inject_mock_transport(monkeypatch, handler)
+
+    response = client.put("/channels/config/feishu", json={"config": {"enabled": True}})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "invalid_credentials"
+    assert detail["fields"] == []
+    assert len(requests) == 1
+    assert "open.feishu.cn" in str(requests[0].url)
+    assert path.read_bytes() == before
+    assert api_server._channel_runtime is None
+    assert FEISHU_STORED_SECRET not in response.text
 
 
 def test_put_enable_rejection_carries_scrubbed_message(tmp_path: Path, monkeypatch) -> None:

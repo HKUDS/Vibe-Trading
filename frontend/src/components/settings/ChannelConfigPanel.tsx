@@ -140,6 +140,21 @@ const GUIDE_DEFS: Record<
       docsLabel: t("settings.channels.guides.websocket.docsLabel"),
     }),
   },
+  feishu: {
+    docsUrl: "https://open.feishu.cn/",
+    build: (t) => ({
+      title: t("settings.channels.guides.feishu.title"),
+      intro: t("settings.channels.guides.feishu.intro"),
+      steps: [
+        t("settings.channels.guides.feishu.step1"),
+        t("settings.channels.guides.feishu.step2"),
+        t("settings.channels.guides.feishu.step3"),
+        t("settings.channels.guides.feishu.step4"),
+        t("settings.channels.guides.feishu.step5"),
+      ],
+      docsLabel: t("settings.channels.guides.feishu.docsLabel"),
+    }),
+  },
 };
 
 export interface ChannelConfigPanelProps {
@@ -262,6 +277,19 @@ export function ChannelConfigPanel({
       "settings.channels.fields.websocket.ping_timeout_s": { label: t("settings.channels.fields.websocket.ping_timeout_s.label"), help: t("settings.channels.fields.websocket.ping_timeout_s.help") },
       "settings.channels.fields.websocket.ssl_certfile": { label: t("settings.channels.fields.websocket.ssl_certfile.label"), help: t("settings.channels.fields.websocket.ssl_certfile.help") },
       "settings.channels.fields.websocket.ssl_keyfile": { label: t("settings.channels.fields.websocket.ssl_keyfile.label"), help: t("settings.channels.fields.websocket.ssl_keyfile.help") },
+      "settings.channels.fields.feishu.app_id": { label: t("settings.channels.fields.feishu.app_id.label"), help: t("settings.channels.fields.feishu.app_id.help") },
+      "settings.channels.fields.feishu.app_secret": { label: t("settings.channels.fields.feishu.app_secret.label"), help: t("settings.channels.fields.feishu.app_secret.help") },
+      "settings.channels.fields.feishu.encrypt_key": { label: t("settings.channels.fields.feishu.encrypt_key.label"), help: t("settings.channels.fields.feishu.encrypt_key.help") },
+      "settings.channels.fields.feishu.verification_token": { label: t("settings.channels.fields.feishu.verification_token.label"), help: t("settings.channels.fields.feishu.verification_token.help") },
+      "settings.channels.fields.feishu.allow_from": { label: t("settings.channels.fields.feishu.allow_from.label"), help: t("settings.channels.fields.feishu.allow_from.help") },
+      "settings.channels.fields.feishu.react_emoji": { label: t("settings.channels.fields.feishu.react_emoji.label"), help: t("settings.channels.fields.feishu.react_emoji.help") },
+      "settings.channels.fields.feishu.done_emoji": { label: t("settings.channels.fields.feishu.done_emoji.label"), help: t("settings.channels.fields.feishu.done_emoji.help") },
+      "settings.channels.fields.feishu.tool_hint_prefix": { label: t("settings.channels.fields.feishu.tool_hint_prefix.label"), help: t("settings.channels.fields.feishu.tool_hint_prefix.help") },
+      "settings.channels.fields.feishu.group_policy": { label: t("settings.channels.fields.feishu.group_policy.label"), help: t("settings.channels.fields.feishu.group_policy.help") },
+      "settings.channels.fields.feishu.reply_to_message": { label: t("settings.channels.fields.feishu.reply_to_message.label"), help: t("settings.channels.fields.feishu.reply_to_message.help") },
+      "settings.channels.fields.feishu.streaming": { label: t("settings.channels.fields.feishu.streaming.label"), help: t("settings.channels.fields.feishu.streaming.help") },
+      "settings.channels.fields.feishu.domain": { label: t("settings.channels.fields.feishu.domain.label"), help: t("settings.channels.fields.feishu.domain.help") },
+      "settings.channels.fields.feishu.topic_isolation": { label: t("settings.channels.fields.feishu.topic_isolation.label"), help: t("settings.channels.fields.feishu.topic_isolation.help") },
     }),
     [t],
   );
