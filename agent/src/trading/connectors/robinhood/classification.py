@@ -10,11 +10,10 @@ UNKNOWN and treated as WRITE (fail-closed).
 This map is the FROZEN canonical Robinhood catalog (SPEC §7.5):
 ``READ = {get_accounts, get_portfolio, get_equity_positions,
 get_equity_quotes, get_equity_orders}`` and
-``WRITE = {place_equity_order, cancel_equity_order}``. Any tool the broker
-reports that is not in this map and not annotated read-only resolves to UNKNOWN
-→ treated as WRITE (fail-closed), so an unrecognized new broker tool can never
-slip through as a plain read. Adding a tool here is a localized edit to this one
-dict plus the classification test parametrize list.
+``WRITE = {place_equity_order, place_option_order, cancel_equity_order}``.
+``place_option_order`` is pinned as WRITE because the Robinhood intent extractor
+does not support it; until its schema is mapped, the gate denies it. Any tool not
+in this map and not annotated read-only resolves to UNKNOWN → treated as WRITE.
 """
 
 from __future__ import annotations
@@ -31,5 +30,6 @@ ROBINHOOD_TOOL_CLASS: dict[str, ToolClass] = {
     "get_equity_orders": ToolClass.READ,
     # WRITE
     "place_equity_order": ToolClass.WRITE,
+    "place_option_order": ToolClass.WRITE,
     "cancel_equity_order": ToolClass.WRITE,
 }

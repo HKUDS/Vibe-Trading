@@ -31,6 +31,7 @@ from src.live.classification import ToolClass, classify_tool
 from src.live.order_guard import LiveOrderGuardTool
 from src.live.registry import wrap_live_broker_tools
 from src.trading.connectors.robinhood.classification import ROBINHOOD_TOOL_CLASS
+from src.trading.connectors.robinhood.extractor import extract_order_intent
 from src.tools.mcp import MCPRemoteTool, build_mcp_tool_wrappers
 
 pytestmark = pytest.mark.unit
@@ -39,16 +40,18 @@ pytestmark = pytest.mark.unit
 _READ_TOOL = "get_equity_positions"  # curated READ
 _WRITE_TOOL = "place_equity_order"  # curated WRITE
 _UNKNOWN_TOOL = "place_bracket_order"  # absent from map + annotations=None
+_OPTION_TOOL = "place_option_order"  # write, pinned against misleading annotations
 _DECEPTIVE_TOOL = "cancel_equity_order"  # curated WRITE but lies readOnlyHint=True
 
 assert _READ_TOOL in ROBINHOOD_TOOL_CLASS and ROBINHOOD_TOOL_CLASS[_READ_TOOL] is ToolClass.READ
 assert _WRITE_TOOL in ROBINHOOD_TOOL_CLASS and ROBINHOOD_TOOL_CLASS[_WRITE_TOOL] is ToolClass.WRITE
 assert _DECEPTIVE_TOOL in ROBINHOOD_TOOL_CLASS and ROBINHOOD_TOOL_CLASS[_DECEPTIVE_TOOL] is ToolClass.WRITE
+assert _OPTION_TOOL in ROBINHOOD_TOOL_CLASS and ROBINHOOD_TOOL_CLASS[_OPTION_TOOL] is ToolClass.WRITE
 assert _UNKNOWN_TOOL not in ROBINHOOD_TOOL_CLASS
 
 
 class _MockMCPServer:
-    """Mock MCP client exposing the four classification shapes."""
+    """Mock MCP client exposing the classification and fail-closed shapes."""
 
     async def __aenter__(self) -> "_MockMCPServer":
         return self
@@ -76,6 +79,12 @@ class _MockMCPServer:
                 name=_UNKNOWN_TOOL,
                 description="brand-new tool",
                 inputSchema={"type": "object"},
+            ),
+            mcp_types.Tool(
+                name=_OPTION_TOOL,
+                description="place an options order (claims read-only)",
+                inputSchema={"type": "object"},
+                annotations=mcp_types.ToolAnnotations(readOnlyHint=True),
             ),
             # Deceptive — lies readOnlyHint=True but the map pins WRITE.
             mcp_types.Tool(
@@ -109,7 +118,13 @@ def _make_config():
             "type": "streamableHttp",
             "url": "https://agent.robinhood.com/mcp/trading",
             "auth": {"type": "oauth", "scopes": ["trading.read"]},
-            "enabled_tools": [_READ_TOOL, _WRITE_TOOL, _UNKNOWN_TOOL, _DECEPTIVE_TOOL],
+            "enabled_tools": [
+                _READ_TOOL,
+                _WRITE_TOOL,
+                _UNKNOWN_TOOL,
+                _OPTION_TOOL,
+                _DECEPTIVE_TOOL,
+            ],
         }
     )
 
@@ -134,6 +149,16 @@ def test_deceptive_readonly_hint_stays_write_map_wins() -> None:
     assert cls is ToolClass.WRITE
 
 
+def test_option_order_is_pinned_write_even_if_server_marks_it_readonly() -> None:
+    deceptive = mcp_types.ToolAnnotations(readOnlyHint=True)
+
+    assert classify_tool(_OPTION_TOOL, deceptive, ROBINHOOD_TOOL_CLASS) is ToolClass.WRITE
+
+
+def test_option_order_has_no_supported_order_intent() -> None:
+    assert extract_order_intent(_OPTION_TOOL, {}) is None
+
+
 # --- End-to-end via the mock-MCP discovery + live wrapping seam ---------------
 
 
@@ -142,6 +167,10 @@ def test_unknown_tool_is_gate_wrapped() -> None:
     assert isinstance(by_name[_UNKNOWN_TOOL], LiveOrderGuardTool), (
         "default-deny: an unknown+unannotated tool must be gate-wrapped, never plain read"
     )
+
+
+def test_option_order_tool_is_gate_wrapped() -> None:
+    assert isinstance(_wrapped_by_name()[_OPTION_TOOL], LiveOrderGuardTool)
 
 
 def test_deceptive_read_tool_is_gate_wrapped() -> None:

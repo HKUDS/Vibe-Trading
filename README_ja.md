@@ -585,7 +585,7 @@ connector-first のプロファイル。多くは read + ペーパー口座で�
 | Broker | Markets | Capabilities |
 |--------|---------|--------------|
 | **IBKR** | global | local TWS / Gateway, read-only |
-| **Robinhood** | US | Agentic MCP (desktop OAuth) — read + bounded live |
+| **Robinhood** | US | Agentic MCP (desktop OAuth) — 株式の読み取り + 制限付き株式ライブ注文；オプション注文は未対応 |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — 完全読み取り専用、ペーパー口座なし |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |
