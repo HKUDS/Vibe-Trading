@@ -479,7 +479,8 @@ def normalize_mcp_tool_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
     properties = normalized.get("properties")
     if properties is not None and not isinstance(properties, dict):
         normalized.pop("properties", None)
-    elif not isinstance(properties, dict) and not _schema_uses_composed_top_level_rules(normalized):
+        properties = None
+    if not isinstance(properties, dict) and not _schema_uses_composed_top_level_rules(normalized):
         normalized["properties"] = {}
 
     required = normalized.get("required")
