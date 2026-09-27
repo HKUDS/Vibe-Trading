@@ -10,6 +10,9 @@ Covers: A-shares (SH/SZ), does NOT cover HK/US/crypto.
 from __future__ import annotations
 
 import logging
+import multiprocessing
+from queue import Empty
+import time
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -18,15 +21,22 @@ from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
 logger = logging.getLogger(__name__)
+BAOSTOCK_FETCH_TIMEOUT_SECONDS = 30.0
 
 
 def _is_a_share(code: str) -> bool:
     # Support both baostock native format (sh.601398) and tushare-style suffix (601398.SH)
     code_lower = code.lower()
-    return (
-        code_lower.startswith(("sh.", "sz."))
-        or code.upper().endswith((".SZ", ".SH"))
-    )
+    return code_lower.startswith(("sh.", "sz.")) or code.upper().endswith((".SZ", ".SH"))
+
+
+def _fetch_in_process(result_queue, codes, start_date, end_date, interval) -> None:
+    """Run BaoStock's non-cancellable client outside the caller process."""
+    try:
+        result = DataLoader()._fetch_with_baostock(codes, start_date, end_date, interval)
+        result_queue.put(("ok", result))
+    except Exception as exc:
+        result_queue.put(("error", repr(exc)))
 
 
 @register
@@ -45,6 +55,7 @@ class DataLoader:
         """Available if baostock is installed."""
         try:
             import baostock  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -83,7 +94,49 @@ class DataLoader:
             )
             return {}
 
+        context = multiprocessing.get_context("spawn")
+        result_queue = context.Queue(maxsize=1)
+        deadline = time.monotonic() + BAOSTOCK_FETCH_TIMEOUT_SECONDS
+        process = context.Process(
+            target=_fetch_in_process,
+            args=(result_queue, codes, start_date, end_date, interval),
+        )
+        process.start()
+        try:
+            try:
+                status, payload = result_queue.get(timeout=max(0, deadline - time.monotonic()))
+            except Empty:
+                if not process.is_alive() and process.exitcode not in (0, None):
+                    logger.warning("baostock worker exited with code %s; falling back", process.exitcode)
+                    return {}
+                logger.warning(
+                    "baostock timed out after %.1fs; falling back",
+                    BAOSTOCK_FETCH_TIMEOUT_SECONDS,
+                )
+                return {}
+            if status == "error":
+                logger.warning("baostock failed: %s", payload)
+                return {}
+            return payload
+        finally:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=0.1)
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=0.1)
+            result_queue.close()
+            result_queue.join_thread()
+
+    def _fetch_with_baostock(
+        self,
+        codes: List[str],
+        start_date: str,
+        end_date: str,
+        interval: str,
+    ) -> Dict[str, pd.DataFrame]:
         import baostock as bs
+
         lg = bs.login()
         if lg.error_code != "0":
             logger.error("baostock login failed: %s", lg.error_msg)
@@ -112,7 +165,11 @@ class DataLoader:
         return result
 
     def _fetch_one(
-        self, bs, code: str, start_date: str, end_date: str,
+        self,
+        bs,
+        code: str,
+        start_date: str,
+        end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch a single A-share symbol."""
         if not _is_a_share(code):
@@ -167,7 +224,5 @@ class DataLoader:
 
         df = df.rename(columns={"date": "trade_date"})
         df = df.set_index("trade_date").sort_index()
-        df = df[["open", "high", "low", "close", "volume"]].dropna(
-            subset=["open", "high", "low", "close"]
-        )
+        df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open", "high", "low", "close"])
         return df
