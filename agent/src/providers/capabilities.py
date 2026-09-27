@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -74,12 +75,26 @@ def _package_version() -> str:
 _VIBE_USER_AGENT = f"Vibe-Trading/{_package_version()}"
 
 
-@lru_cache(maxsize=1)
+# Bound the gh-CLI token cache: an unbounded lru_cache kept the first resolved
+# token for the life of the process, so a rotated or expired token never got
+# re-read (#1617). One minute keeps the subprocess off hot paths while a stale
+# token self-heals quickly.
+_GH_CLI_TOKEN_TTL_SECONDS = 60.0
+_gh_cli_token_cache: tuple[float, str] | None = None
+
+
 def _gh_cli_token() -> str:
     """Return an explicit Copilot token; the SDK handles stored credentials."""
+    global _gh_cli_token_cache
+    if _gh_cli_token_cache is not None:
+        cached_at, cached_token = _gh_cli_token_cache
+        if time.monotonic() - cached_at < _GH_CLI_TOKEN_TTL_SECONDS:
+            return cached_token
     from src.providers.copilot_auth import resolve_copilot_token
 
-    return resolve_copilot_token()[0]
+    token = resolve_copilot_token()[0]
+    _gh_cli_token_cache = (time.monotonic(), token)
+    return token
 
 
 _MOONSHOT_CAPABILITIES = ProviderCapabilities(

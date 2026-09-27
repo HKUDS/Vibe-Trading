@@ -20,9 +20,9 @@ from src.providers.capabilities import (
 
 @pytest.fixture(autouse=True)
 def _clear_token_cache():
-    caps_mod._gh_cli_token.cache_clear()
+    caps_mod._gh_cli_token_cache = None
     yield
-    caps_mod._gh_cli_token.cache_clear()
+    caps_mod._gh_cli_token_cache = None
 
 
 @pytest.fixture
@@ -100,6 +100,25 @@ def test_resolution_falls_back_to_gh_cli(no_ambient_credentials, monkeypatch) ->
     monkeypatch.setattr(copilot_auth, "gh_cli_token", lambda: "gho_cli")
 
     assert copilot_auth.resolve_copilot_token() == ("gho_cli", "gh auth token")
+
+
+def test_gh_cli_token_cache_expires(monkeypatch) -> None:
+    # #1617: the unbounded cache kept the first token for the process lifetime,
+    # so a rotated gh CLI token never got picked up again.
+    calls = []
+
+    def fake_resolve():
+        calls.append(1)
+        return ("token-A" if len(calls) == 1 else "token-B-rotated", "gh auth token")
+
+    monkeypatch.setattr(copilot_auth, "resolve_copilot_token", fake_resolve)
+    assert caps_mod._gh_cli_token() == "token-A"
+    assert caps_mod._gh_cli_token() == "token-A"
+    assert len(calls) == 1
+
+    monkeypatch.setattr(caps_mod, "_GH_CLI_TOKEN_TTL_SECONDS", -1.0)
+    assert caps_mod._gh_cli_token() == "token-B-rotated"
+    assert len(calls) == 2
 
 
 def test_no_credential_is_left_for_sdk_resolution(no_ambient_credentials) -> None:
