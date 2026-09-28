@@ -54,6 +54,8 @@ def write_run_card(
     warnings: Sequence[str] | None = None,
     artifact_refs: Sequence[Mapping[str, Any]] | None = None,
     tool_traces: Sequence[Mapping[str, Any]] | None = None,
+    model_provider: str | None = None,
+    model_id: str | None = None,
 ) -> dict[str, Any]:
     """Write JSON and Markdown run cards for a backtest run.
 
@@ -69,6 +71,11 @@ def write_run_card(
         artifact_refs: Optional IRR-AGL artifact references.
         tool_traces: Optional tool events. Arguments and results are hashed
             before serialization.
+        model_provider: LLM provider that ran this backtest (e.g. "anthropic"),
+            when the run was driven by the agent. Omitted from the card when
+            ``model_id`` is empty, so a run outside an LLM session (a direct
+            CLI backtest) doesn't publish a misleading blank value.
+        model_id: LLM model name that ran this backtest.
 
     Returns:
         The run card payload written to ``run_card.json``.
@@ -110,6 +117,8 @@ def write_run_card(
         card["structured_metrics"] = structured
     if "validation" in metrics:
         card["validation"] = metrics["validation"]
+    if model_id:
+        card["model"] = {"provider": model_provider or "", "id": model_id}
 
     card = _json_safe(card)
     json_path = run_dir / "run_card.json"
@@ -403,6 +412,12 @@ def _render_markdown(card: Mapping[str, Any]) -> str:
     lines.append(f"- config_hash: `{reproducibility.get('config_hash', '')}`")
     if "strategy_hash" in reproducibility:
         lines.append(f"- strategy_hash: `{reproducibility['strategy_hash']}`")
+
+    if "model" in card:
+        model = card["model"]
+        lines.extend(["", "## Model"])
+        lines.append(f"- provider: {model.get('provider', '')}")
+        lines.append(f"- id: {model.get('id', '')}")
 
     lines.extend(["", "## Data Sources"])
     data_sources = card.get("data_sources", [])

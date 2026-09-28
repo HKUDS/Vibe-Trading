@@ -126,6 +126,39 @@ def test_json_and_markdown_files_are_written(tmp_path: Path) -> None:
     assert "sample warning" in markdown
 
 
+def test_model_provenance_is_recorded_when_provided(tmp_path: Path) -> None:
+    card = write_run_card(
+        tmp_path / "run",
+        {"codes": ["AAPL"]},
+        {"sharpe": 1.2},
+        model_provider="anthropic",
+        model_id="claude-sonnet-5",
+    )
+
+    assert card["model"] == {"provider": "anthropic", "id": "claude-sonnet-5"}
+    markdown = (tmp_path / "run" / "run_card.md").read_text(encoding="utf-8")
+    assert "## Model" in markdown
+    assert "provider: anthropic" in markdown
+    assert "id: claude-sonnet-5" in markdown
+
+
+def test_model_key_is_omitted_when_model_id_is_blank(tmp_path: Path) -> None:
+    # A CLI-triggered backtest run outside any LLM session has no model_id to
+    # report; the card should stay silent on it rather than publish a blank
+    # provider/id pair that reads as a real (empty) value.
+    card = write_run_card(tmp_path / "no_model", {"codes": ["AAPL"]}, {"sharpe": 1.2})
+    assert "model" not in card
+
+    card_blank = write_run_card(
+        tmp_path / "blank_model",
+        {"codes": ["AAPL"]},
+        {"sharpe": 1.2},
+        model_provider="anthropic",
+        model_id="",
+    )
+    assert "model" not in card_blank
+
+
 def test_api_run_response_includes_run_card(tmp_path: Path) -> None:
     import api_server
 
@@ -358,6 +391,68 @@ def test_options_backtest_writes_run_card(tmp_path: Path) -> None:
     )
     assert "greeks.csv" in {Path(artifact["path"]).name for artifact in card["artifacts"]}
     assert (tmp_path / "run_card.md").exists()
+
+
+def test_options_backtest_run_card_records_the_configured_model(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from backtest.engines.options_portfolio import run_options_backtest
+    from src.config.accessor import reset_env_config
+
+    monkeypatch.setenv("LANGCHAIN_PROVIDER", "anthropic")
+    monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "claude-sonnet-5")
+    reset_env_config()
+
+    dates = pd.bdate_range("2025-01-01", periods=4)
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0, 103.0],
+            "high": [101.0, 102.0, 103.0, 104.0],
+            "low": [99.0, 100.0, 101.0, 102.0],
+            "close": [100.5, 101.5, 102.5, 103.5],
+            "volume": [1000, 1100, 1200, 1300],
+        },
+        index=dates,
+    )
+
+    class FakeLoader:
+        name = "yfinance"
+
+        def fetch(self, codes, start_date, end_date):
+            return {"SPY": bars.copy()}
+
+    class SignalEngine:
+        def generate(self, data_map):
+            return [
+                {
+                    "date": "2025-01-01",
+                    "action": "open",
+                    "underlying": "SPY",
+                    "legs": [{"type": "call", "strike": 101.0, "expiry": "2025-03-21", "qty": 1}],
+                },
+                {
+                    "date": "2025-01-03",
+                    "action": "close",
+                    "underlying": "SPY",
+                    "legs": [{"type": "call", "strike": 101.0, "expiry": "2025-03-21", "qty": 1}],
+                },
+            ]
+
+    config = {
+        "codes": ["SPY"],
+        "start_date": "2025-01-01",
+        "end_date": "2025-01-06",
+        "source": "yfinance",
+        "engine": "options",
+        "initial_cash": 100_000,
+    }
+    try:
+        run_options_backtest(config, FakeLoader(), SignalEngine(), tmp_path)
+    finally:
+        reset_env_config()
+
+    card = json.loads((tmp_path / "run_card.json").read_text(encoding="utf-8"))
+    assert card["model"] == {"provider": "anthropic", "id": "claude-sonnet-5"}
 
 
 def test_api_run_response_includes_portfolio_studio_artifacts(tmp_path: Path) -> None:

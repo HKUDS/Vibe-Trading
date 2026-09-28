@@ -623,6 +623,8 @@ def run_options_backtest(
     pd.DataFrame([metrics]).to_csv(out / "metrics.csv", index=False)
 
     from backtest.run_card import write_run_card
+    from src.config.accessor import get_env_config
+
     write_run_card(
         run_dir,
         config,
@@ -630,6 +632,8 @@ def run_options_backtest(
         data_sources=[str(getattr(loader, "name", config.get("source", "")))],
         strategy_path=run_dir / "code" / "signal_engine.py",
         warnings=config.get("content_filter_warnings") or None,
+        model_provider=get_env_config().llm.langchain_provider,
+        model_id=get_env_config().llm.langchain_model_name,
         tool_traces=[
             {
                 "tool": "backtest",

@@ -1152,6 +1152,8 @@ class BaseEngine(ABC):
         if config.get("_run_card_annualisation_warning"):
             card_warnings.append(config["_run_card_annualisation_warning"])
         from backtest.run_card import write_run_card
+        from src.config.accessor import get_env_config
+
         write_run_card(
             run_dir,
             config,
@@ -1159,6 +1161,8 @@ class BaseEngine(ABC):
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
             warnings=card_warnings or None,
+            model_provider=get_env_config().llm.langchain_provider,
+            model_id=get_env_config().llm.langchain_model_name,
             tool_traces=[
                 {
                     "tool": "backtest",
