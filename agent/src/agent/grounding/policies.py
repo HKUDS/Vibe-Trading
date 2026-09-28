@@ -41,6 +41,17 @@ from src.agent.grounding.figures import (
 
 import re
 
+# ``a.0.b`` and ``a[0].b`` name the same list element; evidence paths are
+# emitted with brackets, so refs are compared in that spelling.
+_DOTTED_INDEX_RE = re.compile(r"(?<=\w)\.(\d+)(?=\.|\[|$)")
+_INDEX_RE = re.compile(r"\[\d+\]")
+_MAX_INDEXED_REF_CANDIDATES = 12
+
+
+def _index_normalized(path: str) -> str:
+    """Spell dotted collection indices with brackets (``a.0.b`` -> ``a[0].b``)."""
+    return _DOTTED_INDEX_RE.sub(r"[\1]", path)
+
 #: An answer that relabels a locked listed identity as private contradicts the
 #: resolver, which is an identity finding rather than a figure finding.
 _PRIVATE_ASSERTION_RE = re.compile(
@@ -882,8 +893,13 @@ class _PolicyMixin:
         dropped here, before any count of calls, so two instruments' closes do
         not make ``close`` ambiguous.
         """
+        wanted = _index_normalized(field)
+
         def named(path: Any) -> bool:
-            return isinstance(path, str) and (path == field or path.endswith("." + field))
+            if not isinstance(path, str):
+                return False
+            path = _index_normalized(path)
+            return path == wanted or path.endswith("." + wanted)
 
         records = [
             record
@@ -1098,6 +1114,54 @@ class _PolicyMixin:
             if entry.get("tool") == scope and entry.get("call_id") and entry.get("field")
         }
         return sorted(refs)
+
+    def _indexed_field_ref_candidates(
+        self, ref: str, figure: Figure
+    ) -> list[str]:
+        """Exact ``call_id::path[i]`` refs for a ``call::field`` ref that named no element.
+
+        Only paths that equal the declared field once every collection index is
+        dropped are offered, and only from the call (or tool) the ref names.
+        Refs whose value matches the figure come first. These are hints for the
+        next draft; the ref is never resolved through them.
+        """
+        found: dict[str, float] = {}
+        for key in (part.strip() for part in re.split(r"[;,]", ref or "")):
+            if "::" not in key:
+                continue
+            scope, field = (part.strip() for part in key.split("::", 1))
+            if not scope or not field:
+                continue
+            bare = _INDEX_RE.sub("", _index_normalized(field))
+            for call_id, tool, path, value in (
+                *(
+                    (r.call_id, r.tool, r.field, r.value)
+                    for r in self._evidence
+                    if r.status == "observed"
+                ),
+                *(
+                    (e.get("call_id"), e.get("tool"), e.get("field"), e.get("value"))
+                    for e in self._analysis_metrics
+                ),
+            ):
+                if (
+                    call_id
+                    and isinstance(path, str)
+                    and value is not None
+                    and scope in (call_id, tool)
+                    and _INDEX_RE.search(path)
+                ):
+                    stripped = _INDEX_RE.sub("", path)
+                    if stripped == bare or stripped.endswith("." + bare):
+                        found[f"{call_id}::{path}"] = float(value)
+        ranked = sorted(
+            found,
+            key=lambda item: (
+                not self._matches_evidence(figure, [found[item]], [found[item]]),
+                item,
+            ),
+        )
+        return ranked[:_MAX_INDEXED_REF_CANDIDATES]
 
     def _tail_risk_ref_required(
         self,
@@ -1470,6 +1534,9 @@ class _PolicyMixin:
                     f"is declared observed from {declaration.ref}, whose results "
                     f"{'for ' + symbol + ' ' if symbol else ''}do not contain it",
                     source_tool_call_ids=[declaration.ref],
+                    field_ref_candidates=self._indexed_field_ref_candidates(
+                        declaration.ref, figure
+                    ),
                     observed_nearest=self._nearest_prints(figure, scoped_records, values),
                 )
             ]
