@@ -3,8 +3,19 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 
-from src.agent.loop import AgentLoop, MAX_READONLY_REPLAY_RECOVERIES
+import pytest
+
+from src.agent import loop as loop_mod
+from src.agent.context import ContextBuilder
+from src.agent.memory import WorkspaceMemory
+from src.agent.loop import (
+    AgentLoop,
+    KEEP_RECENT,
+    MAX_READONLY_REPLAY_RECOVERIES,
+)
 from src.agent.tool_progress import NO_PROGRESS_LIMIT, ToolProgress
+from src.providers.chat import LLMResponse, ToolCallRequest
+from src.agent.trace import TraceWriter
 from src.tools.web_reader_tool import WebReaderTool
 
 
@@ -80,6 +91,7 @@ def _loop(registry=None):
     loop._readonly_replay_cache = {}
     loop._readonly_replay_ready = set()
     loop._readonly_replay_protected = set()
+    loop._readonly_replay_visibility_pending = set()
     loop._readonly_replay_recoveries = 0
     loop._grounding = None
     loop._cancel_event = threading.Event()
@@ -158,6 +170,240 @@ def test_no_cache_bypasses_repeatable_compaction_replay():
     )
 
 
+class _VisibilityRegistry:
+    def __init__(self):
+        self.probe_executions = 0
+        self.other_executions = 0
+        names = ["probe"] + [
+            f"{prefix}-{i}"
+            for prefix in ("warmup", "later")
+            for i in range(KEEP_RECENT)
+        ]
+        self._tools = {
+            name: SimpleNamespace(name=name, description="Offline visibility tool")
+            for name in names
+        }
+
+    @property
+    def tool_names(self):
+        return list(self._tools)
+
+    def get_definitions(self):
+        return []
+
+    def get(self, name):
+        return SimpleNamespace(
+            is_readonly=True,
+            repeatable=True,
+            deterministic=False,
+            replay_after_compaction=name == "probe",
+        )
+
+    def result(self, name):
+        if name == "probe":
+            value = "RESULT_PROBE metric_alpha metric_beta " + "x" * 160
+        else:
+            value = f"{name} " + "y" * 160
+        return '{"status":"ok","value":"' + value + '"}'
+
+    def execute(self, name, args):
+        result = self.result(name)
+        if name == "probe":
+            self.probe_executions += 1
+        else:
+            self.other_executions += 1
+        return result
+
+
+def test_agent_loop_sends_replay_before_consuming_its_visibility_lease(
+    monkeypatch, tmp_path
+):
+    assert KEEP_RECENT == 3
+    assert MAX_READONLY_REPLAY_RECOVERIES == 6
+    monkeypatch.setenv("PPI_TRADING_DISABLED", "True")
+    monkeypatch.setattr(loop_mod, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(loop_mod, "SESSIONS_DIR", tmp_path / "sessions")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    registry = _VisibilityRegistry()
+    llm = _VisibilityLLM(registry, monkeypatch)
+    loop = AgentLoop(
+        registry=registry,
+        llm=llm,
+        memory=WorkspaceMemory(run_dir=str(run_dir)),
+        max_iterations=4,
+    )
+    result = loop.run("Inspect the offline probe markers.")
+
+    assert result["status"] == "success"
+    assert registry.probe_executions == 1
+    assert len(llm.requests) == 3
+    delivered = next(
+        message
+        for message in llm.requests[2]
+        if message.get("tool_call_id") == "probe-replay"
+    )
+    assert "RESULT_PROBE" in delivered["content"]
+    assert "metric_alpha" in delivered["content"]
+    assert "metric_beta" in delivered["content"]
+    assert loop._readonly_replay_visibility_pending == set()
+
+    events = TraceWriter.read(run_dir)
+    assert sum(event["type"] == "tool_result_replayed" for event in events) == 1
+    assert sum(event["type"] == "replay_visibility_consumed" for event in events) == 1
+
+    # The successful third request consumed the one-decision lease. A later
+    # ordinary Layer 1 pass can now clear the replay behind KEEP_RECENT tools.
+    post_request_trace = TraceWriter(run_dir)
+    loop._microcompact_and_unblock(llm._last_messages, post_request_trace, 4)
+    post_request_trace.close()
+    delivered_after = next(
+        message
+        for message in llm._last_messages
+        if message.get("tool_call_id") == "probe-replay"
+    )
+    assert delivered_after["content"].startswith("[CLEARED FROM CONTEXT:")
+
+
+@pytest.mark.parametrize(
+    "later_tool_count", [0, max(1, KEEP_RECENT - 1), KEEP_RECENT]
+)
+def test_replayed_result_has_one_model_request_visibility_lease(later_tool_count):
+    """Keep a replay through its first post-replay request, then compact it."""
+    assert KEEP_RECENT == 3
+    assert MAX_READONLY_REPLAY_RECOVERIES == 6
+    registry = _VisibilityRegistry()
+    loop = _loop(registry)
+    messages = []
+    trace = _Trace()
+    react_trace = []
+    args = {"query": "offline-probe"}
+
+    def call(call_id, name, arguments, iteration):
+        loop._process_tool_calls(
+            [SimpleNamespace(id=call_id, name=name, arguments=arguments)],
+            _Context(),
+            messages,
+            trace,
+            react_trace,
+            iteration,
+        )
+
+    call("probe-original", "probe", args, 1)
+    for i in range(KEEP_RECENT):
+        call(f"warmup-{i}", f"warmup-{i}", {"i": i}, 1)
+    assert registry.probe_executions == 1
+
+    # The original probe is outside the most recent results and is cleared.
+    loop._microcompact_and_unblock(messages, trace, 2)
+    original = next(m for m in messages if m.get("tool_call_id") == "probe-original")
+    assert original["content"].startswith("[CLEARED FROM CONTEXT:")
+
+    replay_and_later = [
+        SimpleNamespace(id="probe-replay", name="probe", arguments=dict(args))
+    ]
+    replay_and_later.extend(
+        SimpleNamespace(
+            id=f"later-{i}",
+            name=f"later-{i}",
+            arguments={"i": i},
+        )
+        for i in range(later_tool_count)
+    )
+    loop._process_tool_calls(
+        replay_and_later, _Context(), messages, trace, react_trace, 3
+    )
+    assert registry.probe_executions == 1
+    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
+    assert loop._readonly_replay_visibility_pending == {"probe-replay"}
+
+    # This is the normal pre-request microcompaction. With exactly KEEP_RECENT
+    # newer results, it would clear the replay without its one-decision lease.
+    loop._microcompact_and_unblock(
+        messages,
+        trace,
+        4,
+        preserve_tool_call_ids=loop._readonly_replay_visibility_pending,
+    )
+    replay = next(m for m in messages if m.get("tool_call_id") == "probe-replay")
+    assert "RESULT_PROBE" in replay["content"]
+    assert "metric_alpha" in replay["content"]
+    assert "metric_beta" in replay["content"]
+    if later_tool_count == KEEP_RECENT:
+        for i in range(KEEP_RECENT):
+            warmup = next(
+                m for m in messages if m.get("tool_call_id") == f"warmup-{i}"
+            )
+            assert warmup["content"].startswith("[CLEARED FROM CONTEXT:")
+
+    # AgentLoop consumes this lease only after stream_chat returns successfully.
+    # At this boundary, the exact messages sent for that request include replay.
+    loop._consume_readonly_replay_visibility(messages, trace, 4)
+    assert loop._readonly_replay_visibility_pending == set()
+    assert any(
+        e["type"] == "replay_visibility_consumed"
+        and e["call_id"] == "probe-replay"
+        and e["iter"] == 4
+        for e in trace.events
+    )
+
+    # More results arrive after that decision; ordinary Layer 1 rules apply.
+    for i in range(KEEP_RECENT):
+        call(f"after-{i}", f"after-{i}", {"i": i}, 5)
+    loop._microcompact_and_unblock(messages, trace, 6)
+    replay = next(m for m in messages if m.get("tool_call_id") == "probe-replay")
+    assert replay["content"].startswith("[CLEARED FROM CONTEXT:")
+    assert registry.probe_executions == 1
+    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
+
+
+class _VisibilityLLM:
+    model_name = "offline-visibility-stub"
+
+    def __init__(self, registry, monkeypatch):
+        self.registry = registry
+        self.monkeypatch = monkeypatch
+        self.requests = []
+
+    def stream_chat(self, messages, **kwargs):
+        self.requests.append([dict(message) for message in messages])
+        self._last_messages = messages
+        decision = len(self.requests)
+        if decision == 1:
+            calls = [ToolCallRequest("probe-original", "probe", {"query": "offline"})]
+            calls.extend(
+                ToolCallRequest(f"warmup-{i}", f"warmup-{i}", {"i": i})
+                for i in range(KEEP_RECENT)
+            )
+        elif decision == 2:
+            calls = [ToolCallRequest("probe-replay", "probe", {"query": "offline"})]
+            calls.extend(
+                ToolCallRequest(f"later-{i}", f"later-{i}", {"i": i})
+                for i in range(KEEP_RECENT)
+            )
+        else:
+            return LLMResponse(content="Offline probe inspected.")
+
+        future = list(messages)
+        future.append(ContextBuilder.format_assistant_tool_calls(calls))
+        for call in calls:
+            future.append(
+                ContextBuilder.format_tool_result(
+                    call.id, call.name, self.registry.result(call.name)
+                )
+            )
+        self.monkeypatch.setattr(
+            loop_mod,
+            "TOKEN_THRESHOLD",
+            max(2, int(loop_mod.estimate_tokens(future) * 1.6)),
+            raising=False,
+        )
+        return LLMResponse(tool_calls=calls)
+
+
+
+
 def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_protected():
     registry = _Registry(repeatable=True, replay_after_compaction=True)
     loop = _loop(registry)
@@ -224,6 +470,7 @@ def test_no_cache_executes_externally_even_after_normal_read_is_protected():
     tc = SimpleNamespace(name="read_url", arguments=fresh_args, id="fresh-1")
     loop._process_tool_calls([tc], _Context(), [], _Trace(), [], 6)
     assert registry.execute_calls == 1
+    assert loop._readonly_replay_visibility_pending == set()
 
 
 def test_different_repeatable_arguments_still_execute_externally_after_protection():
@@ -372,6 +619,7 @@ def test_a_write_makes_earlier_readonly_results_unreplayable() -> None:
         [SimpleNamespace(name="bash", arguments={"command": "python make_factor.py > factor.csv"}, id="w1")],
         _Context(), [], _Trace(), [], 2,
     )
+    assert loop._readonly_replay_visibility_pending == set()
     key = loop._identical_call_key("factor_analysis", read)
     loop._unblock_lost_readonly_results([], {key})
 
