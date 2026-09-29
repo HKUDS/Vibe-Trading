@@ -46,6 +46,10 @@ import re
 _DOTTED_INDEX_RE = re.compile(r"(?<=\w)\.(\d+)(?=\.|\[|$)")
 _INDEX_RE = re.compile(r"\[\d+\]")
 _MAX_INDEXED_REF_CANDIDATES = 12
+#: A container ref is answered only with leaves that hold the figure's value, so
+#: a handful is enough; calls returning one field are capped the same way.
+_MAX_CONTAINER_REF_CANDIDATES = 5
+_MAX_CALL_REF_CANDIDATES = 5
 
 
 def _index_normalized(path: str) -> str:
@@ -1093,9 +1097,14 @@ class _PolicyMixin:
         return sorted(refs)
 
     def _tool_field_ref_candidates(
-        self, ref: str, symbol: str | None
+        self, ref: str, symbol: str | None, figure: Figure | None = None
     ) -> list[str]:
-        """Exact call refs for a mistaken tool_name::field declaration."""
+        """Exact call refs for a mistaken tool_name::field declaration.
+
+        With ``figure``, refs whose observed value matches it come first, most
+        recent call first among equals; the list is capped. The hint never
+        selects a call: the next draft must still declare the exact ref.
+        """
         key = (ref or "").strip()
         if "::" not in key:
             return []
@@ -1103,65 +1112,148 @@ class _PolicyMixin:
         if not scope or not field:
             return []
         records, entries = self._field_sources(field, symbol)
-        refs = {
-            self._ref_source(record.call_id, record.field, record.scope)[1]
-            for record in records
-            if record.tool == scope and record.call_id and record.field
-        }
-        refs |= {
-            self._ref_source(str(entry.get("call_id")), str(entry.get("field")), None)[1]
-            for entry in entries
-            if entry.get("tool") == scope and entry.get("call_id") and entry.get("field")
-        }
-        return sorted(refs)
+        found: dict[str, list[float]] = {}
+        for record in records:
+            if record.tool == scope and record.call_id and record.field:
+                found.setdefault(self._ref_source(record.call_id, record.field, record.scope)[1], []).append(
+                    float(record.value)
+                )
+        for entry in entries:
+            if entry.get("tool") == scope and entry.get("call_id") and entry.get("field"):
+                found.setdefault(self._ref_source(str(entry.get("call_id")), str(entry.get("field")), None)[1], []).append(
+                    float(entry["value"])
+                )
+        if figure is None:
+            return sorted(found)
+        recency = {item: index for index, item in enumerate(found)}
+        ranked = sorted(
+            found,
+            key=lambda item: (
+                not self._matches_evidence(figure, found[item], found[item]),
+                -recency[item],
+                item,
+            ),
+        )
+        return ranked[:_MAX_CALL_REF_CANDIDATES]
 
     def _indexed_field_ref_candidates(
         self, ref: str, figure: Figure
     ) -> list[str]:
-        """Exact ``call_id::path[i]`` refs for a ``call::field`` ref that named no element.
+        """Exact ``call_id::path[i]`` refs for a ``call::field`` ref that selected no value.
 
-        Only paths that equal the declared field once every collection index is
-        dropped are offered, and only from the call (or tool) the ref names.
+        Two shapes of an unresolved ref are helped, both only from the call (or
+        tool) the ref names:
+
+        * the ref names a list field without its index: paths that equal the
+          declared field once every collection index is dropped are offered;
+        * the ref names a container (``data.groups.positive``): its numeric
+          descendants that hold the figure's value are offered, and none
+          otherwise. An index written in the ref narrows the container to that
+          element.
+
         Refs whose value matches the figure come first. These are hints for the
-        next draft; the ref is never resolved through them.
+        next draft; a ref is never resolved through them and a container ref
+        authorizes nothing.
         """
         found: dict[str, float] = {}
+        containers: set[str] = set()
         for key in (part.strip() for part in re.split(r"[;,]", ref or "")):
             if "::" not in key:
                 continue
             scope, field = (part.strip() for part in key.split("::", 1))
             if not scope or not field:
                 continue
-            bare = _INDEX_RE.sub("", _index_normalized(field))
-            for call_id, tool, path, value in (
+            wanted = _index_normalized(field)
+            bare = _INDEX_RE.sub("", wanted)
+            below = re.compile(r"(?:^|\.)" + re.escape(wanted) + r"(?=[.\[])")
+            for call_id, tool, path, value, record in (
                 *(
-                    (r.call_id, r.tool, r.field, r.value)
+                    (r.call_id, r.tool, r.field, r.value, r)
                     for r in self._evidence
                     if r.status == "observed"
                 ),
                 *(
-                    (e.get("call_id"), e.get("tool"), e.get("field"), e.get("value"))
+                    (e.get("call_id"), e.get("tool"), e.get("field"), e.get("value"), None)
                     for e in self._analysis_metrics
                 ),
             ):
-                if (
+                if not (
                     call_id
                     and isinstance(path, str)
                     and value is not None
                     and scope in (call_id, tool)
-                    and _INDEX_RE.search(path)
                 ):
+                    continue
+                if record is not None and not self._kind_fits(record, figure):
+                    continue
+                item = f"{call_id}::{path}"
+                if below.search(_index_normalized(path)):
+                    containers.add(item)
+                    found[item] = float(value)
+                elif _INDEX_RE.search(path):
                     stripped = _INDEX_RE.sub("", path)
                     if stripped == bare or stripped.endswith("." + bare):
-                        found[f"{call_id}::{path}"] = float(value)
-        ranked = sorted(
-            found,
-            key=lambda item: (
-                not self._matches_evidence(figure, [found[item]], [found[item]]),
-                item,
-            ),
-        )
-        return ranked[:_MAX_INDEXED_REF_CANDIDATES]
+                        found[item] = float(value)
+        matches = {
+            item: self._matches_evidence(figure, [value], [value])
+            for item, value in found.items()
+        }
+        # A container is answered only by the leaf that holds the figure.
+        kept = [item for item in found if item not in containers or matches[item]]
+        ranked = sorted(kept, key=lambda item: (not matches[item], item))
+        cap = _MAX_CONTAINER_REF_CANDIDATES if containers else _MAX_INDEXED_REF_CANDIDATES
+        return ranked[:cap]
+
+    def _other_call_field_ref_candidates(
+        self, ref: str, symbol: str | None, figure: Figure
+    ) -> list[str]:
+        """Same-field refs from other calls of the tool whose value matches ``figure``.
+
+        A ``call_id::field`` ref that does not hold the figure may still name the
+        right field of the wrong call (scope or period). Only calls of the same
+        tool as the declared call, whose value for that field matches, are
+        offered, most recent first. A hint only: the declared ref stays rejected
+        and the next draft must name the exact ref itself.
+        """
+        found: dict[str, None] = {}
+        for key in (part.strip() for part in re.split(r"[;,]", ref or "")):
+            if "::" not in key:
+                continue
+            scope, field = (part.strip() for part in key.split("::", 1))
+            tools = {r.tool for r in self._evidence if r.call_id == scope}
+            tools |= {e.get("tool") for e in self._analysis_metrics if e.get("call_id") == scope}
+            if not scope or not field or not tools:
+                continue
+            records, entries = self._field_sources(field, symbol)
+            for call_id, tool, path, value, record in (
+                *((r.call_id, r.tool, r.field, r.value, r) for r in records),
+                *((e.get("call_id"), e.get("tool"), e.get("field"), e.get("value"), None) for e in entries),
+            ):
+                if (
+                    call_id
+                    and call_id != scope
+                    and tool in tools
+                    and isinstance(path, str)
+                    and (record is None or self._kind_fits(record, figure))
+                    and self._matches_evidence(figure, [float(value)], [float(value)])
+                ):
+                    found[f"{call_id}::{path}"] = None
+        return list(reversed(found))[:_MAX_CALL_REF_CANDIDATES]
+
+    @staticmethod
+    def _kind_fits(record: EvidenceRecord, figure: Figure) -> bool:
+        """Whether a record is of the kind ``figure`` can be grounded in.
+
+        Mirrors the narrowing ``_referenced`` applies, so a hint never points at
+        a leaf the next draft would still be rejected for.
+        """
+        if figure.column and record.field != figure.column:
+            return False
+        if figure.percent:
+            return not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
+        if figure.currency:
+            return _is_price_kind(record)
+        return True
 
     def _tail_risk_ref_required(
         self,
@@ -1449,7 +1541,7 @@ class _PolicyMixin:
                 and not metric_values
             ):
                 call_field_candidates = self._tool_field_ref_candidates(
-                    declaration.ref, symbol
+                    declaration.ref, symbol, figure
                 )
                 if call_field_candidates:
                     return [
@@ -1534,8 +1626,13 @@ class _PolicyMixin:
                     f"is declared observed from {declaration.ref}, whose results "
                     f"{'for ' + symbol + ' ' if symbol else ''}do not contain it",
                     source_tool_call_ids=[declaration.ref],
-                    field_ref_candidates=self._indexed_field_ref_candidates(
-                        declaration.ref, figure
+                    field_ref_candidates=list(
+                        dict.fromkeys(
+                            [
+                                *self._indexed_field_ref_candidates(declaration.ref, figure),
+                                *self._other_call_field_ref_candidates(declaration.ref, symbol, figure),
+                            ]
+                        )
                     ),
                     observed_nearest=self._nearest_prints(figure, scoped_records, values),
                 )
