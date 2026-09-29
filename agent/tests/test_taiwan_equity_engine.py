@@ -17,6 +17,7 @@ import pytest
 from backtest.engines.taiwan_equity import (
     TW_LOT_SIZE,
     TaiwanEquityEngine,
+    _DEFAULT_PRICE_LIMIT,
     tw_can_execute,
     tw_is_etf,
     tw_price_limits,
@@ -190,6 +191,22 @@ class TestPriceLimits:
                 for bound in (upper, lower):
                     tick = Decimal(str(tw_tick_size(bound, etf=etf)))
                     assert Decimal(str(bound)) % tick == 0, (ref, etf, bound)
+
+    def test_a_band_narrower_than_the_tick_grid_raises_instead_of_inverting(self) -> None:
+        # At ref=10.37 the 0.05 tick straddles the reference from both sides: a
+        # band this narrow floors the ceiling and ceils the floor past each
+        # other (10.35, 10.40) rather than bracketing 10.37. TWSE's own +/-10%
+        # band is never this narrow; this is a config-error guard, not a rule.
+        with pytest.raises(ValueError, match="too narrow"):
+            tw_price_limits(10.37, 0.001)
+
+    def test_the_default_and_official_band_never_invert_across_a_wide_sweep(self) -> None:
+        # Companion to the "raises" test above: confirm the realistic bands
+        # (TWSE's actual 10%, and a still-generous 1%) never hit that guard.
+        for band in (_DEFAULT_PRICE_LIMIT, 0.01):
+            for etf in (False, True):
+                for cents in range(100, 600_000, 137):
+                    tw_price_limits(cents / 100, band, etf=etf)  # must not raise
 
 
 class TestLotSize:

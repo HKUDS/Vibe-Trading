@@ -232,11 +232,17 @@ def tw_price_limits(ref: float, band: float = _DEFAULT_PRICE_LIMIT, *, etf: bool
         etf: Use the ETF tick table instead of the stock table.
 
     Returns:
-        ``(upper, lower)``, both on the tick grid.
+        ``(upper, lower)``, both on the tick grid, with ``upper >= lower``.
 
     Raises:
         ValueError: When *ref* is not a positive finite number, or *band* is not
-            a non-negative finite number.
+            a non-negative finite number, or when *band* is narrower than the tick
+            grid can represent at *ref* — flooring the ceiling and ceiling the floor
+            would then cross, which is a config problem (an unrealistically tight
+            ``price_limit``), not a data problem, so it is raised rather than
+            silently returning a physically inverted band. TWSE's own +/-10% band is
+            always wide enough not to hit this; it can only be reached with a custom
+            ``price_limit`` far narrower than any real Taiwan trading rule.
     """
     ref_value = _to_decimal(ref, "reference price")
     band_value = _to_decimal(band, "band")
@@ -252,7 +258,16 @@ def tw_price_limits(ref: float, band: float = _DEFAULT_PRICE_LIMIT, *, etf: bool
     lower_candidate = ref_value * (1 - band_value)
     lower_tick = _tick_for(lower_candidate, etf)
     lower = ((lower_candidate - _PRICE_EPS_DECIMAL) / lower_tick).to_integral_value(ROUND_CEILING) * lower_tick
-    return float(upper), float(max(lower, _MIN_PRICE))
+    lower = max(lower, _MIN_PRICE)
+
+    if upper < lower:
+        raise ValueError(
+            f"price_limit={band!r} is too narrow to represent on the tick grid at "
+            f"reference price {ref!r}: the rounded ceiling {float(upper)!r} would sit "
+            f"below the rounded floor {float(lower)!r}. TWSE's own +/-10% band never hits "
+            "this; use a wider price_limit, or 0/None to disable the check."
+        )
+    return float(upper), float(lower)
 
 
 def tw_can_execute(
@@ -286,6 +301,12 @@ def tw_can_execute(
 
     Returns:
         True if the trade is allowed.
+
+    Raises:
+        ValueError: When ``rules.price_limit`` is narrower than the tick grid can
+            represent at the resolved reference price (see :func:`tw_price_limits`).
+            This is a config problem, not a data problem, so it propagates rather
+            than being caught here: TWSE's own +/-10% band never hits it.
     """
     # 1. Short selling is not modelled.
     if direction == -1:
