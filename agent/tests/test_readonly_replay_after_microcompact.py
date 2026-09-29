@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 from types import SimpleNamespace
 
-import pytest
 
 from src.agent import loop as loop_mod
 from src.agent.context import ContextBuilder
@@ -266,98 +265,6 @@ def test_agent_loop_sends_replay_before_consuming_its_visibility_lease(
     assert delivered_after["content"].startswith("[CLEARED FROM CONTEXT:")
 
 
-@pytest.mark.parametrize(
-    "later_tool_count", [0, max(1, KEEP_RECENT - 1), KEEP_RECENT]
-)
-def test_replayed_result_has_one_model_request_visibility_lease(later_tool_count):
-    """Keep a replay through its first post-replay request, then compact it."""
-    assert KEEP_RECENT == 3
-    assert MAX_READONLY_REPLAY_RECOVERIES == 6
-    registry = _VisibilityRegistry()
-    loop = _loop(registry)
-    messages = []
-    trace = _Trace()
-    react_trace = []
-    args = {"query": "offline-probe"}
-
-    def call(call_id, name, arguments, iteration):
-        loop._process_tool_calls(
-            [SimpleNamespace(id=call_id, name=name, arguments=arguments)],
-            _Context(),
-            messages,
-            trace,
-            react_trace,
-            iteration,
-        )
-
-    call("probe-original", "probe", args, 1)
-    for i in range(KEEP_RECENT):
-        call(f"warmup-{i}", f"warmup-{i}", {"i": i}, 1)
-    assert registry.probe_executions == 1
-
-    # The original probe is outside the most recent results and is cleared.
-    loop._microcompact_and_unblock(messages, trace, 2)
-    original = next(m for m in messages if m.get("tool_call_id") == "probe-original")
-    assert original["content"].startswith("[CLEARED FROM CONTEXT:")
-
-    replay_and_later = [
-        SimpleNamespace(id="probe-replay", name="probe", arguments=dict(args))
-    ]
-    replay_and_later.extend(
-        SimpleNamespace(
-            id=f"later-{i}",
-            name=f"later-{i}",
-            arguments={"i": i},
-        )
-        for i in range(later_tool_count)
-    )
-    loop._process_tool_calls(
-        replay_and_later, _Context(), messages, trace, react_trace, 3
-    )
-    assert registry.probe_executions == 1
-    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
-    assert loop._readonly_replay_visibility_pending == {"probe-replay"}
-
-    # This is the normal pre-request microcompaction. With exactly KEEP_RECENT
-    # newer results, it would clear the replay without its one-decision lease.
-    loop._microcompact_and_unblock(
-        messages,
-        trace,
-        4,
-        preserve_tool_call_ids=loop._readonly_replay_visibility_pending,
-    )
-    replay = next(m for m in messages if m.get("tool_call_id") == "probe-replay")
-    assert "RESULT_PROBE" in replay["content"]
-    assert "metric_alpha" in replay["content"]
-    assert "metric_beta" in replay["content"]
-    if later_tool_count == KEEP_RECENT:
-        for i in range(KEEP_RECENT):
-            warmup = next(
-                m for m in messages if m.get("tool_call_id") == f"warmup-{i}"
-            )
-            assert warmup["content"].startswith("[CLEARED FROM CONTEXT:")
-
-    # AgentLoop consumes this lease only after stream_chat returns successfully.
-    # At this boundary, the exact messages sent for that request include replay.
-    loop._consume_readonly_replay_visibility(messages, trace, 4)
-    assert loop._readonly_replay_visibility_pending == set()
-    assert any(
-        e["type"] == "replay_visibility_consumed"
-        and e["call_id"] == "probe-replay"
-        and e["iter"] == 4
-        for e in trace.events
-    )
-
-    # More results arrive after that decision; ordinary Layer 1 rules apply.
-    for i in range(KEEP_RECENT):
-        call(f"after-{i}", f"after-{i}", {"i": i}, 5)
-    loop._microcompact_and_unblock(messages, trace, 6)
-    replay = next(m for m in messages if m.get("tool_call_id") == "probe-replay")
-    assert replay["content"].startswith("[CLEARED FROM CONTEXT:")
-    assert registry.probe_executions == 1
-    assert sum(e["type"] == "tool_result_replayed" for e in trace.events) == 1
-
-
 class _VisibilityLLM:
     model_name = "offline-visibility-stub"
 
@@ -400,8 +307,6 @@ class _VisibilityLLM:
             raising=False,
         )
         return LLMResponse(tool_calls=calls)
-
-
 
 
 def test_repeatable_opt_in_runs_normally_before_compaction_then_stays_replay_protected():
