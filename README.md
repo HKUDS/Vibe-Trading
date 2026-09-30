@@ -660,6 +660,9 @@ Detailed inventories are folded below to keep the main README scannable. Open th
 | Research | 3 | `alpha-zoo`, `strategy-dev-manager`, `strategy-discovery` |
 | Risk Analysis | 1 | `ashare-pre-st-filter` |
 
+The read-only `report_audit` tool preserves signed financial values in Markdown
+tables and `label: value` lines, so losses are checked as losses rather than profits.
+
 </details>
 
 <details>

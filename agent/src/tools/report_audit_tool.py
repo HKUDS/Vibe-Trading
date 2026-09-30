@@ -36,10 +36,10 @@ _KV_LABEL_RE = re.compile(r"(?P<label>[一-龥A-Za-z][^|\n：:*]{1,30})[：:]\s*
 _UNIT_PATTERN = r"亿[元美港]?元?|万亿|倍|%|[BMTxX](?![A-Za-z])"
 _NUMUNIT_RE = re.compile(
     r"[~约]?\$?\s*(?:"
-    r"(?P<open>[（(])\s*\$?\s*(?P<account_num>[\d,，.]+)\s*"
+    r"(?P<open>[（(])\s*\$?\s*(?P<account_num>[+\-−]?[\d,，.]+)\s*"
     rf"(?P<inside_unit>{_UNIT_PATTERN})?\s*(?P<close>[）)])\s*"
     rf"(?P<outside_unit>{_UNIT_PATTERN})?"
-    r"|(?P<num>[\d,，.]+)\s*"
+    r"|(?P<num>[+\-−]?[\d,，.]+)\s*"
     rf"(?P<unit>{_UNIT_PATTERN})?)"
 )
 _TABLE_SEP_RE = re.compile(r"^\|[\-\s|:]+\|$")
@@ -54,7 +54,7 @@ _QUARTER_RE = re.compile(r"(20\d{2}|Q[1-4]|\d{4}\s*Q[1-4])")
 
 def _clean_num(s: str) -> float | None:
     """Normalise a numeric string with commas (ASCII or wide) to float."""
-    s = s.replace(",", "").replace("，", "").strip()
+    s = s.replace(",", "").replace("，", "").replace("−", "-").strip()
     try:
         return float(s)
     except ValueError:
@@ -95,7 +95,9 @@ def _report_value(text: str, *, prose: bool = False) -> tuple[float, str, int] |
             return None
         value = _clean_num(match.group("account_num"))
         if value is not None:
-            value = -value
+            # Parens mean negative regardless of an inner sign: "(-25)" is
+            # the same debt as "(25)", never a credit.
+            value = -abs(value)
     else:
         value = _clean_num(match.group("num"))
         unit = match.group("unit") or ""
