@@ -19,6 +19,13 @@ import requests
 
 from backtest.loaders import stooq_loader
 
+
+@pytest.fixture(autouse=True)
+def reset_stooq_latch(monkeypatch):
+    monkeypatch.setattr(stooq_loader, "_challenge_until", 0.0)
+    yield
+
+
 _CSV = (
     "Date,Open,High,Low,Close,Volume\n"
     "2024-01-03,184.22,185.88,183.43,184.25,58414460\n"
