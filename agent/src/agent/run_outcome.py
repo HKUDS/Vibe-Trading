@@ -14,6 +14,18 @@ order they executed before the extraction.
 
 Behavior is unchanged: every branch condition and message string moved
 verbatim.
+
+One deliberate semantic delta, flagged in review: pre-extraction the
+``degraded`` flag on the end event and result dict keyed off
+``self._released_fallback`` read *after* the status ladder, so a run that
+released the fallback and then died to a cancel or stall in the narrow
+window before the ladder still stamped ``degraded=True`` on a
+non-success terminal. Post-extraction ``degraded`` only comes from the
+success branches. Both release sites set ``final_content`` first, so
+``has_output`` wins the ladder in every normal flow; the delta needs a
+cancel or watchdog stall in exactly that gap, and nothing outside
+``loop.py`` consumes the flag on failed runs. Documented here rather
+than re-plumbed, per review.
 """
 
 from __future__ import annotations
