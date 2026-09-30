@@ -92,6 +92,43 @@ class TurnoverAwareOptimizer(BaseOptimizer):
         self._prev: Dict[str, float] = {}
         self.realized_turnover: List[float] = []
 
+    def optimize(
+        self,
+        ret: pd.DataFrame,
+        pos: pd.DataFrame,
+        dates: pd.DatetimeIndex,
+    ) -> pd.DataFrame:
+        """Validate caps even when a singleton needs no weight optimization.
+
+        The base singleton path preserves the supplied allocation, including
+        cash exposure. Reject violations rather than silently ignoring caps or
+        inventing a different cash/allocation policy.
+
+        Args:
+            ret: Historical returns aligned with positions.
+            pos: Signed signal allocations.
+            dates: Decision dates aligned with positions.
+
+        Returns:
+            Allocations adjusted by the optimizer, or the validated singleton.
+
+        Raises:
+            ValueError: A supplied singleton allocation violates an explicit cap.
+        """
+        if len(pos.columns) == 1:
+            code = pos.columns[0]
+            cap = self.max_per_name
+            group = self.groups.get(code)
+            if group in self.max_per_group:
+                group_cap = self.max_per_group[group]
+                cap = min(cap, group_cap) if cap is not None else group_cap
+            if cap is not None and (pos[code].abs() > cap + 1e-7).any():
+                raise ValueError(
+                    "single-asset allocation exceeds exposure caps "
+                    f"for {code}: maximum permitted weight is {cap:.6g}"
+                )
+        return super().optimize(ret, pos, dates)
+
     def _build_context(
         self, window: pd.DataFrame, active: List[str]
     ) -> "Dict[str, Any] | None":
