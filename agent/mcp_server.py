@@ -6,7 +6,7 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 74 tools: skills, research goals, strategy discovery,
+Surfaces 75 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
@@ -1188,6 +1188,65 @@ def read_file(path: str) -> str:
     """
     registry = _get_registry()
     return registry.execute("read_file", {"path": path})
+
+
+@mcp.tool
+def read_run_artifact(
+    run_dir: str,
+    artifact: str,
+    format: str = "rows",
+    offset: int = 0,
+    max_rows: int = 1000,
+    columns: _lenient_str_list_opt = None,
+) -> str:
+    """Read a backtest run artifact as structured JSON instead of raw CSV text.
+
+    Artifacts: friendly aliases ``equity``, ``trades``, ``metrics``,
+    ``positions``, ``target_positions`` (CSVs under ``<run_dir>/artifacts/``),
+    ``ohlcv:<CODE>`` (e.g. ``ohlcv:600519.SH``) and ``run_card`` — plus any
+    run_dir-relative ``.csv``/``.json`` path listed in the run's
+    ``run_card.json`` artifacts manifest (e.g. ``artifacts/validation.json``).
+    The manifest is the trust anchor: a relative path it does not list is
+    refused, and a manifest entry pointing outside the run directory is never
+    followed.
+
+    Formats:
+
+    - ``rows``: offset paging over whole records; follow ``next_offset`` until
+      ``truncated`` is false to walk a file losslessly.
+    - ``downsample``: equal-stride sample of at most ``max_rows`` points with
+      the first and last row always pinned — one call feeds a chart.
+    - ``meta``: columns / total_rows / size_bytes, plus the manifest's
+      ``sha256`` and ``manifest_size_bytes`` for a manifest-listed artifact.
+
+    Cells arrive typed (int / float / null / string). Every envelope is
+    serialized within a bounded byte budget (~120K characters): an oversized
+    page shrinks to whole records with honest ``truncated`` / ``next_offset``
+    metadata rather than cutting mid-JSON. Errors return
+    ``{"ok": false, "error", "hint"}``.
+
+    Args:
+        run_dir: Run directory a backtest/tool call returned.
+        artifact: Alias name or manifest-listed relative path (see above);
+            anything else — including path traversal — is refused.
+        format: "rows" (default), "downsample" or "meta".
+        offset: First row index for "rows" mode (default 0).
+        max_rows: Page/sample size, clamped to [1, 5000] (default 1000).
+        columns: Optional column projection; unknown names are refused with
+            the valid list.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "read_run_artifact",
+        {
+            "run_dir": run_dir,
+            "artifact": artifact,
+            "format": format,
+            "offset": offset,
+            "max_rows": max_rows,
+            "columns": columns,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
