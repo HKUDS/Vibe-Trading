@@ -265,6 +265,25 @@ def test_a_bare_field_two_runs_hold_is_ambiguous_and_the_correction_names_the_ru
     assert "rp::sortino" in two_runs.correction_prompt(result)
 
 
+def test_a_wrong_call_ref_hints_only_refs_that_then_ground_the_figure(
+    two_runs: GroundingLedger,
+) -> None:
+    """The hint for a backtest's value names the call that wrote it, and each ref it lists validates."""
+    wrong = two_runs.validate_final_answer(
+        _declared("风险平价 Sortino 1.133。", "1.133 | observed | Sortino | bt-ew::sortino")
+    )
+
+    assert not wrong.valid
+    (issue,) = wrong.issues
+    assert issue["reason"] == "not_in_referenced_call"
+    assert issue["field_ref_candidates"]
+    for ref in issue["field_ref_candidates"]:
+        assert ref.startswith("bt-rp::")
+        assert two_runs.validate_final_answer(
+            _declared("风险平价 Sortino 1.133。", f"1.133 | observed | Sortino | {ref}")
+        ).valid, ref
+
+
 def test_one_run_holding_two_drawdowns_is_still_one_source(tmp_path: Path) -> None:
     """Engine and risk X-ray both report a max_drawdown; a ref cannot be ambiguous
     between two numbers the same run wrote."""
