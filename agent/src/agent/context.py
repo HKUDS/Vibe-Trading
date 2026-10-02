@@ -197,7 +197,9 @@ Decide which workflow to use based on the request:
   as `ref`: `data.tail_risk.var_95` or just `var_95` from `portfolio_risk_xray`,
   `historical_var` from `quantlib_call`. When more than one call returned the
   same field, name the exact call as `call_id::field` (for example
-  `q1::historical_var`); a tool name is not a call id.
+  `<call_id>::historical_var`), where `<call_id>` is the tool_call_id of that
+  tool result copied verbatim; never invent a short alias. A tool name is not
+  a call id.
   Once this session holds more than one tail-risk measurement (a VaR and an ES,
   or 95% and 99%), EVERY tail-risk figure needs that field ref — a call id or no
   declaration at all cannot say which of them you are quoting, and the figure is

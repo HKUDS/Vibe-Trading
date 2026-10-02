@@ -76,6 +76,7 @@ _CORRECTION_REASONS = {
     "ambiguous_field_ref": "{ref} names {sources}, which hold different values; use the one quoted as the ref",
     "tail_risk_needs_field_ref": "this session holds {sources}, which are different measurements; declare the figure with an exact field ref",
     "field_ref_needs_call_id": "{ref} uses a tool name before ::; use one exact call_id::field ref from {sources}",
+    "unknown_call_id": "{ref} names no call, tool or run of this session; copy a real tool_call_id, not an alias",
     "no_formula": "its note states no arithmetic",
     "formula_not_evaluable": "its note is not an arithmetic expression over two or more operands",
     "formula_not_anchored": "no operand of its note is a value this session observed",
