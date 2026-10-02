@@ -7,7 +7,7 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
-from src.agent import loop as loop_mod
+from src.agent import tuning as tuning_mod
 from src.agent.loop import AgentLoop
 
 
@@ -41,8 +41,8 @@ class _SlowWriteRegistry:
 
 def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
     """A hung tool should become a bounded diagnostic instead of heartbeating forever."""
-    monkeypatch.setattr(loop_mod, "TOOL_TIMEOUT_SECONDS", 0.05)
-    monkeypatch.setattr(loop_mod, "HEARTBEAT_INTERVAL_S", 0.01)
+    monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.05, raising=False)
+    monkeypatch.setattr(tuning_mod, "HEARTBEAT_INTERVAL_S", 0.01, raising=False)
     events: list[tuple[str, dict[str, Any]]] = []
     agent = AgentLoop(
         registry=_SlowRegistry(),  # type: ignore[arg-type]
@@ -73,8 +73,8 @@ def test_tool_timeout_returns_error_and_stops_heartbeats(monkeypatch) -> None:
 
 def test_write_tool_timeout_warns_but_does_not_return_before_completion(monkeypatch) -> None:
     """Write tools must not report failure while their side effect continues."""
-    monkeypatch.setattr(loop_mod, "TOOL_TIMEOUT_SECONDS", 0.02)
-    monkeypatch.setattr(loop_mod, "HEARTBEAT_INTERVAL_S", 0.01)
+    monkeypatch.setattr(tuning_mod, "TOOL_TIMEOUT_SECONDS", 0.02, raising=False)
+    monkeypatch.setattr(tuning_mod, "HEARTBEAT_INTERVAL_S", 0.01, raising=False)
     events: list[tuple[str, dict[str, Any]]] = []
     registry = _SlowWriteRegistry()
     agent = AgentLoop(

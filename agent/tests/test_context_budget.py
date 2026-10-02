@@ -29,6 +29,7 @@ from src.agent.context_budget import (
     resolve_window,
 )
 from src.agent.loop import AgentLoop
+import src.agent.tuning as tuning_mod
 from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.trace import TraceWriter
 from src.config.accessor import reset_env_config
@@ -269,9 +270,8 @@ def test_twelve_company_comparison_keeps_every_filing(tmp_path, monkeypatch, pro
 
 def test_the_old_fixed_threshold_evicts_the_same_run(tmp_path, monkeypatch) -> None:
     """Mutation side: the pre-fix 40K estimate clears filings mid-comparison."""
-    import src.agent.loop as loop_mod
 
-    monkeypatch.setattr(loop_mod, "TOKEN_THRESHOLD", 40_000, raising=False)
+    monkeypatch.setattr(tuning_mod, "TOKEN_THRESHOLD", 40_000, raising=False)
     _, _, _, _, trace = _run(tmp_path, monkeypatch, provider="openai-codex", model="openai-codex/gpt-6-sol")
     assert [e for e in trace if e.get("type") == "microcompact_cleared"]
 
