@@ -754,15 +754,16 @@ run from a clone (`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Broker Connectors</b> <sub>18 broker — read + paper, bounded-live bila didukung</sub></summary>
+<summary><b>Broker Connectors</b> <sub>19 broker — read + paper, bounded-live bila didukung</sub></summary>
 
-Profil berorientasi connector. Sebagian besar mendukung read + penempatan order akun paper — IBKR read-only, Robinhood live-only (tanpa akun paper), Scalable Capital read-only (tidak memiliki akun paper sama sekali), sedangkan Trading 212 dan Toss Securities menolak penempatan order sepenuhnya, termasuk paper; penempatan order live dibatasi oleh mandat yang ditentukan pengguna (allowlist simbol, batas ukuran order / eksposur, batas trade harian, dan penghentian darurat) serta tidak pernah menyimpan dana — broker yang mengeksekusi. Tool penempatan order tetap nonaktif di MCP (hanya agent + CLI). Jalur riset / backtest secara struktural tidak dapat mengakses endpoint live.
+Profil berorientasi connector. Sebagian besar mendukung read + penempatan order akun paper — IBKR read-only, Robinhood live-only (tanpa akun paper), Scalable Capital read-only (tidak memiliki akun paper sama sekali), mStock (India) live read-only via REST Type B (tanpa akun paper), sedangkan Trading 212 dan Toss Securities menolak penempatan order sepenuhnya, termasuk paper; penempatan order live dibatasi oleh mandat yang ditentukan pengguna (allowlist simbol, batas ukuran order / eksposur, batas trade harian, dan penghentian darurat) serta tidak pernah menyimpan dana — broker yang mengeksekusi. Tool penempatan order tetap nonaktif di MCP (hanya agent + CLI). Jalur riset / backtest secara struktural tidak dapat mengakses endpoint live.
 
 | Broker | Market | Kapabilitas |
 |--------|---------|--------------|
 | **IBKR** | global | local TWS / Gateway, read-only |
 | **Robinhood** | US | Agentic MCP (desktop OAuth) — read + bounded live |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — fully read-only; no paper account exists |
+| **mStock** | India (NSE/BSE) | REST (Type B) — live read-only; tidak ada akun paper |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |
 | **OKX** · **Binance** | crypto | read + paper + bounded live |
