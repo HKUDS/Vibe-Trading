@@ -363,21 +363,6 @@ _CLAIM_DATE_RE = re.compile(
 )
 
 
-def _claim_date_tuple(date_value: str) -> tuple[int, int] | None:
-    """Extract the (month, day) a report-style date cell names.
-
-    Args:
-        date_value: Date cell as written in the answer, e.g. ``08-10(周一)``.
-
-    Returns:
-        The (month, day) tuple, or None when no date prefix is present.
-    """
-    match = _CLAIM_DATE_RE.match((date_value or "").strip())
-    if match is None:
-        return None
-    return (int(match.group(2)), int(match.group(3)))
-
-
 def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
     """Match an evidence timestamp against the date cell of a claim.
 
@@ -398,15 +383,17 @@ def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
         return False
     if stamp.startswith(claim):
         return True
-    claim_tuple = _claim_date_tuple(claim)
+    match = _CLAIM_DATE_RE.match(claim)
     parts = stamp[:10].split("-")
-    if claim_tuple is None or len(parts) != 3:
+    if match is None or len(parts) != 3:
         return False
     try:
-        stamp_tuple = (int(parts[1]), int(parts[2]))
+        stamp_year, stamp_month, stamp_day = map(int, parts)
     except ValueError:
         return False
-    return stamp_tuple == claim_tuple
+    if match.group(1) is not None and stamp_year != int(match.group(1)):
+        return False
+    return (stamp_month, stamp_day) == (int(match.group(2)), int(match.group(3)))
 
 
 def _leaf_name(path: str) -> str:
@@ -716,11 +703,12 @@ class _EvidenceMixin:
         root = self.run_dir.resolve()
         candidates: list[Path] = []
         own_dir: Path | None = None
+        declared_name: str | None = None
         raw_dir = arguments.get("run_dir") or payload.get("run_dir")
         if raw_dir:
-            candidate = Path(str(raw_dir))
-            if not candidate.is_absolute():
-                candidate = self.run_dir / candidate
+            declared = Path(str(raw_dir))
+            declared_name = declared.name
+            candidate = declared if declared.is_absolute() else self.run_dir / declared
             try:
                 resolved = candidate.resolve()
                 if resolved == root or resolved.is_relative_to(root):
@@ -729,8 +717,22 @@ class _EvidenceMixin:
             except OSError:
                 pass
         # The loop archives a detached backtest's artifacts into the active run
-        # dir right after it succeeds, so that copy is the second candidate.
+        # dir right after it succeeds, so that copy is the second candidate — but
+        # only once the archive names the directory this call declared. A
+        # detached backtest's own dir sits outside the active run, so there the
+        # declared *name* is the only thing tying the archived copy to this call.
         candidates.append(root)
+        archived = (
+            declared_name is not None
+            and own_dir != root
+            and _archive_source(root) == declared_name
+        )
+        if declared_name is not None and own_dir != root and not archived:
+            candidates = [
+                item
+                for item in candidates
+                if own_dir is not None and item.is_relative_to(own_dir)
+            ]
         artifacts = payload.get("artifacts")
         if isinstance(artifacts, dict):
             for path_value in artifacts.values():
@@ -759,7 +761,7 @@ class _EvidenceMixin:
         recorded = 0
         seen_files: set[Path] = set()
         for file_path in files:
-            if file_path in seen_files:
+            if file_path in seen_files or self._is_model_written(file_path):
                 continue
             seen_files.add(file_path)
             recorded += self._record_metrics_file(file_path, call_id)
@@ -771,7 +773,7 @@ class _EvidenceMixin:
             self._record_backtest_outputs(own_dir, call_id, scope)
             # The active run holds this backtest's copy only when the loop's
             # archive names it as the source; otherwise it is an earlier run's.
-            if own_dir != root and _archive_source(root) == own_dir.name:
+            if archived:
                 self._record_backtest_outputs(root, call_id, scope)
         return recorded
 

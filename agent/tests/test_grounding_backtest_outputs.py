@@ -297,6 +297,28 @@ def test_a_table_grounds_only_the_rows_the_model_was_shown(two_runs: GroundingLe
     assert not two_runs.validate_final_answer(unseen).valid
 
 
+def test_model_written_metrics_are_not_backtest_evidence(tmp_path: Path) -> None:
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    run_dir = tmp_path / "rp"
+    _write_backtest(run_dir, RP)
+    _backtest(ledger, run_dir, "bt-rp")
+    metrics = run_dir / "artifacts" / "metrics.csv"
+    metrics.write_text("sharpe\n0.693563\n", encoding="utf-8")
+    ledger.ingest_tool_result(
+        tool_name="write_file",
+        arguments={"path": str(metrics)},
+        result=json.dumps({"status": "ok", "path": str(metrics)}),
+        call_id="model-write-metrics",
+        success=True,
+    )
+    _backtest(ledger, run_dir, "bt-after-write")
+
+    assert not any(
+        row.get("metric") == "sharpe" and row.get("call_id") == "bt-after-write"
+        for row in ledger._analysis_metrics
+    )
+
+
 def test_a_file_the_model_wrote_is_never_engine_output(tmp_path: Path) -> None:
     """Neither a table written before the backtest nor one edited after it."""
     ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
@@ -340,6 +362,75 @@ def test_a_summary_file_the_run_card_does_not_vouch_for_is_ignored(tmp_path: Pat
 
     assert not unvouched.valid
     assert vouched.valid, vouched.issues
+
+
+def test_stale_active_metrics_are_not_attributed_to_a_detached_backtest(tmp_path: Path) -> None:
+    """The active run's metrics file is an earlier run's until the archive names this one."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测")
+    _write_backtest(tmp_path, EW)
+    _write_backtest(tmp_path / "rp", RP)
+
+    _backtest(ledger, tmp_path / "rp", "bt-rp")
+
+    recorded = [
+        item["value"] for item in ledger._analysis_metrics if item.get("call_id") == "bt-rp"
+    ]
+    assert RP["sharpe"] in recorded
+    assert EW["sharpe"] not in recorded
+
+
+def test_a_detached_backtest_cannot_inherit_the_active_runs_copy(tmp_path: Path) -> None:
+    """A run dir outside the active run has no claim on what that dir holds.
+
+    The tool declares a run_dir elsewhere on disk while the active run dir
+    happens to hold an earlier run's metrics; the manifest names that earlier
+    run, so none of its figures were produced by this call.
+    """
+    active = tmp_path / "active"
+    active.mkdir(parents=True)
+    _write_backtest(active, EW)
+    (active / ARCHIVE_MANIFEST).write_text(
+        json.dumps({"source_run": "an-earlier-run"}), encoding="utf-8"
+    )
+    detached = tmp_path / "detached-bt"
+    _write_backtest(detached, RP)
+    ledger = GroundingLedger(run_dir=active, user_message="回测")
+
+    _backtest(ledger, detached, "bt-detached")
+
+    recorded = [
+        item["value"]
+        for item in ledger._analysis_metrics
+        if item.get("call_id") == "bt-detached"
+    ]
+    assert EW["sharpe"] not in recorded
+    assert EW["total_return"] not in recorded
+
+
+def test_a_detached_backtests_archived_copy_counts_once_vouched_for(tmp_path: Path) -> None:
+    """The loop's archive into the active run counts once the manifest names the source."""
+    active = tmp_path / "active"
+    active.mkdir(parents=True)
+    detached = tmp_path / "detached-bt"
+    _write_backtest(detached, RP)
+    for name in ("metrics.csv", "risk_xray.json", "validation.json"):
+        target = active / "artifacts" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((detached / "artifacts" / name).read_bytes())
+    (active / "run_card.json").write_bytes((detached / "run_card.json").read_bytes())
+    (active / ARCHIVE_MANIFEST).write_text(
+        json.dumps({"source_run": detached.name}), encoding="utf-8"
+    )
+    ledger = GroundingLedger(run_dir=active, user_message="回测")
+
+    _backtest(ledger, detached, "bt-detached")
+
+    recorded = [
+        item["value"]
+        for item in ledger._analysis_metrics
+        if item.get("call_id") == "bt-detached"
+    ]
+    assert RP["sharpe"] in recorded
 
 
 def test_the_active_runs_copy_belongs_to_the_backtest_the_archive_names(tmp_path: Path) -> None:
