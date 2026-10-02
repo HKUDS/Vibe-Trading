@@ -51,6 +51,8 @@ _LIVE_CAPABLE = frozenset(
         # against. Tier settled as bounded live in #1367; the profile that ships
         # today is read-only and exposes no order capability.
         "scalable",
+        # mStock has only a production host and no paper environment, so no discriminator ambiguity exists (#1367).
+        "mstock",
     }
 )
 
