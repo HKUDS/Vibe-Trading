@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from src.config.paths import get_runtime_root
+from src.memory.search_index import MemorySearchIndex
 
 logger = logging.getLogger(__name__)
 
@@ -180,10 +181,16 @@ class SessionSearchIndex:
         if not content or not content.strip():
             return
         conn = self._get_conn()
+        # FTS5's default tokenizer has no notion of CJK word boundaries, so a
+        # run of Chinese/Japanese/Korean characters indexes as one token
+        # spanning the whole run. Storing it pre-split into unigrams/bigrams
+        # (the same scheme _sanitize_fts_query queries with) is what makes a
+        # CJK query match anything shorter than the entire message.
+        prepared = MemorySearchIndex._prepare_cjk(content[:50_000])
         conn.execute(
             "INSERT INTO messages (session_id, role, content, tool_name, timestamp) "
             "VALUES (?, ?, ?, ?, ?)",
-            (session_id, role, content[:50_000], tool_name, time.time()),
+            (session_id, role, prepared, tool_name, time.time()),
         )
         conn.execute(
             "UPDATE sessions SET message_count = message_count + 1 WHERE id = ?",
@@ -195,7 +202,9 @@ class SessionSearchIndex:
     def _sanitize_fts_query(query: str) -> str:
         """Sanitize a user query for FTS5 MATCH syntax.
 
-        - Splits on non-alphanumeric/CJK to extract tokens
+        - Splits on non-alphanumeric/CJK to extract tokens, expanding a run
+          of CJK characters into the same unigram+bigram tokens
+          ``index_message`` stores content as (see ``MemorySearchIndex``)
         - Joins with OR so any-word-matches (not all-words-required)
         - Quotes each token to prevent FTS5 operator interpretation
 
@@ -205,13 +214,7 @@ class SessionSearchIndex:
         Returns:
             FTS5-safe MATCH expression.
         """
-        import re as _re
-        # Extract alphanumeric tokens (3+ chars) and CJK characters
-        tokens = _re.findall(r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff\u3400-\u4dbf]", query)
-        if not tokens:
-            return '""'
-        # Quote each token and join with OR for broader matching
-        return " OR ".join(f'"{t}"' for t in tokens)
+        return MemorySearchIndex._sanitize_fts_query(query)
 
     def search(self, query: str, max_sessions: int = 3) -> List[SearchMatch]:
         """Full-text search across all sessions.
@@ -258,7 +261,7 @@ class SessionSearchIndex:
                 title=row[1] or "(untitled)",
                 started_at=self._format_time(row[2]),
                 message_count=row[3],
-                snippet=row[4],
+                snippet=MemorySearchIndex._clean_cjk(row[4] or ""),
                 rank=row[5],
             )
             if len(seen) >= max_sessions:
