@@ -72,6 +72,11 @@ dependencies = [
     "jinja2>=3.1.0",
     "matplotlib>=3.7.0",
     "weasyprint>=60.0",
+    # weasyprint needs system pango/cairo libraries pip cannot install; where
+    # they are missing the shadow report degraded to HTML-only. reportlab
+    # ships binary wheels everywhere and backs the pure-Python PDF fallback
+    # (shadow_account/pdf_fallback.py) so the PDF renders on any host.
+    "reportlab>=4.0",
     "prompt_toolkit>=3.0.0",
 ]
 

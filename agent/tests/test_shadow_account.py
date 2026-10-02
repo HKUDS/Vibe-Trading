@@ -912,7 +912,7 @@ def test_render_shadow_report_emits_html(profitable_journal: Path, tmp_path: Pat
     assert profile.shadow_id in content
     assert "Delta Attribution" in content  # Section 5
     assert "Counterfactual" in content      # Section 6
-    assert out["engine"] in ("weasyprint", "html-only")
+    assert out["engine"] in ("weasyprint", "reportlab", "html-only")
 
 
 @pytest.mark.unit
@@ -1021,6 +1021,76 @@ def test_weasyprint_probe_is_cached_when_available(
         assert pdf_path is not None and pdf_path.exists()
 
     assert attempts == ["weasyprint"]
+
+
+@pytest.mark.unit
+def test_reportlab_fallback_renders_pdf_when_weasyprint_missing(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hosts without weasyprint's system libs still get a PDF via reportlab."""
+    from src.shadow_account import reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)  # probe already failed
+    profile = extract_shadow_profile(profitable_journal)
+    result = _stub_backtest_result(profile)
+
+    out = reporter.render_shadow_report(profile, result, output_dir=tmp_path)
+
+    assert out["engine"] == "reportlab"
+    pdf_path = Path(out["pdf_path"])
+    assert pdf_path.exists()
+    assert pdf_path.read_bytes()[:5] == b"%PDF-"
+    assert pdf_path.stat().st_size > 2000
+
+
+@pytest.mark.unit
+def test_reportlab_fallback_escapes_cjk_and_markup_chars(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CJK text and XML-special chars in run data must not break platypus."""
+    from src.shadow_account import reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)
+    profile = extract_shadow_profile(profitable_journal)
+    result = _stub_backtest_result(profile)
+    signals = [
+        {
+            "symbol": "600519.SH",
+            "market": "china_a",
+            "rule_id": "R1",
+            "reason": "匹配影子规则 <b> & 其他",
+        }
+    ]
+
+    out = reporter.render_shadow_report(
+        profile, result, today_signals=signals, output_dir=tmp_path,
+    )
+
+    assert out["engine"] == "reportlab"
+    assert Path(out["pdf_path"]).exists()
+
+
+@pytest.mark.unit
+def test_pdf_degrades_to_html_only_when_both_engines_fail(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTML remains the last resort, and no partial PDF is left behind."""
+    from src.shadow_account import reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)
+
+    def boom(**kwargs: object) -> None:
+        raise RuntimeError("no reportlab")
+
+    monkeypatch.setattr(reporter, "render_pdf_reportlab", boom)
+    profile = extract_shadow_profile(profitable_journal)
+    result = _stub_backtest_result(profile)
+
+    out = reporter.render_shadow_report(profile, result, output_dir=tmp_path)
+
+    assert out["engine"] == "html-only"
+    assert out["pdf_path"] is None
+    assert not (tmp_path / f"{profile.shadow_id}.pdf").exists()
 
 
 # ---------------- M5/M6: Tool wrappers + scanner ----------------

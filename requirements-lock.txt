@@ -354,9 +354,7 @@ brotli==1.2.0 ; platform_python_implementation == 'CPython' \
     --hash=sha256:f8d635cafbbb0c61327f942df2e3f474dde1cff16c3cd0580564774eaba1ee13 \
     --hash=sha256:fc1530af5c3c275b8524f2e24841cbe2599d74462455e9bae5109e9ff42e9361 \
     --hash=sha256:ff09cd8c5eec3b9d02d2408db41be150d8891c5566addce57513bf546e3d6c6d
-    # via
-    #   fonttools
-    #   httpx
+    # via fonttools
 brotlicffi==1.2.0.1 ; platform_python_implementation != 'CPython' \
     --hash=sha256:2c85e65913cf2b79c57a3fdd05b98d9731d9255dc0cb696b09376cc091b9cddd \
     --hash=sha256:37cb587d32bf7168e2218c455e22e409ad1f3157c6c71945879a311f3e6b6abf \
@@ -373,9 +371,7 @@ brotlicffi==1.2.0.1 ; platform_python_implementation != 'CPython' \
     --hash=sha256:da2e82a08e7778b8bc539d27ca03cdd684113e81394bfaaad8d0dfc6a17ddede \
     --hash=sha256:e015af99584c6db1490a69a210c765953e473e63adc2d891ac3062a737c9e851 \
     --hash=sha256:f2a5575653b0672638ba039b82fda56854934d7a6a24d4b8b5033f73ab43cbc1
-    # via
-    #   fonttools
-    #   httpx
+    # via fonttools
 bs4==0.0.2 \
     --hash=sha256:a48685c58f50fe127722417bae83fe6badf500d54b55f7e39ffe43b798653925 \
     --hash=sha256:abf8742c0805ef7f662dce4b51cca104cffe52b835238afc169142ab9b3fbccc
@@ -431,6 +427,7 @@ certifi==2026.6.17 \
     #   curl-cffi
     #   httpcore
     #   httpx
+    #   langchain-openai
     #   requests
 cffi==2.0.0 \
     --hash=sha256:00bdf7acc5f795150faa6957054fbbca2439db2f775ce831222b66f192f03beb \
@@ -655,6 +652,7 @@ charset-normalizer==3.4.7 \
     --hash=sha256:fea24543955a6a729c45a73fe90e08c743f0b3334bbf3201e6c4bc1b0c7fa464
     # via
     #   ccxt
+    #   reportlab
     #   requests
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
@@ -718,9 +716,7 @@ coincurve==21.0.0 ; python_full_version < '3.14' and implementation_name == 'cpy
 colorama==0.4.6 ; sys_platform == 'win32' \
     --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
     --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
-    # via
-    #   click
-    #   tqdm
+    # via tqdm
 contourpy==1.3.3 \
     --hash=sha256:023b44101dfe49d7d53932be418477dba359649246075c996866106da069af69 \
     --hash=sha256:07ce5ed73ecdc4a03ffe3e1b3e3c1166db35ae7584be76f65dbbe28a7791b0cc \
@@ -962,10 +958,6 @@ exceptiongroup==1.3.1 \
     --hash=sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219 \
     --hash=sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
     # via fastmcp-slim
-fake-useragent==2.2.0 \
-    --hash=sha256:4e6ab6571e40cc086d788523cf9e018f618d07f9050f822ff409a4dfe17c16b2 \
-    --hash=sha256:67f35ca4d847b0d298187443aaf020413746e56acd985a611908c73dba2daa24
-    # via ddgs
 fastapi==0.141.1 \
     --hash=sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3 \
     --hash=sha256:e8822fc40db1e1858054d7a949a888695bc9bdce70139178e33bd2871a453ca1
@@ -1180,9 +1172,7 @@ h11==0.16.0 \
 h2==4.4.1 \
     --hash=sha256:0e25f1462b23c9cb82d9eb02e28bc706dac2a68cb457c6a0d74d63c8a2a5d0e6 \
     --hash=sha256:4e866ffb1a869ae14dd9b5e6beb5c24a13da0495ad72b65925ded182521c1516
-    # via
-    #   -r agent/requirements.txt
-    #   httpx
+    # via -r agent/requirements.txt
 hpack==4.2.0 \
     --hash=sha256:0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0 \
     --hash=sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986
@@ -1252,8 +1242,8 @@ httpx==0.28.1 \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
     #   -r agent/requirements.txt
-    #   ddgs
     #   fastmcp-slim
+    #   langchain-core
     #   langgraph-sdk
     #   langsmith
     #   mcp
@@ -1829,6 +1819,7 @@ lxml==6.1.2 \
     #   python-docx
     #   python-pptx
     #   tushare
+    #   yfinance
 markdown-it-py==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
     --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
@@ -2559,6 +2550,7 @@ pillow==12.3.0 \
     #   -r agent/requirements.txt
     #   matplotlib
     #   python-pptx
+    #   reportlab
     #   weasyprint
 platformdirs==4.11.5 \
     --hash=sha256:89f8d42695853b89c7170bd49bc3dc593f98a71e695ede88e06a3b247bc4563b \
@@ -3214,6 +3206,10 @@ regex==2026.7.19 \
     --hash=sha256:fe31f28c94402043161876a258a9c6f757cb485905c7614ce8d6cd40e6b7bdc1 \
     --hash=sha256:ffd8893ccc1c2fce6e0d6ca402d716fe1b29db70c7132609a05955e31b2aa8f2
     # via tiktoken
+reportlab==5.0.1 \
+    --hash=sha256:1c36e6bb0e71780c72331eba60da7f602e8d4389a8723825af71342e49d791e8 \
+    --hash=sha256:ebd13154be1c8515e665de70bd2d303ae9ddc3ef47e44afd5116441ca0283a26
+    # via -r agent/requirements.txt
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
@@ -3574,10 +3570,6 @@ sniffio==1.3.1 \
     # via
     #   langsmith
     #   openai
-socksio==1.0.0 \
-    --hash=sha256:95dc1f15f9b34e8d7b16f06d74b8ccf48f609af32ab33c608d08761c5dcbb1f3 \
-    --hash=sha256:f88beb3da5b5c38b9890469de67d0cb0f9d494b78b106ca1845f96c10b91c4ac
-    # via httpx
 soupsieve==2.9.2 \
     --hash=sha256:4a55d8cf158a9c2e587fa4922f1bbb91d68ac829e2d6f25403a85747c71daf74 \
     --hash=sha256:8089a26fd974ca7a1f30276d3d8492ab266ab15af581642dfe8aa162e0c1c823

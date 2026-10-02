@@ -54,6 +54,11 @@ def _system_cjk_candidates() -> list[Path]:
     return candidates
 
 
+def system_cjk_candidates() -> list[Path]:
+    """Public alias: reportlab needs this list but not the download path."""
+    return _system_cjk_candidates()
+
+
 def cjk_font_path(*, allow_download: bool = True, timeout: float = 10.0) -> Optional[Path]:
     """Resolve a CJK font file path.
 
