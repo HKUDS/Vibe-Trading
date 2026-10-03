@@ -54,7 +54,6 @@ from src.providers.session_context import bind_llm_session_id, reset_llm_session
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
     MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS,
-    compute_content_filter_warnings,
 )
 from src.config.accessor import get_env_config
 from src.config.paths import get_runs_dir, get_sessions_dir
@@ -902,6 +901,13 @@ from src.agent.tool_results import (  # noqa: E402
     _normalize_tool_run_dir,
     _previously_archived as _previously_archived,
     _archive_backtest_result,
+)
+from src.agent.run_outcome import (  # noqa: E402
+    OutcomeInputs,
+    RunOutcome as RunOutcome,  # noqa: F401 — re-exported for callers/tests
+    build_end_event,
+    build_result_dict,
+    resolve_final_status,
 )
 
 
@@ -2093,108 +2099,55 @@ class AgentLoop:
         # Determine final status. The reason is also propagated into the
         # returned dict so SessionService can surface a meaningful UI
         # message instead of "Execution failed: unknown" (issue #114).
-        final_reason: str | None = None
-        if self._stall_reason is not None:
-            # The stall watchdog already wrote the failed state; keep this
-            # run's terminal status honest instead of overwriting it.
-            final_reason = self._stall_reason
-            final_status = "failed"
-        elif self._cancel_event.is_set():
-            final_reason = "cancelled by user"
-            state_store.mark_cancelled(run_dir, final_reason)
-            final_status = "cancelled"
-        elif no_progress_reason is not None:
-            final_reason = no_progress_reason
-            state_store.mark_failure(run_dir, final_reason)
-            final_status = "failed"
-        elif content_filter_circuit_breaker:
-            final_reason = (
-                f"content_filter_circuit_breaker: "
-                f"{MAX_CONSECUTIVE_CONTENT_FILTER_SKIPS} consecutive LLM "
-                "responses were blocked by content moderation"
-            )
-            state_store.mark_failure(run_dir, final_reason)
-            final_status = "failed"
-        elif (run_dir / "artifacts" / "metrics.csv").exists() or final_content:
-            state_store.mark_success(run_dir)
-            final_status = "success"
-            if self._released_fallback:
-                final_reason = self._released_fallback_reason or (
-                    "final answer degraded to the deterministic fallback after "
-                    f"{self._grounding.validation_count if self._grounding else 0} "
-                    "rejected drafts could not be corrected within the iteration budget"
-                )
-            elif not self._released_fallback:
-                pending_directive = self._pending_write_directive(
+        outcome = resolve_final_status(
+            OutcomeInputs(
+                stall_reason=self._stall_reason,
+                cancelled=self._cancel_event.is_set(),
+                no_progress_reason=no_progress_reason,
+                content_filter_circuit_breaker=content_filter_circuit_breaker,
+                has_output=(run_dir / "artifacts" / "metrics.csv").exists() or bool(final_content),
+                released_fallback=self._released_fallback,
+                released_fallback_reason=self._released_fallback_reason,
+                grounding_validation_count=(
+                    self._grounding.validation_count if self._grounding else 0
+                ),
+                pending_write_directive=lambda: self._pending_write_directive(
                     user_message, run_started_wall
-                )
-                if pending_directive:
-                    final_reason = (
-                        "run ended without writing the task target file(s): "
-                        + pending_directive
-                    )
-                    self._released_fallback = True
-        elif empty_model_response_iter is not None:
-            provider = self._llm_runtime.provider
-            model = self._llm_runtime.configured_model or "(unset)"
-            final_reason = (
-                "empty_model_response: "
-                f"provider={provider} model={model} iteration {empty_model_response_iter} "
-                "returned no content and no tool calls"
+                ),
+                empty_model_response_iter=empty_model_response_iter,
+                empty_response_provider=self._llm_runtime.provider,
+                empty_response_model=self._llm_runtime.configured_model or "(unset)",
+                max_iterations=self.max_iterations,
             )
-            state_store.mark_failure(run_dir, final_reason)
-            final_status = "failed"
-        else:
-            final_reason = (
-                f"reached max iterations ({self.max_iterations}) without final answer"
-            )
-            state_store.mark_failure(run_dir, final_reason)
-            final_status = "failed"
+        )
+        final_reason = outcome.reason
+        if outcome.mark == "cancelled":
+            state_store.mark_cancelled(run_dir, final_reason or "cancelled by user")
+        elif outcome.mark == "failure":
+            state_store.mark_failure(run_dir, final_reason or "")
+        elif outcome.mark == "success":
+            state_store.mark_success(run_dir)
+        if outcome.mark == "success" and outcome.degraded and final_reason and not self._released_fallback:
+            # A success that ended without writing the target file(s): the
+            # pre-extraction code flagged it degraded only for this case.
+            self._released_fallback = True
 
-        end_event: dict[str, Any] = {
-            "type": "end",
-            "iter": self._run_iteration,
-            "status": final_status,
-            "iterations": iteration,
-        }
-        if self._released_fallback:
-            end_event["degraded"] = True
-        if final_reason is not None:
-            end_event["reason"] = final_reason
-        trace.write(end_event)
+        trace.write(build_end_event(outcome, self._run_iteration, iteration))
         trace.close()
 
-        result: dict[str, Any] = {
-            "status": final_status,
-            "run_dir": str(run_dir),
-            "run_id": run_dir.name,
-            "content": final_content,
-            "react_trace": react_trace,
-            "iterations": iteration,
-            "max_iterations": self.max_iterations,
-        }
-        if self._released_fallback:
-            result["degraded"] = True
-        configured_model = self._llm_runtime.configured_model
-        result.update(
-            {
-                "provider": self._llm_runtime.provider,
-                "configured_model": configured_model,
-                "model": last_response_model or configured_model,
-                "model_source": "provider_response" if last_response_model else "configured",
-                "reasoning_effort": self._llm_runtime.reasoning_effort,
-            }
+        result = build_result_dict(
+            outcome,
+            run_dir,
+            react_trace,
+            iteration,
+            self.max_iterations,
+            final_content,
+            self._llm_runtime,
+            last_response_model,
+            content_filter_count,
         )
-        if final_reason is not None:
-            result["reason"] = final_reason
 
         self._run_done.set()
-
-        cf_warnings = compute_content_filter_warnings(
-            content_filter_count, max(1, iteration),
-        )
-        if cf_warnings:
-            result["content_filter_warnings"] = cf_warnings
 
         return result
 
