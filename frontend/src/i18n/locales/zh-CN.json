@@ -143,6 +143,23 @@
     "advancedHint": "在所选时区求值的 5 字段 cron 表达式（分 时 日 月 星期；支持列表和范围），或以毫秒为单位的间隔。",
     "timezoneLabel": "时区",
     "create": "创建定时任务",
+    "saveChanges": "保存更改",
+    "cancelEdit": "取消编辑",
+    "editingHint": "正在编辑此定时任务。保存后将保留其标识和执行历史。",
+    "edit": "编辑",
+    "editAria": "编辑定时任务：{{prompt}}",
+    "editRunningDisabled": "请等待此任务执行完成后再编辑。",
+    "deliveryInApp": "仅保留在 Vibe 中（不发送）",
+    "deliveryNoChannels": "尚未配置已启用的投递渠道。请在“设置 → 渠道”中配置一个。",
+    "deliveryChannelsLoadFailed": "无法加载已配置的投递渠道。",
+    "deliveryChannelUnavailable": "{{channel}}（当前不可用）",
+    "deliveryTargetKind_destination": "目标",
+    "deliveryTargetKind_email_address": "收件人邮箱地址",
+    "deliveryTargetKind_chat": "聊天",
+    "deliveryTargetKind_channel": "频道",
+    "deliveryTargetDisabled": "请先选择投递渠道。",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "已配置目标",
     "promptRequired": "请先填写研究提示词再创建定时任务。",
     "invalidTime": "请输入有效时间（格式 HH:MM）。",
     "executorHint": "仅当服务端启用 VIBE_TRADING_ENABLE_SCHEDULER 时才会执行。",
@@ -197,7 +214,10 @@
     "verdictUnreadable": "最新判定无法解析",
     "verdictNoCalls": "无调用",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "记于 {{when}}"
+    "verdictRecorded": "记于 {{when}}",
+    "deliveryKnownTargetLabel": "已知目标",
+    "deliveryKnownTargetPlaceholder": "选择已知目标…",
+    "deliverySuggestionKind_private_chat": "我的私聊"
   },
   "reports": {
     "badge": "报告",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-

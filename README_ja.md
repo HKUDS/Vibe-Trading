@@ -1246,6 +1246,8 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 エージェントに見えるスケジューリングツールは `scheduled_research` の 1 つだけです。読み取り系アクションは状態/ジョブ/テンプレートを照会し、`propose_create` と `propose_cancel` は短時間で失効する確認プロポーザルを保存するだけで、ジョブストアを直接変更することはありません。Web は決定的な確認カードを表示し、CLI は `y/N` を尋ね、IM 会話では正確に `confirm`（`确认`）または `cancel`（`取消`）と返信する必要があります——commit エンドポイントを呼ぶのはこれらの操作だけです。`end_at` を過ぎたジョブは `expired` になり、再実行されません。配信はチャネル非依存です。`channels.deliveryTargets` に再利用可能な不透明ターゲット参照を設定すると、エージェントと確認 UI には ref/label/channel のみが見え、プロバイダの生の chat/user id は渡りません。アダプタが受領証なしで成功した場合の配信状態は `accepted`、プロバイダのメッセージ id が返ったときだけ `sent` になります（現在は Feishu がエンドツーエンド対応）。
 
+Web UI では既存の定期ジョブをその場で編集できます。prompt、cadence/timezone、配信設定は `PATCH /scheduled-runs/{job_id}` で更新され、ジョブを削除して作り直さないため id と実行履歴が維持されます。実行中のジョブはその実行が終わるまで編集を拒否します。配信先は引き続き operator が管理し、各 channel adapter が宛先フィールドのラベル、placeholder、input type を宣言しつつ、手入力もそのまま使えます。adapter は既知の宛先候補を任意で提示でき、選択すると同じ手入力フィールドを埋めるだけです。たとえば Telegram はローカルの `allow_from` にある数値の private-chat id を候補にでき、username と wildcard は候補にしません。
+
 スケジューラには**すぐ使えるリサーチテンプレートが 5 本**同梱されています —— `premarket-brief`、`earnings-season-tracker`、`portfolio-checkup`、`a-share-money-flow`、`institutional-holdings-diff`。各テンプレートはツール名を挙げず、必要なデータを自然言語で宣言するため、ツール面が広がってもそのまま機能します。また、欠けている入力は記憶で埋めず**明示する**ことが求められます。CLI、REST、TUI の `/playbook` から利用できます：
 
 ```bash

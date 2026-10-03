@@ -143,6 +143,23 @@
     "advancedHint": "تعبير cron من 5 حقول يُقيّم في المنطقة الزمنية المحددة (دقيقة ساعة يوم شهر يوم-أسبوع؛ تُدعم القوائم والنطاقات)، أو فاصل زمني بالمللي ثانية.",
     "timezoneLabel": "المنطقة الزمنية",
     "create": "إنشاء جدولة",
+    "saveChanges": "حفظ التغييرات",
+    "cancelEdit": "إلغاء التعديل",
+    "editingHint": "أنت تعدّل هذا التشغيل المجدول. يحافظ الحفظ على هويته وسجل التنفيذ.",
+    "edit": "تعديل",
+    "editAria": "تعديل التشغيل المجدول: {{prompt}}",
+    "editRunningDisabled": "انتظر حتى ينتهي هذا التشغيل قبل تعديله.",
+    "deliveryInApp": "الاحتفاظ في Vibe فقط (عدم الإرسال)",
+    "deliveryNoChannels": "لا توجد قنوات تسليم مفعّلة ومهيأة. هيّئ واحدة في الإعدادات > القنوات.",
+    "deliveryChannelsLoadFailed": "تعذّر تحميل قنوات التسليم المهيأة.",
+    "deliveryChannelUnavailable": "{{channel}} (غير متاح حاليًا)",
+    "deliveryTargetKind_destination": "الوجهة",
+    "deliveryTargetKind_email_address": "عنوان البريد الإلكتروني للمستلم",
+    "deliveryTargetKind_chat": "المحادثة",
+    "deliveryTargetKind_channel": "القناة",
+    "deliveryTargetDisabled": "اختر قناة تسليم أولًا.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "وجهة مهيأة",
     "promptRequired": "أدخل موجّه البحث قبل إنشاء الجدولة.",
     "invalidTime": "أدخل وقتًا صالحًا بصيغة HH:MM.",
     "executorHint": "تُنفّذ المهام فقط عندما يعمل الخادم مع تفعيل VIBE_TRADING_ENABLE_SCHEDULER.",
@@ -197,7 +214,10 @@
     "verdictUnreadable": "تعذر قراءة أحدث تقييم",
     "verdictNoCalls": "لا إشارات",
     "verdictDelta": "{{was}} ← {{now}}",
-    "verdictRecorded": "اعتبارًا من {{when}}"
+    "verdictRecorded": "اعتبارًا من {{when}}",
+    "deliveryKnownTargetLabel": "وجهة معروفة",
+    "deliveryKnownTargetPlaceholder": "اختر وجهة معروفة…",
+    "deliverySuggestionKind_private_chat": "محادثتي الخاصة"
   },
   "reports": {
     "badge": "التقارير",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-

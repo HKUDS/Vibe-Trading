@@ -355,6 +355,9 @@ class DiscordChannel(BaseChannel):
 
     name = "discord"
     display_name = "Discord"
+    delivery_target_label = "Discord channel"
+    delivery_target_kind = "channel"
+    delivery_target_placeholder = "Channel ID"
     _STREAM_EDIT_INTERVAL = 0.8
 
     @classmethod

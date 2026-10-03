@@ -148,6 +148,23 @@
     "advancedHint": "Ein 5-Feld-Cron-Ausdruck, ausgewertet in der gewählten Zeitzone (Minute Stunde Tag Monat Wochentag; Listen und Bereiche erlaubt), oder ein reines Intervall in Millisekunden.",
     "timezoneLabel": "Zeitzone",
     "create": "Lauf planen",
+    "saveChanges": "Änderungen speichern",
+    "cancelEdit": "Bearbeitung abbrechen",
+    "editingHint": "Dieser geplante Lauf wird bearbeitet. Beim Speichern bleiben Identität und Ausführungsverlauf erhalten.",
+    "edit": "Bearbeiten",
+    "editAria": "Geplanten Lauf bearbeiten: {{prompt}}",
+    "editRunningDisabled": "Warten Sie, bis dieser Lauf beendet ist, bevor Sie ihn bearbeiten.",
+    "deliveryInApp": "Nur in Vibe behalten (nicht senden)",
+    "deliveryNoChannels": "Es sind keine aktivierten Zustellungskanäle konfiguriert. Konfigurieren Sie einen unter Einstellungen → Kanäle.",
+    "deliveryChannelsLoadFailed": "Konfigurierte Zustellungskanäle konnten nicht geladen werden.",
+    "deliveryChannelUnavailable": "{{channel}} (derzeit nicht verfügbar)",
+    "deliveryTargetKind_destination": "Ziel",
+    "deliveryTargetKind_email_address": "E-Mail-Adresse des Empfängers",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Kanal",
+    "deliveryTargetDisabled": "Wählen Sie zuerst einen Zustellungskanal.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Konfiguriertes Ziel",
     "promptRequired": "Geben Sie einen Recherche-Prompt ein, bevor Sie planen.",
     "invalidTime": "Geben Sie eine gültige Zeit als HH:MM ein.",
     "executorHint": "Läufe werden nur ausgeführt, wenn der Server mit aktiviertem VIBE_TRADING_ENABLE_SCHEDULER gestartet wurde.",
@@ -202,7 +219,10 @@
     "verdictUnreadable": "Letztes Urteil nicht lesbar",
     "verdictNoCalls": "Keine Calls",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "Stand {{when}}"
+    "verdictRecorded": "Stand {{when}}",
+    "deliveryKnownTargetLabel": "Bekanntes Ziel",
+    "deliveryKnownTargetPlaceholder": "Bekanntes Ziel auswählen…",
+    "deliverySuggestionKind_private_chat": "Privater Chat"
   },
   "reports": {
     "badge": "Berichte",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-

@@ -99,6 +99,10 @@ class EmailChannel(BaseChannel):
 
     name = "email"
     display_name = "Email"
+    delivery_target_label = "Recipient email address"
+    delivery_target_kind = "email_address"
+    delivery_target_placeholder = "name@example.com"
+    delivery_target_input_type = "email"
     supports_connection_test = True
     _IMAP_MONTHS = (
         "Jan",

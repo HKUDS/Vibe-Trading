@@ -1551,6 +1551,8 @@ when an adapter succeeded without a provider receipt, and `sent` only when the
 adapter returned a provider message id (currently implemented end to end for
 Feishu). Failures remain retryable in the persisted outbox.
 
+On the Web UI, scheduled jobs can be edited in place: prompt, cadence/timezone, and delivery settings are updated with `PATCH /scheduled-runs/{job_id}` without deleting the job, so its id and run history stay intact. A job that is currently running refuses edits until that dispatch finishes. Delivery remains operator-controlled: each channel adapter describes the destination label, placeholder, and input type, while the manual target field remains available. Adapters may also expose optional known-destination suggestions; selecting one only fills that same manual field. Telegram, for example, can suggest numeric private-chat ids already present in its local `allow_from` list, while usernames and wildcards are ignored.
+
 **Five ready-to-schedule templates** ship with the scheduler — `premarket-brief`, `earnings-season-tracker`, `portfolio-checkup`, `a-share-money-flow`, `institutional-holdings-diff`. Each states the data a run needs in plain language instead of naming tools, so a template keeps working as the tool surface grows, and each is required to name a missing input rather than fill it from memory. Reach them from the CLI, over REST, or with `/playbook` in the TUI:
 
 ```bash

@@ -1247,6 +1247,8 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 에이전트에게 보이는 스케줄링 도구는 `scheduled_research` 하나뿐입니다. 읽기 액션은 상태/작업/템플릿을 조회하고, `propose_create` 와 `propose_cancel` 은 짧게 유지되는 확인 제안만 저장할 뿐 작업 저장소를 직접 변경하지 않습니다. Web 은 결정적 확인 카드를 렌더링하고 CLI 는 `y/N` 을 물으며, IM 대화에서는 정확히 `confirm`(`确认`) 또는 `cancel`(`取消`) 로 답해야 합니다 — commit 엔드포인트를 호출하는 것은 이 표면 동작뿐입니다. `end_at` 이 지난 작업은 `expired` 가 되어 다시 실행되지 않습니다. 전달은 채널 중립적입니다. `channels.deliveryTargets` 아래에 재사용 가능한 불투명 대상 참조를 구성하면 에이전트와 확인 UI 에는 ref/label/channel 만 보이고 프로바이더의 원시 chat/user id 는 노출되지 않습니다. 어댑터가 영수증 없이 성공하면 전달 상태는 `accepted`, 프로바이더 메시지 id 가 반환될 때만 `sent` 입니다(현재 Feishu 가 엔드투엔드 지원).
 
+Web UI에서는 기존 예약 작업을 제자리에서 편집할 수 있습니다. prompt, cadence/timezone, delivery 설정은 작업을 삭제하고 다시 만들지 않고 `PATCH /scheduled-runs/{job_id}`로 갱신되므로 id와 실행 이력이 유지됩니다. 실행 중인 작업은 현재 실행이 끝날 때까지 편집을 거부합니다. 전달 대상은 계속 operator가 제어하며 각 channel adapter가 대상 필드의 label, placeholder, input type을 설명하고 수동 입력도 그대로 사용할 수 있습니다. adapter는 선택적으로 알려진 대상 후보를 제공할 수 있고, 선택하면 같은 수동 입력 필드만 채웁니다. 예를 들어 Telegram은 로컬 `allow_from`에 이미 있는 숫자형 private-chat id를 제안할 수 있으며 username과 wildcard는 제외합니다.
+
 스케줄러에는 **바로 예약할 수 있는 리서치 템플릿 5개**가 들어 있습니다 — `premarket-brief`, `earnings-season-tracker`, `portfolio-checkup`, `a-share-money-flow`, `institutional-holdings-diff`. 각 템플릿은 도구 이름을 지목하지 않고 필요한 데이터를 자연어로 선언하므로 도구 표면이 늘어나도 그대로 동작하며, 빠진 입력은 기억으로 채우지 말고 **밝히도록** 요구합니다. CLI, REST, TUI의 `/playbook` 어디서든 쓸 수 있습니다:
 
 ```bash

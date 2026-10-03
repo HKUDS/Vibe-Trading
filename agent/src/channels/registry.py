@@ -95,6 +95,10 @@ class ChannelAvailability:
     display_name: str
     error: str = ""
     install_hint: str = ""
+    delivery_target_label: str = "Destination"
+    delivery_target_kind: str = "destination"
+    delivery_target_placeholder: str = "Chat, group, user, address, or channel ID"
+    delivery_target_input_type: str = "text"
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable availability payload."""
@@ -104,6 +108,10 @@ class ChannelAvailability:
             "display_name": self.display_name,
             "error": self.error,
             "install_hint": self.install_hint,
+            "delivery_target_label": self.delivery_target_label,
+            "delivery_target_kind": self.delivery_target_kind,
+            "delivery_target_placeholder": self.delivery_target_placeholder,
+            "delivery_target_input_type": self.delivery_target_input_type,
         }
 
 
@@ -165,6 +173,22 @@ def inspect_channel(name: str) -> ChannelAvailability:
         mod = importlib.import_module(f"src.channels.{name}")
         cls = _channel_class_from_module(mod, name)
         display = getattr(cls, "display_name", name)
+        delivery_target_label = str(
+            getattr(cls, "delivery_target_label", "Destination")
+        )
+        delivery_target_kind = str(
+            getattr(cls, "delivery_target_kind", "destination")
+        )
+        delivery_target_placeholder = str(
+            getattr(
+                cls,
+                "delivery_target_placeholder",
+                "Chat, group, user, address, or channel ID",
+            )
+        )
+        delivery_target_input_type = str(
+            getattr(cls, "delivery_target_input_type", "text")
+        )
         missing = _missing_optional_dependency(name, mod)
         if missing:
             return ChannelAvailability(
@@ -175,8 +199,20 @@ def inspect_channel(name: str) -> ChannelAvailability:
                 install_hint=_INSTALL_HINTS.get(
                     name, f"pip install 'vibe-trading-ai[{name}]'"
                 ),
+                delivery_target_label=delivery_target_label,
+                delivery_target_kind=delivery_target_kind,
+                delivery_target_placeholder=delivery_target_placeholder,
+                delivery_target_input_type=delivery_target_input_type,
             )
-        return ChannelAvailability(name=name, available=True, display_name=str(display))
+        return ChannelAvailability(
+            name=name,
+            available=True,
+            display_name=str(display),
+            delivery_target_label=delivery_target_label,
+            delivery_target_kind=delivery_target_kind,
+            delivery_target_placeholder=delivery_target_placeholder,
+            delivery_target_input_type=delivery_target_input_type,
+        )
     except Exception as exc:  # noqa: BLE001 - status API must report every adapter
         return ChannelAvailability(
             name=name,

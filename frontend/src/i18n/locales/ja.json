@@ -143,6 +143,23 @@
     "advancedHint": "選択したタイムゾーンで評価される 5 フィールドの cron 式（分 時 日 月 曜日；リストと範囲に対応）、またはミリ秒単位の間隔。",
     "timezoneLabel": "タイムゾーン",
     "create": "スケジュールを作成",
+    "saveChanges": "変更を保存",
+    "cancelEdit": "編集をキャンセル",
+    "editingHint": "このスケジュール実行を編集中です。保存しても識別子と実行履歴は保持されます。",
+    "edit": "編集",
+    "editAria": "スケジュール実行を編集: {{prompt}}",
+    "editRunningDisabled": "この実行が完了してから編集してください。",
+    "deliveryInApp": "Vibe内のみに保持（送信しない）",
+    "deliveryNoChannels": "有効な配信チャネルが設定されていません。設定 → チャネルで設定してください。",
+    "deliveryChannelsLoadFailed": "設定済みの配信チャネルを読み込めませんでした。",
+    "deliveryChannelUnavailable": "{{channel}}（現在利用できません）",
+    "deliveryTargetKind_destination": "送信先",
+    "deliveryTargetKind_email_address": "受信者のメールアドレス",
+    "deliveryTargetKind_chat": "チャット",
+    "deliveryTargetKind_channel": "チャネル",
+    "deliveryTargetDisabled": "先に配信チャネルを選択してください。",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "設定済みの送信先",
     "promptRequired": "スケジュール作成の前にリサーチプロンプトを入力してください。",
     "invalidTime": "有効な時刻を HH:MM 形式で入力してください。",
     "executorHint": "サーバーで VIBE_TRADING_ENABLE_SCHEDULER が有効な場合のみ実行されます。",
@@ -197,7 +214,10 @@
     "verdictUnreadable": "最新の判定を読み取れません",
     "verdictNoCalls": "コールなし",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "{{when}} 時点"
+    "verdictRecorded": "{{when}} 時点",
+    "deliveryKnownTargetLabel": "既知の送信先",
+    "deliveryKnownTargetPlaceholder": "既知の送信先を選択…",
+    "deliverySuggestionKind_private_chat": "自分のプライベートチャット"
   },
   "reports": {
     "badge": "レポート",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-

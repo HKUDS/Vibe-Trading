@@ -11,7 +11,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
       ...actual.api,
       listScheduledRuns: vi.fn(),
       createScheduledRun: vi.fn(),
+      updateScheduledRun: vi.fn(),
       deleteScheduledRun: vi.fn(),
+      getChannelStatus: vi.fn(),
     },
   };
 });
@@ -19,13 +21,19 @@ vi.mock("@/lib/api", async (importOriginal) => {
 const mocked = api as unknown as {
   listScheduledRuns: ReturnType<typeof vi.fn>;
   createScheduledRun: ReturnType<typeof vi.fn>;
+  updateScheduledRun: ReturnType<typeof vi.fn>;
   deleteScheduledRun: ReturnType<typeof vi.fn>;
+  getChannelStatus: ReturnType<typeof vi.fn>;
 };
 
 function run(overrides: Partial<ScheduledRun> = {}): ScheduledRun {
   return {
     id: "auckland-scan",
     prompt: "pre-open scan of NZX names",
+    title: "",
+    source_type: "prompt",
+    playbook_slug: null,
+    end_at: null,
     schedule: "30 23 * * 1-5",
     next_run_at: 1_790_000_000_000,
     status: "pending",
@@ -38,9 +46,13 @@ function run(overrides: Partial<ScheduledRun> = {}): ScheduledRun {
     timezone: "Pacific/Auckland",
     delivery_channel: null,
     delivery_target: null,
+    delivery_target_ref: null,
+    delivery_target_label: null,
     delivery_status: "none",
     delivery_error: null,
     delivery_updated_at: null,
+    delivery_attempts: 0,
+    delivery_provider_message_id: null,
     last_verdict: null,
     ...overrides,
   };
@@ -49,6 +61,53 @@ function run(overrides: Partial<ScheduledRun> = {}): ScheduledRun {
 beforeEach(() => {
   vi.clearAllMocks();
   mocked.listScheduledRuns.mockResolvedValue([]);
+  mocked.getChannelStatus.mockResolvedValue({
+    running: true,
+    inbound_queue: 0,
+    outbound_queue: 0,
+    session_count: 0,
+    channels: {
+      email: {
+        name: "email",
+        display_name: "Email",
+        configured: true,
+        enabled: true,
+        available: true,
+        loaded: true,
+        running: true,
+        delivery_target_label: "Recipient email address",
+        delivery_target_kind: "email_address",
+        delivery_target_placeholder: "name@example.com",
+        delivery_target_input_type: "email",
+      },
+      telegram: {
+        name: "telegram",
+        display_name: "Telegram",
+        configured: true,
+        enabled: true,
+        available: true,
+        loaded: true,
+        running: true,
+        delivery_target_label: "Telegram chat",
+        delivery_target_kind: "chat",
+        delivery_target_placeholder: "Chat, group, or user ID",
+        delivery_target_input_type: "text",
+        delivery_target_suggestions: [
+          { kind: "private_chat", target: "1381234567" },
+          { kind: "private_chat", target: "123456" },
+        ],
+      },
+      discord: {
+        name: "discord",
+        display_name: "Discord",
+        configured: true,
+        enabled: false,
+        available: true,
+        loaded: false,
+        running: false,
+      },
+    },
+  });
 });
 
 describe("Scheduled page", () => {
@@ -90,6 +149,91 @@ describe("Scheduled page", () => {
         }),
       ),
     );
+  });
+
+
+  it("edits prompt, wall-clock schedule, and delivery without recreating the job", async () => {
+    mocked.listScheduledRuns.mockResolvedValue([
+      run({
+        prompt: "old briefing",
+        schedule: "20 10 * * 1-5",
+        timezone: "America/Buenos_Aires",
+        delivery_channel: "email",
+        delivery_target: "old@example.com",
+      }),
+    ]);
+    mocked.updateScheduledRun.mockResolvedValue(run());
+    render(<Scheduled />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Edit scheduled run/ }));
+    expect(screen.getByLabelText("Research prompt")).toHaveValue("old briefing");
+    expect(screen.getByLabelText("Local time")).toHaveValue("10:20");
+    expect(screen.getByLabelText("Delivery channel")).toHaveValue("email");
+    expect(await screen.findByLabelText("Recipient email address")).toHaveValue("old@example.com");
+
+    fireEvent.change(screen.getByLabelText("Research prompt"), {
+      target: { value: "updated briefing" },
+    });
+    fireEvent.change(screen.getByLabelText("Local time"), { target: { value: "10:35" } });
+    fireEvent.change(screen.getByLabelText("Recipient email address"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(mocked.updateScheduledRun).toHaveBeenCalledWith(
+        "auckland-scan",
+        expect.objectContaining({
+          prompt: "updated briefing",
+          schedule: "35 10 * * 1-5",
+          timezone: "America/Buenos_Aires",
+          delivery_channel: "email",
+          delivery_target: "new@example.com",
+        }),
+      ),
+    );
+    expect(mocked.createScheduledRun).not.toHaveBeenCalled();
+  });
+
+  it("lists only enabled configured channels and adapts the destination field", async () => {
+    render(<Scheduled />);
+    await screen.findByText(/No scheduled runs yet/);
+
+    const channel = screen.getByLabelText("Delivery channel");
+    await within(channel).findByRole("option", { name: "Email" });
+    expect(within(channel).getByRole("option", { name: "Email" })).toBeInTheDocument();
+    expect(within(channel).getByRole("option", { name: "Telegram" })).toBeInTheDocument();
+    expect(within(channel).queryByRole("option", { name: "Discord" })).not.toBeInTheDocument();
+
+    fireEvent.change(channel, { target: { value: "email" } });
+    const target = screen.getByLabelText("Recipient email address");
+    expect(target).toHaveAttribute("type", "email");
+    expect(target).toHaveAttribute("placeholder", "name@example.com");
+  });
+
+  it("keeps manual target entry and can fill it from a known Telegram destination", async () => {
+    render(<Scheduled />);
+    await screen.findByText(/No scheduled runs yet/);
+
+    const channel = screen.getByLabelText("Delivery channel");
+    await within(channel).findByRole("option", { name: "Telegram" });
+    fireEvent.change(channel, { target: { value: "telegram" } });
+
+    const target = await screen.findByLabelText("Telegram chat");
+    expect(target).toHaveValue("");
+    expect(target).toHaveAttribute("placeholder", "Chat, group, or user ID");
+
+    const knownTarget = screen.getByLabelText("Known destination");
+    fireEvent.change(knownTarget, { target: { value: "1381234567" } });
+
+    expect(target).toHaveValue("1381234567");
+    expect(
+      within(knownTarget).getByRole("option", { name: "Private chat · 138••••67" }),
+    ).toBeInTheDocument();
+    expect(
+      within(knownTarget).getByRole("option", { name: "Private chat · 1••••6" }),
+    ).toBeInTheDocument();
+    expect(within(knownTarget).queryByRole("option", { name: /123456/ })).not.toBeInTheDocument();
   });
 
   it("surfaces a validation error from the backend", async () => {
@@ -146,7 +290,7 @@ describe("Scheduled page", () => {
 
 
 describe("briefing delivery", () => {
-  it("keeps delivery off unless a channel is typed", async () => {
+  it("keeps delivery off unless a channel is selected", async () => {
     render(<Scheduled />);
     fireEvent.change(screen.getByLabelText(/prompt/i), {
       target: { value: "pre-open scan" },
@@ -164,7 +308,9 @@ describe("briefing delivery", () => {
     fireEvent.change(screen.getByLabelText(/prompt/i), {
       target: { value: "pre-open scan" },
     });
-    fireEvent.change(screen.getByLabelText(/deliver to channel/i), {
+    const channel = screen.getByLabelText(/delivery channel/i);
+    await within(channel).findByRole("option", { name: "Telegram" });
+    fireEvent.change(channel, {
       target: { value: "telegram" },
     });
     fireEvent.click(screen.getByRole("button", { name: /schedule|create/i }));
@@ -178,10 +324,12 @@ describe("briefing delivery", () => {
     fireEvent.change(screen.getByLabelText(/prompt/i), {
       target: { value: "pre-open scan" },
     });
-    fireEvent.change(screen.getByLabelText(/deliver to channel/i), {
-      target: { value: " telegram " },
+    const channel = screen.getByLabelText(/delivery channel/i);
+    await within(channel).findByRole("option", { name: "Telegram" });
+    fireEvent.change(channel, {
+      target: { value: "telegram" },
     });
-    fireEvent.change(screen.getByLabelText(/channel target/i), {
+    fireEvent.change(await screen.findByLabelText(/telegram chat/i), {
       target: { value: " chat-9 " },
     });
     fireEvent.click(screen.getByRole("button", { name: /schedule|create/i }));

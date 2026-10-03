@@ -73,6 +73,8 @@ class SlackChannel(BaseChannel):
 
     name = "slack"
     display_name = "Slack"
+    delivery_target_label = "Slack destination"
+    delivery_target_placeholder = "#channel, @user, or conversation ID"
     _SLACK_ID_RE = re.compile(r"^[CDGUW][A-Z0-9]{2,}$")
     _SLACK_CHANNEL_REF_RE = re.compile(r"^<#([A-Z0-9]+)(?:\|[^>]+)?>$")
     _SLACK_USER_REF_RE = re.compile(r"^<@([A-Z0-9]+)(?:\|[^>]+)?>$")

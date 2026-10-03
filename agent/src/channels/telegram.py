@@ -430,6 +430,22 @@ class TelegramChannel(BaseChannel):
 
     name = "telegram"
     display_name = "Telegram"
+    delivery_target_label = "Telegram chat"
+    delivery_target_kind = "chat"
+    delivery_target_placeholder = "Chat, group, or user ID"
+
+    def delivery_target_suggestions(self) -> list[dict[str, str]]:
+        """Suggest numeric private chats already authorized in allow_from."""
+        suggestions: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in self.config.allow_from:
+            value = str(item).strip()
+            candidate = value.split("|", 1)[0] if "|" in value else value
+            if re.fullmatch(r"[0-9]+", candidate) is None or candidate in seen:
+                continue
+            seen.add(candidate)
+            suggestions.append({"kind": "private_chat", "target": candidate})
+        return suggestions
 
     # Commands registered with Telegram's command menu
     BOT_COMMANDS = [

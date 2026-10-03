@@ -148,6 +148,23 @@
     "advancedHint": "Ekspresi cron 5 kolom yang dievaluasi dalam zona waktu yang dipilih (menit jam hari bulan hari-dalam-minggu; daftar dan rentang diperbolehkan), atau interval langsung dalam milidetik.",
     "timezoneLabel": "Zona waktu",
     "create": "Jadwalkan run",
+    "saveChanges": "Simpan perubahan",
+    "cancelEdit": "Batalkan pengeditan",
+    "editingHint": "Anda sedang mengedit proses terjadwal ini. Penyimpanan mempertahankan identitas dan riwayat eksekusinya.",
+    "edit": "Edit",
+    "editAria": "Edit proses terjadwal: {{prompt}}",
+    "editRunningDisabled": "Tunggu hingga proses ini selesai sebelum mengeditnya.",
+    "deliveryInApp": "Simpan hanya di Vibe (jangan kirim)",
+    "deliveryNoChannels": "Tidak ada saluran pengiriman aktif yang dikonfigurasi. Konfigurasikan satu di Pengaturan → Saluran.",
+    "deliveryChannelsLoadFailed": "Tidak dapat memuat saluran pengiriman yang dikonfigurasi.",
+    "deliveryChannelUnavailable": "{{channel}} (saat ini tidak tersedia)",
+    "deliveryTargetKind_destination": "Tujuan",
+    "deliveryTargetKind_email_address": "Alamat email penerima",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Saluran",
+    "deliveryTargetDisabled": "Pilih saluran pengiriman terlebih dahulu.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Tujuan yang dikonfigurasi",
     "promptRequired": "Masukkan prompt riset sebelum menjadwalkan.",
     "invalidTime": "Masukkan waktu yang valid dalam format HH:MM.",
     "executorHint": "Run hanya dieksekusi jika server dijalankan dengan VIBE_TRADING_ENABLE_SCHEDULER diaktifkan.",
@@ -202,7 +219,10 @@
     "verdictUnreadable": "Kesimpulan terbaru tidak dapat dibaca",
     "verdictNoCalls": "Tidak ada sinyal",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "per {{when}}"
+    "verdictRecorded": "per {{when}}",
+    "deliveryKnownTargetLabel": "Tujuan dikenal",
+    "deliveryKnownTargetPlaceholder": "Pilih tujuan yang dikenal…",
+    "deliverySuggestionKind_private_chat": "Chat pribadi saya"
   },
   "reports": {
     "badge": "Laporan",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-

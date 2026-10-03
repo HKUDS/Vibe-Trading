@@ -143,6 +143,23 @@
     "advancedHint": "선택한 시간대 기준으로 평가되는 5필드 cron 표현식(분 시 일 월 요일; 목록과 범위 지원) 또는 밀리초 단위 간격.",
     "timezoneLabel": "시간대",
     "create": "예약 생성",
+    "saveChanges": "변경 사항 저장",
+    "cancelEdit": "편집 취소",
+    "editingHint": "이 예약 실행을 편집 중입니다. 저장해도 식별 정보와 실행 기록은 유지됩니다.",
+    "edit": "편집",
+    "editAria": "예약 실행 편집: {{prompt}}",
+    "editRunningDisabled": "이 실행이 끝난 후 편집하세요.",
+    "deliveryInApp": "Vibe에만 보관(전송 안 함)",
+    "deliveryNoChannels": "활성화된 전송 채널이 구성되어 있지 않습니다. 설정 → 채널에서 하나를 구성하세요.",
+    "deliveryChannelsLoadFailed": "구성된 전송 채널을 불러오지 못했습니다.",
+    "deliveryChannelUnavailable": "{{channel}} (현재 사용할 수 없음)",
+    "deliveryTargetKind_destination": "대상",
+    "deliveryTargetKind_email_address": "수신자 이메일 주소",
+    "deliveryTargetKind_chat": "채팅",
+    "deliveryTargetKind_channel": "채널",
+    "deliveryTargetDisabled": "먼저 전송 채널을 선택하세요.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "구성된 대상",
     "promptRequired": "예약을 만들기 전에 리서치 프롬프트를 입력하세요.",
     "invalidTime": "유효한 시각을 HH:MM 형식으로 입력하세요.",
     "executorHint": "서버에서 VIBE_TRADING_ENABLE_SCHEDULER가 활성화된 경우에만 실행됩니다.",
@@ -197,7 +214,10 @@
     "verdictUnreadable": "최신 판정을 읽을 수 없음",
     "verdictNoCalls": "호출 없음",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "{{when}} 기준"
+    "verdictRecorded": "{{when}} 기준",
+    "deliveryKnownTargetLabel": "알려진 대상",
+    "deliveryKnownTargetPlaceholder": "알려진 대상 선택…",
+    "deliverySuggestionKind_private_chat": "내 비공개 채팅"
   },
   "reports": {
     "badge": "리포트",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-

@@ -1549,6 +1549,8 @@ when an adapter succeeded without a provider receipt, and `sent` only when the
 adapter returned a provider message id (currently implemented end to end for
 Feishu). Failures remain retryable in the persisted outbox.
 
+Di Web UI, job terjadwal dapat diedit langsung: prompt, cadence/timezone, dan delivery diperbarui melalui `PATCH /scheduled-runs/{job_id}` tanpa menghapus lalu membuat ulang job, sehingga id dan riwayat run tetap dipertahankan. Job yang sedang berjalan menolak edit sampai dispatch tersebut selesai. Delivery tetap dikendalikan operator: setiap channel adapter mendeskripsikan label, placeholder, dan tipe input destination, sementara field manual tetap tersedia. Adapter juga dapat menawarkan saran destination yang sudah dikenal secara opsional; memilih salah satunya hanya mengisi field manual yang sama. Telegram, misalnya, dapat menyarankan private-chat id numerik yang sudah ada di `allow_from` lokal, sedangkan username dan wildcard diabaikan.
+
 **Lima template siap jadwal** tersedia bersama scheduler — `premarket-brief`, `earnings-season-tracker`, `portfolio-checkup`, `a-share-money-flow`, `institutional-holdings-diff`. Setiap template menyatakan data yang dibutuhkan run dalam bahasa biasa alih-alih menyebut tool, sehingga template tetap berfungsi saat surface tool berkembang, dan masing-masing wajib menyebut input yang hilang alih-alih mengisinya dari memory. Akses melalui CLI, REST, atau `/playbook` di TUI:
 
 ```bash

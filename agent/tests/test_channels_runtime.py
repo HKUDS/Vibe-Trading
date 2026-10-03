@@ -204,6 +204,30 @@ def test_registry_ignores_global_channel_settings() -> None:
     assert "model_dump" not in statuses
 
 
+def test_telegram_status_suggests_numeric_authorized_private_chats() -> None:
+    from src.channels.registry import inspect_channel
+
+    if not inspect_channel("telegram").available:
+        pytest.skip("telegram optional dependency not installed")
+
+    manager = ChannelManager(
+        {
+            "telegram": {
+                "enabled": True,
+                "token": "test-token",
+                "allow_from": ["1381234567", "alice", "*", "1381234567|alice", "１２３４５６"],
+            }
+        },
+        MessageBus(),
+    )
+
+    status = manager.get_status()["telegram"]
+
+    assert status["delivery_target_suggestions"] == [
+        {"kind": "private_chat", "target": "1381234567"}
+    ]
+
+
 def test_channel_manager_status_includes_every_configured_adapter() -> None:
     bus = MessageBus()
     manager = ChannelManager(

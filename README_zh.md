@@ -1251,6 +1251,8 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 agent 只有一个调度工具 `scheduled_research`：读操作查看状态/任务/模板；`propose_create` 与 `propose_cancel` 只落一份短时效的确认提案，绝不直接改动任务存储。Web 渲染确定性的确认卡片，CLI 询问 `y/N`，IM 会话需准确回复 `confirm`（`确认`）或 `cancel`（`取消`）——只有这些界面动作会调用 commit 端点。任务过了 `end_at` 即标记为 `expired`，不再触发。投递与通道解耦：在 `channels.deliveryTargets` 下配置可复用的不透明目标引用，agent 与确认界面只见 ref/label/channel，永远看不到平台原始 chat/user id；适配器无平台回执时投递状态为 `accepted`，仅当返回平台消息 id 时才是 `sent`（目前飞书已端到端支持）。
 
+在 Web UI 中，已创建的定时任务可以原地编辑：prompt、频率/时区和投递设置通过 `PATCH /scheduled-runs/{job_id}` 更新，无需删除并重建，因此任务 id 和运行历史会保留。正在执行的任务会在本次执行结束前拒绝编辑。投递仍由 operator 控制：每个 channel adapter 可以声明目标字段的标签、placeholder 和输入类型，同时保留手工填写目标的方式。adapter 还可以提供可选的已知目标建议；选择建议只会填入同一个手工字段。例如 Telegram 可以建议本地 `allow_from` 中已有的数字私聊 id，而 username 和通配符不会被当作目标。
+
 调度器自带**五个开箱即用的研究模板** —— `premarket-brief`、`earnings-season-tracker`、`portfolio-checkup`、`a-share-money-flow`、`institutional-holdings-diff`。每个模板用自然语言声明它需要什么数据，而不是点名某个工具，因此工具面扩展时模板依然有效；模板也被要求**指出缺失的输入**，而不是凭记忆补上。CLI、REST、TUI 里的 `/playbook` 三个入口都能用：
 
 ```bash

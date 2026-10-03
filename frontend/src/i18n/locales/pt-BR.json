@@ -148,6 +148,23 @@
     "advancedHint": "Uma expressão cron de 5 campos avaliada no fuso horário selecionado (minuto hora dia mês dia da semana; listas e intervalos permitidos) ou um intervalo simples em milissegundos.",
     "timezoneLabel": "Fuso horário",
     "create": "Agendar execução",
+    "saveChanges": "Salvar alterações",
+    "cancelEdit": "Cancelar edição",
+    "editingHint": "Você está editando esta execução agendada. Ao salvar, a identidade e o histórico de execuções são preservados.",
+    "edit": "Editar",
+    "editAria": "Editar execução agendada: {{prompt}}",
+    "editRunningDisabled": "Aguarde esta execução terminar antes de editá-la.",
+    "deliveryInApp": "Manter apenas no Vibe (não enviar)",
+    "deliveryNoChannels": "Nenhum canal de entrega habilitado está configurado. Configure um em Configurações → Canais.",
+    "deliveryChannelsLoadFailed": "Não foi possível carregar os canais de entrega configurados.",
+    "deliveryChannelUnavailable": "{{channel}} (indisponível no momento)",
+    "deliveryTargetKind_destination": "Destino",
+    "deliveryTargetKind_email_address": "Endereço de e-mail do destinatário",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Canal",
+    "deliveryTargetDisabled": "Escolha primeiro um canal de entrega.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Destino configurado",
     "promptRequired": "Insira um prompt de pesquisa antes de agendar.",
     "invalidTime": "Insira um horário válido como HH:MM.",
     "executorHint": "As execuções são executadas somente quando o servidor é iniciado com VIBE_TRADING_ENABLE_SCHEDULER ativado.",
@@ -202,7 +219,10 @@
     "verdictUnreadable": "Último veredicto ilegível",
     "verdictNoCalls": "Sem chamadas",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "a partir de {{when}}"
+    "verdictRecorded": "a partir de {{when}}",
+    "deliveryKnownTargetLabel": "Destino conhecido",
+    "deliveryKnownTargetPlaceholder": "Escolher um destino conhecido…",
+    "deliverySuggestionKind_private_chat": "Meu chat privado"
   },
   "reports": {
     "badge": "Relatórios",
@@ -2086,4 +2106,3 @@
     }
   }
 }
-
