@@ -7,8 +7,8 @@ Solves, per rebalance date::
          w_i <= max_per_name                          (per-name cap)
          sum_{i in group_g} w_i <= max_per_group[g]   (per-group cap)
 
-where ``w_prev`` is the weight vector applied at the previous rebalance,
-restricted to the current active set (assets absent last time have prior
+where ``w_prev`` is the previous signed allocation expressed in the current
+position directions, restricted to the current active set (assets absent last time have prior
 weight 0, so entries and exits both count as turnover). With ``gamma == 0``
 the objective reduces to the mean-variance utility baseline.
 
@@ -160,7 +160,14 @@ class TurnoverAwareOptimizer(BaseOptimizer):
         if n == 0:
             return self._equal_weight(0)
 
-        w_prev = np.array([self._prev.get(code, 0.0) for code in active], dtype=float)
+        signs = np.asarray(ctx.get("position_signs", np.ones(n)), dtype=float)
+        # Express the prior signed holdings in today's position directions:
+        # a prior long is negative when today's proposed holding is short.
+        # Then |w - w_prev| prices the full close-and-reopen reversal.
+        w_prev = (
+            np.array([self._prev.get(code, 0.0) for code in active], dtype=float)
+            * signs
+        )
         lam = self.risk_aversion
         gamma = self.turnover_penalty
 
@@ -207,7 +214,14 @@ class TurnoverAwareOptimizer(BaseOptimizer):
 
         has_effective_caps = upper < 1.0 or any(cap < 1.0 for cap in group_caps)
         if not has_effective_caps:
-            x0 = w_prev if w_prev.sum() > 1e-12 else self._equal_weight(n)
+            # Opposite-direction prior holdings cannot seed this nonnegative
+            # simplex. Retain only same-direction holdings and normalize them.
+            same_direction = np.maximum(w_prev, 0.0)
+            x0 = (
+                same_direction / same_direction.sum()
+                if same_direction.sum() > 1e-12
+                else self._equal_weight(n)
+            )
         elif (
             np.isfinite(w_prev).all()
             and (w_prev >= 0.0).all()
@@ -261,11 +275,11 @@ class TurnoverAwareOptimizer(BaseOptimizer):
             or any(row @ weights > cap + 1e-7 for row, cap in zip(group_rows, group_caps))
         ):
             raise RuntimeError("optimizer returned weights that violate exposure caps")
-        self._record_turnover(active, weights)
+        self._record_turnover(active, weights * signs)
         return weights
 
     def _record_turnover(self, active: List[str], weights: np.ndarray) -> None:
-        """Accumulate realized turnover and roll prior weights forward."""
+        """Accumulate signed allocation turnover and roll prior holdings forward."""
         codes = set(active) | set(self._prev)
         new_map = {code: float(weights[i]) for i, code in enumerate(active)}
         turnover = 0.5 * sum(

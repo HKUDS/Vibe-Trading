@@ -820,6 +820,10 @@ When the opt-in market-data cache is enabled, local-source cache entries are
 scoped to the configured file, query, and column mapping. Changing a symbol's
 source declaration does not reuse bars from its previous source. The settled-data
 cache policy for an unchanged declaration remains the same.
+The turnover-aware optimizer measures allocation changes in signed position
+space: reversing a 50% long to a 50% short contributes 0.5 turnover, including
+both the close and the reopen. Its penalty and recorded allocation turnover
+include these reversals; execution-derived turnover remains a separate metric.
 
 </details>
 

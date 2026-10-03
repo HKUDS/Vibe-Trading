@@ -85,6 +85,9 @@ class BaseOptimizer(ABC):
             if ctx is None:
                 continue
 
+            # Stateful optimizers need the direction as well as the signed
+            # return window to measure changes between actual allocations.
+            ctx["position_signs"] = signs
             weights = self._calc_weights(ctx)
             if weights is None or len(weights) != len(active):
                 continue
