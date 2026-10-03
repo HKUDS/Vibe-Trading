@@ -13,6 +13,7 @@ from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.core.runner import Runner
 from src.core.state import RunStateStore
+from src.tools.backtest_summary import collect_ohlcv_paths, try_build_backtest_summary
 from src.tools.path_utils import safe_run_dir
 
 
@@ -153,14 +154,24 @@ def run_backtest(run_dir: str) -> str:
 
     emit_progress("finalize", message="collecting artifacts")
     artifacts_found = {name: str(path) for name, path in result.artifacts.items()}
-    return json.dumps({
+    envelope: dict[str, Any] = {
         "status": "ok" if result.success else "error",
         "exit_code": result.exit_code,
         "stdout": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout,
         "stderr": result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr,
         "artifacts": artifacts_found,
         "run_dir": run_dir,
-    }, ensure_ascii=False)
+    }
+    if result.success:
+        # Strictly additive best-effort fields: the legacy keys above stay
+        # byte-identical, and a summary that cannot be built (missing or
+        # corrupt run_card.json) is omitted rather than failing the run.
+        ohlcv_paths = collect_ohlcv_paths(run_path)
+        artifacts_found["ohlcv"] = ohlcv_paths
+        summary = try_build_backtest_summary(run_path, ohlcv_paths)
+        if summary is not None:
+            envelope["summary"] = summary
+    return json.dumps(envelope, ensure_ascii=False)
 
 
 class BacktestTool(BaseTool):

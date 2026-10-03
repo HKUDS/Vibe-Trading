@@ -807,6 +807,11 @@ def backtest(run_dir: str) -> str:
     - "auto": auto-detect based on symbol format (with fallback)
 
     Returns metrics (Sharpe, return, drawdown, etc.) and artifact paths.
+    On success the envelope also carries a structured ``summary``: the full
+    metrics object, run metadata (run_id/codes/dates/interval/initial_cash),
+    an ``equity_preview`` (at most 50 equal-stride points, first and last
+    pinned) and ``artifact_paths`` including per-symbol ohlcv files — read
+    these instead of parsing ``stdout``.
 
     Args:
         run_dir: Path to the run directory containing config.json and code/.
