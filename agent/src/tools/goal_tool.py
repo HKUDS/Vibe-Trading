@@ -351,7 +351,10 @@ class AddGoalEvidenceTool(_GoalToolBase):
     name = "add_goal_evidence"
     description = (
         "Attach a concise evidence note, artifact reference, or tool result to the current "
-        "research goal. Prefer linking evidence to a criterion by criterion_id or criterion_index."
+        "research goal. Prefer linking evidence to a criterion by criterion_id or criterion_index. "
+        "When the evidence comes from one specific tool result, preserve that result's exact "
+        "tool_call_id; the returned evidence_id (ev_...) identifies the goal-ledger row and is "
+        "not a grounding source reference."
     )
     is_readonly = False
     parameters = {
@@ -378,7 +381,14 @@ class AddGoalEvidenceTool(_GoalToolBase):
                 "type": "string",
                 "description": "Optional host-injected current run directory. Omit unless provided by the runtime.",
             },
-            "tool_call_id": {"type": "string", "description": "Optional tool call id for traceability."},
+            "tool_call_id": {
+                "type": "string",
+                "description": (
+                    "Optional provenance id of the specific tool result behind this evidence. "
+                    "When known, copy its tool_call_id verbatim. Never substitute an evidence_id "
+                    "(ev_...), tool name, shortened alias, or invented id."
+                ),
+            },
             "source_provider": {"type": "string", "description": "Data or tool provider."},
             "source_type": {"type": "string", "description": "Source type, e.g. backtest, market_data, manual_note."},
             "source_uri": {"type": "string", "description": "Optional source URI."},

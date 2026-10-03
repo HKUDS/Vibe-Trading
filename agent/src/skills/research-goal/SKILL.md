@@ -42,7 +42,9 @@ Use this shape when the user did not provide criteria:
 - Keep evidence short and concrete.
 - Prefer artifact-backed evidence when a tool produced a run or file.
 - Include `run_id`, `artifact_path`, `source_provider`, `source_type`, `symbol_universe`, `benchmark`, and `data_as_of` when known.
-- `tool_call_id` is traceability only. Completion needs verified evidence from an existing `run_id` or an allowed `artifact_path` with a matching sha256 hash.
+- For evidence backed by one specific tool result, copy that result's exact `tool_call_id` into `add_goal_evidence`; do not shorten, alias, or invent it.
+- `evidence_id` values such as `ev_...` identify rows in the research-goal ledger. They are used by goal audits and are never grounding source refs; do not write `ev_...::field` in a figures declaration.
+- `tool_call_id` preserves provenance but does not verify goal completion by itself. Completion still needs verified evidence from an existing `run_id` or an allowed `artifact_path` with a matching sha256 hash.
 - Do not mark live trading instructions as evidence. Refuse or reframe them as research-only analysis.
 
 ## Completion Rules
