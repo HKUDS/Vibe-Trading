@@ -353,6 +353,15 @@ class SkillFileTool(BaseTool):
         if Path(rel_path).name == "SKILL.md":
             return json.dumps({"status": "error", "error": "Cannot remove SKILL.md. Use delete_skill to remove the entire skill."})
 
+        # Validate subdirectory (same allowlist as _write_file, so remove can
+        # never touch a file write was never allowed to create)
+        parts = Path(rel_path).parts
+        if len(parts) < 2 or parts[0] not in _ALLOWED_SUBDIRS:
+            return json.dumps({
+                "status": "error",
+                "error": f"Path must start with one of: {', '.join(sorted(_ALLOWED_SUBDIRS))}. Got: '{parts[0] if parts else ''}'",
+            })
+
         target = skill_dir / rel_path
         try:
             target.resolve().relative_to(skill_dir.resolve())

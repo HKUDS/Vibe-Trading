@@ -239,6 +239,15 @@ class TestSkillFileTool:
         assert result["status"] == "ok"
         assert not (skill_dir / "assets" / "data.csv").exists()
 
+    def test_remove_invalid_subdir(self, setup) -> None:
+        tool, _, skill_dir = setup
+        (skill_dir / "LICENSE").write_text("MIT", encoding="utf-8")
+        result = json.loads(tool.execute(
+            action="remove", skill_name="file-test", path="LICENSE",
+        ))
+        assert result["status"] == "error"
+        assert (skill_dir / "LICENSE").exists()
+
     def test_remove_skill_md_blocked(self, setup) -> None:
         tool, _, _ = setup
         result = json.loads(tool.execute(
