@@ -25,6 +25,7 @@ def test_every_builtin_portfolio_connector_has_an_explicit_compatibility_tier():
         "ibkr": "native",
         "kis": "experimental",
         "longbridge": "native",
+        "mstock": "experimental",
         "mt5": "experimental",
         "okx": "contract_tested",
         "shoonya": "experimental",

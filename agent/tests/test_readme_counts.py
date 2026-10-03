@@ -72,7 +72,7 @@ BADGE_ORDER = ("skills", "brokers", "presets", "alphas", "engines", "quantlib")
 # each other, which they did while all five were uniformly wrong — eToro
 # shipped as the 13th connector and the pin stayed at 12. Same again for
 # KIS, Upbit, Toss and Scalable Capital, which landed together as 15-18.
-EXPECTED_BROKERS = 18
+EXPECTED_BROKERS = 19
 
 
 def _read(name: str) -> str:

@@ -13,6 +13,7 @@ from src.trading.connectors.futu.profiles import FUTU_PROFILES
 from src.trading.connectors.ibkr.profiles import IBKR_PROFILES
 from src.trading.connectors.kis.profiles import KIS_PROFILES
 from src.trading.connectors.longbridge.profiles import LONGBRIDGE_PROFILES
+from src.trading.connectors.mstock.profiles import MSTOCK_PROFILES
 from src.trading.connectors.mt5.profiles import MT5_PROFILES
 from src.trading.connectors.okx.profiles import OKX_PROFILES
 from src.trading.connectors.robinhood.profiles import ROBINHOOD_PROFILES
@@ -48,6 +49,7 @@ BUILTIN_PROFILES: tuple[TradingProfile, ...] = (
     *UPBIT_PROFILES,
     *TOSS_PROFILES,
     *SCALABLE_PROFILES,
+    *MSTOCK_PROFILES,
 )
 
 
