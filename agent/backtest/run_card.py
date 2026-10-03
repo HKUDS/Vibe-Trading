@@ -8,7 +8,7 @@ import re
 from decimal import Decimal, InvalidOperation
 import json
 import math
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -42,6 +42,127 @@ BACKTEST_SUMMARY_KEYS = (
     "initial_cash",
     "source",
 )
+
+
+def _model_provenance(
+    run_dir: Path, config: Mapping[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    warnings: list[str] = []
+    metadata_path = run_dir / "strategy_provenance.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        metadata = {}
+    except (OSError, json.JSONDecodeError):
+        metadata = {}
+        warnings.append(
+            "Strategy model provenance could not be read; training exposure is assumed."
+        )
+    if not isinstance(metadata, Mapping):
+        metadata = {}
+        warnings.append(
+            "Strategy model provenance is invalid; training exposure is assumed."
+        )
+
+    raw_files = metadata.get("files")
+    if raw_files is None:
+        raw_files = {}
+    elif not isinstance(raw_files, Mapping):
+        raw_files = {}
+        warnings.append(
+            "Strategy model provenance is invalid; training exposure is assumed."
+        )
+    files: dict[str, dict[str, str | None]] = {}
+    for path in ("config.json", "code/signal_engine.py"):
+        raw_model = raw_files.get(path)
+        if raw_model is None:
+            if (run_dir / path).is_file():
+                files[path] = {"provider": None, "model_id": None, "model_source": None}
+                warnings.append(
+                    f"No strategy model provenance was recorded for {path}; "
+                    "writer identity is unknown."
+                )
+            continue
+        if not isinstance(raw_model, Mapping):
+            files[path] = {"provider": None, "model_id": None, "model_source": None}
+            warnings.append(
+                f"Strategy model provenance for {path} is invalid; "
+                "writer identity is unknown."
+            )
+            continue
+        provider = raw_model.get("provider")
+        model_id = raw_model.get("model_id")
+        files[path] = {
+            "provider": (
+                provider.strip()
+                if isinstance(provider, str) and provider.strip()
+                else None
+            ),
+            "model_id": (
+                model_id.strip()
+                if isinstance(model_id, str) and model_id.strip()
+                else None
+            ),
+            "model_source": (
+                raw_model.get("model_source")
+                if raw_model.get("model_source")
+                in ("provider_response", "configured")
+                else None
+            ),
+        }
+        if files[path]["provider"] is None or files[path]["model_id"] is None:
+            warnings.append(
+                f"Strategy model provenance for {path} is incomplete; "
+                "writer identity is unknown."
+            )
+
+    cutoff_value = config.get("model_training_cutoff")
+    cutoff = str(cutoff_value).strip() if cutoff_value is not None else ""
+    cutoff_date = None
+    if cutoff:
+        try:
+            cutoff_date = date.fromisoformat(cutoff)
+        except ValueError:
+            warnings.append(
+                "model_training_cutoff is invalid; training exposure is assumed."
+            )
+            cutoff = ""
+
+    provenance = {
+        "files": files,
+        "training_cutoff": cutoff or None,
+        "cutoff_source": "config" if cutoff else None,
+    }
+    model_labels = sorted(
+        {
+            "/".join(part for part in (model["provider"], model["model_id"]) if part)
+            for model in files.values()
+            if model["provider"] or model["model_id"]
+        }
+    )
+    model_label = ", ".join(model_labels) or "unknown model"
+    if cutoff_date is None:
+        warnings.append(
+            f"Training cutoff for {model_label} is unknown; "
+            "assume results may reflect what the model remembers."
+        )
+    else:
+        end_value = config.get("end_date")
+        try:
+            end_date = date.fromisoformat(str(end_value)[:10])
+        except (TypeError, ValueError):
+            warnings.append(
+                f"Backtest end date is unavailable; exposure to "
+                f"{model_label} training data cannot be assessed."
+            )
+        else:
+            if end_date < cutoff_date:
+                warnings.append(
+                    f"Backtest window ends on {end_date.isoformat()}, before the training cutoff "
+                    f"({cutoff_date.isoformat()}) for {model_label}; "
+                    "results may reflect what the model remembers."
+                )
+    return provenance, warnings
 
 
 def write_run_card(
@@ -85,6 +206,7 @@ def write_run_card(
         if strategy_file.exists() and strategy_file.is_file():
             reproducibility["strategy_hash"] = _file_hash(strategy_file)
 
+    model_provenance, provenance_warnings = _model_provenance(run_dir, config)
     card: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _utc_now(),
@@ -93,7 +215,8 @@ def write_run_card(
         "reproducibility": reproducibility,
         "data_sources": list(data_sources or []),
         "metrics": _scalar_metrics(metrics),
-        "warnings": list(warnings or []),
+        "warnings": [*(warnings or []), *provenance_warnings],
+        "model_provenance": model_provenance,
         "artifacts": _list_artifacts(run_dir),
     }
     normalized_refs = _normalize_artifact_refs(artifact_refs)
@@ -403,6 +526,22 @@ def _render_markdown(card: Mapping[str, Any]) -> str:
     lines.append(f"- config_hash: `{reproducibility.get('config_hash', '')}`")
     if "strategy_hash" in reproducibility:
         lines.append(f"- strategy_hash: `{reproducibility['strategy_hash']}`")
+
+    model = card.get("model_provenance", {})
+    lines.extend(["", "## Model provenance"])
+    model_files = model.get("files", {})
+    if model_files:
+        for path, source in model_files.items():
+            label = "/".join(
+                part for part in (source.get("provider"), source.get("model_id")) if part
+            ) or "Unknown"
+            source = source.get("model_source")
+            if source:
+                label += f" ({source})"
+            lines.append(f"- {path}: {label}")
+    else:
+        lines.append("- No strategy writer recorded.")
+    lines.append(f"- Training cutoff: {model.get('training_cutoff') or 'Unknown'}")
 
     lines.extend(["", "## Data Sources"])
     data_sources = card.get("data_sources", [])

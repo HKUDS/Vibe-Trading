@@ -197,6 +197,170 @@ def test_ok_false_tool_envelope_is_failure() -> None:
     assert _is_tool_success('{"ok": true, "data": {}}') is True
 
 
+def test_re_resolving_same_query_cannot_overwrite_a_locked_symbol(
+    tmp_path: Path,
+) -> None:
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    first = {
+        "ok": True,
+        "data": {
+            "query": "Acme",
+            "candidates": [{"symbol": "AAA.US", "name": "Acme", "market": "us", "source": "yahoo"}],
+        },
+    }
+    second = {
+        "ok": True,
+        "data": {
+            "query": "Acme",
+            "candidates": [{"symbol": "BBB.US", "name": "Acme", "market": "us", "source": "yahoo"}],
+        },
+    }
+
+    ledger.ingest_tool_result(
+        tool_name="search_symbol", arguments={"query": "Acme"},
+        result=json.dumps(first), call_id="resolve-a", success=True,
+    )
+    assert ledger.authorized_symbols == {"AAA.US"}
+    ledger.authorize_tool_call(
+        "search_symbol", {"query": "Acme"},
+        batch_authorized_symbols=ledger.authorized_symbols, call_id="resolve-b",
+    )
+    ledger.ingest_tool_result(
+        tool_name="search_symbol", arguments={"query": "Acme"},
+        result=json.dumps(second), call_id="resolve-b", success=True,
+    )
+
+    assert ledger.identity_status == "conflicting"
+    assert ledger.authorized_symbols == set()
+
+
+def _resolve_candidate(
+    ledger: GroundingLedger, symbol: str, query: str, call_id: str
+) -> None:
+    """Drive one ``search_symbol`` resolution for ``query`` through the ledger."""
+    ledger.authorize_tool_call(
+        "search_symbol",
+        {"query": query},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        call_id=call_id,
+    )
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": query},
+        result=json.dumps(
+            {
+                "ok": True,
+                "data": {
+                    "query": query,
+                    "candidates": [
+                        {
+                            "symbol": symbol,
+                            "name": query,
+                            "market": "us",
+                            "source": "yahoo",
+                        }
+                    ],
+                },
+            }
+        ),
+        call_id=call_id,
+        success=True,
+    )
+
+
+def test_a_repeat_resolution_cannot_clear_a_conflict(tmp_path: Path) -> None:
+    """Re-answering one side of a contradiction is not evidence that settles it."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    _resolve_candidate(ledger, "AAA.US", "Acme", "resolve-a")
+    _resolve_candidate(ledger, "BBB.US", "Acme", "resolve-b")
+    assert ledger.identity_status == "conflicting"
+
+    _resolve_candidate(ledger, "BBB.US", "Acme", "resolve-c")
+
+    assert ledger.identity_status == "conflicting"
+    assert ledger.authorized_symbols == set()
+
+
+def test_a_non_conclusive_step_cannot_clear_a_conflict(tmp_path: Path) -> None:
+    """A timeout after a contradiction leaves the contradiction standing."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    _resolve_candidate(ledger, "AAA.US", "Acme", "resolve-a")
+    _resolve_candidate(ledger, "BBB.US", "Acme", "resolve-b")
+    assert ledger.identity_status == "conflicting"
+    ledger.authorize_tool_call(
+        "search_symbol",
+        {"query": "Acme"},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        call_id="resolve-timeout",
+    )
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": "Acme"},
+        result=json.dumps({"ok": False, "error": "timeout"}),
+        call_id="resolve-timeout",
+        success=False,
+    )
+
+    assert ledger.identity_status == "conflicting"
+
+
+@pytest.mark.parametrize(
+    ("payload", "success", "call_id"),
+    [
+        ({"ok": False, "error": "timeout"}, False, "resolve-flaky"),
+        ({"ok": False, "error": "rate limited"}, True, "resolve-refused"),
+        (
+            {
+                "ok": True,
+                "source": "symbol_search",
+                "data": {"query": "Acme", "count": 0, "candidates": []},
+            },
+            True,
+            "resolve-empty",
+        ),
+    ],
+)
+def test_a_non_conclusive_re_resolution_cannot_retract_a_locked_symbol(
+    tmp_path: Path, payload: dict[str, Any], success: bool, call_id: str
+) -> None:
+    """A timeout, a refusal or an empty list is not evidence against the lock."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="Analyze Acme")
+    resolved = {
+        "ok": True,
+        "data": {
+            "query": "Acme",
+            "candidates": [
+                {"symbol": "AAA.US", "name": "Acme", "market": "us", "source": "yahoo"}
+            ],
+        },
+    }
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": "Acme"},
+        result=json.dumps(resolved),
+        call_id="resolve-locked",
+        success=True,
+    )
+    assert ledger.authorized_symbols == {"AAA.US"}
+
+    ledger.authorize_tool_call(
+        "search_symbol",
+        {"query": "Acme"},
+        batch_authorized_symbols=ledger.authorized_symbols,
+        call_id=call_id,
+    )
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": "Acme"},
+        result=json.dumps(payload),
+        call_id=call_id,
+        success=success,
+    )
+
+    assert ledger.identity_status == "locked"
+    assert ledger.authorized_symbols == {"AAA.US"}
+
+
 def test_resolver_and_consumer_in_same_batch_cannot_race(
     tmp_path: Path,
 ) -> None:
@@ -980,6 +1144,8 @@ def test_weekday_suffixed_claim_dates_match_evidence() -> None:
     assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "08-10") is True
     assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "2026-08-10") is True
     assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "2026-08-10(一)") is True
+    assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "2025-08-10") is False
+    assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "2025-08-10(一)") is False
     assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "08-11") is False
     assert _timestamp_matches_claim_date("2026-08-10T00:00:00", "no-date") is False
 

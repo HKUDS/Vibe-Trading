@@ -181,7 +181,9 @@ def _previously_archived(target: Path) -> set[str]:
     }
 
 
-def _archive_backtest_result(result: str, active_run_dir: str | None) -> bool:
+def _archive_backtest_result(
+    result: str, active_run_dir: str | None, *, source_call_id: str | None = None
+) -> bool:
     """Copy a successful detached backtest into the active, reportable run.
 
     The model may choose another allowed run directory while iterating.  The
@@ -204,6 +206,14 @@ def _archive_backtest_result(result: str, active_run_dir: str | None) -> bool:
     :data:`_ARCHIVE_MANIFEST`; anything the active run wrote itself (notably
     ``code/signal_engine.py``, written before ``backtest`` is called) is
     untouched, which is why the manifest exists instead of a blanket wipe.
+
+    Args:
+        result: Serialized successful backtest tool result.
+        active_run_dir: Active turn directory that receives reportable output.
+        source_call_id: Exact tool call recorded with the archive's source path.
+
+    Returns:
+        Whether a detached backtest's output was archived.
     """
     if not active_run_dir:
         return False
@@ -241,7 +251,12 @@ def _archive_backtest_result(result: str, active_run_dir: str | None) -> bool:
     for stale in previously_archived - set(archived):
         (target / stale).unlink(missing_ok=True)
     (target / _ARCHIVE_MANIFEST).write_text(
-        json.dumps({"source_run": source.name, "files": sorted(archived)}, indent=2),
+        json.dumps({
+            "source_run": source.name,
+            "source_run_dir": str(source.resolve()),
+            "source_call_id": source_call_id,
+            "files": sorted(archived),
+        }, indent=2),
         encoding="utf-8",
     )
     for filename in (

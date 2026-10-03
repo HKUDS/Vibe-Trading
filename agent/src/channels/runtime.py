@@ -220,6 +220,7 @@ class ChannelRuntime:
                     channel=msg.channel,
                     chat_id=msg.chat_id,
                     content=reply_content,
+                    media=self._report_media(reply),
                     metadata={
                         "_channel_runtime": True,
                         "attempt_id": attempt_id,
@@ -332,6 +333,19 @@ class ChannelRuntime:
         self._session_map[key] = session_id
         self._save_session_map()
         return session_id
+
+    @staticmethod
+    def _report_media(reply: Message) -> list[str]:
+        """Attach verified reports from this attempt, never model-written paths."""
+        from src.tools.report_artifacts import report_path
+        media = []
+        for report in reply.metadata.get("generated_reports", []):
+            if not isinstance(report, dict) or not isinstance(report.get("report_id"), str):
+                continue
+            path = report_path(report["report_id"])
+            if path is not None and str(path) not in media:
+                media.append(str(path))
+        return media
 
     async def _wait_for_reply(self, session_id: str, attempt_id: str | None) -> Message:
         deadline = time.monotonic() + self.config.reply_timeout_s

@@ -15,7 +15,12 @@ class WriteFileTool(BaseTool):
     """Create or overwrite a workspace file, creating parent directories as needed."""
 
     name = "write_file"
-    description = "Write content to a file in the workspace. Creates parent directories automatically."
+    description = (
+        "Write content to a file in the workspace or configured write roots. "
+        "A .pdf path renders Markdown/text to a real PDF; other paths write UTF-8 text. "
+        "Creates parent directories automatically. Use the returned success/error as "
+        "the authoritative outcome; include the returned download URL for PDF reports."
+    )
     is_readonly = False
     parameters = {
         "type": "object",
@@ -87,12 +92,26 @@ class WriteFileTool(BaseTool):
 
         try:
             resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(content, encoding="utf-8")
+            artifact = {}
+            if resolved.suffix.lower() == ".pdf":
+                from src.tools.pdf_report import render_markdown_pdf
+                from src.tools.report_artifacts import publish_pdf
+                render_markdown_pdf(content, resolved)
+                try:
+                    artifact = publish_pdf(resolved)
+                except OSError as exc:
+                    # The requested file exists: a staging failure must not
+                    # falsely report that the user's write was refused.
+                    artifact = {"media_type": "application/pdf", "download_error": redact_internal_paths(str(exc))}
+            else:
+                resolved.write_text(content, encoding="utf-8")
             return json.dumps(
                 {
                     "status": "ok",
                     "path": str(resolved),
-                    "bytes_written": len(content.encode("utf-8")),
+                    "bytes_written": resolved.stat().st_size,
+                    "requested_path": str(file_path),
+                    **artifact,
                 },
                 ensure_ascii=False,
             )

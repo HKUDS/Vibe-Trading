@@ -191,3 +191,43 @@ def test_resolve_safe_path_run_dir_escapes_fallback(tmp_path: Path, monkeypatch)
     with pytest.raises(ValueError) as excinfo:
         resolve_safe_path("/etc/passwd", str(run_dir), allowed_write_roots(), purpose="write")
     assert "escapes run_dir" in str(excinfo.value)
+
+
+def test_write_rejection_names_the_write_roots_env(tmp_path: Path, monkeypatch) -> None:
+    # The escape hatch must be discoverable from the error itself: a model
+    # told only "escapes the workspace" cannot tell the user how to allow
+    # ~/Documents (#1677).
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / "runs"))
+
+    body = _body(WriteFileTool().execute(path="/etc/poison.txt", content="x"))
+
+    assert body["status"] == "error"
+    assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" in body["error"]
+
+
+def test_write_rejection_inside_run_dir_fallback_also_names_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / "runs"))
+    run_dir = tmp_path / "runs" / "run_1"
+    run_dir.mkdir(parents=True)
+
+    body = _body(
+        WriteFileTool().execute(path="/etc/poison.txt", content="x", run_dir=str(run_dir))
+    )
+
+    assert body["status"] == "error"
+    assert "escapes run_dir" in body["error"]
+    assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" in body["error"]
+
+
+def test_read_purpose_rejection_names_the_file_roots_env(tmp_path: Path, monkeypatch) -> None:
+    # purpose="file" is the read side (image_vision); it must point at the
+    # read widening knob, not the write one.
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_FILE_ROOTS", str(tmp_path / "elsewhere"))
+
+    with pytest.raises(ValueError) as excinfo:
+        resolve_safe_path("/etc/passwd", None, allowed_write_roots(), purpose="file")
+
+    assert "VIBE_TRADING_ALLOWED_FILE_ROOTS" in str(excinfo.value)
+    assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" not in str(excinfo.value)

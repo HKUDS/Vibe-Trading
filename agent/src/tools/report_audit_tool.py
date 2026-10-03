@@ -32,13 +32,16 @@ from src.agent.tools import BaseTool
 # Markdown data-point extraction (handles Chinese financial reports)
 # ---------------------------------------------------------------------------
 
-_KV_LABEL_RE = re.compile(
-    r"(?P<label>[一-龥A-Za-z][^|\n：:*]{1,30})[：:]\s*[~约]?\$?"
-    r"(?P<num>[\d,，.]+)\s*"
-    r"(?P<unit>亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?"
+_KV_LABEL_RE = re.compile(r"(?P<label>[一-龥A-Za-z][^|\n：:*]{1,30})[：:]\s*")
+_UNIT_PATTERN = r"亿[元美港]?元?|万亿|倍|%|[BMTxX](?![A-Za-z])"
+_NUMUNIT_RE = re.compile(
+    r"[~约]?\$?\s*(?:"
+    r"(?P<open>[（(])\s*\$?\s*(?P<account_num>[+\-−]?[\d,，.]+)\s*"
+    rf"(?P<inside_unit>{_UNIT_PATTERN})?\s*(?P<close>[）)])\s*"
+    rf"(?P<outside_unit>{_UNIT_PATTERN})?"
+    r"|(?P<currency_sign>[+\-−])?\s*\$?\s*(?P<num>[+\-−]?[\d,，.]+)\s*"
+    rf"(?P<unit>{_UNIT_PATTERN})?)"
 )
-
-_NUMUNIT_RE = re.compile(r"[~约]?\$?([\d,，.]+)\s*(亿[元美港]?元?|万亿|[xX倍]|%|[BMT])?")
 _TABLE_SEP_RE = re.compile(r"^\|[\-\s|:]+\|$")
 
 _SKIP_LABELS = {
@@ -51,11 +54,62 @@ _QUARTER_RE = re.compile(r"(20\d{2}|Q[1-4]|\d{4}\s*Q[1-4])")
 
 def _clean_num(s: str) -> float | None:
     """Normalise a numeric string with commas (ASCII or wide) to float."""
-    s = s.replace(",", "").replace("，", "").strip()
+    s = s.replace(",", "").replace("，", "").replace("−", "-").strip()
     try:
         return float(s)
     except ValueError:
         return None
+
+
+def _report_value(text: str, *, prose: bool = False) -> tuple[float, str, int] | None:
+    """Read a financial value without rescuing malformed accounting notation.
+
+    Args:
+        text: Table cell or text immediately following a prose label.
+        prose: Require a unit or currency for a parenthesized prose value.
+
+    Returns:
+        Finite signed value, its unit and consumed end offset, or None.
+    """
+    match = _NUMUNIT_RE.match(text) if prose else _NUMUNIT_RE.search(text)
+    if match is None:
+        return None
+    # A failed accounting match must not restart at the unsigned inner digits.
+    prefix = text[: match.start()]
+    if prefix.count("(") > prefix.count(")") or prefix.count("（") > prefix.count("）"):
+        return None
+    suffix = text[match.end() :].lstrip()
+    if suffix.startswith((")", "）")):
+        return None
+    if match.group("open"):
+        if (match.group("open"), match.group("close")) not in {
+            ("(", ")"),
+            ("（", "）"),
+        }:
+            return None
+        inside, outside = match.group("inside_unit"), match.group("outside_unit")
+        if inside and outside:
+            return None
+        unit = inside or outside or ""
+        if prose and not unit and "$" not in match.group():
+            return None
+        value = _clean_num(match.group("account_num"))
+        if value is not None:
+            # Parens mean negative regardless of an inner sign: "(-25)" is
+            # the same debt as "(25)", never a credit.
+            value = -abs(value)
+    else:
+        value = _clean_num(match.group("num"))
+        sign = match.group("currency_sign")
+        if sign:
+            if match.group("num").startswith(("+", "-", "−")):
+                return None
+            if value is not None and sign in {"-", "−"}:
+                value = -value
+        unit = match.group("unit") or ""
+    if value is None or not math.isfinite(value):
+        return None
+    return value, unit, match.end()
 
 
 def _is_valid_label(label: str) -> bool:
@@ -97,7 +151,9 @@ def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, 
     while i < len(lines):
         line = lines[i].strip()
         if "|" in line and not _TABLE_SEP_RE.match(line):
-            headers_raw = [h.strip().strip("*_").strip() for h in _split_md_table_row(line)]
+            headers_raw = [
+                h.strip().strip("*_").strip() for h in _split_md_table_row(line)
+            ]
             if i + 1 < len(lines) and _TABLE_SEP_RE.match(lines[i + 1].strip()):
                 i += 2  # skip the separator row
                 while i < len(lines):
@@ -117,12 +173,13 @@ def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, 
                             if col_idx < len(headers_raw)
                             else f"col{col_idx}"
                         )
-                        m = _NUMUNIT_RE.search(cell)
-                        if m:
-                            val = _clean_num(m.group(1))
-                            unit = (m.group(2) or "").strip()
-                            if val and val != 0 and val < 1e15:
-                                results.append((row_label, col_header, val, unit, i + 1, dline))
+                        parsed = _report_value(cell)
+                        if parsed is not None:
+                            val, unit, _ = parsed
+                            if val != 0 and abs(val) < 1e15:
+                                results.append(
+                                    (row_label, col_header, val, unit, i + 1, dline)
+                                )
                     i += 1
                 continue
         i += 1
@@ -149,7 +206,7 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
         label = re.sub(r"[*_`]+", "", label).strip()
         if not _is_valid_label(label):
             return
-        if val is None or val == 0 or val > 1e15:
+        if val is None or not math.isfinite(val) or val == 0 or abs(val) > 1e15:
             return
         if _QUARTER_RE.fullmatch(label.strip()):
             return
@@ -157,14 +214,16 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
         if key in seen:
             return
         seen.add(key)
-        points.append({
-            "id": len(points) + 1,
-            "label": label,
-            "reported_value": val,
-            "unit": unit,
-            "raw_text": raw[:120],
-            "line_number": lineno,
-        })
+        points.append(
+            {
+                "id": len(points) + 1,
+                "label": label,
+                "reported_value": val,
+                "unit": unit,
+                "raw_text": raw[:120],
+                "line_number": lineno,
+            }
+        )
 
     lines = md_text.split("\n")
     in_code = False
@@ -176,7 +235,11 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
             continue
         if col_header.upper() in _YOY_HEADERS:
             continue
-        label = f"{row_label} · {col_header}" if (col_header and col_header != row_label) else row_label
+        label = (
+            f"{row_label} · {col_header}"
+            if (col_header and col_header != row_label)
+            else row_label
+        )
         _add(label, val, unit, lineno, raw)
 
     # 2. ``label: value unit`` lines.
@@ -189,14 +252,14 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
             continue
         if "|" in stripped:
             continue  # handled as a table above
-        for m in _KV_LABEL_RE.finditer(stripped):
-            _add(
-                m.group("label"),
-                _clean_num(m.group("num")),
-                (m.group("unit") or "").strip(),
-                lineno,
-                stripped,
-            )
+        cursor = 0
+        while (m := _KV_LABEL_RE.search(stripped, cursor)) is not None:
+            cursor = m.end()
+            parsed = _report_value(stripped[m.end() :], prose=True)
+            if parsed is not None:
+                val, unit, consumed = parsed
+                cursor += consumed
+                _add(m.group("label"), val, unit, lineno, stripped)
 
     return points
 

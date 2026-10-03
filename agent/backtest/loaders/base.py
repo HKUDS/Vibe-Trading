@@ -466,8 +466,10 @@ _LOADER_CACHE_TRUE_VALUES = {"1", "true", "yes", "on"}
 # persisted. v5 USD/unknown .L entries must never be served as static GBP.
 # v7: tencent fqkline paginates backward (#1410) — entries cached under the
 # forward walk hold tail-truncated multi-year series and must never be served.
-_LOADER_CACHE_VERSION = 7
-_LOADER_FRAME_METADATA_ATTRS = ("quote_currency", "currency_conversion")
+# v8: FMP/Tiingo keep one adjusted/raw basis and cached frames retain their
+# actual adjustment stamp. Older entries may contain artificial return jumps.
+_LOADER_CACHE_VERSION = 8
+_LOADER_FRAME_METADATA_ATTRS = ("quote_currency", "currency_conversion", "adjustment")
 
 
 def loader_cache_enabled() -> bool:

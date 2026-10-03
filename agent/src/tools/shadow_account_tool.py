@@ -13,6 +13,7 @@ import json
 import logging
 from dataclasses import asdict
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -322,6 +323,8 @@ class RenderShadowReportTool(BaseTool):
             "report_url": f"/shadow-reports/{profile.shadow_id}",
         }
         if report["pdf_path"]:
+            from src.tools.report_artifacts import publish_pdf
+            payload.update(publish_pdf(Path(report["pdf_path"])))
             payload["pdf_url"] = f"/shadow-reports/{profile.shadow_id}?format=pdf"
         return _ok(**payload)
 

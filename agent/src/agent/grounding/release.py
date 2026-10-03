@@ -135,9 +135,11 @@ def _correction_line(issue: dict[str, Any]) -> str:
             "; that is the same size with the opposite sign — the formula runs the other "
             "way round from the answer, so write its operands in the order the answer states"
         )
-    candidates = issue.get("field_ref_candidates") or []
-    if candidates:
-        evidence += "; valid field refs: " + ", ".join(str(item) for item in candidates)
+    # Each ref once, and not again when the reason already spelled the same list.
+    candidates = list(dict.fromkeys(str(item) for item in issue.get("field_ref_candidates") or []))
+    sources = list(dict.fromkeys(str(item) for item in issue.get("ambiguous_sources") or []))
+    if candidates and not ("{sources}" in template and candidates == sources):
+        evidence += "; valid field refs: " + ", ".join(candidates)
     nearest = issue.get("observed_nearest") or []
     if nearest:
         evidence += "; nearest observed " + ", ".join(_format_price(float(item)) for item in nearest)

@@ -9,6 +9,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { toast } from "sonner";
 import { normalizeMathDelimiters } from "@/lib/markdown";
+import { downloadGeneratedReport } from "@/lib/api";
 import type { AgentMessage } from "@/types/agent";
 import type { StoredAgentMessage } from "@/stores/agent";
 import { AgentAvatar } from "./AgentAvatar";
@@ -32,6 +33,16 @@ const markdownComponents: ReactMarkdownOptions["components"] = {
   },
   a: ({ node, ...props }) => {
     void node;
+    const report = props.href?.match(/^\/api\/reports\/([0-9a-f]{32})$/);
+    if (report) {
+      return <a {...props} onClick={(event) => {
+        event.preventDefault();
+        const filename = event.currentTarget.textContent || "report.pdf";
+        void downloadGeneratedReport(report[1], filename).catch(() => {
+          toast.error(i18n.t("settings.unknownError"));
+        });
+      }} />;
+    }
     return <a {...props} target="_blank" rel="noopener noreferrer" />;
   },
 };

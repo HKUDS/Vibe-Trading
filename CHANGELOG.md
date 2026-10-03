@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Grounding validation records fired declared checks** (#1661, with the
+  registry substrate from #1628, thanks @he-yufeng). Validation artifacts name
+  the registered checks behind their findings; the existing private/listed
+  identity rule is unchanged.
+- **Public loader-health failures carry sanitized warning evidence** (#1643,
+  thanks @cgycorey). Reports retain up to three bounded loader warnings while
+  continuing to fail unavailable sources. Structured and quoted credentials
+  are redacted; warnings containing filesystem paths are omitted in full.
+
 - **Feishu joins the guided Web UI channel setup** (#1572, thanks
   @shadowinlife). The Feishu panel gets field hints and a setup guide in all
   nine locales. **Test connection** is a standalone probe that requests a
@@ -29,6 +38,21 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   records now come from the `src.agent.tool_results` logger.
 
 ### Fixed
+
+- **Strategy-file writes no longer crash on missing model provenance fields**
+  (#1673, closes #1672, thanks @tomaszkubiak-courses). Each writing turn records
+  the provider-reported model or falls back to the configured model.
+- **Monte Carlo path metrics include starting capital** (#1664, thanks
+  @MetaAviator). Both actual and shuffled paths include the first trade's
+  return and loss against the initial high-water mark when computing Sharpe
+  and maximum drawdown.
+- **Report audits retain accounting negatives and their units** (#1663,
+  closes #1660, thanks @he-yufeng). ASCII and fullwidth parentheses, inner or
+  outer units and currency marks retain the negative sign. Malformed pairs
+  and non-finite or oversized values are rejected without losing the labels
+  of subsequent values on the same line.
+- **Indonesian tool documentation matches the registry** (#1671, thanks
+  @he-yufeng), including `get_southbound_flow` and the measured tool counts.
 
 - **Carhart momentum no longer reads today's price** (#1578, thanks
   @Shizoqua). `academic_carhart_mom` computed the 12-month return minus the

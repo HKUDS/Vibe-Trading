@@ -402,6 +402,39 @@ def test_feishu_pristine_form_roundtrip_validates_for_typed_fields(
     assert "probe-token-do-not-leak" not in response.text
 
 
+def test_email_pristine_form_roundtrip_normalizes_nullable_text_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The generic form must not turn nullable Email fields into invalid blanks."""
+    client, path = _client(
+        tmp_path, monkeypatch, channels={"email": _email_section()}
+    )
+    entry = client.get("/channels/config").json()["channels"]["email"]
+
+    patch: dict[str, Any] = {}
+    for field in entry["fields"]:
+        if field["secret"]:
+            continue
+        value = entry["values"].get(field["key"])
+        if field["type"] == "list":
+            patch[field["key"]] = value if isinstance(value, list) else []
+        elif field["type"] == "bool":
+            patch[field["key"]] = bool(value)
+        else:
+            patch[field["key"]] = "" if value is None else str(value)
+
+    patch["max_attachments_per_email"] = "4"
+
+    response = client.put("/channels/config/email", json={"config": patch})
+
+    assert response.status_code == 200, response.text
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["email"]
+    assert on_disk["max_attachments_per_email"] == "4"
+    assert on_disk["post_action"] is None
+    assert on_disk["post_action_move_mailbox"] is None
+    assert EMAIL_IMAP_PASSWORD not in response.text
+    assert EMAIL_SMTP_PASSWORD not in response.text
+
 def test_display_config_path_relativizes_home() -> None:
     home = Path.home()
 
@@ -1303,3 +1336,19 @@ def test_put_websocket_clears_non_secret_token_issue_path(
     on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["websocket"]
     assert on_disk["token_issue_path"] == ""
     assert on_disk["token"] == "s3cret-value"
+def test_email_test_normalizes_blank_nullable_fields_without_persisting(tmp_path, monkeypatch):
+    client, path = _client(tmp_path, monkeypatch, channels={"email": _email_section()})
+    before = path.read_bytes()
+    seen = []
+    async def successful_probe(config):
+        seen.append(config.post_action)
+        return {"ok": True, "code": "ok", "detail": "connected", "sdk_available": True}
+    monkeypatch.setattr(email_probe, "test_connection", successful_probe)
+    response = client.post("/channels/email/test", json={"config": {"post_action": "", "max_attachments_per_email": 7}})
+    assert response.status_code == 200 and response.json()["ok"] is True
+    assert seen == [None]
+    assert path.read_bytes() == before
+    response = client.post("/channels/email/test", json={"config": {"post_action": "invalid"}})
+    assert response.status_code == 200 and response.json()["ok"] is False
+    assert response.json()["code"] == "invalid_credentials" and seen == [None]
+    assert response.json()["detail"].startswith("validation_error:")

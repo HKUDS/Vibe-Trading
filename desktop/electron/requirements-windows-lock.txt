@@ -3153,6 +3153,12 @@ regex==2026.7.19 \
     --hash=sha256:fe31f28c94402043161876a258a9c6f757cb485905c7614ce8d6cd40e6b7bdc1 \
     --hash=sha256:ffd8893ccc1c2fce6e0d6ca402d716fe1b29db70c7132609a05955e31b2aa8f2
     # via tiktoken
+reportlab==5.0.1 \
+    --hash=sha256:1c36e6bb0e71780c72331eba60da7f602e8d4389a8723825af71342e49d791e8 \
+    --hash=sha256:ebd13154be1c8515e665de70bd2d303ae9ddc3ef47e44afd5116441ca0283a26
+    # via
+    #   -r agent/requirements.txt
+    #   vibe-trading-ai
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed

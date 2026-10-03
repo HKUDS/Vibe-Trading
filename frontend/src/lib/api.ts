@@ -8,6 +8,17 @@ import type {
 
 const BASE = "";
 
+export async function downloadGeneratedReport(reportId: string, filename: string): Promise<void> {
+  const response = await fetch(`${BASE}/api/reports/${encodeURIComponent(reportId)}`, { headers: authHeaders() });
+  if (!response.ok) throw new ApiError(response.statusText, response.status);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;

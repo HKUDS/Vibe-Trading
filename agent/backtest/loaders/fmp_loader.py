@@ -21,6 +21,7 @@ Auth: set ``FMP_API_KEY`` in the environment. Covers US equities only.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -189,6 +190,33 @@ class DataLoader:
         return _parse_historical(payload)
 
 
+def _adjusted_bar(bar: dict) -> Optional[tuple[float, float, float, float]]:
+    """The adjusted ``(open, high, low, close)`` one FMP bar yields, or ``None``.
+
+    FMP carries only ``adjClose``, so the rest of a bar is its raw OHLC scaled
+    by the ``adjClose/close`` factor. ``None`` means the bar cannot be part of
+    an adjusted series — a price that is missing, non-numeric, non-finite or
+    non-positive, or a factor outside the sane 0.01-100x window — so it may
+    neither supply the series' basis nor, once another bar supplies it, be
+    replaced with raw prices.
+    """
+    try:
+        o, h, lo, c = (
+            float(bar[field]) for field in ("open", "high", "low", "close")
+        )
+        adj_close = float(bar["adjClose"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(
+        math.isfinite(value) and value > 0 for value in (o, h, lo, c, adj_close)
+    ):
+        return None
+    ratio = adj_close / c
+    if not 0.01 <= ratio <= 100:
+        return None
+    return o * ratio, h * ratio, lo * ratio, adj_close
+
+
 def _parse_historical(payload: Any) -> Optional[pd.DataFrame]:
     """Convert an FMP historical-price body into an ascending OHLCV frame.
 
@@ -200,6 +228,10 @@ def _parse_historical(payload: Any) -> Optional[pd.DataFrame]:
     total-return prices rather than raw gaps — the same split_dividend caliber
     eastmoney/tencent/yahoo/yfinance serve, and what this source is registered
     as in ``PRICE_CALIBER_BY_SOURCE``. Volume is never scaled.
+
+    A bar that cannot yield a complete, finite, positive adjusted bar is
+    dropped whenever any other bar can, so one series never mixes the two
+    price bases; a response in which no bar can stays consistently raw.
 
     Args:
         payload: Decoded JSON body from the historical-price endpoint.
@@ -220,39 +252,63 @@ def _parse_historical(payload: Any) -> Optional[pd.DataFrame]:
     if not historical:
         return None
 
+    dated = [bar for bar in historical if isinstance(bar, dict)
+             and isinstance(bar.get("date"), str)
+             and pd.notna(pd.to_datetime(bar["date"], errors="coerce"))]
+    if len(dated) != len(historical):
+        logger.warning("FMP: dropped %d bars with missing/invalid dates", len(historical) - len(dated))
+    has_adjusted_data = any(_adjusted_bar(bar) is not None for bar in dated)
     rows = []
-    for bar in historical:
-        if not isinstance(bar, dict) or "date" not in bar:
+    dropped = 0
+    for bar in dated:
+        basis = _adjusted_bar(bar)
+        if basis is not None:
+            o, h, lo, c = basis
+        elif has_adjusted_data:
+            # Preserve a single price basis: a bar whose adjustment is missing
+            # or unusable cannot be replaced with raw OHLC when others are
+            # adjusted. A response with no usable adjustment at all stays raw,
+            # consistently.
+            dropped += 1
             continue
-        adj_close = bar.get("adjClose")
-        close_raw = bar.get("close")
-        ratio: Optional[float] = None
-        try:
-            if adj_close is not None and close_raw is not None:
-                ac = float(adj_close)
-                cr = float(close_raw)
-                if cr > 0 and ac > 0:
-                    r = ac / cr
-                    if 0.01 <= r <= 100:
-                        ratio = r
-        except (TypeError, ValueError):
-            ratio = None
-        row = {"trade_date": bar["date"]}
-        for field in _OHLCV_FIELDS:
-            val = bar.get(field)
-            if field != "volume" and ratio is not None and val is not None:
-                try:
-                    val = float(val) * ratio
-                except (TypeError, ValueError):
-                    pass
-            row[field] = val
-        rows.append(row)
+        else:
+            # Nothing to adjust against: the whole series stays on the raw
+            # basis rather than the response being discarded.
+            o, h, lo, c = (
+                bar.get("open"),
+                bar.get("high"),
+                bar.get("low"),
+                bar.get("close"),
+            )
+        rows.append(
+            {
+                "trade_date": bar["date"],
+                "open": o,
+                "high": h,
+                "low": lo,
+                "close": c,
+                "volume": bar.get("volume"),
+            }
+        )
+
+    if dropped:
+        # Say so rather than truncate in silence: a long-history symbol whose
+        # older bars fall outside the 0.01-100x factor window loses them, and
+        # the backtest then runs a shorter window than it asked for.
+        logger.warning(
+            "FMP: dropped %d of %d bars that carry no usable adjustment while "
+            "the rest do; the series keeps one price basis instead of mixing "
+            "raw and adjusted prices",
+            dropped,
+            len(historical),
+        )
 
     if not rows:
         return None
 
     df = pd.DataFrame(rows)
-    df["trade_date"] = pd.to_datetime(df["trade_date"])
+    df["trade_date"] = pd.to_datetime(df["trade_date"], errors="coerce")
+    df = df.dropna(subset=["trade_date"])
     for field in _OHLCV_FIELDS:
         # Cast to float (not just to_numeric) so integer volume from the API
         # does not leave the column int64 and break the float-OHLCV contract.
@@ -260,6 +316,9 @@ def _parse_historical(payload: Any) -> Optional[pd.DataFrame]:
 
     df = df.set_index("trade_date").sort_index()
     df = df[list(_OHLCV_FIELDS)].dropna(subset=["open", "high", "low", "close"])
+    prices = df[["open", "high", "low", "close"]]
+    df = df.loc[((prices > 0) & (prices < float("inf"))).all(axis=1)]
     if df.empty:
         return None
+    df.attrs["adjustment"] = "split_dividend" if has_adjusted_data else "raw"
     return df

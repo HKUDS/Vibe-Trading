@@ -211,6 +211,30 @@ def test_metrics_reach_the_attempt_and_the_reply(tmp_path, monkeypatch):
     asyncio.run(scenario())
 
 
+def test_generated_report_links_persist_and_stream_identically(tmp_path, monkeypatch):
+    """A model omission must not hide a successfully generated report."""
+    async def scenario():
+        service = _service(tmp_path, monkeypatch)
+        session = service.create_session(title="report")
+        report = {"report_id": "a" * 32, "filename": "研究报告.pdf", "download_url": "/api/reports/" + "a" * 32}
+        trail = []
+        service._record_tool_trail_event(trail, "tool_result", {"tool": "write_file", "status": "ok", "artifact": report})
+        _stub_agent(service, monkeypatch, {"status": "success", "content": "Report saved.", "tool_trail": trail})
+        events = []
+        service.event_bus.emit = lambda sid, kind, data: events.append((kind, data))
+        await service.send_message(session.session_id, "create report")
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if session.session_id not in service._inflight:
+                break
+        reply = service.store.get_messages(session.session_id)[-1]
+        assert reply.metadata["generated_reports"] == [report]
+        assert "[研究报告.pdf](/api/reports/" in reply.content
+        completed = next(data for kind, data in events if kind == "attempt.completed")
+        assert completed["summary"] == reply.content
+    asyncio.run(scenario())
+
+
 def test_empty_successful_answer_says_so():
     """An empty answer must not be dressed up as a finished strategy run."""
     attempt = Attempt(session_id="s" * 12, prompt="p")

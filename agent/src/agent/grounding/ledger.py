@@ -21,6 +21,7 @@ from src.agent.grounding.identity import (
 from src.agent.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
 from src.agent.grounding.figures import parse_figures_block, scan_figures, strip_figures_block
 from src.agent.grounding.policies import ValidationResult, _PolicyMixin
+from src.agent.grounding.registry import GROUNDING_CHECKS
 from src.agent.grounding.release import (
     MAX_GROUNDING_RECOVERY_ROUNDS,
     MAX_PRICE_EVIDENCE_ATTEMPTS,
@@ -290,8 +291,9 @@ class GroundingLedger(
             content: Candidate assistant answer.
 
         Returns:
-            A deterministic validation result. A record containing only the
-            answer hash and structured issues is appended to the artifact.
+            A deterministic validation result. A record containing the answer
+            hash, structured issues, and the names of the declared checks that
+            fired is appended to the artifact.
         """
         return self._validate(content, record=True)
 
@@ -348,6 +350,11 @@ class GroundingLedger(
                 "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
                 "valid": result.valid,
                 "issues": issues,
+                # Names let a run card say which declared checks fired without
+                # re-running the gate; inline rules carry codes only until migrated.
+                "fired_checks": GROUNDING_CHECKS.names_for_codes(
+                    {str(issue.get("code") or "") for issue in issues}
+                ),
                 "figures_block": block.raw,
             }
         )

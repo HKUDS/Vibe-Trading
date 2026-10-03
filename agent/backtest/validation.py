@@ -121,7 +121,9 @@ def _path_metrics(
     pnls: np.ndarray, initial_capital: float, bars_per_year: int = 252
 ) -> Dict[str, float]:
     """Compute Sharpe and max drawdown from a PnL sequence."""
-    equity = initial_capital + np.cumsum(pnls)
+    # Include starting cash so the first trade contributes to returns and
+    # drawdown in both the observed path and every shuffled path.
+    equity = np.concatenate(([initial_capital], initial_capital + np.cumsum(pnls)))
     if len(equity) > 1:
         prev = equity[:-1]
         diff = np.diff(equity)

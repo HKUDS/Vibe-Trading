@@ -113,6 +113,143 @@ def test_rows_to_frame_drops_rows_missing_ohlc() -> None:
     assert len(df) == 2  # row with no OHLC dropped
 
 
+def test_rows_with_incomplete_adjusted_ohlc_do_not_mix_price_bases() -> None:
+    rows = [
+        {
+            "date": "2024-01-02T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 50, "adjHigh": 50.5, "adjLow": 49.5, "adjClose": 50,
+        },
+        {
+            "date": "2024-01-03T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": None, "adjHigh": None, "adjLow": None, "adjClose": None,
+        },
+    ]
+
+    df = _rows_to_frame(rows)
+
+    assert df is not None
+    # This loader promises split/dividend-adjusted prices, so reject the row
+    # without adjusted prices rather than fabricate a 100% return from raw data.
+    assert list(df["close"]) == [50.0]
+
+
+def test_zero_adjusted_ohlc_is_rejected_not_priced() -> None:
+    rows = [
+        {
+            "date": "2024-01-02T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 50, "adjHigh": 50.5, "adjLow": 49.5, "adjClose": 50,
+        },
+        {
+            "date": "2024-01-03T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 0, "adjHigh": 0, "adjLow": 0, "adjClose": 0,
+        },
+    ]
+
+    df = _rows_to_frame(rows)
+
+    assert df is not None
+    # A zero-adjusted bar is not a price: accepting it fabricates a -100% bar.
+    assert list(df["close"]) == [50.0]
+
+
+def test_an_all_unusable_adjusted_response_stays_one_raw_basis() -> None:
+    rows = [
+        {
+            "date": "2024-01-02T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 0, "adjHigh": 0, "adjLow": 0, "adjClose": 0,
+        },
+        {
+            "date": "2024-01-03T00:00:00.000Z",
+            "open": 101, "high": 102, "low": 100, "close": 101, "volume": 1000,
+            "adjOpen": 0, "adjHigh": 0, "adjLow": 0, "adjClose": 0,
+        },
+    ]
+
+    df = _rows_to_frame(rows)
+
+    # No bar carries a usable adjustment, so the series stays consistently raw
+    # (one basis) rather than being discarded or priced at zero.
+    assert df is not None
+    assert list(df["close"]) == [100.0, 101.0]
+
+
+def test_a_bar_that_cannot_be_emitted_does_not_set_the_adjusted_basis() -> None:
+    """A computable factor on an incomplete bar must not claim the basis.
+
+    Such a bar is dropped either way; what it must not do is drag its
+    unadjusted siblings down with it, which turned a usable raw series into no
+    series at all.
+    """
+    rows = [
+        {
+            "date": "2024-01-02T00:00:00.000Z",
+            "open": None, "high": 102, "low": 99, "close": 100, "volume": 1000,
+            "adjClose": 50,
+        },
+        {
+            "date": "2024-01-03T00:00:00.000Z",
+            "open": 101, "high": 103, "low": 100, "close": 101, "volume": 1000,
+        },
+    ]
+
+    df = _rows_to_frame(rows)
+
+    assert df is not None
+    assert list(df["close"]) == [101.0]
+
+
+def test_a_non_finite_adjusted_price_is_not_served() -> None:
+    """An adjusted leg of infinity is not a price: the bar is not adjusted."""
+    rows = [
+        {
+            "date": "2024-01-02T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 50, "adjHigh": 50.5, "adjLow": 49.5, "adjClose": 50,
+        },
+        {
+            "date": "2024-01-03T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": float("inf"), "adjHigh": 50.5, "adjLow": 49.5, "adjClose": 50,
+        },
+    ]
+
+    df = _rows_to_frame(rows)
+
+    assert df is not None
+    assert list(df["close"]) == [50.0]
+
+
+def test_a_dropped_row_is_reported_not_truncated_in_silence(caplog) -> None:
+    """A long-history symbol can lose old rows to the 0.01-100x factor window."""
+    rows = [
+        # A 1997-style row: only adjClose is present and its 600x cumulative
+        # factor (0.002/1.2) sits below the 0.01 floor, so it cannot join the
+        # adjusted series.
+        {
+            "date": "1997-05-15T00:00:00.000Z",
+            "open": 1.0, "high": 1.5, "low": 0.9, "close": 1.2, "volume": 1000,
+            "adjClose": 0.002,
+        },
+        {
+            "date": "2024-01-03T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 50, "adjHigh": 50.5, "adjLow": 49.5, "adjClose": 50,
+        },
+    ]
+
+    with caplog.at_level("WARNING", logger="backtest.loaders.tiingo_loader"):
+        df = _rows_to_frame(rows)
+
+    assert df is not None
+    assert list(df["close"]) == [50.0]
+    assert "dropped 1 of 2" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # fetch() behavior (HTTP mocked)
 # ---------------------------------------------------------------------------

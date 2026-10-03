@@ -120,7 +120,13 @@ def test_engine_warnings_are_not_mistaken_for_the_card_warnings(tmp_path: Path) 
     engine_warnings = ["Annual return requires at least two observations."]
     card = write_run_card(
         tmp_path,
-        {"codes": ["SPY"], "source": "auto"},
+        {
+            "codes": ["SPY"],
+            "source": "auto",
+            "start_date": "2025-01-01",
+            "end_date": "2025-01-02",
+            "model_training_cutoff": "2020-01-01",
+        },
         {"sharpe": None, "warnings": engine_warnings},
         warnings=["from config: content filter"],
     )

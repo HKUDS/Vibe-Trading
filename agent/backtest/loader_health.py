@@ -2,6 +2,8 @@
 
 Run ``python -m backtest.loader_health --output report.json`` from agent/.
 Every non-healthy source fails the lane; connectivity is never a passing skip.
+A row also carries the loader's own warnings as ``evidence``, so an empty frame
+says whether the source refused this runner or the loader itself is broken.
 """
 
 from __future__ import annotations
@@ -12,9 +14,11 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, datetime, timedelta, timezone
 import importlib.util
 import json
+import logging
 import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -50,6 +54,69 @@ DEPENDENCIES = {
 }
 FRESHNESS_DAYS = 14
 WINDOW_DAYS = 21
+
+#: A row carries at most this many loader warnings, each capped and sanitized.
+MAX_EVIDENCE = 3
+EVIDENCE_TEXT_LIMIT = 200
+
+_URL_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://\S+")
+# Filesystem paths may contain spaces: partial replacement can expose names.
+# Omit those warnings entirely; slashes inside market symbols remain sanitizable.
+_FILESYSTEM_PATH_RE = re.compile(r"(?<![A-Za-z0-9])(?:/|[A-Za-z]:[\\/]|\\\\)")
+_PATH_RE = re.compile(r"/[^\s]+")
+_CREDENTIAL_RE = re.compile(
+    r"[\"']?\b[\w-]*(?:token|secret|password|passwd|api[-_]?key|private[-_]?key)[\w-]*[\"']?"
+    r"\s*[=:]\s*(?:\"(?:\\.|[^\"])*(?:\"|$)|'(?:\\.|[^'])*(?:'|$)|\S+)"
+    r"|\b(?:bearer|basic)\s+\S+"
+    r"|\b(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-)[\w-]{8,}",
+    re.IGNORECASE,
+)
+
+
+def sanitize_evidence(text: str) -> str | None:
+    """Redact URLs, paths and credential-shaped tokens from a loader warning.
+
+    Args:
+        text: A log message emitted by a loader.
+
+    Returns:
+        The message with URLs and credential-shaped values redacted and
+        whitespace collapsed, or ``None`` for filesystem paths or when the
+        result still carries an unclassified URL or path separator. An
+        unclassifiable message is dropped because this artifact is public.
+    """
+    cleaned = _CREDENTIAL_RE.sub("<redacted>", _URL_RE.sub("<url>", text or ""))
+    if _FILESYSTEM_PATH_RE.search(cleaned):
+        return None
+    if "://" in cleaned:
+        return None
+    cleaned = " ".join(cleaned.split())
+    cleaned = _PATH_RE.sub("<path>", cleaned)[:EVIDENCE_TEXT_LIMIT].strip()
+    if not cleaned or any(marker in cleaned for marker in ("://", "/", "\\")):
+        return None
+    return cleaned
+
+
+class _LoaderWarningCollector(logging.Handler):
+    """Collect a loader's own warnings so an empty frame can explain itself.
+
+    The child process suppresses the loader's log output (this lane exists to
+    separate a blocked source from a broken one, and both reach the report as
+    the same empty frame), so the reason is carried in the report instead.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if not (record.name == "backtest.loaders" or record.name.startswith("backtest.loaders.")):
+            return
+        if len(self.messages) >= MAX_EVIDENCE:
+            return
+        text = sanitize_evidence(record.getMessage())
+        if text and text not in self.messages:
+            self.messages.append(text)
 
 
 def coverage_errors() -> list[str]:
@@ -128,26 +195,34 @@ def probe(source: str, today: date) -> dict:
         return {"status": "invalid", "reason": "not_public_canary"}
     symbol = CANARY_SYMBOLS[source]
     result = {"status": "unavailable", "reason": "availability_probe_failed"}
-    for attempt in range(1, 3):
-        try:
-            loader = cls()
-            if not loader.is_available():
-                result = {"status": "unavailable", "reason": "availability_probe_failed"}
-            else:
-                frames = loader.fetch(
-                    [symbol], (today - timedelta(days=WINDOW_DAYS)).isoformat(), today.isoformat(), interval="1D"
-                )
-                result = check_frame(frames.get(symbol) if isinstance(frames, dict) else None, today)
-        except (ConnectionError, TimeoutError, requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-            result = {"status": "unreachable", "reason": "network_error"}
-        except ImportError:
-            result = {"status": "missing_dependency", "reason": "loader_import_failed"}
-        except Exception:
-            # Exception messages can contain URLs, local paths or credentials.
-            result = {"status": "error", "reason": "fetch_failed"}
-        result["attempts"] = attempt
-        if result["status"] == "healthy":
-            break
+    collector = _LoaderWarningCollector()
+    loaders_logger = logging.getLogger("backtest.loaders")
+    loaders_logger.addHandler(collector)
+    try:
+        for attempt in range(1, 3):
+            try:
+                loader = cls()
+                if not loader.is_available():
+                    result = {"status": "unavailable", "reason": "availability_probe_failed"}
+                else:
+                    frames = loader.fetch(
+                        [symbol], (today - timedelta(days=WINDOW_DAYS)).isoformat(), today.isoformat(), interval="1D"
+                    )
+                    result = check_frame(frames.get(symbol) if isinstance(frames, dict) else None, today)
+            except (ConnectionError, TimeoutError, requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                result = {"status": "unreachable", "reason": "network_error"}
+            except ImportError:
+                result = {"status": "missing_dependency", "reason": "loader_import_failed"}
+            except Exception:
+                # Exception messages can contain URLs, local paths or credentials.
+                result = {"status": "error", "reason": "fetch_failed"}
+            result["attempts"] = attempt
+            if result["status"] == "healthy":
+                break
+    finally:
+        loaders_logger.removeHandler(collector)
+    if collector.messages and result["status"] != "healthy":
+        result["evidence"] = collector.messages
     return result
 
 

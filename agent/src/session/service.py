@@ -410,6 +410,15 @@ class SessionService:
                 # one thing a failure report needs.
                 tool_trail=result.get("tool_trail", []),
             )
+            reports = [entry["artifact"] for entry in reply.tool_trail
+                       if entry.get("status") == "ok" and isinstance(entry.get("artifact"), dict)]
+            if reports:
+                reply.metadata["generated_reports"] = reports
+                # Persist and stream the same concrete download links even if
+                # the model forgot to include them in its final answer.
+                links = [f"[{str(report['filename']).replace('[', '').replace(']', '')}]({report['download_url']})"
+                         for report in reports]
+                reply.content += "\n\n" + "\n\n".join(dict.fromkeys(links))
             self.store.append_message(reply)
             # The append-only transcript is the user-visible source of truth.
             # Commit it before attempt.json so startup recovery can finish a
@@ -421,7 +430,7 @@ class SessionService:
                 session.session_id,
                 _TERMINAL_EVENTS.get(attempt.status.value, "attempt.failed"),
                 {"attempt_id": attempt.attempt_id, "status": attempt.status.value,
-                 "summary": attempt.summary, "error": attempt.error, "run_dir": attempt.run_dir,
+                 "summary": reply.content, "error": attempt.error, "run_dir": attempt.run_dir,
                  "started_at": wall_started_at, "ended_at": time.time(),
                  **{key: reply_metadata[key] for key in ("elapsed_ms", *runtime_keys) if key in reply_metadata}},
             )
@@ -643,6 +652,8 @@ class SessionService:
         if isinstance(elapsed_ms, (int, float)) and not isinstance(elapsed_ms, bool):
             match["elapsed_ms"] = max(0, int(elapsed_ms))
         match["preview"] = str(data.get("preview") or "")
+        if match["status"] == "ok" and isinstance(data.get("artifact"), dict):
+            match["artifact"] = dict(data["artifact"])
         if call_id:
             match["call_id"] = call_id
 

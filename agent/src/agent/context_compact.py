@@ -226,6 +226,7 @@ def _microcompact(
     *,
     target_tokens: Optional[int] = None,
     measure: Optional[Callable[[list], int]] = None,
+    preserve_tool_call_ids: Optional[set[str]] = None,
 ) -> list:
     """Layer 1: prune old tool results, keeping the most recent N intact.
 
@@ -237,6 +238,8 @@ def _microcompact(
             still needs is what made it re-fetch its evidence until
             ``no_progress``, so the loop passes a target.
         measure: Prompt-size function for ``target_tokens``.
+        preserve_tool_call_ids: Replayed results no successful model request
+            has carried yet; they are never cleared here.
 
     Returns:
         Names of tools whose every result just became unreadable (legacy
@@ -250,6 +253,8 @@ def _microcompact(
     for msg in tool_msgs[:-KEEP_RECENT]:
         if target_tokens is not None and measure is not None and measure(messages) <= target_tokens:
             break
+        if preserve_tool_call_ids and msg.get("tool_call_id") in preserve_tool_call_ids:
+            continue
         content = msg.get("content", "")
         # Skip a result already cleared: the marker is itself >100 chars, so
         # re-clearing it would rewrite the recorded original size with the
@@ -281,7 +286,7 @@ def _result_data_gone(content: Any) -> bool:
     return _is_cleared(content) or content == _STUB_RESULT_CONTENT
 
 
-def _context_collapse(messages: list) -> None:
+def _context_collapse(messages: list, *, preserve_tool_call_ids: Optional[set[str]] = None) -> None:
     """Layer 2: fold long text blocks in older messages without LLM call.
 
     Preserves head + tail of large text, collapses the middle.
@@ -293,6 +298,8 @@ def _context_collapse(messages: list) -> None:
     if len(messages) <= COLLAPSE_PRESERVE_RECENT + 1:
         return
     for msg in messages[1:-COLLAPSE_PRESERVE_RECENT]:
+        if msg.get("role") == "tool" and msg.get("tool_call_id") in (preserve_tool_call_ids or ()):
+            continue
         content = msg.get("content")
         if not isinstance(content, str) or len(content) <= COLLAPSE_TEXT_MIN:
             continue

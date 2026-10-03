@@ -5,11 +5,13 @@ The pipeline:
       → `_build_sections`        build a strict dict for the template
       → `_render_charts`         matplotlib PNG files on disk
       → Jinja2 render HTML
-      → weasyprint → PDF (or HTML-only if weasyprint unusable)
+      → weasyprint → PDF, falling back to reportlab, else HTML-only
 
 Design:
     * No hard dependency on weasyprint at import time — if importing or
-      rendering fails, we keep the HTML artifact and return its path.
+      rendering fails, the pure-Python reportlab fallback in
+      `pdf_fallback` renders the same section payload with a simpler
+      layout; HTML is only the last resort when both engines fail.
     * Charts are optional — any matplotlib failure downgrades gracefully
       (that section just omits its `<img>`).
     * Layout/style live in `templates/shadow_report.{html,css}`; this module
@@ -28,6 +30,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.shadow_account.fonts import apply_matplotlib_cjk_font, cjk_css_font_face
 from src.shadow_account.models import ShadowBacktestResult, ShadowProfile
+from src.shadow_account.pdf_fallback import render_pdf_reportlab
 from src.shadow_account.storage import reports_dir
 
 logger = logging.getLogger(__name__)
@@ -65,9 +68,9 @@ def render_shadow_report(
     Returns:
         Dict with keys:
             ``html_path``  : rendered HTML (always present)
-            ``pdf_path``   : PDF path (present iff weasyprint succeeded)
+            ``pdf_path``   : PDF path (present iff a PDF engine succeeded)
             ``sections``   : structured payload (for frontend preview)
-            ``engine``     : "weasyprint" | "html-only"
+            ``engine``     : "weasyprint" | "reportlab" | "html-only"
     """
     output_dir = Path(output_dir) if output_dir else reports_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -92,7 +95,7 @@ def render_shadow_report(
     html_path = output_dir / f"{profile.shadow_id}.html"
     html_path.write_text(html, encoding="utf-8")
 
-    pdf_path, engine = _try_render_pdf(html, output_dir, profile.shadow_id)
+    pdf_path, engine = _render_pdf(html, sections, charts, output_dir, profile.shadow_id)
 
     return {
         "html_path": str(html_path),
@@ -322,7 +325,7 @@ def _try_render_pdf(
             from weasyprint import HTML  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover — import-level failure
             _WEASYPRINT_HTML = False
-            logger.warning("weasyprint unavailable (%s); HTML-only output.", exc)
+            logger.warning("weasyprint unavailable (%s); trying reportlab.", exc)
             return None, "html-only"
         _WEASYPRINT_HTML = HTML
 
@@ -330,7 +333,7 @@ def _try_render_pdf(
     try:
         _WEASYPRINT_HTML(string=html, base_url=str(_TEMPLATES_DIR)).write_pdf(str(pdf_path))
     except Exception as exc:
-        logger.warning("weasyprint render failed (%s); HTML-only output.", exc)
+        logger.warning("weasyprint render failed (%s); trying reportlab.", exc)
         if pdf_path.exists():
             try:
                 pdf_path.unlink()
@@ -338,6 +341,53 @@ def _try_render_pdf(
                 pass
         return None, "html-only"
     return pdf_path, "weasyprint"
+
+
+def _render_pdf(
+    html: str,
+    sections: dict[str, Any],
+    charts: dict[str, str],
+    output_dir: Path,
+    shadow_id: str,
+) -> tuple[Path | None, str]:
+    """Render the PDF, preferring weasyprint and falling back to reportlab.
+
+    weasyprint needs system pango/cairo libraries that pip cannot install;
+    on hosts without them the report used to degrade to HTML-only. The
+    reportlab path in `pdf_fallback` renders the same section data with a
+    simpler layout, so a PDF comes out on any host.
+    """
+    pdf_path, engine = _try_render_pdf(html, output_dir, shadow_id)
+    if pdf_path is not None:
+        return pdf_path, engine
+    return _try_render_pdf_reportlab(sections, charts, output_dir, shadow_id)
+
+
+def _try_render_pdf_reportlab(
+    sections: dict[str, Any],
+    charts: dict[str, str],
+    output_dir: Path,
+    shadow_id: str,
+) -> tuple[Path | None, str]:
+    """Render PDF via reportlab platypus, returning (path|None, engine_name)."""
+    pdf_path = output_dir / f"{shadow_id}.pdf"
+    try:
+        render_pdf_reportlab(
+            sections=sections,
+            charts=charts,
+            market_labels=_MARKET_LABELS,
+            reason_labels=_REASON_LABELS,
+            pdf_path=pdf_path,
+        )
+    except Exception as exc:
+        logger.warning("reportlab render failed (%s); HTML-only output.", exc)
+        if pdf_path.exists():
+            try:
+                pdf_path.unlink()
+            except OSError:
+                pass
+        return None, "html-only"
+    return pdf_path, "reportlab"
 
 
 # ---------------- Convenience ----------------

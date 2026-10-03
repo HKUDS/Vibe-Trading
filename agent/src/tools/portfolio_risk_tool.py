@@ -16,7 +16,8 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from backtest.risk_xray import compute_risk_xray
+from backtest.metrics import calc_bars_per_year
+from backtest.risk_xray import PERIODS_PER_YEAR, compute_risk_xray
 from src.agent.tools import BaseTool
 from src.market_data import fetch_market_data
 
@@ -119,7 +120,15 @@ class PortfolioRiskXrayTool(BaseTool):
         closes = self._closes_frame(raw, symbols)
         unresolved = raw.get("_unresolved") if isinstance(raw, Mapping) else None
 
-        report = compute_risk_xray(closes, weights)
+        # Calendar bars have the same annual count across markets; preserve
+        # the existing daily convention for other intervals.
+        token = interval.strip()
+        periods_per_year = (
+            calc_bars_per_year(token)
+            if token == "1M" or token.lower() == "1w"
+            else PERIODS_PER_YEAR
+        )
+        report = compute_risk_xray(closes, weights, periods_per_year=periods_per_year)
         envelope = {
             "status": "ok",
             "data": report,

@@ -59,6 +59,7 @@ agent/uploads/
 /swarm/
 /live/
 /uploads/
+/generated_reports/
 /imports/
 /workspace/
 /auth/

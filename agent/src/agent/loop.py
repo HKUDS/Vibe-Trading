@@ -411,6 +411,8 @@ class AgentLoop:
                 ),
             )
         self._llm_runtime = runtime_snapshot
+        self._active_model_id = runtime_snapshot.configured_model
+        self._active_model_source = "configured"
         self.memory = memory or WorkspaceMemory()
         self._event_callback = event_callback
         self.max_iterations = max_iterations
@@ -455,6 +457,9 @@ class AgentLoop:
         self._readonly_replay_cache: dict[tuple[str, str], str] = {}
         self._readonly_replay_ready: set[tuple[str, str]] = set()
         self._readonly_replay_protected: set[tuple[str, str]] = set()
+        # Replayed tool_call_ids whose restored payload no successful model
+        # request has carried yet (message identity, not call identity).
+        self._readonly_replay_visibility_pending: set[str] = set()
         self._readonly_replay_recoveries = 0
         self._tool_progress = ToolProgress()
         self._context_meter = ContextMeter()
@@ -580,6 +585,7 @@ class AgentLoop:
         self._readonly_replay_cache = {}
         self._readonly_replay_ready = set()
         self._readonly_replay_protected = set()
+        self._readonly_replay_visibility_pending = set()
         self._readonly_replay_recoveries = 0
         self._tool_progress = ToolProgress()
         self._context_meter = ContextMeter()
@@ -705,10 +711,15 @@ class AgentLoop:
                     # can force each layer with a tiny number.
                     tokens = estimate_tokens(messages)
                     if tokens > int(_token_threshold() * 0.5):
-                        self._microcompact_and_unblock(messages, trace, iteration)
+                        self._microcompact_and_unblock(
+                            messages,
+                            trace,
+                            iteration,
+                            preserve_tool_call_ids=self._readonly_replay_visibility_pending,
+                        )
                         tokens = estimate_tokens(messages)
                     if tokens > int(_token_threshold() * 0.7):
-                        _context_collapse(messages)
+                        _context_collapse(messages, preserve_tool_call_ids=self._readonly_replay_visibility_pending)
                         tokens = estimate_tokens(messages)
                     _tok_threshold = _token_threshold()
                     if tokens > _tok_threshold:
@@ -941,6 +952,8 @@ class AgentLoop:
                 else:
                     stream_failure_streak = 0
 
+                self._consume_readonly_replay_visibility(messages, trace, current_iter)
+
                 # Cancelled mid-stream: discard this turn's partial response and
                 # end the run now, without executing any of its tool calls.
                 if self._cancel_event.is_set():
@@ -950,13 +963,14 @@ class AgentLoop:
                 self._last_activity_wall = _time.time()
 
                 usage = getattr(response, "usage_metadata", None)
+                current_response_model = getattr(response, "response_model", None)
                 # `messages` is still exactly what this request sent.
                 self._context_meter.observe(
                     usage.get("input_tokens") if isinstance(usage, dict) else None,
                     messages,
                 )
-                if getattr(response, "response_model", None):
-                    last_response_model = response.response_model
+                if current_response_model:
+                    last_response_model = current_response_model
                 usage_delta = _record_llm_usage(
                     run_dir,
                     llm_usage_summary,
@@ -1474,6 +1488,12 @@ class AgentLoop:
                 messages.append(assistant_message)
 
                 # Execute tools with read/write batching
+                self._active_model_id = (
+                    current_response_model or self._llm_runtime.configured_model
+                )
+                self._active_model_source = (
+                    "provider_response" if current_response_model else "configured"
+                )
                 compact_requested, focus_topic = self._process_tool_calls(
                     response.tool_calls, context, messages, trace, react_trace, current_iter,
                 )
@@ -1850,6 +1870,7 @@ class AgentLoop:
                         tc.id, tc.name, truncate_tool_result(restored)
                     )
                 )
+                self._readonly_replay_visibility_pending.add(tc.id)
                 self._successful_call_keys[tc.id] = dedup_key
                 self._called_ok.add(dedup_key)
                 self._readonly_replay_ready.discard(dedup_key)
@@ -2405,9 +2426,53 @@ class AgentLoop:
         if not p.is_absolute() and self.memory.run_dir:
             p = Path(self.memory.run_dir) / p
         try:
-            self._written_files.add(str(p.resolve()).casefold())
+            resolved = p.resolve()
+            self._written_files.add(str(resolved).casefold())
         except (OSError, ValueError):
+            resolved = p
             self._written_files.add(str(p).casefold())
+
+        if not self.memory.run_dir:
+            return
+        run_root = Path(self.memory.run_dir).resolve()
+        try:
+            relative = resolved.relative_to(run_root).as_posix()
+        except ValueError:
+            return
+        if relative not in {"config.json", "code/signal_engine.py"}:
+            return
+
+        metadata_path = run_root / "strategy_provenance.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            files = {}
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning(
+                "Could not read strategy model provenance; update skipped: %s",
+                exc,
+            )
+            return
+        else:
+            if not isinstance(metadata, dict):
+                logger.warning("Invalid strategy model provenance; update skipped.")
+                return
+            files = metadata.get("files", {})
+            if not isinstance(files, dict):
+                logger.warning("Invalid strategy model provenance files; update skipped.")
+                return
+        files[relative] = {
+            "provider": self._llm_runtime.provider or None,
+            "model_id": self._active_model_id or None,
+            "model_source": self._active_model_source,
+        }
+        try:
+            metadata_path.write_text(
+                json.dumps({"files": files}, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.warning("Could not write strategy model provenance: %s", exc)
 
     def _pending_write_directive(
         self, user_message: str, run_started_wall: float
@@ -2522,10 +2587,11 @@ class AgentLoop:
                 iteration,
                 target_tokens=budget.micro_at,
                 measure=self._prompt_tokens,
+                preserve_tool_call_ids=self._readonly_replay_visibility_pending,
             )
             tokens = self._prompt_tokens(messages)
         if tokens > budget.collapse_at:
-            _context_collapse(messages)
+            _context_collapse(messages, preserve_tool_call_ids=self._readonly_replay_visibility_pending)
             tokens = self._prompt_tokens(messages)
         # A summary keeps the static prompt plus a ~20K-token tail, so on a
         # window that small the prompt stays over the line after compacting;
@@ -2587,6 +2653,7 @@ class AgentLoop:
         *,
         target_tokens: Optional[int] = None,
         measure: Optional[Callable[[list], int]] = None,
+        preserve_tool_call_ids: Optional[set[str]] = None,
     ) -> list[str]:
         """Run layer-1 microcompact and re-open lost readonly call identities.
 
@@ -2603,12 +2670,18 @@ class AgentLoop:
             iteration: Current ReAct iteration, recorded on the trace event.
             target_tokens: Clear oldest-first only until the prompt fits.
             measure: Prompt-size function for ``target_tokens``.
+            preserve_tool_call_ids: Replayed results still owed one model request.
 
         Returns:
             The tool names re-opened, for callers and tests to assert on.
         """
         readable_before = self._readable_success_keys(messages)
-        _microcompact(messages, target_tokens=target_tokens, measure=measure)
+        _microcompact(
+            messages,
+            target_tokens=target_tokens,
+            measure=measure,
+            preserve_tool_call_ids=preserve_tool_call_ids,
+        )
         unreadable_tools = self._unblock_lost_readonly_results(messages, readable_before)
         if unreadable_tools:
             trace.write({
@@ -2617,6 +2690,21 @@ class AgentLoop:
                 "tools": unreadable_tools,
             })
         return unreadable_tools
+
+    def _consume_readonly_replay_visibility(
+        self, messages: list, trace: TraceWriter, iteration: int
+    ) -> None:
+        """Release replay leases once a successful model request carried them."""
+        visible = {
+            msg.get("tool_call_id")
+            for msg in messages
+            if msg.get("role") == "tool"
+            and msg.get("tool_call_id") in self._readonly_replay_visibility_pending
+            and not _result_data_gone(msg.get("content"))
+        }
+        for call_id in sorted(visible):
+            self._readonly_replay_visibility_pending.discard(call_id)
+            trace.write({"type": "replay_visibility_consumed", "iter": iteration, "call_id": call_id})
 
     def _readable_success_keys(self, messages: list) -> set[tuple[str, str]]:
         """Identify surviving successful results, not synthetic skip/stub calls."""
@@ -2711,7 +2799,7 @@ class AgentLoop:
                 self._successful_call_keys[tc.id] = recorded_key
             if tc.name == "backtest":
                 try:
-                    _archive_backtest_result(result, self.memory.run_dir)
+                    _archive_backtest_result(result, self.memory.run_dir, source_call_id=tc.id)
                 except OSError as exc:
                     logger.warning("Could not archive backtest output into active run: %s", exc)
             if tc.name in {"write_file", "edit_file"}:
@@ -2780,6 +2868,18 @@ class AgentLoop:
             iteration=iteration,
         )
         preview = trace_result[:200]
+        artifact = None
+        if status == "ok" and tc.name in {"write_file", "render_shadow_report"}:
+            try:
+                payload = json.loads(trace_result)
+                from src.tools.report_artifacts import report_path
+                report_id = payload.get("report_id", "")
+                path = report_path(report_id) if isinstance(report_id, str) else None
+                if path is not None:
+                    artifact = {"report_id": report_id, "filename": path.name,
+                                "download_url": f"/api/reports/{report_id}"}
+            except (ValueError, TypeError, AttributeError, OSError):
+                pass
         react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
         self._emit(
             "tool_result",
@@ -2789,6 +2889,7 @@ class AgentLoop:
                 "elapsed_ms": elapsed_ms,
                 "preview": preview,
                 "call_id": tc.id,
+                **({"artifact": artifact} if artifact else {}),
             },
         )
 
@@ -2845,6 +2946,16 @@ class AgentLoop:
             else:
                 logger.warning("Auto compact: nothing to compress (body too small)")
                 return
+
+        # Replayed results are owed one successful writing request. Keep the
+        # entire assistant-call/result pair out of summaries until then.
+        pending = self._readonly_replay_visibility_pending
+        leased = [msg for msg in head if (
+            msg.get("role") == "tool" and msg.get("tool_call_id") in pending
+        ) or any(call.get("id") in pending for call in msg.get("tool_calls") or [])]
+        if leased:
+            head = [msg for msg in head if all(msg is not kept for kept in leased)]
+            tail = leased + tail
 
         # Build focus section
         focus_section = _FOCUS_SECTION.format(topic=focus_topic) if focus_topic else ""

@@ -295,6 +295,63 @@ def test_run_bench_strict_respects_oos_split(
         assert row["alpha_t_test"] is not None
 
 
+def test_run_bench_strict_places_oos_after_training_cutoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_panel(monkeypatch, n_rows=120)
+    result = run_bench_strict(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        n_random_seeds=2,
+        training_cutoff="2024-03-01",
+        registry=_StubRegistry(panel={}),
+    )
+
+    assert result["status"] == "ok"
+    assert result["training_cutoff"] == "2024-03-01"
+    assert result["oos_split"] == "2024-03-01"
+    assert all(row["ic_count_test"] >= 2 for row in result["rows"])
+
+
+
+@pytest.mark.parametrize("boundary", ["training_cutoff", "oos_split"])
+def test_oos_boundary_with_no_usable_alpha_rows_returns_error(
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: str,
+) -> None:
+    _stub_panel(monkeypatch, n_rows=80)
+    result = run_bench_strict(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=False,
+        registry=_StubRegistry(panel={}),
+        **{boundary: "2024-03-19"},
+    )
+
+    assert result["status"] == "error"
+    assert result["n_alphas_tested"] == 0
+    assert result["n_skipped"] > 0
+    assert "no valid alpha rows" in result["error"]
+
+
+def test_run_bench_strict_rejects_two_oos_boundaries() -> None:
+    result = run_bench_strict(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        oos_split="2024-03-01",
+        training_cutoff="2024-04-01",
+        registry=_StubRegistry(panel={}),
+    )
+
+    assert result["status"] == "error"
+    assert "either training_cutoff or oos_split" in result["error"]
+
+
 def test_run_bench_strict_random_control_is_keyword_only() -> None:
     # Positional call should fail with TypeError because random_control is
     # keyword-only by construction. This locks the rail at the signature

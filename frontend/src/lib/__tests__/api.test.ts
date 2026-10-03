@@ -6,6 +6,24 @@ async function loadApiModule() {
   return import("../api");
 }
 
+describe("generated report download", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  it("downloads PDF bytes with bearer authentication and keeps the key out of the URL", async () => {
+    vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "report-test-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
+    const fetch = vi.fn().mockResolvedValue(new Response("%PDF-contents", { headers: { "content-type": "application/pdf" } }));
+    vi.stubGlobal("fetch", fetch);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = vi.fn(() => "blob:report");
+      static revokeObjectURL = vi.fn();
+    });
+    const { downloadGeneratedReport } = await loadApiModule();
+    await downloadGeneratedReport("a".repeat(32), "研究报告.pdf");
+    expect(fetch).toHaveBeenCalledWith(`/api/reports/${"a".repeat(32)}`, { headers: { Authorization: "Bearer report-test-key" } });
+    expect(click).toHaveBeenCalledOnce();
+  });
+});
+
 describe("api request helper", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", {

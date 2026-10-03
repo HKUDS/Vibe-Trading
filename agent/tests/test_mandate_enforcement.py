@@ -223,6 +223,25 @@ def test_unreadable_positions_fail_closed() -> None:
     assert breach.limit == "max_total_exposure_usd"
 
 
+@pytest.mark.parametrize(
+    "row",
+    [
+        # Toss / Dhan / KIS shape: quantity + current_price.
+        {"symbol": "AAPL", "quantity": 10, "current_price": 25.0},
+        # Zerodha / Shoonya shape: quantity + ltp.
+        {"symbol": "AAPL", "quantity": 10, "ltp": 25.0},
+        # Futu shape: already a market value, spelled market_val.
+        {"code": "AAPL", "qty": 10, "market_val": 250.0},
+    ],
+)
+def test_direct_sdk_position_shapes_are_priced_not_fail_closed(row: dict) -> None:
+    """Connector-shaped rows that only carry current_price/ltp/market_val must
+    price correctly instead of tripping the fail-closed exposure denial every
+    other order would then hit regardless of size (#position-pricing-gap)."""
+    breach = _check(_intent(notional_usd=100.0), _mandate(), positions=[row])
+    assert breach is None
+
+
 def test_universe_market_cap_floor_denies_when_below(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(enforcement, "market_cap_usd", lambda s, ac: 1.0e8)
     mandate = _mandate()
