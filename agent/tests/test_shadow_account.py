@@ -1093,6 +1093,33 @@ def test_pdf_degrades_to_html_only_when_both_engines_fail(
     assert not (tmp_path / f"{profile.shadow_id}.pdf").exists()
 
 
+@pytest.mark.unit
+def test_reportlab_fallback_reuses_helvetica_when_no_cjk_font(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On a fontless host every render must keep using Helvetica.
+
+    The first probe registers nothing, so a cached "probed" flag that reports
+    the CJK family name would hand platypus an unregistered font on the next
+    render (CI hit exactly this on the second reportlab test in a process).
+    """
+    from src.shadow_account import pdf_fallback, reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)
+    monkeypatch.setattr(pdf_fallback, "system_cjk_candidates", lambda: [])
+    monkeypatch.setattr(pdf_fallback, "_font_ready", False)
+    profile = extract_shadow_profile(profitable_journal)
+    result = _stub_backtest_result(profile)
+
+    first = reporter.render_shadow_report(profile, result, output_dir=tmp_path / "a")
+    assert first["engine"] == "reportlab"
+    assert pdf_fallback._ensure_font() == "Helvetica"
+
+    second = reporter.render_shadow_report(profile, result, output_dir=tmp_path / "b")
+    assert second["engine"] == "reportlab"
+    assert Path(second["pdf_path"]).read_bytes()[:5] == b"%PDF-"
+
+
 # ---------------- M5/M6: Tool wrappers + scanner ----------------
 
 @pytest.mark.unit

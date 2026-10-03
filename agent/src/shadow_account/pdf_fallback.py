@@ -24,14 +24,15 @@ logger = logging.getLogger(__name__)
 # reportlab's TTFont only understands TrueType-flavored fonts. The first
 # candidate that registers wins; .ttc files are tried with subfontIndex=0.
 _FONT_FAMILY = "VibeShadowCJK"
-_font_ready: bool | None = None  # None=unprobed, True=family registered
+_font_ready: bool = False  # probe ran; says nothing about what it found
+_font_family: str = _FONT_FAMILY  # family actually usable after the probe
 
 
 def _ensure_font() -> str:
     """Register a CJK-capable TTF once and return the family name to use."""
-    global _font_ready
+    global _font_ready, _font_family
     if _font_ready:
-        return _FONT_FAMILY
+        return _font_family
 
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
@@ -42,11 +43,13 @@ def _ensure_font() -> str:
         except Exception:
             continue
         _font_ready = True
-        return _FONT_FAMILY
+        _font_family = _FONT_FAMILY
+        return _font_family
 
     logger.warning("No TrueType CJK font found; PDF fallback uses Helvetica.")
     _font_ready = True
-    return "Helvetica"
+    _font_family = "Helvetica"
+    return _font_family
 
 
 def _file_uri_to_path(uri: str) -> Path | None:
