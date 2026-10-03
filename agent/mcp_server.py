@@ -2304,7 +2304,9 @@ def get_macro_series(
         series_id: FRED series identifier (e.g. "CPIAUCSL", "UNRATE").
         start_date: Inclusive window start, YYYY-MM-DD. Omit for full history.
         end_date: Inclusive window end, YYYY-MM-DD. Omit for the latest date.
-        limit: Maximum number of most-recent observations to return.
+        limit: Maximum number of most-recent observations to return (max
+            5000). A series longer than that is capped and says so in the
+            result: truncated, observations_available, and a hint.
     """
     params: dict[str, Any] = {"series_id": series_id, "limit": limit}
     if start_date:

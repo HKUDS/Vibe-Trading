@@ -8,8 +8,10 @@ so we monkeypatch that name on the ``fred_macro_tool`` module.
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any, Dict
 
+from src.config.limits import TOOL_RESULT_LIMIT, truncate_tool_result
 from src.tools import fred_macro_tool
 from src.tools.fred_macro_tool import FredMacroTool
 
@@ -179,3 +181,131 @@ class TestParsing:
         payload = {"observations": [{"value": "1.0"}, {"date": "2024-01-01", "value": "2.0"}]}
         rows = fred_macro_tool._parse_observations(payload)
         assert rows == [{"date": "2024-01-01", "value": 2.0}]
+
+
+# ---------------------------------------------------------------------------
+# Truncation reporting
+# ---------------------------------------------------------------------------
+
+
+def _long_payload(count: int) -> Dict[str, Any]:
+    """``count`` ascending daily observations, oldest first, from 2000-01-01."""
+    start = date(2000, 1, 1)
+    return {
+        "observations": [
+            {"date": (start + timedelta(days=i)).isoformat(), "value": str(float(i))}
+            for i in range(count)
+        ]
+    }
+
+
+class TestTruncationReporting:
+    """A capped series reports the cap instead of looking complete."""
+
+    def _run(self, monkeypatch, count: int, **kwargs: Any) -> Dict[str, Any]:
+        monkeypatch.setenv("FRED_API_KEY", "tok_123")
+        monkeypatch.setattr(
+            fred_macro_tool,
+            "throttled_get_json",
+            lambda url, **kw: _long_payload(count),
+        )
+        return json.loads(FredMacroTool().execute(series_id="UNRATE", **kwargs))
+
+    def test_cap_is_reported(self, monkeypatch):
+        available = 2_500
+        out = self._run(monkeypatch, available)
+        data = out["data"]
+
+        assert data["count"] == fred_macro_tool._DEFAULT_LIMIT
+        assert data["truncated"] is True
+        assert data["observations_available"] == available
+        assert data["limit"] == fred_macro_tool._DEFAULT_LIMIT
+        assert str(fred_macro_tool._DEFAULT_LIMIT) in data["hint"]
+        assert str(available) in data["hint"]
+        # Below the ceiling the raise clause is offered, not just the window.
+        assert "raise limit" in data["hint"]
+        # The tail is kept: the window still ends on the newest observation and
+        # starts exactly ``limit`` rows before it.
+        newest = date(2000, 1, 1) + timedelta(days=available - 1)
+        oldest = date(2000, 1, 1) + timedelta(
+            days=available - fred_macro_tool._DEFAULT_LIMIT
+        )
+        assert data["observations"][-1]["date"] == newest.isoformat()
+        assert data["observations"][0]["date"] == oldest.isoformat()
+
+    def test_series_that_fits_is_not_marked_truncated(self, monkeypatch):
+        out = self._run(monkeypatch, fred_macro_tool._DEFAULT_LIMIT)
+        data = out["data"]
+
+        assert data["truncated"] is False
+        assert data["observations_available"] == data["count"]
+        assert "hint" not in data
+
+    def test_raised_limit_uncaps_the_series(self, monkeypatch):
+        out = self._run(monkeypatch, 2_500, limit=2_500)
+        data = out["data"]
+
+        assert data["count"] == 2_500
+        assert data["truncated"] is False
+        # The limit is echoed as asked, not swapped for the default.
+        assert data["limit"] == 2_500
+
+    def test_limit_above_the_ceiling_reports_the_ceiling(self, monkeypatch):
+        out = self._run(monkeypatch, 6_000, limit=fred_macro_tool._MAX_LIMIT + 5_000)
+        data = out["data"]
+
+        assert data["limit"] == fred_macro_tool._MAX_LIMIT
+        assert data["count"] == fred_macro_tool._MAX_LIMIT
+        assert data["truncated"] is True
+        # No dead advice: a limit already at its ceiling cannot be raised.
+        assert "raise limit" not in data["hint"]
+        assert "narrow the date window" in data["hint"]
+
+    def test_one_row_over_the_cap_is_reported(self, monkeypatch):
+        # The boundary: one row over the cap is a cut, not a fit.
+        out = self._run(monkeypatch, fred_macro_tool._DEFAULT_LIMIT + 1)
+        data = out["data"]
+
+        assert data["count"] == fred_macro_tool._DEFAULT_LIMIT
+        assert data["observations_available"] == fred_macro_tool._DEFAULT_LIMIT + 1
+        assert data["truncated"] is True
+
+    def test_below_the_limit_the_request_is_echoed(self, monkeypatch):
+        # The below-cap regime: the limit is echoed as asked and
+        # observations_available is the parsed count, not the cap.
+        out = self._run(monkeypatch, 3, limit=3_000)
+        data = out["data"]
+
+        assert data["observations_available"] == 3
+        assert data["limit"] == 3_000
+        assert data["truncated"] is False
+
+    def test_hint_offers_the_raise_clause_below_the_ceiling(self, monkeypatch):
+        # A cap below the tool's own ceiling offers both remedies, even when the
+        # series is longer than the ceiling itself.
+        out = self._run(monkeypatch, 6_000, limit=fred_macro_tool._DEFAULT_LIMIT)
+        data = out["data"]
+
+        assert data["observations_available"] == 6_000
+        assert "raise limit" in data["hint"]
+        assert "narrow the date window" in data["hint"]
+
+    def test_cap_report_survives_the_tool_result_cap(self, monkeypatch):
+        # The agent loop trims every tool result to TOOL_RESULT_LIMIT characters.
+        # A cap report serialized behind the observation array is cut away in
+        # exactly the long-series case it exists for.
+        monkeypatch.setenv("FRED_API_KEY", "tok_123")
+        monkeypatch.setattr(
+            fred_macro_tool,
+            "throttled_get_json",
+            lambda url, **kw: _long_payload(2_500),
+        )
+        envelope = FredMacroTool().execute(series_id="UNRATE")
+        delivered = truncate_tool_result(envelope)
+
+        assert len(envelope) > TOOL_RESULT_LIMIT
+        assert len(delivered) <= TOOL_RESULT_LIMIT
+        for field in ("observations_available", "truncated", "limit", "hint"):
+            assert f'"{field}"' in delivered
+        # The observations are the part that gets cut.
+        assert delivered.count('"date"') < fred_macro_tool._DEFAULT_LIMIT
