@@ -254,3 +254,9 @@ def test_the_trading_profile_stays_first_for_the_broker_on_ramp() -> None:
     assert service.live_runner_profile_for_broker("robinhood").id == "robinhood-live-mcp"
     assert service.runner_requires_account("robinhood") is True
     assert service.runner_requires_account("ibkr") is False
+
+
+def test_the_robinhood_live_profile_discloses_options_order_limit() -> None:
+    profile = service.live_runner_profile_for_broker("robinhood")
+
+    assert "options order placement is not supported" in profile.notes.lower()
