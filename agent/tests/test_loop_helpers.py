@@ -560,12 +560,12 @@ class TestArchiveBacktestResult:
 
 def test_llm_timeout_seconds_default_and_override(monkeypatch) -> None:
     """The LLM call timeout reads config and honors a module-level override."""
-    import src.agent.loop as loop_module
+    import src.agent.tuning as tuning_module
 
     assert _llm_timeout_seconds() > 0
-    monkeypatch.setattr(loop_module, "LLM_TIMEOUT_SECONDS", 42.0, raising=False)
+    monkeypatch.setattr(tuning_module, "LLM_TIMEOUT_SECONDS", 42.0, raising=False)
     assert _llm_timeout_seconds() == 42.0
-    monkeypatch.delattr(loop_module, "LLM_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delattr(tuning_module, "LLM_TIMEOUT_SECONDS", raising=False)
     assert _llm_timeout_seconds() > 0
 
 def test_pending_write_directive_tracks_written_targets(tmp_path: Path) -> None:
@@ -672,12 +672,12 @@ def test_verification_ledger_deduplicates_and_caps() -> None:
 
 def test_stall_timeout_seconds_default_and_override(monkeypatch) -> None:
     """The stall watchdog timeout reads config and honors a module override."""
-    import src.agent.loop as loop_module
+    import src.agent.tuning as tuning_module
 
     assert _stall_timeout_seconds() > 0
-    monkeypatch.setattr(loop_module, "STALL_TIMEOUT_SECONDS", 42.0, raising=False)
+    monkeypatch.setattr(tuning_module, "STALL_TIMEOUT_SECONDS", 42.0, raising=False)
     assert _stall_timeout_seconds() == 42.0
-    monkeypatch.delattr(loop_module, "STALL_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delattr(tuning_module, "STALL_TIMEOUT_SECONDS", raising=False)
     assert _stall_timeout_seconds() > 0
 
 
