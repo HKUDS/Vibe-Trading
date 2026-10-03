@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Callable
 
+import numpy as np
 import pandas as pd
 
 from src.shadow_account.backtester import _LIQUID_BASKETS, SUPPORTED_MARKETS
@@ -200,8 +201,33 @@ def _compute_features(bars: pd.DataFrame, rule: ShadowRule) -> dict[str, float |
     return features
 
 
+def _wilder_average(values: pd.Series, period: int) -> pd.Series:
+    """True Wilder recursive smoothing: SMA-seeded, then exponential recursion.
+
+    Kept byte-identical to ``_wilder_average`` in ``extractor.py`` — see that
+    copy's docstring for the full rationale. Duplicated rather than imported
+    for the same reason ``_compute_rsi`` already was: this module's
+    ``_compute_rsi`` must evaluate the same RSI that produced the extracted
+    ``entry_rsi14`` bounds, so the two copies cannot drift apart.
+    """
+    result = pd.Series(np.nan, index=values.index, dtype=float)
+    valid = values.dropna()
+    if len(valid) < period:
+        return result
+
+    seed = valid.iloc[:period].mean()
+    result.loc[valid.index[period - 1]] = seed
+
+    remaining = valid.iloc[period:]
+    if len(remaining) > 0:
+        tail = pd.concat([pd.Series([seed]), remaining])
+        smoothed_tail = tail.ewm(alpha=1 / period, adjust=False).mean().iloc[1:]
+        result.loc[remaining.index] = smoothed_tail.to_numpy()
+    return result
+
+
 def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> pd.Series:
-    """Causal Wilder-EWM RSI.
+    """Causal Wilder RSI.
 
     Mirrors ``_compute_rsi`` in ``extractor.py`` so the scanner evaluates the
     same RSI that produced the extracted ``entry_rsi14`` bounds. Causal by
@@ -210,8 +236,8 @@ def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+    avg_gain = _wilder_average(gain, period)
+    avg_loss = _wilder_average(loss, period)
     rs = avg_gain / avg_loss
     return 100 - 100 / (1 + rs)
 
