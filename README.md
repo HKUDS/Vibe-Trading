@@ -820,6 +820,8 @@ When the opt-in market-data cache is enabled, local-source cache entries are
 scoped to the configured file, query, and column mapping. Changing a symbol's
 source declaration does not reuse bars from its previous source. The settled-data
 cache policy for an unchanged declaration remains the same.
+Local data date ranges include the entire UTC end day, including subsecond
+timestamps; bars at the following midnight are excluded before aggregation.
 
 </details>
 
