@@ -491,10 +491,21 @@ def implied_volatility(market_price: float, S: float, K: float, T: float,
         sigma = min(max(sigma - diff / vega, MIN_SIGMA), MAX_SIGMA)
 
     try:
-        return identified(float(brentq(
-            lambda v: bs_price(S, K, T, r, v, option_type, q) - market_price,
-            MIN_SIGMA, MAX_SIGMA, xtol=tol, maxiter=max_iter,
-        )))
+        # brentq's xtol is in volatility units, whereas tol is an absolute
+        # price tolerance. Solve the root tightly, then check the same price
+        # residual Newton uses before reporting a converged volatility.
+        candidate = float(
+            brentq(
+                lambda v: bs_price(S, K, T, r, v, option_type, q) - market_price,
+                MIN_SIGMA,
+                MAX_SIGMA,
+                xtol=np.finfo(float).eps,
+                maxiter=max_iter,
+            )
+        )
+        if abs(bs_price(S, K, T, r, candidate, option_type, q) - market_price) >= tol:
+            return float("nan")
+        return identified(candidate)
     except (ValueError, RuntimeError):
         # ValueError: the bracket does not straddle a root. RuntimeError: brentq
         # ran out of its own iterations. Both mean "no volatility found", and
