@@ -940,6 +940,10 @@ https://github.com/user-attachments/assets/3754a414-c3ee-464f-b1e8-78e1a74fbd30
 pip install vibe-trading-ai
 ```
 
+`vibe-trading update` upgrades PyPI installs in place. Editable checkouts and
+version-control installs receive manual update guidance so their source revision
+is not silently replaced by a PyPI release.
+
 Then run a first research task:
 
 ```bash
