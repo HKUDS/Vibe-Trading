@@ -500,6 +500,35 @@ def test_loader_cache_real_duckdb_round_trip(tmp_path, monkeypatch, loader_cache
     assert restored.attrs == frame.attrs
 
 
+def test_loader_cache_round_trip_keeps_adjustment_override(tmp_path, monkeypatch, loader_cache_root):
+    """A frame-level ``adjustment`` override must survive the cache.
+
+    FMP/Tiingo stamp ``adjustment="raw"`` when a response carries no usable
+    adjusted column; if the cache dropped that attr, a warm hit would come
+    back unmarked and the provenance table would stamp the static
+    ``split_dividend`` caliber onto prices that are actually raw.
+    """
+    pytest.importorskip("duckdb")
+    monkeypatch.setenv(LOADER_CACHE_ENV, "1")
+    frame = _cache_frame()
+    frame.attrs.update(adjustment="raw")
+    kwargs = {
+        "source": "fmp",
+        "symbol": "AAPL.US",
+        "timeframe": "1D",
+        "start_date": "2025-01-01",
+        "end_date": "2025-01-03",
+        "fields": None,
+    }
+
+    loader_cache_put(**kwargs, frame=frame)
+    restored = loader_cache_get(**kwargs)
+
+    assert restored is not None
+    assert restored.attrs == frame.attrs
+    assert restored.attrs["adjustment"] == "raw"
+
+
 def test_yfinance_loader_serves_second_fetch_from_cache(tmp_path, monkeypatch, fake_duckdb, loader_cache_root):
     """A batch loader (yfinance) must skip its bulk download on a full cache hit."""
     monkeypatch.setenv(LOADER_CACHE_ENV, "1")

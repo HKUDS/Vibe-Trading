@@ -176,6 +176,27 @@ def test_an_all_unusable_adjusted_response_stays_one_raw_basis() -> None:
     # (one basis) rather than being discarded or priced at zero.
     assert df is not None
     assert list(df["close"]) == [100.0, 101.0]
+    # The static source table stamps tiingo split_dividend; an all-raw
+    # response must override that on the frame so frame_caliber reports the
+    # basis actually served.
+    assert df.attrs["adjustment"] == "raw"
+
+
+def test_an_adjusted_response_stamps_the_adjusted_basis() -> None:
+    rows = [
+        {
+            "date": "2024-01-02T00:00:00.000Z",
+            "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000,
+            "adjOpen": 50.0, "adjHigh": 50.5, "adjLow": 49.5, "adjClose": 50.0,
+        },
+    ]
+
+    df = _rows_to_frame(rows)
+
+    assert df is not None
+    # Both bases carry an explicit stamp; the provenance table must never
+    # fall back to the static source default for a served frame.
+    assert df.attrs["adjustment"] == "split_dividend"
 
 
 def test_a_bar_that_cannot_be_emitted_does_not_set_the_adjusted_basis() -> None:

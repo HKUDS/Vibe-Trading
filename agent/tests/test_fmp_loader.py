@@ -162,6 +162,25 @@ class TestParseHistorical:
         # Nothing to adjust against: the whole series stays on the raw basis
         # rather than the response being discarded.
         assert list(df["close"]) == [100.0, 101.0]
+        # The static source table stamps fmp split_dividend; an all-raw
+        # response must override that on the frame so frame_caliber reports
+        # the basis actually served.
+        assert df.attrs["adjustment"] == "raw"
+
+    def test_an_adjusted_response_stamps_the_adjusted_basis(self):
+        bars = [
+            {
+                "date": "2024-01-03", "open": 100, "high": 102, "low": 99,
+                "close": 100, "adjClose": 50, "volume": 1000,
+            },
+        ]
+
+        df = _parse_historical(_body("AAPL", bars))
+
+        assert df is not None
+        # Both bases carry an explicit stamp; the provenance table must never
+        # fall back to the static source default for a served frame.
+        assert df.attrs["adjustment"] == "split_dividend"
 
     def test_a_bar_without_a_usable_date_is_dropped(self):
         """A bar that cannot be placed in time is not a bar.
