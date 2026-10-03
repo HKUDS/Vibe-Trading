@@ -247,12 +247,26 @@ def brinson_fachler(
     Raises:
         ValueError: If no sectors were supplied, if the two weight vectors do not
             sum to the same total within ``weight_sum_tolerance``, or if a sector
-            carries a non-zero weight on a side but no return on that side.
+            carries a non-zero weight on a side but no return on that side,
+            if a weight or resolved return is non-finite, or if the tolerance
+            is non-finite or negative.
     """
     ordered: list[str] = list(portfolio_weights)
     ordered.extend(sector for sector in benchmark_weights if sector not in portfolio_weights)
     if not ordered:
         raise ValueError("brinson_fachler needs at least one sector")
+
+    if not math.isfinite(weight_sum_tolerance) or weight_sum_tolerance < 0.0:
+        raise ValueError("weight_sum_tolerance must be finite and non-negative")
+    for side, weights in (
+        ("portfolio", portfolio_weights),
+        ("benchmark", benchmark_weights),
+    ):
+        for sector, weight in weights.items():
+            if not math.isfinite(weight):
+                raise ValueError(
+                    f"sector {sector!r} has non-finite {side} weight {weight!r}"
+                )
 
     portfolio_total = math.fsum(portfolio_weights.values())
     benchmark_total = math.fsum(benchmark_weights.values())
@@ -279,6 +293,11 @@ def brinson_fachler(
             if w_b != 0.0:
                 raise ValueError(f"sector {sector!r} has benchmark weight {w_b!r} but no benchmark return")
             r_b = r_p
+        for side, value in (("portfolio", r_p), ("benchmark", r_b)):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"sector {sector!r} has non-finite {side} return {value!r}"
+                )
         resolved.append((sector, w_p, w_b, float(r_p), float(r_b)))
 
     total_portfolio_return = math.fsum(w_p * r_p for _, w_p, _, r_p, _ in resolved)
@@ -330,8 +349,11 @@ def carino_factor(portfolio_return: float, benchmark_return: float) -> float:
 
     Raises:
         ValueError: If either return is at or below -100%, which would make the
-            wealth relative non-positive and the logarithm undefined.
+            wealth relative non-positive and the logarithm undefined, or if
+            either return is non-finite.
     """
+    if not math.isfinite(portfolio_return) or not math.isfinite(benchmark_return):
+        raise ValueError("Carino linking needs finite portfolio and benchmark returns")
     portfolio_wealth = 1.0 + portfolio_return
     benchmark_wealth = 1.0 + benchmark_return
     if portfolio_wealth <= 0.0 or benchmark_wealth <= 0.0:
