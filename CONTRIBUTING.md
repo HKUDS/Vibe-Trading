@@ -137,6 +137,34 @@ merging. Authors are strongly encouraged to self-check first.
 5. Open a PR. Every commit must include `Signed-off-by:` (use
    `git commit -s`). Reviewers will walk the checklist above.
 
+## Adding a Channel (Quickstart)
+
+Channels ship through one authoring contract; the Web UI renders any channel's
+configuration with no per-channel frontend code.
+
+1. Create `agent/src/channels/<name>.py` with a `BaseChannel` subclass:
+   implement `start`, `stop`, and `send` (abstract), and `default_config()`
+   returning the stored config shape. The registry (`src/channels/registry.py`)
+   auto-discovers the module; delivery receipts, retries and manager wiring come
+   from the base class and manager.
+2. Field metadata lives in `agent/src/channels/config_meta.py`. Hand-written
+   `FIELD_HINTS[name]` entries supply labels and authoritative secret flags;
+   anything you omit is derived from `default_config()` with type inference, and
+   credential-shaped keys are masked by the unconditional `SECRET_KEY_RE`
+   fail-safe either way. If the platform has a credential endpoint, build the
+   connection probe on `token_probe.py` rather than writing a new client (see
+   `dingtalk_probe.py` for the pattern) and override `test_connection()`.
+3. Run the authoring contract locally:
+   ```bash
+   pytest agent/tests/test_channel_authoring_contract.py -q
+   ```
+   It walks every discovered channel and fails when one breaks the recipe
+   (abstracts unset, scalar config keys with no field hint, or an uncovered
+   credential-shaped key that would leak unmasked into the form).
+4. Open a PR with `Signed-off-by:` on every commit. Dict-valued config (e.g.
+   per-group maps) stays file-configured by design; the generic form edits
+   text/password/bool/list widgets only.
+
 ## Code Style
 
 - Format with `black`; lint with `ruff` (config in `pyproject.toml`).
