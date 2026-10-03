@@ -10,7 +10,7 @@ import re
 import sys as _sys
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -115,13 +115,16 @@ def _read_scheduled_briefing(session_id: str) -> Optional[tuple[str, str]]:
     return None
 
 
-async def _send_scheduled_briefing(channel: str, target: Optional[str], text: str):
+async def _send_scheduled_briefing(
+    channel: str, target: Optional[str], text: str, delivery_format: Optional[str] = None
+):
     """Deliver one briefing through the configured IM channel.
 
     Args:
         channel: Channel id as configured in the channel runtime.
         target: Address within that channel, or ``None`` for its default.
         text: The briefing to deliver.
+        delivery_format: Optional presentation hint for channels that support it.
 
     Raises:
         RuntimeError: If the channel runtime is unavailable or has no such
@@ -139,8 +142,9 @@ async def _send_scheduled_briefing(channel: str, target: Optional[str], text: st
         raise RuntimeError(f"channel {channel!r} is not configured")
     if not target:
         raise RuntimeError(f"channel {channel!r} has no delivery target configured")
+    metadata = {"delivery_format": delivery_format} if delivery_format else {}
     return await adapter.send_with_receipt(
-        OutboundMessage(channel=channel, chat_id=target, content=text)
+        OutboundMessage(channel=channel, chat_id=target, content=text, metadata=metadata)
     )
 
 
@@ -225,6 +229,9 @@ class CreateScheduledRunRequest(BaseModel):
     )
     delivery_target_ref: Optional[str] = Field(
         None, description="Opaque operator-configured target ref; preferred over raw target ids"
+    )
+    delivery_format: Optional[Literal["html", "pdf"]] = Field(
+        None, description="Email report presentation: HTML body or PDF attachment"
     )
     end_at: Optional[int] = Field(
         None, description="Epoch-ms boundary after which no further run is dispatched"
@@ -316,6 +323,7 @@ class ScheduledRunResponse(BaseModel):
     delivery_target: Optional[str] = None
     delivery_target_ref: Optional[str] = None
     delivery_target_label: Optional[str] = None
+    delivery_format: Optional[str] = None
     delivery_status: str = "none"
     delivery_error: Optional[str] = None
     delivery_updated_at: Optional[int] = None
@@ -471,6 +479,12 @@ def register_scheduled_routes(
             delivery_target = resolved_target.target
             delivery_target_label = resolved_target.label
 
+        if request.delivery_format is not None and delivery_channel != "email":
+            raise HTTPException(
+                status_code=422,
+                detail="delivery_format is supported only for email delivery",
+            )
+
         job = ScheduledResearchJob(
             id=request.id or str(uuid.uuid4()),
             title=request.title or "",
@@ -486,6 +500,7 @@ def register_scheduled_routes(
             delivery_target=delivery_target,
             delivery_target_ref=request.delivery_target_ref,
             delivery_target_label=delivery_target_label,
+            delivery_format=request.delivery_format,
         )
         _get_scheduled_research_store().upsert(job)
         return _job_to_response(job)

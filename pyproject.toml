@@ -71,6 +71,8 @@ dependencies = [
     "ddgs>=6.0.0",
     "jinja2>=3.1.0",
     "matplotlib>=3.7.0",
+    "mistune>=3.0.0",
+    "nh3>=0.2.18",
     "weasyprint>=60.0",
     # weasyprint needs system pango/cairo libraries pip cannot install; where
     # they are missing the shadow report degraded to HTML-only. reportlab

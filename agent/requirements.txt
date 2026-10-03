@@ -65,6 +65,8 @@ ddgs>=6.0.0
 # Shadow Account HTML/PDF Report
 jinja2>=3.1.0
 matplotlib>=3.7.0
+mistune>=3.0.0
+nh3>=0.2.18
 weasyprint>=60.0
 # Pure-Python PDF fallback where weasyprint's system pango/cairo libs are missing
 reportlab>=4.0

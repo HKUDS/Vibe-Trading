@@ -380,6 +380,7 @@ class ScheduledResearchJob:
     delivery_target: Optional[str] = None
     delivery_target_ref: Optional[str] = None
     delivery_target_label: Optional[str] = None
+    delivery_format: Optional[str] = None
     delivery: DeliveryRecord = field(default_factory=DeliveryRecord)
     last_verdict: Optional[VerdictRecord] = None
 
@@ -411,6 +412,7 @@ class ScheduledResearchJob:
             "delivery_target": self.delivery_target,
             "delivery_target_ref": self.delivery_target_ref,
             "delivery_target_label": self.delivery_target_label,
+            "delivery_format": self.delivery_format,
             "delivery": self.delivery.to_dict(),
             "last_verdict": self.last_verdict.to_dict() if self.last_verdict else None,
         }
@@ -488,6 +490,9 @@ class ScheduledResearchJob:
         delivery_target = data.get("delivery_target")
         delivery_target_ref = data.get("delivery_target_ref")
         delivery_target_label = data.get("delivery_target_label")
+        delivery_format = data.get("delivery_format")
+        if delivery_format not in {None, "html", "pdf"}:
+            raise ValueError("'delivery_format' must be 'html', 'pdf', or null")
         for name, value in (
             ("delivery_channel", delivery_channel),
             ("delivery_target", delivery_target),
@@ -517,6 +522,7 @@ class ScheduledResearchJob:
             delivery_target=delivery_target,
             delivery_target_ref=delivery_target_ref,
             delivery_target_label=delivery_target_label,
+            delivery_format=delivery_format,
             delivery=DeliveryRecord.from_dict(data.get("delivery")),
             last_verdict=_verdict_record_or_none(data.get("last_verdict"), job_id),
         )

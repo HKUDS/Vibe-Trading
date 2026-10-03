@@ -19,6 +19,7 @@ const POLL_MS = 15_000;
 
 type DaysChoice = "every" | "weekdays";
 type ComposerMode = "time" | "advanced";
+type EmailDeliveryFormat = "" | "html" | "pdf";
 
 function browserTimezone(): string {
   try {
@@ -91,6 +92,7 @@ export function Scheduled() {
   // it means the briefing stays in the app.
   const [deliveryChannel, setDeliveryChannel] = useState("");
   const [deliveryTarget, setDeliveryTarget] = useState("");
+  const [deliveryFormat, setDeliveryFormat] = useState<EmailDeliveryFormat>("");
   const [saving, setSaving] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
 
@@ -175,8 +177,10 @@ export function Scheduled() {
         timezone,
         delivery_channel: channel || null,
         delivery_target: channel ? target : null,
+        delivery_format: channel === "email" && deliveryFormat ? deliveryFormat : null,
       });
       setPrompt("");
+      setDeliveryFormat("");
       await refresh();
     } catch (error) {
       setComposerError(error instanceof ApiError ? error.message : String(error));
@@ -392,7 +396,11 @@ export function Scheduled() {
             <input
               id="scheduled-delivery-channel"
               value={deliveryChannel}
-              onChange={(e) => setDeliveryChannel(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setDeliveryChannel(value);
+                if (value.trim() !== "email") setDeliveryFormat("");
+              }}
               placeholder={t("scheduled.deliveryChannelPlaceholder")}
               className={fieldClass}
             />
@@ -410,6 +418,30 @@ export function Scheduled() {
               className={fieldClass}
             />
           </div>
+          {deliveryChannel.trim() === "email" && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <label htmlFor="scheduled-delivery-format" className={labelClass}>
+                {t("scheduled.deliveryFormatLabel")}
+              </label>
+              <select
+                id="scheduled-delivery-format"
+                value={deliveryFormat}
+                onChange={(e) => setDeliveryFormat(e.target.value as EmailDeliveryFormat)}
+                className={fieldClass}
+              >
+                <option value="">{t("scheduled.deliveryFormatDefault")}</option>
+                <option value="html">{t("scheduled.deliveryFormatHtml")}</option>
+                <option value="pdf">{t("scheduled.deliveryFormatPdf")}</option>
+              </select>
+              <p className={hintClass}>
+                {deliveryFormat === "html"
+                  ? t("scheduled.deliveryFormatHtmlHint")
+                  : deliveryFormat === "pdf"
+                    ? t("scheduled.deliveryFormatPdfHint")
+                    : t("scheduled.deliveryFormatDefaultHint")}
+              </p>
+            </div>
+          )}
         </div>
 
         {composerError && (

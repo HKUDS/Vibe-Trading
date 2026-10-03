@@ -18,6 +18,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal
 
+from src.channels.rich_text import render_email_html
+
 import logging; logger = logging.getLogger(__name__)
 from pydantic import Field
 
@@ -305,11 +307,33 @@ class EmailChannel(BaseChannel):
             fallback = "\n".join(failed_attachments)
             content = f"{content.rstrip()}\n\n{fallback}" if content.strip() else fallback
 
+        delivery_format = (msg.metadata or {}).get("delivery_format")
+        if delivery_format not in {"html", "pdf"}:
+            delivery_format = None
+
         email_msg = EmailMessage()
         email_msg["From"] = self.config.from_address or self.config.smtp_username or self.config.imap_username
         email_msg["To"] = to_addr
         email_msg["Subject"] = subject
-        email_msg.set_content(content)
+
+        generated_pdf: bytes | None = None
+        if delivery_format == "pdf":
+            # Keep the report out of the message body when PDF delivery is
+            # requested; a render failure must not silently send it as plain text.
+            notice = "Report attached as PDF."
+            email_msg.set_content(notice)
+            email_msg.add_alternative(render_email_html(notice), subtype="html")
+            try:
+                from weasyprint import HTML
+
+                generated_pdf = HTML(string=render_email_html(content)).write_pdf()
+            except Exception:
+                self.logger.exception("Failed to render required PDF attachment")
+                raise
+        else:
+            email_msg.set_content(content)
+            if delivery_format == "html":
+                email_msg.add_alternative(render_email_html(content), subtype="html")
 
         for data, maintype, subtype, filename in attachments:
             email_msg.add_attachment(
@@ -317,6 +341,13 @@ class EmailChannel(BaseChannel):
                 maintype=maintype,
                 subtype=subtype,
                 filename=filename,
+            )
+        if generated_pdf is not None:
+            email_msg.add_attachment(
+                generated_pdf,
+                maintype="application",
+                subtype="pdf",
+                filename="vibe-trading-report.pdf",
             )
 
         in_reply_to = self._last_message_id_by_chat.get(to_addr)

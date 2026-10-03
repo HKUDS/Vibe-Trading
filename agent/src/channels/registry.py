@@ -33,6 +33,7 @@ _INTERNAL = frozenset(
         "pairing",
         "qq_probe",
         "registry",
+        "rich_text",
         "runtime",
         "targets",
         "token_probe",
