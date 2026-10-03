@@ -58,6 +58,7 @@ npm run build
 
 cd ..\desktop\electron
 npm ci
+npm run runtime:win -- -Clean
 npm run prepare:electron
 npm start
 ```
@@ -67,6 +68,10 @@ the pinned Electron package, then installs the verified Windows x64 runtime for
 the source lifecycle tests. The packaging command additionally requires a
 current `7z.exe`; it treats the pinned GTK NSIS asset as an archive and never
 executes its legacy self-extractor.
+
+The installer command builds the isolated Python backend before Electron
+packaging. It produces an unsigned local review installer and does not publish
+or auto-update anything.
 
 The Windows lifecycle suite used by CI can be run from the same directory:
 
