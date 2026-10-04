@@ -114,3 +114,79 @@ def test_fired_checks_empty_for_a_clean_answer(tmp_path: Path) -> None:
     ledger = _ledger_with_locked_listed_identity(tmp_path)
     ledger.validate_final_answer("GLD 是上市 ETF，维持观察。")
     assert _recorded_validations(tmp_path)[-1]["fired_checks"] == []
+
+
+def _ledger_with_invalidated_identity(tmp_path: Path) -> GroundingLedger:
+    """A failed resolution leaves identity invalidated (#1622 identity slice)."""
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="分析机器人ETF并给出买入价")
+    ledger.ingest_tool_result(
+        tool_name="search_symbol",
+        arguments={"query": "机器人ETF"},
+        result=json.dumps({"ok": False, "error": "timeout"}),
+        call_id="resolve",
+        success=False,
+    )
+    return ledger
+
+
+def test_declared_checks_cover_identity_and_figure_slices_in_order() -> None:
+    assert [d["name"] for d in GROUNDING_CHECKS.describe()] == [
+        "listed-identity-relabelled-private",
+        "identity-not-locked",
+        "figures-block-malformed",
+        "unsourced-symbol-figures",
+    ]
+
+
+def test_identity_not_locked_fires_identically_through_the_gate(tmp_path: Path) -> None:
+    ledger = _ledger_with_invalidated_identity(tmp_path)
+    answer = "机器人ETF 可以买入。"
+    result = ledger.validate_final_answer(answer)
+    assert "identity_not_locked" in [str(issue.get("code")) for issue in result.issues]
+    direct = GROUNDING_CHECKS.run("identity-not-locked", ledger, answer)
+    assert [issue["code"] for issue in direct] == ["identity_not_locked"]
+
+
+def test_identity_not_locked_is_silent_once_locked(tmp_path: Path) -> None:
+    ledger = _ledger_with_locked_listed_identity(tmp_path)
+    assert GROUNDING_CHECKS.run("identity-not-locked", ledger, "GLD 是上市 ETF。") == []
+
+
+def test_figures_block_malformed_fires_identically_through_the_gate(tmp_path: Path) -> None:
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="随便聊聊")
+    answer = "一些文字\n\n```figures\n0.95 is my entry\n```"
+    result = ledger.validate_final_answer(answer)
+    assert "figures_block_malformed" in [str(issue.get("code")) for issue in result.issues]
+    # The walk just stashed this answer's figure state on the ledger, which is
+    # what a direct registry run reads.
+    direct = GROUNDING_CHECKS.run("figures-block-malformed", ledger, answer)
+    assert [issue["code"] for issue in direct] == ["figures_block_malformed"]
+
+
+def test_unsourced_symbol_figures_fires_identically_through_the_gate(tmp_path: Path) -> None:
+    ledger = _ledger_with_locked_listed_identity(tmp_path)
+    answer = "GLD 维持观察。000858.SZ 现价 15.20 元，可以买入。"
+    result = ledger.validate_final_answer(answer)
+    assert "unsourced_symbol_figures" in [str(issue.get("code")) for issue in result.issues]
+    direct = GROUNDING_CHECKS.run("unsourced-symbol-figures", ledger, answer)
+    assert [issue["code"] for issue in direct] == ["unsourced_symbol_figures"]
+
+
+def test_unsourced_symbol_figures_ignores_session_symbols(tmp_path: Path) -> None:
+    ledger = _ledger_with_locked_listed_identity(tmp_path)
+    answer = "GLD 现价 999.99 美元，建议买入。"
+    ledger.validate_final_answer(answer)
+    assert GROUNDING_CHECKS.run("unsourced-symbol-figures", ledger, answer) == []
+
+
+def test_fired_checks_name_the_identity_and_figure_slices(tmp_path: Path) -> None:
+    ledger = _ledger_with_invalidated_identity(tmp_path)
+    ledger.validate_final_answer("机器人ETF 可以买入。")
+    assert _recorded_validations(tmp_path)[-1]["fired_checks"] == ["identity-not-locked"]
+
+    figure_ledger = GroundingLedger(run_dir=tmp_path / "figs", user_message="随便聊聊")
+    figure_ledger.validate_final_answer("一些文字\n\n```figures\n0.95 is my entry\n```")
+    artifact = json.loads(
+        (tmp_path / "figs" / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
+    )
+    assert artifact["validations"][-1]["fired_checks"] == ["figures-block-malformed"]
