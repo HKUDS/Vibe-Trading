@@ -23,7 +23,7 @@ patching the route module's singleton (REST).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, List
 
 import pytest
 from fastapi.testclient import TestClient
@@ -768,3 +768,50 @@ def test_catalogue_size_matches_the_loader(client: TestClient) -> None:
     rows = client.get("/scheduled-runs/playbooks").json()
 
     assert [row["slug"] for row in rows] == [pb.slug for pb in list_playbooks()]
+
+
+@pytest.fixture
+def configured_destinations(monkeypatch):
+    from types import SimpleNamespace
+    from src.channels import targets
+
+    monkeypatch.setattr(targets, "load_agent_config", lambda: SimpleNamespace(channels=SimpleNamespace(delivery_targets={
+        "research": SimpleNamespace(enabled=True, label="Research", channel="email", target="report@example.com"),
+        "team": SimpleNamespace(enabled=True, label="Team", channel="slack", target="channel-id"),
+    })))
+
+
+@pytest.mark.parametrize("fmt", ["html", "pdf"])
+def test_cli_persists_email_format(cli_store, configured_destinations, fmt):
+    assert _run_cli(["playbook", "create", SAMPLE, "--id", "mail-job", "--delivery-target-ref", "research", "--delivery-format", fmt, "--json"]) == 0
+    job = cli_store.get("mail-job")
+    assert job.delivery_format == fmt
+    assert job.delivery_channel == "email"
+    assert job.delivery_target == "report@example.com"
+    assert job.delivery_target_ref == "research"
+
+
+@pytest.mark.parametrize("ref", [None, "team", "unknown", "injected@example.com"])
+def test_cli_rejects_nonemail_format_without_persisting(cli_store, configured_destinations, ref):
+    args = ["playbook", "create", SAMPLE, "--delivery-format", "pdf"]
+    if ref:
+        args += ["--delivery-target-ref", ref]
+    assert _run_cli(args) == 1
+    assert cli_store.load() == {}
+
+
+@pytest.mark.parametrize("fmt", [None, "html", "pdf"])
+def test_playbook_rest_persists_email_format(client, rest_store, configured_destinations, fmt):
+    response = client.post(f"/scheduled-runs/playbooks/{SAMPLE}", json={"id": "mail-job", "delivery_target_ref": "research", "delivery_format": fmt})
+    assert response.status_code == 201, response.text
+    assert response.json()["delivery_format"] == fmt
+    job = rest_store.get("mail-job")
+    assert job.delivery_format == fmt
+    assert job.delivery_target == "report@example.com"
+
+
+@pytest.mark.parametrize("ref", [None, "team", "unknown"])
+def test_playbook_rest_rejects_nonemail_format(client, rest_store, configured_destinations, ref):
+    response = client.post(f"/scheduled-runs/playbooks/{SAMPLE}", json={"delivery_target_ref": ref, "delivery_format": "pdf"})
+    assert response.status_code == 422
+    assert rest_store.load() == {}

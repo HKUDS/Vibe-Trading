@@ -1,22 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-lang-neutral>
 <head>
   <meta charset="utf-8">
-  <script>
-    (function () {
-      try {
-        var stored = localStorage.getItem("vibetrading-theme");
-        var resolved = stored === "dark" || stored === "light"
-          ? stored
-          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.setAttribute("data-theme", resolved);
-      } catch (e) {
-        document.documentElement.setAttribute("data-theme", "light");
-      }
-    })();
-  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vibe-Trading Wiki - Finance Research Agent</title>
+  <title data-i18n="home.title">Vibe-Trading Wiki - Finance Research Agent</title>
   <meta name="description" content="Vibe-Trading is a natural-language finance research agent for market data, backtesting, swarm analysis, trade journals, and research artifacts.">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta name="author" content="HKUDS">
@@ -31,38 +18,45 @@
   <meta name="twitter:description" content="Natural-language finance research, backtesting, swarm analysis, and Shadow Account workflows.">
   <meta name="twitter:image" content="https://vibetrading.wiki/assets/icon.png">
   <link rel="canonical" href="https://vibetrading.wiki/home/">
+  <!-- site-head:start -->
   <link rel="icon" type="image/png" href="/assets/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/main.js?v=20260605"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=20260929e">
+  <script src="/theme-init.js?v=20260929e"></script>
+  <!-- site-head:end -->
+  <script type="module" src="/main.js?v=20260929e"></script>
 </head>
-<body>
+<body data-section="home">
+  <!-- site-header:start -->
   <header class="site-header" id="site-header">
     <div class="site-header__inner">
-      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home" data-i18n-attr="aria-label=header.homeLabel">
         <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
         <span class="brand__text">Vibe-Trading</span>
       </a>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="/docs/" data-i18n="nav.docs">Docs</a>
-        <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
-        <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
-        <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
-        <a href="https://github.com/HKUDS/Vibe-Trading" data-i18n="nav.source">Source</a>
+      <nav class="site-nav" aria-label="Primary" data-i18n-attr="aria-label=header.navLabel">
+        <a href="/home/" data-nav="home" data-i18n="nav.home">Home</a>
+        <a href="/docs/" data-nav="docs" data-i18n="nav.docs">Docs</a>
+        <a href="/tutorials/" data-nav="tutorials" data-i18n="nav.tutorials">Tutorials</a>
+        <a href="/alpha-library/" data-nav="alpha" data-i18n="nav.alpha">Alpha Library</a>
+        <a href="/research-lab/" data-nav="lab" data-i18n="nav.lab">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
       </nav>
       <div class="site-actions">
+        <button class="lang-pill" id="lang-toggle" type="button" lang="zh-CN" aria-label="切换到中文">中文</button>
         <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
           <span aria-hidden="true">Star</span>
           <strong id="star-count">--</strong>
         </a>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme">
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" data-i18n-attr="aria-label=header.themeLabel">
           <span class="theme-icon" aria-hidden="true"></span>
         </button>
       </div>
     </div>
   </header>
+  <!-- site-header:end -->
 
   <main>
     <section class="hero">
@@ -75,19 +69,19 @@
           <a class="button button--ghost" href="https://github.com/HKUDS/Vibe-Trading" data-i18n="hero.cta_source">View source</a>
         </div>
       </div>
-      <div class="hero__visual" aria-label="Vibe-Trading research terminal preview">
+      <div class="hero__visual" aria-label="Vibe-Trading research terminal preview" data-i18n-attr="aria-label=home.terminalLabel">
         <div class="terminal">
           <div class="terminal__bar">
             <span></span><span></span><span></span>
             <strong>vibe-trading</strong>
           </div>
           <div class="terminal__body">
-            <p><span class="prompt">$</span> vibe-trading run -p "Backtest BTC-USDT 20/50 MA for 2024"</p>
-            <p class="muted">route: crypto data -> strategy -> backtest -> run card</p>
-            <p><span class="ok">return</span> +18.6% <span class="warn">max drawdown</span> -7.4%</p>
+            <p data-i18n-html="home.term.prompt"><span class="prompt">$</span> vibe-trading run -p "Backtest BTC-USDT 20/50 MA for 2024"</p>
+            <p class="muted" data-i18n="home.term.route">route: crypto data -> strategy -> backtest -> run card</p>
+            <p data-i18n-html="home.term.result"><span class="ok">return</span> +18.6% <span class="warn">max drawdown</span> -7.4%</p>
             <p><span class="prompt">$</span> vibe-trading --swarm-run investment_committee</p>
-            <p class="muted">workers: macro, quant, risk, catalyst</p>
-            <p><span class="ok">report</span> saved with evidence, metrics, and caveats</p>
+            <p class="muted" data-i18n="home.term.workers">workers: macro, quant, risk, catalyst</p>
+            <p data-i18n-html="home.term.report"><span class="ok">report</span> saved with evidence, metrics, and caveats</p>
           </div>
         </div>
         <div class="market-strip" aria-hidden="true">
@@ -98,21 +92,21 @@
 
     <section class="install-band" aria-labelledby="install-title">
       <div class="section-head">
-        <p class="eyebrow">Install</p>
-        <h2 id="install-title">One command to start a research workspace.</h2>
+        <p class="eyebrow" data-i18n="home.install.eyebrow">Install</p>
+        <h2 id="install-title" data-i18n="home.install.title">One command to start a research workspace.</h2>
       </div>
       <div class="install-panel">
-        <div class="tabs" role="tablist" aria-label="Installation methods">
+        <div class="tabs" role="tablist" aria-label="Installation methods" data-i18n-attr="aria-label=home.install.tabsLabel">
           <button role="tab" aria-selected="true" aria-controls="install-pypi" id="tab-pypi" data-tab="pypi">PyPI</button>
           <button role="tab" aria-selected="false" aria-controls="install-uv" id="tab-uv" data-tab="uv">uv</button>
-          <button role="tab" aria-selected="false" aria-controls="install-source" id="tab-source" data-tab="source">Source</button>
+          <button role="tab" aria-selected="false" aria-controls="install-source" id="tab-source" data-tab="source" data-i18n="home.install.source">Source</button>
         </div>
         <pre id="install-pypi" role="tabpanel" aria-labelledby="tab-pypi"><code>pip install vibe-trading-ai
 vibe-trading init
 vibe-trading</code></pre>
         <pre id="install-uv" role="tabpanel" aria-labelledby="tab-uv" hidden><code>uv tool install vibe-trading-ai
 vibe-trading init
-vibe-trading serve --port 8899</code></pre>
+vibe-trading</code></pre>
         <pre id="install-source" role="tabpanel" aria-labelledby="tab-source" hidden><code>git clone https://github.com/HKUDS/Vibe-Trading
 cd Vibe-Trading
 pip install -e .
@@ -123,111 +117,107 @@ vibe-trading</code></pre>
     <section class="knowledge-band" aria-labelledby="knowledge-title">
       <div class="section-head">
         <p class="eyebrow">Wiki</p>
-        <h2 id="knowledge-title">Explore Vibe-Trading.</h2>
+        <h2 id="knowledge-title" data-i18n="home.explore.title">Explore Vibe-Trading.</h2>
       </div>
       <div class="knowledge-grid">
         <a class="knowledge-card" href="/docs/">
-          <strong>Product Docs</strong>
+          <strong data-i18n="home.explore.docs">Product Docs</strong>
         </a>
         <a class="knowledge-card" href="/tutorials/">
-          <strong>Hands-on AI Quant</strong>
+          <strong data-i18n="home.explore.tutorials">Hands-on AI Quant</strong>
         </a>
         <a class="knowledge-card" href="/alpha-library/">
-          <strong>Alpha Library</strong>
+          <strong data-i18n="nav.alpha">Alpha Library</strong>
         </a>
         <a class="knowledge-card" href="/research-lab/">
-          <strong>Research Lab</strong>
+          <strong data-i18n="nav.lab">Research Lab</strong>
         </a>
       </div>
     </section>
 
     <section class="workflow" aria-labelledby="workflow-title">
       <div class="section-head">
-        <p class="eyebrow">Research loop</p>
-        <h2 id="workflow-title">Every answer keeps the trail inspectable.</h2>
+        <p class="eyebrow" data-i18n="home.loop.eyebrow">Research loop</p>
+        <h2 id="workflow-title" data-i18n="home.loop.title">Every answer keeps the trail inspectable.</h2>
       </div>
       <div class="step-grid">
         <article>
           <span>01</span>
-          <h3>Route</h3>
-          <p>Select skills, data sources, tools, and swarm teams from the request.</p>
+          <h3 data-i18n="home.loop.route">Route</h3>
+          <p data-i18n="home.loop.routeText">Select skills, data sources, tools, and swarm teams from the request.</p>
         </article>
         <article>
           <span>02</span>
-          <h3>Ground</h3>
-          <p>Fetch market data, documents, URLs, broker journals, or local files at runtime.</p>
+          <h3 data-i18n="home.loop.ground">Ground</h3>
+          <p data-i18n="home.loop.groundText">Fetch market data, documents, URLs, broker journals, or local files at runtime.</p>
         </article>
         <article>
           <span>03</span>
-          <h3>Test</h3>
-          <p>Run backtests, factor analysis, options checks, validation, and report generation.</p>
+          <h3 data-i18n="home.loop.test">Test</h3>
+          <p data-i18n="home.loop.testText">Run backtests, factor analysis, options checks, validation, and report generation.</p>
         </article>
         <article>
           <span>04</span>
-          <h3>Deliver</h3>
-          <p>Return run cards, exports, reports, tool traces, and caveats for the next session.</p>
+          <h3 data-i18n="home.loop.deliver">Deliver</h3>
+          <p data-i18n="home.loop.deliverText">Return run cards, exports, reports, tool traces, and caveats for the next session.</p>
         </article>
       </div>
     </section>
 
     <section class="feature-band" aria-labelledby="features-title">
       <div class="section-head">
-        <p class="eyebrow">Capabilities</p>
-        <h2 id="features-title">Built for finance research, not brokerage execution.</h2>
+        <p class="eyebrow" data-i18n="home.features.eyebrow">Capabilities</p>
+        <h2 id="features-title" data-i18n="home.features.title">Built for finance research, not brokerage execution.</h2>
       </div>
       <div class="feature-grid">
         <article class="feature-card">
-          <img src="/assets/feature-self-improving-trading-agent.png" alt="Self-improving trading agent">
-          <h3>Agent Harness</h3>
-          <p>Persistent memory, session search, editable skills, context compression, and tool-batched research runs.</p>
+          <img src="/assets/feature-self-improving-trading-agent.png" alt="Self-improving trading agent" data-i18n-attr="alt=home.features.agentAlt">
+          <h3 data-i18n="home.features.agent">Agent Harness</h3>
+          <p data-i18n="home.features.agentText">Persistent memory, session search, editable skills, context compression, and tool-batched research runs.</p>
         </article>
         <article class="feature-card">
-          <img src="/assets/feature-cross-market-data-backtesting.png" alt="Cross-market data and backtesting">
-          <h3>Backtesting</h3>
-          <p>Seven engines across equities, crypto, futures, forex, composites, and options portfolios.</p>
+          <img src="/assets/feature-cross-market-data-backtesting.png" alt="Cross-market data and backtesting" data-i18n-attr="alt=home.features.backtestAlt">
+          <h3 data-i18n="home.features.backtest">Backtesting</h3>
+          <p data-i18n="home.features.backtestText">Eleven engines across A-shares, global, Indian, Korean and Vietnamese equities, crypto, futures, forex, cross-market composites, and options portfolios.</p>
         </article>
         <article class="feature-card">
-          <img src="/assets/feature-multi-agent-trading-teams.png" alt="Multi-agent trading teams">
-          <h3>Swarm Teams</h3>
-          <p>Investment committee, quant desk, risk review, macro, crypto, and other preset research teams.</p>
+          <img src="/assets/feature-multi-agent-trading-teams.png" alt="Multi-agent trading teams" data-i18n-attr="alt=home.features.swarmAlt">
+          <h3 data-i18n="home.features.swarm">Swarm Teams</h3>
+          <p data-i18n="home.features.swarmText">Investment committee, quant desk, risk review, macro, crypto, and other preset research teams.</p>
         </article>
         <article class="feature-card">
-          <img src="/assets/feature-shadow-account.png" alt="Shadow Account workflow">
-          <h3>Shadow Account</h3>
-          <p>Parse broker journals, extract implicit rules, run counterfactual backtests, and render audit reports.</p>
+          <img src="/assets/feature-shadow-account.png" alt="Shadow Account workflow" data-i18n-attr="alt=home.features.shadowAlt">
+          <h3 data-i18n="home.features.shadow">Shadow Account</h3>
+          <p data-i18n="home.features.shadowText">Parse broker journals, extract implicit rules, run counterfactual backtests, and render audit reports.</p>
         </article>
       </div>
     </section>
 
-    <section class="safety-band" aria-label="Bounded autonomy">
+    <section class="safety-band" aria-label="Bounded autonomy" data-i18n-attr="aria-label=home.safety.label">
       <div>
-        <p class="eyebrow">Boundary</p>
-        <h2>You set the limits.</h2>
+        <p class="eyebrow" data-i18n="home.safety.eyebrow">Boundary</p>
+        <h2 data-i18n="home.safety.title">You set the limits.</h2>
       </div>
-      <p>Vibe-Trading is built for research, simulation, and backtesting. Any live trading is opt-in and read-only by default — it runs only through a broker you authorize yourself (e.g. Robinhood Agentic Trading), strictly within the limits you set, and you can halt it instantly. It holds no funds, runs no execution venue, and is not investment advice. Experimental — use at your own risk.</p>
+      <p data-i18n="home.safety.text">Vibe-Trading is built for research, simulation, and backtesting. Any live trading is opt-in and read-only by default — it runs only through a broker you authorize yourself (e.g. Robinhood Agentic Trading), strictly within the limits you set, and you can halt it instantly. It holds no funds, runs no execution venue, and is not investment advice. Experimental — use at your own risk.</p>
     </section>
   </main>
 
-  <style>
-    .footer-traffic[hidden] { display: none; }
-    .footer-traffic { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1.25rem; margin-top: .75rem; font-size: .85rem; opacity: .8; }
-    .footer-traffic .ft-item strong { font-variant-numeric: tabular-nums; font-weight: 700; }
-    .footer-traffic .ft-note { font-size: .72rem; opacity: .6; }
-  </style>
+  <!-- site-footer:start -->
   <footer class="site-footer">
-    <span>Vibe-Trading Wiki</span>
-    <a href="/docs/">Docs</a>
-    <a href="/tutorials/">Tutorials</a>
-    <a href="/alpha-library/">Alpha Library</a>
-    <a href="/research-lab/">Research Lab</a>
+    <span class="site-footer__name">Vibe-Trading Wiki</span>
+    <a href="/docs/" data-i18n="nav.docs">Docs</a>
+    <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
+    <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
+    <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
     <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
     <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
     <div class="footer-traffic" id="footer-traffic" hidden>
-      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> AI agents</span>
-      <span class="ft-item">👤 <strong id="vt-humans">–</strong> humans</span>
-      <span class="ft-item">📦 <strong id="vt-installs">–</strong> installs/mo</span>
-      <span class="ft-note">visitors to this site · anonymous · first-party</span>
+      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> <span data-i18n="footer.agents">AI agents</span></span>
+      <span class="ft-item">👤 <strong id="vt-humans">–</strong> <span data-i18n="footer.humans">humans</span></span>
+      <span class="ft-item">📦 <strong id="vt-installs">–</strong> <span data-i18n="footer.installs">installs/mo</span></span>
+      <span class="ft-note" data-i18n="footer.note">visitors to this site · anonymous · first-party</span>
     </div>
   </footer>
+  <!-- site-footer:end -->
 </body>
 </html>

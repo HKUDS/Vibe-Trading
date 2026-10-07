@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "charts": {
     "noPriceData": "Aún no hay datos de precio para este símbolo",
@@ -148,6 +148,9 @@
     "advancedHint": "Una expresión cron de 5 campos evaluada en la zona horaria seleccionada (minuto hora día mes día_de_semana; se permiten listas y rangos), o un intervalo simple en milisegundos.",
     "timezoneLabel": "Zona horaria",
     "create": "Programar ejecución",
+    "saveChanges": "Guardar cambios",
+    "cancelEdit": "Cancelar edición",
+    "editingHint": "Estás editando esta ejecución programada. Al guardar se conservan su identidad y su historial de ejecución.",
     "promptRequired": "Ingresa un prompt de investigación antes de programar.",
     "invalidTime": "Ingresa una hora válida en formato HH:MM.",
     "executorHint": "Las ejecuciones solo funcionan cuando el servidor se inicia con VIBE_TRADING_ENABLE_SCHEDULER habilitado.",
@@ -182,16 +185,37 @@
     "proposalConfirmCancel": "Confirmar cancelación",
     "nextRun": "Próxima ejecución: {{when}}",
     "lastError": "Último error: {{error}}",
+    "edit": "Editar",
+    "editAria": "Editar ejecución programada: {{prompt}}",
+    "editRunningDisabled": "Espera a que termine la ejecución o su entrega antes de editar.",
     "delete": "Eliminar",
     "deleteAria": "Eliminar ejecución programada: {{prompt}}",
     "confirmDelete": "Confirmar eliminación",
     "confirmDeleteAria": "Confirmar eliminación de ejecución programada: {{prompt}}",
-    "deliveryChannelLabel": "Enviar al canal",
-    "deliveryChannelPlaceholder": "telegram, feishu… (vacío para que los resultados queden en la app)",
-    "deliveryTargetLabel": "Destino en el canal",
-    "deliveryTargetPlaceholder": "id de chat / grupo / usuario",
-    "deliveryHint": "Desactivado por defecto. El informe se envía **cuando la ejecución termina**, no cuando se programa.",
-    "deliveryTargetRequired": "Indica un destino para ese canal, o deja el canal vacío.",
+    "deliveryChannelLabel": "Canal de entrega",
+    "deliveryChannelPlaceholder": "Elige un canal configurado",
+    "deliveryInApp": "Solo en Vibe (no enviar)",
+    "deliveryNoChannels": "No hay canales de entrega habilitados configurados. Configura uno en Configuración → Canales.",
+    "deliveryChannelsLoadFailed": "No se pudieron cargar los canales de entrega configurados.",
+    "deliveryChannelUnavailable": "{{channel}} (no disponible actualmente)",
+    "deliveryTargetLabel": "Destino",
+    "deliveryTargetKind_destination": "Destino",
+    "deliveryTargetKind_email_address": "Dirección de email del destinatario",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Canal",
+    "deliveryTargetPlaceholder": "chat, grupo, usuario, dirección o ID de canal",
+    "deliveryTargetDisabled": "Primero elige un canal de entrega.",
+    "deliveryHint": "El informe se envía cuando la ejecución termina, no cuando se programa.",
+    "deliveryTargetRequired": "Indica un destino para ese canal, o deja la entrega solo en Vibe.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Destino configurado",
+    "deliveryFormatLabel": "Formato del informe por email",
+    "deliveryFormatDefault": "Predeterminado del canal (texto plano)",
+    "deliveryFormatHtml": "Email HTML",
+    "deliveryFormatPdf": "PDF adjunto",
+    "deliveryFormatDefaultHint": "Mantiene el comportamiento de texto plano existente.",
+    "deliveryFormatHtmlHint": "Muestra el informe completo como HTML sanitizado en el cuerpo del email.",
+    "deliveryFormatPdfHint": "Adjunta el informe completo como PDF y deja solo un aviso breve en el cuerpo.",
     "delivery_none": "Se enviará a {{channel}} tras la próxima ejecución",
     "delivery_pending": "Informe pendiente de envío a {{channel}}",
     "delivery_sending": "Enviando el informe a {{channel}}",
@@ -202,7 +226,16 @@
     "verdictUnreadable": "No se pudo leer el último veredicto",
     "verdictNoCalls": "Sin señales",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "a fecha de {{when}}"
+    "verdictRecorded": "a fecha de {{when}}",
+    "deliveryKnownTargetLabel": "Destino conocido",
+    "deliveryKnownTargetPlaceholder": "Elegir un destino conocido…",
+    "deliverySuggestionKind_private_chat": "Mi chat privado",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "ID de chat, grupo o usuario",
+    "deliveryTargetPlaceholder_channel": "ID del canal",
+    "deliveryTargetPlaceholder_destination": "chat, grupo, usuario, dirección o ID de canal",
+    "deliveryTargetPlaceholder_slack_destination": "#canal, @usuario o ID de conversación",
+    "deliveryTargetKind_slack_destination": "Destino"
   },
   "reports": {
     "badge": "Informes",
@@ -650,6 +683,10 @@
           "max_attachments_per_email": {
             "label": "Máx. adjuntos por correo",
             "help": "Cuántos adjuntos se aceptan de un mismo correo (predeterminado 5)."
+          },
+          "trusted_authserv_id": {
+            "label": "Servidor de autenticación de confianza",
+            "help": "authserv-id del servidor receptor, p. ej. mx.google.com. Tu proveedor debe eliminar las cabeceras Authentication-Results falsificadas entrantes que usen este ID. Obligatorio al verificar SPF o DKIM; vacío rechaza el correo entrante."
           }
         },
         "websocket": {
@@ -717,6 +754,60 @@
             "label": "Ruta de la clave TLS",
             "help": "Ruta de la clave privada PEM en el servidor para WSS. Configura certificado y clave juntos o ninguno; son rutas de archivo del servidor, no material subido."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "El App ID de la aplicación en la consola de desarrolladores de Feishu / Lark (empieza por cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "El App Secret de la aplicación. Se guarda en el servidor y nunca se devuelve al navegador."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "La Encrypt Key de la configuración de suscripción a eventos; opcional en el modo de conexión persistente."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "El Verification Token de la configuración de suscripción a eventos; opcional en el modo de conexión persistente."
+          },
+          "allow_from": {
+            "label": "Remitentes permitidos",
+            "help": "Lista blanca opcional de IDs de remitentes de Feishu autorizados a hablar con el agente; vacía significa todos los que el bot puede ver."
+          },
+          "react_emoji": {
+            "label": "Emoji de procesamiento",
+            "help": "Emoji con el que el bot reacciona al mensaje entrante mientras el agente trabaja (por defecto THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Emoji de finalización",
+            "help": "Emoji con el que reacciona al completarse la tarea; vacío para no reaccionar."
+          },
+          "tool_hint_prefix": {
+            "label": "Prefijo de pistas de herramientas",
+            "help": "Prefijo que se muestra antes de las pistas de herramientas en línea de la respuesta."
+          },
+          "group_policy": {
+            "label": "Política de grupos",
+            "help": "\"mention\": responde solo cuando se menciona al bot en grupos; \"open\": responde a todos los mensajes del grupo."
+          },
+          "reply_to_message": {
+            "label": "Citar el mensaje original",
+            "help": "Responder citando el mensaje original."
+          },
+          "streaming": {
+            "label": "Respuestas en streaming",
+            "help": "Emite la respuesta con ediciones en vivo de tarjetas mediante CardKit."
+          },
+          "domain": {
+            "label": "Dominio",
+            "help": "\"feishu\" para Feishu China (open.feishu.cn), \"lark\" para Lark internacional (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Sesiones por tema",
+            "help": "Asigna a cada tema del grupo su propia sesión del agente."
+          }
         }
       },
       "guides": {
@@ -759,6 +850,16 @@
           "step4": "Guardar con el canal en marcha cambia el servidor en caliente: los clientes conectados (incluido este chat de la interfaz web) se desconectan un momento y vuelven a conectarse.",
           "step5": "Haz clic en «Probar conexión»: valida localmente el certificado y la clave SSL y la disponibilidad de la dirección.",
           "docsLabel": "Abrir la documentación de Vibe-Trading"
+        },
+        "feishu": {
+          "title": "Configuración del bot de Feishu / Lark",
+          "intro": "Los bots de Feishu usan una conexión persistente por WebSocket, así que no necesitas IP pública ni webhook.",
+          "step1": "Crea una aplicación personalizada en la plataforma para desarrolladores de Feishu (open.feishu.cn), o créala por escaneo QR desde la terminal con vibe-trading channels login feishu, que guarda el App ID y el App Secret automáticamente.",
+          "step2": "Añade la capacidad de bot a la aplicación.",
+          "step3": "En Suscripción a eventos, suscríbete a «Recibir mensajes im.message.receive_v1» y elige el modo de conexión persistente.",
+          "step4": "Copia el App ID y el App Secret desde Credenciales e información básica y pégalos en los campos de arriba.",
+          "step5": "Crea una versión y publica la aplicación (con aprobación del administrador si tu tenant lo exige); después activa el canal: se aplica en caliente, sin reiniciar. En tenants internacionales de Lark, pon el dominio en lark.",
+          "docsLabel": "Abrir la plataforma para desarrolladores de Feishu"
         }
       }
     },
@@ -911,6 +1012,7 @@
     "dropFiles": "Suelta los archivos aquí",
     "removeAttachment": "Eliminar {{filename}}",
     "uploadFailed": "Error al subir: {{error}}",
+    "messageTooLong": "El mensaje supera {{limit}} caracteres, incluidos los datos de los adjuntos y las instrucciones del equipo. Acórtalo antes de enviarlo.",
     "failedToSend": "Error al enviar el mensaje, intenta de nuevo.",
     "failedToContinue": "Error al continuar el objetivo, intenta de nuevo.",
     "runtimeBadge": "RUNTIME",
@@ -1014,6 +1116,33 @@
     "reproducibility": "Reproducibilidad",
     "metrics": "Métricas",
     "validationPayload": "Validación",
+    "trust": {
+      "executionRecords": "Registros de ejecución",
+      "executionDescription": "Etapas de ejecución registradas y hashes de sus entradas y resultados.",
+      "noExecutionRecords": "No se guardaron registros de ejecución para esta ejecución.",
+      "startedAt": "Inicio (UTC)",
+      "endedAt": "Fin (UTC)",
+      "argsHash": "SHA-256 de los argumentos",
+      "resultHash": "SHA-256 del resultado",
+      "metricEvidence": "Evidencia de métricas",
+      "evidenceDescription": "Referencias a los datos de métricas guardados. Las sumas de comprobación identifican los archivos registrados; esta vista no los verifica de forma independiente.",
+      "noMetricEvidence": "No se registró evidencia de métricas para esta ejecución.",
+      "metric": "Métrica",
+      "artifact": "Artefacto",
+      "column": "Columna",
+      "row": "Fila de datos (desde 1, sin encabezado)",
+      "artifactHash": "SHA-256 del artefacto",
+      "tools": {
+        "backtest": "Backtest",
+        "load_data": "Cargar datos",
+        "generate_signals": "Generar señales"
+      },
+      "status": {
+        "ok": "Completado",
+        "error": "Fallido",
+        "cancelled": "Cancelado"
+      }
+    },
     "artifactChecksums": "Sumas de verificación de artefactos",
     "path": "Ruta",
     "size": "Tamaño",

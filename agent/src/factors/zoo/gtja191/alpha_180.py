@@ -39,7 +39,7 @@ ALPHA_ID = "gtja191_180"
 __alpha_meta__ = {
     'id': 'gtja191_180',
     'theme': ['volume', 'reversal'],
-    'formula_latex': 'see body',
+    'formula_latex': '((MEAN(VOLUME,20) < VOLUME) ? ((-1*TSRANK(ABS(DELTA(CLOSE,7)),60)) * SIGN(DELTA(CLOSE,7))) : (-1*VOLUME))',
     'columns_required': ['close', 'volume'],
     'extras_required': [],
     'universe': ['equity_cn'],

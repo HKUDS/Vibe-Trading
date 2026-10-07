@@ -244,6 +244,52 @@ function websocketEntry(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function feishuEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    display_name: "Feishu",
+    available: true,
+    loaded: true,
+    install_hint: "",
+    error: "",
+    supports_test: true,
+    sdk_available: true,
+    fields: [
+      { key: "app_id", type: "text", secret: false, required: true, help_key: "settings.channels.fields.feishu.app_id" },
+      { key: "app_secret", type: "password", secret: true, required: true, help_key: "settings.channels.fields.feishu.app_secret" },
+      { key: "encrypt_key", type: "password", secret: true, required: false, help_key: "settings.channels.fields.feishu.encrypt_key" },
+      { key: "verification_token", type: "password", secret: true, required: false, help_key: "settings.channels.fields.feishu.verification_token" },
+      { key: "allow_from", type: "list", secret: false, required: false, help_key: "settings.channels.fields.feishu.allow_from" },
+      { key: "react_emoji", type: "text", secret: false, required: false, help_key: "settings.channels.fields.feishu.react_emoji" },
+      { key: "done_emoji", type: "text", secret: false, required: false, help_key: "settings.channels.fields.feishu.done_emoji" },
+      { key: "tool_hint_prefix", type: "text", secret: false, required: false, help_key: "settings.channels.fields.feishu.tool_hint_prefix" },
+      { key: "group_policy", type: "text", secret: false, required: false, help_key: "settings.channels.fields.feishu.group_policy" },
+      { key: "reply_to_message", type: "bool", secret: false, required: false, help_key: "settings.channels.fields.feishu.reply_to_message" },
+      { key: "streaming", type: "bool", secret: false, required: false, help_key: "settings.channels.fields.feishu.streaming" },
+      { key: "domain", type: "text", secret: false, required: false, help_key: "settings.channels.fields.feishu.domain" },
+      { key: "topic_isolation", type: "bool", secret: false, required: false, help_key: "settings.channels.fields.feishu.topic_isolation" },
+    ],
+    values: {
+      enabled: false,
+      app_id: "cli_a9f8e7d6c5b4",
+      allow_from: [],
+      react_emoji: "THUMBSUP",
+      done_emoji: "",
+      tool_hint_prefix: "",
+      group_policy: "mention",
+      reply_to_message: true,
+      streaming: true,
+      domain: "feishu",
+      topic_isolation: false,
+    },
+    secrets: {
+      app_secret: { set: true, masked: "****abcd" },
+      encrypt_key: { set: true, masked: "****ef01" },
+      verification_token: { set: true, masked: "****2345" },
+    },
+    ...overrides,
+  };
+}
+
 function channelsConfig(overrides: Record<string, unknown> = {}) {
   return {
     config_path: "~/.vibe-trading/agent.json",
@@ -298,6 +344,22 @@ async function renderWebsocketExpanded() {
   await screen.findByText("IM Channels");
   fireEvent.click(await screen.findByRole("button", { name: "Configure WebSocket" }));
   expect(await screen.findByDisplayValue("127.0.0.1")).toBeInTheDocument();
+}
+
+/** Render the card with the three guided IM channels available. */
+function guidedChannelsConfig() {
+  return channelsConfig({
+    channels: { dingtalk: dingtalkEntry(), qq: qqEntry(), feishu: feishuEntry() },
+  });
+}
+
+/** Render the card with the Feishu config panel expanded. */
+async function renderFeishuExpanded() {
+  apiMock.getChannelsConfig.mockResolvedValue(guidedChannelsConfig());
+  render(<ChannelSettings />);
+  await screen.findByText("IM Channels");
+  fireEvent.click(await screen.findByRole("button", { name: "Configure Feishu" }));
+  expect(await screen.findByDisplayValue("cli_a9f8e7d6c5b4")).toBeInTheDocument();
 }
 
 describe("ChannelSettings config panel", () => {
@@ -706,6 +768,85 @@ describe("ChannelSettings config panel", () => {
     fireEvent.click(guideToggle);
     expect(guideToggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText(/keep 127\.0\.0\.1 for local-only use/)).not.toBeInTheDocument();
+  });
+
+  it("renders every Feishu field from the backend help_keys with localized labels", async () => {
+    await renderFeishuExpanded();
+
+    expect(screen.getByText("App ID")).toBeInTheDocument();
+    expect(screen.getByText("App Secret")).toBeInTheDocument();
+    expect(screen.getByText("Encrypt Key")).toBeInTheDocument();
+    expect(screen.getByText("Verification Token")).toBeInTheDocument();
+    expect(screen.getByText("Allowed senders")).toBeInTheDocument();
+    expect(screen.getByText("Working emoji")).toBeInTheDocument();
+    expect(screen.getByText("Done emoji")).toBeInTheDocument();
+    expect(screen.getByText("Tool hint prefix")).toBeInTheDocument();
+    expect(screen.getByText("Group policy")).toBeInTheDocument();
+    expect(screen.getByText("Quote the original message")).toBeInTheDocument();
+    expect(screen.getByText("Streaming replies")).toBeInTheDocument();
+    expect(screen.getByText("Domain")).toBeInTheDocument();
+    expect(screen.getByText("Per-topic sessions")).toBeInTheDocument();
+    expect(screen.getByText(/starts with cli_/)).toBeInTheDocument();
+    // Both Event Subscription secrets document the long-connection optionality.
+    expect(screen.getAllByText(/Optional for long-connection mode/)).toHaveLength(2);
+    expect(screen.getByText(/default THUMBSUP/)).toBeInTheDocument();
+    // The three secret fields keep the generic masked placeholder and password type.
+    for (const masked of ["****abcd", "****ef01", "****2345"]) {
+      const secretInput = screen.getByPlaceholderText(`Keep current (${masked})`);
+      expect(secretInput).toHaveAttribute("type", "password");
+      expect(secretInput).toHaveValue("");
+    }
+  });
+
+  it("toggles the Feishu setup guide with its steps and external link", async () => {
+    await renderFeishuExpanded();
+
+    expect(screen.queryByText(/Create a Custom App on the Feishu Open Platform/)).not.toBeInTheDocument();
+
+    const guideToggle = screen.getByRole("button", { name: "Feishu / Lark bot setup" });
+    expect(guideToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(guideToggle);
+
+    expect(guideToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/WebSocket long connection, so no public IP/)).toBeInTheDocument();
+    expect(screen.getByText(/Create a Custom App on the Feishu Open Platform/)).toBeInTheDocument();
+    expect(screen.getByText(/Add the Bot capability to the app/)).toBeInTheDocument();
+    expect(screen.getByText(/subscribe to receiving messages \(im\.message\.receive_v1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Copy the App ID and App Secret from Credentials & Basic Info/)).toBeInTheDocument();
+    expect(screen.getByText(/Create a version and publish the app/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open the Feishu Open Platform" }))
+      .toHaveAttribute("href", "https://open.feishu.cn/");
+
+    fireEvent.click(guideToggle);
+    expect(guideToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Create a Custom App on the Feishu Open Platform/)).not.toBeInTheDocument();
+  });
+
+  it("never renders smuggled Feishu secret values, only the masked placeholders", async () => {
+    // A contract-violating response that carries raw secrets in `values`
+    // still must not reach the DOM: secret widgets bind to empty drafts.
+    const feishu = feishuEntry({
+      values: {
+        ...feishuEntry().values,
+        app_secret: "leaked-app-secret",
+        encrypt_key: "leaked-encrypt-key",
+        verification_token: "leaked-verification-token",
+      },
+    });
+    apiMock.getChannelsConfig.mockResolvedValue(channelsConfig({ channels: { feishu } }));
+    render(<ChannelSettings />);
+    await screen.findByText("IM Channels");
+    fireEvent.click(await screen.findByRole("button", { name: "Configure Feishu" }));
+    expect(await screen.findByDisplayValue("cli_a9f8e7d6c5b4")).toBeInTheDocument();
+
+    const secretInputs = Array.from(document.querySelectorAll("input[type=password]"));
+    expect(secretInputs).toHaveLength(3);
+    for (const secretInput of secretInputs) {
+      expect(secretInput).toHaveValue("");
+    }
+    expect(document.body.textContent).not.toContain("leaked-app-secret");
+    expect(document.body.textContent).not.toContain("leaked-encrypt-key");
+    expect(document.body.textContent).not.toContain("leaked-verification-token");
   });
 
   it("renders no setup guide for a channel without a guide definition", async () => {

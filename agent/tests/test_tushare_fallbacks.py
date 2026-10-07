@@ -73,11 +73,14 @@ def test_dragon_tiger_maps_top_list_and_top_inst() -> None:
     assert data["seats"][0]["net"] == 2.0e8
 
 
-def test_northbound_converts_tushare_million_yuan_to_10k_cny() -> None:
+def test_northbound_passes_through_million_yuan_with_semantics_note() -> None:
+    """No ×100 rescale: post-2024-08-19 rows are turnover in million CNY
+    (HKEX-verified, issue #1481); a constant factor cannot serve both eras,
+    so values pass through and the note documents the boundary."""
     pro = SimpleNamespace(
         moneyflow_hsgt=lambda **_: [
-            {"trade_date": "20240102", "hgt": 12.0, "sgt": -2.0, "north_money": 10.0},
-            {"trade_date": "20240103", "hgt": 3.5, "sgt": 1.0, "north_money": 4.5},
+            {"trade_date": "20240816", "hgt": -2568.22, "sgt": 100.0, "north_money": -2468.22},
+            {"trade_date": "20240819", "hgt": 46129.34, "sgt": 50000.0, "north_money": 96129.34},
         ]
     )
     with patch.object(tf, "_pro_api", return_value=pro), patch.object(
@@ -85,10 +88,18 @@ def test_northbound_converts_tushare_million_yuan_to_10k_cny() -> None:
     ):
         data = tf.fetch_northbound_flow(lookback_days=2)
 
-    assert data["unit"] == "10k CNY"
-    assert data["history"][0]["shanghai_connect"] == 1200.0
-    assert data["history"][0]["total"] == 1000.0
-    assert data["realtime"]["total"] == 450.0
+    assert data["unit"] == "CNY million"
+    assert data["history"][0]["shanghai_connect"] == -2568.22
+    assert data["history"][0]["total"] == -2468.22
+    assert data["history"][0]["turnover_total"] is None
+    assert data["history"][1]["shanghai_connect"] is None
+    assert data["history"][1]["total"] is None
+    assert data["history"][1]["turnover_shanghai"] == 46129.34
+    assert data["history"][1]["turnover_total"] == 96129.34
+    assert data["realtime"]["total"] is None
+    assert data["realtime"]["turnover_total"] == 96129.34
+    assert "2024-08-19" in data["note"]
+    assert "turnover" in data["note"].lower()
 
 
 def test_margin_trading_maps_and_sorts_most_recent_first() -> None:

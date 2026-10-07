@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -144,6 +145,39 @@ def _rlimit_bootstrap_argv() -> list[str] | None:
     ]
 
 
+def _reexpose_mt5_config(src_root: Path, dst_root: Path) -> None:
+    """Write a credential-free subset of the host's ``mt5.json`` into the sandbox.
+
+    The full connector config carries broker ``login``/``password``/``server``,
+    which strategy code must never see (VT-001), so the file can never join the
+    generic re-expose list. A backtest still has to attach to the
+    already-running, already-logged-in terminal, so it gets only
+    ``terminal_path`` and ``timeout`` (#1589).
+    """
+    src = src_root / "mt5.json"
+    if not src.exists():
+        return
+    try:
+        config = json.loads(src.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(config, dict):
+        return
+    subset: dict[str, Any] = {}
+    terminal_path = config.get("terminal_path")
+    if isinstance(terminal_path, str) and terminal_path.strip() and "\x00" not in terminal_path:
+        subset["terminal_path"] = terminal_path
+    timeout = config.get("timeout")
+    if type(timeout) in (int, float) and math.isfinite(timeout) and timeout > 0:
+        subset["timeout"] = timeout
+    if not subset:
+        return
+    try:
+        (dst_root / "mt5.json").write_text(json.dumps(subset), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _prepare_sandbox_home(real_home: Path | None) -> Path:
     """Create an ephemeral HOME and symlink in only the loader-owned paths.
 
@@ -184,6 +218,7 @@ def _prepare_sandbox_home(real_home: Path | None) -> Path:
                         # falls back to a live fetch / disabled cache — never a
                         # hard break.
                         pass
+            _reexpose_mt5_config(src_root, dst_root)
             try:
                 os.chmod(dst_root, 0o755)
             except OSError:

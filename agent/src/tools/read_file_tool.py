@@ -23,6 +23,21 @@ _OUTPUT_LIMIT = 50_000
 # arbitrary model-supplied relative path never starts reaching into skills/.
 _SKILL_RELATIVE_PREFIXES = ("references/", "scripts/")
 
+# How many entries a directory listing returns.
+_LISTING_LIMIT = 200
+
+# What the refusal says, whichever root the path missed. A risk-parity run once
+# spent all eight of its no-progress rounds trying spellings of the engine's
+# source path (``../../agent/src/backtest``, ``skills/../backtest/engine.py``)
+# against one message that said neither where it may read nor what to do.
+_READABLE = (
+    "read_file opens files under the run directory (a relative path such as "
+    "artifacts/metrics.csv or config.json) and the bundled skill documents "
+    "(skills/<skill>/...). The engine's source code is not readable here; its "
+    "contracts and options are documented in the skills: load_skill(name) lists "
+    "a skill's sections, and load_skill(name, section=...) returns one."
+)
+
 
 def _bundled_skills_dir() -> Path:
     """Return the bundled read-only skills root."""
@@ -123,6 +138,9 @@ class ReadFileTool(BaseTool):
 
         resolved = None
         namespaced = False
+        # Whether any root contains the path at all: a path inside a root that
+        # does not exist is "not found", one outside every root is refused.
+        contained = False
 
         # `skills/` is a namespace bound to the bundled read-only skills root.
         # Binding the prefix stops a same-named file in run_dir — which the agent
@@ -132,6 +150,7 @@ class ReadFileTool(BaseTool):
             namespaced = True
             try:
                 candidate = _safe_path(file_path[len("skills/") :], skills_dir)
+                contained = True
             except ValueError:
                 candidate = None
             if candidate is not None and candidate.exists():
@@ -142,6 +161,7 @@ class ReadFileTool(BaseTool):
             for root in allowed_roots:
                 try:
                     candidate = _safe_path(file_path, root)
+                    contained = True
                     if candidate.exists():
                         resolved = candidate
                         break
@@ -178,10 +198,31 @@ class ReadFileTool(BaseTool):
                 )
 
         if resolved is None:
+            if contained:
+                error_code = "not_found"
+                reason = f"{file_path} was not found."
+            else:
+                error_code = "outside_readable_roots"
+                reason = f"{file_path} is outside what read_file may open."
+            return json.dumps(
+                {"status": "error", "error_code": error_code, "error": f"{reason} {_READABLE}"},
+                ensure_ascii=False,
+            )
+
+        if resolved.is_dir():
+            # A directory is a question about what is in it.
+            entries = sorted(
+                child.name + ("/" if child.is_dir() else "")
+                for child in resolved.iterdir()
+                if not child.name.startswith(".")
+            )
             return json.dumps(
                 {
-                    "status": "error",
-                    "error": f"File not found or path escapes workspace: {file_path}",
+                    "status": "ok",
+                    "path": str(resolved),
+                    "kind": "directory",
+                    "entries": entries[:_LISTING_LIMIT],
+                    "truncated": len(entries) > _LISTING_LIMIT,
                 },
                 ensure_ascii=False,
             )

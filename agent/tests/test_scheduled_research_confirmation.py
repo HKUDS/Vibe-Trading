@@ -235,3 +235,78 @@ def test_im_confirmation_accepts_english_and_chinese_tokens(
         assert len(store.load()) == 2
 
     asyncio.run(scenario())
+
+
+def test_email_format_survives_human_proposal_commit(tmp_path, monkeypatch):
+    from src.scheduled_research import proposals, service
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    store = ScheduledResearchJobStore(tmp_path / "jobs.json")
+    monkeypatch.setattr(proposals, "default_store", lambda: store)
+    monkeypatch.setattr(proposals, "scheduler_status", lambda: {"executable": True})
+    monkeypatch.setattr(service.time, "time", lambda: 1000)
+    monkeypatch.setattr(service, "resolve_delivery_target", lambda ref: DeliveryTarget(ref, "Research", "email", "configured@example.com"))
+    draft = _draft()
+    draft["delivery"] = {"mode": "configured", "target_ref": "research", "format": "pdf"}
+    proposal = json.loads(ScheduledResearchTool().execute(action="propose_create", draft=draft))
+    assert proposal["job"]["delivery"]["format"] == "pdf"
+    assert "configured@example.com" not in json.dumps(proposal)
+    assert store.load() == {}
+    proposals.commit_proposal(proposal["proposal_id"])
+    job = next(iter(store.load().values()))
+    assert job.delivery_format == "pdf"
+    assert job.delivery_target == "configured@example.com"
+
+
+def test_origin_format_uses_session_destination(monkeypatch):
+    from types import SimpleNamespace
+    import api_server
+
+    session = SimpleNamespace(config={"channel": "email", "channel_chat_id": "origin@example.com"})
+    monkeypatch.setattr(api_server, "_get_session_service", lambda: SimpleNamespace(get_session=lambda sid: session))
+    draft = _draft()
+    draft["delivery"] = {"mode": "origin", "format": "html", "target": "injected@example.com"}
+    job = build_job_from_draft(draft, session_id="s", now_ms=1000)
+    assert job.delivery_target == "origin@example.com"
+    assert public_job(job)["delivery"]["format"] == "html"
+    import pytest
+    session.config["channel"] = "slack"
+    with pytest.raises(ValueError, match="only for email"):
+        build_job_from_draft(draft, session_id="s", now_ms=1000)
+
+
+def test_invalid_format_cannot_create_a_proposal(tmp_path, monkeypatch):
+    import pytest
+    from src.scheduled_research import service
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    monkeypatch.setattr(service.time, "time", lambda: 1000)
+    monkeypatch.setattr(service, "resolve_delivery_target", lambda ref: DeliveryTarget(ref, "Team", "slack", "raw"))
+    for delivery in [
+        {"mode": "in_app", "format": "pdf"},
+        {"mode": "configured", "target_ref": "team", "format": "html"},
+        {"mode": "in_app", "format": "rtf"},
+    ]:
+        draft = _draft()
+        draft["delivery"] = delivery
+        with pytest.raises(ValueError, match="format"):
+            ScheduledResearchTool().execute(action="propose_create", draft=draft)
+    assert not list(tmp_path.rglob("srp_*.json"))
+
+
+def test_cli_confirmation_displays_format_and_legacy_relay_preserves_it(monkeypatch):
+    from io import StringIO
+    from rich.console import Console
+    from cli.main import _render_scheduled_proposal
+    from cli._legacy import _scheduled_proposal_from_tool_result
+    from src.scheduled_research import proposals
+
+    for fmt, label in [("html", "HTML"), ("pdf", "PDF"), (None, "纯文本")]:
+        proposal = {"operation": "create", "job": {"title": "Research", "delivery": {"channel": "email", "format": fmt}}}
+        monkeypatch.setattr(proposals, "load_proposal", lambda pid: proposal)
+        recovered = _scheduled_proposal_from_tool_result({"tool": "scheduled_research", "status": "ok", "preview": json.dumps({"proposal_id": "srp_" + "a" * 32})})
+        assert recovered == proposal
+        output = StringIO()
+        _render_scheduled_proposal(Console(file=output, width=200), recovered)
+        assert f"邮件格式: {label}" in output.getvalue()
+        assert "[y/N]" in output.getvalue()

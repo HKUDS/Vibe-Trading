@@ -93,6 +93,15 @@ def register_uploads_routes(
         host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
         return host._UPLOAD_CHUNK_SIZE if host else _UPLOAD_CHUNK_SIZE
 
+    @app.get("/api/reports/{report_id}", dependencies=[Depends(require_auth)])
+    async def get_generated_report(report_id: str):
+        """Download only a staged generated PDF via an opaque ID."""
+        from src.tools.report_artifacts import report_path
+        path = report_path(report_id)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return FileResponse(path, media_type="application/pdf", filename=path.name)
+
     @app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
     async def get_shadow_report(shadow_id: str, format: str = "html"):
         """Serve a rendered Shadow Account report.

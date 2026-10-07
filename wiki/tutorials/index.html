@@ -1,22 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-lang-neutral>
 <head>
   <meta charset="utf-8">
-  <script>
-    (function () {
-      try {
-        var stored = localStorage.getItem("vibetrading-theme");
-        var resolved = stored === "dark" || stored === "light"
-          ? stored
-          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.setAttribute("data-theme", resolved);
-      } catch (e) {
-        document.documentElement.setAttribute("data-theme", "light");
-      }
-    })();
-  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hands-on AI Quant | Vibe-Trading Wiki</title>
+  <title data-i18n="tutorials.title">Hands-on AI Quant | Vibe-Trading Wiki</title>
   <meta name="description" content="Hands-on AI Quant tutorials for Vibe-Trading.">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
@@ -26,62 +13,78 @@
   <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
   <meta property="og:url" content="https://vibetrading.wiki/tutorials/">
   <link rel="canonical" href="https://vibetrading.wiki/tutorials/">
+  <!-- site-head:start -->
   <link rel="icon" type="image/png" href="/assets/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/main.js"></script>
+  <link rel="stylesheet" href="/styles.css?v=20260929e">
+  <script src="/theme-init.js?v=20260929e"></script>
+  <!-- site-head:end -->
+  <script type="module" src="/main.js?v=20260929e"></script>
 </head>
-<body>
+<body data-section="tutorials">
+  <!-- site-header:start -->
   <header class="site-header" id="site-header">
     <div class="site-header__inner">
-      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home" data-i18n-attr="aria-label=header.homeLabel">
         <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
         <span class="brand__text">Vibe-Trading</span>
       </a>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="/docs/">Docs</a>
-        <a href="/tutorials/">Tutorials</a>
-        <a href="/alpha-library/">Alpha Library</a>
-        <a href="/research-lab/">Research Lab</a>
-        <a href="https://github.com/HKUDS/Vibe-Trading">Source</a>
+      <nav class="site-nav" aria-label="Primary" data-i18n-attr="aria-label=header.navLabel">
+        <a href="/home/" data-nav="home" data-i18n="nav.home">Home</a>
+        <a href="/docs/" data-nav="docs" data-i18n="nav.docs">Docs</a>
+        <a href="/tutorials/" data-nav="tutorials" data-i18n="nav.tutorials">Tutorials</a>
+        <a href="/alpha-library/" data-nav="alpha" data-i18n="nav.alpha">Alpha Library</a>
+        <a href="/research-lab/" data-nav="lab" data-i18n="nav.lab">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
       </nav>
       <div class="site-actions">
+        <button class="lang-pill" id="lang-toggle" type="button" lang="zh-CN" aria-label="切换到中文">中文</button>
         <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
           <span aria-hidden="true">Star</span>
           <strong id="star-count">--</strong>
         </a>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme">
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" data-i18n-attr="aria-label=header.themeLabel">
           <span class="theme-icon" aria-hidden="true"></span>
         </button>
       </div>
     </div>
   </header>
+  <!-- site-header:end -->
 
   <main class="section-page">
     <section class="section-hero">
-      <p class="eyebrow">Tutorials</p>
-      <h1>Hands-on AI Quant.</h1>
-      <p class="section-hero__lede">Guides for turning finance ideas into inspectable Vibe-Trading workflows.</p>
+      <p class="eyebrow" data-i18n="nav.tutorials">Tutorials</p>
+      <h1 data-i18n="tutorials.heading">Hands-on AI Quant.</h1>
+      <p class="section-hero__lede" data-i18n="tutorials.lede">Guides for turning finance ideas into inspectable Vibe-Trading workflows.</p>
     </section>
 
-    <section class="knowledge-grid" aria-label="Tutorial list">
-      <a class="knowledge-card" href="/tutorials/vibe-trading-beginner-zh.html">
-        <strong>入门</strong>
-        <h3>Vibe-Trading 中文入门教程</h3>
-        <p>面向非金融专业读者，解释因子、策略、回测、多市场数据源、券商 connector 和 Shadow Account。</p>
+    <section class="knowledge-grid" aria-label="Tutorial list" data-i18n-attr="aria-label=tutorials.listLabel">
+      <a class="knowledge-card" href="/tutorials/vibe-trading-beginner.html" data-href-zh="/tutorials/vibe-trading-beginner-zh.html">
+        <strong data-i18n="tutorials.beginner.tag">Beginner</strong>
+        <h3 data-i18n="tutorials.beginner.title">Vibe-Trading beginner's guide</h3>
+        <p data-i18n="tutorials.beginner.text">For readers without a finance background: factors, strategies, backtests, multi-market data sources, broker connectors and Shadow Account.</p>
       </a>
     </section>
   </main>
 
+  <!-- site-footer:start -->
   <footer class="site-footer">
-    <span>Vibe-Trading Wiki</span>
-    <a href="/docs/">Docs</a>
-    <a href="/tutorials/">Tutorials</a>
-    <a href="/alpha-library/">Alpha Library</a>
-    <a href="/research-lab/">Research Lab</a>
+    <span class="site-footer__name">Vibe-Trading Wiki</span>
+    <a href="/docs/" data-i18n="nav.docs">Docs</a>
+    <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
+    <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
+    <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
     <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+    <div class="footer-traffic" id="footer-traffic" hidden>
+      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> <span data-i18n="footer.agents">AI agents</span></span>
+      <span class="ft-item">👤 <strong id="vt-humans">–</strong> <span data-i18n="footer.humans">humans</span></span>
+      <span class="ft-item">📦 <strong id="vt-installs">–</strong> <span data-i18n="footer.installs">installs/mo</span></span>
+      <span class="ft-note" data-i18n="footer.note">visitors to this site · anonymous · first-party</span>
+    </div>
   </footer>
+  <!-- site-footer:end -->
 </body>
 </html>

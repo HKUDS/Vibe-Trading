@@ -1082,7 +1082,10 @@ def _render_scheduled_proposal(console: Any, proposal: Dict[str, Any]) -> None:
         console.print(
             f"  投递: {delivery.get('target_label') or '仅应用内'}{channel_suffix}"
         )
-    console.print("[bold]确认执行？ [y/N][/bold]")
+        if delivery.get("channel") == "email":
+            label = {"html": "HTML", "pdf": "PDF"}.get(delivery.get("format"), "纯文本")
+            console.print(f"  邮件格式: {label}")
+    console.print("确认执行？ [y/N]", style="bold", markup=False)
 
 
 def _handle_scheduled_proposal_reply(text: str, ctx: InteractiveContext) -> bool:

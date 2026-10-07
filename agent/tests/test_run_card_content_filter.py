@@ -18,6 +18,7 @@ def test_content_filter_warnings_surfaced_in_run_card(tmp_path: Path) -> None:
         "end_date": "2025-01-06",
         "source": "yfinance",
         "engine": "options",
+        "model_training_cutoff": "2020-01-01",
         "content_filter_warnings": [
             "3/10 LLM responses (30%) were blocked by content moderation."
             " Consider switching to a provider with less aggressive filtering"
@@ -50,6 +51,7 @@ def test_no_content_filter_warnings_yields_empty_warnings(tmp_path: Path) -> Non
         "end_date": "2025-02-01",
         "source": "yfinance",
         "engine": "daily",
+        "model_training_cutoff": "2020-01-01",
     }
     warnings = config.get("content_filter_warnings") or None
 
@@ -113,6 +115,7 @@ def test_options_engine_surfaces_content_filter_warnings(tmp_path: Path) -> None
             "source": "yfinance",
             "engine": "options",
             "initial_cash": 100_000,
+            "model_training_cutoff": "2020-01-01",
             "content_filter_warnings": [
                 "2/10 LLM responses (20%) were blocked by content moderation."
                 " Consider switching to a provider with less aggressive filtering"
@@ -177,6 +180,7 @@ def test_options_engine_no_warnings_yields_empty(tmp_path: Path) -> None:
             "source": "yfinance",
             "engine": "options",
             "initial_cash": 100_000,
+            "model_training_cutoff": "2020-01-01",
         },
         FakeLoader(),
         SignalEngine(),

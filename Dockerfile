@@ -61,7 +61,7 @@ FROM python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0
 
 LABEL org.opencontainers.image.title="Vibe-Trading" \
     org.opencontainers.image.description="Natural-language finance research AI agent with backtesting" \
-    org.opencontainers.image.version="0.1.15" \
+    org.opencontainers.image.version="0.1.16" \
     org.opencontainers.image.source="https://github.com/HKUDS/Vibe-Trading" \
     org.opencontainers.image.licenses="MIT"
 
@@ -74,7 +74,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # shared libraries (Pango/HarfBuzz/Fontconfig/Cairo/gdk-pixbuf) per its official
 # Debian install list; without them the lazy `from weasyprint import HTML` in
 # reporter.py fails and PDF rendering silently downgrades to HTML-only.
-# fonts-dejavu-core gives non-blank PDFs.
+# Include fonts for all supported report languages, including CJK and Arabic.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
@@ -83,6 +83,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgdk-pixbuf-2.0-0 \
     libcairo2 \
     fonts-dejavu-core \
+    fonts-noto-core \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Bring in the prebuilt venv from the builder stage.

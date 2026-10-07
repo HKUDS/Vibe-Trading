@@ -20,7 +20,8 @@ rejects unspaced bursts.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+import math
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -83,14 +84,71 @@ def _to_tiingo_symbol(code: str) -> Optional[str]:
     return upper.lower()
 
 
+def _positive_prices(*values: Any) -> Optional[tuple[float, ...]]:
+    """Finite, strictly positive floats for every value, or ``None``.
+
+    A missing, non-numeric, non-finite or non-positive price makes the whole
+    set unusable: zero and infinity are not prices, and a bar built from one is
+    a fabricated return rather than a missing one.
+    """
+    try:
+        numbers = tuple(float(value) for value in values)
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(number) and number > 0 for number in numbers):
+        return None
+    return numbers
+
+
+def _adjusted_basis(
+    row: dict,
+) -> Optional[tuple[float, float, float, float]]:
+    """The adjusted ``(open, high, low, close)`` one bar yields, or ``None``.
+
+    Tiingo's fully adjusted OHLC is preferred; when only ``adjClose`` is
+    present the raw OHLC is scaled by the ``adjClose/close`` factor so the four
+    stay consistent. ``None`` means the bar cannot be part of an adjusted
+    series — a price in the set being used that is missing, non-numeric,
+    non-finite or non-positive, or a factor outside the sane 0.01-100x window —
+    so it may neither supply the series' basis nor, once another bar supplies
+    it, be replaced with raw prices.
+    """
+    if all(
+        row.get(key) is not None for key in ("adjOpen", "adjHigh", "adjLow", "adjClose")
+    ):
+        prices = _positive_prices(
+            row["adjOpen"], row["adjHigh"], row["adjLow"], row["adjClose"]
+        )
+        if prices is None:
+            return None
+        o, h, lo, c = prices
+        return o, h, lo, c
+    prices = _positive_prices(
+        row.get("open"),
+        row.get("high"),
+        row.get("low"),
+        row.get("close"),
+        row.get("adjClose"),
+    )
+    if prices is None:
+        return None
+    o, h, lo, c, adj_close = prices
+    ratio = adj_close / c
+    if not 0.01 <= ratio <= 100:
+        return None
+    return o * ratio, h * ratio, lo * ratio, adj_close
+
+
 def _rows_to_frame(rows: List[dict]) -> Optional[pd.DataFrame]:
     """Convert Tiingo's per-day records into the normalized OHLCV frame.
 
     Prefers Tiingo's adjusted OHLC (``adjOpen``/``adjHigh``/``adjLow``/
     ``adjClose``) when present so the frame is dividend- and split-adjusted
-    (qfq). Falls back to raw ``open``/``high``/``low``/``close`` when adjusted
-    fields are absent, and to an ``adjClose/close`` ratio when only
-    ``adjClose`` is present.
+    (qfq). Falls back to an ``adjClose/close`` ratio when only ``adjClose`` is
+    present, and to raw ``open``/``high``/``low``/``close`` when no bar carries
+    a usable adjustment at all. A bar whose adjustment is missing or unusable
+    is dropped whenever other bars are adjusted, so one series never mixes two
+    price bases.
 
     Args:
         rows: JSON array decoded from the prices endpoint; each item carries a
@@ -102,70 +160,35 @@ def _rows_to_frame(rows: List[dict]) -> Optional[pd.DataFrame]:
         with float ``open``/``high``/``low``/``close``/``volume`` columns
         (adjusted when available), or ``None`` when no usable bar is present.
     """
+    dated = [
+        row for row in rows if isinstance(row, dict) and isinstance(row.get("date"), str)
+        and pd.notna(pd.to_datetime(row["date"], utc=True, errors="coerce"))
+    ]
+    if len(dated) != len(rows):
+        logger.warning("Tiingo: dropped %d bars with missing/invalid dates", len(rows) - len(dated))
+    has_adjusted_data = any(_adjusted_basis(row) is not None for row in dated)
     parsed: List[dict] = []
-    for row in rows:
+    dropped = 0
+    for row in dated:
         date = row.get("date")
-        if date is None:
+        basis = _adjusted_basis(row)
+        if basis is not None:
+            o, h, lo, c = basis
+        elif has_adjusted_data:
+            # Do not fill a missing/invalid adjusted bar with raw prices: that
+            # would mix bases within this series.
+            dropped += 1
             continue
-        # Prefer fully adjusted OHLC when Tiingo provides them.
-        has_adj_ohlc = all(
-            row.get(k) is not None for k in ("adjOpen", "adjHigh", "adjLow", "adjClose")
-        )
-        if has_adj_ohlc:
-            o, h, lo, c = (
-                row.get("adjOpen"),
-                row.get("adjHigh"),
-                row.get("adjLow"),
-                row.get("adjClose"),
-            )
         else:
-            # If only adjClose is present, derive the dividend/split factor and
-            # scale raw OHLC so high/low/open stay consistent with the adjusted close.
-            adj_close = row.get("adjClose")
-            raw_close = row.get("close")
-            ratio = None
-            try:
-                if adj_close is not None and raw_close is not None:
-                    ac = float(adj_close)
-                    rc = float(raw_close)
-                    if rc > 0 and ac > 0:
-                        r = ac / rc
-                        if 0.01 <= r <= 100:
-                            ratio = r
-            except (TypeError, ValueError):
-                ratio = None
-            if ratio is not None:
-                try:
-                    o = (
-                        float(row.get("open")) * ratio
-                        if row.get("open") is not None
-                        else None
-                    )
-                    h = (
-                        float(row.get("high")) * ratio
-                        if row.get("high") is not None
-                        else None
-                    )
-                    lo = (
-                        float(row.get("low")) * ratio
-                        if row.get("low") is not None
-                        else None
-                    )
-                    c = float(adj_close)
-                except (TypeError, ValueError):
-                    o, h, lo, c = (
-                        row.get("open"),
-                        row.get("high"),
-                        row.get("low"),
-                        row.get("close"),
-                    )
-            else:
-                o, h, lo, c = (
-                    row.get("open"),
-                    row.get("high"),
-                    row.get("low"),
-                    row.get("close"),
-                )
+            # No bar carries a usable adjustment (older/unadjusted endpoint
+            # responses, or a response that is unusable throughout): the whole
+            # series consistently remains raw rather than being discarded.
+            o, h, lo, c = (
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+            )
         parsed.append(
             {
                 "trade_date": date,
@@ -176,6 +199,18 @@ def _rows_to_frame(rows: List[dict]) -> Optional[pd.DataFrame]:
                 "volume": row.get("volume"),
             }
         )
+    if dropped:
+        # Say so rather than truncate in silence: older bars of a long-history
+        # symbol can fall outside the 0.01-100x factor window, and the backtest
+        # then runs a shorter window than it asked for.
+        logger.warning(
+            "Tiingo: dropped %d of %d bars that carry no usable adjustment "
+            "while the rest do; the series keeps one price basis instead of "
+            "mixing raw and adjusted prices",
+            dropped,
+            len(dated),
+        )
+
     if not parsed:
         return None
 
@@ -190,6 +225,7 @@ def _rows_to_frame(rows: List[dict]) -> Optional[pd.DataFrame]:
     frame = frame.drop(columns=["trade_date"])
     frame.index = index.normalize()
     frame.index.name = "trade_date"
+    frame = frame.loc[frame.index.notna()]
 
     frame = frame.apply(pd.to_numeric, errors="coerce")
     # Coerce every OHLCV column to float64 so the schema is uniform: integer
@@ -199,6 +235,9 @@ def _rows_to_frame(rows: List[dict]) -> Optional[pd.DataFrame]:
     frame["volume"] = frame["volume"].fillna(0.0)
     frame = frame.loc[:, _OHLCV_COLUMNS].sort_index()
     frame = frame.dropna(subset=["open", "high", "low", "close"])
+    prices = frame[["open", "high", "low", "close"]]
+    frame = frame.loc[((prices > 0) & (prices < float("inf"))).all(axis=1)]
+    frame.attrs["adjustment"] = "split_dividend" if has_adjusted_data else "raw"
     return frame if not frame.empty else None
 
 

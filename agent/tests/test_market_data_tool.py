@@ -497,3 +497,22 @@ def test_canonicalize_interval_keeps_minute_and_month_apart():
     assert _canonicalize_interval("1h") == "1H"
     assert _canonicalize_interval("2W") is None
     assert _INTERVAL_CANON["1M"] == "1M"
+
+
+def test_market_data_tool_asks_only_a_us_equity_for_its_suffix():
+    """Bare ``AAPL`` returns empty frames from the US loaders, so auto asks for
+    ``AAPL.US``; a futures code or a joined crypto pair has the same shape and is
+    served as written, and must reach the loaders."""
+    import src.tools.market_data_tool as mod
+    from unittest import mock
+
+    with mock.patch.object(mod, "fetch_market_data_json", side_effect=lambda **kw: "{}"):
+        for code in ("RB0", "rb2501", "IF2412", "BTCUSDT"):
+            out = json.loads(
+                mod.MarketDataTool().execute(codes=[code], start_date="2026-08-20", end_date="2026-08-21")
+            )
+            assert out == {}, (code, out)
+        refused = json.loads(
+            mod.MarketDataTool().execute(codes=["AAPL"], start_date="2026-08-20", end_date="2026-08-21")
+        )
+    assert refused["ok"] is False and "AAPL.US" in refused["error"]

@@ -102,3 +102,27 @@ def test_timeout_records_state_failed_and_returns_error_envelope(tool_run_dir):
     assert envelope["error"] == "backtest engine timed out after 300s"
     state = json.loads((tool_run_dir / "state.json").read_text(encoding="utf-8"))
     assert state == {"status": "failed", "reason": "backtest engine timed out after 300s"}
+
+
+def test_backtest_uses_configured_tool_timeout(tool_run_dir, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_TOOL_TIMEOUT_SECONDS", "42")
+    with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
+        runner_cls.return_value.execute.return_value = _FakeRunResult(success=True, exit_code=0)
+        run_backtest(str(tool_run_dir))
+
+    assert runner_cls.call_args.kwargs == {"timeout": 42.0}
+
+
+def test_timeout_persists_partial_runner_output(tool_run_dir):
+    timeout = subprocess.TimeoutExpired(
+        cmd="runner.py", timeout=300, output="partial stdout", stderr="partial stderr"
+    )
+    with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
+        runner_cls.return_value.timeout = 300
+        runner_cls.return_value.execute.side_effect = timeout
+        envelope = json.loads(run_backtest(str(tool_run_dir)))
+
+    assert envelope["stdout"] == "partial stdout"
+    assert envelope["stderr"] == "partial stderr"
+    assert (tool_run_dir / "logs" / "runner_stdout.txt").read_text() == "partial stdout"
+    assert (tool_run_dir / "logs" / "runner_stderr.txt").read_text() == "partial stderr"

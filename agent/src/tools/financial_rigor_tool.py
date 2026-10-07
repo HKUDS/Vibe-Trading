@@ -296,12 +296,11 @@ def benford_check(values: list[Any]) -> dict[str, Any]:
     """
     digits: list[int] = []
     for raw in values:
-        v = abs(float(raw))
-        if v > 0 and math.isfinite(v):
-            sig = 10 ** (math.log10(v) - math.floor(math.log10(v)))
-            d = int(sig)
-            if 1 <= d <= 9:
-                digits.append(d)
+        # Decimal construction preserves the supplied digits without a float
+        # round-trip or context rounding at a leading-digit boundary.
+        value = Decimal(int(raw)) if isinstance(raw, bool) else Decimal(str(raw))
+        if value.is_finite() and not value.is_zero():
+            digits.append(value.as_tuple().digits[0])
     n = len(digits)
     if n < 50:
         return {

@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "charts": {
     "noPriceData": "No price data for this symbol yet",
@@ -148,6 +148,9 @@
     "advancedHint": "A 5-field cron expression evaluated in the selected timezone (minute hour day month weekday; lists and ranges allowed), or a bare interval in milliseconds.",
     "timezoneLabel": "Timezone",
     "create": "Schedule run",
+    "saveChanges": "Save changes",
+    "cancelEdit": "Cancel editing",
+    "editingHint": "Editing this scheduled run. Saving keeps its identity and execution history.",
     "promptRequired": "Enter a research prompt before scheduling.",
     "invalidTime": "Enter a valid time as HH:MM.",
     "executorHint": "Runs execute only when the server is started with VIBE_TRADING_ENABLE_SCHEDULER enabled.",
@@ -182,16 +185,37 @@
     "proposalConfirmCancel": "Confirm cancellation",
     "nextRun": "Next run: {{when}}",
     "lastError": "Last error: {{error}}",
+    "edit": "Edit",
+    "editAria": "Edit scheduled run: {{prompt}}",
+    "editRunningDisabled": "Wait for this run or its delivery to finish before editing it.",
     "delete": "Delete",
     "deleteAria": "Delete scheduled run: {{prompt}}",
     "confirmDelete": "Confirm delete",
     "confirmDeleteAria": "Confirm deleting scheduled run: {{prompt}}",
-    "deliveryChannelLabel": "Deliver to channel",
-    "deliveryChannelPlaceholder": "telegram, feishu, … (leave empty to keep results in the app)",
-    "deliveryTargetLabel": "Channel target",
-    "deliveryTargetPlaceholder": "chat / group / user id",
-    "deliveryHint": "Off by default. A briefing is pushed once the run finishes, not when it is scheduled.",
-    "deliveryTargetRequired": "Choose a target for that channel, or clear the channel.",
+    "deliveryChannelLabel": "Delivery channel",
+    "deliveryChannelPlaceholder": "Choose a configured channel",
+    "deliveryInApp": "Keep in Vibe only (do not send)",
+    "deliveryNoChannels": "No enabled delivery channels are configured. Configure one in Settings → Channels.",
+    "deliveryChannelsLoadFailed": "Could not load configured delivery channels.",
+    "deliveryChannelUnavailable": "{{channel}} (currently unavailable)",
+    "deliveryTargetLabel": "Destination",
+    "deliveryTargetKind_destination": "Destination",
+    "deliveryTargetKind_email_address": "Recipient email address",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Channel",
+    "deliveryTargetPlaceholder": "Chat, group, user, address, or channel ID",
+    "deliveryTargetDisabled": "Choose a delivery channel first.",
+    "deliveryHint": "A briefing is pushed once the run finishes, not when it is scheduled.",
+    "deliveryTargetRequired": "Choose a target for that channel, or keep delivery in Vibe only.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Configured destination",
+    "deliveryFormatLabel": "Email report format",
+    "deliveryFormatDefault": "Channel default (plain text)",
+    "deliveryFormatHtml": "HTML email",
+    "deliveryFormatPdf": "PDF attachment",
+    "deliveryFormatDefaultHint": "Keeps the existing plain-text delivery behavior.",
+    "deliveryFormatHtmlHint": "Shows the full report as sanitized HTML in the email body.",
+    "deliveryFormatPdfHint": "Attaches the full report as PDF and keeps only a short notice in the body.",
     "delivery_none": "Delivering to {{channel}} after the next run",
     "delivery_pending": "Briefing owed to {{channel}}",
     "delivery_sending": "Sending the briefing to {{channel}}",
@@ -202,7 +226,16 @@
     "verdictUnreadable": "Latest verdict unreadable",
     "verdictNoCalls": "No calls",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "as of {{when}}"
+    "verdictRecorded": "as of {{when}}",
+    "deliveryKnownTargetLabel": "Known destination",
+    "deliveryKnownTargetPlaceholder": "Choose a known destination…",
+    "deliverySuggestionKind_private_chat": "Private chat",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "Chat, group, or user ID",
+    "deliveryTargetPlaceholder_channel": "Channel ID",
+    "deliveryTargetPlaceholder_destination": "Chat, group, user, address, or channel ID",
+    "deliveryTargetPlaceholder_slack_destination": "#channel, @user, or conversation ID",
+    "deliveryTargetKind_slack_destination": "Destination"
   },
   "reports": {
     "badge": "Reports",
@@ -650,6 +683,10 @@
           "max_attachments_per_email": {
             "label": "Max attachments per email",
             "help": "How many attachments are accepted from one email (default 5)."
+          },
+          "trusted_authserv_id": {
+            "label": "Trusted authentication server",
+            "help": "Receiver authserv-id, e.g. mx.google.com. Your mail provider must strip incoming forged Authentication-Results headers bearing this ID. Required when SPF or DKIM verification is enabled; blank rejects inbound mail."
           }
         },
         "websocket": {
@@ -717,6 +754,60 @@
             "label": "TLS key path",
             "help": "PEM private key path on the server for WSS. Set both certificate and key, or neither; these are file paths on the server, not uploaded material."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "The app's App ID from the Feishu / Lark developer console (starts with cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "The app's App Secret. Stored server-side and never sent back to the browser."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "The Encrypt Key from the Event Subscription settings. Optional for long-connection mode."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "The Verification Token from the Event Subscription settings. Optional for long-connection mode."
+          },
+          "allow_from": {
+            "label": "Allowed senders",
+            "help": "Optional allowlist of Feishu sender IDs that may talk to the agent. Leave empty to allow everyone the bot can see."
+          },
+          "react_emoji": {
+            "label": "Working emoji",
+            "help": "Emoji reacted on an incoming message while the agent works (default THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Done emoji",
+            "help": "Emoji reacted when the task completes. Leave empty for none."
+          },
+          "tool_hint_prefix": {
+            "label": "Tool hint prefix",
+            "help": "Prefix shown before inline tool hints in the reply."
+          },
+          "group_policy": {
+            "label": "Group policy",
+            "help": "\"mention\" replies only when the bot is @mentioned in groups, \"open\" replies to all group messages."
+          },
+          "reply_to_message": {
+            "label": "Quote the original message",
+            "help": "Quote-reply to the original message when answering."
+          },
+          "streaming": {
+            "label": "Streaming replies",
+            "help": "Stream the reply with CardKit live card edits."
+          },
+          "domain": {
+            "label": "Domain",
+            "help": "\"feishu\" for Feishu China (open.feishu.cn), \"lark\" for international Lark (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Per-topic sessions",
+            "help": "Give each group topic its own agent session instead of sharing one session per group."
+          }
         }
       },
       "guides": {
@@ -759,6 +850,16 @@
           "step4": "Saving while the channel is running hot-swaps the server: connected clients (including this Web UI chat) briefly disconnect and reconnect.",
           "step5": "Click Test connection — it validates the SSL certificate/key material and the address availability locally.",
           "docsLabel": "Open the Vibe-Trading docs"
+        },
+        "feishu": {
+          "title": "Feishu / Lark bot setup",
+          "intro": "Feishu bots connect over a WebSocket long connection, so no public IP or webhook URL is needed.",
+          "step1": "Create a Custom App on the Feishu Open Platform (open.feishu.cn), or scan-to-create it from the terminal with vibe-trading channels login feishu, which saves the App ID and App Secret automatically.",
+          "step2": "Add the Bot capability to the app.",
+          "step3": "Under Event Subscription, subscribe to receiving messages (im.message.receive_v1) and choose Long Connection mode.",
+          "step4": "Copy the App ID and App Secret from Credentials & Basic Info and paste them into the fields above.",
+          "step5": "Create a version and publish the app (admin approval if your tenant requires it), then enable the channel here — it hot-applies with no restart. For international Lark tenants, set domain to \"lark\".",
+          "docsLabel": "Open the Feishu Open Platform"
         }
       }
     },
@@ -911,6 +1012,7 @@
     "dropFiles": "Drop files here",
     "removeAttachment": "Remove {{filename}}",
     "uploadFailed": "Upload failed: {{error}}",
+    "messageTooLong": "Message exceeds {{limit}} characters including attachments and team instructions. Shorten it before sending.",
     "failedToSend": "Failed to send message, please retry.",
     "failedToContinue": "Failed to continue goal, please retry.",
     "runtimeBadge": "RUNTIME",
@@ -1014,6 +1116,33 @@
     "reproducibility": "Reproducibility",
     "metrics": "Metrics",
     "validationPayload": "Validation",
+    "trust": {
+      "executionRecords": "Execution records",
+      "executionDescription": "Recorded execution stages and the hashes of their inputs and results.",
+      "noExecutionRecords": "Execution records were not recorded for this run.",
+      "startedAt": "Started (UTC)",
+      "endedAt": "Ended (UTC)",
+      "argsHash": "Arguments SHA-256",
+      "resultHash": "Result SHA-256",
+      "metricEvidence": "Metric evidence",
+      "evidenceDescription": "References to saved metric data. Checksums identify the recorded files; this view does not independently verify them.",
+      "noMetricEvidence": "Metric evidence was not recorded for this run.",
+      "metric": "Metric",
+      "artifact": "Artifact",
+      "column": "Column",
+      "row": "Data row (1-based, excluding header)",
+      "artifactHash": "Artifact SHA-256",
+      "tools": {
+        "backtest": "Backtest",
+        "load_data": "Load data",
+        "generate_signals": "Generate signals"
+      },
+      "status": {
+        "ok": "Completed",
+        "error": "Failed",
+        "cancelled": "Cancelled"
+      }
+    },
     "artifactChecksums": "Artifact Checksums",
     "path": "Path",
     "size": "Size",

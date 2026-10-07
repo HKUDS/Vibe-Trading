@@ -7,6 +7,7 @@ keyed on tool field names, never on natural language.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 import re
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from src.agent.grounding.identity import (
+    _CANONICAL_SYMBOL_RE,
     _infer_currency,
     _infer_venue,
     _normalize_symbol,
@@ -158,8 +160,157 @@ _METADATA_COUNT_TAILS = frozenset(
     {"obs", "observations", "window", "lookback", "count", "days", "duration"}
 )
 
-# Money-denominated row fields a currency-marked figure may quote besides a price.
-_AMOUNT_FIELDS = frozenset({"amount", "turnover", "成交额"})
+# Money-denominated fields a currency-marked figure may quote besides a price:
+# a market-data row's amount, and the backtest engine's equity and P&L leaves.
+_AMOUNT_FIELDS = frozenset(
+    {
+        "amount",
+        "turnover",
+        "成交额",
+        "final_value",
+        "initial_cash",
+        "initial_capital",
+        "pnl",
+        "total_pnl",
+        "avg_pnl",
+        "notional",
+    }
+)
+
+# The backtest engine's summary outputs, relative to its run directory: small
+# documents of scalars, recorded whole when the backtest completes. A list
+# inside them (1,000 Monte Carlo Sharpe samples, one entry per rebalance) is a
+# series and is not descended. metrics.csv/json are recorded as they always
+# were; every other file must appear, byte for byte, in the run card's
+# artifact manifest, which the engine writes after its outputs.
+_BACKTEST_SUMMARY_FILES = (
+    "run_card.json",
+    "artifacts/metrics.csv",
+    "artifacts/metrics.json",
+    "artifacts/risk_xray.json",
+    "artifacts/validation.json",
+    "artifacts/rebalance_notes.json",
+)
+
+_MANIFEST_EXEMPT = frozenset({"run_card.json", "artifacts/metrics.csv", "artifacts/metrics.json"})
+
+# Tools whose result names a file the model itself wrote. Such a file is never
+# engine output, whatever its name.
+_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+
+# Columns of a backtest table that name the row's instrument (trades.csv "code").
+_TABLE_SYMBOL_COLUMNS = frozenset({"symbol", "code", "ticker"})
+
+#: Written by the loop into the active run when it archives a backtest there;
+#: ``source_run`` names the run directory the copy came from.
+ARCHIVE_MANIFEST = ".archived_backtest.json"
+
+
+def _relative_posix(path: Path, root: Path) -> str:
+    """``path`` relative to ``root`` in POSIX form, "" for ``root`` itself."""
+    try:
+        relative = Path(path).resolve().relative_to(root).as_posix()
+    except (OSError, ValueError):
+        return Path(path).as_posix()
+    return "" if relative == "." else relative
+
+
+def _file_sha256(path: Path) -> str | None:
+    """Hex SHA-256 of a file's bytes, or None when it cannot be read."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _archive_matches(root: Path, declared_dir: Path, call_id: str) -> bool:
+    """Check the engine directory and call that produced an archived result.
+
+    Args:
+        root: Active run holding the archive manifest.
+        declared_dir: Source run directory declared by the backtest call.
+        call_id: Exact successful engine tool call.
+
+    Returns:
+        Whether the archive was created for this directory and call.
+    """
+    try:
+        payload = json.loads((root / ARCHIVE_MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or payload.get("source_call_id") != call_id:
+        return False
+    source = payload.get("source_run_dir")
+    if not isinstance(source, str) or not source:
+        return False
+    try:
+        return Path(source).resolve() == declared_dir.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _run_card_manifest(directory: Path) -> dict[str, str]:
+    """``{relative path: sha256}`` from a backtest's run card, or empty."""
+    try:
+        card = json.loads((directory / "run_card.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    entries = card.get("artifacts") if isinstance(card, dict) else None
+    if not isinstance(entries, list):
+        return {}
+    return {
+        str(entry["path"]): str(entry["sha256"])
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("path") and entry.get("sha256")
+    }
+
+
+def _summary_scalars(path: Path) -> list[tuple[str, int | float]]:
+    """``(field, value)`` for every scalar of a summary artifact; lists are not descended.
+
+    A CSV contributes its first data row by (casefolded) header, a JSON
+    document every number reachable through objects alone, under its dotted
+    path ("tail_risk.var_95").
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    pairs: list[tuple[str, int | float]] = []
+    if path.suffix == ".csv":
+        try:
+            rows = list(csv.reader(text.splitlines()))
+        except csv.Error:
+            return []
+        if len(rows) < 2:
+            return []
+        for name, cell in zip(rows[0], rows[1]):
+            value = _coerce_csv_number(cell)
+            if name.strip() and value is not None:
+                pairs.append((name.strip().casefold(), value))
+        return pairs
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+
+    def visit(item: Any, dotted: str) -> None:
+        if _is_number(item):
+            pairs.append((dotted, item))
+        elif isinstance(item, dict):
+            for key, child in item.items():
+                visit(child, f"{dotted}.{key}" if dotted else str(key))
+
+    visit(data, "")
+    return pairs
+
+
+def _cell_symbol(text: str) -> str | None:
+    """The canonical symbol a table cell or header consists of, or None."""
+    stripped = (text or "").strip()
+    if not stripped or _CANONICAL_SYMBOL_RE.fullmatch(stripped) is None:
+        return None
+    return _normalize_symbol(stripped)
 
 
 def _symbol_from_csv_filename(stem: str) -> str | None:
@@ -228,21 +379,6 @@ _CLAIM_DATE_RE = re.compile(
 )
 
 
-def _claim_date_tuple(date_value: str) -> tuple[int, int] | None:
-    """Extract the (month, day) a report-style date cell names.
-
-    Args:
-        date_value: Date cell as written in the answer, e.g. ``08-10(周一)``.
-
-    Returns:
-        The (month, day) tuple, or None when no date prefix is present.
-    """
-    match = _CLAIM_DATE_RE.match((date_value or "").strip())
-    if match is None:
-        return None
-    return (int(match.group(2)), int(match.group(3)))
-
-
 def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
     """Match an evidence timestamp against the date cell of a claim.
 
@@ -263,15 +399,17 @@ def _timestamp_matches_claim_date(timestamp: str, date_value: str) -> bool:
         return False
     if stamp.startswith(claim):
         return True
-    claim_tuple = _claim_date_tuple(claim)
+    match = _CLAIM_DATE_RE.match(claim)
     parts = stamp[:10].split("-")
-    if claim_tuple is None or len(parts) != 3:
+    if match is None or len(parts) != 3:
         return False
     try:
-        stamp_tuple = (int(parts[1]), int(parts[2]))
+        stamp_year, stamp_month, stamp_day = map(int, parts)
     except ValueError:
         return False
-    return stamp_tuple == claim_tuple
+    if match.group(1) is not None and stamp_year != int(match.group(1)):
+        return False
+    return (stamp_month, stamp_day) == (int(match.group(2)), int(match.group(3)))
 
 
 def _leaf_name(path: str) -> str:
@@ -441,7 +579,13 @@ def _metric_kind_for_path(path: str) -> str | None:
 
 @dataclass(frozen=True)
 class EvidenceRecord:
-    """One observed, unavailable, or derived numeric evidence item."""
+    """One observed, unavailable, or derived numeric evidence item.
+
+    ``artifact`` and ``scope`` are set only for backtest output: the file the
+    value was read from and the backtest run directory that produced it, both
+    relative to the ledger's run directory ("" is that directory itself). A
+    declaration's ``ref`` may name either one.
+    """
 
     call_id: str
     tool: str
@@ -454,6 +598,8 @@ class EvidenceRecord:
     currency: str | None = None
     venue: str | None = None
     currency_conversion: str | None = None
+    artifact: str | None = None
+    scope: str | None = None
 
 
 def _is_price_kind(record: EvidenceRecord) -> bool:
@@ -572,31 +718,34 @@ class _EvidenceMixin:
         """Parse metric figures from a successful backtest's run-dir artifacts."""
         root = self.run_dir.resolve()
         candidates: list[Path] = []
+        own_dir: Path | None = None
         raw_dir = arguments.get("run_dir") or payload.get("run_dir")
+        declared = root
         if raw_dir:
-            candidate = Path(str(raw_dir))
-            if not candidate.is_absolute():
-                candidate = self.run_dir / candidate
+            declared = Path(str(raw_dir))
+            declared = declared if declared.is_absolute() else self.run_dir / declared
             try:
-                resolved = candidate.resolve()
+                resolved = declared.resolve()
                 if resolved == root or resolved.is_relative_to(root):
                     candidates.append(resolved)
-            except OSError:
+                    own_dir = resolved
+            except (OSError, RuntimeError, ValueError):
                 pass
-        # The loop archives a detached backtest's artifacts into the active run
-        # dir right after it succeeds, so that copy is the second candidate.
-        candidates.append(root)
-        artifacts = payload.get("artifacts")
-        if isinstance(artifacts, dict):
-            for path_value in artifacts.values():
-                if not isinstance(path_value, str):
-                    continue
-                try:
-                    resolved = Path(path_value).resolve()
-                    if resolved.is_relative_to(root):
-                        candidates.append(resolved)
-                except OSError:
-                    continue
+        else:
+            own_dir = root
+            candidates.append(root)
+        # The loop copies detached output before ingesting this result. The
+        # archive must name the full directory AND this call, since basenames
+        # collide and one directory can be backtested repeatedly in a turn.
+        archived = (
+            own_dir != root
+            and not self._is_model_written(root / ARCHIVE_MANIFEST)
+            and _archive_matches(root, declared, call_id)
+        )
+        if archived:
+            candidates.append(root)
+        # Only canonical engine metric locations count. A result's explicit
+        # artifact path cannot reintroduce an unrelated run or arbitrary CSV.
         files: list[Path] = []
         seen_dirs: set[Path] = set()
         for candidate in candidates:
@@ -609,16 +758,213 @@ class _EvidenceMixin:
             for dir_path in (candidate, candidate / "artifacts"):
                 for name in ("metrics.csv", "metrics.json"):
                     target = dir_path / name
-                    if target.is_file():
+                    if target.is_file() and target.resolve().is_relative_to(candidate.resolve()):
                         files.append(target)
         recorded = 0
         seen_files: set[Path] = set()
         for file_path in files:
-            if file_path in seen_files:
+            if file_path in seen_files or self._is_model_written(file_path):
                 continue
             seen_files.add(file_path)
             recorded += self._record_metrics_file(file_path, call_id)
+        if recorded:
+            own_dir = own_dir or root
+            scope = _relative_posix(own_dir, root)
+            self._backtest_scopes[call_id] = scope
+            self._scope_latest[scope] = call_id
+            self._record_backtest_outputs(own_dir, call_id, scope)
+            # The active run holds this backtest's copy only when the loop's
+            # archive names it as the source; otherwise it is an earlier run's.
+            if archived:
+                self._record_backtest_outputs(root, call_id, scope)
         return recorded
+
+    def _record_backtest_outputs(self, directory: Path, call_id: str, scope: str) -> None:
+        """Record every scalar of a backtest's summary outputs, and hash its tables.
+
+        The run's Sortino, turnover, final equity, Monte Carlo p-values and
+        risk X-ray are as observed as its Sharpe; only kind-named metrics used
+        to count, so a report quoting the rest was refused figure by figure.
+        A file re-recorded under the same path replaces its earlier records:
+        the loop's archive overwrites the active run's copy on every backtest.
+
+        Args:
+            directory: A backtest run directory, or the active run holding its copy.
+            call_id: The backtest call that produced the outputs.
+            scope: That backtest's run directory relative to the ledger's.
+        """
+        root = self.run_dir.resolve()
+        manifest = _run_card_manifest(directory)
+        room = _MAX_GENERIC_EVIDENCE
+        for name in _BACKTEST_SUMMARY_FILES:
+            path = directory / name
+            if (
+                not path.is_file()
+                or not path.resolve().is_relative_to(directory.resolve())
+                or self._is_model_written(path)
+            ):
+                continue
+            if name not in _MANIFEST_EXEMPT and manifest.get(name) != _file_sha256(path):
+                continue
+            artifact = _relative_posix(path, root)
+            self._evidence = [record for record in self._evidence if record.artifact != artifact]
+            for field_name, value in _summary_scalars(path):
+                if room <= 0:
+                    return
+                if _price_field_for_path(field_name) is not None:
+                    continue
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool="backtest",
+                        symbol=None,
+                        source="backtest",
+                        timestamp=None,
+                        field=field_name,
+                        value=value,
+                        status="observed",
+                        artifact=artifact,
+                        scope=scope,
+                    )
+                )
+                room -= 1
+        tables = directory / "artifacts"
+        if tables.is_dir():
+            for path in sorted(tables.glob("*.csv")):
+                if (
+                    not path.resolve().is_relative_to(directory.resolve())
+                    or self._is_model_written(path)
+                    or f"artifacts/{path.name}" in _BACKTEST_SUMMARY_FILES
+                ):
+                    continue
+                digest = _file_sha256(path)
+                if digest is not None:
+                    self._engine_tables[str(path.resolve())] = (digest, scope)
+
+    def _note_model_write(
+        self, tool_name: str, arguments: Mapping[str, Any], payload: dict[str, Any] | None
+    ) -> None:
+        """Remember a file the model wrote, so it never passes for engine output."""
+        if tool_name not in _WRITE_TOOLS:
+            return
+        raw = (payload or {}).get("path") or arguments.get("path") or arguments.get("file_path")
+        if not raw:
+            return
+        path = Path(str(raw))
+        if not path.is_absolute():
+            path = Path(str(arguments.get("run_dir") or self.run_dir)) / path
+        try:
+            self._model_written.add(str(path.resolve()))
+        except OSError:
+            return
+
+    def _is_model_written(self, path: Path) -> bool:
+        """Whether the model wrote ``path`` itself in this run."""
+        try:
+            return str(path.resolve()) in self._model_written
+        except OSError:
+            return True
+
+    def _ingest_engine_table(
+        self, payload: dict[str, Any], call_id: str, *, tool_name: str = "read_file"
+    ) -> None:
+        """Record the rows of a backtest table the model just read back.
+
+        Only a table a completed backtest wrote counts, and only while it is
+        still byte for byte what the engine wrote. Only the rows the model was
+        shown are recorded: a per-bar table is a dense series, and recording
+        all of it would let an invented weight or return match some bar by
+        chance. Price columns are left out, as in a summary file.
+
+        Args:
+            payload: The file or structured artifact reader's result.
+            call_id: The reader's call.
+            tool_name: The reader that showed these rows to the model.
+        """
+        raw = payload.get("path")
+        if not isinstance(raw, str):
+            return
+        try:
+            path = Path(raw).resolve()
+        except OSError:
+            return
+        known = self._engine_tables.get(str(path))
+        if known is None or self._is_model_written(path) or _file_sha256(path) != known[0]:
+            return
+        scope = known[1]
+        if tool_name == "read_run_artifact":
+            columns, records = payload.get("columns"), payload.get("rows")
+            if (
+                not isinstance(columns, list)
+                or not all(isinstance(cell, str) for cell in columns)
+                or not isinstance(records, list)
+                or not all(isinstance(row, list) and len(row) == len(columns) for row in records)
+            ):
+                return
+            header = [cell.strip() for cell in columns]
+            data_rows = [["" if cell is None else str(cell) for cell in row] for row in records]
+        else:
+            content = payload.get("content")
+            if not isinstance(content, str):
+                return
+            truncated = "\n... (truncated)"
+            if content.endswith(truncated):
+                content = content[: -len(truncated)]
+                content = content[: content.rfind("\n") + 1]
+            try:
+                rows = list(csv.reader(content.splitlines()))
+            except csv.Error:
+                return
+            if len(rows) < 2:
+                return
+            header = [cell.strip() for cell in rows[0]]
+            data_rows = rows[1:]
+        folded = [cell.casefold() for cell in header]
+        date_index = next(
+            (index for index, name in enumerate(folded) if name in _CSV_DATE_COLUMNS), None
+        )
+        symbol_index = next(
+            (index for index, name in enumerate(folded) if name in _TABLE_SYMBOL_COLUMNS), None
+        )
+        artifact = _relative_posix(path, self.run_dir.resolve())
+        room = _MAX_GENERIC_EVIDENCE
+        for row in data_rows:
+            timestamp = (
+                row[date_index].strip()
+                if date_index is not None and date_index < len(row)
+                else None
+            )
+            for index, cell in enumerate(row[: len(header)]):
+                if index in (date_index, symbol_index):
+                    continue
+                value = _coerce_csv_number(cell)
+                if value is None:
+                    continue
+                # A weight column is named by its instrument ("000001.SZ"), and
+                # that name is the field a ref narrows on. The record carries no
+                # symbol: a portfolio table is not evidence about the listing,
+                # and a symbol here would start attributing the answer's
+                # portfolio figures to one instrument.
+                column_symbol = _cell_symbol(header[index])
+                if column_symbol is None and _price_field_for_path(folded[index]) is not None:
+                    continue
+                if room <= 0:
+                    return
+                self._evidence.append(
+                    EvidenceRecord(
+                        call_id=call_id,
+                        tool=tool_name,
+                        symbol=None,
+                        source="backtest",
+                        timestamp=timestamp,
+                        field=column_symbol or folded[index],
+                        value=value,
+                        status="observed",
+                        artifact=artifact,
+                        scope=scope,
+                    )
+                )
+                room -= 1
 
     def _record_metrics_file(self, path: Path, call_id: str) -> int:
         """Record metric figures from one metrics.csv/metrics.json artifact."""
@@ -776,7 +1122,7 @@ class _EvidenceMixin:
             )
         source = str(payload.get("source") or tool_name)
         remaining = _MAX_GENERIC_EVIDENCE
-        timestamp_fields = (*_TIMESTAMP_FIELDS, "as_of")
+        timestamp_fields = (*_TIMESTAMP_FIELDS, "latest_date", "as_of")
 
         def visit(value: Any, path: str, timestamp: str | None = None) -> None:
             nonlocal remaining

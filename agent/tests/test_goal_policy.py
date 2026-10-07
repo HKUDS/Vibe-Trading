@@ -19,6 +19,10 @@ from src.goal.policy import reject_live_execution_objective
         "Short interest trends in regional banks",
         "Short-term momentum in semiconductors",
         "研究茅台是否值得买入",
+        "Now research whether to buy AAPL",
+        "Now analyze short interest in TSLA",
+        "Immediately evaluate a long AAPL thesis",
+        "Right away assess whether to sell TSLA",
     ],
 )
 def test_ordinary_research_objectives_are_accepted(objective: str) -> None:
@@ -43,6 +47,13 @@ def test_ordinary_research_objectives_are_accepted(objective: str) -> None:
         "Please buy AAPL",
         "Research the setup, then sell 50 TSLA",
         "买入100股贵州茅台",
+        # Reversed word order: the immediacy cue comes before the verb.
+        "Immediately buy TSLA",
+        "Right away sell my AAPL position",
+        "Now sell GOOGL",
+        "Now, please buy AAPL",
+        "Research the setup; immediately sell TSLA",
+        "Please immediately short TSLA",
     ],
 )
 def test_genuine_execution_requests_are_still_rejected(objective: str) -> None:

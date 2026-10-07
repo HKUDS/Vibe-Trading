@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 import api_server
@@ -92,6 +93,42 @@ def test_completed_attempt_tool_trail_round_trips_through_history_endpoint(
             "tool_trail": expected_trail,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("run_status", "attempt_status"),
+    [("failed", "failed"), ("cancelled", "cancelled")],
+)
+def test_unfinished_attempt_keeps_its_tool_trail(
+    tmp_path: Path, monkeypatch, run_status: str, attempt_status: str
+) -> None:
+    """A failed run's steps survive a reload; they used to be saved as ``[]``.
+
+    The history then read "failed · 0 steps" for a run that stopped on
+    ``no_progress`` after eight rounds of tool calls.
+    """
+    service = _service(tmp_path, monkeypatch)
+    session = Session(session_id="abcdef012346", title="failed trail")
+    service.store.create_session(session)
+    attempt = Attempt(attempt_id="attempt00002", session_id=session.session_id, prompt="Compare games")
+    service.store.create_attempt(attempt)
+    trail = [
+        {"tool": "get_financial_statements", "status": "ok", "arguments": {"code": "002555.SZ"},
+         "call_id": "call-1", "timestamp": 1_785_342_400_000},
+        {"tool": "get_financial_statements", "status": "error", "arguments": {"code": "09999.HK"},
+         "call_id": "call-2", "timestamp": 1_785_342_401_000},
+    ]
+
+    async def _run_with_agent(*args, **kwargs):
+        del args, kwargs
+        return {"status": run_status, "reason": "no_progress: stopped", "tool_trail": trail}
+
+    monkeypatch.setattr(service, "_run_with_agent", _run_with_agent)
+    asyncio.run(service._run_attempt(session, attempt))
+
+    stored = service.store.get_messages(session.session_id)[0]
+    assert stored.metadata["status"] == attempt_status
+    assert stored.tool_trail == trail
 
 
 def test_run_with_agent_consolidates_tool_events_by_call_id(

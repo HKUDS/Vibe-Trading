@@ -21,7 +21,12 @@ from fastapi.testclient import TestClient
 
 import api_server
 from src.api import scheduled_routes
-from src.scheduled_research.models import JobStatus, ScheduledResearchJob
+from src.scheduled_research.models import (
+    DeliveryRecord,
+    DeliveryStatus,
+    JobStatus,
+    ScheduledResearchJob,
+)
 from src.scheduled_research.store import ScheduledResearchJobStore
 
 
@@ -163,6 +168,141 @@ def test_list_surfaces_retry_diagnostics(
 def test_list_rejects_out_of_range_limit(client: TestClient):
     assert client.get("/scheduled-runs", params={"limit": 0}).status_code == 422
     assert client.get("/scheduled-runs", params={"limit": 500}).status_code == 422
+
+
+
+def test_patch_updates_authored_fields_without_replacing_runtime_history(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    job = _seed(
+        store,
+        id="editable",
+        prompt="old prompt",
+        schedule="0 9 * * 1-5",
+        timezone="UTC",
+        status=JobStatus.COMPLETED,
+        last_run_at=1_700_000_100_000,
+        delivery_channel="telegram",
+        delivery_target="123",
+    )
+    original_created_at = job.created_at
+
+    response = client.patch(
+        "/scheduled-runs/editable",
+        json={
+            "prompt": "new prompt",
+            "schedule": "30 10 * * 1-5",
+            "timezone": "Europe/London",
+            "delivery_channel": "email",
+            "delivery_target": "person@example.com",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prompt"] == "new prompt"
+    assert body["schedule"] == "30 10 * * 1-5"
+    assert body["timezone"] == "Europe/London"
+    assert body["delivery_channel"] == "email"
+    assert body["delivery_target"] == "person@example.com"
+    assert body["created_at"] == original_created_at
+    assert body["last_run_at"] == 1_700_000_100_000
+    assert body["status"] == "completed"
+
+    saved = store.get("editable")
+    assert saved is not None
+    assert saved.created_at == original_created_at
+    assert saved.last_run_at == 1_700_000_100_000
+    assert saved.delivery.status.value == "none"
+
+
+def test_patch_same_cadence_and_delivery_preserves_next_run_and_receipt(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(
+        store,
+        id="stable",
+        prompt="old prompt",
+        schedule="0 9 * * 1-5",
+        timezone="UTC",
+        next_run_at=1_900_000_000_000,
+        delivery_channel="email",
+        delivery_target="person@example.com",
+        delivery=DeliveryRecord(
+            status=DeliveryStatus.SENT,
+            provider_message_id="provider-1",
+        ),
+    )
+
+    response = client.patch(
+        "/scheduled-runs/stable",
+        json={
+            "prompt": "new prompt",
+            "schedule": "0 9 * * 1-5",
+            "timezone": "UTC",
+            "delivery_channel": "email",
+            "delivery_target": "person@example.com",
+            "delivery_target_ref": None,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["next_run_at"] == 1_900_000_000_000
+    assert body["delivery_status"] == "sent"
+    assert body["delivery_provider_message_id"] == "provider-1"
+
+
+def test_patch_interval_timezone_only_preserves_next_run(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(
+        store,
+        id="interval-timezone",
+        schedule="60000",
+        timezone="UTC",
+        next_run_at=1_900_000_000_000,
+    )
+
+    response = client.patch(
+        "/scheduled-runs/interval-timezone",
+        json={"timezone": "America/New_York"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["timezone"] == "America/New_York"
+    assert body["next_run_at"] == 1_900_000_000_000
+
+    saved = store.get("interval-timezone")
+    assert saved is not None
+    assert saved.timezone == "America/New_York"
+    assert saved.next_run_at == 1_900_000_000_000
+
+
+def test_patch_rejects_incomplete_delivery_target(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="editable")
+    response = client.patch(
+        "/scheduled-runs/editable",
+        json={"delivery_channel": "email", "delivery_target": None},
+    )
+    assert response.status_code == 422
+    assert "delivery_target" in response.json()["detail"]
+
+
+def test_patch_unknown_job_returns_404(client: TestClient):
+    response = client.patch("/scheduled-runs/missing", json={"prompt": "updated"})
+    assert response.status_code == 404
+
+
+def test_patch_running_job_returns_409(
+    client: TestClient, store: ScheduledResearchJobStore
+):
+    _seed(store, id="running", status=JobStatus.RUNNING)
+    response = client.patch("/scheduled-runs/running", json={"prompt": "updated"})
+    assert response.status_code == 409
 
 
 def test_delete_removes_job_and_returns_204(
@@ -451,3 +591,35 @@ def test_list_omits_verdict_when_never_recorded(
     assert response.status_code == 200
     (row,) = response.json()
     assert row["last_verdict"] is None
+
+
+def test_patch_refuses_edit_while_delivery_is_in_flight(client, store):
+    job = _seed(store, delivery=DeliveryRecord(status=DeliveryStatus.SENDING, session_id="s1", key="k1"))
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"prompt": "new prompt"})
+    assert response.status_code == 409
+    assert store.get(job.id).prompt == job.prompt
+
+
+def test_patch_email_format_preserves_target_ref_and_clears_old_receipt(client, store):
+    job = _seed(store, delivery_channel="email", delivery_target="reader@example.test",
+                delivery_target_ref="mail-reader", delivery_target_label="Reader", delivery_format="html",
+                delivery=DeliveryRecord(status=DeliveryStatus.SENT, session_id="s1", key="k1"))
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"delivery_format": "pdf"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["delivery_format"] == "pdf"
+    assert body["delivery_target_ref"] == "mail-reader"
+    assert body["delivery_status"] == "none"
+    assert store.get(job.id).delivery.session_id == "s1"  # retain verdict observation
+    assert client.patch(f"/scheduled-runs/{job.id}", json={"prompt": "other"}).json()["delivery_format"] == "pdf"
+    assert client.patch(f"/scheduled-runs/{job.id}", json={"delivery_format": None}).json()["delivery_format"] is None
+
+
+def test_patch_leaving_email_clears_implicit_format_and_refuses_explicit_pdf(client, store):
+    job = _seed(store, delivery_channel="email", delivery_target="reader@example.test", delivery_format="pdf")
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"delivery_channel": "telegram", "delivery_target": "123", "delivery_format": "pdf"})
+    assert response.status_code == 422
+    assert store.get(job.id).delivery_channel == "email"
+    response = client.patch(f"/scheduled-runs/{job.id}", json={"delivery_channel": "telegram", "delivery_target": "123"})
+    assert response.status_code == 200
+    assert response.json()["delivery_format"] is None

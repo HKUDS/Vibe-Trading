@@ -2,14 +2,15 @@
 
 The ``MetaTrader5`` Python API is process-global and stateful: one
 ``initialize()`` per process, module-level functions, ``shutdown()`` to
-detach. Every operation therefore runs inside :func:`_session` — a lock,
-initialize, bidirectional profile/identity verification, work, shutdown —
-so no read or write can ever execute against the wrong account class.
+detach. Account-bound operations run inside :func:`_session` with profile
+identity verification. Symbol search uses a separate terminal-path-only
+session and reads symbol metadata without account or trading operations.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -272,6 +273,34 @@ def _session(cfg: MT5Config) -> Iterator[Any]:
                 pass
 
 
+@contextmanager
+def _catalog_session(cfg: MT5Config) -> Iterator[Any]:
+    """Attach by terminal path for symbol metadata without account access."""
+    if not cfg.terminal_path:
+        raise MT5ConfigError("terminal_path is required for MT5 symbol search")
+    if not math.isfinite(cfg.timeout) or cfg.timeout <= 0:
+        raise MT5ConfigError("MT5 timeout must be finite and positive")
+    mt5 = _require_mt5()
+    with _MT5_LOCK:
+        try:
+            if not mt5.initialize(cfg.terminal_path, timeout=int(cfg.timeout * 1000)):
+                raise MT5ConnectionError("MT5 terminal catalog attach failed")
+            yield mt5
+        except _CATALOG_ERRORS:
+            raise
+        except Exception as exc:
+            # Native SDK diagnostics may contain account or local path details.
+            raise MT5ConnectionError("MT5 terminal catalog operation failed") from exc
+        finally:
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
+
+
+_CATALOG_ERRORS = (MT5ConfigError, MT5ConnectionError, MT5DependencyError)
+
+
 def _assert_profile(cfg: MT5Config, account: Any, mt5: Any) -> None:
     """Hard bidirectional identity guard, run inside every session.
 
@@ -300,32 +329,40 @@ def _assert_profile(cfg: MT5Config, account: Any, mt5: Any) -> None:
         )
 
 
-def _resolve_symbol(mt5: Any, cfg: MT5Config, symbol: str) -> str:
-    """Resolve a project symbol to the broker's Market Watch name.
-
-    Tries the configured suffix first, then the bare base, then discovers
-    suffixed variants via ``symbols_get`` (shortest match wins, which picks
-    ``EURUSDm`` over ``EURUSDz`` deterministically on Exness).
-    """
-    base = normalize_base(symbol)
-    if not base:
-        raise MT5ConfigError("symbol is required")
-    candidates = []
+def _catalog_symbol(mt5: Any, cfg: MT5Config, symbol: str) -> str:
+    """Resolve metadata without selecting a symbol or guessing between aliases."""
+    raw = symbol.strip()
+    if raw.upper().endswith("=X"):
+        raw = raw[:-2]
+    base = normalize_base(raw)
+    if not base or not all(char.isalnum() or char == "." for char in base):
+        raise MT5ConfigError("symbol search requires an explicit symbol")
+    # A caller naming a native case-sensitive symbol keeps that exact identity.
+    # A configured suffix is an explicit preference for canonical pair queries.
+    candidates = [raw] if raw != base else []
     if cfg.symbol_suffix:
         candidates.append(base + cfg.symbol_suffix)
-    candidates.append(base)
-    name = next((c for c in candidates if mt5.symbol_info(c) is not None), None)
-    if name is None:
-        matches = sorted(
-            (getattr(info, "name", "") for info in (mt5.symbols_get(group=f"{base}*") or ())),
-            key=len,
-        )
-        matches = [m for m in matches if m]
-        if not matches:
-            raise MT5ConfigError(
-                f"symbol {symbol!r} not offered by this broker (no match for {base}*)"
-            )
-        name = matches[0]
+    candidates.extend((raw, base))
+    for name in dict.fromkeys(candidates):
+        if mt5.symbol_info(name) is not None:
+            return name
+    rows = mt5.symbols_get(group=f"{base}*")
+    if rows is None:
+        raise MT5ConnectionError("MT5 symbol catalog unavailable")
+    matches = sorted({
+        str(getattr(info, "name", "")) for info in rows
+        if str(getattr(info, "name", "")).upper().startswith(base)
+    })
+    if len(matches) > 1:
+        raise MT5ConfigError("ambiguous broker symbol; specify an exact native symbol or configured suffix")
+    if not matches:
+        raise MT5ConfigError("symbol not offered by the configured MT5 terminal")
+    return matches[0]
+
+
+def _resolve_symbol(mt5: Any, cfg: MT5Config, symbol: str) -> str:
+    """Resolve one broker identity, then select it in Market Watch."""
+    name = _catalog_symbol(mt5, cfg, symbol)
     if not mt5.symbol_select(name, True):
         raise MT5ConfigError(f"symbol {name!r} could not be selected in Market Watch")
     return name

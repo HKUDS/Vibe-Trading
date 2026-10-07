@@ -1,0 +1,41 @@
+name: Public loader health
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-loader-health
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install isolated public-source dependencies
+        # mootdx requires an older httpx than the application; do not install
+        # these optional SDKs into the application's dependency environment.
+        run: |
+          python -m venv "$RUNNER_TEMP/loader-health-venv"
+          "$RUNNER_TEMP/loader-health-venv/bin/python" -m pip install -r tools/requirements-loader-health.txt
+      - name: Probe every public source in isolated processes
+        working-directory: agent
+        run: '"$RUNNER_TEMP/loader-health-venv/bin/python" -m backtest.loader_health --output "$RUNNER_TEMP/loader-health.json"'
+      - name: Retain sanitized health report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: public-loader-health
+          path: ${{ runner.temp }}/loader-health.json
+          if-no-files-found: warn
+          retention-days: 30

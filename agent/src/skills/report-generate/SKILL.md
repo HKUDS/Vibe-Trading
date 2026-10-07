@@ -10,6 +10,19 @@ category: tool
 
 Generate structured, professional-grade financial research reports. Follow the conventions used by securities firms and asset managers, and output complete Markdown reports that can be used directly for investment research reference.
 
+## Saving and Delivering a PDF
+
+When the user requests a PDF, send the complete Markdown report to `write_file`
+with a `.pdf` target (prefer `artifacts/report.pdf` under the active run directory).
+The tool renders a real, paginated PDF without requiring system Pango/Cairo.
+Check its returned `status`, `path`, and `bytes_written`; include the returned
+`download_url` as a Markdown link labelled with the report's filename. The Web
+chat downloads it with authentication and IM channels attach the generated PDF.
+A successful write is evidence that the returned path exists; another path's
+earlier rejection does not invalidate it. If rendering fails, report that tool
+error instead of claiming the PDF was created. Do not write HTML or base64 data
+as the content of a `.pdf` file.
+
 ## Report Types and Structure
 
 ### Type Classification
@@ -183,7 +196,15 @@ recovered by 2023.06 to a new high of 2.10.
 
 ## Backtest Report Template
 
-After a backtest is completed, read `metrics.csv` and `equity.csv` to generate:
+After a backtest is completed, read the engine-written `metrics.csv` and
+`equity.csv` from that run. Declare reported measurements with the run directory
+or exact engine field as their grounding reference. A metrics file you write
+yourself is not evidence, and a previous run's archive cannot substantiate the
+current call. For list results, use the exact element reference (for example,
+`call_id::data.positions[0].contribution_pct`); correction hints only identify
+candidates to check and cite explicitly.
+
+Use the verified output to generate:
 
 ```markdown
 # Backtest Report: [Strategy Name]

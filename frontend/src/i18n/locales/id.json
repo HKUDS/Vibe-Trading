@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "charts": {
     "noPriceData": "Belum ada data harga untuk simbol ini",
@@ -148,6 +148,23 @@
     "advancedHint": "Ekspresi cron 5 kolom yang dievaluasi dalam zona waktu yang dipilih (menit jam hari bulan hari-dalam-minggu; daftar dan rentang diperbolehkan), atau interval langsung dalam milidetik.",
     "timezoneLabel": "Zona waktu",
     "create": "Jadwalkan run",
+    "saveChanges": "Simpan perubahan",
+    "cancelEdit": "Batalkan pengeditan",
+    "editingHint": "Anda sedang mengedit proses terjadwal ini. Penyimpanan mempertahankan identitas dan riwayat eksekusinya.",
+    "edit": "Edit",
+    "editAria": "Edit proses terjadwal: {{prompt}}",
+    "editRunningDisabled": "Tunggu proses atau pengirimannya selesai sebelum mengedit.",
+    "deliveryInApp": "Simpan hanya di Vibe (jangan kirim)",
+    "deliveryNoChannels": "Tidak ada saluran pengiriman aktif yang dikonfigurasi. Konfigurasikan satu di Pengaturan → Saluran.",
+    "deliveryChannelsLoadFailed": "Tidak dapat memuat saluran pengiriman yang dikonfigurasi.",
+    "deliveryChannelUnavailable": "{{channel}} (saat ini tidak tersedia)",
+    "deliveryTargetKind_destination": "Tujuan",
+    "deliveryTargetKind_email_address": "Alamat email penerima",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Saluran",
+    "deliveryTargetDisabled": "Pilih saluran pengiriman terlebih dahulu.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Tujuan yang dikonfigurasi",
     "promptRequired": "Masukkan prompt riset sebelum menjadwalkan.",
     "invalidTime": "Masukkan waktu yang valid dalam format HH:MM.",
     "executorHint": "Run hanya dieksekusi jika server dijalankan dengan VIBE_TRADING_ENABLE_SCHEDULER diaktifkan.",
@@ -190,6 +207,13 @@
     "deliveryChannelPlaceholder": "telegram, feishu, … (kosongkan agar hasil tetap di aplikasi)",
     "deliveryTargetLabel": "Target channel",
     "deliveryTargetPlaceholder": "ID chat / grup / pengguna",
+    "deliveryFormatLabel": "Email report format",
+    "deliveryFormatDefault": "Channel default (plain text)",
+    "deliveryFormatHtml": "HTML email",
+    "deliveryFormatPdf": "PDF attachment",
+    "deliveryFormatDefaultHint": "Keeps the existing plain-text delivery behavior.",
+    "deliveryFormatHtmlHint": "Shows the full report as sanitized HTML in the email body.",
+    "deliveryFormatPdfHint": "Attaches the full report as PDF and keeps only a short notice in the body.",
     "deliveryHint": "Nonaktif secara default. Ringkasan dikirim setelah run selesai, bukan saat dijadwalkan.",
     "deliveryTargetRequired": "Pilih target untuk channel tersebut, atau kosongkan channel.",
     "delivery_none": "Akan dikirim ke {{channel}} setelah run berikutnya",
@@ -202,7 +226,16 @@
     "verdictUnreadable": "Kesimpulan terbaru tidak dapat dibaca",
     "verdictNoCalls": "Tidak ada sinyal",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "per {{when}}"
+    "verdictRecorded": "per {{when}}",
+    "deliveryKnownTargetLabel": "Tujuan dikenal",
+    "deliveryKnownTargetPlaceholder": "Pilih tujuan yang dikenal…",
+    "deliverySuggestionKind_private_chat": "Chat pribadi saya",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "ID obrolan, grup, atau pengguna",
+    "deliveryTargetPlaceholder_channel": "ID kanal",
+    "deliveryTargetPlaceholder_destination": "ID chat / grup / pengguna",
+    "deliveryTargetPlaceholder_slack_destination": "#kanal, @pengguna, atau ID percakapan",
+    "deliveryTargetKind_slack_destination": "Tujuan"
   },
   "reports": {
     "badge": "Laporan",
@@ -650,6 +683,10 @@
           "max_attachments_per_email": {
             "label": "Maks. lampiran per email",
             "help": "Berapa banyak lampiran yang diterima dari satu email (default 5)."
+          },
+          "trusted_authserv_id": {
+            "label": "Server autentikasi tepercaya",
+            "help": "authserv-id server penerima, misalnya mx.google.com. Penyedia email harus menghapus header Authentication-Results masuk palsu yang memakai ID ini. Wajib saat verifikasi SPF atau DKIM aktif; kosong menolak email masuk."
           }
         },
         "websocket": {
@@ -717,6 +754,60 @@
             "label": "Path kunci TLS",
             "help": "Path kunci privat PEM di server untuk WSS. Atur sertifikat dan kunci bersamaan, atau kosongkan keduanya; ini path berkas di server, bukan materi yang diunggah."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "App ID aplikasi dari konsol pengembang Feishu / Lark (diawali cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "App Secret aplikasi. Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "Encrypt Key dari pengaturan langganan event; opsional untuk mode long connection."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "Verification Token dari pengaturan langganan event; opsional untuk mode long connection."
+          },
+          "allow_from": {
+            "label": "Pengirim yang diizinkan",
+            "help": "Daftar putih opsional ID pengirim Feishu yang boleh berbicara dengan agen; kosong berarti semua yang terlihat oleh bot."
+          },
+          "react_emoji": {
+            "label": "Emoji saat bekerja",
+            "help": "Emoji yang direaksikan ke pesan masuk sementara agen bekerja (bawaan THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Emoji saat selesai",
+            "help": "Emoji yang direaksikan saat tugas selesai; kosongkan jika tidak ada."
+          },
+          "tool_hint_prefix": {
+            "label": "Prefiks petunjuk tool",
+            "help": "Prefiks yang tampil di depan petunjuk tool inline pada balasan."
+          },
+          "group_policy": {
+            "label": "Kebijakan grup",
+            "help": "\"mention\" hanya membalas saat bot disebut (@mention) di grup, \"open\" membalas semua pesan grup."
+          },
+          "reply_to_message": {
+            "label": "Kutip pesan asli",
+            "help": "Balas dengan mengutip pesan asli."
+          },
+          "streaming": {
+            "label": "Balasan streaming",
+            "help": "Mengalirkan balasan dengan penyuntingan kartu langsung melalui CardKit."
+          },
+          "domain": {
+            "label": "Domain",
+            "help": "\"feishu\" untuk Feishu China (open.feishu.cn) atau \"lark\" untuk Lark internasional (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Sesi per topik",
+            "help": "Beri setiap topik grup sesi agennya sendiri, bukan satu sesi untuk seluruh grup."
+          }
         }
       },
       "guides": {
@@ -759,6 +850,16 @@
           "step4": "Menyimpan saat kanal berjalan akan menukar server secara panas: klien yang terhubung (termasuk obrolan Web UI ini) sempat terputus lalu tersambung kembali.",
           "step5": "Klik «Uji koneksi»; pengujian memvalidasi materi sertifikat/kunci SSL dan ketersediaan alamat secara lokal.",
           "docsLabel": "Buka dokumentasi Vibe-Trading"
+        },
+        "feishu": {
+          "title": "Penyiapan bot Feishu / Lark",
+          "intro": "Bot Feishu memakai long connection WebSocket, jadi tidak perlu IP publik maupun webhook.",
+          "step1": "Buat Custom App di Feishu Open Platform (open.feishu.cn), atau buat lewat pindaian QR dari terminal dengan vibe-trading channels login feishu — App ID dan App Secret tersimpan otomatis.",
+          "step2": "Tambahkan kemampuan Bot ke aplikasi.",
+          "step3": "Di Langganan Event, berlangganan «Menerima pesan im.message.receive_v1» dan pilih mode Long Connection.",
+          "step4": "Salin App ID dan App Secret dari halaman Kredensial & Info Dasar, lalu tempel di kolom di atas.",
+          "step5": "Buat versi dan publikasikan aplikasi (perlu persetujuan admin jika tenant Anda mensyaratkannya), lalu aktifkan kanal di sini — berlaku seketika tanpa restart. Untuk tenant Lark internasional, set domain ke lark.",
+          "docsLabel": "Buka Feishu Open Platform"
         }
       }
     },
@@ -911,6 +1012,7 @@
     "dropFiles": "Letakkan file di sini",
     "removeAttachment": "Hapus {{filename}}",
     "uploadFailed": "Gagal mengunggah: {{error}}",
+    "messageTooLong": "Pesan melebihi {{limit}} karakter, termasuk informasi lampiran dan instruksi tim. Persingkat sebelum mengirim.",
     "failedToSend": "Gagal mengirim pesan, silakan coba lagi.",
     "failedToContinue": "Gagal melanjutkan tujuan, silakan coba lagi.",
     "runtimeBadge": "RUNTIME",
@@ -1014,6 +1116,33 @@
     "reproducibility": "Reprodusibilitas",
     "metrics": "Metrik",
     "validationPayload": "Validasi",
+    "trust": {
+      "executionRecords": "Catatan eksekusi",
+      "executionDescription": "Tahap eksekusi yang dicatat beserta hash masukan dan hasilnya.",
+      "noExecutionRecords": "Catatan eksekusi tidak disimpan untuk proses ini.",
+      "startedAt": "Mulai (UTC)",
+      "endedAt": "Selesai (UTC)",
+      "argsHash": "SHA-256 argumen",
+      "resultHash": "SHA-256 hasil",
+      "metricEvidence": "Bukti metrik",
+      "evidenceDescription": "Referensi ke data metrik tersimpan. Checksum mengidentifikasi berkas yang dicatat; tampilan ini tidak memverifikasinya secara independen.",
+      "noMetricEvidence": "Bukti metrik tidak dicatat untuk proses ini.",
+      "metric": "Metrik",
+      "artifact": "Artefak",
+      "column": "Kolom",
+      "row": "Baris data (mulai dari 1, tanpa header)",
+      "artifactHash": "SHA-256 artefak",
+      "tools": {
+        "backtest": "Backtest",
+        "load_data": "Muat data",
+        "generate_signals": "Buat sinyal"
+      },
+      "status": {
+        "ok": "Selesai",
+        "error": "Gagal",
+        "cancelled": "Dibatalkan"
+      }
+    },
     "artifactChecksums": "Checksum Artefak",
     "path": "Path",
     "size": "Ukuran",

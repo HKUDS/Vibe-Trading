@@ -177,3 +177,17 @@ def test_bars_per_year_none_on_degenerate_span_falls_back_to_default() -> None:
     metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=None)
     assert metrics["final_value"] == 99.0
     json.dumps(metrics, allow_nan=False)
+
+
+def test_profit_loss_ratio_undefined_when_no_closed_trade_lost() -> None:
+    """No losing close: the ratio has no denominator, and 0.0 would rank the run last."""
+    trades = [{"pnl": 100.0}, {"pnl": 50.0}]
+    metrics = _calc_options_metrics(pd.Series([100.0, 250.0]), 100.0, trades)
+    assert metrics["win_rate"] == 1.0
+    assert metrics["profit_loss_ratio"] is None
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_profit_loss_ratio_zero_without_closed_trades() -> None:
+    metrics = _calc_options_metrics(pd.Series([100.0, 100.0]), 100.0, [])
+    assert metrics["profit_loss_ratio"] == 0.0

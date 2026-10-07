@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "layout": {
     "home": "ホーム",
@@ -143,6 +143,23 @@
     "advancedHint": "選択したタイムゾーンで評価される 5 フィールドの cron 式（分 時 日 月 曜日；リストと範囲に対応）、またはミリ秒単位の間隔。",
     "timezoneLabel": "タイムゾーン",
     "create": "スケジュールを作成",
+    "saveChanges": "変更を保存",
+    "cancelEdit": "編集をキャンセル",
+    "editingHint": "このスケジュール実行を編集中です。保存しても識別子と実行履歴は保持されます。",
+    "edit": "編集",
+    "editAria": "スケジュール実行を編集: {{prompt}}",
+    "editRunningDisabled": "実行または配信が完了してから編集してください。",
+    "deliveryInApp": "Vibe内のみに保持（送信しない）",
+    "deliveryNoChannels": "有効な配信チャネルが設定されていません。設定 → チャネルで設定してください。",
+    "deliveryChannelsLoadFailed": "設定済みの配信チャネルを読み込めませんでした。",
+    "deliveryChannelUnavailable": "{{channel}}（現在利用できません）",
+    "deliveryTargetKind_destination": "送信先",
+    "deliveryTargetKind_email_address": "受信者のメールアドレス",
+    "deliveryTargetKind_chat": "チャット",
+    "deliveryTargetKind_channel": "チャネル",
+    "deliveryTargetDisabled": "先に配信チャネルを選択してください。",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "設定済みの送信先",
     "promptRequired": "スケジュール作成の前にリサーチプロンプトを入力してください。",
     "invalidTime": "有効な時刻を HH:MM 形式で入力してください。",
     "executorHint": "サーバーで VIBE_TRADING_ENABLE_SCHEDULER が有効な場合のみ実行されます。",
@@ -185,6 +202,13 @@
     "deliveryChannelPlaceholder": "telegram、feishu など（空欄ならアプリ内のみ）",
     "deliveryTargetLabel": "チャンネル送信先",
     "deliveryTargetPlaceholder": "チャット / グループ / ユーザー ID",
+    "deliveryFormatLabel": "Email report format",
+    "deliveryFormatDefault": "Channel default (plain text)",
+    "deliveryFormatHtml": "HTML email",
+    "deliveryFormatPdf": "PDF attachment",
+    "deliveryFormatDefaultHint": "Keeps the existing plain-text delivery behavior.",
+    "deliveryFormatHtmlHint": "Shows the full report as sanitized HTML in the email body.",
+    "deliveryFormatPdfHint": "Attaches the full report as PDF and keeps only a short notice in the body.",
     "deliveryHint": "既定はオフです。ブリーフィングは実行の**完了後**に配信され、スケジュール時ではありません。",
     "deliveryTargetRequired": "そのチャンネルの送信先を指定するか、チャンネルを空にしてください。",
     "delivery_none": "次回の実行完了後に {{channel}} へ配信します",
@@ -197,7 +221,16 @@
     "verdictUnreadable": "最新の判定を読み取れません",
     "verdictNoCalls": "コールなし",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "{{when}} 時点"
+    "verdictRecorded": "{{when}} 時点",
+    "deliveryKnownTargetLabel": "既知の送信先",
+    "deliveryKnownTargetPlaceholder": "既知の送信先を選択…",
+    "deliverySuggestionKind_private_chat": "自分のプライベートチャット",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "チャット、グループ、ユーザーの ID",
+    "deliveryTargetPlaceholder_channel": "チャンネル ID",
+    "deliveryTargetPlaceholder_destination": "チャット / グループ / ユーザー ID",
+    "deliveryTargetPlaceholder_slack_destination": "#チャンネル、@ユーザー、会話 ID",
+    "deliveryTargetKind_slack_destination": "送信先"
   },
   "reports": {
     "badge": "レポート",
@@ -645,6 +678,10 @@
           "max_attachments_per_email": {
             "label": "1 通あたりの添付数上限",
             "help": "1 通のメールから受け入れる添付ファイルの最大数（既定 5）。"
+          },
+          "trusted_authserv_id": {
+            "label": "信頼する認証サーバー",
+            "help": "受信サーバーの authserv-id（例：mx.google.com）。メール提供者が、この ID を偽装した外部の Authentication-Results ヘッダーを削除する必要があります。SPF または DKIM 検証時は必須です。空欄では受信メールを拒否します。"
           }
         },
         "websocket": {
@@ -712,6 +749,60 @@
             "label": "TLS 鍵パス",
             "help": "WSS 用のサーバー上の PEM 秘密鍵パス。証明書と鍵は両方を設定するか、両方空にしてください。アップロード素材ではなくサーバー上のファイルパスです。"
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "Feishu / Lark 開発者コンソールにあるアプリの App ID（cli_ で始まります）。"
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "アプリの App Secret。サーバー側に保存され、ブラウザに返されることはありません。"
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "イベント購読設定の Encrypt Key。ロングコネクションモードでは省略可能です。"
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "イベント購読設定の Verification Token。ロングコネクションモードでは省略可能です。"
+          },
+          "allow_from": {
+            "label": "許可する送信者",
+            "help": "エージェントと会話できる Feishu の送信者 ID の許可リスト。空欄の場合はボットが見られる全員が対象になります。"
+          },
+          "react_emoji": {
+            "label": "作業中リアクション",
+            "help": "エージェントの作業中、受信したメッセージに付ける絵文字（デフォルトは THUMBSUP）。"
+          },
+          "done_emoji": {
+            "label": "完了リアクション",
+            "help": "タスク完了時に付ける絵文字。空欄の場合は付けません。"
+          },
+          "tool_hint_prefix": {
+            "label": "ツールヒントの接頭辞",
+            "help": "返信内のインラインツールヒントの前に表示される接頭辞。"
+          },
+          "group_policy": {
+            "label": "グループポリシー",
+            "help": "「mention」はグループで @ メンションされたときのみ返信し、「open」はすべてのグループメッセージに返信します。"
+          },
+          "reply_to_message": {
+            "label": "元のメッセージを引用",
+            "help": "返信ときに元のメッセージを引用して返します。"
+          },
+          "streaming": {
+            "label": "ストリーミング返信",
+            "help": "CardKit のライブ編集で返信をストリーミング出力します。"
+          },
+          "domain": {
+            "label": "ドメイン",
+            "help": "中国版 Feishu は「feishu」(open.feishu.cn)、国際版 Lark は「lark」(open.larksuite.com)。"
+          },
+          "topic_isolation": {
+            "label": "トピック別セッション",
+            "help": "グループの各トピックに専用のエージェントセッションを割り当てます。"
+          }
         }
       },
       "guides": {
@@ -754,6 +845,16 @@
           "step4": "チャンネル実行中に保存するとサーバーがホットスワップされます。接続中のクライアント（この Web UI チャットを含む）は一時的に切断され、自動的に再接続します。",
           "step5": "「接続テスト」をクリックすると、SSL 証明書/鍵の素材とアドレスの可用性をローカルで検証します。",
           "docsLabel": "Vibe-Trading のドキュメントを開く"
+        },
+        "feishu": {
+          "title": "Feishu / Lark ボット設定ガイド",
+          "intro": "Feishu ボットは WebSocket ロングコネクションで接続するため、公開 IP も Webhook も不要です。",
+          "step1": "Feishu Open Platform（open.feishu.cn）でカスタムアプリを作成します。ターミナルで vibe-trading channels login feishu を実行すると、QR スキャンで作成でき、App ID と App Secret は自動的に保存されます。",
+          "step2": "アプリにボット機能を追加します。",
+          "step3": "イベント購読で「メッセージ受信 im.message.receive_v1」を購読し、ロングコネクションモードを選択します。",
+          "step4": "「認証情報と基本情報」から App ID と App Secret をコピーして、上の欄に貼り付けます。",
+          "step5": "バージョンを作成してアプリを公開し（テナントの仕様により管理者の承認が必要な場合があります）、ここでチャンネルを有効にすると再起動不要で即座に反映されます。国際版 Lark のテナントはドメインを lark に設定してください。",
+          "docsLabel": "Feishu Open Platform を開く"
         }
       }
     },
@@ -906,6 +1007,7 @@
     "dropFiles": "ここにファイルをドロップ",
     "removeAttachment": "{{filename}} を削除",
     "uploadFailed": "アップロードに失敗しました: {{error}}",
+    "messageTooLong": "添付情報とチーム指示を含むメッセージが {{limit}} 文字を超えています。短くしてから送信してください。",
     "failedToSend": "メッセージ送信に失敗しました。再試行してください。",
     "failedToContinue": "目標の続行に失敗しました。再試行してください。",
     "runtimeBadge": "取引モニター",
@@ -1009,6 +1111,33 @@
     "reproducibility": "再現性",
     "metrics": "メトリクス",
     "validationPayload": "検証",
+    "trust": {
+      "executionRecords": "実行記録",
+      "executionDescription": "記録された実行段階と、入力および結果のハッシュ。",
+      "noExecutionRecords": "この実行の実行記録は保存されていません。",
+      "startedAt": "開始（UTC）",
+      "endedAt": "終了（UTC）",
+      "argsHash": "引数の SHA-256",
+      "resultHash": "結果の SHA-256",
+      "metricEvidence": "指標の根拠",
+      "evidenceDescription": "保存された指標データへの参照です。チェックサムは記録されたファイルを識別します。この画面では独立した検証は行いません。",
+      "noMetricEvidence": "この実行の指標の根拠は記録されていません。",
+      "metric": "指標",
+      "artifact": "成果物",
+      "column": "列",
+      "row": "データ行（1 始まり、ヘッダーを除く）",
+      "artifactHash": "成果物の SHA-256",
+      "tools": {
+        "backtest": "バックテスト",
+        "load_data": "データ読み込み",
+        "generate_signals": "シグナル生成"
+      },
+      "status": {
+        "ok": "完了",
+        "error": "失敗",
+        "cancelled": "キャンセル済み"
+      }
+    },
     "artifactChecksums": "成果物チェックサム",
     "path": "パス",
     "size": "サイズ",

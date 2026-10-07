@@ -1,7 +1,8 @@
 """MT5 read operations: status, account, positions, orders, quote, history.
 
-Every read runs through :func:`_client._session` (identity guard included)
-and returns a fail-closed ``{"status": "error", ...}`` envelope instead of
+Account-bound reads use :func:`_client._session` and its identity guard.
+Symbol search reads only metadata through :func:`_client._catalog_session`.
+Both return a fail-closed ``{"status": "error", ...}`` envelope instead of
 raising, so tools and CLI degrade cleanly when the SDK/terminal is absent.
 """
 
@@ -23,6 +24,7 @@ from src.trading.connectors.mt5._client import (
     _resolve_symbol,
     _usd_contract_value,
 )
+from src.trading.connectors.mt5.symbols import classify_mt5_symbol
 
 _MT5_ERRORS = (MT5DependencyError, MT5ConfigError, MT5ConnectionError, MT5ProfileMismatchError)
 
@@ -236,6 +238,44 @@ def get_quote(symbol: str, *, config: MT5Config | None = None, **_: Any) -> dict
     except _MT5_ERRORS as exc:
         return _error(cfg, str(exc), symbol=clean)
     return _envelope(cfg, symbol=clean, resolved_symbol=name, quote=quote)
+
+
+def search_instruments(
+    query: str,
+    *,
+    config: MT5Config | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Resolve one explicit symbol against the configured terminal catalog."""
+    cfg = config or _client.load_config()
+    try:
+        bounded_limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError, OverflowError):
+        bounded_limit = 10
+
+    try:
+        with _client._catalog_session(cfg) as mt5:
+            name = _client._catalog_symbol(mt5, cfg, str(query or ""))
+            info = mt5.symbol_info(name)
+    except _MT5_ERRORS as exc:
+        return {"status": "error", "error": str(exc), "instruments": [], "catalog_only": True}
+
+    instruments = []
+    if info is not None:
+        name = str(getattr(info, "name", "") or "").strip()
+        if name:
+            instrument_type, _ = classify_mt5_symbol(name)
+            instruments.append(
+                {
+                    "symbol": name,
+                    "native_symbol": name,
+                    "market": "fx" if instrument_type.value == "forex" else "mt5",
+                    "type": instrument_type.value,
+                    "exchange": cfg.server or "MT5",
+                    "venue": cfg.server or "MT5",
+                }
+            )
+    return {"status": "ok", "query": query, "instruments": instruments[:bounded_limit], "catalog_only": True}
 
 
 def get_historical_bars(

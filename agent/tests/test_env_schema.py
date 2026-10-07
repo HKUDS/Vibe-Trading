@@ -17,8 +17,10 @@ Covers:
 from __future__ import annotations
 
 import concurrent.futures
+from typing import Optional
 
 import pytest
+from pydantic import Field, ValidationError
 
 from src.config.accessor import (
     _parse_bool,
@@ -36,6 +38,7 @@ from src.config.env_schema import (
     PathConfig,
     SwarmConfig,
     _parse_env_bool,
+    _EnvBase,
 )
 
 
@@ -221,6 +224,43 @@ class TestEnvConfigTypeCoercion:
         monkeypatch.setenv("TOKEN_THRESHOLD", "abc")
         c = EnvConfig()
         assert c.agent_tuning.token_threshold == 40000
+
+    @pytest.mark.parametrize("value", ["not_a_number", "", "1.5", "NaN", "Infinity"])
+    def test_invalid_optional_int_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+        monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", value)
+        c = EnvConfig()
+        assert c.llm.anthropic_max_tokens is None
+
+    def test_valid_optional_int_is_coerced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "4096")
+        c = EnvConfig()
+        assert c.llm.anthropic_max_tokens == 4096
+        assert isinstance(c.llm.anthropic_max_tokens, int)
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_optional_int_still_enforces_its_positive_constraint(self, monkeypatch, value) -> None:
+        monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", value)
+        with pytest.raises(ValidationError):
+            LLMConfig()
+
+    @pytest.mark.parametrize("field", ["anthropic_max_tokens", "ANTHROPIC_MAX_TOKENS"])
+    @pytest.mark.parametrize("value", [None, 4096])
+    def test_explicit_optional_value_wins_over_environment(self, monkeypatch, field, value) -> None:
+        monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "8192")
+        assert LLMConfig(**{field: value}).anthropic_max_tokens == value
+
+    def test_invalid_explicit_optional_value_is_not_silently_defaulted(self, monkeypatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "8192")
+        with pytest.raises(ValidationError):
+            LLMConfig(anthropic_max_tokens="invalid")
+
+    @pytest.mark.parametrize("raw,expected", [("", None), ("invalid", None), ("0", 0.0), ("2.5", 2.5)])
+    def test_typing_optional_float_environment_coercion(self, monkeypatch, raw, expected) -> None:
+        class OptionalFloatConfig(_EnvBase):
+            value: Optional[float] = Field(alias="LANGCHAIN_TEMPERATURE", default=None)
+
+        monkeypatch.setenv("LANGCHAIN_TEMPERATURE", raw)
+        assert OptionalFloatConfig().value == expected
 
     def test_bool_coercion_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIBE_TRADING_DATA_CACHE", "true")

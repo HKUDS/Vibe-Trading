@@ -74,3 +74,26 @@ def test_academic_factor_matches_golden(alpha_id: str) -> None:
         equal_nan=True,
         err_msg=f"{alpha_id} output diverged from golden",
     )
+
+
+def test_carhart_momentum_skips_the_most_recent_month() -> None:
+    """The last bar's value must not move with any close inside the skipped month.
+
+    The golden above was regenerated together with the formula, so on its own it
+    cannot tell a skip-month return from ``r_252 - r_21``, which moves with
+    today's close. This checks the definition directly: scale one stock's closes
+    over the last 21 bars and its value on the last bar is unchanged; scale its
+    close 21 or 252 bars back and the value moves.
+    """
+    registry = Registry()
+    panel = _build_panel()
+    base = registry.compute("academic_carhart_mom", panel).iloc[-1]
+
+    def last_bar_after_scaling(rows) -> pd.Series:
+        bumped = {name: frame.copy() for name, frame in panel.items()}
+        bumped["close"].iloc[rows, 0] *= 1.25
+        return registry.compute("academic_carhart_mom", bumped).iloc[-1]
+
+    pd.testing.assert_series_equal(last_bar_after_scaling(slice(-21, None)), base)
+    assert last_bar_after_scaling([-22]).iloc[0] != pytest.approx(base.iloc[0])
+    assert last_bar_after_scaling([-253]).iloc[0] != pytest.approx(base.iloc[0])

@@ -165,6 +165,26 @@ def _patch_of(name: str, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_nullable_blanks(name: str, patch: dict[str, Any]) -> dict[str, Any]:
+    """Map blank form values back to None for nullable config defaults.
+
+    The generic web form renders text-like None values as an empty string.
+    Without this normalization, echoing a pristine form back to the API can
+    make nullable Literal fields invalid (for example Email post_action).
+    """
+    try:
+        defaults = load_channel_class(name).default_config()
+    except Exception:  # noqa: BLE001 - validation reports unloadable adapters later
+        return patch
+    if not isinstance(defaults, dict):
+        return patch
+    return {
+        key: None
+        if isinstance(value, str) and value == "" and defaults.get(key) is None
+        else value
+        for key, value in patch.items()
+    }
+
 def _clear_flags(extra: dict[str, Any] | None) -> list[str]:
     """Return the ``clear_<field>`` targets from a request's extra keys."""
     return [
@@ -336,7 +356,7 @@ async def _hot_apply(name: str, section: dict[str, Any] | None) -> str:
 async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[str, Any]:
     """Validate → optional enable-transition probe → write → hot apply."""
     stored = _stored_section(name)
-    patch = _patch_of(name, payload.config)
+    patch = _normalize_nullable_blanks(name, _patch_of(name, payload.config))
     clears = _clear_flags(payload.model_extra)
     merged = {**stored, **patch}
     for key in clears:
@@ -386,7 +406,7 @@ async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[
 async def _run_test(name: str, body: dict[str, Any] | None, clears: list[str]) -> dict[str, Any]:
     """Probe credentials on an ephemeral instance; never persists anything."""
     stored = _stored_section(name)
-    patch = _patch_of(name, body or {})
+    patch = _normalize_nullable_blanks(name, _patch_of(name, body or {}))
     merged = {**stored, **patch}
     for key in clears:
         merged.pop(key, None)

@@ -148,6 +148,18 @@ def test_normalize_mcp_tool_schema_collapses_nullable_object() -> None:
     assert schema["required"] == ["symbol"]
 
 
+def test_normalize_mcp_tool_schema_recovers_from_malformed_properties() -> None:
+    """A non-dict top-level ``properties`` (malformed remote schema) must still
+    end up with the documented ``properties: {}`` fallback, not no key at all.
+    """
+    schema = normalize_mcp_tool_schema(
+        {"type": "object", "properties": "oops", "required": ["symbol"]}
+    )
+
+    assert schema["properties"] == {}
+    assert schema["required"] == ["symbol"]
+
+
 def test_normalize_mcp_tool_schema_preserves_top_level_one_of_branches() -> None:
     schema = normalize_mcp_tool_schema(
         {
@@ -287,6 +299,35 @@ def test_remote_tool_execute_forwards_arguments_for_composed_schema() -> None:
     assert state["call_records"][0]["arguments"] == {"symbol": "AAPL"}
 
 
+def test_remote_tool_malformed_properties_still_yields_valid_schema() -> None:
+    """A remote tool whose schema has a non-dict top-level ``properties`` used
+    to end up with no ``properties`` key at all on ``tool.parameters`` — the
+    exact object forwarded verbatim as the OpenAI-style function-calling
+    schema (``to_openai_schema`` only falls back to a default when
+    ``self.parameters`` is falsy, and a dict missing just one key is still
+    truthy), so a malformed remote schema reached the LLM provider API as an
+    invalid tool definition instead of the documented ``properties: {}``
+    fallback."""
+    state = {
+        "list_calls": 0,
+        "call_calls": 0,
+        "call_records": [],
+        "list_outcomes": [[
+            mcp_types.Tool(
+                name="lookup",
+                description="Lookup by symbol",
+                inputSchema={"type": "object", "properties": "oops", "required": ["symbol"]},
+            )
+        ]],
+        "call_outcomes": [],
+    }
+
+    tool = build_mcp_tool_wrappers("demo", _make_config(), client_factory=_make_factory(state))[0]
+
+    assert isinstance(tool.parameters.get("properties"), dict)
+    assert tool.to_openai_schema()["function"]["parameters"]["properties"] == {}
+
+
 @dataclass
 class _RobinhoodPosition:
     """FastMCP-style generated dataclass nested in a Robinhood response."""
@@ -385,7 +426,8 @@ def test_robinhood_dataclass_dates_are_json_safe_end_to_end() -> None:
 
     assert payload["status"] == "ok"
     assert payload["data"] == structured_portfolio
-    assert payload["structured_content"] == structured_portfolio
+    # The agent-facing result carries the value once; ``call_tool`` keeps both.
+    assert "structured_content" not in payload
 
 
 @pytest.mark.parametrize(
@@ -420,7 +462,7 @@ def test_fastmcp_wrapped_results_keep_unwrapped_data_shape(
     )
 
     assert payload["data"] == expected
-    assert payload["structured_content"] == structured
+    assert "structured_content" not in payload
 
 
 @dataclass
@@ -446,7 +488,7 @@ def test_structured_content_remains_available_when_fastmcp_hydration_fails() -> 
 
     assert payload["status"] == "ok"
     assert payload["data"] == structured
-    assert payload["structured_content"] == structured
+    assert "structured_content" not in payload
 
 
 class _OrderState(Enum):
@@ -835,3 +877,22 @@ class TestHttpErrorBodyIsReported:
 
         assert "Status failed 500" in str(caught.value)
         assert caught.value.response.status_code == 400
+
+
+@pytest.mark.parametrize("bad", [None, [], "oops", 42, False])
+def test_malformed_properties_normalization_is_idempotent(bad):
+    original = {"type": "object", "properties": bad, "required": ["symbol"]}
+    normalized = normalize_mcp_tool_schema(original)
+    assert normalized["properties"] == {}
+    assert normalized["required"] == ["symbol"]
+    assert normalize_mcp_tool_schema(normalized) == normalized
+    assert original["properties"] == bad
+
+
+@pytest.mark.parametrize("composition", ["anyOf", "oneOf", "allOf"])
+def test_malformed_properties_does_not_override_composed_schema(composition):
+    branch = {"type": "object", "properties": {"symbol": {"type": "string"}}}
+    result = normalize_mcp_tool_schema({"type": "object", "properties": "oops", composition: [branch, {"type": "object", "properties": {"code": {"type": "integer"}}}]})
+    assert result[composition][0] == branch
+    assert len(result[composition]) == 2
+    assert "properties" not in result

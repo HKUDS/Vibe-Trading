@@ -120,3 +120,41 @@ def test_no_progress_limit_remains_bounded() -> None:
         assert progress.finish_iteration() is False
     assert progress.finish_iteration() is True
     assert progress.stalled_iterations == NO_PROGRESS_LIMIT
+
+
+def test_stop_message_names_what_kept_happening() -> None:
+    """The fixed text described one scenario (an answer lost to compaction)
+    for every stop; the stop now says which tool did what, how often."""
+    from src.agent.tool_progress import NO_PROGRESS_LIMIT, RECOVERY_MESSAGE, ToolProgress
+
+    progress = ToolProgress()
+    key = ("get_financial_statements", '{"code": "002555.SZ"}')
+    progress.record("get_financial_statements", key, '{"ok": true, "v": 1}', success=True)
+    assert progress.finish_iteration() is False  # first result is new
+    for i in range(NO_PROGRESS_LIMIT):
+        progress.record("get_financial_statements", key, '{"ok": true, "v": 1}', success=True)
+        if i == 0:
+            progress.note("blocked", "get_financial_statements", "identity_mismatch")
+        stopped = progress.finish_iteration()
+    assert stopped
+    message = progress.recovery_message()
+    assert message != RECOVERY_MESSAGE
+    assert f"{NO_PROGRESS_LIMIT} tool rounds in a row" in message
+    assert f"get_financial_statements returned results it had already returned x{NO_PROGRESS_LIMIT}" in message
+    assert "get_financial_statements was refused before running (identity_mismatch) x1" in message
+    assert "rerun" in message and "path" in message
+
+
+def test_progress_forgets_the_notes_of_an_earlier_stall() -> None:
+    from src.agent.tool_progress import ToolProgress
+
+    progress = ToolProgress()
+    progress.record("a", ("a", "{}"), '{"status": "error", "error_code": "timeout"}', success=False)
+    progress.finish_iteration()
+    progress.record("b", ("b", "{}"), '{"ok": true}', success=True)  # new -> progress
+    progress.finish_iteration()
+    progress.record("c", ("c", "{}"), '{"status": "error", "error": "boom"}', success=False)
+    progress.finish_iteration()
+    message = progress.recovery_message()
+    assert "c failed (boom) x1" in message
+    assert "timeout" not in message

@@ -542,6 +542,27 @@ def commit_mandate(
     }
 
 
+def _explicit_float(profile: Mapping[str, Any], key: str) -> float | None:
+    """Return ``profile[key]`` as a float, or ``None`` if absent or null.
+
+    ``_resolve_profile`` lets a commit-time adjustment narrow a numeric limit
+    down to an explicit ``0`` (any value <= the rendered limit is a legal
+    narrowing, the same path used for leverage="none"). Combining
+    ``profile.get(key, default)`` with Python's ``x or default`` idiom treats
+    that explicit ``0`` the same as "key missing" and silently substitutes a
+    higher fallback, which is exactly the widening a commit must never do.
+
+    Args:
+        profile: Resolved proposal profile.
+        key: Numeric limit to read.
+
+    Returns:
+        The explicit numeric value, including zero, or ``None`` if unspecified.
+    """
+    value = profile.get(key)
+    return float(value) if value is not None else None
+
+
 def _profile_to_hard_caps(profile: Mapping[str, Any]) -> dict[str, Any]:
     """Map a clamped proposal profile to the mandate ``hard_caps`` section.
 
@@ -559,11 +580,24 @@ def _profile_to_hard_caps(profile: Mapping[str, Any]) -> dict[str, Any]:
     leverage_raw = profile.get("leverage", "none")
     max_leverage = 1.0 if leverage_raw in ("none", None) else float(leverage_raw)
     instruments = list(profile.get("instruments") or ["equity"])
-    funding = float(profile.get("account_funding_usd", profile.get("max_total_exposure_usd", 0.0)) or 0.0)
-    max_order = float(profile.get("max_order_usd", 0.0) or 0.0)
-    max_exposure = float(profile.get("max_total_exposure_usd", funding or max_order) or max_order)
+
+    funding_val = _explicit_float(profile, "account_funding_usd")
+    exposure_val = _explicit_float(profile, "max_total_exposure_usd")
+    max_order = _explicit_float(profile, "max_order_usd")
+    if max_order is None:
+        max_order = 0.0
+
+    if exposure_val is not None:
+        max_exposure = exposure_val
+    elif funding_val is not None:
+        max_exposure = funding_val
+    else:
+        max_exposure = max_order
+
+    account_funding_usd = funding_val if funding_val is not None else max_exposure
+
     return {
-        "account_funding_usd": funding or max_exposure,
+        "account_funding_usd": account_funding_usd,
         "max_order_notional_usd": max_order,
         "max_total_exposure_usd": max_exposure,
         "max_leverage": max_leverage,

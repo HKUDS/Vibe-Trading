@@ -29,6 +29,30 @@ def _build_agent(llm: Any) -> AgentLoop:
     return AgentLoop(registry=ToolRegistry(), llm=llm, max_iterations=1)
 
 
+def test_replayed_payload_and_call_pair_survive_collapse_and_summary_until_request(tmp_path):
+    from src.agent import loop as loop_mod
+    payload = "replayed evidence " + "x" * 9000
+    call = {"role": "assistant", "content": "", "tool_calls": [
+        {"id": "leased", "type": "function", "function": {"name": "probe", "arguments": "{}"}}]}
+    result = {"role": "tool", "tool_call_id": "leased", "name": "probe", "content": payload}
+    messages = [{"role": "system", "content": "system"}, {"role": "user", "content": "old goal"},
+                call, result, *[{"role": "user", "content": "tail" + "t" * 30000} for _ in range(4)]]
+    agent = _build_agent(_CompactionLLM(["Earlier work summarized."] * 10))
+    agent._readonly_replay_visibility_pending = {"leased"}
+    loop_mod._context_collapse(messages, preserve_tool_call_ids={"leased"})
+    assert result["content"] == payload
+    with_trace = TraceWriter(tmp_path / "trace")
+    try:
+        agent._auto_compact(messages, tmp_path, with_trace)
+        assert any(message.get("content") == payload for message in messages)
+        assert any(any(tc.get("id") == "leased" for tc in message.get("tool_calls", [])) for message in messages)
+        assert agent._readonly_replay_visibility_pending == {"leased"}
+        agent._consume_readonly_replay_visibility(messages, with_trace, 1)
+        assert agent._readonly_replay_visibility_pending == set()
+    finally:
+        with_trace.close()
+
+
 def test_summary_chunks_single_chunk_matches_json_dumps() -> None:
     """The common one-chunk path must preserve the original prompt bytes."""
     messages = [

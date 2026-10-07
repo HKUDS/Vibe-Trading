@@ -149,6 +149,8 @@ class ResearchPlaybook:
         config: Optional[Mapping[str, Any]] = None,
         next_run_at: Optional[int] = None,
         now_ms: Optional[int] = None,
+        delivery_target_ref: Optional[str] = None,
+        delivery_format: Optional[str] = None,
     ) -> ScheduledResearchJob:
         """Build a schedulable job from this playbook.
 
@@ -170,6 +172,8 @@ class ResearchPlaybook:
                 for config resolution.
             next_run_at: Explicit first-fire epoch-ms, bypassing the rule above.
             now_ms: Injectable clock for tests, in epoch milliseconds.
+            delivery_target_ref: Operator-configured destination reference.
+            delivery_format: Email presentation, html/pdf; None keeps plain text.
 
         Returns:
             A ``PENDING`` :class:`ScheduledResearchJob`.
@@ -199,6 +203,14 @@ class ResearchPlaybook:
         job_config: Dict[str, Any] = dict(config or {})
         job_config.setdefault("playbook", self.slug)
 
+        from src.channels.targets import resolve_delivery_target
+
+        target = resolve_delivery_target(delivery_target_ref) if delivery_target_ref else None
+        if delivery_format not in (None, "html", "pdf"):
+            raise ValueError("delivery_format must be 'html', 'pdf', or null")
+        if delivery_format is not None and (target is None or target.channel != "email"):
+            raise ValueError("delivery_format is supported only for email delivery")
+
         return ScheduledResearchJob(
             id=job_id or f"playbook-{self.slug}-{uuid.uuid4().hex[:8]}",
             prompt=self.render(variables),
@@ -208,6 +220,14 @@ class ResearchPlaybook:
             created_at=now,
             config=job_config,
             timezone=tz,
+            title=self.name,
+            source_type="playbook",
+            playbook_slug=self.slug,
+            delivery_channel=target.channel if target else None,
+            delivery_target=target.target if target else None,
+            delivery_target_ref=target.ref if target else None,
+            delivery_target_label=target.label if target else None,
+            delivery_format=delivery_format,
         )
 
     def to_dict(self, include_body: bool = False) -> Dict[str, Any]:

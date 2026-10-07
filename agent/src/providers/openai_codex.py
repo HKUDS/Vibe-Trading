@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -23,6 +24,7 @@ from urllib.parse import urlparse
 
 from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
+from src.providers.session_context import current_llm_session_id
 
 try:  # pragma: no cover - platform-specific imports are exercised via mocks.
     import fcntl
@@ -235,10 +237,17 @@ class CodexAIMessage:
         reasoning = self.additional_kwargs.get("reasoning_content", "") + other.additional_kwargs.get(
             "reasoning_content", ""
         )
+        additional_kwargs: dict[str, Any] = {"reasoning_content": reasoning} if reasoning else {}
+        provider_items = [
+            *self.additional_kwargs.get("provider_items", []),
+            *other.additional_kwargs.get("provider_items", []),
+        ]
+        if provider_items:
+            additional_kwargs["provider_items"] = provider_items
         return CodexAIMessage(
             content=(self.content or "") + (other.content or ""),
             tool_calls=[*self.tool_calls, *other.tool_calls],
-            additional_kwargs={"reasoning_content": reasoning} if reasoning else {},
+            additional_kwargs=additional_kwargs,
             response_metadata=response_metadata,
             usage_metadata=other.usage_metadata or self.usage_metadata,
         )
@@ -414,9 +423,16 @@ def _strip_model_prefix(model: str) -> str:
     return model
 
 
-def _prompt_cache_key(messages: list[dict[str, Any]]) -> str:
-    raw = json.dumps(messages, ensure_ascii=True, sort_keys=True)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def _prompt_cache_key(instructions: str) -> str:
+    """Cache-routing key shared by every request of one conversation.
+
+    The key hashed the whole message list, so it changed on every request and
+    never routed two turns of a run to the same cache. Codex CLI keys on its
+    conversation id; the bound LLM session id is ours, and the system prompt
+    stands in when no session is bound.
+    """
+    basis = current_llm_session_id() or instructions
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
 def _convert_user_message(content: Any) -> dict[str, Any]:
@@ -447,17 +463,56 @@ def _split_tool_call_id(tool_call_id: Any) -> tuple[str, str | None]:
     return "call_0", None
 
 
-def _convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+def _convert_messages(
+    messages: list[dict[str, Any]],
+    *,
+    replay_reasoning: bool = True,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Convert loop messages into Responses ``instructions`` + ``input`` items.
+
+    Args:
+        messages: OpenAI-format loop messages.
+        replay_reasoning: Send each turn's encrypted reasoning items back, as
+            Codex CLI does. With ``store: false`` the backend keeps nothing
+            between requests, so without them a reasoning model starts every
+            turn blind to why it made the calls it is now reading results of.
+
+    Returns:
+        ``(instructions, input_items)``.
+    """
     system_prompt = ""
+    instructions_taken = False
     input_items: list[dict[str, Any]] = []
     for idx, msg in enumerate(messages):
         role = msg.get("role")
         content = msg.get("content")
         if role == "system":
-            system_prompt = content if isinstance(content, str) else ""
+            text = content if isinstance(content, str) else ""
+            if not instructions_taken:
+                system_prompt = text
+                instructions_taken = True
+            elif text:
+                # A system message appended mid-run (the empty-response retry,
+                # the tool-markup retry, the pending-write directive) used to
+                # overwrite `instructions`, so every later request ran without
+                # the 49K-character system prompt. Codex CLI sends added
+                # instructions as developer messages.
+                input_items.append(
+                    {
+                        "type": "message",
+                        "role": "developer",
+                        "content": [{"type": "input_text", "text": text}],
+                    }
+                )
         elif role == "user":
             input_items.append(_convert_user_message(content))
         elif role == "assistant":
+            if replay_reasoning:
+                input_items.extend(
+                    dict(item)
+                    for item in msg.get("provider_items") or []
+                    if isinstance(item, dict) and item.get("type") == "reasoning"
+                )
             if isinstance(content, str) and content:
                 input_items.append(
                     {
@@ -471,15 +526,17 @@ def _convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[st
             for tool_call in msg.get("tool_calls", []) or []:
                 fn = tool_call.get("function") or {}
                 call_id, item_id = _split_tool_call_id(tool_call.get("id"))
-                input_items.append(
-                    {
-                        "type": "function_call",
-                        "id": item_id or f"fc_{idx}",
-                        "call_id": call_id or f"call_{idx}",
-                        "name": fn.get("name"),
-                        "arguments": fn.get("arguments") or "{}",
-                    }
-                )
+                function_call = {
+                    "type": "function_call",
+                    "call_id": call_id or f"call_{idx}",
+                    "name": fn.get("name"),
+                    "arguments": fn.get("arguments") or "{}",
+                }
+                # Only an id the backend issued; a made-up one gave every call
+                # of a parallel batch the same "fc_0".
+                if item_id:
+                    function_call["id"] = item_id
+                input_items.append(function_call)
         elif role == "tool":
             call_id, _ = _split_tool_call_id(msg.get("tool_call_id"))
             output = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
@@ -558,6 +615,15 @@ def _events_from_lines(lines: Iterable[str]) -> Iterable[dict[str, Any]]:
             yield event
 
 
+#: Models whose backend refused a replayed reasoning item (process lifetime).
+_REASONING_REPLAY_REJECTED: set[str] = set()
+_REASONING_REJECTION_RE = re.compile(r"reasoning|encrypted_content|rs_[A-Za-z0-9]", re.IGNORECASE)
+
+
+def _has_reasoning_items(body: dict[str, Any]) -> bool:
+    return any(item.get("type") == "reasoning" for item in body.get("input") or [])
+
+
 def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[CodexAIMessage]:
     tool_buffers: dict[str, dict[str, Any]] = {}
     for event in events:
@@ -566,7 +632,7 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
             item = event.get("item") or {}
             if item.get("type") == "function_call" and item.get("call_id"):
                 tool_buffers[item["call_id"]] = {
-                    "id": item.get("id") or "fc_0",
+                    "id": item.get("id"),
                     "name": item.get("name") or "",
                     "arguments": item.get("arguments") or "",
                 }
@@ -584,12 +650,23 @@ def _message_chunks_from_events(events: Iterable[dict[str, Any]]) -> Iterable[Co
                 tool_buffers[call_id]["arguments"] = event.get("arguments") or ""
         elif event_type == "response.output_item.done":
             item = event.get("item") or {}
-            if item.get("type") == "function_call" and item.get("call_id"):
+            if item.get("type") == "reasoning" and item.get("encrypted_content"):
+                # Kept verbatim (minus plaintext content) for the next request.
+                kept = {
+                    "type": "reasoning",
+                    "summary": item.get("summary") or [],
+                    "encrypted_content": item["encrypted_content"],
+                }
+                if item.get("id"):
+                    kept["id"] = item["id"]
+                yield CodexAIMessage(additional_kwargs={"provider_items": [kept]})
+            elif item.get("type") == "function_call" and item.get("call_id"):
                 call_id = item["call_id"]
                 buf = tool_buffers.get(call_id) or {}
                 args_raw = buf.get("arguments") or item.get("arguments") or "{}"
+                item_id = buf.get("id") or item.get("id")
                 tool = CodexToolCall(
-                    id=f"{call_id}|{buf.get('id') or item.get('id') or 'fc_0'}",
+                    id=f"{call_id}|{item_id}" if item_id else call_id,
                     name=buf.get("name") or item.get("name") or "",
                     arguments=_decode_tool_args(args_raw),
                 )
@@ -651,8 +728,16 @@ class OpenAICodexLLM:
             codex_url=self.codex_url,
         )
 
-    def _body(self, messages: list[dict[str, Any]], *, stream: bool) -> dict[str, Any]:
-        system_prompt, input_items = _convert_messages(messages)
+    def _body(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        stream: bool,
+        replay_reasoning: bool = True,
+    ) -> dict[str, Any]:
+        system_prompt, input_items = _convert_messages(
+            messages, replay_reasoning=replay_reasoning
+        )
         body: dict[str, Any] = {
             "model": _strip_model_prefix(self.model),
             "store": False,
@@ -661,7 +746,7 @@ class OpenAICodexLLM:
             "input": input_items,
             "text": {"verbosity": "medium"},
             "include": ["reasoning.encrypted_content"],
-            "prompt_cache_key": _prompt_cache_key(messages),
+            "prompt_cache_key": _prompt_cache_key(system_prompt),
             "tool_choice": "auto",
             "parallel_tool_calls": True,
         }
@@ -688,10 +773,12 @@ class OpenAICodexLLM:
         self, messages: list[dict[str, Any]], config: Optional[dict[str, Any]] = None
     ) -> Iterable[CodexAIMessage]:
         timeout = (config or {}).get("timeout") or self.timeout
-        body = self._body(messages, stream=True)
+        replay = _strip_model_prefix(self.model) not in _REASONING_REPLAY_REJECTED
+        body = self._body(messages, stream=True, replay_reasoning=replay)
         headers = self._headers()
+        refreshed = False
         with httpx.Client(timeout=timeout, follow_redirects=True, trust_env=True) as client:
-            for attempt in range(2):
+            while True:
                 with client.stream(
                     "POST",
                     self.codex_url,
@@ -704,13 +791,28 @@ class OpenAICodexLLM:
                     raw = response.read().decode("utf-8", "ignore")
                     status_code = response.status_code
 
-                if status_code == 401 and attempt == 0:
+                if status_code == 401 and not refreshed:
+                    refreshed = True
                     authorization = headers.get("Authorization", "")
                     rejected_access = authorization[7:] if authorization.startswith("Bearer ") else None
                     headers = self._headers(
                         force_refresh=True,
                         rejected_access=rejected_access,
                     )
+                    continue
+
+                if (
+                    status_code == 400
+                    and replay
+                    and _has_reasoning_items(body)
+                    and _REASONING_REJECTION_RE.search(raw)
+                ):
+                    # Replay mirrors Codex CLI but was not verified live against
+                    # every model: if the backend refuses a replayed reasoning
+                    # item, stop sending them for this model and resend once.
+                    _REASONING_REPLAY_REJECTED.add(_strip_model_prefix(self.model))
+                    replay = False
+                    body = self._body(messages, stream=True, replay_reasoning=False)
                     continue
 
                 # Preserve the typed status so deterministic 4xx failures are

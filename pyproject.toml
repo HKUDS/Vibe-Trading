@@ -1,6 +1,6 @@
 [project]
 name = "vibe-trading-ai"
-version = "0.1.15"
+version = "0.1.16"
 description = "Natural-language finance research AI agent with backtesting"
 requires-python = ">=3.11"
 license = "MIT"
@@ -71,7 +71,16 @@ dependencies = [
     "ddgs>=6.0.0",
     "jinja2>=3.1.0",
     "matplotlib>=3.7.0",
+    "mistune>=3.0.0",
+    "nh3>=0.2.18",
     "weasyprint>=60.0",
+    # weasyprint needs system pango/cairo libraries pip cannot install; where
+    # they are missing the shadow report degraded to HTML-only. reportlab
+    # ships binary wheels everywhere and backs the pure-Python PDF fallback
+    # (shadow_account/pdf_fallback.py) so the PDF renders on any host.
+    "reportlab>=4.0",
+    "arabic-reshaper>=3.0.1",
+    "python-bidi>=0.6.11",
     "prompt_toolkit>=3.0.0",
 ]
 
@@ -105,6 +114,9 @@ include = ["src*", "backtest*", "cli*", "evals*"]
     "shadow_account/templates/*.j2",
     "shadow_account/templates/*.html",
     "shadow_account/templates/*.css",
+    "shadow_account/assets/*.ttf",
+    "shadow_account/assets/*.txt",
+    "shadow_account/assets/*.md",
 ]
 "evals.harness" = ["README.md", "cases/**/*.json"]
 "backtest" = ["*.py"]

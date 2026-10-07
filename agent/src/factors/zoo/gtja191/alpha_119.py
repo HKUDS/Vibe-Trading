@@ -40,7 +40,7 @@ ALPHA_ID = "gtja191_119"
 __alpha_meta__ = {
     'id': 'gtja191_119',
     'theme': ['volume'],
-    'formula_latex': 'see body',
+    'formula_latex': 'RANK(DECAYLINEAR(CORR(VWAP,SUM(MEAN(VOLUME,5),26),5),7)) - RANK(DECAYLINEAR(TSRANK(MIN(CORR(RANK(OPEN),RANK(MEAN(VOLUME,15)),21),9),7),8))',
     'columns_required': ['open', 'high', 'low', 'close', 'volume', 'amount'],
     'extras_required': [],
     'universe': ['equity_cn'],

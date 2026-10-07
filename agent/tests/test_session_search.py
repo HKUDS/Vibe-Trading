@@ -101,10 +101,27 @@ class TestSearch:
     def test_cjk_search(self, index: SessionSearchIndex) -> None:
         index.index_session("s1", "A股分析")
         index.index_message("s1", "user", "上证指数今日走势分析 shanghai composite index")
-        # FTS5 tokenizes by whitespace; CJK single chars may not match.
-        # Search with the ASCII fallback to verify the session is indexed.
         results = index.search("shanghai composite index")
         assert len(results) >= 1
+
+    def test_cjk_search_matches_a_phrase_shorter_than_the_whole_message(
+        self, index: SessionSearchIndex
+    ) -> None:
+        """A CJK query must match without quoting the entire indexed message.
+
+        FTS5's default tokenizer has no CJK word boundaries, so a run of
+        Chinese characters indexes as one token spanning the whole run.
+        Without unigram/bigram preparation, only a query that happens to be
+        that exact full token could ever match -- any realistic phrase or
+        single word came back empty even though the text was indexed.
+        """
+        index.index_session("s1", "A股分析")
+        index.index_message("s1", "user", "我想了解比特币的最新价格走势和交易策略")
+
+        for query in ("比特币", "价格", "交易策略"):
+            results = index.search(query)
+            assert len(results) >= 1, f"query {query!r} found nothing"
+            assert results[0].session_id == "s1"
 
     def test_snippet_contains_match(self, index: SessionSearchIndex) -> None:
         index.index_session("s1", "Snippet test")

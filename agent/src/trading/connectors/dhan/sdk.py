@@ -4,14 +4,15 @@ Wraps ``DhanHQ`` client for account, positions, orders, quotes, and historical
 data. Supports NSE/BSE equities and F&O (NIFTY/BANKNIFTY options).
 
 Paper-vs-live: Dhan has no sandbox environment. Paper mode uses the same API
-for market data reads but simulates orders locally. Live mode places real orders
-through Dhan's production API.
+for market data reads but simulates orders locally. Non-paper profiles permit
+reads only; order methods refuse them before any SDK call.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
@@ -482,10 +483,18 @@ def place_order(
     if type_token not in ("MARKET", "LIMIT"):
         return {"status": "error", "error": "order_type must be 'market' or 'limit'"}
 
-    if quantity is None or float(quantity) <= 0:
-        return {"status": "error", "error": "quantity must be positive"}
+    try:
+        amount = Decimal(str(quantity))
+        valid_quantity = amount.is_finite() and amount >= 1 and amount == amount.to_integral_value()
+    except (InvalidOperation, ValueError):
+        valid_quantity = False
+    if not valid_quantity:
+        return {
+            "status": "error",
+            "error": "quantity must be a positive whole number of shares",
+        }
 
-    qty = int(float(quantity))
+    qty = int(amount)
     sec_id = str(security_id or symbol).strip()
 
     if type_token == "LIMIT" and limit_price is None:

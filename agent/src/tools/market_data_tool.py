@@ -10,6 +10,7 @@ from typing import Any
 
 from src.agent.tools import BaseTool
 from src.market_data import DEFAULT_MAX_ROWS, fetch_market_data_json
+from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.registry import VALID_SOURCES
 from backtest.runner import _VALID_INTERVALS
 
@@ -191,6 +192,22 @@ class MarketDataTool(BaseTool):
         source = kwargs.get("source", "auto")
         if source not in _SOURCE_ENUM:
             return _error(f"source must be one of {_SOURCE_ENUM}")
+        if source == "auto":
+            # Only what the market detector reads as a US equity: a Chinese
+            # futures code (RB0, IF2412) or a joined crypto pair (BTCUSDT) has
+            # the same shape and is served without any suffix.
+            bare_us = [
+                code for code in codes
+                if re.fullmatch(r"[A-Za-z][A-Za-z0-9.\-]*", code)
+                and "." not in code
+                and "-" not in code
+                and _detect_market(code) == "us_equity"
+            ]
+            if bare_us:
+                return _error(
+                    "US equity symbols must include the .US suffix, "
+                    f"for example AAPL.US; received {bare_us}"
+                )
 
         interval = kwargs.get("interval", "1D")
         if not isinstance(interval, str):

@@ -39,7 +39,7 @@ ALPHA_ID = "gtja191_187"
 __alpha_meta__ = {
     'id': 'gtja191_187',
     'theme': ['reversal'],
-    'formula_latex': 'see body',
+    'formula_latex': 'SUM((OPEN<=DELAY(OPEN,1) ? 0 : MAX(HIGH-OPEN, OPEN-DELAY(OPEN,1))), 20)',
     'columns_required': ['open', 'high'],
     'extras_required': [],
     'universe': ['equity_cn'],

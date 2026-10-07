@@ -55,8 +55,9 @@ volume-derived proxy:
   sort in the original).
 - CMA: negative 60-day change in log average volume (vs. asset-growth
   sort in the original).
-- Carhart UMD: 12-month minus 1-month return (matches the original
-  construction; cross-sectional z-score added for ranking).
+- Carhart UMD: return from t-252 to t-21, skipping the most recent month
+  (matches the original construction; cross-sectional z-score added for
+  ranking).
 - BAB: rolling 252-day Cov(stock, equal-weighted market)/Var(market),
   cross-sectional z-scored negative (vs. value-weighted market + separate
   1y-vol/5y-correlation windows + explicit leverage in the original).

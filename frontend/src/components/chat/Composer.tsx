@@ -28,6 +28,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { UploadedAttachment } from "@/lib/attachments";
+import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit } from "@/lib/chatPrompt";
 import type { AgentActivity } from "@/stores/agent";
 import {
   LiveRuntimeControl,
@@ -115,13 +116,20 @@ export const Composer = memo(forwardRef<ComposerHandle, Props>(function Composer
 
   const submitPrompt = useCallback((prompt: string) => {
     if ((!prompt.trim() && attachments.length === 0) || streaming || uploading) return;
+    const submitted = prompt.trim();
+    const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
+    const requestText = goalComposerActive ? submitted : buildChatPrompt(submitted, attachments, Boolean(swarmPreset));
+    if (promptExceedsLimit(requestText, limit)) {
+      toast.error(t('agent.messageTooLong', { limit: limit.toLocaleString() }));
+      return;
+    }
     setInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     const submittedAttachments = [...attachments];
     if (!goalComposerActive) setAttachments([]);
-    onSubmit(prompt.trim(), submittedAttachments);
+    onSubmit(submitted, submittedAttachments);
     inputRef.current?.focus();
-  }, [attachments, goalComposerActive, onSubmit, streaming, uploading]);
+  }, [attachments, goalComposerActive, onSubmit, streaming, swarmPreset, t, uploading]);
 
   useImperativeHandle(ref, () => ({
     fill(prompt: string) {

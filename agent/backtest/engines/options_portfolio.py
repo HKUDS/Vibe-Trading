@@ -21,6 +21,7 @@ the per-leg vol every pricing site must agree on.
 import json
 import math
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -209,6 +210,7 @@ def run_options_backtest(
     Raises:
         SystemExit: When no data is fetched.
     """
+    trace_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     codes = config.get("codes", [])
     start_date = config.get("start_date", "")
     end_date = config.get("end_date", "")
@@ -628,6 +630,16 @@ def run_options_backtest(
         data_sources=[str(getattr(loader, "name", config.get("source", "")))],
         strategy_path=run_dir / "code" / "signal_engine.py",
         warnings=config.get("content_filter_warnings") or None,
+        tool_traces=[
+            {
+                "tool": "backtest",
+                "args": config,
+                "started_at": trace_started_at,
+                "ended_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "status": "ok",
+                "result": metrics,
+            }
+        ],
     )
 
     print(json.dumps(metrics, indent=2, allow_nan=False))
@@ -838,8 +850,14 @@ def _calc_options_metrics(
     losses = [p for p in closed_pnl if p < 0]
     win_rate = len(wins) / len(closed_pnl) if closed_pnl else 0.0
     avg_win = np.mean(wins) if wins else 0.0
-    avg_loss = abs(np.mean(losses)) if losses else 1e-10
-    pl_ratio = avg_win / avg_loss if avg_loss > 1e-10 else 0.0
+    avg_loss = abs(np.mean(losses)) if losses else 0.0
+    # Closed trades with no loss leave the ratio without a denominator: None,
+    # as in backtest.metrics.win_rate_and_stats, since 0.0 would rank the run
+    # below every other one. No closed trade at all keeps 0.0.
+    if avg_loss > 1e-10:
+        pl_ratio = avg_win / avg_loss
+    else:
+        pl_ratio = None if closed_pnl else 0.0
 
     return {
         "final_value": final_value,
@@ -853,6 +871,6 @@ def _calc_options_metrics(
         # options_rejected_opens and must not inflate the trade count.
         "trade_count": sum(1 for t in trades if t.get("side") != "reject"),
         "win_rate": round(win_rate, 4),
-        "profit_loss_ratio": round(pl_ratio, 4),
+        "profit_loss_ratio": round(pl_ratio, 4) if pl_ratio is not None else None,
         "warnings": warnings,
     }

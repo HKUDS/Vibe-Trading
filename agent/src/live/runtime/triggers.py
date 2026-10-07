@@ -47,8 +47,11 @@ class _MarketSpec:
             Empty == every day (24/7 markets such as crypto).
         always_open: Short-circuit for 24/7 markets; when ``True`` the time /
             weekday / holiday checks are skipped entirely.
-        holidays: Full-day market closures (no half-days modelled). This is a
-            deliberately small, static set — see module docstring limitation.
+        holidays: Full-day market closures. This is a deliberately small,
+            static set — see module docstring limitation.
+        early_closes: Half-day sessions, mapped to their early close bell
+            (exclusive, same convention as ``close_time``). Dates here must
+            not also appear in ``holidays``.
     """
 
     tz: str
@@ -57,12 +60,13 @@ class _MarketSpec:
     weekdays: frozenset[int] = frozenset()
     always_open: bool = False
     holidays: frozenset[date] = field(default_factory=frozenset)
+    early_closes: Mapping[date, time] = field(default_factory=dict)
 
 
 # US market holidays. LIMITATION: this is a hand-maintained static set (no
-# half-day early closes, no rolling computation). It covers the current and
-# next calendar year; extend as needed. A production deploy that needs decades
-# of coverage should swap in `pandas_market_calendars` behind this same spec.
+# rolling computation). It covers the current and next calendar year; extend as
+# needed. A production deploy that needs decades of coverage should swap in
+# `pandas_market_calendars` behind this same spec.
 _US_EQUITY_HOLIDAYS: frozenset[date] = frozenset(
     {
         # 2026
@@ -90,6 +94,17 @@ _US_EQUITY_HOLIDAYS: frozenset[date] = frozenset(
     }
 )
 
+# NYSE 13:00 ET early closes within the holiday window above. The recurring
+# cases are the day after Thanksgiving and Christmas Eve when it is a weekday
+# and not itself the observed holiday; Independence Day adds no entry here
+# because in both covered years its early-close candidate (Jul 3) is either the
+# observed full-day closure (2026) or a Saturday (2027).
+_US_EQUITY_EARLY_CLOSES: Mapping[date, time] = {
+    date(2026, 11, 27): time(13, 0),  # day after Thanksgiving
+    date(2026, 12, 24): time(13, 0),  # Christmas Eve (Thursday)
+    date(2027, 11, 26): time(13, 0),  # day after Thanksgiving
+}
+
 _WEEKDAYS_MON_FRI = frozenset({0, 1, 2, 3, 4})
 
 # Market registry. Keys match the AssetClass-style identifiers the runner uses
@@ -101,6 +116,7 @@ MARKET_SPECS: Mapping[str, _MarketSpec] = {
         close_time=time(16, 0),
         weekdays=_WEEKDAYS_MON_FRI,
         holidays=_US_EQUITY_HOLIDAYS,
+        early_closes=_US_EQUITY_EARLY_CLOSES,
     ),
     "crypto": _MarketSpec(
         tz="UTC",
@@ -175,8 +191,13 @@ class Trigger:
         return cls(kind=TriggerKind.INTERVAL, interval_ms=interval_ms, epoch_ms=epoch_ms)
 
     @classmethod
-    def market(cls, market: str) -> "Trigger":
+    def _market(cls, market: str) -> "Trigger":
         """Build a market-session trigger for a known market key.
+
+        Declared under a private name on purpose: ``market`` is a **field**, and
+        a classmethod of that name in this body would replace the field's
+        ``None`` default before ``@dataclass`` reads it. The public
+        ``Trigger.market`` is bound after the class body — see the note there.
 
         Args:
             market: A key into :data:`MARKET_SPECS` (e.g. ``"us_equity"``).
@@ -205,6 +226,35 @@ class Trigger:
         return cls(kind=TriggerKind.EVENT, predicate=predicate)
 
 
+# ``market`` is both a dataclass field (default ``None``) and the MARKET
+# constructor. A classmethod of that name declared *inside* the class body
+# replaces the field's default before ``@dataclass`` reads it, so every
+# INTERVAL/EVENT trigger carried the bound method in ``market``. That is
+# invisible to :func:`due_now`, which reads ``market`` only for MARKET
+# triggers, but it is wrong in ``repr`` and fatal to ``dataclasses.asdict`` and
+# JSON. No production path serialises a ``Trigger`` today — jobs persist a
+# plain kind string, not the descriptor — so this is a latent footgun rather
+# than an active break.
+#
+# Binding the factory under its public name here, once the decorator has
+# already recorded the field, keeps both halves of the contract: the field
+# defaults to ``None`` and ``Trigger.market(...)`` still builds a MARKET
+# trigger.
+#
+# No in-body spelling works, so this placement is load-bearing, not stylistic:
+# reordering the two names only moves the damage (the field default becomes the
+# method, or the factory becomes ``None``), and an explicit
+# ``field(default=None)`` is overwritten the same way.
+# Keep the descriptor, not a method already bound to Trigger: subclasses must
+# receive their own ``cls`` just as they do through ``interval`` and ``event``.
+Trigger.market = classmethod(Trigger._market.__func__)  # type: ignore[assignment]
+del Trigger._market
+# Introspection must not leak the private placeholder: ``help()`` and ``repr``
+# read ``__qualname__``, while ``str()`` and logging read ``__name__``.
+Trigger.market.__func__.__qualname__ = "Trigger.market"
+Trigger.market.__func__.__name__ = "market"
+
+
 # --------------------------------------------------------------------------- #
 # Pure core                                                                    #
 # --------------------------------------------------------------------------- #
@@ -229,7 +279,8 @@ def market_is_open_at(market: str, now_ms: int) -> bool:
 
     Deterministic — reads no clock. 24/7 markets (``always_open``) are always
     open. Session markets are open only on permitted weekdays, outside the
-    holiday set, and within ``[open_time, close_time)`` local time.
+    holiday set, and within ``[open_time, close)`` local time, where the close
+    bell moves earlier on a listed early-close day.
 
     Args:
         market: A key into :data:`MARKET_SPECS`.
@@ -253,7 +304,8 @@ def market_is_open_at(market: str, now_ms: int) -> bool:
         return False
     if local_dt.date() in spec.holidays:
         return False
-    return spec.open_time <= local_dt.time() < spec.close_time
+    close = spec.early_closes.get(local_dt.date(), spec.close_time)
+    return spec.open_time <= local_dt.time() < close
 
 
 def due_now(trigger: Trigger, now_ms: int, *, event_state: Mapping[str, object] | None = None) -> bool:

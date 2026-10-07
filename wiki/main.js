@@ -1,56 +1,6 @@
-import { initTheme } from "./theme.js";
+import { initSite } from "/site.js?v=20260929e";
 
-const REPO = "HKUDS/Vibe-Trading";
-const API = `https://api.github.com/repos/${REPO}`;
-const STARS_CACHE_KEY = "vibetrading-github-stars";
-const STARS_TTL_MS = 12 * 60 * 60 * 1000;
-
-function formatStarCount(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "--";
-  if (n < 1000) return String(Math.round(n));
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(1)}m`;
-}
-
-function readStarsCache() {
-  try {
-    const raw = localStorage.getItem(STARS_CACHE_KEY);
-    if (!raw) return null;
-    const value = JSON.parse(raw);
-    if (typeof value.count !== "number" || typeof value.at !== "number") return null;
-    return value;
-  } catch {
-    return null;
-  }
-}
-
-function writeStarsCache(count) {
-  try {
-    localStorage.setItem(STARS_CACHE_KEY, JSON.stringify({ count, at: Date.now() }));
-  } catch {
-    /* private mode */
-  }
-}
-
-function initStars() {
-  const el = document.getElementById("star-count");
-  if (!el) return;
-  const cached = readStarsCache();
-  if (cached) el.textContent = formatStarCount(cached.count);
-  if (cached && Date.now() - cached.at < STARS_TTL_MS) return;
-
-  fetch(API, { headers: { Accept: "application/vnd.github+json" } })
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((data) => {
-      if (typeof data.stargazers_count !== "number") return;
-      writeStarsCache(data.stargazers_count);
-      el.textContent = formatStarCount(data.stargazers_count);
-    })
-    .catch(() => {
-      if (!cached) el.textContent = "--";
-    });
-}
-
+// Home page install tabs; a no-op on pages without them.
 function initInstallTabs() {
   const tabs = Array.from(document.querySelectorAll("[data-tab]"));
   if (!tabs.length) return;
@@ -86,67 +36,5 @@ function initInstallTabs() {
   }
 }
 
-async function applyLocale() {
-  try {
-    const response = await fetch("/locales/en.json");
-    if (!response.ok) return;
-    const messages = await response.json();
-    document.querySelectorAll("[data-i18n]").forEach((el) => {
-      const key = el.getAttribute("data-i18n");
-      if (key && messages[key] != null) el.textContent = messages[key];
-    });
-    document.querySelectorAll("[data-i18n-html]").forEach((el) => {
-      const key = el.getAttribute("data-i18n-html");
-      if (key && messages[key] != null) el.innerHTML = messages[key];
-    });
-  } catch {
-    /* static fallback text is already in the HTML */
-  }
-}
-
-function initHeaderScroll() {
-  const header = document.getElementById("site-header");
-  if (!header) return;
-  const sync = () => header.classList.toggle("is-scrolled", window.scrollY > 10);
-  sync();
-  window.addEventListener("scroll", sync, { passive: true });
-}
-
-function formatTrafficCount(n) {
-  n = Number(n) || 0;
-  if (n < 1000) return String(n);
-  return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}`.replace(/\.0$/, "") + "K";
-}
-
-// Render the footer traffic counter from /api/stats (agent vs human visitors to
-// this site, counted server-side by the Pages middleware, plus PyPI installs).
-// The block stays hidden until real data arrives, so it never shows dashes.
-function initTraffic() {
-  const block = document.getElementById("footer-traffic");
-  if (!block) return;
-  fetch("/api/stats")
-    .then((r) => (r.ok ? r.json() : null))
-    .then((stats) => {
-      if (!stats) return;
-      const set = (id, value) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = value;
-      };
-      if (stats.web) {
-        set("vt-agents", formatTrafficCount(stats.web.agent));
-        set("vt-humans", formatTrafficCount(stats.web.human));
-      }
-      if (stats.pypi) set("vt-installs", formatTrafficCount(stats.pypi.last_month));
-      block.hidden = false;
-    })
-    .catch(() => {
-      /* stats unavailable — leave the block hidden */
-    });
-}
-
-initTheme();
-initStars();
+initSite();
 initInstallTabs();
-initHeaderScroll();
-applyLocale();
-initTraffic();

@@ -178,7 +178,7 @@ def test_worker_passes_a_relative_run_dir_through_to_the_tool(
     _run_worker_with(tmp_path, monkeypatch, _DeclaredTool(), {"run_dir": "runs/demo"})
 
     assert _DeclaredTool.received == [
-        str(tmp_path / "artifacts" / "analyst" / "runs" / "demo")
+        str(tmp_path / "artifacts" / "analyst" / "task" / "runs" / "demo")
     ]
 
 

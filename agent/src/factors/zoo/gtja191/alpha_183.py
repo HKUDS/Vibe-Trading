@@ -39,7 +39,7 @@ ALPHA_ID = "gtja191_183"
 __alpha_meta__ = {
     'id': 'gtja191_183',
     'theme': ['volatility'],
-    'formula_latex': 'see body',
+    'formula_latex': 'MAX(SUMAC(CLOSE-MEAN(CLOSE,24))) - MIN(SUMAC(CLOSE-MEAN(CLOSE,24))) / STD(CLOSE,24)',
     'columns_required': ['close'],
     'extras_required': [],
     'universe': ['equity_cn'],

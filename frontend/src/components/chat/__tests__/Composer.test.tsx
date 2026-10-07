@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import i18n from "../../../i18n";
 import { api } from "@/lib/api";
 import { Composer } from "../Composer";
+import { toast } from "sonner";
+import { MAX_MESSAGE_CHARS, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
 
 vi.mock("@/lib/api", () => ({
   api: { uploadFile: vi.fn() },
@@ -30,6 +32,34 @@ const baseProps = {
 };
 
 describe("Composer", () => {
+  it("retains oversized input and gives an actionable error", () => {
+    render(<Composer {...baseProps} />);
+    const textarea = screen.getByRole("textbox");
+    const prompt = "x".repeat(MAX_MESSAGE_CHARS + 1);
+    fireEvent.change(textarea, { target: { value: prompt } });
+    fireEvent.keyDown(textarea, { key: "Enter", code: "Enter" });
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+    expect(textarea).toHaveValue(prompt);
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Shorten it"));
+  });
+
+  it("counts team instructions in the submitted request", () => {
+    render(<Composer {...baseProps} swarmPreset={{ name: "research", title: "Research" }} />);
+    const prompt = "x".repeat(MAX_MESSAGE_CHARS - SWARM_PROMPT_PREFIX.length + 1);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: prompt } });
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", code: "Enter" });
+    expect(baseProps.onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue(prompt);
+  });
+
+  it("accepts the exact Unicode code point boundary", () => {
+    render(<Composer {...baseProps} />);
+    const prompt = "📈".repeat(MAX_MESSAGE_CHARS);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: prompt } });
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter", code: "Enter" });
+    expect(baseProps.onSubmit).toHaveBeenCalledWith(prompt, []);
+  });
+
   beforeAll(async () => {
     await i18n.changeLanguage("en");
   });

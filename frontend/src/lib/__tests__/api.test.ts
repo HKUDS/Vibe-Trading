@@ -6,7 +6,34 @@ async function loadApiModule() {
   return import("../api");
 }
 
+describe("generated report download", () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  it("downloads PDF bytes with bearer authentication and keeps the key out of the URL", async () => {
+    vi.stubGlobal("localStorage", { getItem: vi.fn((key) => key === "vibe_trading_api_auth_key" ? "report-test-key" : "en"), setItem: vi.fn(), removeItem: vi.fn() });
+    const fetch = vi.fn().mockResolvedValue(new Response("%PDF-contents", { headers: { "content-type": "application/pdf" } }));
+    vi.stubGlobal("fetch", fetch);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = vi.fn(() => "blob:report");
+      static revokeObjectURL = vi.fn();
+    });
+    const { downloadGeneratedReport } = await loadApiModule();
+    await downloadGeneratedReport("a".repeat(32), "研究报告.pdf");
+    expect(fetch).toHaveBeenCalledWith(`/api/reports/${"a".repeat(32)}`, { headers: { Authorization: "Bearer report-test-key" } });
+    expect(click).toHaveBeenCalledOnce();
+  });
+});
+
 describe("api request helper", () => {
+  it("translates the server's message-size error into a recovery instruction", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: "message_too_long", max_length: 100_000, message: "Shorten input" },
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+    const { api } = await loadApiModule();
+    await expect(api.sendMessage("session", "oversized")).rejects.toMatchObject({
+      status: 422, code: "message_too_long", message: expect.stringContaining("Shorten it"),
+    });
+  });
   beforeEach(() => {
     vi.stubGlobal("localStorage", {
       getItem: vi.fn(() => ""),

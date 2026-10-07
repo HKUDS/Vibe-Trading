@@ -16,7 +16,8 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from backtest.risk_xray import compute_risk_xray
+from backtest.metrics import calc_bars_per_year
+from backtest.risk_xray import MIN_HISTORY_DAYS, PERIODS_PER_YEAR, compute_risk_xray
 from src.agent.tools import BaseTool
 from src.market_data import fetch_market_data
 
@@ -38,7 +39,7 @@ class PortfolioRiskXrayTool(BaseTool):
     name = "portfolio_risk_xray"
     description = (
         "Portfolio risk x-ray: given symbols (and optional weights), fetch "
-        "recent daily closes through the data fallback chain and compute "
+        "recent closes through the data fallback chain and compute "
         "concentration (HHI/effective N), annualized volatility, max drawdown, "
         "historical VaR/expected shortfall, diversification ratio, and "
         "correlation/beta. Long-only; weights are renormalized when they do "
@@ -59,7 +60,10 @@ class PortfolioRiskXrayTool(BaseTool):
             },
             "start_date": {
                 "type": "string",
-                "description": "YYYY-MM-DD. Defaults to one year before end_date.",
+                "description": (
+                    "YYYY-MM-DD. Defaults to one year before end_date; monthly "
+                    "bars use enough calendar months to meet the minimum history."
+                ),
             },
             "end_date": {
                 "type": "string",
@@ -102,9 +106,11 @@ class PortfolioRiskXrayTool(BaseTool):
             raise ValueError(f"too many symbols ({len(symbols)}); cap is {_MAX_SYMBOLS}")
 
         weights = self._parse_weights(kwargs.get("weights"), symbols)
-        start_date, end_date = self._parse_dates(kwargs.get("start_date"), kwargs.get("end_date"))
         source = str(kwargs.get("source") or "auto")
-        interval = str(kwargs.get("interval") or "1D")
+        interval = str(kwargs.get("interval") or "1D").strip()
+        start_date, end_date = self._parse_dates(
+            kwargs.get("start_date"), kwargs.get("end_date"), interval
+        )
 
         raw = self._fetch(
             codes=symbols,
@@ -119,7 +125,15 @@ class PortfolioRiskXrayTool(BaseTool):
         closes = self._closes_frame(raw, symbols)
         unresolved = raw.get("_unresolved") if isinstance(raw, Mapping) else None
 
-        report = compute_risk_xray(closes, weights)
+        # Calendar bars have the same annual count across markets; preserve
+        # the existing daily convention for other intervals.
+        token = interval.strip()
+        periods_per_year = (
+            calc_bars_per_year(token)
+            if token == "1M" or token.lower() == "1w"
+            else PERIODS_PER_YEAR
+        )
+        report = compute_risk_xray(closes, weights, periods_per_year=periods_per_year)
         envelope = {
             "status": "ok",
             "data": report,
@@ -149,17 +163,22 @@ class PortfolioRiskXrayTool(BaseTool):
         return {sym: raw[sym] for sym in symbols}
 
     @staticmethod
-    def _parse_dates(start_raw: Any, end_raw: Any) -> tuple[str, str]:
+    def _parse_dates(
+        start_raw: Any, end_raw: Any, interval: str = "1D"
+    ) -> tuple[str, str]:
         end = (
             datetime.strptime(end_raw, "%Y-%m-%d").date()
             if isinstance(end_raw, str) and end_raw
             else datetime.now(timezone.utc).date()
         )
-        start = (
-            datetime.strptime(start_raw, "%Y-%m-%d").date()
-            if isinstance(start_raw, str) and start_raw
-            else end - timedelta(days=_DEFAULT_LOOKBACK_DAYS)
-        )
+        if isinstance(start_raw, str) and start_raw:
+            start = datetime.strptime(start_raw, "%Y-%m-%d").date()
+        elif interval == "1M":
+            # Keep the same minimum sample gate for every interval. Include an
+            # extra calendar month so a partial boundary month is not needed.
+            start = (pd.Timestamp(end) - pd.DateOffset(months=MIN_HISTORY_DAYS + 1)).date()
+        else:
+            start = end - timedelta(days=_DEFAULT_LOOKBACK_DAYS)
         if start >= end:
             raise ValueError(f"start_date {start} must be before end_date {end}")
         return start.isoformat(), end.isoformat()

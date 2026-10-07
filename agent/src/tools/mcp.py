@@ -479,7 +479,8 @@ def normalize_mcp_tool_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
     properties = normalized.get("properties")
     if properties is not None and not isinstance(properties, dict):
         normalized.pop("properties", None)
-    elif not isinstance(properties, dict) and not _schema_uses_composed_top_level_rules(normalized):
+        properties = None
+    if not isinstance(properties, dict) and not _schema_uses_composed_top_level_rules(normalized):
         normalized["properties"] = {}
 
     required = normalized.get("required")
@@ -869,6 +870,7 @@ class MCPRemoteTool(BaseTool):
             self._filter_arguments(kwargs),
             local_name=self.name,
         )
+        payload = compact_result_for_agent(payload)
         return json.dumps(payload, ensure_ascii=False, default=_json_default)
 
     def _filter_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1247,6 +1249,79 @@ def _is_wrapped_fastmcp_result(
         and not (is_dataclass(data) and not isinstance(data, type))
         and not callable(getattr(data, "model_dump", None))
     )
+
+
+def compact_result_for_agent(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop redundant copies of one MCP result before it reaches the agent.
+
+    ``_normalize_call_tool_result`` keeps every surface programmatic callers of
+    ``MCPServerAdapter.call_tool`` may read, so a structured result is carried
+    up to four times: ``data``, ``structured_content``, a text block mirroring
+    it in ``content`` and the joined ``text``. Serialized into the agent
+    context that multiplies one payload several times over.
+
+    Only exact mirrors of ``data`` are removed, and only when ``data`` exists:
+    a ``structured_content`` equal to it, bare text blocks whose JSON equals
+    it, and the ``text`` join once a mirror block it embeds is gone. Text-only
+    results, distinct or metadata-bearing blocks, unrelated ``structured_content``
+    and error payloads are returned unchanged. ``payload`` is never mutated.
+
+    Args:
+        payload: Normalized result from ``MCPServerAdapter.call_tool``.
+
+    Returns:
+        Payload without the redundant copies.
+    """
+    if payload.get("status") != "ok" or "data" not in payload:
+        return payload
+
+    compact = dict(payload)
+    data = compact["data"]
+    structured = compact.get("structured_content")
+    if structured is not None and (
+        _same_json(structured, data) or _same_json(structured, {"result": data})
+    ):
+        del compact["structured_content"]
+
+    blocks = compact.get("content")
+    if isinstance(blocks, list):
+        kept = [block for block in blocks if not _is_mirror_text_block(block, data)]
+        if len(kept) != len(blocks):
+            if kept:
+                compact["content"] = kept
+            else:
+                del compact["content"]
+            # ``text`` is the join of the original text blocks, so it embeds the
+            # removed mirror; drop it only when it is exactly that derived join.
+            if compact.get("text") == _extract_text_content(blocks):
+                del compact["text"]
+    return compact
+
+
+def _same_json(left: Any, right: Any) -> bool:
+    """Compare JSON values strictly (``1`` is not ``True``, key order ignored)."""
+    try:
+        return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_mirror_text_block(block: Any, data: Any) -> bool:
+    """Return whether ``block`` is a bare text block that only restates ``data``."""
+    if not isinstance(block, dict) or block.get("type") != "text":
+        return False
+    text = block.get("text")
+    if not isinstance(text, str):
+        return False
+    if any(value is not None for key, value in block.items() if key not in ("type", "text")):
+        return False
+    if isinstance(data, str) and text == data:
+        return True
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        return False
+    return _same_json(parsed, data) or _same_json(parsed, {"result": data})
 
 
 def _extract_result_error(result: CallToolResult) -> str:

@@ -14,6 +14,7 @@ import pandas as pd
 
 from backtest.engines._market_hooks import _detect_market, _is_china_futures
 from backtest.loaders._symbol_utils import _is_etf_listed
+from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
 
@@ -144,6 +145,35 @@ class DataLoader:
                     fields=None,
                     fetch=lambda code=code: self._fetch_one(code, start_date, end_date, interval),
                 )
+                if df is not None and not df.empty and _is_a_share(code) and not _is_etf_listed(code):
+                    # #1541: adjust="qfq" is dividend-additive and cannot serve
+                    # returns; convert to the multiplicative convention when
+                    # the adjust="" companion supports it.
+                    raw_df = None
+                    try:
+                        raw_df = cached_loader_fetch(
+                            source=self.name,
+                            symbol=code,
+                            timeframe=interval,
+                            start_date=start_date,
+                            end_date=end_date,
+                            fields=["raw"],
+                            fetch=lambda code=code: self._fetch_a_share_raw(code, start_date, end_date, interval),
+                        )
+                    except Exception as exc:  # noqa: BLE001 - degrade to additive
+                        logger.warning(
+                            "akshare raw companion fetch failed for %s, serving additive: %s",
+                            code,
+                            exc,
+                        )
+                    converted = convert_additive_to_multiplicative(raw_df, df)
+                    if converted is not None:
+                        converted.attrs = {
+                            **getattr(df, "attrs", {}),
+                            "adjustment": "split_dividend",
+                        }
+                        result[code] = converted
+                        continue
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:
@@ -205,6 +235,34 @@ class DataLoader:
             start_date=sd,
             end_date=ed,
             adjust="qfq",
+        )
+        if df is None or df.empty:
+            return None
+        return self._normalize(df, date_col="日期")
+
+    def _fetch_a_share_raw(
+        self,
+        code: str,
+        start_date: str,
+        end_date: str,
+        interval: str,
+    ) -> Optional[pd.DataFrame]:
+        """Fetch the raw (unadjusted) companion of ``_fetch_a_share`` (#1541)."""
+        import akshare as ak
+
+        symbol = code.split(".")[0]
+        period = _INTERVAL_MAP_DAILY.get(interval)
+        if period is None:
+            raise ValueError(
+                f"Unsupported interval {interval!r}; akshare a-share supports "
+                f"{sorted(_INTERVAL_MAP_DAILY)}"
+            )
+        df = ak.stock_zh_a_hist(
+            symbol=symbol,
+            period=period,
+            start_date=start_date.replace("-", ""),
+            end_date=end_date.replace("-", ""),
+            adjust="",
         )
         if df is None or df.empty:
             return None

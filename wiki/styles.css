@@ -130,6 +130,43 @@ button {
   color: var(--ink);
 }
 
+/* The current section, from <body data-section> (no script needed). */
+body[data-section="home"] .site-nav [data-nav="home"],
+body[data-section="docs"] .site-nav [data-nav="docs"],
+body[data-section="tutorials"] .site-nav [data-nav="tutorials"],
+body[data-section="alpha"] .site-nav [data-nav="alpha"],
+body[data-section="lab"] .site-nav [data-nav="lab"] {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 8px;
+}
+
+.lang-pill {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 12px;
+  font: 700 0.86rem var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lang-pill:hover {
+  border-color: var(--accent);
+}
+
+/* A reader who chose Chinese never sees the English text flash first
+   (theme-init.js sets this; site.js or a 1.5 s timeout clears it). */
+html[data-lang-pending] body {
+  visibility: hidden;
+}
+
 .site-actions {
   gap: 10px;
 }
@@ -536,10 +573,35 @@ pre {
   font-size: 0.92rem;
 }
 
-.site-footer span {
+.site-footer__name {
   margin-right: auto;
   color: var(--ink);
   font-weight: 700;
+}
+
+.footer-traffic[hidden] {
+  display: none;
+}
+
+.footer-traffic {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  flex-basis: 100%;
+  gap: 0.5rem 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.footer-traffic .ft-item strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.footer-traffic .ft-note {
+  font-size: 0.72rem;
+  opacity: 0.6;
 }
 
 @media (max-width: 920px) {
@@ -566,7 +628,27 @@ pre {
     gap: 12px;
   }
 
+  .site-header__inner {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    min-height: 0;
+    padding-top: 12px;
+  }
+
+  /* The nav drops to its own row and scrolls sideways instead of vanishing,
+     so every section stays one tap away on a phone. */
   .site-nav {
+    order: 3;
+    width: 100%;
+    gap: 18px;
+    overflow-x: auto;
+    padding: 2px 0 12px;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+
+  .site-nav::-webkit-scrollbar {
     display: none;
   }
 

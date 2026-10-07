@@ -23,9 +23,16 @@ from typing import Iterable, Sequence
 
 from src.agent.grounding.identity import _CANONICAL_SYMBOL_RE
 
-#: Widest relative gap between a written figure and the value it rounds. Same band as the
-#: evidence tolerance (``policies._TOLERANCE``); the digits written narrow it further.
+#: Maximum relative rounding gap; written precision can only narrow this.
+#: Coarse rounding such as 0.82467 -> 0.82 exceeds the existing 0.5% policy;
+#: the answer must retain more digits instead of widening its evidence band.
 ROUNDED_BAND = 0.005
+
+#: A declared value written as a fraction of two integers ("1/3").
+_FRACTION_RE = re.compile(r"([1-9]\d{0,2})\s*/\s*([1-9]\d{0,2})")
+
+#: Marks of a multiple a declared value may carry ("5.5x", "3 倍").
+_MULTIPLE_MARKS = frozenset({"x", "X", "×", "倍"})
 
 #: The five roles a declaration may carry (spec §2).
 ROLES = ("observed", "derived", "proposed", "cited", "count")
@@ -244,12 +251,15 @@ class _Normalized:
 
 @dataclass(frozen=True)
 class _Token:
-    """One number in normalized text: its span, sign and digits as written."""
+    """One number in normalized text: its span, sign and normalized digits."""
 
     start: int
     end: int
     sign: str
     digits: str
+    # A visible thousands separator made this an explicitly formatted numeric
+    # figure even though its normalized digits are an integer.
+    grouped: bool = False
 
 
 # Header spellings binding a table column to an OHLC field: the table's own
@@ -386,23 +396,34 @@ _DOTTED_DECIMAL_RE = re.compile(
     r"(?<![\d.,])[+-]?[1-9]\d{0,2}(?:\.\d{3})+,\d+(?!\d|\.\d)"
 )
 
+# A dot-only grouped integer ("5.165", "502.408", "1.234.567") is ambiguous on its
+# own because the same spelling can be a decimal. It is grouping only after the
+# surrounding document has independently established decimal-comma notation.
+_DOTTED_GROUPING_RE = re.compile(
+    r"(?<![\d.,])[+-]?[1-9]\d{0,2}(?:\.\d{3})+(?![\d.,])"
+)
+
 
 def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
     """Every number in normalized text, with a decimal comma read as one (#1418).
 
     A comma is a decimal point when the integer part is exactly "0" ("0,666"),
     or when a one- or two-digit fraction carries a percent, pp/bp or currency
-    mark ("12,5 %", "3,95 EUR", "€3,95"). A document that writes an unambiguous
-    decimal comma anywhere and no unambiguous grouping ("1,234,567",
+    mark ("12,5 %", "3,95 EUR", "€3,95"). Document-level notation needs
+    stronger evidence than a bare one-digit "0,1" pair; see
+    :func:`_writes_decimal_commas`. A document with that evidence and no grouping ("1,234,567",
     "1,234.56") reads every single-comma number as a decimal, so "2,237" and
     "−5,132%" beside "1,57%" are 2.237 and −5.132%, not 2237 and −5132%.
 
     Dotted thousands followed by a decimal comma ("1.234,56") are unambiguous.
-    Long comma fractions are only decimal when the number itself carries a local
-    marker (for example "17,9318145214327%"); an unmarked "1400,1777" remains two
-    numbers rather than being guessed as 1400.1777. ``decimal_commas`` lets a caller
-    that parses a fragment of a larger document (a declaration cell) pass the reading
-    of the whole document instead of re-deriving it from the fragment.
+    Once the document independently establishes decimal-comma notation, dot-only
+    grouped integers ("5.165", "502.408", "1.234.567") are read as thousands too;
+    without that document evidence they keep their decimal reading. Long comma
+    fractions are only decimal when the number itself carries a local marker (for
+    example "17,9318145214327%"); an unmarked "1400,1777" remains two numbers rather
+    than being guessed as 1400.1777. ``decimal_commas`` lets a caller that parses
+    a fragment of a larger document (a declaration cell) pass the reading of the
+    whole document instead of re-deriving it from the fragment.
     """
     comma_decimals = (
         _writes_decimal_commas(text) if decimal_commas is None else decimal_commas
@@ -416,12 +437,23 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
         )
         for match in _DOTTED_DECIMAL_RE.finditer(text)
     ]
+    dotted_grouped = [
+        _Token(
+            match.start(),
+            match.end(),
+            match.group(0)[0] if match.group(0)[0] in "+-" else "",
+            match.group(0).lstrip("+-").replace(".", ""),
+            True,
+        )
+        for match in _DOTTED_GROUPING_RE.finditer(text)
+    ] if comma_decimals else []
+    protected = dotted + dotted_grouped
     tokens: list[_Token] = []
     cursor = 0
     for match in _NUMBER_RE.finditer(text):
         if match.start() < cursor:
             continue
-        if any(token.start <= match.start() < token.end for token in dotted):
+        if any(token.start <= match.start() < token.end for token in protected):
             continue
         raw = match.group(0)
         sign = raw[0] if raw[0] in "+-" else ""
@@ -446,13 +478,14 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
                 body, end = f"{body}.{fraction}", stop
         tokens.append(_Token(match.start(), end, sign, body.replace(",", "")))
         cursor = end
-    return sorted(tokens + dotted, key=lambda token: token.start)
+    return sorted(tokens + protected, key=lambda token: token.start)
 
 
 def _writes_decimal_commas(text: str) -> bool:
     """Whether a document writes decimal commas and never a thousands grouping.
 
-    Evidence for a decimal comma is unambiguous on its own: a "0," integer part,
+    Evidence for a decimal comma is a zero integer part with at least two
+    fractional digits (a bare "0,1" could be a list and changes no other number),
     dotted thousands with a decimal comma ("1.234,56"), a fraction of any length
     carrying a percent/pp/bp mark ("17,9318145214327%"), or a one- or two-digit
     fraction carrying a currency mark ("3,95 EUR"). An unmarked "1,50" or a lone
@@ -466,15 +499,19 @@ def _writes_decimal_commas(text: str) -> bool:
         if body.count(",") >= 2 or ("," in body and "." in body):
             grouped = True
         elif body.startswith("0,"):
-            decimal = True
+            decimal = len(body.split(",", 1)[1]) >= 2 or decimal
         elif body.isdigit() and text[match.end() : match.end() + 1] == ",":
             fraction = _digit_run(text, match.end() + 1)
             stop = match.end() + 1 + len(fraction)
-            if _percent_mark(text, stop)[0] > 0 or (
-                1 <= len(fraction) <= 2
-                and (
-                    _currency_before(text, match.start())
-                    or _currency_after(text, stop)
+            if (
+                (body == "0" and len(fraction) >= 2)
+                or (bool(fraction) and _percent_mark(text, stop)[0] > 0)
+                or (
+                    1 <= len(fraction) <= 2
+                    and (
+                        _currency_before(text, match.start())
+                        or _currency_after(text, stop)
+                    )
                 )
             ):
                 decimal = True
@@ -587,6 +624,10 @@ def _parse_value(
         exactly one number and its marks.
     """
     field = _normalize(text).text.strip()
+    fraction = _FRACTION_RE.fullmatch(field)
+    if fraction is not None:
+        # "1/3" for an equal weight: a value, not two numbers.
+        return int(fraction.group(1)) / int(fraction.group(2)), False, field.replace(" ", "")
     tokens = _numbers(field, decimal_commas=decimal_commas)
     if len(tokens) != 1:
         return None
@@ -595,10 +636,11 @@ def _parse_value(
     if rest[:1] in _MAGNITUDES and not _is_currency_mark(rest):
         rest = rest[1:].lstrip()
     unit, consumed = _percent_mark(rest, 0)
-    if not (
-        _is_currency_mark(rest[consumed:].strip())
-        and _is_currency_mark(field[: token.start].strip())
-    ):
+    tail = rest[consumed:].strip()
+    if not unit and tail in _MULTIPLE_MARKS:
+        # "5.5x": a multiple, written the way the answer writes it.
+        tail = ""
+    if not (_is_currency_mark(tail) and _is_currency_mark(field[: token.start].strip())):
         return None
     reading = _reading(token.sign, token.digits, unit)
     if reading is None:
@@ -643,12 +685,12 @@ def parse_figures_block(content: str) -> FiguresBlock:
         stripped = line.strip().replace("｜", "|")
         if not stripped:
             continue
-        parts = stripped.split("|")
+        # Four logical columns; a literal pipe may belong to the ref itself.
         if stripped.startswith("|"):
-            parts = parts[1:]
-        if len(parts) > 1 and stripped.endswith("|"):
-            parts = parts[:-1]
-        parts = [part.strip() for part in parts]
+            stripped = stripped[1:].lstrip()
+            if stripped.endswith("|"):
+                stripped = stripped[:-1].rstrip()
+        parts = [part.strip() for part in stripped.split("|", 3)]
         if _is_header_or_rule(parts):
             continue
         parsed = _parse_value(parts[0], document_reading) if parts else None
@@ -1029,7 +1071,7 @@ def scan_figures(content: str, block: FiguresBlock) -> list[Figure]:
         row, position = (cell[2], cell[3]) if cell else (None, None)
         structural = row is not None and position in (row.date_column, row.symbol_column)
         currency = _currency_before(text, token.start) or _currency_after(text, token.end)
-        marked = percent or currency or "." in token.digits
+        marked = percent or currency or "." in token.digits or token.grouped
         # A cell that also holds a word is prose set in a table: its plain
         # integer is a count or a horizon, as it would be in a sentence (#1471).
         worded = (

@@ -1,0 +1,28 @@
+{
+  "_comment": "Model context windows used to size context compaction. Every entry names its source; add a model only with one. Unknown models use default_window, and a provider's own context-length error teaches the loop the real limit at runtime. VIBE_TRADING_CONTEXT_WINDOW overrides everything.",
+  "default_window": 128000,
+  "models": [
+    {
+      "provider": "openai-codex",
+      "pattern": "^(openai[-_]codex/)?(gpt-6-(astra|sol|luna)|gpt-5\\.6-(sol|terra|luna)|gpt-5\\.5)$",
+      "window": 272000,
+      "source": "Codex backend model metadata: context_window=272000 for every listed model (Codex CLI models cache fetched 2026-09-29T03:26Z)"
+    },
+    {
+      "pattern": "^(deepseek/)?deepseek-(v4-pro|flash)$",
+      "window": 1000000,
+      "source": "https://api-docs.deepseek.com/quick_start/pricing — deepseek-v4-pro and deepseek-flash: context length 1M (read 2026-09-29)"
+    }
+  ],
+  "overflow_error_patterns": [
+    "context_length_exceeded",
+    "maximum context length",
+    "context window",
+    "prompt is too long",
+    "input is too long",
+    "too many tokens",
+    "exceeds the context",
+    "exceeded model token limit",
+    "reduce the length of the messages"
+  ]
+}

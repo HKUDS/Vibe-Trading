@@ -3,8 +3,10 @@
 import asyncio
 import html
 import imaplib
+import logging
 import mimetypes
 import re
+import shlex
 import smtplib
 from contextlib import suppress
 from dataclasses import dataclass
@@ -18,7 +20,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Literal
 
-import logging; logger = logging.getLogger(__name__)
+from src.channels.rich_text import render_email_html
+
 from pydantic import Field
 
 from src.channels import email_probe
@@ -28,6 +31,8 @@ from src.channels.base import BaseChannel
 from src.channels.utils import get_media_dir
 from pydantic import BaseModel
 from src.channels.utils import email_tls_context, safe_filename, send_imap_id
+
+logger = logging.getLogger(__name__)
 
 
 class EmailConfig(BaseModel):
@@ -71,6 +76,16 @@ class EmailConfig(BaseModel):
     # Email authentication verification (anti-spoofing)
     verify_dkim: bool = True   # Require Authentication-Results with dkim=pass
     verify_spf: bool = True    # Require Authentication-Results with spf=pass
+    # authserv-id of the mail server this deployment's own inbox provider
+    # stamps on delivery (the token right after "Authentication-Results:",
+    # e.g. "mx.google.com") -- required to trust any spf=pass/dkim=pass
+    # verdict at all. Without it there is no way to tell that header apart
+    # from one an attacker forged in the message before it ever reached a
+    # real authenticating server, so verification fails closed until it is
+    # set. Find it by looking at the Authentication-Results header on any
+    # genuine email already in the inbox. The receiver must strip untrusted
+    # copies bearing this ID (RFC 8601 section 5); the string is not a signature.
+    trusted_authserv_id: str = ""
 
     # Attachment handling — set allowed types to enable (e.g. ["application/pdf", "image/*"], or ["*"] for all)
     allowed_attachment_types: list[str] = Field(default_factory=list)
@@ -99,6 +114,10 @@ class EmailChannel(BaseChannel):
 
     name = "email"
     display_name = "Email"
+    delivery_target_label = "Recipient email address"
+    delivery_target_kind = "email_address"
+    delivery_target_placeholder = "name@example.com"
+    delivery_target_input_type = "email"
     supports_connection_test = True
     _IMAP_MONTHS = (
         "Jan",
@@ -164,6 +183,18 @@ class EmailChannel(BaseChannel):
                 "Emails with spoofed From headers will be accepted. "
                 "Set verify_dkim=true and verify_spf=true for anti-spoofing protection."
             )
+        elif not self.config.trusted_authserv_id:
+            self.logger.warning(
+                "verify_spf/verify_dkim are on but trusted_authserv_id is not "
+                "set, so no Authentication-Results header can be trusted "
+                "(there is no way to tell your provider's real header apart "
+                "from one an attacker forged before the message ever reached "
+                "an authenticating server). Every inbound email will be "
+                "rejected until you set trusted_authserv_id to the "
+                "authserv-id your provider stamps -- copy it from the "
+                "Authentication-Results header on any genuine email already "
+                "in this inbox."
+            )
         self.logger.info("Starting Email channel (IMAP polling mode)...")
 
         poll_seconds = max(5, int(self.config.poll_interval_seconds))
@@ -228,12 +259,17 @@ class EmailChannel(BaseChannel):
         return await email_probe.test_connection(self.config)
 
     async def send(self, msg: OutboundMessage) -> None:
-        """Send email via SMTP."""
+        """Send email via SMTP; explicit scheduled sends fail visibly if disabled."""
+        force_send = bool((msg.metadata or {}).get("force_send"))
         if not self.config.consent_granted:
+            if force_send:
+                raise RuntimeError("Email delivery requires consent_granted")
             self.logger.warning("Skip email send: consent_granted is false")
             return
 
         if not self.config.smtp_host:
+            if force_send:
+                raise RuntimeError("Email delivery requires smtp_host")
             self.logger.warning("SMTP host not configured")
             return
 
@@ -249,7 +285,6 @@ class EmailChannel(BaseChannel):
 
         # Determine if this is a reply (recipient has sent us an email before)
         is_reply = to_addr in self._last_subject_by_chat
-        force_send = bool((msg.metadata or {}).get("force_send"))
 
         # autoReplyEnabled only controls automatic replies, not proactive sends
         if is_reply and not self.config.auto_reply_enabled and not force_send:
@@ -305,11 +340,33 @@ class EmailChannel(BaseChannel):
             fallback = "\n".join(failed_attachments)
             content = f"{content.rstrip()}\n\n{fallback}" if content.strip() else fallback
 
+        delivery_format = (msg.metadata or {}).get("delivery_format")
+        if delivery_format not in {"html", "pdf"}:
+            delivery_format = None
+
         email_msg = EmailMessage()
         email_msg["From"] = self.config.from_address or self.config.smtp_username or self.config.imap_username
         email_msg["To"] = to_addr
         email_msg["Subject"] = subject
-        email_msg.set_content(content)
+
+        generated_pdf: bytes | None = None
+        if delivery_format == "pdf":
+            # Keep the report out of the message body when PDF delivery is
+            # requested; a render failure must not silently send it as plain text.
+            notice = "Report attached as PDF."
+            email_msg.set_content(notice)
+            email_msg.add_alternative(render_email_html(notice), subtype="html")
+            try:
+                from src.channels.rich_text import render_email_pdf
+
+                generated_pdf = await asyncio.to_thread(render_email_pdf, content)
+            except Exception:
+                self.logger.exception("Failed to render required PDF attachment")
+                raise
+        else:
+            email_msg.set_content(content)
+            if delivery_format == "html":
+                email_msg.add_alternative(render_email_html(content), subtype="html")
 
         for data, maintype, subtype, filename in attachments:
             email_msg.add_attachment(
@@ -317,6 +374,13 @@ class EmailChannel(BaseChannel):
                 maintype=maintype,
                 subtype=subtype,
                 filename=filename,
+            )
+        if generated_pdf is not None:
+            email_msg.add_attachment(
+                generated_pdf,
+                maintype="application",
+                subtype="pdf",
+                filename="vibe-trading-report.pdf",
             )
 
         in_reply_to = self._last_message_id_by_chat.get(to_addr)
@@ -492,11 +556,13 @@ class EmailChannel(BaseChannel):
                     continue
 
                 # --- Anti-spoofing: verify Authentication-Results ---
-                spf_pass, dkim_pass = self._check_authentication_results(parsed)
+                spf_pass, dkim_pass = self._check_authentication_results(
+                    parsed, self.config.trusted_authserv_id
+                )
                 if self.config.verify_spf and not spf_pass:
                     self.logger.warning(
-                        "From %s rejected: SPF verification failed "
-                        "(no 'spf=pass' in Authentication-Results header)",
+                        "From %s rejected: SPF verification failed (no aligned "
+                        "'spf=pass' in a trusted Authentication-Results header)",
                         sender,
                     )
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
@@ -505,8 +571,8 @@ class EmailChannel(BaseChannel):
                     continue
                 if self.config.verify_dkim and not dkim_pass:
                     self.logger.warning(
-                        "From %s rejected: DKIM verification failed "
-                        "(no 'dkim=pass' in Authentication-Results header)",
+                        "From %s rejected: DKIM verification failed (no aligned "
+                        "'dkim=pass' in a trusted Authentication-Results header)",
                         sender,
                     )
                     self._remember_processed_uid(uid, dedupe, cycle_uids)
@@ -858,20 +924,200 @@ class EmailChannel(BaseChannel):
         return payload.strip()
 
     @staticmethod
-    def _check_authentication_results(parsed_msg: Any) -> tuple[bool, bool]:
-        """Parse Authentication-Results headers for SPF and DKIM verdicts.
+    def _authentication_results_segments(value: str) -> list[str]:
+        """Split clauses outside quoted strings and discard nested RFC comments.
+
+        Malformed quoted strings or comments refuse the whole header.
+        """
+        segments: list[str] = []
+        current: list[str] = []
+        depth = 0
+        quoted = False
+        escaped = False
+        for char in value:
+            if escaped:
+                if not depth:
+                    current.append(char)
+                escaped = False
+            elif char == "\\" and (depth or quoted):
+                if not depth:
+                    current.append(char)
+                escaped = True
+            elif depth:
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+            elif char == '"':
+                quoted = not quoted
+                current.append(char)
+            elif not quoted and char == "(":
+                depth = 1
+                current.append(" ")
+            elif not quoted and char == ")":
+                return []
+            elif not quoted and char == ";":
+                segments.append("".join(current).strip())
+                current = []
+            else:
+                current.append(char)
+        if depth or quoted or escaped:
+            return []
+        segments.append("".join(current).strip())
+        return segments
+
+    @classmethod
+    def _select_trusted_authentication_results(
+        cls, parsed_msg: Any, trusted_authserv_id: str
+    ) -> str | None:
+        """Select one unambiguous receiver header by configured authserv-id.
+
+        The receiving provider MUST remove forged copies bearing its own ID
+        (RFC 8601 section 5). The ID alone is not cryptographic provenance.
+        Unknown, malformed or duplicate matching headers fail closed.
+
+        Args:
+            parsed_msg: Parsed email message.
+            trusted_authserv_id: ID of the configured stripping receiver.
+
+        Returns:
+            The sole matching header, or None.
+        """
+        wanted = trusted_authserv_id.strip().lower()
+        if not wanted:
+            return None
+        matches: list[str] = []
+        for header in parsed_msg.get_all("Authentication-Results") or []:
+            segments = cls._authentication_results_segments(str(header))
+            if not segments:
+                continue
+            try:
+                identity = shlex.split(segments[0])
+            except ValueError:
+                continue
+            if identity and identity[0].lower() == wanted:
+                if len(identity) > 2 or (len(identity) == 2 and identity[1] != "1"):
+                    return None
+                matches.append(str(header))
+        return matches[0] if len(matches) == 1 else None
+
+    @classmethod
+    def _parse_authentication_results_clauses(
+        cls, header_value: str,
+    ) -> list[dict[str, Any]]:
+        """Read method/result and properties without interpreting quoted prose.
+
+        Comments have already been removed; quoted property values are decoded
+        by the lexer. A malformed clause is never used for authentication.
+        """
+        clauses: list[dict[str, Any]] = []
+        for segment in cls._authentication_results_segments(header_value)[1:]:
+            lexer = shlex.shlex(segment, posix=True, punctuation_chars="=")
+            lexer.whitespace_split = True
+            lexer.commenters = ""
+            try:
+                tokens = list(lexer)
+            except ValueError:
+                continue
+            if len(tokens) < 3 or tokens[1] != "=":
+                continue
+            if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_-]*(?:/[0-9.]+)?", tokens[0]):
+                continue
+            if not re.fullmatch(r"[a-zA-Z0-9_-]+", tokens[2]):
+                continue
+            properties: dict[tuple[str, str], str] = {}
+            valid = (len(tokens) - 3) % 3 == 0
+            for index in range(3, len(tokens) - 2, 3):
+                key, equals, value = tokens[index:index + 3]
+                if equals != "=":
+                    valid = False
+                    break
+                if key.lower() == "reason":
+                    continue
+                if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_-]*\.[a-zA-Z][a-zA-Z0-9_-]*", key):
+                    valid = False
+                    break
+                pair = tuple(key.lower().split(".", 1))
+                if pair in properties:
+                    valid = False
+                    break
+                properties[pair] = value
+            if valid:
+                clauses.append({"method": tokens[0].lower().split("/", 1)[0],
+                                "result": tokens[2].lower(), "properties": properties})
+        return clauses
+
+    @staticmethod
+    def _domains_align(candidate: str, from_domain: str) -> bool:
+        """Use strict domain alignment; relaxed alignment belongs to the receiver.
+
+        A suffix alone cannot establish organizational ownership (public
+        suffixes and delegated subdomains exist). A trusted DMARC verdict can
+        supply relaxed alignment without a local public-suffix database.
+        """
+        candidate = candidate.strip().lower().rstrip(".")
+        from_domain = from_domain.strip().lower().rstrip(".")
+        return bool(candidate and from_domain and candidate == from_domain)
+
+    @classmethod
+    def _check_authentication_results(
+        cls, parsed_msg: Any, trusted_authserv_id: str = ""
+    ) -> tuple[bool, bool]:
+        """Parse the trusted Authentication-Results header for SPF/DKIM verdicts.
+
+        A ``pass`` result alone is not enough: it only says the named
+        SPF/DKIM domain is legitimate, not that it is the domain the message
+        claims to be from. An attacker can pass SPF/DKIM for their own
+        domain while spoofing the visible From: header to look like someone
+        else's. Each mechanism therefore also requires either an explicit
+        ``dmarc=pass`` in the same trusted header (DMARC evaluation already
+        performs this alignment check) or the mechanism's own authenticated
+        domain to align with the message's From: domain.
+
+        Args:
+            parsed_msg: Parsed email message.
+            trusted_authserv_id: This deployment's own mail server's
+                authserv-id. Verification fails closed (returns
+                ``(False, False)``) without it -- see
+                :meth:`_select_trusted_authentication_results`.
 
         Returns:
             A tuple of (spf_pass, dkim_pass) booleans.
         """
+        header = cls._select_trusted_authentication_results(
+            parsed_msg, trusted_authserv_id
+        )
+        if header is None:
+            return False, False
+
+        from_headers = parsed_msg.get_all("From") or []
+        if len(from_headers) != 1:
+            return False, False
+        from_address = parseaddr(from_headers[0])[1]
+        if "@" not in from_address:
+            return False, False
+        from_domain = from_address.rsplit("@", 1)[-1]
+        clauses = cls._parse_authentication_results_clauses(header)
+        dmarc_pass = any(
+            c["method"] == "dmarc" and c["result"] == "pass"
+            and cls._domains_align(c["properties"].get(("header", "from"), ""), from_domain)
+            for c in clauses
+        )
+
         spf_pass = False
         dkim_pass = False
-        for ar_header in parsed_msg.get_all("Authentication-Results") or []:
-            ar_lower = ar_header.lower()
-            if re.search(r"\bspf\s*=\s*pass\b", ar_lower):
-                spf_pass = True
-            if re.search(r"\bdkim\s*=\s*pass\b", ar_lower):
-                dkim_pass = True
+        for clause in clauses:
+            if clause["method"] == "spf" and clause["result"] == "pass":
+                candidate = clause["properties"].get(("smtp", "mailfrom")) or clause[
+                    "properties"
+                ].get(("smtp", "helo"), "")
+                candidate_domain = candidate.rsplit("@", 1)[-1] if candidate else ""
+                if dmarc_pass or cls._domains_align(candidate_domain, from_domain):
+                    spf_pass = True
+            elif clause["method"] == "dkim" and clause["result"] == "pass":
+                candidate_domain = clause["properties"].get(("header", "d"), "")
+                if dmarc_pass or cls._domains_align(candidate_domain, from_domain):
+                    dkim_pass = True
         return spf_pass, dkim_pass
 
     @classmethod

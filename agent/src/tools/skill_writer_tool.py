@@ -321,7 +321,7 @@ class SkillFileTool(BaseTool):
 
         # Validate subdirectory
         parts = Path(rel_path).parts
-        if len(parts) < 2 or parts[0] not in _ALLOWED_SUBDIRS:
+        if len(parts) < 2 or parts[0] not in _ALLOWED_SUBDIRS or ".." in parts:
             return json.dumps({
                 "status": "error",
                 "error": f"Path must start with one of: {', '.join(sorted(_ALLOWED_SUBDIRS))}. Got: '{parts[0] if parts else ''}'",
@@ -330,7 +330,9 @@ class SkillFileTool(BaseTool):
         target = skill_dir / rel_path
         # Safety: prevent path traversal
         try:
-            target.resolve().relative_to(skill_dir.resolve())
+            resolved_parts = target.resolve().relative_to(skill_dir.resolve()).parts
+            if len(resolved_parts) < 2 or resolved_parts[0] not in _ALLOWED_SUBDIRS:
+                raise ValueError("Path escapes allowed skill subdirectories")
         except ValueError:
             return json.dumps({"status": "error", "error": "Path escapes skill directory"})
 
@@ -353,15 +355,28 @@ class SkillFileTool(BaseTool):
         if Path(rel_path).name == "SKILL.md":
             return json.dumps({"status": "error", "error": "Cannot remove SKILL.md. Use delete_skill to remove the entire skill."})
 
+        # Validate subdirectory (same allowlist as _write_file, so remove can
+        # never touch a file write was never allowed to create)
+        parts = Path(rel_path).parts
+        if len(parts) < 2 or parts[0] not in _ALLOWED_SUBDIRS or ".." in parts:
+            return json.dumps({
+                "status": "error",
+                "error": f"Path must start with one of: {', '.join(sorted(_ALLOWED_SUBDIRS))}. Got: '{parts[0] if parts else ''}'",
+            })
+
         target = skill_dir / rel_path
         try:
-            target.resolve().relative_to(skill_dir.resolve())
+            resolved_parts = target.resolve().relative_to(skill_dir.resolve()).parts
+            if len(resolved_parts) < 2 or resolved_parts[0] not in _ALLOWED_SUBDIRS:
+                raise ValueError("Path escapes allowed skill subdirectories")
         except ValueError:
             return json.dumps({"status": "error", "error": "Path escapes skill directory"})
 
         if not target.exists():
             return json.dumps({"status": "error", "error": f"File not found: {rel_path}"})
 
+        if not target.is_file():
+            return json.dumps({"status": "error", "error": "Only auxiliary files can be removed"})
         target.unlink()
         return json.dumps({
             "status": "ok",

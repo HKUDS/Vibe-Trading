@@ -19,6 +19,7 @@ def _ns(**overrides):
         yes=True,
         strict=False,
         oos_split=None,
+        training_cutoff=None,
         random_seeds=5,
     )
     base.update(overrides)
@@ -121,7 +122,10 @@ def _run(capsys, args, monkeypatch):
 
     def fake_strict(zoo, universe, period, **kwargs):
         called.update(kwargs)
-        return _strict_result()
+        result = _strict_result()
+        result["training_cutoff"] = kwargs.get("training_cutoff")
+        result["oos_split"] = kwargs.get("training_cutoff") or kwargs.get("oos_split")
+        return result
 
     monkeypatch.setattr(strict_mod, "run_bench_strict", fake_strict)
     rc = cli_handlers.cmd_alpha_bench(args)
@@ -129,17 +133,34 @@ def _run(capsys, args, monkeypatch):
 
 
 def test_strict_routes_to_strict_runner(capsys, monkeypatch, _reg, _no_report):
-    rc, called, cap = _run(capsys, _ns(strict=True, oos_split="2023-01-01", random_seeds=3), monkeypatch)
+    rc, called, cap = _run(
+        capsys,
+        _ns(strict=True, training_cutoff="2023-01-01", random_seeds=3),
+        monkeypatch,
+    )
     assert rc == 0
     assert called["random_control"] is True
-    assert called["oos_split"] == "2023-01-01"
+    assert called["oos_split"] is None
+    assert called["training_cutoff"] == "2023-01-01"
     assert called["n_random_seeds"] == 3
     envelope = _envelope(cap.out)
     assert envelope["strict"] is True
     assert envelope["confirmed_alive"] == 2
     assert envelope["noise"] == 5
-    assert envelope["oos_split"] == "2023-01-01"
+    assert envelope["training_cutoff"] == "2023-01-01"
     assert envelope["top"][0]["category"] == "confirmed_alive"
+
+
+def test_strict_routes_existing_oos_split(capsys, monkeypatch, _reg, _no_report):
+    rc, called, cap = _run(
+        capsys,
+        _ns(strict=True, oos_split="2023-01-01"),
+        monkeypatch,
+    )
+    assert rc == 0
+    assert called["oos_split"] == "2023-01-01"
+    assert called["training_cutoff"] is None
+    assert _envelope(cap.out)["oos_split"] == "2023-01-01"
 
 
 def test_default_routes_to_legacy_runner(capsys, monkeypatch, _reg, _no_report):
@@ -160,10 +181,14 @@ def test_default_routes_to_legacy_runner(capsys, monkeypatch, _reg, _no_report):
     assert envelope["top"][0]["category"] == "alive"
 
 
-def test_oos_split_without_strict_is_rejected(capsys, monkeypatch, _reg):
-    rc = cli_handlers.cmd_alpha_bench(_ns(oos_split="2023-01-01"))
-    assert rc == 1
-    assert "--strict" in capsys.readouterr().err
+def test_strict_only_options_without_strict_are_rejected(capsys, monkeypatch, _reg):
+    for option in (
+        {"oos_split": "2023-01-01"},
+        {"training_cutoff": "2023-01-01"},
+    ):
+        rc = cli_handlers.cmd_alpha_bench(_ns(**option))
+        assert rc == 1
+        assert "--strict" in capsys.readouterr().err
 
 
 def test_strict_argparse_flags():
@@ -171,14 +196,18 @@ def test_strict_argparse_flags():
     sub = parser.add_subparsers()
     alpha_parser = cli_handlers.add_subparser(sub)
     args = parser.parse_args(
-        ["alpha", "bench", "--zoo", "alpha101", "--strict", "--oos-split", "2023-01-01", "--random-seeds", "3"]
+        [
+            "alpha", "bench", "--zoo", "alpha101", "--strict",
+            "--training-cutoff", "2023-01-01", "--random-seeds", "3",
+        ]
     )
     assert args.strict is True
-    assert args.oos_split == "2023-01-01"
+    assert args.training_cutoff == "2023-01-01"
     assert args.random_seeds == 3
     args_default = parser.parse_args(["alpha", "bench", "--zoo", "alpha101"])
     assert args_default.strict is False
     assert args_default.oos_split is None
+    assert args_default.training_cutoff is None
     assert args_default.random_seeds == 5
     assert alpha_parser is not None
 

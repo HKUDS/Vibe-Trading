@@ -7,6 +7,8 @@ epoch-millisecond instant and asserted deterministically.
 
 from __future__ import annotations
 
+import dataclasses
+import json
 from datetime import datetime, timezone
 from typing import Mapping
 
@@ -67,6 +69,47 @@ def test_us_equity_open_windows(now_ms: int, expected: bool) -> None:
     assert market_is_open_at("us_equity", now_ms) is expected
 
 
+# 2026-11-27 is the Friday after Thanksgiving: NYSE closes at 13:00 ET.
+_BF_2026 = (2026, 11, 27)
+# 2026-12-24 is a Thursday Christmas Eve: NYSE closes at 13:00 ET.
+_XMAS_EVE_2026 = (2026, 12, 24)
+# 2027-11-26 is the Friday after Thanksgiving 2027.
+_BF_2027 = (2027, 11, 26)
+
+
+@pytest.mark.parametrize(
+    ("now_ms", "expected"),
+    [
+        (_ms(*_BF_2026, 9, 30, "America/New_York"), True),
+        (_ms(*_BF_2026, 12, 59, "America/New_York"), True),
+        # The early bell is exclusive, same convention as the 16:00 close.
+        (_ms(*_BF_2026, 13, 0, "America/New_York"), False),
+        (_ms(*_BF_2026, 13, 30, "America/New_York"), False),
+        (_ms(*_BF_2026, 15, 30, "America/New_York"), False),
+        (_ms(*_XMAS_EVE_2026, 12, 59, "America/New_York"), True),
+        (_ms(*_XMAS_EVE_2026, 13, 0, "America/New_York"), False),
+        (_ms(*_BF_2027, 12, 59, "America/New_York"), True),
+        (_ms(*_BF_2027, 13, 0, "America/New_York"), False),
+    ],
+)
+def test_us_equity_early_close_windows(now_ms: int, expected: bool) -> None:
+    assert market_is_open_at("us_equity", now_ms) is expected
+
+
+def test_us_equity_observed_christmas_stays_a_full_closure() -> None:
+    # 2027-12-24 is the observed Christmas holiday, not an early close: the
+    # morning session must not trade either.
+    assert market_is_open_at("us_equity", _ms(2027, 12, 24, 10, 0, "America/New_York")) is False
+
+
+def test_early_close_table_is_internally_consistent() -> None:
+    spec = triggers.MARKET_SPECS["us_equity"]
+    for day, bell in spec.early_closes.items():
+        assert day.weekday() in spec.weekdays
+        assert day not in spec.holidays
+        assert spec.open_time < bell < spec.close_time
+
+
 def test_us_equity_uses_ny_local_not_utc() -> None:
     # 14:00 UTC on the Friday is 10:00 ET — inside RTH despite 14:00 looking
     # like afternoon if (wrongly) read as local.
@@ -121,6 +164,82 @@ def test_market_trigger_without_market_raises() -> None:
     bad = Trigger(kind=TriggerKind.MARKET, market=None)
     with pytest.raises(ValueError):
         due_now(bad, 0)
+
+
+def test_non_market_triggers_leave_market_unset() -> None:
+    """``market`` is ``None`` on INTERVAL/EVENT triggers, not the factory.
+
+    ``Trigger.market`` is both a dataclass field and the MARKET constructor.
+    Declared inside the class body the constructor replaces the field's
+    ``None`` default before ``@dataclass`` reads it, so every INTERVAL/EVENT
+    trigger carried a bound method in ``market``. That is invisible to
+    :func:`due_now` (which only inspects ``market`` for MARKET triggers) but
+    wrong wherever the field is read or serialised on its own.
+    """
+    assert Trigger.interval(60_000).market is None
+    assert Trigger.event(lambda _state: True).market is None
+
+    # The MARKET factory keeps its public name and still fills the field.
+    assert Trigger.market("us_equity").market == "us_equity"
+
+
+def test_interval_trigger_serialises_to_json() -> None:
+    """An INTERVAL trigger must survive ``dataclasses.asdict`` + ``json.dumps``.
+
+    No production path serialises a ``Trigger`` today — jobs persist a plain
+    kind string, not the descriptor — but the first caller that does must not
+    trip over a bound method in ``market``. Before the field default was
+    restored, this raised ``TypeError``. Pinning the contract makes that latent
+    hazard explicit.
+
+    EVENT triggers are deliberately out of scope: their ``predicate`` is a
+    callable by design, so they are not a serialisable shape in the first place.
+    """
+    restored = json.loads(json.dumps(dataclasses.asdict(Trigger.interval(60_000))))
+    assert restored["market"] is None
+
+
+def test_market_field_default_and_factory_are_both_intact() -> None:
+    """Pin the mechanism, not just the observable effect.
+
+    The recorded field default is what ``@dataclass`` wrote into ``__init__``;
+    asserting on it catches a regression at the source instead of one instance
+    later. The factory is pinned by name and by introspection so the MARKET
+    constructor cannot quietly disappear or start reporting a private name.
+    """
+    import inspect
+
+    assert Trigger.__dataclass_fields__["market"].default is None
+    assert inspect.signature(Trigger).parameters["market"].default is None
+
+    assert Trigger.market("us_equity").market == "us_equity"
+    assert callable(Trigger.market)
+    assert Trigger.market.__qualname__ == "Trigger.market"
+    assert Trigger.market.__name__ == "market"
+    # The factory is bound after the class body; the private placeholder must
+    # not survive as a second public way to build a MARKET trigger.
+    assert not hasattr(Trigger, "_market")
+
+
+@pytest.mark.parametrize("decorate", [False, True])
+def test_market_factory_binds_to_subclass(decorate: bool) -> None:
+    """The deferred factory must retain normal classmethod inheritance."""
+
+    class DerivedTrigger(Trigger):
+        pass
+
+    if decorate:
+        DerivedTrigger = dataclasses.dataclass(frozen=True)(DerivedTrigger)
+
+    trigger = DerivedTrigger.market("crypto")
+    assert type(trigger) is DerivedTrigger
+    assert DerivedTrigger.market.__self__ is DerivedTrigger
+    assert trigger.kind is TriggerKind.MARKET
+    assert trigger.market == "crypto"
+    assert DerivedTrigger.interval(1).market is None
+    assert DerivedTrigger.event(lambda _state: True).market is None
+    assert dataclasses.replace(trigger).market == "crypto"
+    assert json.loads(json.dumps(dataclasses.asdict(trigger)))["market"] == "crypto"
 
 
 # --------------------------------------------------------------------------- #

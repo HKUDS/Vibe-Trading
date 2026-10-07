@@ -33,7 +33,7 @@ def fonts_dir() -> Path:
 
 def _system_cjk_candidates() -> list[Path]:
     """Enumerate locally-installed CJK fonts we can reuse without downloading."""
-    candidates: list[Path] = []
+    candidates: list[Path] = [Path(__file__).parent / "assets" / "VibeCJK-Regular.ttf"]
     env = os.environ
     windir = env.get("WINDIR") or env.get("SystemRoot")
     if windir:
@@ -45,6 +45,7 @@ def _system_cjk_candidates() -> list[Path]:
         ):
             candidates.append(win_fonts / name)
     for p in (
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -52,6 +53,11 @@ def _system_cjk_candidates() -> list[Path]:
     ):
         candidates.append(Path(p))
     return candidates
+
+
+def system_cjk_candidates() -> list[Path]:
+    """Public alias: reportlab needs this list but not the download path."""
+    return _system_cjk_candidates()
 
 
 def cjk_font_path(*, allow_download: bool = True, timeout: float = 10.0) -> Optional[Path]:

@@ -44,7 +44,7 @@ Deduplication check:
 alpha_bench(zoo="academic", universe="equity_us", period="2015-2025")
 ```
 
-Result: the existing `academic_carhart_momentum` alpha has IC 0.92 with our formula. This is a variant (not a duplicate, since IC < 0.99), so we proceed with a note.
+Result: the existing `academic_carhart_mom` alpha has IC 0.92 with our formula. This is a variant (not a duplicate, since IC < 0.99), so we proceed with a note.
 
 Register:
 
@@ -89,10 +89,11 @@ Then implement `signal_engine.py` using the factor template, filling in the mome
 ```python
 # Inside generate():
 for symbol, df in data_map.items():
-    # 12-month cumulative return, skip most recent month
-    ret_12m = df["close"].pct_change(12, fill_method=None).shift(1)
-    ret_1m = df["close"].pct_change(1, fill_method=None)
-    mom_signal = ret_12m - ret_1m  # skip the most recent month
+    # 12-1 momentum on daily bars: the return from 252 bars ago to 21 bars
+    # ago. Skipping the most recent month means today's price never enters;
+    # subtracting a 1-month return from a 12-month one does not do that.
+    close = df["close"]
+    mom_signal = close.shift(21) / close.shift(252) - 1
     signals[symbol] = mom_signal
 ```
 

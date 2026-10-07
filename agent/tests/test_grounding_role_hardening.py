@@ -80,6 +80,12 @@ INDICATORS_A = (
     "ind",
 )
 FACTOR_A = ("factor_analysis", {"symbol": A}, {"status": "ok", "sharpe": 0.888, "win_rate": 0.573}, "fa")
+PROFILE_US = (
+    "get_stock_profile",
+    {"ticker": "AAPL.US"},
+    {"ok": True, "data": {"sections": {"key_stats": {"forwardPE": 22.920343}}}},
+    "profile_us",
+)
 
 HDR = f"{A}（akshare，CNY）最新收盘 0.666 元。"
 ROW = "0.666 | observed | close 2026-09-09 | c1"
@@ -421,6 +427,46 @@ def test_a_ref_may_name_the_tool(tmp_path: Path) -> None:
     assert _reasons(wrong_tool) == ["not_in_referenced_call"]
 
 
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "get_stock_profile",
+        "profile_us",
+        "profile_us::data.sections.key_stats.forwardPE",
+    ],
+)
+def test_an_explicit_symbol_may_be_resolved_from_non_price_evidence(
+    tmp_path: Path, ref: str
+) -> None:
+    """A secondary instrument need not have a quote before its own fundamentals can ground it."""
+    ledger = _ledger(tmp_path, MARKET_A, PROFILE_US)
+    result = ledger.validate_final_answer(
+        HDR
+        + "\nAAPL.US forward P/E is 22.920343."
+        + _block(ROW, f"22.920343 | observed | forward P/E | {ref}")
+    )
+
+    assert result.valid is True, result.issues
+
+
+def test_non_price_symbol_resolution_keeps_other_symbols_evidence_isolated(
+    tmp_path: Path,
+) -> None:
+    """Recognising the secondary symbol must not let its value ground the primary instrument."""
+    ledger = _ledger(tmp_path, MARKET_A, PROFILE_US)
+    result = ledger.validate_final_answer(
+        HDR
+        + f"\n{A} forward P/E is 22.920343."
+        + _block(
+            ROW,
+            "22.920343 | observed | forward P/E | "
+            "profile_us::data.sections.key_stats.forwardPE",
+        )
+    )
+
+    assert _reasons(result) == ["not_in_referenced_call"]
+
+
 def test_a_symbol_the_declaration_names_outranks_the_prose(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path, MARKET_A, MARKET_B, message=f"对比 {A} 和 {B}")
     prose = TWO + "最新收盘 1410.00 元。"
@@ -614,6 +660,77 @@ def test_a_call_scoped_ref_does_not_choose_a_tail_risk_identity(tmp_path: Path) 
     assert result.issues[0]["ambiguous_sources"] == ["es_95", "es_99", "var_95", "var_99"]
 
 
+XRAY_SECOND = (
+    "portfolio_risk_xray",
+    {"symbols": [A]},
+    {
+        "status": "ok",
+        "data": {
+            "tail_risk": {
+                "var_95": 0.0195,
+                "expected_shortfall_95": 0.0268,
+                "var_99": 0.0287,
+                "expected_shortfall_99": 0.0396,
+            }
+        },
+    },
+    "x2",
+)
+
+
+def test_tool_name_before_field_ref_lists_exact_call_refs(tmp_path: Path) -> None:
+    ledger = _ledger(
+        tmp_path,
+        MARKET_A,
+        XRAY,
+        XRAY_SECOND,
+        message="Compare portfolio tail risk across two scopes.",
+    )
+    result = ledger.validate_final_answer(
+        HDR + " VaR 95%: 1.57%。"
+        + _block(
+            ROW,
+            "95% | count | confidence",
+            "1.57% | observed | VaR 95% | "
+            "portfolio_risk_xray::data.tail_risk.var_95",
+        )
+    )
+
+    assert result.valid is False
+    assert _reasons(result) == ["field_ref_needs_call_id"]
+    assert result.issues[0]["field_ref_candidates"] == [
+        "x1::data.tail_risk.var_95",
+        "x2::data.tail_risk.var_95",
+    ]
+    correction = ledger.correction_prompt(result)
+    assert "x1::data.tail_risk.var_95" in correction
+    assert "x2::data.tail_risk.var_95" in correction
+
+
+def test_tail_risk_correction_lists_exact_payload_fields(tmp_path: Path) -> None:
+    ledger = _ledger(
+        tmp_path,
+        MARKET_A,
+        XRAY,
+        XRAY_SECOND,
+        message="Compare portfolio tail risk across two scopes.",
+    )
+    result = ledger.validate_final_answer(
+        HDR + " ES 95%: 2.11%。"
+        + _block(
+            ROW,
+            "95% | count | confidence",
+            "2.11% | observed | ES 95% | portfolio_risk_xray",
+        )
+    )
+
+    assert result.valid is False
+    assert _reasons(result) == ["tail_risk_needs_field_ref"]
+    correction = ledger.correction_prompt(result)
+    assert "x1::data.tail_risk.expected_shortfall_95" in correction
+    assert "x2::data.tail_risk.expected_shortfall_95" in correction
+
+
 def test_an_undeclared_tail_risk_percent_needs_a_field_ref(tmp_path: Path) -> None:
     """The undeclared half of the same rule: a percent a tool returned needs no
     declaration, so it was matched against every tail-risk value in the session.
@@ -711,6 +828,10 @@ def test_a_field_two_calls_returned_differently_needs_its_call(tmp_path: Path) -
     ambiguous = answer("historical_var")
     assert _reasons(ambiguous) == ["ambiguous_field_ref"]
     assert ambiguous.issues[0]["ambiguous_sources"] == ["q1::historical_var", "q2::historical_var"]
+    assert ambiguous.issues[0]["field_ref_candidates"] == [
+        "q1::historical_var",
+        "q2::historical_var",
+    ]
     assert answer("q1::historical_var").valid is True
     assert _reasons(answer("q2::historical_var")) == ["not_in_referenced_call"]
 

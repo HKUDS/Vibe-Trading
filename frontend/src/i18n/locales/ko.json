@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "layout": {
     "home": "홈",
@@ -143,6 +143,23 @@
     "advancedHint": "선택한 시간대 기준으로 평가되는 5필드 cron 표현식(분 시 일 월 요일; 목록과 범위 지원) 또는 밀리초 단위 간격.",
     "timezoneLabel": "시간대",
     "create": "예약 생성",
+    "saveChanges": "변경 사항 저장",
+    "cancelEdit": "편집 취소",
+    "editingHint": "이 예약 실행을 편집 중입니다. 저장해도 식별 정보와 실행 기록은 유지됩니다.",
+    "edit": "편집",
+    "editAria": "예약 실행 편집: {{prompt}}",
+    "editRunningDisabled": "실행 또는 전송이 완료된 후 편집하세요.",
+    "deliveryInApp": "Vibe에만 보관(전송 안 함)",
+    "deliveryNoChannels": "활성화된 전송 채널이 구성되어 있지 않습니다. 설정 → 채널에서 하나를 구성하세요.",
+    "deliveryChannelsLoadFailed": "구성된 전송 채널을 불러오지 못했습니다.",
+    "deliveryChannelUnavailable": "{{channel}} (현재 사용할 수 없음)",
+    "deliveryTargetKind_destination": "대상",
+    "deliveryTargetKind_email_address": "수신자 이메일 주소",
+    "deliveryTargetKind_chat": "채팅",
+    "deliveryTargetKind_channel": "채널",
+    "deliveryTargetDisabled": "먼저 전송 채널을 선택하세요.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "구성된 대상",
     "promptRequired": "예약을 만들기 전에 리서치 프롬프트를 입력하세요.",
     "invalidTime": "유효한 시각을 HH:MM 형식으로 입력하세요.",
     "executorHint": "서버에서 VIBE_TRADING_ENABLE_SCHEDULER가 활성화된 경우에만 실행됩니다.",
@@ -185,6 +202,13 @@
     "deliveryChannelPlaceholder": "telegram, feishu … (비우면 앱 안에만 남습니다)",
     "deliveryTargetLabel": "채널 대상",
     "deliveryTargetPlaceholder": "채팅 / 그룹 / 사용자 ID",
+    "deliveryFormatLabel": "Email report format",
+    "deliveryFormatDefault": "Channel default (plain text)",
+    "deliveryFormatHtml": "HTML email",
+    "deliveryFormatPdf": "PDF attachment",
+    "deliveryFormatDefaultHint": "Keeps the existing plain-text delivery behavior.",
+    "deliveryFormatHtmlHint": "Shows the full report as sanitized HTML in the email body.",
+    "deliveryFormatPdfHint": "Attaches the full report as PDF and keeps only a short notice in the body.",
     "deliveryHint": "기본은 꺼짐입니다. 브리핑은 예약 시점이 아니라 실행이 **끝난 뒤** 전달됩니다.",
     "deliveryTargetRequired": "해당 채널의 대상을 지정하거나 채널을 비워 주세요.",
     "delivery_none": "다음 실행이 끝나면 {{channel}}(으)로 전달합니다",
@@ -197,7 +221,16 @@
     "verdictUnreadable": "최신 판정을 읽을 수 없음",
     "verdictNoCalls": "호출 없음",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "{{when}} 기준"
+    "verdictRecorded": "{{when}} 기준",
+    "deliveryKnownTargetLabel": "알려진 대상",
+    "deliveryKnownTargetPlaceholder": "알려진 대상 선택…",
+    "deliverySuggestionKind_private_chat": "내 비공개 채팅",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "채팅, 그룹 또는 사용자 ID",
+    "deliveryTargetPlaceholder_channel": "채널 ID",
+    "deliveryTargetPlaceholder_destination": "채팅 / 그룹 / 사용자 ID",
+    "deliveryTargetPlaceholder_slack_destination": "#채널, @사용자 또는 대화 ID",
+    "deliveryTargetKind_slack_destination": "대상"
   },
   "reports": {
     "badge": "리포트",
@@ -645,6 +678,10 @@
           "max_attachments_per_email": {
             "label": "메일당 첨부 수 상한",
             "help": "메일 한 통에서 허용하는 첨부 파일 수입니다(기본 5)."
+          },
+          "trusted_authserv_id": {
+            "label": "신뢰할 인증 서버",
+            "help": "수신 서버의 authserv-id(예: mx.google.com)입니다. 메일 제공자는 이 ID를 위조한 외부 Authentication-Results 헤더를 제거해야 합니다. SPF 또는 DKIM 검증을 사용하면 필수이며, 비워 두면 수신 메일이 거부됩니다."
           }
         },
         "websocket": {
@@ -712,6 +749,60 @@
             "label": "TLS 키 경로",
             "help": "WSS용 서버의 PEM 개인 키 경로입니다. 인증서와 키를 모두 설정하거나 모두 비워 두세요. 업로드 자료가 아니라 서버의 파일 경로입니다."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "Feishu / Lark 개발자 콘솔의 앱 App ID(cli_ 로 시작)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "앱의 App Secret. 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "이벤트 구독 설정의 Encrypt Key. 롱커넥션 모드에서는 선택 사항입니다."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "이벤트 구독 설정의 Verification Token. 롱커넥션 모드에서는 선택 사항입니다."
+          },
+          "allow_from": {
+            "label": "허용된 발신자",
+            "help": "에이전트와 대화할 수 있는 Feishu 발신자 ID 허용 목록. 비워 두면 봇이 볼 수 있는 모든 사용자에게 허용됩니다."
+          },
+          "react_emoji": {
+            "label": "작업 중 이모지",
+            "help": "에이전트가 작업하는 동안 들어온 메시지에 붙이는 이모지(기본값 THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "완료 이모지",
+            "help": "작업이 끝났을 때 붙이는 이모지. 비우면 붙이지 않습니다."
+          },
+          "tool_hint_prefix": {
+            "label": "도구 힌트 접두사",
+            "help": "답변의 인라인 도구 힌트 앞에 표시되는 접두사."
+          },
+          "group_policy": {
+            "label": "그룹 정책",
+            "help": "\"mention\"은 그룹에서 @ 멘션될 때만 답변하고, \"open\"은 모든 그룹 메시지에 답변합니다."
+          },
+          "reply_to_message": {
+            "label": "원문 인용 답변",
+            "help": "답변할 때 원문 메시지를 인용합니다."
+          },
+          "streaming": {
+            "label": "스트리밍 답변",
+            "help": "CardKit 라이브 편집으로 답변을 스트리밍합니다."
+          },
+          "domain": {
+            "label": "도메인",
+            "help": "중국용은 \"feishu\"(open.feishu.cn), 국제용 Lark는 \"lark\"(open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "토픽별 세션",
+            "help": "그룹의 각 토픽에 별도 에이전트 세션을 할당합니다."
+          }
         }
       },
       "guides": {
@@ -754,6 +845,16 @@
           "step4": "채널 실행 중에 저장하면 서버가 핫 스왑됩니다. 연결된 클라이언트(이 웹 UI 채팅 포함)는 잠시 끊겼다가 자동으로 다시 연결됩니다.",
           "step5": "‘연결 테스트’를 클릭하면 SSL 인증서/키 자료와 주소 사용 가능 여부를 로컬에서 검증합니다.",
           "docsLabel": "Vibe-Trading 문서 열기"
+        },
+        "feishu": {
+          "title": "Feishu / Lark 봇 설정 가이드",
+          "intro": "Feishu 봇은 WebSocket 롱커넥션으로 연결되므로 공개 IP나 웹훅이 필요 없습니다.",
+          "step1": "Feishu 오픈 플랫폼(open.feishu.cn)에서 사용자 지정 앱을 만드세요. 터미널에서 vibe-trading channels login feishu 로 QR 스캔 생성을 사용하면 App ID와 App Secret이 자동 저장됩니다.",
+          "step2": "앱에 봇 기능을 추가하세요.",
+          "step3": "이벤트 구독에서 '메시지 받기 im.message.receive_v1'를 구독하고 롱커넥션 모드를 선택하세요.",
+          "step4": "'자격 증명 및 기본 정보'에서 App ID와 App Secret을 복사해 위 입력칸에 붙여넣으세요.",
+          "step5": "버전을 만들어 앱을 게시(테넌트에 따라 관리자 승인 필요)한 뒤 여기서 채널을 활성화하면 재시작 없이 즉시 적용됩니다. 국제 Lark 테넌트는 도메인을 lark로 설정하세요.",
+          "docsLabel": "Feishu 오픈 플랫폼 열기"
         }
       }
     },
@@ -906,6 +1007,7 @@
     "dropFiles": "여기에 파일 놓기",
     "removeAttachment": "{{filename}} 제거",
     "uploadFailed": "업로드 실패: {{error}}",
+    "messageTooLong": "첨부 정보와 팀 지침을 포함한 메시지가 {{limit}}자를 초과합니다. 줄인 후 보내세요.",
     "failedToSend": "메시지 전송에 실패했습니다. 다시 시도해 주세요.",
     "failedToContinue": "목표 진행에 실패했습니다. 다시 시도해 주세요.",
     "runtimeBadge": "거래 모니터",
@@ -1009,6 +1111,33 @@
     "reproducibility": "재현성",
     "metrics": "지표",
     "validationPayload": "검증",
+    "trust": {
+      "executionRecords": "실행 기록",
+      "executionDescription": "기록된 실행 단계와 입력 및 결과의 해시입니다.",
+      "noExecutionRecords": "이 실행의 실행 기록이 저장되지 않았습니다.",
+      "startedAt": "시작 (UTC)",
+      "endedAt": "종료 (UTC)",
+      "argsHash": "인수 SHA-256",
+      "resultHash": "결과 SHA-256",
+      "metricEvidence": "지표 근거",
+      "evidenceDescription": "저장된 지표 데이터에 대한 참조입니다. 체크섬은 기록된 파일을 식별하며, 이 화면에서는 별도로 검증하지 않습니다.",
+      "noMetricEvidence": "이 실행의 지표 근거가 기록되지 않았습니다.",
+      "metric": "지표",
+      "artifact": "산출물",
+      "column": "열",
+      "row": "데이터 행 (1부터 시작, 헤더 제외)",
+      "artifactHash": "산출물 SHA-256",
+      "tools": {
+        "backtest": "백테스트",
+        "load_data": "데이터 로드",
+        "generate_signals": "신호 생성"
+      },
+      "status": {
+        "ok": "완료",
+        "error": "실패",
+        "cancelled": "취소됨"
+      }
+    },
     "artifactChecksums": "아티팩트 체크섬",
     "path": "경로",
     "size": "크기",

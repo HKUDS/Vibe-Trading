@@ -6,10 +6,11 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 74 tools: skills, research goals, strategy discovery,
+Surfaces 76 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
 analysis, market data, fundamentals & capital-flow & news & discovery
-(get_fund_flow / get_dragon_tiger / get_northbound_flow / get_margin_trading /
+(get_fund_flow / get_dragon_tiger / get_northbound_flow / get_southbound_flow /
+get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
 get_research_reports / get_stock_news / get_sec_filings /
 get_financial_statements / get_options_chain / get_stock_profile /
@@ -806,6 +807,12 @@ def backtest(run_dir: str) -> str:
     - "auto": auto-detect based on symbol format (with fallback)
 
     Returns metrics (Sharpe, return, drawdown, etc.) and artifact paths.
+    On success the envelope also carries a structured ``summary``: the full
+    scalar metrics plus structured_metrics and validation, run metadata,
+    an ``equity_preview`` (at most 50 equal-stride points, first and last
+    pinned) and ``artifact_paths`` including per-symbol ohlcv files — read
+    these instead of parsing ``stdout``. Large envelopes omit logs first
+    and reduce preview points; any omitted summary is explicitly reported.
 
     Args:
         run_dir: Path to the run directory containing config.json and code/.
@@ -1188,6 +1195,67 @@ def read_file(path: str) -> str:
     """
     registry = _get_registry()
     return registry.execute("read_file", {"path": path})
+
+
+@mcp.tool
+def read_run_artifact(
+    run_dir: str,
+    artifact: str,
+    format: str = "rows",
+    offset: int = 0,
+    max_rows: int = 1000,
+    columns: _lenient_str_list_opt = None,
+) -> str:
+    """Read a backtest run artifact as structured JSON instead of raw CSV text.
+
+    Artifacts: friendly aliases ``equity``, ``trades``, ``metrics``,
+    ``positions``, ``target_positions`` (CSVs under ``<run_dir>/artifacts/``),
+    ``ohlcv:<CODE>`` (e.g. ``ohlcv:600519.SH``) and ``run_card`` — plus any
+    run_dir-relative ``.csv``/``.json`` path listed in the run's
+    ``run_card.json`` artifacts manifest (e.g. ``artifacts/validation.json``).
+    The manifest is the trust anchor: a relative path it does not list is
+    refused, and a manifest entry pointing outside the run directory is never
+    followed.
+
+    Formats:
+
+    - ``rows``: offset paging over whole records; follow ``next_offset`` until
+      ``truncated`` is false to walk a file losslessly.
+    - ``downsample``: equal-stride sample of at most ``max_rows`` points with
+      the first and last row always pinned — one call feeds a chart.
+    - ``meta``: columns / total_rows / size_bytes, plus the manifest's
+      ``sha256`` and ``manifest_size_bytes`` for a manifest-listed artifact.
+
+    Cells arrive typed (int / float / null / string). Every envelope is
+    serialized within the shared model-result character budget: an oversized
+    page shrinks to whole records with honest ``truncated`` / ``next_offset``
+    metadata rather than cutting mid-JSON. Errors return
+    ``{"ok": false, "error", "hint"}``. Small JSON artifacts return their
+    parsed object; oversized JSON returns size metadata in meta mode and an
+    actionable error otherwise.
+
+    Args:
+        run_dir: Run directory a backtest/tool call returned.
+        artifact: Alias name or manifest-listed relative path (see above);
+            anything else — including path traversal — is refused.
+        format: "rows" (default), "downsample" or "meta".
+        offset: First row index for "rows" mode (default 0).
+        max_rows: Page size [1, 5000] (default 1000); samples retain at least two endpoints.
+        columns: Optional column projection; unknown names are refused with
+            the valid list.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "read_run_artifact",
+        {
+            "run_dir": run_dir,
+            "artifact": artifact,
+            "format": format,
+            "offset": offset,
+            "max_rows": max_rows,
+            "columns": columns,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1979,6 +2047,26 @@ def get_northbound_flow(lookback_days: int = 30) -> str:
 
 
 @mcp.tool
+def get_southbound_flow(lookback_days: int = 30) -> str:
+    """Fetch Southbound (Stock-Connect) net capital flow into Hong Kong equities.
+
+    Returns the latest trading day's net buy plus recent daily history, split
+    into 港股通（沪） and 港股通（深） channels (units: 100M HKD, 亿) from the
+    Eastmoney datacenter — cross-verified against HKEX official daily
+    statistics — falling back to the HKEX official report (latest trading day
+    snapshot) when Eastmoney is unavailable. Southbound is the only
+    Stock-Connect direction whose daily net buy is still officially disclosed
+    (the northbound net ended 2024-08-30; see get_northbound_flow). Read-only,
+    no credentials; HK market only.
+
+    Args:
+        lookback_days: Trailing trading days of daily net-buy history to return.
+    """
+    registry = _get_registry()
+    return registry.execute("get_southbound_flow", {"lookback_days": lookback_days})
+
+
+@mcp.tool
 def get_margin_trading(code: str, days: int = 30) -> str:
     """Fetch an A-share stock's daily margin-trading (融资融券) balances (Eastmoney).
 
@@ -2283,7 +2371,10 @@ def get_macro_series(
         series_id: FRED series identifier (e.g. "CPIAUCSL", "UNRATE").
         start_date: Inclusive window start, YYYY-MM-DD. Omit for full history.
         end_date: Inclusive window end, YYYY-MM-DD. Omit for the latest date.
-        limit: Maximum number of most-recent observations to return.
+        limit: Maximum number of most-recent observations to return (max
+            5000). A series longer than that is capped and says so in the
+            result: truncated, observations_available, and a hint. The shared
+            character budget may return fewer rows; count reports delivered rows.
     """
     params: dict[str, Any] = {"series_id": series_id, "limit": limit}
     if start_date:

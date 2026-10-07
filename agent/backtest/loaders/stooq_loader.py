@@ -16,13 +16,19 @@ Symbol convention (Vibe-Trading -> Stooq):
 Response body is CSV ``Date,Open,High,Low,Close,Volume``. An unknown symbol or
 empty window yields the literal ``"N/D"`` or an empty body, both treated as
 "no data" for that symbol (skipped, never fatal to the batch).
+
+A refusal is not CSV: the endpoint answers a blocked client with a proof-of-work
+challenge page, a plain-text quota message, or a bare 403/429. Those latch the
+source off for a cooldown instead of parsing as "no data" (see ``_denial_reason``).
 """
 
 from __future__ import annotations
 
 import io
 import logging
-from typing import Dict, List, Optional
+import time
+from threading import Lock
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -38,16 +44,75 @@ HOST_KEY = "stooq"
 _MIN_INTERVAL_ENV = "VIBE_TRADING_STOOQ_MIN_INTERVAL"
 _DEFAULT_MIN_INTERVAL_S = 0.6
 
-# Stooq currently answers non-browser clients with a JavaScript proof-of-work
-# challenge page (HTTP 200, HTML body) instead of CSV. Without detection the
-# loader parses it as "no data" and the fallback chain slides past a source
-# that never serves, with nothing in the run log to show for it.
-_challenge_warned = False
+# Stooq refuses non-browser clients in more than one way: a JavaScript
+# proof-of-work challenge page (HTTP 200, HTML body), the plain-text quota
+# refusal its free CSV endpoint serves once the per-IP limit trips, or a bare
+# 403/429. Without detection the loader parses the body as "no data" and the
+# fallback chain slides past a source that never serves, with nothing in the run
+# log to show for it. This deadline is the process-wide latch behind that
+# warning: while it lies in the future no further symbol is probed, because a
+# second request can only be answered the same way. It expires rather than
+# latching for the process lifetime, so one transient block does not downgrade
+# stooq for as long as ``vibe-trading serve`` happens to run.
+_challenge_until = 0.0
+# How long a latched process waits before it probes Stooq again.
+_LATCH_COOLDOWN_S = 300.0
+# Serialize each process-local probe with the latch check. Otherwise callers
+# already waiting in the shared HTTP throttle can send after another caller
+# discovers that Stooq is refusing requests.
+_probe_lock = Lock()
+
+# Refusals that arrive without an error status. Matched against the head of the
+# body only, so a CSV row can never trip them.
+_DENIAL_STATUS_CODES = frozenset({403, 429})
+_DENIAL_TEXT_MARKERS = (
+    "exceeded the daily hits limit",
+    "daily hits limit",
+    "too many requests",
+)
 
 
 def _looks_like_challenge_page(body: str) -> bool:
     text = (body or "").lstrip().lower()
     return text.startswith("<") or "challenge" in text[:2000] or "proof of work" in text[:2000]
+
+
+def _denial_reason(response: Any) -> Optional[str]:
+    """Return a short reason when the response is a refusal, else ``None``.
+
+    Args:
+        response: The HTTP response from Stooq's CSV endpoint.
+
+    Returns:
+        A human-readable cause when the source is refusing this client -- a
+        403/429 status, the proof-of-work challenge page, or the plain-text
+        quota message -- otherwise ``None`` for a response worth parsing. An
+        ordinary "no data" body (``N/D``, empty) is not a refusal.
+    """
+    if response.status_code in _DENIAL_STATUS_CODES:
+        return f"HTTP {response.status_code}"
+    body = response.text or ""
+    if _looks_like_challenge_page(body):
+        return "anti-bot challenge page"
+    head = body.lstrip().lower()[:2000]
+    for marker in _DENIAL_TEXT_MARKERS:
+        if marker in head:
+            return f"refusal text {marker!r}"
+    return None
+
+
+def _latch(reason: str) -> None:
+    """Stop probing for the cooldown and tell the operator why."""
+    global _challenge_until
+    _challenge_until = time.monotonic() + _LATCH_COOLDOWN_S
+    logger.warning(
+        "stooq is unavailable to this process (%s); skipping it for %g seconds. "
+        "Move stooq to the end of the chain via MARKET_DATA_ORDER_* (e.g. "
+        "MARKET_DATA_ORDER_US_EQUITY); the override must be a permutation of the "
+        "default chain, so a source can be reordered but not removed.",
+        reason,
+        _LATCH_COOLDOWN_S,
+    )
 
 # Stooq's CSV header columns mapped to our output field names.
 _COLUMN_MAP = {
@@ -160,33 +225,35 @@ class DataLoader:
         self, code: str, start_date: str, end_date: str,
     ) -> Optional[pd.DataFrame]:
         """Fetch and parse one symbol's CSV; ``None`` when Stooq has no data."""
-        params = {
-            "s": map_symbol(code),
-            "d1": _compact_date(start_date),
-            "d2": _compact_date(end_date),
-            "i": "d",
-        }
-        response = throttled_get(
-            _BASE_URL,
-            host_key=HOST_KEY,
-            min_interval=_min_interval(),
-            params=params,
-        )
-        response.raise_for_status()
-        if _looks_like_challenge_page(response.text):
-            global _challenge_warned
-            if not _challenge_warned:
-                logger.warning(
-                    "stooq is serving an anti-bot challenge page instead of CSV "
-                    "data; treating it as unavailable for the rest of this "
-                    "process. Move stooq to the end of the chain via "
-                    "MARKET_DATA_ORDER_* (e.g. MARKET_DATA_ORDER_US_EQUITY); the "
-                    "override must be a permutation of the default chain, so a "
-                    "source can be reordered but not removed."
-                )
-                _challenge_warned = True
-            return None
-        return _parse_csv(response.text)
+        with _probe_lock:
+            if _challenge_until > time.monotonic():
+                # Latched by an earlier probe: the warning already told the
+                # operator the source is unavailable, and a second request can
+                # only be answered the same way. Probing resumes once the
+                # cooldown expires.
+                return None
+            params = {
+                "s": map_symbol(code),
+                "d1": _compact_date(start_date),
+                "d2": _compact_date(end_date),
+                "i": "d",
+            }
+            response = throttled_get(
+                _BASE_URL,
+                host_key=HOST_KEY,
+                min_interval=_min_interval(),
+                params=params,
+            )
+            # Check for a refusal before ``raise_for_status()``: a 403/429 is the
+            # source blocking this client, not one symbol failing, and letting it
+            # raise would spend one throttled request on every remaining symbol.
+            reason = _denial_reason(response)
+            if reason is not None:
+                _latch(reason)
+                return None
+            response.raise_for_status()
+            body = response.text
+        return _parse_csv(body)
 
 
 def _parse_csv(body: str) -> Optional[pd.DataFrame]:

@@ -8,6 +8,17 @@ import type {
 
 const BASE = "";
 
+export async function downloadGeneratedReport(reportId: string, filename: string): Promise<void> {
+  const response = await fetch(`${BASE}/api/reports/${encodeURIComponent(reportId)}`, { headers: authHeaders() });
+  if (!response.ok) throw new ApiError(response.statusText, response.status);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -306,10 +317,13 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
     if (typeof raw === "string" && raw) {
       detail = raw;
     } else if (raw && typeof raw === "object") {
-      const structured = raw as { code?: unknown; message?: unknown };
+      const structured = raw as { code?: unknown; message?: unknown; max_length?: unknown };
       if (typeof structured.code === "string" && structured.code) code = structured.code;
       if (typeof structured.message === "string" && structured.message) detail = structured.message;
       else if (code) detail = code;
+      if (code === "message_too_long" && typeof structured.max_length === "number") {
+        detail = i18n.t("agent.messageTooLong", { limit: structured.max_length.toLocaleString() });
+      }
     }
   } catch { /* ignore */ }
   if (res.status === 401 || res.status === 403) {
@@ -453,6 +467,11 @@ export const api = {
   listScheduledRuns: (signal?: AbortSignal) => request<ScheduledRun[]>("/scheduled-runs", { signal }),
   createScheduledRun: (body: CreateScheduledRunRequest) =>
     request<ScheduledRun>("/scheduled-runs", { method: "POST", body: JSON.stringify(body) }),
+  updateScheduledRun: (id: string, body: UpdateScheduledRunRequest) =>
+    request<ScheduledRun>(`/scheduled-runs/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   deleteScheduledRun: (id: string) =>
     request<void>(`/scheduled-runs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   commitScheduledResearchProposal: (proposalId: string) =>
@@ -673,6 +692,7 @@ export interface ScheduledRun {
   // app, which is what every monitor created before this did.
   delivery_channel: string | null;
   delivery_target: string | null;
+  delivery_format: "html" | "pdf" | null;
   delivery_target_ref: string | null;
   delivery_target_label: string | null;
   delivery_status: string;
@@ -695,7 +715,21 @@ export interface CreateScheduledRunRequest {
   config?: Record<string, unknown>;
   delivery_channel?: string | null;
   delivery_target?: string | null;
+  delivery_format?: "html" | "pdf" | null;
   delivery_target_ref?: string | null;
+}
+
+export interface UpdateScheduledRunRequest {
+  title?: string | null;
+  prompt?: string;
+  schedule?: string;
+  timezone?: string | null;
+  end_at?: number | null;
+  config?: Record<string, unknown> | null;
+  delivery_channel?: string | null;
+  delivery_target?: string | null;
+  delivery_target_ref?: string | null;
+  delivery_format?: "html" | "pdf" | null;
 }
 
 export interface ScheduledResearchProposalJob {
@@ -713,6 +747,7 @@ export interface ScheduledResearchProposalJob {
     channel: string | null;
     target_ref: string | null;
     target_label: string | null;
+    format?: "html" | "pdf" | null;
     status: string;
   };
 }
@@ -841,6 +876,12 @@ export interface UpdateDataSourceSettingsRequest {
   source_orders?: SourceOrderUpdate[];
 }
 
+export interface DeliveryTargetSuggestion {
+  target: string;
+  kind?: string;
+  label?: string;
+}
+
 export interface ChannelAdapterStatus {
   name: string;
   display_name: string;
@@ -851,6 +892,11 @@ export interface ChannelAdapterStatus {
   running: boolean;
   error?: string;
   install_hint?: string;
+  delivery_target_label?: string;
+  delivery_target_kind?: string;
+  delivery_target_placeholder?: string;
+  delivery_target_input_type?: string;
+  delivery_target_suggestions?: DeliveryTargetSuggestion[];
 }
 
 export interface ChannelRuntimeStatus {
@@ -1268,6 +1314,24 @@ export function fetchRunSectorMap(runId: string, refresh?: boolean): Promise<Sec
   return request<SectorMapResponse>(`/runs/${encodeURIComponent(runId)}/positions/sectors${qs}`);
 }
 
+export interface RunCardToolTrace {
+  tool: "backtest" | "load_data" | "generate_signals";
+  started_at: string;
+  ended_at: string;
+  status: "ok" | "error" | "cancelled";
+  args_hash: string;
+  result_hash: string;
+}
+
+export interface RunCardCitation {
+  metric: string;
+  artifact_id: string;
+  column: string;
+  /** One-based data row, excluding the CSV header. */
+  row: number;
+  sha256: string;
+}
+
 export interface RunCard {
   schema_version?: string;
   generated_at?: string;
@@ -1282,6 +1346,8 @@ export interface RunCard {
   validation?: unknown;
   warnings?: string[];
   artifacts?: RunCardArtifact[];
+  tool_traces?: RunCardToolTrace[];
+  citations?: RunCardCitation[];
   [key: string]: unknown;
 }
 

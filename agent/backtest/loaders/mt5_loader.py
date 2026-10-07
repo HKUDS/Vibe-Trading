@@ -14,7 +14,7 @@ logged-in terminal, which is the primary read-only path.
 
 History depth is bounded by the terminal's "Max bars in chart" setting.
 Broker account-type suffixes (Exness ``EURUSDm``) are discovered via
-``symbols_get`` and memoized; results are keyed by the caller's ORIGINAL
+``symbols_get`` without guessing between multiple matches; results are keyed by the caller's ORIGINAL
 code so the runner's coverage check (``set(codes) - set(data_map)``) holds.
 """
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
@@ -54,10 +55,6 @@ _INTERVAL_MAP = {
 #: launch the terminal), and chain resolution probes ``is_available`` often.
 _init_state: bool | None = None
 
-#: base symbol → resolved broker symbol memo.
-_symbol_cache: dict[str, str] = {}
-
-
 def _import_mt5() -> ModuleType | None:
     """Lazy-import the Windows-only SDK; ``None`` when absent."""
     try:
@@ -87,17 +84,35 @@ def _ensure_initialized() -> bool:
         return False
     config = _read_mt5_config()
     kwargs: dict[str, Any] = {}
-    if config.get("login"):
-        kwargs["login"] = int(config["login"])
-        kwargs["password"] = str(config.get("password") or "")
-        kwargs["server"] = str(config.get("server") or "")
-    if config.get("timeout"):
-        kwargs["timeout"] = int(float(config["timeout"]) * 1000)
-    args = (str(config["terminal_path"]),) if config.get("terminal_path") else ()
+    try:
+        if config.get("login"):
+            kwargs["login"] = int(config["login"])
+            kwargs["password"] = str(config.get("password") or "")
+            kwargs["server"] = str(config.get("server") or "")
+        if "timeout" in config:
+            timeout = float(config["timeout"])
+            if not math.isfinite(timeout) or timeout <= 0:
+                raise ValueError("invalid timeout")
+            kwargs["timeout"] = int(timeout * 1000)
+        terminal_path = config.get("terminal_path", "")
+        if not isinstance(terminal_path, str) or "\x00" in terminal_path:
+            raise ValueError("invalid terminal path")
+        args = (terminal_path,) if terminal_path else ()
+    except (TypeError, ValueError, OverflowError):
+        logger.warning("mt5: invalid terminal attachment configuration")
+        _init_state = False
+        return False
+    if not args:
+        logger.warning(
+            "mt5: no terminal_path configured, so the SDK picks a terminal "
+            "itself; on hosts with several MT5 installations that can be a "
+            "different installation logged into a different account. Set "
+            "terminal_path in mt5.json to pin the attach (#1589)."
+        )
     try:
         ok = bool(mt5.initialize(*args, **kwargs))
     except Exception as exc:  # noqa: BLE001 - availability probe must not raise
-        logger.warning("mt5: initialize raised: %s", exc)
+        logger.warning("mt5: initialize raised %s", type(exc).__name__)
         ok = False
     if not ok:
         try:
@@ -119,31 +134,28 @@ def _to_query_base(code: str) -> str:
 
 
 def _resolve_broker_symbol(mt5: ModuleType, code: str) -> str | None:
-    """Resolve a project code to the broker's symbol name (memoized).
+    """Resolve a project code to one unambiguous broker symbol name.
 
     Order: the raw token exactly (case-sensitive broker names pass through),
     the normalized base, then suffix discovery via ``symbols_get(f"{base}*")``
-    — shortest name first, then alphabetical, which deterministically picks
-    ``EURUSDm`` over ``EURUSDz`` on Exness-style brokers.
+    — multiple matches are refused, requiring an exact native symbol.
     """
     base = _to_query_base(code)
-    cached = _symbol_cache.get(base)
-    if cached is not None:
-        return cached
     raw = code.strip()
     for candidate in dict.fromkeys((raw, base)):  # ordered, deduped
         if candidate and mt5.symbol_info(candidate) is not None:
-            _symbol_cache[base] = candidate
             return candidate
     matches = sorted(
         (getattr(info, "name", "") for info in (mt5.symbols_get(group=f"{base}*") or ())),
         key=lambda name: (len(name), name),
     )
-    matches = [m for m in matches if m]
+    matches = sorted({m for m in matches if m and m.upper().startswith(base)})
+    if len(matches) > 1:
+        logger.warning("mt5: ambiguous broker symbol %r; specify the exact native symbol", code)
+        return None
     if not matches:
         logger.warning("mt5: symbol %r not offered by this broker (no match for %s*)", code, base)
         return None
-    _symbol_cache[base] = matches[0]
     return matches[0]
 
 
@@ -212,7 +224,7 @@ class DataLoader:
             try:
                 frame = cached_loader_fetch(
                     source=self.name,
-                    symbol=_to_query_base(clean),
+                    symbol=clean,
                     timeframe=interval,
                     start_date=start_date,
                     end_date=end_date,

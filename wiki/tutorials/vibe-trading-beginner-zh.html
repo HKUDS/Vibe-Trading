@@ -1,20 +1,7 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-page-lang="zh">
 <head>
   <meta charset="utf-8">
-  <script>
-    (function () {
-      try {
-        var stored = localStorage.getItem("vibetrading-theme");
-        var resolved = stored === "dark" || stored === "light"
-          ? stored
-          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.setAttribute("data-theme", resolved);
-      } catch (e) {
-        document.documentElement.setAttribute("data-theme", "light");
-      }
-    })();
-  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vibe-Trading 中文入门教程 | Vibe-Trading Wiki</title>
   <meta name="description" content="面向非金融专业读者的 Vibe-Trading 中文入门教程：理解因子、策略、回测、多市场数据源、券商连接器与 Shadow Account。">
@@ -26,12 +13,18 @@
   <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
   <meta property="og:url" content="https://vibetrading.wiki/tutorials/vibe-trading-beginner-zh.html">
   <link rel="canonical" href="https://vibetrading.wiki/tutorials/vibe-trading-beginner-zh.html">
+  <link rel="alternate" hreflang="en" href="/tutorials/vibe-trading-beginner.html">
+  <link rel="alternate" hreflang="zh-CN" href="/tutorials/vibe-trading-beginner-zh.html">
+  <link rel="alternate" hreflang="x-default" href="/tutorials/vibe-trading-beginner.html">
+  <!-- site-head:start -->
   <link rel="icon" type="image/png" href="/assets/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/main.js"></script>
+  <link rel="stylesheet" href="/styles.css?v=20260929e">
+  <script src="/theme-init.js?v=20260929e"></script>
+  <!-- site-head:end -->
+  <script type="module" src="/main.js?v=20260929e"></script>
   <style>
     .tutorial {
       width: min(940px, calc(100% - 32px));
@@ -300,31 +293,35 @@
     }
   </style>
 </head>
-<body>
+<body data-section="tutorials">
+  <!-- site-header:start -->
   <header class="site-header" id="site-header">
     <div class="site-header__inner">
-      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home" data-i18n-attr="aria-label=header.homeLabel">
         <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
         <span class="brand__text">Vibe-Trading</span>
       </a>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="/docs/">Docs</a>
-        <a href="/tutorials/">Tutorials</a>
-        <a href="/alpha-library/">Alpha Library</a>
-        <a href="/research-lab/">Research Lab</a>
-        <a href="https://github.com/HKUDS/Vibe-Trading">Source</a>
+      <nav class="site-nav" aria-label="Primary" data-i18n-attr="aria-label=header.navLabel">
+        <a href="/home/" data-nav="home" data-i18n="nav.home">Home</a>
+        <a href="/docs/" data-nav="docs" data-i18n="nav.docs">Docs</a>
+        <a href="/tutorials/" data-nav="tutorials" data-i18n="nav.tutorials">Tutorials</a>
+        <a href="/alpha-library/" data-nav="alpha" data-i18n="nav.alpha">Alpha Library</a>
+        <a href="/research-lab/" data-nav="lab" data-i18n="nav.lab">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
       </nav>
       <div class="site-actions">
+        <button class="lang-pill" id="lang-toggle" type="button" lang="zh-CN" aria-label="切换到中文">中文</button>
         <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
           <span aria-hidden="true">Star</span>
           <strong id="star-count">--</strong>
         </a>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme">
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" data-i18n-attr="aria-label=header.themeLabel">
           <span class="theme-icon" aria-hidden="true"></span>
         </button>
       </div>
     </div>
   </header>
+  <!-- site-header:end -->
 
   <main class="tutorial">
     <header>
@@ -390,7 +387,7 @@
         </article>
         <article class="module-card">
           <h3>因子层：factor / alpha</h3>
-          <p><code>agent/src/factors/</code> 内置 456 个 alpha。因子是给股票打分的数值信号，不是下单规则，也不是收益保证。</p>
+          <p><code>agent/src/factors/</code> 内置 462 个 alpha。因子是给股票打分的数值信号，不是下单规则，也不是收益保证。</p>
         </article>
         <article class="module-card">
           <h3>回测层：backtest</h3>
@@ -426,7 +423,7 @@
         <tbody>
           <tr>
             <td>标的 / symbol</td>
-            <td>你研究或交易的对象，比如 <code>AAPL</code>、<code>BTC-USDT</code>、<code>600519.SH</code>。</td>
+            <td>你研究或交易的对象，比如 <code>AAPL.US</code>、<code>BTC-USDT</code>、<code>600519.SH</code>。</td>
             <td>回测配置里的 <code>codes</code>，券商工具里的 <code>symbol</code>。</td>
           </tr>
           <tr>
@@ -516,7 +513,7 @@
           </tr>
           <tr>
             <td>mandate</td>
-            <td>实盘授权边界：能交易哪些标的、单笔多少、最大仓位、每日亏损限制等。</td>
+            <td>实盘授权边界：能交易哪些标的、单笔多少、最大总敞口、每天最多交易几笔等。</td>
             <td>实盘下单路径的风控门。</td>
           </tr>
         </tbody>
@@ -531,7 +528,7 @@
         <p>重要：因子不是策略。因子只回答“哪个标的分数更高”。策略还要回答“买多少、什么时候买、什么时候卖、交易成本多少、是否允许集中持仓、是否能成交”。</p>
       </div>
 
-      <p>当前仓库的 Alpha Zoo 有 456 个 alpha，分成四类：</p>
+      <p>当前仓库的 Alpha Zoo 有 462 个 alpha，分成五个因子集：</p>
       <table class="term-grid">
         <thead>
           <tr>
@@ -543,7 +540,7 @@
         <tbody>
           <tr>
             <td><code>academic</code></td>
-            <td>10</td>
+            <td>12</td>
             <td>学术风格因子，例如动量、反转、52 周高点、非流动性等，适合入门理解。</td>
           </tr>
           <tr>
@@ -561,6 +558,11 @@
             <td>154</td>
             <td>Qlib Alpha158 特征，常作为机器学习模型的输入特征。</td>
           </tr>
+          <tr>
+            <td><code>fundamental</code></td>
+            <td>4</td>
+            <td>用时点正确的财务报表数据构建的因子：净资产收益率、毛利盈利能力、盈利收益率和资产增长。</td>
+          </tr>
         </tbody>
       </table>
 
@@ -574,7 +576,7 @@
         <li><strong>value / quality</strong>：估值或质量风格，通常更偏中长期。</li>
       </ul>
 
-      <p>先用 CLI 浏览，而不是直接读 456 个源码文件：</p>
+      <p>先用 CLI 浏览，而不是直接读 462 个源码文件：</p>
       <pre><code>vibe-trading alpha list --zoo academic
 vibe-trading alpha show academic_mkt_rf
 vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10</code></pre>
@@ -681,7 +683,7 @@ vibe-trading connector check</code></pre>
       <h2>8. Shadow Account</h2>
       <p>Shadow Account 是“复盘你自己”的功能。它不是从网上找一个通用策略，而是读取你的交易流水，配对买入和卖出，找出你赚钱交易里反复出现的规则，再回测一个规则版的 shadow strategy。</p>
 
-      <p>当前交易流水解析支持若干常见券商导出格式和 generic CSV。它会输出持仓天数、胜率、盈亏比、回撤、处置效应、过度交易、追涨、锚定等行为诊断。随后 Shadow Account 会提取 3 到 5 条 if-then 规则，生成策略代码，跑多市场回测，最后渲染 HTML/PDF 报告。</p>
+      <p>当前交易流水解析支持若干常见券商导出格式和 generic CSV。它会输出持仓天数、胜率、盈亏比、回撤、处置效应、过度交易、追涨、锚定等行为诊断。随后 Shadow Account 会提取最多 5 条 if-then 规则，生成策略代码，跑多市场回测，最后渲染 HTML/PDF 报告。</p>
 
       <pre><code>vibe-trading --upload trades_export.csv
 vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, and compare it with my actual trades."</code></pre>
@@ -692,7 +694,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
     <section id="learning-path">
       <h2>9. 建议学习路线</h2>
       <ol>
-        <li><strong>第一天：只跑起来。</strong> 安装、初始化、打开 CLI 或 Web UI，问一个你熟悉的问题，不连券商，不下单。</li>
+        <li><strong>第一天：只跑起来。</strong> 安装、初始化、打开 CLI 或 Web UI（Web UI 要用 Docker，或在源码目录执行 <code>vibe-trading setup</code> 后在 http://127.0.0.1:8899 打开；只用 <code>pip install</code> 安装时不带构建好的 Web UI），问一个你熟悉的问题，不连券商，不下单。</li>
         <li><strong>第二天：只看数据。</strong> 选几个你熟悉的标的，理解 symbol、OHLCV、数据源 fallback 和缺失值。</li>
         <li><strong>第三天：只看因子。</strong> 从 <code>academic</code> zoo 开始，用 <code>alpha show</code> 看公式，用 <code>alpha bench</code> 看 IC/IR，不急着交易。</li>
         <li><strong>第四天：做一个简单回测。</strong> 让 agent 生成一个动量或均线策略，重点看 config、signal_engine、回测指标和交易明细。</li>
@@ -728,13 +730,22 @@ vibe-trading connector list</code></pre>
     </section>
   </main>
 
+  <!-- site-footer:start -->
   <footer class="site-footer">
-    <span>Vibe-Trading Wiki</span>
-    <a href="/docs/">Docs</a>
-    <a href="/tutorials/">Tutorials</a>
-    <a href="/alpha-library/">Alpha Library</a>
-    <a href="/research-lab/">Research Lab</a>
+    <span class="site-footer__name">Vibe-Trading Wiki</span>
+    <a href="/docs/" data-i18n="nav.docs">Docs</a>
+    <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
+    <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
+    <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
     <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+    <div class="footer-traffic" id="footer-traffic" hidden>
+      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> <span data-i18n="footer.agents">AI agents</span></span>
+      <span class="ft-item">👤 <strong id="vt-humans">–</strong> <span data-i18n="footer.humans">humans</span></span>
+      <span class="ft-item">📦 <strong id="vt-installs">–</strong> <span data-i18n="footer.installs">installs/mo</span></span>
+      <span class="ft-note" data-i18n="footer.note">visitors to this site · anonymous · first-party</span>
+    </div>
   </footer>
+  <!-- site-footer:end -->
 </body>
 </html>

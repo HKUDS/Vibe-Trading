@@ -1,52 +1,31 @@
+// Runs before first paint (a blocking external script, so pages with a strict
+// CSP can use it too). Resolves the colour theme. When the page is about to be
+// shown in Chinese — a Chinese article, a /docs/zh/ URL, or a language-neutral
+// page (or bare /docs/) whose reader chose Chinese — it keeps the page hidden
+// until site.js has swapped the English text: at most 1.5 s, so a failed load
+// still shows the page.
 (function () {
+  var root = document.documentElement;
   try {
     var stored = localStorage.getItem("vibetrading-theme");
     var resolved = stored === "dark" || stored === "light"
       ? stored
       : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    document.documentElement.setAttribute("data-theme", resolved);
+    root.setAttribute("data-theme", resolved);
   } catch (e) {
-    document.documentElement.setAttribute("data-theme", "light");
+    root.setAttribute("data-theme", "light");
   }
-})();
-
-(function () {
-  function hydrateAlphaStats() {
-    fetch("content/index.json", { cache: "default" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("index.json " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        var total = document.getElementById("stat-total");
-        var totalSub = document.getElementById("stat-total-sub");
-        var zoos = document.getElementById("stat-zoos");
-        var gen = document.getElementById("stat-generated");
-        if (total) total.textContent = String(data.total_alphas || 0);
-        if (totalSub) totalSub.textContent = "across " + (data.zoo_count || 0) + " zoos";
-        if (zoos) zoos.textContent = String(data.zoo_count || 0);
-        if (gen && data.generated_at) {
-          try { gen.textContent = new Date(data.generated_at).toISOString().slice(0, 10); }
-          catch (e) { gen.textContent = "unknown"; }
-        }
-        var countEls = Array.prototype.slice.call(document.querySelectorAll(".count[data-zoo]"));
-        (data.zoos || []).forEach(function (z) {
-          var zooId = String(z.zoo_id || "");
-          var el = countEls.find(function (candidate) {
-            return candidate.dataset.zoo === zooId;
-          });
-          if (el) el.textContent = z.count + " alphas";
-        });
-      })
-      .catch(function () {
-        var totalSub = document.getElementById("stat-total-sub");
-        if (totalSub) totalSub.textContent = "manifest not generated yet";
-      });
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", hydrateAlphaStats);
-  } else {
-    hydrateAlphaStats();
+  try {
+    var path = location.pathname;
+    var chosenZh = localStorage.getItem("vibetrading-lang") === "zh";
+    var bareDocs = path === "/docs" || path === "/docs/" || path === "/docs/index.html";
+    var zhUrl = path.indexOf("/docs/zh/") === 0 || root.getAttribute("data-page-lang") === "zh";
+    if (zhUrl || (chosenZh && (root.hasAttribute("data-lang-neutral") || bareDocs))) {
+      root.setAttribute("lang", "zh-CN");
+      root.setAttribute("data-lang-pending", "");
+      setTimeout(function () { root.removeAttribute("data-lang-pending"); }, 1500);
+    }
+  } catch (e) {
+    /* storage blocked: English */
   }
 })();

@@ -6,9 +6,7 @@ import asyncio
 import hashlib
 import logging
 from collections import defaultdict
-from collections.abc import Callable
 from contextlib import suppress
-from pathlib import Path
 from typing import Any
 
 from src.channels.base import BaseChannel
@@ -573,12 +571,16 @@ class ChannelManager:
         status = {name: dict(item) for name, item in self._status.items()}
         for name, channel in self.channels.items():
             status.setdefault(name, {})
+            target_suggestions = getattr(channel, "delivery_target_suggestions", None)
             status[name].update(
                 {
                     "enabled": True,
                     "loaded": True,
                     "running": channel.is_running,
                     "display_name": getattr(channel, "display_name", name),
+                    "delivery_target_suggestions": (
+                        target_suggestions() if callable(target_suggestions) else []
+                    ),
                 }
             )
         return status

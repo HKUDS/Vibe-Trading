@@ -13,8 +13,8 @@ import { useSSE } from "@/hooks/useSSE";
 import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
 import {
   extractUploadedAttachments,
-  prependUploadedAttachments,
 } from "@/lib/attachments";
+import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -110,8 +110,6 @@ function toolProgressKey(callId: string | undefined, tool: string): string {
 
 const STREAM_FLUSH_INTERVAL_MS = 80;
 const TIMELINE_WINDOW_SIZE = 160;
-const SWARM_PROMPT_PREFIX =
-  "[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n";
 const GOAL_KICKOFF_PREFIX = [
   "Start working on this research goal now.",
   "Keep it research-only, use available tools when evidence is needed, add concrete evidence to the goal ledger, and keep going until the goal is complete, blocked, waiting for user input, or budget-limited.",
@@ -246,6 +244,7 @@ export function Agent() {
   const replayCheckTimerRef = useRef(0);
   const smoothScrollingRef = useRef(false);
   const smoothScrollTimerRef = useRef(0);
+  const historyScrollTimerRef = useRef(0);
   const titleBeforeCompletionRef = useRef<string | null>(null);
   const completedAttemptIdsRef = useRef<Set<string>>(new Set());
 
@@ -319,6 +318,14 @@ export function Agent() {
       }
     });
   }, [isNearBottom]);
+
+  const scheduleHistoryScroll = useCallback(() => {
+    window.clearTimeout(historyScrollTimerRef.current);
+    historyScrollTimerRef.current = window.setTimeout(() => {
+      historyScrollTimerRef.current = 0;
+      forceScrollToBottom();
+    }, 50);
+  }, [forceScrollToBottom]);
 
   const flushPendingStreamUpdate = useCallback(() => {
     window.clearTimeout(streamFlushTimerRef.current);
@@ -487,6 +494,7 @@ export function Agent() {
   const doDisconnect = useCallback(() => {
     cancelPendingStreamFlush();
     window.clearTimeout(replayCheckTimerRef.current);
+    window.clearTimeout(historyScrollTimerRef.current);
     disconnect();
     sseSessionRef.current = null;
   }, [cancelPendingStreamFlush, disconnect]);
@@ -656,13 +664,13 @@ export function Agent() {
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);
       setRuntimeIdentity(latestRuntimeIdentity ?? {});
-      setTimeout(() => forceScrollToBottom(), 50);
+      scheduleHistoryScroll();
     } catch {
       if (genRef.current !== gen) return;
       setRuntimeIdentity({});
       act().setSessionLoading(false);
     }
-  }, [forceScrollToBottom]);
+  }, [scheduleHistoryScroll]);
 
   const refreshSessionMessages = useCallback(async (sid: string) => {
     const gen = genRef.current + 1;
@@ -1292,7 +1300,7 @@ export function Agent() {
       const cached = getCachedSession(urlSessionId);
       switchSession(urlSessionId, cached);
       if (cached) {
-        setTimeout(() => forceScrollToBottom(), 50);
+        scheduleHistoryScroll();
       }
       // Cached rows provide an instant shell; REST remains authoritative for a
       // turn that completed while this session was off-screen.
@@ -1336,7 +1344,7 @@ export function Agent() {
       if (curSid && curMsgs.length > 0) cacheSession(curSid, curMsgs);
       reset();
     }
-  }, [urlSessionId, doDisconnect, loadSessionMessages, setupSSE, forceScrollToBottom]);
+  }, [urlSessionId, doDisconnect, loadSessionMessages, setupSSE, scheduleHistoryScroll]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -1351,6 +1359,8 @@ export function Agent() {
   }, [sessionId, loadGoalSnapshot]);
 
   useEffect(() => () => {
+    // Invalidate pending history loads before they can schedule another scroll.
+    genRef.current += 1;
     doDisconnect();
     cancelAnimationFrame(progressRafRef.current);
     pendingProgressRef.current.clear();
@@ -1409,6 +1419,13 @@ export function Agent() {
     attachments: ComposerAttachment[] = [],
   ) => {
     if ((!prompt.trim() && attachments.length === 0) || status === "streaming") return;
+    const finalPrompt = buildChatPrompt(prompt, attachments, Boolean(swarmPreset));
+    const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
+    if (promptExceedsLimit(goalComposerActive ? prompt : finalPrompt, limit)) {
+      toast.error(t('agent.messageTooLong', { limit: limit.toLocaleString() }));
+      composerRef.current?.fill(prompt);
+      return;
+    }
     clearStreamingView();
 
     if (goalComposerActive) {
@@ -1446,7 +1463,6 @@ export function Agent() {
       return;
     }
 
-    let finalPrompt = prompt;
     const displayPrompt = toDisplayPrompt(prompt);
     const messageMeta: AgentMessageMeta = { ...displayPrompt.meta };
 
@@ -1454,12 +1470,10 @@ export function Agent() {
     if (swarmPreset) {
       messageMeta.swarmMode = true;
       setSwarmPreset(null);
-      finalPrompt = `${SWARM_PROMPT_PREFIX}${prompt}`;
     }
 
     if (attachments.length > 0) {
       messageMeta.attachments = attachments.map(({ filename }) => ({ filename }));
-      finalPrompt = prependUploadedAttachments(finalPrompt, attachments);
     }
     messageMeta.requestText = finalPrompt;
     act().addMessage({
@@ -1492,7 +1506,8 @@ export function Agent() {
     } catch (error) {
       archiveActivity("failed");
       act().setStatus("error");
-      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : t('agent.failedToSend');
+      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE
+        : error instanceof ApiError && error.code === 'message_too_long' ? error.message : t('agent.failedToSend');
       toast.error(message);
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }

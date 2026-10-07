@@ -1,7 +1,7 @@
 """Tests for channel config field metadata and fail-safe secret masking.
 
-Covers the uiHints registry (hand-written for DingTalk and QQ, derived
-elsewhere) and the security acceptance criterion: no key matching
+Covers the uiHints registry (hand-written for DingTalk, Email, Feishu, QQ
+and WebSocket, derived elsewhere) and the security acceptance criterion: no key matching
 :data:`SECRET_KEY_RE` ever survives in the non-secret ``values`` half.
 """
 
@@ -176,6 +176,105 @@ def test_qq_field_hints_exact_snapshot() -> None:
     assert "enabled" not in {hint["key"] for hint in hints}
 
 
+def test_feishu_field_hints_exact_snapshot() -> None:
+    """Feishu hints match the frozen contract, with ``enabled`` excluded."""
+    hints = channel_field_hints("feishu")
+    assert hints == [
+        {
+            "key": "app_id",
+            "type": "text",
+            "secret": False,
+            "required": True,
+            "help_key": "settings.channels.fields.feishu.app_id",
+        },
+        {
+            "key": "app_secret",
+            "type": "password",
+            "secret": True,
+            "required": True,
+            "help_key": "settings.channels.fields.feishu.app_secret",
+        },
+        {
+            "key": "encrypt_key",
+            "type": "password",
+            "secret": True,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.encrypt_key",
+        },
+        {
+            "key": "verification_token",
+            "type": "password",
+            "secret": True,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.verification_token",
+        },
+        {
+            "key": "allow_from",
+            "type": "list",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.allow_from",
+        },
+        {
+            "key": "react_emoji",
+            "type": "text",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.react_emoji",
+        },
+        {
+            "key": "done_emoji",
+            "type": "text",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.done_emoji",
+        },
+        {
+            "key": "tool_hint_prefix",
+            "type": "text",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.tool_hint_prefix",
+        },
+        {
+            "key": "group_policy",
+            "type": "text",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.group_policy",
+        },
+        {
+            "key": "reply_to_message",
+            "type": "bool",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.reply_to_message",
+        },
+        {
+            "key": "streaming",
+            "type": "bool",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.streaming",
+        },
+        {
+            "key": "domain",
+            "type": "text",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.domain",
+        },
+        {
+            "key": "topic_isolation",
+            "type": "bool",
+            "secret": False,
+            "required": False,
+            "help_key": "settings.channels.fields.feishu.topic_isolation",
+        },
+    ]
+    assert "enabled" not in {hint["key"] for hint in hints}
+
+
 # --- (a2) hand-written Email / WebSocket hints ------------------------------- #
 
 _EMAIL_HINT_KEYS = (
@@ -207,6 +306,7 @@ _EMAIL_HINT_KEYS = (
     "allow_from",
     "verify_dkim",
     "verify_spf",
+    "trusted_authserv_id",
     "allowed_attachment_types",
     "max_attachment_size",
     "max_attachments_per_email",
@@ -238,7 +338,7 @@ def test_email_field_hints_contract() -> None:
     keys = tuple(hint["key"] for hint in hints)
     assert keys == _EMAIL_HINT_KEYS
     assert "enabled" not in keys
-    assert len(hints) == 31
+    assert len(hints) == 32
 
     by_key = {hint["key"]: hint for hint in hints}
     assert {key for key, hint in by_key.items() if hint["secret"]} == {
@@ -526,6 +626,29 @@ def test_hint_marked_secret_is_masked_for_known_channel() -> None:
     )
     assert values == {}
     assert secrets == {"client_secret": {"set": True, "masked": "****1234"}}
+
+
+def test_feishu_secrets_are_masked_and_behavior_values_stay_visible() -> None:
+    """All three Feishu credential fields mask; behavior fields stay in values."""
+    section = {
+        "enabled": True,
+        "app_id": "cli_app_id_123",
+        "app_secret": "dummy-secret-1234",
+        "encrypt_key": "dummy-encrypt-5678",
+        "verification_token": "dummy-verify-9012",
+        "react_emoji": "THUMBSUP",
+        "domain": "lark",
+        "group_policy": "open",
+    }
+    values, secrets = split_values_secrets("feishu", section)
+    assert set(secrets) == {"app_secret", "encrypt_key", "verification_token"}
+    assert secrets["app_secret"] == {"set": True, "masked": "****1234"}
+    assert secrets["encrypt_key"] == {"set": True, "masked": "****5678"}
+    assert secrets["verification_token"] == {"set": True, "masked": "****9012"}
+    assert values["react_emoji"] == "THUMBSUP"
+    assert values["domain"] == "lark"
+    assert values["group_policy"] == "open"
+    assert values["app_id"] == "cli_app_id_123"
 
 
 def test_secret_key_regex_is_case_insensitive() -> None:

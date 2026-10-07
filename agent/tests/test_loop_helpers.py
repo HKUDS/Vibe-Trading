@@ -20,7 +20,6 @@ from src.agent.loop import (
     _archive_backtest_result,
     _llm_timeout_seconds,
     _stall_timeout_seconds,
-    _verification_ledger,
     _cleared_text,
 )
 
@@ -709,6 +708,23 @@ def test_tail_cut_index_counts_tool_call_arguments() -> None:
     assert _tail_cut_index(body) != 0
 
 
+def test_tail_cut_index_counts_reasoning_content() -> None:
+    """#tail-budget: a thinking-model turn's huge reasoning_content must be
+    pushed into the folded head too, not counted as ~10 tokens in the tail."""
+    from src.agent.loop import _tail_cut_index
+
+    fat = "X" * 90_000  # ~22.5K tokens once reasoning_content is counted
+    body = [
+        {"role": "user", "content": "old header"},
+        {"role": "assistant", "content": "final answer", "reasoning_content": fat},
+    ]
+    # Old sizing (content only): both messages fit the 20K budget -> cut at 0.
+    # New sizing: the reasoning turn alone exceeds it -> cut at len(body), tail
+    # empty, the oversized turn goes into the folded head.
+    assert _tail_cut_index(body) == len(body)
+    assert _tail_cut_index(body) != 0
+
+
 def test_context_collapse_stubs_args_of_cleared_paired_call() -> None:
     """#layer-2: a tool_call whose paired result was [cleared] gets its huge
     arguments folded to a valid JSON '{}' stub (call id/name preserved)."""
@@ -809,6 +825,20 @@ def test_msg_estimate_chars_counts_dict_arguments() -> None:
     }
     assert _msg_estimate_chars(msg) >= 4000
     assert _msg_estimate_chars({"role": "user", "content": "hi"}) >= 2
+
+
+def test_msg_estimate_chars_counts_reasoning_content() -> None:
+    """#adversarial: reasoning_content must count toward sizing too, consistent
+    with ``estimate_tokens``' full serialization gate."""
+    from src.agent.loop import _msg_estimate_chars
+
+    msg = {
+        "role": "assistant",
+        "content": "final answer",
+        "reasoning_content": "X" * 4000,
+    }
+    assert _msg_estimate_chars(msg) >= 4000
+    assert _msg_estimate_chars({"role": "user", "content": "hi"}) < 4000
 
 
 class TestMicrocompactMarkerIsStable:

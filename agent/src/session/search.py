@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
+import threading as _threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,6 +26,29 @@ from src.config.paths import get_runtime_root
 logger = logging.getLogger(__name__)
 
 _DB_PATH = get_runtime_root() / "sessions.db"
+
+# Ideographs, kana (including half-width), Hangul syllables and jamo.
+_EAST_ASIAN = "\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f\uac00-\ud7af\u1100-\u11ff\u3130-\u318f"
+_EAST_ASIAN_CHAR = re.compile(f"[{_EAST_ASIAN}]")
+_QUERY_TERM = re.compile(rf"[{_EAST_ASIAN}]+|[^\W_{_EAST_ASIAN}]+")
+
+
+def _prepare_search_text(text: str) -> str:
+    """Separate East Asian characters for FTS5 without changing display text."""
+    return _EAST_ASIAN_CHAR.sub(lambda match: f" {match[0]} ", text)
+
+
+def _search_snippet(content: str, query: str) -> str:
+    """Highlight query terms in the original text, never in expanded tokens."""
+    terms = sorted(set(_QUERY_TERM.findall(query)), key=len, reverse=True)
+    pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE) if terms else None
+    first = pattern.search(content) if pattern else None
+    start = max(0, first.start() - 100) if first else 0
+    end = min(len(content), start + 400)
+    excerpt = content[start:end]
+    if pattern:
+        excerpt = pattern.sub(lambda match: f">>>{match[0]}<<<", excerpt)
+    return ("..." if start else "") + excerpt + ("..." if end < len(content) else "")
 
 
 @dataclass(frozen=True)
@@ -108,31 +133,32 @@ class SessionSearchIndex:
             CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages(session_id);
         """)
-        # FTS5 virtual table — create separately (not inside executescript with IF NOT EXISTS
-        # because FTS5 syntax varies across SQLite versions)
-        try:
+        # Serialize upgrade across processes. Keep original messages for readable
+        # snippets; rebuild the derived index once, including historical rows.
+        conn.create_function("prepare_session_text", 1, _prepare_search_text, deterministic=True)
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(messages)")}
+            migrating = "search_content" not in columns
+            if migrating:
+                for name in ("messages_ai", "messages_ad", "messages_au"):
+                    conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+                conn.execute("ALTER TABLE messages ADD COLUMN search_content TEXT NOT NULL DEFAULT ''")
+                conn.execute("UPDATE messages SET search_content = prepare_session_text(content)")
+                conn.execute("DROP TABLE IF EXISTS messages_fts")
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
-                USING fts5(content, content=messages, content_rowid=id)
+                USING fts5(search_content, content=messages, content_rowid=id)
             """)
-        except sqlite3.OperationalError:
-            pass  # already exists or FTS5 not available
-
-        # Auto-sync triggers
-        for trigger_sql in [
-            """CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-                INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
-            END""",
-            """CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-                INSERT INTO messages_fts(messages_fts, rowid, content)
-                VALUES ('delete', old.id, old.content);
-            END""",
-        ]:
-            try:
-                conn.execute(trigger_sql)
-            except sqlite3.OperationalError:
-                pass
-        conn.commit()
+            conn.execute("""CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+                INSERT INTO messages_fts(rowid, search_content) VALUES (new.id, new.search_content);
+            END""")
+            conn.execute("""CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+                INSERT INTO messages_fts(messages_fts, rowid, search_content)
+                VALUES ('delete', old.id, old.search_content);
+            END""")
+            if migrating:
+                conn.execute("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')")
 
     def index_session(
         self,
@@ -180,10 +206,12 @@ class SessionSearchIndex:
         if not content or not content.strip():
             return
         conn = self._get_conn()
+        content = content[:50_000]
+        prepared = _prepare_search_text(content)
         conn.execute(
-            "INSERT INTO messages (session_id, role, content, tool_name, timestamp) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (session_id, role, content[:50_000], tool_name, time.time()),
+            "INSERT INTO messages (session_id, role, content, search_content, tool_name, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, role, content, prepared, tool_name, time.time()),
         )
         conn.execute(
             "UPDATE sessions SET message_count = message_count + 1 WHERE id = ?",
@@ -195,7 +223,8 @@ class SessionSearchIndex:
     def _sanitize_fts_query(query: str) -> str:
         """Sanitize a user query for FTS5 MATCH syntax.
 
-        - Splits on non-alphanumeric/CJK to extract tokens
+        - Separates Unicode words and East Asian character runs; the latter
+          become adjacent-token phrases, matching shorter text accurately
         - Joins with OR so any-word-matches (not all-words-required)
         - Quotes each token to prevent FTS5 operator interpretation
 
@@ -205,13 +234,8 @@ class SessionSearchIndex:
         Returns:
             FTS5-safe MATCH expression.
         """
-        import re as _re
-        # Extract alphanumeric tokens (3+ chars) and CJK characters
-        tokens = _re.findall(r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff\u3400-\u4dbf]", query)
-        if not tokens:
-            return '""'
-        # Quote each token and join with OR for broader matching
-        return " OR ".join(f'"{t}"' for t in tokens)
+        tokens = [_prepare_search_text(term).strip() for term in _QUERY_TERM.findall(query)]
+        return " OR ".join(f'"{token}"' for token in tokens) if tokens else '""'
 
     def search(self, query: str, max_sessions: int = 3) -> List[SearchMatch]:
         """Full-text search across all sessions.
@@ -233,7 +257,7 @@ class SessionSearchIndex:
                     s.title,
                     s.started_at,
                     s.message_count,
-                    snippet(messages_fts, 0, '>>>', '<<<', '...', 64) AS snippet,
+                    m.content,
                     rank
                 FROM messages_fts
                 JOIN messages m ON m.id = messages_fts.rowid
@@ -258,7 +282,7 @@ class SessionSearchIndex:
                 title=row[1] or "(untitled)",
                 started_at=self._format_time(row[2]),
                 message_count=row[3],
-                snippet=row[4],
+                snippet=_search_snippet(row[4] or "", query),
                 rank=row[5],
             )
             if len(seen) >= max_sessions:
@@ -342,8 +366,6 @@ class SessionSearchIndex:
             self._conn.close()
             self._conn = None
 
-
-import threading as _threading
 
 _shared_index: Optional[SessionSearchIndex] = None
 _shared_lock = _threading.Lock()

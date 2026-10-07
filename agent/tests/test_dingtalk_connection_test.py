@@ -39,7 +39,6 @@ _DEFAULT_CHANNEL_CANDIDATES: list[tuple[str, str]] = [
     ("src.channels.discord", "DiscordChannel"),
     ("src.channels.telegram", "TelegramChannel"),
     ("src.channels.slack", "SlackChannel"),
-    ("src.channels.feishu", "FeishuChannel"),
     ("src.channels.wecom", "WecomChannel"),
 ]
 

@@ -72,6 +72,11 @@ class ScheduledResearchTool(BaseTool):
                                 "enum": ["in_app", "origin", "configured"],
                             },
                             "target_ref": {"type": "string"},
+                            "format": {
+                                "type": ["string", "null"],
+                                "enum": ["html", "pdf", None],
+                                "description": "Email only; omit or null for plain text. Destination must be configured or from the origin session.",
+                            },
                         },
                         "required": ["mode"],
                     },

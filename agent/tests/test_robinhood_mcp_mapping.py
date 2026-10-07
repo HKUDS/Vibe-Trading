@@ -55,6 +55,50 @@ def test_an_omitted_non_equity_value_is_unknown_not_zero() -> None:
     assert mcp.portfolio_summary(envelope)["non_equity_values"]["crypto_value"] is None
 
 
+@pytest.mark.parametrize("buying_power", [[], ["5000.00"], "5000.00", 5000, False])
+def test_portfolio_summary_rejects_an_unmapped_buying_power_shape(buying_power) -> None:
+    envelope = rh.portfolio()
+    envelope["structured_content"]["data"]["buying_power"] = buying_power
+
+    with pytest.raises(mcp.RobinhoodShapeError, match="buying_power is not an object"):
+        mcp.portfolio_summary(envelope)
+
+
+@pytest.mark.parametrize("buying_power", [None, {}, {"buying_power": None}])
+def test_portfolio_summary_preserves_unknown_buying_power(buying_power) -> None:
+    envelope = rh.portfolio(total_value="1234.50")
+    envelope["structured_content"]["data"]["buying_power"] = buying_power
+
+    summary = mcp.portfolio_summary(envelope)
+
+    assert summary["buying_power"] is None
+    assert summary["portfolio_value"] == "1234.50"
+
+
+def test_portfolio_summary_allows_omitted_buying_power() -> None:
+    envelope = rh.portfolio()
+    del envelope["structured_content"]["data"]["buying_power"]
+
+    assert mcp.portfolio_summary(envelope)["buying_power"] is None
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "invalid", [], {}])
+def test_portfolio_summary_rejects_invalid_nested_buying_power(value) -> None:
+    envelope = rh.portfolio()
+    envelope["structured_content"]["data"]["buying_power"] = {"buying_power": value}
+
+    with pytest.raises(mcp.RobinhoodShapeError, match="buying_power.buying_power"):
+        mcp.portfolio_summary(envelope)
+
+
+@pytest.mark.parametrize("value", ["0", 0, "180.25"])
+def test_portfolio_summary_keeps_finite_buying_power(value) -> None:
+    envelope = rh.portfolio()
+    envelope["structured_content"]["data"]["buying_power"] = {"buying_power": value}
+
+    assert mcp.portfolio_summary(envelope)["buying_power"] == str(value)
+
+
 def test_position_rows_map_symbol_quantity_and_cost() -> None:
     rows = mcp.position_rows(
         rh.positions(
@@ -210,3 +254,9 @@ def test_the_trading_profile_stays_first_for_the_broker_on_ramp() -> None:
     assert service.live_runner_profile_for_broker("robinhood").id == "robinhood-live-mcp"
     assert service.runner_requires_account("robinhood") is True
     assert service.runner_requires_account("ibkr") is False
+
+
+def test_the_robinhood_live_profile_discloses_options_order_limit() -> None:
+    profile = service.live_runner_profile_for_broker("robinhood")
+
+    assert "options order placement is not supported" in profile.notes.lower()

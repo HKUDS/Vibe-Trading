@@ -57,7 +57,7 @@ class _FakeMT5Module:
     def __init__(self) -> None:
         self.initialize_result = True
         self.initialize_calls: list[dict[str, Any]] = []
-        self.symbol_names = ["EURUSDm", "EURUSDz", "XAUUSDm", "USDJPYm"]
+        self.symbol_names = ["EURUSDm", "XAUUSDm", "USDJPYm"]
         self.rates: dict[str, np.ndarray | None] = {}
         self.rates_calls: list[tuple[str, int, Any, Any]] = []
 
@@ -95,7 +95,6 @@ def fake_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _FakeMT5Module:
     monkeypatch.setitem(sys.modules, "MetaTrader5", fake)
     monkeypatch.setattr(mt5_loader, "_MT5_CONFIG_PATH", tmp_path / "mt5.json")
     monkeypatch.setattr(mt5_loader, "_init_state", None)
-    monkeypatch.setattr(mt5_loader, "_symbol_cache", {})
     return fake
 
 
@@ -120,12 +119,11 @@ class TestQueryBase:
 
 
 class TestResolution:
-    def test_suffix_discovery_prefers_shortest_then_alpha(self, fake_mod: _FakeMT5Module) -> None:
-        loader = DataLoader()
-        frames = loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10")
-        # EURUSDm and EURUSDz both match EURUSD*; deterministic pick is EURUSDm.
-        assert fake_mod.rates_calls[0][0] == "EURUSDm"
-        assert "EUR/USD" in frames
+    def test_ambiguous_suffix_discovery_fails_closed(self, fake_mod: _FakeMT5Module) -> None:
+        fake_mod.symbol_names.append("EURUSDz")
+        frames = DataLoader().fetch(["EUR/USD"], "2026-06-01", "2026-06-10")
+        assert frames == {}
+        assert fake_mod.rates_calls == []
 
     def test_exact_symbol_wins_over_suffix(self, fake_mod: _FakeMT5Module) -> None:
         fake_mod.symbol_names.append("EURUSD")
@@ -238,6 +236,29 @@ class TestAvailability:
         assert call["args"] == ()
         assert "login" not in call["kwargs"]
 
+    def test_bare_attach_warns_about_terminal_picking(
+        self, fake_mod: _FakeMT5Module, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # A path-less initialize() lets the SDK pick any terminal on the host,
+        # which can be a different installation on a different account (#1589).
+        # The attach itself is the documented primary path; the warning is the
+        # hint that pins it down for multi-install users.
+        with caplog.at_level("WARNING", logger="backtest.loaders.mt5_loader"):
+            DataLoader().is_available()
+        assert any("terminal_path" in r.message for r in caplog.records)
+
+    def test_terminal_path_attaches_without_the_warning(
+        self, fake_mod: _FakeMT5Module, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        config = tmp_path / "mt5.json"
+        config.write_text(json.dumps({"terminal_path": "C:/MT5/terminal64.exe"}), encoding="utf-8")
+        monkeypatch.setattr(mt5_loader, "_MT5_CONFIG_PATH", config)
+        with caplog.at_level("WARNING", logger="backtest.loaders.mt5_loader"):
+            DataLoader().is_available()
+        call = fake_mod.initialize_calls[0]
+        assert call["args"] == ("C:/MT5/terminal64.exe",)
+        assert not any("picks a terminal" in r.message for r in caplog.records)
+
 
 # --------------------------------------------------------------------------- #
 # Registry + routing                                                           #
@@ -277,3 +298,17 @@ class TestRegistryWiring:
         from src.market_data import detect_source
 
         assert detect_source(code) == expected
+
+
+def test_resolution_rechecks_catalog_ambiguity(fake_mod):
+    assert mt5_loader._resolve_broker_symbol(fake_mod, "EUR/USD") == "EURUSDm"
+    fake_mod.symbol_names.append("EURUSDz")
+    assert mt5_loader._resolve_broker_symbol(fake_mod, "EUR/USD") is None
+    assert mt5_loader._resolve_broker_symbol(fake_mod, "EURUSDz") == "EURUSDz"
+
+
+@pytest.mark.parametrize("config", [{"timeout": "nan"}, {"timeout": "bad"}, {"timeout": -1}, {"terminal_path": {"password": "private"}}, {"login": "bad"}])
+def test_loader_invalid_config_degrades_without_attach(fake_mod, monkeypatch, config):
+    monkeypatch.setattr(mt5_loader, "_read_mt5_config", lambda: config)
+    assert DataLoader().is_available() is False
+    assert fake_mod.initialize_calls == []

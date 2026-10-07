@@ -45,7 +45,7 @@ _CANONICAL_READ = {
     "get_equity_quotes",
     "get_equity_orders",
 }
-_CANONICAL_WRITE = {"place_equity_order", "cancel_equity_order"}
+_CANONICAL_WRITE = {"place_equity_order", "place_option_order", "cancel_equity_order"}
 
 
 def test_catalog_is_exactly_the_canonical_set() -> None:

@@ -74,7 +74,9 @@ _CORRECTION_REASONS = {
     "value_mismatch": "the observed evidence is {range}",
     "not_in_referenced_call": "call {ref} returned no such value",
     "ambiguous_field_ref": "{ref} names {sources}, which hold different values; use the one quoted as the ref",
-    "tail_risk_needs_field_ref": "this session holds {sources}, which are different measurements; declare the figure with a ref naming the field it quotes (data.tail_risk.var_99, var_99, or q1::historical_var)",
+    "tail_risk_needs_field_ref": "this session holds {sources}, which are different measurements; declare the figure with an exact field ref",
+    "field_ref_needs_call_id": "{ref} uses a tool name before ::; use one exact call_id::field ref from {sources}",
+    "unknown_call_id": "{ref} names no call, tool or run of this session; copy a real tool_call_id, not an alias",
     "no_formula": "its note states no arithmetic",
     "formula_not_evaluable": "its note is not an arithmetic expression over two or more operands",
     "formula_not_anchored": "no operand of its note is a value this session observed",
@@ -121,6 +123,24 @@ def _correction_line(issue: dict[str, Any]) -> str:
         sources=", ".join(str(source) for source in issue.get("ambiguous_sources") or []),
         result=result if result else "a different value",
     )
+    declared_as = issue.get("declared_as")
+    if declared_as:
+        evidence += (
+            f"; the figures block declares {declared_as}"
+            + (", with the opposite sign," if issue.get("declared_sign_differs") else "")
+            + f" which is not how the answer writes it — declare it exactly as written "
+            f"({issue.get('value')})"
+        )
+    if issue.get("sign_reversed"):
+        evidence += (
+            "; that is the same size with the opposite sign — the formula runs the other "
+            "way round from the answer, so write its operands in the order the answer states"
+        )
+    # Each ref once, and not again when the reason already spelled the same list.
+    candidates = list(dict.fromkeys(str(item) for item in issue.get("field_ref_candidates") or []))
+    sources = list(dict.fromkeys(str(item) for item in issue.get("ambiguous_sources") or []))
+    if candidates and not ("{sources}" in template and candidates == sources):
+        evidence += "; valid field refs: " + ", ".join(candidates)
     nearest = issue.get("observed_nearest") or []
     if nearest:
         evidence += "; nearest observed " + ", ".join(_format_price(float(item)) for item in nearest)
@@ -167,6 +187,8 @@ class _ReleaseMixin:
         """
         lines = [
             "[GROUNDING GATE] The previous draft was rejected and was not released to the user.",
+            "Reply with the corrected answer only, in the user's language, written as the "
+            "answer itself: do not mention this rejection, the check or the figures block.",
             "Every figure below, exactly as you wrote it, with what you declared and what the evidence says:",
         ]
         figures, others = [], []
@@ -176,6 +198,12 @@ class _ReleaseMixin:
         lines.extend(
             f"- {issue.get('message', issue.get('code', 'grounding error'))}" for issue in others
         )
+        omitted = len(validation.issues) - 24
+        if omitted > 0:
+            lines.append(
+                f"{omitted} additional findings are not shown in this bounded feedback. "
+                "Do not assume unlisted figures passed; check their declarations and evidence too."
+            )
         if figures:
             lines.extend(
                 [
@@ -193,6 +221,20 @@ class _ReleaseMixin:
                     + ", ".join(repeated)
                     + ". Take option (2) or (3) for them."
                 )
+        passed = list(validation.passed_figures)
+        if passed:
+            shown = passed[:24]
+            keep = ", ".join(shown)
+            if len(passed) > len(shown):
+                keep += f", and {len(passed) - len(shown)} more"
+            lines.extend(
+                [
+                    "These measured figures in the draft checked clean. Keep these "
+                    "values exactly as written, where they stand: " + keep + ".",
+                    "Cutting them or swapping whole sections for qualitative prose is not "
+                    "a fix; repair the rejected claims while preserving the clean figures.",
+                ]
+            )
         lines.extend(
             [
                 "End the answer with a ```figures``` block declaring every number that "
@@ -208,6 +250,16 @@ class _ReleaseMixin:
                 "report it as not retrieved instead.",
             ]
         )
+        if self._backtest_scopes:
+            runs = ", ".join(f"`{scope}`" for scope in sorted(set(self._backtest_scopes.values())) if scope)
+            lines.append(
+                "A value a backtest wrote is observed with that backtest's run directory "
+                "as ref"
+                + (f" ({runs})" if runs else "")
+                + ", or the file you read under it; a difference between two backtests "
+                "is derived, with both run directories as ref. A figure the answer writes "
+                "as a percent is declared as a percent."
+            )
         recovery = self.recovery_action(validation)
         if recovery == _RESOLVER_TOOL:
             lines.extend(
@@ -330,7 +382,7 @@ class _ReleaseMixin:
             for validation in self._validations
             for code in (issue.get("code") for issue in validation.get("issues", []))
         }
-        if issue_codes & _REDACTABLE_CODES:
+        if issue_codes & _REDACTABLE_CODES and not self._analysis_completed:
             if is_zh:
                 return (
                     "我的回答被安全门槛拒绝:草稿引用了本会话未通过工具获取的价格数字,无法核验。"
@@ -341,6 +393,23 @@ class _ReleaseMixin:
                 "figures that this session never obtained through a tool, so they could not "
                 "be verified. Re-run the task and let the agent fetch the market data first, "
                 "or ask it to answer without the unverified prices."
+            )
+        if issue_codes & _REDACTABLE_CODES:
+            # A completed analysis whose report failed the check: the draft's
+            # figures, not prices, are what failed, and the run's output is
+            # not lost with it.
+            if is_zh:
+                return (
+                    "我的回答没有通过数字核验：草稿里有数字无法与本会话工具返回的结果对上，"
+                    "按规则没有发布。分析本身已经完成，结果文件保存在本次运行的 artifacts "
+                    "目录中。可以重试，或让我只列出工具直接返回的数字。"
+                )
+            return (
+                "My answer did not pass the figure check: some of its figures could not be "
+                "matched to what this session's tools returned, so it was not released. "
+                "The analysis itself completed; its result files are in this run's "
+                "artifacts directory. Retry, or ask me to list only the figures the tools "
+                "returned."
             )
         if is_zh:
             return (
@@ -487,8 +556,11 @@ class _ReleaseMixin:
             with a note stating how many figures were removed, or None.
         """
         # A market answer with no observed price has nothing to stand on once its
-        # figures are cut; a general answer (no instrument asked about) does.
-        if self._identity_required and not self._price_records():
+        # figures are cut; a general answer (no instrument asked about) does, and
+        # so does a completed analysis: naming 600519.SH in a backtest request
+        # makes it a market answer, but the backtest's own output is what the
+        # surviving figures were checked against.
+        if self._identity_required and not self._price_records() and not self._analysis_completed:
             return None
         text = _strip_release_markers(content)
         # Stripping shifts offsets and the cuts anchor on issue spans, so the

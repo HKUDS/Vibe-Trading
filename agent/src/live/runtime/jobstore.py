@@ -16,7 +16,9 @@ stop watching the mandate's cadence. This store guarantees:
   all activity). A genuinely-missing store (first boot) loads as empty — that
   is the only blank-start path.
 
-State lives under ``live_root()/runtime/`` (see :mod:`src.live.paths`).
+Runner state lives under ``live_root()/<broker>/runtime/``; the legacy shared
+``live_root()/runtime/`` store remains readable for migration (see
+:mod:`src.live.paths`).
 """
 
 from __future__ import annotations
@@ -24,10 +26,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.live.paths import live_root
+from src.live.paths import broker_dir, live_root
 from src.live.runtime.scheduler import Job
 
 logger = logging.getLogger(__name__)
@@ -84,16 +87,20 @@ class JobStore:
         path: Absolute path of the JSON store file.
     """
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, *, broker: str | None = None) -> None:
         """Initialize the store.
 
         Args:
             path: Explicit store path. When ``None`` (default), resolves to
-                ``runtime_dir()/jobs.json``. Resolved lazily-but-once here so a
+                ``runtime_dir()/jobs.json``, or the broker's runtime directory
+                when ``broker`` is supplied. Resolved lazily-but-once here so a
                 test that monkeypatches ``get_runtime_root`` before construction
                 gets the isolated path.
+            broker: Optional broker key for an isolated job store. The legacy
+                unscoped store remains readable for migration.
         """
-        self.path = path if path is not None else runtime_dir() / _STORE_FILENAME
+        directory = broker_dir(broker) / _RUNTIME_SUBDIR if broker is not None else runtime_dir()
+        self.path = path if path is not None else directory / _STORE_FILENAME
 
     def load(self) -> list[Job]:
         """Load the persisted jobs.
@@ -139,16 +146,21 @@ class JobStore:
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         payload = json.dumps(self._envelope(jobs), ensure_ascii=False, indent=2)
 
-        tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+        tmp = Path(tmp_name)
         try:
-            os.write(fd, payload.encode("utf-8"))
-            os.fsync(fd)
+            with os.fdopen(fd, "wb", buffering=0) as handle:
+                remaining = memoryview(payload.encode("utf-8"))
+                while remaining:
+                    written = os.write(handle.fileno(), remaining)
+                    if written == 0:
+                        raise OSError("job store write made no progress")
+                    remaining = remaining[written:]
+                os.fsync(handle.fileno())
+            os.replace(tmp, target)
+            self._fsync_dir(target.parent)
         finally:
-            os.close(fd)
-
-        os.replace(tmp, target)
-        self._fsync_dir(target.parent)
+            tmp.unlink(missing_ok=True)
 
     def _quarantine(self, cause: str) -> Path:
         """Rename the corrupt store aside as ``<name>.corrupt-<ts>``.

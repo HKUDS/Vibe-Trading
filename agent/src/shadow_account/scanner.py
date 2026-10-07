@@ -12,11 +12,11 @@ from typing import Any, Callable
 import pandas as pd
 
 from src.shadow_account.backtester import _LIQUID_BASKETS, SUPPORTED_MARKETS
+from src.shadow_account.indicators import RSI_PERIOD as _RSI_PERIOD, compute_rsi as _compute_rsi
 from src.shadow_account.models import ShadowProfile, ShadowRule
 
 PriceFetcher = Callable[..., pd.DataFrame | None]
 
-_RSI_PERIOD = 14
 
 
 def scan_today_signals(
@@ -198,22 +198,6 @@ def _compute_features(bars: pd.DataFrame, rule: ShadowRule) -> dict[str, float |
         if pd.notna(rsi):
             features["entry_rsi14"] = float(rsi)
     return features
-
-
-def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> pd.Series:
-    """Causal Wilder-EWM RSI.
-
-    Mirrors ``_compute_rsi`` in ``extractor.py`` so the scanner evaluates the
-    same RSI that produced the extracted ``entry_rsi14`` bounds. Causal by
-    construction: ``RSI[t]`` depends only on closes dated ``<= t``.
-    """
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - 100 / (1 + rs)
 
 
 def _window_from_rule(rule: ShadowRule, default: int) -> int:

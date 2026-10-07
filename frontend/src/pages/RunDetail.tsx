@@ -466,6 +466,7 @@ export function RunDetail() {
 }
 
 function RunCardTab({ card }: { card: RunCard }) {
+  const { t } = useTranslation();
   const backtest = card.backtest || {};
   const reproducibility = card.reproducibility || {};
   const metrics = card.metrics || {};
@@ -529,6 +530,49 @@ function RunCardTab({ card }: { card: RunCard }) {
 
       <RunCardPanel title={i18n.t("runDetail.structuredMetrics")} icon={Braces}>
         <KeyValueTable data={structuredMetrics} empty={i18n.t("runDetail.noStructuredMetrics")} monospaceValues />
+      </RunCardPanel>
+
+      <RunCardPanel title={t("runDetail.trust.executionRecords")} icon={List}>
+        <p className="mb-3 text-xs text-muted-foreground">{t("runDetail.trust.executionDescription")}</p>
+        {card.tool_traces?.length ? (
+          <ol className="space-y-3">
+            {card.tool_traces.map((trace, index) => (
+              <li key={`${index}-${trace.started_at}`} className="rounded-lg border border-border/60 p-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{t(`runDetail.trust.tools.${trace.tool}`)}</span>
+                  <span className={cn("rounded-md px-2 py-1 text-xs", trace.status === "ok" ? "bg-success/10 text-success" : trace.status === "error" ? "bg-danger/10 text-danger" : "bg-muted text-muted-foreground")}>
+                    {t(`runDetail.trust.status.${trace.status}`)}
+                  </span>
+                </div>
+                <dl className="grid gap-3 text-xs sm:grid-cols-2">
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.startedAt")}</dt><dd className="mt-1 break-all"><time dateTime={trace.started_at}>{trace.started_at || t("runDetail.noneRecorded")}</time></dd></div>
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.endedAt")}</dt><dd className="mt-1 break-all"><time dateTime={trace.ended_at}>{trace.ended_at || t("runDetail.noneRecorded")}</time></dd></div>
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.argsHash")}</dt><dd className="mt-1 break-all font-mono" dir="ltr">{trace.args_hash || t("runDetail.noneRecorded")}</dd></div>
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.resultHash")}</dt><dd className="mt-1 break-all font-mono" dir="ltr">{trace.result_hash || t("runDetail.noneRecorded")}</dd></div>
+                </dl>
+              </li>
+            ))}
+          </ol>
+        ) : <p className="text-sm text-muted-foreground">{t("runDetail.trust.noExecutionRecords")}</p>}
+      </RunCardPanel>
+
+      <RunCardPanel title={t("runDetail.trust.metricEvidence")} icon={FileCheck2}>
+        <p className="mb-3 text-xs text-muted-foreground">{t("runDetail.trust.evidenceDescription")}</p>
+        {card.citations?.length ? (
+          <ul className="space-y-3">
+            {card.citations.map((citation, index) => (
+              <li key={`${index}-${citation.metric}`} className="rounded-lg border border-border/60 p-3">
+                <dl className="grid gap-3 text-xs sm:grid-cols-2">
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.metric")}</dt><dd className="mt-1 break-all font-mono">{citation.metric}</dd></div>
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.artifact")}</dt><dd className="mt-1 break-all font-mono" dir="ltr">{citation.artifact_id}</dd></div>
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.column")}</dt><dd className="mt-1 break-all font-mono">{citation.column}</dd></div>
+                  <div><dt className="text-muted-foreground">{t("runDetail.trust.row")}</dt><dd className="mt-1 font-mono">{citation.row}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-muted-foreground">{t("runDetail.trust.artifactHash")}</dt><dd className="mt-1 break-all font-mono" dir="ltr">{citation.sha256 || t("runDetail.noneRecorded")}</dd></div>
+                </dl>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-sm text-muted-foreground">{t("runDetail.trust.noMetricEvidence")}</p>}
       </RunCardPanel>
 
       <RunCardPanel title={i18n.t("runDetail.artifactChecksums")} icon={FileCheck2}>

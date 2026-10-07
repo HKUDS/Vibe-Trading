@@ -58,7 +58,10 @@ class BaseOptimizer(ABC):
         result = pos.copy()
         for i, dt in enumerate(dates):
             active = [c for c in codes if abs(pos.at[dt, c]) > 1e-9]
-            if not active or i < self.lookback:
+            if i < self.lookback:
+                continue
+            if not active:
+                self._on_passthrough_allocation(result.loc[dt])
                 continue
 
             # Signals are executed at the decision bar's open.  ``ret[dt]``
@@ -68,6 +71,7 @@ class BaseOptimizer(ABC):
             history = ret.loc[ret.index < dt, active]
             window = history.tail(self.lookback)
             if len(window) < max(self.lookback // 2, 5):
+                self._on_passthrough_allocation(result.loc[dt])
                 continue
 
             signs = np.array([np.sign(pos.at[dt, c]) for c in active])
@@ -83,10 +87,15 @@ class BaseOptimizer(ABC):
             signed = window.mul(pd.Series(signs, index=window.columns), axis=1)
             ctx = self._build_context(signed, active)
             if ctx is None:
+                self._on_passthrough_allocation(result.loc[dt])
                 continue
 
+            # Stateful optimizers need the direction as well as the signed
+            # return window to measure changes between actual allocations.
+            ctx["position_signs"] = signs
             weights = self._calc_weights(ctx)
             if weights is None or len(weights) != len(active):
+                self._on_passthrough_allocation(result.loc[dt])
                 continue
 
             for j, c in enumerate(active):
@@ -97,6 +106,13 @@ class BaseOptimizer(ABC):
     # ------------------------------------------------------------------
     # Hooks
     # ------------------------------------------------------------------
+
+    def _on_passthrough_allocation(self, allocation: pd.Series) -> None:
+        """Observe a post-warmup allocation retained without optimization.
+
+        Args:
+            allocation: Signed output allocation for the current decision date.
+        """
 
     def _build_context(
         self, window: pd.DataFrame, active: List[str]

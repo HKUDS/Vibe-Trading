@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -156,6 +157,17 @@ def test_benford_all_same_leading_digit_fails() -> None:
     assert out["is_conforming"] is False
 
 
+def test_benford_exact_round_values_keep_their_true_leading_digit() -> None:
+    # 5000, 50000, ... all start with 5. A log10/floor round-trip can drift a
+    # hair under the integer boundary (5.0 -> 4.999999999999999), which used
+    # to truncate these into digit 4 instead of 5.
+    values = [5 * 10**n for n in range(3, 63)]
+    out = benford_check(values)
+    counts = {row["digit"]: row["observed"] for row in out["distribution"]}
+    assert counts[5] == pytest.approx(1.0)
+    assert counts.get(4, 0.0) == pytest.approx(0.0)
+
+
 # ── exact_calc ────────────────────────────────────────────────────────────
 
 
@@ -265,3 +277,26 @@ def test_execute_three_scenario_validates_growth_shape() -> None:
         growth=[0.1, 0.2], pe=[25, 20, 15],  # growth has only 2 entries
     )
     assert env["status"] == "error"
+
+
+@pytest.mark.parametrize("value, digit", [
+    (4999.9999999, 4), (1999.9999999, 1),
+    (math.nextafter(5000.0, 0.0), 4), (math.nextafter(5000.0, math.inf), 5),
+    (math.nextafter(1.0, 0.0), 9), (math.nextafter(1.0, math.inf), 1),
+    (-5000, 5), (-0.0049999999999, 4), (5e-324, 5),
+    ("4.999999999999999999999999999999999999999", 4),
+    (Decimal("-9.999999999999999999999999999999999999999"), 9),
+    ("5e-1000", 5), (10**400 * 7, 7),
+])
+def test_benford_preserves_leading_digit_without_rounding(value, digit):
+    result = benford_check([value] * 50)
+    assert result["sample_size"] == 50
+    counts = {row["digit"]: row["observed"] for row in result["distribution"]}
+    assert counts[digit] == 1.0
+    assert sum(counts.values()) == 1.0
+
+
+def test_benford_ignores_zero_and_nonfinite_values():
+    result = benford_check([0, -0.0, float("nan"), float("inf"), -float("inf")] + [5] * 50)
+    assert result["sample_size"] == 50
+    assert result["distribution"][4]["observed"] == 1.0

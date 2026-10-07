@@ -11,8 +11,6 @@ Validates:
 
 from __future__ import annotations
 
-import datetime as dt
-
 import pandas as pd
 import pytest
 
@@ -87,6 +85,33 @@ class TestCanExecute:
         engine = _engine(price_limit=0)
         bar = _bar(close=120.0, pre_close=100.0)
         assert engine.can_execute("RELIANCE.NS", 1, bar) is True
+
+    def test_upper_circuit_blocks_covering_a_short(self) -> None:
+        # Closing a short is a buy: with no sellers at the upper circuit, the
+        # cover can't actually fill there, same as a fresh buy can't (see
+        # test_upper_circuit_blocks_buy). Without forwarding the position's
+        # direction to _blocked_by_limit this was checked against the wrong
+        # (lower) band and wrongly allowed.
+        engine = _engine(allow_short=True, price_limit=0.20)
+        engine.positions["RELIANCE.NS"] = Position(
+            symbol="RELIANCE.NS", direction=-1, size=10, entry_price=100.0,
+            entry_time=pd.Timestamp("2024-04-01"),
+        )
+        bar = _bar(close=120.0, pre_close=100.0)  # +20% -> upper band
+        bar.name = pd.Timestamp("2024-04-02")
+        assert engine.can_execute("RELIANCE.NS", 0, bar) is False
+
+    def test_lower_circuit_allows_covering_a_short(self) -> None:
+        # A short's cover buy at the lower band has willing sellers, so it
+        # must still fill (the lower band only blocks sells).
+        engine = _engine(allow_short=True, price_limit=0.20)
+        engine.positions["RELIANCE.NS"] = Position(
+            symbol="RELIANCE.NS", direction=-1, size=10, entry_price=100.0,
+            entry_time=pd.Timestamp("2024-04-01"),
+        )
+        bar = _bar(close=80.0, pre_close=100.0)  # -20% -> lower band
+        bar.name = pd.Timestamp("2024-04-02")
+        assert engine.can_execute("RELIANCE.NS", 0, bar) is True
 
 
 # ---------------------------------------------------------------------------

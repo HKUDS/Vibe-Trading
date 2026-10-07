@@ -1,31 +1,34 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-lang-neutral>
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; img-src 'self' data: https://vibetrading.wiki; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.github.com;">
-  <script src="/theme-init.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Alpha Library | Vibe-Trading Wiki</title>
-  <meta name="description" content="450+ pre-built quant alphas across four zoos: Qlib158, Kakushadze 101, GTJA191, Academic. One-line CLI to benchmark any zoo on your universe.">
+  <title data-i18n="alpha.title">Alpha Library | Vibe-Trading Wiki</title>
+  <meta name="description" content="462 pre-built quant alphas across five zoos: GTJA 191, Qlib Alpha158, Kakushadze 101, academic anomalies and point-in-time fundamentals. One command benchmarks any zoo on your universe.">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Vibe-Trading Wiki">
   <meta property="og:title" content="Alpha Library">
-  <meta property="og:description" content="450+ pre-built quant alphas across four zoos. One-line CLI to benchmark any zoo on your universe.">
+  <meta property="og:description" content="462 pre-built quant alphas across five zoos. One command benchmarks any zoo on your universe.">
   <meta property="og:image" content="https://vibetrading.wiki/assets/alpha-library-og.png">
   <meta property="og:url" content="https://vibetrading.wiki/alpha-library/">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Alpha Library">
-  <meta name="twitter:description" content="450+ pre-built quant alphas across four zoos. One-line CLI to benchmark any zoo on your universe.">
+  <meta name="twitter:description" content="462 pre-built quant alphas across five zoos. One command benchmarks any zoo on your universe.">
   <meta name="twitter:image" content="https://vibetrading.wiki/assets/alpha-library-og.png">
   <link rel="canonical" href="https://vibetrading.wiki/alpha-library/">
+  <link rel="dns-prefetch" href="https://api.github.com">
+  <!-- site-head:start -->
   <link rel="icon" type="image/png" href="/assets/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="dns-prefetch" href="https://api.github.com">
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/main.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=20260929e">
+  <script src="/theme-init.js?v=20260929e"></script>
+  <!-- site-head:end -->
+  <script type="module" src="/main.js?v=20260929e"></script>
+  <script type="module" src="/alpha-library/alpha.js?v=20260929e"></script>
   <style>
     .alpha-hero { width: min(1180px, calc(100% - 32px)); margin: 56px auto 32px; }
     .alpha-hero h1 { font-family: var(--serif); font-size: clamp(2.2rem, 4vw, 3.4rem); margin: 8px 0 14px; letter-spacing: -0.01em; }
@@ -48,63 +51,67 @@
     .alpha-getstart .comment { color: var(--muted); }
   </style>
 </head>
-<body>
+<body data-section="alpha">
   <noscript>
     <style>.alpha-stats, .alpha-zoos { display: none; }</style>
     <p style="padding:24px;color:var(--muted);">Enable JavaScript to load alpha stats.</p>
   </noscript>
+  <!-- site-header:start -->
   <header class="site-header" id="site-header">
     <div class="site-header__inner">
-      <a class="brand" href="/home/" aria-label="Vibe-Trading home">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home" data-i18n-attr="aria-label=header.homeLabel">
         <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
         <span class="brand__text">Vibe-Trading</span>
       </a>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="/docs/">Docs</a>
-        <a href="/tutorials/">Tutorials</a>
-        <a href="/alpha-library/">Alpha Library</a>
-        <a href="/research-lab/">Research Lab</a>
-        <a href="https://github.com/HKUDS/Vibe-Trading">Source</a>
+      <nav class="site-nav" aria-label="Primary" data-i18n-attr="aria-label=header.navLabel">
+        <a href="/home/" data-nav="home" data-i18n="nav.home">Home</a>
+        <a href="/docs/" data-nav="docs" data-i18n="nav.docs">Docs</a>
+        <a href="/tutorials/" data-nav="tutorials" data-i18n="nav.tutorials">Tutorials</a>
+        <a href="/alpha-library/" data-nav="alpha" data-i18n="nav.alpha">Alpha Library</a>
+        <a href="/research-lab/" data-nav="lab" data-i18n="nav.lab">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
       </nav>
       <div class="site-actions">
+        <button class="lang-pill" id="lang-toggle" type="button" lang="zh-CN" aria-label="切换到中文">中文</button>
         <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
           <span aria-hidden="true">Star</span>
           <strong id="star-count">--</strong>
         </a>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme">
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" data-i18n-attr="aria-label=header.themeLabel">
           <span class="theme-icon" aria-hidden="true"></span>
         </button>
       </div>
     </div>
   </header>
+  <!-- site-header:end -->
 
   <main>
     <section class="alpha-hero">
-      <p class="eyebrow">Alpha Library</p>
-      <h1>Alpha Library.</h1>
-      <p>450+ pre-built quant alphas across four zoos. One-line CLI to bench any zoo on your universe.</p>
+      <p class="eyebrow" data-i18n="nav.alpha">Alpha Library</p>
+      <h1 data-i18n="alpha.heading">Alpha Library.</h1>
+      <p data-i18n="alpha.lede">462 pre-built quant alphas across five zoos. One command benchmarks any zoo on your universe.</p>
     </section>
 
     <dl class="alpha-stats" id="alpha-stats">
       <div class="alpha-stat">
-        <dt>Total alphas</dt>
+        <dt data-i18n="alpha.stats.total">Total alphas</dt>
         <dd id="stat-total">--</dd>
-        <span class="small" id="stat-total-sub">loading...</span>
+        <span class="small" id="stat-total-sub">…</span>
       </div>
       <div class="alpha-stat">
-        <dt>Zoos</dt>
+        <dt data-i18n="alpha.stats.zoos">Zoos</dt>
         <dd id="stat-zoos">--</dd>
-        <span class="small">Qlib158 / Kakushadze 101 / GTJA191 / Academic</span>
+        <span class="small">GTJA191 / Qlib158 / Alpha101 / Academic / Fundamental</span>
       </div>
       <div class="alpha-stat">
-        <dt>Last generated</dt>
+        <dt data-i18n="alpha.stats.generated">Last generated</dt>
         <dd id="stat-generated" style="font-size: 0.95rem;">--</dd>
-        <span class="small">via vibe-trading alpha export-manifest</span>
+        <span class="small" data-i18n="alpha.stats.generatedVia">via vibe-trading alpha export-manifest</span>
       </div>
       <div class="alpha-stat">
-        <dt>Live trading</dt>
-        <dd style="font-size: 0.95rem;">opt-in</dd>
-        <span class="small">via a broker you authorize</span>
+        <dt data-i18n="alpha.stats.live">Live trading</dt>
+        <dd style="font-size: 0.95rem;" data-i18n="alpha.stats.optIn">opt-in</dd>
+        <span class="small" data-i18n="alpha.stats.broker">via a broker you authorize</span>
       </div>
     </dl>
 
@@ -112,49 +119,64 @@
       <a class="alpha-zoo-card" href="content/qlib158/index.html">
         <span class="zoo-id">qlib158</span>
         <h3>Qlib Alpha158</h3>
-        <p>Microsoft Qlib's 158 production alphas, ported to the panel API.</p>
+        <p data-i18n="alpha.zoo.qlib158">Microsoft Qlib's 158 production alphas, ported to the panel API.</p>
         <span class="count" data-zoo="qlib158">--</span>
       </a>
       <a class="alpha-zoo-card" href="content/alpha101/index.html">
         <span class="zoo-id">alpha101</span>
         <h3>Kakushadze 101 Formulaic Alphas</h3>
-        <p>The 101 short-horizon formulaic alphas from Kakushadze (2015).</p>
+        <p data-i18n="alpha.zoo.alpha101">The 101 short-horizon formulaic alphas from Kakushadze (2015).</p>
         <span class="count" data-zoo="alpha101">--</span>
       </a>
       <a class="alpha-zoo-card" href="content/gtja191/index.html">
         <span class="zoo-id">gtja191</span>
         <h3>GTJA 191</h3>
-        <p>Guotai Junan's 191 alphas — A-share microstructure &amp; volume themes.</p>
+        <p data-i18n="alpha.zoo.gtja191">Guotai Junan's 191 alphas — A-share microstructure &amp; volume themes.</p>
         <span class="count" data-zoo="gtja191">--</span>
       </a>
       <a class="alpha-zoo-card" href="content/academic/index.html">
         <span class="zoo-id">academic</span>
-        <h3>Academic Anomalies</h3>
-        <p>Curated alphas from the academic asset-pricing literature.</p>
+        <h3 data-i18n="alpha.zoo.academicName">Academic Anomalies</h3>
+        <p data-i18n="alpha.zoo.academic">Curated alphas from the academic asset-pricing literature.</p>
         <span class="count" data-zoo="academic">--</span>
+      </a>
+      <a class="alpha-zoo-card" href="content/fundamental/index.html">
+        <span class="zoo-id">fundamental</span>
+        <h3 data-i18n="alpha.zoo.fundamentalName">Point-in-time Fundamentals</h3>
+        <p data-i18n="alpha.zoo.fundamental">US SEC fundamentals anchored to the filing date, so a backtest never sees a number before it was published.</p>
+        <span class="count" data-zoo="fundamental">--</span>
       </a>
     </section>
 
     <section class="alpha-getstart">
-      <h2>Get started</h2>
-      <pre><code><span class="comment"># install</span>
+      <h2 data-i18n="alpha.start.title">Get started</h2>
+      <pre><code><span class="comment" data-i18n="alpha.start.install"># install</span>
 pip install vibe-trading-ai
 
-<span class="comment"># list every alpha in a zoo</span>
+<span class="comment" data-i18n="alpha.start.list"># list every alpha in a zoo</span>
 vibe-trading alpha list --zoo gtja191
 
-<span class="comment"># benchmark a zoo on your universe and period</span>
+<span class="comment" data-i18n="alpha.start.bench"># benchmark a zoo on your universe and period</span>
 vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2020-2025</code></pre>
     </section>
   </main>
 
+  <!-- site-footer:start -->
   <footer class="site-footer">
-    <span>Vibe-Trading Wiki</span>
-    <a href="/docs/">Docs</a>
-    <a href="/tutorials/">Tutorials</a>
-    <a href="/alpha-library/">Alpha Library</a>
-    <a href="/research-lab/">Research Lab</a>
+    <span class="site-footer__name">Vibe-Trading Wiki</span>
+    <a href="/docs/" data-i18n="nav.docs">Docs</a>
+    <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
+    <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
+    <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
     <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+    <div class="footer-traffic" id="footer-traffic" hidden>
+      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> <span data-i18n="footer.agents">AI agents</span></span>
+      <span class="ft-item">👤 <strong id="vt-humans">–</strong> <span data-i18n="footer.humans">humans</span></span>
+      <span class="ft-item">📦 <strong id="vt-installs">–</strong> <span data-i18n="footer.installs">installs/mo</span></span>
+      <span class="ft-note" data-i18n="footer.note">visitors to this site · anonymous · first-party</span>
+    </div>
   </footer>
+  <!-- site-footer:end -->
 </body>
 </html>

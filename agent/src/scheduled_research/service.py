@@ -46,6 +46,7 @@ def public_job(job: ScheduledResearchJob) -> dict[str, Any]:
             "channel": job.delivery_channel,
             "target_ref": job.delivery_target_ref,
             "target_label": job.delivery_target_label,
+            "format": job.delivery_format,
             "status": job.delivery.status.value,
             "attempts": job.delivery.attempts,
             "provider_message_id": job.delivery.provider_message_id,
@@ -182,6 +183,12 @@ def build_job_from_draft(
     elif mode != "in_app":
         raise ValueError("delivery.mode must be 'in_app', 'origin', or 'configured'")
 
+    delivery_format = delivery_spec.get("format")
+    if delivery_format not in (None, "html", "pdf"):
+        raise ValueError("delivery.format must be 'html', 'pdf', or null")
+    if delivery_format is not None and delivery_channel != "email":
+        raise ValueError("delivery.format is supported only for email delivery")
+
     return ScheduledResearchJob(
         id=str(draft.get("id") or f"sr-{uuid.uuid4().hex[:12]}"),
         title=title,
@@ -199,6 +206,7 @@ def build_job_from_draft(
         delivery_target=delivery_target,
         delivery_target_ref=target_ref,
         delivery_target_label=target_label,
+        delivery_format=delivery_format,
     )
 
 

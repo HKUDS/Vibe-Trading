@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { Agent } from "../Agent";
 import { useAgentStore } from "@/stores/agent";
@@ -149,6 +149,92 @@ describe("Agent runtime identity session transitions", () => {
       expect(identity).toHaveAttribute("data-provider", "");
       expect(identity).toHaveAttribute("data-model", "");
       expect(identity).toHaveAttribute("data-reasoning", "");
+    });
+  });
+
+  describe("history scroll lifecycle", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => {
+      cleanup();
+      vi.useRealTimers();
+    });
+
+    async function mountSession() {
+      const router = createMemoryRouter(
+        [{ path: "/", element: <Agent /> }],
+        { initialEntries: ["/?session=session-one"] },
+      );
+      let view!: ReturnType<typeof render>;
+      await act(async () => {
+        view = render(<RouterProvider router={router} />);
+      });
+      return { ...view, router };
+    }
+
+    it("still scrolls after a mounted session finishes loading", async () => {
+      const raf = vi.spyOn(window, "requestAnimationFrame");
+      await mountSession();
+      raf.mockClear();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+
+      expect(raf).toHaveBeenCalled();
+    });
+
+    it("cancels the loaded history scroll when the page unmounts", async () => {
+      const raf = vi.spyOn(window, "requestAnimationFrame");
+      const view = await mountSession();
+      view.unmount();
+      raf.mockClear();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+      expect(raf).not.toHaveBeenCalled();
+    });
+
+    it("cancels the previous session scroll while the next history is pending", async () => {
+      const next = deferred<ReturnType<typeof storedReply>[]>();
+      apiMock.getSessionMessages.mockImplementation((sid: string) => (
+        sid === "session-one" ? Promise.resolve([storedReply(sid)]) : next.promise
+      ));
+      const raf = vi.spyOn(window, "requestAnimationFrame");
+      const { router } = await mountSession();
+      await act(async () => { await router.navigate("/?session=session-two"); });
+      raf.mockClear();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+      expect(raf).not.toHaveBeenCalled();
+    });
+
+    it("ignores a history response that arrives after unmount", async () => {
+      const pending = deferred<ReturnType<typeof storedReply>[]>();
+      apiMock.getSessionMessages.mockReturnValue(pending.promise);
+      const view = await mountSession();
+      const messages = useAgentStore.getState().messages;
+      view.unmount();
+
+      await act(async () => {
+        pending.resolve([storedReply("session-one")]);
+        await vi.advanceTimersByTimeAsync(100);
+      });
+
+      expect(useAgentStore.getState().messages).toBe(messages);
+    });
+
+    it("cancels the cached history scroll when the page unmounts", async () => {
+      useAgentStore.getState().cacheSession("session-one", [
+        { id: "cached", type: "answer", content: "cached reply", timestamp: 1 },
+      ]);
+      apiMock.getSessionMessages.mockReturnValue(new Promise(() => {}));
+      const raf = vi.spyOn(window, "requestAnimationFrame");
+      const view = await mountSession();
+      view.unmount();
+      raf.mockClear();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+      expect(raf).not.toHaveBeenCalled();
     });
   });
 });

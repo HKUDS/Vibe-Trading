@@ -33,6 +33,18 @@ class BaseChannel(ABC):
 
     supports_connection_test: ClassVar[bool] = False
 
+    # Scheduled delivery is channel-agnostic at the scheduler layer. Adapters
+    # describe the address they accept so generic UIs never need to hard-code
+    # channel names or ask users to guess provider-specific target formats.
+    delivery_target_label: ClassVar[str] = "Destination"
+    delivery_target_kind: ClassVar[str] = "destination"
+    delivery_target_placeholder: ClassVar[str] = "Chat, group, user, address, or channel ID"
+    delivery_target_input_type: ClassVar[str] = "text"
+
+    def delivery_target_suggestions(self) -> list[dict[str, str]]:
+        """Return safe destination suggestions for scheduled delivery."""
+        return []
+
     def __init__(self, config: Any, bus: MessageBus) -> None:
         """Initialize the channel.
 

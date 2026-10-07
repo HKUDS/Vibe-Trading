@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { RunDetail } from "../RunDetail";
 import type { RunData } from "@/lib/api";
@@ -325,6 +325,73 @@ describe("RunDetail page", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Run Card" }));
 
     expect(await screen.findByText("No structured metrics recorded.")).toBeInTheDocument();
+  });
+
+  it("renders execution status, UTC times and complete metric evidence hashes", async () => {
+    const argsHash = "a".repeat(64);
+    const resultHash = "b".repeat(64);
+    const artifactHash = "c".repeat(64);
+    const runCard: NonNullable<RunData["run_card"]> = {
+      schema_version: "v1",
+      tool_traces: [
+        { tool: "load_data", started_at: "2026-09-27T01:00:00Z", ended_at: "2026-09-27T01:00:01Z", status: "ok", args_hash: argsHash, result_hash: resultHash },
+        { tool: "generate_signals", started_at: "2026-09-27T01:00:02Z", ended_at: "2026-09-27T01:00:03Z", status: "error", args_hash: "d".repeat(64), result_hash: "e".repeat(64) },
+        { tool: "backtest", started_at: "2026-09-27T01:00:04Z", ended_at: "2026-09-27T01:00:05Z", status: "cancelled", args_hash: "f".repeat(64), result_hash: "0".repeat(64) },
+      ],
+      citations: [{ metric: "sharpe", artifact_id: "artifacts/metrics.csv", column: "sharpe", row: 1, sha256: artifactHash }],
+    };
+    apiMock.getRun.mockResolvedValue({ status: "success", run_id: "trust", prompt: "Evidence run", run_card: runCard });
+    apiMock.getRunCode.mockResolvedValue({});
+    renderRunDetail("/runs/trust");
+    fireEvent.click(await screen.findByRole("tab", { name: "Run Card" }));
+
+    const executions = screen.getByText("Execution records").closest("section")!;
+    expect(within(executions).getByText("Load data")).toBeInTheDocument();
+    expect(within(executions).getByText("Generate signals")).toBeInTheDocument();
+    expect(within(executions).getByText("Backtest")).toBeInTheDocument();
+    for (const status of ["Completed", "Failed", "Cancelled"]) {
+      expect(within(executions).getByText(status)).toBeInTheDocument();
+    }
+    expect(within(executions).getByText("2026-09-27T01:00:00Z")).toHaveAttribute("dateTime", "2026-09-27T01:00:00Z");
+    expect(within(executions).getByText("2026-09-27T01:00:01Z")).toBeInTheDocument();
+    expect(within(executions).getByText(argsHash)).toHaveClass("break-all");
+    expect(within(executions).getByText(resultHash)).toBeInTheDocument();
+
+    const evidence = screen.getByText("Metric evidence").closest("section")!;
+    expect(within(evidence).getAllByText("sharpe")).toHaveLength(2);
+    expect(within(evidence).getByText("artifacts/metrics.csv")).toBeInTheDocument();
+    expect(within(evidence).getByText("Data row (1-based, excluding header)")).toBeInTheDocument();
+    expect(within(evidence).getByText("1")).toBeInTheDocument();
+    expect(within(evidence).getByText(artifactHash)).toHaveClass("break-all");
+    expect(within(evidence).getByText(/does not independently verify/)).toBeInTheDocument();
+    expect(within(evidence).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { schema_version: "v0", metrics: { sharpe: 1.42 } },
+    { schema_version: "v1", tool_traces: [], citations: [] },
+  ])("explicitly reports absent evidence for $schema_version cards", async (runCard) => {
+    apiMock.getRun.mockResolvedValue({ status: "success", run_id: "no-evidence", prompt: "No evidence", run_card: runCard });
+    apiMock.getRunCode.mockResolvedValue({});
+    renderRunDetail("/runs/no-evidence");
+    fireEvent.click(await screen.findByRole("tab", { name: "Run Card" }));
+    expect(screen.getByText("Execution records were not recorded for this run.")).toBeInTheDocument();
+    expect(screen.getByText("Metric evidence was not recorded for this run.")).toBeInTheDocument();
+    if (runCard.schema_version === "v0") expect(screen.getByText("1.4200")).toBeInTheDocument();
+  });
+
+  it("renders artifact references as inert text", async () => {
+    const unsafeReference = "javascript:alert('<img src=x onerror=alert(1)>')";
+    apiMock.getRun.mockResolvedValue({
+      status: "success", run_id: "inert", prompt: "Inert references",
+      run_card: { citations: [{ metric: "return", artifact_id: unsafeReference, column: "return", row: 1, sha256: "a".repeat(64) }] },
+    });
+    apiMock.getRunCode.mockResolvedValue({});
+    renderRunDetail("/runs/inert");
+    fireEvent.click(await screen.findByRole("tab", { name: "Run Card" }));
+    const evidence = screen.getByText("Metric evidence").closest("section")!;
+    expect(within(evidence).getByText(unsafeReference)).toBeInTheDocument();
+    expect(evidence.querySelector("a, img")).toBeNull();
   });
 
   it("renders the Factor Research tab from has_factor_artifacts and lazy-loads the report", async () => {

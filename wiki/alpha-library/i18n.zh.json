@@ -1,0 +1,1250 @@
+{
+ "notes": {
+  "academic_bab": {
+   "en": "Frazzini & Pedersen (2014) BAB. Price-only proxy: market return is the cross-sectional mean of daily per-stock returns (equal-weighted, not value-weighted as in the original). Beta is Cov(r_i, r_m) / Var(r_m) over a single 252-day window (paper uses separate 1y vol / 5y correlation windows). Factor score is negative beta, cross-sectional z-scored so low-beta names rank highest, matching the long leg of the original long-short construction.",
+   "zh": "Frazzini & Pedersen (2014) 低贝塔策略（BAB）。纯价格代理：市场收益率取每日个股收益率的截面均值（等权，而非原文的市值加权）。贝塔为单一 252 日窗口上的 Cov(r_i, r_m) / Var(r_m)（论文分别使用 1y 波动率窗口与 5y 相关系数窗口）。因子得分为负贝塔，经截面 z 分数标准化，使低贝塔标的排名最高，与原文多空构造中的多头腿一致。"
+  },
+  "academic_carhart_mom": {
+   "en": "Carhart (1997) UMD momentum factor. Return from 12 months ago to 1 month ago, so the most recent month is skipped and today's price never enters; cross-sectional z-score per date for long-short ranking. Top z-scores = winners. Constructed directly from prices, so this matches the original definition modulo the z-score wrapper. Canonical 252d window; declared decay_horizon=60 due to registry schema cap (le=60); real signal horizon=252.",
+   "zh": "Carhart (1997) UMD 动量因子。从 12 个月前到 1 个月前的收益率，跳过最近一个月，当天价格不参与计算；按日期做截面 z 分数，用于多空排名。z 分数最高 = 赢家。直接由价格构造，因此除外层的 z 分数变换外与原始定义一致。采用标准的 252d 窗口；受注册表 schema 上限（le=60）所限，声明 decay_horizon=60；实际信号周期=252。"
+  },
+  "academic_cma": {
+   "en": "[PRICE PROXY] for the Fama-French (2015) CMA (Conservative Minus Aggressive) investment factor. The original definition uses total-asset growth from fundamental data; here we use the negative 60-day change in log average volume as an activity-growth proxy, then cross-sectional z-score per date for long-short ranking. Top z-scores = volume contraction (conservative / low-growth proxy).",
+   "zh": "[价格代理] 对应 Fama-French (2015) CMA（Conservative Minus Aggressive，保守减激进）投资因子。原始定义使用基本面数据中的总资产增长；此处改用对数平均成交量 60 日变化的负值作为活跃度增长代理，再按日期做截面 z 分数，用于多空排名。z 分数最高 = 成交量收缩（保守 / 低增长代理）。"
+  },
+  "academic_corr_rewire": {
+   "en": "Causal rolling rendition of the correlation-regime skill's Mode 4 (rewiring leaderboard): per-asset row mean of |corr(event) - corr(calm)| where the event window is the trailing 20 bars and the calm baseline is the 120 bars immediately before it, sign-flipped and cross-sectionally z-scored so correlation-stable names rank highest. Framed as a structural risk / crowding lens, not a validated alpha: the author's public validation of the underlying regime machinery covers regime detection and attribution on historical replays only and makes no return-prediction claim for this cross-sectional form. Missing data: columns need >= 90% in-window coverage, else NaN; observed entries are demeaned and missing entries contribute zero to the correlation cross-products.",
+   "zh": "correlation-regime skill 中 Mode 4（重连排行榜）的因果滚动实现：对每个资产取 |corr(event) - corr(calm)| 的行均值，其中事件窗口为最近 20 根 bar，平静基线为紧邻其前的 120 根 bar；结果取反号后做截面 z 分数，使相关性稳定的标的排名最高。定位为结构性风险 / 拥挤度视角，而非经过验证的 alpha：作者对底层 regime 机制的公开验证仅覆盖历史回放上的 regime 识别与归因，并未对这一截面形式作出任何收益预测主张。缺失数据：各列在窗口内的覆盖率须 >= 90%，否则为 NaN；观测值先去均值，缺失值在相关系数交叉乘积中的贡献为零。"
+  },
+  "academic_high52w": {
+   "en": "George & Hwang (2004) 52-week-high momentum. Ratio of current close to the trailing 252-day maximum close, cross-sectional z-score per date for long-short ranking. Top z-scores = names trading nearest their 52-week high. Canonical 252d window; declared decay_horizon=60 due to registry schema cap (le=60); real signal horizon spans months.",
+   "zh": "George & Hwang (2004) 52 周高点动量。当前收盘价与过去 252 日最高收盘价之比，按日期做截面 z 分数，用于多空排名。z 分数最高 = 价格最接近其 52 周高点的标的。采用标准的 252d 窗口；受注册表 schema 上限（le=60）所限，声明 decay_horizon=60；实际信号周期跨越数月。"
+  },
+  "academic_hml": {
+   "en": "[PRICE PROXY] for the Fama-French (1993) HML (High Minus Low) value factor. The original definition uses book-to-market ratio from fundamental data; here we use the negative 252-day total return as a long-term reversal proxy, then cross-sectional z-score per date for long-short ranking. Top z-scores = long-term underperformers (deeper value). Canonical 252d window; declared decay_horizon=60 due to registry schema cap (le=60); real signal horizon=252.",
+   "zh": "[价格代理] 对应 Fama-French (1993) HML（High Minus Low，高减低）价值因子。原始定义使用基本面数据中的账面市值比；此处改用 252 日总收益率的负值作为长期反转代理，再按日期做截面 z 分数，用于多空排名。z 分数最高 = 长期表现落后者（价值更深）。采用标准的 252d 窗口；受注册表 schema 上限（le=60）所限，声明 decay_horizon=60；实际信号周期=252。"
+  },
+  "academic_illiq": {
+   "en": "Amihud (2002) ILLIQ. Daily |simple return| divided by dollar volume (close * volume), averaged over a trailing 21-day window, then cross-sectional z-score per date for long-short ranking. Top z-scores = least liquid names, which carry the illiquidity premium. Uses a 1-day return (one extra warmup bar over the 21-day average window).",
+   "zh": "Amihud (2002) ILLIQ。每日 |简单收益率| 除以成交额（close * volume），在过去 21 日窗口内取均值，再按日期做截面 z 分数，用于多空排名。z 分数最高 = 流动性最差的标的，承载非流动性溢价。使用 1 日收益率（比 21 日均值窗口多需一根预热 bar）。"
+  },
+  "academic_mkt_rf": {
+   "en": "[PRICE PROXY] for the Sharpe (1964) / Fama-French market factor (MKT-RF). The original definition uses value-weighted market excess returns; here we use a 21-day per-stock total return and cross-sectional z-score per date for long-short ranking. Top z-scores = strong recent winners; bottom = losers.",
+   "zh": "[价格代理] 对应 Sharpe (1964) / Fama-French 市场因子（MKT-RF）。原始定义使用市值加权的市场超额收益率；此处改用个股 21 日总收益率，并按日期做截面 z 分数，用于多空排名。z 分数最高 = 近期强势赢家；最低 = 输家。"
+  },
+  "academic_retskew": {
+   "en": "Harvey & Siddique (2000) skewness premium. Negative of the trailing 60-day sample skewness of daily simple returns, cross-sectional z-score per date for long-short ranking. Top z-scores = most negatively-skewed names, which command a return premium over lottery-like positively-skewed names. Uses a 1-day return (one extra warmup bar over the 60-day window).",
+   "zh": "Harvey & Siddique (2000) 偏度溢价。取日简单收益率过去 60 日样本偏度的负值，按日期做截面 z 分数，用于多空排名。z 分数最高 = 负偏最强的标的，相对于类彩票的正偏标的可获得收益率溢价。使用 1 日收益率（比 60 日窗口多需一根预热 bar）。"
+  },
+  "academic_rmw": {
+   "en": "[PRICE PROXY] for the Fama-French (2015) RMW (Robust Minus Weak) profitability factor. The original definition uses operating profitability from fundamental data; here we use the negative of 60-day return volatility as a low-vol-quality proxy, then cross-sectional z-score per date for long-short ranking. Top z-scores = lower vol (quality / robust).",
+   "zh": "[价格代理] 对应 Fama-French (2015) RMW（Robust Minus Weak，稳健减疲弱）盈利能力因子。原始定义使用基本面数据中的经营盈利能力；此处改用 60 日收益率波动率的负值作为低波动-质量代理，再按日期做截面 z 分数，用于多空排名。z 分数最高 = 波动率较低（质量 / 稳健）。"
+  },
+  "academic_smb": {
+   "en": "[PRICE PROXY] for the Fama-French (1993) SMB (Small Minus Big) size factor. The original definition uses market capitalization from book equity data; here we use the negative log of 60-day average dollar volume (close * volume) as a liquidity-weighted size proxy, then cross-sectional z-score per date for long-short ranking. Top z-scores = smaller / less liquid names.",
+   "zh": "[价格代理] 对应 Fama-French (1993) SMB（Small Minus Big，小减大）规模因子。原始定义使用账面权益数据中的市值；此处改用 60 日平均成交额（close * volume）对数的负值作为流动性加权的规模代理，再按日期做截面 z 分数，用于多空排名。z 分数最高 = 规模更小 / 流动性更差的标的。"
+  },
+  "academic_strev": {
+   "en": "Jegadeesh (1990) one-month reversal. Negative trailing 21-day return, cross-sectional z-score per date for long-short ranking. Top z-scores = recent one-month losers, which tend to rebound. Constructed directly from prices, matching the original definition modulo the z-score wrapper.",
+   "zh": "Jegadeesh (1990) 一个月反转。取过去 21 日收益率的负值，按日期做截面 z 分数，用于多空排名。z 分数最高 = 近一个月的输家，往往会反弹。直接由价格构造，除外层的 z 分数变换外与原始定义一致。"
+  },
+  "alpha101_019": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_024": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_032": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_036": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_037": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_039": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_048": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_052": {
+   "en": "Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.",
+   "zh": "回看窗口极长（>= ~100 根 bar）；在较短的面板上会产生 NaN 预热期，可能触发注册表的 >95% NaN 守卫。"
+  },
+  "alpha101_056": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization. Paper formula uses market 'cap' which is not part of the standard OHLCV panel; substituted by a constant 1.0 DataFrame. Result remains a valid factor but loses the cap-weighting term.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。论文公式使用市值 'cap'，它不属于标准 OHLCV 面板；此处以常数 1.0 的 DataFrame 替代。结果仍是有效因子，但失去了市值加权项。"
+  },
+  "alpha101_058": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_059": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_063": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_067": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_069": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_070": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_076": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_079": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_080": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_082": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_084": {
+   "en": "SignedPower with a delta(close,5) exponent can produce non-finite values when the exponent is large; non-finite outputs are clipped to NaN to satisfy the registry's no-inf invariant.",
+   "zh": "指数为 delta(close,5) 的 SignedPower 在指数很大时可能产生非有限值；非有限输出被裁剪为 NaN，以满足注册表的 no-inf（不含 inf）不变式。"
+  },
+  "alpha101_087": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_089": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_090": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_091": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_093": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_097": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "alpha101_100": {
+   "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
+   "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
+  },
+  "fund_asset_growth": {
+   "en": "Inverse PIT-safe asset-growth factor. High asset growth is treated as aggressive investment and receives lower scores; low/negative growth receives higher scores.",
+   "zh": "反向的时点正确（PIT）资产增长因子。高资产增长被视为激进投资，得分较低；低 / 负增长得分较高。"
+  },
+  "fund_earnings_yield": {
+   "en": "Hybrid value factor using PIT-safe net income and shares diluted aligned to the daily close panel. Division by zero/non-finite market cap becomes NaN before cross-sectional scoring.",
+   "zh": "混合型价值因子：使用时点正确（PIT）的净利润与稀释后股数，并对齐到日度收盘价面板。截面打分之前，除以零 / 非有限市值的结果置为 NaN。"
+  },
+  "fund_gross_profitability": {
+   "en": "PIT-safe Novy-Marx style gross profitability from the fundamental panel; cross-sectional z-score per date with missing issuers excluded.",
+   "zh": "基于基本面面板的时点正确（PIT）Novy-Marx 式毛利盈利能力；按日期做截面 z 分数，缺失的发行人被排除在外。"
+  },
+  "fund_roe": {
+   "en": "PIT-safe return on equity from the fundamental panel; cross-sectional z-score per date. Missing statements remain NaN and are excluded from that date's cross-section.",
+   "zh": "基于基本面面板的时点正确（PIT）净资产收益率（ROE）；按日期做截面 z 分数。缺失的财务报表保持 NaN，并被排除在当日截面之外。"
+  },
+  "gtja191_001": {
+   "en": "Standard GTJA #1: lag-1 log-volume change rank vs intraday return rank, 6d corr.",
+   "zh": "标准 GTJA #1：滞后 1 期对数成交量变化的排名与日内收益率排名之间的 6 日相关系数。"
+  },
+  "gtja191_002": {
+   "en": "Daily change in close-position-within-range.",
+   "zh": "收盘价在当日高低区间内相对位置的日度变化。"
+  },
+  "gtja191_003": {
+   "en": "Wilder-style accumulation of signed daily moves over 6 days.",
+   "zh": "Wilder 式的 6 日带符号日度价格变动累加。"
+  },
+  "gtja191_004": {
+   "en": "Breakout signal: short-MA vs long-MA +/- 1 std, volume-relative tiebreaker. Output in {-1, +1}.",
+   "zh": "突破信号：短期 MA 对比长期 MA ± 1 倍标准差，以相对成交量打破平局。输出取值于 {-1, +1}。"
+  },
+  "gtja191_005": {
+   "en": "Max over 3 days of 5d corr of TSRANK(volume,5) and TSRANK(high,5).",
+   "zh": "TSRANK(volume,5) 与 TSRANK(high,5) 的 5 日相关系数在 3 日内的最大值。"
+  },
+  "gtja191_006": {
+   "en": "Sign of 4d change of weighted price; cross-sectionally ranked, negated.",
+   "zh": "加权价格 4 日变化的符号；经截面排名后取负。"
+  },
+  "gtja191_007": {
+   "en": "VWAP via A-share amount/volume (equity_cn convention).",
+   "zh": "成交量加权均价（VWAP）按 A 股成交额/成交量计算（equity_cn 惯例）。"
+  },
+  "gtja191_008": {
+   "en": "Negated rank of 4d change in mid-vwap composite.",
+   "zh": "中间价–vwap 组合价 4 日变化的排名，取负。"
+  },
+  "gtja191_009": {
+   "en": "SMA(n=7, m=2) of midpoint change times range / volume.",
+   "zh": "中间价变化乘以高低价差再除以成交量，取 SMA(n=7, m=2)。"
+  },
+  "gtja191_010": {
+   "en": "Per-day return = pct_change(1) via (close - delay(close,1))/delay(close,1).",
+   "zh": "日收益率 = pct_change(1)，按 (close - delay(close,1))/delay(close,1) 计算。"
+  },
+  "gtja191_011": {
+   "en": "Accumulated money-flow-multiplier × volume over 6 days.",
+   "zh": "资金流乘数 × 成交量在 6 日内的累加。"
+  },
+  "gtja191_012": {
+   "en": "Open-minus-10d-vwap rank times negative rank of |close-vwap|.",
+   "zh": "开盘价减 10 日 vwap 均值之差的排名，乘以 |close-vwap| 的负排名。"
+  },
+  "gtja191_013": {
+   "en": "Geometric mean of high/low minus vwap.",
+   "zh": "最高价与最低价的几何平均减去 vwap。"
+  },
+  "gtja191_014": {
+   "en": "Simple 5d momentum = delta(close, 5).",
+   "zh": "简单 5 日动量 = delta(close, 5)。"
+  },
+  "gtja191_015": {
+   "en": "Overnight gap return.",
+   "zh": "隔夜跳空收益率。"
+  },
+  "gtja191_016": {
+   "en": "Max over 5d of rank of rolling rank-volume vs rank-vwap correlation.",
+   "zh": "成交量排名与 vwap 排名的滚动相关系数，其排名在 5 日内的最大值。"
+  },
+  "gtja191_017": {
+   "en": "rank(vwap - 15d max(vwap)) is non-positive; we use signed_power for safety.",
+   "zh": "rank(vwap - 15 日 max(vwap)) 非正；为稳妥起见使用 signed_power（带符号幂）。"
+  },
+  "gtja191_018": {
+   "en": "5d price ratio.",
+   "zh": "5 日价格比值。"
+  },
+  "gtja191_019": {
+   "en": "Piecewise 5d momentum normalized differently in up/down regimes.",
+   "zh": "分段 5 日动量：上涨与下跌区间采用不同的归一化方式。"
+  },
+  "gtja191_020": {
+   "en": "6d return in pct.",
+   "zh": "6 日收益率（百分比）。"
+  },
+  "gtja191_021": {
+   "en": "Rolling 6-day slope of MA6(close) vs time index. REGBETA proxied by ts_cov / ts_std**2.",
+   "zh": "MA6(close) 对时间索引的滚动 6 日斜率。REGBETA 以 ts_cov / ts_std**2 近似代替。"
+  },
+  "gtja191_022": {
+   "en": "SMA(12, m=1) of 3-day-difference in price-deviation-from-MA6.",
+   "zh": "价格相对 MA6 偏离度的 3 日差分，取 SMA(12, m=1)。"
+  },
+  "gtja191_023": {
+   "en": "Up-volatility share. SMA(20, m=1) of STD(20) over up/down days.",
+   "zh": "上涨波动率占比。对上涨/下跌日的 STD(20) 取 SMA(20, m=1)。"
+  },
+  "gtja191_024": {
+   "en": "SMA(5, m=1) of 5d delta(close).",
+   "zh": "5 日 delta(close) 的 SMA(5, m=1)。"
+  },
+  "gtja191_025": {
+   "en": "Long-window RET sum approximated with 60d cap (warmup feasibility); see notes.",
+   "zh": "长窗口 RET 求和以 60 日上限近似（为保证预热期可行）；详见说明。"
+  },
+  "gtja191_026": {
+   "en": "230d corr approximated with 30d window; see notes.",
+   "zh": "230 日相关系数以 30 日窗口近似；详见说明。"
+  },
+  "gtja191_027": {
+   "en": "WMA proxied by decay_linear.",
+   "zh": "WMA 以 decay_linear 近似代替。"
+  },
+  "gtja191_028": {
+   "en": "Stochastic-like indicator double-smoothed.",
+   "zh": "经双重平滑的类随机（Stochastic）指标。"
+  },
+  "gtja191_029": {
+   "en": "6d return times current volume.",
+   "zh": "6 日收益率乘以当日成交量。"
+  },
+  "gtja191_030": {
+   "en": "Multi-factor REGRESI not implementable in pure-fn zoo; degraded to WMA of squared daily return (idio proxy). See notes.",
+   "zh": "多因子 REGRESI 无法在纯函数 zoo 中实现；退化为日收益率平方的 WMA（特质项代理）。详见说明。"
+  },
+  "gtja191_031": {
+   "en": "Bias-12: deviation of close from MA12 in pct.",
+   "zh": "Bias-12（乖离率）：收盘价相对 MA12 的偏离百分比。"
+  },
+  "gtja191_032": {
+   "en": "Negated 3d sum of rank-corr(rank(high), rank(volume), 3).",
+   "zh": "rank-corr(rank(high), rank(volume), 3) 的 3 日求和，取负。"
+  },
+  "gtja191_033": {
+   "en": "240d/20d long-window approximated with 60d/20d (warmup feasibility).",
+   "zh": "240 日/20 日长窗口以 60 日/20 日近似（为保证预热期可行）。"
+  },
+  "gtja191_034": {
+   "en": "MA12 over close.",
+   "zh": "MA12 除以收盘价。"
+  },
+  "gtja191_035": {
+   "en": "Element-wise min of two ranks, negated.",
+   "zh": "两个排名的逐元素最小值，取负。"
+  },
+  "gtja191_036": {
+   "en": "Rolling 6d corr summed over 2 days then ranked.",
+   "zh": "滚动 6 日相关系数在 2 日内求和后再排名。"
+  },
+  "gtja191_037": {
+   "en": "Change over 10d of product (sum(open,5)*sum(ret,5)).",
+   "zh": "乘积 (sum(open,5)*sum(ret,5)) 的 10 日变化。"
+  },
+  "gtja191_038": {
+   "en": "When current high > MA20(high), output -delta(high,2); else 0.",
+   "zh": "当日最高价 > MA20(high) 时输出 -delta(high,2)；否则为 0。"
+  },
+  "gtja191_039": {
+   "en": "180d / 37d windows approximated with 30d / 10d. See notes.",
+   "zh": "180 日 / 37 日窗口以 30 日 / 10 日近似。详见说明。"
+  },
+  "gtja191_040": {
+   "en": "Up-volume vs down-volume ratio over 26 days.",
+   "zh": "26 日内上涨日成交量与下跌日成交量之比。"
+  },
+  "gtja191_041": {
+   "en": "5d max of 3d delta(vwap), ranked, negated.",
+   "zh": "3 日 delta(vwap) 的 5 日最大值，排名后取负。"
+  },
+  "gtja191_042": {
+   "en": "Negative rank of 10d std(high) times 10d corr(high, volume).",
+   "zh": "10 日 std(high) 的负排名乘以 10 日 corr(high, volume)。"
+  },
+  "gtja191_043": {
+   "en": "Signed volume accumulation over 6 days.",
+   "zh": "6 日内带符号成交量的累加。"
+  },
+  "gtja191_044": {
+   "en": "Sum of two TSRANK terms.",
+   "zh": "两个 TSRANK 项之和。"
+  },
+  "gtja191_045": {
+   "en": "150d MA volume approximated with 30d window.",
+   "zh": "150 日成交量 MA 以 30 日窗口近似。"
+  },
+  "gtja191_046": {
+   "en": "Mean of four MA windows over price.",
+   "zh": "四个窗口 MA 的平均值除以价格。"
+  },
+  "gtja191_047": {
+   "en": "Williams %R style indicator smoothed with SMA(9,1).",
+   "zh": "Williams %R 类指标，以 SMA(9,1) 平滑。"
+  },
+  "gtja191_048": {
+   "en": "Rank of 3d signed momentum sum times 5d/20d volume ratio, negated.",
+   "zh": "3 日带符号动量之和的排名乘以 5 日/20 日成交量比，取负。"
+  },
+  "gtja191_049": {
+   "en": "Down-side range as share of total range over 12 days.",
+   "zh": "12 日内下行波幅占总波幅的比例。"
+  },
+  "gtja191_050": {
+   "en": "Signed version of #49.",
+   "zh": "#49 的带符号版本。"
+  },
+  "gtja191_051": {
+   "en": "Up-range share over 12 days.",
+   "zh": "12 日内上行波幅占比。"
+  },
+  "gtja191_052": {
+   "en": "Bull power / bear power ratio over 26 days.",
+   "zh": "26 日内多头力量 / 空头力量之比。"
+  },
+  "gtja191_053": {
+   "en": "Pct of up-days in 12d window.",
+   "zh": "12 日窗口内上涨日的百分比。"
+  },
+  "gtja191_054": {
+   "en": "Negated rank of (std|c-o|,10) + (c-o) + corr(c,o,10).",
+   "zh": "(std|c-o|,10) + (c-o) + corr(c,o,10) 的排名，取负。"
+  },
+  "gtja191_055": {
+   "en": "Sumof complex per-day score over 20 days; numerator simplified.",
+   "zh": "逐日复合得分的 20 日求和；分子已简化。"
+  },
+  "gtja191_056": {
+   "en": "Boolean comparator returns 1/0; 40d mean truncated.",
+   "zh": "布尔比较返回 1/0；40 日均值窗口已截短。"
+  },
+  "gtja191_057": {
+   "en": "KDJ %K-style indicator with SMA(3,1) smoothing.",
+   "zh": "KDJ %K 类指标，以 SMA(3,1) 平滑。"
+  },
+  "gtja191_058": {
+   "en": "Pct of up-days in 20d window.",
+   "zh": "20 日窗口内上涨日的百分比。"
+  },
+  "gtja191_059": {
+   "en": "Like alpha #3 but with 20d window.",
+   "zh": "与 alpha #3 相同，但窗口为 20 日。"
+  },
+  "gtja191_060": {
+   "en": "20-day version of alpha #11.",
+   "zh": "alpha #11 的 20 日版本。"
+  },
+  "gtja191_061": {
+   "en": "80d mean volume approximated with 30d.",
+   "zh": "80 日平均成交量以 30 日近似。"
+  },
+  "gtja191_062": {
+   "en": "Negated 5d corr(high, rank(volume)).",
+   "zh": "5 日 corr(high, rank(volume))，取负。"
+  },
+  "gtja191_063": {
+   "en": "RSI-6 style.",
+   "zh": "RSI-6 类指标。"
+  },
+  "gtja191_064": {
+   "en": "60d mean truncated to 10d; ts_max window 13→4 and decay_linear 14→6 for warmup feasibility.",
+   "zh": "60 日均值截短为 10 日；ts_max 窗口 13→4、decay_linear 14→6，以保证预热期可行。"
+  },
+  "gtja191_065": {
+   "en": "MA6 over close.",
+   "zh": "MA6 除以收盘价。"
+  },
+  "gtja191_066": {
+   "en": "Bias-6 pct.",
+   "zh": "Bias-6（乖离率），百分比。"
+  },
+  "gtja191_067": {
+   "en": "RSI-24 style.",
+   "zh": "RSI-24 类指标。"
+  },
+  "gtja191_068": {
+   "en": "Like alpha #9 but with SMA(15, m=2).",
+   "zh": "与 alpha #9 相同，但使用 SMA(15, m=2)。"
+  },
+  "gtja191_069": {
+   "en": "DTM/DBM as in GTJA spec.",
+   "zh": "DTM/DBM 按 GTJA 规范定义。"
+  },
+  "gtja191_070": {
+   "en": "6d std of amount (turnover).",
+   "zh": "amount（成交额，turnover）的 6 日标准差。"
+  },
+  "gtja191_071": {
+   "en": "Bias-24.",
+   "zh": "Bias-24（乖离率）。"
+  },
+  "gtja191_072": {
+   "en": "Williams %R style with SMA(15,1).",
+   "zh": "Williams %R 类指标，使用 SMA(15,1)。"
+  },
+  "gtja191_073": {
+   "en": "Composite of decay-linear of close-volume corr minus another decay term.",
+   "zh": "收盘价–成交量相关系数的线性衰减加权项减去另一线性衰减加权项的组合。"
+  },
+  "gtja191_074": {
+   "en": "40d MA volume truncated to 10d; SUM windows kept at 20.",
+   "zh": "40 日成交量 MA 截短为 10 日；SUM 窗口保持为 20。"
+  },
+  "gtja191_075": {
+   "en": "Benchmark unavailable in zoo panel; degraded to row-mean(close) as benchmark proxy. Window 50→20. See notes.",
+   "zh": "zoo 面板中无基准数据；退化为以 row-mean(close) 作为基准代理。窗口 50→20。详见说明。"
+  },
+  "gtja191_076": {
+   "en": "Coefficient-of-variation of |daily return|/volume over 20 days.",
+   "zh": "|日收益率|/成交量 在 20 日内的变异系数。"
+  },
+  "gtja191_077": {
+   "en": "40d MA truncated to 30d.",
+   "zh": "40 日 MA 截短为 30 日。"
+  },
+  "gtja191_078": {
+   "en": "CCI-12 style.",
+   "zh": "CCI-12 类指标。"
+  },
+  "gtja191_079": {
+   "en": "RSI-12.",
+   "zh": "RSI-12 指标。"
+  },
+  "gtja191_080": {
+   "en": "5d volume change pct.",
+   "zh": "成交量 5 日变化百分比。"
+  },
+  "gtja191_081": {
+   "en": "SMA(21, m=2) of volume.",
+   "zh": "成交量的 SMA(21, m=2)。"
+  },
+  "gtja191_082": {
+   "en": "Williams %R with SMA(20,1).",
+   "zh": "Williams %R，使用 SMA(20,1)。"
+  },
+  "gtja191_083": {
+   "en": "Negated rank of 5d cov(rank(high), rank(volume)).",
+   "zh": "5 日 cov(rank(high), rank(volume)) 的排名，取负。"
+  },
+  "gtja191_084": {
+   "en": "20d version of alpha #43.",
+   "zh": "alpha #43 的 20 日版本。"
+  },
+  "gtja191_085": {
+   "en": "Vol-adjusted contrarian momentum.",
+   "zh": "成交量调整的逆向动量。"
+  },
+  "gtja191_086": {
+   "en": "Returns -1 / +1 / -delta depending on second-derivative thresholds.",
+   "zh": "依据二阶导数阈值返回 -1 / +1 / -delta。"
+  },
+  "gtja191_087": {
+   "en": "Sum of two decay-linear terms, negated.",
+   "zh": "两个线性衰减加权项之和，取负。"
+  },
+  "gtja191_088": {
+   "en": "20d return pct.",
+   "zh": "20 日收益率（百分比）。"
+  },
+  "gtja191_089": {
+   "en": "MACD-like signal.",
+   "zh": "类 MACD 信号。"
+  },
+  "gtja191_090": {
+   "en": "Negated rank of 5d corr(rank vwap, rank volume).",
+   "zh": "5 日 corr(rank vwap, rank volume) 的排名，取负。"
+  },
+  "gtja191_091": {
+   "en": "40d mean truncated to 30d.",
+   "zh": "40 日均值截短为 30 日。"
+  },
+  "gtja191_092": {
+   "en": "180d mean truncated to 30d.",
+   "zh": "180 日均值截短为 30 日。"
+  },
+  "gtja191_093": {
+   "en": "Sum of downside range moves over 20 days.",
+   "zh": "20 日内下行波幅之和。"
+  },
+  "gtja191_094": {
+   "en": "30d signed volume.",
+   "zh": "30 日带符号成交量。"
+  },
+  "gtja191_095": {
+   "en": "20d std of amount.",
+   "zh": "成交额（amount）的 20 日标准差。"
+  },
+  "gtja191_096": {
+   "en": "KDJ %D-style double smoothed.",
+   "zh": "KDJ %D 类指标，经双重平滑。"
+  },
+  "gtja191_097": {
+   "en": "10d std of volume.",
+   "zh": "成交量的 10 日标准差。"
+  },
+  "gtja191_098": {
+   "en": "100d windows truncated to 30d for warmup feasibility.",
+   "zh": "为保证预热期可行，100 日窗口截短为 30 日。"
+  },
+  "gtja191_099": {
+   "en": "Negated rank of 5d cov(rank close, rank volume).",
+   "zh": "5 日 cov(rank close, rank volume) 的排名，取负。"
+  },
+  "gtja191_100": {
+   "en": "20d std of volume.",
+   "zh": "成交量的 20 日标准差。"
+  },
+  "gtja191_101": {
+   "en": "Inequality cast to float via .astype('float64').",
+   "zh": "不等式结果通过 .astype('float64') 转为 float。"
+  },
+  "gtja191_102": {
+   "en": "SMA(x,n,m) -> x.ewm(alpha=m/n, adjust=False).mean().",
+   "zh": "SMA(x,n,m) 映射为 x.ewm(alpha=m/n, adjust=False).mean()。"
+  },
+  "gtja191_103": {
+   "en": "Days since the most recent extreme; today=0. Ties choose the latest bar (port policy).",
+   "zh": "距最近一次极值的天数；当日记为 0。并列时取最近的一根 bar（移植实现的约定）。"
+  },
+  "gtja191_108": {
+   "en": "x^y interpreted as x ** y after rank; both terms in (0,1].",
+   "zh": "x^y 在排名之后按 x ** y 解释；两项均位于 (0,1]。"
+  },
+  "gtja191_109": {
+   "en": "SMA -> ewm(alpha=2/10).",
+   "zh": "SMA 映射为 ewm(alpha=2/10)。"
+  },
+  "gtja191_115": {
+   "en": "x^y -> np.power after rank.",
+   "zh": "x^y 在排名之后映射为 np.power。"
+  },
+  "gtja191_116": {
+   "en": "Rolling OLS slope vs. linear index; cov(c,t,20)/var(t,20).",
+   "zh": "对线性索引的滚动 OLS 斜率；cov(c,t,20)/var(t,20)。"
+  },
+  "gtja191_117": {
+   "en": "ret = close/delay(close,1) - 1.",
+   "zh": "收益率 ret = close/delay(close,1) - 1。"
+  },
+  "gtja191_122": {
+   "en": "Triple SMA of log close.",
+   "zh": "对数收盘价的三重 SMA。"
+  },
+  "gtja191_131": {
+   "en": "DELAT in report typo = DELTA.",
+   "zh": "研报中的 DELAT 为笔误，即 DELTA。"
+  },
+  "gtja191_133": {
+   "en": "Days since the most recent extreme; today=0. Ties choose the latest bar (port policy).",
+   "zh": "距最近一次极值的天数；当日记为 0。并列时取最近的一根 bar（移植实现的约定）。"
+  },
+  "gtja191_136": {
+   "en": "ret = close/delay(close,1) - 1.",
+   "zh": "收益率 ret = close/delay(close,1) - 1。"
+  },
+  "gtja191_137": {
+   "en": "Transcribed from the standard 137 implementation; piecewise denominator.",
+   "zh": "转录自 137 的标准实现；分母为分段形式。"
+  },
+  "gtja191_140": {
+   "en": "MIN(a,b) elementwise -> np.minimum.",
+   "zh": "逐元素 MIN(a,b) 映射为 np.minimum。"
+  },
+  "gtja191_143": {
+   "en": "Recursive SELF unrolled to cumulative product of (1 + up_return) since series start.",
+   "zh": "递归的 SELF 展开为自序列起点以来 (1 + up_return) 的累积乘积。"
+  },
+  "gtja191_144": {
+   "en": "SUMIF -> (x*cond).rolling(n).sum(); COUNT -> cond.rolling(n).sum().",
+   "zh": "SUMIF 映射为 (x*cond).rolling(n).sum()；COUNT 映射为 cond.rolling(n).sum()。"
+  },
+  "gtja191_146": {
+   "en": "Standardised return deviation; SMA(.,61,2)=ewm(alpha=2/61).",
+   "zh": "标准化的收益率偏离；SMA(.,61,2)=ewm(alpha=2/61)。"
+  },
+  "gtja191_147": {
+   "en": "Rolling OLS slope of MA12 against linear index, window 12.",
+   "zh": "MA12 对线性索引的滚动 OLS 斜率，窗口 12。"
+  },
+  "gtja191_149": {
+   "en": "Downside beta vs. benchmark; uses fallback cross-sectional mean if benchmark_close missing.",
+   "zh": "相对基准的下行贝塔；若缺少 benchmark_close，则回退为截面均值。"
+  },
+  "gtja191_154": {
+   "en": "Original returns boolean; we cast to float and multiply by -1.",
+   "zh": "原公式返回布尔值；此处转为 float 并乘以 -1。"
+  },
+  "gtja191_156": {
+   "en": "MAX elementwise -> np.maximum.",
+   "zh": "逐元素 MAX 映射为 np.maximum。"
+  },
+  "gtja191_157": {
+   "en": "PROD(.,1) is identity; we use it directly.",
+   "zh": "PROD(.,1) 为恒等运算；此处直接使用。"
+  },
+  "gtja191_161": {
+   "en": "Average True Range (12).",
+   "zh": "平均真实波幅（12）。"
+  },
+  "gtja191_162": {
+   "en": "RSI-style normalised.",
+   "zh": "RSI 类指标，经归一化。"
+  },
+  "gtja191_165": {
+   "en": "SUMAC = expanding cumulative sum approximated by rolling 48-day cumulative sum.",
+   "zh": "SUMAC = 扩展窗口累计和，以滚动 48 日累计和近似。"
+  },
+  "gtja191_166": {
+   "en": "Skewness-style; constants from report.",
+   "zh": "偏度类指标；常数取自研报。"
+  },
+  "gtja191_172": {
+   "en": "Wilder's ADX-style indicator; mean over last 6 bars.",
+   "zh": "Wilder 的 ADX 类指标；取最近 6 根 bar 的均值。"
+  },
+  "gtja191_175": {
+   "en": "ATR(6).",
+   "zh": "ATR(6)（平均真实波幅）。"
+  },
+  "gtja191_177": {
+   "en": "Days since the most recent extreme; today=0. Ties choose the latest bar (port policy).",
+   "zh": "距最近一次极值的天数；当日记为 0。并列时取最近的一根 bar（移植实现的约定）。"
+  },
+  "gtja191_181": {
+   "en": "Benchmark falls back to cross-sectional mean of close.",
+   "zh": "基准回退为收盘价的截面均值。"
+  },
+  "gtja191_182": {
+   "en": "Benchmark falls back to cross-sectional mean of close.",
+   "zh": "基准回退为收盘价的截面均值。"
+  },
+  "gtja191_186": {
+   "en": "alpha172 averaged with its 6-day lag.",
+   "zh": "alpha172 与其滞后 6 日的值取平均。"
+  },
+  "gtja191_190": {
+   "en": "Complex log of ratio of conditional squared deviations.",
+   "zh": "条件平方偏差之比的对数（表达式较复杂）。"
+  },
+  "qlib158_cntd10": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~30% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~30% 起）。"
+  },
+  "qlib158_cntd20": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~15% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~15% 起）。"
+  },
+  "qlib158_cntd30": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~10% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~10% 起）。"
+  },
+  "qlib158_cntd5": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~40% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~40% 起）。"
+  },
+  "qlib158_cntd60": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~5% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~5% 起）。"
+  },
+  "qlib158_cntn10": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~30% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~30% 起）。"
+  },
+  "qlib158_cntn20": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~15% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~15% 起）。"
+  },
+  "qlib158_cntn30": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~10% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~10% 起）。"
+  },
+  "qlib158_cntn5": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~40% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~40% 起）。"
+  },
+  "qlib158_cntn60": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~5% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~5% 起）。"
+  },
+  "qlib158_cntp10": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~30% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~30% 起）。"
+  },
+  "qlib158_cntp20": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~15% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~15% 起）。"
+  },
+  "qlib158_cntp30": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~10% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~10% 起）。"
+  },
+  "qlib158_cntp5": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~40% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~40% 起）。"
+  },
+  "qlib158_cntp60": {
+   "en": "A missing close leaves window+1 rolling rows NaN; on sparse panels this can trigger the >95% NaN registry guard (from ~5% missing bars).",
+   "zh": "一个缺失的收盘价会使 window+1 行滚动结果为 NaN；在稀疏面板上，这可能触发注册表的 >95% NaN 守卫（缺失 bar 达 ~5% 起）。"
+  }
+ },
+ "nicknames": {
+  "academic_bab": {
+   "en": "Frazzini-Pedersen 2014 betting-against-beta",
+   "zh": "Frazzini-Pedersen 2014 低贝塔策略（BAB）"
+  },
+  "academic_carhart_mom": {
+   "en": "Carhart 1997 momentum — 12m-1m return",
+   "zh": "Carhart 1997 动量 — 12m-1m 收益率"
+  },
+  "academic_cma": {
+   "en": "[PRICE PROXY] FF2015 CMA — investment via inverse volume growth",
+   "zh": "[价格代理] FF2015 CMA — 以反向成交量增长代理投资"
+  },
+  "academic_corr_rewire": {
+   "en": "correlation-rewiring stability score",
+   "zh": "相关性重连稳定性得分"
+  },
+  "academic_high52w": {
+   "en": "George-Hwang 2004 52-week-high momentum",
+   "zh": "George-Hwang 2004 52 周高点动量"
+  },
+  "academic_hml": {
+   "en": "[PRICE PROXY] FF1993 HML — value via inverse 252d return",
+   "zh": "[价格代理] FF1993 HML — 以反向 252d 收益率代理价值"
+  },
+  "academic_illiq": {
+   "en": "Amihud 2002 illiquidity — |return| per dollar volume",
+   "zh": "Amihud 2002 非流动性 — 单位成交额的 |收益率|"
+  },
+  "academic_mkt_rf": {
+   "en": "[PRICE PROXY] Market factor (Sharpe 1964) — 21d demeaned return",
+   "zh": "[价格代理] 市场因子（Sharpe 1964）— 21d 去均值收益率"
+  },
+  "academic_retskew": {
+   "en": "Harvey-Siddique 2000 return skewness — inverse 60d skew",
+   "zh": "Harvey-Siddique 2000 收益率偏度 — 反向 60d 偏度"
+  },
+  "academic_rmw": {
+   "en": "[PRICE PROXY] FF2015 RMW — quality via inverse 60d volatility",
+   "zh": "[价格代理] FF2015 RMW — 以反向 60d 波动率代理质量"
+  },
+  "academic_smb": {
+   "en": "[PRICE PROXY] FF1993 SMB — small-minus-big via inverse dollar-volume",
+   "zh": "[价格代理] FF1993 SMB — 以反向成交额代理小减大"
+  },
+  "academic_strev": {
+   "en": "Jegadeesh 1990 short-term reversal — inverse 21d return",
+   "zh": "Jegadeesh 1990 短期反转 — 反向 21d 收益率"
+  },
+  "alpha101_001": {
+   "en": "Kakushadze Alpha #1",
+   "zh": "Kakushadze 因子 Alpha #1"
+  },
+  "alpha101_002": {
+   "en": "Kakushadze Alpha #2",
+   "zh": "Kakushadze 因子 Alpha #2"
+  },
+  "alpha101_003": {
+   "en": "Kakushadze Alpha #3",
+   "zh": "Kakushadze 因子 Alpha #3"
+  },
+  "alpha101_004": {
+   "en": "Kakushadze Alpha #4",
+   "zh": "Kakushadze 因子 Alpha #4"
+  },
+  "alpha101_005": {
+   "en": "Kakushadze Alpha #5",
+   "zh": "Kakushadze 因子 Alpha #5"
+  },
+  "alpha101_006": {
+   "en": "Kakushadze Alpha #6",
+   "zh": "Kakushadze 因子 Alpha #6"
+  },
+  "alpha101_007": {
+   "en": "Kakushadze Alpha #7",
+   "zh": "Kakushadze 因子 Alpha #7"
+  },
+  "alpha101_008": {
+   "en": "Kakushadze Alpha #8",
+   "zh": "Kakushadze 因子 Alpha #8"
+  },
+  "alpha101_009": {
+   "en": "Kakushadze Alpha #9",
+   "zh": "Kakushadze 因子 Alpha #9"
+  },
+  "alpha101_010": {
+   "en": "Kakushadze Alpha #10",
+   "zh": "Kakushadze 因子 Alpha #10"
+  },
+  "alpha101_011": {
+   "en": "Kakushadze Alpha #11",
+   "zh": "Kakushadze 因子 Alpha #11"
+  },
+  "alpha101_012": {
+   "en": "Kakushadze Alpha #12",
+   "zh": "Kakushadze 因子 Alpha #12"
+  },
+  "alpha101_013": {
+   "en": "Kakushadze Alpha #13",
+   "zh": "Kakushadze 因子 Alpha #13"
+  },
+  "alpha101_014": {
+   "en": "Kakushadze Alpha #14",
+   "zh": "Kakushadze 因子 Alpha #14"
+  },
+  "alpha101_015": {
+   "en": "Kakushadze Alpha #15",
+   "zh": "Kakushadze 因子 Alpha #15"
+  },
+  "alpha101_016": {
+   "en": "Kakushadze Alpha #16",
+   "zh": "Kakushadze 因子 Alpha #16"
+  },
+  "alpha101_017": {
+   "en": "Kakushadze Alpha #17",
+   "zh": "Kakushadze 因子 Alpha #17"
+  },
+  "alpha101_018": {
+   "en": "Kakushadze Alpha #18",
+   "zh": "Kakushadze 因子 Alpha #18"
+  },
+  "alpha101_019": {
+   "en": "Kakushadze Alpha #19",
+   "zh": "Kakushadze 因子 Alpha #19"
+  },
+  "alpha101_020": {
+   "en": "Kakushadze Alpha #20",
+   "zh": "Kakushadze 因子 Alpha #20"
+  },
+  "alpha101_021": {
+   "en": "Kakushadze Alpha #21",
+   "zh": "Kakushadze 因子 Alpha #21"
+  },
+  "alpha101_022": {
+   "en": "Kakushadze Alpha #22",
+   "zh": "Kakushadze 因子 Alpha #22"
+  },
+  "alpha101_023": {
+   "en": "Kakushadze Alpha #23",
+   "zh": "Kakushadze 因子 Alpha #23"
+  },
+  "alpha101_024": {
+   "en": "Kakushadze Alpha #24",
+   "zh": "Kakushadze 因子 Alpha #24"
+  },
+  "alpha101_025": {
+   "en": "Kakushadze Alpha #25",
+   "zh": "Kakushadze 因子 Alpha #25"
+  },
+  "alpha101_026": {
+   "en": "Kakushadze Alpha #26",
+   "zh": "Kakushadze 因子 Alpha #26"
+  },
+  "alpha101_027": {
+   "en": "Kakushadze Alpha #27",
+   "zh": "Kakushadze 因子 Alpha #27"
+  },
+  "alpha101_028": {
+   "en": "Kakushadze Alpha #28",
+   "zh": "Kakushadze 因子 Alpha #28"
+  },
+  "alpha101_029": {
+   "en": "Kakushadze Alpha #29",
+   "zh": "Kakushadze 因子 Alpha #29"
+  },
+  "alpha101_030": {
+   "en": "Kakushadze Alpha #30",
+   "zh": "Kakushadze 因子 Alpha #30"
+  },
+  "alpha101_031": {
+   "en": "Kakushadze Alpha #31",
+   "zh": "Kakushadze 因子 Alpha #31"
+  },
+  "alpha101_032": {
+   "en": "Kakushadze Alpha #32",
+   "zh": "Kakushadze 因子 Alpha #32"
+  },
+  "alpha101_033": {
+   "en": "Kakushadze Alpha #33",
+   "zh": "Kakushadze 因子 Alpha #33"
+  },
+  "alpha101_034": {
+   "en": "Kakushadze Alpha #34",
+   "zh": "Kakushadze 因子 Alpha #34"
+  },
+  "alpha101_035": {
+   "en": "Kakushadze Alpha #35",
+   "zh": "Kakushadze 因子 Alpha #35"
+  },
+  "alpha101_036": {
+   "en": "Kakushadze Alpha #36",
+   "zh": "Kakushadze 因子 Alpha #36"
+  },
+  "alpha101_037": {
+   "en": "Kakushadze Alpha #37",
+   "zh": "Kakushadze 因子 Alpha #37"
+  },
+  "alpha101_038": {
+   "en": "Kakushadze Alpha #38",
+   "zh": "Kakushadze 因子 Alpha #38"
+  },
+  "alpha101_039": {
+   "en": "Kakushadze Alpha #39",
+   "zh": "Kakushadze 因子 Alpha #39"
+  },
+  "alpha101_040": {
+   "en": "Kakushadze Alpha #40",
+   "zh": "Kakushadze 因子 Alpha #40"
+  },
+  "alpha101_041": {
+   "en": "Kakushadze Alpha #41",
+   "zh": "Kakushadze 因子 Alpha #41"
+  },
+  "alpha101_042": {
+   "en": "Kakushadze Alpha #42",
+   "zh": "Kakushadze 因子 Alpha #42"
+  },
+  "alpha101_043": {
+   "en": "Kakushadze Alpha #43",
+   "zh": "Kakushadze 因子 Alpha #43"
+  },
+  "alpha101_044": {
+   "en": "Kakushadze Alpha #44",
+   "zh": "Kakushadze 因子 Alpha #44"
+  },
+  "alpha101_045": {
+   "en": "Kakushadze Alpha #45",
+   "zh": "Kakushadze 因子 Alpha #45"
+  },
+  "alpha101_046": {
+   "en": "Kakushadze Alpha #46",
+   "zh": "Kakushadze 因子 Alpha #46"
+  },
+  "alpha101_047": {
+   "en": "Kakushadze Alpha #47",
+   "zh": "Kakushadze 因子 Alpha #47"
+  },
+  "alpha101_048": {
+   "en": "Kakushadze Alpha #48",
+   "zh": "Kakushadze 因子 Alpha #48"
+  },
+  "alpha101_049": {
+   "en": "Kakushadze Alpha #49",
+   "zh": "Kakushadze 因子 Alpha #49"
+  },
+  "alpha101_050": {
+   "en": "Kakushadze Alpha #50",
+   "zh": "Kakushadze 因子 Alpha #50"
+  },
+  "alpha101_051": {
+   "en": "Kakushadze Alpha #51",
+   "zh": "Kakushadze 因子 Alpha #51"
+  },
+  "alpha101_052": {
+   "en": "Kakushadze Alpha #52",
+   "zh": "Kakushadze 因子 Alpha #52"
+  },
+  "alpha101_053": {
+   "en": "Kakushadze Alpha #53",
+   "zh": "Kakushadze 因子 Alpha #53"
+  },
+  "alpha101_054": {
+   "en": "Kakushadze Alpha #54",
+   "zh": "Kakushadze 因子 Alpha #54"
+  },
+  "alpha101_055": {
+   "en": "Kakushadze Alpha #55",
+   "zh": "Kakushadze 因子 Alpha #55"
+  },
+  "alpha101_056": {
+   "en": "Kakushadze Alpha #56",
+   "zh": "Kakushadze 因子 Alpha #56"
+  },
+  "alpha101_057": {
+   "en": "Kakushadze Alpha #57",
+   "zh": "Kakushadze 因子 Alpha #57"
+  },
+  "alpha101_058": {
+   "en": "Kakushadze Alpha #58",
+   "zh": "Kakushadze 因子 Alpha #58"
+  },
+  "alpha101_059": {
+   "en": "Kakushadze Alpha #59",
+   "zh": "Kakushadze 因子 Alpha #59"
+  },
+  "alpha101_060": {
+   "en": "Kakushadze Alpha #60",
+   "zh": "Kakushadze 因子 Alpha #60"
+  },
+  "alpha101_061": {
+   "en": "Kakushadze Alpha #61",
+   "zh": "Kakushadze 因子 Alpha #61"
+  },
+  "alpha101_062": {
+   "en": "Kakushadze Alpha #62",
+   "zh": "Kakushadze 因子 Alpha #62"
+  },
+  "alpha101_063": {
+   "en": "Kakushadze Alpha #63",
+   "zh": "Kakushadze 因子 Alpha #63"
+  },
+  "alpha101_064": {
+   "en": "Kakushadze Alpha #64",
+   "zh": "Kakushadze 因子 Alpha #64"
+  },
+  "alpha101_065": {
+   "en": "Kakushadze Alpha #65",
+   "zh": "Kakushadze 因子 Alpha #65"
+  },
+  "alpha101_066": {
+   "en": "Kakushadze Alpha #66",
+   "zh": "Kakushadze 因子 Alpha #66"
+  },
+  "alpha101_067": {
+   "en": "Kakushadze Alpha #67",
+   "zh": "Kakushadze 因子 Alpha #67"
+  },
+  "alpha101_068": {
+   "en": "Kakushadze Alpha #68",
+   "zh": "Kakushadze 因子 Alpha #68"
+  },
+  "alpha101_069": {
+   "en": "Kakushadze Alpha #69",
+   "zh": "Kakushadze 因子 Alpha #69"
+  },
+  "alpha101_070": {
+   "en": "Kakushadze Alpha #70",
+   "zh": "Kakushadze 因子 Alpha #70"
+  },
+  "alpha101_071": {
+   "en": "Kakushadze Alpha #71",
+   "zh": "Kakushadze 因子 Alpha #71"
+  },
+  "alpha101_072": {
+   "en": "Kakushadze Alpha #72",
+   "zh": "Kakushadze 因子 Alpha #72"
+  },
+  "alpha101_073": {
+   "en": "Kakushadze Alpha #73",
+   "zh": "Kakushadze 因子 Alpha #73"
+  },
+  "alpha101_074": {
+   "en": "Kakushadze Alpha #74",
+   "zh": "Kakushadze 因子 Alpha #74"
+  },
+  "alpha101_075": {
+   "en": "Kakushadze Alpha #75",
+   "zh": "Kakushadze 因子 Alpha #75"
+  },
+  "alpha101_076": {
+   "en": "Kakushadze Alpha #76",
+   "zh": "Kakushadze 因子 Alpha #76"
+  },
+  "alpha101_077": {
+   "en": "Kakushadze Alpha #77",
+   "zh": "Kakushadze 因子 Alpha #77"
+  },
+  "alpha101_078": {
+   "en": "Kakushadze Alpha #78",
+   "zh": "Kakushadze 因子 Alpha #78"
+  },
+  "alpha101_079": {
+   "en": "Kakushadze Alpha #79",
+   "zh": "Kakushadze 因子 Alpha #79"
+  },
+  "alpha101_080": {
+   "en": "Kakushadze Alpha #80",
+   "zh": "Kakushadze 因子 Alpha #80"
+  },
+  "alpha101_081": {
+   "en": "Kakushadze Alpha #81",
+   "zh": "Kakushadze 因子 Alpha #81"
+  },
+  "alpha101_082": {
+   "en": "Kakushadze Alpha #82",
+   "zh": "Kakushadze 因子 Alpha #82"
+  },
+  "alpha101_083": {
+   "en": "Kakushadze Alpha #83",
+   "zh": "Kakushadze 因子 Alpha #83"
+  },
+  "alpha101_084": {
+   "en": "Kakushadze Alpha #84",
+   "zh": "Kakushadze 因子 Alpha #84"
+  },
+  "alpha101_085": {
+   "en": "Kakushadze Alpha #85",
+   "zh": "Kakushadze 因子 Alpha #85"
+  },
+  "alpha101_086": {
+   "en": "Kakushadze Alpha #86",
+   "zh": "Kakushadze 因子 Alpha #86"
+  },
+  "alpha101_087": {
+   "en": "Kakushadze Alpha #87",
+   "zh": "Kakushadze 因子 Alpha #87"
+  },
+  "alpha101_088": {
+   "en": "Kakushadze Alpha #88",
+   "zh": "Kakushadze 因子 Alpha #88"
+  },
+  "alpha101_089": {
+   "en": "Kakushadze Alpha #89",
+   "zh": "Kakushadze 因子 Alpha #89"
+  },
+  "alpha101_090": {
+   "en": "Kakushadze Alpha #90",
+   "zh": "Kakushadze 因子 Alpha #90"
+  },
+  "alpha101_091": {
+   "en": "Kakushadze Alpha #91",
+   "zh": "Kakushadze 因子 Alpha #91"
+  },
+  "alpha101_092": {
+   "en": "Kakushadze Alpha #92",
+   "zh": "Kakushadze 因子 Alpha #92"
+  },
+  "alpha101_093": {
+   "en": "Kakushadze Alpha #93",
+   "zh": "Kakushadze 因子 Alpha #93"
+  },
+  "alpha101_094": {
+   "en": "Kakushadze Alpha #94",
+   "zh": "Kakushadze 因子 Alpha #94"
+  },
+  "alpha101_095": {
+   "en": "Kakushadze Alpha #95",
+   "zh": "Kakushadze 因子 Alpha #95"
+  },
+  "alpha101_096": {
+   "en": "Kakushadze Alpha #96",
+   "zh": "Kakushadze 因子 Alpha #96"
+  },
+  "alpha101_097": {
+   "en": "Kakushadze Alpha #97",
+   "zh": "Kakushadze 因子 Alpha #97"
+  },
+  "alpha101_098": {
+   "en": "Kakushadze Alpha #98",
+   "zh": "Kakushadze 因子 Alpha #98"
+  },
+  "alpha101_099": {
+   "en": "Kakushadze Alpha #99",
+   "zh": "Kakushadze 因子 Alpha #99"
+  },
+  "alpha101_100": {
+   "en": "Kakushadze Alpha #100",
+   "zh": "Kakushadze 因子 Alpha #100"
+  },
+  "alpha101_101": {
+   "en": "Kakushadze Alpha #101",
+   "zh": "Kakushadze 因子 Alpha #101"
+  },
+  "fund_asset_growth": {
+   "en": "Asset growth - inverse investment factor",
+   "zh": "资产增长 - 反向投资因子"
+  },
+  "fund_earnings_yield": {
+   "en": "Earnings yield - net income over market cap",
+   "zh": "盈利收益率 - 净利润除以市值"
+  },
+  "fund_gross_profitability": {
+   "en": "Gross profitability - gross profit over total assets",
+   "zh": "毛利盈利能力 - 毛利除以总资产"
+  },
+  "fund_roe": {
+   "en": "ROE - return on equity (PIT-safe fundamentals)",
+   "zh": "ROE - 净资产收益率，基于时点正确（PIT）基本面"
+  }
+ },
+ "themes": {
+  "volume": "成交量",
+  "momentum": "动量",
+  "reversal": "反转",
+  "volatility": "波动率",
+  "microstructure": "微观结构",
+  "quality": "质量",
+  "liquidity": "流动性",
+  "value": "价值",
+  "growth": "成长",
+  "sentiment": "情绪"
+ }
+}

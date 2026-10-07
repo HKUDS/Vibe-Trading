@@ -175,6 +175,49 @@ def test_redact_payload_keeps_account_ref_provenance() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        "token_budget",
+        "token_usage",
+        "total_input_tokens",
+        "total_output_tokens",
+        "clob_token_id",
+    ],
+)
+def test_is_sensitive_arg_preserves_benign_token_fields(key: str) -> None:
+    """The ``"token"`` credential marker is a substring match (to catch
+    ``access_token``, ``refresh_token`` …), so token counts/budgets and the
+    public CLOB outcome-token id need an explicit exemption to avoid being
+    over-redacted."""
+    value = "123456789012345678901234567890" if key == "clob_token_id" else 50000
+    assert is_sensitive_arg(key, value=value) is False
+    assert is_sensitive_arg(key) is True  # No value evidence means no exemption.
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["api_key", "access_token", "refresh_token", "bearer_token", "token", "api_token"],
+)
+def test_is_sensitive_arg_still_catches_token_credentials(key: str) -> None:
+    assert is_sensitive_arg(key) is True
+
+
+def test_redact_payload_keeps_token_budget_and_usage_readable() -> None:
+    out = redact_payload(
+        {
+            "token_budget": 50000,
+            "objective": "research NVDA",
+            "access_token": "sekret",
+        }
+    )
+    assert out == {
+        "token_budget": 50000,
+        "objective": "research NVDA",
+        "access_token": "[redacted]",
+    }
+
+
 def test_redact_payload_scrubs_top_level_sensitive_keys() -> None:
     out = redact_payload(
         {"symbol": "NVDA", "authorization": "Bearer rh-oauth-token", "qty": 3}
@@ -446,3 +489,131 @@ def test_bare_token_scrub_leaves_ordinary_output_alone() -> None:
     """Short sk-prefixed words and usage counters are not credentials."""
     text = "tokens: 1204 in / 318 out, sk-ok, account 12345"
     assert redact_text(text) == text
+
+
+_TOKEN_METADATA_KEYS = [
+    "token_budget", "tokenBudget", "Token Budget", "token-budget",
+    "token_usage", "tokenUsage", "Token Usage", "token-usage",
+    "total_input_tokens", "totalInputTokens", "Total Input Tokens",
+    "total_output_tokens", "totalOutputTokens", "Total Output Tokens",
+    "clob_token_id", "clobTokenId", "CLOB Token ID", "clob-token-id",
+]
+
+
+@pytest.mark.parametrize("sink", ["arguments", RESULT_SINK, "unknown"])
+@pytest.mark.parametrize("key", _TOKEN_METADATA_KEYS)
+@pytest.mark.parametrize(
+    "value",
+    ["opaque-test-credential", "Bearer planted-test-token", "sk-proj-" + "x" * 24,
+     {"accessToken": "nested-test-credential"}, ["opaque-test-credential"], True, -1],
+)
+def test_token_metadata_exceptions_never_release_unexpected_values(
+    sink: str, key: str, value: Any,
+) -> None:
+    """Benign names cannot launder credentials, including unrecognizable ones."""
+    out = redact_payload({key: value}, sink=sink)
+    if "usage" in key.lower() and isinstance(value, dict):
+        assert out == {key: {"accessToken": "[redacted]"}}
+    else:
+        assert out == {key: "[redacted]"}
+    assert redact_payload(out, sink=sink) == out
+
+
+@pytest.mark.parametrize("sink", ["arguments", RESULT_SINK, "unknown"])
+def test_token_metadata_keeps_counts_and_public_ids_in_every_sink(sink: str) -> None:
+    payload = {
+        "tokenBudget": 50000,
+        "total_input_tokens": 0,
+        "totalOutputTokens": 412,
+        "token_usage": {"totalInputTokens": 1024, "total_output_tokens": 512,
+                        "details": {"cached": 32, "reasoning": 16}},
+        "clobTokenId": str(2**256 - 1),
+    }
+    assert redact_payload(payload, sink=sink) == payload
+    assert json.loads(redact_tool_result(json.dumps(payload))) == payload
+
+
+@pytest.mark.parametrize("sink", ["arguments", RESULT_SINK, "unknown"])
+def test_usage_mapping_recurses_but_never_treats_nested_credentials_as_counts(sink: str) -> None:
+    payload = {"tokenUsage": {
+        "totalInputTokens": 128,
+        "details": {"cached": 64, "apiKey": 12345,
+                    "refreshToken": "opaque-test-credential", "note": "unlabelled-private-value"},
+        "accessToken": {"count": 4},
+        "content": "private body",
+        "rows": [{"password": "list-test-credential"}],
+    }}
+    expected = {"tokenUsage": {
+        "totalInputTokens": 128,
+        "details": {"cached": 64, "apiKey": "[redacted]",
+                    "refreshToken": "[redacted]", "note": "[redacted]"},
+        "accessToken": "[redacted]", "content": "[redacted]", "rows": "[redacted]",
+    }}
+    assert redact_payload(payload, sink=sink) == expected
+    assert payload["tokenUsage"]["details"]["apiKey"] == 12345
+
+
+@pytest.mark.parametrize("value", ["²", "１２３", str(2**256), "1" * 5000, "12.3", "0x123"])
+def test_clob_id_exception_only_accepts_decimal_uint256(value: str) -> None:
+    assert redact_payload({"clob_token_id": value}) == {"clob_token_id": "[redacted]"}
+
+
+@pytest.mark.parametrize("key", ["secretTokenBudget", "tokenUsageAccessToken", "clobTokenIdSecret"])
+def test_metadata_exception_is_exact_and_cannot_hide_a_credential_suffix(key: str) -> None:
+    assert redact_payload({key: 123}) == {key: "[redacted]"}
+
+
+def test_metadata_validation_reaches_swarm_argument_previews() -> None:
+    from src.swarm.worker import _preview_tool_arguments
+
+    preview = _preview_tool_arguments({
+        "token_budget": "opaque-test-credential",
+        "token_usage": {"total_input_tokens": 7, "accessToken": "nested-test-credential"},
+        "totalOutputTokens": 12,
+    })
+    assert preview["token_budget"] == "[redacted]"
+    assert "nested-test-credential" not in json.dumps(preview)
+    assert "7" in preview["token_usage"]
+    assert preview["totalOutputTokens"] == "12"
+
+
+def test_metadata_validation_reaches_trace_events_and_result_previews(tmp_path: Path) -> None:
+    payload = {"tokenBudget": "opaque-test-credential", "totalInputTokens": 23,
+               "tokenUsage": {"refreshToken": "nested-test-credential", "cached": 12}}
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    tc = SimpleNamespace(id="tc_metadata", name="fetch_quote", arguments=payload)
+    events, _, react_trace = _run_one_tool_call(_StubRegistry(json.dumps(payload)), tc, run_dir)
+    for surface in [_persisted_text(run_dir), json.dumps(events), json.dumps(react_trace)]:
+        assert "opaque-test-credential" not in surface
+        assert "nested-test-credential" not in surface
+    entries = TraceWriter.read(run_dir, resolve_offloads=True)
+    call = next(entry for entry in entries if entry["type"] == "tool_call")
+    result = next(entry for entry in entries if entry["type"] == "tool_result")
+    assert call["args"]["totalInputTokens"] == 23
+    assert json.loads(result["result"])["tokenUsage"]["cached"] == 12
+
+
+def test_metadata_validation_reaches_all_audit_sinks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.live import audit, paths
+
+    monkeypatch.setattr(paths, "get_runtime_root", lambda: tmp_path)
+    records: list[dict] = []
+    events: list[dict] = []
+    payload = {"tokenBudget": "opaque-test-credential", "tokenUsage": {
+        "totalInputTokens": 77, "accessToken": "nested-test-credential"}}
+    event = audit.LiveActionEvent(kind="order_placed", session_id="s1", outcome="accepted",
+                                 server="test-broker", broker_request=payload, broker_response=payload)
+    returned = audit.write_live_action(
+        event, event_callback=lambda name, data: events.append(data),
+        trace_writer=SimpleNamespace(write=records.append),
+    )
+    ledger = [json.loads(line) for line in audit.audit_ledger_path().read_text().splitlines()]
+    assert ledger == events == [returned]
+    assert records == [{"type": "live_action", **returned}]
+    chain = [json.loads(line) for line in audit.audit_chain_ledger_path().read_text().splitlines()]
+    assert len(chain) == 1
+    for record in ledger + records + events + chain:
+        assert "opaque-test-credential" not in json.dumps(record)
+        assert "nested-test-credential" not in json.dumps(record)
+        assert record["broker_request"]["tokenUsage"]["totalInputTokens"] == 77

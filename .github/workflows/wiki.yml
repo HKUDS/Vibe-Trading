@@ -30,13 +30,28 @@ jobs:
 
       - name: Check JavaScript syntax
         run: |
+          node --check wiki/site.js
           node --check wiki/main.js
-          node --check wiki/theme.js
+          node --check wiki/theme-init.js
+          node --check wiki/alpha-library/alpha.js
           node --check wiki/docs/content.js
+          node --check wiki/docs/content.en.js
+          node --check wiki/docs/content.zh.js
           node --check wiki/docs/main.js
 
+      - name: Check English and Chinese docs match
+        run: node wiki/scripts/check_docs_parity.mjs
+
       - name: Check locale JSON
-        run: python -m json.tool wiki/locales/en.json >/dev/null
+        run: python -m json.tool wiki/locales/zh.json >/dev/null
+
+      - name: Check every page carries the shared header, footer and head block
+        run: python wiki/scripts/sync_site_chrome.py --check
+
+      - name: Check every translatable string has Chinese
+        run: |
+          python -m pip install --quiet jinja2
+          python wiki/scripts/check_i18n.py
 
       - name: Check social card metadata
         run: python wiki/scripts/check_social_cards.py

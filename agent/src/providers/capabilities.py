@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from threading import Lock
+from time import monotonic
 from typing import Mapping, Optional
 
 
@@ -74,12 +76,28 @@ def _package_version() -> str:
 _VIBE_USER_AGENT = f"Vibe-Trading/{_package_version()}"
 
 
-@lru_cache(maxsize=1)
+_GH_CLI_TOKEN_TTL_SECONDS = 60.0
+_gh_cli_token_cache: tuple[float, str] | None = None
+_gh_cli_token_lock = Lock()
+
+
 def _gh_cli_token() -> str:
     """Return an explicit Copilot token; the SDK handles stored credentials."""
-    from src.providers.copilot_auth import resolve_copilot_token
+    global _gh_cli_token_cache
 
-    return resolve_copilot_token()[0]
+    with _gh_cli_token_lock:
+        now = monotonic()
+        if (
+            _gh_cli_token_cache is not None
+            and now - _gh_cli_token_cache[0] < _GH_CLI_TOKEN_TTL_SECONDS
+        ):
+            return _gh_cli_token_cache[1]
+
+        from src.providers.copilot_auth import resolve_copilot_token
+
+        token = resolve_copilot_token()[0]
+        _gh_cli_token_cache = (monotonic(), token)
+        return token
 
 
 _MOONSHOT_CAPABILITIES = ProviderCapabilities(

@@ -137,6 +137,35 @@ merging. Authors are strongly encouraged to self-check first.
 5. Open a PR. Every commit must include `Signed-off-by:` (use
    `git commit -s`). Reviewers will walk the checklist above.
 
+## Adding a Channel (Quickstart)
+
+Channels ship through one authoring contract; the Web UI renders any channel's
+configuration with no per-channel frontend code.
+
+1. Create `agent/src/channels/<name>.py` with a `BaseChannel` subclass:
+   implement `start`, `stop`, and `send` (abstract), and `default_config()`
+   returning the stored config shape. The registry (`src/channels/registry.py`)
+   auto-discovers the module; delivery receipts, retries and manager wiring come
+   from the base class and manager.
+2. Field metadata lives in `agent/src/channels/config_meta.py`. Hand-written
+   `FIELD_HINTS[name]` entries supply labels and authoritative secret flags;
+   channels without hand-written hints derive them from `default_config()` with
+   type inference. Stored keys without a hand-written declaration use the
+   `SECRET_KEY_RE` fail-safe. Declared secret flags are authoritative, including
+   audited exceptions for benign path or timeout keys. If the platform has a credential endpoint, build the
+   connection probe on `token_probe.py` rather than writing a new client (see
+   `dingtalk_probe.py` for the pattern) and override `test_connection()`.
+3. Run the authoring contract locally:
+   ```bash
+   pytest agent/tests/test_channel_authoring_contract.py -q
+   ```
+   It walks every discovered channel and fails when one breaks the recipe
+   (abstracts unset, scalar config keys with no field hint, or an uncovered
+   credential-shaped key that would leak unmasked into the form).
+4. Open a PR with `Signed-off-by:` on every commit. Dict-valued config (e.g.
+   per-group maps) stays file-configured by design; the generic form edits
+   text/password/bool/list widgets only.
+
 ## Code Style
 
 - Format with `black`; lint with `ruff` (config in `pyproject.toml`).
@@ -163,3 +192,65 @@ trailer; keep commit metadata clean.
 
 By contributing, you agree that your contributions are licensed under the
 project's MIT license (see `LICENSE`).
+
+## Broker Bring-up Checklist
+
+Apply this checklist to every new connector or capability change. A generated
+matrix row records a declaration; attach separate evidence for runtime claims.
+
+- [ ] Declare each paper/live and read-only/trading profile separately in the
+  connector's `profiles.py`. Do not transfer a paper permission into a live
+  profile. Document sandbox versus local simulation and the structural runtime
+  discriminator; without one, live placement must remain disabled.
+- [ ] Declare only mapped capabilities. Record the actual read/quote endpoints,
+  response shapes, currency, pagination, and unsupported asset coverage, with
+  sanitized fixtures and source references. A listed quote capability is not
+  proof that every position can be priced.
+- [ ] Record supported order kinds and instrument classes from observed schemas
+  or broker documentation; they are not inferred by the matrix. Test unsupported
+  requests and malformed or incomplete replies fail closed.
+- [ ] Test live risk-increasing actions through the shared mandate gate,
+  including account selection, limits, kill switch, and audit. Verify cancel,
+  flatten, position management, and copy paths separately where implemented;
+  placement coverage alone does not establish their coverage.
+- [ ] Separate offline contract tests from authorized sandbox/live verification.
+  State exactly which paths were exercised, when, and which remain unverified.
+  Never commit credentials, account records, or unsanitized broker responses.
+- [ ] Regenerate the README from the repository root and run the CI drift guard:
+  ```bash
+  PYTHONPATH=agent python -m src.trading.capability_matrix
+  pytest agent/tests/test_capability_matrix.py -q
+  ```
+  Include the generated profile rows and verification evidence in the same PR.
+
+### Public-source health lane
+
+The **Public loader health** workflow runs weekly (Monday 04:17 UTC) and can
+be dispatched manually. It is separate from offline PR tests. To reproduce:
+
+```bash
+python3.11 -m venv /tmp/vibe-loader-health-venv
+/tmp/vibe-loader-health-venv/bin/python -m pip install -r tools/requirements-loader-health.txt
+cd agent
+/tmp/vibe-loader-health-venv/bin/python -m backtest.loader_health --output /tmp/loader-health.json
+```
+
+Use the isolated environment: mootdx's HTTP client requirement conflicts with
+the application's dependency range. The canary imports the checkout's loader
+code directly, without installing the full application dependency set.
+
+Each unauthenticated network loader has a liquid canary symbol; the local-file
+loader is explicitly excluded. Adding a public loader requires updating the
+canary catalog, enforced by the offline test suite. Probes bypass the loader
+cache and run with a temporary home and no inherited credentials. Each source
+has a 120-second total subprocess deadline, including two attempts, and the
+workflow has its own job deadline. Reports contain only source identifiers and
+validation metadata, never returned bars, raw exceptions, or account settings.
+
+Missing dependencies, unavailable endpoints, connection failures, malformed
+OHLCV, and bars older than 14 days fail the health lane; none become passing
+skips. A failed lane is an investigation signal, not proof the provider itself
+is broken: runner geography, holidays and upstream changes need checking.
+The 14-day window is a coarse freshness alarm, not a market-calendar guarantee.
+Reports are retained for 30 days. No authenticated source or broker order path
+is exercised.

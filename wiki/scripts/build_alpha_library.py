@@ -17,12 +17,18 @@ Security posture (v0.1.8):
       so manifest-derived strings (``formula_latex``, ``notes``, ids, …)
       cannot break out of the document.
     * Each generated page carries a strict Content-Security-Policy meta:
-      ``default-src 'self'; style-src 'self' 'unsafe-inline';
-      script-src 'none'; img-src 'self' data:;``.
-    * KaTeX is intentionally **not** loaded — ``script-src 'none'`` forbids
-      it. ``formula_latex`` is shown as raw escaped text inside ``<pre>``.
-      A future revision can swap in a server-side LaTeX→MathML pass that
-      keeps CSP intact.
+      ``script-src 'self'`` — no inline script and nothing from another
+      origin. The only scripts are the site's own shell (theme, header,
+      language switch), the same files every other wiki page loads.
+    * KaTeX is intentionally **not** loaded. ``formula_latex`` is shown as
+      raw escaped text inside ``<pre>``. A future revision can swap in a
+      server-side LaTeX→MathML pass that keeps CSP intact.
+    * Notes, nicknames and theme tags carry their Chinese in ``data-text-zh``
+      from ``wiki/alpha-library/i18n.zh.json`` — only when the stored English
+      still matches the manifest, so a stale translation is never shown.
+    * The header, footer and head block come from ``wiki/partials/`` (the
+      same markup ``sync_site_chrome.py`` writes into the hand-written
+      pages); labels carry ``data-i18n`` keys from ``wiki/locales/zh.json``.
     * Run-time safety check (``--check-escape``, on by default) verifies a
       sample page contains no unescaped ``<``/``>``/``"`` from
       manifest-derived fields. The script exits non-zero on failure.
@@ -43,6 +49,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from markupsafe import Markup
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sync_site_chrome import render_block  # noqa: E402
+
 try:
     from jinja2 import Environment, select_autoescape
 except ImportError as exc:  # pragma: no cover — Jinja2 is a project dep
@@ -60,14 +71,24 @@ except ImportError as exc:  # pragma: no cover — Jinja2 is a project dep
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_MANIFEST = _REPO_ROOT / "wiki" / "alpha-library" / "manifest.json"
 _DEFAULT_OUTPUT = _REPO_ROOT / "wiki" / "alpha-library" / "content"
+# Chinese notes, nicknames and theme names. Each note and nickname keeps the
+# English it was translated from, so an edited English text is shown in
+# English until its translation is updated (agent/tests/factors/
+# test_alpha_library_translations.py fails in the meantime).
+_I18N_PATH = _REPO_ROOT / "wiki" / "alpha-library" / "i18n.zh.json"
 
-# Strict CSP for static content pages — no scripts at all.
+# Strict CSP for static content pages: same-origin scripts only, no inline.
 _CSP_CONTENT = (
     "default-src 'self'; "
-    "style-src 'self' 'unsafe-inline'; "
-    "script-src 'none'; "
-    "img-src 'self' data:;"
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "script-src 'self'; "
+    "img-src 'self' data:; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "connect-src 'self' https://api.github.com;"
 )
+
+# Cache-busting version of the site shell modules; matches the hand-written pages.
+_SHELL_VERSION = "20260929e"
 
 # Display names for zoos. Source of truth — do not depend on prose elsewhere.
 _ZOO_DISPLAY: dict[str, dict[str, str]] = {
@@ -86,6 +107,13 @@ _ZOO_DISPLAY: dict[str, dict[str, str]] = {
     "academic": {
         "name": "Academic Anomalies",
         "tagline": "Curated alphas from the academic asset-pricing literature.",
+    },
+    "fundamental": {
+        "name": "Point-in-time Fundamentals",
+        "tagline": (
+            "US SEC fundamentals anchored to the filing date, so a backtest never "
+            "sees a number before it was published."
+        ),
     },
 }
 
@@ -141,7 +169,7 @@ def parse_manifest(path: Path) -> dict[str, Any]:
 
 
 _ALPHA_PAGE_TEMPLATE = """<!doctype html>
-<html lang="en">
+<html lang="en" data-lang-neutral>
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="{{ csp }}">
@@ -150,7 +178,8 @@ _ALPHA_PAGE_TEMPLATE = """<!doctype html>
   <meta name="description" content="{{ alpha.id }} — {{ zoo_display.name }} alpha definition.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://vibetrading.wiki/alpha-library/content/{{ zoo.zoo_id }}/{{ alpha.id }}.html">
-  <link rel="stylesheet" href="../../../styles.css">
+{{ head_block }}
+  <script type="module" src="/main.js?v={{ shell_version }}"></script>
   <style>
     .alpha-page { width: min(880px, calc(100% - 32px)); margin: 48px auto 96px; }
     .alpha-page .crumbs { color: var(--muted); font-family: var(--mono); font-size: 0.85rem; margin-bottom: 12px; }
@@ -166,29 +195,31 @@ _ALPHA_PAGE_TEMPLATE = """<!doctype html>
     .alpha-page .tag { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; margin: 2px 4px 2px 0; font-size: 0.78rem; color: var(--muted); }
   </style>
 </head>
-<body>
+<body data-section="alpha">
+{{ header_block }}
+
   <main class="alpha-page">
     <p class="crumbs">
-      <a href="../../index.html">Alpha Library</a>
+      <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
       &nbsp;/&nbsp;
-      <a href="index.html">{{ zoo_display.name }}</a>
+      <a href="index.html" data-i18n="alpha.zoo.{{ zoo.zoo_id }}Name">{{ zoo_display.name }}</a>
       &nbsp;/&nbsp;
       <span>{{ alpha.id }}</span>
     </p>
     <h1>{{ alpha.id }}</h1>
-    {% if alpha.meta.nickname %}<p class="nickname">{{ alpha.meta.nickname }}</p>{% endif %}
+    {% if alpha.meta.nickname %}<p class="nickname"{% if zh.nickname %} data-text-zh="{{ zh.nickname }}"{% endif %}>{{ alpha.meta.nickname }}</p>{% endif %}
 
-    <h2>Themes &amp; universe</h2>
+    <h2 data-i18n="alpha.page.themes">Themes &amp; universe</h2>
     <p>
-      {% for t in alpha.meta.theme %}<span class="tag">{{ t }}</span>{% endfor %}
+      {% for t in alpha.meta.theme %}<span class="tag" data-text-zh="{{ t | zh_theme }}">{{ t }}</span>{% endfor %}
       {% for u in alpha.meta.universe %}<span class="tag">{{ u }}</span>{% endfor %}
       {% for f in alpha.meta.frequency %}<span class="tag">{{ f }}</span>{% endfor %}
     </p>
 
-    <h2>Formula</h2>
+    <h2 data-i18n="alpha.page.formula">Formula</h2>
     <pre class="formula"><code>{{ alpha.meta.formula_latex }}</code></pre>
 
-    <h2>Definition</h2>
+    <h2 data-i18n="alpha.page.definition">Definition</h2>
     <dl class="meta-grid">
       <div><dt>id</dt><dd>{{ alpha.id }}</dd></div>
       <div><dt>zoo</dt><dd>{{ zoo.zoo_id }}</dd></div>
@@ -201,22 +232,24 @@ _ALPHA_PAGE_TEMPLATE = """<!doctype html>
     </dl>
 
     {% if alpha.meta.notes %}
-    <h2>Notes</h2>
-    <p class="notes">{{ alpha.meta.notes }}</p>
+    <h2 data-i18n="alpha.page.notes">Notes</h2>
+    <p class="notes"{% if zh.notes %} data-text-zh="{{ zh.notes }}"{% endif %}>{{ alpha.meta.notes }}</p>
     {% endif %}
 
-    <h2>Run it</h2>
+    <h2 data-i18n="alpha.page.run">Run it</h2>
     <pre class="formula"><code>pip install vibe-trading-ai
 vibe-trading alpha show {{ alpha.id }}
 vibe-trading alpha bench --zoo {{ zoo.zoo_id }} --universe csi300 --period 2020-2025</code></pre>
   </main>
+
+{{ footer_block }}
 </body>
 </html>
 """
 
 
 _ZOO_PAGE_TEMPLATE = """<!doctype html>
-<html lang="en">
+<html lang="en" data-lang-neutral>
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="{{ csp }}">
@@ -225,7 +258,8 @@ _ZOO_PAGE_TEMPLATE = """<!doctype html>
   <meta name="description" content="{{ zoo_display.tagline }}">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://vibetrading.wiki/alpha-library/content/{{ zoo.zoo_id }}/index.html">
-  <link rel="stylesheet" href="../../../styles.css">
+{{ head_block }}
+  <script type="module" src="/main.js?v={{ shell_version }}"></script>
   <style>
     .zoo-page { width: min(1100px, calc(100% - 32px)); margin: 48px auto 96px; }
     .zoo-page .crumbs { color: var(--muted); font-family: var(--mono); font-size: 0.85rem; margin-bottom: 12px; }
@@ -242,27 +276,29 @@ _ZOO_PAGE_TEMPLATE = """<!doctype html>
     .zoo-page .theme-cell { color: var(--muted); font-size: 0.82rem; }
   </style>
 </head>
-<body>
+<body data-section="alpha">
+{{ header_block }}
+
   <main class="zoo-page">
-    <p class="crumbs"><a href="../../index.html">Alpha Library</a> &nbsp;/&nbsp; <span>{{ zoo_display.name }}</span></p>
-    <h1>{{ zoo_display.name }} <span class="count-pill">{{ zoo.alphas | length }} alphas</span></h1>
-    <p class="tagline">{{ zoo_display.tagline }}</p>
+    <p class="crumbs"><a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a> &nbsp;/&nbsp; <span data-i18n="alpha.zoo.{{ zoo.zoo_id }}Name">{{ zoo_display.name }}</span></p>
+    <h1><span data-i18n="alpha.zoo.{{ zoo.zoo_id }}Name">{{ zoo_display.name }}</span> <span class="count-pill">{{ zoo.alphas | length }} <span data-i18n="alpha.page.alphasUnit">alphas</span></span></h1>
+    <p class="tagline" data-i18n="alpha.zoo.{{ zoo.zoo_id }}">{{ zoo_display.tagline }}</p>
 
     <table>
       <thead>
         <tr>
           <th>id</th>
-          <th>theme</th>
-          <th>universe</th>
-          <th>decay</th>
-          <th>warmup</th>
+          <th data-i18n="alpha.page.theme">theme</th>
+          <th data-i18n="alpha.page.universe">universe</th>
+          <th data-i18n="alpha.page.decay">decay</th>
+          <th data-i18n="alpha.page.warmup">warmup</th>
         </tr>
       </thead>
       <tbody>
       {% for a in zoo.alphas %}
         <tr>
           <td><a href="{{ a.id }}.html">{{ a.id }}</a></td>
-          <td class="theme-cell">{{ a.meta.theme | join(", ") }}</td>
+          <td class="theme-cell" data-text-zh="{{ a.meta.theme | map('zh_theme') | join('、') }}">{{ a.meta.theme | join(", ") }}</td>
           <td class="theme-cell">{{ a.meta.universe | join(", ") }}</td>
           <td>{{ a.meta.decay_horizon }}</td>
           <td>{{ a.meta.min_warmup_bars }}</td>
@@ -271,6 +307,8 @@ _ZOO_PAGE_TEMPLATE = """<!doctype html>
       </tbody>
     </table>
   </main>
+
+{{ footer_block }}
 </body>
 </html>
 """
@@ -281,13 +319,66 @@ _ZOO_PAGE_TEMPLATE = """<!doctype html>
 # ---------------------------------------------------------------------------
 
 
+def _load_i18n() -> dict[str, Any]:
+    """Load the Chinese notes / nicknames / theme names (empty when absent).
+
+    Returns:
+        ``{"notes": {id: {"en", "zh"}}, "nicknames": {...}, "themes": {tag: zh}}``.
+    """
+    if not _I18N_PATH.is_file():
+        return {"notes": {}, "nicknames": {}, "themes": {}}
+    return json.loads(_I18N_PATH.read_text(encoding="utf-8"))
+
+
+_I18N = _load_i18n()
+
+
+def _zh_texts(alpha: dict) -> dict[str, str | None]:
+    """Chinese note and nickname for one alpha, or None where stale / missing.
+
+    Args:
+        alpha: One manifest alpha entry.
+
+    Returns:
+        ``{"notes": ..., "nickname": ...}``.
+    """
+    meta = alpha.get("meta", {})
+    out: dict[str, str | None] = {}
+    for field, bucket in (("notes", "notes"), ("nickname", "nicknames")):
+        entry = _I18N.get(bucket, {}).get(alpha.get("id"))
+        text = meta.get(field)
+        out[field] = entry["zh"] if entry and text and entry.get("en") == text else None
+    return out
+
+
 def _build_env() -> Environment:
     """Create a Jinja2 environment with mandatory autoescape on."""
-    return Environment(
+    env = Environment(
         autoescape=select_autoescape(["html", "xml"]),
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["zh_theme"] = lambda tag: _I18N.get("themes", {}).get(tag, tag)
+    return env
+
+
+def _chrome() -> dict[str, Any]:
+    """Return the shared head block, header and footer as trusted markup.
+
+    They come from ``wiki/partials/`` (repository files, not manifest data),
+    so they are marked safe and bypass autoescape; everything derived from
+    the manifest still goes through it.
+
+    Returns:
+        Template variables ``head_block``, ``header_block``, ``footer_block``
+        and ``shell_version``.
+    """
+    return {
+        "head_block": Markup(render_block("site-head", "  ")),
+        "header_block": Markup(render_block("site-header", "  ")),
+        "footer_block": Markup(render_block("site-footer", "  ")),
+        "shell_version": _SHELL_VERSION,
+    }
 
 
 def render_alpha_page(env: Environment, alpha: dict, zoo: dict) -> str:
@@ -302,6 +393,8 @@ def render_alpha_page(env: Environment, alpha: dict, zoo: dict) -> str:
         zoo=zoo,
         zoo_display=zoo_display,
         csp=_CSP_CONTENT,
+        zh=_zh_texts(alpha),
+        **_chrome(),
     )
 
 
@@ -312,7 +405,7 @@ def render_zoo_page(env: Environment, zoo: dict) -> str:
         {"name": zoo["zoo_id"], "tagline": ""},
     )
     template = env.from_string(_ZOO_PAGE_TEMPLATE)
-    return template.render(zoo=zoo, zoo_display=zoo_display, csp=_CSP_CONTENT)
+    return template.render(zoo=zoo, zoo_display=zoo_display, csp=_CSP_CONTENT, **_chrome())
 
 
 def render_index_data(manifest: dict) -> dict:
@@ -357,25 +450,23 @@ def _escape_smoke(sample_html: str, alpha: dict) -> bool:
     that would indicate Jinja2 autoescape was bypassed.
     """
     formula = alpha.get("meta", {}).get("formula_latex", "")
-    if "<script" in formula.lower():
-        # We synthesised a hostile string into a real alpha — refuse.
-        return "<script" not in sample_html.lower()
-
-    # If formula contains literal angle brackets, they must be HTML-escaped
-    # in the output. We look for the raw ASCII characters inside the file —
-    # but only after we strip out our own template chrome. Cheap heuristic:
-    # the formula content lives inside `<pre class="formula"><code>...</code></pre>`.
+    # The formula lives inside `<pre class="formula"><code>...</code></pre>`;
+    # the page's own chrome (which loads the site scripts) is outside it.
     start_tag = '<pre class="formula"><code>'
     end_tag = "</code></pre>"
-    if start_tag in sample_html:
-        start = sample_html.index(start_tag) + len(start_tag)
-        end = sample_html.index(end_tag, start)
-        block = sample_html[start:end]
-        # autoescape should turn `<` into `&lt;` etc.
-        if "<" in formula and "<" in block and "&lt;" not in block:
-            return False
-        if ">" in formula and ">" in block and "&gt;" not in block:
-            return False
+    if start_tag not in sample_html:
+        return "<script" not in formula.lower()
+    start = sample_html.index(start_tag) + len(start_tag)
+    end = sample_html.index(end_tag, start)
+    block = sample_html[start:end]
+    if "<script" in formula.lower():
+        # We synthesised a hostile string into a real alpha — refuse.
+        return "<script" not in block.lower()
+    # autoescape should turn `<` into `&lt;` etc.
+    if "<" in formula and "<" in block and "&lt;" not in block:
+        return False
+    if ">" in formula and ">" in block and "&gt;" not in block:
+        return False
     return True
 
 
@@ -424,6 +515,7 @@ def main(argv: list[str] | None = None) -> int:
     zoo_count = 0
     sample_alpha: dict | None = None
     sample_html: str | None = None
+    untranslated: list[str] = []
 
     for zoo in manifest.get("zoos", []):
         zoo_id = zoo.get("zoo_id")
@@ -444,6 +536,10 @@ def main(argv: list[str] | None = None) -> int:
                 # regex, but never trust a JSON file from disk.
                 continue
             html = render_alpha_page(env, alpha, zoo)
+            zh = _zh_texts(alpha)
+            meta = alpha.get("meta", {})
+            if (meta.get("notes") and not zh["notes"]) or (meta.get("nickname") and not zh["nickname"]):
+                untranslated.append(alpha_id)
             _write(zoo_dir / f"{alpha_id}.html", html)
             alpha_count += 1
             if sample_alpha is None:
@@ -465,6 +561,12 @@ def main(argv: list[str] | None = None) -> int:
             print("html escape FAIL", file=sys.stderr)
             return 1
 
+    if untranslated:
+        print(
+            f"warning: {len(untranslated)} alphas show English notes/nicknames in Chinese "
+            f"(missing or stale in {_I18N_PATH.name}): {', '.join(untranslated[:10])}",
+            file=sys.stderr,
+        )
     print(
         f"built: {alpha_count} alphas across {zoo_count} zoos -> {out_dir}"
     )

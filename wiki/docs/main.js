@@ -1,56 +1,36 @@
-import { initTheme } from "/theme.js";
+import { initSite, setPageLang, storedLang } from "/site.js?v=20260929e";
 import {
+  DOCS_DEFAULT_LANG,
   DOCS_DEFAULT_PAGE,
-  DOCS_DEFAULT_VERSION,
-  DOCS_LATEST_ALIAS,
-  DOCS_STRUCTURE,
+  DOCS_LANGUAGES,
+  DOCS_UI,
   DOCS_VERSIONS
-} from "/docs/content.js";
+} from "/docs/content.js?v=20260929e";
 
-const REPO = "HKUDS/Vibe-Trading";
-const API = `https://api.github.com/repos/${REPO}`;
-const STARS_CACHE_KEY = "vibetrading-github-stars";
-const STARS_TTL_MS = 12 * 60 * 60 * 1000;
+const SITE = "https://vibetrading.wiki";
 
-const allPages = DOCS_STRUCTURE.flatMap((group) =>
-  group.pages.map((page) => ({ ...page, group: group.label }))
+function stripTags(html) {
+  return String(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+}
+
+const pagesByLang = Object.fromEntries(
+  Object.entries(DOCS_LANGUAGES).map(([lang, { structure }]) => [
+    lang,
+    structure.flatMap((group) =>
+      group.pages.map((page) => ({
+        ...page,
+        group: group.label,
+        searchText: [
+          page.title,
+          page.description,
+          page.lead,
+          ...page.sections.map((section) => `${section.title} ${stripTags(section.body)}`)
+        ].join(" ").toLowerCase()
+      }))
+    )
+  ])
 );
 
-function formatStarCount(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "--";
-  if (n < 1000) return String(Math.round(n));
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${(n / 1_000_000).toFixed(1)}m`;
-}
-
-function initStars() {
-  const el = document.getElementById("star-count");
-  if (!el) return;
-
-  let cached = null;
-  try {
-    cached = JSON.parse(localStorage.getItem(STARS_CACHE_KEY) || "null");
-  } catch {
-    cached = null;
-  }
-  if (cached && typeof cached.count === "number") el.textContent = formatStarCount(cached.count);
-  if (cached && Date.now() - cached.at < STARS_TTL_MS) return;
-
-  fetch(API, { headers: { Accept: "application/vnd.github+json" } })
-    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((data) => {
-      if (typeof data.stargazers_count !== "number") return;
-      try {
-        localStorage.setItem(STARS_CACHE_KEY, JSON.stringify({ count: data.stargazers_count, at: Date.now() }));
-      } catch {
-        /* ignore */
-      }
-      el.textContent = formatStarCount(data.stargazers_count);
-    })
-    .catch(() => {
-      if (!cached) el.textContent = "--";
-    });
-}
 
 function slugify(text) {
   return String(text)
@@ -59,59 +39,105 @@ function slugify(text) {
     .replace(/^-|-$/g, "");
 }
 
+function langForSegment(segment) {
+  const match = Object.entries(DOCS_LANGUAGES).find(([, meta]) => meta.segment === segment);
+  return match ? match[0] : DOCS_DEFAULT_LANG;
+}
+
+// The URL decides the language: /docs/zh/… is Chinese, /docs/latest/… (or an
+// old version number) English. Only a URL that names no language — /docs/
+// itself — falls back to the reader's stored choice, English by default.
 function routeParts() {
   const normalized = location.pathname.replace(/\/+$/, "");
-  if (!normalized || normalized === "/docs" || normalized === "/docs/index.html") {
-    return { version: DOCS_LATEST_ALIAS, pageId: DOCS_DEFAULT_PAGE };
-  }
   const match = normalized.match(/^\/docs\/([^/]+)\/(.+)$/);
-  if (!match) return { version: DOCS_LATEST_ALIAS, pageId: DOCS_DEFAULT_PAGE };
-  return { version: match[1], pageId: match[2] || DOCS_DEFAULT_PAGE };
+  if (!match) {
+    const bare = normalized.match(/^\/docs\/([^/]+)$/);
+    const lang = bare && bare[1] !== "index.html" ? langForSegment(bare[1]) : storedLang();
+    return { lang, pageId: DOCS_DEFAULT_PAGE, canonical: false };
+  }
+  const lang = langForSegment(match[1]);
+  return { lang, pageId: match[2], canonical: match[1] === DOCS_LANGUAGES[lang].segment };
 }
 
-function canonicalPath(pageId, version = DOCS_LATEST_ALIAS) {
-  return `/docs/${version}/${pageId}`;
+function canonicalPath(pageId, lang) {
+  return `/docs/${DOCS_LANGUAGES[lang].segment}/${pageId}`;
 }
 
-function resolvePage(pageId) {
-  return allPages.find((page) => page.id === pageId) || allPages.find((page) => page.id === DOCS_DEFAULT_PAGE);
+function resolvePage(pageId, lang) {
+  const pages = pagesByLang[lang];
+  return pages.find((page) => page.id === pageId) || pages.find((page) => page.id === DOCS_DEFAULT_PAGE);
 }
 
-function setMeta(page, version) {
-  document.title = `${page.title} - Vibe-Trading Docs`;
-  const description = page.description || page.lead || "Vibe-Trading documentation.";
+
+function setAlternate(hreflang, href) {
+  let link = document.querySelector(`link[rel='alternate'][hreflang='${hreflang}']`);
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "alternate";
+    link.hreflang = hreflang;
+    document.head.appendChild(link);
+  }
+  link.href = href;
+}
+
+function setMeta(page, lang) {
+  const ui = DOCS_UI[lang];
+  const title = `${page.title} - ${ui.siteTitle}`;
+  const description = page.description || page.lead;
+  document.title = title;
   document.querySelector('meta[name="description"]')?.setAttribute("content", description);
-  document.querySelector('meta[property="og:title"]')?.setAttribute("content", `${page.title} - Vibe-Trading Docs`);
+  document.querySelector('meta[property="og:title"]')?.setAttribute("content", title);
   document.querySelector('meta[property="og:description"]')?.setAttribute("content", description);
-  const canonical = `https://vibetrading.wiki${canonicalPath(page.id, version)}`;
+  document.querySelector('meta[property="og:site_name"]')?.setAttribute("content", ui.siteTitle);
+  const canonical = `${SITE}${canonicalPath(page.id, lang)}`;
   document.querySelector('meta[property="og:url"]')?.setAttribute("content", canonical);
   document.querySelector("link[rel='canonical']")?.setAttribute("href", canonical);
+  for (const [code, meta] of Object.entries(DOCS_LANGUAGES)) {
+    setAlternate(meta.htmlLang, `${SITE}${canonicalPath(page.id, code)}`);
+  }
+  setAlternate("x-default", `${SITE}${canonicalPath(page.id, DOCS_DEFAULT_LANG)}`);
+}
+
+function applyChrome(lang) {
+  const ui = DOCS_UI[lang];
+  document.querySelectorAll("[data-ui]").forEach((el) => {
+    const value = ui[el.getAttribute("data-ui")];
+    if (typeof value === "string") el.textContent = value;
+  });
+  document.getElementById("docs-search")?.setAttribute("placeholder", ui.searchPlaceholder);
+  document.querySelector(".docs-sidebar")?.setAttribute("aria-label", ui.navLabel);
+  document.querySelector(".docs-outline")?.setAttribute("aria-label", ui.onThisPage);
+
+  const select = document.getElementById("version-select");
+  if (select) {
+    select.innerHTML = DOCS_VERSIONS.map((item) =>
+      `<option value="${item.name}">${item.label[lang] || item.name}</option>`
+    ).join("");
+  }
 }
 
 function navLink(page, currentId) {
   const active = page.id === currentId ? "is-active" : "";
-  return `<a class="${active}" href="${canonicalPath(page.id)}" data-doc-link="${page.id}">
+  return `<a class="${active}" data-doc-link="${page.id}">
     <span>${page.title}</span>
     <small>${page.description}</small>
   </a>`;
 }
 
-function renderNav(currentId, filter = "") {
+function renderNav(currentId, lang, filter = "") {
   const nav = document.getElementById("docs-nav");
   if (!nav) return;
   const q = filter.trim().toLowerCase();
-  const groups = DOCS_STRUCTURE.map((group) => {
-    const pages = group.pages.filter((page) => {
-      if (!q) return true;
-      return `${page.title} ${page.description} ${page.lead}`.toLowerCase().includes(q);
-    });
-    if (!pages.length) return "";
+  const pages = pagesByLang[lang];
+  const groups = DOCS_LANGUAGES[lang].structure.map((group) => {
+    const matches = pages.filter((page) => page.group === group.label && (!q || page.searchText.includes(q)));
+    if (!matches.length) return "";
     return `<section>
       <h2>${group.label}</h2>
-      ${pages.map((page) => navLink(page, currentId)).join("")}
+      ${matches.map((page) => navLink(page, currentId)).join("")}
     </section>`;
   }).join("");
-  nav.innerHTML = groups || `<p class="empty-state">No pages match that search.</p>`;
+  nav.innerHTML = groups || `<p class="empty-state">${DOCS_UI[lang].noMatch}</p>`;
 }
 
 function renderOutline(page) {
@@ -122,13 +148,15 @@ function renderOutline(page) {
   ).join("");
 }
 
-function renderArticle(page, version) {
+function renderArticle(page, lang) {
   const article = document.getElementById("docs-article");
   if (!article) return;
 
-  const index = allPages.findIndex((candidate) => candidate.id === page.id);
-  const previous = index > 0 ? allPages[index - 1] : null;
-  const next = index < allPages.length - 1 ? allPages[index + 1] : null;
+  const ui = DOCS_UI[lang];
+  const pages = pagesByLang[lang];
+  const index = pages.findIndex((candidate) => candidate.id === page.id);
+  const previous = index > 0 ? pages[index - 1] : null;
+  const next = index < pages.length - 1 ? pages[index + 1] : null;
 
   article.innerHTML = `
     <header class="doc-hero">
@@ -143,22 +171,10 @@ function renderArticle(page, version) {
       </section>
     `).join("")}
     <footer class="doc-footer">
-      ${previous ? `<a href="${canonicalPath(previous.id, version)}" data-doc-link="${previous.id}"><span>Previous</span><strong>${previous.title}</strong></a>` : "<span></span>"}
-      ${next ? `<a href="${canonicalPath(next.id, version)}" data-doc-link="${next.id}"><span>Next</span><strong>${next.title}</strong></a>` : "<span></span>"}
+      ${previous ? `<a data-doc-link="${previous.id}"><span>${ui.previous}</span><strong>${previous.title}</strong></a>` : "<span></span>"}
+      ${next ? `<a data-doc-link="${next.id}"><span>${ui.next}</span><strong>${next.title}</strong></a>` : "<span></span>"}
     </footer>
   `;
-}
-
-function renderVersionSelect(version) {
-  const select = document.getElementById("version-select");
-  if (!select) return;
-  select.innerHTML = DOCS_VERSIONS.map((item) =>
-    `<option value="${item.name}" ${item.name === DOCS_DEFAULT_VERSION ? "selected" : ""}>${item.label}</option>`
-  ).join("");
-  select.addEventListener("change", () => {
-    const { pageId } = routeParts();
-    navigate(canonicalPath(pageId, DOCS_LATEST_ALIAS));
-  });
 }
 
 function navigate(path) {
@@ -167,31 +183,35 @@ function navigate(path) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function bindDocLinks(root = document) {
+function bindDocLinks(lang, root = document) {
   root.querySelectorAll("[data-doc-link]").forEach((link) => {
-    link.addEventListener("click", (event) => {
+    const pageId = link.getAttribute("data-doc-link");
+    if (!pageId) return;
+    link.setAttribute("href", canonicalPath(pageId, lang));
+    link.onclick = (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button === 1) return;
       event.preventDefault();
-      const pageId = link.getAttribute("data-doc-link");
-      if (!pageId) return;
-      navigate(canonicalPath(pageId));
-    });
+      navigate(canonicalPath(pageId, lang));
+    };
   });
 }
 
 function renderCurrent() {
-  const { version, pageId } = routeParts();
-  const resolvedVersion = version === DOCS_LATEST_ALIAS ? DOCS_LATEST_ALIAS : DOCS_DEFAULT_VERSION;
-  const page = resolvePage(pageId);
+  const { lang, pageId, canonical } = routeParts();
+  const page = resolvePage(pageId, lang);
 
-  if (location.pathname === "/docs" || location.pathname === "/docs/" || location.pathname === "/docs/index.html") {
-    history.replaceState({}, "", canonicalPath(page.id, DOCS_LATEST_ALIAS));
+  if (!canonical || page.id !== pageId) {
+    history.replaceState({}, "", canonicalPath(page.id, lang) + location.hash);
   }
 
-  setMeta(page, resolvedVersion);
-  renderNav(page.id, document.getElementById("docs-search")?.value || "");
-  renderArticle(page, resolvedVersion);
+  current = { lang, pageId: page.id };
+  setPageLang(lang);
+  setMeta(page, lang);
+  applyChrome(lang);
+  renderNav(page.id, lang, document.getElementById("docs-search")?.value || "");
+  renderArticle(page, lang);
   renderOutline(page);
-  bindDocLinks(document);
+  bindDocLinks(lang);
   document.getElementById("docs-article")?.focus({ preventScroll: true });
 }
 
@@ -199,25 +219,19 @@ function initSearch() {
   const search = document.getElementById("docs-search");
   if (!search) return;
   search.addEventListener("input", () => {
-    const { pageId } = routeParts();
-    renderNav(resolvePage(pageId).id, search.value);
-    bindDocLinks(document.getElementById("docs-nav") || document);
+    const { lang, pageId } = routeParts();
+    renderNav(resolvePage(pageId, lang).id, lang, search.value);
+    bindDocLinks(lang, document.getElementById("docs-nav") || document);
   });
 }
 
-function initHeaderScroll() {
-  const header = document.getElementById("site-header");
-  if (!header) return;
-  const sync = () => header.classList.toggle("is-scrolled", window.scrollY > 10);
-  sync();
-  window.addEventListener("scroll", sync, { passive: true });
-}
+let current = { lang: DOCS_DEFAULT_LANG, pageId: DOCS_DEFAULT_PAGE };
 
 window.addEventListener("popstate", renderCurrent);
 
-initTheme();
-initStars();
-renderVersionSelect(DOCS_DEFAULT_VERSION);
+initSite({ onToggle: (lang) => navigate(canonicalPath(current.pageId, lang)) });
 initSearch();
-initHeaderScroll();
 renderCurrent();
+// The sections are rendered after load, so the browser could not scroll to
+// a #section in the URL on its own.
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();

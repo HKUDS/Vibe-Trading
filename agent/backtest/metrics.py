@@ -318,7 +318,7 @@ def buy_and_hold_return(close: Any) -> Optional[float]:
     return last / first - 1.0
 
 
-def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
+def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, Optional[float]]:
     """Win rate and P&L statistics from completed trades.
 
     Args:
@@ -326,7 +326,8 @@ def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
 
     Returns:
         Dict with win_rate, profit_loss_ratio, max_consecutive_loss,
-        avg_holding_bars, profit_factor.
+        avg_holding_bars, profit_factor. profit_loss_ratio and profit_factor
+        are ``None`` when no trade lost, since both divide by the losses.
     """
     if not trades:
         return {
@@ -342,13 +343,16 @@ def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
 
     win_rate = len(wins) / len(trades)
 
+    # With no losing trade both ratios have no denominator. 0.0 would read as
+    # "no profit at all" and rank a run that never lost below every other run,
+    # so they are None: an empty metrics.csv cell and null in JSON.
     avg_win = float(np.mean(wins)) if wins else 0.0
-    avg_loss = abs(float(np.mean(losses))) if losses else 1e-10
-    profit_loss_ratio = avg_win / avg_loss if avg_loss > 1e-10 else 0.0
+    avg_loss = abs(float(np.mean(losses))) if losses else 0.0
+    profit_loss_ratio = avg_win / avg_loss if avg_loss > 1e-10 else None
 
     gross_profit = sum(wins) if wins else 0.0
-    gross_loss = abs(sum(losses)) if losses else 1e-10
-    profit_factor = gross_profit / gross_loss if gross_loss > 1e-10 else 0.0
+    gross_loss = abs(sum(losses)) if losses else 0.0
+    profit_factor = gross_profit / gross_loss if gross_loss > 1e-10 else None
 
     max_consec = 0
     cur_consec = 0
@@ -364,10 +368,12 @@ def win_rate_and_stats(trades: List[TradeRecord]) -> Dict[str, float]:
 
     return {
         "win_rate": win_rate,
-        "profit_loss_ratio": round(profit_loss_ratio, 4),
+        "profit_loss_ratio": (
+            round(profit_loss_ratio, 4) if profit_loss_ratio is not None else None
+        ),
         "max_consecutive_loss": max_consec,
         "avg_holding_bars": round(avg_holding, 1),
-        "profit_factor": round(profit_factor, 4),
+        "profit_factor": round(profit_factor, 4) if profit_factor is not None else None,
     }
 
 
@@ -574,7 +580,7 @@ def calc_metrics(
             ann_ret = float("inf")
     # ``Series.std()`` uses ddof=1, so a single-observation return series
     # (e.g. a one-bar backtest) yields NaN and poisons the Sharpe ratio.
-    # Guard the small sample the same way ``downside_std`` is guarded below.
+    # Guard the small sample before calculating volatility.
     vol = float(port_ret.std()) if len(port_ret) > 1 and returns_finite else 0.0
     sharpe = (
         float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
@@ -595,11 +601,15 @@ def calc_metrics(
 
     calmar = ann_ret / abs(max_dd) if abs(max_dd) > 1e-10 else 0.0
 
-    # Sortino
+    # Sortino: zero-target downside RMS, with all return periods in the divisor.
     if returns_finite:
         downside = port_ret[port_ret < 0]
-        downside_std = float(downside.std()) if len(downside) > 1 else 1e-10
-        sortino = float(port_ret.mean() / (downside_std + 1e-10) * np.sqrt(bpy))
+        downside_deviation = (
+            float(np.sqrt((downside**2).sum() / len(port_ret)))
+            if len(downside) > 0
+            else 1e-10  # Preserve the existing no-downside fallback.
+        )
+        sortino = float(port_ret.mean() / (downside_deviation + 1e-10) * np.sqrt(bpy))
     else:
         sortino = 0.0
     if not np.isfinite(sortino):
@@ -630,7 +640,7 @@ def calc_metrics(
         excess = total_ret - bench_return
         aligned_bench = bench_ret.reindex(port_ret.index).fillna(0.0)
         active_ret = port_ret - aligned_bench
-        # Same ddof=1 small-sample guard as ``vol`` / ``downside_std`` so the
+        # Same ddof=1 small-sample guard as ``vol`` so the
         # information ratio stays finite for a single-observation series.
         active_std = float(active_ret.std()) if len(active_ret) > 1 and returns_finite else 0.0
         ir = (

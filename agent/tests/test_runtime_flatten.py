@@ -492,3 +492,148 @@ def test_nested_broker_error_flatten_is_not_a_success(live_runtime: Path) -> Non
         "error": "insufficient buying power",
     } in report["errors"]
     assert report["side_effects_attempted"] is True
+
+
+# --- fail-open hardening on the kill-switch path ---------------------------
+# A failure that only concerns the audit file must not abort the sweep: the
+# runner latches a failed sweep permanently (runner.py:697-726), so an escaping
+# exception here disables the kill-switch for this process and every restart.
+
+
+def test_audit_write_failure_does_not_abort_sweep(
+    live_runtime: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # write_live_action does real I/O (mkdir/json.dumps/open/write); a disk
+    # fault must cost us an audit line, not the sweep.
+    def boom(*args: Any, **kwargs: Any) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(flatten, "write_live_action", boom)
+    broker = _Broker(
+        open_orders=[{"order_id": "o1"}, {"order_id": "o2"}],
+        positions=[{"symbol": "NVDA", "qty": 3}, {"symbol": "AAPL", "qty": -2}],
+    )
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    # Every order and every position was still acted on despite the audit fault.
+    assert [action for action, _ in broker.calls] == [
+        "cancel",
+        "cancel",
+        "close",
+        "close",
+    ]
+    assert report["cancelled_order_ids"] == ["o1", "o2"]
+    assert [s["symbol"] for s in report["flatten_orders_submitted"]] == [
+        "NVDA",
+        "AAPL",
+    ]
+    assert report["errors"] == []
+    assert report["side_effects_attempted"] is True
+
+
+@pytest.mark.parametrize("bad_order", [{"order_id": None}, {"order_id": ""}, {"order_id": "   "}, {}])
+def test_missing_or_blank_order_id_is_not_submitted(
+    live_runtime: Path, bad_order: dict[str, Any]
+) -> None:
+    # A cancel keyed on a missing/blank id would be recorded as a successful
+    # cancellation of an order that is still resting.
+    broker = _Broker(open_orders=[bad_order, {"order_id": "o2"}], positions=[])
+    report = flatten.flatten_and_cancel(
+        "robinhood", broker.submit, broker.read_positions, broker.read_open_orders
+    )
+    assert broker.calls == [("cancel", {"action": "cancel", "order_id": "o2"})]
+    assert report["cancelled_order_ids"] == ["o2"]
+    assert any(
+        e["phase"] == "cancel" and "missing or invalid order_id" in e["error"]
+        for e in report["errors"]
+    )
+
+
+@pytest.mark.parametrize(
+    "dirty_qty",
+    ["n/a", "", None, float("nan"), float("inf"), {"a": 1}, True, 10**400],
+    ids=["str", "blank", "none", "nan", "inf", "dict", "bool", "overflow"],
+)
+def test_dirty_position_qty_is_recorded_and_sweep_continues(
+    live_runtime: Path, dirty_qty: Any
+) -> None:
+    # ValueError/TypeError from a bare float() escaped the loop and left every
+    # later position unflattened; NaN slipped past the zero/sign checks and
+    # reached the broker as a real market order size.
+    broker = _Broker(
+        open_orders=[],
+        positions=[{"symbol": "DIRTY", "qty": dirty_qty}, {"symbol": "NVDA", "qty": 3}],
+    )
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert [
+        r[1]["symbol"] for r in broker.calls if r[0] == "close"
+    ] == ["NVDA"]
+    for request in (r[1] for r in broker.calls):
+        qty = request.get("qty")
+        assert qty is not None and qty > 0
+    assert report["flatten_orders_submitted"] == [
+        {"symbol": "NVDA", "qty": 3.0, "side": "sell", "response": {"state": "accepted", "echo": "NVDA"}}
+    ]
+    assert any(
+        e["phase"] == "flatten"
+        and e["symbol"] == "DIRTY"
+        and "invalid or missing position qty" in e["error"]
+        for e in report["errors"]
+    )
+
+
+def test_missing_qty_field_is_an_error_not_a_silent_zero(
+    live_runtime: Path,
+) -> None:
+    # `float(position.get("qty", 0) or 0)` folded an absent field into a genuine
+    # zero position, so the report looked clean while exposure stayed open.
+    broker = _Broker(open_orders=[], positions=[{"symbol": "NVDA"}])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert report["flatten_orders_submitted"] == []
+    assert any(
+        e["phase"] == "flatten" and "invalid or missing position qty" in e["error"]
+        for e in report["errors"]
+    )
+
+
+def test_zero_qty_still_skipped_without_error(live_runtime: Path) -> None:
+    # The genuine zero position stays a clean skip — distinct from bad data.
+    broker = _Broker(open_orders=[], positions=[{"symbol": "GME", "qty": 0}])
+    report = flatten.flatten_and_cancel(
+        "robinhood",
+        broker.submit,
+        broker.read_positions,
+        broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert report["flatten_orders_submitted"] == []
+    assert report["errors"] == []
+
+
+@pytest.mark.parametrize("symbol", [None, "", "  ", True, {"symbol": "AAPL"}])
+def test_invalid_symbol_never_reaches_a_close_submission(live_runtime, symbol) -> None:
+    broker = _Broker([], [{"symbol": symbol, "qty": 1}, {"symbol": "AAPL", "qty": -2}])
+    report = flatten.flatten_and_cancel(
+        "robinhood", broker.submit, broker.read_positions, broker.read_open_orders,
+        allow_flatten=True,
+    )
+    assert [request["symbol"] for _, request in broker.calls] == ["AAPL"]
+    assert report["flatten_orders_submitted"][0]["side"] == "buy"
+    assert any(error["phase"] == "flatten" and "symbol" in error["error"] for error in report["errors"])

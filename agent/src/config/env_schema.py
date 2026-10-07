@@ -20,9 +20,10 @@ Usage::
 from __future__ import annotations
 
 import os
+import types
 from enum import Enum
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Union, get_args, get_origin
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
@@ -73,6 +74,28 @@ def _parse_responses_api_bool(v: Any) -> Any:
 ResponsesApiBool = Annotated[bool, BeforeValidator(_parse_responses_api_bool)]
 
 
+def _numeric_type(annotation: Any) -> Any:
+    """Return ``int``/``float`` for that type or an ``Optional`` of it, else ``None``.
+
+    Handles both ``typing.Optional[int]`` and the ``int | None`` spelling,
+    which produce different ``get_origin`` results (``typing.Union`` vs.
+    ``types.UnionType``).
+
+    Args:
+        annotation: The field annotation resolved by Pydantic.
+
+    Returns:
+        Its numeric type, or ``None`` for annotations needing normal validation.
+    """
+    if annotation is int or annotation is float:
+        return annotation
+    if get_origin(annotation) in (Union, types.UnionType):
+        args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(args) == 1 and args[0] in (int, float):
+            return args[0]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
@@ -109,13 +132,13 @@ class _EnvBase(BaseModel):
                 env_val = os.environ[alias]
                 # Safe coercion for numeric fields: drop unparseable values
                 # so Pydantic falls back to the field default.
-                annotation = field_info.annotation
-                if annotation is int and isinstance(env_val, str):
+                numeric_type = _numeric_type(field_info.annotation)
+                if numeric_type is int and isinstance(env_val, str):
                     try:
                         env_val = int(env_val)
                     except ValueError:
                         continue
-                elif annotation is float and isinstance(env_val, str):
+                elif numeric_type is float and isinstance(env_val, str):
                     try:
                         env_val = float(env_val)
                     except ValueError:
@@ -401,7 +424,19 @@ class AgentTuningConfig(_EnvBase):
     ``src/tools/web_search_tool.py``, ``api_server.py``.
     """
 
+    # Deprecated: counted chars/4 of messages without tool schemas, so no value
+    # tuned against it means anything under real-token accounting. Read only to
+    # warn (src/agent/context_budget.py); compaction ignores it.
     token_threshold: int = Field(alias="TOKEN_THRESHOLD", default=40000)
+    vibe_trading_context_window: int | None = Field(
+        alias="VIBE_TRADING_CONTEXT_WINDOW", default=None, gt=0,
+    )
+    # Cost ceiling on the prompt the loop lets a run grow to before compacting,
+    # whatever the model's window. The largest healthy research run measured
+    # on 2026-09-29 sent 154K real input tokens.
+    vibe_trading_context_max_tokens: int = Field(
+        alias="VIBE_TRADING_CONTEXT_MAX_TOKENS", default=200_000, gt=0,
+    )
     vt_heartbeat_interval_s: float = Field(alias="VT_HEARTBEAT_INTERVAL_S", default=3.0)
     vt_reasoning_delta_min_interval_s: float = Field(
         alias="VT_REASONING_DELTA_MIN_INTERVAL_S", default=1.0,

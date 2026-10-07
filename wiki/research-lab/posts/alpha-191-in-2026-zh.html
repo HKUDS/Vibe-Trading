@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self'; img-src 'self' data: https://vibetrading.wiki; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.github.com;">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>国泰君安 191 因子，2026 年还剩哪些有效？ | Vibe-Trading 研究实验室</title>
+  <meta name="description" content="对国泰君安 2014 年发布的 191 个短周期 alpha 因子做样本外检验，在沪深300、2018-2025 年区间上重新评估：还有多少存活、多少方向反转、哪些主题最经得起时间考验。">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="Vibe-Trading 研究实验室">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Vibe-Trading Wiki">
+  <meta property="og:title" content="国泰君安 191 因子，2026 年还剩哪些有效？">
+  <meta property="og:description" content="在沪深300（2018-2025）上对 2014 年国泰君安 191 个短周期 alpha 因子做样本外 IC 复盘：存活数量汇总、分主题拆解与复现方法。">
+  <meta property="og:url" content="https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026-zh.html">
+  <link rel="canonical" href="https://vibetrading.wiki/research-lab/posts/alpha-191-in-2026-zh.html">
+  <link rel="alternate" hreflang="en" href="/research-lab/posts/alpha-191-in-2026.html">
+  <link rel="alternate" hreflang="zh-CN" href="/research-lab/posts/alpha-191-in-2026-zh.html">
+  <link rel="alternate" hreflang="x-default" href="/research-lab/posts/alpha-191-in-2026.html">
+  <!-- site-head:start -->
+  <link rel="icon" type="image/png" href="/assets/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=20260929e">
+  <script src="/theme-init.js?v=20260929e"></script>
+  <!-- site-head:end -->
+  <script type="module" src="/main.js?v=20260929e"></script>
+  <style>
+    .post {
+      width: min(760px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 72px 0 96px;
+    }
+    .post header.post-head {
+      margin-bottom: 48px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 32px;
+    }
+    .post header.post-head h1 {
+      font-family: var(--serif);
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      line-height: 1.05;
+      margin: 12px 0 16px;
+      letter-spacing: -0.01em;
+    }
+    .post header.post-head .byline {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      letter-spacing: 0.04em;
+    }
+    .post section {
+      margin: 48px 0;
+    }
+    .post h2 {
+      font-family: var(--serif);
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      line-height: 1.15;
+      margin: 0 0 16px;
+    }
+    .post h3 {
+      font-family: var(--sans);
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 28px 0 10px;
+      letter-spacing: 0;
+    }
+    .post p, .post li {
+      color: var(--ink);
+      font-size: 1.04rem;
+      line-height: 1.7;
+    }
+    .post p.lede {
+      font-family: var(--serif);
+      font-size: 1.22rem;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    .post ul, .post ol {
+      padding-left: 1.4rem;
+    }
+    .post li + li {
+      margin-top: 8px;
+    }
+    .post code, .post pre {
+      font-family: var(--mono);
+      font-size: 0.92rem;
+    }
+    .post pre {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-2);
+      padding: 14px 16px;
+      line-height: 1.55;
+    }
+    .post code.formula {
+      display: inline-block;
+      padding: 1px 6px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--surface-2);
+    }
+    .post pre.formula-block {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .findings-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin: 24px 0;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+    .findings-stats .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .findings-stats .stat .label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .findings-stats .stat .num {
+      font-family: var(--serif);
+      font-size: 2.2rem;
+      line-height: 1;
+      color: var(--accent);
+    }
+    .findings-stats .stat.reversed .num { color: var(--danger); }
+    .findings-stats .stat.dead .num { color: var(--muted); }
+    .theme-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.96rem;
+    }
+    .theme-table th, .theme-table td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+    }
+    .theme-table th {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .theme-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .callout {
+      margin: 24px 0;
+      padding: 16px 20px;
+      border-left: 3px solid var(--accent);
+      background: var(--surface-2);
+      border-radius: 0 6px 6px 0;
+    }
+    .callout.warn {
+      border-left-color: var(--accent-2);
+    }
+    .alpha-card {
+      margin: 16px 0;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .alpha-card .alpha-id {
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .alpha-card .alpha-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .post .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 24px 0 8px;
+    }
+    .post .cta-row a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+    .post .cta-row a.primary {
+      border-color: var(--ink);
+      background: var(--ink);
+      color: var(--bg);
+    }
+    .footnote {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+  </style>
+</head>
+<body data-section="lab">
+  <!-- site-header:start -->
+  <header class="site-header" id="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home" data-i18n-attr="aria-label=header.homeLabel">
+        <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
+        <span class="brand__text">Vibe-Trading</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary" data-i18n-attr="aria-label=header.navLabel">
+        <a href="/home/" data-nav="home" data-i18n="nav.home">Home</a>
+        <a href="/docs/" data-nav="docs" data-i18n="nav.docs">Docs</a>
+        <a href="/tutorials/" data-nav="tutorials" data-i18n="nav.tutorials">Tutorials</a>
+        <a href="/alpha-library/" data-nav="alpha" data-i18n="nav.alpha">Alpha Library</a>
+        <a href="/research-lab/" data-nav="lab" data-i18n="nav.lab">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+      </nav>
+      <div class="site-actions">
+        <button class="lang-pill" id="lang-toggle" type="button" lang="zh-CN" aria-label="切换到中文">中文</button>
+        <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
+          <span aria-hidden="true">Star</span>
+          <strong id="star-count">--</strong>
+        </a>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" data-i18n-attr="aria-label=header.themeLabel">
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+  <!-- site-header:end -->
+
+  <main>
+    <article class="post">
+      <header class="post-head">
+        <p class="byline">研究实验室 &middot; ALPHA ZOO &middot; 样本外研究</p>
+        <h1>国泰君安 191 因子，2026 年还剩哪些有效？</h1>
+        <p class="lede">2014 年，国泰君安证券发布了一份研究报告，系统整理了面向 A 股市场的 191 个短周期 alpha 因子。十二年过去，T+1 交收制度依旧，行业轮动格局已两度翻转，散户资金流处于数十年来的高位&mdash;&mdash;这些公式里还有多少能产生可靠的信号？我们在沪深300 上、以 2018&ndash;2025 年为区间，对全部 191 个因子做了基准测试，得到的答案远比一个数字更耐人寻味。</p>
+      </header>
+
+      <p class="callout" id="revision"><strong>2026-09-29 修订。</strong>本文第一版（2026-05-17）使用的 Tushare 价格未做除权除息复权&mdash;&mdash;跨越除权日的收益率读到的是机械性的价格缺口，而且总是偏向下跌&mdash;&mdash;并且把最新的沪深300 成分名单套用到了整个窗口。这两个问题已于 2026-08-04 修复；自 2026-09 起，某根 K 线上只要因子的任一输入缺失，因子就不输出值，而不是用缺失数据生成信号。第一版报告的是存活 10 个、反转 15 个、失效 165 个；下文所有数字均来自在当前代码上的重新运行。</p>
+
+      <section id="tldr">
+        <h2>要点速览</h2>
+        <p>国泰君安 2014 年发布的 191 个短周期 alpha 因子中，在沪深300、2018&ndash;2025 年区间上，只有 8 个（4%）仍能通过我们的存活筛选&mdash;&mdash;平均 IC 为正且高于 0.02、t 统计量高于 2、且至少 55% 的交易日 IC 为正。另有 14 个（7%）<em>方向反转</em>且具有统计显著性，如今成了反向信号。另外 168 个（88%）在两个方向上都已不再显著；还有 1 个（<code>gtja191_138</code>）完全无法检验：它的输出 99% 是 NaN。8 个存活因子中有一半带有微观结构 / K 线形态标签，这是各主题中最高的存活率，而不是我们原先预期的原始量价交互一族。具体数量见下文；方法刻意保守，局限性也不容忽视。</p>
+        <div class="findings-stats" aria-label="因子存活数量汇总">
+          <div class="stat alive">
+            <span class="label">存活</span>
+            <span class="num"><span class="num-alive">8</span></span>
+            <span>191 个因子中</span>
+          </div>
+          <div class="stat reversed">
+            <span class="label">反转</span>
+            <span class="num"><span class="num-reversed">14</span></span>
+            <span>191 个因子中</span>
+          </div>
+          <div class="stat dead">
+            <span class="label">失效</span>
+            <span class="num"><span class="num-dead">168</span></span>
+            <span>191 个因子中</span>
+          </div>
+        </div>
+        <p class="callout">下文数字来自 2026-09-29 的一次 bench 运行（Vibe-Trading 0.1.16：沪深300 时点成分、复权价格，2018&ndash;2025），可用文末的 CLI 命令复现。</p>
+      </section>
+
+      <section id="background">
+        <h2>背景</h2>
+        <p>国泰君安 2014 年的这份研究报告&mdash;&mdash;题为《191 个短周期交易型 alpha 因子》（英文译名 <em>191 Short-Period Transactional Alpha Factors</em>）&mdash;&mdash;问世于中国量化发展的一个特殊时点。当时市场刚走出多年的横盘震荡，散户参与度正在回升，而“公式化 alpha”模板要到一年后，才借由 Kakushadze 2015 年的 arXiv 预印本 <em>101 Formulaic Alphas</em> 在国际上流行开来。回头看，国泰君安团队拿出的是迄今针对 A 股公开发布的最系统的短周期因子目录之一：191 个编号公式，每个都只是基于日频 OHLCV 与换手率的寥寥几行算子运算。</p>
+        <p>报告中的公式读起来像是关于市场微观结构的第一性原理假设，被翻译成了便于用 pandas 实现的算术。有些事后看来显而易见（基于排名的五日反转；成交量与收盘价的相关性）；另一些则相当奇特（报告中
+        <code class="formula">SUMIF</code> / <code class="formula">FILTER</code> / <code class="formula">REGBETA</code>
+        的组合嵌套深达四到五层算子）。用现代量化的话说，它们是一个<em>先验库</em>：每个公式都编码了某个人的判断&mdash;&mdash;哪种微观结构规律可以在 1&ndash;5 天的周期上被利用。</p>
+        <p>这件事在 2026 年之所以重要，原因很简单：短周期 alpha 的衰减速度比任何其他类别都快。长周期的价值或质量因子不做任何调整也可能存活十年；而建立在量价交互上的 1&ndash;5 天公式大概做不到。在因子研究的尺度上，十二年的样本外几乎等同于永恒。A 股市场本身也变了：T+1 交收仍在，但机构与散户的结构已经翻转，科创板与创业板注册制改革重新定价了小盘股风险，公募基金带有高频色彩的交易执行也压缩了许多明显的均值回归窗口。</p>
+        <p>于是我们做了这次检验：先讲方法，再给数字。</p>
+      </section>
+
+      <section id="method">
+        <h2>方法</h2>
+        <p>这次检验刻意做成<em>截面信息系数（IC）研究</em>，而不是完整回测。要回答的问题是：<em>这个 alpha 对股票的排序，是否在整个窗口内平均而言、稳健地与次日收益相关？</em>更高保真度的策略回测（含交易成本、仓位限制、行业中性化、按衰减系数加权的组合）是另一个问题，不在本文讨论范围内。</p>
+
+        <h3>股票池</h3>
+        <p>沪深300：流动性最好的 300 只 A 股，由指数公司每半年调整一次成分。每个交易日的截面，取 Tushare 月末成分名单中当日有效的指数成分，因此一只股票只在它属于指数的期间计入&mdash;&mdash;窗口期内共有 348 只股票曾是成分股。价格已做除权除息前复权。</p>
+
+        <h3>区间</h3>
+        <p>2018-01-02 至 2025-12-31。八个日历年，约 1,940 个交易日，相对 2014 年的报告完全处于样本外。窗口刻意覆盖了 2018 年的熊市、2020&ndash;2021 年流动性驱动的上涨、2022 年的回撤以及 2024&ndash;2025 年的震荡市&mdash;&mdash;因此平均 IC 是跨市场状态平均的结果，而不是挑选有利市场状态得出的。</p>
+
+        <h3>信号定义</h3>
+        <p>对每个 alpha 和每个交易日 <em>t</em>，我们计算股票池内每只股票的因子值，再在截面上做排名变换，映射到 <code class="formula">[0, 1]</code>。远期收益为从 <em>t</em> 日收盘到 <em>t+1</em> 日收盘的 1 日简单收益率，同样做截面排名变换。第 <em>t</em> 日的 Spearman IC 即两条排名序列的 Pearson 相关系数。我们报告所有有效交易日的平均 IC、IC 序列的 t 统计量，以及 IC 为正的交易日占比。</p>
+
+        <h3>分类标准</h3>
+        <ul>
+          <li><strong>存活。</strong>平均 IC &gt; 0.02、t-stat(IC) &gt; 2，且 IC &gt; 0 的交易日占比 &ge; 55%。三个条件须同时满足。</li>
+          <li><strong>反转。</strong>平均 IC &lt; &minus;0.02 且 t-stat(IC) &lt; &minus;2（即上述条件的符号翻转版）。原报告设定该因子以某一方向预测收益；我们观察到它以相反方向预测，且具有统计显著性。</li>
+          <li><strong>失效。</strong>其余所有能够计算的情况：|平均 IC| &le; 0.02，或 |t-stat| &le; 2，或 IC 为正的交易日不足 55%。输出中 NaN 占比超过 95% 的因子完全不参与检验，单独列出。</li>
+        </ul>
+
+        <h3>方法本身带来的局限</h3>
+        <p>以下三个刻意的选择限定了结果应当如何解读：</p>
+        <ul>
+          <li>IC 为<em>向前 1 日</em>，不做衰减平滑。decay-3 或 decay-5 IC（原报告偏好的周期）会得出略有不同的数字；我们会在后续文章中发布。</li>
+          <li>不做交易成本调整。一个高 IC、每日调仓换手率接近 100% 的因子，在扣除 5&ndash;10 bps 的现实双边成本后，实际上无法盈利。bench 不测量换手率，这里的存活分类也没有考虑它。</li>
+          <li>不做行业中性化。国泰君安 191 因子没有一个需要行业标签，因此这里所有 IC 都是在原始截面上测得的。</li>
+        </ul>
+
+        <h3>所用工具</h3>
+        <pre><code>$ vibe-trading alpha bench --zoo gtja191 --universe csi300 \
+                            --period 2018-2025 --top 20</code></pre>
+        <p>一条命令即可。它会在 <code>~/.vibe-trading/reports/</code> 下写一份 HTML 报告，列出按 IR 排名靠前的因子（平均 IC、IC 标准差、IR、IC 为正的交易日占比、交易日数），以及无法计算的因子。复现方法见文末。</p>
+      </section>
+
+      <section id="findings">
+        <h2>结果</h2>
+
+        <h3>总体存活情况</h3>
+        <p>再列一次核心数字：</p>
+        <div class="findings-stats" aria-label="因子存活数量汇总（结果部分重复展示）">
+          <div class="stat alive">
+            <span class="label">存活</span>
+            <span class="num"><span class="num-alive">8</span></span>
+            <span>通过全部三项筛选</span>
+          </div>
+          <div class="stat reversed">
+            <span class="label">反转</span>
+            <span class="num"><span class="num-reversed">14</span></span>
+            <span>如今以相反方向预测</span>
+          </div>
+          <div class="stat dead">
+            <span class="label">失效</span>
+            <span class="num"><span class="num-dead">168</span></span>
+            <span>低于显著性阈值</span>
+          </div>
+        </div>
+        <p>让我们意外的不是失效数量&mdash;&mdash;衰减人人都预料得到&mdash;&mdash;而是<em>反转</em>数量。相当一部分在 2014 年有效的因子，如今成了幅度具有统计显著性的反向指标。最简单的解读是：公式原本捕捉的行为异象（小盘股均值回归、散户的尾盘资金流）已被恰恰是这类公式所代表的系统化交易挤出，剩下的就是反向交易。</p>
+
+        <h3>分主题拆解</h3>
+        <p>每个因子在注册表元数据里带有一到两个主题标签&mdash;&mdash;即它最倚重的那组算子。带两个标签的因子在两行中都会计入，因此各行数量之和超过 190。下表数字为各主题内的存活率：</p>
+
+        <table class="theme-table" aria-label="各主题存活率">
+          <thead>
+            <tr>
+              <th>主题</th>
+              <th>定义</th>
+              <th>数量</th>
+              <th>存活率</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>量价交互</td>
+              <td>成交量与收盘价、高低价振幅的相关性 / 协方差</td>
+              <td>81</td>
+              <td>4% (3/81)</td>
+            </tr>
+            <tr>
+              <td>短周期波动率</td>
+              <td>5-20 日窗口上的滚动标准差 / 振幅</td>
+              <td>26</td>
+              <td>8% (2/26)</td>
+            </tr>
+            <tr>
+              <td>反转</td>
+              <td>1-5 日周期上取负号的收益信号</td>
+              <td>38</td>
+              <td>8% (3/38)</td>
+            </tr>
+            <tr>
+              <td>动量</td>
+              <td>10-60 日周期上取正号的收益信号</td>
+              <td>63</td>
+              <td>0% (0/63)</td>
+            </tr>
+            <tr>
+              <td>换手 / 流动性</td>
+              <td>成交量比率、换手率变换</td>
+              <td>2</td>
+              <td>0% (0/2)</td>
+            </tr>
+            <tr>
+              <td>微观结构 / 振幅</td>
+              <td>开收高低价分解、日内振幅代理变量</td>
+              <td>18</td>
+              <td>22% (4/18)</td>
+            </tr>
+            <tr>
+              <td>情绪</td>
+              <td>市场下跌日中个股上涨的占比（仅 <code>gtja191_075</code> 一个因子，基准为代理变量）</td>
+              <td>1</td>
+              <td>0% (0/1)</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p>重新运行的结果是：<em>微观结构 / 振幅</em>类因子是最突出的存活者（22%，18 个中 4 个）。<em>反转</em>和<em>短周期波动率</em>其次，都是 8%（38 个中 3 个、26 个中 2 个），原始<em>量价交互</em>为 4%（81 个中 3 个）。<em>动量</em>类 63 个无一存活&mdash;&mdash;其中 5 个如今以相反方向预测&mdash;&mdash;规模很小的<em>换手</em>类 2 个也无一存活。这一规律符合如下情形下的预期：十年的系统化资金压缩了最容易的反转 / 动量交易，却没有触动那些捕捉 K 线形态效应、基于日线结构几何的因子。</p>
+
+        <h3>存活因子 Top 5</h3>
+        <p>窗口内 IR（平均 IC 除以其标准差）最高的五个因子，按降序排列，公式均为注册表中的原样（对应 Python 模块的 <code>__alpha_meta__["formula_latex"]</code>）。</p>
+
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_114</span>
+          <pre class="formula-block"><code>((RANK(DELAY(((HIGH-LOW)/(SUM(CLOSE,5)/5)),2)) * RANK(RANK(VOLUME))) / (((HIGH-LOW)/(SUM(CLOSE,5)/5))/(VWAP-CLOSE)))</code></pre>
+          <p class="alpha-note">在沪深300 / 2018&ndash;2025 窗口上，平均 IC = 0.0606，IR = 0.2926。公式逐字取自注册表（<code>gtja191_114</code> 的 <code>__alpha_meta__["formula_latex"]</code>）。</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_171</span>
+          <pre class="formula-block"><code>-1*((l-c)*(o^5))/((c-h)*(c^5))</code></pre>
+          <p class="alpha-note">在沪深300 / 2018&ndash;2025 窗口上，平均 IC = 0.0435，IR = 0.2299。公式逐字取自注册表（<code>gtja191_171</code> 的 <code>__alpha_meta__["formula_latex"]</code>）。</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_120</span>
+          <pre class="formula-block"><code>rank(vwap-close)/rank(vwap+close)</code></pre>
+          <p class="alpha-note">在沪深300 / 2018&ndash;2025 窗口上，平均 IC = 0.0452，IR = 0.2119。公式逐字取自注册表（<code>gtja191_120</code> 的 <code>__alpha_meta__["formula_latex"]</code>）。</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_111</span>
+          <pre class="formula-block"><code>sma(v*((c-l)-(h-c))/(h-l),11,2)-sma(v*((c-l)-(h-c))/(h-l),4,2)</code></pre>
+          <p class="alpha-note">在沪深300 / 2018&ndash;2025 窗口上，平均 IC = 0.0355，IR = 0.1888。公式逐字取自注册表（<code>gtja191_111</code> 的 <code>__alpha_meta__["formula_latex"]</code>）。</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_163</span>
+          <pre class="formula-block"><code>rank(((-1*ret)*mean(v,20))*vwap*(high-close))</code></pre>
+          <p class="alpha-note">在沪深300 / 2018&ndash;2025 窗口上，平均 IC = 0.0342，IR = 0.1674。公式逐字取自注册表（<code>gtja191_163</code> 的 <code>__alpha_meta__["formula_latex"]</code>）。</p>
+        </article>
+
+        <h3>三个如今方向相反的因子</h3>
+        <p>平均 IC 最负的三个因子。三者都在反转一栏：它们如今以与报告设定相反的方向预测收益，且具有统计显著性。</p>
+
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_124（反转）</span>
+          <pre class="formula-block"><code>(close-vwap)/decay_linear(rank(tsmax(close,30)),2)</code></pre>
+          <p class="alpha-note">平均 IC = -0.0518，IR = -0.2516。在沪深300 / 2018&ndash;2025 上，是 gtja191 因子集中平均 IC 最负的因子。</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_178（反转）</span>
+          <pre class="formula-block"><code>(c-delay(c,1))/delay(c,1)*v</code></pre>
+          <p class="alpha-note">平均 IC = -0.0329，IR = -0.1644。平均 IC 第二负。</p>
+        </article>
+        <article class="alpha-card">
+          <span class="alpha-id">gtja191_137（反转）</span>
+          <pre class="formula-block"><code>16*((c-dc1+(c-o)/2+dc1-do1)/MAX_term) * MAX(abs(h-dc1), abs(l-dc1))</code></pre>
+          <p class="alpha-note">平均 IC = -0.0300，IR = -0.1464。平均 IC 第三负。<code>MAX_term</code> 是报告中分三段取值的分母，由 |h &minus; dc1|、|l &minus; dc1|、|h &minus; dl1| 和 |dc1 &minus; do1| 构成（dc1、do1、dl1 分别为前一日的收盘价、开盘价和最低价）；完整定义见模块代码。</p>
+        </article>
+
+        <h3>一段反思</h3>
+        <p>做完这类存活研究，人们容易过度概括：“衰减不可避免；公式化 alpha 已死。”我们认为这不是正确的解读。这次研究给出的结论更窄、也更有用：一份 12 年前的短周期因子目录中，仍有一小部分&mdash;&mdash;190 个中的 8 个&mdash;&mdash;能产生信号；存活者集中在一个可解释的主题里（K 线几何：开收高低价分解），失效者也同样集中在可解释的主题里（动量类无一存活、5 个方向翻转，以及简单的换手率变换）。至于 Kakushadze 101 公式或 Qlib 158 特征集是否会以同样的速度衰减，它几乎说明不了什么&mdash;&mdash;这两个因子集的算子词汇不同，面向的股票池也不同（分别是美股和多周期）。这留待后续工作，另行跑 bench。</p>
+      </section>
+
+      <section id="caveats">
+        <h2>局限与注意事项</h2>
+        <p>解读这些结果时有几项限制。每一项都不容忽视，其中任何一项都可能让核心数字变动数十个因子。</p>
+
+        <h3>1 日 IC 不等于盈利能力</h3>
+        <p>整个研究停留在 IC 层面，而非策略 PnL 层面。日频上统计显著的正 IC，在扣除现实的交易成本后，对应的策略仍可能亏钱，尤其当因子的日换手率很高时（国泰君安 191 因子大多如此）。请把本文当作一次<em>信号质量扫描</em>，而不是对盈利能力的论断。包含交易成本建模、仓位限制和行业中性化的正式 PnL 回测，是另一项独立的工作。</p>
+
+        <h3>仅限沪深300</h3>
+        <p>我们的基准测试只覆盖流动性最好的 300 只 A 股。为全 A 股票池设计的因子&mdash;&mdash;全 A 约有 5,000 只股票，流动性特征差异很大&mdash;&mdash;表现会有所不同。尤其是小盘股均值回归类因子，在沪深300 上往往比在全市场上表现更差（因为沪深300 以机构资金为主导，短周期的散户反转效应较弱），这里一些“失效”的因子在中证1000 上或许会复活。</p>
+
+        <h3>Tushare 数据范围</h3>
+        <p>我们的数据源是 Tushare 日终 OHLCV 与成交额，已做除权除息前复权，VWAP 由成交额推算；不含日内逐笔或订单簿数据。有 5 个国泰君安 191 因子引用了面板中没有的输入&mdash;&mdash;基准指数收盘价（<code>gtja191_075</code>、<code>_149</code>、<code>_181</code>、<code>_182</code>）或多因子回归残差（<code>gtja191_030</code>）&mdash;&mdash;改用了代理变量：截面平均收盘价，或日收益率平方的加权平均，各因子的说明中均有写明。这 5 个因子在这里应视为<em>未经充分检验</em>，而不是“失效”。</p>
+
+        <h3>8 年窗口偏短</h3>
+        <p>按学术标准，8 年窗口偏短。经典的 Fama-French 论文使用 30&ndash;90 年的窗口。一些被我们标为“失效”的因子，在更长或所处时段不同的样本上可能复活&mdash;&mdash;例如，若 2026&ndash;2030 年的市场状态重新回到散户占比更高的结构，均值回归类因子可能恢复。这个标签的含义是“在本窗口内失效”，而非“永久失效”。</p>
+
+        <h3>股票池中的幸存者偏差</h3>
+        <p>本文第一版把最新的沪深300 成分名单套用到整个 2018&ndash;2025 窗口，每只股票之所以在列，都是因为它存活到了最后&mdash;&mdash;这是一个事后挑选的集合，会使 IC 偏高。重新运行时，每个交易日的截面都按当日有效的成分名单筛选（窗口期内共有 348 只股票曾是成分股）。<code>sp500</code> 股票池仍使用今天的成分名单，因此在它上面做的任何跨因子集比较都适用同样的提醒&mdash;&mdash;它的 bench 报告会写明这一点&mdash;&mdash;那里较低的存活数应理解为“衰减加上幸存者偏差”，而不是该因子家族的干净失败。</p>
+
+        <h3>190 个公式，各测一次</h3>
+        <p>在同一窗口上检验 190 个公式，总会有一些仅凭运气显得不错。bench 会报告：如果所有公式都不含任何信号，预期的最高 IR 有多大&mdash;&mdash;这里是 0.204。实际最高的 IR 为 0.293（<code>gtja191_114</code>），通过了这一校正（概率 0.9999）。另有两个存活因子高于 0.204&mdash;&mdash;<code>gtja191_171</code>（0.230）和 <code>gtja191_120</code>（0.212）；其余五个的 IR 在 0.130 到 0.189 之间，低于这一水平，应视为候选信号而非已确认的信号。</p>
+
+        <h3>未按市场状态分组</h3>
+        <p>我们在整个 2018&ndash;2025 窗口上对 IC 取平均。这些因子中很多几乎肯定依赖市场状态&mdash;&mdash;在趋势市有效、在震荡市失灵，或者反过来。后续文章会按市场状态（牛市 / 熊市 / 震荡市，以 20 日指数动量划分）拆分存活数量，但本文的汇总数字是跨状态平均的。一个考虑市场状态的部署方案，或许能把一半的失效因子保留为条件信号。</p>
+      </section>
+
+      <section id="reproduce">
+        <h2>自己动手复现</h2>
+        <p>整个 bench 只需在开源安装之上执行一条 CLI 命令。完整源码在 GitHub 的 HKUDS 组织下；PyPI 上的包名是 <code>vibe-trading-ai</code>。</p>
+
+        <pre><code>pip install vibe-trading-ai
+export TUSHARE_TOKEN=your_token_here
+vibe-trading alpha bench --zoo gtja191 \
+                         --universe csi300 \
+                         --period 2018-2025 \
+                         --top 20</code></pre>
+
+        <p>你会得到一份保存在 <code>~/.vibe-trading/reports/</code> 的 HTML 报告，列出按 IR 排名靠前的因子，以及无法计算的因子。同一命令也适用于 <code>--zoo alpha101</code>（Kakushadze 的 101 Formulaic Alphas，忠实于论文、据 2015 年 arXiv 预印本重写）和 <code>--zoo qlib158</code>（微软 Qlib 特征库，依 Apache-2.0 许可并注明出处使用）。跨因子集比较通过 <code>alpha compare</code> 运行。</p>
+
+        <div class="cta-row">
+          <a class="primary" href="https://github.com/HKUDS/Vibe-Trading">在 GitHub 查看源码</a>
+          <a href="/alpha-library/">浏览因子库</a>
+          <a href="/docs/">阅读文档</a>
+        </div>
+
+        <p>如果你发现某个因子的存活分类出乎意料&mdash;&mdash;尤其是我们没有列入前 5 名的存活者，或你原本以为会存活却落入反转一栏的因子&mdash;&mdash;欢迎附上因子 id 和你的理由提交 issue。社区也欢迎通过 pull request 贡献新的因子集、新的股票池（中证1000、纳斯达克 100、主流加密货币）或新的验证工具，流程遵循
+        <a href="https://github.com/HKUDS/Vibe-Trading/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>
+        中的 DCO 规范。</p>
+
+        <p class="footnote">来源引用：国泰君安证券，<em>《191 个短周期交易型 alpha 因子》</em>（191 Short-Period Transactional Alpha Factors），2014 年。重新实现的
+        <code>agent/src/factors/zoo/gtja191/</code> 仅使用报告中的公式内容；报告的叙述性正文、样本内表格和图表均未复制。完整的出处说明见该目录下的
+        <code>LICENSE.md</code>。</p>
+      </section>
+    </article>
+  </main>
+
+  <!-- site-footer:start -->
+  <footer class="site-footer">
+    <span class="site-footer__name">Vibe-Trading Wiki</span>
+    <a href="/docs/" data-i18n="nav.docs">Docs</a>
+    <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
+    <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
+    <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
+    <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+    <div class="footer-traffic" id="footer-traffic" hidden>
+      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> <span data-i18n="footer.agents">AI agents</span></span>
+      <span class="ft-item">👤 <strong id="vt-humans">–</strong> <span data-i18n="footer.humans">humans</span></span>
+      <span class="ft-item">📦 <strong id="vt-installs">–</strong> <span data-i18n="footer.installs">installs/mo</span></span>
+      <span class="ft-note" data-i18n="footer.note">visitors to this site · anonymous · first-party</span>
+    </div>
+  </footer>
+  <!-- site-footer:end -->
+</body>
+</html>

@@ -84,8 +84,11 @@ class TestFetchWithMockedClient:
                 ["600519.SH"], "2024-01-01", "2024-01-31", interval="1D"
             )
 
-        resolve.assert_called_once_with("600519.SH")
-        # 1D -> klt 101, compact dates passed through.
+        assert resolve.call_count == 2
+        resolve.assert_any_call("600519.SH")
+        # 1D -> klt 101, compact dates passed through. The A-share fetch now
+        # also pulls the fqt=0 companion for the #1541 conversion.
+        assert fetch_kline.call_count == 2
         _, kwargs = fetch_kline.call_args
         assert kwargs["klt"] == eastmoney_client.KLT_BY_INTERVAL["1D"]
         assert kwargs["beg"] == "20240101"
@@ -180,7 +183,7 @@ class TestFetchEndToEndHttpMocked:
         ) as http:
             out = loader.fetch(["600519.SH"], "2024-01-01", "2024-01-31")
 
-        http.assert_called_once()
+        assert http.call_count == 2
         _, kwargs = http.call_args
         assert kwargs["params"]["secid"] == "1.600519"
         assert kwargs["host_key"] == "eastmoney"

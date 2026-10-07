@@ -21,7 +21,10 @@ ROBINHOOD_PROFILES: tuple[TradingProfile, ...] = (
         ),
         readonly=False,
         config={"server": "robinhood", "account_selection": "required"},
-        notes="Reads via Robinhood MCP; execution stays behind OAuth, mandate, guard, audit, and halt.",
+        notes=(
+            "Live order placement supports equities only; options order placement is not supported. "
+            "Robinhood's options order and required review schemas are not mapped into the mandate gate."
+        ),
     ),
     # The portfolio view of the same MCP server and OAuth grant. It declares no
     # quotes.read: the get_equity_quotes reply shape has not been observed, so
@@ -43,4 +46,3 @@ ROBINHOOD_PROFILES: tuple[TradingProfile, ...] = (
         ),
     ),
 )
-

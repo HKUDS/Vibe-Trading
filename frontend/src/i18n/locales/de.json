@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "charts": {
     "noPriceData": "Noch keine Kursdaten für dieses Symbol",
@@ -148,6 +148,23 @@
     "advancedHint": "Ein 5-Feld-Cron-Ausdruck, ausgewertet in der gewählten Zeitzone (Minute Stunde Tag Monat Wochentag; Listen und Bereiche erlaubt), oder ein reines Intervall in Millisekunden.",
     "timezoneLabel": "Zeitzone",
     "create": "Lauf planen",
+    "saveChanges": "Änderungen speichern",
+    "cancelEdit": "Bearbeitung abbrechen",
+    "editingHint": "Dieser geplante Lauf wird bearbeitet. Beim Speichern bleiben Identität und Ausführungsverlauf erhalten.",
+    "edit": "Bearbeiten",
+    "editAria": "Geplanten Lauf bearbeiten: {{prompt}}",
+    "editRunningDisabled": "Warte, bis der Lauf oder die Zustellung abgeschlossen ist.",
+    "deliveryInApp": "Nur in Vibe behalten (nicht senden)",
+    "deliveryNoChannels": "Es sind keine aktivierten Zustellungskanäle konfiguriert. Konfigurieren Sie einen unter Einstellungen → Kanäle.",
+    "deliveryChannelsLoadFailed": "Konfigurierte Zustellungskanäle konnten nicht geladen werden.",
+    "deliveryChannelUnavailable": "{{channel}} (derzeit nicht verfügbar)",
+    "deliveryTargetKind_destination": "Ziel",
+    "deliveryTargetKind_email_address": "E-Mail-Adresse des Empfängers",
+    "deliveryTargetKind_chat": "Chat",
+    "deliveryTargetKind_channel": "Kanal",
+    "deliveryTargetDisabled": "Wählen Sie zuerst einen Zustellungskanal.",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "Konfiguriertes Ziel",
     "promptRequired": "Geben Sie einen Recherche-Prompt ein, bevor Sie planen.",
     "invalidTime": "Geben Sie eine gültige Zeit als HH:MM ein.",
     "executorHint": "Läufe werden nur ausgeführt, wenn der Server mit aktiviertem VIBE_TRADING_ENABLE_SCHEDULER gestartet wurde.",
@@ -190,6 +207,13 @@
     "deliveryChannelPlaceholder": "telegram, feishu … (leer lassen, dann bleibt alles in der App)",
     "deliveryTargetLabel": "Ziel im Kanal",
     "deliveryTargetPlaceholder": "Chat- / Gruppen- / Benutzer-ID",
+    "deliveryFormatLabel": "Email report format",
+    "deliveryFormatDefault": "Channel default (plain text)",
+    "deliveryFormatHtml": "HTML email",
+    "deliveryFormatPdf": "PDF attachment",
+    "deliveryFormatDefaultHint": "Keeps the existing plain-text delivery behavior.",
+    "deliveryFormatHtmlHint": "Shows the full report as sanitized HTML in the email body.",
+    "deliveryFormatPdfHint": "Attaches the full report as PDF and keeps only a short notice in the body.",
     "deliveryHint": "Standardmäßig aus. Das Briefing wird **nach dem Lauf** gesendet, nicht bei der Planung.",
     "deliveryTargetRequired": "Geben Sie ein Ziel für diesen Kanal an, oder leeren Sie das Kanalfeld.",
     "delivery_none": "Wird nach dem nächsten Lauf an {{channel}} gesendet",
@@ -202,7 +226,16 @@
     "verdictUnreadable": "Letztes Urteil nicht lesbar",
     "verdictNoCalls": "Keine Calls",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "Stand {{when}}"
+    "verdictRecorded": "Stand {{when}}",
+    "deliveryKnownTargetLabel": "Bekanntes Ziel",
+    "deliveryKnownTargetPlaceholder": "Bekanntes Ziel auswählen…",
+    "deliverySuggestionKind_private_chat": "Privater Chat",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "Chat-, Gruppen- oder Benutzer-ID",
+    "deliveryTargetPlaceholder_channel": "Kanal-ID",
+    "deliveryTargetPlaceholder_destination": "Chat- / Gruppen- / Benutzer-ID",
+    "deliveryTargetPlaceholder_slack_destination": "#Kanal, @Benutzer oder Konversations-ID",
+    "deliveryTargetKind_slack_destination": "Ziel"
   },
   "reports": {
     "badge": "Berichte",
@@ -650,6 +683,10 @@
           "max_attachments_per_email": {
             "label": "Max. Anhänge pro E-Mail",
             "help": "Wie viele Anhänge aus einer E-Mail übernommen werden (Standard 5)."
+          },
+          "trusted_authserv_id": {
+            "label": "Vertrauenswürdiger Authentifizierungsserver",
+            "help": "authserv-id des empfangenden Servers, z. B. mx.google.com. Der Mailanbieter muss gefälschte eingehende Authentication-Results-Header mit dieser ID entfernen. Bei SPF- oder DKIM-Prüfung erforderlich; leer wird eingehende Mail abgewiesen."
           }
         },
         "websocket": {
@@ -717,6 +754,60 @@
             "label": "TLS-Schlüsselpfad",
             "help": "PEM-Schlüsselpfad auf dem Server für WSS. Zertifikat und Schlüssel gemeinsam setzen oder beide leer lassen; es sind Dateipfade auf dem Server, kein hochgeladenes Material."
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "Die App ID der Anwendung aus der Feishu-/Lark-Entwicklerkonsole (beginnt mit cli_)."
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "Das App Secret der Anwendung. Wird serverseitig gespeichert und nie an den Browser zurückgegeben."
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key",
+            "help": "Der Encrypt Key aus den Einstellungen zum Ereignisabo; im Long-Connection-Modus optional."
+          },
+          "verification_token": {
+            "label": "Verification Token",
+            "help": "Der Verification Token aus den Einstellungen zum Ereignisabo; im Long-Connection-Modus optional."
+          },
+          "allow_from": {
+            "label": "Erlaubte Absender",
+            "help": "Optionale Allowlist von Feishu-Absender-IDs, die mit dem Agenten sprechen dürfen; leer bedeutet alle, die der Bot sehen kann."
+          },
+          "react_emoji": {
+            "label": "Arbeits-Emoji",
+            "help": "Emoji-Reaktion auf eingehende Nachrichten, während der Agent arbeitet (Standard: THUMBSUP)."
+          },
+          "done_emoji": {
+            "label": "Fertig-Emoji",
+            "help": "Emoji-Reaktion nach Abschluss der Aufgabe; leer bedeutet keine."
+          },
+          "tool_hint_prefix": {
+            "label": "Präfix für Tool-Hinweise",
+            "help": "Präfix vor den inline angezeigten Tool-Hinweisen in der Antwort."
+          },
+          "group_policy": {
+            "label": "Gruppenrichtlinie",
+            "help": "\"mention\" antwortet nur bei @-Erwähnung in Gruppen, \"open\" antwortet auf alle Gruppennachrichten."
+          },
+          "reply_to_message": {
+            "label": "Originalnachricht zitieren",
+            "help": "Als Antwort die Originalnachricht zitieren."
+          },
+          "streaming": {
+            "label": "Streaming-Antworten",
+            "help": "Antwort per Live-Bearbeitung der CardKit-Karte streamen."
+          },
+          "domain": {
+            "label": "Domain",
+            "help": "\"feishu\" für Feishu China (open.feishu.cn), \"lark\" für das internationale Lark (open.larksuite.com)."
+          },
+          "topic_isolation": {
+            "label": "Sitzungen pro Thread",
+            "help": "Jedem Gruppen-Thread eine eigene Agent-Sitzung geben, statt einer gemeinsamen pro Gruppe."
+          }
         }
       },
       "guides": {
@@ -759,6 +850,16 @@
           "step4": "Speichern im laufenden Betrieb tauscht den Server live aus: Verbundene Clients (einschließlich dieses Web-UI-Chats) verlieren kurz die Verbindung und verbinden sich neu.",
           "step5": "Klicke auf „Verbindung testen“ – Zertifikat/Schlüssel für SSL und die Verfügbarkeit der Adresse werden lokal geprüft.",
           "docsLabel": "Vibe-Trading-Dokumentation öffnen"
+        },
+        "feishu": {
+          "title": "Feishu-/Lark-Bot einrichten",
+          "intro": "Feishu-Bots nutzen die WebSocket-Long-Connection; eine öffentliche IP oder ein Webhook ist nicht nötig.",
+          "step1": "Erstelle eine benutzerdefinierte App in der Feishu Open Platform (open.feishu.cn) — oder per QR-Scan im Terminal mit vibe-trading channels login feishu; App ID und App Secret werden dabei automatisch gespeichert.",
+          "step2": "Füge der App die Bot-Funktion hinzu.",
+          "step3": "Abonniere im Ereignisabo »Nachrichten empfangen im.message.receive_v1« und wähle den Long-Connection-Modus.",
+          "step4": "Kopiere App ID und App Secret aus „Anmeldedaten & Basisinformationen“ und füge sie oben ein.",
+          "step5": "Erstelle eine Version und veröffentliche die App (je nach Tenant mit Admin-Freigabe), dann aktiviere den Kanal hier — er wird ohne Neustart heiß übernommen. Für internationale Lark-Tenants die Domain auf lark setzen.",
+          "docsLabel": "Feishu Open Platform öffnen"
         }
       }
     },
@@ -911,6 +1012,7 @@
     "dropFiles": "Dateien hier ablegen",
     "removeAttachment": "{{filename}} entfernen",
     "uploadFailed": "Hochladen fehlgeschlagen: {{error}}",
+    "messageTooLong": "Die Nachricht überschreitet {{limit}} Zeichen einschließlich Anhangsinformationen und Teamanweisungen. Kürze sie vor dem Senden.",
     "failedToSend": "Nachricht konnte nicht gesendet werden, bitte erneut versuchen.",
     "failedToContinue": "Ziel konnte nicht fortgesetzt werden, bitte erneut versuchen.",
     "runtimeBadge": "LAUFZEIT",
@@ -1014,6 +1116,33 @@
     "reproducibility": "Reproduzierbarkeit",
     "metrics": "Metriken",
     "validationPayload": "Validierung",
+    "trust": {
+      "executionRecords": "Ausführungsprotokolle",
+      "executionDescription": "Aufgezeichnete Ausführungsschritte und Hashes ihrer Eingaben und Ergebnisse.",
+      "noExecutionRecords": "Für diesen Lauf wurden keine Ausführungsprotokolle gespeichert.",
+      "startedAt": "Beginn (UTC)",
+      "endedAt": "Ende (UTC)",
+      "argsHash": "SHA-256 der Argumente",
+      "resultHash": "SHA-256 des Ergebnisses",
+      "metricEvidence": "Kennzahlennachweise",
+      "evidenceDescription": "Verweise auf gespeicherte Kennzahlendaten. Prüfsummen identifizieren die aufgezeichneten Dateien; diese Ansicht prüft sie nicht unabhängig.",
+      "noMetricEvidence": "Für diesen Lauf wurden keine Kennzahlennachweise gespeichert.",
+      "metric": "Kennzahl",
+      "artifact": "Artefakt",
+      "column": "Spalte",
+      "row": "Datenzeile (ab 1, ohne Kopfzeile)",
+      "artifactHash": "SHA-256 des Artefakts",
+      "tools": {
+        "backtest": "Backtest",
+        "load_data": "Daten laden",
+        "generate_signals": "Signale erzeugen"
+      },
+      "status": {
+        "ok": "Abgeschlossen",
+        "error": "Fehlgeschlagen",
+        "cancelled": "Abgebrochen"
+      }
+    },
     "artifactChecksums": "Artefakt-Prüfsummen",
     "path": "Pfad",
     "size": "Größe",

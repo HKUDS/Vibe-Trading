@@ -129,7 +129,7 @@ class TestCliInit:
                  "ask",
                  side_effect=[
                      "https://chatgpt.com/backend-api/codex/responses",
-                     "openai-codex/gpt-5.4",
+                     "openai-codex/gpt-6-sol",
                      "",
                  ],
              ):
@@ -139,5 +139,5 @@ class TestCliInit:
         content = env_path.read_text(encoding="utf-8")
         assert "LANGCHAIN_PROVIDER=openai-codex" in content
         assert "OPENAI_CODEX_BASE_URL=https://chatgpt.com/backend-api/codex/responses" in content
-        assert "LANGCHAIN_MODEL_NAME=openai-codex/gpt-5.4" in content
+        assert "LANGCHAIN_MODEL_NAME=openai-codex/gpt-6-sol" in content
         assert "OPENAI_API_KEY=" not in content

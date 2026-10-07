@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { CalendarClock, Loader2, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api, ApiError, type ScheduledRun } from "@/lib/api";
+import { api, ApiError, type ChannelAdapterStatus, type ScheduledRun } from "@/lib/api";
 import {
   describeCadence,
   formatIntervalMs,
@@ -19,6 +19,14 @@ const POLL_MS = 15_000;
 
 type DaysChoice = "every" | "weekdays";
 type ComposerMode = "time" | "advanced";
+type EmailDeliveryFormat = "" | "html" | "pdf";
+
+function isWeekdayCadence(weekdays: number[]): boolean {
+  return (
+    weekdays.length === 5 &&
+    weekdays.every((day, index) => day === index + 1)
+  );
+}
 
 function browserTimezone(): string {
   try {
@@ -26,6 +34,15 @@ function browserTimezone(): string {
   } catch {
     return "UTC";
   }
+}
+
+function maskDeliveryTarget(target: string): string {
+  if (target.length <= 2) return "•".repeat(target.length);
+  if (target.length <= 6) {
+    return `${target.slice(0, 1)}${"•".repeat(target.length - 2)}${target.slice(-1)}`;
+  }
+  const prefixLength = target.startsWith("-100") ? 4 : 3;
+  return `${target.slice(0, prefixLength)}••••${target.slice(-2)}`;
 }
 
 function timezoneOptions(): string[] {
@@ -80,6 +97,9 @@ export function Scheduled() {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [channelStatus, setChannelStatus] = useState<Record<string, ChannelAdapterStatus>>({});
+  const [channelLoadError, setChannelLoadError] = useState(false);
 
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<ComposerMode>("time");
@@ -91,6 +111,8 @@ export function Scheduled() {
   // it means the briefing stays in the app.
   const [deliveryChannel, setDeliveryChannel] = useState("");
   const [deliveryTarget, setDeliveryTarget] = useState("");
+  const [deliveryTargetRef, setDeliveryTargetRef] = useState<string | null>(null);
+  const [deliveryFormat, setDeliveryFormat] = useState<EmailDeliveryFormat>("");
   const [saving, setSaving] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
 
@@ -131,6 +153,24 @@ export function Scheduled() {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void api.getChannelStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setChannelStatus(status.channels ?? {});
+        setChannelLoadError(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChannelStatus({});
+        setChannelLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Auto-disarm an armed delete after a few seconds (blur is unreliable on
   // Safari/iOS, where buttons do not take focus on click).
   useEffect(() => {
@@ -149,7 +189,51 @@ export function Scheduled() {
     return `${Number(match[2])} ${Number(match[1])} * * ${days === "every" ? "*" : "1-5"}`;
   }
 
-  async function handleCreate(event: React.FormEvent) {
+  function resetComposer() {
+    setEditingId(null);
+    setPrompt("");
+    setMode("time");
+    setTime("09:00");
+    setDays("weekdays");
+    setAdvanced("");
+    setTimezone(browserTimezone());
+    setDeliveryChannel("");
+    setDeliveryTarget("");
+    setDeliveryTargetRef(null);
+    setDeliveryFormat("");
+    setComposerError(null);
+  }
+
+  function beginEdit(run: ScheduledRun) {
+    const cadence = describeCadence(run.schedule);
+    setPendingDelete(null);
+    setEditingId(run.id);
+    setPrompt(run.prompt);
+    setTimezone(displayZone(run));
+    setDeliveryChannel(run.delivery_channel ?? "");
+    setDeliveryTarget(run.delivery_target ?? "");
+    setDeliveryTargetRef(run.delivery_target_ref);
+    setDeliveryFormat(run.delivery_format === "html" || run.delivery_format === "pdf" ? run.delivery_format : "");
+    setComposerError(null);
+
+    if (cadence.kind === "daily") {
+      setMode("time");
+      setDays("every");
+      setTime(formatWallTime(cadence.hour, cadence.minute));
+      setAdvanced("");
+    } else if (cadence.kind === "weekly" && isWeekdayCadence(cadence.weekdays)) {
+      setMode("time");
+      setDays("weekdays");
+      setTime(formatWallTime(cadence.hour, cadence.minute));
+      setAdvanced("");
+    } else {
+      setMode("advanced");
+      setAdvanced(run.schedule);
+    }
+
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setComposerError(null);
     if (!prompt.trim()) {
@@ -169,14 +253,21 @@ export function Scheduled() {
         setComposerError(t("scheduled.deliveryTargetRequired"));
         return;
       }
-      await api.createScheduledRun({
+      const payload = {
         prompt: prompt.trim(),
         schedule,
         timezone,
         delivery_channel: channel || null,
         delivery_target: channel ? target : null,
-      });
-      setPrompt("");
+        delivery_format: channel === "email" && deliveryFormat ? deliveryFormat : null,
+        delivery_target_ref: channel ? deliveryTargetRef : null,
+      };
+      if (editingId) {
+        await api.updateScheduledRun(editingId, payload);
+      } else {
+        await api.createScheduledRun(payload);
+      }
+      resetComposer();
       await refresh();
     } catch (error) {
       setComposerError(error instanceof ApiError ? error.message : String(error));
@@ -189,6 +280,7 @@ export function Scheduled() {
     setPendingDelete(null);
     try {
       await api.deleteScheduledRun(id);
+      if (editingId === id) resetComposer();
       await refresh();
     } catch (error) {
       setListError(error instanceof ApiError ? error.message : String(error));
@@ -276,6 +368,24 @@ export function Scheduled() {
     }
   }
 
+  const configuredDeliveryChannels = Object.values(channelStatus)
+    .filter((channel) => channel.configured && channel.enabled && channel.available)
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
+
+  const selectedChannel = deliveryChannel ? channelStatus[deliveryChannel] : undefined;
+  const selectedChannelIsAvailable = configuredDeliveryChannels.some(
+    (channel) => channel.name === deliveryChannel,
+  );
+  const targetLabel = t(`scheduled.deliveryTargetKind_${selectedChannel?.delivery_target_kind || "destination"}`, {
+    defaultValue: selectedChannel?.delivery_target_label || t("scheduled.deliveryTargetLabel"),
+  });
+  const targetPlaceholder = t(`scheduled.deliveryTargetPlaceholder_${selectedChannel?.delivery_target_kind || "destination"}`, {
+    defaultValue: selectedChannel?.delivery_target_placeholder || t("scheduled.deliveryTargetPlaceholder"),
+  });
+  const targetInputType =
+    selectedChannel?.delivery_target_input_type === "email" ? "email" : "text";
+  const targetSuggestions = selectedChannel?.delivery_target_suggestions ?? [];
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <header className="flex items-center gap-3">
@@ -286,7 +396,20 @@ export function Scheduled() {
         </div>
       </header>
 
-      <form onSubmit={handleCreate} className="space-y-4 rounded-lg border bg-card p-4">
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border bg-card p-4">
+        {editingId && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2">
+            <p className="text-sm">{t("scheduled.editingHint")}</p>
+            <button
+              type="button"
+              onClick={resetComposer}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+              {t("scheduled.cancelEdit")}
+            </button>
+          </div>
+        )}
         <div className="space-y-1.5">
           <label htmlFor="scheduled-prompt" className={labelClass}>
             {t("scheduled.promptLabel")}
@@ -389,27 +512,116 @@ export function Scheduled() {
             <label htmlFor="scheduled-delivery-channel" className={labelClass}>
               {t("scheduled.deliveryChannelLabel")}
             </label>
-            <input
+            <select
               id="scheduled-delivery-channel"
               value={deliveryChannel}
-              onChange={(e) => setDeliveryChannel(e.target.value)}
-              placeholder={t("scheduled.deliveryChannelPlaceholder")}
+              onChange={(e) => {
+                const nextChannel = e.target.value;
+                if (nextChannel !== deliveryChannel) {
+                  setDeliveryTarget("");
+                  setDeliveryTargetRef(null);
+                }
+                setDeliveryChannel(nextChannel);
+                if (nextChannel !== "email") setDeliveryFormat("");
+              }}
               className={fieldClass}
-            />
-            <p className={hintClass}>{t("scheduled.deliveryHint")}</p>
+            >
+              <option value="">{t("scheduled.deliveryInApp")}</option>
+              {deliveryChannel && !selectedChannelIsAvailable && (
+                <option value={deliveryChannel}>
+                  {t("scheduled.deliveryChannelUnavailable", {
+                    channel: selectedChannel?.display_name || deliveryChannel,
+                  })}
+                </option>
+              )}
+              {configuredDeliveryChannels.map((channel) => (
+                <option key={channel.name} value={channel.name}>
+                  {channel.display_name}
+                </option>
+              ))}
+            </select>
+            {channelLoadError ? (
+              <p className="text-xs text-danger">{t("scheduled.deliveryChannelsLoadFailed")}</p>
+            ) : configuredDeliveryChannels.length === 0 && !deliveryChannel ? (
+              <p className={hintClass}>{t("scheduled.deliveryNoChannels")}</p>
+            ) : (
+              <p className={hintClass}>{t("scheduled.deliveryHint")}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <label htmlFor="scheduled-delivery-target" className={labelClass}>
-              {t("scheduled.deliveryTargetLabel")}
+              {targetLabel}
             </label>
             <input
               id="scheduled-delivery-target"
+              type={targetInputType}
+              disabled={!deliveryChannel}
               value={deliveryTarget}
-              onChange={(e) => setDeliveryTarget(e.target.value)}
-              placeholder={t("scheduled.deliveryTargetPlaceholder")}
+              onChange={(e) => {
+                setDeliveryTarget(e.target.value);
+                setDeliveryTargetRef(null);
+              }}
+              placeholder={
+                deliveryChannel
+                  ? targetPlaceholder
+                  : t("scheduled.deliveryTargetDisabled")
+              }
               className={fieldClass}
             />
+            {deliveryChannel && targetSuggestions.length > 0 && (
+              <select
+                aria-label={t("scheduled.deliveryKnownTargetLabel")}
+                value=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setDeliveryTarget(e.target.value);
+                  setDeliveryTargetRef(null);
+                }}
+                className={fieldClass}
+              >
+                <option value="">{t("scheduled.deliveryKnownTargetPlaceholder")}</option>
+                {targetSuggestions.map((suggestion) => {
+                  const label = suggestion.kind
+                    ? t(`scheduled.deliverySuggestionKind_${suggestion.kind}`, {
+                        defaultValue: suggestion.label || suggestion.target,
+                      })
+                    : suggestion.label || suggestion.target;
+                  return (
+                    <option
+                      key={`${suggestion.kind || "target"}:${suggestion.target}`}
+                      value={suggestion.target}
+                    >
+                      {label} · {maskDeliveryTarget(suggestion.target)}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
           </div>
+          {deliveryChannel.trim() === "email" && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <label htmlFor="scheduled-delivery-format" className={labelClass}>
+                {t("scheduled.deliveryFormatLabel")}
+              </label>
+              <select
+                id="scheduled-delivery-format"
+                value={deliveryFormat}
+                onChange={(e) => setDeliveryFormat(e.target.value as EmailDeliveryFormat)}
+                className={fieldClass}
+              >
+                <option value="">{t("scheduled.deliveryFormatDefault")}</option>
+                <option value="html">{t("scheduled.deliveryFormatHtml")}</option>
+                <option value="pdf">{t("scheduled.deliveryFormatPdf")}</option>
+              </select>
+              <p className={hintClass}>
+                {deliveryFormat === "html"
+                  ? t("scheduled.deliveryFormatHtmlHint")
+                  : deliveryFormat === "pdf"
+                    ? t("scheduled.deliveryFormatPdfHint")
+                    : t("scheduled.deliveryFormatDefaultHint")}
+              </p>
+            </div>
+          )}
         </div>
 
         {composerError && (
@@ -424,9 +636,25 @@ export function Scheduled() {
             disabled={saving}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Plus className="h-4 w-4" aria-hidden />}
-            {t("scheduled.create")}
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : editingId ? (
+              <Save className="h-4 w-4" aria-hidden />
+            ) : (
+              <Plus className="h-4 w-4" aria-hidden />
+            )}
+            {editingId ? t("scheduled.saveChanges") : t("scheduled.create")}
           </button>
+          {editingId && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={resetComposer}
+              className="rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted disabled:opacity-60"
+            >
+              {t("scheduled.cancelEdit")}
+            </button>
+          )}
           <p className={hintClass}>{t("scheduled.executorHint")}</p>
         </div>
       </form>
@@ -470,7 +698,7 @@ export function Scheduled() {
                       <span className={hintClass}>{zone}</span>
                       <StatusPill label={status.label} tone={status.tone} />
                     </div>
-                    <p className="truncate text-sm text-muted-foreground">{run.prompt}</p>
+                    <p className="line-clamp-2 break-words text-sm text-muted-foreground">{run.prompt}</p>
                     <p className={hintClass}>
                       {run.status === "expired"
                         ? t("scheduled.noFurtherRuns", { defaultValue: "No further runs" })
@@ -492,58 +720,91 @@ export function Scheduled() {
                       </p>
                     )}
                     {run.delivery_channel && (
-                      <p
-                        className={
-                          run.delivery_status === "failed"
-                            ? "break-words text-xs text-danger"
-                            : hintClass
-                        }
-                      >
-                        {t(`scheduled.delivery_${run.delivery_status}`, {
-                          channel: run.delivery_channel,
-                          defaultValue: t("scheduled.delivery_none", {
-                            channel: run.delivery_channel,
-                          }),
-                        })}
-                        {run.delivery_status === "failed" && run.delivery_error
-                          ? ` — ${run.delivery_error}`
-                          : ""}
-                      </p>
+                      <>
+                        <p className={hintClass}>
+                          {t("scheduled.deliverySummary", {
+                            channel:
+                              channelStatus[run.delivery_channel]?.display_name ||
+                              run.delivery_channel,
+                            target:
+                              run.delivery_target_label ||
+                              run.delivery_target ||
+                              t("scheduled.deliveryUnknownTarget"),
+                          })}
+                        </p>
+                        <p
+                          className={
+                            run.delivery_status === "failed"
+                              ? "break-words text-xs text-danger"
+                              : hintClass
+                          }
+                        >
+                          {t(`scheduled.delivery_${run.delivery_status}`, {
+                            channel:
+                              channelStatus[run.delivery_channel]?.display_name ||
+                              run.delivery_channel,
+                            defaultValue: t("scheduled.delivery_none", {
+                              channel:
+                                channelStatus[run.delivery_channel]?.display_name ||
+                                run.delivery_channel,
+                            }),
+                          })}
+                          {run.delivery_status === "failed" && run.delivery_error
+                            ? ` — ${run.delivery_error}`
+                            : ""}
+                        </p>
+                      </>
                     )}
                     {verdictCell(run)}
                   </div>
-                  {pendingDelete === run.id ? (
-                    <div className="flex items-center gap-1.5">
-                      {/* Cancel first so it inherits the Delete button's spot —
-                          an accidental double-click disarms instead of destroying. */}
-                      <button
-                        type="button"
-                        onClick={() => setPendingDelete(null)}
-                        className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
-                      >
-                        {t("layout.cancel")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleConfirmedDelete(run.id)}
-                        aria-label={t("scheduled.confirmDeleteAria", { prompt: run.prompt })}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-danger bg-danger/10 px-2.5 py-1.5 text-xs text-danger transition"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                        {t("scheduled.confirmDelete")}
-                      </button>
-                    </div>
-                  ) : (
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setPendingDelete(run.id)}
-                      aria-label={t("scheduled.deleteAria", { prompt: run.prompt })}
-                      className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                      onClick={() => beginEdit(run)}
+                      disabled={(run.status === "running" || run.delivery_status === "sending")}
+                      aria-label={t("scheduled.editAria", { prompt: run.prompt })}
+                      title={
+                        (run.status === "running" || run.delivery_status === "sending")
+                          ? t("scheduled.editRunningDisabled")
+                          : undefined
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
-                      {t("scheduled.delete")}
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                      {t("scheduled.edit")}
                     </button>
-                  )}
+                    {pendingDelete === run.id ? (
+                      <>
+                        {/* Cancel first so an accidental double-click disarms instead of destroying. */}
+                        <button
+                          type="button"
+                          onClick={() => setPendingDelete(null)}
+                          className="rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                        >
+                          {t("layout.cancel")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmedDelete(run.id)}
+                          aria-label={t("scheduled.confirmDeleteAria", { prompt: run.prompt })}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-danger bg-danger/10 px-2.5 py-1.5 text-xs text-danger transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                          {t("scheduled.confirmDelete")}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPendingDelete(run.id)}
+                        aria-label={t("scheduled.deleteAria", { prompt: run.prompt })}
+                        className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                        {t("scheduled.delete")}
+                      </button>
+                    )}
+                  </div>
                 </li>
               );
             })}

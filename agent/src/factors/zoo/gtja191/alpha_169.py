@@ -39,7 +39,7 @@ ALPHA_ID = "gtja191_169"
 __alpha_meta__ = {
     'id': 'gtja191_169',
     'theme': ['momentum'],
-    'formula_latex': 'see body',
+    'formula_latex': 'SMA(MEAN(DELAY(SMA(CLOSE-DELAY(CLOSE,1),9,1),1),12)-MEAN(DELAY(SMA(CLOSE-DELAY(CLOSE,1),9,1),1),26),10,1)',
     'columns_required': ['close'],
     'extras_required': [],
     'universe': ['equity_cn'],

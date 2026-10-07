@@ -70,7 +70,14 @@ jobs:
   test:
     name: test / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 10 minutes stopped fitting again after the frontend split below: on
+    # 2026-09-29 the 3.11 leg's pytest step took 520s of a job that finished
+    # at exactly 600s (run 36553260060), and the next push was cancelled at
+    # 99% of the suite with no failing test (36556726032). The suite, not a
+    # hang, fills the budget, and runner speed varies by minutes (the same
+    # tree's 3.14 leg took 5m14s one run and 8m32s the other), so the limit
+    # leaves room for that instead of being trimmed to the last good run.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

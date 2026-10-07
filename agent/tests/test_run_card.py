@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -115,7 +116,7 @@ def test_json_and_markdown_files_are_written(tmp_path: Path) -> None:
     markdown = md_path.read_text(encoding="utf-8")
 
     assert loaded == card
-    assert loaded["schema_version"] == "0.1"
+    assert loaded["schema_version"] == "1.0"
     assert loaded["generated_at"].endswith("Z")
     assert loaded["metrics"] == {"max_drawdown": -0.08, "sharpe": 1.23}
     assert loaded["validation"] == {"consistency_rate": 0.8, "n_windows": 5}
@@ -296,15 +297,16 @@ def test_options_backtest_writes_run_card(tmp_path: Path) -> None:
                 },
             ]
 
-    run_options_backtest(
-        {
-            "codes": ["SPY"],
-            "start_date": "2025-01-01",
-            "end_date": "2025-01-06",
-            "source": "yfinance",
-            "engine": "options",
-            "initial_cash": 100_000,
-        },
+    config = {
+        "codes": ["SPY"],
+        "start_date": "2025-01-01",
+        "end_date": "2025-01-06",
+        "source": "yfinance",
+        "engine": "options",
+        "initial_cash": 100_000,
+    }
+    metrics = run_options_backtest(
+        config,
         FakeLoader(),
         SignalEngine(),
         tmp_path,
@@ -313,6 +315,47 @@ def test_options_backtest_writes_run_card(tmp_path: Path) -> None:
     card = json.loads((tmp_path / "run_card.json").read_text(encoding="utf-8"))
     assert card["backtest"]["engine"] == "options"
     assert card["data_sources"] == ["yfinance"]
+    assert len(card["tool_traces"]) == 1
+    assert card["tool_traces"][0]["tool"] == "backtest"
+    assert card["tool_traces"][0]["status"] == "ok"
+    started_at = datetime.fromisoformat(
+        card["tool_traces"][0]["started_at"].replace("Z", "+00:00")
+    )
+    ended_at = datetime.fromisoformat(
+        card["tool_traces"][0]["ended_at"].replace("Z", "+00:00")
+    )
+    assert started_at.tzinfo == timezone.utc
+    assert ended_at.tzinfo == timezone.utc
+    assert started_at <= ended_at
+    assert (
+        card["tool_traces"][0]["args_hash"]
+        == hashlib.sha256(
+            json.dumps(
+                config,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+    )
+    assert (
+        card["tool_traces"][0]["result_hash"]
+        == hashlib.sha256(
+            json.dumps(
+                metrics,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+    )
+    assert card["citations"]
+    assert all(
+        citation["artifact_id"] == "artifacts/metrics.csv"
+        for citation in card["citations"]
+    )
     assert "greeks.csv" in {Path(artifact["path"]).name for artifact in card["artifacts"]}
     assert (tmp_path / "run_card.md").exists()
 

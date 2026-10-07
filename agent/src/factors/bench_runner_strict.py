@@ -322,6 +322,7 @@ def run_bench_strict(
     random_control: bool,
     n_random_seeds: int = 5,
     oos_split: str | None = None,
+    training_cutoff: str | None = None,
     thresholds: StrictThresholds | None = None,
     top: int = 20,
     on_progress: ProgressCb | None = None,
@@ -343,8 +344,9 @@ def run_bench_strict(
             values shrink the random IC variance and tighten the alpha
             t-stat; default 5 is enough for a 455-alpha zoo without making
             the bench more than ~6x slower.
-        oos_split: Date string (``YYYY-MM-DD``) splitting train and test.
-            ``None`` disables the OOS gate (full sample only).
+        oos_split: Date string splitting train and test.
+            ``None`` disables the OOS gate unless ``training_cutoff`` is set.
+        training_cutoff: Model training cutoff; test observations must be later.
         thresholds: ``StrictThresholds`` instance. Defaults to
             ``alpha_t_threshold=2.0`` (back-compat). Pass ``3.5`` to apply
             Harvey-Liu-Zhu (2016) multiple-testing correction when bench
@@ -387,6 +389,7 @@ def run_bench_strict(
     # Initialise the full schema up-front so even early-error returns
     # carry zeroed counters and empty lists — downstream consumers can
     # depend on the keys always being present.
+    effective_oos_split = training_cutoff if training_cutoff is not None else oos_split
     entry: dict[str, Any] = {
         "status": "pending",
         "zoo": zoo,
@@ -394,7 +397,8 @@ def run_bench_strict(
         "period": period,
         "random_control": random_control,
         "n_random_seeds": effective_seeds,
-        "oos_split": oos_split,
+        "oos_split": effective_oos_split,
+        "training_cutoff": training_cutoff,
         "alpha_t_threshold": thresholds.alpha_t_threshold,
         "n_alphas_tested": 0,
         "n_skipped": 0,
@@ -423,6 +427,9 @@ def run_bench_strict(
         entry["wall_seconds"] = round(time.monotonic() - start, 2)
         return entry
 
+    if training_cutoff is not None and oos_split is not None:
+        return _finish_error("pass either training_cutoff or oos_split, not both")
+
     reg = registry if registry is not None else get_default_registry()
     alpha_ids = reg.list(zoo=zoo)
     if not alpha_ids:
@@ -443,18 +450,19 @@ def run_bench_strict(
     n_total = len(alpha_ids)
 
     oos_ts: pd.Timestamp | None = None
-    if oos_split is not None:
+    if effective_oos_split is not None:
         try:
-            oos_ts = pd.Timestamp(oos_split)
+            oos_ts = pd.Timestamp(effective_oos_split)
         except (TypeError, ValueError) as exc:
-            return _finish_error(f"invalid oos_split {oos_split!r}: {exc}")
+            return _finish_error(f"invalid OOS boundary {effective_oos_split!r}: {exc}")
         close = panel.get("close")
         if close is not None and len(close.index):
             first = pd.Timestamp(close.index.min())
             last = pd.Timestamp(close.index.max())
             if not first <= oos_ts < last:
                 return _finish_error(
-                    f"oos_split {oos_split!r} must fall within the loaded sample "
+                    f"OOS boundary {effective_oos_split!r} must fall within the "
+                    "loaded sample "
                     f"[{first.date()}, {last.date()})"
                 )
 
@@ -512,7 +520,7 @@ def run_bench_strict(
                 # horizon before the last price.
                 if min(ic_count_train, ic_count_test) < 2:
                     raise SkipAlpha(
-                        f"oos_split {oos_split} leaves {ic_count_train} train / "
+                        f"OOS boundary {effective_oos_split} leaves {ic_count_train} train / "
                         f"{ic_count_test} test IC observations; each side needs 2"
                     )
 
@@ -621,6 +629,13 @@ def run_bench_strict(
     legacy_dead = counts["noise"] + counts["train_only"]
 
     by_theme = _theme_breakdown_strict(rows)
+
+    if effective_oos_split is not None and not rows:
+        entry["n_skipped"] = len(skipped)
+        entry["skipped"] = skipped
+        return _finish_error(
+            "OOS benchmark produced no valid alpha rows; inspect skipped reasons"
+        )
 
     entry.update(
         {

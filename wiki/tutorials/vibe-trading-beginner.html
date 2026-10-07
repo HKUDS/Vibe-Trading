@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="en" data-page-lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vibe-Trading Beginner’s Guide | Vibe-Trading Wiki</title>
+  <meta name="description" content="A Vibe-Trading beginner’s guide for readers without a finance background: what factors, strategies, backtests, multi-market data sources, broker connectors and Shadow Account are.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Vibe-Trading Wiki">
+  <meta property="og:title" content="Vibe-Trading Beginner’s Guide">
+  <meta property="og:description" content="From finance jargon to hands-on use: helps readers without a finance background understand Vibe-Trading and start using it.">
+  <meta property="og:image" content="https://vibetrading.wiki/assets/icon.png">
+  <meta property="og:url" content="https://vibetrading.wiki/tutorials/vibe-trading-beginner.html">
+  <link rel="canonical" href="https://vibetrading.wiki/tutorials/vibe-trading-beginner.html">
+  <link rel="alternate" hreflang="en" href="/tutorials/vibe-trading-beginner.html">
+  <link rel="alternate" hreflang="zh-CN" href="/tutorials/vibe-trading-beginner-zh.html">
+  <link rel="alternate" hreflang="x-default" href="/tutorials/vibe-trading-beginner.html">
+  <!-- site-head:start -->
+  <link rel="icon" type="image/png" href="/assets/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css?v=20260929e">
+  <script src="/theme-init.js?v=20260929e"></script>
+  <!-- site-head:end -->
+  <script type="module" src="/main.js?v=20260929e"></script>
+  <style>
+    .tutorial {
+      width: min(940px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 64px 0 96px;
+    }
+
+    .tutorial header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 36px;
+      margin-bottom: 36px;
+    }
+
+    .tutorial h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 6vw, 5.4rem);
+      line-height: 1;
+      overflow-wrap: break-word;
+    }
+
+    .tutorial .lede {
+      max-width: 760px;
+      margin: 22px 0 0;
+      color: var(--ink);
+      font-family: var(--serif);
+      font-size: clamp(1.12rem, 2.4vw, 1.38rem);
+      line-height: 1.55;
+    }
+
+    .tutorial section {
+      margin: 54px 0;
+      scroll-margin-top: 92px;
+    }
+
+    .tutorial h2 {
+      margin-bottom: 16px;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      line-height: 1.08;
+    }
+
+    .tutorial h3 {
+      margin-top: 28px;
+      font-size: 1.16rem;
+    }
+
+    .tutorial p,
+    .tutorial li,
+    .tutorial td,
+    .tutorial th {
+      font-size: 1.02rem;
+      line-height: 1.72;
+    }
+
+    .tutorial p,
+    .tutorial li {
+      color: var(--ink);
+    }
+
+    .tutorial a {
+      color: var(--accent-3);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .toc,
+    .callout,
+    .term-grid,
+    .module-grid,
+    .route-grid,
+    .workflow-flow {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+    }
+
+    .toc {
+      padding: 18px 20px;
+    }
+
+    .toc ol {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 22px;
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--accent);
+    }
+
+    .callout.warning {
+      border-left-color: var(--accent-2);
+    }
+
+    .callout p {
+      margin: 0;
+    }
+
+    .module-grid,
+    .route-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+    }
+
+    .module-card,
+    .route-card {
+      background: var(--surface);
+      padding: 18px;
+    }
+
+    .module-card code,
+    .route-card code,
+    .tutorial td code,
+    .tutorial li code,
+    .tutorial p code {
+      font-family: var(--mono);
+      font-size: 0.9em;
+      color: var(--accent);
+    }
+
+    .module-card p,
+    .route-card p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .term-grid {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+    }
+
+    .term-grid th,
+    .term-grid td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .term-grid th {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .term-grid tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .workflow-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      margin: 24px 0;
+    }
+
+    .flow-step {
+      min-height: 132px;
+      background: var(--surface);
+      padding: 16px;
+    }
+
+    .flow-step span {
+      display: block;
+      margin-bottom: 20px;
+      color: var(--accent-2);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .flow-step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .tutorial pre {
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-2);
+      padding: 18px;
+      white-space: pre-wrap;
+    }
+
+    .tutorial pre code {
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 0.92rem;
+    }
+
+    .meta-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .meta-list span {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      padding: 8px 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 800px) {
+      .toc ol,
+      .module-grid,
+      .route-grid,
+      .workflow-flow {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .tutorial {
+        width: min(100% - 32px, 940px);
+        padding-top: 44px;
+      }
+
+      .tutorial h1 {
+        font-size: clamp(2.05rem, 10vw, 2.75rem);
+        line-height: 1.06;
+        overflow-wrap: break-word;
+      }
+
+      .tutorial .lede {
+        font-size: 1rem;
+      }
+
+      .tutorial p,
+      .tutorial li,
+      .tutorial td,
+      .tutorial th {
+        font-size: 0.97rem;
+      }
+
+      .term-grid {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .term-grid th,
+      .term-grid td {
+        min-width: 160px;
+      }
+
+      .meta-list span {
+        font-size: 0.74rem;
+      }
+    }
+  </style>
+</head>
+<body data-section="tutorials">
+  <!-- site-header:start -->
+  <header class="site-header" id="site-header">
+    <div class="site-header__inner">
+      <a class="brand" href="/home/" aria-label="Vibe-Trading home" data-i18n-attr="aria-label=header.homeLabel">
+        <img class="brand__mark" src="/assets/icon.png" alt="" width="40" height="40">
+        <span class="brand__text">Vibe-Trading</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary" data-i18n-attr="aria-label=header.navLabel">
+        <a href="/home/" data-nav="home" data-i18n="nav.home">Home</a>
+        <a href="/docs/" data-nav="docs" data-i18n="nav.docs">Docs</a>
+        <a href="/tutorials/" data-nav="tutorials" data-i18n="nav.tutorials">Tutorials</a>
+        <a href="/alpha-library/" data-nav="alpha" data-i18n="nav.alpha">Alpha Library</a>
+        <a href="/research-lab/" data-nav="lab" data-i18n="nav.lab">Research Lab</a>
+        <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+      </nav>
+      <div class="site-actions">
+        <button class="lang-pill" id="lang-toggle" type="button" lang="zh-CN" aria-label="切换到中文">中文</button>
+        <a class="star-pill" href="https://github.com/HKUDS/Vibe-Trading" aria-label="Vibe-Trading on GitHub">
+          <span aria-hidden="true">Star</span>
+          <strong id="star-count">--</strong>
+        </a>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle color theme" data-i18n-attr="aria-label=header.themeLabel">
+          <span class="theme-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+  <!-- site-header:end -->
+
+  <main class="tutorial">
+    <header>
+      <p class="eyebrow">Tutorial · Beginner Guide</p>
+      <h1>From finance jargon to hands-on use: understanding Vibe-Trading</h1>
+      <p class="lede">This guide is for readers with no finance training and little trading experience. It does not teach you a “can’t-lose strategy”. Instead, it explains what factors, strategies, backtests, data sources, broker connectors and Shadow Account are in Vibe-Trading, and how to start using them in a safe order.</p>
+      <div class="meta-list" aria-label="Guide scope">
+        <span>Multi-market</span>
+        <span>Data sources</span>
+        <span>Factors / Alpha</span>
+        <span>Backtesting</span>
+        <span>Broker connectors</span>
+        <span>Shadow Account</span>
+      </div>
+    </header>
+
+    <nav class="toc" aria-label="Contents">
+      <ol>
+        <li><a href="#mental-model">Start with a map of the project</a></li>
+        <li><a href="#terms">Common finance terms in plain English</a></li>
+        <li><a href="#factors">Factors and the Alpha Zoo</a></li>
+        <li><a href="#strategy">Strategies and the Signal Engine</a></li>
+        <li><a href="#backtest">How backtesting works</a></li>
+        <li><a href="#markets">Choosing markets and data sources</a></li>
+        <li><a href="#connectors">Broker connectors</a></li>
+        <li><a href="#shadow">Shadow Account</a></li>
+        <li><a href="#learning-path">A suggested learning path</a></li>
+        <li><a href="#contribute">What you can contribute</a></li>
+      </ol>
+    </nav>
+
+    <section id="mental-model">
+      <h2>1. Start with a map of the project</h2>
+      <p>To begin with, think of Vibe-Trading as a workbench for trading research. You ask a question in plain language, and the project breaks it into steps: reading data, computing factors, writing a strategy, backtesting, reporting and connecting to accounts. It is not a broker and it never holds your money. Its real value is that every research step can be run, checked again later, and kept.</p>
+
+      <div class="workflow-flow" aria-label="Vibe-Trading workflow">
+        <div class="flow-step">
+          <span>01 Prompt</span>
+          <p>You ask a question, for example “backtest a momentum strategy on a set of large-cap stocks”.</p>
+        </div>
+        <div class="flow-step">
+          <span>02 Data</span>
+          <p>Loaders fetch market data for stocks, crypto, futures, forex and more.</p>
+        </div>
+        <div class="flow-step">
+          <span>03 Signal</span>
+          <p>Factor or strategy code turns the data into buy and sell signals.</p>
+        </div>
+        <div class="flow-step">
+          <span>04 Backtest</span>
+          <p>The backtest engine simulates the trades under that market’s rules.</p>
+        </div>
+        <div class="flow-step">
+          <span>05 Report</span>
+          <p>Out come metrics, charts, a report, a run card and artifacts you can check again.</p>
+        </div>
+      </div>
+
+      <div class="module-grid">
+        <article class="module-card">
+          <h3>Data layer: loader</h3>
+          <p><code>agent/backtest/loaders/</code> handles price and financial data. For each type of market it picks a public source, an optional source that needs a key, a source behind a broker gateway, or your own local files, and falls back to another source where one is available.</p>
+        </article>
+        <article class="module-card">
+          <h3>Factor layer: factor / alpha</h3>
+          <p><code>agent/src/factors/</code> ships 462 alphas. A factor is a numeric signal that scores stocks. It is not an order rule, and it is not a promise of returns.</p>
+        </article>
+        <article class="module-card">
+          <h3>Backtest layer: backtest</h3>
+          <p><code>agent/backtest/</code> runs simulated trading from <code>config.json</code> and <code>code/signal_engine.py</code>. Stocks, crypto, futures, forex and multi-asset portfolios each have their own engines.</p>
+        </article>
+        <article class="module-card">
+          <h3>Broker layer: connector</h3>
+          <p><code>agent/src/trading/</code> puts every broker behind the same set of profiles: account, positions, orders, quotes, historical bars, placing orders and cancelling them. This is different from a loader: a loader reads market data, while a connector reads, or acts on, your brokerage account.</p>
+        </article>
+        <article class="module-card">
+          <h3>Tool layer: MCP tools</h3>
+          <p><code>agent/src/tools/</code> exposes these capabilities as tools the agent can call, such as <code>backtest</code>, <code>factor_analysis</code>, <code>trading_positions</code> and <code>analyze_trade_journal</code>.</p>
+        </article>
+        <article class="module-card">
+          <h3>Review layer: Shadow Account</h3>
+          <p><code>agent/src/shadow_account/</code> pulls your habits out of your trade history as rules, backtests a “rule-based version of you”, and then works out where and why it differs from your real trades.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="terms">
+      <h2>2. Common finance terms in plain English</h2>
+      <p>Put the jargon into everyday words first, and the code becomes much easier to read. The terms below come up again and again in the README, the Alpha Zoo, backtests and broker connectors.</p>
+
+      <table class="term-grid">
+        <thead>
+          <tr>
+            <th>Term</th>
+            <th>In plain English</th>
+            <th>Where it lives in the project</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Symbol / instrument</td>
+            <td>The thing you research or trade, such as <code>AAPL.US</code>, <code>BTC-USDT</code> or <code>600519.SH</code>.</td>
+            <td><code>codes</code> in the backtest config; <code>symbol</code> in the broker tools.</td>
+          </tr>
+          <tr>
+            <td>Bar (candlestick) / OHLCV</td>
+            <td>The opening, highest, lowest and closing price, plus the volume traded, over one period of time.</td>
+            <td>The basic price columns a loader returns: <code>open/high/low/close/volume</code>.</td>
+          </tr>
+          <tr>
+            <td>VWAP</td>
+            <td>Volume-weighted average price. Roughly, “the average price the market actually traded at during this period”.</td>
+            <td>Some alphas need a <code>vwap</code> column.</td>
+          </tr>
+          <tr>
+            <td>amount</td>
+            <td>Turnover in money: the value traded, usually price times volume.</td>
+            <td>Used by some volume, liquidity and short-horizon factors; some stock data sources provide it.</td>
+          </tr>
+          <tr>
+            <td>Factor / alpha</td>
+            <td>A formula that scores a group of stocks. A high score might mean a stock is more worth buying, or more worth selling; that has to be checked with IC, backtests and an economic explanation.</td>
+            <td><code>agent/src/factors/zoo/</code>.</td>
+          </tr>
+          <tr>
+            <td>Strategy</td>
+            <td>Turns signals into trading rules: what to buy, how much, when to sell, how many positions to hold at most, and how to cut losses.</td>
+            <td><code>signal_engine.py</code> and the backtest config.</td>
+          </tr>
+          <tr>
+            <td>Signal Engine</td>
+            <td>The Python class that holds a strategy’s logic in this project. It reads bars or a panel and outputs target positions or buy and sell signals.</td>
+            <td><code>code/signal_engine.py</code> in a backtest run dir.</td>
+          </tr>
+          <tr>
+            <td>Backtest</td>
+            <td>Uses historical data to simulate “what would have happened if I had traded by these rules back then”. It can only show past performance; it cannot prove future returns.</td>
+            <td><code>agent/backtest/runner.py</code> and each market’s engine.</td>
+          </tr>
+          <tr>
+            <td>IC</td>
+            <td>Information Coefficient. Here it is the Spearman correlation between how a factor ranks stocks on a given day and how those stocks later rank by return. A positive IC means high-scoring stocks were more likely to go up afterwards.</td>
+            <td><code>compute_ic_series()</code>.</td>
+          </tr>
+          <tr>
+            <td>IR</td>
+            <td>Mean IC divided by the volatility of IC. Roughly, “how steady is this factor?”</td>
+            <td>One of the ranking metrics in <code>alpha bench</code>.</td>
+          </tr>
+          <tr>
+            <td>lookahead</td>
+            <td>Peeking at future data: for example, using information only known after today’s close while pretending you knew it before today’s open.</td>
+            <td>Factor operators forbid a negative shift; backtests execute on the next bar to reduce the risk of peeking.</td>
+          </tr>
+          <tr>
+            <td>PIT</td>
+            <td>Point-in-time: using only data that was already public and available at that moment.</td>
+            <td>Financial fields, Shadow Account entry context and backtest validation all stress this boundary.</td>
+          </tr>
+          <tr>
+            <td>warmup</td>
+            <td>At the start of a rolling window there is not enough data yet. For example, a 20-day moving average has no valid value for the first 19 days.</td>
+            <td><code>min_warmup_bars</code> in alpha metadata.</td>
+          </tr>
+          <tr>
+            <td>NaN</td>
+            <td>A missing value. In financial data a missing value is not 0; it often means a trading halt, a gap in the data source, or a window that is not full yet.</td>
+            <td>Factor operators keep NaN and never silently fill it with 0.</td>
+          </tr>
+          <tr>
+            <td>Slippage</td>
+            <td>The gap between the price you wanted to trade at and the price you actually got.</td>
+            <td>Each market engine has its own simplified slippage parameters.</td>
+          </tr>
+          <tr>
+            <td>Drawdown</td>
+            <td>How far the account’s value falls from a peak to a low. Maximum drawdown is a key measure of how painful a strategy is to live with.</td>
+            <td>Backtest metrics.</td>
+          </tr>
+          <tr>
+            <td>benchmark</td>
+            <td>The yardstick you compare against, such as the CSI 300, the Hang Seng Index or SPY. A strategy is judged not only on whether it made money, but also on whether it beat its yardstick.</td>
+            <td>The backtest report and its benchmark comparison.</td>
+          </tr>
+          <tr>
+            <td>paper / live</td>
+            <td>Paper is a simulated account; live is a real account. Be very careful with a real account.</td>
+            <td><code>environment</code> in a connector profile.</td>
+          </tr>
+          <tr>
+            <td>mandate</td>
+            <td>The limits you authorize for live trading: which instruments may be traded, how large a single order may be, the maximum total exposure, how many trades are allowed per day, and so on.</td>
+            <td>The risk gate on the live-order path.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="factors">
+      <h2>3. Factors and the Alpha Zoo</h2>
+      <p>Factors are the part of Vibe-Trading that most often confuses readers without a finance background. Think of a factor as a “ranking formula”: every day it gives each of many stocks a score, and then you check whether the high-scoring group went on to do better.</p>
+
+      <div class="callout">
+        <p>Important: a factor is not a strategy. A factor only answers “which instrument scores higher”. A strategy also has to answer how much to buy, when to buy, when to sell, what the trading costs are, whether concentrated positions are allowed, and whether the orders could actually be filled.</p>
+      </div>
+
+      <p>The Alpha Zoo in the current repository holds 462 alphas in five zoos:</p>
+      <table class="term-grid">
+        <thead>
+          <tr>
+            <th>Zoo</th>
+            <th>Count</th>
+            <th>How to think about it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>academic</code></td>
+            <td>12</td>
+            <td>Academic-style factors such as momentum, reversal, the 52-week high and illiquidity. A good place to start.</td>
+          </tr>
+          <tr>
+            <td><code>alpha101</code></td>
+            <td>101</td>
+            <td>Formulaic alphas; many of the formulas mix price, volume, ranks and rolling correlations.</td>
+          </tr>
+          <tr>
+            <td><code>gtja191</code></td>
+            <td>191</td>
+            <td>Short-horizon trading factors published by Guotai Junan Securities, rooted mainly in the China A-share market.</td>
+          </tr>
+          <tr>
+            <td><code>qlib158</code></td>
+            <td>154</td>
+            <td>Features from Qlib’s Alpha158 set, often used as inputs to machine-learning models.</td>
+          </tr>
+          <tr>
+            <td><code>fundamental</code></td>
+            <td>4</td>
+            <td>Factors built from point-in-time financial statements: return on equity, gross profitability, earnings yield and asset growth.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>Common themes can be read like this:</p>
+      <ul>
+        <li><strong>momentum</strong>: do instruments that have been strong lately keep being strong?</li>
+        <li><strong>reversal</strong>: after a big fall or a big rise, does the price swing back?</li>
+        <li><strong>volume</strong>: do changes in trading volume carry information about what money is doing?</li>
+        <li><strong>volatility</strong>: can volatility explain later returns or risk?</li>
+        <li><strong>liquidity / microstructure</strong>: signals about liquidity, the order book and how trades are made up.</li>
+        <li><strong>value / quality</strong>: valuation or quality styles, usually more medium- to long-term.</li>
+      </ul>
+
+      <p>Browse with the CLI first, rather than reading 462 source files straight away:</p>
+      <pre><code>vibe-trading alpha list --zoo academic
+vibe-trading alpha show academic_mkt_rf
+vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10</code></pre>
+
+      <p><code>alpha bench</code> tests factors on a universe of stocks. The project’s built-in classification is: <code>alive</code> when the mean IC is above 0.02, at least 55% of the IC readings are positive and the t-statistic is significant; <code>reversed</code> when the IC is significantly negative; <code>dead</code> for everything else. This is not a “you can buy it” verdict, only the first filter at the research stage.</p>
+    </section>
+
+    <section id="strategy">
+      <h2>4. Strategies and the Signal Engine</h2>
+      <p>A strategy turns a research idea into rules that can be executed. A very simple strategy might be: “Hold when the 20-day moving average is above the 60-day moving average; otherwise stay out of the market.” A multi-factor strategy might be: “Within a pool of stocks, combine momentum, quality and volatility into one score, buy the top 20, and rebalance once a month.”</p>
+
+      <p>In Vibe-Trading, a strategy usually ends up as a run dir:</p>
+      <pre><code>my_run/
+  config.json
+  code/
+    signal_engine.py</code></pre>
+
+      <p><code>config.json</code> tells the backtest system the symbols, the start and end dates, the data source, the bar interval and which market engine to use. <code>signal_engine.py</code> tells it what signal to produce on each bar or trading day.</p>
+
+      <div class="callout warning">
+        <p>The most common beginner mistake is to treat “the factor score is high” as “buy with everything I have, right now”. A real strategy also needs position limits, a rebalancing frequency, trading costs, handling for trading halts and daily price limits, risk control and a benchmark comparison.</p>
+      </div>
+    </section>
+
+    <section id="backtest">
+      <h2>5. How backtesting works</h2>
+      <p>A backtest is not a forecaster; it is a simulator of the past. Its value is that, before you put real money in, you can see what a set of rules went through in historical data: how much it made, its largest loss, how often it traded, whether it only worked in one particular year, and whether fees ate the profits.</p>
+
+      <h3>Starting a backtest</h3>
+      <pre><code>vibe-trading run -p "Backtest a momentum strategy on a broad equity universe from 2020 to 2025. Include benchmark comparison, drawdown, turnover, and a short explanation."</code></pre>
+
+      <p>If the agent creates a run dir, it will eventually call the <code>backtest</code> tool. That tool checks <code>config.json</code> and <code>code/signal_engine.py</code>, then runs <code>agent/backtest/runner.py</code>.</p>
+
+      <h3>Why the market engine matters</h3>
+      <p>Different markets do not share one set of trading rules. In the project, stocks, crypto, futures, forex and multi-asset portfolios go through different engines. Some stock markets have to handle T+1 (a share bought today cannot be sold until the next trading day), daily price limits, board lots (the minimum number of shares per order), commissions, stamp duty, settlement fees and slippage; others may allow T+0 same-day round trips, short selling or fractional shares.</p>
+
+      <p>This means you cannot judge a signal only by how accurate it is; you also have to see whether it can actually be filled under real market rules, how high the costs are, and whether positions become too concentrated. Many short-term strategies that look great fall apart once slippage and fees are added.</p>
+    </section>
+
+    <section id="markets">
+      <h2>6. Choosing markets and data sources</h2>
+      <p>When new users try the project for the first time, the things they mix up most are the “market”, the “data source” and the “brokerage account”. The market decides the trading rules; the data source decides where the historical data comes from; a brokerage account only comes in when you need to read a real account or place simulated or real orders.</p>
+
+      <div class="route-grid">
+        <article class="route-card">
+          <h3>Public data sources</h3>
+          <p>Good for getting started, ordinary price data and quick trial runs. The upside is a low barrier to entry; the downside is that coverage, rate limits, adjustment for splits and dividends, field quality and availability vary from source to source.</p>
+        </article>
+        <article class="route-card">
+          <h3>Optional sources that need a key</h3>
+          <p>Good for steadier research and richer fields, such as index constituents, financial data, fundamental fields or professional market data. The downside is that you need to apply for a token or pay.</p>
+        </article>
+        <article class="route-card">
+          <h3>Local data</h3>
+          <p>The <code>local</code> loader can read your own CSV, Parquet or DuckDB data. For cleaned historical data, offline research and reproducible experiments, local data is usually the easiest to keep under control.</p>
+        </article>
+        <article class="route-card">
+          <h3>Cross-market portfolios</h3>
+          <p>CompositeEngine supports research on portfolios that span markets. For example, when one strategy holds stocks, crypto and futures at the same time, each market is handled by its own engine.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="connectors">
+      <h2>7. Broker connectors</h2>
+      <p>Keep connectors and loaders apart: a loader reads market data, while a connector links to your brokerage account. Typical connector capabilities include reading the account, positions, orders, quotes and historical bars, and, under a profile that allows it, placing or cancelling orders.</p>
+
+      <pre><code>vibe-trading connector list
+vibe-trading connector use &lt;profile-id&gt;
+vibe-trading connector check</code></pre>
+
+      <p>When you look at a connector, don’t start by asking “can it trade automatically?”. Look at the profile’s safety properties first:</p>
+      <table class="term-grid">
+        <thead>
+          <tr>
+            <th>Profile type</th>
+            <th>What it means</th>
+            <th>When to use it</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>readonly</code></td>
+            <td>Only reads the account, positions, orders or quotes; it never submits an order.</td>
+            <td>Use this first when you connect a real account for the first time.</td>
+          </tr>
+          <tr>
+            <td><code>paper</code></td>
+            <td>Connects to a simulated or sandbox account; even when it places orders, no real money is involved.</td>
+            <td>For checking a strategy, order fields, fill reports and the cancel flow.</td>
+          </tr>
+          <tr>
+            <td><code>live</code></td>
+            <td>Connects to a real account. Every write action must pass the authorized limits, the kill switch, fail-closed checks and the audit log.</td>
+            <td>Only once you fully understand the risks and have tested with read-only and paper first.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>If you just want to learn the project, stick to read-only and paper at first. Once you can explain why every simulated order was produced, then think about connecting a real account.</p>
+    </section>
+
+    <section id="shadow">
+      <h2>8. Shadow Account</h2>
+      <p>Shadow Account is a feature for reviewing yourself. Instead of finding a generic strategy online, it reads your trade history, pairs up buys and sells, finds the rules that keep recurring in your profitable trades, and then backtests a rule-based shadow strategy.</p>
+
+      <p>Trade-history parsing currently supports several common broker export formats and a generic CSV. It reports behavioural diagnostics such as holding period, win rate, profit/loss ratio, drawdown, the disposition effect (holding losing positions longer than winning ones), overtrading, chasing rallies and anchoring. Shadow Account then extracts up to five if-then rules, generates strategy code, runs backtests across markets, and finally renders an HTML/PDF report.</p>
+
+      <pre><code>vibe-trading --upload trades_export.csv
+vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, and compare it with my actual trades."</code></pre>
+
+      <p>If you want to add this path for a new broker, the best place to start is normalizing its official API or user-exported trade records into the project’s <code>TradeRecord</code> format, then reusing the existing Trade Journal and Shadow Account flow.</p>
+    </section>
+
+    <section id="learning-path">
+      <h2>9. A suggested learning path</h2>
+      <ol>
+        <li><strong>Day 1: just get it running.</strong> Install, initialize, and open the CLI or the Web UI (the Web UI at http://127.0.0.1:8899 comes with Docker, or with a source checkout after <code>vibe-trading setup</code>; <code>pip install</code> alone ships no built Web UI). Ask a question about something you know well. No broker connection, no orders.</li>
+        <li><strong>Day 2: just look at data.</strong> Pick a few instruments you know and get to grips with symbols, OHLCV, data-source fallback and missing values.</li>
+        <li><strong>Day 3: just look at factors.</strong> Start with the <code>academic</code> zoo: read formulas with <code>alpha show</code> and check IC/IR with <code>alpha bench</code>. No rush to trade.</li>
+        <li><strong>Day 4: run a simple backtest.</strong> Have the agent write a momentum or moving-average strategy, and focus on the config, signal_engine, the backtest metrics and the list of trades.</li>
+        <li><strong>Day 5: review your own trades.</strong> If you have a CSV exported from your broker, use Trade Journal and Shadow Account to see your behaviour profile. If you don’t have one, that’s fine: start by reading the report template and the data structures.</li>
+        <li><strong>Day 6 onward: connect a broker.</strong> Start with read-only and paper, confirm that the account, positions and orders read correctly, and then learn the live-trading boundaries: mandate, kill switch and fail-closed.</li>
+      </ol>
+
+      <p>A starter set of commands:</p>
+      <pre><code>pip install vibe-trading-ai
+vibe-trading init
+vibe-trading
+vibe-trading serve --port 8899
+vibe-trading alpha list --zoo academic
+vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10
+vibe-trading connector list</code></pre>
+    </section>
+
+    <section id="contribute">
+      <h2>10. What you can contribute</h2>
+      <p>If you want to contribute to the project, you don’t need to start with live order placement. A steadier route is to begin with docs, examples, parsers and tests.</p>
+
+      <ul>
+        <li><strong>Beginner docs.</strong> Explain factors, strategies, backtests, data sources and broker connectors in a way ordinary investors can follow.</li>
+        <li><strong>Reproducible examples.</strong> Add teaching runs across markets that include the data source, parameters, backtest metrics and risk notes, without turning them into investment advice.</li>
+        <li><strong>Trade-history import.</strong> If a broker’s official API or export file provides fills, orders and positions, normalize it into <code>TradeRecord</code> and plug it into Trade Journal and Shadow Account.</li>
+        <li><strong>Connector docs.</strong> Explain clearly how paper, live, read-only and trade profiles differ, so users don’t assume every connector can place live orders straight away.</li>
+        <li><strong>Safety tests.</strong> Add regression tests for the connector guard, the live mandate, paper-only limits, the path sandbox and uploaded-file parsing.</li>
+      </ul>
+
+      <div class="callout warning">
+        <p>Neither this guide nor Vibe-Trading is investment advice. Any real trade should first go through your own judgement, your broker’s confirmation, testing on a paper account, and risk control.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- site-footer:start -->
+  <footer class="site-footer">
+    <span class="site-footer__name">Vibe-Trading Wiki</span>
+    <a href="/docs/" data-i18n="nav.docs">Docs</a>
+    <a href="/tutorials/" data-i18n="nav.tutorials">Tutorials</a>
+    <a href="/alpha-library/" data-i18n="nav.alpha">Alpha Library</a>
+    <a href="/research-lab/" data-i18n="nav.lab">Research Lab</a>
+    <a href="https://github.com/HKUDS/Vibe-Trading">GitHub</a>
+    <a href="https://pypi.org/project/vibe-trading-ai/">PyPI</a>
+    <div class="footer-traffic" id="footer-traffic" hidden>
+      <span class="ft-item">🤖 <strong id="vt-agents">–</strong> <span data-i18n="footer.agents">AI agents</span></span>
+      <span class="ft-item">👤 <strong id="vt-humans">–</strong> <span data-i18n="footer.humans">humans</span></span>
+      <span class="ft-item">📦 <strong id="vt-installs">–</strong> <span data-i18n="footer.installs">installs/mo</span></span>
+      <span class="ft-note" data-i18n="footer.note">visitors to this site · anonymous · first-party</span>
+    </div>
+  </footer>
+  <!-- site-footer:end -->
+</body>
+</html>

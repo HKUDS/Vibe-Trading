@@ -351,6 +351,19 @@ def market_has_corporate_actions(market: str) -> bool:
     return market not in _NA_CALIBER_MARKETS and market not in _INDEX_CALIBER_MARKETS
 
 
+def frame_caliber(frame: object, source: str, market: str | None = None, symbol: str | None = None) -> str:
+    """Caliber of one served frame, honoring what the loader actually served.
+    A loader that converted its series (e.g. the additive-to-multiplicative
+    path from #1541) reports the caliber on the frame itself; the static
+    (source, market) table is the fallback for unconverted data.
+    """
+    attrs = getattr(frame, "attrs", None)
+    adjustment = attrs.get("adjustment") if isinstance(attrs, dict) else None
+    if isinstance(adjustment, str) and adjustment:
+        return adjustment
+    return price_caliber(source, market, symbol)
+
+
 def price_caliber(source: str, market: str | None = None, symbol: str | None = None) -> str:
     """Return the adjustment caliber of ``source``'s served prices.
 

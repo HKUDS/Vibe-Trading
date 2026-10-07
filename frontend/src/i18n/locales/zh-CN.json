@@ -1,6 +1,6 @@
 {
   "app": {
-    "version": "v0.1.15"
+    "version": "v0.1.16"
   },
   "layout": {
     "home": "首页",
@@ -143,6 +143,23 @@
     "advancedHint": "在所选时区求值的 5 字段 cron 表达式（分 时 日 月 星期；支持列表和范围），或以毫秒为单位的间隔。",
     "timezoneLabel": "时区",
     "create": "创建定时任务",
+    "saveChanges": "保存更改",
+    "cancelEdit": "取消编辑",
+    "editingHint": "正在编辑此定时任务。保存后将保留其标识和执行历史。",
+    "edit": "编辑",
+    "editAria": "编辑定时任务：{{prompt}}",
+    "editRunningDisabled": "请等待本次执行或投递完成后再编辑。",
+    "deliveryInApp": "仅保留在 Vibe 中（不发送）",
+    "deliveryNoChannels": "尚未配置已启用的投递渠道。请在“设置 → 渠道”中配置一个。",
+    "deliveryChannelsLoadFailed": "无法加载已配置的投递渠道。",
+    "deliveryChannelUnavailable": "{{channel}}（当前不可用）",
+    "deliveryTargetKind_destination": "目标",
+    "deliveryTargetKind_email_address": "收件人邮箱地址",
+    "deliveryTargetKind_chat": "聊天",
+    "deliveryTargetKind_channel": "频道",
+    "deliveryTargetDisabled": "请先选择投递渠道。",
+    "deliverySummary": "{{channel}} → {{target}}",
+    "deliveryUnknownTarget": "已配置目标",
     "promptRequired": "请先填写研究提示词再创建定时任务。",
     "invalidTime": "请输入有效时间（格式 HH:MM）。",
     "executorHint": "仅当服务端启用 VIBE_TRADING_ENABLE_SCHEDULER 时才会执行。",
@@ -185,6 +202,13 @@
     "deliveryChannelPlaceholder": "telegram、feishu…（留空则结果只留在应用内）",
     "deliveryTargetLabel": "频道目标",
     "deliveryTargetPlaceholder": "会话 / 群 / 用户 id",
+    "deliveryFormatLabel": "Email report format",
+    "deliveryFormatDefault": "Channel default (plain text)",
+    "deliveryFormatHtml": "HTML email",
+    "deliveryFormatPdf": "PDF attachment",
+    "deliveryFormatDefaultHint": "Keeps the existing plain-text delivery behavior.",
+    "deliveryFormatHtmlHint": "Shows the full report as sanitized HTML in the email body.",
+    "deliveryFormatPdfHint": "Attaches the full report as PDF and keeps only a short notice in the body.",
     "deliveryHint": "默认关闭。简报在运行**结束后**推送，而不是在排定时推送。",
     "deliveryTargetRequired": "请为该频道填写目标，或清空频道。",
     "delivery_none": "下次运行结束后推送到 {{channel}}",
@@ -197,7 +221,16 @@
     "verdictUnreadable": "最新判定无法解析",
     "verdictNoCalls": "无调用",
     "verdictDelta": "{{was}} → {{now}}",
-    "verdictRecorded": "记于 {{when}}"
+    "verdictRecorded": "记于 {{when}}",
+    "deliveryKnownTargetLabel": "已知目标",
+    "deliveryKnownTargetPlaceholder": "选择已知目标…",
+    "deliverySuggestionKind_private_chat": "我的私聊",
+    "deliveryTargetPlaceholder_email_address": "name@example.com",
+    "deliveryTargetPlaceholder_chat": "聊天、群组或用户 ID",
+    "deliveryTargetPlaceholder_channel": "频道 ID",
+    "deliveryTargetPlaceholder_destination": "会话 / 群 / 用户 id",
+    "deliveryTargetPlaceholder_slack_destination": "#频道、@用户或会话 ID",
+    "deliveryTargetKind_slack_destination": "目标"
   },
   "reports": {
     "badge": "报告",
@@ -645,6 +678,10 @@
           "max_attachments_per_email": {
             "label": "单封邮件附件数上限",
             "help": "一封邮件最多接受的附件数量（默认 5）。"
+          },
+          "trusted_authserv_id": {
+            "label": "受信任的认证服务器",
+            "help": "收件服务器的 authserv-id，例如 mx.google.com。邮件服务商必须移除外部伪造且使用此 ID 的 Authentication-Results 邮件头。启用 SPF 或 DKIM 验证时必填；留空会拒收邮件。"
           }
         },
         "websocket": {
@@ -712,6 +749,60 @@
             "label": "TLS 私钥路径",
             "help": "WSS 使用的服务端 PEM 私钥路径。证书与私钥需成对设置或同时留空；这里是服务器上的文件路径，不是上传的材料。"
           }
+        },
+        "feishu": {
+          "app_id": {
+            "label": "App ID",
+            "help": "飞书 / Lark 开放平台开发者后台中应用的 App ID（以 cli_ 开头）。"
+          },
+          "app_secret": {
+            "label": "App Secret",
+            "help": "应用的 App Secret，保存在服务端，绝不会回传到浏览器。"
+          },
+          "encrypt_key": {
+            "label": "Encrypt Key（加密密钥）",
+            "help": "事件订阅设置中的 Encrypt Key；使用长连接模式时可不填。"
+          },
+          "verification_token": {
+            "label": "Verification Token（验证令牌）",
+            "help": "事件订阅设置中的 Verification Token；使用长连接模式时可不填。"
+          },
+          "allow_from": {
+            "label": "允许的发送者",
+            "help": "允许与智能体对话的飞书发送者 ID 白名单；留空表示机器人可见范围内的所有人都可对话。"
+          },
+          "react_emoji": {
+            "label": "处理中表情",
+            "help": "智能体处理期间对收到的消息附加的表情（默认 THUMBSUP）。"
+          },
+          "done_emoji": {
+            "label": "完成表情",
+            "help": "任务完成时附加的表情；留空表示不附加。"
+          },
+          "tool_hint_prefix": {
+            "label": "工具提示前缀",
+            "help": "回复中内联工具提示前显示的前缀。"
+          },
+          "group_policy": {
+            "label": "群聊策略",
+            "help": "“mention”表示群聊中仅在被 @ 提及时回复；“open”表示回复所有群消息。"
+          },
+          "reply_to_message": {
+            "label": "引用原消息",
+            "help": "回复时引用（quote-reply）原消息。"
+          },
+          "streaming": {
+            "label": "流式回复",
+            "help": "通过 CardKit 实时编辑卡片，将回复以流式方式输出。"
+          },
+          "domain": {
+            "label": "域名",
+            "help": "中国版飞书填“feishu”（open.feishu.cn），国际版 Lark 填“lark”（open.larksuite.com）。"
+          },
+          "topic_isolation": {
+            "label": "按话题隔离会话",
+            "help": "群聊中每个话题使用独立的智能体会话，而不是整群共享一个会话。"
+          }
         }
       },
       "guides": {
@@ -754,6 +845,16 @@
           "step4": "渠道运行中保存会热切换服务：已连接的客户端（包括本 Web UI 聊天）会短暂断开并自动重连。",
           "step5": "点击“测试连接”，它会在本地校验 SSL 证书/私钥与地址可用性。",
           "docsLabel": "打开 Vibe-Trading 文档"
+        },
+        "feishu": {
+          "title": "飞书 / Lark 机器人配置指南",
+          "intro": "飞书机器人通过 WebSocket 长连接接入，无需公网 IP 或回调地址。",
+          "step1": "在飞书开放平台（open.feishu.cn）创建企业自建应用；也可在终端运行 vibe-trading channels login feishu 扫码创建，App ID 与 App Secret 会自动保存。",
+          "step2": "为应用添加机器人能力。",
+          "step3": "在事件订阅中订阅“接收消息 im.message.receive_v1”，并选择长连接模式。",
+          "step4": "在“凭证与基础信息”页面复制 App ID 与 App Secret，填入上方字段。",
+          "step5": "创建版本并发布应用（若租户要求，需管理员审批），然后回到这里启用渠道——即时生效、无需重启；国际版 Lark 租户请将域名设为“lark”。",
+          "docsLabel": "打开飞书开放平台"
         }
       }
     },
@@ -906,6 +1007,7 @@
     "dropFiles": "拖放文件到这里",
     "removeAttachment": "移除 {{filename}}",
     "uploadFailed": "上传失败：{{error}}",
+    "messageTooLong": "消息（含附件信息和团队指令）超过 {{limit}} 个字符，请缩短后再发送。",
     "failedToSend": "发送消息失败，请重试。",
     "failedToContinue": "继续目标失败，请重试。",
     "runtimeBadge": "交易监控",
@@ -1009,6 +1111,33 @@
     "reproducibility": "可复现性",
     "metrics": "指标",
     "validationPayload": "验证",
+    "trust": {
+      "executionRecords": "执行记录",
+      "executionDescription": "已记录的执行阶段及其输入和结果的哈希值。",
+      "noExecutionRecords": "此次运行未记录执行记录。",
+      "startedAt": "开始时间（UTC）",
+      "endedAt": "结束时间（UTC）",
+      "argsHash": "参数 SHA-256",
+      "resultHash": "结果 SHA-256",
+      "metricEvidence": "指标证据",
+      "evidenceDescription": "指向已保存指标数据的引用。校验和标识记录中的文件；此视图不会独立验证文件。",
+      "noMetricEvidence": "此次运行未记录指标证据。",
+      "metric": "指标",
+      "artifact": "产物",
+      "column": "列",
+      "row": "数据行（从 1 开始，不含表头）",
+      "artifactHash": "产物 SHA-256",
+      "tools": {
+        "backtest": "回测",
+        "load_data": "加载数据",
+        "generate_signals": "生成信号"
+      },
+      "status": {
+        "ok": "已完成",
+        "error": "失败",
+        "cancelled": "已取消"
+      }
+    },
     "artifactChecksums": "制品校验和",
     "path": "路径",
     "size": "大小",

@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -906,6 +907,7 @@ class BaseEngine(ABC):
         Returns:
             Metrics dictionary.
         """
+        trace_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         codes = config.get("codes", [])
         interval = config.get("interval", "1D")
         extra_fields = config.get("extra_fields") or None
@@ -1166,6 +1168,16 @@ class BaseEngine(ABC):
             data_sources=_run_card_data_sources(config, loader),
             strategy_path=run_dir / "code" / "signal_engine.py",
             warnings=card_warnings or None,
+            tool_traces=[
+                {
+                    "tool": "backtest",
+                    "args": config,
+                    "started_at": trace_started_at,
+                    "ended_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "status": "ok",
+                    "result": m,
+                }
+            ],
         )
 
         # Print scalar metrics (skip nested dicts for JSON compat).
