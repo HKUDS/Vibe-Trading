@@ -33,6 +33,7 @@ _STUB_RESULT_CONTENT = "[Result from earlier context — see summary above]"
 TAIL_TOKEN_BUDGET = 20_000
 SUMMARY_CHUNK_CHARS = 80_000
 
+
 def _format_timeout(seconds: float) -> str:
     """Return a human-readable timeout label."""
     if seconds < 1:

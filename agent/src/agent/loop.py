@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
-import copy
 import json
 import logging
 import queue
@@ -418,9 +417,6 @@ from src.agent.tool_results import (  # noqa: E402
     _previously_archived as _previously_archived,
     _archive_backtest_result,
 )
-
-
-
 
 
 class AgentLoop:
