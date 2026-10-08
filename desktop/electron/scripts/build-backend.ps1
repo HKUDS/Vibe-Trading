@@ -95,11 +95,12 @@ function Resolve-SevenZip {
 }
 
 if (-not $BuildPython) {
-    $repoVenvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
-    if (Test-Path -LiteralPath $repoVenvPython) {
-        $BuildPython = $repoVenvPython
-    }
-    else {
+    $pythonCandidates = @(
+        (Join-Path $repoRoot '.packaging-venv\Scripts\python.exe'),
+        (Join-Path $repoRoot '.venv\Scripts\python.exe')
+    )
+    $BuildPython = $pythonCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $BuildPython) {
         $BuildPython = (Get-Command python.exe -ErrorAction Stop).Source
     }
 }

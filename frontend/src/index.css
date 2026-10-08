@@ -109,6 +109,84 @@
   overflow-y: hidden;
 }
 
+/* Lightweight office sprites used by the native Pixel Office management view. */
+.pixel-office-floor {
+  background-color: hsl(var(--card));
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.22) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.pixel-desk {
+  background: hsl(var(--background) / 0.82);
+  box-shadow: inset 0 -10px 0 hsl(var(--muted) / 0.32);
+}
+.pixel-character {
+  position: relative;
+  width: 66px;
+  height: 70px;
+  image-rendering: pixelated;
+}
+.pixel-character__shadow {
+  position: absolute;
+  left: 8px;
+  bottom: 3px;
+  width: 48px;
+  height: 8px;
+  background: hsl(var(--foreground) / 0.14);
+  border-radius: 50%;
+}
+.pixel-character__body {
+  position: absolute;
+  left: 16px;
+  top: 6px;
+  width: 34px;
+  height: 55px;
+  filter: drop-shadow(2px 3px 0 hsl(var(--foreground) / 0.2));
+}
+.pixel-character__head {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  background: #f1b48b;
+  box-shadow: 0 -5px 0 #3b2a24, 5px -5px 0 #3b2a24, 10px -5px 0 #3b2a24, 0 5px 0 #f1b48b, 24px 5px 0 #f1b48b;
+}
+.pixel-character__torso {
+  position: absolute;
+  left: 5px;
+  top: 29px;
+  width: 25px;
+  height: 20px;
+  background: var(--pixel-color);
+}
+.pixel-character__arm,
+.pixel-character__leg {
+  position: absolute;
+  width: 7px;
+  background: var(--pixel-color);
+}
+.pixel-character__arm { top: 30px; height: 18px; }
+.pixel-character__arm--left { left: 0; }
+.pixel-character__arm--right { right: 0; }
+.pixel-character__leg { top: 49px; height: 12px; background: #334155; }
+.pixel-character__leg--left { left: 7px; }
+.pixel-character__leg--right { right: 7px; }
+.pixel-character__typing {
+  position: absolute;
+  right: 0;
+  top: 2px;
+  color: var(--pixel-color);
+  font-weight: 800;
+  letter-spacing: 1px;
+  animation: pixel-typing 900ms steps(2, end) infinite;
+}
+@keyframes pixel-typing {
+  0%, 100% { opacity: 0.25; transform: translateY(2px); }
+  50% { opacity: 1; transform: translateY(0); }
+}
+
 /* Message/hero entrance — one subtle rise per mount; removed under reduced motion */
 @keyframes msg-enter {
   from { opacity: 0; transform: translateY(10px); }

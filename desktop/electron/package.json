@@ -19,7 +19,7 @@
     "smoke:credentials": "npm run build && npm run prepare:electron && electron scripts/smoke-credentials.cjs",
     "smoke:lifecycle": "npm run build && npm run prepare:electron && node scripts/test-packaging-preparation.mjs && node scripts/test-locales.mjs && node scripts/test-backend-resolution.mjs && node scripts/smoke-lifecycle.mjs && node scripts/smoke-parent-death.mjs",
     "pack:win": "npm run build && npm run prepare:electron && electron-builder --publish never --win dir",
-    "installer:win:review": "npm run build && npm run prepare:electron && node scripts/build-review-installer.mjs",
+    "installer:win:review": "npm run runtime:win -- -Clean && npm run build && npm run prepare:electron && node scripts/build-review-installer.mjs",
     "installer:win:signed": "node scripts/build-signed-installer.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx"
   },
@@ -48,6 +48,7 @@
     "directories": {
       "output": "release"
     },
+    "publish": null,
     "files": [
       "dist/**/*",
       "package.json"

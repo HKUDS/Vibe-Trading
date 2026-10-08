@@ -44,6 +44,9 @@ npm run smoke:lifecycle
 npm run installer:win:review
 ```
 
+`installer:win:review` also runs the backend runtime build automatically, so
+running `npm run runtime:win` separately is optional when using that command.
+
 The installer and checksum are written under `desktop/electron/release/`.
 The `installer:win:review` artifact is deliberately unsigned and must never be
 published to users. The command strips all supported signing credentials,
