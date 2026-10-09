@@ -176,9 +176,9 @@ _URL_USERINFO_SHAPES = (
         "see https://[redacted]@host/x",
     ),
     (
-        # A token used as the username (no colon) is still a credential.
-        "fetch http://tok3n@git.example.com/repo",
-        "fetch http://[redacted]@git.example.com/repo",
+        # A long token used as the username (no colon) is still a credential.
+        "fetch https://ghp_" + "a" * 36 + "@github.com/org/repo",
+        "fetch https://[redacted]@github.com/org/repo",
     ),
 )
 
@@ -220,6 +220,8 @@ def test_redact_text_is_idempotent(raw: str) -> None:
         "pad_token=0 eos_token=2 max_token=4096",
         # JSON fields after a URL must survive; only real userinfo is scrubbed.
         '{"url":"https://api.x.com","email":"bob@x.com"}',
+        # A short SSH username is not a credential; keep it readable.
+        "git+ssh://git@github.com/org/repo.git",
     ],
 )
 def test_redact_text_leaves_benign_output_readable(raw: str) -> None:

@@ -452,13 +452,17 @@ _TEXT_BEARER_PATTERN = re.compile(
 )
 
 #: URL userinfo (``scheme://user:password@host``). It is a credential with no
-#: key label, so the key-based pattern never reaches it. The class may contain
-#: ``@`` (a password can), but stops at whitespace, path/query/fragment markers,
-#: quotes, brackets and commas. So the match ends at the last ``@`` of the
-#: authority, and JSON fields after a URL are left alone. A bare username
-#: (``git@host``) is redacted too, since a token used as a username is a
-#: credential.
-_TEXT_URL_USERINFO_PATTERN = re.compile(r"(?<=://)[^\s/?#\"'<>(){}\[\],]+@")
+#: key label, so the key-based pattern never reaches it. A password may contain
+#: ``@``, so the match runs to the last ``@`` before a delimiter (whitespace,
+#: path/query/fragment markers, quotes, brackets, commas), and JSON fields after
+#: a URL are left alone. A bare username is redacted only when it is 20+ token
+#: characters (a pasted access token), so ``git@host`` stays readable.
+_TEXT_URL_USERINFO_PATTERN = re.compile(
+    r"(?<=://)"
+    r"(?:[^\s/?#\"'<>(){}\[\],:@]*:[^\s/?#\"'<>(){}\[\],]*"  # user:password
+    r"|[A-Za-z0-9_-]{20,})"                                  # bare token
+    r"@"
+)
 
 
 def _sub_credential_pair(match: re.Match[str]) -> str:
