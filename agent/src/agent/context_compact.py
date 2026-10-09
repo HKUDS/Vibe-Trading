@@ -15,6 +15,8 @@ from typing import Any, Callable, Optional
 
 KEEP_RECENT = 3
 
+# Tests patch these here, not in loop.py: the collapse path reads this
+# module's globals after the extraction.
 COLLAPSE_PRESERVE_RECENT = 6
 COLLAPSE_TEXT_MIN = 2400
 COLLAPSE_HEAD = 900

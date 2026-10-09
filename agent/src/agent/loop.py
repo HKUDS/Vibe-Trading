@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
-import copy
 import json
 import logging
 import queue
