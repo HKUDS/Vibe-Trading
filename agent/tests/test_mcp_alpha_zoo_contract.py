@@ -208,9 +208,15 @@ def test_alpha_bench_rejects_output_outside_allowed_roots(monkeypatch) -> None:
     os.name == "nt", reason="symlink creation requires privileges unavailable on Windows"
 )
 def test_alpha_bench_does_not_follow_preexisting_report_symlink(monkeypatch, tmp_path: Path) -> None:
+    class _BenchEntry:
+        # run_alpha_bench's fundamental-column validation reads ``.meta``
+        # (carried by real registry entries); an empty meta declares no
+        # columns_required.
+        meta: dict = {}
+
     class _BenchRegistry:
-        def get(self, alpha_id: str) -> object:
-            return object()
+        def get(self, alpha_id: str) -> _BenchEntry:
+            return _BenchEntry()
 
     class _FixedDateTime:
         @classmethod

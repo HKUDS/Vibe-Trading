@@ -39,9 +39,10 @@ def infer_market(code: str) -> str:
     code_upper = code.strip().upper()
     if canonical_fx_pair(code_upper):
         return "forex"
-    detected = _detect_market(code_upper)
-    if detected != "a_share":
-        return detected
+    # Crypto pair spellings must be checked before the _detect_market
+    # shortcut below: its generic ``^[A-Z]{3}/[A-Z]{3}$`` forex pattern also
+    # matches crypto quotes (``ETH/USD``); only fiat-leg pairs are forex
+    # (``canonical_fx_pair`` above). Pinned by test_explicit_crypto_pairs_stay_crypto.
     crypto_suffixes = ("USDT", "BTC", "ETH", "BNB", "SOL", "ADA", "DOGE")
     if (
         "/" in code_upper
@@ -55,6 +56,9 @@ def infer_market(code: str) -> str:
         )
     ):
         return "crypto"
+    detected = _detect_market(code_upper)
+    if detected != "a_share":
+        return detected
     if code_upper.endswith(".HK"):
         return "hk_equity"
     if code_upper.endswith((".SH", ".SZ", ".BJ")):
