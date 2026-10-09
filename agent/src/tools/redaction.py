@@ -427,7 +427,7 @@ _TEXT_VALUE = r"\"[^\"\n]*\"|'[^'\n]*'|[^\s,;{}\[\]()\"']+"
 #: Every quantifier applies to a bounded character class, with no nesting and
 #: no overlapping alternatives, so matching stays linear (no ReDoS surface).
 _TEXT_KV_PATTERN = re.compile(
-    r"(?P<q>[\"']?)\b(?P<name>" + _TEXT_CREDENTIAL_KEYS + r")\b(?P=q)"
+    r"(?P<q>[\"']?)(?P<name>" + _TEXT_CREDENTIAL_KEYS + r")\b(?P=q)"
     r"(?P<sep>\s*[:=]\s*)"
     r"(?![\"']?" + re.escape(_REDACTED) + r"[\"']?|bearer\b)"
     r"(?P<value>" + _TEXT_VALUE + r")",
@@ -441,6 +441,11 @@ _TEXT_BEARER_PATTERN = re.compile(
     r"\b(?P<scheme>bearer)\s+(?P<value>[A-Za-z0-9._~+/-]+=*)",
     re.IGNORECASE,
 )
+
+#: URL userinfo (``scheme://user:password@host``). It is a credential with no
+#: key label, so the key-based pattern never reaches it. The class stops at the
+#: first ``@`` after ``://``, so an ``@`` later in a path is left alone.
+_TEXT_URL_USERINFO_PATTERN = re.compile(r"(?<=://)[^\s/?#@]+@")
 
 
 def _sub_credential_pair(match: re.Match[str]) -> str:
@@ -506,6 +511,7 @@ def redact_text(text: object) -> str:
     if not s:
         return s
     s = _TEXT_BEARER_PATTERN.sub(r"\g<scheme> " + _REDACTED, s)
+    s = _TEXT_URL_USERINFO_PATTERN.sub(_REDACTED + "@", s)
     s = _TEXT_KV_PATTERN.sub(_sub_credential_pair, s)
     # Bare tokens with no key label in front of them.
     return _TEXT_TOKEN_PATTERN.sub(_REDACTED, s)

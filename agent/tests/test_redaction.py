@@ -150,7 +150,32 @@ _CREDENTIAL_SHAPES = (
     ("authorization=raw-token-value", "authorization=[redacted]"),
     ("Authorization: Bearer eyJhbGciOi.J9-_x==", "Authorization: Bearer [redacted]"),
     ("bearer abc123", "bearer [redacted]"),
+    # Env-style names: the label is a suffix of a longer identifier, so the
+    # leading word boundary used to reject it (``_`` is a word character).
+    ("TUSHARE_TOKEN=abc123", "TUSHARE_TOKEN=[redacted]"),
+    ("export OPENAI_API_KEY=abc123", "export OPENAI_API_KEY=[redacted]"),
+    ("MY_PASSWORD=hunter2", "MY_PASSWORD=[redacted]"),
+    ("DB_SECRET: abc123", "DB_SECRET: [redacted]"),
 )
+
+
+#: URL userinfo (``scheme://user:password@host``) carries a credential with no
+#: key label, so the key-based pattern never sees it.
+_URL_USERINFO_SHAPES = (
+    (
+        "connect failed: https://user:hunter2pass@proxy.local:8080/x",
+        "connect failed: https://[redacted]@proxy.local:8080/x",
+    ),
+    (
+        "GET http://bot:tok3n@hooks.example.com/v1 returned 404",
+        "GET http://[redacted]@hooks.example.com/v1 returned 404",
+    ),
+)
+
+
+@pytest.mark.parametrize(("raw", "expected"), _URL_USERINFO_SHAPES)
+def test_redact_text_scrubs_url_userinfo(raw: str, expected: str) -> None:
+    assert redact_text(raw) == expected
 
 
 @pytest.mark.parametrize(("raw", "expected"), _CREDENTIAL_SHAPES)
@@ -176,6 +201,8 @@ def test_redact_text_is_idempotent(raw: str) -> None:
         "no separator after this token",
         "tokens: 1204 in / 318 out",  # plural = a count, not a credential
         "api_keys: 3 configured",
+        "max_tokens=4096 total_input_tokens: 74812",
+        "tokenizer=bert-base version=2",
     ],
 )
 def test_redact_text_leaves_benign_output_readable(raw: str) -> None:
