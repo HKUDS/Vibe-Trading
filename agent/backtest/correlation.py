@@ -39,9 +39,6 @@ def infer_market(code: str) -> str:
     code_upper = code.strip().upper()
     if canonical_fx_pair(code_upper):
         return "forex"
-    detected = _detect_market(code_upper)
-    if detected != "a_share":
-        return detected
     crypto_suffixes = ("USDT", "BTC", "ETH", "BNB", "SOL", "ADA", "DOGE")
     if (
         "/" in code_upper
@@ -55,6 +52,9 @@ def infer_market(code: str) -> str:
         )
     ):
         return "crypto"
+    detected = _detect_market(code_upper)
+    if detected != "a_share":
+        return detected
     if code_upper.endswith(".HK"):
         return "hk_equity"
     if code_upper.endswith((".SH", ".SZ", ".BJ")):

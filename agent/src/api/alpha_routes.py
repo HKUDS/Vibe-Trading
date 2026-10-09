@@ -38,7 +38,6 @@ import asyncio
 import json
 import logging
 import importlib.util
-import os
 import re
 import threading
 import time
@@ -405,10 +404,11 @@ def register_alpha_routes(
     @app.get("/alpha/readiness", dependencies=[Depends(require_auth)])
     async def alpha_readiness():
         """Report configuration and mathematical prerequisites without network probes."""
+        from src.config.accessor import get_env_config
         from src.factors.registry import get_default_registry
 
         registry = get_default_registry()
-        configured = bool(os.getenv("TUSHARE_TOKEN"))
+        configured = bool(get_env_config().data.tushare_token)
         installed = importlib.util.find_spec("tushare") is not None
         return {"universes": {
             "csi300": {"ready": configured and installed, "reason": "tushare_ready" if configured and installed else "tushare_token_missing" if not configured else "tushare_dependency_missing"},
