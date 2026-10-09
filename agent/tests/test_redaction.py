@@ -170,6 +170,16 @@ _URL_USERINFO_SHAPES = (
         "GET http://bot:tok3n@hooks.example.com/v1 returned 404",
         "GET http://[redacted]@hooks.example.com/v1 returned 404",
     ),
+    (
+        # The password may itself contain ``@``; the match runs to the last one.
+        "see https://user:p@ss@host/x",
+        "see https://[redacted]@host/x",
+    ),
+    (
+        # A token used as the username (no colon) is still a credential.
+        "fetch http://tok3n@git.example.com/repo",
+        "fetch http://[redacted]@git.example.com/repo",
+    ),
 )
 
 
@@ -183,7 +193,10 @@ def test_redact_text_scrubs_credential_shapes(raw: str, expected: str) -> None:
     assert redact_text(raw) == expected
 
 
-@pytest.mark.parametrize("raw", [shape[0] for shape in _CREDENTIAL_SHAPES])
+@pytest.mark.parametrize(
+    "raw",
+    [shape[0] for shape in _CREDENTIAL_SHAPES + _URL_USERINFO_SHAPES],
+)
 def test_redact_text_is_idempotent(raw: str) -> None:
     """Redacting twice must equal redacting once (previews are re-rendered)."""
     once = redact_text(raw)
@@ -203,6 +216,10 @@ def test_redact_text_is_idempotent(raw: str) -> None:
         "api_keys: 3 configured",
         "max_tokens=4096 total_input_tokens: 74812",
         "tokenizer=bert-base version=2",
+        # Lowercase suffixes of longer identifiers are not env-style names.
+        "pad_token=0 eos_token=2 max_token=4096",
+        # JSON fields after a URL must survive; only real userinfo is scrubbed.
+        '{"url":"https://api.x.com","email":"bob@x.com"}',
     ],
 )
 def test_redact_text_leaves_benign_output_readable(raw: str) -> None:
