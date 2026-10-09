@@ -160,6 +160,10 @@ _CREDENTIAL_SHAPES = (
     # trailing word boundary needs the full ``secret_access_key`` alternative.
     ("AWS_SECRET_ACCESS_KEY=wJalrXUt/K7MDENG", "AWS_SECRET_ACCESS_KEY=[redacted]"),
     ("secret_access_key: abc123", "secret_access_key: [redacted]"),
+    # Lowercase AWS names, as in ~/.aws/credentials. ``aws_`` is the one
+    # lowercase prefix accepted; other lowercase prefixes stay identifiers.
+    ("aws_secret_access_key = abc123", "aws_secret_access_key = [redacted]"),
+    ("aws_session_token = abc123", "aws_session_token = [redacted]"),
 )
 
 
@@ -222,6 +226,9 @@ def test_redact_text_is_idempotent(raw: str) -> None:
         "tokenizer=bert-base version=2",
         # Lowercase suffixes of longer identifiers are not env-style names.
         "pad_token=0 eos_token=2 max_token=4096",
+        # Other aws_ names are config, not credentials.
+        "aws_region = us-east-1",
+        "aws_profile=default",
         # JSON fields after a URL must survive; only real userinfo is scrubbed.
         '{"url":"https://api.x.com","email":"bob@x.com"}',
         # A short SSH username is not a credential; keep it readable.

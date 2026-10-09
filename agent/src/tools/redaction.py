@@ -401,8 +401,9 @@ def _redact_token_usage(value: Any, *, sink: str) -> Any:
 #: scoped to credential field names so a benign number in shell output (a
 #: price, a duration, a timestamp) is never mangled.
 #:
-#: All names are SINGULAR and must start a word: either a ``\b`` boundary, or an
-#: UPPERCASE env-style prefix such as ``TUSHARE_`` (see :data:`_TEXT_KV_PATTERN`).
+#: All names are SINGULAR and must start a word: either a ``\b`` boundary, an
+#: UPPERCASE env-style prefix such as ``TUSHARE_``, or the ``aws_`` prefix (see
+#: :data:`_TEXT_KV_PATTERN`).
 #: A plural is a count or a collection, never a credential, and matching it
 #: mangles routine output (``tokens: 1204 in / 318 out`` from the LLM usage
 #: line, ``api_keys: 3``). A lowercase suffix like ``pad_token`` or
@@ -435,8 +436,9 @@ _TEXT_KV_PATTERN = re.compile(
     # ``\b`` for a plain name; for an env-style name the label follows an
     # UPPERCASE segment and ``_`` (``TUSHARE_TOKEN``). The inline ``(?-i:...)``
     # keeps the uppercase test case-sensitive under IGNORECASE, so ``pad_token``
-    # and ``max_token`` still do not match.
-    r"(?:\b|(?<=(?-i:[A-Z0-9])_))"
+    # and ``max_token`` still do not match. ``aws_`` is the one lowercase prefix
+    # accepted, for ``~/.aws/credentials`` names such as ``aws_secret_access_key``.
+    r"(?:\b|(?<=(?-i:[A-Z0-9])_)|(?<=aws_))"
     r"(?P<name>" + _TEXT_CREDENTIAL_KEYS + r")\b(?P=q)"
     r"(?P<sep>\s*[:=]\s*)"
     r"(?![\"']?" + re.escape(_REDACTED) + r"[\"']?|bearer\b)"
