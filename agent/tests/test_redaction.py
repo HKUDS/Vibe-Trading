@@ -156,6 +156,10 @@ _CREDENTIAL_SHAPES = (
     ("export OPENAI_API_KEY=abc123", "export OPENAI_API_KEY=[redacted]"),
     ("MY_PASSWORD=hunter2", "MY_PASSWORD=[redacted]"),
     ("DB_SECRET: abc123", "DB_SECRET: [redacted]"),
+    # Multi-word AWS name: ``secret`` alone is followed by ``_``, so the
+    # trailing word boundary needs the full ``secret_access_key`` alternative.
+    ("AWS_SECRET_ACCESS_KEY=wJalrXUt/K7MDENG", "AWS_SECRET_ACCESS_KEY=[redacted]"),
+    ("secret_access_key: abc123", "secret_access_key: [redacted]"),
 )
 
 

@@ -410,7 +410,8 @@ def _redact_token_usage(value: Any, *, sink: str) -> Any:
 _TEXT_CREDENTIAL_KEYS = (
     r"api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token"
     r"|refresh[_-]?token|bearer[_-]?token|id[_-]?token|session[_-]?token"
-    r"|client[_-]?secret|secret[_-]?key|private[_-]?key|app[_-]?secret"
+    r"|client[_-]?secret|secret[_-]?access[_-]?key|secret[_-]?key"
+    r"|private[_-]?key|app[_-]?secret"
     r"|passphrase|password|passwd|authorization|secret|token"
 )
 
