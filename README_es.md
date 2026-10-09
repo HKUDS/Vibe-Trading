@@ -611,15 +611,16 @@ clon (`pip install -e .`).
 </details>
 
 <details>
-<summary><b>Conectores de Broker</b> <sub>18 brokers — lectura + paper, live acotado donde esté soportado</sub></summary>
+<summary><b>Conectores de Broker</b> <sub>19 brokers — lectura + paper, live acotado donde esté soportado</sub></summary>
 
-Perfiles centrados en el conector. La mayoría hace lectura + colocación de órdenes en cuenta paper — IBKR es de solo lectura, Robinhood es solo live (sin cuenta paper), Scalable Capital es de solo lectura (no existe cuenta paper), y Trading 212 y Toss Securities rechazan la colocación de órdenes por completo, incluido el paper; la colocación de órdenes live está acotada por un mandato definido por el usuario (lista blanca de símbolos, límites de tamaño de orden / exposición, límite diario de operaciones, interruptor de apagado instantáneo) y nunca retiene fondos — el broker ejecuta. Las herramientas de colocación de órdenes se mantienen fuera de MCP (solo agente + CLI). Las rutas de investigación / backtest están estructuralmente vetadas de cualquier endpoint live.
+Perfiles centrados en el conector. La mayoría hace lectura + colocación de órdenes en cuenta paper — IBKR es de solo lectura, Robinhood es solo live (sin cuenta paper), Scalable Capital es de solo lectura (no existe cuenta paper), mStock (India) es live de solo lectura por su REST Type B (sin cuenta paper), y Trading 212 y Toss Securities rechazan la colocación de órdenes por completo, incluido el paper; la colocación de órdenes live está acotada por un mandato definido por el usuario (lista blanca de símbolos, límites de tamaño de orden / exposición, límite diario de operaciones, interruptor de apagado instantáneo) y nunca retiene fondos — el broker ejecuta. Las herramientas de colocación de órdenes se mantienen fuera de MCP (solo agente + CLI). Las rutas de investigación / backtest están estructuralmente vetadas de cualquier endpoint live.
 
 | Broker | Mercados | Capacidades |
 |--------|---------|--------------|
 | **IBKR** | global | TWS / Gateway local, solo lectura |
 | **Robinhood** | EE. UU. | MCP agéntico (OAuth de escritorio) — lectura de acciones + órdenes de acciones en vivo limitadas; las opciones no están admitidas |
 | **Scalable Capital** | DE / UE | MCP agéntico (OAuth de escritorio) — totalmente de solo lectura; no existe cuenta paper |
+| **mStock** | India (NSE/BSE) | REST (Type B) — live de solo lectura; no existe cuenta paper |
 | **Tiger** | EE. UU. / HK / A | lectura + paper + live acotado |
 | **Alpaca** | EE. UU. | lectura + paper + live acotado (+ modo TAP de aislamiento de credenciales) |
 | **OKX** · **Binance** | cripto | lectura + paper + live acotado |

@@ -104,6 +104,12 @@ _CONNECTOR_COMPATIBILITY: dict[str, PortfolioCompatibility] = {
         "stocks_etfs",
         "Equity positions for one selected account, unpriced until the quote reply is mapped.",
     ),
+    "mstock": PortfolioCompatibility(
+        "experimental",
+        1,
+        "positions",
+        "Type B REST reply shapes stay unverified until the HTTP read mapping lands."
+    ),
     # No "scalable" entry: its profile does not declare account.read /
     # positions.read, so it is not a portfolio-eligible connection. The
     # holdings reply shape is unverified (no published tool argument schemas),
