@@ -842,6 +842,10 @@ include these reversals; execution-derived turnover remains a separate metric.
 Local data date ranges include the entire UTC end day, including subsecond
 timestamps; bars at the following midnight are excluded before aggregation.
 
+The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
+`BNB/USD`, `SOL/USD`, `ADA/USD`, and `DOGE/USD` as crypto. Fiat pairs such as
+`GBP/USD`, `EUR/USD`, and `USD/JPY` retain their forex classification.
+
 </details>
 
 <details>
