@@ -259,6 +259,11 @@ matrix row records a declaration; attach separate evidence for runtime claims.
 - [ ] Record supported order kinds and instrument classes from observed schemas
   or broker documentation; they are not inferred by the matrix. Test unsupported
   requests and malformed or incomplete replies fail closed.
+- [ ] For options, record write-side tool argument names and types separately
+  from read-side contract shapes. Keep unsupported shapes gated off; verify
+  supported shapes through the existing mandate caps against priced notional
+  (premium times multiplier), one audit event per decision, and red-first
+  live-safety tests.
 - [ ] Test live risk-increasing actions through the shared mandate gate,
   including account selection, limits, kill switch, and audit. Verify cancel,
   flatten, position management, and copy paths separately where implemented;
