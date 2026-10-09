@@ -35,6 +35,7 @@ _INTERNAL = frozenset(
         "registry",
         "rich_text",
         "runtime",
+        "slack_probe",
         "targets",
         "token_probe",
         "utils",
