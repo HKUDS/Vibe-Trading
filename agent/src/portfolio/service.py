@@ -495,6 +495,24 @@ class PortfolioService:
         ]
         return snapshot
 
+    def snapshot_by_id(self, snapshot_id: str) -> dict[str, Any] | None:
+        """Return one stored snapshot exactly as persisted, never recomputed.
+
+        Args:
+            snapshot_id: Exact persisted snapshot identifier.
+
+        Returns:
+            The stored envelope, or ``None`` when the id is unknown, was valued
+            under another contract version, or includes a source that is no
+            longer enabled (a removed or revoked connector's data stays hidden).
+        """
+        snapshot = self.store.get(snapshot_id)
+        if snapshot is None or snapshot.get("valuation_version") != PORTFOLIO_VALUATION_VERSION:
+            return None
+        enabled = {source.id for source in self.settings_store.load().sources if source.enabled}
+        observed = {str(account.get("source_id") or account.get("broker")) for account in snapshot.get("accounts", [])}
+        return snapshot if observed <= enabled else None
+
     def reconnect_source(self, source_id: str) -> dict[str, Any]:
         """Run a source's interactive OAuth flow on explicit user request.
 
@@ -618,8 +636,12 @@ class PortfolioService:
         writer.writerows(snapshot["positions"])
         return output.getvalue()
 
-    def analysis_context(self) -> dict[str, Any] | None:
+    def analysis_context(self, snapshot_id: str | None = None) -> dict[str, Any] | None:
         """Return a credential/account-id-free snapshot suitable for an LLM.
+
+        With ``snapshot_id`` the read is pinned to that stored snapshot (no
+        fallback to the latest one when it is unavailable); without it the
+        latest semantics are unchanged.
 
         The context also carries ``risk_xray_args`` — the ``symbols`` and
         ``weights`` arguments for the existing ``portfolio_risk_xray`` tool.
@@ -629,7 +651,7 @@ class PortfolioService:
         Returns:
             The sanitized context, or ``None`` when no usable snapshot exists.
         """
-        snapshot = self.latest()
+        snapshot = self.latest() if snapshot_id is None else self.snapshot_by_id(snapshot_id)
         if snapshot is None:
             return None
         total = _decimal(snapshot["totals"]["usd"])
@@ -648,7 +670,14 @@ class PortfolioService:
                 }
             )
         return {
+            "snapshot_id": snapshot.get("snapshot_id"),
             "as_of": snapshot["created_at"],
+            "read_identity": {
+                "mode": "latest" if snapshot_id is None else "pinned",
+                "snapshot_id": snapshot.get("snapshot_id"),
+                "as_of": snapshot["created_at"],
+                "valuation_version": snapshot.get("valuation_version"),
+            },
             "complete": snapshot["complete"],
             "totals": snapshot["totals"],
             "account_allocation": [
