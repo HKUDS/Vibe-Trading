@@ -38,7 +38,6 @@ _REAL_ASYNC_CLIENT = httpx.AsyncClient
 _DEFAULT_CHANNEL_CANDIDATES: list[tuple[str, str]] = [
     ("src.channels.discord", "DiscordChannel"),
     ("src.channels.telegram", "TelegramChannel"),
-    ("src.channels.slack", "SlackChannel"),
     ("src.channels.wecom", "WecomChannel"),
 ]
 

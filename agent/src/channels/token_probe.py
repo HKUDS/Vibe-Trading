@@ -74,6 +74,7 @@ async def probe_token_endpoint(
     token_key: str,
     secrets: Sequence[str],
     sdk_available: bool,
+    headers: dict[str, str] | None = None,
     transport: httpx.AsyncHTTPTransport | None = None,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
@@ -90,6 +91,8 @@ async def probe_token_endpoint(
         secrets: Credential values to scrub from every ``detail``.
         sdk_available: Whether the channel's optional SDK imported; echoed
             back so the caller's envelope carries it unchanged.
+        headers: Optional request headers for endpoints that authenticate
+            outside the JSON body (e.g. Slack's ``Authorization: Bearer``).
         transport: Optional custom transport (e.g. an IPv4-bound one).
         timeout: Per-phase timeout in seconds for the fresh client.
 
@@ -103,7 +106,7 @@ async def probe_token_endpoint(
             timeout=httpx.Timeout(timeout, connect=timeout),
             transport=transport,
         ) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers=headers)
     except httpx.HTTPError as exc:
         return {
             "ok": False,
