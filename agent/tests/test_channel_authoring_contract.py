@@ -19,6 +19,16 @@ import pytest
 from src.channels.config_meta import channel_field_hints, split_values_secrets
 from src.channels.registry import discover_channel_names, load_channel_class
 
+# Hand-written hints replace derived ones, so a channel may deliberately keep
+# scalar keys file-configured. Each exemption is an audited design decision,
+# not a gap: slack's transport knobs — SlackChannel.start() only accepts
+# mode == "socket" (any other mode logs and returns), so mode/webhook_path
+# have no meaningful form widget (feishu precedent: transport knobs are not
+# exposed). See _slack_hints() in config_meta.py.
+_FILE_CONFIGURED_SCALARS: dict[str, set[str]] = {
+    "slack": {"mode", "webhook_path"},
+}
+
 
 @pytest.mark.parametrize("name", discover_channel_names())
 def test_every_discovered_channel_satisfies_the_authoring_contract(name) -> None:
@@ -45,10 +55,11 @@ def test_every_discovered_channel_satisfies_the_authoring_contract(name) -> None
     # The generic form renders from hints; every configurable scalar key
     # must resolve one. Dict-valued fields are exempt by design: the form
     # cannot edit them, so they stay file-configured (see _derive_hints).
+    # _FILE_CONFIGURED_SCALARS lists the audited per-channel exemptions.
     hints = channel_field_hints(name)
     configurable = {k for k, v in default_config.items() if k != "enabled" and not isinstance(v, dict)}
     hint_keys = {h["key"] for h in hints}
-    missing = configurable - hint_keys
+    missing = configurable - hint_keys - _FILE_CONFIGURED_SCALARS.get(name, set())
     assert not missing, f"{name} has scalar config keys with no field hint: {sorted(missing)}"
 
     # Test the serialized form consumed by the settings UI, rather than
