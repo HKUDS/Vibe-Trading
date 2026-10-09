@@ -863,6 +863,56 @@
             "label": "Per-topic sessions",
             "help": "Give each group topic its own agent session instead of sharing one session per group."
           }
+        },
+        "slack": {
+          "bot_token": {
+            "label": "Bot token (xoxb-)",
+            "help": "The Slack bot user OAuth token (starts with xoxb-). Stored server-side and never sent back to the browser."
+          },
+          "app_token": {
+            "label": "App token (xapp-)",
+            "help": "The Slack app-level token (starts with xapp-) with the connections:write scope, required for Socket Mode. Stored server-side and never sent back to the browser."
+          },
+          "user_token_read_only": {
+            "label": "User token read-only",
+            "help": "A behavior flag, not a credential: keeps user-token access read-only."
+          },
+          "reply_in_thread": {
+            "label": "Reply in thread",
+            "help": "Reply in a thread under the original message instead of posting directly to the channel."
+          },
+          "react_emoji": {
+            "label": "Working emoji",
+            "help": "Emoji reacted on an incoming message while the agent works (default eyes)."
+          },
+          "done_emoji": {
+            "label": "Done emoji",
+            "help": "Emoji reacted when the task completes (default white_check_mark). Leave empty for none."
+          },
+          "include_thread_context": {
+            "label": "Include thread context",
+            "help": "Prepend earlier replies from the thread as context the first time the bot is pulled into it."
+          },
+          "thread_context_limit": {
+            "label": "Thread context limit",
+            "help": "Maximum number of thread messages included as context (default 20)."
+          },
+          "allow_from": {
+            "label": "Allowed senders",
+            "help": "Allowlist of Slack user IDs permitted to talk to the agent. DM and channel access are further controlled by the DM policy and the group policy."
+          },
+          "group_policy": {
+            "label": "Group policy",
+            "help": "\"mention\" replies only when the bot is @mentioned in a channel, \"open\" replies to all channel messages, \"allowlist\" replies only in the channels listed below."
+          },
+          "group_allow_from": {
+            "label": "Allowed channels",
+            "help": "Channel IDs the bot responds in when the group policy is \"allowlist\"."
+          },
+          "group_require_mention": {
+            "label": "Require mention in allowed channels",
+            "help": "With the \"allowlist\" policy, also require an @mention before replying in approved channels. No effect for \"mention\" or \"open\"."
+          }
         }
       },
       "guides": {

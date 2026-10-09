@@ -1,8 +1,9 @@
 """Tests for channel config field metadata and fail-safe secret masking.
 
-Covers the uiHints registry (hand-written for DingTalk, Email, Feishu, QQ
-and WebSocket, derived elsewhere) and the security acceptance criterion: no key matching
-:data:`SECRET_KEY_RE` ever survives in the non-secret ``values`` half.
+Covers the uiHints registry (hand-written for DingTalk, Email, Feishu, QQ,
+Slack and WebSocket, derived elsewhere) and the security acceptance criterion:
+no key matching :data:`SECRET_KEY_RE` ever survives in the non-secret
+``values`` half.
 """
 
 from __future__ import annotations
@@ -397,6 +398,143 @@ def test_websocket_field_hints_contract() -> None:
         assert hint["help_key"] == f"settings.channels.fields.websocket.{hint['key']}"
 
 
+# --- (a2b) hand-written Slack hints ------------------------------------------ #
+
+_SLACK_HINT_KEYS = (
+    "bot_token",
+    "app_token",
+    "user_token_read_only",
+    "reply_in_thread",
+    "react_emoji",
+    "done_emoji",
+    "include_thread_context",
+    "thread_context_limit",
+    "allow_from",
+    "group_policy",
+    "group_allow_from",
+    "group_require_mention",
+)
+
+
+def test_slack_field_hints_contract() -> None:
+    """Slack hints: declaration order, secrets, required set, help_key prefix."""
+    hints = channel_field_hints("slack")
+    keys = tuple(hint["key"] for hint in hints)
+    assert keys == _SLACK_HINT_KEYS
+    assert "enabled" not in keys
+    assert len(hints) == 12
+
+    by_key = {hint["key"]: hint for hint in hints}
+    assert {key for key, hint in by_key.items() if hint["secret"]} == {
+        "bot_token",
+        "app_token",
+    }
+    assert by_key["bot_token"]["type"] == "password"
+    assert by_key["app_token"]["type"] == "password"
+    # required mirrors SlackChannel.start(): it logs "bot/app token not
+    # configured" and returns without connecting when either is missing.
+    assert {key for key, hint in by_key.items() if hint["required"]} == {
+        "bot_token",
+        "app_token",
+    }
+    for hint in hints:
+        assert hint["help_key"] == f"settings.channels.fields.slack.{hint['key']}"
+
+
+def test_slack_transport_knobs_stay_file_configured() -> None:
+    """``mode``/``webhook_path`` are excluded: socket is the only transport."""
+    keys = {hint["key"] for hint in channel_field_hints("slack")}
+    assert "mode" not in keys
+    assert "webhook_path" not in keys
+    assert "dm" not in keys
+
+
+def test_slack_group_policy_choices_pin() -> None:
+    """group_policy carries the enum the adapter branches on; nothing else does.
+
+    Drift pin for the choices contract: the literals mirror
+    ``SlackChannel._should_respond_in_channel`` ("open"/"mention"/"allowlist")
+    and ``_is_allowed`` ("allowlist") in slack.py. Route-side enum enforcement
+    is deferred to a later PR.
+    """
+    by_key = {hint["key"]: hint for hint in channel_field_hints("slack")}
+    choices = by_key["group_policy"].get("choices")
+    assert choices == ["open", "mention", "allowlist"]
+    assert all(isinstance(choice, str) for choice in choices)
+
+    source = (_REPO_ROOT / "agent/src/channels/slack.py").read_text(encoding="utf-8")
+    for choice in choices:
+        assert f'group_policy == "{choice}"' in source, choice
+
+    # Additive contract: choices is absent for every other hinted field, in
+    # slack and in all pre-existing hint tables.
+    for name, hints in _config_meta.FIELD_HINTS.items():
+        for hint in hints:
+            if (name, hint["key"]) != ("slack", "group_policy"):
+                assert "choices" not in hint, f"{name}.{hint['key']}"
+
+
+def test_slack_hint_keys_exist_in_default_config() -> None:
+    """Every slack hint key is a real SlackConfig field (authoring contract)."""
+    config = _section_for("slack")
+    if config is None:
+        pytest.skip("slack adapter is not loadable in this environment")
+    for hint in channel_field_hints("slack"):
+        assert hint["key"] in config
+
+
+def test_slack_user_token_read_only_is_not_a_secret() -> None:
+    """The audited subtraction: a behavior bool the regex over-matches."""
+    assert SECRET_KEY_RE.search("user_token_read_only")
+    assert is_secret_key("slack", "user_token_read_only") is False
+    assert is_secret_key("slack", "bot_token") is True
+    assert is_secret_key("slack", "app_token") is True
+
+    values, secrets = split_values_secrets(
+        "slack", {"user_token_read_only": True, "bot_token": "xoxb-dummy-1234"}
+    )
+    assert values == {"user_token_read_only": True}
+    assert set(secrets) == {"bot_token"}
+
+
+def test_slack_split_keeps_dm_dict_and_behavior_values_untouched() -> None:
+    """Regression: F5 unmasks user_token_read_only but must NOT flatten ``dm``.
+
+    The raw ``dm`` dict still travels in ``values`` unchanged (nested ``dm.*``
+    graphical editing is a later feature); credentials mask; every behavior
+    field stays visible.
+    """
+    section = {
+        "enabled": True,
+        "mode": "socket",
+        "webhook_path": "/slack/events",
+        "bot_token": "xoxb-dummy-secret-1234",
+        "app_token": "xapp-dummy-secret-5678",
+        "user_token_read_only": True,
+        "reply_in_thread": True,
+        "react_emoji": "eyes",
+        "done_emoji": "white_check_mark",
+        "include_thread_context": True,
+        "thread_context_limit": 20,
+        "allow_from": ["U123"],
+        "group_policy": "mention",
+        "group_allow_from": [],
+        "group_require_mention": False,
+        "dm": {"enabled": True, "policy": "open", "allow_from": []},
+    }
+
+    values, secrets = split_values_secrets("slack", section)
+
+    assert set(secrets) == {"bot_token", "app_token"}
+    assert secrets["bot_token"] == {"set": True, "masked": "****1234"}
+    assert secrets["app_token"] == {"set": True, "masked": "****5678"}
+    assert values["user_token_read_only"] is True
+    assert values["dm"] == {"enabled": True, "policy": "open", "allow_from": []}
+    assert values["group_policy"] == "mention"
+    assert values["allow_from"] == ["U123"]
+    assert set(values) == set(section) - {"bot_token", "app_token"}
+
+
 # --- (a3) hint-authoritative secret resolution ------------------------------- #
 
 
@@ -695,7 +833,10 @@ _EXPECTED_SECRET_KEYS: dict[str, set[str]] = {
     "napcat": {"access_token"},
     "qq": {"secret"},
     "signal": set(),
-    "slack": {"bot_token", "app_token", "user_token_read_only"},
+    # user_token_read_only is NOT here: the hand-written slack hint carries an
+    # audited secret=False subtraction (a behavior bool the regex over-matches),
+    # listed in _AUDITED_NON_SECRETS below.
+    "slack": {"bot_token", "app_token"},
     "telegram": {"token", "webhook_secret_token"},
     "wecom": {"secret"},
     "weixin": {"token"},
@@ -780,6 +921,7 @@ _AUDITED_NON_SECRETS = {
     ("websocket", "token_issue_path"),  # a URL path
     ("websocket", "token_ttl_s"),  # an integer lifetime
     ("websocket", "websocket_requires_token"),  # a boolean switch
+    ("slack", "user_token_read_only"),  # a boolean switch
 }
 
 

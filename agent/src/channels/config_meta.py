@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
+from typing import NotRequired
 from typing import TypedDict
 from urllib.parse import urlsplit, urlunsplit
 
@@ -54,6 +55,11 @@ class FieldHint(TypedDict):
             submission on it (verified against ``ChannelConfigPanel.tsx``).
         help_key: i18n key for the frontend label, or ``None`` when the
             channel has no hand-written label.
+        choices: Optional closed set of valid values. When present (and
+            non-empty) the frontend widget renders a ``<select>`` instead of a
+            free-text input; option labels render the raw enum strings. Absent
+            for every pre-existing hint — the contract extension is additive,
+            and only Slack's ``group_policy`` carries choices today.
     """
 
     key: str
@@ -61,6 +67,7 @@ class FieldHint(TypedDict):
     secret: bool
     required: bool
     help_key: str | None
+    choices: NotRequired[list[str]]
 
 
 def _dingtalk_hints() -> list[FieldHint]:
@@ -240,11 +247,74 @@ def _websocket_hints() -> list[FieldHint]:
     ]
 
 
+# Drift pin: these literals mirror the policy strings the adapter branches on
+# in ``SlackChannel._should_respond_in_channel`` ("open"/"mention"/"allowlist")
+# and ``_is_allowed`` ("allowlist") in slack.py — there is no pydantic enum, so
+# this list plus its contract test is the only cross-reference. Route-side enum
+# enforcement (422 on a value outside ``choices``) is deferred to a later PR.
+_SLACK_GROUP_POLICY_CHOICES = ["open", "mention", "allowlist"]
+
+
+def _slack_hints() -> list[FieldHint]:
+    """Return the hand-written Slack field hints (``enabled`` excluded).
+
+    ``required`` decision: :meth:`SlackChannel.start` (slack.py) logs
+    "bot/app token not configured" and returns without connecting when either
+    ``bot_token`` or ``app_token`` is missing, so both credentials are marked
+    required — consistent with the DingTalk/Feishu credential precedent, and
+    safe because ``required`` is a decorative affordance (see
+    :class:`FieldHint`).
+
+    ``user_token_read_only`` carries an audited ``secret=False`` subtraction
+    from :data:`SECRET_KEY_RE`: the key name contains "token" but the value is
+    a plain behavior bool, so the fail-safe regex masked it and made it
+    uneditable — the same over-match class as websocket's ``token_ttl_s``
+    (module docstring).
+
+    ``mode`` and ``webhook_path`` are deliberately excluded: socket is the
+    only transport :meth:`SlackChannel.start` accepts (any other mode logs
+    "Unsupported mode" and returns), so they stay file-configured — the
+    Feishu precedent, where transport knobs are not exposed either.
+    Hand-written hints replace derived ones, so unlisted keys simply do not
+    render in the form while still traveling in GET ``values``.
+    """
+    specs = (
+        ("bot_token", "password", True, True),
+        ("app_token", "password", True, True),
+        ("user_token_read_only", "bool", False, False),
+        ("reply_in_thread", "bool", False, False),
+        ("react_emoji", "text", False, False),
+        ("done_emoji", "text", False, False),
+        ("include_thread_context", "bool", False, False),
+        ("thread_context_limit", "text", False, False),
+        ("allow_from", "list", False, False),
+        ("group_policy", "text", False, False),
+        ("group_allow_from", "list", False, False),
+        ("group_require_mention", "bool", False, False),
+    )
+    return [
+        {
+            "key": key,
+            "type": widget,
+            "secret": secret,
+            "required": required,
+            "help_key": f"{_HELP_KEY_PREFIX}.slack.{key}",
+            **(
+                {"choices": list(_SLACK_GROUP_POLICY_CHOICES)}
+                if key == "group_policy"
+                else {}
+            ),
+        }
+        for key, widget, secret, required in specs
+    ]
+
+
 FIELD_HINTS: dict[str, list[FieldHint]] = {
     "dingtalk": _dingtalk_hints(),
     "email": _email_hints(),
     "feishu": _feishu_hints(),
     "qq": _qq_hints(),
+    "slack": _slack_hints(),
     "websocket": _websocket_hints(),
 }
 
