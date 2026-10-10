@@ -862,6 +862,56 @@
             "label": "토픽별 세션",
             "help": "그룹의 각 토픽에 별도 에이전트 세션을 할당합니다."
           }
+        },
+        "slack": {
+          "bot_token": {
+            "label": "봇 토큰(xoxb-)",
+            "help": "Slack 봇 사용자 OAuth 토큰(xoxb- 로 시작). 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          },
+          "app_token": {
+            "label": "앱 토큰(xapp-)",
+            "help": "connections:write 범위를 가진 Slack 앱 수준 토큰(xapp- 로 시작). Socket Mode에 필요합니다. 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          },
+          "user_token_read_only": {
+            "label": "사용자 토큰 읽기 전용",
+            "help": "동작 플래그(자격 증명이 아님): 사용자 토큰 접근을 읽기 전용으로 유지합니다."
+          },
+          "reply_in_thread": {
+            "label": "스레드로 답변",
+            "help": "채널에 직접 게시하는 대신 원본 메시지 아래의 스레드로 답변합니다."
+          },
+          "react_emoji": {
+            "label": "작업 중 이모지",
+            "help": "에이전트가 작업하는 동안 수신 메시지에 추가할 이모지(기본값 eyes)."
+          },
+          "done_emoji": {
+            "label": "완료 이모지",
+            "help": "작업 완료 시 추가할 이모지(기본값 white_check_mark). 비워 두면 사용하지 않습니다."
+          },
+          "include_thread_context": {
+            "label": "스레드 컨텍스트 포함",
+            "help": "봇이 스레드에 처음 호출될 때 이전 스레드 답변을 컨텍스트로 앞에 첨부합니다."
+          },
+          "thread_context_limit": {
+            "label": "스레드 컨텍스트 제한",
+            "help": "컨텍스트로 포함할 스레드 메시지 수의 최대값(기본값 20)."
+          },
+          "allow_from": {
+            "label": "허용된 발신자",
+            "help": "에이전트와 대화할 수 있는 Slack 사용자 ID 허용 목록. DM 및 채널 접근은 DM 정책과 그룹 정책으로도 제어됩니다."
+          },
+          "group_policy": {
+            "label": "그룹 정책",
+            "help": "\"mention\"은 채널에서 @ 멘션될 때만 답변하고, \"open\"은 모든 채널 메시지에 답변하며, \"allowlist\"는 아래에 나열된 채널에서만 답변합니다."
+          },
+          "group_allow_from": {
+            "label": "허용된 채널",
+            "help": "그룹 정책이 \"allowlist\"일 때 봇이 응답할 채널 ID."
+          },
+          "group_require_mention": {
+            "label": "허용 채널에서 멘션 요구",
+            "help": "\"allowlist\" 정책에서 승인된 채널에서도 @ 멘션되어야 답변합니다. \"mention\"과 \"open\" 정책에는 영향이 없습니다."
+          }
         }
       },
       "guides": {

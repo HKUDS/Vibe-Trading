@@ -867,6 +867,56 @@
             "label": "Sesi per topik",
             "help": "Beri setiap topik grup sesi agennya sendiri, bukan satu sesi untuk seluruh grup."
           }
+        },
+        "slack": {
+          "bot_token": {
+            "label": "Token bot (xoxb-)",
+            "help": "Token OAuth pengguna bot Slack (diawali dengan xoxb-). Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          },
+          "app_token": {
+            "label": "Token aplikasi (xapp-)",
+            "help": "Token tingkat aplikasi Slack (diawali dengan xapp-) dengan cakupan connections:write, diperlukan untuk Socket Mode. Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          },
+          "user_token_read_only": {
+            "label": "Token pengguna hanya-baca",
+            "help": "Tanda perilaku, bukan kredensial: menjaga akses token pengguna tetap hanya-baca."
+          },
+          "reply_in_thread": {
+            "label": "Balas di utas",
+            "help": "Membalas di utas (thread) di bawah pesan asli alih-alih mengirim langsung ke kanal."
+          },
+          "react_emoji": {
+            "label": "Emoji saat bekerja",
+            "help": "Emoji yang direaksikan pada pesan masuk saat agen bekerja (default eyes)."
+          },
+          "done_emoji": {
+            "label": "Emoji selesai",
+            "help": "Emoji yang direaksikan saat tugas selesai (default white_check_mark). Biarkan kosong untuk tidak memakai apa pun."
+          },
+          "include_thread_context": {
+            "label": "Sertakan konteks utas",
+            "help": "Menyertakan balasan sebelumnya dari utas sebagai konteks saat bot pertama kali ditarik ke dalamnya."
+          },
+          "thread_context_limit": {
+            "label": "Batas konteks utas",
+            "help": "Jumlah maksimum pesan utas yang disertakan sebagai konteks (default 20)."
+          },
+          "allow_from": {
+            "label": "Pengirim yang diizinkan",
+            "help": "Daftar putih ID pengguna Slack yang boleh berbicara dengan agen. Akses DM dan kanal juga dikendalikan oleh kebijakan DM dan kebijakan grup."
+          },
+          "group_policy": {
+            "label": "Kebijakan grup",
+            "help": "\"mention\" hanya membalas saat bot disebut (@mention) di kanal, \"open\" membalas semua pesan kanal, \"allowlist\" hanya membalas di kanal yang tercantum di bawah."
+          },
+          "group_allow_from": {
+            "label": "Kanal yang diizinkan",
+            "help": "ID kanal tempat bot merespons saat kebijakan grup adalah \"allowlist\"."
+          },
+          "group_require_mention": {
+            "label": "Wajib sebut di kanal yang diizinkan",
+            "help": "Dengan kebijakan \"allowlist\", juga mewajibkan @mention sebelum membalas di kanal yang disetujui. Tidak berpengaruh pada \"mention\" atau \"open\"."
+          }
         }
       },
       "guides": {

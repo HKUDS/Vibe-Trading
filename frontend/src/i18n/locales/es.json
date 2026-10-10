@@ -867,6 +867,56 @@
             "label": "Sesiones por tema",
             "help": "Asigna a cada tema del grupo su propia sesión del agente."
           }
+        },
+        "slack": {
+          "bot_token": {
+            "label": "Token del bot (xoxb-)",
+            "help": "El token OAuth de usuario bot de Slack (empieza por xoxb-). Se guarda en el servidor y nunca se devuelve al navegador."
+          },
+          "app_token": {
+            "label": "Token de la app (xapp-)",
+            "help": "El token de nivel de aplicación de Slack (empieza por xapp-) con el ámbito connections:write, necesario para Socket Mode. Se guarda en el servidor y nunca se devuelve al navegador."
+          },
+          "user_token_read_only": {
+            "label": "Token de usuario en solo lectura",
+            "help": "Indicador de comportamiento, no una credencial: mantiene el acceso con token de usuario en solo lectura."
+          },
+          "reply_in_thread": {
+            "label": "Responder en hilo",
+            "help": "Responder en un hilo bajo el mensaje original en lugar de publicar directamente en el canal."
+          },
+          "react_emoji": {
+            "label": "Emoji de procesamiento",
+            "help": "Emoji con el que se reacciona a un mensaje entrante mientras el agente trabaja (por defecto eyes)."
+          },
+          "done_emoji": {
+            "label": "Emoji de finalización",
+            "help": "Emoji con el que se reacciona cuando la tarea termina (por defecto white_check_mark). Déjalo vacío para no usar ninguno."
+          },
+          "include_thread_context": {
+            "label": "Incluir contexto del hilo",
+            "help": "Anteponer las respuestas anteriores del hilo como contexto la primera vez que el bot es incorporado a él."
+          },
+          "thread_context_limit": {
+            "label": "Límite de contexto del hilo",
+            "help": "Número máximo de mensajes del hilo incluidos como contexto (por defecto 20)."
+          },
+          "allow_from": {
+            "label": "Remitentes permitidos",
+            "help": "Lista blanca de IDs de usuario de Slack autorizados a hablar con el agente. El acceso a MD y canales también está controlado por la política de MD y la política de grupos."
+          },
+          "group_policy": {
+            "label": "Política de grupos",
+            "help": "\"mention\": responde solo cuando se menciona al bot en un canal; \"open\": responde a todos los mensajes del canal; \"allowlist\": responde solo en los canales enumerados abajo."
+          },
+          "group_allow_from": {
+            "label": "Canales permitidos",
+            "help": "IDs de canales en los que el bot responde cuando la política de grupos es \"allowlist\"."
+          },
+          "group_require_mention": {
+            "label": "Requerir mención en canales permitidos",
+            "help": "Con la política \"allowlist\", exigir además una @mención antes de responder en los canales aprobados. Sin efecto para \"mention\" u \"open\"."
+          }
         }
       },
       "guides": {

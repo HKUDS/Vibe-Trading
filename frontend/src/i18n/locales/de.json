@@ -867,6 +867,56 @@
             "label": "Sitzungen pro Thread",
             "help": "Jedem Gruppen-Thread eine eigene Agent-Sitzung geben, statt einer gemeinsamen pro Gruppe."
           }
+        },
+        "slack": {
+          "bot_token": {
+            "label": "Bot-Token (xoxb-)",
+            "help": "Das Slack-Bot-User-OAuth-Token (beginnt mit xoxb-). Wird serverseitig gespeichert und nie an den Browser zurückgegeben."
+          },
+          "app_token": {
+            "label": "App-Token (xapp-)",
+            "help": "Das Slack-App-Level-Token (beginnt mit xapp-) mit dem connections:write-Scope, erforderlich für den Socket-Modus. Wird serverseitig gespeichert und nie an den Browser zurückgegeben."
+          },
+          "user_token_read_only": {
+            "label": "User-Token schreibgeschützt",
+            "help": "Verhaltensschalter, keine Zugangsdaten: hält den Zugriff per User-Token schreibgeschützt."
+          },
+          "reply_in_thread": {
+            "label": "Im Thread antworten",
+            "help": "In einem Thread unter der Originalnachricht antworten, statt direkt in den Channel zu schreiben."
+          },
+          "react_emoji": {
+            "label": "Arbeits-Emoji",
+            "help": "Emoji, mit dem auf eine eingehende Nachricht reagiert wird, während der Agent arbeitet (Standard: eyes)."
+          },
+          "done_emoji": {
+            "label": "Fertig-Emoji",
+            "help": "Emoji, mit dem reagiert wird, wenn die Aufgabe abgeschlossen ist (Standard: white_check_mark). Leer lassen für keins."
+          },
+          "include_thread_context": {
+            "label": "Thread-Kontext einbeziehen",
+            "help": "Frühere Antworten aus dem Thread als Kontext voranstellen, wenn der Bot zum ersten Mal in den Thread geholt wird."
+          },
+          "thread_context_limit": {
+            "label": "Thread-Kontextlimit",
+            "help": "Maximale Anzahl von Thread-Nachrichten, die als Kontext einbezogen werden (Standard: 20)."
+          },
+          "allow_from": {
+            "label": "Erlaubte Absender",
+            "help": "Allowlist von Slack-User-IDs, die mit dem Agenten sprechen dürfen. Der Zugriff auf DMs und Channels wird zusätzlich durch die DM-Richtlinie und die Gruppenrichtlinie gesteuert."
+          },
+          "group_policy": {
+            "label": "Gruppenrichtlinie",
+            "help": "\"mention\" antwortet nur bei @-Erwähnung in einem Channel, \"open\" antwortet auf alle Channel-Nachrichten, \"allowlist\" antwortet nur in den unten aufgeführten Channels."
+          },
+          "group_allow_from": {
+            "label": "Erlaubte Channels",
+            "help": "Channel-IDs, in denen der Bot antwortet, wenn die Gruppenrichtlinie \"allowlist\" ist."
+          },
+          "group_require_mention": {
+            "label": "Erwähnung in erlaubten Channels erforderlich",
+            "help": "Mit der Richtlinie \"allowlist\" zusätzlich eine @-Erwähnung verlangen, bevor in zugelassenen Channels geantwortet wird. Ohne Wirkung für \"mention\" oder \"open\"."
+          }
         }
       },
       "guides": {

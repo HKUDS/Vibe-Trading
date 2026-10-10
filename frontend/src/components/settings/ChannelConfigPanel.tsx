@@ -294,6 +294,18 @@ export function ChannelConfigPanel({
       "settings.channels.fields.feishu.streaming": { label: t("settings.channels.fields.feishu.streaming.label"), help: t("settings.channels.fields.feishu.streaming.help") },
       "settings.channels.fields.feishu.domain": { label: t("settings.channels.fields.feishu.domain.label"), help: t("settings.channels.fields.feishu.domain.help") },
       "settings.channels.fields.feishu.topic_isolation": { label: t("settings.channels.fields.feishu.topic_isolation.label"), help: t("settings.channels.fields.feishu.topic_isolation.help") },
+      "settings.channels.fields.slack.bot_token": { label: t("settings.channels.fields.slack.bot_token.label"), help: t("settings.channels.fields.slack.bot_token.help") },
+      "settings.channels.fields.slack.app_token": { label: t("settings.channels.fields.slack.app_token.label"), help: t("settings.channels.fields.slack.app_token.help") },
+      "settings.channels.fields.slack.user_token_read_only": { label: t("settings.channels.fields.slack.user_token_read_only.label"), help: t("settings.channels.fields.slack.user_token_read_only.help") },
+      "settings.channels.fields.slack.reply_in_thread": { label: t("settings.channels.fields.slack.reply_in_thread.label"), help: t("settings.channels.fields.slack.reply_in_thread.help") },
+      "settings.channels.fields.slack.react_emoji": { label: t("settings.channels.fields.slack.react_emoji.label"), help: t("settings.channels.fields.slack.react_emoji.help") },
+      "settings.channels.fields.slack.done_emoji": { label: t("settings.channels.fields.slack.done_emoji.label"), help: t("settings.channels.fields.slack.done_emoji.help") },
+      "settings.channels.fields.slack.include_thread_context": { label: t("settings.channels.fields.slack.include_thread_context.label"), help: t("settings.channels.fields.slack.include_thread_context.help") },
+      "settings.channels.fields.slack.thread_context_limit": { label: t("settings.channels.fields.slack.thread_context_limit.label"), help: t("settings.channels.fields.slack.thread_context_limit.help") },
+      "settings.channels.fields.slack.allow_from": { label: t("settings.channels.fields.slack.allow_from.label"), help: t("settings.channels.fields.slack.allow_from.help") },
+      "settings.channels.fields.slack.group_policy": { label: t("settings.channels.fields.slack.group_policy.label"), help: t("settings.channels.fields.slack.group_policy.help") },
+      "settings.channels.fields.slack.group_allow_from": { label: t("settings.channels.fields.slack.group_allow_from.label"), help: t("settings.channels.fields.slack.group_allow_from.help") },
+      "settings.channels.fields.slack.group_require_mention": { label: t("settings.channels.fields.slack.group_require_mention.label"), help: t("settings.channels.fields.slack.group_require_mention.help") },
     }),
     [t],
   );
@@ -553,6 +565,36 @@ export function ChannelConfigPanel({
               disabled={formDisabled}
             />
           </div>
+          {text.help ? <span className={hintClass}>{text.help}</span> : null}
+        </div>
+      );
+    }
+
+    if (field.choices?.length) {
+      const current = typeof values[field.key] === "string" ? (values[field.key] as string) : "";
+      return (
+        <div key={field.key} className="grid gap-2">
+          <label className={labelClass} htmlFor={inputId}>
+            {text.label}
+            {field.required ? (
+              <span className="ms-1 text-destructive" aria-hidden="true">*</span>
+            ) : null}
+          </label>
+          <select
+            id={inputId}
+            value={current}
+            onChange={(event) => setValue(field.key, event.target.value)}
+            className={fieldClass}
+            disabled={formDisabled}
+          >
+            {/* A stored value outside the enum stays visible instead of silently snapping to an option. */}
+            {current && !field.choices.includes(current) ? (
+              <option value={current}>{current}</option>
+            ) : null}
+            {field.choices.map((choice) => (
+              <option key={choice} value={choice}>{choice}</option>
+            ))}
+          </select>
           {text.help ? <span className={hintClass}>{text.help}</span> : null}
         </div>
       );

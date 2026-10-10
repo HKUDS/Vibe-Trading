@@ -36,6 +36,8 @@ WS_TOKEN = "ws-token-secret-abcdefghij"
 WS_ISSUE_SECRET = "ws-issue-secret-987654321"
 FEISHU_APP_ID = "cli_feishu_app_id_1234567890"
 FEISHU_STORED_SECRET = "feishu-stored-secret-abcdefghij"
+SLACK_BOT_TOKEN = "xoxb-route-test-bot-token-123456"
+SLACK_APP_TOKEN = "xapp-route-test-app-token-abcdef"
 
 # Captured before any test monkeypatches httpx, so repeated injections in a
 # single test still wrap the real client (test_dingtalk_connection_test idiom).
@@ -1253,6 +1255,54 @@ def test_post_websocket_test_returns_probe_code_not_unsupported(
     assert body["tested_saved_config"] is True
     # The test endpoint never persists anything.
     assert path.read_bytes() == before
+
+
+def test_post_slack_test_runs_two_leg_probe_not_unsupported(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Slack's Test route runs the two-leg probe (auth.test then
+    apps.connections.open) instead of short-circuiting ``unsupported``."""
+    client, path = _client(tmp_path, monkeypatch, channels={})
+    before = path.read_bytes()
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if seen[-1].endswith("/api/auth.test"):
+            return httpx.Response(200, json={"ok": True})
+        return httpx.Response(
+            200, json={"ok": True, "url": "wss://wss-primary.slack.com/link/"}
+        )
+
+    _inject_mock_transport(monkeypatch, handler)
+
+    response = client.post(
+        "/channels/slack/test",
+        json={
+            "config": {
+                "bot_token": SLACK_BOT_TOKEN,
+                "app_token": SLACK_APP_TOKEN,
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True, body
+    assert body["code"] == "ok"
+    assert body["code"] != "unsupported"
+    assert body["tested_saved_config"] is False
+    assert body["sdk_available"] is True
+    assert seen == [
+        "https://slack.com/api/auth.test",
+        "https://slack.com/api/apps.connections.open",
+    ]
+    # The test endpoint never persists anything, and neither the tokens nor
+    # the wss:// URL from the success body reach the response.
+    assert path.read_bytes() == before
+    assert SLACK_BOT_TOKEN not in response.text
+    assert SLACK_APP_TOKEN not in response.text
+    assert "wss://" not in response.text
 
 
 def test_post_email_test_empty_config_reports_missing_credentials(

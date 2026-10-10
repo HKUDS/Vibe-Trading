@@ -862,6 +862,56 @@
             "label": "按话题隔离会话",
             "help": "群聊中每个话题使用独立的智能体会话，而不是整群共享一个会话。"
           }
+        },
+        "slack": {
+          "bot_token": {
+            "label": "Bot 令牌（xoxb-）",
+            "help": "Slack 机器人用户的 OAuth 令牌（以 xoxb- 开头）。保存在服务端，绝不会回传到浏览器。"
+          },
+          "app_token": {
+            "label": "App 令牌（xapp-）",
+            "help": "Slack 应用级令牌（以 xapp- 开头），需具备 connections:write 权限，Socket Mode 必需。保存在服务端，绝不会回传到浏览器。"
+          },
+          "user_token_read_only": {
+            "label": "用户令牌只读",
+            "help": "行为开关，不是凭据：保持用户令牌只读。"
+          },
+          "reply_in_thread": {
+            "label": "在话题中回复",
+            "help": "在原消息下的话题（thread）中回复，而不是直接发送到频道。"
+          },
+          "react_emoji": {
+            "label": "处理中表情",
+            "help": "智能体处理消息期间为该消息添加的表情回应（默认 eyes）。"
+          },
+          "done_emoji": {
+            "label": "完成表情",
+            "help": "任务完成时添加的表情回应（默认 white_check_mark）。留空表示不添加。"
+          },
+          "include_thread_context": {
+            "label": "包含话题上下文",
+            "help": "机器人首次被拉入话题时，将话题中较早的回复作为上下文一并附上。"
+          },
+          "thread_context_limit": {
+            "label": "话题上下文条数上限",
+            "help": "作为上下文包含的话题消息数量上限（默认 20）。"
+          },
+          "allow_from": {
+            "label": "允许的发送者",
+            "help": "允许与智能体对话的 Slack 用户 ID 白名单。DM 与频道访问还受 DM 策略和群聊策略控制。"
+          },
+          "group_policy": {
+            "label": "群聊策略",
+            "help": "“mention”表示在频道中仅在被 @ 提及时回复；“open”表示回复所有频道消息；“allowlist”表示仅在下方列出的频道中回复。"
+          },
+          "group_allow_from": {
+            "label": "允许的频道",
+            "help": "群聊策略为“allowlist”时，机器人会响应的频道 ID。"
+          },
+          "group_require_mention": {
+            "label": "允许频道内需提及",
+            "help": "在“allowlist”策略下，已批准的频道中还需 @ 提及机器人才回复。对“mention”和“open”策略无效。"
+          }
         }
       },
       "guides": {
