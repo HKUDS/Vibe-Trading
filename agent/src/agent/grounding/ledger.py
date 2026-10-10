@@ -19,7 +19,7 @@ from src.agent.grounding.identity import (
     _utc_now,
 )
 from src.agent.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
-from src.agent.grounding.figures import Figure, parse_figures_block, scan_figures, strip_figures_block
+from src.agent.grounding.figures import Figure, FiguresBlock, parse_figures_block, scan_figures, strip_figures_block
 from src.agent.grounding.policies import ValidationResult, _PolicyMixin
 from src.agent.grounding.registry import GROUNDING_CHECKS
 from src.agent.grounding.release import (
@@ -130,6 +130,12 @@ class GroundingLedger(
         # any. Not a draft, so it stays out of ``validation_count``.
         self._released: dict[str, Any] | None = None
         self._recovery_rounds = 0
+        # Parsed figures state of the answer under validation. Declared checks
+        # receive only (ledger, content), so the gate stashes it here for the
+        # walk; that is what the registry contract means by figure state
+        # living on the ledger.
+        self._active_block: FiguresBlock | None = None
+        self._active_figures: Sequence[Figure] = ()
         self._symbol_resolution_attempts = 0
         self._price_evidence_attempts = 0
         self._ingested_csvs: set[str] = set()
@@ -365,9 +371,11 @@ class GroundingLedger(
         self._ingest_run_dir_ohlc_csvs()
         block = parse_figures_block(content)
         figures = scan_figures(content, block)
+        self._active_block = block
+        self._active_figures = figures
         issues: list[dict[str, Any]] = []
         issues.extend(self._validate_identity(content))
-        issues.extend(self._validate_unsourced_symbols(content, figures, block))
+        issues.extend(GROUNDING_CHECKS.run("unsourced-symbol-figures", self, content))
         issues.extend(self._validate_figures(content, block, figures))
         issues = self._dedupe_issues(issues)
         result = ValidationResult(
