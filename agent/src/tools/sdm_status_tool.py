@@ -10,7 +10,11 @@ from typing import Any
 
 from src.agent.tools import BaseTool
 from src.strategy_store.decay import DecayEvaluator
-from src.strategy_store.metrics import compute_decay_metrics, has_decay_inputs
+from src.strategy_store.metrics import (
+    DECAY_BENCH_TYPES,
+    compute_decay_metrics,
+    has_decay_inputs,
+)
 from src.strategy_store.models import (
     ArtifactStatus,
     ArtifactType,
@@ -221,12 +225,19 @@ class SdmStatusTool(BaseTool):
         if artifact is None:
             return _error(ValueError(f"Artifact not found: {artifact_id}"))
 
-        bench_history = list(store.get_bench_history(artifact_id, limit=10))
+        bench_history = list(
+            store.get_bench_history(
+                artifact_id, limit=10, bench_types=DECAY_BENCH_TYPES
+            )
+        )
         if len(bench_history) < 3:
             return _ok({
                 "artifact_id": artifact_id,
                 "signal": "insufficient_data",
-                "message": f"Need at least 3 bench results, have {len(bench_history)}",
+                "message": (
+                    "Need at least 3 initial or periodic bench results, "
+                    f"have {len(bench_history)}"
+                ),
             })
 
         metrics = compute_decay_metrics(bench_history)

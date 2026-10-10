@@ -134,6 +134,10 @@ class Artifact:
     validation_date: str | None = None
 
 
+#: Bench types the ``bench_history`` schema accepts.
+BENCH_TYPES = ("initial", "periodic", "manual")
+
+
 @dataclass(frozen=True)
 class BenchResult:
     """Backtest result for an artifact."""

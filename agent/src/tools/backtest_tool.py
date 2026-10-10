@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import subprocess
 from pathlib import Path
@@ -14,6 +15,7 @@ from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
 from src.core.runner import Runner
 from src.core.state import RunStateStore
+from src.strategy_store.models import BENCH_TYPES
 from src.tools.backtest_summary import collect_ohlcv_paths, try_build_backtest_summary
 from src.tools.path_utils import safe_run_dir
 
@@ -58,6 +60,135 @@ def _persist_timeout_output(run_path: Path, exc: subprocess.TimeoutExpired) -> d
     (log_dir / "runner_stdout.txt").write_text(output["stdout"], encoding="utf-8")
     (log_dir / "runner_stderr.txt").write_text(output["stderr"], encoding="utf-8")
     return output
+
+
+#: Strategy metrics copied from ``artifacts/metrics.csv`` into a bench row. A
+#: strategy backtest has no cross-sectional IC, so the factor columns stay
+#: ``None`` rather than being filled with a stand-in.
+_BENCH_METRIC_COLUMNS = ("sharpe", "annual_return", "max_drawdown", "calmar")
+
+#: Bench type of a run whose config does not declare one; it is left out of
+#: decay monitoring (see ``DECAY_BENCH_TYPES``).
+_DEFAULT_BENCH_TYPE = "manual"
+
+
+def _read_bench_metrics(run_path: Path) -> dict[str, float] | None:
+    """Read the strategy metrics a bench row records from ``metrics.csv``.
+
+    Args:
+        run_path: Run directory containing ``artifacts/metrics.csv``.
+
+    Returns:
+        Finite bench metric values keyed by column name, or ``None`` when the
+        file is missing or has no data row. NaN and infinities are dropped
+        because decay monitoring treats them as missing observations.
+    """
+    from src.strategy_discovery.run_artifacts import parse_finite_float
+
+    metrics_path = run_path / "artifacts" / "metrics.csv"
+    if not metrics_path.is_file():
+        return None
+    with metrics_path.open(encoding="utf-8-sig", newline="") as handle:
+        row = next(csv.DictReader(handle), None)
+    if not row:
+        return None
+    # Same header normalisation as read_metrics_trade_count, so the two readers
+    # of this file cannot disagree about a column.
+    row = {(name or "").strip().lower(): value for name, value in row.items()}
+    metrics: dict[str, float] = {}
+    for column in _BENCH_METRIC_COLUMNS:
+        value = parse_finite_float(row.get(column))
+        if value is not None:
+            metrics[column] = value
+    return metrics
+
+
+def _record_bench_if_declared(
+    config: dict[str, Any], run_path: Path, *, success: bool
+) -> dict[str, Any] | None:
+    """Record the run in the bench history of the artifact its config declares.
+
+    A backtest cannot tell which registered artifact it serves, so the link is
+    declared through ``artifact_id`` in ``config.json``. The bench type comes
+    from ``bench_type`` in the config and defaults to ``manual`` (see
+    ``DECAY_BENCH_TYPES``). ``category`` stays ``None``: grading a run alive or
+    dead belongs to the evaluation step, not to the runner that produced the
+    numbers.
+
+    One row is kept per distinct measurement. A rerun that reproduces a stored
+    row exactly is skipped, so repeating a run cannot count as an independent
+    confirmation; a rerun of the same directory whose metrics or window
+    changed is a new measurement and is recorded.
+
+    Args:
+        config: Parsed ``config.json`` of the run.
+        run_path: Resolved run directory.
+        success: Whether the backtest engine finished successfully.
+
+    Returns:
+        ``None`` when the config declares no ``artifact_id``. Otherwise a dict
+        with ``status`` (``recorded``, ``skipped`` or ``failed``) and
+        ``artifact_id``, plus ``bench_type`` when recorded or ``reason``
+        otherwise. Errors are reported here instead of raised, so bookkeeping
+        never turns a successful backtest into a failed one.
+    """
+    artifact_id = str(config.get("artifact_id") or "").strip()
+    if not artifact_id:
+        return None
+
+    def _outcome(status: str, **detail: str) -> dict[str, Any]:
+        return {"status": status, "artifact_id": artifact_id, **detail}
+
+    if not success:
+        return _outcome("skipped", reason="backtest did not succeed")
+
+    bench_type = str(config.get("bench_type") or _DEFAULT_BENCH_TYPE).strip()
+    if bench_type not in BENCH_TYPES:
+        return _outcome(
+            "failed",
+            reason=f"bench_type must be one of {', '.join(BENCH_TYPES)}, "
+            f"got {bench_type!r}",
+        )
+
+    try:
+        from src.strategy_discovery.run_artifacts import read_metrics_trade_count
+        from src.strategy_store._shared import get_store
+        from src.strategy_store.models import BenchResult
+
+        metrics = _read_bench_metrics(run_path)
+        if metrics is None:
+            return _outcome("skipped", reason="artifacts/metrics.csv missing or empty")
+        if not metrics:
+            return _outcome(
+                "skipped",
+                reason="metrics.csv has no finite " + ", ".join(_BENCH_METRIC_COLUMNS),
+            )
+        # A run without trades has nothing to measure decay against, and its
+        # zero-valued metrics would read as a real collapse in performance.
+        trade_count = read_metrics_trade_count(run_path)
+        if trade_count is None:
+            return _outcome("skipped", reason="metrics.csv has no usable trade_count")
+        if trade_count <= 0:
+            return _outcome("skipped", reason="backtest produced no trades")
+
+        store = get_store()
+        if store.get_artifact(artifact_id) is None:
+            return _outcome("failed", reason="artifact_id is not registered")
+
+        result = BenchResult(
+            artifact_id=artifact_id,
+            bench_type=bench_type,
+            test_start=str(config.get("start_date") or "") or None,
+            test_end=str(config.get("end_date") or "") or None,
+            run_dir=str(run_path),
+            **metrics,
+        )
+        if store.has_bench_result(result):
+            return _outcome("skipped", reason="identical bench already recorded")
+        store.record_bench(result)
+        return _outcome("recorded", bench_type=bench_type)
+    except Exception as exc:  # noqa: BLE001
+        return _outcome("failed", reason=f"{type(exc).__name__}: {exc}")
 
 
 def run_backtest(run_dir: str) -> str:
@@ -153,6 +284,8 @@ def run_backtest(run_dir: str) -> str:
     else:
         state_store.mark_failure(run_path, f"backtest engine exited with code {result.exit_code}")
 
+    bench_record = _record_bench_if_declared(config, run_path, success=result.success)
+
     emit_progress("finalize", message="collecting artifacts")
     artifacts_found = {name: str(path) for name, path in result.artifacts.items()}
     envelope: dict[str, Any] = {
@@ -163,6 +296,8 @@ def run_backtest(run_dir: str) -> str:
         "artifacts": artifacts_found,
         "run_dir": run_dir,
     }
+    if bench_record is not None:
+        envelope["bench_record"] = bench_record
     if result.success:
         # Small envelopes retain the legacy fields unchanged. Oversized
         # envelopes are fitted below with explicit omission notices. A missing

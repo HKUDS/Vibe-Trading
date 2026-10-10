@@ -117,9 +117,37 @@ class StrategyStoreProtocol(Protocol):
         ...
 
     def get_bench_history(
-        self, artifact_id: str, *, limit: int = 50
+        self,
+        artifact_id: str,
+        *,
+        limit: int = 50,
+        bench_types: Sequence[str] | None = None,
     ) -> Sequence[BenchResult]:
-        """Get bench history for an artifact, newest first."""
+        """Get bench history for an artifact, newest first.
+
+        Args:
+            artifact_id: Artifact whose bench rows are returned.
+            limit: Maximum number of rows.
+            bench_types: When given, only rows of these bench types are
+                returned, and ``limit`` applies after the filter.
+
+        Returns:
+            Matching bench results, newest first.
+        """
+        ...
+
+    def has_bench_result(self, result: BenchResult) -> bool:
+        """Return whether an identical bench row is already stored.
+
+        Rows are identical when every field except ``id`` and ``created_at``
+        is equal, so a rerun that changed any metric or window is not a match.
+
+        Args:
+            result: Candidate bench result.
+
+        Returns:
+            ``True`` when a stored row matches ``result``.
+        """
         ...
 
     # --- Decay snapshots ---
@@ -299,13 +327,49 @@ class InMemoryStrategyStore:
 
     @_synchronized
     def get_bench_history(
-        self, artifact_id: str, *, limit: int = 50
+        self,
+        artifact_id: str,
+        *,
+        limit: int = 50,
+        bench_types: Sequence[str] | None = None,
     ) -> Sequence[BenchResult]:
-        """Return bench results for an artifact, newest first."""
-        matched = [r for r in self._bench_results if r.artifact_id == artifact_id]
+        """Return bench results for an artifact, newest first.
+
+        Args:
+            artifact_id: Artifact whose bench rows are returned.
+            limit: Maximum number of rows.
+            bench_types: When given, only rows of these bench types are
+                returned, and ``limit`` applies after the filter.
+
+        Returns:
+            Matching bench results, newest first.
+        """
+        matched = [
+            r
+            for r in self._bench_results
+            if r.artifact_id == artifact_id
+            and (bench_types is None or r.bench_type in bench_types)
+        ]
         # id ascends with insertion, so it breaks timestamp ties newest first.
         matched.sort(key=lambda r: (r.created_at or "", r.id or 0), reverse=True)
         return matched[:limit]
+
+    @_synchronized
+    def has_bench_result(self, result: BenchResult) -> bool:
+        """Return whether an identical bench row is already stored.
+
+        Args:
+            result: Candidate bench result; ``id`` and ``created_at`` are
+                ignored.
+
+        Returns:
+            ``True`` when a stored row matches ``result`` on every other field.
+        """
+        probe = replace(result, id=None, created_at="")
+        return any(
+            replace(stored, id=None, created_at="") == probe
+            for stored in self._bench_results
+        )
 
     # -- Decay snapshots -----------------------------------------------------
 

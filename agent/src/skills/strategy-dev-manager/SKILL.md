@@ -84,13 +84,13 @@ After ingesting a paper via `read_document`, check the `ocr_quality` field in th
 Build the SignalEngine, run the backtest, and link results.
 
 1. Call `create_hypothesis(title, thesis, universe, signal_definition)` to create a research hypothesis that tracks this work.
-2. Call `generate_backtest_config(hypothesis_id, start_date, end_date)` to produce the `config.json` for the backtest runner.
+2. Call `generate_backtest_config(hypothesis_id, start_date, end_date)` to produce the `config.json` for the backtest runner. For an artifact registered with `sdm_register`, add its `artifact_id` to `config.json` so the backtest is recorded in the artifact's bench history. Add `"bench_type": "initial"` for the first evaluation run and `"periodic"` for scheduled re-benches; without it the run is recorded as `manual`, which decay monitoring ignores.
 3. Call `scaffold_signal_engine(hypothesis_id, run_dir)` to generate the skeleton `signal_engine.py` in the run directory.
 4. Implement the full `signal_engine.py` using the appropriate template from `templates/`:
    - Factor artifacts → `templates/factor_signal_engine.py`
    - Strategy artifacts → `templates/strategy_signal_engine.py`
 5. Validate syntax: `bash("python -c \"import ast; ast.parse(open('code/signal_engine.py').read()); print('OK')\"")`
-6. Call `backtest(run_dir)` to execute the backtest.
+6. Call `backtest(run_dir)` to execute the backtest. When `config.json` declares an `artifact_id`, the result carries a `bench_record` that reports whether the run was `recorded`, `skipped` (failed run, no trades, missing metrics, or an identical row already stored) or `failed` (for example an unregistered `artifact_id`), with a `reason`.
 7. Call `link_autopilot_backtest(hypothesis_id, run_dir)` to link the run results back to the hypothesis.
 8. Call `sdm_status(action="detail", artifact_id=...)` and update the artifact status to "benching".
 
@@ -116,7 +116,7 @@ Judge the backtest output against quality thresholds.
    - Update status to "disabled" with a reason string
    - Record what failed (for example "IC mean 0.012, below 0.03 threshold")
 
-5. Record bench results via `sdm_status` update so the history is queryable.
+5. Check the bench record: the backtest itself writes the bench row when `config.json` declares the `artifact_id`. Confirm `bench_record.status` is `recorded` in the backtest result, or list the rows with `sdm_status(action="detail", artifact_id=...)`. If the run was not recorded, fix the config and re-run the backtest.
 
 ### Phase 5: MONITOR
 
@@ -205,7 +205,7 @@ LLMs may generate plausible-looking formulas that do not appear in the paper. AL
 IC > 0.99 means the factor is a duplicate. IC between 0.90 and 0.99 may be a variant. Use judgment: if the formula is structurally different but produces similar signals, note it as a variant rather than rejecting it outright.
 
 ### Decay Baseline
-Decay monitoring requires at least 3 bench history entries to establish a baseline. A newly registered artifact with only one backtest cannot be meaningfully scanned for decay.
+Decay monitoring requires at least 3 `initial` or `periodic` bench history entries to establish a baseline; `manual` entries are kept for reference and do not count. A newly registered artifact with only one backtest cannot be meaningfully scanned for decay.
 
 ### Template Mismatch
 Strategy-type artifacts need the strategy SignalEngine template (with entry/exit/position logic), not the factor template. Using the wrong template produces a SignalEngine that compiles but generates meaningless signals.

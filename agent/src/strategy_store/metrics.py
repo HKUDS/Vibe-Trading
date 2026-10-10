@@ -12,6 +12,10 @@ from typing import Any
 
 _DECAY_INPUT_KEYS = ("ic_ratio", "rolling_ir", "ic_positive_ratio", "rolling_sharpe")
 
+#: Bench types that measure an artifact over time. ``manual`` rows record
+#: ad-hoc reruns and are kept out of decay so they cannot shift the baseline.
+DECAY_BENCH_TYPES = ("initial", "periodic")
+
 
 def has_decay_inputs(metrics: dict[str, float | None]) -> bool:
     """Return True if at least one evaluate_decay input metric is available.
