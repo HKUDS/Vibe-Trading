@@ -2142,7 +2142,9 @@
       "errorReconnect": "Falha na reconexão da conta",
       "errorReconnectTimeout": "A autorização do navegador expirou. Reconecte-se e conclua a autorização do corretora imediatamente.",
       "errorSaveSettings": "Não foi possível salvar as configurações do portfólio",
-      "errorExport": "Falha na exportação"
+      "errorExport": "Falha na exportação",
+      "exportResearch": "Exportar snapshot de análise",
+      "researchSnapshotHint": "Exporte esta observação sem credenciais ou números de conta. Reutilize seu ID de snapshot em portfolio_summary."
     },
     "metrics": {
       "total": "Ativos totais",

@@ -2142,7 +2142,9 @@
       "errorReconnect": "فشلت إعادة ربط الحساب",
       "errorReconnectTimeout": "انتهت مهلة تفويض المتصفح. أعد الاتصال وأكمل تفويض الوسيط سريعًا.",
       "errorSaveSettings": "تعذّر حفظ إعدادات المحفظة",
-      "errorExport": "فشل التصدير"
+      "errorExport": "فشل التصدير",
+      "exportResearch": "تصدير لقطة البحث",
+      "researchSnapshotHint": "صدّر هذه الملاحظة دون بيانات اعتماد أو أرقام حسابات. أعد استخدام معرّف اللقطة في portfolio_summary."
     },
     "metrics": {
       "total": "إجمالي الأصول",

@@ -256,6 +256,22 @@ export function Portfolio() {
     }
   }
 
+  async function downloadResearchSnapshot() {
+    if (!snapshot) return;
+    try {
+      const result = await api.getPortfolioAnalysisContext(snapshot.snapshot_id);
+      const blob = new Blob([JSON.stringify(result.context, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `portfolio-research-${snapshot.snapshot_id}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("portfolio.page.errorExport"));
+    }
+  }
+
   useEffect(() => { void load(); }, []);
 
   const positions = useMemo(() => {
@@ -337,6 +353,9 @@ export function Portfolio() {
             </button>
             <button onClick={() => void download()} disabled={!snapshot} className="inline-flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm disabled:opacity-50">
               <Download className="h-4 w-4" />{t("portfolio.page.exportCsv")}
+            </button>
+            <button onClick={() => void downloadResearchSnapshot()} disabled={!snapshot} className="inline-flex items-center gap-2 rounded-md border bg-card px-4 py-2 text-sm disabled:opacity-50" title={t("portfolio.page.researchSnapshotHint")}>
+              <Download className="h-4 w-4" />{t("portfolio.page.exportResearch")}
             </button>
             <button onClick={() => void refresh()} disabled={refreshing || reconnectingSource !== null} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}

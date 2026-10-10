@@ -74,6 +74,7 @@ async def probe_token_endpoint(
     token_key: str,
     secrets: Sequence[str],
     sdk_available: bool,
+    required_fields: Sequence[str] = (),
     headers: dict[str, str] | None = None,
     method: str = "POST",
     transport: httpx.AsyncHTTPTransport | None = None,
@@ -92,6 +93,8 @@ async def probe_token_endpoint(
         secrets: Credential values to scrub from every ``detail``.
         sdk_available: Whether the channel's optional SDK imported; echoed
             back so the caller's envelope carries it unchanged.
+        required_fields: Additional truthy response fields required for
+            success, such as Slack's bot identity when checking a bot token.
         headers: Optional request headers for endpoints that authenticate
             outside the JSON body (e.g. Slack's ``Authorization: Bearer``).
         method: HTTP method for the request. ``"GET"`` sends no JSON body,
@@ -133,7 +136,7 @@ async def probe_token_endpoint(
         # middlebox) must classify, never raise: .get on a non-dict would
         # surface as a bare 500 on the unguarded /test route.
         token = body.get(token_key) if isinstance(body, dict) else None
-        if not token:
+        if not token or any(not body.get(key) for key in required_fields):
             return {
                 "ok": False,
                 "code": "invalid_credentials",
@@ -142,7 +145,9 @@ async def probe_token_endpoint(
             }
         return {"ok": True, "code": "ok", "sdk_available": sdk_available}
 
-    if 400 <= resp.status_code < 500:
+    # A timed-out or rate-limited request says nothing about the credentials.
+    # Keep enable verification fail-closed while reporting a retryable failure.
+    if 400 <= resp.status_code < 500 and resp.status_code not in (408, 429):
         return {
             "ok": False,
             "code": "invalid_credentials",

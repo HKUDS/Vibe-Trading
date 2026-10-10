@@ -2142,7 +2142,9 @@
       "errorReconnect": "口座の再接続に失敗しました",
       "errorReconnectTimeout": "ブラウザー認証がタイムアウトしました。再接続し、ブローカー認証を速やかに完了してください。",
       "errorSaveSettings": "ポートフォリオ設定を保存できません",
-      "errorExport": "書き出しに失敗しました"
+      "errorExport": "書き出しに失敗しました",
+      "exportResearch": "調査用スナップショットを出力",
+      "researchSnapshotHint": "認証情報や口座番号を含めず、この観測を出力します。portfolio_summary でスナップショット ID を再利用できます。"
     },
     "metrics": {
       "total": "総資産",

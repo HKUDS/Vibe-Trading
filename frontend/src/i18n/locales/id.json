@@ -2142,7 +2142,9 @@
       "errorReconnect": "Gagal menghubungkan ulang akun",
       "errorReconnectTimeout": "Otorisasi browser mengalami timeout. Hubungkan ulang dan selesaikan otorisasi broker sesegera mungkin.",
       "errorSaveSettings": "Tidak dapat menyimpan pengaturan portofolio",
-      "errorExport": "Ekspor gagal"
+      "errorExport": "Ekspor gagal",
+      "exportResearch": "Ekspor snapshot riset",
+      "researchSnapshotHint": "Ekspor pengamatan ini tanpa kredensial atau nomor rekening. Gunakan kembali ID snapshot di portfolio_summary."
     },
     "metrics": {
       "total": "Total aset",

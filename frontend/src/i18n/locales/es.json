@@ -2142,7 +2142,9 @@
       "errorReconnect": "No se pudo volver a conectar la cuenta",
       "errorReconnectTimeout": "La autorización del navegador agotó el tiempo. Vuelve a conectar y completa pronto la autorización del bróker.",
       "errorSaveSettings": "No se pudieron guardar los ajustes de la cartera",
-      "errorExport": "Fallo al exportar"
+      "errorExport": "Fallo al exportar",
+      "exportResearch": "Exportar instantánea de análisis",
+      "researchSnapshotHint": "Exporta esta observación sin credenciales ni números de cuenta. Reutiliza su ID de instantánea en portfolio_summary."
     },
     "metrics": {
       "total": "Activos totales",

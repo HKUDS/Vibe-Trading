@@ -179,20 +179,32 @@ class SessionStore:
         if not path.exists():
             return []
         messages: List[Message] = []
-        for line in path.read_text(encoding="utf-8").strip().splitlines():
-            if line.strip():
+        # Decode physical JSONL records separately: one unreadable byte must
+        # cost one record, never the intact messages on either side of it.
+        with path.open("rb") as log:
+            for line_number, raw_line in enumerate(log, start=1):
+                if not raw_line.strip():
+                    continue
                 try:
+                    line = raw_line.decode("utf-8")
                     payload = json.loads(line)
                     if not isinstance(payload, dict):
                         raise TypeError(
                             f"message line must be a JSON object, got {type(payload).__name__}"
                         )
                     messages.append(Message.from_dict(payload))
-                except (json.JSONDecodeError, TypeError, ValueError, KeyError):
+                except (
+                    json.JSONDecodeError,
+                    UnicodeDecodeError,
+                    TypeError,
+                    ValueError,
+                    KeyError,
+                ) as exc:
                     logger.warning(
-                        "Skipping corrupted message line in session %s: %s",
+                        "Skipping corrupted message record %d in session %s (%s)",
+                        line_number,
                         session_id,
-                        line[:200],
+                        type(exc).__name__,
                     )
         return messages[-limit:]
 
@@ -345,5 +357,10 @@ class SessionStore:
             return None
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "Skipping corrupt JSON file %s (%s)", path.name, type(exc).__name__
+            )
+            return None
+        except OSError:
             return None

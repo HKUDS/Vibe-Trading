@@ -253,10 +253,10 @@ def register_portfolio_routes(app: FastAPI) -> None:
         return {"status": "ok", "history": service().history(limit)}
 
     @app.get("/api/portfolio/analysis-context", dependencies=[Depends(require_auth)])
-    def portfolio_analysis_context():
-        context = service().analysis_context()
+    def portfolio_analysis_context(snapshot_id: str | None = Query(None, min_length=1)):
+        context = service().analysis_context(snapshot_id=snapshot_id)
         if context is None:
-            raise HTTPException(status_code=404, detail="no portfolio snapshot exists")
+            raise HTTPException(status_code=404, detail="portfolio snapshot unavailable")
         return {"status": "ok", "context": context}
 
     @app.get("/api/portfolio/export.csv", dependencies=[Depends(require_auth)])

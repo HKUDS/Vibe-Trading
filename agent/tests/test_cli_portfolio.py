@@ -30,6 +30,9 @@ class _Service:
         """Return the scripted snapshot (``None`` when nothing is stored)."""
         return self._snapshot
 
+    def snapshot_by_id(self, snapshot_id):
+        return self._snapshot if self._snapshot and self._snapshot["snapshot_id"] == snapshot_id else None
+
     def refresh(self):
         """Return the scripted snapshot or raise the scripted error."""
         self.refresh_calls += 1
@@ -98,6 +101,14 @@ def test_show_without_snapshot_points_at_refresh(capsys) -> None:
     assert "portfolio refresh" in out
 
 
+def test_show_pinned_snapshot_and_missing_id_never_falls_back(capsys) -> None:
+    service = _Service(snapshot=_SNAPSHOT)
+    assert _legacy.cmd_portfolio_show(service, snapshot_id="abc") == _legacy.EXIT_SUCCESS
+    assert "AAPL" in capsys.readouterr().out
+    assert _legacy.cmd_portfolio_show(service, snapshot_id="gone") == _legacy.EXIT_RUN_FAILED
+    assert "unavailable" in capsys.readouterr().out
+
+
 def test_refresh_prints_and_exits_nonzero_when_incomplete(capsys) -> None:
     service = _Service(snapshot=_SNAPSHOT)
     rc = _legacy.cmd_portfolio_refresh(service=service)
@@ -157,19 +168,22 @@ def test_sources_without_connections_explains_where_to_create_one(capsys) -> Non
 
 def test_dispatch_defaults_to_show_and_routes_subcommands(monkeypatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr(_legacy, "cmd_portfolio_show", lambda: calls.append("show") or 0)
+    monkeypatch.setattr(_legacy, "cmd_portfolio_show", lambda **kwargs: calls.append(kwargs.get("snapshot_id") or "show") or 0)
     monkeypatch.setattr(_legacy, "cmd_portfolio_refresh", lambda: calls.append("refresh") or 0)
     monkeypatch.setattr(_legacy, "cmd_portfolio_sources", lambda: calls.append("sources") or 0)
     assert _legacy._dispatch_portfolio(Namespace(portfolio_command=None)) == 0
     assert _legacy._dispatch_portfolio(Namespace(portfolio_command="refresh")) == 0
     assert _legacy._dispatch_portfolio(Namespace(portfolio_command="sources")) == 0
     assert calls == ["show", "refresh", "sources"]
+    assert _legacy._dispatch_portfolio(Namespace(portfolio_command="show", snapshot_id="abc")) == 0
+    assert calls[-1] == "abc"
     assert _legacy._dispatch_portfolio(Namespace(portfolio_command="bogus")) == _legacy.EXIT_USAGE_ERROR
 
 
 def test_parser_registers_the_portfolio_subcommands() -> None:
     parser = _legacy._build_parser()
     assert parser.parse_args(["portfolio"]).portfolio_command is None
+    assert parser.parse_args(["portfolio", "show", "--snapshot-id", "abc"]).snapshot_id == "abc"
     for sub in ("show", "refresh", "sources"):
         args = parser.parse_args(["portfolio", sub])
         assert args.command == "portfolio" and args.portfolio_command == sub

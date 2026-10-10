@@ -223,6 +223,34 @@ class TestFtsAddThenSearchFinds:
 
         assert [entry.title for entry in results] == ["first recall", "second recall"]
 
+    @pytest.mark.parametrize("requested", [2, 3])
+    def test_real_fts_finds_current_rows_beyond_a_fixed_buffer(
+        self, tmp_path, monkeypatch, fts_db, requested
+    ):
+        """Expand past stale rows and stop when the real SQLite index ends."""
+        from src.memory.search_index import get_shared_index
+
+        monkeypatch.setenv("VT_MEMORY_FTS_INDEX", "false")
+        reset_env_config()
+        mem = PersistentMemory(tmp_path / "memories")
+        mem.add("first recall", "evidence retrieval", "project")
+        mem.add("second recall", "evidence retrieval", "project")
+        entries = {entry.title: entry for entry in mem.list_entries()}
+        first, second = entries["first recall"], entries["second recall"]
+
+        index = get_shared_index()
+        for entry_id in [first.id, *(f"stale{i}" for i in range(12)), second.id]:
+            index.index_entry(entry_id, "recall", "", "", "evidence retrieval")
+        ranked = index.search("evidence retrieval", max_results=100)
+        assert [match.entry_id for match in ranked] == [
+            first.id, *(f"stale{i}" for i in range(12)), second.id
+        ]
+
+        monkeypatch.setenv("VT_MEMORY_FTS_INDEX", "true")
+        reset_env_config()
+        results = mem.find_relevant("evidence retrieval", max_results=requested)
+        assert [entry.id for entry in results] == [first.id, second.id]
+
 
 # ---------------------------------------------------------------------------
 # 4a. Fallback token-scan must find the same short-token content the FTS5

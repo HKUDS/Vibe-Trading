@@ -4203,17 +4203,22 @@ def _print_portfolio_snapshot(snapshot: dict[str, Any]) -> None:
         console.print(f"[yellow]![/yellow] {rich_escape(str(warning))}")
 
 
-def cmd_portfolio_show(service: Any | None = None) -> int:
-    """Print the latest stored portfolio snapshot.
+def cmd_portfolio_show(service: Any | None = None, snapshot_id: str | None = None) -> int:
+    """Print the latest snapshot or one exact stored observation.
 
     Args:
         service: Optional ``PortfolioService`` (tests inject a stub).
+        snapshot_id: Optional immutable snapshot id; never falls back to latest.
 
     Returns:
         The process exit code.
     """
-    snapshot = _portfolio_service(service).latest()
+    instance = _portfolio_service(service)
+    snapshot = instance.latest() if snapshot_id is None else instance.snapshot_by_id(snapshot_id)
     if snapshot is None:
+        if snapshot_id is not None:
+            console.print("[red]The requested portfolio snapshot is unavailable.[/red]")
+            return EXIT_RUN_FAILED
         console.print(
             "[dim]No portfolio snapshot yet. Select sources on the Web UI Portfolio page "
             "(or `vibe-trading portfolio sources`), then run `vibe-trading portfolio refresh`.[/dim]"
@@ -4296,7 +4301,7 @@ def _dispatch_portfolio(args: argparse.Namespace) -> int:
     """
     sub = getattr(args, "portfolio_command", None) or "show"
     if sub == "show":
-        return cmd_portfolio_show()
+        return cmd_portfolio_show(snapshot_id=getattr(args, "snapshot_id", None))
     if sub == "refresh":
         return cmd_portfolio_refresh()
     if sub == "sources":
@@ -5522,7 +5527,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Read-only multi-broker portfolio (the Web UI /portfolio page, in the terminal)",
     )
     portfolio_subparsers = portfolio_parser.add_subparsers(dest="portfolio_command")
-    portfolio_subparsers.add_parser("show", help="Print the latest stored snapshot")
+    portfolio_show_parser = portfolio_subparsers.add_parser("show", help="Print a stored snapshot")
+    portfolio_show_parser.add_argument("--snapshot-id", help="Read this exact immutable snapshot")
     portfolio_subparsers.add_parser(
         "refresh", help="Read every enabled source now, store a new snapshot, and print it"
     )

@@ -2142,7 +2142,9 @@
       "errorReconnect": "Erneutes Verbinden des Kontos fehlgeschlagen",
       "errorReconnectTimeout": "Die Browser-Autorisierung ist abgelaufen. Verbinden Sie sich erneut und schließen Sie die Broker-Autorisierung zeitnah ab.",
       "errorSaveSettings": "Portfolio-Einstellungen konnten nicht gespeichert werden",
-      "errorExport": "Export fehlgeschlagen"
+      "errorExport": "Export fehlgeschlagen",
+      "exportResearch": "Analyse-Snapshot exportieren",
+      "researchSnapshotHint": "Diese Beobachtung ohne Zugangsdaten oder Kontonummern exportieren. Die Snapshot-ID kann in portfolio_summary wiederverwendet werden."
     },
     "metrics": {
       "total": "Gesamtvermögen",

@@ -86,7 +86,9 @@ def _run(coro: Any) -> Any:
 def _ok_handler(request: httpx.Request) -> httpx.Response:
     """Answer both legs the way Slack answers valid credentials."""
     if str(request.url) == AUTH_TEST_URL:
-        return httpx.Response(200, json={"ok": True, "user_id": "U12345"})
+        return httpx.Response(
+            200, json={"ok": True, "user_id": "U12345", "bot_id": "B12345"}
+        )
     if str(request.url) == CONNECTIONS_OPEN_URL:
         return httpx.Response(200, json={"ok": True, "url": WSS_URL})
     raise AssertionError(f"unexpected URL {request.url}")  # pragma: no cover
@@ -162,7 +164,7 @@ def test_socket_mode_disabled_reports_invalid_credentials_on_leg_two(
 
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == AUTH_TEST_URL:
-            return httpx.Response(200, json={"ok": True})
+            return httpx.Response(200, json={"ok": True, "bot_id": "B12345"})
         return httpx.Response(200, json={"ok": False, "error": "not_allowed"})
 
     requests = _inject_mock_transport(monkeypatch, handler)
@@ -234,7 +236,7 @@ def test_leg_two_server_error_reports_network(
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == AUTH_TEST_URL:
-            return httpx.Response(200, json={"ok": True})
+            return httpx.Response(200, json={"ok": True, "bot_id": "B12345"})
         return httpx.Response(503, text="upstream exploded")
 
     _inject_mock_transport(monkeypatch, handler)
@@ -273,7 +275,7 @@ def test_rejection_detail_scrubs_echoed_tokens(
     # Force leg 2 to be the echoing leg.
     def leg2_handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == AUTH_TEST_URL:
-            return httpx.Response(200, json={"ok": True})
+            return httpx.Response(200, json={"ok": True, "bot_id": "B12345"})
         return httpx.Response(500, text=f"exploded with {APP_TOKEN}")
 
     _inject_mock_transport(monkeypatch, leg2_handler)
@@ -296,3 +298,38 @@ def test_probe_never_logs_tokens_or_wss_url(
     assert BOT_TOKEN not in caplog.text
     assert APP_TOKEN not in caplog.text
     assert WSS_URL not in caplog.text
+
+
+def test_user_token_is_rejected_before_opening_socket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = _inject_mock_transport(
+        monkeypatch,
+        lambda request: httpx.Response(200, json={"ok": True, "user_id": "U12345"}),
+    )
+    result = _run(_make_channel().test_connection())
+    assert result["ok"] is False
+    assert result["code"] == "invalid_credentials"
+    assert len(requests) == 1
+
+
+def test_unsupported_mode_is_rejected_without_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = _inject_mock_transport(monkeypatch, _ok_handler)
+    result = _run(_make_channel(mode="http").test_connection())
+    assert result["ok"] is False
+    assert result["code"] == "invalid_credentials"
+    assert not requests
+
+
+@pytest.mark.parametrize("status", [408, 429])
+def test_transient_http_failure_is_not_invalid_credentials(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    _inject_mock_transport(
+        monkeypatch, lambda request: httpx.Response(status, text="try again later")
+    )
+    result = _run(_make_channel().test_connection())
+    assert result["ok"] is False
+    assert result["code"] == "network"

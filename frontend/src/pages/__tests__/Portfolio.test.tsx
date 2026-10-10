@@ -11,6 +11,7 @@ vi.mock("@/lib/api", async () => {
     api: {
       ...actual.api,
       getPortfolio: vi.fn(),
+      getPortfolioAnalysisContext: vi.fn(),
       refreshPortfolio: vi.fn(),
       getPortfolioRefreshStatus: vi.fn(),
       reconnectPortfolioSource: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/api", async () => {
 
 const mocked = api as unknown as {
   getPortfolio: ReturnType<typeof vi.fn>;
+  getPortfolioAnalysisContext: ReturnType<typeof vi.fn>;
   refreshPortfolio: ReturnType<typeof vi.fn>;
   getPortfolioRefreshStatus: ReturnType<typeof vi.fn>;
   reconnectPortfolioSource: ReturnType<typeof vi.fn>;
@@ -133,6 +135,35 @@ const portfolioConfiguration = {
 };
 
 describe("Portfolio page", () => {
+  it("exports the displayed observation by id and reports a revoked snapshot", async () => {
+    const context = { snapshot_id: "snap-1", totals: { usd: 1000 }, read_identity: { mode: "pinned" } };
+    mocked.getPortfolioAnalysisContext.mockResolvedValue({ status: "ok", context });
+    const create = vi.fn(() => "blob:research");
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = create;
+      static revokeObjectURL = revoke;
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      render(<Portfolio />);
+      const button = await screen.findByRole("button", { name: "Export research snapshot" });
+      await waitFor(() => expect(button).toBeEnabled());
+      fireEvent.click(button);
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect(mocked.getPortfolioAnalysisContext).toHaveBeenCalledWith("snap-1");
+      expect(create).toHaveBeenCalledWith(expect.any(Blob));
+      expect(revoke).toHaveBeenCalledWith("blob:research");
+      mocked.getPortfolioAnalysisContext.mockRejectedValue(new Error("portfolio snapshot unavailable"));
+      fireEvent.click(button);
+      expect(await screen.findByText("portfolio snapshot unavailable")).toBeInTheDocument();
+      expect(click).toHaveBeenCalledOnce();
+    } finally {
+      click.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.getPortfolio.mockResolvedValue({ status: "ok", snapshot });

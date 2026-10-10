@@ -2142,7 +2142,9 @@
       "errorReconnect": "계좌 재연결에 실패했습니다",
       "errorReconnectTimeout": "브라우저 인증 시간이 초과되었습니다. 다시 연결하고 브로커 인증을 신속히 완료하세요.",
       "errorSaveSettings": "포트폴리오 설정을 저장할 수 없습니다",
-      "errorExport": "내보내기에 실패했습니다"
+      "errorExport": "내보내기에 실패했습니다",
+      "exportResearch": "연구 스냅샷 내보내기",
+      "researchSnapshotHint": "인증 정보나 계좌 번호 없이 이 관측을 내보냅니다. portfolio_summary에서 스냅샷 ID를 재사용할 수 있습니다."
     },
     "metrics": {
       "total": "총자산",

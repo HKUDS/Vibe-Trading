@@ -5,6 +5,37 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Maintenance — 2026-10-10
+
+- Slack and Discord gain localized connection forms and read-only credential
+  probes (#1764, #1777). Slack verifies both bot identity and Socket Mode app
+  access; Discord requires a bot identity. HTTP 408/429 report temporary errors.
+  Failed probes leave saved settings unchanged. Discord admission policies
+  refresh without reconnecting.
+- Recover sessions and attempts with invalid UTF-8 metadata, and skip malformed
+  message records while preserving readable neighbors and original files (#1775).
+  Redact environment-style credentials and URL userinfo (#1765); generic trade
+  journals retain quantities and prices instead of being misclassified as Futu
+  exports (#1766).
+- Memory links recognize two-character identifiers (#1771). FTS recall expands
+  past stale index rows until enough current memories are found or the index is
+  exhausted (#1772).
+- Pin portfolio research to an immutable snapshot (#1769): the agent accepts
+  `snapshot_id`, the CLI supports `portfolio show --snapshot-id ID`, REST accepts
+  the same identifier, and Web exports the displayed sanitized research snapshot
+  as JSON. Unavailable or revoked snapshots never fall back to newer data.
+  Technical indicators accept an optional ISO `end_date` and report provenance
+  plus a fingerprint of their exact input bars (#1768).
+- Exclude top-level process exit codes and elapsed times from observed financial
+  evidence (#1767). Register existing figure/identity checks without changing
+  their predicates (#1691); extract compaction, tuning, usage accounting and
+  terminal outcome policy from the agent loop (#1631, #1678, #1662, #1641).
+- Expand the options connector evidence checklist (#1770). Update compatible
+  Python/frontend dependencies and pinned CI actions (#1692, #1668, #1667,
+  #1666, #1665); align Vitest with its coverage plugin. Keep `uuid-utils` at
+  0.17.0 because the proposed 1.0.0 upgrade (#1670) conflicts with the current
+  LangChain constraint. Preserve mootdx's retirement from the public canary.
+
 ### Maintenance — 2026-10-09
 
 - Channel edits to live-read settings apply without reconnecting, including a

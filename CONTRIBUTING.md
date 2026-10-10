@@ -263,7 +263,8 @@ matrix row records a declaration; attach separate evidence for runtime claims.
   from read-side contract shapes. Keep unsupported shapes gated off; verify
   supported shapes through the existing mandate caps against priced notional
   (premium times multiplier), one audit event per decision, and red-first
-  live-safety tests.
+  live-safety tests. Premium notional is not maximum loss or exercise exposure;
+  validate those limits separately where the instrument requires them.
 - [ ] Test live risk-increasing actions through the shared mandate gate,
   including account selection, limits, kill switch, and audit. Verify cancel,
   flatten, position management, and copy paths separately where implemented;

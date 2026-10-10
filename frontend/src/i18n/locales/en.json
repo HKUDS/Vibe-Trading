@@ -2142,7 +2142,9 @@
       "errorReconnect": "Account reconnect failed",
       "errorReconnectTimeout": "Browser authorization timed out. Reconnect and complete the broker authorization promptly.",
       "errorSaveSettings": "Unable to save portfolio settings",
-      "errorExport": "Export failed"
+      "errorExport": "Export failed",
+      "exportResearch": "Export research snapshot",
+      "researchSnapshotHint": "Export this exact observation without credentials or account numbers. Reuse its snapshot ID in portfolio_summary."
     },
     "metrics": {
       "total": "Total assets",

@@ -17,7 +17,8 @@ JSON body, so both legs pass the shared probe's optional ``headers`` with
 an empty payload. Note that Slack answers HTTP 200 with ``{"ok": false,
 "error": "invalid_auth"}`` for bad tokens; ``token_key="ok"`` routes that
 through the shared "200 but no token" branch, which already classifies it
-as ``invalid_credentials``.
+as ``invalid_credentials``. Requiring the documented ``bot_id`` field also
+refuses a user token, whose successful ``auth.test`` response has no bot identity.
 
 Leg 1 (``auth.test``) validates the bot token. Leg 2
 (``apps.connections.open``) validates the app token AND that Socket Mode
@@ -72,6 +73,13 @@ async def test_connection(
     """
     secrets = (config.bot_token, config.app_token)
 
+    if config.mode != "socket":
+        return {
+            "ok": False,
+            "code": "invalid_credentials",
+            "detail": "Slack supports socket mode only",
+            "sdk_available": sdk_available,
+        }
     if not config.bot_token:
         return {
             "ok": False,
@@ -79,7 +87,7 @@ async def test_connection(
             "detail": "missing bot token",
             "sdk_available": sdk_available,
         }
-    if config.mode == "socket" and not config.app_token:
+    if not config.app_token:
         return {
             "ok": False,
             "code": "invalid_credentials",
@@ -92,6 +100,7 @@ async def test_connection(
         payload={},
         headers={"Authorization": f"Bearer {config.bot_token}"},
         token_key="ok",
+        required_fields=("bot_id",),
         secrets=secrets,
         sdk_available=sdk_available,
     )

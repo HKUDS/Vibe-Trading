@@ -1310,7 +1310,7 @@ def test_post_slack_test_runs_two_leg_probe_not_unsupported(
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
         if seen[-1].endswith("/api/auth.test"):
-            return httpx.Response(200, json={"ok": True})
+            return httpx.Response(200, json={"ok": True, "bot_id": "B12345"})
         return httpx.Response(
             200, json={"ok": True, "url": "wss://wss-primary.slack.com/link/"}
         )

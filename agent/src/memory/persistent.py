@@ -370,11 +370,8 @@ class PersistentMemory:
             try:
                 from src.memory.search_index import get_shared_index
                 index = get_shared_index()
-                # The on-disk memory files are canonical. The FTS database can
-                # briefly retain rows for files removed outside this process,
-                # so fetch a small candidate buffer before discarding rows that
-                # no longer map to a current entry.
-                matches = index.search(query, max_results=max_results * 4)
+                candidate_limit = max_results
+                matches = index.search(query, max_results=candidate_limit)
 
                 # Auto-rebuild on first empty search if entries exist on disk
                 all_entries = None
@@ -387,7 +384,7 @@ class PersistentMemory:
                         ]
                         index.rebuild_all(entries_data)
                         index._auto_rebuilt = True
-                        matches = index.search(query, max_results=max_results)
+                        matches = index.search(query, max_results=candidate_limit)
 
                 if matches:
                     # Map FTS results back to full entries
@@ -397,6 +394,22 @@ class PersistentMemory:
                     fts_pairs = [
                         (m, entry_map[m.entry_id]) for m in matches if m.entry_id in entry_map
                     ]
+                    # Files are canonical. Keep the FTS ordering but expand the
+                    # candidate window until enough current entries survive,
+                    # or the index is exhausted; a fixed buffer can still be
+                    # filled entirely by externally removed memories.
+                    while (
+                        candidate_limit > 0
+                        and len(matches) == candidate_limit
+                        and len(fts_pairs) < max_results
+                    ):
+                        candidate_limit *= 2
+                        matches = index.search(query, max_results=candidate_limit)
+                        fts_pairs = [
+                            (m, entry_map[m.entry_id])
+                            for m in matches
+                            if m.entry_id in entry_map
+                        ]
                     if fts_pairs:
                         if _is_decay_enabled():
                             # FTS5's rank is more negative for stronger matches;

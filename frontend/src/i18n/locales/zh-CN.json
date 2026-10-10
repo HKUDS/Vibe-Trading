@@ -2142,7 +2142,9 @@
       "errorReconnect": "账户重新连接失败",
       "errorReconnectTimeout": "等待浏览器授权超时，请重新连接并及时完成券商授权",
       "errorSaveSettings": "无法保存持仓设置",
-      "errorExport": "导出失败"
+      "errorExport": "导出失败",
+      "exportResearch": "导出研究快照",
+      "researchSnapshotHint": "导出当前这份观测，不含凭证和账户号码。可在 portfolio_summary 中复用其快照 ID。"
     },
     "metrics": {
       "total": "总资产",

@@ -39,8 +39,8 @@ class _Service:
     def export_csv(self):
         return "broker,symbol\nibkr,AAPL\n"
 
-    def analysis_context(self):
-        return {"privacy": "sanitized"}
+    def analysis_context(self, snapshot_id=None):
+        return None if snapshot_id == "gone" else {"privacy": "sanitized", "snapshot_id": snapshot_id}
 
 
 def test_portfolio_routes_are_readonly_and_return_expected_shapes(monkeypatch):
@@ -107,6 +107,18 @@ def test_portfolio_routes_are_readonly_and_return_expected_shapes(monkeypatch):
     exported = client.get("/api/portfolio/export.csv")
     assert exported.status_code == 200
     assert "ibkr,AAPL" in exported.text
+
+
+def test_analysis_context_route_pins_snapshot_and_never_falls_back(monkeypatch):
+    monkeypatch.setattr(portfolio_routes, "PortfolioService", _Service)
+    app = FastAPI()
+    portfolio_routes.register_portfolio_routes(app)
+    client = TestClient(app)
+    response = client.get("/api/portfolio/analysis-context?snapshot_id=first")
+    assert response.status_code == 200
+    assert response.json()["context"]["snapshot_id"] == "first"
+    assert client.get("/api/portfolio/analysis-context?snapshot_id=gone").status_code == 404
+    assert client.get("/api/portfolio/analysis-context?snapshot_id=").status_code == 422
 
 
 def test_concurrent_portfolio_reconnect_returns_conflict(monkeypatch):

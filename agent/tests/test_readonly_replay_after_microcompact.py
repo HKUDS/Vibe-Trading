@@ -301,7 +301,7 @@ class _VisibilityLLM:
                 )
             )
         self.monkeypatch.setattr(
-            loop_mod,
+            __import__("src.agent.tuning", fromlist=["TOKEN_THRESHOLD"]),
             "TOKEN_THRESHOLD",
             max(2, int(loop_mod.estimate_tokens(future) * 1.6)),
             raising=False,
