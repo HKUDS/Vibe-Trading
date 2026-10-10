@@ -22,8 +22,12 @@ from typing import Any
 import httpx
 import pytest
 
-from src.channels.bus.queue import MessageBus
-from src.channels.slack import SlackChannel
+from tests.slack_stubs import install_slack_stubs
+
+install_slack_stubs()
+
+from src.channels.bus.queue import MessageBus  # noqa: E402
+from src.channels.slack import SlackChannel  # noqa: E402
 
 AUTH_TEST_URL = "https://slack.com/api/auth.test"
 CONNECTIONS_OPEN_URL = "https://slack.com/api/apps.connections.open"
