@@ -1306,8 +1306,18 @@ def main(run_dir: Path) -> None:
 
     # Every source has already been fetched, sanitized, and enriched above.
     # Reuse that exact snapshot so provider costs and run-card provenance stay
-    # aligned with the data consumed by the engine.
-    loader = _AutoLoader(data_map)
+    # aligned with the data consumed by the engine. A source that must stay
+    # offline keeps its own loader behind the snapshot: a declared benchmark is
+    # usually outside ``codes``, and without it the benchmark could only come
+    # from the network, which such a source refuses.
+    if is_no_network_fallback_source(source):
+        loader = _AutoLoader(
+            data_map,
+            inner=loader,
+            name=str(getattr(loader, "name", None) or source),
+        )
+    else:
+        loader = _AutoLoader(data_map)
 
     if engine_type == "options":
         from backtest.engines.options_portfolio import run_options_backtest
@@ -1959,14 +1969,68 @@ def _sanitize_data_map(data_map: dict) -> dict:
 
 
 class _AutoLoader:
-    """Loader adapter that returns a pre-fetched data map."""
+    """Loader adapter that returns a pre-fetched data map.
 
-    def __init__(self, data_map: dict):
+    With an ``inner`` loader, symbols outside the snapshot are fetched through
+    it, and ``name`` reports that loader's source so benchmark resolution can
+    tell the adapter apart from a network loader swapped in by a fallback.
+    """
+
+    def __init__(
+        self,
+        data_map: dict,
+        inner: Any = None,
+        name: str | None = None,
+    ) -> None:
+        """Wrap a fetched snapshot.
+
+        Args:
+            data_map: ``code -> DataFrame`` snapshot already consumed by the run.
+            inner: Loader that served the snapshot; consulted only for symbols
+                the snapshot does not hold. ``None`` serves the snapshot alone.
+            name: Source name of ``inner``. When ``None`` the adapter exposes no
+                ``name``: a bare snapshot does not stand for any one source.
+        """
         self._data = data_map
+        self._inner = inner
+        if name is not None:
+            self.name = name
 
-    def fetch(self, codes, start_date, end_date, fields=None, interval="1D"):
-        """Return preloaded rows for requested codes."""
-        return {c: df for c, df in self._data.items() if c in codes}
+    def fetch(
+        self,
+        codes: List[str],
+        start_date: str,
+        end_date: str,
+        fields: Optional[List[str]] = None,
+        interval: str = "1D",
+    ) -> dict:
+        """Return snapshot rows, fetching symbols it lacks through ``inner``.
+
+        Frames from ``inner`` go through the same OHLC sanitisation as the
+        snapshot, so a benchmark is held to the bar quality the strategy was.
+
+        Args:
+            codes: Requested symbols.
+            start_date: Window start, passed through to ``inner``.
+            end_date: Window end, passed through to ``inner``.
+            fields: Extra fields, passed through to ``inner``.
+            interval: Bar interval, passed through to ``inner``.
+
+        Returns:
+            ``code -> DataFrame`` for every requested symbol that could be served.
+        """
+        served = {c: df for c, df in self._data.items() if c in codes}
+        missing = [c for c in codes if c not in served]
+        if missing and self._inner is not None:
+            source = str(getattr(self, "name", "") or "")
+            requested = _normalize_codes(missing, source)
+            fetched = self._inner.fetch(
+                requested, start_date, end_date, fields=fields, interval=interval
+            )
+            if isinstance(fetched, dict):
+                restored = _restore_original_codes(fetched, missing, requested)
+                served.update(_sanitize_data_map(restored))
+        return served
 
 
 if __name__ == "__main__":

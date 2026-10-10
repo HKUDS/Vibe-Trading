@@ -971,6 +971,7 @@ class BaseEngine(ABC):
         )
         bench_ret = ret_df.mean(axis=1) if ret_df.shape[1] > 0 else pd.Series(0.0, index=dates)
         benchmark_metadata = {}
+        benchmark_warning: str | None = None
 
         # ── External benchmark fetch ──────────────────────────────────────────
         bench_ticker = config.get("benchmark")
@@ -1006,6 +1007,16 @@ class BaseEngine(ABC):
                         window_ret if window_ret is not None else bench_result.total_ret
                     ),
                 }
+            else:
+                # The equal-weight basket stands in for the declared benchmark,
+                # so every benchmark-relative metric (excess_return,
+                # information_ratio, tracking_error, benchmark_beta) is graded
+                # against something the caller did not ask for. Say so.
+                benchmark_warning = (
+                    f"declared benchmark {bench_ticker!r} could not be resolved; "
+                    "benchmark-relative metrics are graded against the "
+                    "equal-weight basket of the traded symbols instead"
+                )
         # ── External benchmark fetch ──────────────────────────────────────────
 
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
@@ -1151,6 +1162,8 @@ class BaseEngine(ABC):
             card_warnings.append(config["_run_card_caliber_warning"])
         if config.get("_run_card_annualisation_warning"):
             card_warnings.append(config["_run_card_annualisation_warning"])
+        if benchmark_warning:
+            card_warnings.append(benchmark_warning)
         from backtest.run_card import write_run_card
         write_run_card(
             run_dir,
