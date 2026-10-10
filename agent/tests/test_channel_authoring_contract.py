@@ -104,3 +104,23 @@ def test_declared_noop_keys_are_real_non_secret_non_enabled(name) -> None:
         assert key in defaults, f"{name} declares noop key '{key}' absent from default_config()"
         assert not is_secret_key(name, key), f"{name} declares secret '{key}' as a noop key"
         assert key != "enabled", f"{name} declares 'enabled' noop (it drives start/stop)"
+
+
+def test_discord_group_policy_choices_match_the_adapter_literal() -> None:
+    """Drift pin: discord's choices mirror the adapter's Literal declaration.
+
+    ``DiscordConfig`` declares ``group_policy: Literal["mention", "open"]``
+    and ``_should_respond_in_group`` branches on the same strings; the hint's
+    ``choices`` list has no shared constant to import, so this test is the
+    cross-reference (the slack pin lives in test_channel_config_meta.py).
+    """
+    by_key = {hint["key"]: hint for hint in channel_field_hints("discord")}
+    choices = by_key["group_policy"].get("choices")
+    assert choices == ["mention", "open"]
+
+    source = (
+        Path(__file__).resolve().parents[2] / "agent/src/channels/discord.py"
+    ).read_text(encoding="utf-8")
+    assert 'group_policy: Literal["mention", "open"]' in source
+    for choice in choices:
+        assert f'group_policy == "{choice}"' in source, choice

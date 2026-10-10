@@ -917,6 +917,56 @@
             "label": "Exigir menção nos canais permitidos",
             "help": "Com a política \"allowlist\", exigir também uma @menção antes de responder nos canais aprovados. Sem efeito para \"mention\" ou \"open\"."
           }
+        },
+        "discord": {
+          "token": {
+            "label": "Token do bot",
+            "help": "O token do bot obtido no Portal de Desenvolvedores do Discord — não um token de usuário ou OAuth. Armazenado no servidor e nunca devolvido ao navegador."
+          },
+          "allow_from": {
+            "label": "Remetentes permitidos",
+            "help": "Lista de permissão opcional de IDs de usuário do Discord que podem falar com o agente. Deixe vazio para permitir todos."
+          },
+          "allow_channels": {
+            "label": "Canais permitidos",
+            "help": "Lista de permissão opcional de IDs de canais do Discord nos quais o bot responde. Deixe vazio para permitir todos os canais."
+          },
+          "intents": {
+            "label": "Intents do gateway",
+            "help": "Campo de bits de intents do gateway como inteiro (padrão 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT). MESSAGE CONTENT é um intent privilegiado que deve ser ativado no Portal de Desenvolvedores, senão o bot não conecta."
+          },
+          "group_policy": {
+            "label": "Política de grupos",
+            "help": "\"mention\" responde apenas quando o bot é mencionado com @ em um canal do servidor, \"open\" responde a todas as mensagens do canal (ainda sujeito às listas de permissão)."
+          },
+          "read_receipt_emoji": {
+            "label": "Emoji de confirmação de leitura",
+            "help": "Emoji adicionado como reação a uma mensagem recebida para confirmá-la de imediato (padrão 👀); removido quando a resposta chega."
+          },
+          "working_emoji": {
+            "label": "Emoji de processamento",
+            "help": "Emoji adicionado como reação enquanto o agente ainda trabalha (padrão 🔧), após o atraso do emoji de processamento."
+          },
+          "working_emoji_delay": {
+            "label": "Atraso do emoji de processamento (s)",
+            "help": "Segundos antes de adicionar o emoji de processamento, para que respostas rápidas nunca o mostrem (padrão 2.0)."
+          },
+          "streaming": {
+            "label": "Respostas em streaming",
+            "help": "Transmitir a resposta editando progressivamente uma única mensagem do Discord em vez de enviar uma mensagem final única."
+          },
+          "proxy": {
+            "label": "URL do proxy",
+            "help": "Proxy HTTP opcional pelo qual passam a conexão ao gateway e as chamadas de API, p. ex. http://host:port."
+          },
+          "proxy_username": {
+            "label": "Usuário do proxy",
+            "help": "Usuário do proxy; informe-o junto com a senha do proxy ou não informe nenhum — um par pela metade é ignorado com um aviso. Armazenado no servidor e nunca devolvido ao navegador."
+          },
+          "proxy_password": {
+            "label": "Senha do proxy",
+            "help": "Senha do proxy; informe-a junto com o usuário do proxy ou não informe nenhum — um par pela metade é ignorado com um aviso. Armazenado no servidor e nunca devolvido ao navegador."
+          }
         }
       },
       "guides": {
@@ -969,6 +1019,16 @@
           "step4": "Copie o App ID e o App Secret em Credenciais e informações básicas e cole-os nos campos acima.",
           "step5": "Crie uma versão e publique o aplicativo (com aprovação do administrador se o seu tenant exigir); em seguida, ative o canal aqui — a aplicação é imediata, sem reiniciar. Em tenants internacionais do Lark, defina o domínio como lark.",
           "docsLabel": "Abrir a plataforma de desenvolvedores do Feishu"
+        },
+        "discord": {
+          "title": "Guia de configuração do Discord",
+          "intro": "Bots do Discord conectam-se ao gateway com um token de bot, então não é preciso IP público nem webhook.",
+          "step1": "Crie uma aplicação no Portal de Desenvolvedores do Discord (discord.com/developers).",
+          "step2": "Abra a página Bot, redefina o token e copie-o.",
+          "step3": "Em Privileged Gateway Intents, ative MESSAGE CONTENT INTENT — os intents padrão o exigem.",
+          "step4": "Gere uma URL de convite OAuth2 com o escopo bot (e applications.commands) e adicione o bot ao seu servidor.",
+          "step5": "Cole o token aqui, clique em “Testar conexão” e ative o canal.",
+          "docsLabel": "Abrir a documentação de desenvolvedores do Discord"
         }
       }
     },

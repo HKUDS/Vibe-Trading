@@ -156,6 +156,21 @@ const GUIDE_DEFS: Record<
       docsLabel: t("settings.channels.guides.feishu.docsLabel"),
     }),
   },
+  discord: {
+    docsUrl: "https://discord.com/developers/docs/intro",
+    build: (t) => ({
+      title: t("settings.channels.guides.discord.title"),
+      intro: t("settings.channels.guides.discord.intro"),
+      steps: [
+        t("settings.channels.guides.discord.step1"),
+        t("settings.channels.guides.discord.step2"),
+        t("settings.channels.guides.discord.step3"),
+        t("settings.channels.guides.discord.step4"),
+        t("settings.channels.guides.discord.step5"),
+      ],
+      docsLabel: t("settings.channels.guides.discord.docsLabel"),
+    }),
+  },
 };
 
 export interface ChannelConfigPanelProps {
@@ -306,6 +321,18 @@ export function ChannelConfigPanel({
       "settings.channels.fields.slack.group_policy": { label: t("settings.channels.fields.slack.group_policy.label"), help: t("settings.channels.fields.slack.group_policy.help") },
       "settings.channels.fields.slack.group_allow_from": { label: t("settings.channels.fields.slack.group_allow_from.label"), help: t("settings.channels.fields.slack.group_allow_from.help") },
       "settings.channels.fields.slack.group_require_mention": { label: t("settings.channels.fields.slack.group_require_mention.label"), help: t("settings.channels.fields.slack.group_require_mention.help") },
+      "settings.channels.fields.discord.token": { label: t("settings.channels.fields.discord.token.label"), help: t("settings.channels.fields.discord.token.help") },
+      "settings.channels.fields.discord.allow_from": { label: t("settings.channels.fields.discord.allow_from.label"), help: t("settings.channels.fields.discord.allow_from.help") },
+      "settings.channels.fields.discord.allow_channels": { label: t("settings.channels.fields.discord.allow_channels.label"), help: t("settings.channels.fields.discord.allow_channels.help") },
+      "settings.channels.fields.discord.intents": { label: t("settings.channels.fields.discord.intents.label"), help: t("settings.channels.fields.discord.intents.help") },
+      "settings.channels.fields.discord.group_policy": { label: t("settings.channels.fields.discord.group_policy.label"), help: t("settings.channels.fields.discord.group_policy.help") },
+      "settings.channels.fields.discord.read_receipt_emoji": { label: t("settings.channels.fields.discord.read_receipt_emoji.label"), help: t("settings.channels.fields.discord.read_receipt_emoji.help") },
+      "settings.channels.fields.discord.working_emoji": { label: t("settings.channels.fields.discord.working_emoji.label"), help: t("settings.channels.fields.discord.working_emoji.help") },
+      "settings.channels.fields.discord.working_emoji_delay": { label: t("settings.channels.fields.discord.working_emoji_delay.label"), help: t("settings.channels.fields.discord.working_emoji_delay.help") },
+      "settings.channels.fields.discord.streaming": { label: t("settings.channels.fields.discord.streaming.label"), help: t("settings.channels.fields.discord.streaming.help") },
+      "settings.channels.fields.discord.proxy": { label: t("settings.channels.fields.discord.proxy.label"), help: t("settings.channels.fields.discord.proxy.help") },
+      "settings.channels.fields.discord.proxy_username": { label: t("settings.channels.fields.discord.proxy_username.label"), help: t("settings.channels.fields.discord.proxy_username.help") },
+      "settings.channels.fields.discord.proxy_password": { label: t("settings.channels.fields.discord.proxy_password.label"), help: t("settings.channels.fields.discord.proxy_password.help") },
     }),
     [t],
   );

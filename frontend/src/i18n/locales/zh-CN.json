@@ -912,6 +912,56 @@
             "label": "允许频道内需提及",
             "help": "在“allowlist”策略下，已批准的频道中还需 @ 提及机器人才回复。对“mention”和“open”策略无效。"
           }
+        },
+        "discord": {
+          "token": {
+            "label": "Bot 令牌",
+            "help": "来自 Discord 开发者门户（Developer Portal）的机器人令牌（Bot Token），不是用户令牌或 OAuth 令牌。保存在服务端，绝不会回传到浏览器。"
+          },
+          "allow_from": {
+            "label": "允许的发送者",
+            "help": "允许与智能体对话的 Discord 用户 ID 白名单。留空表示允许所有人。"
+          },
+          "allow_channels": {
+            "label": "允许的频道",
+            "help": "机器人会响应的 Discord 频道 ID 白名单。留空表示允许所有频道。"
+          },
+          "intents": {
+            "label": "网关意图",
+            "help": "网关意图（Gateway Intents）位域整数（默认 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT）。其中 MESSAGE CONTENT 是特权意图，必须在开发者门户中开启，否则机器人无法连接。"
+          },
+          "group_policy": {
+            "label": "群聊策略",
+            "help": "“mention”表示在服务器频道中仅在被 @ 提及时回复；“open”表示回复所有频道消息（仍受白名单约束）。"
+          },
+          "read_receipt_emoji": {
+            "label": "已读回执表情",
+            "help": "收到消息时立即添加的表情回应，表示已接收（默认 👀）；回复送达后自动移除。"
+          },
+          "working_emoji": {
+            "label": "处理中表情",
+            "help": "智能体仍在处理时添加的表情回应（默认 🔧），在“处理中表情延迟”之后出现。"
+          },
+          "working_emoji_delay": {
+            "label": "处理中表情延迟（秒）",
+            "help": "等待多少秒后才添加处理中表情，快速回复将不会显示它（默认 2.0）。"
+          },
+          "streaming": {
+            "label": "流式回复",
+            "help": "以持续编辑同一条 Discord 消息的方式流式输出回复，而不是等完成后一次性发送。"
+          },
+          "proxy": {
+            "label": "代理地址",
+            "help": "可选的 HTTP 代理，网关连接与 API 调用会经由它转发，例如 http://host:port。"
+          },
+          "proxy_username": {
+            "label": "代理用户名",
+            "help": "代理的用户名；需与代理密码成对填写，只填一半会被忽略并记录警告。保存在服务端，绝不会回传到浏览器。"
+          },
+          "proxy_password": {
+            "label": "代理密码",
+            "help": "代理的密码；需与代理用户名成对填写，只填一半会被忽略并记录警告。保存在服务端，绝不会回传到浏览器。"
+          }
         }
       },
       "guides": {
@@ -964,6 +1014,16 @@
           "step4": "在“凭证与基础信息”页面复制 App ID 与 App Secret，填入上方字段。",
           "step5": "创建版本并发布应用（若租户要求，需管理员审批），然后回到这里启用渠道——即时生效、无需重启；国际版 Lark 租户请将域名设为“lark”。",
           "docsLabel": "打开飞书开放平台"
+        },
+        "discord": {
+          "title": "Discord 配置指南",
+          "intro": "Discord 机器人使用 Bot 令牌通过网关（Gateway）连接，无需公网 IP 或回调地址。",
+          "step1": "在 Discord 开发者门户（discord.com/developers）创建应用。",
+          "step2": "打开 Bot 页面，重置令牌（Reset Token）并复制。",
+          "step3": "在 Privileged Gateway Intents 下开启 MESSAGE CONTENT INTENT——默认意图需要它。",
+          "step4": "生成带 bot（及 applications.commands）权限范围的 OAuth2 邀请链接，把机器人加入你的服务器。",
+          "step5": "回到这里粘贴令牌，点击“测试连接”，然后启用渠道。",
+          "docsLabel": "打开 Discord 开发者文档"
         }
       }
     },
