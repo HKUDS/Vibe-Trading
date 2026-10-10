@@ -358,7 +358,14 @@ class DiscordChannel(BaseChannel):
     delivery_target_label = "Discord channel"
     delivery_target_kind = "channel"
     delivery_target_placeholder = "Channel ID"
-    hot_reload_noop_keys = frozenset({"allow_from", "read_receipt_emoji", "working_emoji", "working_emoji_delay"})
+    # allow_channels and group_policy are read live from self.config on every
+    # inbound message — allow_channels in the client-side admission helper
+    # (_interaction_channel_allowed) and in _should_accept_inbound, group_policy
+    # in _should_respond_in_group — and neither is captured into the discord.py
+    # client at start(), so both satisfy the base.py noop contract (#1625).
+    hot_reload_noop_keys = frozenset(
+        {"allow_from", "allow_channels", "group_policy", "read_receipt_emoji", "working_emoji", "working_emoji_delay"}
+    )
     _STREAM_EDIT_INTERVAL = 0.8
 
     @classmethod

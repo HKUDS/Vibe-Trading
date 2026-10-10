@@ -345,6 +345,53 @@ def test_signal_policy_put_refreshes_without_counting_computed_fields(tmp_path, 
     assert channel.is_allowed("bob") and not channel.is_allowed("alice")
 
 
+def test_discord_refresh_applies_noop_keys_without_touching_transport() -> None:
+    from src.channels.discord import DiscordChannel
+
+    section = {
+        "enabled": True,
+        "token": "stored-token",
+        "allow_channels": ["1"],
+        "group_policy": "mention",
+    }
+    channel = DiscordChannel(section, MessageBus())
+    assert {
+        "allow_from",
+        "allow_channels",
+        "group_policy",
+        "read_receipt_emoji",
+        "working_emoji",
+        "working_emoji_delay",
+    } <= channel.hot_reload_noop_keys
+    for transport_key in (
+        "token",
+        "intents",
+        "proxy",
+        "proxy_username",
+        "proxy_password",
+        "streaming",
+    ):
+        assert transport_key not in channel.hot_reload_noop_keys
+
+    refreshed = dict(
+        section, allow_channels=["2", "3"], group_policy="open", token="rotated-token"
+    )
+    assert channel.refresh_config(refreshed) is True
+    assert channel.config.allow_channels == ["2", "3"]
+    assert channel.config.group_policy == "open"
+    # A transport key riding along in the same section is NOT applied: the
+    # refresh copies only noop keys, so rotating the token still hot-swaps.
+    assert channel.config.token == "stored-token"
+
+    # group_policy is Literal["mention", "open"]: an invalid value fails
+    # model_validate, refresh returns False, and the route falls back to a
+    # full reload with the old config preserved.
+    before = channel.config
+    assert channel.refresh_config(dict(section, group_policy="everything")) is False
+    assert channel.config is before
+    assert channel.config.group_policy == "open"
+
+
 def test_weixin_refresh_preserves_the_authenticated_endpoint(tmp_path, monkeypatch):
     monkeypatch.setenv('VIBE_TRADING_HOME', str(tmp_path))
     section = {'enabled': True, 'state_dir': str(tmp_path), 'allow_from': ['alice']}
