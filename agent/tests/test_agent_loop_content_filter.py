@@ -251,7 +251,7 @@ def test_auto_compact_summary_hard_deadline(
     """
     import time
 
-    import src.agent.loop as loop_module
+    import src.agent.tuning as tuning_module
     from src.agent.loop import AgentLoop
     from src.agent.tools import ToolRegistry
     from src.agent.trace import TraceWriter
@@ -270,7 +270,7 @@ def test_auto_compact_summary_hard_deadline(
 
     llm = _HangingSummaryLLM()
     agent = AgentLoop(registry=ToolRegistry(), llm=llm)
-    monkeypatch.setattr(loop_module, "LLM_TIMEOUT_SECONDS", 0.3, raising=False)
+    monkeypatch.setattr(tuning_module, "LLM_TIMEOUT_SECONDS", 0.3, raising=False)
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": "sys"},
