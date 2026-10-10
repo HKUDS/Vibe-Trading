@@ -1,5 +1,13 @@
 """Mootdx loader: A-share OHLCV via TCP-direct 通达信 servers (no IP ban).
 
+Status (2026-10-08): RETIRED from the default fallback chain. The TDX quote
+servers stopped answering the client protocol mootdx/tdxpy speak in 2026-07
+(mootdx/mootdx#157; every category and market returns empty) and upstream is
+dormant since 2024. The loader remains registered so explicit
+``source="mootdx"`` calls keep working if a compatible fork ever appears,
+but the default chain no longer routes through it. See
+HKUDS/Vibe-Trading#1729.
+
 Mootdx (https://github.com/mootdx/mootdx) talks the native 通达信 binary
 protocol over TCP and is not subject to the HTTP scraping rate limits that
 periodically break the akshare → East Money path. Public market data only,

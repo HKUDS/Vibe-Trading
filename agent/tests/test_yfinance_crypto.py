@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders.yfinance_loader import DataLoader, _to_yfinance_symbol
+from tests.loader_contract import assert_loader_contract
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +99,7 @@ def test_fetch_passes_inclusive_end_date_to_yfinance_as_exclusive_end(monkeypatc
     result = yfl.DataLoader().fetch(["AAPL.US"], "2025-01-01", "2025-01-03")
 
     assert "AAPL.US" in result
+    assert_loader_contract(result["AAPL.US"], context="yfinance fallback single-symbol")
     assert calls == [(["AAPL"], "2025-01-01", "2025-01-04", "1d")]
 
 

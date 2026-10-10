@@ -152,6 +152,7 @@ class QQChannel(BaseChannel):
     name = "qq"
     display_name = "QQ"
     supports_connection_test = True
+    hot_reload_noop_keys = frozenset({"allow_from"})
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:

@@ -10,6 +10,7 @@ import pandas as pd
 
 from backtest.loaders.base import make_loader_cache_key
 from backtest.loaders.ccxt_loader import _parse_ccxt_symbol, _validate_bracket_artifact
+from tests.loader_contract import assert_loader_contract
 
 
 def _hourly_rows(opens: list[float]) -> list[list[float]]:
@@ -235,6 +236,7 @@ def test_perpetual_fetch_has_no_bracket_columns_without_artifact(monkeypatch) ->
         ["BTC-USDT-PERP"], "2024-01-01", "2024-01-01", interval="1H"
     )["BTC-USDT-PERP"]
 
+    assert_loader_contract(frame, context="ccxt perpetual 1H")
     assert "maintenance_brackets" not in frame.columns
     assert "maintenance_bracket_version" not in frame.columns
     assert all("bracket" not in str(call) for call in exchange.calls)

@@ -41,6 +41,7 @@ from backtest.loaders.futu import (  # noqa: E402
     _to_futu_symbol,
     _to_futu_ktype,
 )
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.base import NoAvailableSourceError  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -233,6 +234,7 @@ class TestFetch:
         df = result["700.HK"]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
+        assert_loader_contract(df, context="canonical frame")
 
     def test_futu_symbol_converted_correctly(self, loader, mock_ctx):
         mock_ctx.request_history_kline.return_value = (0, _make_kline_df(), None)

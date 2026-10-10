@@ -7,11 +7,8 @@ import i18n from '@/i18n';
  *   /alpha-zoo/bench           → bench runner
  *   /alpha-zoo/:alphaId        → alpha detail
  *
- * The bench view uses a raw EventSource rather than the shared `useSSE` hook
- * because that hook hard-codes the agent's known event types (text_delta,
- * tool_call, …) and would silently drop the alpha bench events
- * (`progress`, `result`, `done`, `error`). The swarm page uses the same
- * raw-EventSource pattern (frontend/src/pages/Agent.tsx).
+ * Bench and compare views use a shared recoverable job hook for snapshots
+ * and their progress/result/done/error EventSource events.
  */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -38,9 +35,11 @@ import {
   type AlphaBenchTopRow,
   type AlphaCompareResult,
 } from "@/lib/api";
-import { echarts } from "@/lib/echarts";
+import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 import { getChartTheme } from "@/lib/chart-theme";
-import { useThemeDark } from "@/lib/theme-store";
+import { useAnalysisState } from "@/hooks/useAnalysisState";
+import { useAlphaJob } from "@/hooks/useAlphaJob";
+import type { AlphaReadiness } from "@/lib/api";
 
 /* ---------- Constants ---------- */
 
@@ -144,22 +143,16 @@ export function AlphaZoo() {
 function BrowseView() {
   const [alphas, setAlphas] = useState<AlphaSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [zooFilter, setZooFilter] = useState<string>("");
-  const [themeFilter, setThemeFilter] = useState<string>("");
-  const [universeFilter, setUniverseFilter] = useState<string>("");
-  const [search, setSearch] = useState("");
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [total, setTotal] = useState<number>(0);
-  // Alphas ticked for a head-to-head compare; handed to CompareView via the URL.
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
-
-  const toggleSelected = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const [draft, setDraft] = useAnalysisState("alpha-browse", { zooFilter: "", themeFilter: "", universeFilter: "", search: "", visibleCount: PAGE_SIZE, selected: [] as string[] });
+  const { zooFilter, themeFilter, universeFilter, search, visibleCount } = draft;
+  const selected = new Set(draft.selected);
+  const setZooFilter = (zooFilter: string) => setDraft((d) => ({ ...d, zooFilter, visibleCount: PAGE_SIZE }));
+  const setThemeFilter = (themeFilter: string) => setDraft((d) => ({ ...d, themeFilter, visibleCount: PAGE_SIZE }));
+  const setUniverseFilter = (universeFilter: string) => setDraft((d) => ({ ...d, universeFilter, visibleCount: PAGE_SIZE }));
+  const setSearch = (search: string) => setDraft((d) => ({ ...d, search }));
+  const setVisibleCount = (update: number | ((n: number) => number)) => setDraft((d) => ({ ...d, visibleCount: typeof update === "function" ? update(d.visibleCount) : update }));
+  const [total, setTotal] = useState(0);
+  const toggleSelected = (id: string) => setDraft((d) => ({ ...d, selected: d.selected.includes(id) ? d.selected.filter((v) => v !== id) : [...d.selected, id] }));
 
   const compareHref =
     selected.size >= 2
@@ -171,16 +164,12 @@ function BrowseView() {
     setLoading(true);
     api
       .listAlphas({
-        zoo: zooFilter || undefined,
-        theme: themeFilter || undefined,
-        universe: universeFilter || undefined,
         limit: 1000,
       })
       .then((res) => {
         if (!alive) return;
         setAlphas(res.alphas);
         setTotal(res.total);
-        setVisibleCount(PAGE_SIZE);
       })
       .catch((err: unknown) => {
         if (!alive) return;
@@ -195,7 +184,7 @@ function BrowseView() {
     return () => {
       alive = false;
     };
-  }, [zooFilter, themeFilter, universeFilter]);
+  }, []);
 
   const themeOptions = useMemo(() => {
     const set = new Set<string>();
@@ -205,13 +194,11 @@ function BrowseView() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return alphas;
-    return alphas.filter(
-      (a) =>
-        a.id.toLowerCase().includes(q) ||
-        (a.nickname || "").toLowerCase().includes(q),
-    );
-  }, [alphas, search]);
+    return alphas.filter((a) => (!zooFilter || a.zoo === zooFilter)
+      && (!themeFilter || a.theme?.includes(themeFilter))
+      && (!universeFilter || a.universe?.includes(universeFilter))
+      && (!q || a.id.toLowerCase().includes(q) || (a.nickname || "").toLowerCase().includes(q)));
+  }, [alphas, search, zooFilter, themeFilter, universeFilter]);
 
   const visible = filtered.slice(0, visibleCount);
 
@@ -278,8 +265,7 @@ function BrowseView() {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
-                setVisibleCount(PAGE_SIZE);
-              }}
+                      }}
               placeholder={i18n.t("alphaZoo.searchPlaceholder")}
               className="w-full pl-9 pr-3 py-2 rounded-lg border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
@@ -331,7 +317,7 @@ function BrowseView() {
           >
             <option value="">{i18n.t("alphaZoo.allUniverses")}</option>
             {FILTER_UNIVERSE_OPTIONS.map((u) => (
-              <option key={u.value} value={u.value}>
+              <option key={u.value} value={u.value} disabled={u.value === "btc-usdt"}>
                 {i18n.t("alphaZoo.universeOption." + u.value as any)}
               </option>
             ))}
@@ -346,13 +332,14 @@ function BrowseView() {
           {selected.size >= 2 ? ` (${selected.size})` : ""}
         </Link>
         <Link
-          to="/alpha-zoo/bench"
+          to={selected.size === 1 ? `/alpha-zoo/bench?alpha_id=${encodeURIComponent([...selected][0])}&zoo=${encodeURIComponent(alphas.find((a) => a.id === [...selected][0])?.zoo ?? "alpha101")}&universe=${alphas.find((a) => a.id === [...selected][0])?.universe.includes("equity_us") ? "sp500" : "csi300"}` : selected.size > 1 ? compareHref : "/alpha-zoo/bench"}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.runBenchmark")}
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {selected.size ? i18n.t("analysis.evaluateSelected", { count: selected.size }) : i18n.t("alphaZoo.runBenchmark")}
         </Link>
       </div>
 
+      <p className="text-sm text-muted-foreground">{i18n.t("analysis.factorSelectionHint")}</p>
       {/* Table */}
       {/* TODO(v0.2): switch to react-window if alpha count exceeds 5000 */}
       <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">
@@ -534,8 +521,8 @@ function DetailView({ alphaId }: DetailProps) {
   // Keep period in sync with the BenchView form default so the prefilled
   // form values match what users see if they click "Run bench" from here.
   const benchHref = benchUniverse
-    ? `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&universe=${encodeURIComponent(benchUniverse)}&period=2020-2025`
-    : `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&period=2020-2025`;
+    ? `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&universe=${encodeURIComponent(benchUniverse)}&period=2020-2025&alpha_id=${encodeURIComponent(a.id)}`
+    : `/alpha-zoo/bench?zoo=${encodeURIComponent(a.zoo)}&period=2020-2025&alpha_id=${encodeURIComponent(a.id)}`;
 
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
@@ -551,7 +538,7 @@ function DetailView({ alphaId }: DetailProps) {
           onClick={() => navigate(benchHref)}
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
         >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.runBenchmark")}
+          <Play className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("analysis.evaluateFactor")}
         </button>
       </div>
 
@@ -642,12 +629,13 @@ function MetaRow({ label, value, last }: { label: string; value: string; last?: 
 
 /* ---------- Bench view ---------- */
 
-type BenchStatus = "idle" | "submitting" | "streaming" | "done" | "error";
+
 
 interface BenchProgress {
   n_done: number;
   n_total: number;
   current_alpha_id?: string;
+  stage?: "loading_data" | "preparing_returns" | "computing";
 }
 
 function BenchView() {
@@ -659,123 +647,25 @@ function BenchView() {
       zoo: q.get("zoo") || "alpha101",
       universe: q.get("universe") || "csi300",
       period: q.get("period") || "2020-2025",
-      top: Number(q.get("top") || "20"),
+      top: Math.min(5, Math.max(1, Number(q.get("top") || "5"))),
+      alphaId: q.get("alpha_id") || "",
     };
   }, [locSearch]);
 
-  const [zoo, setZoo] = useState(initial.zoo);
-  const [universe, setUniverse] = useState(initial.universe);
-  const [period, setPeriod] = useState(initial.period);
-  const [top, setTop] = useState<number>(initial.top);
-
-  const [status, setStatus] = useState<BenchStatus>("idle");
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<BenchProgress | null>(null);
-  const [result, setResult] = useState<AlphaBenchResult | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
-  // Track terminal `done` so the synthetic EventSource `error` fired on
-  // close doesn't surface as a spurious toast (race between done + error).
-  const doneRef = useRef(false);
-
-  useEffect(() => {
-    return () => {
-      sourceRef.current?.close();
-      sourceRef.current = null;
-    };
-  }, []);
-
-  const startBench = async (e: FormEvent) => {
-    e.preventDefault();
-    if (status === "submitting" || status === "streaming") return;
-    setStatus("submitting");
-    setProgress(null);
-    setResult(null);
-    setFormError(null);
-    doneRef.current = false;
-    sourceRef.current?.close();
-    const safeTop = Number.isFinite(top) && top > 0 ? top : 20;
-    try {
-      const res = await api.createAlphaBench({
-        zoo,
-        universe,
-        period,
-        top: safeTop,
-      });
-      setJobId(res.job_id);
-      await attachStream(res.job_id);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : i18n.t("alphaZoo.failedToStartBench" as any);
-      // BTC-USDT is single-asset — surface inline rather than as a toast,
-      // because the form is the action context and the message includes a
-      // concrete suggestion for the user's next step.
-      if (msg.toLowerCase().includes("single-asset")) {
-        setFormError(i18n.t("alphaZoo.singleAssetHint" as any, { message: msg }));
-      } else {
-        toast.error(msg);
-      }
-      setStatus("error");
-    }
+  const [draft, setDraft] = useAnalysisState(`alpha-bench:${initial.zoo}:${initial.alphaId}`, { ...initial });
+  const { zoo, universe, period, top, alphaId } = draft;
+  const setZoo = (zoo: string) => setDraft((d) => ({ ...d, zoo }));
+  const setUniverse = (universe: string) => setDraft((d) => ({ ...d, universe }));
+  const setPeriod = (period: string) => setDraft((d) => ({ ...d, period }));
+  const setTop = (top: number) => setDraft((d) => ({ ...d, top }));
+  const job = useAlphaJob<AlphaBenchResult>("bench", `${initial.zoo}:${initial.alphaId}`);
+  const { status, jobId, progress, result, formError, busy } = job;
+  const readiness = useReadiness();
+  const startBench = async (event: FormEvent) => {
+    event.preventDefault();
+    if (universe === "btc-usdt") { job.setFormError(i18n.t("analysis.ready_single_asset")); return; }
+    await job.submit({ zoo, universe, period, top: Number.isFinite(top) && top > 0 ? Math.min(5, top) : 5, ...(alphaId ? { alpha_id: alphaId } : {}) });
   };
-
-  const attachStream = async (newJobId: string) => {
-    setStatus("streaming");
-    // Mint a single-use SSE ticket, then open the stream with ?ticket= (the
-    // long-lived API key never goes in the URL).
-    const url = await api.alphaBenchStreamUrl(newJobId);
-    const source = new EventSource(url);
-    sourceRef.current = source;
-
-    source.addEventListener("progress", (e) => {
-      try {
-        const data = JSON.parse((e as MessageEvent).data) as BenchProgress;
-        setProgress(data);
-      } catch {
-        /* ignore */
-      }
-    });
-
-    source.addEventListener("result", (e) => {
-      try {
-        const data = JSON.parse((e as MessageEvent).data) as AlphaBenchResult;
-        setResult(data);
-      } catch {
-        /* ignore */
-      }
-    });
-
-    source.addEventListener("done", () => {
-      doneRef.current = true;
-      setStatus("done");
-      source.close();
-      sourceRef.current = null;
-    });
-
-    source.addEventListener("error", (e) => {
-      // EventSource raises a synthetic error on every disconnect, including
-      // the normal close that follows our `done` event. The ref check is
-      // synchronous (state updates from `done` would be batched and not
-      // visible here yet), so it's the only reliable race guard.
-      if (doneRef.current) {
-        source.close();
-        sourceRef.current = null;
-        return;
-      }
-      let msg = i18n.t("alphaZoo.benchStreamError" as any);
-      try {
-        const data = JSON.parse((e as MessageEvent).data || "{}");
-        if (typeof data.message === "string") msg = data.message;
-      } catch {
-        /* network-level error, no payload */
-      }
-      toast.error(msg);
-      setStatus("error");
-      source.close();
-      sourceRef.current = null;
-    });
-  };
-
-  const busy = status === "submitting" || status === "streaming";
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
@@ -791,10 +681,10 @@ function BenchView() {
           <Play className="h-3.5 w-3.5" aria-hidden="true" /> {i18n.t("alphaZoo.benchRunner")}
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">
-          {i18n.t("alphaZoo.scoreZoo")}
+          {alphaId ? i18n.t("analysis.evaluateFactor") : i18n.t("alphaZoo.scoreZoo")}
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          {i18n.t("alphaZoo.scoreDesc")}
+          {alphaId ? i18n.t("analysis.selectedFactor", { id: alphaId }) : i18n.t("alphaZoo.scoreDesc")}
         </p>
       </div>
 
@@ -809,7 +699,7 @@ function BenchView() {
             id="bench-zoo"
             value={zoo}
             onChange={(e) => setZoo(e.target.value)}
-            disabled={busy}
+            disabled={busy || Boolean(alphaId)}
             className="w-full px-3 py-2 rounded-lg border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
           >
             {ZOO_CARDS.map((z) => (
@@ -829,7 +719,7 @@ function BenchView() {
             className="w-full px-3 py-2 rounded-lg border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
           >
             {UNIVERSE_OPTIONS.map((u) => (
-              <option key={u.value} value={u.value}>
+              <option key={u.value} value={u.value} disabled={u.value === "btc-usdt"}>
                 {i18n.t("alphaZoo.universeOption." + u.value as any)}
               </option>
             ))}
@@ -847,12 +737,12 @@ function BenchView() {
           />
         </div>
         <div>
-          <label htmlFor="bench-top" className="text-xs text-muted-foreground block mb-1">{i18n.t("alphaZoo.top")}</label>
+          <label htmlFor="bench-top" className="text-xs text-muted-foreground block mb-1">{i18n.t("analysis.resultLimit")}</label>
           <input
             id="bench-top"
             type="number"
             min={1}
-            max={500}
+            max={5}
             value={Number.isFinite(top) ? top : ""}
             onChange={(e) =>
               // Empty input → fall back to default; submit also clamps
@@ -890,12 +780,16 @@ function BenchView() {
         )}
       </form>
 
+      {zoo === "fundamental" && <p className="text-sm text-muted-foreground">{i18n.t("analysis.fundamentalsRequirement")}</p>}
+      <ReadinessPanel readiness={readiness} universe={universe} count={alphaId ? 1 : readiness.data?.zoo_counts[zoo]} />
+      {status === "disconnected" && <button type="button" onClick={job.reconnect} className="text-primary underline">{i18n.t("analysis.resumeJob")}</button>}
       {/* Progress */}
-      {(status === "submitting" || status === "streaming") && (
+      {(status === "submitting" || status === "streaming" || status === "disconnected") && (
         <ProgressPanel jobId={jobId} progress={progress} />
       )}
 
       {/* Result */}
+      {result && job.request && <p className="text-sm text-muted-foreground">{i18n.t("alphaZoo.universe")}: {i18n.t("alphaZoo.universeOption." + job.request.universe, { defaultValue: job.request.universe })} · {i18n.t("alphaZoo.period")}: {job.request.period}</p>}
       {result && <ResultPanel result={result} />}
     </div>
   );
@@ -932,6 +826,8 @@ function ProgressPanel({
           style={{ width: `${pct}%` }}
         />
       </div>
+      <p className="text-sm text-muted-foreground">{i18n.t(`analysis.stage_${progress?.stage ?? (progress?.n_done ? "computing" : "loading_data")}`)}</p>
+      <p className="text-xs text-muted-foreground">{i18n.t("analysis.backgroundJob")}</p>
       {progress?.current_alpha_id && (
         <p className="text-xs text-muted-foreground font-mono truncate">
           {i18n.t("alphaZoo.computing", { id: progress.current_alpha_id })}
@@ -942,19 +838,16 @@ function ProgressPanel({
 }
 
 function ResultPanel({ result }: { result: AlphaBenchResult }) {
-  const dark = useThemeDark();
   const chartRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!chartRef.current) return;
+  useChartLifecycle(chartRef, () => {
     const theme = getChartTheme();
-    const chart = echarts.init(chartRef.current);
     const themes = Object.keys(result.by_theme || {}).sort();
     const aliveSeries = themes.map((k) => result.by_theme[k].alive);
     const reversedSeries = themes.map((k) => result.by_theme[k].reversed);
     const deadSeries = themes.map((k) => result.by_theme[k].dead);
 
-    chart.setOption({
+    return {
       backgroundColor: "transparent",
       tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
       legend: {
@@ -980,23 +873,8 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
         { name: i18n.t("alphaZoo.reversed"), type: "bar", stack: "n", data: reversedSeries, itemStyle: { color: theme.warningColor } },
         { name: i18n.t("alphaZoo.dead"), type: "bar", stack: "n", data: deadSeries, itemStyle: { color: theme.downColor } },
       ],
-    });
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
-      });
-    });
-    ro.observe(chartRef.current);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
     };
-  }, [result, dark]);
+  }, [result]);
 
   const totals = [
     { label: i18n.t("alphaZoo.alive"), value: result.alive, icon: CheckCircle2, tone: "text-green-600 dark:text-green-400" },
@@ -1007,6 +885,8 @@ function ResultPanel({ result }: { result: AlphaBenchResult }) {
 
   return (
     <div className="space-y-4">
+      <FactorDataNotice meta={result.meta} />
+      {result.n_alphas_tested === 0 && <p role="alert" className="text-warning">{i18n.t("analysis.noEvaluableFactors")}</p>}
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {totals.map(({ label, value, icon: Icon, tone }) => (
@@ -1141,8 +1021,7 @@ function parseAlphaIds(text: string): string[] {
 /**
  * Head-to-head comparison of a hand-picked set of alphas.
  *
- * Mirrors {@link BenchView}'s raw-EventSource lifecycle (the shared `useSSE`
- * hook drops these event types). Ids are prefilled from `?ids=a,b,c` — set by
+ * Uses the same recoverable job lifecycle as {@link BenchView}. Ids are prefilled from `?ids=a,b,c` — set by
  * the BrowseView multi-select — and remain editable as free text.
  */
 function CompareView() {
@@ -1152,108 +1031,22 @@ function CompareView() {
     return parseAlphaIds(q.get("ids") || "").join(", ");
   }, [locSearch]);
 
-  const [idsText, setIdsText] = useState(initialIds);
-  const [universe, setUniverse] = useState("csi300");
-  const [period, setPeriod] = useState("2020-2025");
-  const [sort, setSort] = useState("ir");
-
-  const [status, setStatus] = useState<BenchStatus>("idle");
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<BenchProgress | null>(null);
-  const [result, setResult] = useState<AlphaCompareResult | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const sourceRef = useRef<EventSource | null>(null);
-  const doneRef = useRef(false);
-
+  const [draft, setDraft] = useAnalysisState(`alpha-compare:${initialIds}`, { idsText: initialIds, universe: "csi300", period: "2020-2025", sort: "ir" });
+  const { idsText, universe, period, sort } = draft;
+  const setIdsText = (idsText: string) => setDraft((d) => ({ ...d, idsText }));
+  const setUniverse = (universe: string) => setDraft((d) => ({ ...d, universe }));
+  const setPeriod = (period: string) => setDraft((d) => ({ ...d, period }));
+  const setSort = (sort: string) => setDraft((d) => ({ ...d, sort }));
+  const job = useAlphaJob<AlphaCompareResult>("compare", initialIds || "default");
+  const { status, jobId, progress, result, formError, busy } = job;
+  const readiness = useReadiness();
   const ids = useMemo(() => parseAlphaIds(idsText), [idsText]);
-
-  useEffect(() => {
-    return () => {
-      sourceRef.current?.close();
-      sourceRef.current = null;
-    };
-  }, []);
-
-  const attachStream = async (newJobId: string) => {
-    setStatus("streaming");
-    // Mint a single-use SSE ticket, then open the stream with ?ticket= (the
-    // long-lived API key never goes in the URL).
-    const source = new EventSource(await api.alphaCompareStreamUrl(newJobId));
-    sourceRef.current = source;
-
-    source.addEventListener("progress", (e) => {
-      try {
-        setProgress(JSON.parse((e as MessageEvent).data) as BenchProgress);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("result", (e) => {
-      try {
-        setResult(JSON.parse((e as MessageEvent).data) as AlphaCompareResult);
-      } catch {
-        /* ignore */
-      }
-    });
-    source.addEventListener("done", () => {
-      doneRef.current = true;
-      setStatus("done");
-      source.close();
-      sourceRef.current = null;
-    });
-    source.addEventListener("error", (e) => {
-      // EventSource raises a synthetic error on the close that follows `done`;
-      // the ref check (synchronous) is the only reliable race guard.
-      if (doneRef.current) {
-        source.close();
-        sourceRef.current = null;
-        return;
-      }
-      let msg = i18n.t("alphaZoo.compareStreamError" as any);
-      try {
-        const data = JSON.parse((e as MessageEvent).data || "{}");
-        if (typeof data.message === "string") msg = data.message;
-      } catch {
-        /* network-level error, no payload */
-      }
-      toast.error(msg);
-      setStatus("error");
-      source.close();
-      sourceRef.current = null;
-    });
+  const startCompare = async (event: FormEvent) => {
+    event.preventDefault();
+    if (ids.length < 2) { job.setFormError(i18n.t("alphaZoo.enterAtLeast2")); return; }
+    if (universe === "btc-usdt") { job.setFormError(i18n.t("analysis.ready_single_asset")); return; }
+    await job.submit({ alpha_ids: ids, universe, period, sort });
   };
-
-  const startCompare = async (e: FormEvent) => {
-    e.preventDefault();
-    if (status === "submitting" || status === "streaming") return;
-    if (ids.length < 2) {
-      setFormError(i18n.t("alphaZoo.enterAtLeast2"));
-      return;
-    }
-    setStatus("submitting");
-    setProgress(null);
-    setResult(null);
-    setFormError(null);
-    doneRef.current = false;
-    sourceRef.current?.close();
-    try {
-      const res = await api.createAlphaCompare({
-        alpha_ids: ids,
-        universe,
-        period,
-        sort,
-      });
-      setJobId(res.job_id);
-      await attachStream(res.job_id);
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : i18n.t("alphaZoo.failedToStartComparison" as any);
-      toast.error(msg);
-      setStatus("error");
-    }
-  };
-
-  const busy = status === "submitting" || status === "streaming";
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
@@ -1306,7 +1099,7 @@ function CompareView() {
               className="w-full px-3 py-2 rounded-lg border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50"
             >
               {UNIVERSE_OPTIONS.map((u) => (
-                <option key={u.value} value={u.value}>
+                <option key={u.value} value={u.value} disabled={u.value === "btc-usdt"}>
                   {i18n.t("alphaZoo.universeOption." + u.value as any)}
                 </option>
               ))}
@@ -1369,7 +1162,9 @@ function CompareView() {
         )}
       </form>
 
-      {(status === "submitting" || status === "streaming") && (
+      <ReadinessPanel readiness={readiness} universe={universe} count={ids.length} />
+      {status === "disconnected" && <button type="button" onClick={job.reconnect} className="text-primary underline">{i18n.t("analysis.resumeJob")}</button>}
+      {(status === "submitting" || status === "streaming" || status === "disconnected") && (
         <ProgressPanel jobId={jobId} progress={progress} />
       )}
 
@@ -1382,6 +1177,7 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
   const deltaKey = `delta_${result.sort}_vs_best`;
   return (
     <div className="space-y-4">
+      <FactorDataNotice meta={result.meta} />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="inline-flex items-center gap-1.5 font-medium text-success">
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {i18n.t("alphaZoo.winner")}:{" "}
@@ -1460,4 +1256,36 @@ function CompareResultPanel({ result }: { result: AlphaCompareResult }) {
       )}
     </div>
   );
+}
+
+function useReadiness() {
+  const [data, setData] = useState<AlphaReadiness | null>(null);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    api.getAlphaReadiness().then((data) => { if (active) { setData(data); setError(""); } }).catch((error) => { if (active) setError(error instanceof Error ? error.message : i18n.t("analysis.failed")); });
+    return () => { active = false; };
+  }, [retry]);
+  return { data, error, retry: () => setRetry((n) => n + 1) };
+}
+
+function ReadinessPanel({ readiness, universe, count }: { readiness: ReturnType<typeof useReadiness>; universe: string; count?: number }) {
+  const info = readiness.data?.universes[universe];
+  return <div className="space-y-2 rounded-xl border bg-card p-4 text-sm" role="status">
+    <p>{i18n.t("analysis.evaluationScope", { count: count ?? "–" })}</p>
+    <p className={info?.ready ? "text-muted-foreground" : "text-warning"}>{info ? i18n.t(`analysis.ready_${info.reason}`) : readiness.error || i18n.t("analysis.checkingData")}</p>
+    {readiness.error && <button onClick={readiness.retry} className="text-primary underline">{i18n.t("connection.retry")}</button>}
+    {info && !info.ready && universe !== "btc-usdt" && <Link to="/settings" className="inline-block text-primary underline">{i18n.t("layout.settings")}</Link>}
+  </div>;
+}
+
+function FactorDataNotice({ meta }: { meta?: import("@/lib/api").AlphaDataMeta }) {
+  if (!meta) return null;
+  return <div className="space-y-1 rounded-lg border bg-card p-3 text-sm">
+    {meta.fetched_instruments !== undefined && <p>{i18n.t("analysis.factorCoverage", { count: meta.fetched_instruments, total: meta.requested_instruments ?? "–" })}</p>}
+    {meta.missing_instruments?.length ? <p className="text-warning">{i18n.t("analysis.missingAssets", { assets: meta.missing_instruments.join(", ") })}</p> : null}
+    {meta.survivorship_bias && <p className="text-warning">{i18n.t("analysis.survivorshipBias")}</p>}
+    {meta.degraded && <p className="text-warning">{i18n.t("analysis.degradedUniverse")}</p>}
+  </div>;
 }

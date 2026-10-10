@@ -14,6 +14,7 @@ import pytest
 import requests
 
 from backtest.loaders import nobitex
+from tests.loader_contract import assert_loader_contract
 
 
 def _udf_payload(
@@ -128,6 +129,7 @@ class TestFetch:
         assert df.index.is_monotonic_increasing
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert len(df) == 2
+        assert_loader_contract(df, context="canonical frame")
         assert df["close"].tolist() == [1.5, 2.5]
         assert df["volume"].dtype.kind == "f"
         assert recorder.calls[0]["params"]["symbol"] == "BTCIRT"

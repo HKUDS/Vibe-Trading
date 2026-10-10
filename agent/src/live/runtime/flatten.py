@@ -37,6 +37,7 @@ BEFORE the report is returned, so the preemptive sweep is fully reconstructable.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Callable
 
 from src.live.audit import LiveActionEvent, write_live_action
@@ -259,6 +260,19 @@ def _cancel_resting_orders(
             )
             continue
         order_id = order.get("order_id")
+        if not isinstance(order_id, str) or not order_id.strip():
+            # A cancel request is keyed entirely by order_id. Without a usable
+            # one the broker call is meaningless, yet a non-error envelope would
+            # be recorded as a cancellation of a real order that is still
+            # resting. Record it and move on — no side effect is attempted, so
+            # side_effects_attempted must stay as-is.
+            report["errors"].append(
+                {
+                    "phase": "cancel",
+                    "error": f"missing or invalid order_id: {order_id!r}",
+                }
+            )
+            continue
         request = {"action": "cancel", "order_id": order_id}
         report["side_effects_attempted"] = True
         try:
@@ -336,8 +350,22 @@ def _flatten_open_positions(
             )
             continue
         symbol = position.get("symbol")
-        qty = float(position.get("qty", 0) or 0)
-        if qty == 0:
+        qty = _coerce_position_qty(position.get("qty"))
+        if qty is None:
+            report["errors"].append(
+                {
+                    "phase": "flatten",
+                    "symbol": symbol,
+                    "error": f"invalid or missing position qty: {position.get('qty')!r}",
+                }
+            )
+            continue
+        if qty == 0.0:
+            continue
+        if not isinstance(symbol, str) or not symbol.strip():
+            report["errors"].append(
+                {"phase": "flatten", "error": f"invalid or missing position symbol: {symbol!r}"}
+            )
             continue
         side = "sell" if qty > 0 else "buy"
         close_qty = abs(qty)
@@ -395,6 +423,31 @@ def _flatten_open_positions(
         )
 
 
+def _coerce_position_qty(raw: Any) -> float | None:
+    """Parse a broker position ``qty`` into a finite float, or ``None``.
+
+    The signed quantity decides the close side and size, so it must be a real
+    finite number. A bare ``float()`` cannot be trusted here: a non-numeric or
+    non-finite value (``"n/a"``, a dict, ``nan``, ``inf``) either raises out of
+    the sweep loop — aborting every remaining position on this trip — or, worse,
+    slips past ``qty == 0`` / ``qty > 0`` with ``nan`` and submits a real market
+    order of NaN shares. Booleans are rejected too: ``float(True)`` is ``1.0``,
+    which would close one share off a malformed record.
+
+    Returns:
+        The signed quantity as a float, ``0.0`` for a genuine zero position, or
+        ``None`` when the value is absent, malformed, or non-finite (the caller
+        records it in ``report["errors"]`` and moves on to the next position).
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        qty = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return qty if math.isfinite(qty) else None
+
+
 def _error_envelope_message(response: Any) -> str | None:
     """Return the error string when a broker call failed via envelope.
 
@@ -448,6 +501,16 @@ def _audit(
 ) -> None:
     """Append one redacted live-action record for a sweep broker call.
 
+    Fail-safe: an audit write must never abort the sweep. The ledger write does
+    real I/O (``mkdir`` / ``json.dumps`` / ``open`` / ``write``), any of which can
+    raise on a bad record or a failing disk — and an exception escaping here
+    propagates out of ``flatten_and_cancel`` into the runner, which then latches
+    the sweep permanently (``mark_sweep_fired``) so no further cancel or flatten
+    ever runs, for this process or any restart. A dropped audit line is a
+    detectable gap; a permanently disabled kill-switch is not. This mirrors the
+    chain-ledger branch of :func:`src.live.audit.write_live_action`, which states
+    the same policy for the same reason.
+
     Args:
         broker: Broker key (stamped as ``server``).
         remote_tool: Broker remote tool invoked (``cancel_order`` | ``place_order``).
@@ -457,16 +520,26 @@ def _audit(
         outcome: ``"accepted"`` on success, ``"error"`` on failure.
         error: Error string when ``outcome == "error"``, else ``None``.
     """
-    write_live_action(
-        LiveActionEvent(
-            kind="order_placed" if outcome == "accepted" else "order_rejected",
-            session_id=_RUNTIME_SESSION_ID,
-            outcome=outcome,  # type: ignore[arg-type]
-            server=broker,
-            remote_tool=remote_tool,
-            intent_normalized=intent,
-            broker_request=request,
-            broker_response=response,
-            error=error,
+    try:
+        write_live_action(
+            LiveActionEvent(
+                kind="order_placed" if outcome == "accepted" else "order_rejected",
+                session_id=_RUNTIME_SESSION_ID,
+                outcome=outcome,  # type: ignore[arg-type]
+                server=broker,
+                remote_tool=remote_tool,
+                intent_normalized=intent,
+                broker_request=request,
+                broker_response=response,
+                error=error,
+            )
         )
-    )
+    except Exception as exc:  # noqa: BLE001 — a logging fault must not stop the sweep
+        logger.exception(
+            "live preemptive sweep audit write failed (%s: %s) for %s/%s; the "
+            "broker call itself is unaffected and the sweep continues",
+            type(exc).__name__,
+            exc,
+            broker,
+            remote_tool,
+        )

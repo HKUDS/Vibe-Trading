@@ -19,7 +19,7 @@ from src.agent.grounding.identity import (
     _utc_now,
 )
 from src.agent.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
-from src.agent.grounding.figures import parse_figures_block, scan_figures, strip_figures_block
+from src.agent.grounding.figures import Figure, parse_figures_block, scan_figures, strip_figures_block
 from src.agent.grounding.policies import ValidationResult, _PolicyMixin
 from src.agent.grounding.registry import GROUNDING_CHECKS
 from src.agent.grounding.release import (
@@ -40,6 +40,38 @@ GROUNDING_ARTIFACT = "grounding_evidence.json"
 _ANALYSIS_TOOLS = frozenset(
     {"backtest", "factor_analysis", "run_shadow_backtest", "quantlib_call"}
 )
+
+
+def _passed_figures(
+    figures: Sequence[Figure], issues: Sequence[Mapping[str, Any]]
+) -> tuple[str, ...]:
+    """The measured figures no issue flags, as written, in document order.
+
+    The correction prompt needs them for its keep list. A spelling that fails
+    anywhere in the draft is endorsed nowhere, so the list only carries values
+    the gate can vouch for outright. Bare integers stay off: only the
+    price-posing ones are checked, so a plain "bare" pass proves nothing.
+    """
+    flagged_spans = {
+        (int(span[0]), int(span[1]))
+        for issue in issues
+        if isinstance((span := issue.get("span")), (list, tuple)) and len(span) == 2
+    }
+    flagged_values = {
+        str(issue.get("value")) for issue in issues if issue.get("value") is not None
+    }
+    passed: list[str] = []
+    seen: set[str] = set()
+    for figure in figures:
+        if figure.shape != "measured":
+            continue
+        if (figure.start, figure.end) in flagged_spans:
+            continue
+        if figure.text in flagged_values or figure.text in seen:
+            continue
+        seen.add(figure.text)
+        passed.append(figure.text)
+    return tuple(passed)
 
 
 _ACTIONABLE_MARKET_RE = re.compile(
@@ -280,6 +312,8 @@ class GroundingLedger(
             self._ingest_market_data(arguments, payload, call_id)
         elif tool_name == "read_file" and payload is not None:
             self._ingest_engine_table(payload, call_id)
+        elif tool_name == "read_run_artifact" and payload is not None:
+            self._ingest_engine_table(payload, call_id, tool_name=tool_name)
         elif payload is not None:
             self._ingest_generic_numeric(tool_name, arguments, payload, call_id)
         self.persist()
@@ -340,6 +374,7 @@ class GroundingLedger(
             valid=not issues,
             issues=issues,
             released_text=strip_figures_block(content, block),
+            passed_figures=_passed_figures(figures, issues),
         )
         if not record:
             return result

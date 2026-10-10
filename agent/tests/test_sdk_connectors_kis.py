@@ -365,3 +365,54 @@ def test_kis_order_ops_classified_write() -> None:
         assert KIS_TOOL_CLASS[name] is ToolClass.WRITE
     for name in ("get_positions", "get_account_snapshot"):
         assert KIS_TOOL_CLASS[name] is ToolClass.READ
+
+
+def test_kis_open_orders_merges_disjoint_exchange_buckets(monkeypatch) -> None:
+    """daily-ccld's EXCG_ID_DVSN_CD buckets do not overlap.
+
+    A live account returned 6 rows for KRX and 33 for SOR with zero overlap, so
+    asking only for KRX dropped most fills and the orders view looked empty.
+    """
+    cfg = kis.KISConfig(app_key="k", app_secret="s", account_no="12345678", profile="paper")
+    by_venue = {
+        "KRX": [{"ord_dt": "20261006", "odno": "1", "pdno": "069500", "rmn_qty": "0"}],
+        "SOR": [
+            {"ord_dt": "20261006", "odno": "2", "pdno": "000660", "rmn_qty": "0"},
+            {"ord_dt": "20261006", "odno": "3", "pdno": "005930", "rmn_qty": "5"},
+        ],
+        "NXT": [],
+    }
+    asked: list[str] = []
+
+    def fake_paginated(_cfg, _path, *, tr_id, params):
+        asked.append(params["EXCG_ID_DVSN_CD"])
+        return {"output1": by_venue[params["EXCG_ID_DVSN_CD"]]}
+
+    monkeypatch.setattr(kis, "_get_paginated", fake_paginated)
+    result = kis.get_open_orders(cfg, include_executions=True)
+
+    assert asked == list(kis._EXCHANGE_IDS_INQUIRY)
+    assert [r["symbol"] for r in result["executions"]] == ["069500", "000660"]
+    assert [r["symbol"] for r in result["open_orders"]] == ["005930"]
+
+
+def test_kis_open_orders_dedupes_an_order_reported_by_two_venues(monkeypatch) -> None:
+    cfg = kis.KISConfig(app_key="k", app_secret="s", account_no="12345678", profile="paper")
+    row = {"ord_dt": "20261006", "odno": "7", "pdno": "000660", "rmn_qty": "0"}
+    monkeypatch.setattr(kis, "_get_paginated", lambda *a, **k: {"output1": [dict(row)]})
+    result = kis.get_open_orders(cfg, include_executions=True)
+    assert len(result["executions"]) == 1
+
+
+def test_kis_open_orders_reports_an_incomplete_venue_inquiry(monkeypatch) -> None:
+    """Known rows cannot authorize reporting an incomplete inquiry as complete."""
+    cfg = kis.KISConfig(app_key="k", app_secret="s", account_no="12345678", profile="paper")
+
+    def fake_paginated(_cfg, _path, *, tr_id, params):
+        if params["EXCG_ID_DVSN_CD"] != "KRX":
+            raise kis.KISAPIError("unsupported exchange")
+        return {"output1": [{"ord_dt": "20261006", "odno": "1", "pdno": "069500", "rmn_qty": "0"}]}
+
+    monkeypatch.setattr(kis, "_get_paginated", fake_paginated)
+    with pytest.raises(kis.KISAPIError, match="incomplete.*SOR.*NXT"):
+        kis.get_open_orders(cfg, include_executions=True)

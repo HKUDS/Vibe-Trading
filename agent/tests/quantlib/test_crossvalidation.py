@@ -387,6 +387,76 @@ def test_group_purged_kfold_splits_input_validation():
         list(group_purged_kfold_splits([], n_folds=2))
 
 
+def test_group_purged_kfold_splits_leaks_a_forward_looking_label_without_purging():
+    """Groups adjacent to the test block are embargoed, but a group further
+    back whose own label reaches forward into the test window was never
+    checked at all -- group_purged_kfold_splits hardcoded purged=0 and took
+    no label_end_times, unlike every other splitter in this module. This
+    reproduces the leak directly against the module's own leakage auditor.
+    """
+    n_dates, n_assets = 10, 2
+    dates = np.repeat(np.arange(n_dates), n_assets)
+    n = len(dates)
+    # Each row's label resolves 3 rows (~1.5 dates) later.
+    label_end_times = np.minimum(np.arange(n) + 3, n - 1)
+
+    splits = list(
+        group_purged_kfold_splits(dates, n_folds=5, embargo_fraction=0.3)
+    )
+    reports = [
+        detect_boundary_leakage(split, label_end_times, n_samples=n, embargo_size=3)
+        for split in splits
+    ]
+
+    assert any(not report.clean for report in reports)
+
+
+def test_group_purged_kfold_splits_purges_a_forward_looking_label():
+    n_dates, n_assets = 10, 2
+    dates = np.repeat(np.arange(n_dates), n_assets)
+    n = len(dates)
+    label_end_times = np.minimum(np.arange(n) + 3, n - 1)
+
+    splits = list(
+        group_purged_kfold_splits(
+            dates, label_end_times=label_end_times, n_folds=5, embargo_fraction=0.3
+        )
+    )
+
+    for split in splits:
+        report = detect_boundary_leakage(
+            split, label_end_times, n_samples=n, embargo_size=3
+        )
+        assert report.clean, f"leak: overlapping={report.overlapping.tolist()}"
+
+
+def test_group_purged_kfold_splits_reports_purged_count():
+    n_dates, n_assets = 10, 2
+    dates = np.repeat(np.arange(n_dates), n_assets)
+    n = len(dates)
+    label_end_times = np.minimum(np.arange(n) + 3, n - 1)
+
+    splits = list(
+        group_purged_kfold_splits(
+            dates, label_end_times=label_end_times, n_folds=5, embargo_fraction=0.3
+        )
+    )
+
+    assert any(split.purged > 0 for split in splits)
+
+
+def test_group_purged_kfold_splits_without_label_end_times_is_unchanged():
+    """The default (no label_end_times) path must behave exactly as before:
+    no backward purging, purged always 0."""
+    n_dates, n_assets = 100, 10
+    dates = np.repeat(np.arange(n_dates), n_assets)
+
+    splits = list(group_purged_kfold_splits(dates, n_folds=5, embargo_fraction=0.05))
+
+    for split in splits:
+        assert split.purged == 0
+
+
 def test_timestamp_label_index_must_be_ordered_and_unique():
     index = pd.to_datetime(["2024-01-01", "2024-01-03", "2024-01-02", "2024-01-04"])
     ends = pd.Series(index, index=index)

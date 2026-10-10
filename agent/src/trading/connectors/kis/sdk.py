@@ -69,6 +69,15 @@ _TR_CHART = "FHKST03010100"
 _MARKET_DIV_KRX = "J"
 #: Exchange id division code required by order-cash since the 2024 API rev.
 _EXCHANGE_ID_KRX = "KRX"
+#: Exchange ids the daily order/execution inquiry must be asked for separately.
+#
+# Since Nextrade (NXT) opened as a second Korean venue, brokers route most
+# retail orders through SOR (smart order routing over KRX+NXT). ``daily-ccld``
+# filters on EXCG_ID_DVSN_CD and the buckets are DISJOINT, not nested: a live
+# account returned 6 rows for KRX and 33 for SOR with ZERO overlap. Asking only
+# for KRX (the previous behaviour) silently dropped most fills, so open_orders
+# and executions looked empty. Ask each venue and merge on (ord_dt, odno).
+_EXCHANGE_IDS_INQUIRY = ("KRX", "SOR", "NXT")
 
 #: Safety margin subtracted from the token's reported TTL before it is
 #: treated as expired, so a request never races an in-flight expiry.
@@ -309,33 +318,57 @@ def get_open_orders(
     *,
     include_executions: bool = False,
 ) -> dict[str, Any]:
-    """Fetch today's orders, split into still-open vs already-executed."""
+    """Fetch today's orders, split into still-open vs already-executed.
+
+    Asks every venue in ``_EXCHANGE_IDS_INQUIRY`` and merges, because the
+    endpoint's EXCG_ID_DVSN_CD buckets do not overlap — see that constant.
+    """
     cfg = config or load_config()
     today = _kst_today()
-    payload = _get_paginated(
-        cfg,
-        "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
-        tr_id=_TR_DAILY_CCLD[cfg.environment],
-        params={
-            "CANO": cfg.account_no,
-            "ACNT_PRDT_CD": cfg.account_product_code,
-            "INQR_STRT_DT": today,
-            "INQR_END_DT": today,
-            "SLL_BUY_DVSN_CD": "00",
-            "CCLD_DVSN": "00",
-            "ORD_GNO_BRNO": "",
-            "ODNO": "",
-            "INQR_DVSN_3": "00",
-            "INQR_DVSN_1": "",
-            "INQR_DVSN": "00",
-            "EXCG_ID_DVSN_CD": _EXCHANGE_ID_KRX,
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": "",
-        },
-    )
+
+    items: list[Mapping[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    venue_errors: list[str] = []
+    for exchange_id in _EXCHANGE_IDS_INQUIRY:
+        try:
+            payload = _get_paginated(
+                cfg,
+                "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+                tr_id=_TR_DAILY_CCLD[cfg.environment],
+                params={
+                    "CANO": cfg.account_no,
+                    "ACNT_PRDT_CD": cfg.account_product_code,
+                    "INQR_STRT_DT": today,
+                    "INQR_END_DT": today,
+                    "SLL_BUY_DVSN_CD": "00",
+                    "CCLD_DVSN": "00",
+                    "ORD_GNO_BRNO": "",
+                    "ODNO": "",
+                    "INQR_DVSN_3": "00",
+                    "INQR_DVSN_1": "",
+                    "INQR_DVSN": "00",
+                    "EXCG_ID_DVSN_CD": exchange_id,
+                    "CTX_AREA_FK100": "",
+                    "CTX_AREA_NK100": "",
+                },
+            )
+        except KISAPIError as exc:
+            # One venue rejecting the filter must not hide the others' fills.
+            venue_errors.append(f"{exchange_id}: {exc}")
+            continue
+        for item in _as_list(payload.get("output1")):
+            # odno is unique per order per day; ord_dt guards a day rollover
+            # mid-call. A row without one is kept rather than silently dropped.
+            key = (str(item.get("ord_dt") or ""), str(item.get("odno") or ""))
+            if key[1] and key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
 
     open_orders, executions = [], []
-    for item in _as_list(payload.get("output1")):
+    if venue_errors:
+        raise KISAPIError("KIS order inquiry is incomplete: " + "; ".join(venue_errors))
+    for item in items:
         row = _order_to_dict(item)
         remaining = _as_float(item.get("rmn_qty"))
         if remaining > 0:
@@ -757,6 +790,8 @@ def _get_paginated(
     for _ in range(_MAX_CONTINUATION_PAGES):
         body, headers = _request(cfg, "GET", path, tr_id=tr_id, params=page_params, tr_cont=tr_cont)
         last_body = body
+        if not isinstance(body.get(rows_key), list):
+            raise KISAPIError(f"KIS {path} returned no valid {rows_key} list; inquiry is incomplete")
         rows.extend(_as_list(body.get(rows_key)))
         if str(headers.get("tr_cont", "")) not in ("F", "M"):
             break
@@ -788,26 +823,60 @@ def _request(
     if missing:
         raise KISConfigError(f"KIS connector not configured: missing {', '.join(missing)}.")
 
-    try:
-        response = requests.request(
-            method.upper(),
-            f"{cfg.base_url}{path}",
-            headers=_headers(cfg, tr_id, tr_cont),
-            params=dict(params or {}),
-            json=dict(body) if body is not None else None,
-            timeout=cfg.timeout,
-        )
-    except requests.RequestException as exc:
-        raise KISAPIError(f"KIS request failed: {exc}") from exc
+    for attempt in (0, 1):
+        try:
+            response = requests.request(
+                method.upper(),
+                f"{cfg.base_url}{path}",
+                headers=_headers(cfg, tr_id, tr_cont),
+                params=dict(params or {}),
+                json=dict(body) if body is not None else None,
+                timeout=cfg.timeout,
+            )
+        except requests.RequestException as exc:
+            raise KISAPIError(f"KIS request failed: {exc}") from exc
 
-    if response.status_code in (401, 403):
-        raise KISAPIError("KIS API authentication failed: check app_key/app_secret.")
-    if response.status_code >= 400:
-        raise KISAPIError(f"KIS API returned HTTP {response.status_code}: {_error_message(response)}")
+        if response.status_code >= 400:
+            message = _error_message(response)
+            # KIS issues ONE token per app_key: a token minted for the other
+            # environment (or by another process sharing the key) silently
+            # invalidates this one long before the cached expires_at. The cache
+            # still looks valid, so without this the connector fails every call
+            # until the file ages out — which would silently mute monitoring.
+            if attempt == 0 and _is_expired_token(message):
+                _clear_token_cache(cfg)
+                continue
+            if response.status_code in (401, 403):
+                raise KISAPIError("KIS API authentication failed: check app_key/app_secret.")
+            raise KISAPIError(f"KIS API returned HTTP {response.status_code}: {message}")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise KISAPIError("KIS API returned invalid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise KISAPIError("KIS API returned a non-object response.")
+        if payload.get("rt_cd") is not None and str(payload["rt_cd"]) != "0":
+            message = _error_message(response)
+            if attempt == 0 and _is_expired_token(message):
+                _clear_token_cache(cfg)
+                continue
+            raise KISAPIError(f"KIS API rejected the request: {message}")
+        return payload, response.headers
+    raise KISAPIError("KIS API rejected the token twice; re-issue failed.")
+
+
+def _is_expired_token(message: str) -> bool:
+    """Recognize the broker's explicit token-expiry rejection."""
+    low = message.lower()
+    return "만료된 token" in low or "expired" in low and "token" in low
+
+
+def _clear_token_cache(cfg: KISConfig) -> None:
+    """Discard this environment's rejected token before one bounded retry."""
     try:
-        return response.json(), response.headers
-    except ValueError as exc:
-        raise KISAPIError("KIS API returned invalid JSON.") from exc
+        _token_cache_path(cfg).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _error_message(response: requests.Response) -> str:

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 import { echarts, CHART_GROUP, connectCharts } from "@/lib/echarts";
@@ -21,27 +21,36 @@ export function useChartLifecycle(
   deps: readonly unknown[],
 ): void {
   const dark = useThemeDark();
+  const resource = useRef<{ node: HTMLDivElement; chart: ReturnType<typeof echarts.init>; observer: ResizeObserver; frame: number | null } | null>(null);
+  const dispose = () => {
+    const current = resource.current;
+    if (!current) return;
+    current.observer.disconnect();
+    if (current.frame !== null) cancelAnimationFrame(current.frame);
+    current.chart.dispose();
+    resource.current = null;
+  };
+  useEffect(() => dispose, []);
   useEffect(() => {
+    if (resource.current?.node !== ref.current) dispose();
     if (!ref.current) return;
-    const chart = echarts.init(ref.current);
-    chart.group = CHART_GROUP;
-    connectCharts();
-    chart.setOption(buildOption());
-
-    let resizeFrame: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = null;
-        chart.resize();
+    if (!resource.current) {
+      const chart = echarts.init(ref.current);
+      chart.group = CHART_GROUP;
+      connectCharts();
+      const current = { node: ref.current, chart, observer: null as unknown as ResizeObserver, frame: null as number | null };
+      current.observer = new ResizeObserver(() => {
+        if (current.frame !== null) cancelAnimationFrame(current.frame);
+        current.frame = requestAnimationFrame(() => {
+          current.frame = null;
+          chart.resize();
+        });
       });
-    });
-    ro.observe(ref.current);
-    return () => {
-      ro.disconnect();
-      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-      chart.dispose();
-    };
+      current.observer.observe(ref.current);
+      resource.current = current;
+    }
+    // Replace options so removed legs/series cannot survive a parameter edit.
+    resource.current.chart.setOption(buildOption(), { notMerge: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, dark]);
 }

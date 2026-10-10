@@ -19,12 +19,21 @@ describe("generated report download", () => {
     });
     const { downloadGeneratedReport } = await loadApiModule();
     await downloadGeneratedReport("a".repeat(32), "研究报告.pdf");
-    expect(fetch).toHaveBeenCalledWith(`/api/reports/${"a".repeat(32)}`, { headers: { Authorization: "Bearer report-test-key" } });
+    expect(fetch).toHaveBeenCalledWith(`/api/reports/${"a".repeat(32)}`, expect.objectContaining({ headers: { Authorization: "Bearer report-test-key" } }));
     expect(click).toHaveBeenCalledOnce();
   });
 });
 
 describe("api request helper", () => {
+  it("translates the server's message-size error into a recovery instruction", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: "message_too_long", max_length: 100_000, message: "Shorten input" },
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+    const { api } = await loadApiModule();
+    await expect(api.sendMessage("session", "oversized")).rejects.toMatchObject({
+      status: 422, code: "message_too_long", message: expect.stringContaining("Shorten it"),
+    });
+  });
   beforeEach(() => {
     vi.stubGlobal("localStorage", {
       getItem: vi.fn(() => ""),
@@ -172,5 +181,66 @@ describe("api request helper", () => {
       status: 401,
       message: "Add an API key in Settings.",
     } satisfies Partial<ApiError>);
+  });
+});
+
+describe("API failure recovery", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubEnv("VITE_API_TIMEOUT_MS", "1000");
+    vi.stubGlobal("localStorage", { getItem: () => "", setItem: vi.fn(), removeItem: vi.fn() });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  function hangUntilAbort(signal: AbortSignal) {
+    return new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    });
+  }
+
+  it("bounds a stalled conversation-list request and clears its timer", async () => {
+    vi.stubGlobal("fetch", vi.fn((_url, init) => hangUntilAbort(init.signal)));
+    const { api } = await loadApiModule();
+    const pending = expect(api.listSessions()).rejects.toMatchObject({
+      code: "request_timeout", message: expect.stringContaining("timed out"),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the timeout active while reading a stalled response body", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => ({
+      ok: true,
+      text: () => hangUntilAbort(init.signal),
+    })));
+    const { api } = await loadApiModule();
+    const pending = expect(api.listSessions()).rejects.toMatchObject({ code: "request_timeout" });
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+  });
+
+  it("explains a failed server connection in the active locale", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const { api } = await loadApiModule();
+    await expect(api.listSessions()).rejects.toMatchObject({
+      code: "network_error", message: expect.stringContaining("Check that it is running"),
+    });
+  });
+
+  it("does not replay a timed-out write and reports its uncertain outcome", async () => {
+    const fetch = vi.fn((_url, init) => hangUntilAbort(init.signal));
+    vi.stubGlobal("fetch", fetch);
+    const { api } = await loadApiModule();
+    const pending = expect(api.renameSession("session", "new title")).rejects.toMatchObject({
+      code: "request_timeout", message: expect.stringContaining("check the current state"),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await pending;
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

@@ -616,6 +616,7 @@ class FeishuChannel(BaseChannel):
     name = "feishu"
     display_name = "Feishu"
     supports_connection_test = True
+    hot_reload_noop_keys = frozenset({"allow_from", "react_emoji", "done_emoji", "tool_hint_prefix"})
 
     _STREAM_EDIT_INTERVAL = 0.5  # throttle between CardKit streaming updates
     _WS_CLOSE_TIMEOUT_S = 3.0  # bound for the best-effort socket close in stop()

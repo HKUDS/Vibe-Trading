@@ -82,6 +82,7 @@ class WecomChannel(BaseChannel):
 
     name = "wecom"
     display_name = "WeCom"
+    hot_reload_noop_keys = frozenset({"allow_from"})
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:

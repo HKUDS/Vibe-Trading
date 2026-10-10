@@ -740,6 +740,40 @@ def test_deleting_a_whole_sealed_segment_is_detected(tmp_path):
     assert result.first_break.reason == "seq_gap"
 
 
+def test_a_malformed_line_in_a_sealed_segment_is_reported_not_raised(tmp_path):
+    """verify_chain already reports malformed JSON as a clean ChainBreak
+    instead of letting json.JSONDecodeError escape; the whole-history
+    verifier must do the same for the exact same corruption, whether it
+    lands in a sealed segment or the active file."""
+    from src.governance.ledger import rotate_if_needed, verify_chain_with_archives
+
+    led = tmp_path / "audit_chain.jsonl"
+    for i in range(5):
+        append_record(led, {"action": "order", "n": i})
+    archive = rotate_if_needed(led, max_bytes=100)
+    append_record(led, {"action": "order", "n": 5})
+
+    with archive.open("a", encoding="utf-8") as handle:
+        handle.write("{not valid json\n")
+
+    result = verify_chain_with_archives(led)
+    assert result.ok is False
+    assert result.first_break.reason == "malformed_json"
+
+
+def test_a_malformed_line_in_the_active_file_is_reported_not_raised(tmp_path):
+    from src.governance.ledger import verify_chain_with_archives
+
+    led = tmp_path / "audit_chain.jsonl"
+    append_record(led, {"action": "order", "n": 0})
+    with led.open("a", encoding="utf-8") as handle:
+        handle.write("{not valid json\n")
+
+    result = verify_chain_with_archives(led)
+    assert result.ok is False
+    assert result.first_break.reason == "malformed_json"
+
+
 def test_rotation_refuses_to_seal_a_corrupt_ledger(tmp_path):
     from src.governance.ledger import rotate_if_needed
 

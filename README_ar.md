@@ -52,14 +52,27 @@
 
 > ⚠️ **تحذير أمني:** حساب X باسم `VibeTrading_HKU`، ومشروع Virtuals رقم `101845`، وعقد التوكن `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` كلّها غير رسمية ولا تتبع Vibe-Trading. لم نُطلق أو نؤيد مطلقًا أي توكن أو عملة ميم. لا تشترِ هذا التوكن، ولا تربط محفظتك، ولا توقّع أي شيء. [التفاصيل](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-09** 🛠️ **إعدادات القنوات ودقة الاختبارات التاريخية**: تحافظ تحديثات الإعدادات دون إعادة الاتصال على بيانات اعتماد الروابط وعنوان خادم WeChat الناتج عن المصادقة، وتعرض الواجهة نتائج الحفظ وإعادة التشغيل بتسع لغات ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)، [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)، [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). يعتمد تقلب الخيارات عبر الأسواق على التوقيتات المعروفة عند كل شمعة فقط، ويشمل التراجع رأس المال الأولي. صُححت مسارات بيانات العملات الرقمية والمعادن الثمينة، وكشف تكرار أسهم هونغ كونغ، واستعادة الذاكرة المؤقتة، والمبالغ بالصيغة العلمية، والتحقق من قيم حقوق الملكية المفقودة. أُزيل mootdx من سلسلة أسهم A الافتراضية. تفاصيل طلبات الدمج الثلاثة عشر في [CHANGELOG](CHANGELOG.md).
+
+- **2026-10-08** 🔐 **حماية تقارير PDF وتصحيح قراءات الوسيط**: تدعم تقارير البريد المجدولة حماية اختيارية بكلمة مرور عبر AES-256 في الويب وCLI وتأكيدات الوكيل؛ تُحفظ كلمة المرور في إعدادات القناة الخاصة فقط ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). يستعلم KIS عن مسارات التداول الثلاثة ويجدد الرمز المنتهي صراحةً مرة واحدة ويرفض القراءة غير المكتملة ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). تُحفظ الصيغة الحسابية بعد الوصف مع استمرار التحقق من الأدلة ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
+
+- **2026-10-07** 🛠️ **استمرارية البحث وتصحيح مقاييس المخاطر**: نُقلت حالة التشغيل خارج تعليمات النظام للحفاظ على بادئة ثابتة ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). صُححت محاذاة التواريخ بين الأسواق وعوائد الأسعار المفقودة وحساب Sortino للخيارات باستخدام العينة كاملةً ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710)، [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717)، [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). تشترك اختبارات مصادر البيانات في عقد OHLCV واحد، مع إصلاحات لتقييم الائتمان والتعرضات والتحقق الزمني وتشخيص التدقيق.
+
+<details>
+<summary>أخبار سابقة</summary>
+
+- **2026-10-06** 🛠️ **إصلاح التحكم بالتداول وتصحيح التقارير**: يلغي إيقاف مشغّل التداول الفعلي التحليل الجاري وينتظر انتهاء المجدول، بما يشمل الإلغاء أثناء بدء التشغيل وإغلاق API، مع تصحيح وحدات الوقت في الحالة ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). يتجاوز إلغاء الأوامر وإغلاق المراكز في الطوارئ السجلات غير الصالحة ويواصل معالجة الباقي ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)). تُحفظ جداول الوسطاء بصورة منفصلة مع معالجة الكتابات المتزامنة والجزئية. تُراعى ساعات الإغلاق المبكر للأسهم الأمريكية ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). تحافظ تصحيحات التقارير على الأرقام التي اجتازت التحقق، ولا توحي الملاحظات المحدودة بأن الأرقام غير المذكورة قد اجتازته ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
+
+- **2026-10-05** 🛠️ **إدخال البحث وتصحيح الحسابات**: تدعم المحادثة نصوص بحث أطول وتوضح باللغة الحالية كيفية تقصير النص عند تجاوز الحد ([#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)). يستخدم Sortino انحراف الجانب السلبي عبر جميع الفترات، ويستبعد التحقق الجماعي التسميات المتداخلة. تحسنت أوزان التباين وRSI بمتوسط Wilder الأولي وحذف الذاكرة باسم الملف. عند استخدام اسم مستعار غير صحيح للاستدعاء، يقترح التصحيح مراجع الحقول الفعلية مع بقاء التحقق من الأرقام كما هو ([#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)).
+
+- **2026-10-04** 🛠️ **تحسين التقارير المجدولة وسير البحث**: يمكن تعديل المهام المجدولة واختيار وجهة مُعدّة مسبقًا، مع إرسال تقارير البريد بصيغة HTML أو كمرفقات PDF ([#1649](https://github.com/HKUDS/Vibe-Trading/pull/1649), [#1680](https://github.com/HKUDS/Vibe-Trading/pull/1680)).
+  تتضمن الاختبارات التاريخية ملخصات منظّمة وقراءة ملفات النتائج على صفحات ([#1646](https://github.com/HKUDS/Vibe-Trading/pull/1646), [#1647](https://github.com/HKUDS/Vibe-Trading/pull/1647)). تشمل الإصلاحات مقتطفات بحث الذاكرة، وإرشادات مسار التصدير، وبيان اقتطاع البيانات الكلية، ومخاطر الشموع الشهرية، ودوران المحفظة عند عكس الاتجاه أو إعادة الاستثمار بعد التحول إلى النقد، ودقة التقلب الضمني، وفجوات VaR، وتحديث التثبيت من VCS، وحظر أوامر خيارات Robinhood غير المدعومة.
+
 - **2026-10-03** 🛠️ **تحسين موثوقية البحث والتقارير والبيانات**: أُصلحت مشكلات البحث في الجلسات بالصينية واليابانية والكورية، وإعداد القنوات، وتقييم حيازات الوسطاء، وكتابة الملفات التي كانت تعيق الاستخدام اليومي. تتضمن ملفات PDF خطوط CJK، ويتحقق Swarm من مدخلات الإعدادات المسبقة ويفصل مخرجات المهام، وتبقى نتائج الأدوات المعاد استخدامها متاحة بعد ضغط السياق ([#1683](https://github.com/HKUDS/Vibe-Trading/pull/1683), [#1455](https://github.com/HKUDS/Vibe-Trading/pull/1455), [#1635](https://github.com/HKUDS/Vibe-Trading/pull/1635)). تستخدم الاختبارات التاريخية أساسًا موحدًا لتعديل الأسعار، وتميّز الذاكرة المؤقتة المحلية بين مصادر البيانات، وتتبع حدود الأصل الواحد وحسابات المخاطر الأسبوعية والشهرية الإعدادات المعلنة. يحافظ التدقيق على إشارة الخسائر، ويعتمد التحقق الرقمي على مخرجات المحرك الحالية ومراجع القوائم الدقيقة، ويعيد Stooq المحاولة بعد انتهاء فترة الانتظار عقب الرفض ([#1684](https://github.com/HKUDS/Vibe-Trading/pull/1684), [#1650](https://github.com/HKUDS/Vibe-Trading/pull/1650), [#1685](https://github.com/HKUDS/Vibe-Trading/pull/1685), [#1640](https://github.com/HKUDS/Vibe-Trading/pull/1640)).
 
 - **2026-10-02** 🛠️ **إصلاحات الاختبارات الخلفية وتدقيق التقارير**: تحتفظ كتابة ملفات الاستراتيجيات بمصدر النموذج دون تعطل ([#1673](https://github.com/HKUDS/Vibe-Trading/pull/1673))، وتشمل حسابات التراجع وSharpe في محاكاة مونت كارلو رأس المال الابتدائي ([#1664](https://github.com/HKUDS/Vibe-Trading/pull/1664)). يحافظ تدقيق التقارير على القيم السالبة المحاسبية بين الأقواس ووحداتها ([#1663](https://github.com/HKUDS/Vibe-Trading/pull/1663))، وتسجل مخرجات التحقق العددي الفحوص المعلنة التي تفعّلت ([#1661](https://github.com/HKUDS/Vibe-Trading/pull/1661)). تتضمن تقارير صحة مصادر البيانات العامة أسباب الفشل بعد إزالة المعلومات الحساسة ([#1643](https://github.com/HKUDS/Vibe-Trading/pull/1643))، وتطابق وثائق الأدوات الإندونيسية سجل الأدوات ([#1671](https://github.com/HKUDS/Vibe-Trading/pull/1671)).
 
 - **2026-10-01** ✅ **دقة البيانات واختبارات خلفية قابلة للتكرار**: يرفض تحويل الأسعار المعدلة لأسهم A الحالات الملتبسة ذات الشمعة الواحدة ([#1551](https://github.com/HKUDS/Vibe-Trading/pull/1551)). تُحوَّل مبالغ التدفقات جنوباً من Eastmoney من وحدة مليون دولار هونغ كونغ، ولا تُعامل الردود الفاشلة كبيانات فارغة ([#1486](https://github.com/HKUDS/Vibe-Trading/pull/1486)). يميز المصدر البديل للتدفقات شمالاً بين قيمة التداول وصافي التدفق بعد 2024-08-19 ([#1484](https://github.com/HKUDS/Vibe-Trading/pull/1484)). تُصنَّف مراكز Binance غير المسعّرة وحدها على أنها غير مكتملة دون التأثير على الوسطاء الآخرين ([#1505](https://github.com/HKUDS/Vibe-Trading/pull/1505)). تسجل بطاقات التشغيل مصدر النموذج وتحذر عندما يكون تاريخ انتهاء التدريب مجهولاً أو خارج فترة الاختبار ([#1618](https://github.com/HKUDS/Vibe-Trading/pull/1618)).
-
-<details>
-<summary>أخبار سابقة</summary>
 
 - **2026-09-30** 🛠️ **إعداد Feishu في واجهة الويب، وعامل زخم كان يقرأ سعر اليوم، وعامل الربح لاختبار لم يخسر أي صفقة**: انضم Feishu إلى إعداد القنوات الموجَّه، مع اختبار اتصال مستقل وإعادة تحميل فورية تُغلق اتصال WebSocket القديم ([#1572](https://github.com/HKUDS/Vibe-Trading/pull/1572)). كان `academic_carhart_mom` يطرح عائد شهر واحد من عائد 12 شهراً فيتحرك مع سعر إغلاق اليوم، وأصبح الآن العائد من قبل 12 شهراً إلى قبل شهر واحد ([#1578](https://github.com/HKUDS/Vibe-Trading/pull/1578)). الاختبار الذي لم يخسر أي صفقة يُبلغ الآن عن عامل الربح على أنه غير معرَّف بدلاً من 0.0 الذي كان يضعه في المرتبة الأخيرة ([#1602](https://github.com/HKUDS/Vibe-Trading/pull/1602)). صفحة الحماية من الروبوتات في Stooq توقف الآن كل الطلبات اللاحقة في العملية، لا سطر السجل فقط ([#1637](https://github.com/HKUDS/Vibe-Trading/pull/1637))؛ وتصل نتائج أدوات MCP إلى الوكيل مرة واحدة بدلاً من أربع مرات ([#1634](https://github.com/HKUDS/Vibe-Trading/pull/1634))؛ وانفصلت أول وحدة من `loop.py` ([#1636](https://github.com/HKUDS/Vibe-Trading/pull/1636)).
 
@@ -449,7 +462,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | أسهم A (اختيار صريح فقط) | none | أُزيل من السلسلة الافتراضية في أكتوبر 2026 بعد توقف خوادم TDX عن الاستجابة لبروتوكول العميل (#1729) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -471,7 +485,7 @@ vibe-trading connector install /tmp/my-broker
 
 **سلاسل التراجع (بحسب خطر حظر عنوان IP):**
 
-- **أسهم A** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **أسهم A** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **أسهم US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **أسهم HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **أسهم الهند (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -603,7 +617,7 @@ LONGBRIDGE_ACCESS_TOKEN=...
 | الوسيط | الأسواق | القدرات |
 |--------|---------|---------|
 | **IBKR** | عالمي | TWS / Gateway محلي، قراءة فقط |
-| **Robinhood** | US | Agentic MCP (OAuth عبر سطح المكتب) — قراءة + تداول حي محدود |
+| **Robinhood** | US | Agentic MCP (OAuth عبر سطح المكتب) — قراءة الأسهم + تداول أسهم حي محدود؛ تداول الخيارات غير مدعوم |
 | **Scalable Capital** | DE / EU | Agentic MCP (OAuth عبر سطح المكتب) — قراءة فقط بالكامل؛ لا يوجد حساب ورقي |
 | **Tiger** | US / HK / A | قراءة + ورقي + تداول حي محدود |
 | **Alpaca** | US | قراءة + ورقي + تداول حي محدود (+ وضع عزل الاعتماد TAP) |
@@ -835,7 +849,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **مزودو LLM المدعومون:** OpenRouter, OpenAI, Anthropic (Messages API الأصلي), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (local). عند عدم ضبط أي `*_BASE_URL`، يتراجع كل مزوّد إلى نقطة نهايته القانونية، فيكفي مفتاح واحد. راجع `.env.example` للإعداد.
 
-> **نصيحة:** تعمل كل الأسواق دون مفاتيح API بفضل fallback التلقائي. yfinance/Yahoo (HK/US/كندا/المملكة المتحدة)، وOKX (crypto)، وmootdx (أسهم A، اتصال TCP مباشر بدون قيود IP)، وAKShare (A-shares, US, HK, futures, forex) كلها مجانية. يجب أن تعلن أسعار LSE `.L` عملة GBP أو GBp لتطبيع البنس قبل المحاسبة بالجنيه. رمز Tushare اختياري — mootdx هو الـ fallback الموصى به لأسهم A بدون رمز، بينما يوفر AKShare احتياطياً أوسع تغطية.
+> **نصيحة:** تعمل كل الأسواق دون مفاتيح API بفضل fallback التلقائي. yfinance/Yahoo (HK/US/كندا/المملكة المتحدة)، وOKX (crypto)، وAKShare (A-shares, US, HK, futures, forex) كلها مجانية. يجب أن تعلن أسعار LSE `.L` عملة GBP أو GBp لتطبيع البنس قبل المحاسبة بالجنيه. رمز Tushare اختياري، ومصادر أسهم A بدون رمز هي tencent وbaostock وAKShare.
 
 ### المسار A: Docker (دون إعداد)
 
@@ -1244,6 +1258,8 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 يرى الوكيل أداة جدولة واحدة فقط هي `scheduled_research`: إجراءات القراءة تستعرض الحالة/المهام/القوالب، بينما `propose_create` و `propose_cancel` لا تحفظان سوى اقتراح تأكيد قصير الأجل ولا تعدّلان مخزن المهام أبدًا. يعرض الويب بطاقة تأكيد حتمية، ويسأل سطر الأوامر `y/N`، وتتطلب محادثات المراسلة ردًا حرفيًا `confirm` (`确认`) أو `cancel` (`取消`) — وهذه الإجراءات وحدها تستدعي نقطة الالتزام. بعد تجاوز `end_at` تصبح المهمة `expired` ولا تُنفَّذ مجددًا. التسليم محايد للقنوات: هيّئ مراجع أهداف معتمة قابلة لإعادة الاستخدام تحت `channels.deliveryTargets`، فلا يرى الوكيل وواجهات التأكيد سوى ref/label/channel دون معرّف الدردشة/المستخدم الخام لدى المزوّد. حالة التسليم `accepted` عندما ينجح المحوّل دون إيصال من المزوّد، و`sent` فقط عند إرجاع معرّف رسالة من المزوّد (مطبَّق حاليًا من طرف إلى طرف لـ Feishu).
 
+في Web UI يمكن تعديل مهام البحث المجدولة في مكانها: يتم تحديث الـ prompt والوتيرة/المنطقة الزمنية وإعدادات التسليم عبر `PATCH /scheduled-runs/{job_id}` من دون حذف المهمة وإعادة إنشائها، لذلك يبقى المعرّف وسجل التشغيل محفوظين. ترفض المهمة الجاري تنفيذها التعديل حتى ينتهي ذلك التشغيل. يظل التسليم تحت تحكم المشغّل: يصف كل channel adapter تسمية حقل الوجهة والـ placeholder ونوع الإدخال، مع بقاء الإدخال اليدوي متاحًا. ويمكن للمحوّل أيضًا عرض اقتراحات اختيارية لوجهات معروفة؛ اختيار أحدها لا يفعل أكثر من ملء الحقل اليدوي نفسه. في Telegram مثلًا يمكن اقتراح معرّفات المحادثات الخاصة الرقمية الموجودة أصلًا في `allow_from` المحلي، مع تجاهل usernames والـ wildcards.
+
 يأتي المجدول ومعه **خمسة قوالب بحث جاهزة للجدولة** — `premarket-brief` و`earnings-season-tracker` و`portfolio-checkup` و`a-share-money-flow` و`institutional-holdings-diff`. يصرّح كل قالب بالبيانات التي يحتاجها بلغة طبيعية بدل تسمية أداة بعينها، فيظل صالحاً مع توسّع مجموعة الأدوات، ويُطلب منه **ذكر أي مُدخل مفقود** بدل ملئه من الذاكرة. يمكن الوصول إليها من CLI أو REST أو عبر `/playbook` داخل واجهة TUI:
 
 ```bash
@@ -1266,7 +1282,7 @@ curl -X POST http://localhost:8899/scheduled-runs/playbooks/premarket-brief \
 
 ## 🔌 MCP Plugin
 
-يعرض Vibe-Trading 75 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
+يعرض Vibe-Trading 76 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
 
 **متغيرات البيئة:** العميل هو من يشغّل الخادم بنفسه، لذا لا يصل إليه `export` من الـ shell أبداً —— اضبطها في كتلة `env` الخاصة بالعميل. كود الاختبار الخلفي المولَّد محصور ضمن جذور التشغيل المسموح بها، لذا تحتاج إلى `VIBE_TRADING_ALLOWED_RUN_ROOTS` لكتابة النتائج في دليل عمل خاص بك:
 
@@ -1322,7 +1338,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**أدوات MCP المعروضة (75):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`.
+**أدوات MCP المعروضة (76):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`.
 
 ### أدوات MCP الخارجية في SWARM
 
@@ -1682,7 +1698,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 75 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 76 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
@@ -1697,7 +1713,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # Cross-session persistent memory
 │   │   │   └── persistent.py       #   file-based memory (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 108 auto-discovered agent tools
+│   │   ├── tools/                  # 109 auto-discovered agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── remember_tool.py    #   cross-session memory (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)

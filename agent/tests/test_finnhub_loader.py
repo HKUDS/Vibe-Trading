@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 import pandas as pd
 
 from backtest.loaders import finnhub_loader
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.finnhub_loader import (
     DataLoader,
     _to_epoch_seconds,
@@ -125,6 +126,7 @@ class TestFetch:
         df = out["AAPL.US"]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
+        assert_loader_contract(df, context="canonical frame")
         assert isinstance(df.index, pd.DatetimeIndex)
         assert len(df) == 2
         assert df.index.is_monotonic_increasing

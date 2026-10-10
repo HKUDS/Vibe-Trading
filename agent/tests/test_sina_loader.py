@@ -20,6 +20,7 @@ from backtest.loaders.sina_loader import (
     _strip_jsonp,
     _to_sina_symbol,
 )
+from tests.loader_contract import assert_loader_contract
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +100,7 @@ def test_bars_to_frame_shape_and_dtypes() -> None:
     assert df is not None
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
     assert df.index.name == "trade_date"
+    assert_loader_contract(df, context="sina bars_to_frame")
     assert isinstance(df.index, pd.DatetimeIndex)
     assert all(str(df[c].dtype) == "float64" for c in df.columns)
     assert len(df) == 3

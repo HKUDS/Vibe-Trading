@@ -31,8 +31,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.api import state as _state
 from src.channels import config as _channels_config
+from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
+from src.channels.manager import _strip_url_userinfo as _strip_error_url_userinfo
 from src.channels.config_meta import (
+    _strip_url_userinfo,
     channel_field_hints,
     is_secret_key,
     split_values_secrets,
@@ -53,6 +56,9 @@ _VERIFY_BLOCK_CODES = frozenset({"invalid_credentials", "network"})
 
 # Bound the fallback stop so a wedged adapter cannot stall the reset + restart.
 _FALLBACK_STOP_TIMEOUT_S = 10.0
+
+# Sanitized reset_reason bounds: exception text may embed credentials in URLs.
+_RESET_REASON_MAX_LEN = 200
 
 # Per-channel lifecycle keys the manager consumes from the section; they are
 # not adapter model fields but are legitimate config content (#341 lineage).
@@ -165,6 +171,34 @@ def _patch_of(name: str, body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _drop_echoed_url_rewrites(
+    stored: dict[str, Any], patch: dict[str, Any]
+) -> dict[str, Any]:
+    """Return *patch* without values that only echo a stripped stored URL.
+
+    ``GET /channels/config`` hands out non-secret URL values with the userinfo
+    removed (``https://user:pw@host`` -> ``https://host``), and the settings form
+    writes every non-secret field back verbatim on save. Applying that echo
+    would replace the stored URL with the stripped form it was derived from,
+    destroying the embedded credential. An incoming value equal to the stripped
+    form of the stored one is treated as the echo of the value this API handed
+    out, so the stored value is kept. A deliberate retype of that stripped form
+    is therefore kept as well; ``clear_<key>`` remains the way to remove the
+    setting, and any *different* URL, including a new credential, is applied.
+    """
+    kept: dict[str, Any] = {}
+    for key, value in patch.items():
+        original = stored.get(key)
+        if (
+            isinstance(original, str)
+            and isinstance(value, str)
+            and value == _strip_url_userinfo(original)
+        ):
+            continue
+        kept[key] = value
+    return kept
+
+
 def _normalize_nullable_blanks(name: str, patch: dict[str, Any]) -> dict[str, Any]:
     """Map blank form values back to None for nullable config defaults.
 
@@ -221,11 +255,16 @@ def _channel_entry(name: str, section: dict[str, Any], status_map: dict[str, Any
         "loaded": bool(status_map.get("loaded", False)),
         "install_hint": str(status_map.get("install_hint") or ""),
         "error": str(status_map.get("error") or ""),
+        "error_context": str(status_map.get("error_context") or ""),
+        "error_at": str(status_map.get("error_at") or ""),
         "supports_test": _supports_connection_test(name),
         "sdk_available": bool(status_map.get("sdk_available", available)),
         "fields": channel_field_hints(name),
         "values": values,
         "secrets": secrets,
+        "pdf_password_configured": bool(
+            name == "email" and secrets.get("pdf_password", {}).get("set")
+        ),
     }
 
 
@@ -253,9 +292,17 @@ def _scrub_detail(name: str, text: Any, section: dict[str, Any]) -> str:
     """Mask every secret value of *section* found in *text* (defense in depth)."""
     cleaned = str(text or "")
     for key, value in section.items():
-        if _is_secret_key(name, key) and isinstance(value, str) and value:
-            cleaned = cleaned.replace(value, "***")
-    return cleaned
+        if isinstance(value, str) and value:
+            if _is_secret_key(name, key):
+                cleaned = cleaned.replace(value, "***")
+            else:
+                # A known config URL can contain malformed userinfo, including
+                # spaces. Scrub the whole value before parsing free-text URLs,
+                # whose boundary must stop at prose whitespace.
+                redacted = _strip_url_userinfo(value)
+                if redacted != value:
+                    cleaned = cleaned.replace(value, redacted)
+    return _strip_error_url_userinfo(cleaned)
 
 
 def _validation_fields(exc: ValidationError) -> list[str]:
@@ -315,31 +362,79 @@ def _build_ephemeral(name: str, section: dict[str, Any]) -> tuple[type, Any]:
         raise _reject_validation([type(exc).__name__]) from None
 
 
-async def _hot_apply(name: str, section: dict[str, Any] | None) -> str:
-    """Apply a written section to the cached runtime; return the apply mode.
+def format_reset_notice() -> str:
+    """Return the fixed IM reset-notice text (plain English, ``format_pairing_reply`` style)."""
+    return "Channel configuration updated; connections were reset."
+
+
+def _sanitize_reset_reason(
+    exc: BaseException, *, name: str = "", sections: tuple[dict[str, Any], ...] = ()
+) -> str:
+    """Return a bounded, credential-free one-line reason for a degraded reset (#1625)."""
+    text = f"{type(exc).__name__}: {exc}"
+    for section in sections:
+        text = _scrub_detail(name, text, section)
+    text = _strip_error_url_userinfo(text)
+    return " ".join(text.split())[:_RESET_REASON_MAX_LEN]
+
+
+async def _publish_reset_notice(runtime: Any, name: str, chat_id: str) -> None:
+    """Best-effort reset notice on the fresh runtime's bus (#1625).
+
+    A bus publish is a queue put, so the HTTP response never waits on the
+    adapter; the dispatcher's normal retry applies, and a notice lost while
+    the adapter reconnects is accepted (nanobot's /restart notice has the
+    same property across execv).
+    """
+    bus = getattr(runtime, "bus", None)
+    if bus is None:
+        return
+    try:
+        await bus.publish_outbound(OutboundMessage(
+            channel=name, chat_id=chat_id,
+            content=format_reset_notice(), metadata={"_config_notice": True},
+        ))
+    except Exception:  # noqa: BLE001 - a failed notice must not fail the PUT
+        logger.warning("Reset notice for %s was not published", name, exc_info=True)
+
+
+async def _hot_apply(
+    name: str, section: dict[str, Any] | None,
+    *, previous_section: dict[str, Any] | None = None,
+) -> tuple[str, str | None]:
+    """Apply a written section to the cached runtime; return ``(applied, reason)``.
 
     Running runtime → per-channel hot swap; built-but-stopped → drop the stale
     singleton so the next explicit Start reads fresh config; never built →
     no-op (the lazy build reads disk). A failed swap falls back to a full
-    reset + restart through the same path ``/channels/start`` uses.
+    reset + restart through the same path ``/channels/start`` uses; that
+    degraded path returns a sanitized ``reset_reason`` and pushes a
+    best-effort notice to the channel's last chat, so a disruption that was
+    previously log-only becomes an explained one (#1625).
     """
     host = _host()
     runtime = getattr(host, "_channel_runtime", None)
     if runtime is None:
-        return "deferred"
+        return "deferred", None
     if not runtime.status().get("running"):
         async with _runtime_lock:
             _state.reset_channel_runtime()
-        return "reset"
+        return "reset", None
     try:
         await runtime.manager.reload_channel(name, section)
-        return "hot_swapped"
-    except Exception:  # noqa: BLE001 - a failed swap must not strand the runtime
-        logger.warning(
-            "Hot reload failed for channel %s; falling back to a runtime reset",
-            name,
-            exc_info=True,
+        return "hot_swapped", None
+    except Exception as exc:  # noqa: BLE001 - a failed swap must not strand the runtime
+        reason = _sanitize_reset_reason(
+            exc, name=name, sections=(previous_section or {}, section or {}),
         )
+        logger.warning(
+            "Hot reload failed for channel %s; falling back to a runtime reset: %s",
+            name, reason,
+        )
+        # The reset destroys the old manager, so capture the notify target —
+        # the last chat we sent to — before its state is gone.
+        get_last = getattr(runtime.manager, "last_chat_id", None)
+        last_chat_id = get_last(name) if callable(get_last) else None
         async with _runtime_lock:
             try:
                 await asyncio.wait_for(runtime.stop(), timeout=_FALLBACK_STOP_TIMEOUT_S)
@@ -349,14 +444,28 @@ async def _hot_apply(name: str, section: dict[str, Any] | None) -> str:
                     exc_info=True,
                 )
             _state.reset_channel_runtime()
-            await host._get_channel_runtime().start(start_manager=True)
-        return "reset"
+            fresh = host._get_channel_runtime()
+            await fresh.start(start_manager=True)
+        if last_chat_id is not None:
+            await _publish_reset_notice(fresh, name, last_chat_id)
+        return "reset", reason
 
 
 async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[str, Any]:
-    """Validate → optional enable-transition probe → write → hot apply."""
+    """Validate → optional enable-transition probe → write → apply.
+
+    The response ``applied`` field reports how the edit reached the runtime:
+    ``refreshed`` (a noop-key edit applied in place, no reconnect),
+    ``hot_swapped`` (adapter stop+start), ``reset`` (full runtime rebuild), or
+    ``deferred`` (no runtime yet; the next start reads disk). A ``reset`` that
+    degraded from a failed hot swap additionally carries ``reset_reason`` — a
+    sanitized one-line explanation (bounded, URL userinfo stripped); the key
+    is absent on every other path.
+    """
     stored = _stored_section(name)
-    patch = _normalize_nullable_blanks(name, _patch_of(name, payload.config))
+    patch = _drop_echoed_url_rewrites(
+        stored, _normalize_nullable_blanks(name, _patch_of(name, payload.config))
+    )
     clears = _clear_flags(payload.model_extra)
     merged = {**stored, **patch}
     for key in clears:
@@ -399,14 +508,44 @@ async def _apply_update(name: str, payload: ChannelConfigUpdateRequest) -> dict[
         ) from None
 
     fresh = _stored_section(name)
-    applied = await _hot_apply(name, fresh or None)
-    return {"channel": _fresh_entry(name), "applied": applied}
+    # Noop-key edits (declared keys + manager bool overrides) are read live per
+    # message, so refresh in place; ``enabled`` never qualifies (start/stop, #1625).
+    before = _effective_section(name, stored)
+    after = _effective_section(name, fresh)
+    model = type(instance.config)
+    if hasattr(model, "model_validate"):
+        # Web text widgets serialize numbers as strings; compare validated
+        # values and defaults so an echoed connection field is not an edit.
+        computed = set(model.model_computed_fields)
+        try:
+            before.update(model.model_validate(stored).model_dump(by_alias=True, exclude=computed))
+        except Exception:  # an edit may be repairing an invalid stored section
+            pass
+        after.update(instance.config.model_dump(by_alias=True, exclude=computed))
+    changed = {key for key in before.keys() | after.keys() if before.get(key) != after.get(key)}
+    noop_keys = cls.hot_reload_noop_keys | _MANAGER_OVERRIDE_KEYS
+    runtime = getattr(_host(), "_channel_runtime", None)
+    if (
+        changed <= noop_keys
+        and runtime is not None
+        and runtime.status().get("running")
+        and runtime.manager.get_channel(name) is not None
+        and await runtime.manager.refresh_channel_config(name, fresh)
+    ):
+        return {"channel": _fresh_entry(name), "applied": "refreshed"}
+    applied, reset_reason = await _hot_apply(name, fresh or None, previous_section=stored)
+    response: dict[str, Any] = {"channel": _fresh_entry(name), "applied": applied}
+    if reset_reason is not None:
+        response["reset_reason"] = reset_reason
+    return response
 
 
 async def _run_test(name: str, body: dict[str, Any] | None, clears: list[str]) -> dict[str, Any]:
     """Probe credentials on an ephemeral instance; never persists anything."""
     stored = _stored_section(name)
-    patch = _normalize_nullable_blanks(name, _patch_of(name, body or {}))
+    patch = _drop_echoed_url_rewrites(
+        stored, _normalize_nullable_blanks(name, _patch_of(name, body or {})),
+    )
     merged = {**stored, **patch}
     for key in clears:
         merged.pop(key, None)
@@ -442,7 +581,10 @@ async def _run_test(name: str, body: dict[str, Any] | None, clears: list[str]) -
     except Exception as exc:  # noqa: BLE001 - a broken section cannot be probed
         return _result(False, "invalid_credentials", f"validation_error: {type(exc).__name__}", sdk_fallback)
 
-    probe = await instance.test_connection()
+    try:
+        probe = await instance.test_connection()
+    except Exception as exc:  # probe adapters may also raise SDK/network errors
+        probe = {"ok": False, "code": "network", "detail": f"{type(exc).__name__}: {exc}"}
     code = probe.get("code")
     sdk_available = probe.get("sdk_available")
     return _result(

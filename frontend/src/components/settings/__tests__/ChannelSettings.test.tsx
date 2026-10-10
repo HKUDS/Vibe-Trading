@@ -553,6 +553,23 @@ describe("ChannelSettings config panel", () => {
     expect((secondBody.config as Record<string, unknown>).client_secret).toBeUndefined();
   });
 
+  it.each([
+    ["refreshed", undefined, "Settings saved without reconnecting the channel."],
+    ["reset", "RuntimeError: upstream unavailable", "Settings saved. Channel connections were restarted."],
+    ["deferred", undefined, "Settings saved. Changes will apply when channels start."],
+  ])("explains the %s apply result after saving", async (applied, resetReason, message) => {
+    apiMock.putChannelConfig.mockResolvedValue({
+      channel: dingtalkEntry(), applied, reset_reason: resetReason,
+    });
+    await renderExpanded();
+    fireEvent.change(screen.getByPlaceholderText("Keep current (****abcd)"), {
+      target: { value: "new-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save configuration" }));
+    expect(await screen.findByText(message!)).toBeInTheDocument();
+    if (resetReason) expect(screen.getByText(resetReason)).toBeInTheDocument();
+  });
+
   it("disables Save until the form is dirty", async () => {
     await renderExpanded();
 

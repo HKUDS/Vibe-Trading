@@ -49,7 +49,11 @@ def compute_edge_density(
     density = pd.Series(np.nan, index=returns.index)
     for i in range(corr_window, len(returns) + 1):
         corr = returns.iloc[i - corr_window:i].corr().abs().to_numpy()
-        density.iloc[i - 1] = float((corr[upper_mask] >= edge_threshold).sum()) / n_pairs
+        pair_corr = corr[upper_mask]
+        # Undefined pairs (e.g. a constant asset) are missing evidence, not
+        # non-edges. Keep density unknown until the whole basket is measurable.
+        if np.isfinite(pair_corr).all():
+            density.iloc[i - 1] = float((pair_corr >= edge_threshold).sum()) / n_pairs
     return density
 
 
@@ -111,7 +115,7 @@ def _aligned_returns(price_series: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     returns_frames = []
     for code in sorted(price_series):
         ts = _close_series(code, price_series[code])
-        ts.index = ts.index.normalize()
+        ts.index = ts.index.tz_localize(None).normalize()
         rets = ts.pct_change(fill_method=None).dropna()
         rets.name = code
         returns_frames.append(rets)
@@ -152,6 +156,8 @@ def compute_regime_timeline(
     smooth_window: int = 5,
     enter_threshold: float = 0.65,
     exit_threshold: float = 0.45,
+    *,
+    price_series: Dict[str, pd.DataFrame] | None = None,
 ) -> Dict[str, object]:
     """Fetch price data and compute the correlation-regime timeline.
 
@@ -185,7 +191,8 @@ def compute_regime_timeline(
         datetime.now() - timedelta(days=days + corr_window + 90)
     ).strftime("%Y-%m-%d")
 
-    price_series = _fetch_price_series(codes, start_date, end_date)
+    if price_series is None:
+        price_series = _fetch_price_series(codes, start_date, end_date)
 
     if len(price_series) < 2:
         raise ValueError(

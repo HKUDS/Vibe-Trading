@@ -22,6 +22,7 @@ event through the EXISTING session EventBus, so the frontend's already-wired
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import sys as _sys
 import time
@@ -543,21 +544,84 @@ def _active_mandate_state(broker: str) -> Optional[ActiveMandateState]:
 
 def _runner_liveness_state(broker: str) -> RunnerLivenessState:
     """Build the runner-liveness snapshot for a broker (SPEC §7.5 contract)."""
-    alive = False
+    task = _host()._runner_tasks.get(broker)
+    alive = task is not None and not task.done()
     tick: Optional[float] = None
     age: Optional[float] = None
     try:
         from src.live.runtime import liveness
 
-        alive = bool(liveness.is_runner_alive(broker))
+        alive = alive or bool(liveness.is_runner_alive(broker))
         raw_tick = liveness.last_tick(broker)
         if raw_tick is not None:
-            tick = float(raw_tick)
+            tick = float(raw_tick) / 1000
             age = max(0.0, time.time() - tick)
     except Exception:  # pragma: no cover - liveness module is built concurrently
         logger.debug("runner liveness lookup failed for %s", broker, exc_info=True)
 
     return RunnerLivenessState(broker=broker, alive=alive, last_tick=tick, last_tick_age_seconds=age)
+
+
+async def _run_live_session_attempt(svc: Any, session_id: str, prompt: str) -> Dict[str, Any]:
+    """Own a queued session attempt until completion or cooperative cancellation.
+
+    Args:
+        svc: The public session service used by the live runner.
+        session_id: The runner's dedicated session.
+        prompt: The mandate-bound autonomous tick prompt.
+
+    Returns:
+        The submission receipt plus the completed attempt's result.
+
+    Raises:
+        RuntimeError: If submission has no attempt id or execution fails.
+        asyncio.CancelledError: After a stopped tick's attempt has terminated.
+    """
+    loop = asyncio.get_running_loop()
+    completed = loop.create_future()
+    receipt: Dict[str, Any] = {}
+    early_results: Dict[str, Dict[str, Any]] = {}
+
+    def on_terminal(event: Any) -> None:
+        if event.session_id != session_id or event.event_type not in {
+            "attempt.completed", "attempt.failed", "attempt.cancelled", "attempt.interrupted"
+        }:
+            return
+        data = {**event.data, "status": event.event_type.split(".", 1)[1]}
+
+        def settle() -> None:
+            attempt_id = data.get("attempt_id")
+            if not receipt:
+                early_results[attempt_id] = data
+            elif attempt_id == receipt.get("attempt_id") and not completed.done():
+                completed.set_result(data)
+
+        loop.call_soon_threadsafe(settle)
+
+    svc.event_bus.add_listener(on_terminal)
+    try:
+        receipt = await svc.send_message(session_id, prompt)
+        attempt_id = receipt.get("attempt_id")
+        if not isinstance(attempt_id, str) or not attempt_id:
+            raise RuntimeError("live session submission returned no attempt id")
+        if attempt_id in early_results:
+            completed.set_result(early_results[attempt_id])
+        try:
+            terminal = await asyncio.shield(completed)
+        except asyncio.CancelledError:
+            svc.cancel_current(session_id)
+            # Session execution is a separate task (and may own an AgentLoop
+            # thread). Cancelling only this waiter cannot stop that execution.
+            await asyncio.shield(completed)
+            raise
+        if terminal["status"] != "completed":
+            raise RuntimeError(str(terminal.get("error") or terminal["status"]))
+        return {
+            **receipt, "status": "success", "content": terminal.get("summary", ""),
+            "run_dir": terminal.get("run_dir"),
+        }
+    finally:
+        svc.event_bus.remove_listener(on_terminal)
 
 
 def _build_live_runner(broker: str) -> Any:
@@ -688,7 +752,7 @@ def _build_live_runner(broker: str) -> Any:
     session_id = session.session_id
 
     async def _agent_caller(sid: str, prompt: str) -> Dict[str, Any]:
-        return await svc.send_message(sid, prompt)
+        return await _run_live_session_attempt(svc, sid, prompt)
 
     def _audit_with_bus(event: Any) -> Dict[str, Any]:
         return write_live_action(
@@ -722,13 +786,119 @@ def _build_live_runner(broker: str) -> Any:
     return runner
 
 
+def _runner_scheduler_task(runner: Any) -> Optional["asyncio.Task[Any]"]:
+    """Return the live task driving the runner's scheduler, or ``None``.
+
+    Neither ``LiveRunner`` nor ``Scheduler`` exposes a public accessor for the
+    scheduler loop task (``LiveRunner`` only publishes ``runner_id``;
+    ``Scheduler``'s public surface is ``start``/``stop``/``add_job``/
+    ``remove_job``/``jobs``), so both hops are read defensively with
+    ``getattr``. A runner whose ``run_loop`` declined to start — no mandate, or
+    an expired one (``runner.py`` returns before calling ``Scheduler.start``) —
+    leaves ``_task`` unset and has nothing to await.
+    """
+    task = getattr(getattr(runner, "_scheduler", None), "_task", None)
+    if task is None or task.done():
+        return None
+    return task
+
+
+async def _stop_scheduler(runner: Any) -> None:
+    """Tear the runner's scheduler down, tolerating a sync or async ``stop``.
+
+    ``Scheduler.stop`` is a coroutine function, but the ``_Scheduler`` protocol
+    in ``runner.py`` types ``stop`` as returning ``Any``, so injected doubles may
+    be plain callables. Teardown is best-effort: a scheduler that refuses to
+    stop must not turn into an unhandled error inside the driver task.
+    """
+    stop = getattr(getattr(runner, "_scheduler", None), "stop", None)
+    if stop is None:
+        return
+    try:
+        result = stop()
+        if inspect.isawaitable(result):
+            await result
+    except Exception:  # noqa: BLE001 - teardown is best-effort by contract
+        logger.warning(
+            "live scheduler teardown failed for %s",
+            getattr(runner, "broker", "?"),
+            exc_info=True,
+        )
+
+
 async def _drive_runner(runner: Any) -> None:
-    """Run a runner's ``run_loop`` to completion, sync or async."""
-    result = runner.run_loop()
-    if asyncio.iscoroutine(result):
-        await result
-    else:
-        await asyncio.get_running_loop().run_in_executor(None, lambda: result)
+    """Run a runner's ``run_loop`` and stay alive for as long as its scheduler.
+
+    ``run_loop`` is fire-and-forget: it resolves the jobs, calls
+    ``Scheduler.start()`` (which only spawns the loop task) and returns. The
+    task wrapping this coroutine is the *only* handle
+    ``POST /live/runner/stop`` holds, and its ``add_done_callback`` unregisters
+    it the moment this coroutine returns — so a driver that returned alongside
+    ``run_loop`` would leave the scheduler firing ``run_once()`` on its cadence
+    while ``stop`` answered ``was_running: false``.
+
+    Keeping this coroutine parked on the scheduler task makes the driver's
+    lifetime the scheduler's lifetime, so cancelling it actually stops trading.
+    """
+    scheduler_task = None
+    try:
+        result = runner.run_loop()
+        if inspect.isawaitable(result):
+            await result
+        scheduler_task = _runner_scheduler_task(runner)
+        if scheduler_task is None:
+            return
+        # Shielded: cancelling this task is precisely what ``stop`` does, and the
+        # teardown below is what has to reach the scheduler loop task.
+        await asyncio.shield(scheduler_task)
+    finally:
+        # Starting an async runner may itself be cancelled after it spawned its
+        # scheduler. Cleanup must cover startup as well as the steady-state wait.
+        if scheduler_task is not None or getattr(getattr(runner, "_scheduler", None), "_task", None) is not None:
+            await _stop_scheduler(runner)
+            from src.live.runtime.liveness import heartbeat_path
+
+            try:
+                heartbeat_path(runner.broker).unlink(missing_ok=True)
+            except (AttributeError, OSError, ValueError):
+                logger.warning("could not clear stopped runner heartbeat", exc_info=True)
+
+
+async def _cancel_runner_task(task: Any) -> None:
+    """Cancel a driver once and wait for its scheduler cleanup.
+
+    Concurrent stop requests share the same driver. A second cancellation
+    must not interrupt the first request's asynchronous scheduler teardown.
+    Shielding also lets teardown finish if an HTTP client disconnects.
+
+    Args:
+        task: The registered runner driver task.
+    """
+    if not getattr(task, "cancelling", lambda: 0)():
+        task.cancel()
+    if isinstance(task, asyncio.Future):
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if not task.done():
+                raise
+
+
+async def _stop_live_runners() -> None:
+    """Await all registered live drivers before API shutdown completes."""
+    tasks = _host()._runner_tasks
+    registered = list(tasks.items())
+    results = await asyncio.gather(
+        *(_cancel_runner_task(task) for _, task in registered), return_exceptions=True
+    )
+    for (broker, task), result in zip(registered, results):
+        if tasks.get(broker) is task and task.done():
+            tasks.pop(broker, None)
+        if isinstance(result, BaseException):
+            logger.error(
+                "live runner shutdown failed for %s", broker,
+                exc_info=(type(result), result, result.__traceback__),
+            )
 
 
 # ============================================================================
@@ -1183,11 +1353,13 @@ def register_live_routes(
 
         h = _host()
         tasks = h._runner_tasks
-        task = tasks.pop(broker, None)
+        task = tasks.get(broker)
         if task is None or task.done():
             return {"broker": broker, "stopped": False, "was_running": False}
 
-        task.cancel()
+        await _cancel_runner_task(task)
+        if tasks.get(broker) is task:
+            tasks.pop(broker, None)
         h._emit_live_event(
             payload.session_id,
             "live.action",

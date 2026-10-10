@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router";
-import { Activity, BarChart3, Bot, CalendarClock, CandlestickChart, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, WalletCards } from "lucide-react";
+import { Check, ChevronDown, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -10,6 +10,10 @@ import { useAgentStore } from "@/stores/agent";
 import { BrandMark } from "@/components/common/BrandMark";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
+import i18n from "@/i18n";
+import { toast } from "sonner";
+import { SidebarNavigation } from "./SidebarNavigation";
+import { PageHelp } from "./PageHelp";
 
 // APP_VERSION is sourced from i18n locale files (app.version key) to keep a
 // single source of truth across the footer and every localised README.
@@ -17,30 +21,43 @@ import { SUPPORTED_LANGUAGES } from "@/i18n";
 export function Layout() {
   const { t } = useTranslation();
 
-  // "/" is the product (chat); marketing moved to /about. The Agent entry
-  // matches both "/" and legacy "/agent" deep links.
-  const NAV = [
-    { to: "/", icon: Bot, label: t('layout.agent') },
-    { to: "/runtime", icon: Activity, label: t('layout.runtime') },
-    { to: "/scheduled", icon: CalendarClock, label: t('layout.scheduled') },
-    { to: "/reports", icon: FileText, label: t('layout.reports') },
-    { to: "/portfolio", icon: WalletCards, label: t('layout.portfolio') },
-    { to: "/alpha-zoo", icon: Layers, label: t('layout.alphaZoo') },
-    { to: "/options", icon: CandlestickChart, label: t('layout.optionsLab') },
-    { to: "/settings", icon: Settings, label: t('layout.settings') },
-    { to: "/correlation", icon: BarChart3, label: t('layout.correlation') },
-  ];
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { dark, toggle } = useDarkMode();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const sessionsLoadGeneration = useRef(0);
+  const pendingSessionActions = useRef(new Set<string>());
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
   const [collapsed, setCollapsed] = useState(() => safeGet("qa-sidebar") === "collapsed");
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const sessionsPanelRef = useRef<HTMLDivElement>(null);
+  const sessionsTriggerRef = useRef<HTMLButtonElement>(null);
 
   const activeSessionId = searchParams.get("session");
   const streamingSessionId = useAgentStore(s => s.streamingSessionId);
+
+  useEffect(() => {
+    if (!sessionsOpen) return;
+    const dismiss = (event: MouseEvent) => {
+      if (!sessionsPanelRef.current?.contains(event.target as Node)
+        && !sessionsTriggerRef.current?.contains(event.target as Node)) setSessionsOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSessionsOpen(false);
+        sessionsTriggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", dismiss);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", dismiss);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sessionsOpen]);
 
   useEffect(() => {
     safeSet("qa-sidebar", collapsed ? "collapsed" : "expanded");
@@ -55,17 +72,32 @@ export function Layout() {
     return () => window.removeEventListener("storage", syncSidebarPreference);
   }, []);
 
-  const loadSessions = () => {
+  const loadSessions = useCallback(() => {
+    const generation = ++sessionsLoadGeneration.current;
+    setSessionsLoading(true);
     api.listSessions()
-      .then((list) => setSessions(Array.isArray(list) ? list : []))
-      .catch(() => {})
-      .finally(() => setSessionsLoading(false));
-  };
+      .then((list) => {
+        if (generation !== sessionsLoadGeneration.current) return;
+        setSessions(Array.isArray(list) ? list : []);
+        setSessionsError(null);
+      })
+      .catch((error: unknown) => {
+        if (generation === sessionsLoadGeneration.current) {
+          setSessionsError(error instanceof Error ? error.message : i18n.t("settings.unknownError"));
+        }
+      })
+      .finally(() => {
+        if (generation === sessionsLoadGeneration.current) setSessionsLoading(false);
+      });
+  }, []);
 
   // Load sessions on mount. Also refresh when navigating TO /agent or when
   // the active session changes (covers new session creation from Agent).
-  const isAgentPage = pathname.startsWith("/agent");
-  useEffect(() => { loadSessions(); }, [isAgentPage, activeSessionId]);
+  const isAgentPage = pathname === "/" || pathname.startsWith("/agent");
+  useEffect(() => {
+    loadSessions();
+    return () => { sessionsLoadGeneration.current += 1; };
+  }, [isAgentPage, activeSessionId, loadSessions]);
 
   // Re-list after out-of-band title changes (e.g. LLM auto-titling on the
   // first completed exchange).
@@ -73,27 +105,40 @@ export function Layout() {
     const refresh = () => loadSessions();
     window.addEventListener("vibe:sessions-refresh", refresh);
     return () => window.removeEventListener("vibe:sessions-refresh", refresh);
-  }, []);
+  }, [loadSessions]);
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
 
   const deleteSession = async (sid: string) => {
+    if (pendingSessionActions.current.has(sid)) return;
+    pendingSessionActions.current.add(sid);
     try {
       await api.deleteSession(sid);
       setSessions((prev) => prev.filter((s) => s.session_id !== sid));
-    } catch { /* ignore */ }
-    setDeleteTarget(null);
+      setDeleteTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("settings.unknownError"));
+    } finally {
+      pendingSessionActions.current.delete(sid);
+    }
   };
 
   const renameSession = async (sid: string) => {
     if (!renameValue.trim()) { setRenameTarget(null); return; }
+    if (pendingSessionActions.current.has(sid)) return;
+    pendingSessionActions.current.add(sid);
+    const title = renameValue.trim();
     try {
-      await api.renameSession(sid, renameValue.trim());
-      setSessions((prev) => prev.map((s) => s.session_id === sid ? { ...s, title: renameValue.trim() } : s));
-    } catch { /* ignore */ }
-    setRenameTarget(null);
+      await api.renameSession(sid, title);
+      setSessions((prev) => prev.map((s) => s.session_id === sid ? { ...s, title } : s));
+      setRenameTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("settings.unknownError"));
+    } finally {
+      pendingSessionActions.current.delete(sid);
+    }
   };
 
   return (
@@ -127,36 +172,31 @@ export function Layout() {
         </div>
 
         {/* Nav */}
-        <nav
-          aria-label={t('layout.mainNavigation', { defaultValue: 'Main navigation' })}
-          className={cn("space-y-0.5", collapsed ? "p-1" : "p-2 max-md:p-1")}
-        >
-          {NAV.map(({ to, icon: Icon, label }) => {
-            const text = label;
-            return (
-              <Link
-                key={to}
-                to={to}
-                aria-label={text}
-                className={cn(
-                  "flex items-center rounded-md text-[13px] transition-colors",
-                  collapsed ? "justify-center px-2 py-1.5" : "gap-3 px-3 py-1.5 max-md:justify-center max-md:px-2",
-                  (to === "/" ? pathname === "/" || pathname.startsWith("/agent") : pathname.startsWith(to))
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
-                title={collapsed ? text : undefined}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!collapsed && <span className="max-md:hidden">{text}</span>}
-              </Link>
-            );
-          })}
-        </nav>
+        <SidebarNavigation collapsed={collapsed} />
 
-        {/* Sessions — hidden when collapsed */}
-        {!collapsed && (
-          <div className="flex-1 overflow-auto border-t border-border/60 mt-2 flex flex-col max-md:hidden">
+        <button
+          ref={sessionsTriggerRef}
+          type="button"
+          aria-label={t("layout.sessions")}
+          aria-expanded={sessionsOpen}
+          aria-controls="sidebar-sessions"
+          title={t("layout.sessions")}
+          onClick={() => setSessionsOpen((open) => !open)}
+          className={cn("mx-1 mt-2 flex items-center justify-center rounded-md border-t p-2 text-muted-foreground hover:bg-muted", !collapsed && "md:hidden")}
+        >
+          <MessageSquare className="h-4 w-4" />
+        </button>
+
+        {/* Compact layouts keep history and new-chat actions in a disclosure. */}
+        {(!collapsed || sessionsOpen) && (
+          <div
+            ref={sessionsPanelRef}
+            id="sidebar-sessions"
+            aria-label={t("layout.sessions")}
+            className={cn("overflow-auto flex flex-col border-border/60", sessionsOpen
+              ? "fixed inset-y-0 start-12 z-40 w-[min(18rem,calc(100vw-3rem))] border-e bg-card shadow-xl"
+              : "flex-1 border-t mt-2 max-md:hidden")}
+          >
             <div className="flex items-center justify-between px-4 py-2">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <MessageSquare className="h-3.5 w-3.5" />
@@ -164,13 +204,22 @@ export function Layout() {
               </span>
               <Link
                 to="/agent"
+                onClick={() => setSessionsOpen(false)}
                 aria-label={t('layout.newChat')}
                 className="flex items-center gap-1 p-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 title={t('layout.newChat')}
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>
+              {sessionsOpen && <button type="button" aria-label={t("layout.collapse")} onClick={() => { setSessionsOpen(false); sessionsTriggerRef.current?.focus(); }} className="rounded p-1.5 text-muted-foreground hover:bg-muted"><X className="h-4 w-4" /></button>}
             </div>
+
+            {sessionsOpen && sessionsError && (
+              <div className="mx-3 mb-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-xs">
+                <p>{t("layout.sessionsLoadFailed")} {sessionsError}</p>
+                <button type="button" onClick={loadSessions} disabled={sessionsLoading} className="mt-2 rounded border px-2 py-1 disabled:opacity-50">{t("connection.retry")}</button>
+              </div>
+            )}
 
             <div className="px-2 pb-2 space-y-0.5 overflow-auto flex-1">
               {sessionsLoading ? (
@@ -179,7 +228,7 @@ export function Layout() {
                     <div key={i} className="h-7 rounded-md bg-muted/50 animate-pulse" />
                   ))}
                 </div>
-              ) : sessions.length === 0 ? (
+              ) : !sessionsError && sessions.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-muted-foreground/60">{t('layout.noSessions')}</p>
               ) : null}
               {sessions.map((s) => {
@@ -201,6 +250,7 @@ export function Layout() {
                     ) : (
                       <Link
                         to={`/agent?session=${s.session_id}`}
+                        onClick={() => setSessionsOpen(false)}
                         className={cn(
                           "flex-1 min-w-0 ps-3 pe-14 py-1.5 rounded-md text-xs transition-colors truncate block border-s-2",
                           isActive
@@ -267,6 +317,7 @@ export function Layout() {
               <button onClick={() => setCollapsed(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors" title={t('layout.expand')}>
                 <ChevronsRight className="h-3.5 w-3.5" />
               </button>
+              <LanguageSwitcher compact />
             </>
           ) : (
             <>
@@ -307,8 +358,18 @@ export function Layout() {
 
       {/* Main */}
       <div className="relative flex-1 flex flex-col overflow-hidden">
-        <ConnectionBanner status={sseStatus} retryAttempt={sseRetryAttempt} />
+        {sessionsError ? (
+          <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs">
+            <span className="font-medium">{t("layout.sessionsLoadFailed")}</span>
+            <span className="text-muted-foreground">{sessionsError}</span>
+            <button type="button" onClick={loadSessions} disabled={sessionsLoading} className="ms-auto rounded-md border px-2 py-1 disabled:opacity-50">
+              {sessionsLoading ? t("settings.loading") : t("connection.retry")}
+            </button>
+            <Link to="/settings" className="text-primary underline">{t("layout.settings")}</Link>
+          </div>
+        ) : <ConnectionBanner status={sseStatus} retryAttempt={sseRetryAttempt} />}
         <main id="main" className="flex-1 min-h-0 overflow-auto">
+          <PageHelp />
           <Outlet />
         </main>
       </div>
@@ -329,7 +390,7 @@ export function Layout() {
 // the trigger sits in the layout or which language is active. We measure
 // the trigger with getBoundingClientRect() and update on resize/scroll.
 // ---------------------------------------------------------------------------
-function LanguageSwitcher() {
+function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
   const { i18n, t } = useTranslation();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -414,8 +475,8 @@ function LanguageSwitcher() {
         className="flex items-center gap-1 p-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors max-md:justify-center"
       >
         <Languages className="h-3.5 w-3.5 shrink-0" />
-        <span className="whitespace-nowrap max-md:hidden">{current.label}</span>
-        <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform max-md:hidden", open && "rotate-180")} />
+        {!compact && <span className="whitespace-nowrap max-md:hidden">{current.label}</span>}
+        {!compact && <ChevronDown className={cn("h-3 w-3 shrink-0 transition-transform max-md:hidden", open && "rotate-180")} />}
       </button>
       {open && menuStyle && (
         <ul

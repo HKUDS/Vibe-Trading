@@ -19,6 +19,7 @@ import ccxt
 
 import backtest.loaders.ccxt_loader as cl
 from backtest.loaders.base import DEFAULT_MAX_RETRIES
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.ccxt_loader import DataLoader
 
 SINCE = int(pd.Timestamp("2026-05-01").timestamp() * 1000)
@@ -79,7 +80,7 @@ def test_happy_path_single_call_unchanged():
     df = DataLoader._fetch_one(ex, "BTC/USDT", "1d", SINCE, END)
     assert ex.calls == 1  # short page (< limit) -> exactly one call, as before
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
-
+    assert_loader_contract(df, context="ccxt bounded daily")
 
 def test_wallclock_budget_enforced(monkeypatch):
     seq = iter([1000.0, 1000.0, 1_000_000.0])  # deadline blown by the retry check

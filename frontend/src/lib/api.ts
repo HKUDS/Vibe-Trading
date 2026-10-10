@@ -7,11 +7,50 @@ import type {
 } from "@/lib/options";
 
 const BASE = "";
+const configuredTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
+const REQUEST_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+  ? configuredTimeout : 120_000;
+const METADATA_TIMEOUT_MS = Math.min(REQUEST_TIMEOUT_MS, 15_000);
+
+/** Bound both the connection and body read; never automatically replay writes. */
+async function performRequest<T>(
+  path: string,
+  options: RequestInit,
+  read: (response: Response) => Promise<T>,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abort = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener("abort", abort, { once: true });
+  try {
+    const response = await fetch(`${BASE}${path}`, { ...options, signal: controller.signal });
+    if (!response.ok) throw await errorFromResponse(response);
+    return await read(response);
+  } catch (error) {
+    if (timedOut) {
+      const mutation = options.method && !["GET", "HEAD"].includes(options.method.toUpperCase());
+      throw new ApiError(i18n.t(mutation ? "connection.requestTimeoutMutation" : "connection.requestTimeout"), 0, "request_timeout");
+    }
+    if (options.signal?.aborted || error instanceof ApiError) throw error;
+    if (error instanceof TypeError) {
+      throw new ApiError(i18n.t("connection.requestFailed"), 0, "network_error");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abort);
+  }
+}
 
 export async function downloadGeneratedReport(reportId: string, filename: string): Promise<void> {
-  const response = await fetch(`${BASE}/api/reports/${encodeURIComponent(reportId)}`, { headers: authHeaders() });
-  if (!response.ok) throw new ApiError(response.statusText, response.status);
-  const url = URL.createObjectURL(await response.blob());
+  const blob = await performRequest(`/api/reports/${encodeURIComponent(reportId)}`, { headers: authHeaders() }, (response) => response.blob());
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
@@ -51,6 +90,14 @@ export function isAuthRequiredError(error: unknown): boolean {
 export interface CorrelationResponse {
   labels: string[];
   matrix: number[][];
+}
+
+export interface CorrelationAnalysisResponse {
+  correlation: CorrelationResponse | null;
+  regime: CorrelationRegimeResponse | null;
+  errors: { correlation?: string; regime?: string };
+  coverage: { requested: string[]; missing: string[]; observations: number; first_date: string | null; last_date: string | null;
+    diagnostics: Record<string, { symbol: string; market: string; source: string | null; attempts: Array<{ source: string; reason: "source_unavailable" | "fetch_failed" | "no_data" }> }> };
 }
 
 export interface RegimeEpisode {
@@ -317,19 +364,24 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
     if (typeof raw === "string" && raw) {
       detail = raw;
     } else if (raw && typeof raw === "object") {
-      const structured = raw as { code?: unknown; message?: unknown };
+      const structured = raw as { code?: unknown; message?: unknown; max_length?: unknown };
       if (typeof structured.code === "string" && structured.code) code = structured.code;
       if (typeof structured.message === "string" && structured.message) detail = structured.message;
       else if (code) detail = code;
+      if (code === "message_too_long" && typeof structured.max_length === "number") {
+        detail = i18n.t("agent.messageTooLong", { limit: structured.max_length.toLocaleString() });
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    if (res.status >= 500) detail = i18n.t("connection.requestFailed");
+  }
   if (res.status === 401 || res.status === 403) {
     detail = getAuthRequiredMessage();
   }
   return new ApiError(detail, res.status, code);
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request<T>(path: string, options?: RequestInit, timeoutMs?: number): Promise<T> {
   const { headers, ...rest } = options ?? {};
   const mergedHeaders: Record<string, string> = { "Content-Type": "application/json", ...authHeaders() };
   if (headers) {
@@ -337,26 +389,24 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       mergedHeaders[key] = value;
     });
   }
-  const res = await fetch(`${BASE}${path}`, {
+  return performRequest(path, {
     ...rest,
     headers: mergedHeaders,
-  });
-  if (!res.ok) {
-    throw await errorFromResponse(res);
-  }
-  const text = await res.text();
-  if (!text) return {} as T;
+  }, async (res) => {
+    const text = await res.text();
+    if (!text) return {} as T;
 
-  const contentType = res.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    const preview = text.slice(0, 80).replace(/\s+/g, " ");
-    throw new ApiError(
-      `Expected JSON from ${path}, got ${contentType || "unknown content type"}: ${preview}`,
-      res.status,
-    );
-  }
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      const preview = text.slice(0, 80).replace(/\s+/g, " ");
+      throw new ApiError(
+        `Expected JSON from ${path}, got ${contentType || "unknown content type"}: ${preview}`,
+        res.status,
+      );
+    }
 
-  return JSON.parse(text) as T;
+    return JSON.parse(text) as T;
+  }, timeoutMs);
 }
 
 export interface UploadResult {
@@ -368,11 +418,7 @@ export interface UploadResult {
 async function uploadFile(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}/upload`, { method: "POST", headers: authHeaders(), body: form });
-  if (!res.ok) {
-    throw await errorFromResponse(res);
-  }
-  return res.json();
+  return performRequest("/upload", { method: "POST", headers: authHeaders(), body: form }, (res) => res.json());
 }
 
 function appendQueryParam(url: string, key: string, value: string): string {
@@ -382,6 +428,8 @@ function appendQueryParam(url: string, key: string, value: string): string {
 
 export const api = {
   uploadFile,
+  getCorrelationAnalysis: (codes: string, days: number, method: "pearson" | "spearman", includeRegime: boolean, signal?: AbortSignal) =>
+    request<CorrelationAnalysisResponse>(`/correlation/analysis?${new URLSearchParams({ codes, days: String(days), method, include_regime: String(includeRegime) })}`, { signal }),
   getCorrelation: (codes: string, days: number, method: "pearson" | "spearman") =>
     request<CorrelationResponse>(
       `/correlation?codes=${encodeURIComponent(codes)}&days=${encodeURIComponent(String(days))}&method=${encodeURIComponent(method)}`,
@@ -436,9 +484,7 @@ export const api = {
   getPortfolioHistory: (limit = 180) =>
     request<{ status: string; history: PortfolioHistoryPoint[] }>(`/api/portfolio/history?limit=${encodeURIComponent(String(limit))}`),
   downloadPortfolioCsv: async () => {
-    const response = await fetch(`${BASE}/api/portfolio/export.csv`, { headers: authHeaders() });
-    if (!response.ok) throw await errorFromResponse(response);
-    return response.blob();
+    return performRequest("/api/portfolio/export.csv", { headers: authHeaders() }, (response) => response.blob());
   },
   listRuns: (limit?: number) => request<RunListItem[]>(`/runs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`),
   getRun: (id: string, params: RunDetailParams = {}) => {
@@ -452,7 +498,7 @@ export const api = {
   getRunFactor: (id: string) => request<FactorReportPayload>(`/runs/${id}/factor`),
   getRunAttribution: (id: string) => request<AttributionResponse>(`/runs/${encodeURIComponent(id)}/attribution`),
   getRunPine: (id: string) => request<PineScriptResult>(`/runs/${id}/pine`),
-  listSessions: () => request<SessionItem[]>("/sessions"),
+  listSessions: () => request<SessionItem[]>("/sessions", undefined, METADATA_TIMEOUT_MS),
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
@@ -464,6 +510,11 @@ export const api = {
   listScheduledRuns: (signal?: AbortSignal) => request<ScheduledRun[]>("/scheduled-runs", { signal }),
   createScheduledRun: (body: CreateScheduledRunRequest) =>
     request<ScheduledRun>("/scheduled-runs", { method: "POST", body: JSON.stringify(body) }),
+  updateScheduledRun: (id: string, body: UpdateScheduledRunRequest) =>
+    request<ScheduledRun>(`/scheduled-runs/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   deleteScheduledRun: (id: string) =>
     request<void>(`/scheduled-runs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   commitScheduledResearchProposal: (proposalId: string) =>
@@ -561,6 +612,9 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
   // Alpha Zoo API
+  getAlphaReadiness: () => request<AlphaReadiness>("/alpha/readiness", {}, METADATA_TIMEOUT_MS),
+  getAlphaBenchJob: (jobId: string) => request<AlphaJobSnapshot<AlphaBenchResult>>(`/alpha/bench/${encodeURIComponent(jobId)}`, {}, METADATA_TIMEOUT_MS),
+  getAlphaCompareJob: (jobId: string) => request<AlphaJobSnapshot<AlphaCompareResult>>(`/alpha/compare/${encodeURIComponent(jobId)}`, {}, METADATA_TIMEOUT_MS),
   listAlphas: (params: AlphaListParams = {}) => {
     const q = new URLSearchParams();
     if (params.zoo) q.set("zoo", params.zoo);
@@ -588,10 +642,11 @@ export const api = {
     withAuthTicket(`${BASE}/alpha/compare/${encodeURIComponent(jobId)}/stream`),
 
   // Options Lab
-  analyzeOptionsPayoff: (body: OptionsPayoffRequest) =>
+  analyzeOptionsPayoff: (body: OptionsPayoffRequest, signal?: AbortSignal) =>
     request<OptionsPayoffResponse>("/options/payoff", {
       method: "POST",
       body: JSON.stringify(body),
+      signal,
     }),
   getOptionsChain: (ticker: string, expiration?: number) => {
     const q = new URLSearchParams();
@@ -684,6 +739,8 @@ export interface ScheduledRun {
   // app, which is what every monitor created before this did.
   delivery_channel: string | null;
   delivery_target: string | null;
+  delivery_format: "html" | "pdf" | null;
+  protect_pdf: boolean;
   delivery_target_ref: string | null;
   delivery_target_label: string | null;
   delivery_status: string;
@@ -706,7 +763,23 @@ export interface CreateScheduledRunRequest {
   config?: Record<string, unknown>;
   delivery_channel?: string | null;
   delivery_target?: string | null;
+  delivery_format?: "html" | "pdf" | null;
+  protect_pdf?: boolean;
   delivery_target_ref?: string | null;
+}
+
+export interface UpdateScheduledRunRequest {
+  title?: string | null;
+  prompt?: string;
+  schedule?: string;
+  timezone?: string | null;
+  end_at?: number | null;
+  config?: Record<string, unknown> | null;
+  delivery_channel?: string | null;
+  delivery_target?: string | null;
+  delivery_target_ref?: string | null;
+  delivery_format?: "html" | "pdf" | null;
+  protect_pdf?: boolean;
 }
 
 export interface ScheduledResearchProposalJob {
@@ -724,6 +797,8 @@ export interface ScheduledResearchProposalJob {
     channel: string | null;
     target_ref: string | null;
     target_label: string | null;
+    format?: "html" | "pdf" | null;
+    protect_pdf?: boolean;
     status: string;
   };
 }
@@ -852,6 +927,12 @@ export interface UpdateDataSourceSettingsRequest {
   source_orders?: SourceOrderUpdate[];
 }
 
+export interface DeliveryTargetSuggestion {
+  target: string;
+  kind?: string;
+  label?: string;
+}
+
 export interface ChannelAdapterStatus {
   name: string;
   display_name: string;
@@ -862,6 +943,11 @@ export interface ChannelAdapterStatus {
   running: boolean;
   error?: string;
   install_hint?: string;
+  delivery_target_label?: string;
+  delivery_target_kind?: string;
+  delivery_target_placeholder?: string;
+  delivery_target_input_type?: string;
+  delivery_target_suggestions?: DeliveryTargetSuggestion[];
 }
 
 export interface ChannelRuntimeStatus {
@@ -910,6 +996,7 @@ export interface ChannelConfigEntry {
   fields: ChannelFieldHint[];
   values: Record<string, unknown>;
   secrets: Record<string, ChannelSecretStatus>;
+  pdf_password_configured?: boolean;
 }
 
 export interface ChannelsConfigResponse {
@@ -932,7 +1019,8 @@ export type ChannelPutBody = {
 
 export interface ChannelPutResult {
   channel: ChannelConfigEntry;
-  applied: "hot_swapped" | "reset" | "deferred";
+  applied: "refreshed" | "hot_swapped" | "reset" | "deferred";
+  reset_reason?: string;
 }
 
 export type ChannelTestBody = {
@@ -1581,11 +1669,21 @@ export interface AlphaDetailResponse {
 }
 
 export interface AlphaBenchRequest {
+  request_id?: string;
   zoo: string;
   universe: string;
   period: string;
   top?: number;
+  alpha_id?: string;
 }
+
+export interface AlphaReadiness {
+  universes: Record<string, { ready: boolean; reason: "public_data" | "tushare_ready" | "tushare_token_missing" | "tushare_dependency_missing" | "single_asset" }>;
+  zoo_counts: Record<string, number>;
+}
+
+export interface AlphaProgress { n_done: number; n_total: number; current_alpha_id?: string; stage?: "loading_data" | "preparing_returns" | "computing" }
+export interface AlphaJobSnapshot<T> { job_id: string; status: "queued" | "running" | "done" | "error"; progress: AlphaProgress; result: T | null; error: string | null }
 
 export interface AlphaBenchTopRow {
   id: string;
@@ -1596,7 +1694,17 @@ export interface AlphaBenchTopRow {
   category: "alive" | "reversed" | "dead";
 }
 
+export interface AlphaDataMeta {
+  fetched_instruments?: number;
+  requested_instruments?: number;
+  missing_instruments?: string[];
+  survivorship_bias?: boolean;
+  degraded?: boolean;
+}
+
 export interface AlphaBenchResult {
+  n_alphas_tested?: number;
+  meta?: AlphaDataMeta;
   alive: number;
   reversed: number;
   dead: number;
@@ -1607,6 +1715,7 @@ export interface AlphaBenchResult {
 }
 
 export interface AlphaCompareRequest {
+  request_id?: string;
   alpha_ids: string[];
   universe: string;
   period: string;
@@ -1633,6 +1742,7 @@ export interface AlphaCompareSkip {
 }
 
 export interface AlphaCompareResult {
+  meta?: AlphaDataMeta;
   universe: string;
   period: string;
   sort: string;

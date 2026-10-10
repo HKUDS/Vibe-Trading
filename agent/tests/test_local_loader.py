@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 import backtest.loaders.local_loader as local_loader
+from tests.loader_contract import assert_loader_contract
 
 
 def _configure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sources: list[dict]) -> None:
@@ -59,6 +60,7 @@ def test_local_loader_fetches_csv_with_local_prefix(
     )
 
     assert set(frames) == {"AAPL.US"}
+    assert_loader_contract(frames["AAPL.US"], context="local csv daily")
     assert list(frames["AAPL.US"]["close"]) == [10.5, 12.5]
 
 

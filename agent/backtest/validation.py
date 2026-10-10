@@ -173,7 +173,13 @@ def bootstrap_sharpe_ci(
     if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
         return {"error": f"seed must be >= 0, got {seed}"}
 
-    returns = equity_curve.pct_change().replace([np.inf, -np.inf], 0.0).dropna().values
+    # Missing equity is not a flat observation or a one-period recovery return.
+    returns = (
+        equity_curve.pct_change(fill_method=None)
+        .replace([np.inf, -np.inf], 0.0)
+        .dropna()
+        .values
+    )
     if len(returns) < 5:
         return {"error": "need at least 5 return observations"}
 
@@ -247,13 +253,23 @@ def walk_forward_analysis(
         win_eq = equity_curve.iloc[start_idx:end_idx]
         win_start = indices[start_idx]
         win_end = indices[end_idx - 1]
+        if not np.isfinite(win_eq.iloc[[0, -1]]).all():
+            return {"error": f"window {i + 1} requires observed start and end equity"}
 
         # Per-window trades
         win_trades = [t for t in trades if win_start <= t.entry_time <= win_end]
 
         # Per-window metrics
         ret = float(win_eq.iloc[-1] / win_eq.iloc[0] - 1) if win_eq.iloc[0] > 0 else 0.0
-        win_returns = win_eq.pct_change().replace([np.inf, -np.inf], 0.0).dropna().values
+        # Use only observed adjacent pairs within this window.
+        win_returns = (
+            win_eq.pct_change(fill_method=None)
+            .replace([np.inf, -np.inf], 0.0)
+            .dropna()
+            .values
+        )
+        if not len(win_returns):
+            return {"error": f"window {i + 1} has no observed adjacent equity returns"}
         sharpe = _sharpe(win_returns, bars_per_year) if len(win_returns) > 1 else 0.0
 
         peak = win_eq.cummax()

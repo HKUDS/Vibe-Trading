@@ -158,8 +158,9 @@ def _build_runner(tracker: _OrderTracker, **overrides) -> LiveRunner:
         trip_halt_fn=tracker.trip_halt,
         session_id="live-test",
     )
+    broker = overrides.pop("broker", BROKER)
     kwargs.update(overrides)
-    return LiveRunner(BROKER, **kwargs)
+    return LiveRunner(broker, **kwargs)
 
 
 # --------------------------------------------------------------------------- #
@@ -529,10 +530,69 @@ def test_stop_loop_idempotent() -> None:
     tracker = _OrderTracker()
     sched = _FakeScheduler()
     runner = _build_runner(tracker, scheduler=sched)
-    runner.stop_loop()
+    asyncio.run(runner.stop_loop())
     assert sched.stopped is True
     # No scheduler => no-op, no raise.
-    _build_runner(tracker).stop_loop()
+    asyncio.run(_build_runner(tracker).stop_loop())
+
+
+def test_stop_loop_awaits_the_real_scheduler() -> None:
+    from src.live.runtime.scheduler import Scheduler
+
+    async def scenario() -> None:
+        async def fire(job) -> None:
+            pass
+
+        scheduler = Scheduler(fire)
+        runner = _build_runner(_OrderTracker(), scheduler=scheduler)
+        scheduler.start()
+        task = scheduler._task
+        await runner.stop_loop()
+        assert task.done()
+        assert scheduler._task is None
+        await runner.stop_loop()
+
+    asyncio.run(scenario())
+
+
+def test_default_job_stores_keep_each_brokers_cadence_separate(tmp_path, monkeypatch) -> None:
+    from src.live import paths
+    from src.live.runtime.triggers import Trigger
+
+    monkeypatch.setattr(paths, "get_runtime_root", lambda: tmp_path)
+    first, second = _FakeScheduler(), _FakeScheduler()
+    _build_runner(_OrderTracker(), broker="robinhood", scheduler=first,
+                  triggers=[Trigger.interval(30_000)]).run_loop()
+    _build_runner(_OrderTracker(), broker="alpaca", scheduler=second,
+                  triggers=[Trigger.interval(90_000)]).run_loop()
+    assert [job.schedule for job in first.jobs] == ["interval:30000"]
+    assert [job.schedule for job in second.jobs] == ["interval:90000"]
+    assert all(job.payload["broker"] == "alpaca" for job in second.jobs)
+    restarted = _FakeScheduler()
+    _build_runner(_OrderTracker(), broker="robinhood", scheduler=restarted,
+                  triggers=[Trigger.interval(120_000)]).run_loop()
+    assert [job.schedule for job in restarted.jobs] == ["interval:30000"]
+
+
+def test_default_job_store_migrates_only_its_own_legacy_jobs(tmp_path, monkeypatch) -> None:
+    from src.live import paths
+    from src.live.runtime.jobstore import JobStore
+    from src.live.runtime.scheduler import Job
+    from src.live.runtime.triggers import Trigger
+
+    monkeypatch.setattr(paths, "get_runtime_root", lambda: tmp_path)
+    legacy = JobStore()
+    legacy.save([
+        Job("robinhood-watch", 1, "interval:5000", {"broker": "robinhood"}),
+        Job("alpaca-watch", 2, "interval:6000", {"broker": "alpaca"}),
+        Job("unbound", 3, "interval:7000"),
+    ])
+    for broker, expected in [("robinhood", "robinhood-watch"), ("alpaca", "alpaca-watch")]:
+        scheduler = _FakeScheduler()
+        _build_runner(_OrderTracker(), broker=broker, scheduler=scheduler,
+                      triggers=[Trigger.interval(30_000)]).run_loop()
+        assert [job.id for job in scheduler.jobs] == [expected]
+    assert len(legacy.load()) == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -544,7 +604,7 @@ def test_real_audit_write_on_halt(monkeypatch, tmp_path) -> None:
     # Isolate the runtime root so the real ledger lands under tmp.
     monkeypatch.setattr("src.config.paths.Path.home", lambda: tmp_path)
     from src.live.audit import audit_ledger_path, write_live_action
-    from src.live.halt import halt_flag_set, trip_halt
+    from src.live.halt import trip_halt
 
     tracker = _OrderTracker()
     runner = LiveRunner(

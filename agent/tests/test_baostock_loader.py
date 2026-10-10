@@ -3,6 +3,7 @@
 Ensures both baostock native (sh.601398) and tushare-style (601398.SH) codes work.
 """
 from backtest.loaders.baostock_loader import _is_a_share
+from tests.loader_contract import assert_loader_contract
 
 
 class TestIsAShareCodeFormat:
@@ -128,6 +129,7 @@ class TestVolumeUnitNormalization:
 
         df = loader._fetch_one(bs_mock, "601398.SH", "2024-01-01", "2024-01-31")
 
+        assert_loader_contract(df, context="baostock daily")
         assert df["volume"].iloc[-1] == 55128.0
 
     def test_odd_lot_volume_keeps_fractional_lots(self):

@@ -370,8 +370,10 @@ class DataLoader:
         # Treat ``end_date`` as inclusive of the whole day so intraday bars on
         # the end day survive the filter (a bare midnight bound dropped them,
         # which would defeat any sub-daily ``interval``).
-        end = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-        df = df[(df.index >= start) & (df.index <= end)]
+        end = pd.Timestamp(end_date) + pd.Timedelta(days=1)
+        # A half-open boundary includes fractional seconds on the end day
+        # without admitting the following midnight.
+        df = df[(df.index >= start) & (df.index < end)]
         if df.empty:
             return None
         df = _resample_to_interval(df, interval, symbol)

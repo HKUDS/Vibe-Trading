@@ -137,11 +137,14 @@ class TestOutputPrinciplesCannotBeOverriddenBySession:
         assert blocks[0] == blocks[1] == blocks[2]
 
     def test_the_block_sits_before_any_per_session_content(self) -> None:
-        """It is in the cacheable prefix, ahead of memory and the timestamp."""
+        """It is in the cacheable prefix, ahead of the timestamp. Per-run
+        workspace state no longer reaches the system prompt at all — it rides
+        the first user message (see test_system_prompt_cache_stability.py,
+        issue #1707)."""
         prompt = _rendered_prompt()
 
-        assert prompt.index("## Output Principles") < prompt.index("## State")
         assert prompt.index("## Output Principles") < prompt.index("## Current Date & Time")
+        assert "## State" not in prompt
 
 
 # ---------------------------------------------------------------------------

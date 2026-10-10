@@ -12,6 +12,10 @@ client with a configured key is used to prove the auth gate rejects.
 
 from __future__ import annotations
 
+import asyncio
+import threading
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -204,3 +208,48 @@ def test_correlation_rate_limiter_is_per_client(monkeypatch: pytest.MonkeyPatch)
     assert limiter.allow("1.1.1.1") is True
     assert limiter.allow("1.1.1.1") is False
     assert limiter.allow("2.2.2.2") is True
+
+
+@pytest.mark.parametrize(
+    ("path", "module_name", "function_name"),
+    [
+        ("/correlation", "backtest.correlation", "compute_correlation_matrix"),
+        ("/correlation/regime", "backtest.regime", "compute_regime_timeline"),
+        ("/correlation/analysis", "backtest.correlation", "compute_correlation_analysis"),
+    ],
+)
+def test_slow_analysis_does_not_block_other_api_requests(
+    monkeypatch: pytest.MonkeyPatch, path: str, module_name: str, function_name: str
+):
+    """Health must respond while a price-data computation is still waiting."""
+    import importlib
+
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def compute(**kwargs):
+        started.set()
+        release.wait(timeout=1)
+        finished.set()
+        return {"labels": kwargs["codes"], "matrix": [[1.0, 0.5], [0.5, 1.0]]}
+
+    monkeypatch.setattr(importlib.import_module(module_name), function_name, compute)
+    monkeypatch.delenv("API_AUTH_KEY", raising=False)
+    monkeypatch.setattr(api_server, "_API_KEY", "")
+    transport = httpx.ASGITransport(app=api_server.app, client=("127.0.0.1", 50000))
+    async def probe():
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            analysis = asyncio.create_task(client.get(path, params={"codes": "AAPL,SPY"}))
+            try:
+                assert await asyncio.to_thread(started.wait, 2)
+                health = await client.get("/health")
+                assert health.status_code == 200
+                assert not finished.is_set(), "Analysis blocked the API event loop"
+            finally:
+                release.set()
+                response = await analysis
+            assert response.status_code == 200
+            assert response.json()["labels"] == ["AAPL", "SPY"]
+
+    asyncio.run(probe())

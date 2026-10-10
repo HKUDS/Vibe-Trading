@@ -217,6 +217,7 @@ class MatrixChannel(BaseChannel):
 
     name = "matrix"
     display_name = "Matrix"
+    hot_reload_noop_keys = frozenset({"allow_from"})
     _STREAM_EDIT_INTERVAL = 2 # min seconds between edit_message_text calls
     monotonic_time = time.monotonic
 

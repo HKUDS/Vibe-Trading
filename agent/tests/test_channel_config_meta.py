@@ -290,6 +290,7 @@ _EMAIL_HINT_KEYS = (
     "smtp_port",
     "smtp_username",
     "smtp_password",
+    "pdf_password",
     "smtp_use_tls",
     "smtp_use_ssl",
     "verify_tls",
@@ -306,6 +307,7 @@ _EMAIL_HINT_KEYS = (
     "allow_from",
     "verify_dkim",
     "verify_spf",
+    "trusted_authserv_id",
     "allowed_attachment_types",
     "max_attachment_size",
     "max_attachments_per_email",
@@ -337,15 +339,17 @@ def test_email_field_hints_contract() -> None:
     keys = tuple(hint["key"] for hint in hints)
     assert keys == _EMAIL_HINT_KEYS
     assert "enabled" not in keys
-    assert len(hints) == 31
+    assert len(hints) == 33
 
     by_key = {hint["key"]: hint for hint in hints}
     assert {key for key, hint in by_key.items() if hint["secret"]} == {
         "imap_password",
         "smtp_password",
+        "pdf_password",
     }
     assert by_key["imap_password"]["type"] == "password"
     assert by_key["smtp_password"]["type"] == "password"
+    assert by_key["pdf_password"]["type"] == "password"
     # required mirrors EmailChannel._validate_config: the channel refuses to
     # start without all six credential fields.
     assert {key for key, hint in by_key.items() if hint["required"]} == {
@@ -358,6 +362,14 @@ def test_email_field_hints_contract() -> None:
     }
     for hint in hints:
         assert hint["help_key"] == f"settings.channels.fields.email.{hint['key']}"
+
+
+def test_email_pdf_password_config_metadata_exposes_presence_only() -> None:
+    value = "private-pdf-password-1234"
+    values, secrets = split_values_secrets("email", {"pdf_password": value})
+    assert values == {}
+    assert secrets["pdf_password"] == {"set": True, "masked": "****"}
+    assert value not in repr((values, secrets))
 
 
 def test_websocket_field_hints_contract() -> None:
@@ -606,6 +618,10 @@ def test_proxy_url_userinfo_is_stripped_from_values() -> None:
             "webhook_url": "https://example.com/hook",
             "note": "plain text",
             "bad_proxy": "http://user:pw@host:notaport",
+            "far_port": "https://user:pw@host:99999/hook",
+            "space_url": "http://admin:pass word@proxy:8080",
+            "tab_url": "http://us\ter:pw@host/",
+            "space_user_url": "https://user:pw @host:8080",
             "token": "abc",
         },
     )
@@ -614,7 +630,17 @@ def test_proxy_url_userinfo_is_stripped_from_values() -> None:
     assert "pw" not in values["proxy"]
     assert values["webhook_url"] == "https://example.com/hook"
     assert values["note"] == "plain text"
-    assert values["bad_proxy"] == "http://user:pw@host:notaport"
+    # A malformed port must not exempt the URL from redaction.
+    assert values["bad_proxy"] == "http://host:notaport"
+    # Nor may an out-of-range port (a plausible typo).
+    assert values["far_port"] == "https://host:99999/hook"
+    # Whitespace inside the authority must not exempt the URL from redaction.
+    assert values["space_url"] == "http://proxy:8080"
+    assert "pass word" not in values["space_url"]
+    assert values["tab_url"] == "http://host/"
+    assert "pw" not in values["tab_url"]
+    assert values["space_user_url"] == "https://host:8080"
+    assert "user:pw" not in values["space_user_url"]
     assert secrets["token"] == {"set": True, "masked": "****"}
 
 

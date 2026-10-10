@@ -10,13 +10,14 @@ import re
 import sys as _sys
 import time
 import uuid
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 from src.config.accessor import get_env_config
+from src.scheduled_research.models import contains_pdf_password
 
 if TYPE_CHECKING:
     from src.scheduled_research.models import ScheduledResearchJob
@@ -115,13 +116,21 @@ def _read_scheduled_briefing(session_id: str) -> Optional[tuple[str, str]]:
     return None
 
 
-async def _send_scheduled_briefing(channel: str, target: Optional[str], text: str):
+async def _send_scheduled_briefing(
+    channel: str,
+    target: Optional[str],
+    text: str,
+    delivery_format: Optional[str] = None,
+    protect_pdf: bool = False,
+):
     """Deliver one briefing through the configured IM channel.
 
     Args:
         channel: Channel id as configured in the channel runtime.
         target: Address within that channel, or ``None`` for its default.
         text: The briefing to deliver.
+        delivery_format: Optional presentation hint for channels that support it.
+        protect_pdf: Whether the generated PDF must be password protected.
 
     Raises:
         RuntimeError: If the channel runtime is unavailable or has no such
@@ -139,8 +148,13 @@ async def _send_scheduled_briefing(channel: str, target: Optional[str], text: st
         raise RuntimeError(f"channel {channel!r} is not configured")
     if not target:
         raise RuntimeError(f"channel {channel!r} has no delivery target configured")
+    metadata = {"force_send": True}
+    if delivery_format:
+        metadata["delivery_format"] = delivery_format
+    if protect_pdf:
+        metadata["protect_pdf"] = True
     return await adapter.send_with_receipt(
-        OutboundMessage(channel=channel, chat_id=target, content=text)
+        OutboundMessage(channel=channel, chat_id=target, content=text, metadata=metadata)
     )
 
 
@@ -165,6 +179,21 @@ def _start_scheduled_research_executor() -> None:
     if not _scheduled_research_scheduler_enabled():
         return
     _get_scheduled_research_executor().start()
+
+
+async def _stop_scheduled_research_on_shutdown() -> None:
+    """Stop live drivers, channels and research even if one service fails."""
+    from src.api.channels_routes import _stop_channel_runtime
+    from src.api.live_routes import _stop_live_runners
+
+    host = _sys.modules.get("api_server")
+    try:
+        await getattr(host, "_stop_live_runners", _stop_live_runners)()
+    finally:
+        try:
+            await getattr(host, "_stop_channel_runtime", _stop_channel_runtime)()
+        finally:
+            await getattr(host, "_stop_scheduled_research_executor", _stop_scheduled_research_executor)()
 
 
 async def _stop_scheduled_research_executor() -> None:
@@ -226,8 +255,51 @@ class CreateScheduledRunRequest(BaseModel):
     delivery_target_ref: Optional[str] = Field(
         None, description="Opaque operator-configured target ref; preferred over raw target ids"
     )
+    delivery_format: Optional[Literal["html", "pdf"]] = Field(
+        None, description="Email report presentation: HTML body or PDF attachment"
+    )
+    protect_pdf: bool = Field(False, description="Password-protect the generated PDF")
     end_at: Optional[int] = Field(
         None, description="Epoch-ms boundary after which no further run is dispatched"
+    )
+
+
+class UpdateScheduledRunRequest(BaseModel):
+    """Mutable authored fields for an existing scheduled research job.
+
+    Omitted fields are preserved. Explicit null clears nullable fields such as
+    timezone, end_at, and delivery. Runtime/history fields are never client
+    writable.
+    """
+
+    prompt: Optional[str] = Field(
+        None, min_length=1, description="Replacement research prompt"
+    )
+    title: Optional[str] = Field(None, description="Human-readable monitor title")
+    schedule: Optional[str] = Field(
+        None, min_length=1, description="Replacement interval-ms or 5-field cron"
+    )
+    config: Optional[Dict[str, Any]] = Field(
+        None, description="Replacement session/backtest config"
+    )
+    timezone: Optional[str] = Field(
+        None, description="Replacement IANA timezone; null means UTC"
+    )
+    delivery_channel: Optional[str] = Field(
+        None, description="Replacement delivery channel; null disables delivery"
+    )
+    delivery_target: Optional[str] = Field(
+        None, description="Replacement address within the delivery channel"
+    )
+    delivery_target_ref: Optional[str] = Field(
+        None, description="Replacement opaque configured target ref"
+    )
+    delivery_format: Optional[Literal["html", "pdf"]] = Field(
+        None, description="Email presentation; null restores plain text"
+    )
+    protect_pdf: Optional[bool] = Field(None, description="Replace the PDF protection choice")
+    end_at: Optional[int] = Field(
+        None, description="Replacement epoch-ms end boundary; null removes it"
     )
 
 
@@ -291,6 +363,8 @@ class CreateRunFromPlaybookRequest(BaseModel):
     title: Optional[str] = None
     end_at: Optional[int] = None
     delivery_target_ref: Optional[str] = None
+    delivery_format: Optional[Literal["html", "pdf"]] = None
+    protect_pdf: bool = False
 
 
 class ScheduledRunResponse(BaseModel):
@@ -316,6 +390,8 @@ class ScheduledRunResponse(BaseModel):
     delivery_target: Optional[str] = None
     delivery_target_ref: Optional[str] = None
     delivery_target_label: Optional[str] = None
+    delivery_format: Optional[str] = None
+    protect_pdf: bool = False
     delivery_status: str = "none"
     delivery_error: Optional[str] = None
     delivery_updated_at: Optional[int] = None
@@ -349,6 +425,13 @@ def _job_to_response(job: ScheduledResearchJob) -> "ScheduledRunResponse":
         delivery_attempts=delivery.get("attempts", 0),
         delivery_provider_message_id=delivery.get("provider_message_id"),
     )
+
+
+def _email_pdf_password_configured() -> bool:
+    """Read only whether the private Email PDF password is configured."""
+    from src.scheduled_research.service import email_pdf_password_configured
+
+    return email_pdf_password_configured()
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +502,8 @@ def register_scheduled_routes(
                     "'_' or '-'"
                 ),
             )
+        if contains_pdf_password(request.config):
+            raise HTTPException(status_code=422, detail="config must not include pdf_password")
 
         try:
             validate_schedule(request.schedule)
@@ -471,6 +556,21 @@ def register_scheduled_routes(
             delivery_target = resolved_target.target
             delivery_target_label = resolved_target.label
 
+        if request.delivery_format is not None and delivery_channel != "email":
+            raise HTTPException(
+                status_code=422,
+                detail="delivery_format is supported only for email delivery",
+            )
+        if request.protect_pdf and request.delivery_format != "pdf":
+            raise HTTPException(status_code=422, detail="protect_pdf requires PDF email delivery")
+        if request.protect_pdf and delivery_channel != "email":
+            raise HTTPException(status_code=422, detail="protect_pdf requires Email delivery")
+        if request.protect_pdf and not _email_pdf_password_configured():
+            raise HTTPException(
+                status_code=422,
+                detail="PDF protection requested but no PDF password is configured",
+            )
+
         job = ScheduledResearchJob(
             id=request.id or str(uuid.uuid4()),
             title=request.title or "",
@@ -486,6 +586,8 @@ def register_scheduled_routes(
             delivery_target=delivery_target,
             delivery_target_ref=request.delivery_target_ref,
             delivery_target_label=delivery_target_label,
+            delivery_format=request.delivery_format,
+            protect_pdf=request.protect_pdf,
         )
         _get_scheduled_research_store().upsert(job)
         return _job_to_response(job)
@@ -542,6 +644,200 @@ def register_scheduled_routes(
             return discard_proposal(proposal_id)
         except ProposalError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+    @app.patch(
+        "/scheduled-runs/{job_id}",
+        response_model=ScheduledRunResponse,
+        dependencies=[Depends(require_auth)],
+    )
+    async def update_scheduled_run(
+        job_id: str,
+        request: UpdateScheduledRunRequest,
+    ) -> ScheduledRunResponse:
+        """Update future configuration without deleting the job or its history."""
+        from src.scheduled_research.executor import next_due
+        from src.scheduled_research.models import (
+            DeliveryRecord,
+            DeliveryStatus,
+            JobStatus,
+            is_interval_schedule,
+            validate_schedule,
+            validate_timezone,
+            validate_timezone_shape,
+        )
+
+        _host_validate_path_param(job_id, "job_id")
+        store = _get_scheduled_research_store()
+        job = store.get(job_id)
+        if job is None:
+            raise HTTPException(
+                status_code=404, detail=f"scheduled run {job_id} not found"
+            )
+        if job.status == JobStatus.RUNNING or job.delivery.status == DeliveryStatus.SENDING:
+            raise HTTPException(
+                status_code=409,
+                detail="a running scheduled run or active delivery cannot be edited; retry after it finishes",
+            )
+
+        fields = request.model_fields_set
+        if not fields:
+            return _job_to_response(job)
+
+        prompt = job.prompt
+        if "prompt" in fields:
+            if request.prompt is None or not request.prompt.strip():
+                raise HTTPException(status_code=422, detail="prompt must not be blank")
+            prompt = request.prompt
+
+        title = job.title
+        if "title" in fields:
+            title = request.title or ""
+
+        schedule = job.schedule
+        if "schedule" in fields:
+            if request.schedule is None:
+                raise HTTPException(status_code=422, detail="schedule must not be null")
+            schedule = request.schedule
+
+        timezone = job.timezone if "timezone" not in fields else request.timezone
+        config = job.config if "config" not in fields else (request.config or {})
+        if contains_pdf_password(config):
+            raise HTTPException(status_code=422, detail="config must not include pdf_password")
+        end_at = job.end_at if "end_at" not in fields else request.end_at
+
+        try:
+            validate_schedule(schedule)
+            if is_interval_schedule(schedule):
+                validate_timezone_shape(timezone)
+            else:
+                validate_timezone(timezone)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        now_ms = int(time.time() * 1000)
+        if "end_at" in fields and end_at is not None and end_at <= now_ms:
+            raise HTTPException(status_code=422, detail="end_at must be in the future")
+
+        # Interval schedules are timezone-agnostic. A timezone-only edit must
+        # not move their next fire time; only cron schedules use timezone as
+        # part of their execution cadence.
+        schedule_changed = schedule != job.schedule or (
+            not is_interval_schedule(schedule) and timezone != job.timezone
+        )
+        next_run_at = job.next_run_at
+        if schedule_changed:
+            if is_interval_schedule(schedule):
+                next_run_at = now_ms
+            else:
+                try:
+                    next_run_at = next_due(schedule, now_ms, timezone)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if end_at is not None and next_run_at > end_at:
+            raise HTTPException(
+                status_code=422, detail="the next scheduled run occurs after end_at"
+            )
+
+        delivery_fields = {
+            "delivery_channel",
+            "delivery_target",
+            "delivery_target_ref",
+            "protect_pdf",
+        }
+        delivery_requested = bool(delivery_fields & fields)
+        delivery_channel = job.delivery_channel
+        delivery_target = job.delivery_target
+        delivery_target_ref = job.delivery_target_ref
+        delivery_target_label = job.delivery_target_label
+
+        if delivery_requested:
+            if request.delivery_target_ref:
+                from src.channels.targets import resolve_delivery_target
+
+                try:
+                    resolved = resolve_delivery_target(request.delivery_target_ref)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+                delivery_channel = resolved.channel
+                delivery_target = resolved.target
+                delivery_target_ref = resolved.ref
+                delivery_target_label = resolved.label
+            else:
+                if "delivery_channel" in fields:
+                    new_channel = (request.delivery_channel or "").strip()
+                    if (
+                        new_channel != (job.delivery_channel or "")
+                        and "delivery_target" not in fields
+                    ):
+                        delivery_target = None
+                    delivery_channel = new_channel or None
+                if "delivery_target" in fields:
+                    new_target = (request.delivery_target or "").strip()
+                    delivery_target = new_target or None
+                # A raw channel/target edit supersedes any prior opaque ref.
+                delivery_target_ref = None
+                delivery_target_label = None
+                if delivery_channel is None:
+                    delivery_target = None
+                elif delivery_target is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="delivery_target is required when delivery_channel is set",
+                    )
+
+        delivery_format = job.delivery_format
+        protect_pdf = job.protect_pdf
+        if "delivery_format" in fields:
+            delivery_format = request.delivery_format
+        if "protect_pdf" in fields:
+            protect_pdf = request.protect_pdf is True
+        if delivery_channel != "email" and "delivery_format" not in fields:
+            delivery_format = None
+        if delivery_format is not None and delivery_channel != "email":
+            raise HTTPException(
+                status_code=422, detail="delivery_format is supported only for email delivery"
+            )
+        if delivery_channel != "email":
+            protect_pdf = False
+        if protect_pdf and delivery_format != "pdf":
+            raise HTTPException(status_code=422, detail="protect_pdf requires PDF email delivery")
+        if protect_pdf and delivery_channel != "email":
+            raise HTTPException(status_code=422, detail="protect_pdf requires Email delivery")
+        if protect_pdf and not _email_pdf_password_configured():
+            raise HTTPException(
+                status_code=422,
+                detail="PDF protection requested but no PDF password is configured",
+            )
+
+        delivery_changed = delivery_format != job.delivery_format or protect_pdf != job.protect_pdf or delivery_requested and (
+            delivery_channel != job.delivery_channel
+            or delivery_target != job.delivery_target
+            or delivery_target_ref != job.delivery_target_ref
+            or delivery_target_label != job.delivery_target_label
+        )
+
+        job.prompt = prompt
+        job.title = title
+        job.schedule = schedule
+        job.config = config
+        job.timezone = timezone
+        job.end_at = end_at
+        job.next_run_at = next_run_at
+        if delivery_changed:
+            job.delivery_format = delivery_format
+            job.protect_pdf = protect_pdf
+            job.delivery_channel = delivery_channel
+            job.delivery_target = delivery_target
+            job.delivery_target_ref = delivery_target_ref
+            job.delivery_target_label = delivery_target_label
+            # The previous outbox receipt describes the old destination. Clear
+            # it rather than presenting that receipt as if it belonged to the
+            # newly-authored delivery configuration.
+            job.delivery = DeliveryRecord(session_id=job.delivery.session_id)
+
+        store.upsert(job)
+        return _job_to_response(job)
 
     @app.delete(
         "/scheduled-runs/{job_id}",
@@ -664,12 +960,21 @@ def register_scheduled_routes(
                 variables=request.variables,
                 config=request.config,
                 next_run_at=request.next_run_at,
+                delivery_target_ref=request.delivery_target_ref,
+                delivery_format=request.delivery_format,
+                protect_pdf=request.protect_pdf,
                 **kwargs,
             )
         except ValueError as exc:
             # Covers PlaybookError (undeclared/oversized variable) and the
             # schedule / timezone / cron-window failures, all ValueError.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        if job.protect_pdf and not _email_pdf_password_configured():
+            raise HTTPException(
+                status_code=422,
+                detail="PDF protection requested but no PDF password is configured",
+            )
 
         now_ms = int(time.time() * 1000)
         if request.end_at is not None:
@@ -682,18 +987,6 @@ def register_scheduled_routes(
         job.title = request.title or playbook.name
         job.source_type = "playbook"
         job.playbook_slug = playbook.slug
-        if request.delivery_target_ref:
-            from src.channels.targets import resolve_delivery_target
-
-            try:
-                target = resolve_delivery_target(request.delivery_target_ref)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            job.delivery_channel = target.channel
-            job.delivery_target = target.target
-            job.delivery_target_ref = target.ref
-            job.delivery_target_label = target.label
-
         _get_scheduled_research_store().upsert(job)
         return _job_to_response(job)
 

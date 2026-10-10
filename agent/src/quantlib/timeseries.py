@@ -274,8 +274,8 @@ def fit_ornstein_uhlenbeck(series: pd.Series, dt: float = 1.0) -> dict:
         raise ValueError(f"dt must be strictly positive, got {dt}")
 
     sm = _require("statsmodels.api", "statsmodels", "fit_ornstein_uhlenbeck")
-    s = pd.Series(series, dtype=float).dropna()
-    if not np.isfinite(s.values).all():
+    s = pd.Series(series, dtype=float)
+    if not np.isfinite(s.dropna().values).all():
         raise ValueError("series contains non-finite values")
 
     lagged = s.shift(1)

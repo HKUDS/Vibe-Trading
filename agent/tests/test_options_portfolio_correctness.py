@@ -150,9 +150,7 @@ def test_bars_per_year_none_does_not_crash() -> None:
     # The runner passes bars_per_year=None for cross-market baskets
     # (calendar-day convention). All three guards used to raise
     # TypeError ('<=' / '>' not supported between NoneType and int).
-    # Zigzag path with multiple downside observations so the sortino guard
-    # is reached (a single negative return yields an undefined downside std,
-    # unrelated to the None bug under test).
+    # Zigzag path provides nonzero volatility and downside deviation.
     equity = pd.Series(
         [100.0, 90.0, 95.0, 85.0, 92.0, 80.0],
         index=pd.date_range("2026-01-01", periods=6, freq="D"),
@@ -191,3 +189,109 @@ def test_profit_loss_ratio_undefined_when_no_closed_trade_lost() -> None:
 def test_profit_loss_ratio_zero_without_closed_trades() -> None:
     metrics = _calc_options_metrics(pd.Series([100.0, 100.0]), 100.0, [])
     assert metrics["profit_loss_ratio"] == 0.0
+
+
+@pytest.mark.parametrize("bars_per_year", [252, 365, None])
+@pytest.mark.parametrize(
+    "values,mean_return,downside_mean_square",
+    [
+        ([100.0, 99.0, 98.01, 100.9503], 0.01 / 3, 0.0002 / 3),
+        ([100.0, 99.0, 101.97], 0.01, 0.0001 / 2),
+        ([100.0, 99.0, 97.02, 102.8412], 0.01, 0.0005 / 3),
+        ([100.0, 99.0, 98.01], -0.01, 0.0001),
+        ([100.0, 99.0], -0.01, 0.0001),
+    ],
+    ids=["equal-losses", "single-loss", "unequal-losses", "all-losses", "one-period"],
+)
+def test_sortino_uses_full_sample_downside_deviation(
+    values: list[float],
+    mean_return: float,
+    downside_mean_square: float,
+    bars_per_year: int | None,
+) -> None:
+    equity = pd.Series(
+        values, index=pd.date_range("2026-01-01", periods=len(values), freq="D")
+    )
+    metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=bars_per_year)
+
+    # Hand-derived moments use observed period returns, with no initial zero.
+    # For daily observations the existing span convention counts all equity bars.
+    annualization = bars_per_year
+    if annualization is None:
+        annualization = int(len(values) * 365.25 / (len(values) - 1))
+    expected = mean_return / np.sqrt(downside_mean_square) * np.sqrt(annualization)
+    assert metrics["sortino"] == pytest.approx(expected, abs=5e-5)
+    assert not any("Sortino" in warning for warning in metrics["warnings"])
+    json.dumps(metrics, allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "values,bars_per_year",
+    [
+        ([], 252),
+        ([100.0], 252),
+        ([100.0, 101.0, 102.0], 252),
+        ([100.0, 100.0, 100.0], 252),
+        ([100.0, 100.0 - 1e-11], 252),
+        ([100.0, 0.0, 50.0], 252),
+        ([100.0, np.nan, 99.0], 252),
+        ([100.0, np.inf], 252),
+        ([100.0, 99.0, 101.97], 0),
+        ([100.0, 99.0, 101.97], -1),
+    ],
+    ids=[
+        "empty",
+        "single-point",
+        "no-losses",
+        "flat",
+        "below-threshold",
+        "nonfinite-returns",
+        "nan-equity",
+        "infinite-equity",
+        "zero-annualization",
+        "negative-annualization",
+    ],
+)
+def test_sortino_undefined_cases_remain_json_safe(
+    values: list[float], bars_per_year: int
+) -> None:
+    metrics = _calc_options_metrics(
+        pd.Series(values, dtype=float), 100.0, [], bars_per_year=bars_per_year
+    )
+
+    assert metrics["sortino"] is None
+    assert any("Sortino" in warning for warning in metrics["warnings"])
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_counts_the_drop_from_initial_cash() -> None:
+    # The first recorded bar already reflects the open's commission, so the
+    # account's real high-water mark (initial cash) is not in the series.
+    equity = pd.Series([95.0, 90.0, 99.0])
+    metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=252)
+
+    assert metrics["max_drawdown"] == pytest.approx(-0.10)
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_seeds_initial_cash_on_a_single_bar() -> None:
+    metrics = _calc_options_metrics(pd.Series([90.0]), 100.0, [], bars_per_year=252)
+
+    assert metrics["max_drawdown"] == pytest.approx(-0.10)
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_stays_zero_on_an_all_up_path() -> None:
+    metrics = _calc_options_metrics(
+        pd.Series([100.0, 105.0, 110.0]), 100.0, [], bars_per_year=252
+    )
+
+    assert metrics["max_drawdown"] == 0.0
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_falls_back_to_observed_peak_without_valid_initial_cash() -> None:
+    metrics = _calc_options_metrics(pd.Series([95.0, 90.0]), 0.0, [], bars_per_year=252)
+
+    assert metrics["max_drawdown"] == pytest.approx(round((90.0 - 95.0) / 95.0, 6))
+    json.dumps(metrics, allow_nan=False)

@@ -35,6 +35,7 @@ broker. See the live-trading SPEC §7.5.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -930,9 +931,20 @@ class LiveRunner:
         if jobs is not None:
             return list(jobs)
 
-        store = self._job_store or JobStore()
+        store = self._job_store or JobStore(broker=self.broker)
         try:
-            persisted = store.load()
+            if self._job_store is None and not store.path.exists():
+                # Older runners shared one file. Migrate only explicitly bound
+                # jobs, retaining that file for other brokers' migrations.
+                persisted = [
+                    job for job in JobStore().load()
+                    if isinstance(job.payload, dict)
+                    and job.payload.get("broker") == self.broker
+                ]
+                if persisted:
+                    store.save(persisted)
+            else:
+                persisted = store.load()
         except Exception:  # noqa: BLE001 — a corrupt store must not wedge start
             logger.exception("job store load failed for %s; recomputing", self.broker)
             persisted = []
@@ -1004,7 +1016,13 @@ class LiveRunner:
             )
         return built
 
-    def stop_loop(self) -> None:
-        """Stop the scheduler if one was injected (idempotent)."""
+    async def stop_loop(self) -> None:
+        """Stop and await an injected scheduler (idempotent).
+
+        Callers must await this method so the scheduler has stopped before
+        they restart the runner or report a completed stop.
+        """
         if self._scheduler is not None:
-            self._scheduler.stop()
+            result = self._scheduler.stop()
+            if inspect.isawaitable(result):
+                await result

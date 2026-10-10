@@ -165,6 +165,9 @@ def _infer_market(codes: list[str], source: str) -> str:
 
     first = codes[0].upper()
 
+    # Yahoo uses .SS for Shanghai; other loaders use the repository's .SH form.
+    if first.endswith((".SH", ".SS", ".SZ", ".BJ")):
+        return "a_share"
     if first.endswith(".US"):
         return "us_equity"
     if first.endswith(".HK"):

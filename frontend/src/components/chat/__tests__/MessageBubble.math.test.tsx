@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { MarkdownContent, MessageBubble } from "../MessageBubble";
 import type { AgentMessage } from "@/types/agent";
 
@@ -11,23 +11,27 @@ function answer(content: string): AgentMessage {
 }
 
 describe("MessageBubble LaTeX rendering", () => {
-  it("renders \\(...\\) as KaTeX inline math", () => {
+  // These cases verify the real math pipeline; module preparation belongs
+  // outside the per-assertion wait, especially when the full suite is busy.
+  beforeAll(async () => { await import("../EnhancedMarkdown"); });
+
+  it("renders \\(...\\) as KaTeX inline math", async () => {
     const { container } = render(
       <MessageBubble msg={answer("Sharpe: \\(\\frac{R_p - R_f}{\\sigma_p}\\)")} />,
     );
-    expect(container.querySelector(".katex")).not.toBeNull();
+    await waitFor(() => expect(container.querySelector(".katex")).not.toBeNull());
   });
 
-  it("renders \\[...\\] as KaTeX display math", () => {
+  it("renders \\[...\\] as KaTeX display math", async () => {
     const { container } = render(
       <MessageBubble msg={answer("\\[\\sum_{i=1}^n w_i r_i\\]")} />,
     );
-    expect(container.querySelector(".katex-display")).not.toBeNull();
+    await waitFor(() => expect(container.querySelector(".katex-display")).not.toBeNull());
   });
 
-  it("renders $$...$$ as KaTeX math", () => {
+  it("renders $$...$$ as KaTeX math", async () => {
     const { container } = render(<MessageBubble msg={answer("Vol: $$\\sigma^2$$")} />);
-    expect(container.querySelector(".katex")).not.toBeNull();
+    await waitFor(() => expect(container.querySelector(".katex")).not.toBeNull());
   });
 
   it("does NOT treat dollar amounts as math", () => {

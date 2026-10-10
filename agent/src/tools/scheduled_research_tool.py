@@ -72,6 +72,15 @@ class ScheduledResearchTool(BaseTool):
                                 "enum": ["in_app", "origin", "configured"],
                             },
                             "target_ref": {"type": "string"},
+                            "format": {
+                                "type": ["string", "null"],
+                                "enum": ["html", "pdf", None],
+                                "description": "Email only; omit or null for plain text. Destination must be configured or from the origin session.",
+                            },
+                            "protect_pdf": {
+                                "type": "boolean",
+                                "description": "Encrypt a PDF Email report using the private channel password configured by the user; never supply the password in a draft.",
+                            },
                         },
                         "required": ["mode"],
                     },

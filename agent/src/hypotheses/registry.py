@@ -362,7 +362,10 @@ class HypothesisRegistry:
             if score > 0:
                 scored.append((score, hyp))
         scored.sort(key=lambda item: (item[0], item[1].updated_at), reverse=True)
-        return [hyp for _, hyp in scored[: max(1, min(int(limit), 100))]]
+        # limit=0 means zero results, not "at least one" -- the floor used to
+        # be max(1, ...), silently returning one record even when the caller
+        # (a tool argument an LLM fills in) explicitly asked for none.
+        return [hyp for _, hyp in scored[: max(0, min(int(limit), 100))]]
 
     def list(self) -> list[Hypothesis]:
         """Load all hypotheses from storage."""

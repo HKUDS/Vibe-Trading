@@ -1,12 +1,9 @@
 import i18n from '@/i18n';
-import { Component, memo, useState, useCallback, type ReactNode } from "react";
+import { Component, lazy, memo, Suspense, useState, useCallback, type ReactNode } from "react";
 import { XCircle, RefreshCw, Copy, Check, Paperclip, Users, Target, Clock3 } from "lucide-react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import rehypeHighlight from "rehype-highlight";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
 import { toast } from "sonner";
 import { normalizeMathDelimiters } from "@/lib/markdown";
 import { downloadGeneratedReport } from "@/lib/api";
@@ -21,7 +18,8 @@ const remarkPlugins: ReactMarkdownOptions["remarkPlugins"] = [
   remarkGfm,
   [remarkMath, { singleDollarTextMath: false }],
 ];
-const rehypePlugins: ReactMarkdownOptions["rehypePlugins"] = [rehypeHighlight, rehypeKatex];
+// Math fonts and syntax highlighters are only needed for completed answers.
+const EnhancedMarkdown = lazy(() => import("./EnhancedMarkdown"));
 const markdownComponents: ReactMarkdownOptions["components"] = {
   table: ({ node, ...props }) => {
     void node;
@@ -96,16 +94,24 @@ export const MarkdownContent = memo(function MarkdownContent({
     normalized = content;
   }
 
+  const structuralMarkdown = (
+    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+      {normalized}
+    </ReactMarkdown>
+  );
+
   return (
     <div className={proseClassName}>
       <MarkdownErrorBoundary content={content}>
-        <ReactMarkdown
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={streaming ? [] : rehypePlugins}
-          components={markdownComponents}
-        >
-          {normalized}
-        </ReactMarkdown>
+        {streaming ? structuralMarkdown : (
+          <Suspense fallback={structuralMarkdown}>
+            <EnhancedMarkdown
+              content={normalized}
+              remarkPlugins={remarkPlugins}
+              components={markdownComponents}
+            />
+          </Suspense>
+        )}
       </MarkdownErrorBoundary>
       {showCursor && (
         <span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle" />

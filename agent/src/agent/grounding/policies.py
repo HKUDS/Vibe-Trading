@@ -114,11 +114,16 @@ class ValidationResult:
 
     ``released_text`` is the draft without its declaration block, which is a
     contract with the gate and never reaches the user.
+
+    ``passed_figures`` names the measured figures the gate checked and let
+    through, as written, so the correction prompt can tell the model what to
+    keep, not only what to fix.
     """
 
     valid: bool
     issues: list[dict[str, Any]] = field(default_factory=list)
     released_text: str = ""
+    passed_figures: tuple[str, ...] = ()
 
 
 def _close(value: float, target: float) -> bool:
@@ -406,12 +411,12 @@ def _formula_in_note(note: str) -> tuple[float, list[float], ast.Expression] | N
         parts = [piece for part in parts for piece in part.split(separator)]
     # A formula followed by its explanation ("(a − b) / b，自高点回撤"). A bare
     # "," is not split: it groups thousands inside a formula.
-    for separator in ("，", "；", "：", "; ", ", "):
+    for separator in ("，", "；", "：", ":", "; ", ", "):
         parts = [piece for part in parts for piece in part.split(separator)]
     candidates.extend(part for part in parts if part.strip())
     # Only once the note as written fails: its words removed, whole and in parts.
     unlabelled = _without_labels(note)
-    for separator in ("≈", "≒", "＝", "=", "→", "->", "，", "；", "：", "; ", ", "):
+    for separator in ("≈", "≒", "＝", "=", "→", "->", "，", "；", "：", ":", "; ", ", "):
         unlabelled = " \n ".join(unlabelled.split(separator))
     candidates.extend(part for part in unlabelled.split(" \n ") if part.strip())
     for candidate in candidates:
@@ -1229,6 +1234,53 @@ class _PolicyMixin:
             return _is_price_kind(record)
         return True
 
+    def _unknown_call_field_ref_candidates(
+        self, ref: str, symbol: str | None, figure: Figure
+    ) -> list[str]:
+        """Exact ``call_id::path`` refs for a ``scope::field`` whose scope names nothing.
+
+        A model that writes an alias (``p1::field``) instead of the call id it
+        was given names no call, tool or run of this session, so the ref selects
+        no evidence. This only lists where the field really lives, so the next
+        draft can copy an exact ref; it grants nothing, and the figure stays
+        rejected until it is re-declared with one of them. Refs whose value the
+        figure matches come first; at most :data:`_MAX_CALL_REF_CANDIDATES` are
+        returned. Candidates keep the same symbol and kind restrictions as a
+        real field ref, so the correction cannot recommend an unusable ref.
+        """
+        key = (ref or "").strip()
+        if "::" not in key:
+            return []
+        scope, field = (part.strip() for part in key.split("::", 1))
+        if not scope or not field or self._names_session_source(scope):
+            return []
+        records, entries = self._field_sources(field, symbol)
+        found: dict[str, list[float]] = {}
+        money = bool(figure.currency and not figure.percent)
+        for record in records:
+            if record.call_id and record.field and self._kind_fits(record, figure):
+                label = self._ref_source(record.call_id, record.field, record.scope)[1]
+                found.setdefault(label, []).append(float(record.value))
+        for entry in entries if not (money or figure.column) else ():
+            if entry.get("call_id") and entry.get("field"):
+                label = self._ref_source(str(entry["call_id"]), str(entry["field"]), None)[1]
+                found.setdefault(label, []).append(float(entry["value"]))
+        compatible = {
+            label
+            for label, values in found.items()
+            if self._matches_evidence(figure, values, [] if money else values)
+        }
+        ranked = sorted(found, key=lambda label: (label not in compatible, label))
+        return ranked[:_MAX_CALL_REF_CANDIDATES]
+
+    def _names_session_source(self, name: str) -> bool:
+        """Whether ``name`` is a call id, tool name or backtest run of this session."""
+        return (
+            any(name in (record.call_id, record.tool) for record in self._evidence)
+            or any(name in (entry.get("call_id"), entry.get("tool")) for entry in self._analysis_metrics)
+            or bool(self._artifact_scope(name))
+        )
+
     def _tail_risk_ref_required(
         self,
         figure: Figure,
@@ -1530,6 +1582,23 @@ class _PolicyMixin:
                             source_tool_call_ids=[declaration.ref],
                             ambiguous_sources=call_field_candidates,
                             field_ref_candidates=call_field_candidates,
+                        )
+                    ]
+                unknown_scope_candidates = self._unknown_call_field_ref_candidates(
+                    declaration.ref, symbol, figure
+                )
+                if unknown_scope_candidates:
+                    return [
+                        self._figure_issue(
+                            "numeric_claim_conflict",
+                            figure,
+                            "observed",
+                            symbol,
+                            "unknown_call_id",
+                            f"is declared observed from {declaration.ref}, whose left side "
+                            "is not a call id, tool or run of this session",
+                            source_tool_call_ids=[declaration.ref],
+                            field_ref_candidates=unknown_scope_candidates,
                         )
                     ]
             values = [float(record.value) for record in scoped_records] + metric_values

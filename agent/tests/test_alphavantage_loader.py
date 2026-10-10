@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import alphavantage_loader as av
+from tests.loader_contract import assert_loader_contract
 
 
 def _payload(*dates_rows) -> dict:
@@ -75,6 +76,7 @@ class TestFetch:
         df = out["AAPL"]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
+        assert_loader_contract(df, context="canonical frame")
         assert isinstance(df.index, pd.DatetimeIndex)
         assert df.index.is_monotonic_increasing
         assert all(df[col].dtype == float for col in df.columns)

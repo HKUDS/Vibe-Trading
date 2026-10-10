@@ -15,6 +15,13 @@ describe("Reports page", () => {
     apiMock.listRuns.mockReset();
   });
 
+  it("gives a first-time user an actionable path to create a backtest", async () => {
+    apiMock.listRuns.mockResolvedValue([]);
+    render(<Reports />, { wrapper: MemoryRouter });
+    expect(await screen.findByText("No reports yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Start with the research assistant" })).toHaveAttribute("href", "/");
+  });
+
   it("lists backtest reports newest first with Full Report links and skips non-report runs", async () => {
     apiMock.listRuns.mockResolvedValue([
       {

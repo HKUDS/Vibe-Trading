@@ -79,10 +79,6 @@ skill document, not recalled memory. They are not defaults to be tuned.
 
 {skill_descriptions}
 
-## State
-
-{memory_summary}
-
 ## Task Routing
 
 Decide which workflow to use based on the request:
@@ -205,7 +201,9 @@ Decide which workflow to use based on the request:
   as `ref`: `data.tail_risk.var_95` or just `var_95` from `portfolio_risk_xray`,
   `historical_var` from `quantlib_call`. When more than one call returned the
   same field, name the exact call as `call_id::field` (for example
-  `q1::historical_var`); a tool name is not a call id.
+  `<call_id>::historical_var`), where `<call_id>` is the tool_call_id of that
+  tool result copied verbatim; never invent a short alias. A tool name is not
+  a call id.
   Each element of a list is its own field: address it by index,
   `call_id::data.positions[0].contribution_pct` (`positions.0.contribution_pct`
   is read the same way). A field name without the index does not select an
@@ -343,7 +341,6 @@ class ContextBuilder:
             data_source_count=self._count_data_sources(),
             tool_descriptions=self._format_tool_descriptions(),
             skill_descriptions=self.skills_loader.get_descriptions(),
-            memory_summary=self.memory.to_summary(),
             memory_section=memory_section,
             strategy_discovery_routing=routing,
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M UTC"),
@@ -372,6 +369,11 @@ class ContextBuilder:
         user message as context. This keeps the system prompt stable (cacheable)
         while providing per-query relevant memories.
 
+        Volatile workspace state (run_dir, tool counters) is injected the same
+        way: run_dir changes on every run and counters change on every tool
+        call, so rendering them into the system prompt invalidated the provider
+        prefix cache on every turn (issue #1707).
+
         Args:
             user_message: User message.
             history: Prior conversation messages.
@@ -399,6 +401,16 @@ class ContextBuilder:
                     )
             except Exception as exc:
                 logger.debug("Auto-recall failed: %s", exc)
+
+        # Volatile workspace state rides in the first user message so the
+        # system prompt stays byte-stable across turns (prefix cache stays
+        # valid). Same envelope convention as recalled-memories above.
+        state_summary = self.memory.to_summary()
+        if state_summary and state_summary != "(empty state)":
+            enriched = (
+                f"<agent-state>\n{state_summary}\n</agent-state>\n\n"
+                f"{enriched}"
+            )
 
         messages.append({"role": "user", "content": enriched})
         return messages

@@ -47,8 +47,11 @@ class _MarketSpec:
             Empty == every day (24/7 markets such as crypto).
         always_open: Short-circuit for 24/7 markets; when ``True`` the time /
             weekday / holiday checks are skipped entirely.
-        holidays: Full-day market closures (no half-days modelled). This is a
-            deliberately small, static set — see module docstring limitation.
+        holidays: Full-day market closures. This is a deliberately small,
+            static set — see module docstring limitation.
+        early_closes: Half-day sessions, mapped to their early close bell
+            (exclusive, same convention as ``close_time``). Dates here must
+            not also appear in ``holidays``.
     """
 
     tz: str
@@ -57,12 +60,13 @@ class _MarketSpec:
     weekdays: frozenset[int] = frozenset()
     always_open: bool = False
     holidays: frozenset[date] = field(default_factory=frozenset)
+    early_closes: Mapping[date, time] = field(default_factory=dict)
 
 
 # US market holidays. LIMITATION: this is a hand-maintained static set (no
-# half-day early closes, no rolling computation). It covers the current and
-# next calendar year; extend as needed. A production deploy that needs decades
-# of coverage should swap in `pandas_market_calendars` behind this same spec.
+# rolling computation). It covers the current and next calendar year; extend as
+# needed. A production deploy that needs decades of coverage should swap in
+# `pandas_market_calendars` behind this same spec.
 _US_EQUITY_HOLIDAYS: frozenset[date] = frozenset(
     {
         # 2026
@@ -90,6 +94,17 @@ _US_EQUITY_HOLIDAYS: frozenset[date] = frozenset(
     }
 )
 
+# NYSE 13:00 ET early closes within the holiday window above. The recurring
+# cases are the day after Thanksgiving and Christmas Eve when it is a weekday
+# and not itself the observed holiday; Independence Day adds no entry here
+# because in both covered years its early-close candidate (Jul 3) is either the
+# observed full-day closure (2026) or a Saturday (2027).
+_US_EQUITY_EARLY_CLOSES: Mapping[date, time] = {
+    date(2026, 11, 27): time(13, 0),  # day after Thanksgiving
+    date(2026, 12, 24): time(13, 0),  # Christmas Eve (Thursday)
+    date(2027, 11, 26): time(13, 0),  # day after Thanksgiving
+}
+
 _WEEKDAYS_MON_FRI = frozenset({0, 1, 2, 3, 4})
 
 # Market registry. Keys match the AssetClass-style identifiers the runner uses
@@ -101,6 +116,7 @@ MARKET_SPECS: Mapping[str, _MarketSpec] = {
         close_time=time(16, 0),
         weekdays=_WEEKDAYS_MON_FRI,
         holidays=_US_EQUITY_HOLIDAYS,
+        early_closes=_US_EQUITY_EARLY_CLOSES,
     ),
     "crypto": _MarketSpec(
         tz="UTC",
@@ -263,7 +279,8 @@ def market_is_open_at(market: str, now_ms: int) -> bool:
 
     Deterministic — reads no clock. 24/7 markets (``always_open``) are always
     open. Session markets are open only on permitted weekdays, outside the
-    holiday set, and within ``[open_time, close_time)`` local time.
+    holiday set, and within ``[open_time, close)`` local time, where the close
+    bell moves earlier on a listed early-close day.
 
     Args:
         market: A key into :data:`MARKET_SPECS`.
@@ -287,7 +304,8 @@ def market_is_open_at(market: str, now_ms: int) -> bool:
         return False
     if local_dt.date() in spec.holidays:
         return False
-    return spec.open_time <= local_dt.time() < spec.close_time
+    close = spec.early_closes.get(local_dt.date(), spec.close_time)
+    return spec.open_time <= local_dt.time() < close
 
 
 def due_now(trigger: Trigger, now_ms: int, *, event_state: Mapping[str, object] | None = None) -> bool:

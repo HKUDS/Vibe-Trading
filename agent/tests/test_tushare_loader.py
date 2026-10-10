@@ -21,6 +21,7 @@ from backtest.loaders.tushare import (
     _is_index,
     _is_us_equity,
 )
+from tests.loader_contract import assert_loader_contract
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +170,7 @@ class TestFetchDailyFrameRouting:
         loader.api.index_daily.assert_not_called()
         loader.api.hk_daily.assert_not_called()
         assert result is not None
-        assert not result.empty
+        assert_loader_contract(result, context="tushare stock daily")
 
     def test_etf_routes_to_fund_daily(self) -> None:
         loader = self._make_loader()

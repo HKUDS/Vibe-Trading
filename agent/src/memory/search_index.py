@@ -61,36 +61,126 @@ def _cjk_query_tokens(chars: list[str]) -> list[str]:
     return tokens
 
 
-def _dedupe_cjk_runs(text: str) -> str:
-    """Remove duplicate CJK substrings produced by bigram expansion during clean.
+_MARKERS = ("...", ">>>", "<<<")
 
-    After collapsing spaces, bigram tokens merge into the original run,
-    creating duplicates like '\u8bb0\u5fc6\u7cfb\u7edf\u8bb0\u5fc6\u5fc6\u7cfb\u7cfb\u7edf'. This finds CJK runs and
-    keeps only the longest non-repeating form.
+
+def _strip_markers(token: str) -> str:
+    """Remove snippet() highlight/truncation markers to see the underlying text."""
+    for marker in _MARKERS:
+        token = token.replace(marker, "")
+    return token
+
+
+def _cjk_token_inner(token: str) -> Optional[str]:
+    """The 1-2 CJK chars a unigram/bigram token carries, ignoring its markers.
+
+    Returns ``None`` for anything else (plain non-CJK text, a bare "..."
+    truncation marker, or a token longer than a bigram).
     """
-    _cjk_run_re = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]{2,}")
+    inner = _strip_markers(token)
+    if 1 <= len(inner) <= 2 and all(_is_cjk_char(c) for c in inner):
+        return inner
+    return None
 
-    def _shrink(match: re.Match) -> str:  # type: ignore[type-arg]
-        run = match.group(0)
-        # Try to find the minimal prefix whose repetition covers the run
-        # But simpler: the original text was unigrams + bigrams concatenated.
-        # The original run length N produces N unigrams + (N-1) bigrams
-        # = N + 2*(N-1) = 3N-2 chars when concatenated. Solve for N.
-        total = len(run)
-        # 3N - 2 = total => N = (total + 2) / 3
-        n = (total + 2) // 3
-        if 3 * n - 2 == total and n >= 2:
-            # Verify the prefix matches
-            candidate = run[:n]
-            # Rebuild what bigram expansion would produce concatenated
-            expected = candidate + "".join(
-                candidate[i] + candidate[i + 1] for i in range(n - 1)
-            )
-            if expected == run:
-                return candidate
-        return run
 
-    return _cjk_run_re.sub(_shrink, text)
+def _merge_cjk_group(raw_tokens: list[str], inners: list[str]) -> str:
+    """Collapse one run of unigram/bigram tokens back into display text.
+
+    ``_prepare_cjk`` emits a CJK run as its unigrams in order, then its
+    bigrams in order, so the unigrams alone already reconstruct the run and
+    the bigrams are pure duplicates -- dropped whenever at least one unigram
+    is present (keeping each unigram's own highlight markers intact). A
+    snippet() window can still land past where a run's unigrams end, in
+    which case the group holds bigrams only; those are chained on their
+    shared character instead.
+    """
+    unigrams = [raw for raw, inner in zip(raw_tokens, inners) if len(inner) == 1]
+    if unigrams:
+        return "".join(unigrams)
+
+    chars: list[str] = []
+    highlighted: list[bool] = []
+    for raw, inner in zip(raw_tokens, inners):
+        marked = ">>>" in raw or "<<<" in raw
+        if chars and chars[-1] == inner[0]:
+            highlighted[-1] = highlighted[-1] or marked
+            chars.append(inner[1])
+            highlighted.append(marked)
+        else:
+            chars.extend(inner)
+            highlighted.extend([marked] * len(inner))
+    rendered = "".join(f">>>{char}<<<" if marked else char
+                       for char, marked in zip(chars, highlighted))
+    return ("..." if raw_tokens[0].startswith("...") else "") + rendered + (
+        "..." if raw_tokens[-1].endswith("...") else ""
+    )
+
+
+class _CleanPiece:
+    """One reconstructed chunk of display text plus the raw whitespace run
+    that followed it, so the final join can tell a real original space
+    (``gap_after >= 2`` -- ``_prepare_cjk`` doubles it, see below) apart from
+    the single space it inserts purely to delimit FTS5 tokens."""
+
+    __slots__ = ("text", "gap_after")
+
+    def __init__(self, text: str, gap_after: int) -> None:
+        self.text = text
+        self.gap_after = gap_after
+
+
+def _segment_with_gaps(text: str) -> list[tuple[str, int]]:
+    """Split ``text`` into (content, following-whitespace-run-length) pairs."""
+    parts = re.split(r"( +)", text)
+    segments: list[tuple[str, int]] = []
+    for i in range(0, len(parts), 2):
+        seg = parts[i]
+        gap = len(parts[i + 1]) if i + 1 < len(parts) else 0
+        if seg:
+            segments.append((seg, gap))
+        elif gap and segments:
+            prev_seg, prev_gap = segments[-1]
+            segments[-1] = (prev_seg, prev_gap + gap)
+    return segments
+
+
+def _group_cjk_pieces(text: str) -> list[_CleanPiece]:
+    """Merge runs of unigram/bigram tokens in ``text`` into display pieces.
+
+    A real original space between two separate CJK runs survives
+    ``_prepare_cjk`` as an *extra* space on top of the single space that
+    always separates stored tokens (its own run becomes a literal
+    ``" "`` block, joined on both sides by the normal token separator), so
+    two consecutive CJK tokens only belong in the same run when the gap
+    between them is exactly 1; anything wider is a real space and starts a
+    new piece.
+    """
+    pieces: list[_CleanPiece] = []
+    group_raw: list[str] = []
+    group_inner: list[str] = []
+    group_gap_after = 0
+    prev_gap: Optional[int] = None
+
+    def flush_group() -> None:
+        if group_raw:
+            pieces.append(_CleanPiece(_merge_cjk_group(group_raw, group_inner), group_gap_after))
+            group_raw.clear()
+            group_inner.clear()
+
+    for seg, gap in _segment_with_gaps(text):
+        inner = _cjk_token_inner(seg)
+        if inner is not None:
+            if group_raw and prev_gap != 1:
+                flush_group()
+            group_raw.append(seg)
+            group_inner.append(inner)
+            group_gap_after = gap
+        else:
+            flush_group()
+            pieces.append(_CleanPiece(seg, gap))
+        prev_gap = gap
+    flush_group()
+    return pieces
 
 
 @dataclass(frozen=True)
@@ -387,42 +477,78 @@ class MemorySearchIndex:
 
     @staticmethod
     def _clean_cjk(text: str) -> str:
-        """Collapse extra whitespace and remove bigram duplicates from display text.
+        """Collapse unigram/bigram tokens back into readable CJK display text.
 
-        Removes spaces between CJK characters and strips bigram tokens that
-        are substrings of already-present CJK runs, normalizing whitespace.
+        ``_prepare_cjk`` stores a CJK run as unigrams-then-bigrams so FTS5 can
+        match both single characters and 2-char phrases, and joins every
+        block (CJK run or plain-text run) with a single space so FTS5 sees
+        separate tokens; this reverses both for display. A ``snippet()``
+        window can cut into a run anywhere and splice ``>>>``/``<<<``
+        highlight markers or ``...`` truncation into it, so runs are merged
+        token-by-token (see ``_merge_cjk_group``) rather than by collapsing
+        whitespace and guessing a run's original length from its character
+        count -- that guess silently did nothing whenever a window did not
+        hold one complete, uninterrupted run, which left duplicated
+        characters in search snippets. Separately, a plain CJK run sitting
+        directly against non-CJK text (a ticker, a date, punctuation) with
+        no space in the original got one inserted on read, because nothing
+        told the two blocks' artificial join apart from a real one -- fixed
+        by using the extra width a real space leaves behind (see
+        ``_group_cjk_pieces``) wherever no highlight markers are involved.
         """
-        # First remove bigram-only tokens (two adjacent CJK chars surrounded by spaces)
-        # by collapsing all CJK-adjacent spacing.
-        _cjk_space = re.compile(
-            r"([\u4e00-\u9fff\u3400-\u4dbf])\s+([\u4e00-\u9fff\u3400-\u4dbf])"
-        )
-        prev = None
-        while prev != text:
-            prev = text
-            text = _cjk_space.sub(r"\1\2", text)
-        # Remove duplicate CJK runs that appear due to bigram expansion
-        # e.g. "记忆系统记忆忆系系统" → keep longest contiguous run only
-        text = _dedupe_cjk_runs(text)
-        return re.sub(r"\s+", " ", text).strip()
+        pieces = _group_cjk_pieces(text)
+
+        joined: list[str] = []
+        for idx, piece in enumerate(pieces):
+            joined.append(piece.text)
+            if idx == len(pieces) - 1:
+                continue
+            nxt = pieces[idx + 1]
+            stripped = _strip_markers(piece.text)
+            next_stripped = _strip_markers(nxt.text)
+            ends_cjk = bool(stripped) and _is_cjk_char(stripped[-1])
+            next_starts_cjk = bool(next_stripped) and _is_cjk_char(next_stripped[0])
+
+            if ends_cjk and next_starts_cjk:
+                # Both sides read as CJK script once markers are stripped
+                # (a plain run, a highlighted char, or both) -- the artificial
+                # join is the single space FTS5 needed as a token delimiter,
+                # so only a real original space (widened past that one by
+                # _prepare_cjk) earns a space back.
+                if piece.gap_after >= 2:
+                    joined.append(" ")
+            elif ends_cjk != next_starts_cjk:
+                # A plain CJK run directly against plain non-CJK text (a
+                # ticker, a date, punctuation) -- same artificial-join logic,
+                # just across the script boundary instead of within it.
+                if piece.gap_after >= 2:
+                    joined.append(" ")
+            else:
+                # Either both sides are plain non-CJK text (their shared
+                # space was always real, never doubled), or a highlight
+                # marker sits against non-CJK text -- keep the space either
+                # way.
+                joined.append(" ")
+
+        return re.sub(r"\s+", " ", "".join(joined)).strip()
 
     @staticmethod
     def _sanitize_fts_query(query: str) -> str:
         """Sanitize user query for FTS5 MATCH syntax.
-    
+
         Extracts alphanumeric tokens (2+ chars) and CJK characters,
         generates bigrams for consecutive CJK chars, quotes each token
         and joins with OR to prevent FTS5 operator injection.
-    
+
         Args:
             query: Raw user query string.
-    
+
         Returns:
             FTS5-safe MATCH expression, or empty-quoted string if no tokens.
         """
         tokens: list[str] = []
         cjk_buffer: list[str] = []
-    
+
         # Walk through pre-extracted raw tokens
         raw_tokens = re.findall(
             r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff\u3400-\u4dbf]", query
@@ -435,10 +561,10 @@ class MemorySearchIndex:
                     tokens.extend(_cjk_query_tokens(cjk_buffer))
                     cjk_buffer = []
                 tokens.append(tok)
-    
+
         if cjk_buffer:
             tokens.extend(_cjk_query_tokens(cjk_buffer))
-    
+
         if not tokens:
             return '""'
         # Quote each token and join with OR for broader matching

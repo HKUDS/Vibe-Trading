@@ -92,6 +92,20 @@ def test_gate_stamps_the_mandate_account_on_reads_and_the_order(live_runtime: Pa
     assert broker.order_calls[0]["account_number"] == ACCOUNT
 
 
+def test_unsupported_option_order_never_reaches_broker_with_valid_mandate(live_runtime: Path) -> None:
+    _write_mandate(live_runtime, _bound_mandate())
+    broker = _GateBroker()
+    spec = replace(_spec(), remote_name="place_option_order")
+    guard = order_guard.LiveOrderGuardTool(broker, spec, broker="robinhood", session_id="s1")
+
+    out = json.loads(guard.execute(symbol="AAPL", side="buy", instrument_type="option", notional_usd=100))
+
+    assert out["status"] == "blocked"
+    assert out["reason"] == "order intent could not be parsed"
+    assert broker.reads == []
+    assert broker.order_calls == []
+
+
 def test_gate_refuses_every_order_when_the_mandate_names_no_account(live_runtime: Path) -> None:
     _write_mandate(live_runtime, _bound_mandate(account_ref=""))
     broker = _GateBroker()

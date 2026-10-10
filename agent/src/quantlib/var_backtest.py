@@ -236,7 +236,7 @@ class VarBacktestReport:
 def _align(
     returns: pd.Series | np.ndarray | Sequence[float],
     var: pd.Series | np.ndarray | Sequence[float] | float,
-) -> tuple[np.ndarray, np.ndarray, pd.Index | None, int]:
+) -> tuple[np.ndarray, np.ndarray, pd.Index | None, int, np.ndarray]:
     """Pair each return with the VaR forecast that was made for it.
 
     Args:
@@ -245,9 +245,11 @@ def _align(
             a single scalar applied to every return.
 
     Returns:
-        Tuple of ``(returns, var, index, dropped)``: two equal-length finite
+        Tuple of ``(returns, var, index, dropped, positions)``: two equal-length finite
         float arrays, the surviving index when the inputs carried one, and the
-        number of pairs dropped for holding a non-finite value.
+        number of pairs dropped for holding a non-finite value, and the
+        surviving original positions so consecutive transitions cannot bridge
+        a dropped observation.
 
     Raises:
         ValueError: If either input is not 1-D, if two indexed Series do not
@@ -297,7 +299,7 @@ def _align(
 
     index = ret_index if ret_index is not None else var_index
     kept_index = index[keep] if index is not None else None
-    return ret_values[keep], var_values[keep], kept_index, dropped
+    return ret_values[keep], var_values[keep], kept_index, dropped, np.flatnonzero(keep)
 
 
 def violation_indicator(
@@ -322,7 +324,7 @@ def violation_indicator(
     Raises:
         ValueError: If the inputs cannot be aligned (see :func:`_align`).
     """
-    ret_values, var_values, _, _ = _align(returns, var)
+    ret_values, var_values, _, _, _ = _align(returns, var)
     return ret_values < -var_values
 
 
@@ -434,7 +436,13 @@ def christoffersen_independence(
         )
     flags = flags.astype(bool)
 
-    prev, curr = flags[:-1], flags[1:]
+    return _independence_from_pairs(flags[:-1], flags[1:], significance)
+
+
+def _independence_from_pairs(
+    prev: np.ndarray, curr: np.ndarray, significance: float
+) -> IndependenceResult:
+    """Evaluate independence from observed consecutive pairs only."""
     n00 = int(np.sum(~prev & ~curr))
     n01 = int(np.sum(~prev & curr))
     n10 = int(np.sum(prev & ~curr))
@@ -512,6 +520,13 @@ def christoffersen_conditional_coverage(
     )
     independence = christoffersen_independence(flags, significance=significance)
 
+    return _conditional_coverage_result(kupiec, independence, significance)
+
+
+def _conditional_coverage_result(
+    kupiec: KupiecResult, independence: IndependenceResult, significance: float
+) -> ConditionalCoverageResult:
+    """Combine coverage and independence evaluated on the same sample."""
     statistic = kupiec.statistic + independence.statistic
     p_value = float(chi2.sf(statistic, df=2))
     return ConditionalCoverageResult(
@@ -612,7 +627,9 @@ def var_backtest(
         returns: Realised returns, signed, in chronological order.
         var: VaR forecasts as positive loss magnitudes -- one per return, or a
             scalar for a constant-VaR model. When both sides are indexed Series
-            the labels must match exactly.
+            the labels must match exactly. Non-finite pairs are excluded from
+            coverage counts and break consecutive independence transitions;
+            observations on opposite sides of a missing pair are not adjacent.
         confidence: VaR confidence level the model claims, e.g. 0.99.
         significance: Level at which each ``rejected`` flag is decided.
 
@@ -624,16 +641,24 @@ def var_backtest(
         ValueError: If the inputs cannot be aligned, if fewer than two finite
             pairs survive, or if either probability is out of range.
     """
-    ret_values, var_values, index, dropped = _align(returns, var)
+    ret_values, var_values, index, dropped, positions = _align(returns, var)
     if ret_values.size < 2:
         raise ValueError(
             f"var_backtest needs at least 2 aligned observations, got {ret_values.size}"
         )
 
     breaches = ret_values < -var_values
-    conditional = christoffersen_conditional_coverage(
-        breaches, confidence=confidence, significance=significance
+    kupiec = kupiec_pof(
+        violations=int(breaches.sum()),
+        observations=int(breaches.size),
+        confidence=confidence,
+        significance=significance,
     )
+    adjacent = np.diff(positions) == 1
+    independence = _independence_from_pairs(
+        breaches[:-1][adjacent], breaches[1:][adjacent], significance
+    )
+    conditional = _conditional_coverage_result(kupiec, independence, significance)
     traffic = basel_traffic_light(
         violations=int(breaches.sum()),
         observations=int(breaches.size),

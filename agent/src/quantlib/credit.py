@@ -824,8 +824,12 @@ def cds_price(
     # Implied hazard rate lambda ≈ s / LGD
     lambda_hazard = float(s_dec / lgd) if lgd > 0 else 0.0
 
-    n_periods = max(1, int(round(tenor_years * payment_frequency)))
-    t_grid = np.linspace(tenor_years / n_periods, tenor_years, n_periods)
+    n_periods = max(1, int(np.ceil(tenor_years * payment_frequency)))
+    # Keep regular premium dates fixed at the requested frequency; only the
+    # last period is a stub when maturity falls between coupon dates.
+    t_grid = np.r_[
+        np.arange(1, n_periods, dtype=float) / payment_frequency, tenor_years
+    ]
     t_prev = np.r_[0.0, t_grid[:-1]]
     dts = t_grid - t_prev
     t_mid = 0.5 * (t_prev + t_grid)

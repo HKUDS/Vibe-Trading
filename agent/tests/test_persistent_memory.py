@@ -472,6 +472,14 @@ class TestRemove:
         results = pm.find_relevant("temporary")
         assert len(results) == 0
 
+    def test_remove_by_filename_stem(self, tmp_path: Path) -> None:
+        """remove() should resolve a filename stem the same way find() does,
+        not just an exact title match."""
+        pm = PersistentMemory(memory_dir=tmp_path)
+        pm.add("Q2 Planning", "roadmap notes", "project")
+        assert pm.remove("project_q2_planning") is True
+        assert pm.find("Q2 Planning") is None
+
 
 # ---------------------------------------------------------------------------
 # PersistentMemory.snapshot

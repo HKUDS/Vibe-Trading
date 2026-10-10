@@ -69,6 +69,47 @@ def test_us_equity_open_windows(now_ms: int, expected: bool) -> None:
     assert market_is_open_at("us_equity", now_ms) is expected
 
 
+# 2026-11-27 is the Friday after Thanksgiving: NYSE closes at 13:00 ET.
+_BF_2026 = (2026, 11, 27)
+# 2026-12-24 is a Thursday Christmas Eve: NYSE closes at 13:00 ET.
+_XMAS_EVE_2026 = (2026, 12, 24)
+# 2027-11-26 is the Friday after Thanksgiving 2027.
+_BF_2027 = (2027, 11, 26)
+
+
+@pytest.mark.parametrize(
+    ("now_ms", "expected"),
+    [
+        (_ms(*_BF_2026, 9, 30, "America/New_York"), True),
+        (_ms(*_BF_2026, 12, 59, "America/New_York"), True),
+        # The early bell is exclusive, same convention as the 16:00 close.
+        (_ms(*_BF_2026, 13, 0, "America/New_York"), False),
+        (_ms(*_BF_2026, 13, 30, "America/New_York"), False),
+        (_ms(*_BF_2026, 15, 30, "America/New_York"), False),
+        (_ms(*_XMAS_EVE_2026, 12, 59, "America/New_York"), True),
+        (_ms(*_XMAS_EVE_2026, 13, 0, "America/New_York"), False),
+        (_ms(*_BF_2027, 12, 59, "America/New_York"), True),
+        (_ms(*_BF_2027, 13, 0, "America/New_York"), False),
+    ],
+)
+def test_us_equity_early_close_windows(now_ms: int, expected: bool) -> None:
+    assert market_is_open_at("us_equity", now_ms) is expected
+
+
+def test_us_equity_observed_christmas_stays_a_full_closure() -> None:
+    # 2027-12-24 is the observed Christmas holiday, not an early close: the
+    # morning session must not trade either.
+    assert market_is_open_at("us_equity", _ms(2027, 12, 24, 10, 0, "America/New_York")) is False
+
+
+def test_early_close_table_is_internally_consistent() -> None:
+    spec = triggers.MARKET_SPECS["us_equity"]
+    for day, bell in spec.early_closes.items():
+        assert day.weekday() in spec.weekdays
+        assert day not in spec.holidays
+        assert spec.open_time < bell < spec.close_time
+
+
 def test_us_equity_uses_ny_local_not_utc() -> None:
     # 14:00 UTC on the Friday is 10:00 ET — inside RTH despite 14:00 looking
     # like afternoon if (wrongly) read as local.
@@ -183,6 +224,7 @@ def test_market_field_default_and_factory_are_both_intact() -> None:
 @pytest.mark.parametrize("decorate", [False, True])
 def test_market_factory_binds_to_subclass(decorate: bool) -> None:
     """The deferred factory must retain normal classmethod inheritance."""
+
     class DerivedTrigger(Trigger):
         pass
 

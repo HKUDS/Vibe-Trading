@@ -535,6 +535,149 @@ def test_put_feishu_merge_patch_writes_section(tmp_path: Path, monkeypatch) -> N
     assert FEISHU_STORED_SECRET not in response.text
 
 
+def test_echoed_form_patch_does_not_discard_url_userinfo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Saving an echoed form must not strip a stored URL's embedded credentials.
+
+    ``GET /channels/config`` returns non-secret URL values with the userinfo
+    removed, and the settings form writes every non-secret field back verbatim
+    (``buildPatch``). Writing that echo to disk would silently destroy the
+    credential the stored URL carried, so the merge keeps the stored value;
+    ``clear_<key>`` remains the way to remove the setting.
+    """
+    PROXY = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path,
+        monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": PROXY}},
+    )
+
+    entry = client.get("/channels/config").json()["channels"]["discord"]
+    assert entry["values"]["proxy"] == "http://proxy.local:8080"
+
+    patch: dict[str, Any] = {}
+    for field in entry["fields"]:
+        if field["secret"]:
+            continue
+        value = entry["values"].get(field["key"])
+        if field["type"] == "list":
+            patch[field["key"]] = value if isinstance(value, list) else []
+        elif field["type"] == "bool":
+            patch[field["key"]] = bool(value)
+        else:
+            patch[field["key"]] = "" if value is None else str(value)
+
+    response = client.put("/channels/config/discord", json={"config": patch})
+    assert response.status_code == 200, response.text
+
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert on_disk["proxy"] == PROXY
+    assert "proxy-secret" not in response.text
+
+
+def test_changed_url_and_clear_flag_still_beat_the_echo_guard(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The echo guard must not block a real edit, nor removal of the setting."""
+    PROXY = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path,
+        monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": PROXY}},
+    )
+
+    response = client.put(
+        "/channels/config/discord",
+        json={"config": {"proxy": "http://new-user:new-secret@proxy.local:9090"}},
+    )
+    assert response.status_code == 200, response.text
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert on_disk["proxy"] == "http://new-user:new-secret@proxy.local:9090"
+
+    response = client.put(
+        "/channels/config/discord", json={"config": {}, "clear_proxy": True}
+    )
+    assert response.status_code == 200, response.text
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert "proxy" not in on_disk
+
+
+def test_enable_probe_uses_the_stored_url_not_the_echoed_stripped_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The enable transition must probe the URL on disk, credential included.
+
+    The form echoes the stripped GET value back, so without the echo guard the
+    ephemeral adapter would be built from the credential-less URL and the probe
+    would validate a different target than the one being enabled.
+    """
+    PROXY = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path,
+        monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": PROXY}},
+    )
+
+    probed: list[str] = []
+
+    async def _record_probe(self: Any) -> dict[str, Any]:
+        probed.append(self.config.proxy)
+        return {"ok": True, "code": "ok", "detail": ""}
+
+    discord_cls = routes.load_channel_class("discord")
+    monkeypatch.setattr(discord_cls, "supports_connection_test", True)
+    monkeypatch.setattr(discord_cls, "test_connection", _record_probe)
+
+    entry = client.get("/channels/config").json()["channels"]["discord"]
+    assert entry["values"]["proxy"] == "http://proxy.local:8080"
+
+    patch: dict[str, Any] = {}
+    for field in entry["fields"]:
+        if field["secret"]:
+            continue
+        value = entry["values"].get(field["key"])
+        if field["type"] == "list":
+            patch[field["key"]] = value if isinstance(value, list) else []
+        elif field["type"] == "bool":
+            patch[field["key"]] = bool(value)
+        else:
+            patch[field["key"]] = "" if value is None else str(value)
+    patch["enabled"] = True
+
+    response = client.put("/channels/config/discord", json={"config": patch})
+    assert response.status_code == 200, response.text
+
+    assert probed == [PROXY]
+    on_disk = json.loads(path.read_text(encoding="utf-8"))["channels"]["discord"]
+    assert on_disk["proxy"] == PROXY
+    assert "proxy-secret" not in response.text
+
+
+def test_connection_test_keeps_echoed_url_credentials(tmp_path, monkeypatch) -> None:
+    proxy = "http://proxy-user:proxy-secret@proxy.local:8080"
+    client, path = _client(
+        tmp_path, monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": proxy}},
+    )
+    probed = []
+
+    async def probe(self):
+        probed.append(self.config.proxy)
+        return {"ok": True, "code": "ok", "detail": ""}
+
+    cls = routes.load_channel_class("discord")
+    monkeypatch.setattr(cls, "supports_connection_test", True)
+    monkeypatch.setattr(cls, "test_connection", probe)
+    values = client.get("/channels/config").json()["channels"]["discord"]["values"]
+    response = client.post("/channels/discord/test", json={"config": values})
+    assert response.status_code == 200, response.text
+    assert response.json()["ok"]
+    assert probed == [proxy]
+    assert "proxy-secret" not in response.text
+    assert json.loads(path.read_text())["channels"]["discord"]["proxy"] == proxy
+
+
 def test_put_feishu_enable_with_bad_credentials_is_blocked_before_write(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1352,3 +1495,77 @@ def test_email_test_normalizes_blank_nullable_fields_without_persisting(tmp_path
     assert response.status_code == 200 and response.json()["ok"] is False
     assert response.json()["code"] == "invalid_credentials" and seen == [None]
     assert response.json()["detail"].startswith("validation_error:")
+
+
+def test_email_authentication_trust_anchor_is_editable_in_generic_form(tmp_path, monkeypatch):
+    client, path = _client(tmp_path, monkeypatch, channels={"email": _email_section()})
+    entry = client.get("/channels/config").json()["channels"]["email"]
+    field = next(field for field in entry["fields"] if field["key"] == "trusted_authserv_id")
+    assert field["help_key"] == "settings.channels.fields.email.trusted_authserv_id"
+    response = client.put("/channels/config/email", json={"config": {"trusted_authserv_id": "mx.example.test"}})
+    assert response.status_code == 200
+    assert json.loads(path.read_text())["channels"]["email"]["trusted_authserv_id"] == "mx.example.test"
+
+
+def test_email_pdf_password_config_exposes_presence_only(tmp_path, monkeypatch):
+    password = "private-pdf-password-123456"
+    client, path = _client(
+        tmp_path, monkeypatch,
+        channels={"email": _email_section(pdf_password=password)},
+    )
+    response = client.get("/channels/config")
+    assert response.status_code == 200
+    entry = response.json()["channels"]["email"]
+    assert entry["pdf_password_configured"] is True
+    assert entry["secrets"]["pdf_password"] == {"set": True, "masked": "****"}
+    assert "pdf_password" not in entry["values"]
+    assert password not in response.text
+    update = client.put(
+        "/channels/config/email", json={"config": {"pdf_password": "replacement-password"}}
+    )
+    assert update.status_code == 200, update.text
+    assert update.json()["channel"]["pdf_password_configured"] is True
+    assert "replacement-password" not in update.text
+    assert json.loads(path.read_text())["channels"]["email"]["pdf_password"] == "replacement-password"
+
+    client, _path = _client(tmp_path, monkeypatch, channels={"email": _email_section()})
+    entry = client.get("/channels/config").json()["channels"]["email"]
+    assert entry["pdf_password_configured"] is False
+
+
+@pytest.mark.parametrize("endpoint", ["test", "enable"])
+@pytest.mark.parametrize("raises", [False, True])
+@pytest.mark.parametrize("password", ["pass@word", "pass word"])
+def test_probe_failures_redact_url_credentials_and_do_not_write(
+    tmp_path, monkeypatch, endpoint, raises, password,
+) -> None:
+    """Both probe entry points sanitize returned errors and raised exceptions."""
+    proxy = f"http://proxy-user:{password}@proxy.local:notaport"
+    client, path = _client(
+        tmp_path, monkeypatch,
+        channels={"discord": {"enabled": False, "proxy": proxy, "token": STORED_SECRET}},
+    )
+    before = path.read_bytes()
+
+    async def probe(self):
+        detail = f"Failed via {self.config.proxy}; token={self.config.token}"
+        if raises:
+            raise RuntimeError(detail)
+        return {"ok": False, "code": "network", "detail": detail}
+
+    cls = routes.load_channel_class("discord")
+    monkeypatch.setattr(cls, "supports_connection_test", True)
+    monkeypatch.setattr(cls, "test_connection", probe)
+    if endpoint == "test":
+        response = client.post("/channels/discord/test", json={"config": {}})
+        assert response.status_code == 200, response.text
+        assert response.json()["code"] == "network"
+        assert response.json()["ok"] is False
+    else:
+        response = client.put("/channels/config/discord", json={"config": {"enabled": True}})
+        assert response.status_code == 422, response.text
+    assert "proxy-user" not in response.text
+    assert password not in response.text
+    assert STORED_SECRET not in response.text
+    assert "proxy.local:notaport" in response.text
+    assert path.read_bytes() == before

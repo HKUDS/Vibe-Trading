@@ -163,6 +163,75 @@ def test_goal_evidence_tool_binds_runtime_artifact(
     assert evidence["verification_status"] == "verified"
 
 
+def test_goal_evidence_preserves_exact_tool_call_provenance(tmp_path: Path) -> None:
+    """Tool-backed goal evidence keeps the exact source call id beside its own evidence id."""
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    created = json.loads(
+        start.execute(
+            objective="Audit one tool-backed metric.",
+            criteria=["Record the metric provenance"],
+        )
+    )
+    call_id = "call_iDflHZFxCGQG1VfvfLoNBXCk|fc_0fa4bc82"
+
+    result = json.loads(
+        add.execute(
+            goal_id=created["snapshot"]["goal"]["goal_id"],
+            criterion_index=1,
+            text="The source tool returned the audited metric.",
+            tool_call_id=call_id,
+            source_provider="pytest",
+            source_type="market_data",
+        )
+    )
+
+    evidence = result["evidence"]
+    assert result["status"] == "ok"
+    assert evidence["evidence_id"].startswith("ev_")
+    assert evidence["tool_call_id"] == call_id
+    assert evidence["evidence_id"] != evidence["tool_call_id"]
+    assert result["snapshot"]["evidence"][0]["tool_call_id"] == call_id
+
+
+def test_goal_evidence_can_remain_manual_without_tool_call_id(tmp_path: Path) -> None:
+    """Manual evidence does not acquire an invented tool provenance id."""
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    add = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    created = json.loads(
+        start.execute(
+            objective="Record a manual research note.",
+            criteria=["Record the note"],
+        )
+    )
+
+    result = json.loads(
+        add.execute(
+            goal_id=created["snapshot"]["goal"]["goal_id"],
+            criterion_index=1,
+            text="Manual reasoning note.",
+            source_provider="pytest",
+            source_type="manual_note",
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["evidence"]["tool_call_id"] is None
+
+
+def test_goal_evidence_tool_schema_distinguishes_call_and_evidence_ids() -> None:
+    """The always-visible tool schema tells the model which id belongs in grounding provenance."""
+    description = AddGoalEvidenceTool.description
+    call_description = AddGoalEvidenceTool.parameters["properties"]["tool_call_id"]["description"]
+
+    assert "exact tool_call_id" in description
+    assert "evidence_id (ev_...)" in description
+    assert "copy its tool_call_id verbatim" in call_description
+    assert "Never substitute an evidence_id" in call_description
+
+
 def test_goal_status_tool_can_cancel_current_goal(tmp_path: Path) -> None:
     """Agent tools can move a current goal to a terminal status."""
     store = GoalStore(tmp_path / "goals.db")
@@ -211,3 +280,5 @@ def test_research_goal_skill_is_bundled() -> None:
 
     assert "start_research_goal" in content
     assert "add_goal_evidence" in content
+    assert "exact `tool_call_id`" in content
+    assert "`ev_...::field`" in content

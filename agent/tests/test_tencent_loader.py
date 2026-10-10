@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import tencent_loader
+from tests.loader_contract import assert_loader_contract
 
 
 class _FakeResponse:
@@ -100,6 +101,7 @@ def test_hk_equity_maps_to_hk_prefix_and_parses(monkeypatch) -> None:
     assert len(urls) == 1
     assert "param=hk00700,day," in urls[0]
     df = result["00700.HK"]
+    assert_loader_contract(df, context="tencent hk daily")
     assert len(df) == 2
     # Tencent kline rows are [date, open, close, high, low, volume].
     assert df.iloc[0]["open"] == 466.4

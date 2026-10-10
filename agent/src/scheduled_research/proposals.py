@@ -174,6 +174,11 @@ def commit_proposal(proposal_id: str) -> dict[str, Any]:
             from src.scheduled_research.models import ScheduledResearchJob
 
             job = ScheduledResearchJob.from_dict(payload["internal_job"])
+            if job.protect_pdf:
+                from src.scheduled_research.service import email_pdf_password_configured
+
+                if not email_pdf_password_configured():
+                    raise ProposalError("PDF protection requested but no PDF password is configured")
             store.upsert(job)
             payload["committed_job_id"] = job.id
         elif payload["operation"] == "cancel":

@@ -51,6 +51,9 @@ def heston_feller_condition(kappa: float, theta: float, sigma_v: float) -> dict[
             * ``feller_ratio`` (float): 2 * kappa * theta / (sigma_v**2)
             * ``is_satisfied`` (bool): True if feller_ratio > 1.0.
     """
+    for name, value in (("kappa", kappa), ("theta", theta), ("sigma_v", sigma_v)):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
     if sigma_v <= 0.0:
         raise ValueError(f"sigma_v must be strictly positive, got {sigma_v}")
     if kappa <= 0.0 or theta <= 0.0:
@@ -135,6 +138,23 @@ def heston_price(
     Returns:
         Option price as a non-negative float.
     """
+    for name, value in (
+        ("S0", S0),
+        ("K", K),
+        ("T", T),
+        ("r", r),
+        ("q", q),
+        ("v0", v0),
+        ("kappa", kappa),
+        ("theta", theta),
+        ("sigma_v", sigma_v),
+        ("rho", rho),
+        ("integration_limit", integration_limit),
+    ):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
+    if integration_limit <= 0.0:
+        raise ValueError("integration_limit must be strictly positive")
     if S0 <= 0.0 or K <= 0.0:
         raise ValueError(f"Spot S0 and strike K must be positive, got S0={S0}, K={K}")
     if T <= 0.0:

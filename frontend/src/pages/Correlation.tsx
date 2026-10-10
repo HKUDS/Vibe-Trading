@@ -1,53 +1,61 @@
 import i18n from '@/i18n';
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import { CorrelationMatrix } from "@/components/charts/CorrelationMatrix";
 import { RegimeTimeline } from "@/components/charts/RegimeTimeline";
-import { api, type CorrelationRegimeResponse } from "@/lib/api";
+import { api, type CorrelationAnalysisResponse } from "@/lib/api";
+import { useAnalysisState } from "@/hooks/useAnalysisState";
 
 const WINDOWS = [30, 60, 90, 180, 365] as const;
 
 export function Correlation() {
-  const [codes, setCodes] = useState("000001.SZ,600519.SH,000858.SZ,601318.SH");
-  const [days, setDays] = useState<number>(90);
-  const [method, setMethod] = useState<"pearson" | "spearman">("pearson");
-  const [showRegime, setShowRegime] = useState(false);
+  const [draft, setDraft] = useAnalysisState("correlation", {
+    codes: "000001.SZ,600519.SH,000858.SZ,601318.SH", days: 90,
+    method: "pearson" as "pearson" | "spearman", showRegime: false,
+    result: null as CorrelationAnalysisResponse | null, resultQuery: "", computedAt: "",
+  });
+  const { codes, days, method, showRegime, result, resultQuery, computedAt } = draft;
+  const setCodes = (codes: string) => setDraft((d) => ({ ...d, codes }));
+  const setDays = (days: number) => setDraft((d) => ({ ...d, days }));
+  const setMethod = (method: "pearson" | "spearman") => setDraft((d) => ({ ...d, method }));
+  const setShowRegime = (showRegime: boolean) => setDraft((d) => ({ ...d, showRegime }));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [labels, setLabels] = useState<string[]>([]);
-  const [matrix, setMatrix] = useState<number[][]>([]);
-  const [regime, setRegime] = useState<CorrelationRegimeResponse | null>(null);
+  const labels = result?.correlation?.labels ?? [];
+  const matrix = result?.correlation?.matrix ?? [];
+  const regime = result?.regime ?? null;
   const requestGeneration = useRef(0);
+  const controller = useRef<AbortController | null>(null);
+  const parsedCodes = codes.split(/[,;\s，；]+/).map((code) => code.trim().toUpperCase()).filter(Boolean);
+  const uniqueCodes = new Set(parsedCodes.map((code) => code.replace(/\.US$/, "")));
+  const inputValid = parsedCodes.length >= 2 && parsedCodes.length <= 20 && uniqueCodes.size === parsedCodes.length;
+  const query = JSON.stringify({ codes: parsedCodes.join(","), days, method, showRegime });
+  const fresh = resultQuery === query;
+  useEffect(() => () => { requestGeneration.current += 1; controller.current?.abort(); }, []);
 
   const invalidateResult = () => {
     requestGeneration.current += 1;
-    setLabels([]);
-    setMatrix([]);
-    setRegime(null);
+    controller.current?.abort();
     setError(null);
     setLoading(false);
   };
 
   const compute = async () => {
+    if (!inputValid) return;
+    controller.current?.abort();
+    const pending = new AbortController();
+    controller.current = pending;
     const generation = ++requestGeneration.current;
     setError(null);
-    setLabels([]);
-    setMatrix([]);
-    setRegime(null);
     setLoading(true);
     try {
-      const [result, regimeResult] = await Promise.all([
-        api.getCorrelation(codes, days, method),
-        showRegime ? api.getCorrelationRegime(codes, days) : Promise.resolve(null),
-      ]);
+      const response = await api.getCorrelationAnalysis(parsedCodes.join(","), days, method, showRegime, pending.signal);
       if (requestGeneration.current === generation) {
-        setLabels(result.labels);
-        setMatrix(result.matrix);
-        setRegime(regimeResult);
+        setDraft((d) => ({ ...d, result: response, resultQuery: query, computedAt: new Date().toISOString() }));
       }
     } catch (e) {
-      if (requestGeneration.current === generation) {
+      if (!pending.signal.aborted && requestGeneration.current === generation) {
         setError(e instanceof Error ? e.message : i18n.t("correlation.failedToCompute"));
       }
     } finally {
@@ -66,8 +74,9 @@ export function Correlation() {
       {/* Controls */}
       <div className="flex flex-col gap-4 border rounded-lg p-4">
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium">{i18n.t("correlation.assetCodes")}</label>
+          <label htmlFor="correlation-codes" className="text-sm font-medium">{i18n.t("correlation.assetCodes")}</label>
           <input
+            id="correlation-codes"
             type="text"
             value={codes}
             onChange={(e) => {
@@ -84,7 +93,7 @@ export function Correlation() {
 
         <div className="flex flex-wrap gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">{i18n.t("correlation.windowDays")}</label>
+            <label className="text-sm font-medium">{i18n.t("analysis.windowObservations")}</label>
             <div className="flex gap-1.5">
               {WINDOWS.map((w) => (
                 <button
@@ -150,11 +159,12 @@ export function Correlation() {
 
         <button
           onClick={compute}
-          disabled={loading}
+          disabled={loading || !inputValid}
           className="self-start px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {loading ? i18n.t("correlation.loading") : i18n.t("correlation.compute")}
         </button>
+        {!inputValid && <p role="alert" className="text-sm text-warning">{i18n.t("analysis.assetsValidation")}</p>}
       </div>
 
       {/* Error */}
@@ -163,6 +173,16 @@ export function Correlation() {
           {error}
         </div>
       )}
+
+      {result && <div className="space-y-2 rounded-lg border bg-card p-3 text-sm" role="status">
+        <p>{fresh ? i18n.t("analysis.updated") : i18n.t("analysis.previousResult")} · {i18n.t("analysis.lastComputed", { time: new Date(computedAt).toLocaleTimeString() })}</p>
+        <p className="text-muted-foreground">{i18n.t("analysis.coverage", { count: result.coverage.observations, start: result.coverage.first_date ?? "–", end: result.coverage.last_date ?? "–" })}</p>
+        <p className="text-xs">{i18n.t("analysis.usedAssets", { assets: labels.join(", ") || "–" })}</p>
+        {result.coverage.missing.length > 0 && <p className="text-warning">{i18n.t("analysis.missingAssets", { assets: result.coverage.missing.join(", ") })}</p>}
+        {result.coverage.missing.map((code) => <p key={code} className="text-xs text-muted-foreground">{code}: {result.coverage.diagnostics[code]?.attempts.map((a) => `${a.source}: ${i18n.t(`analysis.${a.reason}`)}`).join("; ")}</p>)}
+        {Object.entries(result.errors).map(([section, message]) => <p role="alert" key={section} className="text-danger">{i18n.t(section === "regime" ? "correlation.regimeTimeline" : "correlation.title")}: {message}</p>)}
+        {regime && <p className="text-xs text-muted-foreground">{i18n.t("analysis.regimeMethod")}</p>}
+      </div>}
 
       {/* Regime timeline (above the matrix when enabled) */}
       {regime && <RegimeTimeline data={regime} height={260} />}

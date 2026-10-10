@@ -1,6 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { Layout } from "../Layout";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 const sessions = [
   {
@@ -86,6 +90,13 @@ function renderLayout() {
 }
 
 describe("Layout accessibility", () => {
+  beforeEach(() => {
+    window.localStorage.removeItem("qa-sidebar");
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(api.listSessions).mockReset().mockResolvedValue(sessions as never);
+    vi.mocked(api.renameSession).mockReset().mockResolvedValue({ status: "ok" });
+    vi.mocked(api.deleteSession).mockReset().mockResolvedValue({ status: "ok" });
+  });
   it("labels landmarks, brand, main content, and the new-chat affordance", () => {
     renderLayout();
 
@@ -150,5 +161,71 @@ describe("Layout accessibility", () => {
     fireEvent(window, new StorageEvent("storage", { key: "qa-sidebar" }));
 
     expect(sidebar).toHaveClass("w-12");
+  });
+
+  it("shows a connection failure instead of an empty history, and retries", async () => {
+    vi.mocked(api.listSessions).mockRejectedValueOnce(new Error("Backend unavailable"));
+    renderLayout();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Backend unavailable");
+    expect(screen.queryByText("No sessions yet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "connection.retry" }));
+    expect(await screen.findByText(sessions[0].title)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("retains the rename draft and surfaces a failed save", async () => {
+    vi.mocked(api.renameSession).mockRejectedValueOnce(new Error("Rename failed"));
+    renderLayout();
+    await screen.findByText(sessions[0].title);
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "My renamed chat" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Rename failed"));
+    expect(input).toHaveValue("My renamed chat");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("My renamed chat")).toBeInTheDocument();
+  });
+
+  it("keeps a failed deletion visible so it can be retried", async () => {
+    vi.mocked(api.deleteSession).mockRejectedValueOnce(new Error("Delete failed"));
+    renderLayout();
+    await screen.findByText(sessions[0].title);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Delete failed"));
+    expect(screen.getByText(sessions[0].title)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(screen.queryByText(sessions[0].title)).not.toBeInTheDocument());
+  });
+
+  it("does not submit rename twice when Enter is followed by blur", async () => {
+    let complete!: (value: { status: string }) => void;
+    vi.mocked(api.renameSession).mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
+    renderLayout();
+    await screen.findByText(sessions[0].title);
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "Renamed once" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+    expect(api.renameSession).toHaveBeenCalledOnce();
+    await act(async () => complete({ status: "ok" }));
+    expect(screen.getByText("Renamed once")).toBeInTheDocument();
+  });
+
+  it("keeps history, new chat and language reachable with a collapsed sidebar", async () => {
+    window.localStorage.setItem("qa-sidebar", "collapsed");
+    renderLayout();
+    const trigger = screen.getByRole("button", { name: "Sessions" });
+    expect(screen.queryByRole("link", { name: "New Chat" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Language" })).toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByText(sessions[0].title)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New Chat" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
   });
 });

@@ -112,6 +112,9 @@ export interface OptionsContractRow {
 
 export interface OptionsChainData {
   ticker: string;
+  /** Source quote and nearest strike in the complete ladder, before row capping. */
+  underlying_price?: number | null;
+  atm_strike?: number | null;
   expiration: number;
   /** Epoch seconds. */
   expirations: number[];

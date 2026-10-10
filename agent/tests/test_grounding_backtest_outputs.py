@@ -837,3 +837,87 @@ def test_the_correction_asks_for_the_answer_alone(two_runs: GroundingLedger) -> 
 
     assert "do not mention this rejection" in prompt
     assert "in the user's language" in prompt
+
+
+@pytest.mark.parametrize("mode", ["rows", "downsample"])
+def test_structured_artifact_reader_grounds_only_shown_rows(
+    two_runs: GroundingLedger, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from src.tools.run_artifact_tool import read_run_artifact
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(two_runs.run_dir))
+    result = read_run_artifact(
+        str(two_runs.run_dir / "rp"), "target_positions", format=mode,
+        max_rows=2, columns=["timestamp", "000001.SZ"],
+    )
+    payload = json.loads(result)
+    assert payload["returned_rows"] == 2
+    two_runs.ingest_tool_result(
+        tool_name="read_run_artifact", arguments={"run_dir": str(two_runs.run_dir / "rp")},
+        result=result, call_id="structured-weights", success=True,
+    )
+    observed = [r for r in two_runs._evidence if r.call_id == "structured-weights"]
+    assert {r.field for r in observed} == {"000001.SZ"}
+    assert {r.value for r in observed} == {row[1] for row in payload["rows"]}
+    shown = _declared("初始权重 38.97%。", "38.97% | observed | 权重 | rp/artifacts/target_positions.csv")
+    assert two_runs.validate_final_answer(shown).valid
+    unseen = _declared("未读取权重 29.79%。", "29.79% | observed | 权重 | rp/artifacts/target_positions.csv")
+    assert not two_runs.validate_final_answer(unseen).valid
+
+
+@pytest.mark.parametrize("changed", ["different_bytes", "same_bytes"])
+def test_structured_reader_never_grounds_model_written_table(
+    two_runs: GroundingLedger, monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    from src.tools.run_artifact_tool import read_run_artifact
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(two_runs.run_dir))
+    table = two_runs.run_dir / "rp" / "artifacts" / "target_positions.csv"
+    if changed == "different_bytes":
+        table.write_text("timestamp,000001.SZ\n2024-01-02,0.4567\n", encoding="utf-8")
+    two_runs.ingest_tool_result(
+        tool_name="write_file", arguments={"path": str(table)},
+        result=json.dumps({"status": "ok", "path": str(table)}),
+        call_id="model-write-table", success=True,
+    )
+    result = read_run_artifact(str(table.parent.parent), "target_positions")
+    two_runs.ingest_tool_result(
+        tool_name="read_run_artifact", arguments={"run_dir": str(table.parent.parent)},
+        result=result, call_id="read-model-table", success=True,
+    )
+    assert not any(r.call_id == "read-model-table" for r in two_runs._evidence)
+
+
+def test_structured_reader_checks_engine_hash_and_scope(
+    two_runs: GroundingLedger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.tools.run_artifact_tool import read_run_artifact
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(two_runs.run_dir))
+    table = two_runs.run_dir / "rp" / "artifacts" / "target_positions.csv"
+    table.write_text("timestamp,000001.SZ\n2024-01-02,0.4567\n", encoding="utf-8")
+    result = read_run_artifact(str(table.parent.parent), "target_positions")
+    two_runs.ingest_tool_result(
+        tool_name="read_run_artifact", arguments={"run_dir": str(table.parent.parent)},
+        result=result, call_id="read-changed", success=True,
+    )
+    assert not any(r.call_id == "read-changed" for r in two_runs._evidence)
+    result = read_run_artifact(str(two_runs.run_dir / "ew"), "target_positions")
+    two_runs.ingest_tool_result(
+        tool_name="read_run_artifact", arguments={"run_dir": str(two_runs.run_dir / "ew")},
+        result=result, call_id="read-ew", success=True,
+    )
+    wrong = _declared("风险平价权重 33.33%。", "33.33% | observed | 权重 | rp/artifacts/target_positions.csv")
+    assert not two_runs.validate_final_answer(wrong).valid
+
+
+def test_external_symlink_is_not_registered_as_engine_table(tmp_path: Path) -> None:
+    _write_backtest(tmp_path / "rp", RP)
+    _write_backtest(tmp_path / "ew", EW)
+    target = tmp_path / "rp" / "artifacts" / "target_positions.csv"
+    target.unlink()
+    target.symlink_to(tmp_path / "ew" / "artifacts" / "target_positions.csv")
+    ledger = GroundingLedger(run_dir=tmp_path, user_message="回测风险平价")
+    _backtest(ledger, tmp_path / "rp", "bt-rp")
+    _read(ledger, target, "read-sibling")
+    assert not any(r.call_id == "read-sibling" for r in ledger._evidence)

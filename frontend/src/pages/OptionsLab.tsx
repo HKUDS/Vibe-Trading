@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CandlestickChart, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,8 +17,9 @@ import { GreeksCards } from "@/components/options/GreeksCards";
 import { OptionsChainTable } from "@/components/options/OptionsChainTable";
 import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
 import { OptionsScenarioMatrix } from "@/components/charts/OptionsScenarioMatrix";
+import { useAnalysisState } from "@/hooks/useAnalysisState";
 
-const ANALYZE_DEBOUNCE_MS = 500;
+const ANALYZE_DEBOUNCE_MS = 250;
 
 function MetricCard({
   label,
@@ -57,52 +58,58 @@ function MetricCard({
 export function OptionsLab() {
   const { t } = useTranslation();
 
-  const [params, setParams] = useState<OptionsLabParams>(DEFAULT_PARAMS);
-  const [legs, setLegs] = useState<OptionLeg[]>(
-    () => buildPresetLegs("long_call", DEFAULT_PARAMS.entry_spot) ?? [],
-  );
-  const [activePresetId, setActivePresetId] = useState<string | null>("long_call");
-  const [result, setResult] = useState<OptionsPayoffResponse | null>(null);
+  const [draft, setDraft] = useAnalysisState("options", {
+    params: DEFAULT_PARAMS as OptionsLabParams,
+    legs: buildPresetLegs("long_call", DEFAULT_PARAMS.entry_spot) ?? [],
+    activePresetId: "long_call" as string | null,
+    result: null as OptionsPayoffResponse | null,
+    resultRequest: null as OptionsPayoffRequest | null,
+    updatedAt: "",
+  });
+  const { params, legs, activePresetId, result, resultRequest, updatedAt } = draft;
+  const setParams = (params: OptionsLabParams) => setDraft((d) => ({ ...d, params }));
+  const [retry, setRetry] = useState(0);
+  const [chainOpen, setChainOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const req = useMemo(() => buildPayoffRequest(legs, params), [legs, params]);
+  const signature = req ? JSON.stringify(req) : null;
+  const currentSignature = useRef(signature);
+  currentSignature.current = signature;
+  const fresh = signature !== null && signature === JSON.stringify(resultRequest);
 
-  const analyze = useCallback(
-    async (req: OptionsPayoffRequest) => {
-      const gen = ++generation.current;
-      setLoading(true);
-      setError(null);
+  useEffect(() => {
+    const gen = ++generation.current;
+    const controller = new AbortController();
+    setError(null);
+    if (!req || (fresh && retry === 0)) { setLoading(false); return; }
+    setLoading(true);
+    const timer = setTimeout(async () => {
       try {
-        const res = await api.analyzeOptionsPayoff(req);
-        if (generation.current === gen) setResult(res);
-      } catch (e) {
-        if (generation.current === gen) {
-          setError(e instanceof Error ? e.message : t("options.errorGeneric"));
+        const res = await api.analyzeOptionsPayoff(req, controller.signal);
+        if (generation.current === gen && currentSignature.current === signature) {
+          setDraft((d) => ({ ...d, result: res, resultRequest: req, updatedAt: new Date().toISOString() }));
         }
+      } catch (e) {
+        if (!controller.signal.aborted && generation.current === gen) setError(e instanceof Error ? e.message : t("options.errorGeneric"));
       } finally {
         if (generation.current === gen) setLoading(false);
       }
-    },
-    [t],
-  );
-
-  useEffect(() => {
-    const req = buildPayoffRequest(legs, params);
-    if (!req) return;
-    const timer = setTimeout(() => void analyze(req), ANALYZE_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [legs, params, analyze]);
+    }, ANALYZE_DEBOUNCE_MS);
+    return () => { clearTimeout(timer); generation.current += 1; controller.abort(); };
+    // A completed result must not dispatch its own calculation again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, retry]);
 
   const applyPreset = (presetId: string) => {
     const presetLegs = buildPresetLegs(presetId, params.entry_spot);
     if (!presetLegs) return;
-    setActivePresetId(presetId);
-    setLegs(presetLegs);
+    setDraft((d) => ({ ...d, activePresetId: presetId, legs: presetLegs }));
   };
 
   const handleLegsChange = (next: OptionLeg[]) => {
-    setActivePresetId(null);
-    setLegs(next);
+    setDraft((d) => ({ ...d, activePresetId: null, legs: next }));
   };
 
   const summary = result?.summary ?? null;
@@ -142,8 +149,13 @@ export function OptionsLab() {
       </div>
 
       {/* Builder + results */}
-      <div className="grid gap-4 xl:grid-cols-3">
-        <div className="xl:col-span-1">
+      <div role="status" aria-live="polite" className="rounded-lg border bg-card px-3 py-2 text-sm">
+        {!req ? t("analysis.invalid") : loading ? t("analysis.updating") : error ? t("analysis.failed") : fresh ? t("analysis.updated") : t("analysis.editing")}
+        {result && !fresh && <span className="ms-2 text-warning">{t("analysis.previousResult")}</span>}
+        {updatedAt && <span className="ms-2 text-xs text-muted-foreground">{t("analysis.lastComputed", { time: new Date(updatedAt).toLocaleTimeString() })}</span>}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(26rem,2fr)_minmax(0,3fr)]">
+        <div className="min-w-0">
           <StrategyBuilder
             legs={legs}
             params={params}
@@ -154,9 +166,9 @@ export function OptionsLab() {
           />
         </div>
 
-        <div className="flex flex-col gap-4 xl:col-span-2">
+        <div className="flex min-w-0 flex-col gap-4">
           {/* Key-metrics strip */}
-          <div className={cn("grid grid-cols-2 gap-3 lg:grid-cols-4", loading && "opacity-60")}>
+          <div className={cn("grid grid-cols-2 gap-3 2xl:grid-cols-4", (loading || !fresh) && "opacity-60")}>
             <MetricCard
               label={t("options.metrics.entryCost")}
               value={
@@ -184,7 +196,7 @@ export function OptionsLab() {
 
           {/* Backend error banner */}
           {error && (
-            <div className="rounded border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{error}</div>
+            <div role="alert" className="flex items-center justify-between rounded border border-danger/30 bg-danger/5 p-3 text-sm text-danger">{error}<button onClick={() => setRetry((n) => n + 1)}>{t("connection.retry")}</button></div>
           )}
 
           {/* Payoff diagram */}
@@ -200,7 +212,7 @@ export function OptionsLab() {
             </div>
             <OptionsPayoffChart
               curve={result?.expiry_curve ?? { spot: [], pnl: [] }}
-              entrySpot={params.entry_spot}
+              entrySpot={resultRequest?.entry_spot ?? params.entry_spot}
               breakevens={summary?.breakevens ?? []}
             />
           </section>
@@ -226,7 +238,11 @@ export function OptionsLab() {
       </section>
 
       {/* Live US options chain */}
-      <OptionsChainTable referenceSpot={params.entry_spot} />
+      <details className="rounded-xl border bg-card p-4" onToggle={(e) => setChainOpen(e.currentTarget.open)}>
+        <summary className="cursor-pointer text-sm font-semibold">{t("options.chain.title")}</summary>
+        <p className="my-2 text-xs text-muted-foreground">{t("analysis.chainOnDemand")}</p>
+        {chainOpen && <OptionsChainTable />}
+      </details>
 
       <p className="pb-2 text-xs text-muted-foreground">{t("options.disclaimer")}</p>
     </div>

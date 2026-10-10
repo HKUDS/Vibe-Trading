@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import qveris_loader as qv
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.base import NoAvailableSourceError
 from backtest.loaders.registry import (
     FALLBACK_CHAINS,
@@ -245,6 +246,7 @@ class TestFetch:
         df = out["BTC-USDT"]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
+        assert_loader_contract(df, context="canonical frame")
         assert isinstance(df.index, pd.DatetimeIndex)
         assert df.index.dtype == "datetime64[ns]"
         assert df.loc["2024-01-02", "close"] == 110.0

@@ -1,7 +1,7 @@
 # Standalone public-loader canary environment (Python 3.11).
 # Install into its own venv; import repository sources with PYTHONPATH=agent.
-# Do not install the full application: mootdx 0.11.7 requires httpx <0.26,
-# while the application's LLM dependencies require newer httpx.
+# Kept separate from the full application so optional SDK pins do not fight
+# the application's LLM dependency stack.
 pandas>=2.2,<3
 numpy>=1.26,<3
 requests>=2.31,<3
@@ -13,5 +13,4 @@ yfinance>=0.2.54,<2
 akshare>=1.17,<2
 ccxt>=4,<5
 baostock==0.9.3
-mootdx==0.11.7
 pykrx>=1.0,<2

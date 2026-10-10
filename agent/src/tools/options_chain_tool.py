@@ -10,6 +10,7 @@ reuses one session, so the agent never hits Yahoo un-spaced.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Dict, List, Optional
 
 from backtest.loaders import yahoo_client
@@ -161,9 +162,27 @@ def _success(ticker: str, result: Dict[str, Any]) -> str:
 
     calls = _contracts(block.get("calls"))
     puts = _contracts(block.get("puts"))
+    quote = result.get("quote")
+    price = quote.get("regularMarketPrice") if isinstance(quote, dict) else None
+    underlying_price = _positive_number(price)
+    # Determine ATM from the complete ladder, before the output-row cap.
+    strikes = {
+        strike
+        for rows in (block.get("calls"), block.get("puts"))
+        if isinstance(rows, list)
+        for row in rows
+        if isinstance(row, dict)
+        if (strike := _positive_number(row.get("strike"))) is not None
+    }
+    atm_strike = (
+        min(strikes, key=lambda strike: (abs(strike - underlying_price), strike))
+        if underlying_price is not None and strikes else None
+    )
 
     data = {
         "ticker": ticker,
+        "underlying_price": underlying_price,
+        "atm_strike": atm_strike,
         "expiration": block.get("expirationDate"),
         "expirations": expirations,
         "calls_count": len(calls),
@@ -175,6 +194,20 @@ def _success(ticker: str, result: Dict[str, Any]) -> str:
         {"ok": True, "market": "us", "source": "yahoo", "data": data},
         ensure_ascii=False,
     )
+
+
+def _positive_number(value: Any) -> float | None:
+    """Validate a source number without guessing missing values.
+
+    Args:
+        value: The price or strike supplied by the data source.
+
+    Returns:
+        A finite positive number, or None for missing or malformed input.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) and value > 0 else None
 
 
 def _contracts(raw: Any) -> List[Dict[str, Any]]:

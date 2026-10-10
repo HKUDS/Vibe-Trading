@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { Agent } from "../Agent";
 import { useAgentStore } from "@/stores/agent";
@@ -135,5 +135,24 @@ describe("Agent background stream completion reconciliation", () => {
       expect(apiMock.getSessionMessages).toHaveBeenCalledWith("session-bg");
     });
     expect(useAgentStore.getState().streamingSessionId).toBe("session-bg");
+  });
+
+  it("recovers an unavailable conversation without discarding the composer draft", async () => {
+    apiMock.getSessionMessages.mockReset()
+      .mockRejectedValueOnce(new Error("History unavailable"))
+      .mockResolvedValueOnce([storedReply("session-one")]);
+    const router = createMemoryRouter(
+      [{ path: "/", element: <Agent /> }],
+      { initialEntries: ["/?session=session-one"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("History unavailable");
+    const composer = screen.getByRole("textbox");
+    fireEvent.change(composer, { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await waitFor(() => expect(useAgentStore.getState().messages.some((message) => message.content === "done")).toBe(true));
+    expect(composer).toHaveValue("Keep my draft");
+    expect(apiMock.getSessionMessages).toHaveBeenCalledTimes(2);
   });
 });

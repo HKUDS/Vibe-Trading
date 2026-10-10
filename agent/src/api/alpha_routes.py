@@ -8,14 +8,18 @@ Routes (auth via the caller-supplied ``require_auth`` /
 
 - ``GET  /alpha/list``                — list alphas with optional filters
 - ``GET  /alpha/{alpha_id}``          — single alpha meta + source
+- ``GET  /alpha/readiness``          — configured universe eligibility
 - ``POST /alpha/bench``               — kick off a background bench (returns job_id)
+- ``GET  /alpha/bench/{job_id}``      — recover a job snapshot
 - ``GET  /alpha/bench/{job_id}/stream`` — SSE: progress / result / done / error
 - ``POST /alpha/compare``             — kick off a head-to-head of >= 2 alphas (job_id)
+- ``GET  /alpha/compare/{job_id}``    — recover a job snapshot
 - ``GET  /alpha/compare/{job_id}/stream`` — SSE: progress / result / done / error
 
 Job state lives in the module-level ``ALPHA_BENCH_JOBS`` dict, guarded by
 ``_JOBS_LOCK``. No persistence — process restart wipes job state, which is
-acceptable for v1 (a bench takes 5-10 min; users re-trigger).
+reported explicitly by snapshot reads. Identical submissions carrying the same
+request ID recover the existing job instead of starting another worker.
 
 Concurrency: at most ``MAX_CONCURRENT_BENCHES`` bench workers run at the same
 time across the process. POST returns 429 when the cap is reached. Workers run
@@ -33,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import importlib.util
 import re
 import threading
 import time
@@ -153,9 +158,11 @@ class BenchRequest(BaseModel):
     """POST /alpha/bench body."""
 
     zoo: str = Field(..., min_length=1, max_length=64)
+    request_id: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
     universe: str = Field(..., min_length=1, max_length=64)
     period: str = Field(..., min_length=4, max_length=32)
     top: int = Field(20, ge=1, le=500)
+    alpha_id: str | None = Field(None, pattern=r"^[a-z][a-z0-9]+_[a-z0-9_]{1,64}$")
 
     @field_validator("zoo")
     @classmethod
@@ -180,6 +187,7 @@ class CompareRequest(BaseModel):
     """POST /alpha/compare body — a head-to-head of >= 2 named alphas."""
 
     alpha_ids: list[str] = Field(..., min_length=2, max_length=50)
+    request_id: str | None = Field(None, pattern=r"^[a-f0-9]{32}$")
     universe: str = Field(..., min_length=1, max_length=64)
     period: str = Field(..., min_length=4, max_length=32)
     sort: str = Field("ir", min_length=1, max_length=32)
@@ -233,6 +241,7 @@ def _make_progress_cb(
             if job is None:
                 return
             job["progress"] = {
+                "stage": "computing",
                 "n_done": int(n_done),
                 "n_total": int(n_total),
                 "current_alpha_id": alpha_id,
@@ -243,7 +252,16 @@ def _make_progress_cb(
     return _cb
 
 
-def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: int) -> None:
+def _stage_callback(job_id: str, jobs: dict) -> Callable[[str], None]:
+    """Record pipeline phase without treating data loading as factor progress."""
+    def update(stage: str) -> None:
+        with _JOBS_LOCK:
+            if job_id in jobs:
+                jobs[job_id]["progress"]["stage"] = stage
+    return update
+
+
+def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: int, alpha_id: str | None = None) -> None:
     """Synchronous bench worker (called via ``asyncio.to_thread``)."""
     from src.factors.bench_runner import run_bench  # local import: heavy deps
 
@@ -259,6 +277,8 @@ def _run_bench_blocking(job_id: str, zoo: str, universe: str, period: str, top: 
             period=period,
             top=top,
             on_progress=_make_progress_cb(job_id),
+            on_stage=_stage_callback(job_id, ALPHA_BENCH_JOBS),
+            only=[alpha_id] if alpha_id else None,
         )
     except Exception as exc:  # noqa: BLE001 — worker must never crash the loop
         logger.exception("alpha bench worker crashed (job=%s)", job_id)
@@ -313,6 +333,7 @@ def _run_compare_blocking(
             period,
             sort=sort,
             on_progress=_make_progress_cb(job_id, ALPHA_COMPARE_JOBS),
+            on_stage=_stage_callback(job_id, ALPHA_COMPARE_JOBS),
         )
     except Exception as exc:  # noqa: BLE001 — worker must never crash the loop
         logger.exception("alpha compare worker crashed (job=%s)", job_id)
@@ -379,6 +400,29 @@ def register_alpha_routes(
     # -----------------------------------------------------------------------
     # GET /alpha/list
     # -----------------------------------------------------------------------
+
+    @app.get("/alpha/readiness", dependencies=[Depends(require_auth)])
+    async def alpha_readiness():
+        """Report configuration and mathematical prerequisites without network probes."""
+        from src.config.accessor import get_env_config
+        from src.factors.registry import get_default_registry
+
+        registry = get_default_registry()
+        configured = bool(get_env_config().data.tushare_token.strip())
+        installed = importlib.util.find_spec("tushare") is not None
+        return {"universes": {
+            "csi300": {"ready": configured and installed, "reason": "tushare_ready" if configured and installed else "tushare_token_missing" if not configured else "tushare_dependency_missing"},
+            "sp500": {"ready": True, "reason": "public_data"},
+            "btc-usdt": {"ready": False, "reason": "single_asset"},
+        }, "zoo_counts": {zoo: len(registry.list(zoo=zoo)) for zoo in sorted(_VALID_ZOOS)}}
+
+    @app.get("/alpha/bench/{job_id}", dependencies=[Depends(require_auth)])
+    async def bench_snapshot(job_id: str):
+        return _job_snapshot(ALPHA_BENCH_JOBS, job_id, _result_for_wire)
+
+    @app.get("/alpha/compare/{job_id}", dependencies=[Depends(require_auth)])
+    async def compare_snapshot(job_id: str):
+        return _job_snapshot(ALPHA_COMPARE_JOBS, job_id, _compare_result_for_wire)
 
     @app.get("/alpha/list", dependencies=[Depends(require_auth)])
     async def list_alphas(
@@ -506,11 +550,31 @@ def register_alpha_routes(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"invalid period: {exc}")
 
+        if payload.universe == "btc-usdt":
+            raise HTTPException(status_code=400, detail="BTC-USDT is single-asset; cross-sectional IC needs at least two instruments. Choose a stock universe.")
+        if payload.alpha_id:
+            from src.factors.registry import get_default_registry
+            try:
+                selected = get_default_registry().get(payload.alpha_id)
+            except KeyError:
+                raise HTTPException(status_code=400, detail="Unknown alpha_id")
+            if selected.zoo != payload.zoo:
+                raise HTTPException(status_code=400, detail="The selected alpha does not belong to the chosen zoo")
+
         # Concurrency cap. We peek at the semaphore counter rather than
         # ``acquire(block=False)`` so the actual acquire happens inside the
         # worker (after the 202 is returned). _value is a CPython
         # implementation detail but it's been stable since 3.0 and asyncio's
         # own ``locked()`` uses it.
+        # A retry after a lost POST response must return the same task.
+        if payload.request_id:
+            with _JOBS_LOCK:
+                existing = ALPHA_BENCH_JOBS.get(payload.request_id)
+                if existing:
+                    if existing.get("_request") != payload.model_dump():
+                        raise HTTPException(status_code=409, detail="request_id already used for different parameters")
+                    return {"status": "ok", "job_id": payload.request_id}
+
         sem = _get_bench_semaphore()
         # ``locked()`` returns True iff the counter is 0; defensive check.
         if sem.locked() or getattr(sem, "_value", MAX_CONCURRENT_BENCHES) <= 0:
@@ -521,17 +585,21 @@ def register_alpha_routes(
 
         _prune_old_jobs()
 
-        job_id = uuid.uuid4().hex
+        from src.factors.registry import get_default_registry
+        n_total = 1 if payload.alpha_id else len(get_default_registry().list(zoo=payload.zoo))
+        job_id = payload.request_id or uuid.uuid4().hex
         with _JOBS_LOCK:
             ALPHA_BENCH_JOBS[job_id] = {
                 "job_id": job_id,
+                "_request": payload.model_dump(),
                 "status": "queued",
                 "zoo": payload.zoo,
                 "universe": payload.universe,
                 "period": payload.period,
                 "top": payload.top,
+                "alpha_id": payload.alpha_id,
                 "created_at": _now_iso(),
-                "progress": {"n_done": 0, "n_total": 0, "current_alpha_id": None},
+                "progress": {"n_done": 0, "n_total": n_total, "current_alpha_id": None},
                 "result": None,
                 "error": None,
             }
@@ -546,6 +614,7 @@ def register_alpha_routes(
                         payload.universe,
                         payload.period,
                         payload.top,
+                        payload.alpha_id,
                     )
                 except Exception:  # noqa: BLE001 — never escape the loop
                     logger.exception("bench runner outer task crashed (job=%s)", job_id)
@@ -590,11 +659,22 @@ def register_alpha_routes(
     async def kick_off_compare(payload: CompareRequest) -> dict[str, Any]:
         """Queue a background head-to-head comparison and return a job_id."""
         from src.tools.alpha_bench_tool import _parse_period
+        if payload.universe == "btc-usdt":
+            raise HTTPException(status_code=400, detail="BTC-USDT is single-asset; cross-sectional IC needs at least two instruments. Choose a stock universe.")
 
         try:
             _parse_period(payload.period)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"invalid period: {exc}")
+
+        # A retry after a lost POST response must return the same task.
+        if payload.request_id:
+            with _JOBS_LOCK:
+                existing = ALPHA_COMPARE_JOBS.get(payload.request_id)
+                if existing:
+                    if existing.get("_request") != payload.model_dump():
+                        raise HTTPException(status_code=409, detail="request_id already used for different parameters")
+                    return {"status": "ok", "job_id": payload.request_id}
 
         sem = _get_compare_semaphore()
         if sem.locked() or getattr(sem, "_value", MAX_CONCURRENT_COMPARES) <= 0:
@@ -605,10 +685,11 @@ def register_alpha_routes(
 
         _prune_old_jobs()
 
-        job_id = uuid.uuid4().hex
+        job_id = payload.request_id or uuid.uuid4().hex
         with _JOBS_LOCK:
             ALPHA_COMPARE_JOBS[job_id] = {
                 "job_id": job_id,
+                "_request": payload.model_dump(),
                 "status": "queued",
                 "alpha_ids": payload.alpha_ids,
                 "universe": payload.universe,
@@ -683,7 +764,7 @@ def _job_event_stream(
     """
 
     async def event_stream():
-        last_n_done = -1
+        last_progress = None
         last_emit = time.monotonic()
         while True:
             if await request.is_disconnected():
@@ -700,10 +781,9 @@ def _job_event_stream(
                 result = job.get("result")
                 error = job.get("error")
 
-            n_done = int(progress.get("n_done") or 0)
-            if n_done != last_n_done:
+            if progress != last_progress:
                 yield _sse("progress", progress)
-                last_n_done = n_done
+                last_progress = progress
                 last_emit = time.monotonic()
 
             if status == "done":
@@ -744,6 +824,20 @@ def _compare_result_for_wire(result: dict[str, Any]) -> dict[str, Any]:
     ``status`` (the SSE event type already conveys success).
     """
     return {k: v for k, v in result.items() if k != "status"}
+
+
+def _job_snapshot(jobs: dict, job_id: str, project: Callable) -> dict:
+    """Return a bounded public snapshot; expired/restarted jobs fail explicitly."""
+    if not _JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(status_code=400, detail="invalid job_id")
+    with _JOBS_LOCK:
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job expired or the server restarted. Start a new evaluation.")
+        snapshot = {key: value for key, value in job.items() if not key.startswith("_")}
+        snapshot["progress"] = dict(job.get("progress") or {})
+        snapshot["result"] = project(job["result"]) if job.get("result") else None
+    return snapshot
 
 
 # ---------------------------------------------------------------------------

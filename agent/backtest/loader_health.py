@@ -29,7 +29,6 @@ CANARY_SYMBOLS = {
     "binance": "BTC-USDT",
     "ccxt": "BTC-USDT",
     "eastmoney": "601398.SH",
-    "mootdx": "601398.SH",
     "nobitex": "BTC-IRT",
     "okx": "BTC-USDT",
     "pykrx": "005930.KS",
@@ -43,12 +42,18 @@ CANARY_SYMBOLS = {
     "yahoo": "AAPL.US",
     "yfinance": "AAPL.US",
 }
-EXCLUDED_PUBLIC_SOURCES = {"local": "operator files, not a public endpoint"}
+EXCLUDED_PUBLIC_SOURCES = {
+    "local": "operator files, not a public endpoint",
+    # Retired 2026-10-08 (HKUDS/Vibe-Trading#1729): TDX servers stopped
+    # answering the mootdx/tdxpy client protocol in 2026-07
+    # (mootdx/mootdx#157) and upstream is dormant. The loader stays
+    # registered for explicit use but is out of the default chain.
+    "mootdx": "upstream TDX protocol dead since 2026-07 (mootdx/mootdx#157)",
+}
 DEPENDENCIES = {
     "akshare": "akshare",
     "baostock": "baostock",
     "ccxt": "ccxt",
-    "mootdx": "mootdx",
     "pykrx": "pykrx",
     "yfinance": "yfinance",
 }
@@ -67,7 +72,9 @@ _PATH_RE = re.compile(r"/[^\s]+")
 _CREDENTIAL_RE = re.compile(
     r"[\"']?\b[\w-]*(?:token|secret|password|passwd|api[-_]?key|private[-_]?key)[\w-]*[\"']?"
     r"\s*[=:]\s*(?:\"(?:\\.|[^\"])*(?:\"|$)|'(?:\\.|[^'])*(?:'|$)|\S+)"
-    r"|\b(?:bearer|basic)\s+\S+"
+    # A scheme owns the rest of the warning: its value may be labelled
+    # (``Bearer token: VALUE``), and stopping at the label left the value behind.
+    r"|\b(?:bearer|basic)\s+\S+(?:\s+\S+)*"
     r"|\b(?:gh[pousr]_|github_pat_|sk-|xox[baprs]-)[\w-]{8,}",
     re.IGNORECASE,
 )

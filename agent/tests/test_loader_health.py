@@ -14,6 +14,20 @@ from backtest import loader_health as health
 TODAY = date(2026, 9, 28)
 
 
+@pytest.fixture(autouse=True)
+def _registered_loaders():
+    """Register the real loaders before a test stubs one of them.
+
+    Registration fires on first use and assigns into ``LOADER_REGISTRY``
+    unconditionally, so a stub installed for a real source before that first
+    use is silently replaced by the real loader and the test reaches the live
+    network instead of the stub.
+    """
+    from backtest.loaders.registry import _ensure_registered
+
+    _ensure_registered()
+
+
 def frame(age=0):
     return pd.DataFrame(
         {"open": [10.0], "high": [12.0], "low": [9.0], "close": [11.0], "volume": [100.0]},
@@ -22,6 +36,16 @@ def frame(age=0):
 
 
 def test_catalog_covers_every_public_network_loader():
+    assert health.coverage_errors() == []
+
+
+def test_retired_mootdx_is_excluded_with_reason_not_canaried():
+    """mootdx left the canary set when the TDX servers stopped answering the
+    mootdx/tdxpy protocol (#1729, mootdx/mootdx#157). It must stay visible as
+    an excluded entry whose reason says why, not silently vanish."""
+    assert "mootdx" not in health.CANARY_SYMBOLS
+    reason = health.EXCLUDED_PUBLIC_SOURCES.get("mootdx")
+    assert reason and "mootdx/mootdx#157" in reason
     assert health.coverage_errors() == []
 
 
@@ -290,6 +314,25 @@ def test_sanitizer_redacts_header_and_token_shaped_credentials():
     assert health.sanitize_evidence("x-api-key: abc123 rejected") == "<redacted> rejected"
     assert health.sanitize_evidence("api_key=abc123 in query") == "<redacted> in query"
     assert health.sanitize_evidence("token sk-abcdefghijklmnop rejected") == "token <redacted> rejected"
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        # The scheme arm used to stop at the label and leave its value in the
+        # report artifact CI uploads.
+        ("Authorization: Bearer token: S3CR3TVALUE", "Authorization: <redacted>"),
+        ("Bearer password: hunter2", "<redacted>"),
+    ],
+)
+def test_sanitizer_redacts_a_schemes_labelled_value(message, expected):
+    assert health.sanitize_evidence(message) == expected
+
+
+def test_sanitizer_does_not_strand_a_scheme_behind_a_keyword_label():
+    """A keyword chain must not hide the scheme's value from the scheme arm."""
+    cleaned = health.sanitize_evidence("password: token: Bearer S3CR3TVALUE")
+    assert cleaned is not None and "S3CR3TVALUE" not in cleaned
 
 
 def test_sanitizer_truncates_and_collapses_whitespace():

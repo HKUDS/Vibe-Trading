@@ -62,34 +62,26 @@ describe("WelcomeScreen", () => {
     ).toBeInTheDocument();
   });
 
-  it("hands off all four quick-action prompts unchanged", async () => {
+  it("fills the three beginner task prompts without submitting a request", async () => {
     const actions = [
       {
-        label: "Check if a stock is expensive",
-        prompt:
-          "Use the financial_rigor tool to verify Kweichow Moutai's valuation: price 1500, EPS 68.6, book value per share 180 — compute PE, PB, ROE exactly, then a three-scenario valuation (growth 12%/8%/0%, PE 22/18/14, 3 years)",
+        label: "Research a stock",
+        prompt: "Research AAPL: summarize its business, recent financial performance, and key risks using current data. State the sources and dates, and flag missing information.",
       },
       {
-        label: "Options risk check (Greeks)",
-        prompt:
-          "Calculate option Greeks using Black-Scholes: spot=100, strike=105, risk-free rate=3%, vol=25%, expiry=90 days, analyze Delta/Gamma/Theta/Vega",
+        label: "Test a strategy",
+        prompt: "Backtest a 20/60-day moving-average strategy on AAPL over the past year. Compare returns and drawdowns with buy-and-hold, and include trading costs. Keep this research-only.",
       },
       {
-        label: "Balance a 3-stock portfolio",
-        prompt:
-          "Build a risk-parity portfolio with 000001.SZ, 600519.SH, 000858.SZ, backtest for the full year of 2024, and compare with equal-weighted benchmark",
-      },
-      {
-        label: "Buy or sell? Let a committee debate",
-        prompt:
-          "[Swarm Team Mode] Use the investment_committee preset to evaluate whether to go long or short on 600519.SH given current market conditions",
+        label: "Review my holdings",
+        prompt: "Summarize my connected accounts and holdings, including concentration and portfolio risks. If no account is connected, explain how to set one up first. Do not place or modify orders.",
       },
     ];
     const user = userEvent.setup();
     render(<WelcomeScreen onExample={onExample} />);
 
     const quickActions = screen.getByRole("group", { name: "Quick actions" });
-    expect(within(quickActions).getAllByRole("button")).toHaveLength(4);
+    expect(within(quickActions).getAllByRole("button")).toHaveLength(3);
 
     for (const [index, action] of actions.entries()) {
       await user.click(
@@ -97,7 +89,7 @@ describe("WelcomeScreen", () => {
       );
       expect(onExample).toHaveBeenNthCalledWith(index + 1, action.prompt);
     }
-    expect(onExample).toHaveBeenCalledTimes(4);
+    expect(onExample).toHaveBeenCalledTimes(3);
   });
 
   it("marks the clicked quick action as selected and moves the selection", async () => {
@@ -111,22 +103,22 @@ describe("WelcomeScreen", () => {
       expect(button).not.toHaveClass("text-primary");
     }
 
-    const committee = within(quickActions).getByRole("button", {
-      name: "Buy or sell? Let a committee debate",
+    const portfolio = within(quickActions).getByRole("button", {
+      name: "Review my holdings",
     });
-    await user.click(committee);
-    expect(committee).toHaveAttribute("aria-pressed", "true");
-    expect(committee).toHaveClass("text-primary");
+    await user.click(portfolio);
+    expect(portfolio).toHaveAttribute("aria-pressed", "true");
+    expect(portfolio).toHaveClass("text-primary");
     expect(onExample).toHaveBeenCalledTimes(1);
 
-    const valuation = within(quickActions).getByRole("button", {
-      name: "Check if a stock is expensive",
+    const research = within(quickActions).getByRole("button", {
+      name: "Research a stock",
     });
-    await user.click(valuation);
-    expect(committee).toHaveAttribute("aria-pressed", "false");
-    expect(committee).not.toHaveClass("text-primary");
-    expect(valuation).toHaveAttribute("aria-pressed", "true");
-    expect(valuation).toHaveClass("text-primary");
+    await user.click(research);
+    expect(portfolio).toHaveAttribute("aria-pressed", "false");
+    expect(portfolio).not.toHaveClass("text-primary");
+    expect(research).toHaveAttribute("aria-pressed", "true");
+    expect(research).toHaveClass("text-primary");
     expect(onExample).toHaveBeenCalledTimes(2);
   });
 

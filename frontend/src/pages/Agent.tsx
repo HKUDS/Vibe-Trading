@@ -13,8 +13,8 @@ import { useSSE } from "@/hooks/useSSE";
 import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
 import {
   extractUploadedAttachments,
-  prependUploadedAttachments,
 } from "@/lib/attachments";
+import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -110,8 +110,6 @@ function toolProgressKey(callId: string | undefined, tool: string): string {
 
 const STREAM_FLUSH_INTERVAL_MS = 80;
 const TIMELINE_WINDOW_SIZE = 160;
-const SWARM_PROMPT_PREFIX =
-  "[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n";
 const GOAL_KICKOFF_PREFIX = [
   "Start working on this research goal now.",
   "Keep it research-only, use available tools when evidence is needed, add concrete evidence to the goal ledger, and keep going until the goal is complete, blocked, waiting for user input, or budget-limited.",
@@ -260,6 +258,7 @@ export function Agent() {
   const [visibleRowCount, setVisibleRowCount] = useState(TIMELINE_WINDOW_SIZE);
   const visibleRowsSessionRef = useRef<string | null>(null);
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [runtimeIdentity, setRuntimeIdentity] = useState<RuntimeIdentity>({});
 
   const messages = useAgentStore(s => s.messages);
@@ -523,6 +522,7 @@ export function Agent() {
   }, []);
 
   const loadSessionMessages = useCallback(async (sid: string, gen: number) => {
+    setHistoryError(null);
     try {
       const msgs = await api.getSessionMessages(sid);
       if (genRef.current !== gen) return;
@@ -667,12 +667,13 @@ export function Agent() {
       act().cacheSession(sid, agentMsgs);
       setRuntimeIdentity(latestRuntimeIdentity ?? {});
       scheduleHistoryScroll();
-    } catch {
+    } catch (error) {
       if (genRef.current !== gen) return;
       setRuntimeIdentity({});
       act().setSessionLoading(false);
+      setHistoryError(error instanceof Error ? error.message : t("settings.unknownError"));
     }
-  }, [scheduleHistoryScroll]);
+  }, [scheduleHistoryScroll, t]);
 
   const refreshSessionMessages = useCallback(async (sid: string) => {
     const gen = genRef.current + 1;
@@ -1341,6 +1342,7 @@ export function Agent() {
       doDisconnect();
       setRuntimeIdentity({});
       setGroundingRevision(null);
+      setHistoryError(null);
       setLiveItems([]);
       liveRuntimeRef.current?.resetSession();
       if (curSid && curMsgs.length > 0) cacheSession(curSid, curMsgs);
@@ -1421,6 +1423,13 @@ export function Agent() {
     attachments: ComposerAttachment[] = [],
   ) => {
     if ((!prompt.trim() && attachments.length === 0) || status === "streaming") return;
+    const finalPrompt = buildChatPrompt(prompt, attachments, Boolean(swarmPreset));
+    const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
+    if (promptExceedsLimit(goalComposerActive ? prompt : finalPrompt, limit)) {
+      toast.error(t('agent.messageTooLong', { limit: limit.toLocaleString() }));
+      composerRef.current?.fill(prompt);
+      return;
+    }
     clearStreamingView();
 
     if (goalComposerActive) {
@@ -1458,7 +1467,6 @@ export function Agent() {
       return;
     }
 
-    let finalPrompt = prompt;
     const displayPrompt = toDisplayPrompt(prompt);
     const messageMeta: AgentMessageMeta = { ...displayPrompt.meta };
 
@@ -1466,12 +1474,10 @@ export function Agent() {
     if (swarmPreset) {
       messageMeta.swarmMode = true;
       setSwarmPreset(null);
-      finalPrompt = `${SWARM_PROMPT_PREFIX}${prompt}`;
     }
 
     if (attachments.length > 0) {
       messageMeta.attachments = attachments.map(({ filename }) => ({ filename }));
-      finalPrompt = prependUploadedAttachments(finalPrompt, attachments);
     }
     messageMeta.requestText = finalPrompt;
     act().addMessage({
@@ -1504,7 +1510,8 @@ export function Agent() {
     } catch (error) {
       archiveActivity("failed");
       act().setStatus("error");
-      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE : t('agent.failedToSend');
+      const message = isAuthRequiredError(error) ? AUTH_REQUIRED_MESSAGE
+        : error instanceof ApiError && ['message_too_long', 'network_error', 'request_timeout'].includes(error.code || '') ? error.message : t('agent.failedToSend');
       toast.error(message);
       act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
     }
@@ -1780,6 +1787,16 @@ export function Agent() {
         runtimeModel={visibleRuntimeIdentity.model}
         runtimeReasoningEffort={visibleRuntimeIdentity.reasoningEffort}
       />
+      {historyError && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs">
+          <span>{t("layout.sessionsLoadFailed")} {historyError}</span>
+          <button type="button" onClick={() => {
+            if (!sessionId) return;
+            act().setSessionLoading(true);
+            void refreshSessionMessages(sessionId);
+          }} className="ms-auto rounded-md border px-2 py-1">{t("connection.retry")}</button>
+        </div>
+      )}
       <div
         ref={listRef}
         data-streaming={status === "streaming" ? "true" : undefined}
@@ -1804,7 +1821,7 @@ export function Agent() {
               ))}
             </div>
           )}
-          {!sessionLoading && messages.length === 0 && (
+          {!sessionLoading && !historyError && messages.length === 0 && (
             // my-auto (not justify-*) centers the hero vertically while staying
             // scroll-reachable once the example library expands past the viewport.
             <div className="msg-enter my-auto">

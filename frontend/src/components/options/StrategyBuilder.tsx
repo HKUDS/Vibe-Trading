@@ -180,54 +180,63 @@ export function StrategyBuilder({
       <div className="mt-4 mb-2 text-xs font-medium text-muted-foreground">{t("options.builder.parameters")}</div>
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">{t("options.builder.entrySpot")}</label>
+          <label htmlFor="option-entry_spot" className="text-[11px] text-muted-foreground">{t("options.builder.entrySpot")}</label>
           <input
             type="number"
             min={0}
             step="any"
+            id="option-entry_spot"
             value={Number.isFinite(params.entry_spot) ? params.entry_spot : ""}
             onChange={(e) => setParam({ entry_spot: parseFloat(e.target.value) })}
             className={cn(INPUT_CLS, "tabular-nums")}
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">{t("options.builder.expiryDays")}</label>
+          <label htmlFor="option-expiry_days" className="text-[11px] text-muted-foreground">{t("options.builder.expiryDays")}</label>
           <input
             type="number"
             min={0}
             step={1}
+            id="option-expiry_days"
             value={Number.isFinite(params.expiry_days) ? params.expiry_days : ""}
             onChange={(e) => setParam({ expiry_days: parseFloat(e.target.value) })}
             className={cn(INPUT_CLS, "tabular-nums")}
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">{t("options.builder.volatility")}</label>
+          <label htmlFor="option-volatility_pct" className="text-[11px] text-muted-foreground">{t("options.builder.volatility")}</label>
           <input
             type="number"
             min={0}
             step="any"
+            id="option-volatility_pct"
             value={Number.isFinite(params.volatility_pct) ? params.volatility_pct : ""}
             onChange={(e) => setParam({ volatility_pct: parseFloat(e.target.value) })}
             className={cn(INPUT_CLS, "tabular-nums")}
           />
         </div>
+      </div>
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs text-muted-foreground">{t("analysis.advancedParameters")}</summary>
+        <div className="mt-3 grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">{t("options.builder.riskFreeRate")}</label>
+          <label htmlFor="option-risk_free_rate_pct" className="text-[11px] text-muted-foreground">{t("options.builder.riskFreeRate")}</label>
           <input
             type="number"
             step="any"
+            id="option-risk_free_rate_pct"
             value={Number.isFinite(params.risk_free_rate_pct) ? params.risk_free_rate_pct : ""}
             onChange={(e) => setParam({ risk_free_rate_pct: parseFloat(e.target.value) })}
             className={cn(INPUT_CLS, "tabular-nums")}
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">{t("options.builder.multiplier")}</label>
+          <label htmlFor="option-multiplier" className="text-[11px] text-muted-foreground">{t("options.builder.multiplier")}</label>
           <input
             type="number"
             min={0}
             step="any"
+            id="option-multiplier"
             value={Number.isFinite(params.multiplier) ? params.multiplier : ""}
             onChange={(e) => setParam({ multiplier: parseFloat(e.target.value) })}
             className={cn(INPUT_CLS, "tabular-nums")}
@@ -235,17 +244,20 @@ export function StrategyBuilder({
           <span className="text-[10px] text-muted-foreground/70">{t("options.builder.multiplierHint")}</span>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] text-muted-foreground">{t("options.builder.commissionRate")}</label>
+          <label htmlFor="option-commission_rate_pct" className="text-[11px] text-muted-foreground">{t("options.builder.commissionRate")}</label>
           <input
             type="number"
             min={0}
             step="any"
+            id="option-commission_rate_pct"
             value={Number.isFinite(params.commission_rate_pct) ? params.commission_rate_pct : ""}
             onChange={(e) => setParam({ commission_rate_pct: parseFloat(e.target.value) })}
             className={cn(INPUT_CLS, "tabular-nums")}
           />
         </div>
       </div>
+
+      </details>
 
       {!inputsValid && (
         <p className="mt-3 rounded border border-warning/30 bg-warning/5 p-2 text-xs text-warning">

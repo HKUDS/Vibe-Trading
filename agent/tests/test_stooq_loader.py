@@ -18,6 +18,7 @@ import pytest
 import requests
 
 from backtest.loaders import stooq_loader
+from tests.loader_contract import assert_loader_contract
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +115,7 @@ class TestFetch:
         assert isinstance(df.index, pd.DatetimeIndex)
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         # Sorted ascending: 01-02 before 01-03.
+        assert_loader_contract(df, context="canonical frame")
         assert list(df.index) == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")]
         assert df.loc[pd.Timestamp("2024-01-02"), "open"] == pytest.approx(187.15)
         assert df.loc[pd.Timestamp("2024-01-03"), "close"] == pytest.approx(184.25)

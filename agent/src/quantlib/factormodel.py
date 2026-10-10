@@ -507,6 +507,10 @@ def portfolio_style_exposure(
     if exposures.shape[1] == 0:
         raise ValueError("exposures has no factor columns")
 
+    # A row missing any factor cannot describe this asset's style. Exclude
+    # it as a whole and report its absolute weight rather than summing NaNs
+    # into an apparently measured zero exposure.
+    exposures = exposures.loc[np.isfinite(exposures.to_numpy(dtype=float)).all(axis=1)]
     matched = weights.index.intersection(exposures.index)
     unmatched_weight = float(weights.drop(matched).abs().sum())
     result = exposures.loc[matched].mul(weights.loc[matched], axis=0).sum()

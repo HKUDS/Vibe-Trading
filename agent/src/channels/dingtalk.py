@@ -191,6 +191,7 @@ class DingTalkChannel(BaseChannel):
     name = "dingtalk"
     display_name = "DingTalk"
     supports_connection_test = True
+    hot_reload_noop_keys = frozenset({"allow_from"})
     _ZIP_BEFORE_UPLOAD_EXTS = {".htm", ".html"}
 
     @classmethod

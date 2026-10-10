@@ -19,7 +19,6 @@ import pandas as pd
 
 from backtest.models import Position
 
-
 # ── Symbol -> market classification (shared by runner.py + composite.py) ──
 
 # Known Chinese-futures product codes — used as a heuristic when a symbol
@@ -29,14 +28,59 @@ from backtest.models import Position
 # before lookup so callers can pass any case (``RB2410`` and ``rb2410``
 # both resolve correctly).
 _CN_FUTURES_PRODUCTS = {
-    "if", "ic", "ih", "im", "t", "tf", "ts", "tl",
-    "au", "ag", "cu", "al", "zn", "pb", "ni", "sn", "ss",
-    "rb", "hc", "i", "j", "jm",
-    "sc", "fu", "lu", "bu", "nr",
-    "c", "cs", "m", "y", "a", "p", "jd", "lh",
-    "cf", "sr", "ta", "ma", "ap", "rm", "oi",
-    "pp", "l", "v", "eg", "eb", "pf", "sa", "fg", "ur",
-    "si", "lc",
+    "if",
+    "ic",
+    "ih",
+    "im",
+    "t",
+    "tf",
+    "ts",
+    "tl",
+    "au",
+    "ag",
+    "cu",
+    "al",
+    "zn",
+    "pb",
+    "ni",
+    "sn",
+    "ss",
+    "rb",
+    "hc",
+    "i",
+    "j",
+    "jm",
+    "sc",
+    "fu",
+    "lu",
+    "bu",
+    "nr",
+    "c",
+    "cs",
+    "m",
+    "y",
+    "a",
+    "p",
+    "jd",
+    "lh",
+    "cf",
+    "sr",
+    "ta",
+    "ma",
+    "ap",
+    "rm",
+    "oi",
+    "pp",
+    "l",
+    "v",
+    "eg",
+    "eb",
+    "pf",
+    "sa",
+    "fg",
+    "ur",
+    "si",
+    "lc",
 }
 
 
@@ -85,7 +129,13 @@ _MARKET_PATTERNS = [
     (re.compile(r"^[A-Z]{2,}(?:USDT|USDC|BUSD)$", re.I), "crypto"),
     # China futures: product+delivery.exchange (e.g. IF2406.CFFEX, rb2410.SHFE)
     # Tushare suffix spellings (SHF/CZC/CFX/GFE) classify here too.
-    (re.compile(r"^[A-Za-z]{1,2}\d{3,4}\.(ZCE|DCE|SHFE|INE|CFFEX|GFEX|SHF|CZC|CFX|GFE)$", re.I), "futures"),
+    (
+        re.compile(
+            r"^[A-Za-z]{1,2}\d{3,4}\.(ZCE|DCE|SHFE|INE|CFFEX|GFEX|SHF|CZC|CFX|GFE)$",
+            re.I,
+        ),
+        "futures",
+    ),
     # Global futures: product+month-code (e.g. ESZ4, CLF25, GCM2025)
     (re.compile(r"^[A-Z]{2,4}[FGHJKMNQUVXZ]\d{1,2}$", re.I), "futures"),
     # Global futures: product+YYMM (e.g. CL2412, ES2503)
@@ -101,16 +151,22 @@ _MARKET_PATTERNS = [
     # futures venue already proves the class: CBOT lists single-letter grains
     # (C, S, W, O), which ``^[A-Z]{2,4}\d{4}$`` cannot express without also
     # claiming bare codes it has no venue to justify.
-    (re.compile(
-        r"^[A-Z]{1,4}(?:[FGHJKMNQUVXZ]\d{1,2}|\d{4})\.(CME|CBOT|NYMEX|COMEX|ICE|EUREX)$",
-        re.I,
-    ), "futures"),
+    (
+        re.compile(
+            r"^[A-Z]{1,4}(?:[FGHJKMNQUVXZ]\d{1,2}|\d{4})\.(CME|CBOT|NYMEX|COMEX|ICE|EUREX)$",
+            re.I,
+        ),
+        "futures",
+    ),
     # China futures: main continuous contract (RB0, IF0, MA0). Dated contracts
     # live ~240 trading days (RB2601 measured at 242), so any backtest longer
     # than a contract cycle has to name the rolled series. It fell through to
     # the a_share default, which put a leveraged futures series under T+1 and
     # no shorting, and kept it out of the futures loader chain entirely.
     (re.compile(_CN_FUTURES_MAIN_PATTERN, re.I), "futures"),
+    # Known crypto bases quoted in USD must precede the generic XXX/YYY FX rule.
+    # ETH/USD is the public correlation API spelling; fiat GBP/USD remains FX.
+    (re.compile(r"^(?:BTC|ETH|BNB|SOL|ADA|DOGE)/USD$", re.I), "crypto"),
     # Forex pairs: XXX/YYY or XXXXXX.FX
     (re.compile(r"^[A-Z]{3}/[A-Z]{3}$"), "forex"),
     (re.compile(r"^[A-Z]{6}\.FX$"), "forex"),
@@ -132,10 +188,13 @@ _MARKET_PATTERNS = [
     # never re-routed. The four metal codes are ISO 4217; the rest are G10
     # currencies. Length-only patterns (``^[A-Z]{6}$``) are deliberately
     # rejected — they over-match tickers like ``NFLXLI`` or ``AMZNLY``.
-    (re.compile(
-        r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$",
-        re.I,
-    ), "forex"),
+    (
+        re.compile(
+            r"^(?:XAU|XAG|XPT|XPD|EUR|GBP|JPY|CHF|CAD|AUD|NZD|USD)[A-Z]{3}$",
+            re.I,
+        ),
+        "forex",
+    ),
     # Yahoo index symbols (^SPX, ^NDX, ^FTSE, ^VIX, ...) — served verbatim,
     # same as the =F/=X conventions. Classified as their own market so they
     # never route through an equity/China chain or a cash currency. Kept from
@@ -221,7 +280,11 @@ def hk_counter_currency(code: str) -> str | None:
         return None
     number = int(match.group(1))
     return next(
-        (cur for low, high, cur in _HK_COUNTER_CURRENCY_RANGES if low <= number <= high),
+        (
+            cur
+            for low, high, cur in _HK_COUNTER_CURRENCY_RANGES
+            if low <= number <= high
+        ),
         "HKD",
     )
 
@@ -258,6 +321,7 @@ def code_currency(code: str) -> str:
         exchange = code.upper().rpartition(".")[2]
         return _FUTURES_EXCHANGE_CURRENCY.get(exchange, "USD")
     return f"UNKNOWN:{market}"
+
 
 def strip_local_prefix(code: str) -> str:
     """Return the instrument symbol behind a ``local:`` routing prefix.
@@ -348,6 +412,7 @@ def _detect_submarket(codes: List[str]) -> str:
         if upper.endswith(".L"):
             return "uk"
     return "us"
+
 
 # ── Crypto: OKX tiered maintenance margin table (simplified) ──
 
@@ -510,12 +575,22 @@ def check_crypto_liquidation(
 # ── Forex: swap tables ──
 
 _SWAP_LONG: dict[str, float] = {
-    "EUR/USD": -6.5, "GBP/USD": -3.0, "USD/JPY": 8.0, "USD/CHF": 4.0,
-    "AUD/USD": -2.0, "USD/CAD": 2.0, "NZD/USD": -1.5,
+    "EUR/USD": -6.5,
+    "GBP/USD": -3.0,
+    "USD/JPY": 8.0,
+    "USD/CHF": 4.0,
+    "AUD/USD": -2.0,
+    "USD/CAD": 2.0,
+    "NZD/USD": -1.5,
 }
 _SWAP_SHORT: dict[str, float] = {
-    "EUR/USD": 3.5, "GBP/USD": -1.0, "USD/JPY": -12.0, "USD/CHF": -8.0,
-    "AUD/USD": -1.0, "USD/CAD": -5.0, "NZD/USD": -2.0,
+    "EUR/USD": 3.5,
+    "GBP/USD": -1.0,
+    "USD/JPY": -12.0,
+    "USD/CHF": -8.0,
+    "AUD/USD": -1.0,
+    "USD/CAD": -5.0,
+    "NZD/USD": -2.0,
 }
 
 

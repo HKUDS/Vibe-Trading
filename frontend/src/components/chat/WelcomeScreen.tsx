@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem } from "lucide-react";
+import { ChevronDown, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem, Search, WalletCards } from "lucide-react";
 import { BrandMark } from "@/components/common/BrandMark";
 
 interface Example {
@@ -196,24 +196,19 @@ const GREETING_KEYS = {
 
 const QUICK_ACTIONS = [
   {
-    titleKey: "welcome.examples.valuationCheck",
-    promptKey: "welcome.examples.valuationCheckPrompt",
-    icon: <Gem className="h-4 w-4" aria-hidden="true" />,
+    titleKey: "welcome.tasks.research",
+    promptKey: "welcome.tasks.researchPrompt",
+    icon: <Search className="h-4 w-4" aria-hidden="true" />,
   },
   {
-    titleKey: "welcome.examples.optionsGreeks",
-    promptKey: "welcome.examples.optionsGreeksPrompt",
-    icon: <Sparkles className="h-4 w-4" aria-hidden="true" />,
-  },
-  {
-    titleKey: "welcome.examples.crossMarketPortfolio",
-    promptKey: "welcome.examples.crossMarketPortfolioPrompt",
+    titleKey: "welcome.tasks.backtest",
+    promptKey: "welcome.tasks.backtestPrompt",
     icon: <TrendingUp className="h-4 w-4" aria-hidden="true" />,
   },
   {
-    titleKey: "welcome.examples.investmentCommittee",
-    promptKey: "welcome.examples.investmentCommitteePrompt",
-    icon: <Users className="h-4 w-4" aria-hidden="true" />,
+    titleKey: "welcome.tasks.portfolio",
+    promptKey: "welcome.tasks.portfolioPrompt",
+    icon: <WalletCards className="h-4 w-4" aria-hidden="true" />,
   },
 ] as const;
 
@@ -255,6 +250,7 @@ export function WelcomeScreen({ onExample }: Props) {
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
             {t("welcome.taskSubtitle" as any)}
+            <span className="mt-2 block text-xs">{t("welcome.tasks.hint")}</span>
           </p>
         </div>
 

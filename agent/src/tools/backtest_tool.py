@@ -11,8 +11,10 @@ from backtest.loaders.registry import VALID_SOURCES
 from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
+from src.config.limits import TOOL_RESULT_LIMIT
 from src.core.runner import Runner
 from src.core.state import RunStateStore
+from src.tools.backtest_summary import collect_ohlcv_paths, try_build_backtest_summary
 from src.tools.path_utils import safe_run_dir
 
 
@@ -153,14 +155,51 @@ def run_backtest(run_dir: str) -> str:
 
     emit_progress("finalize", message="collecting artifacts")
     artifacts_found = {name: str(path) for name, path in result.artifacts.items()}
-    return json.dumps({
+    envelope: dict[str, Any] = {
         "status": "ok" if result.success else "error",
         "exit_code": result.exit_code,
         "stdout": result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout,
         "stderr": result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr,
         "artifacts": artifacts_found,
         "run_dir": run_dir,
-    }, ensure_ascii=False)
+    }
+    if result.success:
+        # Small envelopes retain the legacy fields unchanged. Oversized
+        # envelopes are fitted below with explicit omission notices. A missing
+        # or corrupt run card never turns a successful run into an error.
+        ohlcv_paths = collect_ohlcv_paths(run_path)
+        artifacts_found["ohlcv"] = ohlcv_paths
+        summary = try_build_backtest_summary(run_path, ohlcv_paths)
+        if summary is not None:
+            envelope["summary"] = summary
+    return _serialize_result(envelope)
+
+
+def _serialize_result(envelope: dict[str, Any]) -> str:
+    """Keep structured results usable through the agent's delivery cap."""
+    def encode() -> str:
+        return json.dumps(envelope, ensure_ascii=False)
+
+    if len(encode()) <= TOOL_RESULT_LIMIT:
+        return encode()
+    for key in ("stdout", "stderr"):
+        if envelope.get(key):
+            envelope[key] = ""
+            envelope["logs_omitted"] = "Read the run logs for full stdout/stderr."
+    summary = envelope.get("summary")
+    if isinstance(summary, dict):
+        points = summary.get("equity_preview", [])
+        while len(encode()) > TOOL_RESULT_LIMIT and len(points) > 2:
+            count = max(2, len(points) // 2)
+            points = [points[i * (len(points) - 1) // (count - 1)] for i in range(count)]
+            summary["equity_preview"] = points
+        if len(encode()) > TOOL_RESULT_LIMIT:
+            envelope.pop("summary")
+            envelope["summary_omitted"] = "Summary exceeds the result budget; inspect run_card.json locally or use read_run_artifact in meta mode."
+    if len(encode()) > TOOL_RESULT_LIMIT:
+        envelope["artifacts"] = {}
+        envelope["artifacts_omitted"] = "Artifact paths exceed the result budget; inspect the run directory with read_file."
+    return encode()
 
 
 class BacktestTool(BaseTool):

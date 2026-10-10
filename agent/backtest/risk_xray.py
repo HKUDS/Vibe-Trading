@@ -150,7 +150,10 @@ def compute_risk_xray(
             "fewer than 2 shared trading days after aligning calendars across symbols"
         )
 
-    returns = aligned.pct_change(fill_method=None).dropna(how="any")
+    # Compute each one-bar return before dropping incomplete shared dates.
+    # Otherwise an interior missing close becomes a multi-bar move presented
+    # as one observation and distorts volatility and tail risk.
+    returns = frame[kept].pct_change(fill_method=None).dropna(how="any")
     if returns.empty:
         raise ValueError("no overlapping return observations across symbols")
 

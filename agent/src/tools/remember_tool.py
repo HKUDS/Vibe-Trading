@@ -21,7 +21,7 @@ class RememberTool(BaseTool):
         "Persistent cross-session memory. "
         "save: store user preferences, strategy insights, or project context. "
         "recall: search past memories by keyword. "
-        "forget: remove a memory by title. "
+        "forget: remove a memory by title or filename stem. "
         "reinforce: provide quality feedback on a memory."
     )
     is_readonly = False
@@ -35,7 +35,7 @@ class RememberTool(BaseTool):
             },
             "title": {
                 "type": "string",
-                "description": "Memory title (for save/forget)",
+                "description": "Memory title (save), or title/filename stem (forget)",
             },
             "content": {
                 "type": "string",

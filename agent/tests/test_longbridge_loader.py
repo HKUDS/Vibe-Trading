@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import longbridge as loader_mod
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.base import NoAvailableSourceError
 from src.trading.connectors.longbridge import credentials as lb_credentials
 
@@ -249,6 +250,7 @@ def test_fetch_combines_all_windows_and_caches_complete_frame(
     ]
     assert list(result) == ["AAPL"]
     assert len(result["AAPL"]) == 2
+    assert_loader_contract(result["AAPL"], context="longbridge daily")
     assert len(cached) == 1
     pd.testing.assert_frame_equal(cached[0], result["AAPL"])
 

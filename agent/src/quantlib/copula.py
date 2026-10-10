@@ -200,7 +200,11 @@ def gaussian_copula_cdf(u: float, v: float, rho: float) -> float:
     z1 = float(norm.ppf(u))
     z2 = float(norm.ppf(v))
     cov = [[1.0, rho], [rho, 1.0]]
-    val = multivariate_normal.cdf([z1, z2], mean=[0.0, 0.0], cov=cov)
+    # Near-perfect valid correlations can be numerically rank deficient under
+    # SciPy's tolerance. This covariance remains positive semidefinite.
+    val = multivariate_normal.cdf(
+        [z1, z2], mean=[0.0, 0.0], cov=cov, allow_singular=True
+    )
     return float(val)
 
 
@@ -235,6 +239,10 @@ def fit_copula_from_tau(tau: float, family: Literal["clayton", "gumbel", "gaussi
             raise ValueError("Gaussian copula requires tau in (-1, 1)")
         # Greiner's relation: rho = sin(pi/2 * tau)
         rho = float(math.sin(math.pi * 0.5 * tau))
+        # sin rounds to an exact endpoint for some valid interior tau values.
+        # Preserve the strict open interval required by gaussian_copula_cdf.
+        if abs(rho) == 1.0:
+            rho = math.nextafter(rho, 0.0)
         return {"family": "gaussian", "rho": rho, "tau": tau, "lambda_lower": 0.0, "lambda_upper": 0.0}
     else:
         raise ValueError(f"Unsupported family: {family}")

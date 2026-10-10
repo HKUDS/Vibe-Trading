@@ -15,6 +15,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import eastmoney_client
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.eastmoney_loader import DataLoader, _to_compact_date
 
 
@@ -98,6 +99,7 @@ class TestFetchWithMockedClient:
         df = out["600519.SH"]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
+        assert_loader_contract(df, context="canonical frame")
         assert isinstance(df.index, pd.DatetimeIndex)
         assert df.index.is_monotonic_increasing
         assert len(df) == 2

@@ -40,10 +40,8 @@ def _fake_loader(codes: list[str]) -> object:
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, codes: list[str], sectors: dict[str, str]) -> None:
-    import backtest.loaders.registry as registry
-
     monkeypatch.setattr(tool, "_fetch_sp500_constituents", lambda: (codes, sectors))
-    monkeypatch.setattr(registry, "resolve_loader", lambda _market: _fake_loader(codes))
+    monkeypatch.setattr("src.market_data.get_loader", lambda _source: lambda: _fake_loader(codes))
 
 
 def test_sector_frame_matches_the_close_frame(monkeypatch: pytest.MonkeyPatch) -> None:

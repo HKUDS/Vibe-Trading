@@ -37,7 +37,7 @@ from src.factors.registry import (
     SkipAlpha,
     get_default_registry,
 )
-from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel
+from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel, _prepare_bench_panel, _validate_bench_data_requirements
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +142,7 @@ def run_bench(
     on_progress: ProgressCb | None = None,
     registry: Registry | None = None,
     only: Iterable[str] | None = None,
+    on_stage: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Run a bench end-to-end and return the API-shaped summary.
 
@@ -193,6 +194,9 @@ def run_bench(
             return entry
 
     try:
+        _validate_bench_data_requirements(reg, alpha_ids, universe)
+        if on_stage:
+            on_stage("loading_data")
         panel = _load_universe_panel(universe, period)
     except (ValueError, NotImplementedError, RuntimeError) as exc:
         entry["status"] = "error"
@@ -201,6 +205,9 @@ def run_bench(
         return entry
 
     try:
+        panel = _prepare_bench_panel(reg, alpha_ids, panel, universe, period)
+        if on_stage:
+            on_stage("preparing_returns")
         return_df = _compute_forward_returns(panel)
     except Exception as exc:  # noqa: BLE001
         entry["status"] = "error"
@@ -211,6 +218,8 @@ def run_bench(
     rows: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     n_total = len(alpha_ids)
+    if on_stage:
+        on_stage("computing")
 
     try:
         n_workers = get_env_config().agent_tuning.vibe_trading_bench_workers or os.cpu_count() or 1

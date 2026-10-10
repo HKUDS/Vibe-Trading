@@ -23,8 +23,8 @@ jobs:
           python-version: '3.11'
           cache: pip
       - name: Install isolated public-source dependencies
-        # mootdx requires an older httpx than the application; do not install
-        # these optional SDKs into the application's dependency environment.
+        # These optional SDKs are pinned tighter than the application's stack;
+        # do not install them into the application's dependency environment.
         run: |
           python -m venv "$RUNNER_TEMP/loader-health-venv"
           "$RUNNER_TEMP/loader-health-venv/bin/python" -m pip install -r tools/requirements-loader-health.txt

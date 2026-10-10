@@ -149,7 +149,10 @@ def _to_plain_number(text: str, decimal_separator: str | None) -> str:
     Raises:
         ValueError: If the value uses a single comma whose role cannot be
             determined -- ``"1,234"`` is 1234 in a US export and 1.234 in a
-            European one, and the data cannot say which.
+            European one, and the data cannot say which. The same applies to
+            a single dot followed by exactly three digits -- ``"12.000"`` is
+            12 in a US export and 12000 in a European one, since European
+            grouping always groups digits in threes.
     """
     if decimal_separator is not None:
         grouping = "," if decimal_separator == "." else "."
@@ -169,6 +172,17 @@ def _to_plain_number(text: str, decimal_separator: str | None) -> str:
             f"{text!r} uses a single comma and could be either "
             f"{text.replace(',', '')} (comma groups thousands) or "
             f"{text.replace(',', '.')} (comma is the decimal separator); pass "
+            "decimal_separator='.' or decimal_separator=',' to say which"
+        )
+    dot_tail = text.rpartition(".")[2]
+    if has_dot and text.count(".") == 1 and len(dot_tail) == 3 and dot_tail.isdigit():
+        # A lone dot followed by anything other than exactly three digits can
+        # only be a decimal point -- European grouping never uses a group of
+        # that width. Three digits is where it turns genuinely ambiguous.
+        raise ValueError(
+            f"{text!r} uses a single dot followed by three digits and could "
+            f"be either {text.replace('.', '')} (dot groups thousands) or "
+            f"{text} (dot is the decimal separator); pass "
             "decimal_separator='.' or decimal_separator=',' to say which"
         )
     return text

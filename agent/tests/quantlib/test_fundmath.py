@@ -1079,6 +1079,36 @@ def test_american_waterfall_refuses_a_non_mapping():
         american_waterfall([("only", None)], preferred_rate=0.08, carry_rate=0.20)
 
 
+def test_american_waterfall_refuses_a_bare_date_as_of():
+    """A bare date is out of contract (as_of is deal_id -> date). Silently
+    treating it as None would accrue the preferred to each deal's own latest
+    flow date while looking like the override was honored.
+    """
+    series = make_series(
+        [("2020-01-01", -100.0, "capital_call"), ("2021-01-01", 150.0, "distribution")]
+    )
+    with pytest.raises(TypeError, match="as_of"):
+        american_waterfall(
+            {"A": series}, preferred_rate=0.08, carry_rate=0.20, as_of=dt.date(2024, 1, 1)
+        )
+
+
+def test_american_waterfall_honors_as_of_per_deal():
+    """100 contributed on 2020-01-01 at an 8% pref, measured to 2024-01-01
+    (1461 days), owes 100 * (1.08 ** (1461 / 365) - 1) = 36.0776 of preferred.
+    """
+    series = make_series(
+        [("2020-01-01", -100.0, "capital_call"), ("2021-01-01", 150.0, "distribution")]
+    )
+    result = american_waterfall(
+        {"A": series},
+        preferred_rate=0.08,
+        carry_rate=0.20,
+        as_of={"A": dt.date(2024, 1, 1)},
+    )
+    assert result.deals["A"].preferred_amount == pytest.approx(36.07758522909388)
+
+
 def test_american_waterfall_refuses_mixed_currencies():
     deals = {
         "A": make_series(

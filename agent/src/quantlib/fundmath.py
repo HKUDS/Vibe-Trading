@@ -2047,17 +2047,25 @@ def american_waterfall(
         An :class:`AmericanWaterfallResult` aggregating every deal.
 
     Raises:
-        TypeError: If ``deals`` is not a mapping, or a value is not a
-            ``CashFlowSeries``.
+        TypeError: If ``deals`` is not a mapping, a value is not a
+            ``CashFlowSeries``, or ``as_of`` is neither a mapping nor None.
         ValueError: If ``deals`` is empty, spans more than one currency, or
             any deal raises the errors :func:`european_waterfall` already
             documents (bad rate, contribution after ``as_of``, sign-
             convention violation, and so on).
     """
     deals = _validate_deals(deals)
+    if as_of is not None and not isinstance(as_of, Mapping):
+        # A bare date silently fell back to per-deal latest-flow accrual here,
+        # which reads like an honored override. Refuse it like a bad `deals`.
+        raise TypeError(
+            "as_of must be a mapping of deal_id -> date, or None; got "
+            f"{type(as_of).__name__}. Pass a single date per deal as "
+            "{deal_id: date}, or None to accrue to each deal's latest flow date."
+        )
     per_deal: dict[str, WaterfallResult] = {}
     for deal_id, series in deals.items():
-        deal_as_of = as_of.get(deal_id) if isinstance(as_of, Mapping) else None
+        deal_as_of = as_of.get(deal_id) if as_of is not None else None
         per_deal[deal_id] = european_waterfall(
             series,
             preferred_rate=preferred_rate,

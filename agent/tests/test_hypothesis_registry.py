@@ -151,6 +151,19 @@ def test_search_by_text_and_status(storage_path: Path) -> None:
     assert status_results[0].title == "Dividend drift"
 
 
+def test_search_limit_zero_returns_no_results(storage_path: Path) -> None:
+    registry = HypothesisRegistry()
+    registry.create(
+        title="Funding squeeze",
+        thesis="Crowded negative funding predicts squeeze.",
+        status="testing",
+        universe="Crypto perps",
+    )
+
+    assert registry.search(query="funding", limit=0) == []
+    assert registry.search(query="funding", limit=-5) == []
+
+
 def test_tool_wrappers_use_env_isolated_storage(storage_path: Path) -> None:
     created = json.loads(CreateHypothesisTool().execute(
         title="Tool-created carry",

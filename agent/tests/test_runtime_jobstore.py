@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -68,6 +70,32 @@ def test_save_is_atomic_no_temp_left_behind(live_runtime: Path) -> None:
     store.save([_job()])
     leftovers = list(runtime_dir().glob(".*tmp"))
     assert leftovers == [], f"temp files leaked: {leftovers}"
+
+
+def test_save_completes_short_writes(live_runtime, monkeypatch) -> None:
+    store = JobStore()
+    real_write = os.write
+    monkeypatch.setattr("src.live.runtime.jobstore.os.write", lambda fd, data: real_write(fd, data[:7]))
+    store.save([_job("full-payload")])
+    assert [job.id for job in store.load()] == ["full-payload"]
+
+
+def test_concurrent_saves_use_distinct_temporary_files(live_runtime, monkeypatch) -> None:
+    store = JobStore()
+    barrier = Barrier(2)
+    real_replace = os.replace
+
+    def replace(src, dst):
+        barrier.wait(timeout=2)
+        real_replace(src, dst)
+
+    monkeypatch.setattr("src.live.runtime.jobstore.os.replace", replace)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [pool.submit(store.save, [_job(name)]) for name in ("a", "b")]
+        for result in results:
+            result.result(timeout=3)
+    assert store.load()[0].id in {"a", "b"}
+    assert list(runtime_dir().glob(".*tmp")) == []
 
 
 def test_save_overwrites_in_place(live_runtime: Path) -> None:

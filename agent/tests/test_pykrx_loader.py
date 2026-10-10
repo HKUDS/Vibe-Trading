@@ -21,6 +21,7 @@ import pytest
 
 from backtest.loaders import pykrx_loader as mod
 from backtest.loaders.pykrx_loader import DataLoader, _normalize, map_symbol
+from tests.loader_contract import assert_loader_contract
 
 
 class TestMapSymbol:
@@ -56,6 +57,7 @@ class TestNormalize:
     def test_renames_sorts_and_selects_ohlcv(self) -> None:
         out = _normalize(_pykrx_frame())
         assert out is not None
+        assert_loader_contract(out, context="pykrx normalized")
         assert list(out.columns) == ["open", "high", "low", "close", "volume"]
         assert out.index.name == "trade_date"
         assert out.index.is_monotonic_increasing

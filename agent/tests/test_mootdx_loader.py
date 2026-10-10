@@ -9,6 +9,7 @@ import pytest
 
 import backtest.loaders.mootdx_loader as ml
 from backtest.loaders.mootdx_loader import DataLoader, _is_a_share, _is_bj
+from tests.loader_contract import assert_loader_contract
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +111,7 @@ def test_fetch_daily_uses_get_k_data(fake_client: _FakeStdQuotes) -> None:
     df = out["000001.SZ"]
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
     assert df.index.name == "trade_date"
+    assert_loader_contract(df, context="mootdx daily")
     assert len(df) == 3
     # Symbol stripping: SDK called with bare 6-digit code.
     assert any(call[0] == "get_k_data" and call[1] == "000001" for call in fake_client.calls)
@@ -228,15 +230,16 @@ def test_is_available_true_when_mootdx_present(fake_client: _FakeStdQuotes) -> N
 # ---------------------------------------------------------------------------
 
 
-def test_registry_lists_mootdx_in_a_share_chain() -> None:
+def test_registry_keeps_mootdx_registered_but_off_default_chain() -> None:
     from backtest.loaders.registry import FALLBACK_CHAINS, _ensure_registered, LOADER_REGISTRY
 
     _ensure_registered()
     assert "mootdx" in LOADER_REGISTRY
     chain = FALLBACK_CHAINS["a_share"]
-    assert "mootdx" in chain
+    # Retired from the default chain 2026-10: TDX servers stopped answering the
+    # client protocol (#1729, mootdx/mootdx#157). The loader stays registered so
+    # explicit source="mootdx" keeps working, but auto fallback never picks it.
+    assert "mootdx" not in chain
     # Order is by IP-ban risk: throttle-tolerant public/no-auth sources lead,
-    # key-gated REST trails. So mootdx (TCP, no auth) > akshare (HTTP scrape) >
-    # tushare (key-gated REST, placed last).
-    assert chain.index("mootdx") < chain.index("akshare")
+    # key-gated REST trails. So akshare (HTTP scrape) > tushare (key-gated REST).
     assert chain.index("akshare") < chain.index("tushare")

@@ -10,6 +10,46 @@ For general project setup (`pip install -e ".[dev]"`, dev servers,
 `pytest --ignore=agent/tests/e2e_backtest`), see the README. For bug reports
 and feature requests, use the GitHub issue templates.
 
+The Web UI bounds API requests (including reading the response body) to two
+minutes by default. Set `VITE_API_TIMEOUT_MS` in `frontend/.env.local` before
+starting Vite or building the frontend to change this limit. Conversation-list
+requests use at most 15 seconds so an unavailable backend shows a connection
+error and a retry action promptly. Timed-out writes are never retried
+automatically: the server may still be processing them, so check the current
+state before repeating an action. These limits do not interrupt an accepted
+agent run or its SSE stream. Factor submissions are the exception to the write
+retry rule: the Web UI reuses a request ID, and the server returns the existing
+job for an identical submission instead of starting another worker.
+
+## Specialized analysis
+
+In Factor Research, select one factor to evaluate only that factor, or several
+to compare them. The full-zoo benchmark remains available; its result display
+limit does not reduce computation. Readiness labels check configuration and
+installed dependencies, not provider availability. CSI 300 requires Tushare
+credentials and access; fundamental factors use US SEC data with point-in-time
+filing dates and require the S&P 500 universe. Results report observed coverage,
+missing symbols and current-constituent survivorship bias. A first large-universe
+download can take minutes; later evaluations reuse the existing panel cache.
+
+Analysis drafts and completed results survive navigation and reload in the same
+browser tab. Factor progress reports data loading separately from computation;
+Reconnect resumes the existing job or repeats its identical request ID. Running
+jobs remain process-local: a server restart loses them, and completed server
+snapshots expire after one hour when pruned. Completed results already stored in
+the browser tab remain readable. Correlation matrix and regime analysis share
+one price snapshot, report the actual overlapping sample and preserve either
+successful result if the other cannot run. Options analysis marks old results
+while parameters change, cancels superseded payoff requests and loads the
+contract chain only when expanded.
+
+Market-data fallback retries only symbols still missing, including empty frames
+after resampling. Unavailable results include sanitized source attempts and
+recovery actions; inspect symbol, venue, date range, interval, credentials and
+optional dependencies before retrying. Explicit-only sources retain their
+existing currency and fallback boundaries. Missing observations are never
+replaced with invented prices or financial fields.
+
 For AI-assisted or automation-assisted contributions, also see
 [`AGENT_CONTRIBUTOR_GUIDE.md`](AGENT_CONTRIBUTOR_GUIDE.md). It summarizes safe
 local checks, higher-risk broker/MCP/credential surfaces, and the expected PR
@@ -137,6 +177,45 @@ merging. Authors are strongly encouraged to self-check first.
 5. Open a PR. Every commit must include `Signed-off-by:` (use
    `git commit -s`). Reviewers will walk the checklist above.
 
+## Adding a Channel (Quickstart)
+
+Channels ship through one authoring contract; the Web UI renders any channel's
+configuration with no per-channel frontend code.
+
+1. Create `agent/src/channels/<name>.py` with a `BaseChannel` subclass:
+   implement `start`, `stop`, and `send` (abstract), and `default_config()`
+   returning the stored config shape. The registry (`src/channels/registry.py`)
+   auto-discovers the module; delivery receipts, retries and manager wiring come
+   from the base class and manager.
+2. Field metadata lives in `agent/src/channels/config_meta.py`. Hand-written
+   `FIELD_HINTS[name]` entries supply labels and authoritative secret flags;
+   channels without hand-written hints derive them from `default_config()` with
+   type inference. Stored keys without a hand-written declaration use the
+   `SECRET_KEY_RE` fail-safe. Declared secret flags are authoritative, including
+   audited exceptions for benign path or timeout keys. If the platform has a credential endpoint, build the
+   connection probe on `token_probe.py` rather than writing a new client (see
+   `dingtalk_probe.py` for the pattern) and override `test_connection()`.
+   Declare `hot_reload_noop_keys` only for writable fields consumed live from
+   `self.config`. Such edits are revalidated and applied without reconnecting;
+   connection settings and enable transitions still reload the adapter. A
+   computed field is not writable (Signal's policies live under `dm`/`group`).
+   Refresh copies only declared live fields into the current validated config,
+   preserving connection state resolved during login (such as WeChat's server
+   address). Do not replace the entire runtime config with the stored section.
+   The Web UI reports the apply outcome. A failed hot swap that requires a full
+   reset returns a bounded, sanitized reason and sends a best-effort notice to
+   the changed channel's last outbound chat.
+3. Run the authoring contract locally:
+   ```bash
+   pytest agent/tests/test_channel_authoring_contract.py -q
+   ```
+   It walks every discovered channel and fails when one breaks the recipe
+   (abstracts unset, scalar config keys with no field hint, or an uncovered
+   credential-shaped key that would leak unmasked into the form).
+4. Open a PR with `Signed-off-by:` on every commit. Dict-valued config (e.g.
+   per-group maps) stays file-configured by design; the generic form edits
+   text/password/bool/list widgets only.
+
 ## Code Style
 
 - Format with `black`; lint with `ruff` (config in `pyproject.toml`).
@@ -206,12 +285,13 @@ cd agent
 /tmp/vibe-loader-health-venv/bin/python -m backtest.loader_health --output /tmp/loader-health.json
 ```
 
-Use the isolated environment: mootdx's HTTP client requirement conflicts with
-the application's dependency range. The canary imports the checkout's loader
-code directly, without installing the full application dependency set.
+Use the isolated environment to keep optional SDK pins separate from the
+application's dependency range. The canary imports the checkout's loader code
+directly, without installing the full application dependency set.
 
-Each unauthenticated network loader has a liquid canary symbol; the local-file
-loader is explicitly excluded. Adding a public loader requires updating the
+Each active unauthenticated network loader has a liquid canary symbol. The
+local-file loader and retired mootdx source are explicitly excluded with a
+reason; mootdx remains available through explicit source selection. Adding a public loader requires updating the
 canary catalog, enforced by the offline test suite. Probes bypass the loader
 cache and run with a temporary home and no inherited credentials. Each source
 has a 120-second total subprocess deadline, including two attempts, and the

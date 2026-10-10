@@ -52,14 +52,27 @@
 
 > ⚠️ **보안 경고:** X 계정 `VibeTrading_HKU`, Virtuals 프로젝트 `101845`, 토큰 컨트랙트 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4`는 모두 Vibe-Trading 공식과 무관합니다. Vibe-Trading은 어떠한 토큰이나 밈코인도 발행하거나 공식적으로 지지한 적이 없습니다. 해당 토큰을 구매하거나 지갑을 연결하거나 어떠한 서명도 하지 마세요. [자세히 보기](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-09** 🛠️ **채널 설정 및 백테스트 수정**: 재연결 없는 설정 업데이트에서 URL 인증 정보와 WeChat 인증 후 서버 주소를 보존하며, 저장·재시작 결과를 웹에서 9개 언어로 표시합니다 ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). 여러 시장의 옵션 변동성은 각 시점까지 알려진 타임스탬프만 사용하고, 낙폭은 초기 자금을 반영합니다. 암호화폐·귀금속 데이터 경로, 홍콩 주식 중복 판별, 캐시 복구, 과학적 표기 금액 및 누락된 자산 값 검증을 수정했습니다. 기본 A주 경로에서 mootdx를 제외했습니다. 13개 PR은 [CHANGELOG](CHANGELOG.md)를 참조하세요.
+
+- **2026-10-08** 🔐 **PDF 보고서 비밀번호 보호와 증권사 조회 수정**: 예약 이메일 PDF에 AES-256 보호를 선택할 수 있으며 Web, CLI 및 에이전트 확인에 반영됩니다. 비밀번호는 비공개 채널 설정에만 저장합니다([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS는 세 거래 경로를 조회하고 명시적으로 만료된 토큰을 한 번만 갱신하며 불완전한 조회는 오류로 처리합니다([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). 설명 뒤의 전체 파생 수식을 보존하고 증거 검증을 유지합니다([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
+
+- **2026-10-07** 🛠️ **리서치 연속성과 위험 지표 수정**: 실행 상태를 시스템 프롬프트 밖으로 옮겨 안정적인 접두부를 유지합니다([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). 시장 간 날짜 정렬, 누락 가격 주변의 수익률, 전체 표본을 사용하는 옵션 Sortino 계산을 수정했습니다([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). 데이터 로더 테스트는 공통 OHLCV 계약을 사용하며 신용 평가, 스타일 노출, 순차 검증 및 감사 진단도 개선했습니다.
+
+<details>
+<summary>이전 뉴스</summary>
+
+- **2026-10-06** 🛠️ **실거래 제어와 보고서 수정**: 실거래 러너 중지는 현재 분석을 취소하고 스케줄러 종료를 기다리며 시작 중 취소와 API 종료도 처리합니다. 상태 시간의 단위도 수정했습니다([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). 긴급 취소·청산은 잘못된 레코드를 건너뛰고 나머지 주문과 포지션을 계속 처리합니다([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)). 증권사별 일정을 따로 저장하고 동시 쓰기와 부분 쓰기를 처리합니다. 미국 주식 단축 거래일의 조기 폐장 시간을 반영합니다([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). 보고서 수정은 검증된 수치를 유지하며 생략된 오류가 검증을 통과한 것처럼 안내하지 않습니다([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
+
+- **2026-10-05** 🛠️ **리서치 입력과 계산 수정**: 더 긴 리서치 입력을 지원하며 한도를 넘으면 현재 언어로 줄이도록 안내합니다([#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)). Sortino는 전체 기간의 하방 편차를 사용하고 그룹 검증은 겹치는 레이블을 제외합니다. 공분산 가중치, Wilder 초기 평균을 사용하는 RSI, 파일명으로 메모리 삭제도 개선했습니다. 잘못된 호출 별칭을 인용하면 수정할 수 있도록 실제 필드 참조를 안내하며 수치 검증 규칙은 유지합니다([#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)).
+
+- **2026-10-04** 🛠️ **예약 보고서와 리서치 흐름 개선**: 예약 작업을 편집하고 설정된 수신 대상을 선택할 수 있습니다. 이메일 보고서는 HTML 또는 PDF 첨부를 지원합니다([#1649](https://github.com/HKUDS/Vibe-Trading/pull/1649), [#1680](https://github.com/HKUDS/Vibe-Trading/pull/1680)).
+  백테스트에 구조화된 요약과 결과 파일 페이지 읽기를 추가했습니다([#1646](https://github.com/HKUDS/Vibe-Trading/pull/1646), [#1647](https://github.com/HKUDS/Vibe-Trading/pull/1647)). 메모리 검색 미리보기, 내보내기 경로 안내, 매크로 데이터 잘림 표시, 월봉 리스크, 포지션 반전과 현금화 후 재진입의 회전율, IV 정확도, VaR 결측 구간, VCS 설치 업데이트, Robinhood의 미지원 옵션 주문 차단도 수정했습니다.
+
 - **2026-10-03** 🛠️ **리서치·보고서·데이터 신뢰성 개선**: 중국어·일본어·한국어 세션 검색, 채널 설정, 증권사 보유 자산 평가와 파일 쓰기에서 일상적인 사용을 막던 문제를 수정했습니다. PDF 전달 시 CJK 글꼴을 포함하고, Swarm은 프리셋 입력을 검증하며 작업별 산출물을 분리하고, 재사용한 도구 결과는 컨텍스트 압축 후에도 유지됩니다([#1683](https://github.com/HKUDS/Vibe-Trading/pull/1683), [#1455](https://github.com/HKUDS/Vibe-Trading/pull/1455), [#1635](https://github.com/HKUDS/Vibe-Trading/pull/1635)). 백테스트의 가격 조정 기준을 통일하고 로컬 캐시는 데이터 소스를 구분하며, 단일 자산 한도와 주간·월간 위험 계산은 지정된 설정을 따릅니다. 감사는 손실 부호를 유지하고 수치 검증은 이번 엔진 출력과 정확한 목록 참조를 사용하며, Stooq은 거부 후 대기 시간이 지나면 재시도합니다([#1684](https://github.com/HKUDS/Vibe-Trading/pull/1684), [#1650](https://github.com/HKUDS/Vibe-Trading/pull/1650), [#1685](https://github.com/HKUDS/Vibe-Trading/pull/1685), [#1640](https://github.com/HKUDS/Vibe-Trading/pull/1640)).
 
 - **2026-10-02** 🛠️ **백테스트와 보고서 검증 수정**: 전략 파일 쓰기가 충돌 없이 모델 출처를 유지하고 ([#1673](https://github.com/HKUDS/Vibe-Trading/pull/1673)), 몬테카를로 낙폭과 Sharpe 계산에 초기 자본을 포함합니다 ([#1664](https://github.com/HKUDS/Vibe-Trading/pull/1664)). 보고서 감사는 회계식 괄호 음수와 단위를 보존하며 ([#1663](https://github.com/HKUDS/Vibe-Trading/pull/1663)), 수치 검증 산출물은 발동된 선언형 검사를 기록합니다 ([#1661](https://github.com/HKUDS/Vibe-Trading/pull/1661)). 공개 데이터 소스 상태 보고서에는 민감 정보를 제거한 실패 이유를 담고 ([#1643](https://github.com/HKUDS/Vibe-Trading/pull/1643)), 인도네시아어 도구 문서를 레지스트리에 맞췄습니다 ([#1671](https://github.com/HKUDS/Vibe-Trading/pull/1671)).
 
 - **2026-10-01** ✅ **데이터 정확성과 재현 가능한 백테스트**: A주 수정주가 변환은 모호한 단일 봉 경계 사례를 거부합니다 ([#1551](https://github.com/HKUDS/Vibe-Trading/pull/1551)). 남향 자금의 Eastmoney 금액은 백만 HKD 단위에서 환산하고 실패 응답을 빈 데이터로 처리하지 않습니다 ([#1486](https://github.com/HKUDS/Vibe-Trading/pull/1486)). 북향 자금 대체 소스는 2024-08-19 이후 거래대금과 순유입을 구분합니다 ([#1484](https://github.com/HKUDS/Vibe-Trading/pull/1484)). Binance의 미평가 포지션만 불완전으로 표시하며 다른 브로커에는 영향을 주지 않습니다 ([#1505](https://github.com/HKUDS/Vibe-Trading/pull/1505)). 실행 카드는 모델 출처를 기록하고 학습 기준일이 불명확하거나 테스트 기간 밖이면 경고합니다 ([#1618](https://github.com/HKUDS/Vibe-Trading/pull/1618)).
-
-<details>
-<summary>이전 뉴스</summary>
 
 - **2026-09-30** 🛠️ **Web UI의 Feishu 설정, 당일 가격을 읽던 모멘텀 팩터, 손실 거래가 없는 백테스트의 수익 팩터**: Feishu가 가이드형 채널 설정에 추가되어 독립 연결 테스트를 제공하고, 핫 리로드 시 이전 WebSocket을 닫습니다([#1572](https://github.com/HKUDS/Vibe-Trading/pull/1572)). `academic_carhart_mom`은 12개월 수익률에서 1개월 수익률을 빼서 당일 종가에 따라 움직였으나, 이제 12개월 전부터 1개월 전까지의 수익률입니다([#1578](https://github.com/HKUDS/Vibe-Trading/pull/1578)). 손실 거래가 없는 실행은 수익 팩터를 최하위로 정렬되게 만드는 0.0 대신 정의되지 않음으로 보고합니다([#1602](https://github.com/HKUDS/Vibe-Trading/pull/1602)). Stooq의 봇 차단 페이지를 감지하면 로그만 남기는 것이 아니라 해당 프로세스의 이후 요청을 모두 중단하고([#1637](https://github.com/HKUDS/Vibe-Trading/pull/1637)), MCP 도구 결과는 최대 네 번이 아니라 한 번만 에이전트에 전달되며([#1634](https://github.com/HKUDS/Vibe-Trading/pull/1634)), `loop.py`에서 첫 번째 모듈이 분리되었습니다([#1636](https://github.com/HKUDS/Vibe-Trading/pull/1636)).
 
@@ -449,7 +462,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | A주 (명시적 선택만) | none | 2026년 10월 기본 경로에서 제외: TDX 서버가 클라이언트 프로토콜에 응답하지 않음 (#1729) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -471,7 +485,7 @@ vibe-trading connector install /tmp/my-broker
 
 **폴백 체인 (IP 차단 위험 순):**
 
-- **A주** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A주** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **미국** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **홍콩** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **인도 (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -603,7 +617,7 @@ connector-first 프로필. 대부분의 브로커가 read + 페이퍼 계정 주
 | Broker | Markets | Capabilities |
 |--------|---------|--------------|
 | **IBKR** | global | local TWS / Gateway, read-only |
-| **Robinhood** | US | Agentic MCP (desktop OAuth) — read + bounded live |
+| **Robinhood** | US | Agentic MCP (desktop OAuth) — 주식 조회 + 제한된 실거래 주문; 옵션 주문은 지원하지 않음 |
 | **Scalable Capital** | DE / EU | Agentic MCP (desktop OAuth) — 완전 읽기 전용, 페이퍼 계정 없음 |
 | **Tiger** | US / HK / A | read + paper + bounded live |
 | **Alpaca** | US | read + paper + bounded live (+ TAP credential-isolation mode) |
@@ -838,7 +852,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **지원 LLM provider:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama(local). `*_BASE_URL`이 설정되지 않으면 각 provider는 canonical endpoint로 폴백하므로 key만 있으면 충분합니다. 설정은 `.env.example`을 참고하세요.
 
-> **팁:** 자동 fallback 덕분에 모든 시장은 API key 없이도 작동합니다. yfinance/Yahoo(HK/US/캐나다/영국), OKX(crypto), mootdx(A주, TCP 직결, IP 제한 없음), AKShare(A주, US, HK, futures, forex)는 모두 무료입니다. LSE `.L` 호가는 GBP 또는 GBp로 명시되어야 하며, GBP 회계 전에 펜스를 정규화합니다. Tushare token은 선택 사항이며, mootdx가 권장 no-token A주 fallback이고 AKShare는 더 넓은 커버리지의 백업입니다.
+> **팁:** 자동 fallback 덕분에 모든 시장은 API key 없이도 작동합니다. yfinance/Yahoo(HK/US/캐나다/영국), OKX(crypto), AKShare(A주, US, HK, futures, forex)는 모두 무료입니다. LSE `.L` 호가는 GBP 또는 GBp로 명시되어야 하며, GBP 회계 전에 펜스를 정규화합니다. Tushare token은 선택 사항이며, A주의 no-token fallback은 tencent·baostock·AKShare입니다.
 
 ### 경로 A: Docker (설정 불필요)
 
@@ -1247,6 +1261,8 @@ curl -X DELETE http://localhost:8899/scheduled-runs/<job_id>
 
 에이전트에게 보이는 스케줄링 도구는 `scheduled_research` 하나뿐입니다. 읽기 액션은 상태/작업/템플릿을 조회하고, `propose_create` 와 `propose_cancel` 은 짧게 유지되는 확인 제안만 저장할 뿐 작업 저장소를 직접 변경하지 않습니다. Web 은 결정적 확인 카드를 렌더링하고 CLI 는 `y/N` 을 물으며, IM 대화에서는 정확히 `confirm`(`确认`) 또는 `cancel`(`取消`) 로 답해야 합니다 — commit 엔드포인트를 호출하는 것은 이 표면 동작뿐입니다. `end_at` 이 지난 작업은 `expired` 가 되어 다시 실행되지 않습니다. 전달은 채널 중립적입니다. `channels.deliveryTargets` 아래에 재사용 가능한 불투명 대상 참조를 구성하면 에이전트와 확인 UI 에는 ref/label/channel 만 보이고 프로바이더의 원시 chat/user id 는 노출되지 않습니다. 어댑터가 영수증 없이 성공하면 전달 상태는 `accepted`, 프로바이더 메시지 id 가 반환될 때만 `sent` 입니다(현재 Feishu 가 엔드투엔드 지원).
 
+Web UI에서는 기존 예약 작업을 제자리에서 편집할 수 있습니다. prompt, cadence/timezone, delivery 설정은 작업을 삭제하고 다시 만들지 않고 `PATCH /scheduled-runs/{job_id}`로 갱신되므로 id와 실행 이력이 유지됩니다. 실행 중인 작업은 현재 실행이 끝날 때까지 편집을 거부합니다. 전달 대상은 계속 operator가 제어하며 각 channel adapter가 대상 필드의 label, placeholder, input type을 설명하고 수동 입력도 그대로 사용할 수 있습니다. adapter는 선택적으로 알려진 대상 후보를 제공할 수 있고, 선택하면 같은 수동 입력 필드만 채웁니다. 예를 들어 Telegram은 로컬 `allow_from`에 이미 있는 숫자형 private-chat id를 제안할 수 있으며 username과 wildcard는 제외합니다.
+
 스케줄러에는 **바로 예약할 수 있는 리서치 템플릿 5개**가 들어 있습니다 — `premarket-brief`, `earnings-season-tracker`, `portfolio-checkup`, `a-share-money-flow`, `institutional-holdings-diff`. 각 템플릿은 도구 이름을 지목하지 않고 필요한 데이터를 자연어로 선언하므로 도구 표면이 늘어나도 그대로 동작하며, 빠진 입력은 기억으로 채우지 말고 **밝히도록** 요구합니다. CLI, REST, TUI의 `/playbook` 어디서든 쓸 수 있습니다:
 
 ```bash
@@ -1269,7 +1285,7 @@ curl -X POST http://localhost:8899/scheduled-runs/playbooks/premarket-brief \
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading은 모든 MCP-compatible client를 위해 75개 MCP tools를 제공합니다. stdio subprocess로 실행되므로 server setup이 필요 없습니다. 핵심 research tools는 HK/US/crypto에서 API key 없이 작동하고, trading connector tools는 선택된 connector profile을 사용하며, `run_swarm`만 LLM key가 필요합니다.
+Vibe-Trading은 모든 MCP-compatible client를 위해 76개 MCP tools를 제공합니다. stdio subprocess로 실행되므로 server setup이 필요 없습니다. 핵심 research tools는 HK/US/crypto에서 API key 없이 작동하고, trading connector tools는 선택된 connector profile을 사용하며, `run_swarm`만 LLM key가 필요합니다.
 
 **환경 변수:** server는 client가 직접 spawn하므로 shell의 `export`는 전달되지 않습니다 —— client의 `env` block에 설정하세요. 생성된 backtest code는 allowed run roots 안으로 제한되므로, 결과를 자신의 작업 directory에 쓰려면 `VIBE_TRADING_ALLOWED_RUN_ROOTS`가 필요합니다:
 
@@ -1325,7 +1341,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**노출되는 MCP tools(75):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`.
+**노출되는 MCP tools(76):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`.
 
 ### SWARM 외부 MCP tools
 
@@ -1687,7 +1703,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 75 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 76 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
@@ -1702,7 +1718,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # Cross-session persistent memory
 │   │   │   └── persistent.py       #   file-based memory (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 108 auto-discovered agent tools
+│   │   ├── tools/                  # 109 auto-discovered agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── remember_tool.py    #   cross-session memory (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)

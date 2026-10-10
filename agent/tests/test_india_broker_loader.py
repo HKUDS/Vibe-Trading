@@ -12,6 +12,7 @@ import datetime as dt
 import pandas as pd
 
 from backtest.loaders import india_broker_loader as mod
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.india_broker_loader import DataLoader, _base_symbol, _exchange_for
 
 
@@ -66,6 +67,7 @@ def test_fetch_parses_and_clips_window(monkeypatch) -> None:
     assert len(df) == 2
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
     assert df.index.name == "trade_date"
+    assert_loader_contract(df, context="india broker daily")
     # Broker received the bare symbol on the right exchange.
     assert fake.calls[0]["symbol"] == "RELIANCE"
     assert fake.calls[0]["exchange"] == "NSE"

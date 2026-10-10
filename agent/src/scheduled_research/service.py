@@ -46,6 +46,8 @@ def public_job(job: ScheduledResearchJob) -> dict[str, Any]:
             "channel": job.delivery_channel,
             "target_ref": job.delivery_target_ref,
             "target_label": job.delivery_target_label,
+            "format": job.delivery_format,
+            "protect_pdf": job.protect_pdf,
             "status": job.delivery.status.value,
             "attempts": job.delivery.attempts,
             "provider_message_id": job.delivery.provider_message_id,
@@ -72,6 +74,26 @@ def scheduler_status() -> dict[str, Any]:
     if executor is not None:
         running = bool(executor.is_running)
     return {"enabled": enabled, "running": running, "executable": enabled and running}
+
+
+def email_pdf_password_configured() -> bool:
+    """Return whether the active Email channel has a private PDF password.
+
+    Returns:
+        Password presence only, preferring the running adapter configuration.
+    """
+    host = sys.modules.get("api_server") or sys.modules.get("agent.api_server")
+    manager = getattr(host, "_channel_manager", None) if host else None
+    adapter = manager.get_channel("email") if manager is not None else None
+    if adapter is not None:
+        return bool(getattr(getattr(adapter, "config", None), "pdf_password", ""))
+    try:
+        from src.channels.config import load_channels_config
+
+        section = load_channels_config().get("email", {})
+        return bool(section.get("pdf_password")) if isinstance(section, dict) else False
+    except Exception:
+        return False
 
 
 def _parse_end_at(value: Any) -> int | None:
@@ -182,6 +204,19 @@ def build_job_from_draft(
     elif mode != "in_app":
         raise ValueError("delivery.mode must be 'in_app', 'origin', or 'configured'")
 
+    delivery_format = delivery_spec.get("format")
+    protect_pdf = delivery_spec.get("protect_pdf", False)
+    if not isinstance(protect_pdf, bool):
+        raise ValueError("delivery.protect_pdf must be a boolean")
+    if delivery_format not in (None, "html", "pdf"):
+        raise ValueError("delivery.format must be 'html', 'pdf', or null")
+    if delivery_format is not None and delivery_channel != "email":
+        raise ValueError("delivery.format is supported only for email delivery")
+    if protect_pdf and delivery_format != "pdf":
+        raise ValueError("delivery.protect_pdf requires PDF email delivery")
+    if protect_pdf and not email_pdf_password_configured():
+        raise ValueError("PDF protection requested but no PDF password is configured")
+
     return ScheduledResearchJob(
         id=str(draft.get("id") or f"sr-{uuid.uuid4().hex[:12]}"),
         title=title,
@@ -199,6 +234,8 @@ def build_job_from_draft(
         delivery_target=delivery_target,
         delivery_target_ref=target_ref,
         delivery_target_label=target_label,
+        delivery_format=delivery_format,
+        protect_pdf=protect_pdf,
     )
 
 

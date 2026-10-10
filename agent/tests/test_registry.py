@@ -17,7 +17,9 @@ from backtest.loaders.registry import (
     FALLBACK_CHAINS,
     LOADER_REGISTRY,
     VALID_SOURCES,
+    get_default_source_order,
     get_loader_cls_with_fallback,
+    is_valid_source_order,
     register,
     resolve_loader,
 )
@@ -230,6 +232,16 @@ class TestFallbackChains:
         for market, chain in FALLBACK_CHAINS.items():
             assert len(chain) > 0, f"Fallback chain for {market} is empty"
 
+    def test_mootdx_retired_from_chain_but_still_registered(self) -> None:
+        """mootdx left the default a_share chain (#1729: TDX servers stopped
+        answering the mootdx/tdxpy protocol, upstream dormant), but the loader
+        stays registered so explicit source="mootdx" keeps working."""
+        assert "mootdx" not in FALLBACK_CHAINS["a_share"]
+        assert "mootdx" in LOADER_REGISTRY
+        # An override naming it is no longer a permutation of the default.
+        order = get_default_source_order("a_share") + ["mootdx"]
+        assert not is_valid_source_order("a_share", order)
+
     def test_crypto_chain_includes_yfinance_fallback(self) -> None:
         """yfinance is a fallback for crypto when OKX, Binance and CCXT fail."""
         assert "yfinance" in FALLBACK_CHAINS["crypto"]
@@ -241,7 +253,6 @@ class TestFallbackChains:
         with key-gated REST fallbacks, in the exact reviewed order."""
         assert FALLBACK_CHAINS["a_share"] == [
             "tencent",
-            "mootdx",
             "eastmoney",
             "baostock",
             "akshare",

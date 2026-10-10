@@ -626,13 +626,18 @@ class PersistentMemory:
         return path
 
     def remove(self, name: str, memory_type: str | None = None) -> bool:
-        """Remove a memory entry by name.
+        """Remove a memory entry by title or filename stem.
 
         One title can exist under several memory types, each in its own file
         (``{memory_type}_{slug}.md``, #1525), so a bare title can be ambiguous.
 
+        Falls back to filename-stem resolution (matching ``find()``) when no
+        title matches, so a name that resolves via ``find()`` or the CLI's
+        ``memory forget`` command also resolves here instead of silently
+        reporting "not found" for the same entry.
+
         Args:
-            name: Title of the entry to remove.
+            name: Title or filename stem of the entry to remove.
             memory_type: The entry's type; needed only when the title exists
                 under more than one type.
 
@@ -645,11 +650,22 @@ class PersistentMemory:
         """
         from src.config.accessor import get_env_config
 
+        name = name.strip()
+        if not name:
+            return False
+        entries = self._scan_entries()
         matches = [
             entry
-            for entry in self._scan_entries()
+            for entry in entries
             if entry.title == name and (memory_type is None or entry.memory_type == memory_type)
         ]
+        if not matches:
+            matches = [
+                entry
+                for entry in entries
+                if (entry.path.stem == name or entry.path.stem.endswith(f"_{name}"))
+                and (memory_type is None or entry.memory_type == memory_type)
+            ]
         if not matches:
             return False
         if len(matches) > 1:

@@ -185,6 +185,7 @@ export function Reports() {
             <p className="mt-1 text-sm text-muted-foreground">
               {runs.length === 0 ? t("reports.emptyBody") : t("reports.noMatchesBody")}
             </p>
+            {runs.length === 0 && <Link to="/" className="mt-5 inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">{t("navigation.startResearch")}</Link>}
           </section>
         ) : null}
 

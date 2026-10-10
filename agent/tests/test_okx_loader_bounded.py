@@ -18,6 +18,7 @@ import requests
 import backtest.loaders.okx as okx
 from backtest.loaders.base import DEFAULT_MAX_RETRIES
 from backtest.loaders.okx import DataLoader
+from tests.loader_contract import assert_loader_contract
 
 S = int(pd.Timestamp("2026-05-01").timestamp() * 1000)
 E = int((pd.Timestamp("2026-05-05") + pd.Timedelta(days=1)).timestamp() * 1000)
@@ -98,6 +99,7 @@ def test_happy_path_single_call(monkeypatch):
     df = DataLoader()._paginate(session, okx.CANDLES_PATH, "BTC-USDT", S, E, "1D", 20)
     assert seq.calls == 1
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+    assert_loader_contract(df, context="okx paginated daily")
 
 
 def test_wallclock_budget_enforced(monkeypatch):

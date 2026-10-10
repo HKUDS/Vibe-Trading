@@ -470,7 +470,7 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
 
 
 def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
-    """SP500 panel via yfinance. Adds vwap = (O+H+L+C)/4 fallback for alpha101.
+    """SP500 panel via the shared per-symbol loader fallback. Adds vwap = (O+H+L+C)/4 fallback for alpha101.
 
     Survivorship-bias warning: ``_fetch_sp500_constituents`` returns Wikipedia's
     *current* member list, not a point-in-time snapshot. Names that dropped out
@@ -497,10 +497,14 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
 
     # yfinance loader expects project-style symbols (``AAPL.US``).
     project_codes = [f"{c}.US" for c in codes]
-    from backtest.loaders.registry import resolve_loader
+    from src.market_data import fetch_market_data, get_loader
 
-    loader = resolve_loader("us_equity")
-    fetched = _retry(lambda: loader.fetch(project_codes, start, end)) or {}
+    response = fetch_market_data(
+        codes=project_codes, start_date=start, end_date=end, source="auto",
+        include_provenance=True, as_frames=True, loader_resolver=get_loader,
+    )
+    fetched = {code: frame for code, frame in response.items() if not code.startswith("_")}
+    missing = response.get("_unresolved", [])
 
     panel = _wide_from_fetched(fetched, include_amount=False)
     # Synthetic vwap for alpha101 alphas that require it on US universe
@@ -540,6 +544,11 @@ def _load_sp500_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     # required column names, so this extra key is ignored by the compute path.
     panel["_meta"] = {
         "universe": "sp500",
+        "requested_instruments": len(project_codes),
+        "fetched_instruments": len(fetched),
+        "missing_instruments": missing,
+        "data_diagnostics": response.get("_diagnostics", {}),
+        "price_sources": sorted({item["source"] for item in response.get("_provenance", {}).values()}),
         "survivorship_bias": True,
         "degraded": constituent_source == "hand-picked fallback",
         "constituent_source": constituent_source,
@@ -666,6 +675,64 @@ def _retry(fn, *, tries: int = 3, base_delay: float = 1.0):
 # ---------------------------------------------------------------------------
 # Per-alpha IC bench
 # ---------------------------------------------------------------------------
+
+
+def _validate_bench_data_requirements(registry: Any, alpha_ids: list[str], universe: str) -> list[str]:
+    """Validate known universe constraints before making data requests.
+
+    Args:
+        registry: Registry holding the selected factors.
+        alpha_ids: Factors to evaluate.
+        universe: Requested stock universe.
+
+    Returns:
+        Required fundamental column names.
+
+    Raises:
+        ValueError: If US-only SEC inputs are requested from another universe.
+    """
+    columns = sorted({column for aid in alpha_ids
+                      for column in (registry.get(aid).meta or {}).get("columns_required", [])
+                      if column.startswith("fund:")})
+    if columns and universe != "sp500":
+        raise ValueError("Fundamental factor evaluation currently uses SEC US filings. Choose the S&P 500 universe.")
+    return columns
+
+
+def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, universe: str, period: str) -> dict:
+    """Load only the declared PIT fundamental inputs for the selected factors.
+
+    Args:
+        registry: Registry holding the factors being evaluated.
+        alpha_ids: Selected factor identifiers.
+        panel: Observed price panel; never mutated or filled with invented values.
+        universe: Stock universe; SEC fundamentals currently cover US stocks.
+        period: Requested historical period.
+
+    Returns:
+        A panel including the required fundamental columns.
+
+    Raises:
+        ValueError: If SEC inputs are requested for a non-US universe.
+        RuntimeError: If fewer than two stocks have the required financial inputs.
+    """
+    columns = [column for column in _validate_bench_data_requirements(registry, alpha_ids, universe) if column not in panel]
+    if not columns:
+        return panel
+    from backtest.loaders.fundamentals_loader import load_fundamental_panel
+
+    start, end = _parse_period(period)
+    close = panel["close"]
+    fields = [column.removeprefix("fund:") for column in columns]
+    loaded = load_fundamental_panel(symbols=list(close.columns), fields=fields, start=start, end=end, pit=True, index=close.index)
+    enriched = dict(panel)
+    for column, field in zip(columns, fields):
+        frame = loaded.get(field)
+        if frame is None or frame.notna().any().sum() < 2:
+            raise RuntimeError(f"SEC field {field!r} has data for fewer than two stocks. Check SEC connectivity and filing coverage for this period.")
+        enriched[column] = frame.reindex(index=close.index, columns=close.columns)
+    enriched["_meta"] = {**panel.get("_meta", {}), "fundamental_source": "sec", "fundamental_pit": True}
+    return enriched
 
 
 def _compute_forward_returns(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -1002,6 +1069,7 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
 
     # Load panel — W4 universe loader fetches constituents + OHLCV (+ amount, vwap).
     try:
+        _validate_bench_data_requirements(registry, alpha_ids, universe)
         panel = _load_universe_panel(universe, period)
     except (ValueError, NotImplementedError, RuntimeError) as exc:
         return {
@@ -1014,6 +1082,7 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
         }
 
     try:
+        panel = _prepare_bench_panel(registry, alpha_ids, panel, universe, period)
         return_df = _compute_forward_returns(panel)
     except Exception as exc:
         return {"status": "error", "error": f"forward returns failed: {exc}"}

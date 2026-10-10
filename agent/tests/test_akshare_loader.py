@@ -23,6 +23,7 @@ from backtest.loaders.akshare_loader import (
     _is_hk,
     _is_us,
 )
+from tests.loader_contract import assert_loader_contract
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +182,7 @@ class TestRouting:
         assert df is not None
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert len(df) == 2
+        assert_loader_contract(df, context="canonical frame")
 
     def test_etf_sz_uses_sz_prefix(self, fake_akshare: SimpleNamespace) -> None:
         loader = DataLoader()

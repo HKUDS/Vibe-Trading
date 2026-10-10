@@ -33,6 +33,24 @@ class BaseChannel(ABC):
 
     supports_connection_test: ClassVar[bool] = False
 
+    # Config keys a running adapter absorbs in place (no stop+start): those read
+    # live per message (``self.config.X``) rather than captured into the SDK
+    # client at ``start()``. Empty default keeps undeclared channels on the full
+    # reload path; ``enabled``/connection keys are never declared (#1625).
+    hot_reload_noop_keys: ClassVar[frozenset[str]] = frozenset()
+
+    # Scheduled delivery is channel-agnostic at the scheduler layer. Adapters
+    # describe the address they accept so generic UIs never need to hard-code
+    # channel names or ask users to guess provider-specific target formats.
+    delivery_target_label: ClassVar[str] = "Destination"
+    delivery_target_kind: ClassVar[str] = "destination"
+    delivery_target_placeholder: ClassVar[str] = "Chat, group, user, address, or channel ID"
+    delivery_target_input_type: ClassVar[str] = "text"
+
+    def delivery_target_suggestions(self) -> list[dict[str, str]]:
+        """Return safe destination suggestions for scheduled delivery."""
+        return []
+
     def __init__(self, config: Any, bus: MessageBus) -> None:
         """Initialize the channel.
 
@@ -69,6 +87,36 @@ class BaseChannel(ABC):
             ``unsupported``.
         """
         return {"ok": False, "code": "unsupported"}
+
+    def refresh_config(self, section: dict[str, Any]) -> bool:
+        """Refresh declared live fields; preserve runtime connection state.
+
+        Validate the stored section, then copy only ``hot_reload_noop_keys``
+        into the current config. Login may have resolved connection fields
+        that are absent from storage, such as Weixin's authenticated base URL.
+        On validation failure keep the old config and request a full reload.
+        """
+        try:
+            model_cls = type(self.config)
+            if hasattr(model_cls, "model_validate"):
+                computed = set(model_cls.model_computed_fields)
+                fresh = model_cls.model_validate(section).model_dump(by_alias=True, exclude=computed)
+                current = self.config.model_dump(by_alias=True, exclude=computed)
+                current.update({key: fresh[key] for key in self.hot_reload_noop_keys if key in fresh})
+                self.config = model_cls.model_validate(current)
+            else:
+                fresh = {**self.default_config(), **section}
+                current = dict(self.config)
+                for key in self.hot_reload_noop_keys:
+                    if key in fresh:
+                        current[key] = fresh[key]
+                    else:
+                        current.pop(key, None)
+                self.config = current
+        except Exception:  # noqa: BLE001 - a rejected section must not strand the adapter
+            logger.debug("refresh_config rejected section for %s", self.name, exc_info=True)
+            return False
+        return True
 
     @abstractmethod
     async def start(self) -> None:

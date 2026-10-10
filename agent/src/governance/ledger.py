@@ -662,6 +662,30 @@ def rotate_if_needed(
     return archive
 
 
+def _iter_all_segment_lines(
+    path: Path,
+) -> Iterator[tuple[int, dict[str, Any] | None, str | None]]:
+    """Like :func:`_iter_parsed_lines`, chained across every sealed segment and
+    then the active file, with one continuous index over the concatenation.
+
+    Delegates the actual parsing to :func:`_iter_parsed_lines` so a malformed
+    line anywhere in the history is reported the same clean, structured way a
+    single-file :func:`verify_chain` call already reports one -- rather than
+    an uncaught ``json.JSONDecodeError`` escaping to the caller, which a
+    from-scratch ``json.loads`` loop over the concatenated lines used to do.
+    """
+    offset = 0
+    for segment in [*archive_segments(path), path]:
+        if not segment.exists():
+            continue
+        lines = segment.read_text(encoding="utf-8").splitlines()
+        for local_index, record, parse_error in _iter_parsed_lines(lines):
+            yield offset + local_index, record, parse_error
+            if parse_error is not None:
+                return
+        offset += len(lines)
+
+
 def verify_chain_with_archives(path: Path) -> ChainVerificationResult:
     """Verify a ledger's whole history, sealed segments included.
 
@@ -678,61 +702,5 @@ def verify_chain_with_archives(path: Path) -> ChainVerificationResult:
         ``index`` of a break is its position in that concatenation, not in any
         one file.
     """
-    records: list[dict[str, Any]] = []
-    for segment in [*archive_segments(path), path]:
-        if not segment.exists():
-            continue
-        for line in segment.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                records.append(json.loads(line))
-
-    if not records:
-        return ChainVerificationResult(ok=True, record_count=0, first_break=None)
-
-    prev_hash = GENESIS_PREV_HASH
-    for index, record in enumerate(records):
-        expected_seq = index + 1
-        if record.get("seq") != expected_seq:
-            return ChainVerificationResult(
-                ok=False,
-                record_count=len(records),
-                first_break=ChainBreak(
-                    index=index,
-                    seq=record.get("seq"),
-                    reason="seq_gap",
-                    detail=f"expected seq={expected_seq}, found {record.get('seq')!r}",
-                ),
-            )
-        if record.get("prev_record_hash") != prev_hash:
-            return ChainVerificationResult(
-                ok=False,
-                record_count=len(records),
-                first_break=ChainBreak(
-                    index=index,
-                    seq=record.get("seq"),
-                    reason="prev_hash_mismatch",
-                    detail=(
-                        f"expected prev_record_hash={prev_hash!r}, "
-                        f"found {record.get('prev_record_hash')!r}"
-                    ),
-                ),
-            )
-        payload = {
-            k: v for k, v in record.items()
-            if k not in ("seq", "prev_record_hash", "record_hash")
-        }
-        recomputed = compute_record_hash(record["seq"], record["prev_record_hash"], payload)
-        if recomputed != record.get("record_hash"):
-            return ChainVerificationResult(
-                ok=False,
-                record_count=len(records),
-                first_break=ChainBreak(
-                    index=index,
-                    seq=record.get("seq"),
-                    reason="record_hash_mismatch",
-                    detail=f"stored {record.get('record_hash')!r}, recomputed {recomputed!r}",
-                ),
-            )
-        prev_hash = record["record_hash"]
-
-    return ChainVerificationResult(ok=True, record_count=len(records), first_break=None)
+    result, _, _ = _walk_chain(_iter_all_segment_lines(path))
+    return result

@@ -580,7 +580,7 @@ def calc_metrics(
             ann_ret = float("inf")
     # ``Series.std()`` uses ddof=1, so a single-observation return series
     # (e.g. a one-bar backtest) yields NaN and poisons the Sharpe ratio.
-    # Guard the small sample the same way ``downside_std`` is guarded below.
+    # Guard the small sample before calculating volatility.
     vol = float(port_ret.std()) if len(port_ret) > 1 and returns_finite else 0.0
     sharpe = (
         float(port_ret.mean() / (vol + 1e-10) * np.sqrt(bpy))
@@ -601,11 +601,15 @@ def calc_metrics(
 
     calmar = ann_ret / abs(max_dd) if abs(max_dd) > 1e-10 else 0.0
 
-    # Sortino
+    # Sortino: zero-target downside RMS, with all return periods in the divisor.
     if returns_finite:
         downside = port_ret[port_ret < 0]
-        downside_std = float(downside.std()) if len(downside) > 1 else 1e-10
-        sortino = float(port_ret.mean() / (downside_std + 1e-10) * np.sqrt(bpy))
+        downside_deviation = (
+            float(np.sqrt((downside**2).sum() / len(port_ret)))
+            if len(downside) > 0
+            else 1e-10  # Preserve the existing no-downside fallback.
+        )
+        sortino = float(port_ret.mean() / (downside_deviation + 1e-10) * np.sqrt(bpy))
     else:
         sortino = 0.0
     if not np.isfinite(sortino):
@@ -636,7 +640,7 @@ def calc_metrics(
         excess = total_ret - bench_return
         aligned_bench = bench_ret.reindex(port_ret.index).fillna(0.0)
         active_ret = port_ret - aligned_bench
-        # Same ddof=1 small-sample guard as ``vol`` / ``downside_std`` so the
+        # Same ddof=1 small-sample guard as ``vol`` so the
         # information ratio stays finite for a single-observation series.
         active_std = float(active_ret.std()) if len(active_ret) > 1 and returns_finite else 0.0
         ir = (

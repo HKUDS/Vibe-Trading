@@ -718,7 +718,7 @@ def test_update_source_orders_persists_and_hot_applies(
                 {
                     "market": "a_share",
                     "order": [
-                        "tushare", "tencent", "mootdx", "eastmoney",
+                        "tushare", "tencent", "eastmoney",
                         "baostock", "akshare", "gildata", "local",
                     ],
                 },
@@ -736,7 +736,7 @@ def test_update_source_orders_persists_and_hot_applies(
     assert entry["override"][0] == "tushare"
     # ...persisted to the dotenv...
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
-    assert "MARKET_DATA_ORDER_A_SHARE=tushare,tencent,mootdx" in env_text
+    assert "MARKET_DATA_ORDER_A_SHARE=tushare,tencent,eastmoney" in env_text
     # ...synced into the running process env...
     assert os.environ.get("MARKET_DATA_ORDER_A_SHARE", "").startswith("tushare,")
     # ...and hot-applied to the live registry chain.
@@ -757,7 +757,7 @@ def test_update_source_orders_reset_clears_override(
                 {
                     "market": "a_share",
                     "order": [
-                        "tushare", "tencent", "mootdx", "eastmoney",
+                        "tushare", "tencent", "eastmoney",
                         "baostock", "akshare", "gildata", "local",
                     ],
                 },

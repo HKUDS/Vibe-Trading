@@ -15,7 +15,7 @@ from src.entities.cashflow import (
 )
 from src.entities.ingest import CashFlowIngestError, load_cashflows
 from src.entities.cashflow import FxRate, FxRateTable, MissingExchangeRateError, translate_cashflows
-from src.entities.ingest import EntityPanel, PanelIngestError, PanelObservation, load_panel
+from src.entities.ingest import PanelIngestError, PanelObservation, load_panel
 from src.entities.models import (
     Bond,
     Entity,
@@ -445,6 +445,25 @@ def test_load_cashflows_refuses_an_ambiguous_single_comma(tmp_path):
         load_cashflows(path)
     assert load_cashflows(path, decimal_separator=".")[0].amount == pytest.approx(1234.0)
     assert load_cashflows(path, decimal_separator=",")[0].amount == pytest.approx(1.234)
+
+
+def test_load_cashflows_refuses_an_ambiguous_single_dot(tmp_path):
+    """'12.000' is 12 in a US export and 12000 in a European one."""
+    path = _write_csv(
+        tmp_path, "flows.csv", 'date,amount,kind,currency\n2024-03-31,"12.000",coupon,USD\n'
+    )
+    with pytest.raises(CashFlowIngestError, match="decimal_separator"):
+        load_cashflows(path)
+    assert load_cashflows(path, decimal_separator=".")[0].amount == pytest.approx(12.0)
+    assert load_cashflows(path, decimal_separator=",")[0].amount == pytest.approx(12000.0)
+
+
+def test_load_cashflows_accepts_an_unambiguous_single_dot(tmp_path):
+    """A dot not followed by exactly three digits can only be a decimal point."""
+    path = _write_csv(
+        tmp_path, "flows.csv", 'date,amount,kind,currency\n2024-03-31,"123.45",coupon,USD\n'
+    )
+    assert load_cashflows(path)[0].amount == pytest.approx(123.45)
 
 
 def test_load_cashflows_rejects_an_invalid_decimal_separator(tmp_path):
@@ -1056,3 +1075,23 @@ def test_panel_path_does_not_touch_the_bar_price_panel_gate():
     # 1W / 1M are bar sizes the runner builds from daily bars (#1479); this
     # path still adds no interval of its own.
     assert _VALID_INTERVALS == {"1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"}
+
+
+@pytest.mark.parametrize('amount,expected', [
+    ('1.2e3', 1200.), ('1.2E3', 1200.), ('1.23e3', 1230.),
+    ('1.234e3', 1234.), ('1.2e-3', 0.0012), ('-1.2e3', -1200.),
+])
+def test_unambiguous_scientific_amount_is_accepted(tmp_path, amount, expected):
+    path = tmp_path / 'flows.csv'
+    kind = 'capital_call' if expected < 0 else 'coupon'
+    path.write_text(f'date,amount,kind,currency\n2024-03-31,{amount},{kind},USD\n')
+    assert load_cashflows(path)[0].amount == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("value", ["1.2e3", "1.2E3", "1.234e3"])
+def test_panel_scientific_amount_uses_the_same_parser(tmp_path, value):
+    path = _write_csv(
+        tmp_path, "panel.csv",
+        f"entity,date,metric,value,currency,unit\nFUNDA,2024-01-01,nav,{value},USD,USD\n",
+    )
+    assert list(load_panel(path))[0].value == pytest.approx(float(value))

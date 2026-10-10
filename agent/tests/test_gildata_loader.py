@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from backtest.loaders import gildata_loader as gl
+from tests.loader_contract import assert_loader_contract
 from backtest.loaders.gildata_loader import (
     DataLoader,
     _gildata_symbol,
@@ -114,6 +115,7 @@ class TestParseDailyRows:
         assert list(df.index) == [pd.Timestamp("2024-01-03"), pd.Timestamp("2024-01-04")]
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
         assert df.index.name == "trade_date"
+        assert_loader_contract(df, context="canonical frame")
         for col in df.columns:
             assert df[col].dtype == float
 

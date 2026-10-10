@@ -114,13 +114,14 @@ from src.api.state import (  # noqa: F401, E402
 console = Console()
 logger = logging.getLogger(__name__)
 
-from src.api.channels_routes import (  # noqa: E402
+from src.api.channels_routes import (  # noqa: F401, E402
     _start_channel_runtime,
     _stop_channel_runtime,
 )
-from src.api.scheduled_routes import (  # noqa: E402
+from src.api.scheduled_routes import (  # noqa: F401, E402
     _start_scheduled_research_executor,
     _stop_scheduled_research_executor,
+    _stop_scheduled_research_on_shutdown,
 )
 
 
@@ -140,14 +141,6 @@ async def _run_startup_preflight() -> None:
 
     if get_env_config().agent_tuning.vibe_trading_channels_auto_start:
         await _start_channel_runtime()
-
-
-async def _stop_scheduled_research_on_shutdown() -> None:
-    """Stop the scheduled research executor on server shutdown."""
-    try:
-        await _stop_channel_runtime()
-    finally:
-        await _stop_scheduled_research_executor()
 
 
 @asynccontextmanager
@@ -288,6 +281,7 @@ from src.api.live_routes import (  # noqa: F401, E402
     _live_broker_adapter,
     _build_live_runner,
     _drive_runner,
+    _stop_live_runners,
     _connector_verify_cache,
     _check_connector_status,
 )

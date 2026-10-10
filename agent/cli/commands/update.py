@@ -55,6 +55,7 @@ EXIT_FAILED = 1
 KIND_WHEEL = "wheel"
 KIND_EDITABLE = "editable"
 KIND_CHECKOUT = "checkout"
+KIND_VCS = "vcs"
 
 
 def fetch_latest_version() -> str:
@@ -80,6 +81,7 @@ def detect_install_kind() -> str:
     - ``KIND_EDITABLE``: ``pip install -e .`` — either the modern marker
       (``direct_url.json`` in the metadata dir with ``dir_info.editable``) or
       the legacy marker (a source-tree ``*.egg-info`` dir on ``sys.path``).
+    - ``KIND_VCS``: installed directly from a Git or other VCS source.
     - ``KIND_WHEEL``: anything else that resolves through importlib.metadata.
 
     Why both markers? The metadata dir that ``distribution()`` resolves can be
@@ -103,6 +105,8 @@ def detect_install_kind() -> str:
             parsed = json.loads(direct_url)
             if isinstance(parsed, dict) and parsed.get("dir_info", {}).get("editable"):
                 return KIND_EDITABLE
+            if isinstance(parsed, dict) and isinstance(parsed.get("vcs_info"), dict):
+                return KIND_VCS
         except (ValueError, AttributeError):
             return KIND_WHEEL  # corrupt metadata; default to the pip path
         return KIND_WHEEL
@@ -158,6 +162,14 @@ def cmd_update() -> int:
             "upgrade would replace your dev install with the released wheel.\n"
             "Update the checkout instead: run `git pull` in the repo and reinstall "
             "(`pip install -e .`)."
+        )
+        return EXIT_OK
+    if kind == KIND_VCS:
+        console.print(
+            f"[yellow]Version-control source install detected[/yellow] "
+            f"({CURRENT_VERSION} -> {latest} is available on PyPI).\n"
+            "A PyPI upgrade would replace your source revision with a released wheel.\n"
+            "Update or reinstall from your original version-control source instead."
         )
         return EXIT_OK
     if kind == KIND_CHECKOUT:

@@ -73,6 +73,30 @@ def test_a_job_without_a_channel_never_arms_the_outbox(tmp_path: Path) -> None:
     assert sender.sent == []
 
 
+def test_protected_pdf_flag_reaches_channel_sender_without_a_password(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    job = _job(
+        delivery_channel="email",
+        delivery_target="reader@example.test",
+        delivery_format="pdf",
+        protect_pdf=True,
+    )
+    store.upsert(job)
+    calls = []
+
+    async def sender(*args):
+        calls.append(args)
+
+    executor = _executor(
+        store,
+        reader=lambda _session: ("completed", "briefing"),
+        sender=sender,
+    )
+    asyncio.run(executor.tick(now_ms=1_000))
+
+    assert calls == [("email", "reader@example.test", "briefing", "pdf", True)]
+
+
 def test_a_firing_arms_the_outbox_and_the_sweep_delivers_it(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.upsert(_job(delivery_channel="telegram", delivery_target="chat-9"))

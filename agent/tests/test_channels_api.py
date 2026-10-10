@@ -58,6 +58,10 @@ def test_channels_status_reports_all_configured_adapters(tmp_path: Path, monkeyp
     assert payload["channels"]["telegram"]["enabled"] is False
     assert payload["channels"]["slack"]["enabled"] is True
     assert "available" in payload["channels"]["slack"]
+    assert payload["channels"]["email"]["delivery_target_label"] == "Recipient email address"
+    assert payload["channels"]["email"]["delivery_target_kind"] == "email_address"
+    assert payload["channels"]["email"]["delivery_target_input_type"] == "email"
+    assert payload["channels"]["telegram"]["delivery_target_label"] == "Telegram chat"
     assert "reply_timeout_s" not in payload["channels"]
     assert "send_max_retries" not in payload["channels"]
     assert api_server._channel_runtime is not None

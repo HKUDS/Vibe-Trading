@@ -7,6 +7,7 @@ import json
 import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import mcp_server
 import pytest
@@ -210,7 +211,7 @@ def test_alpha_bench_rejects_output_outside_allowed_roots(monkeypatch) -> None:
 def test_alpha_bench_does_not_follow_preexisting_report_symlink(monkeypatch, tmp_path: Path) -> None:
     class _BenchRegistry:
         def get(self, alpha_id: str) -> object:
-            return object()
+            return SimpleNamespace(meta=None)
 
     class _FixedDateTime:
         @classmethod

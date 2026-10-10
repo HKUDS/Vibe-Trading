@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
+
 from src.tools import options_chain_tool as oc
 
 
@@ -114,6 +116,28 @@ class TestOptionsChainSuccess:
             out = oc.OptionsChainTool().execute(ticker="AAPL")
         payload = json.loads(out)
         assert payload["data"]["calls_count"] == oc._MAX_CONTRACTS_PER_SIDE
+
+    def test_atm_uses_quote_and_full_ladder_before_capping(self):
+        result = _sample_result()
+        result["quote"] = {"regularMarketPrice": 337.4}
+        result["options"][0]["calls"] = [
+            {"strike": float(i)} for i in range(100, 401)
+        ]
+        data = json.loads(oc._success("AAPL", result))["data"]
+        assert data["underlying_price"] == 337.4
+        assert data["atm_strike"] == 337.0
+        assert len(data["calls"]) == oc._MAX_CONTRACTS_PER_SIDE
+        assert all(row["strike"] != data["atm_strike"] for row in data["calls"])
+
+    @pytest.mark.parametrize("quote", [None, {}, {"regularMarketPrice": None},
+        {"regularMarketPrice": True}, {"regularMarketPrice": 0},
+        {"regularMarketPrice": float("nan")}, {"regularMarketPrice": "337.4"}])
+    def test_missing_or_invalid_quote_never_guesses_atm(self, quote):
+        result = _sample_result()
+        result["quote"] = quote
+        data = json.loads(oc._success("AAPL", result))["data"]
+        assert data["underlying_price"] is None
+        assert data["atm_strike"] is None
 
 
 class TestOptionsChainErrors:

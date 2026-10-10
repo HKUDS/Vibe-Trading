@@ -76,7 +76,6 @@ class TestAttributionPromptIntegrity:
             data_source_count=18,
             tool_descriptions="[test tools]",
             skill_descriptions="[test skills]",
-            memory_summary="[test memory]",
             memory_section="[test section]",
             strategy_discovery_routing="[test routing]",
             current_datetime="2025-01-01 12:00:00",

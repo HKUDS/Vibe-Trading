@@ -76,6 +76,7 @@ _CORRECTION_REASONS = {
     "ambiguous_field_ref": "{ref} names {sources}, which hold different values; use the one quoted as the ref",
     "tail_risk_needs_field_ref": "this session holds {sources}, which are different measurements; declare the figure with an exact field ref",
     "field_ref_needs_call_id": "{ref} uses a tool name before ::; use one exact call_id::field ref from {sources}",
+    "unknown_call_id": "{ref} names no call, tool or run of this session; copy a real tool_call_id, not an alias",
     "no_formula": "its note states no arithmetic",
     "formula_not_evaluable": "its note is not an arithmetic expression over two or more operands",
     "formula_not_anchored": "no operand of its note is a value this session observed",
@@ -197,6 +198,12 @@ class _ReleaseMixin:
         lines.extend(
             f"- {issue.get('message', issue.get('code', 'grounding error'))}" for issue in others
         )
+        omitted = len(validation.issues) - 24
+        if omitted > 0:
+            lines.append(
+                f"{omitted} additional findings are not shown in this bounded feedback. "
+                "Do not assume unlisted figures passed; check their declarations and evidence too."
+            )
         if figures:
             lines.extend(
                 [
@@ -214,6 +221,20 @@ class _ReleaseMixin:
                     + ", ".join(repeated)
                     + ". Take option (2) or (3) for them."
                 )
+        passed = list(validation.passed_figures)
+        if passed:
+            shown = passed[:24]
+            keep = ", ".join(shown)
+            if len(passed) > len(shown):
+                keep += f", and {len(passed) - len(shown)} more"
+            lines.extend(
+                [
+                    "These measured figures in the draft checked clean. Keep these "
+                    "values exactly as written, where they stand: " + keep + ".",
+                    "Cutting them or swapping whole sections for qualitative prose is not "
+                    "a fix; repair the rejected claims while preserving the clean figures.",
+                ]
+            )
         lines.extend(
             [
                 "End the answer with a ```figures``` block declaring every number that "

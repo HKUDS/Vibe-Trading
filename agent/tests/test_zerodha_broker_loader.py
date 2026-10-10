@@ -14,6 +14,7 @@ import pandas as pd
 
 from backtest.loaders import india_broker_loader as mod
 from backtest.loaders.india_broker_loader import DataLoader, _base_symbol, _exchange_for
+from tests.loader_contract import assert_loader_contract
 
 
 def _epoch(date_str: str) -> int:
@@ -56,6 +57,7 @@ def test_zerodha_discovery(monkeypatch) -> None:
     assert "RELIANCE.NS" in result
     df = result["RELIANCE.NS"]
     assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+    assert_loader_contract(df, context="zerodha daily")
     # window clipped to April only (the May bar is dropped)
     assert len(df) == 2
     assert fake.calls[0]["symbol"] == "RELIANCE"

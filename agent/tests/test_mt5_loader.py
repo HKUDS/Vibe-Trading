@@ -20,6 +20,7 @@ import pytest
 
 import backtest.loaders.mt5_loader as mt5_loader
 from backtest.loaders.mt5_loader import DataLoader, _to_query_base
+from tests.loader_contract import assert_loader_contract
 
 pytestmark = pytest.mark.unit
 
@@ -173,6 +174,7 @@ class TestIntervalsAndFrames:
         loader = DataLoader()
         frames = loader.fetch(["EUR/USD"], "2026-06-01", "2026-06-10")
         frame = frames["EUR/USD"]  # keyed by the ORIGINAL input code
+        assert_loader_contract(frame, context="mt5 daily")
         assert list(frame.columns) == ["open", "high", "low", "close", "volume"]
         assert frame.index.name == "trade_date"
         assert frame["volume"].tolist() == [1200, 1300, 1400]  # tick_volume

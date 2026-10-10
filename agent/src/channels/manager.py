@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from collections import defaultdict
-from collections.abc import Callable
 from contextlib import suppress
-from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
 from src.channels.base import BaseChannel
@@ -40,6 +40,25 @@ _RELOAD_STOP_TIMEOUT_S = 10.0
 # Inbound messages whose reply fingerprint is kept for duplicate suppression.
 _MAX_REPLY_FINGERPRINTS = 4096
 
+# Runtime-error bookkeeping for the status surface (Refs #1625).
+_ERROR_CONTEXTS = frozenset({"start", "send", "reload_stop"})
+_ERROR_TEXT_LIMIT = 200
+# A URL's userinfo (``user:password@``) lives in its authority, before the
+# last '@'. Matching it textually rather than through urllib.parse keeps a
+# malformed or out-of-range port from defeating the redaction:
+# ``urlsplit(...).port`` raises on those, and the fail-open fallback returned
+# the credential the error text was being scrubbed of.
+# An error message is free text, so the userinfo group stops at whitespace:
+# unlike ``config_meta._URL_USERINFO_RE``, which matches a single config value
+# and tolerates a space inside the authority, this pattern must not swallow the
+# prose between a URL and a later '@' into one match.
+_URL_IN_TEXT_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/\s?#]*@)?(\S*)")
+
+
+def _strip_url_userinfo(text: str) -> str:
+    """Return *text* with username/password stripped from every embedded URL."""
+    return _URL_IN_TEXT_RE.sub(lambda match: match.group(1) + match.group(2), text)
+
 
 class ChannelManager:
     """Manages chat channels and coordinates message routing.
@@ -70,6 +89,9 @@ class ChannelManager:
         # would each stop the adapter they saw and start their own.
         self._reload_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._origin_reply_fingerprints: dict[tuple[str, str, str], str] = {}
+        # Last outbound chat per channel: where a degraded config reset sends
+        # its user-visible notice (#1625). One entry per channel — bounded.
+        self._last_chat_ids: dict[str, str] = {}
         self._status: dict[str, dict[str, Any]] = {}
 
         self._init_channels()
@@ -142,6 +164,8 @@ class ChannelManager:
                 running=channel.is_running,
                 display_name=getattr(cls, "display_name", name),
                 error="",
+                error_context="",
+                error_at="",
             )
             logger.info("%s channel enabled", cls.display_name)
             return channel
@@ -226,8 +250,9 @@ class ChannelManager:
         """Start a channel and log any exceptions."""
         try:
             await channel.start()
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to start channel %s", name)
+            self._record_error(name, "start", exc)
 
     def _spawn_channel_start(self, name: str, channel: BaseChannel) -> None:
         """Start a channel in the background, keeping a strong task reference."""
@@ -301,19 +326,44 @@ class ChannelManager:
         async with self._reload_locks[name]:
             return await self._reload_channel_locked(name, section)
 
+    async def refresh_channel_config(self, name: str, section: dict) -> bool:
+        """Apply a noop-key config edit in place; False if not built or rejected."""
+        # Same lock as reload_channel: a refresh and a reload of one channel
+        # must not interleave (the reason _reload_locks exists).
+        async with self._reload_locks[name]:
+            channel = self.channels.get(name)
+            if channel is None or not channel.refresh_config(section):
+                return False
+            channel.send_progress = self._resolve_bool_override(
+                section, "send_progress", self._global_bool("send_progress", True),
+            )
+            channel.send_tool_hints = self._resolve_bool_override(
+                section, "send_tool_hints", self._global_bool("send_tool_hints", False),
+            )
+            channel.show_reasoning = self._resolve_bool_override(
+                section, "show_reasoning", self._global_bool("show_reasoning", True),
+            )
+            self._store_channel_section(name, section)
+            return True
+
     async def _reload_channel_locked(self, name: str, section: dict | None) -> dict[str, Any]:
         old = self.channels.get(name)
+        stop_error: BaseException | None = None
         if old is not None:
             try:
                 await asyncio.wait_for(old.stop(), timeout=_RELOAD_STOP_TIMEOUT_S)
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as exc:
                 logger.warning("Stopping %s timed out; replacing", name)
-            except Exception:
+                stop_error = exc
+            except Exception as exc:
                 logger.warning("Stopping %s failed; replacing", name, exc_info=True)
+                stop_error = exc
         self.channels.pop(name, None)
         self._store_channel_section(name, section)
 
         if section is None or not self._section_enabled(section):
+            if stop_error is not None:
+                self._record_error(name, "reload_stop", stop_error)
             return self._record_status(
                 name,
                 configured=section is not None,
@@ -325,6 +375,10 @@ class ChannelManager:
         channel = self._build_channel(name, section)
         if channel is None:
             return self._record_status(name)
+        if stop_error is not None:
+            # After the build's success-clear: a wedged stop means the old adapter
+            # may still be alive; the status must explain the degraded swap.
+            self._record_error(name, "reload_stop", stop_error)
         self.channels[name] = channel
         if self._is_manager_running():
             # start() can be long-running (reconnect loops), so it must not be
@@ -340,6 +394,19 @@ class ChannelManager:
         self._status.setdefault(name, {})
         self._status[name].update(fields)
         return self._status[name]
+
+    def _record_error(self, name: str, context: str, exc: BaseException) -> None:
+        """Merge a scrubbed one-line runtime-error summary into ``_status[name]``.
+
+        ``context`` is one of ``_ERROR_CONTEXTS``; the traceback stays in the log
+        because the status surface flows into HTTP responses (Refs #1625).
+        """
+        self._record_status(
+            name,
+            error=_strip_url_userinfo(f"{type(exc).__name__}: {exc}")[:_ERROR_TEXT_LIMIT],
+            error_context=context,
+            error_at=datetime.now(timezone.utc).isoformat(),
+        )
 
     @staticmethod
     def _section_enabled(section: Any) -> bool:
@@ -449,6 +516,11 @@ class ChannelManager:
                                 msg.channel, msg.chat_id,
                             )
                             continue
+                    # Record the chat right before delivery: a chat we just
+                    # sent to is a chat a reset notice can reach (#1625). Only
+                    # this main path records — the reasoning-routing branch
+                    # above carries transient fragments, not conversations.
+                    self._last_chat_ids[msg.channel] = msg.chat_id
                     await self._send_with_retry(channel, msg)
                 else:
                     logger.warning("Unknown channel: %s", msg.channel)
@@ -551,6 +623,7 @@ class ChannelManager:
                         "Failed to send to %s after %d attempts",
                         msg.channel, max_attempts,
                     )
+                    self._record_error(msg.channel, "send", e)
                     return
                 delay = _SEND_RETRY_DELAYS[min(attempt, len(_SEND_RETRY_DELAYS) - 1)]
                 logger.warning(
@@ -568,17 +641,25 @@ class ChannelManager:
         """Get a channel by name."""
         return self.channels.get(name)
 
+    def last_chat_id(self, name: str) -> str | None:
+        """Return the most recent outbound chat id for *name* (None if never sent)."""
+        return self._last_chat_ids.get(name)
+
     def get_status(self) -> dict[str, Any]:
         """Get status of all channels."""
         status = {name: dict(item) for name, item in self._status.items()}
         for name, channel in self.channels.items():
             status.setdefault(name, {})
+            target_suggestions = getattr(channel, "delivery_target_suggestions", None)
             status[name].update(
                 {
                     "enabled": True,
                     "loaded": True,
                     "running": channel.is_running,
                     "display_name": getattr(channel, "display_name", name),
+                    "delivery_target_suggestions": (
+                        target_suggestions() if callable(target_suggestions) else []
+                    ),
                 }
             )
         return status

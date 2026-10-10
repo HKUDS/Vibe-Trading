@@ -137,7 +137,7 @@ class _FakeRegistry:
 def _fake_run_bench(metrics: dict[str, dict[str, Any]], *, status_by_zoo: dict[str, str] | None = None):
     """Build a ``run_bench`` double returning canned rows for the ``only`` ids."""
 
-    def _fake(*, zoo: str, universe: str, period: str, top: int, only: list[str], registry: Any, on_progress: Any = None) -> dict[str, Any]:  # noqa: ARG001
+    def _fake(*, zoo: str, universe: str, period: str, top: int, only: list[str], registry: Any, on_progress: Any = None, on_stage: Any = None) -> dict[str, Any]:  # noqa: ARG001
         if status_by_zoo and zoo in status_by_zoo:
             return {"status": "error", "error": status_by_zoo[zoo]}
         rows, skipped = [], []
@@ -219,7 +219,7 @@ def test_compare_groups_across_zoos(monkeypatch, capsys) -> None:
 
     fake = _fake_run_bench(metrics)
 
-    def _tracking(*, zoo, universe, period, top, only, registry, on_progress=None):  # noqa: ANN001, ARG001
+    def _tracking(*, zoo, universe, period, top, only, registry, on_progress=None, on_stage=None):  # noqa: ANN001, ARG001
         calls.append((zoo, tuple(only)))
         return fake(
             zoo=zoo, universe=universe, period=period, top=top, only=only,
@@ -311,7 +311,7 @@ def test_core_progress_counts_globally_across_zoos(monkeypatch) -> None:
     id_to_zoo = {"a": "alpha101", "b": "alpha101", "c": "gtja191"}
     metrics = {k: _metrics(0.02, 0.05, 0.40) for k in id_to_zoo}
 
-    def _fake(*, zoo, universe, period, top, only, registry, on_progress=None):  # noqa: ANN001, ARG001
+    def _fake(*, zoo, universe, period, top, only, registry, on_progress=None, on_stage=None):  # noqa: ANN001, ARG001
         rows = []
         for i, aid in enumerate(only, start=1):
             rows.append({"id": aid, **metrics[aid]})

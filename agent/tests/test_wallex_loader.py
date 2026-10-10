@@ -14,6 +14,7 @@ import pytest
 import requests
 
 from backtest.loaders import wallex
+from tests.loader_contract import assert_loader_contract
 
 
 def _udf_payload(
@@ -119,6 +120,7 @@ class TestFetch:
         assert isinstance(df.index, pd.DatetimeIndex)
         assert df.index.is_monotonic_increasing
         assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+        assert_loader_contract(df, context="wallex daily")
         assert len(df) == 2
         assert df["close"].tolist() == [198174.0, 199000.0]
         assert df["volume"].dtype.kind == "f"
