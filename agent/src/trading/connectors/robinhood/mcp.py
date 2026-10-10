@@ -45,6 +45,14 @@ _RUNNER_TOOL_NAMES = {
     "cancel_order": "cancel_equity_order",
 }
 
+#: Whether this connector can place options orders. ``False`` until the
+#: argument schemas of ``place_option_order`` and ``review_option_order`` are
+#: observed (#1435): the server advertises both, but the gate can only price an
+#: order from fields it knows, so ``place_option_order`` stays unmapped and
+#: denied. The options mandate check it would feed is
+#: :func:`src.live.options.check_option_order`.
+OPTIONS_ORDERS_SUPPORTED = False
+
 #: ``get_portfolio`` values held outside equities. ``get_equity_positions``
 #: covers none of them, so a holdings view is only complete when all are zero.
 NON_EQUITY_VALUE_FIELDS = (

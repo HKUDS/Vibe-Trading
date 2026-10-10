@@ -528,6 +528,16 @@ def check_mandate(
             detail=f"{symbol} is on the mandate exclude list",
         )
 
+    # Options are sized by contract multiplier and max loss, not share
+    # notional: they go through src.live.options.check_option_order only.
+    if intent.instrument_type == InstrumentType.OPTION:
+        return _breach(
+            broker=broker, remote_tool=remote_tool, intent=intent,
+            kind=BREACH_KIND_INSTRUMENT, limit="allowed_instruments",
+            limit_value=0.0, attempted_value=0.0,
+            detail="options orders are not priced by the share-notional gate",
+        )
+
     # 2. Instrument-type allowance (empty == deny all, fail-closed).
     if intent.instrument_type not in caps.allowed_instruments:
         return _breach(

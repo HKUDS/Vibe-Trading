@@ -23,7 +23,8 @@ ROBINHOOD_PROFILES: tuple[TradingProfile, ...] = (
         config={"server": "robinhood", "account_selection": "required"},
         notes=(
             "Live order placement supports equities only; options order placement is not supported. "
-            "Robinhood's options order and required review schemas are not mapped into the mandate gate."
+            "Robinhood advertises place_option_order and review_option_order, but their argument "
+            "schemas are not observed, so they are not mapped into the mandate gate (#1435)."
         ),
     ),
     # The portfolio view of the same MCP server and OAuth grant. It declares no

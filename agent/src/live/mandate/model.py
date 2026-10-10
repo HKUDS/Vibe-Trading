@@ -74,6 +74,32 @@ class HardCaps:
 
 
 @dataclass(frozen=True)
+class OptionLimits:
+    """Options-specific ceilings (#1435). Present only when the user opted in.
+
+    ``Mandate.option_limits is None`` means options are disabled, whatever
+    ``allowed_instruments`` says. Every amount is USD after the contract
+    multiplier (premium ``2.50`` x 3 contracts x 100 == ``750``).
+
+    Attributes:
+        max_premium_per_order_usd: Premium one order may pay (net debit).
+        max_loss_per_order_usd: Worst-case loss one order may carry.
+        max_premium_per_day_usd: Premium paid across a UTC day.
+        max_loss_per_day_usd: Worst-case loss opened across a UTC day.
+        allow_naked_short: Whether a short leg not covered by a long leg of
+            the same order is allowed. ``False`` by default; when ``True`` a
+            naked short put counts strike x multiplier as its max loss and a
+            naked short call stays refused (its loss is unbounded).
+    """
+
+    max_premium_per_order_usd: float
+    max_loss_per_order_usd: float
+    max_premium_per_day_usd: float
+    max_loss_per_day_usd: float
+    allow_naked_short: bool = False
+
+
+@dataclass(frozen=True)
 class UniverseConstraint:
     """Layer (b): user-set universe the agent picks symbols WITHIN.
 
@@ -139,6 +165,9 @@ class Mandate:
             ``True`` is an explicit per-mandate opt-in the user makes at commit.
             Read by ``src.live.runtime.flatten`` on a halt trip (SPEC §7.5 #6
             "optionally, per mandate").
+        option_limits: Options ceilings the user approved at commit, or
+            ``None`` (the default, and what an old ``mandate.json`` loads as)
+            when options are disabled.
     """
 
     schema_version: int
@@ -146,3 +175,4 @@ class Mandate:
     universe: UniverseConstraint
     consent: ConsentMeta
     flatten_on_halt: bool = False
+    option_limits: OptionLimits | None = None
