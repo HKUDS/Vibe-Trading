@@ -27,6 +27,7 @@ _INTERNAL = frozenset(
         "config_meta",
         "dingtalk_media",
         "dingtalk_probe",
+        "discord_probe",
         "email_probe",
         "feishu_probe",
         "manager",

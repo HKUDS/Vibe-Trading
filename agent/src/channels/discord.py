@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import Field
 
+from src.channels import discord_probe
 from src.channels.bus.events import OutboundMessage
 from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
@@ -355,6 +356,7 @@ class DiscordChannel(BaseChannel):
 
     name = "discord"
     display_name = "Discord"
+    supports_connection_test = True
     delivery_target_label = "Discord channel"
     delivery_target_kind = "channel"
     delivery_target_placeholder = "Channel ID"
@@ -475,6 +477,19 @@ class DiscordChannel(BaseChannel):
         """Stop the Discord channel."""
         self._running = False
         await self._reset_runtime_state(close_client=True)
+
+    async def test_connection(self) -> dict[str, Any]:
+        """Validate the Discord bot token with a standalone REST probe.
+
+        Delegates to :func:`src.channels.discord_probe.test_connection`; see
+        that function for the full contract. ``sdk_available`` passes the real
+        ``DISCORD_AVAILABLE`` guard (unlike slack's constant ``True``): this
+        module imports the ``discord`` SDK conditionally, so the probe works
+        — and reports SDK availability honestly — even without it.
+        """
+        return await discord_probe.test_connection(
+            self.config, sdk_available=DISCORD_AVAILABLE
+        )
 
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Discord using discord.py."""

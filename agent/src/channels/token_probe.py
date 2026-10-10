@@ -13,9 +13,9 @@ returned, logged, or cached.
 
 Adding another token-endpoint channel (checklist):
 
-1. ``<name>_probe.py``: endpoint URL, payload shape, ``token_key``; import
-   the adapter's config type under ``TYPE_CHECKING`` only, so a credential
-   check never pulls the channel's SDK.
+1. ``<name>_probe.py``: endpoint URL, HTTP method, payload shape,
+   ``token_key``; import the adapter's config type under ``TYPE_CHECKING``
+   only, so a credential check never pulls the channel's SDK.
 2. ``registry._INTERNAL``: add ``"<name>_probe"`` so channel discovery keeps
    treating the module as internal rather than as an adapter.
 3. Adapter: ``supports_connection_test = True`` plus a thin
@@ -75,6 +75,7 @@ async def probe_token_endpoint(
     secrets: Sequence[str],
     sdk_available: bool,
     headers: dict[str, str] | None = None,
+    method: str = "POST",
     transport: httpx.AsyncHTTPTransport | None = None,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
@@ -85,14 +86,17 @@ async def probe_token_endpoint(
     A successful token is discarded: it is never returned, logged, or cached.
 
     Args:
-        url: The token endpoint to POST to.
-        payload: JSON body carrying the credentials.
+        url: The token endpoint to request.
+        payload: JSON body carrying the credentials; not sent on ``"GET"``.
         token_key: Response field whose truthy value means success.
         secrets: Credential values to scrub from every ``detail``.
         sdk_available: Whether the channel's optional SDK imported; echoed
             back so the caller's envelope carries it unchanged.
         headers: Optional request headers for endpoints that authenticate
             outside the JSON body (e.g. Slack's ``Authorization: Bearer``).
+        method: HTTP method for the request. ``"GET"`` sends no JSON body,
+            for endpoints that authenticate purely through ``headers``
+            (e.g. Discord's ``users/@me``).
         transport: Optional custom transport (e.g. an IPv4-bound one).
         timeout: Per-phase timeout in seconds for the fresh client.
 
@@ -106,7 +110,12 @@ async def probe_token_endpoint(
             timeout=httpx.Timeout(timeout, connect=timeout),
             transport=transport,
         ) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            resp = await client.request(
+                method,
+                url,
+                json=payload if method != "GET" else None,
+                headers=headers,
+            )
     except httpx.HTTPError as exc:
         return {
             "ok": False,
