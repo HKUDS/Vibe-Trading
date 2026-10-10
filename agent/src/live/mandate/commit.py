@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import uuid
@@ -409,6 +410,7 @@ def commit_mandate(
     ceilings_ref: Mapping[str, Any] | None = None,
     lifetime_days: int = DEFAULT_MANDATE_LIFETIME_DAYS,
     flatten_on_halt: bool | None = None,
+    option_limits: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write a mandate — the ONLY code path that activates live-trading authority.
 
@@ -442,6 +444,12 @@ def commit_mandate(
             ``False`` (cancel-only, the safe default). An explicit bool overrides
             the profile. Persisted on the mandate and read on a halt trip by
             ``src.live.runtime.flatten`` (SPEC §7.5 #6).
+        option_limits: Options ceilings the user explicitly approved on the
+            surface (#1435): ``max_premium_per_order_usd``,
+            ``max_loss_per_order_usd``, ``max_premium_per_day_usd``,
+            ``max_loss_per_day_usd`` and optional ``allow_naked_short``.
+            ``None`` (the default) leaves options disabled. Deliberately not
+            read from the proposal profile, which the agent authors.
 
     Returns:
         ``{"mandate_id", "consent_record_id", "broker", "expires_at",
@@ -478,6 +486,8 @@ def commit_mandate(
         else bool(resolved.get("flatten_on_halt", False))
     )
 
+    options_doc = _validate_option_limits(option_limits) if option_limits is not None else None
+
     mandate_id = _new_id("mandate")
     consent_record_id = _new_id("cr")
 
@@ -493,6 +503,8 @@ def commit_mandate(
         # Top-level halt-behavior policy (not a quantitative ceiling): read by
         # the read-only loader onto Mandate.flatten_on_halt; absent => False.
         "flatten_on_halt": do_flatten_on_halt,
+        # Absent/null => options disabled (the read-only loader's default).
+        "option_limits": options_doc,
         "consent": {
             "created_at": created_iso,
             "consent_token_sha256": consent_token_sha256,
@@ -513,6 +525,7 @@ def commit_mandate(
         "account_ref": account_ref,
         "resolved_profile": resolved,
         "flatten_on_halt": do_flatten_on_halt,
+        "option_limits": options_doc,
         "ceilings_ref": proposal.get("ceilings_ref"),
         "created_at": created_iso,
         "expires_at": expires_iso,
@@ -540,6 +553,38 @@ def commit_mandate(
         "expires_at": expires_iso,
         "resolved_profile": resolved,
     }
+
+
+_OPTION_LIMIT_KEYS = (
+    "max_premium_per_order_usd",
+    "max_loss_per_order_usd",
+    "max_premium_per_day_usd",
+    "max_loss_per_day_usd",
+)
+
+
+def _validate_option_limits(limits: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the persisted ``option_limits`` section, or raise ``CommitError``.
+
+    Every amount is required (no default can stand in for a user's number) and
+    must be a finite, non-negative real; ``allow_naked_short`` must be a bool.
+    """
+    if not isinstance(limits, Mapping):
+        raise CommitError("option_limits must be an object")
+    unknown = sorted(set(limits) - set(_OPTION_LIMIT_KEYS) - {"allow_naked_short"})
+    if unknown:
+        raise CommitError(f"option_limits has unknown fields: {', '.join(unknown)}")
+    doc: dict[str, Any] = {}
+    for key in _OPTION_LIMIT_KEYS:
+        value = limits.get(key)
+        if not _is_real_number(value) or not math.isfinite(value) or value < 0:
+            raise CommitError(f"option_limits.{key} must be a finite non-negative number")
+        doc[key] = float(value)
+    allow_naked_short = limits.get("allow_naked_short", False)
+    if not isinstance(allow_naked_short, bool):
+        raise CommitError("option_limits.allow_naked_short must be true or false")
+    doc["allow_naked_short"] = allow_naked_short
+    return doc
 
 
 def _explicit_float(profile: Mapping[str, Any], key: str) -> float | None:
