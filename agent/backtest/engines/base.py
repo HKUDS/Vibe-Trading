@@ -2013,6 +2013,8 @@ class BaseEngine(ABC):
             commission=entry_commission + order.exit_commission,
             entry_margin=order.released_margin,
             exit_margin=exit_margin,
+            open_price=before.open_price,
+            open_size=before.open_size,
         ))
         self._record_fill(
             symbol=before.symbol,
@@ -2053,6 +2055,8 @@ class BaseEngine(ABC):
             leverage=order.leverage,
             entry_bar_idx=self._bar_idx,
             entry_commission=order.commission,
+            open_price=order.price,
+            open_size=order.size,
         )
         self._record_fill(
             symbol=order.symbol,
@@ -2146,6 +2150,8 @@ class BaseEngine(ABC):
             commission=pos.entry_commission + exit_comm,
             entry_margin=margin,
             exit_margin=exit_margin,
+            open_price=pos.open_price,
+            open_size=pos.open_size,
         ))
         self._record_fill(
             symbol=symbol,
@@ -2273,16 +2279,22 @@ class BaseEngine(ABC):
         target_out.index.name = "timestamp"
         target_out.to_csv(out / "target_positions.csv")
 
-        # Trades (compatible format)
+        # Trades (compatible format): two rows per round trip, entry then exit.
+        # The entry row is the opening fill as executed. A TradeRecord's
+        # entry_price is the weighted cost after any scale-ins while its
+        # entry_time stays on the first open, so pairing those two would
+        # report a fill that never happened. Scale-ins stay in fills.jsonl.
         trade_rows = []
         for t in self.trades:
             # Entry event
+            entry_price = t.entry_price if t.open_price is None else t.open_price
+            entry_qty = t.size if t.open_size is None else t.open_size
             trade_rows.append({
                 "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
                 "code": t.symbol,
                 "side": "buy" if t.direction == 1 else "sell",
-                "price": round(t.entry_price, 4),
-                "qty": round(t.size, 6),
+                "price": round(entry_price, 4),
+                "qty": round(entry_qty, 6),
                 "reason": "signal",
                 "pnl": 0.0,
                 "holding_days": 0,
