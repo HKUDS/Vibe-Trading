@@ -370,7 +370,11 @@ class PersistentMemory:
             try:
                 from src.memory.search_index import get_shared_index
                 index = get_shared_index()
-                matches = index.search(query, max_results=max_results)
+                # The on-disk memory files are canonical. The FTS database can
+                # briefly retain rows for files removed outside this process,
+                # so fetch a small candidate buffer before discarding rows that
+                # no longer map to a current entry.
+                matches = index.search(query, max_results=max_results * 4)
 
                 # Auto-rebuild on first empty search if entries exist on disk
                 all_entries = None

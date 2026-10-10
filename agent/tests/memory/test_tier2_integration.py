@@ -193,6 +193,36 @@ class TestFtsAddThenSearchFinds:
         assert len(results) >= 1
         assert any("quant" in e.title.lower() for e in results)
 
+    def test_fts_stale_rows_do_not_displace_current_memories(self, tmp_path, monkeypatch, fts_db):
+        """Discarding a stale FTS row must not shrink the requested result set."""
+        monkeypatch.setenv("VT_MEMORY_FTS_INDEX", "false")
+        reset_env_config()
+
+        mem = PersistentMemory(tmp_path)
+        mem.add("first recall", "evidence retrieval", "project")
+        mem.add("second recall", "evidence retrieval", "project")
+        entries = {entry.title: entry for entry in mem.list_entries()}
+
+        from src.memory.search_index import MemoryMatch
+        import src.memory.search_index as search_index
+
+        class _Index:
+            def search(self, query, max_results):
+                candidates = [
+                    MemoryMatch("stale0", "removed memory", "", -10.0),
+                    MemoryMatch(entries["first recall"].id, "first recall", "", -9.0),
+                    MemoryMatch(entries["second recall"].id, "second recall", "", -8.0),
+                ]
+                return candidates[:max_results]
+
+        monkeypatch.setattr(search_index, "get_shared_index", lambda: _Index())
+        monkeypatch.setenv("VT_MEMORY_FTS_INDEX", "true")
+        reset_env_config()
+
+        results = mem.find_relevant("evidence retrieval", max_results=2)
+
+        assert [entry.title for entry in results] == ["first recall", "second recall"]
+
 
 # ---------------------------------------------------------------------------
 # 4a. Fallback token-scan must find the same short-token content the FTS5
