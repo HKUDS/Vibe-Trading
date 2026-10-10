@@ -401,13 +401,18 @@ def _redact_token_usage(value: Any, *, sink: str) -> Any:
 #: scoped to credential field names so a benign number in shell output (a
 #: price, a duration, a timestamp) is never mangled.
 #:
-#: All names are SINGULAR and ``\b``-anchored: a plural is a count or a
-#: collection, never a credential, and matching it mangles routine output
-#: (``tokens: 1204 in / 318 out`` from the LLM usage line, ``api_keys: 3``).
+#: All names are SINGULAR and must start a word: either a ``\b`` boundary, an
+#: UPPERCASE env-style prefix such as ``TUSHARE_``, or the ``aws_`` prefix (see
+#: :data:`_TEXT_KV_PATTERN`).
+#: A plural is a count or a collection, never a credential, and matching it
+#: mangles routine output (``tokens: 1204 in / 318 out`` from the LLM usage
+#: line, ``api_keys: 3``). A lowercase suffix like ``pad_token`` or
+#: ``max_token`` is an ordinary identifier, so it is left alone.
 _TEXT_CREDENTIAL_KEYS = (
     r"api[_-]?key|api[_-]?secret|access[_-]?token|auth[_-]?token"
     r"|refresh[_-]?token|bearer[_-]?token|id[_-]?token|session[_-]?token"
-    r"|client[_-]?secret|secret[_-]?key|private[_-]?key|app[_-]?secret"
+    r"|client[_-]?secret|secret[_-]?access[_-]?key|secret[_-]?key"
+    r"|private[_-]?key|app[_-]?secret"
     r"|passphrase|password|passwd|authorization|secret|token"
 )
 
@@ -427,7 +432,14 @@ _TEXT_VALUE = r"\"[^\"\n]*\"|'[^'\n]*'|[^\s,;{}\[\]()\"']+"
 #: Every quantifier applies to a bounded character class, with no nesting and
 #: no overlapping alternatives, so matching stays linear (no ReDoS surface).
 _TEXT_KV_PATTERN = re.compile(
-    r"(?P<q>[\"']?)\b(?P<name>" + _TEXT_CREDENTIAL_KEYS + r")\b(?P=q)"
+    r"(?P<q>[\"']?)"
+    # ``\b`` for a plain name; for an env-style name the label follows an
+    # UPPERCASE segment and ``_`` (``TUSHARE_TOKEN``). The inline ``(?-i:...)``
+    # keeps the uppercase test case-sensitive under IGNORECASE, so ``pad_token``
+    # and ``max_token`` still do not match. ``aws_`` is the one lowercase prefix
+    # accepted, for ``~/.aws/credentials`` names such as ``aws_secret_access_key``.
+    r"(?:\b|(?<=(?-i:[A-Z0-9])_)|(?<=aws_))"
+    r"(?P<name>" + _TEXT_CREDENTIAL_KEYS + r")\b(?P=q)"
     r"(?P<sep>\s*[:=]\s*)"
     r"(?![\"']?" + re.escape(_REDACTED) + r"[\"']?|bearer\b)"
     r"(?P<value>" + _TEXT_VALUE + r")",
@@ -440,6 +452,19 @@ _TEXT_KV_PATTERN = re.compile(
 _TEXT_BEARER_PATTERN = re.compile(
     r"\b(?P<scheme>bearer)\s+(?P<value>[A-Za-z0-9._~+/-]+=*)",
     re.IGNORECASE,
+)
+
+#: URL userinfo (``scheme://user:password@host``). It is a credential with no
+#: key label, so the key-based pattern never reaches it. A password may contain
+#: ``@``, so the match runs to the last ``@`` before a delimiter (whitespace,
+#: path/query/fragment markers, quotes, brackets, commas), and JSON fields after
+#: a URL are left alone. A bare username is redacted only when it is 20+ token
+#: characters (a pasted access token), so ``git@host`` stays readable.
+_TEXT_URL_USERINFO_PATTERN = re.compile(
+    r"(?<=://)"
+    r"(?:[^\s/?#\"'<>(){}\[\],:@]*:[^\s/?#\"'<>(){}\[\],]*"  # user:password
+    r"|[A-Za-z0-9_-]{20,})"                                  # bare token
+    r"@"
 )
 
 
@@ -487,9 +512,10 @@ def redact_text(text: object) -> str:
     Used for plain-text tool results, shell output, error messages and log
     lines where :func:`redact_payload` is a no-op (it only walks structured
     keys). Bearer header values and ``key=value`` / ``key: value`` /
-    ``"key": "value"`` credential pairs are replaced with ``'[redacted]'``
-    while the surrounding text — labels, paths, error context — stays
-    readable.
+    ``"key": "value"`` credential pairs are replaced with ``'[redacted]'``,
+    and URL userinfo (``scheme://user:password@host``) becomes
+    ``scheme://[redacted]@host``, while the surrounding text — labels, paths,
+    error context — stays readable.
 
     Args:
         text: Free-form string (or any object coerced via :func:`str`).
@@ -506,6 +532,7 @@ def redact_text(text: object) -> str:
     if not s:
         return s
     s = _TEXT_BEARER_PATTERN.sub(r"\g<scheme> " + _REDACTED, s)
+    s = _TEXT_URL_USERINFO_PATTERN.sub(_REDACTED + "@", s)
     s = _TEXT_KV_PATTERN.sub(_sub_credential_pair, s)
     # Bare tokens with no key label in front of them.
     return _TEXT_TOKEN_PATTERN.sub(_REDACTED, s)
