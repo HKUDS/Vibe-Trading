@@ -7,23 +7,18 @@ Real engine schema (``backtest/engines/base.py::_write_artifacts``, the
 writer every reproducible run goes through):
 
 * ``trades.csv`` — columns ``timestamp, code, side, price, qty, reason,
-  pnl, holding_days, return_pct`` with TWO rows per round trip: an entry
-  row (``reason="signal"``, ``pnl=0.0``, ``holding_days=0``) followed by
+  pnl, holding_days, holding_bars, return_pct, event`` with TWO rows per
+  round trip: an entry row (``reason="signal"``, ``pnl=0.0``, ``holding_days=0``) followed by
   the exit row carrying the realized ``pnl``.
 * ``equity.csv`` — date column ``timestamp`` (the engine's index name)
   plus ``ret, equity, drawdown, benchmark_equity, active_ret``.
 
-Entry/exit convention. The engine writes no dedicated marker column, and
-``reason`` is not one either — exits can also carry ``reason="signal"``
-(the base engine closes positions on signal). This reader therefore
-mirrors the repo's own artifact-reload convention in
-``backtest/validation.py``: a row is a closed-trade (exit) row iff its
-``pnl`` parses to a nonzero finite value, while ``pnl == 0.0`` rows are
-entry rows. Files with no zero-pnl rows at all are treated as legacy
-one-row-per-trade artifacts where every dated row is a meaningful closed
-trade. Documented limitation (shared with ``validation.py``): an
-exact-break-even exit (``pnl == 0.0``) is indistinguishable from an entry
-row and is not counted as a round trip.
+Entry/exit convention. New BaseEngine artifacts carry an explicit ``event``
+column (``entry`` / ``exit``), so break-even exits count as completed trades.
+Unknown or blank event values are skipped, never inferred from PnL. Unmarked
+files retain the legacy convention: finite nonzero PnL marks an exit, zero
+marks an entry. Without any zero-PnL rows, every dated row counts as a legacy
+closed trade. Break-even exits in unmarked files remain ambiguous.
 
 Legacy artifacts keep parsing through column aliases (``date`` for
 ``timestamp``, ``benchmark`` for ``benchmark_equity``). Unusable files —
@@ -136,14 +131,14 @@ def read_trade_activity(path: Path) -> tuple[list[date], int | None] | None:
     Returns ``(exit_dates, max_concurrent)``:
 
     * ``exit_dates`` — one date per closed round trip, sorted. Engine
-      artifacts hold two rows per round trip (entry row ``pnl=0.0`` plus
-      exit row with realized pnl); only exit rows count, so a round trip
+      artifacts hold two rows per round trip (``event=entry`` and
+      ``event=exit``); only exit rows count, so a round trip
       is counted once, never twice. Legacy one-row-per-trade artifacts
       (no zero-pnl marker rows) count every dated row.
     * ``max_concurrent`` — peak simultaneously open positions derived
       from the entry/exit pairs (FIFO per code, matching the engine's
       one-position-per-symbol book), or ``None`` when the file lacks the
-      zero-pnl entry marker and concurrency is undetectable.
+      entry marker and concurrency is undetectable.
 
     Returns ``None`` when the file is unusable: no date column, decode /
     OS / CSV errors, or no usable content. Rows with unparseable dates
@@ -165,7 +160,8 @@ def read_trade_activity(path: Path) -> tuple[list[date], int | None] | None:
             pnl_column = _find_column(fieldnames, _PNL_ALIASES)
             code_column = _find_column(fieldnames, _CODE_ALIASES)
 
-            rows: list[tuple[date, str, float | None]] = []
+            event_column = _find_column(fieldnames, ("event",))
+            rows: list[tuple[date, str, float | None, str]] = []
             for record in reader:
                 trade_date = parse_iso_date(record.get(date_column))
                 if trade_date is None:
@@ -180,7 +176,14 @@ def read_trade_activity(path: Path) -> tuple[list[date], int | None] | None:
                     if code_column is not None
                     else ""
                 )
-                rows.append((trade_date, code, pnl))
+                event = (
+                    str(record.get(event_column) or "")
+                    if event_column is not None
+                    else "entry" if pnl == 0.0 else "exit"
+                )
+                if event_column is not None and event not in {"entry", "exit"}:
+                    continue
+                rows.append((trade_date, code, pnl, event))
     except _UNREADABLE_ERRORS as exc:
         logger.warning(
             "trades.csv at %s is unreadable (%s); treated as unusable", path, exc
@@ -190,32 +193,28 @@ def read_trade_activity(path: Path) -> tuple[list[date], int | None] | None:
     if not rows:
         return [], None
 
-    # The engine writes entry rows with pnl=0.0 and exit rows with realized
-    # pnl (backtest/engines/base.py::_write_artifacts); backtest/validation.py
-    # reloads the same artifacts with `pnl != 0` as the exit-row filter. When
-    # no marker row exists, every dated row is a closed trade (legacy
-    # one-row-per-trade artifacts) and concurrency is undetectable.
-    has_entry_marker = any(pnl is not None and pnl == 0.0 for _, _, pnl in rows)
-    if not has_entry_marker:
-        return sorted(trade_date for trade_date, _, _ in rows), None
+    # Without explicit events, preserve the legacy one-row-per-trade rule.
+    has_entry_marker = any(event == "entry" for _, _, _, event in rows)
+    if event_column is None and not has_entry_marker:
+        return sorted(trade_date for trade_date, _, _, _ in rows), None
 
     exit_dates: list[date] = []
     open_entries: dict[str, list[date]] = {}
     intervals: list[tuple[date, date]] = []
-    for trade_date, code, pnl in rows:
-        if pnl is None:
-            continue  # unclassifiable without a usable pnl marker
-        if pnl != 0.0:
+    for trade_date, code, pnl, event in rows:
+        if event_column is None and pnl is None:
+            continue  # unclassifiable without a usable legacy pnl marker
+        if event == "exit":
             # Exit row: one closed round trip.
             exit_dates.append(trade_date)
             pending = open_entries.get(code)
             if pending:
                 intervals.append((pending.pop(0), trade_date))
         else:
-            # Entry row (engine marker pnl == 0.0).
+            # Explicit entry or legacy zero-PnL entry marker.
             open_entries.setdefault(code, []).append(trade_date)
     exit_dates.sort()
-    return exit_dates, _max_concurrent_positions(intervals)
+    return exit_dates, _max_concurrent_positions(intervals) if has_entry_marker else None
 
 
 def read_trade_dates(path: Path) -> list[date] | None:
