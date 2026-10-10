@@ -135,6 +135,24 @@ def test_guard_patches_and_restores() -> None:
     assert socketutil.SocketUtil.connect is original_connect
 
 
+@pytest.mark.parametrize("args,vip", [((), False), (("0",), False), (("bs-test",), True)])
+def test_guard_accepts_legacy_and_api_key_connect(monkeypatch, args, vip) -> None:
+    """Keep SDK 0.9.3/0.9.4 routing and deadlines through the same guard."""
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(cons, "BAOSTOCK_VIP_SERVER_IP", "vip.example", raising=False)
+    sock = Mock()
+    create = Mock(return_value=sock)
+    monkeypatch.setattr(socket, "create_connection", create)
+    with _baostock_socket_guard(0.5) as acquired:
+        assert acquired
+        bs.util.socketutil.SocketUtil().connect(*args)
+        host = cons.BAOSTOCK_VIP_SERVER_IP if vip else cons.BAOSTOCK_SERVER_IP
+        create.assert_called_once_with((host, cons.BAOSTOCK_SERVER_PORT), timeout=0.5)
+        assert context.default_socket is sock
+    sock.close.assert_called_once_with()
+
+
 def test_read_timeout_env(monkeypatch) -> None:
     assert _read_timeout() == _DEFAULT_READ_TIMEOUT
     monkeypatch.setenv(_READ_TIMEOUT_ENV, "0.7")

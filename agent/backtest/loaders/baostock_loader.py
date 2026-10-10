@@ -103,13 +103,19 @@ def _bounded_send_msg(msg: str, timeout: float) -> Optional[str]:
         return None
 
 
-def _connect_with_timeout(self, timeout: float) -> None:
-    """SocketUtil.connect with a deadline and no unbound-socket NameError."""
+def _connect_with_timeout(self, timeout: float, api_key: str = "0") -> None:
+    """Bound SDK 0.9.3/0.9.4 connections while preserving SDK host routing.
+
+    Args:
+        timeout: Connection deadline in seconds.
+        api_key: SDK 0.9.4 routing argument; omitted by SDK 0.9.3.
+    """
     import baostock.common.contants as cons
     import baostock.common.context as context
 
     try:
-        sock = socket.create_connection((cons.BAOSTOCK_SERVER_IP, cons.BAOSTOCK_SERVER_PORT), timeout=timeout)
+        host = cons.BAOSTOCK_VIP_SERVER_IP if api_key.startswith("bs-") else cons.BAOSTOCK_SERVER_IP
+        sock = socket.create_connection((host, cons.BAOSTOCK_SERVER_PORT), timeout=timeout)
     except OSError as exc:
         logger.warning("baostock connect failed: %s", exc)
         sock = None
@@ -134,7 +140,7 @@ def _baostock_socket_guard(timeout: float):
     previous_socket = getattr(context, "default_socket", None)
     context.default_socket = None
     socketutil.send_msg = lambda msg: _bounded_send_msg(msg, timeout)
-    socketutil.SocketUtil.connect = lambda util: _connect_with_timeout(util, timeout)
+    socketutil.SocketUtil.connect = lambda util, api_key="0": _connect_with_timeout(util, timeout, api_key)
     try:
         yield True
     finally:

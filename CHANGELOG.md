@@ -35,6 +35,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   #1666, #1665); align Vitest with its coverage plugin. Keep `uuid-utils` at
   0.17.0 because the proposed 1.0.0 upgrade (#1670) conflicts with the current
   LangChain constraint. Preserve mootdx's retirement from the public canary.
+  BaoStock's bounded connection wrapper accepts the new 0.9.4 API-key argument
+  while retaining public/VIP routing and compatibility with 0.9.3.
 
 ### Maintenance — 2026-10-09
 
