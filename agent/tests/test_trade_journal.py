@@ -196,6 +196,25 @@ def test_detect_format_signatures() -> None:
     assert detect_format(unknown) == "unknown"
 
 
+def test_detect_format_needs_a_futu_value_column_to_claim_futu() -> None:
+    # `Date,Symbol,Side` is an ordinary English journal header, not a Futu
+    # signature. parse_futu reads Quantity/Amount by exact spelling, so a
+    # journal using the generic aliases used to be claimed as Futu and then
+    # parsed to zero quantity/price/amount while parse_file still succeeded.
+    aliased = pd.DataFrame(columns=["Date", "Symbol", "Side", "Qty", "Price"])
+    assert detect_format(aliased) == "generic"
+
+    lowercase_values = pd.DataFrame(
+        columns=["Date", "Symbol", "Side", "quantity", "price", "amount"]
+    )
+    assert detect_format(lowercase_values) == "generic"
+
+    direction_aliased = pd.DataFrame(columns=["Date", "Symbol", "Direction", "Size"])
+    assert detect_format(direction_aliased) == "generic"
+
+    assert detect_format(pd.DataFrame(columns=["Date", "Symbol", "Side", "Amount"])) == "futu"
+
+
 def test_records_to_dataframe_sorts_and_handles_empty() -> None:
     empty = records_to_dataframe([])
     assert empty.empty
@@ -306,6 +325,41 @@ def test_load_dataframe_accepts_utf16_bom_csv(tmp_path: Path) -> None:
     assert list(df.columns) == ["Date", "Symbol", "Side", "Quantity", "Price"]
     assert detect_format(df) == "futu"
     assert df.iloc[0]["Symbol"] == "AAPL"
+
+
+@pytest.mark.parametrize(
+    "header,commission",
+    [
+        ("Date,Symbol,Side,Qty,Price", ""),
+        ("Date,Symbol,Side,Size,Price", ""),
+        ("Date,Symbol,Side,quantity,price,commission", ",1.5"),
+    ],
+)
+def test_parse_file_keeps_economics_for_aliased_english_journals(
+    tmp_path: Path, header: str, commission: str
+) -> None:
+    """Capitalized generic aliases must not be routed to the Futu parser.
+
+    The Futu parser reads ``Quantity``/``Price``/``Amount`` by exact spelling, so
+    these journals came back with every economic field zeroed while ``parse_file``
+    still reported success.
+    """
+    csv = tmp_path / "aliased_journal.csv"
+    csv.write_text(
+        f"{header}\n"
+        f"2026-01-02,AAPL,Buy,10,100{commission}\n"
+        f"2026-01-05,AAPL,Sell,10,120{commission}\n",
+        encoding="utf-8",
+    )
+
+    fmt, records = parse_file(csv)
+
+    assert fmt == "generic"
+    assert [r.quantity for r in records] == [10.0, 10.0]
+    assert [r.price for r in records] == [100.0, 120.0]
+    assert [r.amount for r in records] == [1000.0, 1200.0]
+    expected_fee = [1.5, 1.5] if commission else [0.0, 0.0]
+    assert [r.fee for r in records] == expected_fee
 
 
 @pytest.mark.parametrize(
@@ -628,6 +682,31 @@ def test_analyze_full_includes_profile_and_behavior(allow_tmp: Path) -> None:
     assert "profile" in result
     assert "behavior" in result
     assert result["profile"]["total_pnl"] == 200.0
+
+
+def test_analyze_reports_pnl_for_a_capitalized_aliased_journal(allow_tmp: Path) -> None:
+    """The tool must not report an empty, successful analysis over real fills.
+
+    A journal headed ``Date,Symbol,Side,Qty,Price`` used to be detected as a Futu
+    export, whose parser reads ``Quantity`` by exact spelling, so the run returned
+    ``status: ok`` with the format mislabelled and every economic field at zero.
+    """
+    csv = allow_tmp / "aliased_capitalized.csv"
+    csv.write_text(
+        "Date,Symbol,Side,Qty,Price\n"
+        "2026-01-02 09:35:00,600519.SH,Buy,100,10\n"
+        "2026-01-09 14:00:00,600519.SH,Sell,100,12\n",
+        encoding="utf-8",
+    )
+
+    result = json.loads(analyze_trade_journal(str(csv)))
+
+    assert result["status"] == "ok"
+    assert result["format_detected"] == "generic"
+    assert result["total_records"] == 2
+    assert result["profile"]["total_pnl"] == 200.0
+    assert result["profile"]["total_roundtrips"] == 1
+    assert result["profile"]["win_rate"] == 1.0
 
 
 def test_analyze_strategy_is_pending_placeholder(allow_tmp: Path) -> None:

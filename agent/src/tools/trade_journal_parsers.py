@@ -159,6 +159,14 @@ def load_dataframe(path: str | Path) -> pd.DataFrame:
 
 # ---------------- Format detection ----------------
 
+# parse_futu reads its value columns by exact spelling, so a frame carrying
+# none of them cannot be parsed as a Futu export however its headers are
+# capitalised. `Date,Symbol,Side` on its own is an ordinary English journal
+# header and belongs to the case-insensitive generic parser.
+_FUTU_SIDE_COLUMNS = ("Side", "Direction")
+_FUTU_VALUE_COLUMNS = ("Quantity", "Amount")
+
+
 def detect_format(df: pd.DataFrame) -> FormatName:
     """Detect broker format by column-name signature.
 
@@ -175,7 +183,11 @@ def detect_format(df: pd.DataFrame) -> FormatName:
         return "tonghuashun"
     if {"买卖标志", "股票代码"}.issubset(cols) or {"买卖标志", "成交均价"}.issubset(cols):
         return "eastmoney"
-    if {"Date", "Symbol", "Side"}.issubset(cols) or {"Date", "Symbol", "Direction"}.issubset(cols):
+    if (
+        {"Date", "Symbol"}.issubset(cols)
+        and cols.intersection(_FUTU_SIDE_COLUMNS)
+        and cols.intersection(_FUTU_VALUE_COLUMNS)
+    ):
         return "futu"
 
     # Generic: any subset containing time/symbol/side hints
