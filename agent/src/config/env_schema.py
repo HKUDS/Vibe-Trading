@@ -249,7 +249,7 @@ class DataConfig(_EnvBase):
     etoro_user_key: str = Field(alias="ETORO_USER_KEY", default="")
     # Per-market source-order overrides (Settings page "source priority").
     # Value: comma-separated permutation of the market's default chain, e.g.
-    # MARKET_DATA_ORDER_A_SHARE=tushare,tencent,mootdx,... Applied by
+    # MARKET_DATA_ORDER_A_SHARE=tushare,tencent,eastmoney,... Applied by
     # backtest.loaders.registry.refresh_source_order_overrides() (which reads
     # os.getenv directly); declared here for visibility/validation parity.
     market_data_order_a_share: str = Field(alias="MARKET_DATA_ORDER_A_SHARE", default="")

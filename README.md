@@ -52,14 +52,16 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-09** 🛠️ **Channel updates and backtest correctness**: Channel settings preserve embedded URL credentials and authenticated WeChat endpoints during in-place updates, with save/reset feedback in all nine languages ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). Cross-market option volatility uses only timestamps known at each bar; drawdown includes starting capital. Crypto/precious-metal routing, HK duplicate detection, cache recovery, scientific-notation amounts and missing-equity validation are corrected. mootdx leaves the default A-share chain. See [CHANGELOG](CHANGELOG.md) for all thirteen PRs.
+
 - **2026-10-08** 🔐 **Protected PDF reports and clearer broker reads**: Scheduled Email PDFs support optional AES-256 password protection across Web, CLI playbooks and agent confirmations; the password stays in private channel configuration ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS queries all three venue buckets, refreshes an explicitly expired token once, and reports incomplete reads as errors ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). Derived formulas keep their arithmetic after descriptive labels while evidence checks remain enforced ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
 
 - **2026-10-07** 🛠️ **Research continuity and reliable risk metrics**: Volatile workspace state now travels outside the system prompt, preserving its stable prefix ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). Cross-market dates align correctly, missing prices no longer bridge return observations, and options Sortino uses full-sample downside deviation ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). Loader fixtures share one OHLCV contract; credit valuation, style exposures, walk-forward folds and audit diagnostics are corrected.
 
-- **2026-10-06** 🛠️ **Live controls and report corrections**: Stopping a live runner cancels its current analysis and waits for scheduler cleanup, including startup cancellation and API shutdown; status timestamps use the correct units ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). Emergency cancel/flatten scans skip malformed records without abandoning the remaining book ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)); broker schedules are stored separately and writes handle concurrency and partial writes. US equity half-days respect the early closing bell ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). Report corrections preserve figures that passed validation, and bounded feedback no longer implies that unlisted figures passed ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-10-06** 🛠️ **Live controls and report corrections**: Stopping a live runner cancels its current analysis and waits for scheduler cleanup, including startup cancellation and API shutdown; status timestamps use the correct units ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). Emergency cancel/flatten scans skip malformed records without abandoning the remaining book ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)); broker schedules are stored separately and writes handle concurrency and partial writes. US equity half-days respect the early closing bell ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). Report corrections preserve figures that passed validation, and bounded feedback no longer implies that unlisted figures passed ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
 
 - **2026-10-05** 🛠️ **Research prompts and calculation fixes**: Chat accepts longer research prompts and gives a localized recovery message when input is too large ([#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)). Backtests use full-sample Sortino downside deviation; grouped validation purges overlapping labels, covariance weights remain finite, shadow RSI uses Wilder seeds, and memory removal accepts filename stems. Invalid call aliases now receive exact source references for correction ([#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)); numeric validation stays unchanged.
 
@@ -579,7 +581,8 @@ One `get_market_data` call, **28 market-data sources**, one of them the optional
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | A-share (explicit-only) | none | retired from the default chain 2026-10: TDX servers stopped answering the client protocol it speaks (#1729) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -601,7 +604,7 @@ One `get_market_data` call, **28 market-data sources**, one of them the optional
 
 **Fallback chains (by IP-ban risk):**
 
-- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -835,6 +838,8 @@ When the opt-in market-data cache is enabled, local-source cache entries are
 scoped to the configured file, query, and column mapping. Changing a symbol's
 source declaration does not reuse bars from its previous source. The settled-data
 cache policy for an unchanged declaration remains the same.
+Unusable cached metadata is treated as a cache miss: the declared local source
+is read again, and the replacement entry can serve subsequent cache hits.
 The turnover-aware optimizer measures allocation changes in signed position
 space: reversing a 50% long to a 50% short contributes 0.5 turnover, including
 both the close and the reopen. Its penalty and recorded allocation turnover
@@ -1012,7 +1017,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **Supported LLM providers:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, OpenCode (Go / Zen), Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (local). When no `*_BASE_URL` is set, each provider falls back to its canonical endpoint, so just a key is enough. See `.env.example` for config.
 
-> **Tip:** All markets work without any API keys thanks to automatic fallback. yfinance/Yahoo (HK/US/Canada/UK), OKX (crypto), mootdx (A-shares, TCP-direct, no IP throttle), and AKShare (A-shares, US, HK, futures, forex) are all free. LSE `.L` quotes must declare GBP or GBp so pence can be normalized before GBP accounting. Tushare token is optional — mootdx is the preferred no-token A-share fallback, with AKShare as a broader backup.
+> **Tip:** All markets work without any API keys thanks to automatic fallback. yfinance/Yahoo (HK/US/Canada/UK), OKX (crypto), and AKShare (A-shares, US, HK, futures, forex) are all free. LSE `.L` quotes must declare GBP or GBp so pence can be normalized before GBP accounting. Tushare token is optional; tencent, baostock and AKShare are the no-token A-share fallbacks.
 
 ### GitHub Copilot SDK provider
 

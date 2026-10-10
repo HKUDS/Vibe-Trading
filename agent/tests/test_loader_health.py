@@ -39,6 +39,16 @@ def test_catalog_covers_every_public_network_loader():
     assert health.coverage_errors() == []
 
 
+def test_retired_mootdx_is_excluded_with_reason_not_canaried():
+    """mootdx left the canary set when the TDX servers stopped answering the
+    mootdx/tdxpy protocol (#1729, mootdx/mootdx#157). It must stay visible as
+    an excluded entry whose reason says why, not silently vanish."""
+    assert "mootdx" not in health.CANARY_SYMBOLS
+    reason = health.EXCLUDED_PUBLIC_SOURCES.get("mootdx")
+    assert reason and "mootdx/mootdx#157" in reason
+    assert health.coverage_errors() == []
+
+
 def test_new_loader_cannot_silently_disappear(monkeypatch):
     from backtest.loaders.registry import LOADER_REGISTRY
 

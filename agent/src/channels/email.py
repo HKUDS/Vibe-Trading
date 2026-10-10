@@ -122,6 +122,7 @@ class EmailChannel(BaseChannel):
     delivery_target_placeholder = "name@example.com"
     delivery_target_input_type = "email"
     supports_connection_test = True
+    hot_reload_noop_keys = frozenset({"allow_from"})
     _IMAP_MONTHS = (
         "Jan",
         "Feb",

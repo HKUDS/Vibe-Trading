@@ -197,7 +197,19 @@ def test_record_error_scrubs_credentials_and_bounds_length(
         ValueError("bad url https://user:pass@host:notaport/x"),
     )
     error = manager.get_status()["fakea"]["error"]
-    assert "https://user:pass@host:notaport/x" in error  # malformed URLs pass through
+    # A malformed port must not exempt the URL from redaction.
+    assert "user:pass" not in error
+    assert "https://host:notaport/x" in error
+
+    # An out-of-range port is the same fail-open path (a plausible typo).
+    manager._record_error(
+        "fakea",
+        "start",
+        ConnectionError("cannot reach https://bot:sup3rsecret@chat.example.com:99999/api"),
+    )
+    error = manager.get_status()["fakea"]["error"]
+    assert "sup3rsecret" not in error
+    assert "https://chat.example.com:99999/api" in error
 
     manager._record_error("fakea", "send", RuntimeError("x" * 500))
     error = manager.get_status()["fakea"]["error"]

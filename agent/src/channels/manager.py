@@ -10,7 +10,6 @@ from collections import defaultdict
 from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from src.channels.base import BaseChannel
 from src.channels.bus.events import OutboundMessage
@@ -44,26 +43,21 @@ _MAX_REPLY_FINGERPRINTS = 4096
 # Runtime-error bookkeeping for the status surface (Refs #1625).
 _ERROR_CONTEXTS = frozenset({"start", "send", "reload_stop"})
 _ERROR_TEXT_LIMIT = 200
-_URL_IN_TEXT_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://\S+")
+# A URL's userinfo (``user:password@``) lives in its authority, before the
+# last '@'. Matching it textually rather than through urllib.parse keeps a
+# malformed or out-of-range port from defeating the redaction:
+# ``urlsplit(...).port`` raises on those, and the fail-open fallback returned
+# the credential the error text was being scrubbed of.
+# An error message is free text, so the userinfo group stops at whitespace:
+# unlike ``config_meta._URL_USERINFO_RE``, which matches a single config value
+# and tolerates a space inside the authority, this pattern must not swallow the
+# prose between a URL and a later '@' into one match.
+_URL_IN_TEXT_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/\s?#]*@)?(\S*)")
 
 
 def _strip_url_userinfo(text: str) -> str:
     """Return *text* with username/password stripped from every embedded URL."""
-
-    def _strip(match: re.Match[str]) -> str:
-        url = match.group(0)
-        try:
-            parts = urlsplit(url)
-            if parts.username is None and parts.password is None:
-                return url
-            host = parts.hostname or ""
-            if parts.port is not None:  # raises ValueError on a malformed port
-                host = f"{host}:{parts.port}"
-            return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
-        except ValueError:
-            return url
-
-    return _URL_IN_TEXT_RE.sub(_strip, text)
+    return _URL_IN_TEXT_RE.sub(lambda match: match.group(1) + match.group(2), text)
 
 
 class ChannelManager:
@@ -95,6 +89,9 @@ class ChannelManager:
         # would each stop the adapter they saw and start their own.
         self._reload_locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._origin_reply_fingerprints: dict[tuple[str, str, str], str] = {}
+        # Last outbound chat per channel: where a degraded config reset sends
+        # its user-visible notice (#1625). One entry per channel — bounded.
+        self._last_chat_ids: dict[str, str] = {}
         self._status: dict[str, dict[str, Any]] = {}
 
         self._init_channels()
@@ -329,6 +326,26 @@ class ChannelManager:
         async with self._reload_locks[name]:
             return await self._reload_channel_locked(name, section)
 
+    async def refresh_channel_config(self, name: str, section: dict) -> bool:
+        """Apply a noop-key config edit in place; False if not built or rejected."""
+        # Same lock as reload_channel: a refresh and a reload of one channel
+        # must not interleave (the reason _reload_locks exists).
+        async with self._reload_locks[name]:
+            channel = self.channels.get(name)
+            if channel is None or not channel.refresh_config(section):
+                return False
+            channel.send_progress = self._resolve_bool_override(
+                section, "send_progress", self._global_bool("send_progress", True),
+            )
+            channel.send_tool_hints = self._resolve_bool_override(
+                section, "send_tool_hints", self._global_bool("send_tool_hints", False),
+            )
+            channel.show_reasoning = self._resolve_bool_override(
+                section, "show_reasoning", self._global_bool("show_reasoning", True),
+            )
+            self._store_channel_section(name, section)
+            return True
+
     async def _reload_channel_locked(self, name: str, section: dict | None) -> dict[str, Any]:
         old = self.channels.get(name)
         stop_error: BaseException | None = None
@@ -499,6 +516,11 @@ class ChannelManager:
                                 msg.channel, msg.chat_id,
                             )
                             continue
+                    # Record the chat right before delivery: a chat we just
+                    # sent to is a chat a reset notice can reach (#1625). Only
+                    # this main path records — the reasoning-routing branch
+                    # above carries transient fragments, not conversations.
+                    self._last_chat_ids[msg.channel] = msg.chat_id
                     await self._send_with_retry(channel, msg)
                 else:
                     logger.warning("Unknown channel: %s", msg.channel)
@@ -618,6 +640,10 @@ class ChannelManager:
     def get_channel(self, name: str) -> BaseChannel | None:
         """Get a channel by name."""
         return self.channels.get(name)
+
+    def last_chat_id(self, name: str) -> str | None:
+        """Return the most recent outbound chat id for *name* (None if never sent)."""
+        return self._last_chat_ids.get(name)
 
     def get_status(self) -> dict[str, Any]:
         """Get status of all channels."""

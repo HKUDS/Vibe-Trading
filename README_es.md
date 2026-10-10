@@ -52,14 +52,16 @@
 
 > ⚠️ **Advertencia de seguridad:** la cuenta de X `VibeTrading_HKU`, el proyecto de Virtuals `101845` y el contrato de token `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` no son activos oficiales de Vibe-Trading. Nunca hemos lanzado ni respaldado ningún token o memecoin. No compres, conectes una wallet ni firmes nada. [Detalles](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-09** 🛠️ **Configuración de canales y correcciones de backtests**: Las actualizaciones sin reconexión conservan las credenciales de las URL y la dirección del servidor autenticado de WeChat; la web explica guardados y reinicios en nueve idiomas ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). La volatilidad de opciones entre mercados usa solo marcas temporales conocidas en cada barra; la caída máxima incluye el capital inicial. Corregimos las rutas de criptoactivos y metales preciosos, los duplicados de Hong Kong, la recuperación de caché, los importes en notación científica y la validación de valores ausentes. mootdx sale de la cadena predeterminada de acciones A. Los trece PR están en [CHANGELOG](CHANGELOG.md).
+
 - **2026-10-08** 🔐 **Informes PDF protegidos y lecturas del bróker corregidas**: Los PDF de correo programado admiten protección AES-256 opcional en Web, CLI y confirmaciones del agente; la contraseña permanece en la configuración privada del canal ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS consulta las tres rutas, renueva una sola vez un token explícitamente caducado y rechaza lecturas incompletas ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). Las fórmulas conservan la expresión tras las etiquetas descriptivas y mantienen la verificación de evidencias ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
 
 - **2026-10-07** 🛠️ **Continuidad de investigación y métricas de riesgo corregidas**: El estado de ejecución se separa del mensaje del sistema para preservar su prefijo estable ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). Se corrigen las fechas entre mercados, los retornos alrededor de precios ausentes y el Sortino de opciones con toda la muestra ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). Los cargadores comparten un contrato OHLCV; también se corrigen valoración crediticia, exposiciones, validación temporal y diagnóstico de auditoría.
 
-- **2026-10-06** 🛠️ **Control de operaciones reales y corrección de informes**: Detener el agente de operaciones reales cancela el análisis en curso y espera a que termine el planificador, incluso al cancelar durante el inicio o cerrar la API; se corrigen también las unidades de tiempo del estado ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). La cancelación y el cierre de posiciones de emergencia omiten registros inválidos y continúan con los restantes ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)); cada bróker conserva su propia programación y las escrituras manejan concurrencia y escrituras parciales. Las sesiones reducidas de acciones estadounidenses respetan el cierre anticipado ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). Las correcciones conservan las cifras verificadas y no presentan las cifras omitidas de los comentarios limitados como aprobadas ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
-
 <details>
 <summary>Noticias anteriores</summary>
+
+- **2026-10-06** 🛠️ **Control de operaciones reales y corrección de informes**: Detener el agente de operaciones reales cancela el análisis en curso y espera a que termine el planificador, incluso al cancelar durante el inicio o cerrar la API; se corrigen también las unidades de tiempo del estado ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). La cancelación y el cierre de posiciones de emergencia omiten registros inválidos y continúan con los restantes ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)); cada bróker conserva su propia programación y las escrituras manejan concurrencia y escrituras parciales. Las sesiones reducidas de acciones estadounidenses respetan el cierre anticipado ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). Las correcciones conservan las cifras verificadas y no presentan las cifras omitidas de los comentarios limitados como aprobadas ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
 
 - **2026-10-05** 🛠️ **Consultas de investigación y cálculos corregidos**: El chat admite consultas más largas e indica en el idioma actual cómo acortarlas cuando superan el límite ([#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)). Sortino usa la desviación a la baja de todos los períodos; la validación por grupos excluye etiquetas solapadas. También mejoran los pesos de covarianza, el RSI con media inicial de Wilder y la eliminación de memorias por nombre de archivo. Los alias de llamada incorrectos reciben referencias exactas para corregirlos, conservando la validación numérica ([#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)).
 
@@ -459,7 +461,8 @@ Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de e
 
 | Fuente | Mercados | Autenticación | Rol |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | ninguna | nunca bloqueada por IP (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | ninguna | nunca bloqueada por IP |
+| `mootdx` | Acciones A (solo selección explícita) | ninguna | retirado de la cadena predeterminada en octubre de 2026: los servidores TDX dejaron de responder al protocolo del cliente (#1729) |
 | `eastmoney` | A / EE. UU. / HK | ninguna | OHLCV + herramientas de fundamentales y flujo profundas (limitada) |
 | `baostock` · `akshare` | A (+ EE. UU./HK/futuros/macro/fx) | ninguna | fallbacks gratuitos |
 | `tushare` | A / HK / futuros / fondos / macro | token | la más completa para A-share |
@@ -481,7 +484,7 @@ Una sola llamada `get_market_data`, **28 fuentes de datos de mercado**, una de e
 
 **Cadenas de fallback (por riesgo de bloqueo de IP):**
 
-- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **EE. UU.** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -866,7 +869,7 @@ vibe-trading-mcp               # inicia el servidor MCP (stdio)
 
 > **Proveedores de LLM compatibles:** OpenRouter, OpenAI, Anthropic (API de Messages nativa), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (local). Cuando no se configura ningún `*_BASE_URL`, cada proveedor recurre a su endpoint canónico, así que basta con una clave. Consulta `.env.example` para la configuración.
 
-> **Consejo:** Todos los mercados funcionan sin ninguna clave de API gracias al fallback automático. yfinance/Yahoo (HK/US/Canadá/Reino Unido), OKX (cripto), mootdx (acciones A, conexión TCP directa, sin limitación de IP) y AKShare (acciones A, EE. UU., HK, futuros, forex) son gratuitos. Las cotizaciones LSE `.L` deben declarar GBP o GBp para normalizar los peniques antes de la contabilidad en GBP. El token de Tushare es opcional — mootdx es el fallback preferido sin token para acciones A, con AKShare como respaldo más amplio.
+> **Consejo:** Todos los mercados funcionan sin ninguna clave de API gracias al fallback automático. yfinance/Yahoo (HK/US/Canadá/Reino Unido), OKX (cripto) y AKShare (acciones A, EE. UU., HK, futuros, forex) son gratuitos. Las cotizaciones LSE `.L` deben declarar GBP o GBp para normalizar los peniques antes de la contabilidad en GBP. El token de Tushare es opcional; los fallback sin token para acciones A son tencent, baostock y AKShare.
 
 ### Ruta A: Docker (configuración cero)
 

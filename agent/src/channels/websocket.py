@@ -268,6 +268,7 @@ class WebSocketChannel(BaseChannel):
     name = "websocket"
     display_name = "WebSocket"
     supports_connection_test = True
+    hot_reload_noop_keys = frozenset({"allow_from"})
 
     def __init__(
         self,

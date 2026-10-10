@@ -262,3 +262,36 @@ def test_sortino_undefined_cases_remain_json_safe(
     assert metrics["sortino"] is None
     assert any("Sortino" in warning for warning in metrics["warnings"])
     json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_counts_the_drop_from_initial_cash() -> None:
+    # The first recorded bar already reflects the open's commission, so the
+    # account's real high-water mark (initial cash) is not in the series.
+    equity = pd.Series([95.0, 90.0, 99.0])
+    metrics = _calc_options_metrics(equity, 100.0, [], bars_per_year=252)
+
+    assert metrics["max_drawdown"] == pytest.approx(-0.10)
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_seeds_initial_cash_on_a_single_bar() -> None:
+    metrics = _calc_options_metrics(pd.Series([90.0]), 100.0, [], bars_per_year=252)
+
+    assert metrics["max_drawdown"] == pytest.approx(-0.10)
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_stays_zero_on_an_all_up_path() -> None:
+    metrics = _calc_options_metrics(
+        pd.Series([100.0, 105.0, 110.0]), 100.0, [], bars_per_year=252
+    )
+
+    assert metrics["max_drawdown"] == 0.0
+    json.dumps(metrics, allow_nan=False)
+
+
+def test_max_drawdown_falls_back_to_observed_peak_without_valid_initial_cash() -> None:
+    metrics = _calc_options_metrics(pd.Series([95.0, 90.0]), 0.0, [], bars_per_year=252)
+
+    assert metrics["max_drawdown"] == pytest.approx(round((90.0 - 95.0) / 95.0, 6))
+    json.dumps(metrics, allow_nan=False)

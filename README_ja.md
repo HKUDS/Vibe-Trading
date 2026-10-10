@@ -52,14 +52,16 @@
 
 > ⚠️ **セキュリティ警告：** Xアカウント `VibeTrading_HKU`、Virtualsプロジェクト `101845`、およびトークンコントラクト `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` は、いずれもVibe-Trading公式のものではありません。Vibe-Tradingはこれまで、いかなるトークンやミームコインも発行・公認していません。購入、ウォレットの接続、署名は行わないでください。[詳細](SECURITY.md#official-channels--impersonation)
 
+- **2026-10-09** 🛠️ **チャンネル設定とバックテストの修正**：再接続なしの設定更新で URL 内の認証情報と WeChat 認証後のサーバーアドレスを保持し、保存・再起動の結果を Web で9言語表示します（[#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)、[#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)、[#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)）。複数市場のオプション価格に使うボラティリティは各時点までのタイムスタンプだけで計算し、ドローダウンには初期資金を反映。暗号資産・貴金属のデータ取得経路、香港株の重複判定、キャッシュ復旧、科学表記の金額、欠損資産額の検証を修正しました。mootdx は標準の A 株取得経路から外れます。全13件は [CHANGELOG](CHANGELOG.md)。
+
 - **2026-10-08** 🔐 **PDF レポートのパスワード保護とブローカー読み取り修正**：定期メール PDF に AES-256 保護を選択でき、Web、CLI、エージェント確認画面に反映されます。パスワードは非公開のチャネル設定だけに保存します（[#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)）。KIS は三つの取引経路を照会し、明示的なトークン失効を一度だけ再取得、不完全な読み取りはエラーにします（[#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)）。説明ラベルの後の導出式を保持し、証拠検証を維持します（[#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)）。
 
 - **2026-10-07** 🛠️ **リサーチの継続性とリスク指標の修正**：実行状態をシステムプロンプトから分離し、安定したプレフィックスを保ちます（[#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)）。市場間の日付整列、欠損価格前後のリターン、全標本によるオプションのソルティノ比率を修正しました（[#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710)、[#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717)、[#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)）。データ取得テストは共通の OHLCV 契約を使い、信用評価、スタイル・エクスポージャー、時系列検証、監査診断も改善しました。
 
-- **2026-10-06** 🛠️ **ライブ運用制御とレポート修正**：ライブランナーの停止は実行中の分析をキャンセルしてスケジューラーの終了を待ち、起動中のキャンセルと API 終了にも対応します。状態の時刻単位も修正しました（[#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)）。緊急キャンセル・決済処理は不正なレコードを除外して残りの注文・保有を処理します（[#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)）。ブローカーごとにスケジュールを保存し、並行書き込みと部分書き込みに対応。米国株の短縮取引日は早い閉場時刻を守ります（[#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)）。レポート修正は検証済みの数値を保持し、省略された指摘を検証済みと誤認させません（[#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)）。
-
 <details>
 <summary>過去のニュース</summary>
+
+- **2026-10-06** 🛠️ **ライブ運用制御とレポート修正**：ライブランナーの停止は実行中の分析をキャンセルしてスケジューラーの終了を待ち、起動中のキャンセルと API 終了にも対応します。状態の時刻単位も修正しました（[#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)）。緊急キャンセル・決済処理は不正なレコードを除外して残りの注文・保有を処理します（[#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)）。ブローカーごとにスケジュールを保存し、並行書き込みと部分書き込みに対応。米国株の短縮取引日は早い閉場時刻を守ります（[#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)）。レポート修正は検証済みの数値を保持し、省略された指摘を検証済みと誤認させません（[#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)）。
 
 - **2026-10-05** 🛠️ **調査入力と計算の修正**：チャットで長い調査入力に対応し、上限を超えた場合は現在の言語で短縮を案内します（[#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)）。Sortino は全期間の下方偏差を使用し、グループ検証は重複ラベルを除外します。共分散ウェイト、Wilder 初期平均による RSI、ファイル名によるメモリ削除も改善しました。 呼び出しの別名を誤って引用した場合、修正用に実際のフィールド参照を提示します（[#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)）。数値の検証規則は維持されます。
 
@@ -460,7 +462,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | A株（明示指定のみ） | none | 2026年10月に標準経路から除外：TDX サーバーがクライアントのプロトコルに応答しなくなったため（#1729） |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -482,7 +485,7 @@ vibe-trading connector install /tmp/my-broker
 
 **フォールバックチェーン（IP 規制リスク順）：**
 
-- **A 株** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A 株** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **米国株** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **香港株** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **インド株（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -851,7 +854,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **Supported LLM providers:** OpenRouter、OpenAI、Anthropic（ネイティブ Messages API）、DeepSeek、Gemini、Groq、DashScope/Qwen、Zhipu、Moonshot/Kimi、MiniMax、SiliconFlow（CN + Global）、Xiaomi MIMO、Novita AI、iFlytek Spark、Z.ai、NVIDIA NIM、ModelScope、GitHub Copilot、Ollama（local）。`*_BASE_URL` が未設定の場合、各プロバイダーは canonical なエンドポイントにフォールバックするため、key だけで十分です。設定は `.env.example` を参照してください。
 
-> **Tip:** 自動フォールバックにより、すべての市場は API key なしで利用できます。yfinance/Yahoo（HK/US/カナダ/英国）、OKX（crypto）、mootdx（A 株、TCP 直結で IP 制限なし）、AKShare（A-shares、US、HK、futures、forex）はすべて無料です。LSE `.L` クォートは GBP または GBp の明示が必要で、GBP 会計の前にペンスを正規化します。Tushare token は任意で、A 株は mootdx が推奨の no-token fallback、AKShare がより広いカバレッジのバックアップになります。
+> **Tip:** 自動フォールバックにより、すべての市場は API key なしで利用できます。yfinance/Yahoo（HK/US/カナダ/英国）、OKX（crypto）、AKShare（A-shares、US、HK、futures、forex）はすべて無料です。LSE `.L` クォートは GBP または GBp の明示が必要で、GBP 会計の前にペンスを正規化します。Tushare token は任意で、A 株の no-token fallback は tencent・baostock・AKShare です。
 
 ### Path A: Docker（設定ゼロ）
 

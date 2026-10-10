@@ -178,7 +178,11 @@ def is_no_network_fallback_source(source: str) -> bool:
 FALLBACK_CHAINS: dict[str, list[str]] = {
     "a_share": [
         "tencent",
-        "mootdx",
+        # mootdx retired from the default chain 2026-10-08: the TDX quote
+        # servers stopped answering the client protocol mootdx/tdxpy speak
+        # (2026-07, mootdx/mootdx#157) and upstream is dormant, so the slot
+        # only cost ~10s of dead time per miss. The loader stays registered
+        # for explicit source="mootdx" use. See HKUDS/Vibe-Trading#1729.
         "eastmoney",
         "baostock",
         "akshare",
@@ -454,7 +458,7 @@ def additive_caliber_warning(stamps: dict[str, tuple[str, str]]) -> str | None:
 # Users can reprioritize a market's chain via one env var per market
 # (persisted to ~/.vibe-trading/.env by the Settings page's "source
 # priority" card):
-#     MARKET_DATA_ORDER_A_SHARE=tushare,tencent,mootdx,...
+#     MARKET_DATA_ORDER_A_SHARE=tushare,tencent,eastmoney,...
 # The value must be a permutation of the market's default chain —
 # reordering is allowed, adding/dropping sources is not. Invalid values
 # warn and keep the default chain, so a typo can never silently strip a

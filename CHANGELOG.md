@@ -5,6 +5,48 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Maintenance — 2026-10-09
+
+- Channel edits to live-read settings apply without reconnecting, including a
+  full Web form that echoes unchanged connection values (#1737; #1734/#1736).
+  Web results distinguish refresh, reconnect, deferred application and degraded
+  reset in all nine languages. Reset reasons redact URL userinfo and old/new
+  secret values; a best-effort notice goes to the changed channel's last chat.
+  Signal refreshes its writable nested policies, not its computed allowlist.
+  Refresh changes only declared live fields and preserves connection state
+  resolved during login, including WeChat's authenticated server address.
+- Strip URL credentials even with malformed ports or multiple `@` characters
+  (#1742; #1741). Saving or testing an echoed configuration preserves the stored
+  URL credentials; explicit edits and clear flags remain effective (#1744; #1743).
+  Enable and connection-test failures also redact credentials, including raised
+  SDK exceptions, and leave saved configuration unchanged.
+- Recognize known slash-USD crypto pairs before forex in both correlation and
+  shared Agent/MCP market-data routing, while keeping precious metals on the
+  forex chain (#1740, #1748). Normalize
+  suffixed Hong Kong aliases for duplicate detection (#1746; #1745), and treat
+  unusable persisted cache metadata as a recoverable cache miss (#1747).
+  Five-digit display aliases share an identity with their four-digit spelling;
+  distinct currency counters stay separate. Missing cache index metadata is a
+  miss too, with valid entries still reused after repair.
+- Options drawdown includes the initial-cash high-water mark (#1750; #1749).
+  Pricing volatility receives the run's annualization factor; cross-market
+  pricing estimates each bar's frequency from elapsed return intervals known
+  at that time, including subdaily intervals. Extending a run cannot change
+  earlier option prices (#1753). Bootstrap and walk-forward validation use
+  only observed adjacent equity returns across missing data (#1754).
+  A walk-forward window without observed endpoints or any adjacent returns
+  reports an error instead of a fabricated zero score or an incomplete aggregate.
+- Cash-flow ingestion refuses ambiguous single-dot amounts unless the decimal
+  separator is supplied, while accepting unambiguous scientific notation in
+  cash-flow and entity-panel files (#1739). American waterfalls reject a bare `as_of`
+  date rather than silently ignoring it; per-deal dates remain supported (#1732).
+- Retire mootdx from the default A-share chain and public canary (#1730; #1729),
+  with explicit-source access retained. Old source-order overrides containing
+  the retired slot fall back to the current default with a warning.
+- Restore main CI through the configured environment accessor and corrected
+  correlation routing (#1740; #1751). Repair the outdated Alpha Zoo test double
+  while retaining production factor-metadata validation.
+
 ### Maintenance — 2026-10-08
 
 - Optional AES-256 protection for Email PDF reports (#1709): Web, CLI

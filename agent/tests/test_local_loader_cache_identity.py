@@ -1,5 +1,6 @@
 """Local cache entries must identify the configured file and schema."""
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -120,3 +121,79 @@ def test_ignored_yaml_metadata_does_not_break_local_fetch(
     frame = local_loader.DataLoader().fetch(["AAA.US"], "2025-01-02", "2025-01-03")
 
     assert frame["AAA.US"]["close"].tolist() == [10, 10]
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "null", "array", "index_names_length", "unhashable_index_column",
+        "empty_object", "empty_index", "missing_index", "missing_names",
+        "wrong_version", "missing_attrs", "invalid_attrs",
+    ],
+)
+def test_corrupt_local_cache_metadata_refetches_and_repairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, corruption: str
+) -> None:
+    """A corrupt optional cache must not hide an available local CSV source."""
+    monkeypatch.setattr(base, "loader_cache_enabled", lambda: True)
+    monkeypatch.setattr(base, "loader_cache_root", lambda: tmp_path / "cache")
+    path = tmp_path / "bars.csv"
+    _write(path, 10)
+    monkeypatch.setattr(
+        local_loader, "_load_config", lambda: {"sources": [_source(path)]}
+    )
+
+    def fetch() -> pd.DataFrame:
+        return local_loader.DataLoader().fetch(["AAA.US"], "2025-01-02", "2025-01-03")[
+            "AAA.US"
+        ]
+
+    assert fetch()["close"].tolist() == [10, 10]
+    metadata_paths = list((tmp_path / "cache").rglob("*.json"))
+    assert len(metadata_paths) == 1, "exercise one real persisted cache entry"
+    metadata_path = metadata_paths[0]
+    original = json.loads(metadata_path.read_text())
+    assert original["index_columns"], "exercise actual persisted index metadata"
+    malformed = dict(original)
+    if corruption == "null":
+        malformed = None
+    elif corruption == "array":
+        malformed = []
+    elif corruption == "index_names_length":
+        malformed["index_names"] = ["date", "unexpected_extra_level"]
+    elif corruption == "empty_object":
+        malformed = {}
+    elif corruption == "empty_index":
+        malformed["index_columns"] = []
+    elif corruption == "missing_index":
+        malformed.pop("index_columns")
+    elif corruption == "missing_names":
+        malformed.pop("index_names")
+    elif corruption == "wrong_version":
+        malformed["version"] = -1
+    elif corruption == "missing_attrs":
+        malformed.pop("frame_attrs")
+    elif corruption == "invalid_attrs":
+        malformed["frame_attrs"] = {"adjustment": ["qfq"]}
+    else:
+        malformed["index_columns"] = [{"not": "a column name"}]
+    metadata_path.write_text(json.dumps(malformed))
+    _write(path, 20)
+
+    repaired = fetch()
+    assert repaired["close"].tolist() == [20, 20]
+    assert isinstance(repaired.index, pd.DatetimeIndex)
+    assert repaired.index.tolist() == [
+        pd.Timestamp("2025-01-02"),
+        pd.Timestamp("2025-01-03"),
+    ]
+    restored = json.loads(metadata_path.read_text())
+    assert isinstance(restored, dict)
+    assert restored["index_columns"] == original["index_columns"]
+    assert restored["index_names"] == original["index_names"]
+
+    def unexpected_read(*args: object) -> None:
+        raise AssertionError("repaired valid cache should avoid reading the CSV again")
+
+    monkeypatch.setitem(local_loader._READERS, "csv", unexpected_read)
+    pd.testing.assert_frame_equal(repaired, fetch())

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from src.channels.config_meta import channel_field_hints, split_values_secrets
+from src.channels.config_meta import channel_field_hints, is_secret_key, split_values_secrets
 from src.channels.registry import discover_channel_names, load_channel_class
 
 # Hand-written hints replace derived ones, so a channel may deliberately keep
@@ -30,10 +30,10 @@ _FILE_CONFIGURED_SCALARS: dict[str, set[str]] = {
 }
 
 
-@pytest.mark.parametrize("name", discover_channel_names())
-def test_every_discovered_channel_satisfies_the_authoring_contract(name) -> None:
+def _load_channel_class_or_skip(name: str):
+    """Load a discovered channel; skip only on a genuine missing-dependency envelope."""
     try:
-        cls = load_channel_class(name)
+        return load_channel_class(name)
     except ImportError as exc:
         # Only the adapter's explicit missing-dependency envelope can skip.
         # An arbitrary import or missing BaseChannel subclass must fail.
@@ -45,6 +45,11 @@ def test_every_discovered_channel_satisfies_the_authoring_contract(name) -> None
         if not (direct_missing or declared_missing):
             raise
         pytest.skip(str(exc))
+
+
+@pytest.mark.parametrize("name", discover_channel_names())
+def test_every_discovered_channel_satisfies_the_authoring_contract(name) -> None:
+    cls = _load_channel_class_or_skip(name)
 
     # A concrete adapter: start/stop/send are abstract on BaseChannel.
     assert not cls.__abstractmethods__, f"{name} leaves BaseChannel abstracts unset"
@@ -83,3 +88,19 @@ def test_test_connection_envelope_shape_is_documented_by_default() -> None:
 
     assert "test_connection" not in BaseChannel.__abstractmethods__
     assert asyncio.run(BaseChannel.test_connection(None)) == {"ok": False, "code": "unsupported"}
+
+
+@pytest.mark.parametrize("name", discover_channel_names())
+def test_declared_noop_keys_are_real_non_secret_non_enabled(name) -> None:
+    """Every ``hot_reload_noop_keys`` entry is a real, non-secret, non-enabled key.
+
+    A noop key is applied to a running adapter without reconnecting, so it must
+    be an ordinary config field the adapter reads live — never ``enabled`` (a
+    start/stop transition) nor a secret (which must not be applied in place).
+    """
+    cls = _load_channel_class_or_skip(name)
+    defaults = cls.default_config()
+    for key in cls.hot_reload_noop_keys:
+        assert key in defaults, f"{name} declares noop key '{key}' absent from default_config()"
+        assert not is_secret_key(name, key), f"{name} declares secret '{key}' as a noop key"
+        assert key != "enabled", f"{name} declares 'enabled' noop (it drives start/stop)"

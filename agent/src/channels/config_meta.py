@@ -26,7 +26,6 @@ import re
 from typing import Any
 from typing import NotRequired
 from typing import TypedDict
-from urllib.parse import urlsplit, urlunsplit
 
 from src.channels.registry import load_channel_class
 
@@ -413,21 +412,20 @@ def _mask(value: Any, *, reveal_suffix: bool = True) -> dict[str, Any]:
     return {"set": True, "masked": masked}
 
 
+# A URL's userinfo (``user:password@``) lives in its authority, before the
+# last '@'. Matching it textually rather than through urllib.parse keeps a
+# malformed or out-of-range port from defeating the strip: ``urlsplit(...).port``
+# raises on those, and the fail-open fallback returned the credential.
+# The authority is matched as text, so the userinfo group tolerates whitespace
+# inside it (``pass word@host``) instead of stopping at the first space.
+_URL_USERINFO_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)(?:[^/?#]*@)?(\S*)")
+
+
 def _strip_url_userinfo(value: Any) -> Any:
     """Return a URL string without embedded credentials; non-URLs pass through."""
     if not isinstance(value, str) or "://" not in value:
         return value
-    try:
-        parts = urlsplit(value)
-        if parts.username is None and parts.password is None:
-            return value
-        host = parts.hostname or ""
-        port = parts.port  # raises ValueError on a malformed port
-        if port is not None:
-            host = f"{host}:{port}"
-        return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
-    except ValueError:
-        return value
+    return _URL_USERINFO_RE.sub(lambda match: match.group(1) + match.group(2), value)
 
 
 def split_values_secrets(

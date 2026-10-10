@@ -20,6 +20,7 @@ import {
   type ChannelConfigEntry,
   type ChannelFieldHint,
   type ChannelPutBody,
+  type ChannelPutResult,
   type ChannelTestBody,
   type ChannelTestResult,
 } from "@/lib/api";
@@ -195,6 +196,7 @@ export function ChannelConfigPanel({
   const [error, setError] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [enableAnyway, setEnableAnyway] = useState(false);
+  const [applyResult, setApplyResult] = useState<ChannelPutResult | null>(null);
 
   useEffect(() => {
     // A freshly fetched entry re-seeds non-secret fields (typed secret drafts
@@ -389,21 +391,35 @@ export function ChannelConfigPanel({
     setErrorDetail(detail || null);
   };
 
+  const applyMessage = (result: ChannelPutResult) => {
+    if (result.applied === "refreshed") return t("settings.channels.config.appliedInPlace");
+    if (result.applied === "reset" && result.reset_reason) return t("settings.channels.config.appliedReset");
+    if (result.applied === "deferred" || result.applied === "reset") return t("settings.channels.config.appliedOnStart");
+    return t("settings.channels.config.appliedReconnect");
+  };
+
+  const showApplied = (result: ChannelPutResult, fallback: string) => {
+    setApplyResult(result);
+    if (result.applied === "reset" && result.reset_reason) toast.info(applyMessage(result));
+    else toast.success(result.applied === "refreshed" ? applyMessage(result) : fallback);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setError(null);
     setErrorDetail(null);
     setEnableAnyway(false);
+    setApplyResult(null);
     const body: ChannelPutBody = { config: buildPatch() };
     for (const field of entry.fields) {
       if (field.secret && clears[field.key]) body[`clear_${field.key}`] = true;
     }
     try {
-      await api.putChannelConfig(name, body);
+      const result = await api.putChannelConfig(name, body);
       setSecretDrafts({});
       setClears({});
-      toast.success(t("settings.channels.config.saved"));
+      showApplied(result, t("settings.channels.config.saved"));
       await onChanged();
     } catch (saveError) {
       const failure = describeApiFailure(saveError);
@@ -451,12 +467,13 @@ export function ChannelConfigPanel({
     setError(null);
     setErrorDetail(null);
     setEnableAnyway(false);
+    setApplyResult(null);
     try {
-      await api.putChannelConfig(name, {
+      const result = await api.putChannelConfig(name, {
         config: { enabled: next },
         skip_verify: options?.skipVerify,
       });
-      toast.success(
+      showApplied(result,
         next
           ? t("settings.channels.config.enabledToast")
           : t("settings.channels.config.disabledToast"),
@@ -708,6 +725,18 @@ export function ChannelConfigPanel({
               {t("settings.channels.config.enableRejectedDetail", { detail: errorDetail })}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {applyResult ? (
+        <div
+          role="status"
+          className={`rounded-md border px-3 py-2 text-sm ${applyResult.reset_reason
+            ? "border-warning/40 bg-warning/10 text-warning-foreground"
+            : "border-success/30 bg-success/5 text-success"}`}
+        >
+          <div>{applyMessage(applyResult)}</div>
+          {applyResult.reset_reason ? <div className="mt-1 break-words text-xs">{applyResult.reset_reason}</div> : null}
         </div>
       ) : null}
 

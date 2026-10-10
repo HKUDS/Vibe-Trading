@@ -756,6 +756,10 @@ def test_proxy_url_userinfo_is_stripped_from_values() -> None:
             "webhook_url": "https://example.com/hook",
             "note": "plain text",
             "bad_proxy": "http://user:pw@host:notaport",
+            "far_port": "https://user:pw@host:99999/hook",
+            "space_url": "http://admin:pass word@proxy:8080",
+            "tab_url": "http://us\ter:pw@host/",
+            "space_user_url": "https://user:pw @host:8080",
             "token": "abc",
         },
     )
@@ -764,7 +768,17 @@ def test_proxy_url_userinfo_is_stripped_from_values() -> None:
     assert "pw" not in values["proxy"]
     assert values["webhook_url"] == "https://example.com/hook"
     assert values["note"] == "plain text"
-    assert values["bad_proxy"] == "http://user:pw@host:notaport"
+    # A malformed port must not exempt the URL from redaction.
+    assert values["bad_proxy"] == "http://host:notaport"
+    # Nor may an out-of-range port (a plausible typo).
+    assert values["far_port"] == "https://host:99999/hook"
+    # Whitespace inside the authority must not exempt the URL from redaction.
+    assert values["space_url"] == "http://proxy:8080"
+    assert "pass word" not in values["space_url"]
+    assert values["tab_url"] == "http://host/"
+    assert "pw" not in values["tab_url"]
+    assert values["space_user_url"] == "https://host:8080"
+    assert "user:pw" not in values["space_user_url"]
     assert secrets["token"] == {"set": True, "masked": "****"}
 
 

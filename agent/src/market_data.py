@@ -66,13 +66,17 @@ _SOURCE_PATTERNS = [
 
 def detect_source(code: str) -> str:
     """Infer the best loader source for a normalized symbol."""
-    for pattern, source in _SOURCE_PATTERNS:
-        if pattern.match(code):
-            return source
     from backtest.engines._market_hooks import _detect_market
     from backtest.loaders.registry import FALLBACK_CHAINS
 
-    market = _detect_market(code)
+    market = _detect_market(code.strip().upper())
+    for pattern, source in _SOURCE_PATTERNS:
+        if pattern.match(code):
+            # XXX/USD also matches known crypto bases. Keep the shared market
+            # classification authoritative over this broad forex-source rule.
+            if source == "mt5" and market == "crypto":
+                continue
+            return source
     if market == "a_share":
         return "tushare"  # Keep the documented fallback for unknown symbols.
     chain = FALLBACK_CHAINS.get(market, [])

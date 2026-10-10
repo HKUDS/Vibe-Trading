@@ -358,6 +358,7 @@ class DiscordChannel(BaseChannel):
     delivery_target_label = "Discord channel"
     delivery_target_kind = "channel"
     delivery_target_placeholder = "Channel ID"
+    hot_reload_noop_keys = frozenset({"allow_from", "read_receipt_emoji", "working_emoji", "working_emoji_delay"})
     _STREAM_EDIT_INTERVAL = 0.8
 
     @classmethod

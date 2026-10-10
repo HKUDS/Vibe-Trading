@@ -29,7 +29,6 @@ CANARY_SYMBOLS = {
     "binance": "BTC-USDT",
     "ccxt": "BTC-USDT",
     "eastmoney": "601398.SH",
-    "mootdx": "601398.SH",
     "nobitex": "BTC-IRT",
     "okx": "BTC-USDT",
     "pykrx": "005930.KS",
@@ -43,12 +42,18 @@ CANARY_SYMBOLS = {
     "yahoo": "AAPL.US",
     "yfinance": "AAPL.US",
 }
-EXCLUDED_PUBLIC_SOURCES = {"local": "operator files, not a public endpoint"}
+EXCLUDED_PUBLIC_SOURCES = {
+    "local": "operator files, not a public endpoint",
+    # Retired 2026-10-08 (HKUDS/Vibe-Trading#1729): TDX servers stopped
+    # answering the mootdx/tdxpy client protocol in 2026-07
+    # (mootdx/mootdx#157) and upstream is dormant. The loader stays
+    # registered for explicit use but is out of the default chain.
+    "mootdx": "upstream TDX protocol dead since 2026-07 (mootdx/mootdx#157)",
+}
 DEPENDENCIES = {
     "akshare": "akshare",
     "baostock": "baostock",
     "ccxt": "ccxt",
-    "mootdx": "mootdx",
     "pykrx": "pykrx",
     "yfinance": "yfinance",
 }

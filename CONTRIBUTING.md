@@ -195,6 +195,16 @@ configuration with no per-channel frontend code.
    audited exceptions for benign path or timeout keys. If the platform has a credential endpoint, build the
    connection probe on `token_probe.py` rather than writing a new client (see
    `dingtalk_probe.py` for the pattern) and override `test_connection()`.
+   Declare `hot_reload_noop_keys` only for writable fields consumed live from
+   `self.config`. Such edits are revalidated and applied without reconnecting;
+   connection settings and enable transitions still reload the adapter. A
+   computed field is not writable (Signal's policies live under `dm`/`group`).
+   Refresh copies only declared live fields into the current validated config,
+   preserving connection state resolved during login (such as WeChat's server
+   address). Do not replace the entire runtime config with the stored section.
+   The Web UI reports the apply outcome. A failed hot swap that requires a full
+   reset returns a bounded, sanitized reason and sends a best-effort notice to
+   the changed channel's last outbound chat.
 3. Run the authoring contract locally:
    ```bash
    pytest agent/tests/test_channel_authoring_contract.py -q
@@ -275,12 +285,13 @@ cd agent
 /tmp/vibe-loader-health-venv/bin/python -m backtest.loader_health --output /tmp/loader-health.json
 ```
 
-Use the isolated environment: mootdx's HTTP client requirement conflicts with
-the application's dependency range. The canary imports the checkout's loader
-code directly, without installing the full application dependency set.
+Use the isolated environment to keep optional SDK pins separate from the
+application's dependency range. The canary imports the checkout's loader code
+directly, without installing the full application dependency set.
 
-Each unauthenticated network loader has a liquid canary symbol; the local-file
-loader is explicitly excluded. Adding a public loader requires updating the
+Each active unauthenticated network loader has a liquid canary symbol. The
+local-file loader and retired mootdx source are explicitly excluded with a
+reason; mootdx remains available through explicit source selection. Adding a public loader requires updating the
 canary catalog, enforced by the offline test suite. Probes bypass the loader
 cache and run with a temporary home and no inherited credentials. Each source
 has a 120-second total subprocess deadline, including two attempts, and the

@@ -52,14 +52,16 @@
 
 > ⚠️ **تحذير أمني:** حساب X باسم `VibeTrading_HKU`، ومشروع Virtuals رقم `101845`، وعقد التوكن `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` كلّها غير رسمية ولا تتبع Vibe-Trading. لم نُطلق أو نؤيد مطلقًا أي توكن أو عملة ميم. لا تشترِ هذا التوكن، ولا تربط محفظتك، ولا توقّع أي شيء. [التفاصيل](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-09** 🛠️ **إعدادات القنوات ودقة الاختبارات التاريخية**: تحافظ تحديثات الإعدادات دون إعادة الاتصال على بيانات اعتماد الروابط وعنوان خادم WeChat الناتج عن المصادقة، وتعرض الواجهة نتائج الحفظ وإعادة التشغيل بتسع لغات ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)، [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)، [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). يعتمد تقلب الخيارات عبر الأسواق على التوقيتات المعروفة عند كل شمعة فقط، ويشمل التراجع رأس المال الأولي. صُححت مسارات بيانات العملات الرقمية والمعادن الثمينة، وكشف تكرار أسهم هونغ كونغ، واستعادة الذاكرة المؤقتة، والمبالغ بالصيغة العلمية، والتحقق من قيم حقوق الملكية المفقودة. أُزيل mootdx من سلسلة أسهم A الافتراضية. تفاصيل طلبات الدمج الثلاثة عشر في [CHANGELOG](CHANGELOG.md).
+
 - **2026-10-08** 🔐 **حماية تقارير PDF وتصحيح قراءات الوسيط**: تدعم تقارير البريد المجدولة حماية اختيارية بكلمة مرور عبر AES-256 في الويب وCLI وتأكيدات الوكيل؛ تُحفظ كلمة المرور في إعدادات القناة الخاصة فقط ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). يستعلم KIS عن مسارات التداول الثلاثة ويجدد الرمز المنتهي صراحةً مرة واحدة ويرفض القراءة غير المكتملة ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). تُحفظ الصيغة الحسابية بعد الوصف مع استمرار التحقق من الأدلة ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
 
 - **2026-10-07** 🛠️ **استمرارية البحث وتصحيح مقاييس المخاطر**: نُقلت حالة التشغيل خارج تعليمات النظام للحفاظ على بادئة ثابتة ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). صُححت محاذاة التواريخ بين الأسواق وعوائد الأسعار المفقودة وحساب Sortino للخيارات باستخدام العينة كاملةً ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710)، [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717)، [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). تشترك اختبارات مصادر البيانات في عقد OHLCV واحد، مع إصلاحات لتقييم الائتمان والتعرضات والتحقق الزمني وتشخيص التدقيق.
 
-- **2026-10-06** 🛠️ **إصلاح التحكم بالتداول وتصحيح التقارير**: يلغي إيقاف مشغّل التداول الفعلي التحليل الجاري وينتظر انتهاء المجدول، بما يشمل الإلغاء أثناء بدء التشغيل وإغلاق API، مع تصحيح وحدات الوقت في الحالة ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). يتجاوز إلغاء الأوامر وإغلاق المراكز في الطوارئ السجلات غير الصالحة ويواصل معالجة الباقي ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)). تُحفظ جداول الوسطاء بصورة منفصلة مع معالجة الكتابات المتزامنة والجزئية. تُراعى ساعات الإغلاق المبكر للأسهم الأمريكية ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). تحافظ تصحيحات التقارير على الأرقام التي اجتازت التحقق، ولا توحي الملاحظات المحدودة بأن الأرقام غير المذكورة قد اجتازته ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
-
 <details>
 <summary>أخبار سابقة</summary>
+
+- **2026-10-06** 🛠️ **إصلاح التحكم بالتداول وتصحيح التقارير**: يلغي إيقاف مشغّل التداول الفعلي التحليل الجاري وينتظر انتهاء المجدول، بما يشمل الإلغاء أثناء بدء التشغيل وإغلاق API، مع تصحيح وحدات الوقت في الحالة ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). يتجاوز إلغاء الأوامر وإغلاق المراكز في الطوارئ السجلات غير الصالحة ويواصل معالجة الباقي ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)). تُحفظ جداول الوسطاء بصورة منفصلة مع معالجة الكتابات المتزامنة والجزئية. تُراعى ساعات الإغلاق المبكر للأسهم الأمريكية ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). تحافظ تصحيحات التقارير على الأرقام التي اجتازت التحقق، ولا توحي الملاحظات المحدودة بأن الأرقام غير المذكورة قد اجتازته ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
 
 - **2026-10-05** 🛠️ **إدخال البحث وتصحيح الحسابات**: تدعم المحادثة نصوص بحث أطول وتوضح باللغة الحالية كيفية تقصير النص عند تجاوز الحد ([#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)). يستخدم Sortino انحراف الجانب السلبي عبر جميع الفترات، ويستبعد التحقق الجماعي التسميات المتداخلة. تحسنت أوزان التباين وRSI بمتوسط Wilder الأولي وحذف الذاكرة باسم الملف. عند استخدام اسم مستعار غير صحيح للاستدعاء، يقترح التصحيح مراجع الحقول الفعلية مع بقاء التحقق من الأرقام كما هو ([#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)).
 
@@ -460,7 +462,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | أسهم A (اختيار صريح فقط) | none | أُزيل من السلسلة الافتراضية في أكتوبر 2026 بعد توقف خوادم TDX عن الاستجابة لبروتوكول العميل (#1729) |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -482,7 +485,7 @@ vibe-trading connector install /tmp/my-broker
 
 **سلاسل التراجع (بحسب خطر حظر عنوان IP):**
 
-- **أسهم A** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **أسهم A** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **أسهم US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **أسهم HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **أسهم الهند (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -846,7 +849,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **مزودو LLM المدعومون:** OpenRouter, OpenAI, Anthropic (Messages API الأصلي), DeepSeek, Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (local). عند عدم ضبط أي `*_BASE_URL`، يتراجع كل مزوّد إلى نقطة نهايته القانونية، فيكفي مفتاح واحد. راجع `.env.example` للإعداد.
 
-> **نصيحة:** تعمل كل الأسواق دون مفاتيح API بفضل fallback التلقائي. yfinance/Yahoo (HK/US/كندا/المملكة المتحدة)، وOKX (crypto)، وmootdx (أسهم A، اتصال TCP مباشر بدون قيود IP)، وAKShare (A-shares, US, HK, futures, forex) كلها مجانية. يجب أن تعلن أسعار LSE `.L` عملة GBP أو GBp لتطبيع البنس قبل المحاسبة بالجنيه. رمز Tushare اختياري — mootdx هو الـ fallback الموصى به لأسهم A بدون رمز، بينما يوفر AKShare احتياطياً أوسع تغطية.
+> **نصيحة:** تعمل كل الأسواق دون مفاتيح API بفضل fallback التلقائي. yfinance/Yahoo (HK/US/كندا/المملكة المتحدة)، وOKX (crypto)، وAKShare (A-shares, US, HK, futures, forex) كلها مجانية. يجب أن تعلن أسعار LSE `.L` عملة GBP أو GBp لتطبيع البنس قبل المحاسبة بالجنيه. رمز Tushare اختياري، ومصادر أسهم A بدون رمز هي tencent وbaostock وAKShare.
 
 ### المسار A: Docker (دون إعداد)
 

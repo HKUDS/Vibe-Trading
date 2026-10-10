@@ -28,7 +28,7 @@ per-source skill.
 | ccxt | Crypto (100+ exchanges) | No | Needs exchange access | ccxt |
 | baostock | A-shares (free daily/min) | No | China network | data-routing |
 | tencent | A-shares, HK, US (never-banned) | No | Unrestricted | data-routing |
-| mootdx | A-shares (TDX servers, never-banned) | No | China network | data-routing |
+| mootdx | A-shares (retired 2026-10: TDX servers stopped answering the client protocol; explicit `source="mootdx"` only) | No | China network | data-routing |
 | futu | A/HK/US via OpenD gateway | Yes (OpenD running) | Local gateway | data-routing (runner-internal) |
 | mt5 | Forex & metals (your broker's MT5 feed) | Yes (running, logged-in MT5 terminal; optional `~/.vibe-trading/mt5.json`) | Local terminal (Windows) | data-routing (runner-internal) |
 | tickerall | Forex & metals (same broker MT5 feed, hosted) | Yes (`TICKERALL_API_KEY` + `TICKERALL_ACCOUNT_ID`; read-only) | Hosted API (any OS, no terminal) | data-routing (runner-internal; **explicit `source=tickerall` only**) |
@@ -96,7 +96,7 @@ same-market sources automatically. Only set a concrete source when the user asks
 
 ### Source priority (for OHLCV by market)
 
-- **A-shares**: tencent / mootdx (never banned) > tushare (`TUSHARE_TOKEN`) >
+- **A-shares**: tencent (never banned) > tushare (`TUSHARE_TOKEN`) >
   baostock / akshare > eastmoney (throttled).
 - **US stocks**: stooq / yahoo > tiingo / finnhub / fmp / alphavantage (key-gated) >
   sina / eastmoney (throttled) > yfinance.
@@ -123,8 +123,8 @@ same-market sources automatically. Only set a concrete source when the user asks
 
 ## Ban-Risk & Fallback Notes
 
-- **Prefer never-banned sources**: `tencent` and `mootdx` have no observed IP ban;
-  reach for them first for A-share OHLCV when no token is set.
+- **Prefer never-banned sources**: `tencent` has no observed IP ban;
+  reach for it first for A-share OHLCV when no token is set.
 - **Eastmoney rate-limits by IP and must be throttled.** Every Eastmoney-backed
   tool/loader routes through the shared per-host throttle; do not hammer it. On a
   throttle/timeout, fall back to the same-market source above (tencent/baostock).

@@ -98,6 +98,39 @@ def test_duplicate_aliases_rejected_before_any_fetch(monkeypatch):
     assert correlation._normalize_symbol("eur/usd", "forex") == "EURUSD=X"
 
 
+@pytest.mark.parametrize(
+    "pair", [
+        ("700", "700.HK"), ("9988", "9988.HK"), ("00700", "00700.HK"),
+        ("00700.HK", "0700.HK"), ("00005.HK", "5"),
+    ]
+)
+def test_hk_spellings_of_one_instrument_are_rejected_as_duplicates(pair, monkeypatch):
+    """A bare HK code and its suffixed spelling must normalize to one key.
+
+    The bare path zero-pads to four digits while the suffixed spelling passed
+    through unchanged, so the duplicate guard missed the same instrument written
+    both ways and the endpoint returned a self-correlation, presented as a
+    cross-asset relationship.
+    """
+    fetch = Mock()
+    monkeypatch.setattr(correlation, "_fetch_price_series", fetch)
+    left, right = pair
+    market = correlation.infer_market(left)
+    assert correlation._normalize_symbol(left, market) == correlation._normalize_symbol(
+        right, market
+    )
+    with pytest.raises(ValueError, match="distinct"):
+        correlation.compute_correlation_analysis(list(pair))
+    fetch.assert_not_called()
+
+
+def test_hk_normalization_preserves_distinct_currency_counters():
+    """Remove redundant zeroes without truncating a real five-digit counter."""
+    assert correlation._normalize_symbol("80700.HK", "hk_equity") == "80700.HK"
+    assert correlation._normalize_symbol("80700", "hk_equity") == "80700.HK"
+    assert correlation._normalize_symbol("00700.HK", "hk_equity") == "0700.HK"
+
+
 def test_readiness_snapshots_and_single_asset_validation():
     client = TestClient(api_server.app, client=("127.0.0.1", 50000))
     assert client.get("/alpha/readiness").json()["universes"]["btc-usdt"]["ready"] is False
@@ -111,6 +144,23 @@ def test_readiness_snapshots_and_single_asset_validation():
         assert client.get("/alpha/bench/expired").status_code == 404
     finally:
         alpha_routes.ALPHA_BENCH_JOBS.pop(job_id, None)
+
+
+@pytest.mark.parametrize("token,ready", [("", False), (" \t\n", False), ("synthetic-token", True)])
+def test_alpha_readiness_requires_a_nonblank_tushare_token(monkeypatch, token, ready):
+    from src.config import accessor
+
+    config = accessor.get_env_config()
+    config = config.model_copy(update={"data": config.data.model_copy(update={"tushare_token": token})})
+    monkeypatch.setattr(accessor, "get_env_config", lambda: config)
+    find_spec = alpha_routes.importlib.util.find_spec
+    monkeypatch.setattr(
+        alpha_routes.importlib.util, "find_spec",
+        lambda name: object() if name == "tushare" else find_spec(name),
+    )
+    client = TestClient(api_server.app, client=("127.0.0.1", 50000))
+    status = client.get("/alpha/readiness").json()["universes"]["csi300"]
+    assert status == {"ready": ready, "reason": "tushare_ready" if ready else "tushare_token_missing"}
 
 
 def test_lost_submission_response_reuses_job_and_refuses_changed_parameters(monkeypatch):

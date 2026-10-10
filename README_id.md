@@ -53,14 +53,16 @@
 
 > ⚠️ **Peringatan keamanan:** Akun X `VibeTrading_HKU`, proyek Virtuals `101845`, dan kontrak token `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` bukan aset resmi Vibe-Trading. Kami tidak pernah meluncurkan atau mendukung token maupun memecoin apa pun. Jangan membeli, menghubungkan wallet, atau menandatangani apa pun. [Detail](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-09** 🛠️ **Pengaturan kanal dan perbaikan backtest**: Pembaruan tanpa menyambungkan ulang mempertahankan kredensial URL dan alamat server WeChat hasil autentikasi; web menjelaskan hasil penyimpanan dan mulai ulang dalam sembilan bahasa ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). Volatilitas opsi lintas pasar hanya memakai waktu yang sudah diketahui pada setiap bar; drawdown mencakup modal awal. Perbaikan meliputi rute data kripto/logam mulia, duplikat saham Hong Kong, pemulihan cache, nominal notasi ilmiah, dan validasi nilai ekuitas yang hilang. mootdx dikeluarkan dari rantai saham A bawaan. Ketiga belas PR tercantum dalam [CHANGELOG](CHANGELOG.md).
+
 - **2026-10-08** 🔐 **Laporan PDF terlindungi dan pembacaan broker diperbaiki**: PDF Email terjadwal mendukung perlindungan AES-256 opsional melalui Web, CLI, dan konfirmasi agen; kata sandi hanya disimpan dalam konfigurasi privat kanal ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS menanyakan ketiga jalur perdagangan, memperbarui token yang secara eksplisit kedaluwarsa satu kali, dan menolak pembacaan yang tidak lengkap ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). Rumus turunan tetap utuh setelah label deskriptif dengan pemeriksaan bukti tetap berlaku ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
 
 - **2026-10-07** 🛠️ **Kesinambungan riset dan koreksi metrik risiko**: Status eksekusi dipindahkan dari prompt sistem agar prefiksnya tetap stabil ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). Tanggal lintas pasar, imbal hasil di sekitar harga yang hilang, dan Sortino opsi berdasarkan seluruh sampel diperbaiki ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). Pengujian loader memakai satu kontrak OHLCV, disertai koreksi valuasi kredit, eksposur, validasi berjalan, dan diagnosis audit.
 
-- **2026-10-06** 🛠️ **Kontrol trading langsung dan koreksi laporan**: Menghentikan runner trading langsung membatalkan analisis aktif dan menunggu penjadwal selesai, termasuk pembatalan saat mulai dan penutupan API; satuan waktu pada status juga diperbaiki ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). Pembatalan order dan penutupan posisi darurat melewati catatan tidak valid lalu melanjutkan catatan lainnya ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)); jadwal setiap broker disimpan terpisah dengan penanganan penulisan bersamaan dan parsial. Sesi saham AS yang dipersingkat mengikuti waktu tutup lebih awal ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). Koreksi laporan mempertahankan angka yang lolos verifikasi, dan umpan balik terbatas tidak menyiratkan bahwa angka yang tidak tercantum sudah lolos ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
-
 <details>
 <summary>Berita sebelumnya</summary>
+
+- **2026-10-06** 🛠️ **Kontrol trading langsung dan koreksi laporan**: Menghentikan runner trading langsung membatalkan analisis aktif dan menunggu penjadwal selesai, termasuk pembatalan saat mulai dan penutupan API; satuan waktu pada status juga diperbaiki ([#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)). Pembatalan order dan penutupan posisi darurat melewati catatan tidak valid lalu melanjutkan catatan lainnya ([#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)); jadwal setiap broker disimpan terpisah dengan penanganan penulisan bersamaan dan parsial. Sesi saham AS yang dipersingkat mengikuti waktu tutup lebih awal ([#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)). Koreksi laporan mempertahankan angka yang lolos verifikasi, dan umpan balik terbatas tidak menyiratkan bahwa angka yang tidak tercantum sudah lolos ([#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)).
 
 - **2026-10-05** 🛠️ **Input riset dan perbaikan perhitungan**: Chat menerima input riset lebih panjang dan memberi petunjuk dalam bahasa aktif untuk mempersingkat teks yang melampaui batas ([#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)). Sortino memakai deviasi penurunan dari seluruh periode; validasi grup membuang label yang tumpang tindih. Bobot kovarians, RSI dengan rata-rata awal Wilder, dan penghapusan memori lewat nama file juga diperbaiki. Alias panggilan yang keliru kini mendapat referensi sumber yang tepat untuk koreksi, dengan validasi angka tetap berlaku ([#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)).
 
@@ -621,7 +623,8 @@ Satu call `get_market_data`, **28 sumber data market**, salah satunya marketplac
 
 | Sumber | Market | Auth | Peran |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | tidak ada | tidak terkena IP-ban (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | tidak ada | tidak terkena IP-ban |
+| `mootdx` | A-share (hanya pemilihan eksplisit) | tidak ada | dihapus dari rantai bawaan pada Oktober 2026: server TDX berhenti merespons protokol klien (#1729) |
 | `eastmoney` | A / AS / HK | tidak ada | OHLCV + fundamental mendalam & tool flow (throttled) |
 | `baostock` · `akshare` | A (+ AS/HK/futures/makro/fx) | tidak ada | fallback gratis |
 | `tushare` | A / HK / futures / fund / makro | token | A-share paling kaya |
@@ -643,7 +646,7 @@ Satu call `get_market_data`, **28 sumber data market**, salah satunya marketplac
 
 **Fallback chain (berdasarkan risiko IP-ban):**
 
-- **A-share** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -1024,7 +1027,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **Provider LLM yang didukung:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, OpenCode (Go / Zen), Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (lokal). Jika `*_BASE_URL` tidak diatur, setiap provider fallback ke endpoint canonical-nya, jadi cukup key saja. Lihat `.env.example` untuk config.
 
-> **Tip:** Semua market dapat bekerja tanpa API key berkat fallback otomatis. yfinance/Yahoo (HK/AS/Kanada/UK), OKX (crypto), mootdx (A-share, TCP langsung, tanpa throttle IP), dan AKShare (A-share, AS, HK, futures, forex) semuanya gratis. Quote LSE `.L` harus mendeklarasikan GBP atau GBp agar pence dapat dinormalisasi sebelum accounting GBP. Token Tushare opsional — mootdx adalah fallback A-share tanpa token yang disarankan, dengan AKShare sebagai backup yang lebih luas.
+> **Tip:** Semua market dapat bekerja tanpa API key berkat fallback otomatis. yfinance/Yahoo (HK/AS/Kanada/UK), OKX (crypto), dan AKShare (A-share, AS, HK, futures, forex) semuanya gratis. Quote LSE `.L` harus mendeklarasikan GBP atau GBp agar pence dapat dinormalisasi sebelum accounting GBP. Token Tushare opsional; fallback A-share tanpa token adalah tencent, baostock, dan AKShare.
 
 <a id="github-copilot-sdk-provider"></a>
 ### Provider GitHub Copilot SDK

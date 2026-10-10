@@ -58,6 +58,7 @@ class NapcatChannel(BaseChannel):
 
     name = "napcat"
     display_name = "Napcat (QQ)"
+    hot_reload_noop_keys = frozenset({"allow_from"})
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:

@@ -52,14 +52,16 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
+- **2026-10-09** 🛠️ **渠道设置与回测修正**：原地更新渠道设置时保留 URL 内嵌凭证和微信认证后的服务地址，Web 以九种语言说明保存与重启结果（[#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)、[#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)、[#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)）。跨市场期权波动率仅使用截至当前时点的时间戳，回撤纳入初始资金。修正加密货币／贵金属数据源路由、港股重复识别、缓存恢复、科学计数金额解析及缺失净值验证；mootdx 移出默认 A 股链。全部十三项 PR 见 [CHANGELOG](CHANGELOG.md)。
+
 - **2026-10-08** 🔐 **PDF 报告密码保护与券商读取修复**：定时邮件 PDF 可选 AES-256 密码保护，覆盖 Web、CLI 模板和 Agent 确认入口；密码只保存在渠道私有配置中（[#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)）。KIS 读取三个交易场所的订单，明确过期的 token 只刷新一次，不完整的读取返回错误（[#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)）。派生公式保留说明标签之后的完整算式，证据核验规则保持不变（[#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)）。
 
 - **2026-10-07** 🛠️ **研究连续性与风险指标修正**：运行状态移出系统提示词，保留稳定前缀以利于缓存（[#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)）。跨市场日期正确对齐，缺失价格不再拼接跨期收益，期权 Sortino 按全样本计算下行偏差（[#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710)、[#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717)、[#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)）。数据源测试共用 OHLCV 契约，并修正信用估值、风格敞口、滚动验证和审计诊断。
 
-- **2026-10-06** 🛠️ **实盘控制与报告纠错修复**：停止实盘运行会取消当前分析并等待调度器完成清理，覆盖启动期间取消及 API 关闭，运行状态时间单位也已修正（[#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)）。紧急撤单／平仓扫描跳过异常记录，继续处理其余订单和持仓（[#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)）；不同券商的调度独立保存，持久化正确处理并发写入与短写入。美股半日交易遵循提前收市时间（[#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)）。报告纠错保留已核验通过的数字，反馈截断也不会暗示未列出的数字已通过（[#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)）。
-
 <details>
 <summary>更早的新闻</summary>
+
+- **2026-10-06** 🛠️ **实盘控制与报告纠错修复**：停止实盘运行会取消当前分析并等待调度器完成清理，覆盖启动期间取消及 API 关闭，运行状态时间单位也已修正（[#1704](https://github.com/HKUDS/Vibe-Trading/pull/1704)）。紧急撤单／平仓扫描跳过异常记录，继续处理其余订单和持仓（[#1703](https://github.com/HKUDS/Vibe-Trading/pull/1703)）；不同券商的调度独立保存，持久化正确处理并发写入与短写入。美股半日交易遵循提前收市时间（[#1706](https://github.com/HKUDS/Vibe-Trading/pull/1706)）。报告纠错保留已核验通过的数字，反馈截断也不会暗示未列出的数字已通过（[#1702](https://github.com/HKUDS/Vibe-Trading/pull/1702)）。
 
 - **2026-10-05** 🛠️ **研究输入与计算修复**：聊天支持更长的研究输入，超限时以当前语言提示缩短（[#1701](https://github.com/HKUDS/Vibe-Trading/pull/1701)）。回测 Sortino 使用全样本下行偏差；分组验证剔除重叠标签，协方差权重保持有限，影子账户 RSI 使用 Wilder 初始均值，记忆支持按文件名删除。 报告误用调用别名时，纠正提示提供真实字段引用（[#1638](https://github.com/HKUDS/Vibe-Trading/pull/1638)），数值校验保持不变。
 
@@ -475,7 +477,8 @@ vibe-trading connector install /tmp/my-broker
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
-| `tencent` · `mootdx` | A-share + HK | none | never IP-banned (`mootdx` = 通达信 TCP) |
+| `tencent` | A-share + HK | none | never IP-banned |
+| `mootdx` | A 股（仅显式指定） | none | 2026-10 移出默认链：TDX 服务器不再响应其客户端协议（#1729） |
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
@@ -497,7 +500,7 @@ vibe-trading connector install /tmp/my-broker
 
 **Fallback 链（按被封 IP 风险排序）：**
 
-- **A股** → `tencent` · `mootdx` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A股** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
 - **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -856,7 +859,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 
 > **支持的 LLM providers：** OpenRouter、OpenAI、Anthropic（原生 Messages API）、DeepSeek、Gemini、Groq、DashScope/Qwen、Zhipu、Moonshot/Kimi、MiniMax、SiliconFlow（CN + Global）、Xiaomi MIMO、Novita AI、iFlytek 星火、Z.ai、NVIDIA NIM、ModelScope、GitHub Copilot、Ollama（本地）。未设置 `*_BASE_URL` 时，每个 provider 会回退到其规范端点，因此只需一个 key 即可。配置见 `.env.example`。
 
-> **提示：** 由于自动 fallback，所有市场都可以在没有任何 API key 的情况下工作。yfinance/Yahoo（港股/美股/加拿大/英国）、OKX（加密）、mootdx（A 股，TCP 直连不封 IP）和 AKShare（A 股、美股、港股、期货、外汇）都是免费的。LSE `.L` 报价必须明示为 GBP 或 GBp，以便在英镑记账前将便士归一化。Tushare token 是可选项 —— mootdx 是首选的免 token A 股 fallback，AKShare 作为覆盖更广的兜底。
+> **提示：** 由于自动 fallback，所有市场都可以在没有任何 API key 的情况下工作。yfinance/Yahoo（港股/美股/加拿大/英国）、OKX（加密）和 AKShare（A 股、美股、港股、期货、外汇）都是免费的。LSE `.L` 报价必须明示为 GBP 或 GBp，以便在英镑记账前将便士归一化。Tushare token 是可选项，tencent、baostock 和 AKShare 是免 token 的 A 股 fallback。
 
 ### Path A: Docker（零配置）
 

@@ -58,7 +58,7 @@ Core research MCP tools work with zero API keys for HK/US/Canada/crypto. After `
 | Feature | Key needed | When |
 |---------|-----------|------|
 | HK/US/Canada equities & crypto | None | Always free (yfinance / stooq / yahoo + OKX) |
-| China A-share data | None | Free via akshare / baostock / tencent / sina / eastmoney / mootdx fallback (`TUSHARE_TOKEN` optional for premium quality) |
+| China A-share data | None | Free via akshare / baostock / tencent / sina / eastmoney fallback (`TUSHARE_TOKEN` optional for premium quality) |
 | Premium US fundamentals/quotes | `FINNHUB_API_KEY` / `ALPHAVANTAGE_API_KEY` / `TIINGO_API_KEY` / `FMP_API_KEY` | Only for optional-key providers (graceful fallback to free sources) |
 | Multi-agent swarm (`run_swarm`) | `OPENAI_API_KEY` + `LANGCHAIN_MODEL_NAME` | Swarm spawns internal LLM workers |
 
@@ -81,7 +81,7 @@ Create and run quantitative strategies across 10 engines (ChinaA, GlobalEquity, 
 - **Korea equities (KRX: KOSPI/KOSDAQ)** via pykrx using `<CODE>.KS` (KOSPI, e.g. `005930.KS`) or `<CODE>.KQ` (KOSDAQ, e.g. `247540.KQ`) — free, no API key (`pip install "vibe-trading-ai[krx]"`; yahoo/yfinance fallback needs no extra). pykrx serves **daily bars only** (an intraday request falls through to another source) and its adjusted series is Naver-backed rather than a verbatim KRX print. The `KoreaEquityEngine` models same-day round trips (no T+1), the ±30% daily price limit measured from the previous close and quantized to the KRX tick grid, tick-rounded fills, the 0.20% sell-side transaction tax (2026 rate), and 1-share lots. It is **long-only**: `allow_short` is refused, because KRX covered-short and uptick rules cannot be enforced on daily bars.
 - **Vietnam equities (HOSE)** via yahoo / yfinance using `<TICKER>.VN` (e.g. `VIC.VN`) — no API key. Yahoo officially lists HOSE but not HNX or UPCOM; those venues are unsupported and need the `local` source. yfinance is an unofficial Yahoo client, so availability is best-effort and subject to Yahoo's personal-use terms. The `VietnamEquityEngine` approximates the formal T+2 settlement cycle — shares bought on day T normally become sellable during the afternoon session on T+2, informally called T+1.5 — as a two-bar hold on daily data (`vn_settlement_bars` covers scenario testing and future rule changes). It applies HOSE's normal ±7% band around the reference price, rounding the ceiling down and the floor up to the 10/50/100-VND tick grid, and uses 100-share round lots; odd-lot trading is not modelled. Costs are configurable brokerage plus, for individual investors, 0.1% sell-side personal income tax on gross proceeds. It is **long-only**, because operational cash-equity short selling is not generally available in Vietnam.
 - **Cryptocurrency** via OKX or CCXT/100+ exchanges (free, no API key)
-- **China A-shares** via AKShare / baostock / tencent / sina / eastmoney / mootdx (free, no API key) — `TUSHARE_TOKEN` optional for premium quality
+- **China A-shares** via AKShare / baostock / tencent / sina / eastmoney (free, no API key) — `TUSHARE_TOKEN` optional for premium quality
 - **Futures, forex, macro** via AKShare (free, no API key)
 - **Forex / metals with no local terminal** via the hosted **TickerAll** MetaTrader 5 feed (`source="tickerall"`, `TICKERALL_API_KEY` + `TICKERALL_ACCOUNT_ID`, read-only) — the same broker feed as the `mt5` loader but over a hosted API on any OS. **Explicit-only** (never an automatic fallback).
 - **HK & A-share equities** via Futu (broker login required, optional)

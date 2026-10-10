@@ -1021,7 +1021,8 @@ export type ChannelPutBody = {
 
 export interface ChannelPutResult {
   channel: ChannelConfigEntry;
-  applied: "hot_swapped" | "reset" | "deferred";
+  applied: "refreshed" | "hot_swapped" | "reset" | "deferred";
+  reset_reason?: string;
 }
 
 export type ChannelTestBody = {

@@ -1,8 +1,15 @@
 ---
 name: mootdx
 category: data-source
-description: Mootdx A-share market data via TCP-direct 通达信 servers. Free, no API key, no IP rate limits. Use as the stable A-share OHLCV fallback when akshare's East Money scrape is throttled.
+description: Mootdx A-share market data via TCP-direct 通达信 servers. RETIRED 2026-10 — TDX servers stopped answering the client protocol, so this source is out of the automatic fallback chain and kept only for explicit `source="mootdx"` use.
 ---
+
+> **Status (2026-10-08): retired from the default chain.** TDX servers stopped
+> answering the client protocol mootdx speaks (upstream: mootdx/mootdx#157), so
+> this source is no longer in the automatic A-share fallback and is excluded
+> from the loader-health canary. The loader stays registered for explicit
+> `source="mootdx"` calls in case a future upstream release restores the
+> protocol. For A-share OHLCV prefer tencent / eastmoney / baostock.
 
 ## Overview
 

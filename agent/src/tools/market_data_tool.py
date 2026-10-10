@@ -122,7 +122,7 @@ class MarketDataTool(BaseTool):
                     "Longbridge OpenAPI (requires Longbridge credentials). "
                     "Free, no key: yfinance/yahoo (US/HK/Canada equities; "
                     "Canada uses .TO/.V), okx/ccxt/binance "
-                    "(crypto), baostock/tencent/eastmoney/sina/akshare/mootdx "
+                    "(crypto), baostock/tencent/eastmoney/sina/akshare "
                     "(China A-shares), futu (HK/A via local FutuOpenD), stooq "
                     "(global EOD), pykrx (Korea KRX daily "
                     "bars for <CODE>.KS / <CODE>.KQ; needs the optional pykrx "

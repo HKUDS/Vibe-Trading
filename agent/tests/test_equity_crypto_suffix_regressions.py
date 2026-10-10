@@ -1,6 +1,8 @@
 import pandas as pd
 import pytest
 from backtest.correlation import infer_market, _fetch_price_series
+from backtest.loaders import registry
+from src.market_data import fetch_market_data
 
 
 @pytest.mark.parametrize("symbol", ["ABNB", "ABNB.US", "SOL", "SOL.US"])
@@ -104,3 +106,64 @@ def test_correlation_slash_crypto_uses_crypto_chain(monkeypatch):
     assert list(rows) == ["ETH/USD"]
     assert rows["ETH/USD"]["close"].tolist() == [100, 110]
     assert seen == ["ETH/USD"]
+
+
+def _routing_frame():
+    return pd.DataFrame(
+        {'open': [100., 101.], 'high': [101., 102.], 'low': [99., 100.],
+         'close': [100., 101.], 'volume': [1., 1.]},
+        index=pd.date_range('2025-01-01', periods=2, name='date'),
+    )
+
+
+@pytest.mark.parametrize('symbol', ['XAU/USD', 'XAG/USD', 'XPT/USD', 'XPD/USD'])
+def test_precious_metals_keep_the_forex_loader(symbol, monkeypatch):
+    calls = []
+
+    class Forex:
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, **kwargs):
+            calls.append('forex')
+            return {code: _routing_frame() for code in codes}
+
+    class Crypto:
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, **kwargs):
+            calls.append('crypto')
+            return {}
+
+    monkeypatch.setattr(registry, '_ensure_registered', lambda: None)
+    monkeypatch.setattr(registry, 'get_source_order_override', lambda market: None)
+    monkeypatch.setattr(registry, 'FALLBACK_CHAINS', {'forex': ['fx'], 'crypto': ['coin']})
+    monkeypatch.setattr(registry, 'LOADER_REGISTRY', {'fx': Forex, 'coin': Crypto})
+    rows = _fetch_price_series([symbol], '2025-01-01', '2025-01-02')
+    assert calls == ['forex']
+    assert symbol in rows
+
+
+@pytest.mark.parametrize('symbol', ['BTC/USD', 'ETH/USD', 'BNB/USD', 'SOL/USD', 'ADA/USD', 'DOGE/USD'])
+def test_market_data_auto_reaches_crypto_chain(symbol, monkeypatch):
+    calls = []
+    monkeypatch.setattr(registry, 'refresh_source_order_overrides', lambda: None)
+    monkeypatch.setattr(registry, 'get_source_order_override', lambda market: None)
+    monkeypatch.setattr(registry, 'FALLBACK_CHAINS', {'forex': ['mt5'], 'crypto': ['okx']})
+
+    def resolve(source):
+        class Loader:
+            name = source
+
+            def fetch(self, codes, *args, **kwargs):
+                calls.append(source)
+                return {code: _routing_frame() for code in codes} if source == 'okx' else {}
+        return Loader
+
+    result = fetch_market_data(
+        codes=[symbol], start_date='2025-01-01', end_date='2025-01-02',
+        loader_resolver=resolve,
+    )
+    assert calls == ['okx']
+    assert result[symbol]

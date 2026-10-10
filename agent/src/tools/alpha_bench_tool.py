@@ -692,7 +692,7 @@ def _validate_bench_data_requirements(registry: Any, alpha_ids: list[str], unive
         ValueError: If US-only SEC inputs are requested from another universe.
     """
     columns = sorted({column for aid in alpha_ids
-                      for column in (getattr(registry.get(aid), "meta", None) or {}).get("columns_required", [])
+                      for column in (registry.get(aid).meta or {}).get("columns_required", [])
                       if column.startswith("fund:")})
     if columns and universe != "sp500":
         raise ValueError("Fundamental factor evaluation currently uses SEC US filings. Choose the S&P 500 universe.")

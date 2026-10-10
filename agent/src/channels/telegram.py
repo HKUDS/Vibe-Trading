@@ -433,6 +433,7 @@ class TelegramChannel(BaseChannel):
     delivery_target_label = "Telegram chat"
     delivery_target_kind = "chat"
     delivery_target_placeholder = "Chat, group, or user ID"
+    hot_reload_noop_keys = frozenset({"allow_from", "react_emoji"})
 
     def delivery_target_suggestions(self) -> list[dict[str, str]]:
         """Suggest numeric private chats already authorized in allow_from."""
