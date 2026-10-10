@@ -120,6 +120,22 @@ class PortfolioStore:
                 return payload
         return None
 
+    def get(self, snapshot_id: str) -> dict[str, Any] | None:
+        """Return one immutable snapshot by id.
+
+        Args:
+            snapshot_id: Exact persisted snapshot identifier.
+
+        Returns:
+            The stored snapshot envelope, or None when the id is absent.
+        """
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT payload FROM portfolio_snapshots WHERE id = ? LIMIT 1",
+                (str(snapshot_id),),
+            ).fetchone()
+        return json.loads(row["payload"]) if row else None
+
     def history(
         self,
         limit: int = 180,
