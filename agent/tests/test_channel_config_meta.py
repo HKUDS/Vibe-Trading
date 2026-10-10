@@ -1,9 +1,9 @@
 """Tests for channel config field metadata and fail-safe secret masking.
 
-Covers the uiHints registry (hand-written for DingTalk, Email, Feishu, QQ,
-Slack and WebSocket, derived elsewhere) and the security acceptance criterion:
-no key matching :data:`SECRET_KEY_RE` ever survives in the non-secret
-``values`` half.
+Covers the uiHints registry (hand-written for DingTalk, Discord, Email,
+Feishu, QQ, Slack and WebSocket, derived elsewhere) and the security
+acceptance criterion: no key matching :data:`SECRET_KEY_RE` ever survives in
+the non-secret ``values`` half.
 """
 
 from __future__ import annotations
@@ -467,10 +467,13 @@ def test_slack_group_policy_choices_pin() -> None:
         assert f'group_policy == "{choice}"' in source, choice
 
     # Additive contract: choices is absent for every other hinted field, in
-    # slack and in all pre-existing hint tables.
+    # slack, discord and all pre-existing hint tables.
     for name, hints in _config_meta.FIELD_HINTS.items():
         for hint in hints:
-            if (name, hint["key"]) != ("slack", "group_policy"):
+            if (name, hint["key"]) not in {
+                ("slack", "group_policy"),
+                ("discord", "group_policy"),
+            }:
                 assert "choices" not in hint, f"{name}.{hint['key']}"
 
 
@@ -533,6 +536,112 @@ def test_slack_split_keeps_dm_dict_and_behavior_values_untouched() -> None:
     assert values["group_policy"] == "mention"
     assert values["allow_from"] == ["U123"]
     assert set(values) == set(section) - {"bot_token", "app_token"}
+
+
+# --- (a2c) hand-written Discord hints ---------------------------------------- #
+
+_DISCORD_HINT_KEYS = (
+    "token",
+    "allow_from",
+    "allow_channels",
+    "intents",
+    "group_policy",
+    "read_receipt_emoji",
+    "working_emoji",
+    "working_emoji_delay",
+    "streaming",
+    "proxy",
+    "proxy_username",
+    "proxy_password",
+)
+
+
+def test_discord_field_hints_contract() -> None:
+    """Discord hints: declaration order, secrets, required set, help_key prefix."""
+    hints = channel_field_hints("discord")
+    keys = tuple(hint["key"] for hint in hints)
+    assert keys == _DISCORD_HINT_KEYS
+    assert "enabled" not in keys
+    assert len(hints) == 12
+
+    by_key = {hint["key"]: hint for hint in hints}
+    assert {key for key, hint in by_key.items() if hint["secret"]} == {
+        "token",
+        "proxy_username",
+        "proxy_password",
+    }
+    assert by_key["token"]["type"] == "password"
+    assert by_key["proxy_username"]["type"] == "password"
+    assert by_key["proxy_password"]["type"] == "password"
+    # required mirrors DiscordChannel.start(): it logs "bot token not
+    # configured" and returns without connecting when the token is empty.
+    assert {key for key, hint in by_key.items() if hint["required"]} == {"token"}
+    for hint in hints:
+        assert hint["help_key"] == f"settings.channels.fields.discord.{hint['key']}"
+
+
+def test_discord_group_policy_choices_pin() -> None:
+    """group_policy carries the enum the adapter declares.
+
+    Drift pin for the choices contract: the literals mirror the
+    ``group_policy: Literal["mention", "open"]`` declaration on DiscordConfig
+    and the strings ``DiscordChannel._should_respond_in_group`` branches on in
+    discord.py. Route-side enum enforcement is deferred to a later PR.
+    """
+    by_key = {hint["key"]: hint for hint in channel_field_hints("discord")}
+    choices = by_key["group_policy"].get("choices")
+    assert choices == ["mention", "open"]
+    assert all(isinstance(choice, str) for choice in choices)
+
+    source = (_REPO_ROOT / "agent/src/channels/discord.py").read_text(encoding="utf-8")
+    for choice in choices:
+        assert f'group_policy == "{choice}"' in source, choice
+
+
+def test_discord_hint_keys_exist_in_default_config() -> None:
+    """Every discord hint key is a real DiscordConfig field (authoring contract)."""
+    config = _section_for("discord")
+    if config is None:
+        pytest.skip("discord adapter is not loadable in this environment")
+    for hint in channel_field_hints("discord"):
+        assert hint["key"] in config
+
+
+def test_discord_secrets_are_masked_and_behavior_values_stay_visible() -> None:
+    """All three Discord credential fields mask; behavior fields stay in values.
+
+    Discord carries no audited ``secret=False`` subtraction: every
+    secret-shaped key (``token``, ``proxy_username``, ``proxy_password``) is a
+    true credential, so the hand-written flags agree with SECRET_KEY_RE and
+    ``_AUDITED_NON_SECRETS`` stays untouched.
+    """
+    section = {
+        "enabled": True,
+        "token": "dummy-token-1234",
+        "allow_from": ["123456789"],
+        "allow_channels": [],
+        "intents": 37377,
+        "group_policy": "mention",
+        "read_receipt_emoji": "👀",
+        "working_emoji": "🔧",
+        "working_emoji_delay": 2.0,
+        "streaming": True,
+        "proxy": "http://proxy.local:8080",
+        "proxy_username": "proxy-user-4321",
+        "proxy_password": "proxy-pass-5678",
+    }
+
+    values, secrets = split_values_secrets("discord", section)
+
+    assert set(secrets) == {"token", "proxy_username", "proxy_password"}
+    assert secrets["token"] == {"set": True, "masked": "****1234"}
+    assert secrets["proxy_username"] == {"set": True, "masked": "****4321"}
+    assert secrets["proxy_password"] == {"set": True, "masked": "****5678"}
+    assert values["intents"] == 37377
+    assert values["group_policy"] == "mention"
+    assert values["proxy"] == "http://proxy.local:8080"
+    assert values["allow_from"] == ["123456789"]
+    assert set(values) == set(section) - {"token", "proxy_username", "proxy_password"}
 
 
 # --- (a3) hint-authoritative secret resolution ------------------------------- #
@@ -607,7 +716,7 @@ def test_derived_channel_regex_masking_unchanged() -> None:
 # --- (b) fallback derivation ------------------------------------------------- #
 
 
-@pytest.mark.parametrize("name", ["discord", "telegram"])
+@pytest.mark.parametrize("name", ["telegram"])
 def test_fallback_derives_types_and_secret_flags(name: str) -> None:
     """Adapters without hand-written hints derive metadata from default_config()."""
     config = _section_for(name)

@@ -917,6 +917,56 @@
             "label": "Require mention in allowed channels",
             "help": "With the \"allowlist\" policy, also require an @mention before replying in approved channels. No effect for \"mention\" or \"open\"."
           }
+        },
+        "discord": {
+          "token": {
+            "label": "Bot token",
+            "help": "The bot token from the Discord Developer Portal — not a user or OAuth token. Stored server-side and never sent back to the browser."
+          },
+          "allow_from": {
+            "label": "Allowed senders",
+            "help": "Optional allowlist of Discord user IDs that may talk to the agent. Leave empty to allow everyone."
+          },
+          "allow_channels": {
+            "label": "Allowed channels",
+            "help": "Optional allowlist of Discord channel IDs the bot responds in. Leave empty to allow every channel."
+          },
+          "intents": {
+            "label": "Gateway intents",
+            "help": "Gateway intent bitfield as an integer (default 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT). MESSAGE CONTENT is a privileged intent that must be enabled in the Developer Portal or the bot fails to connect."
+          },
+          "group_policy": {
+            "label": "Group policy",
+            "help": "\"mention\" replies only when the bot is @mentioned in a server channel, \"open\" replies to all channel messages (still subject to the allowlists)."
+          },
+          "read_receipt_emoji": {
+            "label": "Read receipt emoji",
+            "help": "Emoji reacted on an incoming message right away to acknowledge it (default 👀); removed once the reply arrives."
+          },
+          "working_emoji": {
+            "label": "Working emoji",
+            "help": "Emoji reacted while the agent is still working (default 🔧), added after the working emoji delay."
+          },
+          "working_emoji_delay": {
+            "label": "Working emoji delay (s)",
+            "help": "Seconds to wait before adding the working emoji, so quick replies never show it (default 2.0)."
+          },
+          "streaming": {
+            "label": "Streaming replies",
+            "help": "Stream the reply by progressively editing one Discord message instead of sending a single final message."
+          },
+          "proxy": {
+            "label": "Proxy URL",
+            "help": "Optional HTTP proxy the gateway connection and API calls go through, e.g. http://host:port."
+          },
+          "proxy_username": {
+            "label": "Proxy username",
+            "help": "Username for the proxy; set it together with the proxy password or not at all — a half-specified pair is ignored with a warning. Stored server-side and never sent back to the browser."
+          },
+          "proxy_password": {
+            "label": "Proxy password",
+            "help": "Password for the proxy; set it together with the proxy username or not at all — a half-specified pair is ignored with a warning. Stored server-side and never sent back to the browser."
+          }
         }
       },
       "guides": {
@@ -969,6 +1019,16 @@
           "step4": "Copy the App ID and App Secret from Credentials & Basic Info and paste them into the fields above.",
           "step5": "Create a version and publish the app (admin approval if your tenant requires it), then enable the channel here — it hot-applies with no restart. For international Lark tenants, set domain to \"lark\".",
           "docsLabel": "Open the Feishu Open Platform"
+        },
+        "discord": {
+          "title": "Discord setup guide",
+          "intro": "Discord bots connect over the gateway with a bot token, so no public IP or webhook URL is needed.",
+          "step1": "Create an application in the Discord Developer Portal (discord.com/developers).",
+          "step2": "Open the Bot page, reset the token, and copy it.",
+          "step3": "Under Privileged Gateway Intents, enable MESSAGE CONTENT INTENT — the default intents require it.",
+          "step4": "Generate an OAuth2 invite URL with the bot (and applications.commands) scope and add the bot to your server.",
+          "step5": "Paste the token here, click Test connection, then enable the channel.",
+          "docsLabel": "Open the Discord developer documentation"
         }
       }
     },

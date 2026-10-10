@@ -912,6 +912,56 @@
             "label": "許可チャンネルでメンションを要求",
             "help": "「allowlist」ポリシーで、承認済みチャンネルでも @ メンションされたときのみ返信します。「mention」と「open」には影響しません。"
           }
+        },
+        "discord": {
+          "token": {
+            "label": "ボットトークン",
+            "help": "Discord Developer Portal のボットトークンです（ユーザートークンや OAuth トークンではありません）。サーバー側に保存され、ブラウザに返されることはありません。"
+          },
+          "allow_from": {
+            "label": "許可する送信者",
+            "help": "エージェントと会話できる Discord ユーザー ID の許可リスト。空欄ですべて許可します。"
+          },
+          "allow_channels": {
+            "label": "許可するチャンネル",
+            "help": "ボットが応答する Discord チャンネル ID の許可リスト。空欄ですべてのチャンネルを許可します。"
+          },
+          "intents": {
+            "label": "ゲートウェイインテント",
+            "help": "ゲートウェイインテントのビットフィールド整数（デフォルト 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT）。MESSAGE CONTENT は特権インテントで、Developer Portal で有効にしないとボットは接続できません。"
+          },
+          "group_policy": {
+            "label": "グループポリシー",
+            "help": "「mention」はサーバーのチャンネルで @ メンションされたときのみ返信し、「open」はすべてのチャンネルメッセージに返信します（いずれも許可リストに従います）。"
+          },
+          "read_receipt_emoji": {
+            "label": "既読リアクション",
+            "help": "受信メッセージにすぐ付ける確認用のリアクション（デフォルトは 👀）。返信が届くと削除されます。"
+          },
+          "working_emoji": {
+            "label": "作業中リアクション",
+            "help": "エージェントが作業中の間に付けるリアクション（デフォルトは 🔧）。作業中リアクションの遅延後に追加されます。"
+          },
+          "working_emoji_delay": {
+            "label": "作業中リアクションの遅延（秒）",
+            "help": "作業中リアクションを付けるまでの待機秒数。短い返信では表示されません（デフォルト 2.0）。"
+          },
+          "streaming": {
+            "label": "ストリーミング返信",
+            "help": "最終メッセージを一度に送信する代わりに、1 通の Discord メッセージを逐次編集して返信をストリーミングします。"
+          },
+          "proxy": {
+            "label": "プロキシ URL",
+            "help": "ゲートウェイ接続と API 呼び出しが経由する任意の HTTP プロキシ（例：http://host:port）。"
+          },
+          "proxy_username": {
+            "label": "プロキシのユーザー名",
+            "help": "プロキシのユーザー名（パスワードと組で設定してください。片方だけの場合は警告とともに無視されます）。サーバー側に保存され、ブラウザに返されることはありません。"
+          },
+          "proxy_password": {
+            "label": "プロキシのパスワード",
+            "help": "プロキシのパスワード（ユーザー名と組で設定してください。片方だけの場合は警告とともに無視されます）。サーバー側に保存され、ブラウザに返されることはありません。"
+          }
         }
       },
       "guides": {
@@ -964,6 +1014,16 @@
           "step4": "「認証情報と基本情報」から App ID と App Secret をコピーして、上の欄に貼り付けます。",
           "step5": "バージョンを作成してアプリを公開し（テナントの仕様により管理者の承認が必要な場合があります）、ここでチャンネルを有効にすると再起動不要で即座に反映されます。国際版 Lark のテナントはドメインを lark に設定してください。",
           "docsLabel": "Feishu Open Platform を開く"
+        },
+        "discord": {
+          "title": "Discord セットアップガイド",
+          "intro": "Discord ボットはボットトークンでゲートウェイに接続するため、公開 IP も Webhook も不要です。",
+          "step1": "Discord Developer Portal（discord.com/developers）でアプリケーションを作成します。",
+          "step2": "Bot ページを開き、トークンをリセットしてコピーします。",
+          "step3": "Privileged Gateway Intents で MESSAGE CONTENT INTENT を有効にします（デフォルトのインテントに必要です）。",
+          "step4": "bot（および applications.commands）スコープの OAuth2 招待 URL を生成し、ボットをサーバーに追加します。",
+          "step5": "ここにトークンを貼り付け、「接続テスト」をクリックしてからチャンネルを有効にします。",
+          "docsLabel": "Discord 開発者ドキュメントを開く"
         }
       }
     },

@@ -917,6 +917,56 @@
             "label": "Wajib sebut di kanal yang diizinkan",
             "help": "Dengan kebijakan \"allowlist\", juga mewajibkan @mention sebelum membalas di kanal yang disetujui. Tidak berpengaruh pada \"mention\" atau \"open\"."
           }
+        },
+        "discord": {
+          "token": {
+            "label": "Token bot",
+            "help": "Token bot dari Discord Developer Portal — bukan token pengguna atau OAuth. Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          },
+          "allow_from": {
+            "label": "Pengirim yang diizinkan",
+            "help": "Daftar putih opsional ID pengguna Discord yang boleh berbicara dengan agen. Biarkan kosong untuk mengizinkan semua orang."
+          },
+          "allow_channels": {
+            "label": "Kanal yang diizinkan",
+            "help": "Daftar putih opsional ID kanal Discord tempat bot merespons. Biarkan kosong untuk mengizinkan semua kanal."
+          },
+          "intents": {
+            "label": "Gateway intent",
+            "help": "Bitfield gateway intent berupa bilangan bulat (default 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT). MESSAGE CONTENT adalah intent istimewa yang harus diaktifkan di Developer Portal, jika tidak bot gagal terhubung."
+          },
+          "group_policy": {
+            "label": "Kebijakan grup",
+            "help": "\"mention\" hanya membalas saat bot disebut (@mention) di kanal server, \"open\" membalas semua pesan kanal (tetap tunduk pada daftar putih)."
+          },
+          "read_receipt_emoji": {
+            "label": "Emoji tanda dibaca",
+            "help": "Emoji yang direaksikan pada pesan masuk sebagai tanda terima (default 👀); dihapus setelah balasan tiba."
+          },
+          "working_emoji": {
+            "label": "Emoji saat bekerja",
+            "help": "Emoji yang direaksikan saat agen masih bekerja (default 🔧), ditambahkan setelah penundaan emoji saat bekerja."
+          },
+          "working_emoji_delay": {
+            "label": "Penundaan emoji saat bekerja (dtk)",
+            "help": "Detik sebelum emoji saat bekerja ditambahkan, sehingga balasan cepat tidak pernah menampilkannya (default 2.0)."
+          },
+          "streaming": {
+            "label": "Balasan streaming",
+            "help": "Mengalirkan balasan dengan menyunting satu pesan Discord secara bertahap, alih-alih mengirim satu pesan final."
+          },
+          "proxy": {
+            "label": "URL proksi",
+            "help": "Proksi HTTP opsional yang dilalui koneksi gateway dan panggilan API, misalnya http://host:port."
+          },
+          "proxy_username": {
+            "label": "Nama pengguna proksi",
+            "help": "Nama pengguna proksi; isi berpasangan dengan kata sandi proksi atau tidak sama sekali — pasangan yang setengah diisi diabaikan dengan peringatan. Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          },
+          "proxy_password": {
+            "label": "Kata sandi proksi",
+            "help": "Kata sandi proksi; isi berpasangan dengan nama pengguna proksi atau tidak sama sekali — pasangan yang setengah diisi diabaikan dengan peringatan. Disimpan di sisi server dan tidak pernah dikirim kembali ke peramban."
+          }
         }
       },
       "guides": {
@@ -969,6 +1019,16 @@
           "step4": "Salin App ID dan App Secret dari halaman Kredensial & Info Dasar, lalu tempel di kolom di atas.",
           "step5": "Buat versi dan publikasikan aplikasi (perlu persetujuan admin jika tenant Anda mensyaratkannya), lalu aktifkan kanal di sini — berlaku seketika tanpa restart. Untuk tenant Lark internasional, set domain ke lark.",
           "docsLabel": "Buka Feishu Open Platform"
+        },
+        "discord": {
+          "title": "Panduan setup Discord",
+          "intro": "Bot Discord terhubung ke gateway dengan token bot, jadi tidak perlu IP publik maupun webhook.",
+          "step1": "Buat aplikasi di Discord Developer Portal (discord.com/developers).",
+          "step2": "Buka halaman Bot, atur ulang token, lalu salin.",
+          "step3": "Di Privileged Gateway Intents, aktifkan MESSAGE CONTENT INTENT — intent default membutuhkannya.",
+          "step4": "Buat URL undangan OAuth2 dengan cakupan bot (dan applications.commands), lalu tambahkan bot ke server Anda.",
+          "step5": "Tempel token di sini, klik Uji koneksi, lalu aktifkan kanal.",
+          "docsLabel": "Buka dokumentasi pengembang Discord"
         }
       }
     },

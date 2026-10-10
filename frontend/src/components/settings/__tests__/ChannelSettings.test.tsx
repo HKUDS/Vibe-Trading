@@ -334,6 +334,50 @@ function slackEntry(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function discordEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    display_name: "Discord",
+    available: true,
+    loaded: true,
+    install_hint: "",
+    error: "",
+    supports_test: true,
+    sdk_available: true,
+    fields: [
+      { key: "token", type: "password", secret: true, required: true, help_key: "settings.channels.fields.discord.token" },
+      { key: "allow_from", type: "list", secret: false, required: false, help_key: "settings.channels.fields.discord.allow_from" },
+      { key: "allow_channels", type: "list", secret: false, required: false, help_key: "settings.channels.fields.discord.allow_channels" },
+      { key: "intents", type: "text", secret: false, required: false, help_key: "settings.channels.fields.discord.intents" },
+      { key: "group_policy", type: "text", secret: false, required: false, help_key: "settings.channels.fields.discord.group_policy", choices: ["mention", "open"] },
+      { key: "read_receipt_emoji", type: "text", secret: false, required: false, help_key: "settings.channels.fields.discord.read_receipt_emoji" },
+      { key: "working_emoji", type: "text", secret: false, required: false, help_key: "settings.channels.fields.discord.working_emoji" },
+      { key: "working_emoji_delay", type: "text", secret: false, required: false, help_key: "settings.channels.fields.discord.working_emoji_delay" },
+      { key: "streaming", type: "bool", secret: false, required: false, help_key: "settings.channels.fields.discord.streaming" },
+      { key: "proxy", type: "text", secret: false, required: false, help_key: "settings.channels.fields.discord.proxy" },
+      { key: "proxy_username", type: "password", secret: true, required: false, help_key: "settings.channels.fields.discord.proxy_username" },
+      { key: "proxy_password", type: "password", secret: true, required: false, help_key: "settings.channels.fields.discord.proxy_password" },
+    ],
+    values: {
+      enabled: false,
+      allow_from: [],
+      allow_channels: [],
+      intents: 37377,
+      group_policy: "mention",
+      read_receipt_emoji: "👀",
+      working_emoji: "🔧",
+      working_emoji_delay: 2,
+      streaming: true,
+      proxy: "",
+    },
+    secrets: {
+      token: { set: true, masked: "****cdef" },
+      proxy_username: { set: true, masked: "****user" },
+      proxy_password: { set: true, masked: "****pass" },
+    },
+    ...overrides,
+  };
+}
+
 function channelsConfig(overrides: Record<string, unknown> = {}) {
   return {
     config_path: "~/.vibe-trading/agent.json",
@@ -399,6 +443,17 @@ async function renderSlackExpanded() {
   await screen.findByText("IM Channels");
   fireEvent.click(await screen.findByRole("button", { name: "Configure Slack" }));
   expect(await screen.findByDisplayValue("eyes")).toBeInTheDocument();
+}
+
+/** Render the card with the Discord config panel expanded. */
+async function renderDiscordExpanded() {
+  apiMock.getChannelsConfig.mockResolvedValue(channelsConfig({
+    channels: { dingtalk: dingtalkEntry(), discord: discordEntry() },
+  }));
+  render(<ChannelSettings />);
+  await screen.findByText("IM Channels");
+  fireEvent.click(await screen.findByRole("button", { name: "Configure Discord" }));
+  expect(await screen.findByDisplayValue("37377")).toBeInTheDocument();
 }
 
 /** Render the card with the three guided IM channels available. */
@@ -994,6 +1049,104 @@ describe("ChannelSettings config panel", () => {
       "mention",
       "allowlist",
     ]);
+  });
+
+  it("renders every Discord field from the backend help_keys with localized labels", async () => {
+    await renderDiscordExpanded();
+
+    expect(screen.getByText("Bot token")).toBeInTheDocument();
+    expect(screen.getByText("Allowed senders")).toBeInTheDocument();
+    expect(screen.getByText("Allowed channels")).toBeInTheDocument();
+    expect(screen.getByText("Gateway intents")).toBeInTheDocument();
+    expect(screen.getByText("Group policy")).toBeInTheDocument();
+    expect(screen.getByText("Read receipt emoji")).toBeInTheDocument();
+    expect(screen.getByText("Working emoji")).toBeInTheDocument();
+    expect(screen.getByText("Working emoji delay (s)")).toBeInTheDocument();
+    expect(screen.getByText("Streaming replies")).toBeInTheDocument();
+    expect(screen.getByText("Proxy URL")).toBeInTheDocument();
+    expect(screen.getByText("Proxy username")).toBeInTheDocument();
+    expect(screen.getByText("Proxy password")).toBeInTheDocument();
+    expect(screen.getByText(/MESSAGE CONTENT is a privileged intent/)).toBeInTheDocument();
+    // token is the only required field: the decorative asterisk marks it.
+    expect(screen.getByText("Bot token").textContent).toContain("*");
+    // All three credentials keep the generic masked placeholder and password type.
+    for (const masked of ["****cdef", "****user", "****pass"]) {
+      const secretInput = screen.getByPlaceholderText(`Keep current (${masked})`);
+      expect(secretInput).toHaveAttribute("type", "password");
+      expect(secretInput).toHaveValue("");
+    }
+  });
+
+  it("renders the Discord group_policy choices as a select with mention and open", async () => {
+    await renderDiscordExpanded();
+
+    const select = screen.getByLabelText("Group policy");
+    expect(select.tagName).toBe("SELECT");
+    expect(Array.from(select.querySelectorAll("option")).map((option) => option.value)).toEqual([
+      "mention",
+      "open",
+    ]);
+    expect(select).toHaveValue("mention");
+
+    // The select flows through the same form-state path as text inputs.
+    fireEvent.change(select, { target: { value: "open" } });
+    expect(select).toHaveValue("open");
+    fireEvent.click(screen.getByRole("button", { name: "Save configuration" }));
+
+    await waitFor(() => expect(apiMock.putChannelConfig).toHaveBeenCalledTimes(1));
+    expect(apiMock.putChannelConfig).toHaveBeenLastCalledWith("discord", {
+      config: expect.objectContaining({ group_policy: "open" }),
+    });
+  });
+
+  it("never renders smuggled Discord secret values, only the masked placeholders", async () => {
+    // A contract-violating response that carries raw secrets in `values`
+    // still must not reach the DOM: secret widgets bind to empty drafts.
+    const discord = discordEntry({
+      values: {
+        ...discordEntry().values,
+        token: "leaked-bot-token",
+        proxy_username: "leaked-proxy-user",
+        proxy_password: "leaked-proxy-pass",
+      },
+    });
+    apiMock.getChannelsConfig.mockResolvedValue(channelsConfig({ channels: { discord } }));
+    render(<ChannelSettings />);
+    await screen.findByText("IM Channels");
+    fireEvent.click(await screen.findByRole("button", { name: "Configure Discord" }));
+    expect(await screen.findByDisplayValue("37377")).toBeInTheDocument();
+
+    const secretInputs = Array.from(document.querySelectorAll("input[type=password]"));
+    expect(secretInputs).toHaveLength(3);
+    for (const secretInput of secretInputs) {
+      expect(secretInput).toHaveValue("");
+    }
+    expect(document.body.textContent).not.toContain("leaked-bot-token");
+    expect(document.body.textContent).not.toContain("leaked-proxy-user");
+    expect(document.body.textContent).not.toContain("leaked-proxy-pass");
+  });
+
+  it("toggles the Discord setup guide with its steps and external link", async () => {
+    await renderDiscordExpanded();
+
+    expect(screen.queryByText(/Create an application in the Discord Developer Portal/)).not.toBeInTheDocument();
+
+    const guideToggle = screen.getByRole("button", { name: "Discord setup guide" });
+    expect(guideToggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(guideToggle);
+
+    expect(guideToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/Create an application in the Discord Developer Portal/)).toBeInTheDocument();
+    expect(screen.getByText(/reset the token/)).toBeInTheDocument();
+    expect(screen.getByText(/enable MESSAGE CONTENT INTENT/)).toBeInTheDocument();
+    expect(screen.getByText(/applications\.commands/)).toBeInTheDocument();
+    expect(screen.getByText(/click Test connection, then enable the channel/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open the Discord developer documentation" }))
+      .toHaveAttribute("href", "https://discord.com/developers/docs/intro");
+
+    fireEvent.click(guideToggle);
+    expect(guideToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(/Create an application in the Discord Developer Portal/)).not.toBeInTheDocument();
   });
 
   it("renders no setup guide for a channel without a guide definition", async () => {

@@ -912,6 +912,56 @@
             "label": "허용 채널에서 멘션 요구",
             "help": "\"allowlist\" 정책에서 승인된 채널에서도 @ 멘션되어야 답변합니다. \"mention\"과 \"open\" 정책에는 영향이 없습니다."
           }
+        },
+        "discord": {
+          "token": {
+            "label": "봇 토큰",
+            "help": "Discord 개발자 포털의 봇 토큰입니다(사용자 토큰이나 OAuth 토큰이 아님). 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          },
+          "allow_from": {
+            "label": "허용된 발신자",
+            "help": "에이전트와 대화할 수 있는 Discord 사용자 ID 허용 목록. 비워 두면 모두 허용됩니다."
+          },
+          "allow_channels": {
+            "label": "허용된 채널",
+            "help": "봇이 응답할 Discord 채널 ID 허용 목록. 비워 두면 모든 채널이 허용됩니다."
+          },
+          "intents": {
+            "label": "게이트웨이 인텐트",
+            "help": "게이트웨이 인텐트 비트필드 정수(기본값 37377 = GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT). MESSAGE CONTENT는 특권 인텐트라 개발자 포털에서 활성화해야 하며, 그렇지 않으면 봇이 연결에 실패합니다."
+          },
+          "group_policy": {
+            "label": "그룹 정책",
+            "help": "\"mention\"은 서버 채널에서 @ 멘션될 때만 답변하고, \"open\"은 모든 채널 메시지에 답변합니다(허용 목록의 제약을 받음)."
+          },
+          "read_receipt_emoji": {
+            "label": "읽음 확인 이모지",
+            "help": "메시지 수신 즉시 추가되는 확인용 이모지(기본값 👀). 답변이 도착하면 제거됩니다."
+          },
+          "working_emoji": {
+            "label": "작업 중 이모지",
+            "help": "에이전트가 아직 작업 중일 때 추가할 이모지(기본값 🔧). 작업 중 이모지 지연 시간 후에 추가됩니다."
+          },
+          "working_emoji_delay": {
+            "label": "작업 중 이모지 지연(초)",
+            "help": "작업 중 이모지를 추가하기까지 기다릴 초 수. 빠른 답변에는 표시되지 않습니다(기본값 2.0)."
+          },
+          "streaming": {
+            "label": "스트리밍 답변",
+            "help": "최종 메시지를 한 번에 보내는 대신 하나의 Discord 메시지를 점진적으로 편집하며 답변을 스트리밍합니다."
+          },
+          "proxy": {
+            "label": "프록시 URL",
+            "help": "게이트웨이 연결과 API 호출이 거쳐 가는 선택적 HTTP 프록시(예: http://host:port)."
+          },
+          "proxy_username": {
+            "label": "프록시 사용자 이름",
+            "help": "프록시 사용자 이름(프록시 비밀번호와 함께 설정해야 하며, 한쪽만 지정하면 경고와 함께 무시됩니다). 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          },
+          "proxy_password": {
+            "label": "프록시 비밀번호",
+            "help": "프록시 비밀번호(프록시 사용자 이름과 함께 설정해야 하며, 한쪽만 지정하면 경고와 함께 무시됩니다). 서버 측에만 저장되며 브라우저로는 절대 반환되지 않습니다."
+          }
         }
       },
       "guides": {
@@ -964,6 +1014,16 @@
           "step4": "'자격 증명 및 기본 정보'에서 App ID와 App Secret을 복사해 위 입력칸에 붙여넣으세요.",
           "step5": "버전을 만들어 앱을 게시(테넌트에 따라 관리자 승인 필요)한 뒤 여기서 채널을 활성화하면 재시작 없이 즉시 적용됩니다. 국제 Lark 테넌트는 도메인을 lark로 설정하세요.",
           "docsLabel": "Feishu 오픈 플랫폼 열기"
+        },
+        "discord": {
+          "title": "Discord 설정 가이드",
+          "intro": "Discord 봇은 봇 토큰으로 게이트웨이에 연결하므로 공개 IP나 웹훅이 필요 없습니다.",
+          "step1": "Discord 개발자 포털(discord.com/developers)에서 애플리케이션을 만드세요.",
+          "step2": "Bot 페이지를 열고 토큰을 재설정(Reset Token)한 뒤 복사하세요.",
+          "step3": "Privileged Gateway Intents에서 MESSAGE CONTENT INTENT를 활성화하세요(기본 인텐트에 필요합니다).",
+          "step4": "bot(및 applications.commands) 범위의 OAuth2 초대 URL을 생성해 봇을 서버에 추가하세요.",
+          "step5": "여기에 토큰을 붙여넣고 '연결 테스트'를 클릭한 다음 채널을 사용 설정하세요.",
+          "docsLabel": "Discord 개발자 문서 열기"
         }
       }
     },
