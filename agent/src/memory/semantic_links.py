@@ -49,7 +49,7 @@ _NON_LATIN_SCRIPT_RANGES = (
     "א-ת"  # Hebrew letters
     "Ѐ-ӿ"  # Cyrillic
 )
-_TOKEN_RE = re.compile(rf"[a-zA-Z0-9]{{3,}}|[{_NON_LATIN_SCRIPT_RANGES}]")
+_TOKEN_RE = re.compile(rf"[a-zA-Z0-9]{{2,}}|[{_NON_LATIN_SCRIPT_RANGES}]")
 
 # Relations file schema version
 _RELATIONS_VERSION = 1

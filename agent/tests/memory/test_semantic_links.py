@@ -30,6 +30,20 @@ def _make_tokens(text: str) -> list[str]:
 
 
 class TestDiscoverLinks:
+    def test_discover_links_keeps_short_financial_identifiers(self, tmp_path: Path) -> None:
+        """Two-character tickers and ratios can establish a memory link."""
+        linker = SemanticLinker(tmp_path)
+        source_tokens = _make_tokens("GE EV valuation notes")
+        all_entries = [
+            ("source.md", source_tokens),
+            ("related.md", _make_tokens("GE EV earnings analysis")),
+            ("unrelated.md", _make_tokens("weather forecast temperature rain")),
+        ]
+
+        links = linker.discover_links("source.md", source_tokens, all_entries)
+
+        assert "related.md" in [target for target, _score in links]
+
     def test_discover_links_finds_similar(self, tmp_path: Path) -> None:
         """Entries with overlapping content get linked."""
         linker = SemanticLinker(tmp_path)
