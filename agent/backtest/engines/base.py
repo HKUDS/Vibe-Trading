@@ -2288,6 +2288,7 @@ class BaseEngine(ABC):
                 "holding_days": 0,
                 "holding_bars": 0.0,
                 "return_pct": 0.0,
+                "event": "entry",
             })
             # Exit event
             try:
@@ -2305,11 +2306,12 @@ class BaseEngine(ABC):
                 "holding_days": hold_days,
                 "holding_bars": t.holding_bars,
                 "return_pct": round(t.pnl_pct, 2),
+                "event": "exit",
             })
 
         trade_cols = [
             "timestamp", "code", "side", "price", "qty", "reason", "pnl",
-            "holding_days", "holding_bars", "return_pct",
+            "holding_days", "holding_bars", "return_pct", "event",
         ]
         pd.DataFrame(trade_rows or [], columns=trade_cols).to_csv(out / "trades.csv", index=False)
 

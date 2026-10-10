@@ -1336,6 +1336,12 @@ Saves write the `channels.<name>` section of `~/.vibe-trading/agent.json` atomic
 
 ### Strategy & Backtesting
 
+New BaseEngine `artifacts/trades.csv` files include an `event` column:
+`entry` marks an opening row and `exit` marks a completed trade, including
+zero-PnL exits. Validation and strategy-discovery readers use this marker.
+Files without it retain legacy loading; their zero-PnL exits remain ambiguous.
+The separate options-engine trade format is unchanged.
+
 ```bash
 # Moving average crossover on US equities
 vibe-trading run -p "Backtest a 20/50-day moving average crossover on AAPL for the past year, show Sharpe ratio and max drawdown"
