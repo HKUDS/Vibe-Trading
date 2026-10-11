@@ -384,6 +384,79 @@ def _fetch_yahoo_statement(
     return {"periods": _cap_periods(periods)}
 
 
+# CVM statement codes per requested statement, consolidated first. CVM files
+# carry no ratio/indicator block, so "indicators" always comes from Yahoo.
+_CVM_STATEMENTS: dict[str, tuple[str, ...]] = {
+    "balance": ("BPA", "BPP"),
+    "income": ("DRE",),
+    "cashflow": ("DFC_MI", "DFC_MD"),
+}
+
+
+def _fetch_cvm_statement(code: str, *, statement: str, period: str) -> dict[str, Any] | None:
+    """Read a B3 company's filed statement from the local CVM store.
+
+    The store is filled by ``python -m src.br_data sync`` (DFP annual, ITR
+    quarterly). Consolidated statements are preferred; parent-only (``_ind``)
+    ones are used when a company files no consolidated set.
+
+    Args:
+        code: B3 symbol, e.g. ``"PETR4.SA"``.
+        statement: ``balance``, ``income`` or ``cashflow``.
+        period: ``"annual"`` (DFP) or ``"quarter"`` (ITR).
+
+    Returns:
+        ``{"periods": [...]}`` newest first, each period a flat
+        ``{"period_end", "period_start", "<account> <description>": value}``
+        record in BRL, or ``None`` when the store, the ticker or the rows are
+        missing, so the caller can fall back to Yahoo.
+    """
+    statements = _CVM_STATEMENTS.get(statement)
+    if not statements:
+        return None
+    try:
+        from src.br_data.store import connect
+
+        ticker = code.rpartition(".")[0].strip().upper()
+        doc = "DFP" if period == "annual" else "ITR"
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT cnpj FROM cvm_company_tickers WHERE ticker = ?", (ticker,)
+            ).fetchone()
+            if row is None:
+                return None
+            rows: list[Any] = []
+            for suffix in ("", "_ind"):
+                names = [name + suffix for name in statements]
+                marks = ",".join("?" for _ in names)
+                rows = conn.execute(
+                    "SELECT period_end, period_start, account, description, value "
+                    f"FROM cvm_statements WHERE cnpj = ? AND doc = ? AND statement IN ({marks}) "
+                    "ORDER BY period_end DESC, period_start, account",
+                    (row["cnpj"], doc, *names),
+                ).fetchall()
+                if rows:
+                    break
+    except Exception as exc:  # noqa: BLE001 - missing store or schema: fall back to Yahoo
+        logger.info("cvm statement unavailable for %s: %s", code, exc)
+        return None
+    if not rows:
+        return None
+    periods: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in rows:
+        key = (r["period_end"], r["period_start"])
+        record = periods.setdefault(
+            key, {"period_end": r["period_end"], "period_start": r["period_start"] or None}
+        )
+        record[f"{r['account']} {r['description'] or ''}".strip()] = r["value"]
+    ordered = sorted(
+        periods.values(),
+        key=lambda rec: (rec["period_end"], rec["period_start"] or ""),
+        reverse=True,
+    )
+    return {"periods": _cap_periods(ordered)}
+
+
 def _to_number(value: Any) -> float | None:
     """Coerce a numeric provider cell to float, preserving missing values."""
     if value in (None, "", "-"):
@@ -681,6 +754,9 @@ def _classify_market(code: str) -> str | None:
     if suffix == "L":
         # London Stock Exchange (#1206).
         return "uk"
+    if suffix == "SA":
+        # B3 (Brazil).
+        return "br"
     return None
 
 
@@ -692,9 +768,10 @@ class FinancialStatementsTool(BaseTool):
         "Fetch a single stock's financial statements: balance sheet, income "
         "statement, cash-flow statement, or key per-period indicators (margins, "
         "ROE, EPS, etc.). Markets: A-share (.SH/.SZ/.BJ), US (.US), "
-        "Hong Kong (.HK) and UK LSE (.L). US uses SEC EDGAR companyfacts; "
-        "A-share and HK use Eastmoney; UK uses Yahoo quoteSummary (annual "
-        "history). Reports come back newest-first as flat per-period rows. Use "
+        "Hong Kong (.HK), UK LSE (.L) and Brazil B3 (.SA). US uses SEC EDGAR "
+        "companyfacts; A-share and HK use Eastmoney; UK uses Yahoo quoteSummary "
+        "(annual history); Brazil uses the official CVM DFP/ITR filings from the "
+        "local br-data store (values in BRL), falling back to Yahoo. Reports come back newest-first as flat per-period rows. Use "
         'this to read fundamentals before building a valuation or screen. Example: '
         '{"code": "600519.SH", "statement": "income", "period": "annual"}.'
     )
@@ -705,7 +782,7 @@ class FinancialStatementsTool(BaseTool):
                 "type": "string",
                 "description": (
                     "Single symbol with a market suffix, e.g. '600519.SH', "
-                    "'000001.SZ', 'AAPL.US', '00700.HK', or 'VOD.L'."
+                    "'000001.SZ', 'AAPL.US', '00700.HK', 'VOD.L', or 'PETR4.SA'."
                 ),
             },
             "statement": {
@@ -772,7 +849,7 @@ class FinancialStatementsTool(BaseTool):
         market = _classify_market(code)
         if market is None:
             return _error(
-                "code must carry a supported suffix: .SH/.SZ/.BJ, .US, .HK, or .L"
+                "code must carry a supported suffix: .SH/.SZ/.BJ, .US, .HK, .L, or .SA"
             )
 
         if market == "us":
@@ -781,6 +858,15 @@ class FinancialStatementsTool(BaseTool):
         elif market == "uk":
             result = _fetch_yahoo_statement(code, statement=statement, period=period)
             source = "yahoo"
+        elif market == "br":
+            # Official CVM filings (local store) first; Yahoo when not synced
+            # yet and for the indicator block CVM does not publish.
+            cvm = _fetch_cvm_statement(code, statement=statement, period=period)
+            if cvm is not None:
+                result, source = cvm, "cvm"
+            else:
+                result = _fetch_yahoo_statement(code, statement=statement, period=period)
+                source = "yahoo"
         else:
             result = _fetch_eastmoney_statement(
                 code, statement=statement, period=period

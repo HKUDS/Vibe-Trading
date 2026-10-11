@@ -45,8 +45,11 @@ Variáveis opcionais (*Settings → Variables*): `UPSTREAM_REPO`,
    exato da lista em https://openrouter.ai/models, no formato `empresa/modelo`).
    O modelo deve ser trocado aqui, não no *Settings* do Web UI: os valores do
    compose voltam a valer a cada reinício.
-4. Instale e abra `http://<ip-do-zima>:8899`; informe a `API_AUTH_KEY` quando o
-   Web UI pedir.
+4. Instale e abra `http://<ip-do-zima>:8899`. O Web UI não pede a chave
+   sozinho: até ela ser informada aparece "O acesso remoto à API requer uma
+   chave de API". Vá em **Configurações → Chave de autenticação da API**, cole
+   o valor de `API_AUTH_KEY` e salve. A chave fica guardada só naquele
+   navegador; repita em cada computador/celular.
 
 ### Pastas
 

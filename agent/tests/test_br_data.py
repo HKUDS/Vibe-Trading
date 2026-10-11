@@ -214,3 +214,43 @@ def test_agent_tool_reads_the_store(store, monkeypatch) -> None:
     assert not json.loads(tool.execute(action="nope"))["ok"]
     status = json.loads(tool.execute(action="status"))
     assert status["data"]["rows"][0]["rows"] == 4
+
+
+def test_financial_statements_read_cvm_store_then_fall_back_to_yahoo(store, monkeypatch) -> None:
+    from src.tools import financial_statements_tool as fst
+
+    with connect(store, write=True) as conn:
+        conn.execute("INSERT INTO cvm_company_tickers VALUES ('PETR4', '33000167000101')")
+        conn.executemany(
+            "INSERT INTO cvm_statements VALUES (?, 'DFP', 'DRE', ?, ?, ?, ?, ?, 1)",
+            [
+                ("33000167000101", "2024-12-31", "2024-01-01", "3.01", "Receita", 491e9),
+                ("33000167000101", "2023-12-31", "2023-01-01", "3.01", "Receita", 511e9),
+            ],
+        )
+    calls: list[str] = []
+    monkeypatch.setattr(fst, "_fetch_yahoo_statement",
+                        lambda code, **kw: calls.append(code) or {"periods": [{"endDate": "2024"}]})
+
+    income = json.loads(fst.FinancialStatementsTool().execute(code="PETR4.SA", statement="income"))
+    assert income["ok"] and income["source"] == "cvm" and income["market"] == "br"
+    periods = income["data"]["PETR4.SA"]["periods"]
+    assert [p["period_end"] for p in periods] == ["2024-12-31", "2023-12-31"]
+    assert periods[0]["3.01 Receita"] == 491e9
+    assert calls == []
+
+    # Not synced for this company / no indicator block in CVM -> Yahoo.
+    other = json.loads(fst.FinancialStatementsTool().execute(code="VALE3.SA", statement="income"))
+    indicators = json.loads(fst.FinancialStatementsTool().execute(code="PETR4.SA"))
+    assert other["source"] == "yahoo" and indicators["source"] == "yahoo"
+    assert calls == ["VALE3.SA", "PETR4.SA"]
+
+
+def test_stock_news_routes_b3_symbols_to_yahoo_with_full_symbol(monkeypatch) -> None:
+    from src.tools import stock_news_tool as snt
+
+    queries: list[str] = []
+    monkeypatch.setattr(snt, "_fetch_yahoo_news", lambda query, limit: queries.append(query) or [])
+    out = json.loads(snt.StockNewsTool().execute(code="petr4.sa", scope="stock"))
+    assert out["ok"] and out["market"] == "br" and out["source"] == "yahoo"
+    assert queries == ["PETR4.SA"]
