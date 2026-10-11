@@ -42,7 +42,7 @@ _EM_NEWS_URL = "https://search-api-web.eastmoney.com/search/jsonp"
 # A-share / China-market suffixes that route to the Eastmoney news surface.
 _EM_SUFFIXES = ("SH", "SZ", "BJ")
 # Suffixes that route to Yahoo's search-news surface.
-_YAHOO_SUFFIXES = ("US", "HK")
+_YAHOO_SUFFIXES = ("US", "HK", "SA")
 
 # Default broad-market query used when ``scope='global'`` carries no code.
 _GLOBAL_QUERY = "财经"
@@ -249,8 +249,9 @@ class StockNewsTool(BaseTool):
     description = (
         "Fetch recent financial news headlines, read-only and no auth. Markets: "
         "China A-share (SH/SZ/BJ) returns Eastmoney news ARTICLES "
-        "(title/url/source/published/snippet) under 'articles'. US (.US) and Hong "
-        "Kong (.HK) return Yahoo Finance news articles with the same fields. Use "
+        "(title/url/source/published/snippet) under 'articles'. US (.US), Hong "
+        "Kong (.HK) and Brazil (B3 .SA) return Yahoo Finance news articles with "
+        "the same fields. Use "
         "scope 'stock' with a 'code', or scope 'global' (no code) for broad "
         "China-market finance articles. "
         'Example: {"code": "600519.SH", "scope": "stock", "limit": 10}.'
@@ -353,6 +354,10 @@ class StockNewsTool(BaseTool):
         if suffix in _EM_SUFFIXES:
             return self._stock_via_eastmoney(code, query, limit)
         if suffix in _YAHOO_SUFFIXES:
+            # A bare B3 code (PETR4) is ambiguous on Yahoo search; its own
+            # spelling (PETR4.SA) is the listing.
+            if suffix == "SA":
+                query = code.upper()
             return self._stock_via_yahoo(code, query, limit)
         return self._error(
             f"unsupported market for code {code!r}; expected suffix in "
@@ -374,7 +379,7 @@ class StockNewsTool(BaseTool):
 
     def _stock_via_yahoo(self, code: str, query: str, limit: int) -> str:
         """Fetch US/HK news articles from Yahoo for one code."""
-        market = "hk" if _suffix_of(code) == "HK" else "us"
+        market = {"HK": "hk", "SA": "br"}.get(_suffix_of(code), "us")
         try:
             articles = _fetch_yahoo_news(query, limit)
         except Exception as exc:  # noqa: BLE001 - surface any fetch failure as envelope
