@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
+
 from src.session.events import EventBus, SSEEvent
 
 
@@ -48,3 +52,49 @@ def test_synthetic_heartbeat_frame_has_no_replay_id() -> None:
 
     assert "event: heartbeat" in frame
     assert "id:" not in frame
+
+
+def test_subscribe_does_not_double_deliver_an_event_published_during_replay() -> None:
+    """A publish() landing between queue registration and the replay snapshot
+    must not be returned through both paths.
+    """
+
+    class SlowEventBus(EventBus):
+        def replay(self, *args, **kwargs):
+            time.sleep(0.15)
+            return super().replay(*args, **kwargs)
+
+    async def run() -> list:
+        bus = SlowEventBus()
+        bus.set_loop(asyncio.get_running_loop())
+        baseline = bus.emit("s1", "baseline", {})
+
+        def publish_from_another_thread() -> None:
+            time.sleep(0.05)
+            bus.emit("s1", "race", {})
+
+        thread = threading.Thread(target=publish_from_another_thread)
+        thread.start()
+
+        gen = bus.subscribe("s1", last_event_id=baseline.event_id)
+        received = []
+
+        async def collect_one() -> None:
+            async for event in gen:
+                received.append(event.event_id)
+                return
+
+        await asyncio.wait_for(collect_one(), timeout=3)
+        thread.join()
+
+        try:
+            await asyncio.wait_for(gen.__anext__(), timeout=0.3)
+            received.append("unexpected-second-event")
+        except asyncio.TimeoutError:
+            pass
+        return received
+
+    received = asyncio.run(run())
+
+    assert len(received) == 1
+

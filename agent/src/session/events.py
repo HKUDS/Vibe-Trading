@@ -212,19 +212,29 @@ class EventBus:
             List of events that should be replayed.
         """
         with self._lock:
-            buffer = self._buffers.get(session_id, [])
-            if not last_event_id:
-                return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
-            found = False
-            result: List[SSEEvent] = []
-            for event in buffer:
-                if found:
-                    result.append(event)
-                elif event.event_id == last_event_id:
-                    found = True
-            if not found and replay_all:
-                return list(buffer)
-            return result
+            return self._replay_locked(session_id, last_event_id, replay_all=replay_all)
+
+    def _replay_locked(
+        self,
+        session_id: str,
+        last_event_id: Optional[str] = None,
+        *,
+        replay_all: bool = False,
+    ) -> List[SSEEvent]:
+        """Compute the replay list. Caller must already hold ``self._lock``."""
+        buffer = self._buffers.get(session_id, [])
+        if not last_event_id:
+            return list(buffer) if replay_all else []  # First connect: history loaded via REST by default.
+        found = False
+        result: List[SSEEvent] = []
+        for event in buffer:
+            if found:
+                result.append(event)
+            elif event.event_id == last_event_id:
+                found = True
+        if not found and replay_all:
+            return list(buffer)
+        return result
 
     async def subscribe(
         self,
@@ -246,13 +256,17 @@ class EventBus:
         """
         queue: asyncio.Queue[SSEEvent] = asyncio.Queue(maxsize=200)
 
+        # The replay snapshot and queue registration must happen under the
+        # same lock acquisition: otherwise a publish() landing between them
+        # would land in both the replay buffer and the live queue, and the
+        # subscriber would see that event delivered twice.
         with self._lock:
+            replay_events = self._replay_locked(session_id, last_event_id, replay_all=replay_all)
             if session_id not in self._subscribers:
                 self._subscribers[session_id] = []
             self._subscribers[session_id].append(queue)
 
         try:
-            replay_events = self.replay(session_id, last_event_id, replay_all=replay_all)
             for event in replay_events:
                 yield event
 
