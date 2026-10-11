@@ -374,6 +374,51 @@ def test_project_three_statement_raises_on_broken_opening_balance_sheet():
     assert excinfo.value.residual == pytest.approx(-1.0, abs=TOL)
 
 
+def test_balance_tolerance_is_honored_for_projected_periods():
+    """A caller-widened balance_tolerance must apply to every projected period, not just the opening.
+
+    The rollforwards preserve the residual exactly: expanding assets - liabilities - equity for period t
+    with cash_end = prior_cash + NI + D&A - ΔNWC - capex + draw - repay - div, ppe_end = prior_ppe + capex - D&A,
+    RE_end = prior_RE + NI - div, debt_end = prior_debt + draw - repay, every term except nwc_end - ΔNWC = prior_nwc
+    cancels, leaving residual_t ≡ residual_0. So a residual the caller accepts at period 0 is transported unchanged
+    into period 1 and then rejected if _project_period ignores the tolerance.
+
+    This test builds an opening sheet with a known 0.5 residual (residual/assets = 9.09e-4), which passes at
+    tolerance=1e-3 but would fail at the default 1e-9. Without the fix, period 1 raises BalanceSheetError even
+    though the residual is exactly conserved.
+    """
+    opening_with_residual = {
+        "revenue": 1000.0,
+        "cash": 100.0,
+        "net_working_capital": 50.0,
+        "ppe": 400.0,
+        "revolver_balance": 200.0,
+        "paid_in_capital": 200.0,
+        "retained_earnings": 149.5,  # Makes residual = 100+50+400 - (200+200+149.5) = 0.5
+    }
+    drivers_one_period = {
+        "revenue_growth": [0.05],
+        "gross_margin": [0.30],
+        "opex_pct_revenue": [0.20],
+        "capex_pct_revenue": [0.06],
+        "nwc_pct_revenue": [0.10],
+        "tax_rate": [0.25],
+        "dividend_payout_ratio": [0.20],
+        "depreciation_amortization": [30.0],
+        "interest_rate": [0.08],
+        "minimum_cash": [50.0],
+    }
+    # At tolerance=1e-3, both opening (residual/assets = 0.5/550 ≈ 9.09e-4) and period 1 should pass.
+    result = project_three_statement(opening_with_residual, drivers_one_period, balance_tolerance=1e-3)
+    assert len(result.periods) == 1
+    # Verify the residual is exactly conserved in period 1.
+    bs1 = result.periods[0].balance_sheet
+    assets1 = bs1.cash + bs1.net_working_capital + bs1.ppe
+    liab_eq1 = bs1.revolver_balance + bs1.paid_in_capital + bs1.retained_earnings
+    residual1 = assets1 - liab_eq1
+    assert residual1 == pytest.approx(0.5, abs=1e-9)
+
+
 # --------------------------------------------------------------------------
 # Interest/revolver circularity: convergent (multi-iteration) and divergent.
 # --------------------------------------------------------------------------
