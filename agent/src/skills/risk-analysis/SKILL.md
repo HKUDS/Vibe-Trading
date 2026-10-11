@@ -110,7 +110,7 @@ dd["recovered"]           # False when the series ends still underwater
 
 Full return keys: `max_drawdown`, `peak_date`, `trough_date`, `recovery_date`, `recovered`, `peak_to_trough_periods`, `trough_to_recovery_periods`, `underwater_days`, `recovery_days`.
 
-- Recovery means reaching the **peak** value again, not merely bouncing off the trough; `recovery_date` is None and `recovered` is False if it never happens.
+- Recovery means reaching the **peak** value again, not merely bouncing off the trough; `recovery_date` is None and `recovered` is False if it never happens. Revisiting the peak starts a new episode: its `peak_date` and underwater duration exclude an earlier, already recovered drawdown.
 - `underwater_days` / `recovery_days` are calendar days and require a `DatetimeIndex`; on any other index they come back None and you should use the `*_periods` counts, which are always populated.
 - Non-positive equity raises — a drawdown *ratio* is undefined at or below zero. Rebase a signed PnL series to a positive net value first.
 
