@@ -44,6 +44,8 @@ _TRADING_DAYS = {
     "india_broker": 252,
     # Korean equity (KRX)
     "pykrx": 252,
+    # Brazilian equity (B3)
+    "b3_cotahist": 252,
 }
 # mt5 is a forex/CFD feed: 24x5 sessions → 260 trading days, 24h intraday bars.
 # US equity (yfinance-style): 6.5h sessions → 390 1m bars/day.
@@ -71,6 +73,8 @@ _BARS_PER_DAY = {
             "india_broker": 375,
             # Korean equity (6.5h session, 09:00-15:30 KST)
             "pykrx": 390,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 420,
             },
     "5m":  {"yfinance": 78,  "yahoo": 78,  "finnhub": 78,  "alphavantage": 78,
             "tiingo": 78,  "fmp": 78,  "stooq": 78,  "longbridge": 78,
@@ -82,6 +86,8 @@ _BARS_PER_DAY = {
             "mt5": 288, "tickerall": 288,
             "india_broker": 75,
             "pykrx": 78,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 84,
             },
     "15m": {"yfinance": 26,  "yahoo": 26,  "finnhub": 26,  "alphavantage": 26,
             "tiingo": 26,  "fmp": 26,  "stooq": 26,  "longbridge": 26,
@@ -93,6 +99,8 @@ _BARS_PER_DAY = {
             "mt5": 96, "tickerall": 96,
             "india_broker": 25,
             "pykrx": 26,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 28,
             },
     "30m": {"yfinance": 13,  "yahoo": 13,  "finnhub": 13,  "alphavantage": 13,
             "tiingo": 13,  "fmp": 13,  "stooq": 13,  "longbridge": 13,
@@ -104,6 +112,8 @@ _BARS_PER_DAY = {
             "mt5": 48, "tickerall": 48,
             "india_broker": 13,
             "pykrx": 13,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 14,
             },
     "1H":  {"yfinance": 7,   "yahoo": 7,   "finnhub": 7,   "alphavantage": 7,
             "tiingo": 7,   "fmp": 7,   "stooq": 7,   "longbridge": 7,
@@ -115,6 +125,8 @@ _BARS_PER_DAY = {
             "mt5": 24, "tickerall": 24,
             "india_broker": 7,
             "pykrx": 7,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 7,
             },
     "4H":  {"yfinance": 2,   "yahoo": 2,   "finnhub": 2,   "alphavantage": 2,
             "tiingo": 2,   "fmp": 2,   "stooq": 2,   "longbridge": 2,
@@ -126,6 +138,8 @@ _BARS_PER_DAY = {
             "mt5": 6, "tickerall": 6,
             "india_broker": 2,
             "pykrx": 2,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 2,
             },
     "1D":  {"yfinance": 1,   "yahoo": 1,   "finnhub": 1,   "alphavantage": 1,
             "tiingo": 1,   "fmp": 1,   "stooq": 1,   "longbridge": 1,
@@ -137,6 +151,8 @@ _BARS_PER_DAY = {
             "mt5": 1, "tickerall": 1,
             "india_broker": 1,
             "pykrx": 1,
+            # Brazilian equity (B3, 7h session 10:00-17:00 BRT; daily-only loader)
+            "b3_cotahist": 1,
             },
 }
 

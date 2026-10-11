@@ -81,7 +81,9 @@ def store_series(conn: sqlite3.Connection, code: int, rows: list[tuple[str, Opti
 def sync(conn: sqlite3.Connection, start_year: int, today: date, codes: Optional[list[int]] = None) -> int:
     """Top up each series from its last stored observation (or ``start_year``)."""
     total = 0
-    for code in codes or list(SERIES):
+    failures: list[str] = []
+    codes = codes or list(SERIES)
+    for code in codes:
         row = conn.execute("SELECT MAX(obs_date) FROM bcb_series WHERE code = ?", (code,)).fetchone()
         start = date.fromisoformat(row[0]) - timedelta(days=45) if row and row[0] else date(start_year, 1, 1)
         try:
@@ -89,4 +91,7 @@ def sync(conn: sqlite3.Connection, start_year: int, today: date, codes: Optional
             conn.commit()
         except Exception as exc:  # noqa: BLE001 - one series must not stop the rest
             logger.warning("bcb: series %s failed: %s", code, exc)
+            failures.append(f"{code}: {type(exc).__name__}")
+    if failures and len(failures) == len(codes):
+        raise RuntimeError(f"every BCB series failed ({'; '.join(failures)})")
     return total

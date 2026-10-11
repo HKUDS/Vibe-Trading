@@ -44,6 +44,9 @@ CANARY_SYMBOLS = {
 }
 EXCLUDED_PUBLIC_SOURCES = {
     "local": "operator files, not a public endpoint",
+    # Reads the local SQLite store that `python -m src.br_data sync` fills
+    # from B3's COTAHIST files; it never calls a network endpoint itself.
+    "b3_cotahist": "local br-data store, synced separately",
     # Retired 2026-10-08 (HKUDS/Vibe-Trading#1729): TDX servers stopped
     # answering the mootdx/tdxpy client protocol in 2026-07
     # (mootdx/mootdx#157) and upstream is dormant. The loader stays

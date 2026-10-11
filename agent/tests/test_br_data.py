@@ -16,6 +16,7 @@ import pytest
 from src.br_data import cotahist, cvm_companies, cvm_funds, tesouro
 from src.br_data._download import br_date, to_float
 from src.br_data.store import connect, init_db
+from tests.loader_contract import assert_loader_contract
 
 
 def _cotahist_line(day: str, ticker: str, tpmerc: int, close_cents: int, *,
@@ -111,6 +112,7 @@ def test_cotahist_sync_downloads_years_then_daily_files(store, monkeypatch) -> N
     frames = loader.fetch(["PETR4.SA", "PETR4F.SA", "NONE3.SA"], "2025-01-01", "2025-01-31")
     assert set(frames) == {"PETR4.SA", "PETR4F.SA"}
     petr = frames["PETR4.SA"]
+    assert_loader_contract(petr, context="b3_cotahist PETR4.SA")
     assert list(petr["close"]) == pytest.approx([37.12, 37.50, 38.00])
     assert petr.attrs["quote_currency"] == "BRL"
 
