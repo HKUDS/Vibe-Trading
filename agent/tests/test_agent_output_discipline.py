@@ -799,6 +799,59 @@ class TestRepeatedHeadingsAreAddressable:
         assert "- Mode 1 (" in payload["outline"]
 
 
+_CASE_REPEATED_TITLE_SKILL = (
+    "---\nname: case-repeat-skill\ndescription: Repeats a heading in different case.\n---\n"
+    "# Case Repeat Skill\n\n"
+    "## Setup\n\nfirst setup body\n\n"
+    "## setup\n\nsecond setup body\n"
+)
+
+
+class TestCaseDifferingHeadingsAreAddressable:
+    """Two headings differing only by case must resolve, not loop forever.
+
+    The ambiguous-match error suggests a qualified path for each match,
+    built from the section's own stored title. When the only difference
+    between two matches is case, casefolded comparison used for the
+    suggested path's own lookup threw that distinction away, so
+    resubmitting exactly what the error suggested reproduced the same
+    ambiguous error with no way out.
+    """
+
+    @pytest.fixture()
+    def case_repeat(self, tmp_path: Path) -> LoadSkillTool:
+        directory = tmp_path / "case-repeat-skill"
+        directory.mkdir()
+        (directory / "SKILL.md").write_text(_CASE_REPEATED_TITLE_SKILL, encoding="utf-8")
+        return LoadSkillTool(SkillsLoader(skills_dir=tmp_path, user_skills_dir=tmp_path / "absent"))
+
+    def test_the_suggested_qualified_path_actually_resolves(self, case_repeat: LoadSkillTool) -> None:
+        bare = json.loads(case_repeat.execute(name="case-repeat-skill", section="SETUP"))
+        assert bare["status"] == "error"
+        assert "Case Repeat Skill > Setup" in bare["content"]
+        assert "Case Repeat Skill > setup" in bare["content"]
+
+        first = json.loads(
+            case_repeat.execute(name="case-repeat-skill", section="Case Repeat Skill > Setup")
+        )
+        second = json.loads(
+            case_repeat.execute(name="case-repeat-skill", section="Case Repeat Skill > setup")
+        )
+
+        assert "first setup body" in first["content"]
+        assert "second setup body" not in first["content"]
+        assert "second setup body" in second["content"]
+        assert "first setup body" not in second["content"]
+
+    def test_an_exact_case_bare_title_resolves_without_qualifying(
+        self, case_repeat: LoadSkillTool
+    ) -> None:
+        payload = json.loads(case_repeat.execute(name="case-repeat-skill", section="setup"))
+
+        assert payload["status"] == "ok"
+        assert "second setup body" in payload["content"]
+
+
 class TestEverySectionOfEveryBundledSkillRoundTrips:
     """Whatever the outline offers, asking for it must return exactly that span."""
 
