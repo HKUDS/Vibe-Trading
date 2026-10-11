@@ -55,6 +55,43 @@ _UA_ENV = "VIBE_TRADING_SEC_UA"
 # present your own address; this default keeps the client compliant out of box.
 _DEFAULT_SEC_UA = f"Vibe-Trading/1.0 (contact: vibe-trading@example.com) {DEFAULT_USER_AGENT}"
 
+# Ticker -> CIK overrides that take precedence over the SEC ticker table.
+#
+# The table occasionally re-points a long-standing ticker at a newly created
+# holding-company registrant that carries no historical XBRL yet, while the
+# operating filer with the full fact history keeps a different CIK. Resolving
+# through the table alone then yields an (almost) empty companyfacts payload,
+# which downstream reads as "this issuer reports nothing".
+#
+# Each entry must be verified against live data.sec.gov payloads before it is
+# added; record the verification here.
+#
+# * ``XOM`` — verified 2026-10-11: ``company_tickers.json`` maps XOM to CIK
+#   2115436 "ExxonMobil Holdings Corp", a holding registrant whose first 10-Q
+#   was filed 2026-08-03 (94 us-gaap concepts, every fact period_end >= 2025).
+#   The 2017-2024 XBRL history lives under the operating filer CIK 34088
+#   "Exxon Mobil Corporation" (Revenues 127 facts, NetIncomeLoss 229,
+#   NetCashProvidedByUsedInOperatingActivities 120,
+#   PaymentsToAcquirePropertyPlantAndEquipment 156, Assets 152). If the holding
+#   registrant ever accumulates its own substantive history, revisit this pin.
+#
+# Non-entries (verified correct, deliberately NOT overridden):
+#
+# * ``BAC`` — verified 2026-10-11 during a 50-name audit of the sp500 bench
+#   fallback universe: the table maps BAC to CIK 70858, whose submissions
+#   ``name`` is "BANK OF AMERICA CORP /DE/" (formerNames BANKAMERICA CORP/DE/
+#   <- NATIONSBANK CORP; tickers include BAC; SIC 6021) and whose companyfacts
+#   carries the full operating history (891 us-gaap concepts, NetIncomeLoss
+#   238 facts 2007-2026, Assets 192 facts 2008-2026). The companyfacts
+#   top-level ``entityName`` reads "BofA Finance LLC" — a payload-stamp quirk
+#   that an earlier audit misread as a subsidiary resolution. Nothing in the
+#   fundamentals extraction reads ``entityName`` (only the 13F full-text-search
+#   tool uses that field, as a query parameter). Do not pin BAC on the basis
+#   of that field alone; re-verify against submissions ``name`` first.
+_TICKER_CIK_OVERRIDES: Dict[str, str] = {
+    "XOM": "0000034088",
+}
+
 # Process-wide memoized ticker->CIK map ("AAPL" -> "0000320193"), built lazily.
 _TICKER_CACHE: Optional[Dict[str, str]] = None
 _TICKER_CACHE_LOCK = threading.Lock()
@@ -178,15 +215,23 @@ def cik_for(ticker: str) -> Optional[str]:
     """
     if not ticker or not ticker.strip():
         return None
-    table = _ticker_map()
     candidate = ticker.strip().upper()
-    if candidate in table:
-        return table[candidate]
+    override = _TICKER_CIK_OVERRIDES.get(candidate)
+    if override is not None:
+        return override
     # ``AAPL.US`` is this project's US symbol convention while the SEC table
     # carries the bare ticker. Only a known market suffix may be stripped — a
     # trailing ``.B`` is a share class, not a market.
     head, _, tail = candidate.rpartition(".")
-    if head and tail in _MARKET_SUFFIXES:
+    suffix_stripped = bool(head and tail in _MARKET_SUFFIXES)
+    if suffix_stripped:
+        override = _TICKER_CIK_OVERRIDES.get(head)
+        if override is not None:
+            return override
+    table = _ticker_map()
+    if candidate in table:
+        return table[candidate]
+    if suffix_stripped:
         candidate = head
         if candidate in table:
             return table[candidate]

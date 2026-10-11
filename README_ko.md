@@ -662,7 +662,7 @@ Paper-vs-live는 **구조적 브로커별 런타임 가드**(account-id 형식, 
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 462개 사전 빌드된 quant alpha</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 472개 사전 빌드된 quant alpha</sub></summary>
 
 - 🧬 operator 계층에서 lookahead가 금지된 462개 cross-sectional alpha
 - 📈 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행

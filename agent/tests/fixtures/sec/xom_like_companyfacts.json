@@ -1,0 +1,130 @@
+{
+  "_comment": "Shape modeled on Exxon Mobil Corporation (CIK 0000034088) companyfacts, fetched 2026-10-11 from https://data.sec.gov/api/xbrl/companyfacts/CIK0000034088.json. XOM stopped tagging WeightedAverageNumberOfDilutedSharesOutstanding after FY2013 and presents a single EPS share count (EarningsPerShareBasic == EarningsPerShareDiluted in all 48 10-K/10-Q frames 2017-2024), so only the basic weighted-average concept carries the diluted EPS denominator. Values below are the real filed facts for the three 2017 quarters.",
+  "facts": {
+    "us-gaap": {
+      "WeightedAverageNumberOfSharesOutstandingBasic": {
+        "units": {
+          "shares": [
+            {
+              "start": "2017-01-01",
+              "end": "2017-03-31",
+              "filed": "2017-05-03",
+              "val": 4223000000,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-06-30",
+              "filed": "2017-08-02",
+              "val": 4244000000,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-04-01",
+              "end": "2017-06-30",
+              "filed": "2017-08-02",
+              "val": 4271000000,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-09-30",
+              "filed": "2017-11-01",
+              "val": 4252000000,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-07-01",
+              "end": "2017-09-30",
+              "filed": "2017-11-01",
+              "val": 4271000000,
+              "form": "10-Q"
+            }
+          ]
+        }
+      },
+      "EarningsPerShareBasic": {
+        "units": {
+          "USD/shares": [
+            {
+              "start": "2017-01-01",
+              "end": "2017-03-31",
+              "filed": "2017-05-03",
+              "val": 0.95,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-06-30",
+              "filed": "2017-08-02",
+              "val": 1.73,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-04-01",
+              "end": "2017-06-30",
+              "filed": "2017-08-02",
+              "val": 0.78,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-09-30",
+              "filed": "2017-11-01",
+              "val": 2.66,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-07-01",
+              "end": "2017-09-30",
+              "filed": "2017-11-01",
+              "val": 0.93,
+              "form": "10-Q"
+            }
+          ]
+        }
+      },
+      "EarningsPerShareDiluted": {
+        "units": {
+          "USD/shares": [
+            {
+              "start": "2017-01-01",
+              "end": "2017-03-31",
+              "filed": "2017-05-03",
+              "val": 0.95,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-06-30",
+              "filed": "2017-08-02",
+              "val": 1.73,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-04-01",
+              "end": "2017-06-30",
+              "filed": "2017-08-02",
+              "val": 0.78,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-09-30",
+              "filed": "2017-11-01",
+              "val": 2.66,
+              "form": "10-Q"
+            },
+            {
+              "start": "2017-07-01",
+              "end": "2017-09-30",
+              "filed": "2017-11-01",
+              "val": 0.93,
+              "form": "10-Q"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -102,6 +102,73 @@ class TestSymbolSuffixes:
             assert sec.cik_for("00700.HK") is None
 
 
+class TestTickerCikOverrides:
+    """Verified ticker->CIK pins win over the SEC ticker table.
+
+    SEC's company_tickers.json re-pointed XOM at CIK 2115436 ("ExxonMobil
+    Holdings Corp"), a holding registrant whose first 10-Q was filed 2026-08
+    and whose companyfacts carries no period before 2025 — every 2017-2024
+    fundamental panel column came back NaN. The operating filer with the full
+    XBRL history is CIK 34088 ("Exxon Mobil Corporation").
+    """
+
+    _PAYLOAD_WITH_SHELL = {
+        "0": {"cik_str": 2115436, "ticker": "XOM", "title": "ExxonMobil Holdings Corp"},
+        "1": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
+    }
+
+    def test_override_wins_over_table_entry(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD_WITH_SHELL):
+            assert sec.cik_for("XOM") == "0000034088"
+
+    def test_override_applies_to_market_suffix_and_case_variants(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD_WITH_SHELL):
+            assert sec.cik_for("XOM.US") == "0000034088"
+            assert sec.cik_for("xom.us") == "0000034088"
+
+    def test_override_resolves_without_fetching_the_table(self):
+        with patch.object(sec, "throttled_get_json") as mock_get:
+            assert sec.cik_for("XOM.US") == "0000034088"
+            mock_get.assert_not_called()
+
+    def test_non_overridden_tickers_still_resolve_from_table(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD_WITH_SHELL):
+            assert sec.cik_for("AAPL") == "0000320193"
+
+    def test_override_values_are_padded_ten_digit_ciks(self):
+        for cik in sec._TICKER_CIK_OVERRIDES.values():
+            assert len(cik) == 10 and cik.isdigit()
+
+
+class TestBacVerifiedCorrectWithoutOverride:
+    """BAC resolves through the SEC table — live-verified correct on 2026-10-11.
+
+    An audit of the 50-name sp500 bench fallback universe flagged BAC because
+    the companyfacts payload for CIK 70858 stamps its top-level ``entityName``
+    as "BofA Finance LLC". That field is a payload quirk, not the registrant
+    identity: ``company_tickers.json`` maps BAC to CIK 70858 titled "BANK OF
+    AMERICA CORP /DE/", the submissions document for the same CIK is named
+    "BANK OF AMERICA CORP /DE/" (formerNames BANKAMERICA CORP/DE/ <-
+    NATIONSBANK CORP, tickers include BAC), and its companyfacts carries the
+    full operating history (891 us-gaap concepts, NetIncomeLoss 238 facts
+    2007-2026, Assets 192 facts 2008-2026). Fundamentals extraction never
+    reads ``entityName``. These tests keep a well-meaning future "fix" from
+    pinning BAC to a different CIK on the basis of that field alone.
+    """
+
+    _PAYLOAD = {
+        "0": {"cik_str": 70858, "ticker": "BAC", "title": "BANK OF AMERICA CORP /DE/"},
+    }
+
+    def test_bac_resolves_from_table_with_and_without_market_suffix(self):
+        with patch.object(sec, "throttled_get_json", return_value=self._PAYLOAD):
+            assert sec.cik_for("BAC") == "0000070858"
+            assert sec.cik_for("BAC.US") == "0000070858"
+
+    def test_bac_is_not_pinned_in_overrides(self):
+        assert "BAC" not in sec._TICKER_CIK_OVERRIDES
+
+
 class TestCikPadding:
     """_pad_cik normalizes ints, padded strings, and CIK-prefixed strings."""
 
