@@ -212,7 +212,9 @@ def parametric_var(
     _validate_horizon(horizon)
     values = _clean_returns(returns)
     if values.size < 2:
-        raise ValueError("parametric_var needs at least 2 observations for a std estimate")
+        raise ValueError(
+            "parametric_var needs at least 2 observations for a std estimate"
+        )
     mu = float(values.mean())
     sigma = float(values.std(ddof=1))
     z = float(norm.ppf(1.0 - confidence))
@@ -278,7 +280,9 @@ def drawdown_series(equity: pd.Series | np.ndarray | Sequence[float]) -> pd.Seri
         raise ValueError("equity contains no finite observation")
     values = series.to_numpy()
     if (values <= 0.0).any():
-        raise ValueError("equity must be strictly positive to express drawdown as a fraction")
+        raise ValueError(
+            "equity must be strictly positive to express drawdown as a fraction"
+        )
 
     running_peak = np.maximum.accumulate(values)
     dd = -(values / running_peak - 1.0)  # non-negative loss fraction
@@ -359,7 +363,9 @@ def drawdown_distribution_analysis(
         raise ValueError("equity contains no finite observation")
     values = series.to_numpy()
     if (values <= 0.0).any():
-        raise ValueError("equity must be strictly positive to express drawdown as a fraction")
+        raise ValueError(
+            "equity must be strictly positive to express drawdown as a fraction"
+        )
 
     n = len(values)
     running_peak = np.maximum.accumulate(values)
@@ -487,19 +493,25 @@ def max_drawdown_analysis(equity: pd.Series | np.ndarray | Sequence[float]) -> d
         raise ValueError("equity contains no finite observation")
     values = series.to_numpy()
     if (values <= 0.0).any():
-        raise ValueError("equity must be strictly positive to express drawdown as a fraction")
+        raise ValueError(
+            "equity must be strictly positive to express drawdown as a fraction"
+        )
 
     running_peak = np.maximum.accumulate(values)
     drawdown = values / running_peak - 1.0  # <= 0 everywhere
     trough_pos = int(np.argmin(drawdown))
     # Revisiting a high-water mark closes the preceding drawdown. Start the
     # worst episode at its latest peak, rather than including a recovered one.
-    peak_pos = int(np.flatnonzero(values[: trough_pos + 1] == running_peak[trough_pos])[-1])
+    peak_pos = int(
+        np.flatnonzero(values[: trough_pos + 1] == running_peak[trough_pos])[-1]
+    )
 
     # A flat/rising curve has drawdown 0 at the trough, so the trough itself
     # already satisfies "back at the peak" and recovery is instantaneous.
     at_or_above_peak = np.flatnonzero(values[trough_pos:] >= values[peak_pos])
-    recovery_pos = int(trough_pos + at_or_above_peak[0]) if at_or_above_peak.size else None
+    recovery_pos = (
+        int(trough_pos + at_or_above_peak[0]) if at_or_above_peak.size else None
+    )
 
     index = series.index
     is_dated = isinstance(index, pd.DatetimeIndex)
@@ -510,8 +522,12 @@ def max_drawdown_analysis(equity: pd.Series | np.ndarray | Sequence[float]) -> d
         "recovery_date": index[recovery_pos] if recovery_pos is not None else None,
         "recovered": recovery_pos is not None,
         "peak_to_trough_periods": trough_pos - peak_pos,
-        "trough_to_recovery_periods": None if recovery_pos is None else recovery_pos - trough_pos,
-        "underwater_days": int((index[trough_pos] - index[peak_pos]).days) if is_dated else None,
+        "trough_to_recovery_periods": (
+            None if recovery_pos is None else recovery_pos - trough_pos
+        ),
+        "underwater_days": (
+            int((index[trough_pos] - index[peak_pos]).days) if is_dated else None
+        ),
         "recovery_days": (
             int((index[recovery_pos] - index[trough_pos]).days)
             if is_dated and recovery_pos is not None
@@ -563,7 +579,9 @@ def monte_carlo_gbm(
     if sigma < 0.0:
         raise ValueError(f"sigma must be >= 0, got {sigma}")
     if n_steps < 1 or n_paths < 1:
-        raise ValueError(f"n_steps and n_paths must be >= 1, got {n_steps} and {n_paths}")
+        raise ValueError(
+            f"n_steps and n_paths must be >= 1, got {n_steps} and {n_paths}"
+        )
     if steps_per_year < 1:
         raise ValueError(f"steps_per_year must be >= 1, got {steps_per_year}")
 
@@ -603,10 +621,14 @@ def analyze_mc_results(paths: np.ndarray, confidence: float = 0.95) -> dict:
     _validate_confidence(confidence)
     matrix = np.asarray(paths, dtype=float)
     if matrix.ndim != 2 or matrix.shape[1] < 2:
-        raise ValueError(f"paths must be 2-D with >= 2 columns, got shape {matrix.shape}")
+        raise ValueError(
+            f"paths must be 2-D with >= 2 columns, got shape {matrix.shape}"
+        )
     start = matrix[:, 0]
     if (start <= 0.0).any():
-        raise ValueError("paths column 0 (the starting price) must be strictly positive")
+        raise ValueError(
+            "paths column 0 (the starting price) must be strictly positive"
+        )
 
     returns = matrix[:, -1] / start - 1.0
     return {

@@ -22,7 +22,9 @@ from src.tools.quantlib_tool import QuantlibCallTool
         ([100, 100, 100], 0, 0, 0),
     ],
 )
-def test_episode_starts_at_last_high_water_mark_before_worst_trough(values, peak, trough, recovery):
+def test_episode_starts_at_last_high_water_mark_before_worst_trough(
+    values, peak, trough, recovery
+):
     result = max_drawdown_analysis(values)
     assert result["peak_date"] == peak
     assert result["trough_date"] == trough
@@ -34,7 +36,9 @@ def test_episode_starts_at_last_high_water_mark_before_worst_trough(values, peak
 def test_calendar_underwater_duration_excludes_an_already_recovered_episode():
     equity = pd.Series(
         [100, 90, 100, 80, 100],
-        index=pd.to_datetime(["2025-01-01", "2025-01-02", "2025-01-10", "2025-01-12", "2025-01-15"]),
+        index=pd.to_datetime(
+            ["2025-01-01", "2025-01-02", "2025-01-10", "2025-01-12", "2025-01-15"]
+        ),
     )
     result = max_drawdown_analysis(equity)
     assert result["peak_date"] == pd.Timestamp("2025-01-10")
