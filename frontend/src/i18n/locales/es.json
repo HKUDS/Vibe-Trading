@@ -1059,6 +1059,7 @@
         "ca_equity": "Acciones de Canadá",
         "vietnam_equity": "Acciones de Vietnam",
         "ar_equity": "Acciones de Argentina",
+        "br_equity": "Acciones de Brasil",
         "uk_equity": "Acciones del Reino Unido",
         "index": "Índices",
         "crypto": "Cripto",
@@ -1389,6 +1390,7 @@
         "futures": "Futuros",
         "forex": "Divisas",
         "ar_equity": "Renta variable Argentina",
+        "br_equity": "Renta variable Brasil",
         "uk_equity": "Renta variable Reino Unido",
         "vietnam_equity": "Renta variable Vietnam",
         "other": "Otros"

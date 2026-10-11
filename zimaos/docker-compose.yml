@@ -66,6 +66,42 @@ services:
           description:
             en_us: Web UI / API
 
+  # Daily sync of the official Brazilian datasets (B3 COTAHIST, CVM funds and
+  # companies, Banco Central, Tesouro Direto) into the shared vibe-home volume,
+  # where the app's get_br_market_data tool and the B3 loader read them.
+  # The first run downloads several GB and can take hours; later runs only
+  # fetch what changed.
+  vibe-trading-br-data:
+    image: ghcr.io/incorpore/vibe-trading:latest
+    container_name: vibe-trading-br-data
+    pull_policy: always
+    restart: unless-stopped
+    command: ["python", "-m", "src.br_data", "daemon"]
+    environment:
+      TZ: America/Sao_Paulo
+      # First years to download (B3 publishes from 1986; each year of
+      # COTAHIST is a few hundred MB in SQLite, options included).
+      VIBE_BR_COTAHIST_START_YEAR: "2015"
+      VIBE_BR_CVM_START_YEAR: "2022"
+      # Daily run time (Sao Paulo), after B3 and CVM publish the day's files.
+      VIBE_BR_SYNC_TIME: "21:30"
+    volumes:
+      - vibe-home:/home/vibe/.vibe-trading
+    # The image's healthcheck probes the web server, which this service does
+    # not run.
+    healthcheck:
+      disable: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 2g
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
   watchtower:
     # Maintained fork of containrrr/watchtower (works with current Docker APIs).
     image: nickfedor/watchtower:1.23

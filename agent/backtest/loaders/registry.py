@@ -61,6 +61,7 @@ VALID_SOURCES: set[str] = {
     "longbridge",
     "mt5",
     "tickerall",
+    "b3_cotahist",
     "local",
     "auto",
 }
@@ -123,6 +124,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.longbridge",
             "backtest.loaders.mt5_loader",
             "backtest.loaders.tickerall_loader",
+            "backtest.loaders.b3_cotahist_loader",
             "backtest.loaders.local_loader",
         ]
         import importlib
@@ -226,6 +228,10 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "ca_equity": ["yahoo", "yfinance", "local"],
     # Argentina (BYMA .BA): Yahoo public chart first, yfinance fallback.
     "ar_equity": ["yahoo", "yfinance", "local"],
+    # Brazil (B3 .SA): Yahoo public chart (adjusted) first, yfinance second,
+    # then the official B3 COTAHIST files (unadjusted, daily, every listed
+    # instrument) synced by ``vibe-trading br-data sync``.
+    "br_equity": ["yahoo", "yfinance", "b3_cotahist", "local"],
     # UK (LSE .L): direct Yahoo first, SDK fallback second.
     "uk_equity": ["yahoo", "yfinance", "local"],
     # Vietnam (.VN): Yahoo lists HOSE only — HNX and UPCOM are unsupported,
@@ -284,6 +290,7 @@ PRICE_CALIBER_BY_SOURCE: dict[str, str] = {
     "sina": "raw",
     "alphavantage": "raw",  # TIME_SERIES_DAILY, not the _ADJUSTED endpoint
     "longbridge": "raw",  # pins AdjustType.NoAdjust
+    "b3_cotahist": "raw",  # B3 COTAHIST files carry traded prices only
 }
 
 #: Per-(source, market) exceptions to the per-source table.

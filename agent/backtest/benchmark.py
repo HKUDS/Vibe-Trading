@@ -24,6 +24,7 @@ MARKET_BENCHMARKS: dict[str, Optional[str]] = {
     "us_equity":  "SPY",
     "hk_equity":  "HK.03100",   # Hang Seng China Enterprises ETF
     "ca_equity":  "XIC.TO",     # S&P/TSX Capped Composite ETF
+    "br_equity":  "BOVA11.SA",  # iShares Ibovespa ETF
     "a_share":    "000300.SH",  # CSI 300 (China A-share core index)
     "crypto":     "BTC-USDT",
     "futures":    "ES.CME",      # E-mini S&P 500 futures
@@ -176,6 +177,8 @@ def _infer_market(codes: list[str], source: str) -> str:
         return "ca_equity"
     if first.endswith((".NS", ".BO")):
         return "india_equity"
+    if first.endswith(".SA"):
+        return "br_equity"
     if first.endswith((".KS", ".KQ")):
         return "kr_equity"
     crypto_quotes = ("-USDT", "-USDC", "-USD", "-BTC", "-ETH")

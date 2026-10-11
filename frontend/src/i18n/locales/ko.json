@@ -1054,6 +1054,7 @@
         "ca_equity": "캐나다 주식",
         "vietnam_equity": "베트남 주식",
         "ar_equity": "아르헨티나 주식",
+        "br_equity": "브라질 주식",
         "uk_equity": "영국 주식",
         "index": "지수",
         "crypto": "암호화폐",
@@ -1384,6 +1385,7 @@
         "futures": "선물",
         "forex": "외환",
         "ar_equity": "아르헨티나 주식",
+        "br_equity": "브라질 주식",
         "uk_equity": "영국 주식",
         "vietnam_equity": "베트남 주식",
         "other": "기타"

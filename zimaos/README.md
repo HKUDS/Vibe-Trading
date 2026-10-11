@@ -58,3 +58,42 @@ recria só o `vibe-trading` (por causa do label) mantendo os volumes.
 
 Cada build também recebe a tag `:sha-<commit>`; para voltar a uma versão,
 troque `latest` por essa tag no compose.
+
+## Dados do mercado brasileiro
+
+### Ações da B3 em tempo quase real (Yahoo)
+Use o sufixo `.SA`: `PETR4.SA`, `VALE3.SA`, `BOVA11.SA` (ETF), `HGLG11.SA`
+(FII), `AAPL34.SA` (BDR), `PETR4F.SA` (fracionário). O backtest usa regras da
+B3: moeda BRL, taxas de negociação + liquidação (0,030% por ordem), corretagem
+configurável, lote de 1 ação (`br_lot_size: 100` para lote-padrão), tick de
+R$0,01 e venda a descoberto permitida. O benchmark padrão é o `BOVA11.SA`.
+Imposto de renda não é descontado por operação.
+
+### Base oficial completa (gratuita)
+O serviço `vibe-trading-br-data` do compose baixa e atualiza todo dia às
+21:30 (horário de Brasília):
+
+| Fonte | Conteúdo |
+| --- | --- |
+| B3 COTAHIST | cotação diária de **todos** os ativos da B3 (ações, FIIs, ETFs, BDRs, opções, termo) |
+| CVM – fundos | cadastro e informe diário de todos os fundos (cota, PL, captação, resgate, cotistas) |
+| CVM – companhias | cadastro, mapa ticker→CNPJ, DFP (anual) e ITR (trimestral) |
+| Banco Central (SGS) | Selic, CDI, IPCA, IGP-M, INPC, PTAX, euro, PIB, desemprego (outras séries sob demanda) |
+| Tesouro Direto | preços e taxas de todos os títulos, histórico completo |
+
+Os dados ficam em `~/.vibe-trading/br-data/br_data.db` (volume `vibe-home`).
+O agente consulta tudo pela ferramenta `get_br_market_data`, e o backtest usa
+a COTAHIST como fonte reserva quando o Yahoo falha. Os preços da COTAHIST são
+os negociados, **sem ajuste** de proventos.
+
+A primeira execução baixa vários GB e pode levar horas. Variáveis do serviço:
+`VIBE_BR_COTAHIST_START_YEAR` (padrão 2015; mínimo 1986),
+`VIBE_BR_CVM_START_YEAR` (padrão 2022) e `VIBE_BR_SYNC_TIME`.
+
+Comandos manuais (no terminal do container):
+
+```bash
+python -m src.br_data status                      # o que já foi baixado
+python -m src.br_data sync --only bcb tesouro     # só algumas fontes
+python -m src.br_data sync --cotahist-from 1986   # histórico completo da B3
+```

@@ -30,6 +30,8 @@ _SOURCE_PATTERNS = [
     (re.compile(r"^[A-Z0-9&.\-]+\.(TO|V)$", re.I), "yahoo"),
     # Argentina: BYMA equities and CEDEARs use Yahoo's canonical .BA suffix.
     (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "yahoo"),
+    # Brazil: B3 equities, FIIs, ETFs and BDRs use Yahoo's canonical .SA suffix.
+    (re.compile(r"^[A-Z0-9]+\.SA$", re.I), "yahoo"),
     # UK: London Stock Exchange (VOD.L, SHEL.L). Yahoo serves the suffix
     # verbatim; without this they fell through to the tushare default and were
     # routed to China-market loaders that cannot resolve them.

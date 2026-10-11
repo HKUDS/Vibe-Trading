@@ -1331,6 +1331,7 @@ export type SectorAssetClass =
   | "kr_equity"
   | "ca_equity"
   | "ar_equity"
+  | "br_equity"
   | "uk_equity"
   | "vietnam_equity"
   | "index"
