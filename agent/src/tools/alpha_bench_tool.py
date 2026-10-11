@@ -730,8 +730,18 @@ def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, unive
         frame = loaded.get(field)
         if frame is None or frame.notna().any().sum() < 2:
             raise RuntimeError(f"SEC field {field!r} has data for fewer than two stocks. Check SEC connectivity and filing coverage for this period.")
-        enriched[column] = frame.reindex(index=close.index, columns=close.columns)
-    enriched["_meta"] = {**panel.get("_meta", {}), "fundamental_source": "sec", "fundamental_pit": True}
+        # The loader anchors a filing on its SEC ``filed`` date, which is a date
+        # without a time. ~47% of 10-Q/10-K filings are accepted after 16:00 ET
+        # yet keep the same-day filing date (EDGAR only rolls to the next
+        # business day after 17:30 ET), so a value visible on bar t may encode
+        # information published after close(t). The backtest engines already
+        # apply next-bar-open semantics to signals (engines/base.py shifts by
+        # one bar); mirror that here on the IC path by making a filed-on-t
+        # value first usable on bar t+1, so the factor never overlaps the
+        # close(t)->close(t+1) forward return that carries the market's
+        # reaction to the filing.
+        enriched[column] = frame.reindex(index=close.index, columns=close.columns).shift(1)
+    enriched["_meta"] = {**panel.get("_meta", {}), "fundamental_source": "sec", "fundamental_pit": True, "fundamental_pit_lag_bars": 1}
     return enriched
 
 
