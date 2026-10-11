@@ -558,6 +558,11 @@ def _convert_tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
                 "name": name,
                 "description": fn.get("description") or "",
                 "parameters": params if isinstance(params, dict) else {},
+                # The Codex Responses endpoint treats a tool without an explicit
+                # ``strict`` as strict, which makes the model emit every property
+                # (``""`` for an optional string) instead of omitting it. Tool
+                # schemas here are plain JSON Schema with ``required`` honoured.
+                "strict": False,
             }
         )
     return converted
