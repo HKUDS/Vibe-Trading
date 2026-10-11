@@ -20,12 +20,24 @@ services:
     pull_policy: always
     user: "0:0"
     restart: "no"
-    entrypoint: ["sh", "-c"]
+    # Plain argv, no shell and no variables: ZimaOS interpolates the compose
+    # file more than once, so an escaped shell variable reaches the shell as
+    # an empty string. find also descends into the nested br-data mount.
+    entrypoint: ["find"]
     command:
-      - >-
-        for d in /app/agent/runs /app/agent/sessions /home/vibe/.vibe-trading
-        /home/vibe/.vibe-trading/br-data /app/agent/.swarm/runs /app/agent/uploads;
-        do find "$$d" ! -user vibe -exec chown vibe:vibe {} +; done
+      - /app/agent/runs
+      - /app/agent/sessions
+      - /home/vibe/.vibe-trading
+      - /app/agent/.swarm/runs
+      - /app/agent/uploads
+      - "!"
+      - -user
+      - vibe
+      - -exec
+      - chown
+      - vibe:vibe
+      - "{}"
+      - +
     healthcheck:
       disable: true
     volumes:
