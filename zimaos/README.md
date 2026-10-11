@@ -5,7 +5,7 @@ HKUDS/Vibe-Trading ──(a cada 30 min)──▶ incorpore/Vibe-Trading:main
                                               │ build
                                               ▼
                               ghcr.io/incorpore/vibe-trading:latest
-                                              │ Watchtower (a cada 5 min)
+                                              │ seu Watchtower (já instalado)
                                               ▼
                                          ZimaOS
 ```
@@ -27,8 +27,8 @@ upstream para que o merge automático não gere conflitos.
    publish image → Run workflow*) para publicar a primeira imagem.
 4. **Torne o pacote público** (uma vez): *github.com/incorpore → Packages →
    vibe-trading → Package settings → Change visibility → Public*. Se preferir
-   privado, descomente `REPO_USER`/`REPO_PASS` no compose (PAT com
-   `read:packages`) e faça `docker login ghcr.io` no ZimaOS.
+   privado, faça `docker login ghcr.io` no ZimaOS com um PAT `read:packages`
+   e dê as mesmas credenciais ao seu Watchtower.
 
 Variáveis opcionais (*Settings → Variables*): `UPSTREAM_REPO`,
 `UPSTREAM_BRANCH`, `ZIMAOS_PLATFORMS` (ex.: `linux/amd64,linux/arm64`).
@@ -40,12 +40,40 @@ Variáveis opcionais (*Settings → Variables*): `UPSTREAM_REPO`,
 2. Troque `API_AUTH_KEY` por um valor aleatório (`openssl rand -hex 32`).
    Ele é obrigatório: a porta 8899 fica acessível na rede local e a API
    recusa clientes fora do loopback sem chave.
-3. Instale e abra `http://<ip-do-zima>:8899`; informe a chave quando o Web UI
-   pedir. Chaves de LLM podem ser colocadas no compose ou no *Settings* do
-   Web UI (ficam salvas no volume `vibe-home`).
+3. Troque `OPENROUTER_API_KEY` pela sua chave (https://openrouter.ai/keys) e,
+   se quiser, `LANGCHAIN_MODEL_NAME` por outro modelo do OpenRouter (use o id
+   exato da lista em https://openrouter.ai/models, no formato `empresa/modelo`).
+   O modelo deve ser trocado aqui, não no *Settings* do Web UI: os valores do
+   compose voltam a valer a cada reinício.
+4. Instale e abra `http://<ip-do-zima>:8899`; informe a `API_AUTH_KEY` quando o
+   Web UI pedir.
 
-O container `vibe-trading-watchtower` verifica a imagem a cada 5 minutos e
-recria só o `vibe-trading` (por causa do label) mantendo os volumes.
+### Pastas
+
+Tudo fica em `/media/URSUS/AppData/vibe-trading/`:
+
+| Pasta | Conteúdo |
+| --- | --- |
+| `home/` | configurações (`.env`), memória, skills, índice de sessões |
+| `br-data/` | base oficial brasileira (`br_data.db`, vários GB) |
+| `runs/`, `sessions/`, `swarm-runs/`, `uploads/` | arquivos de trabalho do agente |
+
+O container `vibe-trading-init` roda uma vez a cada início: cria as pastas e
+passa a posse para o usuário `vibe` da imagem (UID 1000), porque o Docker cria
+pastas novas como root. Se ele falhar no seu ZimaOS, rode uma vez no terminal:
+
+```bash
+mkdir -p /media/URSUS/AppData/vibe-trading/{home,br-data,runs,sessions,swarm-runs,uploads}
+chown -R 1000:1000 /media/URSUS/AppData/vibe-trading
+```
+
+### Atualização
+
+Os containers `vibe-trading` e `vibe-trading-br-data` têm o label
+`com.centurylinklabs.watchtower.enable=true`, então o Watchtower que você já
+tem instalado os atualiza (se ele estiver em modo `--label-enable`, só esses
+são atualizados; senão ele já monitora todos). Os dados ficam nas pastas acima
+e não são afetados.
 
 ## Comportamento
 
@@ -81,7 +109,7 @@ O serviço `vibe-trading-br-data` do compose baixa e atualiza todo dia às
 | Banco Central (SGS) | Selic, CDI, IPCA, IGP-M, INPC, PTAX, euro, PIB, desemprego (outras séries sob demanda) |
 | Tesouro Direto | preços e taxas de todos os títulos, histórico completo |
 
-Os dados ficam em `~/.vibe-trading/br-data/br_data.db` (volume `vibe-home`).
+Os dados ficam em `/media/URSUS/AppData/vibe-trading/br-data/br_data.db`.
 O agente consulta tudo pela ferramenta `get_br_market_data`, e o backtest usa
 a COTAHIST como fonte reserva quando o Yahoo falha. Os preços da COTAHIST são
 os negociados, **sem ajuste** de proventos.
