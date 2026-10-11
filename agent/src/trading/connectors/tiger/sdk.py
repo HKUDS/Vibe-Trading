@@ -68,7 +68,9 @@ class TigerConfig:
         account: Tiger account number. A 17-digit number is a paper account.
         profile: ``paper``, ``live-readonly`` or ``live``.
         timeout: Network timeout in seconds.
-        readonly: Always true for this layer; order methods are not exposed.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     tiger_id: str = ""

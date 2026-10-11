@@ -66,7 +66,9 @@ class LongbridgeConfig:
         profile: ``paper``, ``live-readonly`` or ``live`` (operator-declared).
         region: ``global`` or ``cn`` (host region; not a paper/live signal).
         timeout: Network timeout in seconds.
-        readonly: Always true for this layer; order methods are not exposed.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     app_key: str = field(default="", repr=False)

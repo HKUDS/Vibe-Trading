@@ -131,9 +131,9 @@ def _sdk_config(
     #
     # Per-call overrides must still pass the connector's own allowlist. Every
     # SDK connector deliberately narrows what a caller may override — OKX and
-    # Binance both exclude ``readonly`` ("always true for this layer") and
-    # ``timeout``; Longbridge's overlay is ``profile``/``region`` only,
-    # precisely so a caller "cannot mix or bypass the shared resolver".
+    # Binance both exclude ``readonly`` and ``timeout``; Longbridge's overlay
+    # is ``profile``/``region`` only, precisely so a caller "cannot mix or
+    # bypass the shared resolver".
     # ``build_config`` applies that filter; constructing from a raw merged
     # mapping would not, and ``overrides`` is the one part of this payload that
     # reaches us from an MCP tool argument or a REST body.

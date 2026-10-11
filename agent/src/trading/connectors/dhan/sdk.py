@@ -80,7 +80,9 @@ class DhanConfig:
         access_token: Dhan API access token (generated from dhan.co).
         profile: ``paper``, ``live-readonly`` or ``live``.
         timeout: Network timeout in seconds.
-        readonly: Whether order placement is disabled.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     client_id: str = ""

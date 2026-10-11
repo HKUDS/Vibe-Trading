@@ -80,7 +80,9 @@ class FutuConfig:
         filter_trdmarket: Trade market filter for the trade context, e.g. ``HK``.
         acc_id: Account id; ``0`` means resolve by ``trd_env``.
         timeout: Network/connect timeout in seconds.
-        readonly: Always true for this layer; order methods are not exposed.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     host: str = DEFAULT_HOST
