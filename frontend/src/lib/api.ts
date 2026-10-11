@@ -846,6 +846,8 @@ export interface LLMProviderOption {
   api_key_required: boolean;
   auth_type?: string;
   login_command?: string | null;
+  /** Reasoning effort levels the provider accepts, besides "" (provider default). */
+  reasoning_efforts?: string[];
 }
 
 export interface LLMSettings {
@@ -881,6 +883,7 @@ export interface ListLLMModelsRequest {
   provider: string;
   base_url?: string;
   api_key?: string;
+  refresh?: boolean;
 }
 
 export interface LLMModelsResponse {
@@ -892,6 +895,8 @@ export interface LLMModelsResponse {
     | "api_key_required"
     | "model_list_unavailable"
     | null;
+  /** Model id -> reasoning effort levels it accepts; empty means none. */
+  effort_levels?: Record<string, string[]> | null;
 }
 
 export interface SourceOrderEntry {

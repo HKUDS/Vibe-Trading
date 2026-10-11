@@ -728,10 +728,11 @@ class TestSettingsAllowlist:
     """The settings API admits the explicit 'none' value and says so."""
 
     def test_none_is_a_valid_reasoning_effort(self) -> None:
-        from src.api.settings_routes import LLM_REASONING_EFFORTS
+        from src.api.settings_routes import LLM_PROVIDER_BY_NAME
 
-        assert "none" in LLM_REASONING_EFFORTS
-        assert "" in LLM_REASONING_EFFORTS, "empty still means 'leave unset'"
+        # Levels are per provider now; every provider without its own list
+        # inherits the default one, which keeps the explicit "none".
+        assert "none" in LLM_PROVIDER_BY_NAME["openai"].reasoning_efforts
 
     def test_none_persists_through_the_settings_endpoint(
         self, settings_client: TestClient, settings_env_path: Path

@@ -1,6 +1,7 @@
 import { Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { LLMSettings } from "@/lib/api";
+import { effortLabelKey } from "@/lib/reasoningEffort";
 
 interface Props {
   settings: LLMSettings | null;
@@ -22,17 +23,11 @@ export function ModelRuntimeBar({
   const provider = settings.providers.find((item) => item.name === providerId);
   const providerLabel = provider?.label || providerId || t("agent.unknownProvider");
   const model = runtimeModel || settings.model_name || t("agent.unknownModel");
-  const effortLabels: Record<string, string> = {
-    none: t("settings.reasoningEffortNone"),
-    low: t("settings.reasoningEffortLow"),
-    medium: t("settings.reasoningEffortMedium"),
-    high: t("settings.reasoningEffortHigh"),
-    max: t("settings.reasoningEffortMax"),
-  };
   const reasoningEffort = runtimeReasoningEffort !== undefined
     ? runtimeReasoningEffort
     : settings.reasoning_effort;
-  const effortLabel = effortLabels[reasoningEffort] || t("settings.providerDefault");
+  const effortKey = effortLabelKey(reasoningEffort);
+  const effortLabel = effortKey ? t(effortKey) : t("settings.providerDefault");
 
   return (
     <div className="shrink-0 border-b border-border/70 bg-background/95 px-6 py-2 backdrop-blur-sm">

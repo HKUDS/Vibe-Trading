@@ -1412,7 +1412,7 @@ def _sync_provider_env() -> None:
         os.environ.pop("OPENAI_API_KEY", None)
         return
 
-    if provider in {"copilot", "github-copilot"}:
+    if provider in {"copilot", "github-copilot", "claude-cli"}:
         os.environ.pop("OPENAI_API_BASE", None)
         os.environ.pop("OPENAI_BASE_URL", None)
         os.environ.pop("OPENAI_API_KEY", None)
@@ -1666,6 +1666,16 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         return CopilotSDKLLM(
             model=name,
             timeout=get_env_config().llm.timeout_seconds,
+        )
+
+    if provider == "claude-cli":
+        from src.providers.claude_cli import ClaudeCliLLM
+
+        llm_cfg = get_env_config().llm
+        return ClaudeCliLLM(
+            model=name,
+            timeout=llm_cfg.timeout_seconds,
+            reasoning_effort=llm_cfg.langchain_reasoning_effort.strip().lower(),
         )
 
     if provider == "anthropic":

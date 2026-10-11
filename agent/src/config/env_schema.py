@@ -156,7 +156,8 @@ class LLMConfig(_EnvBase):
     """LLM provider and generation parameters.
 
     Sources: ``src/providers/llm.py``, ``src/providers/chat.py``,
-    ``src/providers/openai_codex.py``, ``src/preflight.py``.
+    ``src/providers/openai_codex.py``, ``src/providers/claude_cli.py``,
+    ``src/preflight.py``.
     """
 
     langchain_provider: str = Field(alias="LANGCHAIN_PROVIDER", default="openai")
@@ -179,6 +180,15 @@ class LLMConfig(_EnvBase):
     openai_codex_base_url: str = Field(
         alias="OPENAI_CODEX_BASE_URL",
         default="https://chatgpt.com/backend-api/codex/responses",
+    )
+    claude_cli_path: str = Field(alias="CLAUDE_CLI_PATH", default="")
+    # A convenience filter, not a security boundary: live orders are still bound
+    # by the mandate gate whatever this list hides.
+    claude_cli_deny_tool_prefixes: str = Field(
+        alias="CLAUDE_CLI_DENY_TOOL_PREFIXES", default="trading_,etoro_"
+    )
+    claude_cli_bash_policy: str = Field(
+        alias="CLAUDE_CLI_BASH_POLICY", default="python-only"
     )
     openai_model: str = Field(alias="OPENAI_MODEL", default="")
     vibe_trading_disable_http_proxy: EnvBool = Field(

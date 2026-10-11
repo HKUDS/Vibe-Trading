@@ -235,5 +235,17 @@
     "api_key_required": false,
     "auth_type": "gh_cli",
     "login_command": "gh auth login"
+  },
+  {
+    "name": "claude-cli",
+    "label": "Claude Code CLI (local login)",
+    "api_key_env": null,
+    "base_url_env": "CLAUDE_CLI_BASE_URL",
+    "default_model": "claude-opus-5-5",
+    "default_base_url": "",
+    "api_key_required": false,
+    "auth_type": "claude_cli",
+    "login_command": "claude auth login",
+    "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"]
   }
 ]

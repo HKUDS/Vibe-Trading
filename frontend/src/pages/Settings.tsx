@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Database, KeyRound, Loader2, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { QVerisSettings } from "@/components/settings/QVerisSettings"; // QVERIS
 import { SourcePrioritySettings } from "@/components/settings/SourcePrioritySettings";
 import { api, isAuthRequiredError, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
+import { effortLabelKey } from "@/lib/reasoningEffort";
 
 interface LLMFormState {
   provider: string;
@@ -46,6 +47,7 @@ export function Settings() {
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelListHint, setModelListHint] = useState<string | null>(null);
+  const [effortLevelsByModel, setEffortLevelsByModel] = useState<Record<string, string[]> | null>(null);
   const [localApiKey, setLocalApiKeyState] = useState(() => getApiAuthKey());
   const [clearApiKey, setClearApiKey] = useState(false);
   const [tushareToken, setTushareToken] = useState("");
@@ -139,10 +141,17 @@ export function Settings() {
     setClearApiKey(false);
     setModelOptions([provider.default_model]);
     setModelListHint(null);
+    setEffortLevelsByModel(null);
   };
 
-  const refreshModels = async () => {
+  // The provider the form shows now; a model list answering for an earlier one
+  // (the CLI can take seconds) must not overwrite the current options.
+  const currentProviderRef = useRef(form?.provider);
+  currentProviderRef.current = form?.provider;
+
+  const refreshModels = async ({ refresh }: { refresh: boolean }) => {
     if (!form || !selectedProvider) return;
+    const requestedProvider = form.provider;
     setModelsLoading(true);
     setModelListHint(null);
     try {
@@ -150,12 +159,15 @@ export function Settings() {
         provider: form.provider,
         base_url: form.base_url,
         api_key: apiKey.trim() || undefined,
+        refresh,
       });
+      if (currentProviderRef.current !== requestedProvider) return;
       setModelOptions(Array.from(new Set([
         form.model_name,
         selectedProvider.default_model,
         ...result.models,
       ].filter(Boolean))));
+      setEffortLevelsByModel(result.effort_levels ?? null);
       const warningMessages = {
         oauth_discovery_unsupported: t("settings.modelDiscoveryOauthUnsupported"),
         api_key_required: t("settings.modelDiscoveryApiKeyRequired"),
@@ -167,11 +179,32 @@ export function Settings() {
           : t("settings.modelsLoaded", { count: result.models.length }),
       );
     } catch (error) {
+      if (currentProviderRef.current !== requestedProvider) return;
       setModelListHint(error instanceof Error ? error.message : t("settings.modelsLoadFailed"));
     } finally {
       setModelsLoading(false);
     }
   };
+
+  // The CLI reports which models the login can run and the levels each accepts,
+  // so fetch that as soon as the provider is shown rather than on a button press.
+  const isClaudeCli = selectedProvider?.auth_type === "claude_cli";
+  useEffect(() => {
+    if (isClaudeCli) void refreshModels({ refresh: false });
+    // refreshModels reads the form at call time; re-run only when the provider changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClaudeCli]);
+
+  // A model's own levels when the provider reports them, else the provider's.
+  const visibleEffortLevels =
+    (form && effortLevelsByModel?.[form.model_name]) ?? selectedProvider?.reasoning_efforts ?? [];
+  // A level the selected model does not accept would be saved but never take
+  // effect, so it is shown and saved as the provider default, with the reason.
+  const unsupportedEffort =
+    form?.reasoning_effort && !visibleEffortLevels.includes(form.reasoning_effort)
+      ? form.reasoning_effort
+      : null;
+  const unsupportedEffortKey = unsupportedEffort ? effortLabelKey(unsupportedEffort) : undefined;
 
   const submitLocalApiKey = (event: FormEvent) => {
     event.preventDefault();
@@ -188,6 +221,7 @@ export function Settings() {
       const desktop = window.vibeDesktop;
       const updated = await api.updateLLMSettings({
         ...form,
+        reasoning_effort: unsupportedEffort ? "" : form.reasoning_effort,
         api_key: isDesktop ? undefined : apiKey.trim() || undefined,
         clear_api_key: isDesktop ? false : clearApiKey,
       });
@@ -398,7 +432,7 @@ export function Settings() {
                 />
                 <button
                   type="button"
-                  onClick={() => void refreshModels()}
+                  onClick={() => void refreshModels({ refresh: true })}
                   disabled={modelsLoading}
                   className="inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                   title={t("settings.loadModels")}
@@ -529,18 +563,28 @@ export function Settings() {
             <label className="grid gap-2">
               <span className={labelClass}>{t("settings.reasoningEffort")}</span>
               <select
-                value={form.reasoning_effort}
+                value={unsupportedEffort ? "" : form.reasoning_effort}
                 onChange={(event) => setForm({ ...form, reasoning_effort: event.target.value })}
                 className={fieldClass}
               >
                 <option value="">{t("settings.providerDefault")}</option>
-                <option value="none">{t("settings.reasoningEffortNone")}</option>
-                <option value="low">{t("settings.reasoningEffortLow")}</option>
-                <option value="medium">{t("settings.reasoningEffortMedium")}</option>
-                <option value="high">{t("settings.reasoningEffortHigh")}</option>
-                <option value="max">{t("settings.reasoningEffortMax")}</option>
+                {visibleEffortLevels.map((level) => {
+                  const labelKey = effortLabelKey(level);
+                  return (
+                    <option key={level} value={level}>
+                      {labelKey ? t(labelKey) : level}
+                    </option>
+                  );
+                })}
               </select>
               <span className={hintClass}>{t("settings.reasoningEffortDesc")}</span>
+              {unsupportedEffort && (
+                <span className={hintClass}>
+                  {t("settings.reasoningEffortReset", {
+                    level: unsupportedEffortKey ? t(unsupportedEffortKey) : unsupportedEffort,
+                  })}
+                </span>
+              )}
             </label>
 
             <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">

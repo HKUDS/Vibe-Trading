@@ -49,6 +49,19 @@ describe("ModelRuntimeBar", () => {
     expect(screen.getByText(/Reasoning Effort: None \(explicit\)/)).toBeInTheDocument();
   });
 
+  it("labels the claude-cli xhigh level instead of falling back to the default", () => {
+    render(
+      <ModelRuntimeBar
+        settings={settings}
+        runtimeProvider="claude-cli"
+        runtimeModel="claude-opus-5-5"
+        runtimeReasoningEffort="xhigh"
+      />,
+    );
+
+    expect(screen.getByText(/Reasoning Effort: Extra high/)).toBeInTheDocument();
+  });
+
   it("shows the persisted historical reasoning effort instead of current settings", () => {
     render(
       <ModelRuntimeBar

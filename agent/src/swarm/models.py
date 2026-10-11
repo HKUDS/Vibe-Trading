@@ -16,10 +16,11 @@ from src.tools.redaction import redact_text
 
 _PUBLIC_METADATA_MAX_LENGTH = 128
 _REDACTED_METADATA = "[redacted]"
-_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "max"})
+_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 _PUBLIC_PROVIDERS = frozenset(
     {
         "anthropic",
+        "claude-cli",
         "dashscope",
         "deepseek",
         "gemini",

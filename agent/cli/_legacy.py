@@ -3008,9 +3008,11 @@ def cmd_provider_login(provider: str) -> int:
     normalized = provider.strip().lower().replace("_", "-")
     if normalized in {"copilot", "github-copilot"}:
         return _login_copilot()
+    if normalized == "claude-cli":
+        return _login_claude_cli()
     if normalized != "openai-codex":
         console.print(
-            "[red]Unknown OAuth provider.[/red] Supported: openai-codex, copilot"
+            "[red]Unknown OAuth provider.[/red] Supported: openai-codex, copilot, claude-cli"
         )
         return EXIT_USAGE_ERROR
     try:
@@ -3059,6 +3061,23 @@ def _login_copilot() -> int:
         "[yellow]No GitHub credential found.[/yellow]\n"
         "Run [bold]copilot[/bold] and sign in, run [bold]gh auth login[/bold], "
         "or set [bold]COPILOT_GITHUB_TOKEN[/bold]."
+    )
+    return EXIT_RUN_FAILED
+
+
+def _login_claude_cli() -> int:
+    """Report the local Claude Code CLI login used by the claude-cli provider."""
+    from src.providers.claude_cli import get_claude_cli_auth_status
+
+    logged_in, method = get_claude_cli_auth_status()
+    if logged_in:
+        console.print(f"[green]Claude Code CLI is logged in[/green]  [dim]{method}[/dim]")
+        return EXIT_SUCCESS
+
+    console.print(
+        f"[yellow]Claude Code CLI is not logged in[/yellow] ({method}).\n"
+        "Run [bold]claude auth login[/bold], or set [bold]CLAUDE_CLI_PATH[/bold] "
+        "to the claude executable."
     )
     return EXIT_RUN_FAILED
 

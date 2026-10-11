@@ -340,3 +340,11 @@ def test_accepts_other_providers(provider: str, model: str) -> None:
     run = SwarmRun(**_base_kwargs(), provider=provider, model=model)
     assert run.provider == provider
     assert run.model == model
+
+
+def test_claude_cli_xhigh_effort_is_public_metadata() -> None:
+    """``xhigh`` is a real claude-cli level, so run records must show it."""
+    from src.swarm.models import public_reasoning_effort
+
+    assert public_reasoning_effort("xhigh") == "xhigh"
+    assert public_reasoning_effort("XHIGH") == "xhigh"

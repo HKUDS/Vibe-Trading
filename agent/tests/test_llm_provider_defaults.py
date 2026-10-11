@@ -171,9 +171,12 @@ def test_credential_fallback_map_matches_provider_catalog() -> None:
     providers_path = (
         Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
     )
+    # claude-cli drives a local executable and has no HTTP endpoint, so it is
+    # the one provider deliberately left out of the fallback map.
     catalog = {
         item["name"]: item["default_base_url"]
         for item in json.loads(providers_path.read_text(encoding="utf-8"))
+        if item.get("auth_type") != "claude_cli"
     }
     assert _provider_default_base_urls() == catalog
 

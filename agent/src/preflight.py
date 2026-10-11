@@ -119,6 +119,25 @@ def _check_llm_provider() -> CheckResult:
             impact="",
         )
 
+    if provider.lower() == "claude-cli":
+        from src.providers.claude_cli import get_claude_cli_auth_status
+
+        logged_in, auth_method = get_claude_cli_auth_status()
+        if not logged_in:
+            return CheckResult(
+                name=f"LLM ({provider})",
+                status="not_configured",
+                message=f"Claude Code CLI: {auth_method}",
+                impact="install Claude Code and run `claude auth login`, or set CLAUDE_CLI_PATH",
+                critical=True,
+            )
+        return CheckResult(
+            name=f"LLM ({provider})",
+            status="ready",
+            message=f"{model} via local claude -p ({auth_method}) | {diag_hint}",
+            impact="",
+        )
+
     if not base_url:
         return CheckResult(
             name=f"LLM ({provider})",
