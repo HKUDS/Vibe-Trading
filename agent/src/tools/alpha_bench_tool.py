@@ -699,6 +699,64 @@ def _validate_bench_data_requirements(registry: Any, alpha_ids: list[str], unive
     return columns
 
 
+def _val_columns_required(registry: Any, alpha_ids: list[str], panel: dict) -> list[str]:
+    """Collect declared ``val:*`` columns missing from the panel.
+
+    Args:
+        registry: Registry holding the selected factors.
+        alpha_ids: Factors to evaluate.
+        panel: Observed price panel.
+
+    Returns:
+        Sorted ``val:*`` column names not already present in the panel.
+    """
+    return sorted({column for aid in alpha_ids
+                   for column in (registry.get(aid).meta or {}).get("columns_required", [])
+                   if column.startswith("val:") and column not in panel})
+
+
+def _attach_valuation_columns(
+    enriched: dict, panel: dict, val_columns: list[str], start: str, end: str
+) -> dict:
+    """Attach ``val:*`` columns for a CN universe from tushare ``daily_basic``.
+
+    Daily market data keyed by ``trade_date`` — PIT-safe by construction, no
+    filing lag. Frames are masked to the price panel's own cross-section so a
+    date whose close was membership-masked carries no valuation either.
+
+    Args:
+        enriched: Panel copy being extended.
+        panel: Observed price panel (source of the cross-section mask).
+        val_columns: Declared ``val:*`` columns to attach.
+        start: Period start (YYYY-MM-DD).
+        end: Period end (YYYY-MM-DD).
+
+    Returns:
+        The enriched panel.
+
+    Raises:
+        ValueError: If a declared field is outside the daily_basic whitelist.
+        RuntimeError: If fewer than two stocks have data for a field.
+    """
+    from backtest.loaders.valuation_loader import load_valuation_panel
+
+    close = panel["close"]
+    fields = [column.removeprefix("val:") for column in val_columns]
+    loaded = load_valuation_panel(
+        symbols=list(close.columns), fields=fields, start=start, end=end, index=close.index
+    )
+    for column, field in zip(val_columns, fields):
+        frame = loaded.get(field)
+        if frame is None or frame.notna().any().sum() < 2:
+            raise RuntimeError(
+                f"tushare daily_basic field {field!r} has data for fewer than two "
+                "stocks. Check TUSHARE_TOKEN permissions and CN coverage for this period."
+            )
+        enriched[column] = frame.reindex(index=close.index, columns=close.columns).where(close.notna())
+    enriched["_meta"] = {**enriched.get("_meta", {}), "valuation_source": "tushare_daily_basic"}
+    return enriched
+
+
 def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, universe: str, period: str) -> dict:
     """Load only the declared PIT fundamental inputs for the selected factors.
 
@@ -706,32 +764,40 @@ def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, unive
         registry: Registry holding the factors being evaluated.
         alpha_ids: Selected factor identifiers.
         panel: Observed price panel; never mutated or filled with invented values.
-        universe: Stock universe; SEC fundamentals currently cover US stocks.
+        universe: Stock universe; SEC fundamentals currently cover US stocks,
+            ``val:*`` daily valuation columns cover the CN universe only —
+            other universes skip them and declaring alphas SkipAlpha.
         period: Requested historical period.
 
     Returns:
         A panel including the required fundamental columns.
 
     Raises:
-        ValueError: If SEC inputs are requested for a non-US universe.
+        ValueError: If SEC inputs are requested for a non-US universe, or a
+            ``val:`` field is outside the daily_basic whitelist.
         RuntimeError: If fewer than two stocks have the required financial inputs.
     """
     columns = [column for column in _validate_bench_data_requirements(registry, alpha_ids, universe) if column not in panel]
-    if not columns:
+    val_columns = _val_columns_required(registry, alpha_ids, panel) if universe == "csi300" else []
+    if not columns and not val_columns:
         return panel
-    from backtest.loaders.fundamentals_loader import load_fundamental_panel
 
     start, end = _parse_period(period)
     close = panel["close"]
-    fields = [column.removeprefix("fund:") for column in columns]
-    loaded = load_fundamental_panel(symbols=list(close.columns), fields=fields, start=start, end=end, pit=True, index=close.index)
     enriched = dict(panel)
-    for column, field in zip(columns, fields):
-        frame = loaded.get(field)
-        if frame is None or frame.notna().any().sum() < 2:
-            raise RuntimeError(f"SEC field {field!r} has data for fewer than two stocks. Check SEC connectivity and filing coverage for this period.")
-        enriched[column] = frame.reindex(index=close.index, columns=close.columns)
-    enriched["_meta"] = {**panel.get("_meta", {}), "fundamental_source": "sec", "fundamental_pit": True}
+    if columns:
+        from backtest.loaders.fundamentals_loader import load_fundamental_panel
+
+        fields = [column.removeprefix("fund:") for column in columns]
+        loaded = load_fundamental_panel(symbols=list(close.columns), fields=fields, start=start, end=end, pit=True, index=close.index)
+        for column, field in zip(columns, fields):
+            frame = loaded.get(field)
+            if frame is None or frame.notna().any().sum() < 2:
+                raise RuntimeError(f"SEC field {field!r} has data for fewer than two stocks. Check SEC connectivity and filing coverage for this period.")
+            enriched[column] = frame.reindex(index=close.index, columns=close.columns)
+        enriched["_meta"] = {**enriched.get("_meta", {}), "fundamental_source": "sec", "fundamental_pit": True}
+    if val_columns:
+        enriched = _attach_valuation_columns(enriched, panel, val_columns, start, end)
     return enriched
 
 

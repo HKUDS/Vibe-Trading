@@ -40,9 +40,28 @@ def test_panel_column_gate_accepts_unknown_fund_field() -> None:
     assert meta.columns_required == ["fund:whatever"]
 
 
+def test_panel_column_gate_accepts_val_prefix() -> None:
+    meta = AlphaMeta(**_meta(columns_required=["close", "val:pb"]))
+
+    assert meta.columns_required == ["close", "val:pb"]
+
+
+def test_panel_column_gate_accepts_unknown_val_field() -> None:
+    # The gate is prefix-based like fund:; the daily_basic whitelist is
+    # enforced at injection time, not at metadata validation.
+    meta = AlphaMeta(**_meta(columns_required=["val:whatever"]))
+
+    assert meta.columns_required == ["val:whatever"]
+
+
 def test_panel_column_gate_rejects_unknown_non_prefixed_column() -> None:
     with pytest.raises(ValueError, match="unknown panel column: garbage"):
         AlphaMeta(**_meta(columns_required=["garbage"]))
+
+
+def test_panel_column_gate_rejects_unknown_prefix() -> None:
+    with pytest.raises(ValueError, match="unknown panel column: est:eps"):
+        AlphaMeta(**_meta(columns_required=["est:eps"]))
 
 
 def test_decay_horizon_accepts_annual_report_scale_window() -> None:

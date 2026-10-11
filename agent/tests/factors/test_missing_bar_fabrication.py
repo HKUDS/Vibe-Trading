@@ -118,6 +118,9 @@ def _base() -> dict[str, np.ndarray]:
         "fund:leverage",
         "fund:revenue_growth",
         "fund:earnings_growth",
+        "val:pb",
+        "val:ps_ttm",
+        "val:dv_ttm",
     ):
         base[name] = rng.integers(32, 96, (_T, _N)) / 64.0
     return base

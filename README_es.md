@@ -668,7 +668,7 @@ junto al catálogo incluido (los archivos con el mismo nombre lo sobrescriben, i
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>472 alphas cuantitativos preconstruidos en 5 familias</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>475 alphas cuantitativos preconstruidos en 5 familias</sub></summary>
 
 - 🧬 462 alphas cross-sectional, con prohibición de lookahead a nivel de la capa de operadores
 - 📈 Categorización de IC + IR + vivo/invertido/muerto en un solo comando de la CLI
