@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 
 from backtest import runner
+from backtest.loaders import valuation_loader
 from src.factors.registry import AlphaMeta, Registry
 
 _DATES = pd.to_datetime(["2024-01-01", "2024-01-02"])
@@ -339,6 +340,7 @@ def test_missing_token_degrades_to_nan_frames(
 ) -> None:
     """No TUSHARE_TOKEN: the run survives on NaN frames instead of crashing."""
     monkeypatch.setenv("TUSHARE_TOKEN", "")
+    monkeypatch.setattr(valuation_loader, "_baostock_available", lambda: False)
     index = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
     panel = {"close": pd.DataFrame({"000001.SZ": [10.1, 10.3, 10.4]}, index=index)}
 
