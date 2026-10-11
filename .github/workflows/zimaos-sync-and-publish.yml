@@ -1,0 +1,170 @@
+name: ZimaOS - Sync upstream and publish image
+
+# Fork-only workflow (incorpore/Vibe-Trading). It lives in its own file so that
+# merging HKUDS/Vibe-Trading never conflicts with it.
+#
+#   1. sync     - every 30 min, merge HKUDS/Vibe-Trading:main into this fork's
+#                 main and push when upstream moved.
+#   2. publish  - build the Dockerfile and push
+#                   ghcr.io/<owner>/vibe-trading:latest
+#                   ghcr.io/<owner>/vibe-trading:sha-<short>
+#                 Watchtower on the ZimaOS box (zimaos/docker-compose.yml)
+#                 pulls :latest and recreates the container.
+#
+# Token: pushes made with GITHUB_TOKEN cannot touch .github/workflows/** and do
+# not trigger other workflow runs. Add a fine-grained PAT as the repository
+# secret UPSTREAM_SYNC_TOKEN (this repo only; Contents: read/write, Workflows:
+# read/write) so upstream workflow changes can be merged too. Without it the
+# sync still works for every upstream commit that does not edit workflows.
+#
+# Optional repository variables:
+#   UPSTREAM_REPO      default HKUDS/Vibe-Trading
+#   UPSTREAM_BRANCH    default main
+#   ZIMAOS_PLATFORMS   default linux/amd64 (use linux/amd64,linux/arm64 for ARM boxes)
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Build and push :latest even if upstream did not change'
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+
+concurrency:
+  group: zimaos-sync-and-publish
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO || 'HKUDS/Vibe-Trading' }}
+  UPSTREAM_BRANCH: ${{ vars.UPSTREAM_BRANCH || 'main' }}
+
+jobs:
+  sync:
+    if: github.event_name != 'push' && github.repository != 'HKUDS/Vibe-Trading'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
+      via_pat: ${{ steps.merge.outputs.via_pat }}
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+
+      - name: Merge upstream
+        id: merge
+        env:
+          HAS_PAT: ${{ secrets.UPSTREAM_SYNC_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          echo "via_pat=${HAS_PAT}" >> "$GITHUB_OUTPUT"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch --no-tags upstream "${UPSTREAM_BRANCH}"
+
+          if git merge-base --is-ancestor "upstream/${UPSTREAM_BRANCH}" HEAD; then
+            echo "Fork already contains ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before="$(git rev-parse HEAD)"
+          if ! git merge --no-edit "upstream/${UPSTREAM_BRANCH}" \
+                 -m "chore(sync): merge ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}"; then
+            git merge --abort || true
+            echo "::error::Merge conflict with ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}. Merge it manually into main."
+            exit 1
+          fi
+
+          if [ "${HAS_PAT}" != "true" ] && \
+             [ -n "$(git diff --name-only "${before}" HEAD -- .github/workflows)" ]; then
+            echo "::error::Upstream changed .github/workflows; GITHUB_TOKEN cannot push that. Add the UPSTREAM_SYNC_TOKEN secret (see header of this workflow)."
+            exit 1
+          fi
+
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: sync
+    # - push to main: always (own commits, or a sync pushed with the PAT,
+    #   which fires a push event).
+    # - manual run: when force_publish, or when the sync merged something.
+    # - schedule: when the sync merged with GITHUB_TOKEN (that push fires no
+    #   event, so the build has to happen here).
+    if: >-
+      always() && github.repository != 'HKUDS/Vibe-Trading' && (
+        github.event_name == 'push' ||
+        (needs.sync.result == 'success' && (
+          (github.event_name == 'workflow_dispatch' && (inputs.force_publish || needs.sync.outputs.changed == 'true')) ||
+          (needs.sync.outputs.changed == 'true' && needs.sync.outputs.via_pat != 'true')
+        ))
+      )
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Image name
+        id: img
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "name=ghcr.io/${owner}/vibe-trading" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ vars.ZIMAOS_PLATFORMS || 'linux/amd64' }}
+          push: true
+          tags: |
+            ${{ steps.img.outputs.name }}:latest
+            ${{ steps.img.outputs.name }}:sha-${{ steps.img.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=zimaos
+          cache-to: type=gha,mode=max,scope=zimaos
+
+      - name: Summary
+        env:
+          IMAGE: ${{ steps.img.outputs.name }}
+          SHA: ${{ steps.img.outputs.sha }}
+        run: |
+          {
+            echo "### Published"
+            echo "- \`${IMAGE}:latest\`"
+            echo "- \`${IMAGE}:sha-${SHA}\`"
+            echo ""
+            echo "Watchtower on ZimaOS will pick up \`:latest\` on its next poll."
+          } >> "$GITHUB_STEP_SUMMARY"
