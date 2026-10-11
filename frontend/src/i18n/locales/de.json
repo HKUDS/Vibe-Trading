@@ -1059,6 +1059,7 @@
         "ca_equity": "Kanada-Aktien",
         "vietnam_equity": "Vietnam-Aktien",
         "ar_equity": "Argentinien-Aktien",
+        "br_equity": "Brasilien-Aktien",
         "uk_equity": "UK-Aktien",
         "index": "Indizes",
         "crypto": "Krypto",
@@ -1389,6 +1390,7 @@
         "futures": "Futures",
         "forex": "Devisen",
         "ar_equity": "Argentinien-Aktien",
+        "br_equity": "Brasilien-Aktien",
         "uk_equity": "UK-Aktien",
         "vietnam_equity": "Vietnam-Aktien",
         "other": "Sonstige"

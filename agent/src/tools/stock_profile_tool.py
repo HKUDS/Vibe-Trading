@@ -275,6 +275,8 @@ def _market_for(ticker: str) -> str:
         return "uk"
     if upper.endswith(".BA"):
         return "ar"
+    if upper.endswith(".SA"):
+        return "br"
     return "us"
 
 
@@ -283,8 +285,8 @@ class StockProfileTool(BaseTool):
 
     name = "get_stock_profile"
     description = (
-        "Fetch a read-only company profile for a US, Hong Kong, UK (LSE .L), or "
-        "Argentina (BYMA .BA) "
+        "Fetch a read-only company profile for a US, Hong Kong, UK (LSE .L), "
+        "Argentina (BYMA .BA), or Brazil (B3 .SA) "
         "listing from Yahoo Finance: valuation key statistics, analyst price "
         "targets and earnings/revenue estimates, institutional and insider "
         "ownership, and the analyst recommendation trend. Always includes "
@@ -301,7 +303,7 @@ class StockProfileTool(BaseTool):
             "ticker": {
                 "type": "string",
                 "description": (
-                    "US, HK, UK (LSE .L), or Argentina (BYMA .BA) symbol. US uses a bare or .US suffix "
+                    "US, HK, UK (LSE .L), Argentina (BYMA .BA), or Brazil (B3 .SA, e.g. PETR4.SA) symbol. US uses a bare or .US suffix "
                     "(AAPL or AAPL.US); HK uses a zero-padded .HK code "
                     "(00700.HK); UK uses the .L suffix (VOD.L)."
                 ),

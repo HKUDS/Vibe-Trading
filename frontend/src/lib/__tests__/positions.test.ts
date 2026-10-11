@@ -114,6 +114,8 @@ describe("classifyAssetClass parity with backend rules", () => {
     // earlier and were never classified here, so they read as "other".
     ["GGAL.BA", "ar_equity"],
     ["GOOGL.BA", "ar_equity"],
+    ["PETR4.SA", "br_equity"],
+    ["HGLG11.SA", "br_equity"],
     ["VOD.L", "uk_equity"],
     ["VIC.VN", "vietnam_equity"],
     ["005930.KS", "kr_equity"],

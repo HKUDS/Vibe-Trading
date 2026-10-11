@@ -125,7 +125,7 @@ _CANONICAL_SYMBOL_RE = re.compile(
     # Every equity suffix the market-data layer routes (backtest.engines.
     # _market_hooks._MARKET_PATTERNS); test_market_identity_parity keeps the
     # two in step, because .L / .VN / .BA each landed there without landing here.
-    r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V|BA|L|VN)|"
+    r"[A-Z][A-Z0-9&.-]{0,19}\.(?:US|NS|BO|FX|TO|V|BA|SA|L|VN)|"
     r"[A-Z0-9]{2,15}(?:-|/)(?:USDT|USDC|USD|BTC|ETH)|"
     r"[A-Z]{2,15}(?:" + "|".join(_JOINED_CRYPTO_QUOTE_SUFFIXES) + r")|"
     r"\^[A-Z0-9&.\-]{1,20}|"
@@ -255,6 +255,7 @@ def _infer_venue(symbol: str) -> str | None:
         ".TO": "toronto",
         ".V": "tsx_venture",
         ".BA": "buenos_aires",
+        ".SA": "b3",
         ".L": "lse",
         ".VN": "hose",
     }
@@ -322,6 +323,7 @@ def _infer_currency(symbol: str) -> str | None:
         ".TO": "CAD",
         ".V": "CAD",
         ".BA": "ARS",
+        ".SA": "BRL",
         # The UK loaders admit only a declared GBP / GBp quote and hand back
         # GBP, the same contract as the backtest's _MARKET_CURRENCY.
         ".L": "GBP",

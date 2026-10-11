@@ -160,6 +160,7 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "TO": "ca",
     "V": "ca",
     "BA": "ar",
+    "SA": "br",
     "L": "uk",
     "VN": "vn",
 }

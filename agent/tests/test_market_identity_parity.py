@@ -25,6 +25,7 @@ _SAMPLES: dict[str, tuple[str, str, str]] = {
     "kr_equity": ("005930.KS", "005930.KS", "kr"),
     "ca_equity": ("TD.TO", "TD.TO", "ca"),
     "ar_equity": ("GGAL.BA", "GGAL.BA", "ar"),
+    "br_equity": ("PETR4.SA", "PETR4.SA", "br"),
     "uk_equity": ("VOD.L", "VOD.L", "uk"),
     "vietnam_equity": ("VIC.VN", "VIC.VN", "vn"),
 }

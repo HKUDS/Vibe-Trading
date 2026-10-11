@@ -1,0 +1,146 @@
+# Vibe-Trading on ZimaOS (App Store -> "+" -> Install a customized app -> Import).
+# Uses the image published by .github/workflows/zimaos-sync-and-publish.yml and
+# a Watchtower sidecar that pulls :latest and recreates the container whenever
+# a new build lands. See zimaos/README.md.
+name: vibe-trading
+
+services:
+  vibe-trading:
+    image: ghcr.io/incorpore/vibe-trading:latest
+    container_name: vibe-trading
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "8899:8899"
+    environment:
+      # REQUIRED: the port is published on the LAN, and the API refuses
+      # non-loopback clients without a key. Use a long random value
+      # (e.g. `openssl rand -hex 32`) and enter it in the Web UI when asked.
+      API_AUTH_KEY: "change-me"
+      TZ: America/Sao_Paulo
+      # Ollama on the ZimaOS host (optional).
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      # Do NOT set VIBE_TRADING_TRUST_DOCKER_LOOPBACK here: with a LAN-published
+      # port it would treat LAN clients as local.
+      # LLM keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) can be added here or
+      # in the Web UI Settings; the UI saves them to the vibe-home volume.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Named volumes inherit the image's ownership (user `vibe`), so no
+      # chown is needed on the host. Settings/.env, memory and skills live in
+      # vibe-home and survive every image update.
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-swarm-runs:/app/agent/.swarm/runs
+      - vibe-uploads:/app/agent/uploads
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/vibe/.cache
+      - /home/vibe/.config
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 512
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    x-casaos:
+      envs:
+        - container: API_AUTH_KEY
+          description:
+            en_us: Required. Secret key for LAN access to the Web UI / API.
+            pt_br: Obrigatório. Chave secreta para acesso ao Web UI / API pela rede.
+        - container: TZ
+          description:
+            en_us: Time zone
+      ports:
+        - container: "8899"
+          description:
+            en_us: Web UI / API
+
+  # Daily sync of the official Brazilian datasets (B3 COTAHIST, CVM funds and
+  # companies, Banco Central, Tesouro Direto) into the shared vibe-home volume,
+  # where the app's get_br_market_data tool and the B3 loader read them.
+  # The first run downloads several GB and can take hours; later runs only
+  # fetch what changed.
+  vibe-trading-br-data:
+    image: ghcr.io/incorpore/vibe-trading:latest
+    container_name: vibe-trading-br-data
+    pull_policy: always
+    restart: unless-stopped
+    command: ["python", "-m", "src.br_data", "daemon"]
+    environment:
+      TZ: America/Sao_Paulo
+      # First years to download (B3 publishes from 1986; each year of
+      # COTAHIST is a few hundred MB in SQLite, options included).
+      VIBE_BR_COTAHIST_START_YEAR: "2015"
+      VIBE_BR_CVM_START_YEAR: "2022"
+      # Daily run time (Sao Paulo), after B3 and CVM publish the day's files.
+      VIBE_BR_SYNC_TIME: "21:30"
+    volumes:
+      - vibe-home:/home/vibe/.vibe-trading
+    # The image's healthcheck probes the web server, which this service does
+    # not run.
+    healthcheck:
+      disable: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 2g
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  watchtower:
+    # Maintained fork of containrrr/watchtower (works with current Docker APIs).
+    image: nickfedor/watchtower:1.23
+    container_name: vibe-trading-watchtower
+    restart: unless-stopped
+    environment:
+      # Only update containers labelled watchtower.enable=true (i.e. vibe-trading).
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: "300"
+      TZ: America/Sao_Paulo
+      # Only needed while the GHCR package is private: a PAT with read:packages.
+      # REPO_USER: incorpore
+      # REPO_PASS: ghp_xxx
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  vibe-runs:
+  vibe-sessions:
+  vibe-home:
+  vibe-swarm-runs:
+  vibe-uploads:
+
+x-casaos:
+  architectures:
+    - amd64
+  main: vibe-trading
+  author: incorpore
+  developer: HKUDS
+  category: Finance
+  icon: https://raw.githubusercontent.com/HKUDS/Vibe-Trading/main/assets/icon.png
+  index: /
+  port_map: "8899"
+  scheme: http
+  title:
+    en_us: Vibe-Trading
+  tagline:
+    en_us: Natural-language finance research agent with backtesting
+    pt_br: Agente de pesquisa financeira com backtesting
+  description:
+    en_us: Auto-updated build of incorpore/Vibe-Trading (synced from HKUDS/Vibe-Trading).

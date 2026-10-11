@@ -55,6 +55,9 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
                 "Argentina .BA market data is supported, but Argentina backtest "
                 "execution rules are not modeled yet"
             )
+        elif market == "br_equity":
+            from backtest.engines.brazil_equity import BrazilEquityEngine
+            engines["br_equity"] = BrazilEquityEngine(config)
         elif market == "ca_equity":
             from backtest.engines.global_equity import GlobalEquityEngine
             engines["ca_equity"] = GlobalEquityEngine(config, market="ca")

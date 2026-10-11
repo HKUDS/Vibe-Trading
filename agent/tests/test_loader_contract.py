@@ -17,6 +17,7 @@ from tests.loader_contract import loader_contract_errors
 CONTRACT_SUITES = {
     "akshare": "test_akshare_loader.py",
     "alphavantage": "test_alphavantage_loader.py",
+    "b3_cotahist": "test_br_data.py",
     "baostock": "test_baostock_loader.py",
     "binance": "test_binance_fallback.py",
     "ccxt": "test_ccxt_loader_bounded.py",

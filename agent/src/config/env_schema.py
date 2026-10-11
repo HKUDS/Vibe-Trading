@@ -232,6 +232,16 @@ class DataConfig(_EnvBase):
     vibe_trading_sec_ftd_files: int = Field(alias="VIBE_TRADING_SEC_FTD_FILES", default=1)
     vibe_trading_openalex_mailto: str = Field(alias="VIBE_TRADING_OPENALEX_MAILTO", default="")
     vibe_tw_stock_db: str = Field(alias="VIBE_TW_STOCK_DB", default="")
+    # Brazilian official data (B3 COTAHIST, CVM, BCB, Tesouro Direto), synced
+    # by ``vibe-trading br-data sync`` into one SQLite file. Empty = default
+    # ``~/.vibe-trading/br-data/br_data.db``.
+    vibe_br_data_db: str = Field(alias="VIBE_BR_DATA_DB", default="")
+    # First COTAHIST year a sync downloads (B3 publishes from 1986).
+    vibe_br_cotahist_start_year: int = Field(alias="VIBE_BR_COTAHIST_START_YEAR", default=2015)
+    # First year of CVM fund daily reports / company filings a sync downloads.
+    vibe_br_cvm_start_year: int = Field(alias="VIBE_BR_CVM_START_YEAR", default=2022)
+    # Local time (HH:MM, America/Sao_Paulo) of the daily sync in daemon mode.
+    vibe_br_sync_time: str = Field(alias="VIBE_BR_SYNC_TIME", default="21:30")
     vibe_trading_data_cache: EnvBool = Field(alias="VIBE_TRADING_DATA_CACHE", default=False)
     vibe_trading_data_cache_root: str = Field(alias="VIBE_TRADING_DATA_CACHE_ROOT", default="")
     aliyun_iqs_api_key: str = Field(alias="ALIYUN_IQS_API_KEY", default="")
@@ -259,6 +269,7 @@ class DataConfig(_EnvBase):
     market_data_order_kr_equity: str = Field(alias="MARKET_DATA_ORDER_KR_EQUITY", default="")
     market_data_order_ca_equity: str = Field(alias="MARKET_DATA_ORDER_CA_EQUITY", default="")
     market_data_order_ar_equity: str = Field(alias="MARKET_DATA_ORDER_AR_EQUITY", default="")
+    market_data_order_br_equity: str = Field(alias="MARKET_DATA_ORDER_BR_EQUITY", default="")
     market_data_order_uk_equity: str = Field(alias="MARKET_DATA_ORDER_UK_EQUITY", default="")
     market_data_order_vietnam_equity: str = Field(alias="MARKET_DATA_ORDER_VIETNAM_EQUITY", default="")
     market_data_order_crypto: str = Field(alias="MARKET_DATA_ORDER_CRYPTO", default="")

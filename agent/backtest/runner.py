@@ -851,6 +851,7 @@ _MARKET_TO_SOURCE = {
     "kr_equity": "pykrx",
     "ca_equity": "yahoo",
     "ar_equity": "yahoo",
+    "br_equity": "yahoo",
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
     "crypto": "okx",
@@ -1548,6 +1549,11 @@ def _create_market_engine(source: str, config: dict, codes: List[str]):
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
         return VietnamEquityEngine(config)
+    # Brazil (B3) routing — same reason as India: ``yahoo`` has no Wave-1
+    # branch and would otherwise fall through to the crypto default.
+    if "br_equity" in markets:
+        from backtest.engines.brazil_equity import BrazilEquityEngine
+        return BrazilEquityEngine(config)
     # Argentina market-data routing is supported, but BYMA execution rules
     # are not modeled yet. Fail closed instead of silently applying US/crypto
     # commissions, lot sizes, settlement, or short-selling assumptions.

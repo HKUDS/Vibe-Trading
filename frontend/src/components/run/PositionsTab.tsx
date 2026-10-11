@@ -28,6 +28,7 @@ const ASSET_CLASS_LABEL_KEYS = {
   hk_equity: "runDetail.positions.assetClass.hk_equity",
   ca_equity: "runDetail.positions.assetClass.ca_equity",
   ar_equity: "runDetail.positions.assetClass.ar_equity",
+  br_equity: "runDetail.positions.assetClass.br_equity",
   uk_equity: "runDetail.positions.assetClass.uk_equity",
   vietnam_equity: "runDetail.positions.assetClass.vietnam_equity",
   kr_equity: "runDetail.positions.assetClass.kr_equity",
