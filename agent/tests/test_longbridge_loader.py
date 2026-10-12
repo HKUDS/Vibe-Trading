@@ -255,6 +255,59 @@ def test_fetch_combines_all_windows_and_caches_complete_frame(
     pd.testing.assert_frame_equal(cached[0], result["AAPL"])
 
 
+def test_fetch_uses_from_apikey_when_sdk_provides_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SDK 4.0+ refuses ``Config(...)``; the loader must go through the factory."""
+    factory_calls: list[tuple[str, ...]] = []
+    built = object()
+
+    class Sdk4Config:
+        def __new__(cls, *args: object) -> "Sdk4Config":
+            raise TypeError("cannot create 'builtins.Config' instances")
+
+        @staticmethod
+        def from_apikey(*args: str) -> object:
+            factory_calls.append(args)
+            return built
+
+    class FakeQuoteContext:
+        def __init__(self, config: object) -> None:
+            assert config is built
+
+        def history_candlesticks_by_date(
+            self, *args: object, **kwargs: object
+        ) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    timestamp=pd.Timestamp(kwargs["start"]),
+                    open=10,
+                    high=11,
+                    low=9,
+                    close=10.5,
+                    volume=100,
+                )
+            ]
+
+    fake_openapi = SimpleNamespace(
+        Config=Sdk4Config,
+        QuoteContext=FakeQuoteContext,
+        Period=SimpleNamespace(Day="day"),
+        AdjustType=SimpleNamespace(NoAdjust="none"),
+    )
+    monkeypatch.setattr(loader_mod, "_require_longbridge", lambda: fake_openapi)
+    monkeypatch.setattr(loader_mod, "loader_cache_get", lambda **kwargs: None)
+    monkeypatch.setattr(loader_mod, "loader_cache_put", lambda **kwargs: None)
+
+    result = _configured_loader().fetch(
+        ["AAPL"], "2026-01-01", "2026-01-02", interval="1D"
+    )
+
+    assert factory_calls == [("key", "secret", "token")]
+    assert list(result) == ["AAPL"]
+    assert_loader_contract(result["AAPL"], context="longbridge daily via from_apikey")
+
+
 def test_fetch_rejects_partial_history_when_a_window_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -326,7 +379,9 @@ def test_fetch_redacts_sdk_initialization_exception_and_drops_cause(
     with pytest.raises(NoAvailableSourceError) as exc_info:
         _configured_loader().fetch(["AAPL"], "2026-01-01", "2026-01-02")
 
-    assert str(exc_info.value) == "Longbridge SDK initialization failed."
+    assert str(exc_info.value) == (
+        "Longbridge SDK initialization failed (SecretBearingSdkError)."
+    )
     assert secret not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None

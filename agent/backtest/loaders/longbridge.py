@@ -86,6 +86,30 @@ def _require_longbridge():
     return openapi
 
 
+def _build_sdk_config(
+    openapi: Any, app_key: str, app_secret: str, access_token: str
+) -> Any:
+    """Build a ``longbridge.openapi.Config`` on any SDK in the supported range.
+
+    From 4.0 the SDK refuses direct ``Config(...)`` construction and only offers
+    ``Config.from_apikey``; 0.2.x has no ``from_apikey``. ``longbridge>=0.2.5``
+    admits both, so pick by capability rather than by version number.
+
+    Args:
+        openapi: The ``longbridge.openapi`` module.
+        app_key: Longbridge OpenAPI app key.
+        app_secret: Longbridge OpenAPI app secret.
+        access_token: Longbridge OpenAPI access token.
+
+    Returns:
+        The SDK ``Config`` instance.
+    """
+    config_cls = openapi.Config
+    if hasattr(config_cls, "from_apikey"):
+        return config_cls.from_apikey(app_key, app_secret, access_token)
+    return config_cls(app_key, app_secret, access_token)
+
+
 def _to_longport_symbol(code: str) -> str:
     """Convert a project symbol to LongPort format.
 
@@ -334,17 +358,20 @@ class LongbridgeLoader:
         openapi = _require_longbridge()
         _init_error: str | None = None
         try:
-            cfg = openapi.Config(
-                self._app_key, self._app_secret, self._access_token,
+            cfg = _build_sdk_config(
+                openapi, self._app_key, self._app_secret, self._access_token
             )
             ctx = openapi.QuoteContext(cfg)
         except LongbridgeDependencyError:
             raise
-        except Exception:
-            # Capture only stable text; do NOT raise inside the handler so
-            # the original exception (which may contain secrets) cannot
-            # leak into __context__.
-            _init_error = "Longbridge SDK initialization failed."
+        except Exception as exc:
+            # Keep only the exception type: its message may carry credentials,
+            # but the type alone tells an SDK API change from a bad token. Do
+            # NOT raise inside the handler, or the original exception leaks
+            # into __context__.
+            _init_error = (
+                f"Longbridge SDK initialization failed ({type(exc).__name__})."
+            )
 
         if _init_error is not None:
             raise NoAvailableSourceError(_init_error)
