@@ -773,6 +773,12 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
             "top": top_rows,
             "wall_seconds": result.get("wall_seconds"),
         }
+        # Run-config disclosure: a saved envelope must state its own horizon,
+        # sampling and any universe-based exclusions — numbers that show
+        # where they came from.
+        for key in ("horizon", "forward_return_sampling", "universe_excluded"):
+            if key in result:
+                envelope[key] = result[key]
         if getattr(args, "strict", False):
             envelope["strict"] = True
             for key in ("confirmed_alive", "train_only", "reversed_strict", "noise"):

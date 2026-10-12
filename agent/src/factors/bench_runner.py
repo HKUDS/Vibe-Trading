@@ -37,7 +37,7 @@ from src.factors.registry import (
     SkipAlpha,
     get_default_registry,
 )
-from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel, _prepare_bench_panel, _validate_bench_data_requirements
+from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel, _prepare_bench_panel, _split_alphas_by_universe_support, _validate_bench_data_requirements
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +201,25 @@ def run_bench(
             entry["error"] = f"none of the requested alphas are registered under zoo={zoo!r}"
             entry["wall_seconds"] = round(time.monotonic() - start, 2)
             return entry
+
+    alpha_ids, universe_excluded = _split_alphas_by_universe_support(reg, alpha_ids, universe)
+    if universe_excluded:
+        entry["universe_excluded"] = universe_excluded
+        logger.info(
+            "bench: %d alpha(s) excluded on %s — fund:* inputs need SEC US filings (sp500): %s",
+            len(universe_excluded),
+            universe,
+            ", ".join(universe_excluded[:10]),
+        )
+    if not alpha_ids:
+        entry["status"] = "error"
+        entry["error"] = (
+            f"all {len(universe_excluded)} selected alphas require SEC US filings "
+            f"(fund:* inputs); the {universe!r} universe cannot serve them. "
+            "Choose the S&P 500 universe."
+        )
+        entry["wall_seconds"] = round(time.monotonic() - start, 2)
+        return entry
 
     try:
         _validate_bench_data_requirements(reg, alpha_ids, universe)

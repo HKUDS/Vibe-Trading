@@ -699,6 +699,40 @@ def _validate_bench_data_requirements(registry: Any, alpha_ids: list[str], unive
     return columns
 
 
+def _split_alphas_by_universe_support(
+    registry: Any, alpha_ids: list[str], universe: str
+) -> tuple[list[str], list[str]]:
+    """Split the selection into (benchable, excluded) for this universe.
+
+    ``fund:*`` inputs are served from SEC US filings, which only the sp500
+    panel carries; on any other universe the declaring alphas are excluded
+    with disclosure instead of failing the whole bench — the mirror of the
+    sp500 path, where CN ``val:*`` alphas SkipAlpha cleanly on missing
+    columns. ``_validate_bench_data_requirements`` remains the backstop for
+    callers that bypass this split.
+
+    Args:
+        registry: Registry holding the selected factors.
+        alpha_ids: Factors selected for the bench.
+        universe: Requested stock universe.
+
+    Returns:
+        ``(kept, excluded)`` — alphas benchable on this universe, and alphas
+        excluded because they declare ``fund:*`` columns off sp500.
+    """
+    if universe == "sp500":
+        return list(alpha_ids), []
+    kept: list[str] = []
+    excluded: list[str] = []
+    for aid in alpha_ids:
+        columns = (registry.get(aid).meta or {}).get("columns_required", [])
+        if any(str(column).startswith("fund:") for column in columns):
+            excluded.append(aid)
+        else:
+            kept.append(aid)
+    return kept, excluded
+
+
 def _val_columns_required(registry: Any, alpha_ids: list[str], panel: dict) -> list[str]:
     """Collect declared ``val:*`` columns missing from the panel.
 
@@ -1192,6 +1226,25 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
             "error": "no alphas matched the selection (registry empty or filters too narrow)",
         }
 
+    alpha_ids, universe_excluded = _split_alphas_by_universe_support(registry, alpha_ids, universe)
+    if not alpha_ids:
+        return {
+            "status": "error",
+            "error": (
+                f"all {len(universe_excluded)} selected alphas require SEC US filings "
+                f"(fund:* inputs); the {universe!r} universe cannot serve them. "
+                "Choose the S&P 500 universe."
+            ),
+            "universe_excluded": universe_excluded,
+        }
+    if universe_excluded:
+        logger.info(
+            "alpha_bench: %d alpha(s) excluded on %s — fund:* inputs need SEC US filings (sp500): %s",
+            len(universe_excluded),
+            universe,
+            ", ".join(universe_excluded[:10]),
+        )
+
     # Load panel — W4 universe loader fetches constituents + OHLCV (+ amount, vwap).
     try:
         _validate_bench_data_requirements(registry, alpha_ids, universe)
@@ -1251,13 +1304,18 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     except OSError as exc:
         return {"status": "error", "error": f"failed to write report: {exc}"}
 
-    return {
+    envelope: dict[str, Any] = {
         "status": "ok",
         "report_path": str(report_path),
         "n_alphas_tested": len(results),
         "n_skipped": len(failures),
+        "horizon": horizon,
+        "forward_return_sampling": "non_overlapping" if horizon > 1 else "daily",
         "top": top,
     }
+    if universe_excluded:
+        envelope["universe_excluded"] = universe_excluded
+    return envelope
 
 
 class AlphaBenchTool(BaseTool):

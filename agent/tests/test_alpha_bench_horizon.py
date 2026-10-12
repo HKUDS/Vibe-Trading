@@ -423,3 +423,27 @@ def test_json_envelope_still_parses_with_horizon(
     assert start >= 0
     envelope = json.loads(out[start + 1 :])
     assert envelope["status"] == "ok"
+
+
+def test_json_envelope_discloses_horizon_and_exclusions(
+    capsys, monkeypatch: pytest.MonkeyPatch, _reg, _no_report
+) -> None:
+    import src.factors.bench_runner as legacy_mod
+
+    result = _legacy_result()
+    result.update(
+        {
+            "horizon": 21,
+            "forward_return_sampling": "non_overlapping",
+            "universe_excluded": ["fund_roa"],
+        }
+    )
+    monkeypatch.setattr(legacy_mod, "run_bench", lambda **kw: result)
+    rc = cli_handlers.cmd_alpha_bench(_ns(horizon=21))
+    assert rc == 0
+
+    out = capsys.readouterr().out
+    envelope = json.loads(out[out.find("\n{") + 1 :])
+    assert envelope["horizon"] == 21
+    assert envelope["forward_return_sampling"] == "non_overlapping"
+    assert envelope["universe_excluded"] == ["fund_roa"]
