@@ -18,6 +18,7 @@ __alpha_meta__ = {
     "decay_horizon": 252,
     "min_warmup_bars": 1,
     "notes": (
+        "Nonpositive multiples are excluded rather than ranked as cheap. "
         "Industry-neutralized inverse price-to-book: each name is z-scored "
         "against its Shenwan level-1 industry peers instead of the whole "
         "cross-section (sector tag from tushare index_member_all SW2021 "
@@ -41,4 +42,5 @@ __alpha_meta__ = {
 
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return within-industry z-scored inverse price-to-book."""
-    return -zscore_by_group(panel["val:pb"], panel["sector"])
+    values = panel["val:pb"]
+    return -zscore_by_group(values.where(values > 0), panel["sector"])

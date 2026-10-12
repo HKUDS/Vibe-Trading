@@ -235,3 +235,21 @@ def test_no_inf_on_degenerate_group_values(
 
     assert not np.isinf(arr).any()
     assert out.loc[_DATES[0], ["BANK1", "BANK2"]].isna().all()
+
+
+@pytest.mark.parametrize(
+    "stem,column",
+    [("pb_ind_neutral", "pb"), ("ps_ttm_ind_neutral", "ps_ttm")],
+)
+def test_nonpositive_multiples_are_not_ranked_as_cheap(stem: str, column: str) -> None:
+    """Mirrors the raw siblings' upstream guard: PB/PS <= 0 is excluded, never 'cheapest'."""
+    import importlib
+
+    mod = importlib.import_module(f"src.factors.zoo.fundamental.{stem}")
+    frame = pd.DataFrame([[-1.0, 0.0, 1.0, 2.0, 3.0]], columns=list("ABCDE"))
+    sector = pd.DataFrame([["G1"] * 5], columns=list("ABCDE"))
+
+    actual = mod.compute({f"val:{column}": frame, "sector": sector})
+
+    assert actual[["A", "B"]].isna().all().all()
+    np.testing.assert_allclose(actual[["C", "D", "E"]].to_numpy(), [[1.0, 0.0, -1.0]])
