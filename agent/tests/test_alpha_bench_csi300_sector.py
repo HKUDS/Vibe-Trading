@@ -149,6 +149,11 @@ def test_sector_attaches_with_pit_labels_and_meta_disclosure(
     assert sector.loc["2024-01-02", "600000.SH"] == "银行"
     assert sector.loc["2024-01-02", "000001.SZ"] == "非银金融"
     assert sector.loc["2024-01-02", "000002.SZ"] == "房地产"
+    # The original panel (the dict that was pickled into the cache) is never
+    # mutated: the attach adds keys to its own copy only.
+    assert "sector" not in panel
+    assert panel["_meta"]["sector_source"] is None
+    assert panel["_meta"]["sector_coverage"] == 0.0
     # Inherits the PIT membership mask: a label exists only where close does.
     assert (sector.notna() <= close.notna()).all().all()
     assert enriched["_meta"]["sector_source"] == "tushare index_member_all SW2021 L1"

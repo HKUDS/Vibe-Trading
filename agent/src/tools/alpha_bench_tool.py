@@ -811,7 +811,10 @@ def _attach_sector_column(enriched: dict, panel: dict, start: str, end: str) -> 
     align to the price panel and inherit its PIT membership mask through
     ``.where(close.notna())`` — the same trick the ``val:*`` attach uses.
     Attached here, not in ``_load_csi300_panel``, so the labels never enter
-    the pickled price-panel cache.
+    the pickled price-panel cache. ``sector_coverage`` in ``_meta`` is the
+    fraction of panel columns with at least one non-null label anywhere in
+    the window — per-date coverage can be lower; unlabelled cells stay NaN
+    through ``zscore_by_group``.
 
     Never raises: no token or a provider failure leaves the tag off (the
     loader degrades to an all-None frame; ``RuntimeError`` on a missing token

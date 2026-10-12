@@ -32,7 +32,10 @@ __alpha_meta__ = {
         "stays NaN and is excluded from that date's cross-section; an "
         "industry group with fewer than two labelled names cannot form a "
         "within-group z-score and stays NaN. Keyed by trade_date, so "
-        "PIT-safe by construction with no filing lag. Lineage: "
+        "PIT-safe by construction with no filing lag. Membership is "
+        "point-in-time but the SW2021 taxonomy itself is retroactive — a "
+        "name reclassified in 2021 carries its 2021 industry back through "
+        "history. Lineage: "
         "industry-neutral variant of fund_dividend_yield (#1789 follow-up)."
     ),
 }
