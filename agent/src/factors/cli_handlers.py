@@ -74,6 +74,21 @@ from src.factors.registry import Registry, RegistryError
 # We treat ``<repo>`` (and any subdirectory thereof) as the write-allow root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
+
+def _load_cli_env() -> None:
+    """Load dotenv values before a CLI path reads configuration.
+
+    The ``alpha`` dispatch path skips ``cli._legacy._ensure_cli_env``, so
+    ``alpha bench`` / ``alpha compare`` must load ``~/.vibe-trading/.env``
+    themselves before reading credentials.
+    """
+    try:
+        from src.providers.llm import _ensure_dotenv
+
+        _ensure_dotenv()
+    except Exception:
+        pass
+
 # Benchmarkable data universes: every name here must have a panel loader in
 # ``src.tools.alpha_bench_tool._UNIVERSE_TAG``. There is no KRX (or NSE/BSE)
 # panel yet, so Korea/India are deliberately absent — ``alpha bench`` would
@@ -546,6 +561,7 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
     stream Rich progress, then renders the HTML report via helpers imported
     from ``src.tools.alpha_bench_tool`` (we do NOT modify that module).
     """
+    _load_cli_env()
     try:
         if (
             getattr(args, "oos_split", None)
@@ -830,6 +846,7 @@ def cmd_alpha_compare(args: argparse.Namespace) -> int:
     restricted via ``run_bench(only=...)`` — so comparing three alphas does
     not bench all 191 in their zoo.
     """
+    _load_cli_env()
     try:
         reg = Registry()
         if getattr(args, "compare_all", False):
