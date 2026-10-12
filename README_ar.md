@@ -52,15 +52,18 @@
 
 > ⚠️ **تحذير أمني:** حساب X باسم `VibeTrading_HKU`، ومشروع Virtuals رقم `101845`، وعقد التوكن `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` كلّها غير رسمية ولا تتبع Vibe-Trading. لم نُطلق أو نؤيد مطلقًا أي توكن أو عملة ميم. لا تشترِ هذا التوكن، ولا تربط محفظتك، ولا توقّع أي شيء. [التفاصيل](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-12** 🧮 **تحديثات البحث والاختبار التاريخي**: تصحيح تنفيذ الافتتاح وإسناد الأداء عند التصفية ومدة التراجع وتسامح التقييم وتوقيت إفصاحات SEC في IC للعوامل ([#1780](https://github.com/HKUDS/Vibe-Trading/pull/1780)–[#1794](https://github.com/HKUDS/Vibe-Trading/pull/1794)). إضافة 13 عاملًا أساسيًا وللتقييم، وبيانات البرازيل واختباراتها، وقوالب ZimaOS بتفعيل اختياري، وتقدم التشغيل في Feishu. النطاق والقيود في [CHANGELOG](CHANGELOG.md).
+
+- **2026-10-11** 🛠️ **خمسة إصلاحات ذات أولوية**: تتطلب الأرقام المشتقة دليلًا لكل قيمة مستخدمة، وتبقى أوامر الخيارات الحية غير المدعومة محظورة. تحافظ المعايير دون اتصال على المصدر المحدد، وتميز سجلات التداول الإغلاق بلا ربح أو خسارة، وتحفظ أدوات Codex المعاملات الاختيارية ([#1622](https://github.com/HKUDS/Vibe-Trading/issues/1622)، [#1779](https://github.com/HKUDS/Vibe-Trading/pull/1779)، [#1781](https://github.com/HKUDS/Vibe-Trading/pull/1781)، [#1785](https://github.com/HKUDS/Vibe-Trading/pull/1785)).
+
 - **2026-10-10** 🛠️ **إعداد Slack وDiscord وبحث قابل لإعادة الإنتاج**: تتحقق النماذج المترجمة من بيانات اعتماد البوت دون حفظ التغييرات ([#1764](https://github.com/HKUDS/Vibe-Trading/pull/1764)، [#1777](https://github.com/HKUDS/Vibe-Trading/pull/1777)). يعيد بحث المحفظة استخدام لقطات ثابتة، وتصدّر واجهة الويب JSON دون بيانات اعتماد أو أرقام حسابات ([#1769](https://github.com/HKUDS/Vibe-Trading/pull/1769)). تذكر المؤشرات حد التاريخ وبصمة المدخلات؛ تُستعاد سجلات الجلسة التالفة دون إعادة كتابة الملفات الأصلية. أُصلح استرجاع الذاكرة وإخفاء بيانات الاعتماد والتعرف على سجل التداول. راجع [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary>أخبار سابقة</summary>
 
 - **2026-10-09** 🛠️ **إعدادات القنوات ودقة الاختبارات التاريخية**: تحافظ تحديثات الإعدادات دون إعادة الاتصال على بيانات اعتماد الروابط وعنوان خادم WeChat الناتج عن المصادقة، وتعرض الواجهة نتائج الحفظ وإعادة التشغيل بتسع لغات ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)، [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)، [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). يعتمد تقلب الخيارات عبر الأسواق على التوقيتات المعروفة عند كل شمعة فقط، ويشمل التراجع رأس المال الأولي. صُححت مسارات بيانات العملات الرقمية والمعادن الثمينة، وكشف تكرار أسهم هونغ كونغ، واستعادة الذاكرة المؤقتة، والمبالغ بالصيغة العلمية، والتحقق من قيم حقوق الملكية المفقودة. أُزيل mootdx من سلسلة أسهم A الافتراضية. تفاصيل طلبات الدمج الثلاثة عشر في [CHANGELOG](CHANGELOG.md).
 
 - **2026-10-08** 🔐 **حماية تقارير PDF وتصحيح قراءات الوسيط**: تدعم تقارير البريد المجدولة حماية اختيارية بكلمة مرور عبر AES-256 في الويب وCLI وتأكيدات الوكيل؛ تُحفظ كلمة المرور في إعدادات القناة الخاصة فقط ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). يستعلم KIS عن مسارات التداول الثلاثة ويجدد الرمز المنتهي صراحةً مرة واحدة ويرفض القراءة غير المكتملة ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). تُحفظ الصيغة الحسابية بعد الوصف مع استمرار التحقق من الأدلة ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
-
-
-<details>
-<summary>أخبار سابقة</summary>
 
 - **2026-10-07** 🛠️ **استمرارية البحث وتصحيح مقاييس المخاطر**: نُقلت حالة التشغيل خارج تعليمات النظام للحفاظ على بادئة ثابتة ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). صُححت محاذاة التواريخ بين الأسواق وعوائد الأسعار المفقودة وحساب Sortino للخيارات باستخدام العينة كاملةً ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710)، [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717)، [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). تشترك اختبارات مصادر البيانات في عقد OHLCV واحد، مع إصلاحات لتقييم الائتمان والتعرضات والتحقق الزمني وتشخيص التدقيق.
 
@@ -377,7 +380,7 @@ Vibe-Trading مساحة عمل بحثية مفتوحة المصدر تحول ا�
 | **تشغيل فرق محللين** | مراجعات بحث متعددة الوكلاء لتدفقات الاستثمار والكم والكريبتو والماكرو والمخاطر. |
 | **وصل الأبحاث بقنوات IM** | إدارة بيئة جلسة واحدة عبر WebSocket وTelegram وSlack وDiscord وMatrix وWhatsApp وSignal وQQ/NapCat وWeChat/WeCom وFeishu/Lark وDingTalk وTeams وemail وMochat من CLI وREST وWeb UI. |
 | **إنتاج مخرجات قابلة للاستخدام** | تقارير، وTradingView Pine Script، وTDX، وMetaTrader 5، وأدوات MCP، وجلسات بحث لاحقة. |
-| **bench ألفا zoo جاهزة** | تشغيل IC + IR + تصنيف alive/reversed/dead عبر 462 ألفا (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) بسطر أوامر واحد على universe الخاص بك. |
+| **bench ألفا zoo جاهزة** | تشغيل IC + IR + تصنيف alive/reversed/dead عبر 475 ألفا (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) بسطر أوامر واحد على universe الخاص بك. |
 | **رصد أنظمة الارتباط** | جدول زمني قائم على كثافة الحواف + التباطؤ (hysteresis) على واجهة `/correlation` يُظهر متى تندمج الأسواق في كتلة واحدة — سياق مخاطر وصفي، لا إشارة تداول. |
 
 ---
@@ -484,7 +487,7 @@ vibe-trading connector install /tmp/my-broker
 | `tickerall` | الفوركس / المعادن | مفتاح + حساب (للقراءة فقط) | تغذية MT5 لنفس الوسيط لكن **مستضافة** — دون طرفية محلية وعلى أي نظام تشغيل (بالاختيار الصريح فقط، ولا تدخل سلسلة auto أبدًا) |
 | `pykrx` | كوريا (KRX: KOSPI/KOSDAQ) | لا شيء | أشرطة يومية لـ KOSPI / KOSDAQ لرموز `.KS` / `.KQ` (إضافة `krx` اختيارية) |
 | `india_broker` | الهند (NSE/BSE) | تسجيل دخول الوسيط | قراءة فقط لأشرطة Zerodha / Shoonya / Dhan لرموز `.NS` / `.BO` (ذيل سلسلة التراجع) |
-| `b3_cotahist` | Brazil (B3) | none | official B3 COTAHIST daily bars for every listed instrument, read from the local store filled by `python -m src.br_data sync`; offline tail of the `.SA` chain |
+| `b3_cotahist` | Brazil (B3) | none | شموع B3 اليومية المحلية للسوق النقدي والكسور (خام، BRL)، عبر `python -m src.br_data sync`؛ مصدر بديل دون اتصال لـ `.SA` |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
 **سلاسل التراجع (بحسب خطر حظر عنوان IP):**
@@ -664,9 +667,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>462 ألفا كمّي جاهز عبر 5 families</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>475 ألفا كمّي جاهز عبر 5 families</sub></summary>
 
-- 🧬 462 ألفا cross-sectional، مع منع lookahead على طبقة العوامل (operators)
+- 🧬 475 ألفا cross-sectional، مع منع lookahead على طبقة العوامل (operators)
 - 📈 IC + IR + تصنيف alive/reversed/dead بأمر CLI واحد
 - 🔬 بوابة نقاء AST + اختبار حماية lookahead بـ 300 صف + قاطع شبكة عبر `pytest-socket`
 - 📦 إسناد Apache-2 لـ Qlib؛ ملف `LICENSE.md` لكل zoo يصرّح بأن الصيغ محتوى رياضي
@@ -974,7 +977,7 @@ Vibe-Trading وكيل كثيف الأدوات؛ المهارات والاختب�
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # استعرض 462 ألفا جاهز؛ متاح show / bench / compare / export-manifest
+vibe-trading alpha list    # استعرض 475 ألفا جاهز؛ متاح show / bench / compare / export-manifest
 vibe-trading playbook list # خمسة قوالب بحث مجدولة؛ متاح show / create
 vibe-trading channels status --local  # فحص إعدادات قنوات IM وتلميحات التثبيت
 vibe-trading provider doctor  # طباعة تشخيصات المزود/الوكيل/الحزم بعد إخفاء الأسرار
@@ -1728,7 +1731,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 462 ألفا عبر 5 families
+│   │   ├── factors/                # Alpha Zoo — 475 ألفا عبر 5 families
 │   │   │   ├── base.py             #   19 عاملاً (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   تحميل بيانات وصفية AST فقط + حساب كسول + بوابات سلامة
 │   │   │   ├── bench_runner.py     #   IC + تصنيف alive/reversed/dead
@@ -1811,7 +1814,7 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 | **Data Bridge** | أحضر بياناتك: موصلات CSV/Parquet/SQL محلية مع schema mapping | المُحمِّل المحلي شُحن |
 | **Options Lab** | سطح تقلب، ولوحة Greeks، ومستكشف payoff/scenario | مخطط |
 | **Portfolio Studio** | أشعة مخاطر، وقيود، ومحسن يراعي الدوران، وملاحظات إعادة توازن | محسن يراعي الدوران **تم الإطلاق 0.1.11**؛ الباقي مخطط |
-| **Alpha Zoo** | 462 ألفا كمّي جاهز (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental)، سطر أوامر واحد للـ bench، تكامل agent، وواجهة Web | **تم الإطلاق 0.1.8**، موسّع حتى 0.1.12 |
+| **Alpha Zoo** | 475 ألفا كمّي جاهز (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental)، سطر أوامر واحد للـ bench، تكامل agent، وواجهة Web | **تم الإطلاق 0.1.8**، موسّع حتى 0.1.12 |
 | **Strategy Development Manager** | تسجيل الأوراق البحثية / أبحاث الوسطاء كعوامل واستراتيجيات مع مخزن دائم + دورة حياة آلية لاضمحلال IC/Sharpe | **تم الإطلاق 0.1.11** |
 | **Correlation Regime** | جدول زمني لنظام الارتباط قائم على كثافة الحواف + التباطؤ (hysteresis) فوق `/correlation` — رصد متى تندمج الأسواق في كتلة واحدة | **تم الإطلاق 0.1.12** |
 | **Research Delivery** | موجزات مجدولة وجلسات بحث حي عبر Slack / Telegram / قنوات IM شبيهة بالبريد | المُجدوِل + IM Runtime شُحنا |

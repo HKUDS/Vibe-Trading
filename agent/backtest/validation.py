@@ -400,9 +400,11 @@ def _load_trades(run_dir: Path) -> List[TradeRecord]:
     if df.empty:
         return []
 
-    # trades.csv has entry+exit row pairs; extract exit rows (they have pnl != 0)
+    # New artifacts identify exits explicitly, including break-even trades.
+    # Unmarked historical/other-engine files retain their legacy convention.
     trades = []
-    exit_rows = df[df["pnl"] != 0].reset_index(drop=True)
+    exit_mask = df["event"].eq("exit") if "event" in df.columns else df["pnl"].ne(0)
+    exit_rows = df[exit_mask].reset_index(drop=True)
     for _, row in exit_rows.iterrows():
         hold = pd.to_numeric(row.get("holding_bars"), errors="coerce")
         if pd.isna(hold):

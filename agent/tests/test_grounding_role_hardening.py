@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 from src.agent.grounding import GroundingLedger
+from tests.grounding_parameter_helpers import declared_parameter
 from src.agent.grounding.evidence import _metric_kind_for_path
 from src.agent.grounding.policies import _note_tokens
 
@@ -232,16 +233,19 @@ def test_an_added_operand_must_be_observed(tmp_path: Path, prose: str, row: str)
 
 
 @pytest.mark.parametrize(
-    ("prose", "row"),
+    ("prose", "row", "parameter"),
     [
-        ("第一档 0.646 元。", "0.646 | derived | 0.666 × 0.97 | c1"),
-        ("第一档 0.646 元。", "0.646 | derived | 0.666 × (1 − 0.03) | c1"),
-        ("较高点回撤 36.8%。", "36.8% | derived | (0.666 − 1.053) / 1.053 | c1"),
-        ("中枢 0.860 元。", "0.860 | derived | (0.666 + 1.053) / 2 | c1"),
+        ("第一档 0.646 元。", "0.646 | derived | 0.666 × 0.97 | c1", "97%"),
+        ("第一档 0.646 元。", "0.646 | derived | 0.666 × (1 − 0.03) | c1", "3%"),
+        ("较高点回撤 36.8%。", "36.8% | derived | (0.666 − 1.053) / 1.053 | c1", None),
+        ("中枢 0.860 元。", "0.860 | derived | (0.666 + 1.053) / 2 | c1", "2"),
     ],
 )
-def test_observed_sums_and_free_multipliers_still_derive(tmp_path: Path, prose: str, row: str) -> None:
-    result = _ledger(tmp_path, MARKET_A).validate_final_answer(HDR + " " + prose + _block(ROW, row))
+def test_observed_sums_and_declared_multipliers_still_derive(
+    tmp_path: Path, prose: str, row: str, parameter: str | None
+) -> None:
+    chosen = declared_parameter(parameter) if parameter is not None else ""
+    result = _ledger(tmp_path, MARKET_A).validate_final_answer(HDR + chosen + " " + prose + _block(ROW, row))
 
     assert result.valid is True, result.issues
 
@@ -256,7 +260,7 @@ def test_observed_sums_and_free_multipliers_still_derive(tmp_path: Path, prose: 
 )
 def test_a_percentage_factor_and_a_return_ratio_are_not_offsets(tmp_path: Path, prose: str, row: str) -> None:
     result = _ledger(tmp_path, MARKET_B, message=f"分析 {B}").validate_final_answer(
-        HDR_B + " " + prose + _block(ROW_B, row)
+        HDR_B + declared_parameter("3%") + " " + prose + _block(ROW_B, row)
     )
 
     assert result.valid is True, result.issues
@@ -266,8 +270,8 @@ def test_a_derived_result_is_compared_at_the_prose_precision(tmp_path: Path) -> 
     """A declaration written coarser than the prose cannot widen the band."""
     ledger = _ledger(tmp_path, MARKET_A)
 
-    coarse = ledger.validate_final_answer(HDR + " 目标价 1.00 元。" + _block(ROW, "1 | derived | 0.666 × 0.9 | c1"))
-    exact = ledger.validate_final_answer(HDR + " 目标价 0.60 元。" + _block(ROW, "0.6 | derived | 0.666 × 0.9 | c1"))
+    coarse = ledger.validate_final_answer(HDR + declared_parameter("90%") + " 目标价 1.00 元。" + _block(ROW, "1 | derived | 0.666 × 0.9 | c1"))
+    exact = ledger.validate_final_answer(HDR + declared_parameter("90%") + " 目标价 0.60 元。" + _block(ROW, "0.6 | derived | 0.666 × 0.9 | c1"))
 
     assert _reasons(coarse) == ["derivation_result_mismatch"]
     assert exact.valid is True, exact.issues
@@ -357,7 +361,7 @@ def test_a_percent_is_never_a_proposed_level(tmp_path: Path, row: str) -> None:
 
 def test_the_same_percent_declared_derived_passes(tmp_path: Path) -> None:
     result = _ledger(tmp_path, MARKET_A).validate_final_answer(
-        HDR + " 建议仓位 30%。" + _block(ROW, "30% | derived | 0.666 × 0.45 | c1")
+        HDR + declared_parameter("45%") + " 建议仓位 30%。" + _block(ROW, "30% | derived | 0.666 × 0.45 | c1")
     )
 
     assert result.valid is True, result.issues
@@ -986,7 +990,7 @@ def test_a_money_figure_is_derived_from_money(
     ],
 )
 def test_a_price_discount_and_a_drawdown_still_derive(tmp_path: Path, prose: str, row: str) -> None:
-    result = _ledger(tmp_path, MARKET_A).validate_final_answer(HDR + prose + _block(ROW, row))
+    result = _ledger(tmp_path, MARKET_A).validate_final_answer(HDR + declared_parameter("97%") + prose + _block(ROW, row))
 
     assert result.valid is True, result.issues
 

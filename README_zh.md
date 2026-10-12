@@ -52,15 +52,18 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
+- **2026-10-12** 🧮 **研究与回测更新**：修正开仓成交、清仓时归因、回撤时长、估值容差及因子 IC 的 SEC 财报可见时点（[#1780](https://github.com/HKUDS/Vibe-Trading/pull/1780)–[#1794](https://github.com/HKUDS/Vibe-Trading/pull/1794)）。新增 13 个基本面／估值因子、巴西数据与回测、需显式启用的 ZimaOS 模板，以及飞书运行进度。范围与数据限制见 [CHANGELOG](CHANGELOG.md)。
+
+- **2026-10-11** 🛠️ **五项优先修复**：派生数字的每个数据操作数都须有证据，不支持的实盘期权继续拦截。离线基准保持指定数据源，交易记录区分零盈亏平仓，Codex 工具保留可选参数（[#1622](https://github.com/HKUDS/Vibe-Trading/issues/1622)、[#1779](https://github.com/HKUDS/Vibe-Trading/pull/1779)、[#1781](https://github.com/HKUDS/Vibe-Trading/pull/1781)、[#1785](https://github.com/HKUDS/Vibe-Trading/pull/1785)）。
+
 - **2026-10-10** 🛠️ **Slack/Discord 配置与可复现研究**：本地化配置表单可测试机器人凭证，测试不会保存改动（[#1764](https://github.com/HKUDS/Vibe-Trading/pull/1764)、[#1777](https://github.com/HKUDS/Vibe-Trading/pull/1777)）。组合研究可复用不可变快照，Web 可导出脱敏 JSON（[#1769](https://github.com/HKUDS/Vibe-Trading/pull/1769)）。技术指标报告日期边界和输入指纹；损坏的会话记录可恢复且不重写原文件。另修复记忆召回、凭证脱敏和交易流水格式识别。详见 [CHANGELOG](CHANGELOG.md)。
+
+<details>
+<summary>更早的新闻</summary>
 
 - **2026-10-09** 🛠️ **渠道设置与回测修正**：原地更新渠道设置时保留 URL 内嵌凭证和微信认证后的服务地址，Web 以九种语言说明保存与重启结果（[#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737)、[#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742)、[#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)）。跨市场期权波动率仅使用截至当前时点的时间戳，回撤纳入初始资金。修正加密货币／贵金属数据源路由、港股重复识别、缓存恢复、科学计数金额解析及缺失净值验证；mootdx 移出默认 A 股链。全部十三项 PR 见 [CHANGELOG](CHANGELOG.md)。
 
 - **2026-10-08** 🔐 **PDF 报告密码保护与券商读取修复**：定时邮件 PDF 可选 AES-256 密码保护，覆盖 Web、CLI 模板和 Agent 确认入口；密码只保存在渠道私有配置中（[#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)）。KIS 读取三个交易场所的订单，明确过期的 token 只刷新一次，不完整的读取返回错误（[#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)）。派生公式保留说明标签之后的完整算式，证据核验规则保持不变（[#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)）。
-
-
-<details>
-<summary>更早的新闻</summary>
 
 - **2026-10-07** 🛠️ **研究连续性与风险指标修正**：运行状态移出系统提示词，保留稳定前缀以利于缓存（[#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)）。跨市场日期正确对齐，缺失价格不再拼接跨期收益，期权 Sortino 按全样本计算下行偏差（[#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710)、[#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717)、[#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)）。数据源测试共用 OHLCV 契约，并修正信用估值、风格敞口、滚动验证和审计诊断。
 
@@ -376,7 +379,7 @@ Vibe-Trading 是一个开源研究工作台，用于把金融问题转化为可�
 | **运行分析师团队** | 面向投资、量化、加密、宏观和风控工作流的多智能体研究评审。 |
 | **把研究接入 IM 通道** | 通过 WebSocket、Telegram、Slack、Discord、Matrix、WhatsApp、Signal、QQ/NapCat、微信/企业微信、飞书/Lark、钉钉、Teams、email、Mochat，在 CLI、REST 和 Web UI 中管理同一套 session runtime。 |
 | **交付可用成果** | 报告、TradingView Pine Script、TDX、MetaTrader 5、MCP tools，以及可延续的研究 sessions。 |
-| **跑预置 alpha zoo 横评** | 462 个 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental），一行 CLI 在你选的 universe 上算 IC + IR + alive/reversed/dead 分类 |
+| **跑预置 alpha zoo 横评** | 475 个 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental），一行 CLI 在你选的 universe 上算 IC + IR + alive/reversed/dead 分类 |
 | **识别相关性状态** | `/correlation` 界面上的边密度 + 迟滞时间线，显示市场何时融合为一个板块——属于描述性风险上下文，而非交易信号。 |
 
 ---
@@ -499,7 +502,7 @@ vibe-trading connector install /tmp/my-broker
 | `tickerall` | 外汇 / 贵金属 | key + 账户（只读） | 同一家券商的 MT5 数据源，**托管** —— 无需本地终端，任意操作系统（仅显式选用，绝不进 auto 链） |
 | `pykrx` | 韩国（KRX：KOSPI/KOSDAQ） | 无 | `.KS` / `.KQ` 的 KOSPI / KOSDAQ 日线（可选 `krx` extra） |
 | `india_broker` | 印度（NSE/BSE） | 券商登录 | 只读 Zerodha / Shoonya / Dhan bars，服务 `.NS` / `.BO`（fallback 链尾） |
-| `b3_cotahist` | Brazil (B3) | none | official B3 COTAHIST daily bars for every listed instrument, read from the local store filled by `python -m src.br_data sync`; offline tail of the `.SA` chain |
+| `b3_cotahist` | Brazil (B3) | none | 本地 B3 官方现货／零股日线（原始价格、BRL），由 `python -m src.br_data sync` 导入；`.SA` 的离线后备源 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
 **Fallback 链（按被封 IP 风险排序）：**
@@ -677,9 +680,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>462 个预置 alpha，覆盖 5 个家族</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>475 个预置 alpha，覆盖 5 个家族</sub></summary>
 
-- 🧬 462 个横截面 alpha，算子层即禁用 lookahead
+- 🧬 475 个横截面 alpha，算子层即禁用 lookahead
 - 📈 一条 CLI 命令完成 IC + IR + alive/reversed/dead 分类
 - 🔬 AST 纯函数门禁 + 300 行 lookahead 哨兵测试 + `pytest-socket` 网络阻断
 - 📦 Qlib 部分附 Apache-2 出处声明；每个 zoo 一份 `LICENSE.md`，声明公式属于数学内容
@@ -984,7 +987,7 @@ Vibe-Trading 是高度依赖工具的智能体：skills、backtests、memory 和
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # 浏览 462 个预置 alpha；支持 show / bench / compare / export-manifest 子命令
+vibe-trading alpha list    # 浏览 475 个预置 alpha；支持 show / bench / compare / export-manifest 子命令
 vibe-trading playbook list # 五个定时研究模板；支持 show / create 子命令
 vibe-trading channels status --local  # 检查 IM 通道配置和依赖安装提示
 vibe-trading provider doctor  # 打印脱敏后的 provider/proxy/依赖诊断
@@ -1731,7 +1734,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo 网络搜索
 │   │   │   └── ...                 #   bash、文件 I/O、因子分析、期权、alpha 浏览 + 横评等
 │   │   │
-│   │   ├── factors/                # Alpha Zoo —— 5 个家族共 462 个 alpha
+│   │   ├── factors/                # Alpha Zoo —— 5 个家族共 475 个 alpha
 │   │   │   ├── base.py             #   19 个算子（rank/scale/ts_*/delta/decay_linear/safe_div/vwap）
 │   │   │   ├── registry.py         #   纯 AST 元数据加载 + 惰性计算 + sanity 校验
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 分类
@@ -1814,7 +1817,7 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 | **Data Bridge** | 自带数据：本地 CSV/Parquet/SQL connectors 与 schema mapping | 本地加载器已发布 |
 | **Options Lab** | Vol surface、Greeks dashboard、payoff/scenario explorer | Planned |
 | **Portfolio Studio** | Risk x-ray、constraints、turnover-aware optimizer、rebalance notes | Turnover-aware optimizer **已发布 0.1.11**；其余 Planned |
-| **Alpha Zoo** | 462 个预置 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental），一行 CLI 跑横评，agent 集成，Web UI 浏览 | **已发布 0.1.8**，延续至 0.1.12 |
+| **Alpha Zoo** | 475 个预置 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental），一行 CLI 跑横评，agent 集成，Web UI 浏览 | **已发布 0.1.8**，延续至 0.1.12 |
 | **Strategy Development Manager** | 把论文 / 券商研报注册为因子与策略，配持久化 store + 自动化 IC/Sharpe 衰减生命周期 | **已发布 0.1.11** |
 | **Correlation Regime** | 叠加在 `/correlation` 上的边密度 + 迟滞状态时间线——识别市场何时融合为一个板块 | **已发布 0.1.12** |
 | **Research Delivery** | 通过 Slack / Telegram / email-style IM channels 发送定时 briefs 与实时研究 sessions | 调度器 + IM Runtime 已发布 |

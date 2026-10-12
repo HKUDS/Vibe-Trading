@@ -93,8 +93,35 @@ def _base() -> dict[str, np.ndarray]:
     volume = rng.integers(1000, 50000, (_T, _N)).astype(float)
     vwap = (high + low + 2 * close) / 4.0
     base = {"close": close, "open": open_, "high": high, "low": low, "volume": volume, "vwap": vwap}
-    # Drawn last so the price arrays above stay what they were.
-    for name in ("fund:asset_growth", "fund:net_income", "fund:shares_diluted", "fund:gross_profitability", "fund:roe"):
+    # Drawn last so the price arrays above stay what they were. The original
+    # five keep their draw order (identical values); the remaining schema
+    # fields are appended so every fundamental alpha's declared dependencies
+    # are present and the oracles actually exercise it instead of SkipAlpha.
+    for name in (
+        "fund:asset_growth",
+        "fund:net_income",
+        "fund:shares_diluted",
+        "fund:gross_profitability",
+        "fund:roe",
+        "fund:revenue",
+        "fund:cogs",
+        "fund:gross_profit",
+        "fund:operating_income",
+        "fund:total_assets",
+        "fund:total_equity",
+        "fund:total_debt",
+        "fund:cash",
+        "fund:cfo",
+        "fund:capex",
+        "fund:roa",
+        "fund:accruals",
+        "fund:leverage",
+        "fund:revenue_growth",
+        "fund:earnings_growth",
+        "val:pb",
+        "val:ps_ttm",
+        "val:dv_ttm",
+    ):
         base[name] = rng.integers(32, 96, (_T, _N)) / 64.0
     return base
 

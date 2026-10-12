@@ -59,6 +59,7 @@ _VALID_INTERVALS = {"1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"}
 _VALID_ENGINES = {"daily", "options"}
 _PRICE_PANEL_COLUMNS = ("open", "high", "low", "close", "volume", "vwap", "amount")
 _FUND_PREFIX = "fund:"
+_VAL_PREFIX = "val:"
 
 
 @dataclass(frozen=True)
@@ -1039,6 +1040,26 @@ def _fund_columns_required(selected_factors: Iterable[Any]) -> list[str]:
     return out
 
 
+def _val_columns_required(selected_factors: Iterable[Any]) -> list[str]:
+    """Collect requested ``val:*`` panel columns from selected factors.
+
+    Args:
+        selected_factors: Factor metadata/spec objects.
+
+    Returns:
+        Stable, de-duplicated ``val:*`` column names.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for spec in selected_factors:
+        for column in _columns_required_from_factor_spec(spec):
+            if not column.startswith(_VAL_PREFIX) or column in seen:
+                continue
+            seen.add(column)
+            out.append(column)
+    return out
+
+
 def _build_price_panel(data_map: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     """Convert ``code -> OHLCV frame`` rows into the factor panel shape.
 
@@ -1140,6 +1161,85 @@ def _inject_fundamental_panel(
     return panel
 
 
+def _inject_valuation_panel(
+    panel: dict[str, pd.DataFrame],
+    *,
+    symbols: list[str],
+    val_columns: Iterable[str],
+    start: str,
+    end: str,
+    index: pd.DatetimeIndex | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Inject required ``val:*`` daily valuation fields into a factor panel.
+
+    Source is tushare ``daily_basic`` (CN A-share only): daily market data
+    keyed by ``trade_date``, so PIT-safe by construction — no filing lag.
+    Non-CN symbols and missing dates stay NaN; nothing is fabricated, and
+    factors declaring ``val:`` columns SkipAlpha or NaN-out naturally where
+    there is no CN supply.
+
+    Args:
+        panel: Existing factor panel keyed by column name.
+        symbols: Symbols to load.
+        val_columns: Requested ``val:*`` columns.
+        start: Start date string.
+        end: End date string.
+        index: Optional price index to align to. Defaults to ``panel["close"]``.
+
+    Returns:
+        The same panel dictionary with ``val:<field>`` frames added.
+
+    Raises:
+        ValueError: If a declared ``val:`` field is outside the daily_basic
+            whitelist (pe, pe_ttm, pb, ps_ttm, dv_ttm).
+    """
+    fields = [column[len(_VAL_PREFIX):] for column in val_columns if column.startswith(_VAL_PREFIX)]
+    fields = list(dict.fromkeys(fields))
+    if not fields:
+        return panel
+
+    from backtest.loaders.valuation_loader import (
+        load_valuation_panel,
+        validate_valuation_fields,
+    )
+
+    # Whitelist rejection is a caller-fixable contract error, so it must
+    # propagate rather than degrade into NaN frames like a provider outage.
+    fields = validate_valuation_fields(fields)
+
+    price_index = index
+    if price_index is None:
+        close = panel.get("close")
+        price_index = close.index if close is not None else pd.DatetimeIndex([])
+
+    try:
+        loaded = load_valuation_panel(
+            symbols=symbols,
+            fields=fields,
+            start=start,
+            end=end,
+            index=price_index,
+        )
+    except Exception as exc:  # noqa: BLE001 - data-source failure must not kill backtest
+        logger.warning(
+            "valuation panel load failed for fields=%s symbols=%s: %s; injecting NaN frames",
+            fields,
+            symbols,
+            exc,
+            exc_info=True,
+        )
+        loaded = {}
+
+    for field in fields:
+        frame = loaded.get(field)
+        if not isinstance(frame, pd.DataFrame):
+            frame = _nan_fundamental_frame(price_index, symbols)
+        else:
+            frame = frame.reindex(index=price_index, columns=symbols)
+        panel[f"{_VAL_PREFIX}{field}"] = frame
+    return panel
+
+
 def _project_panel_fields_to_data_map(
     data_map: dict[str, pd.DataFrame],
     panel: dict[str, pd.DataFrame],
@@ -1163,28 +1263,41 @@ def _maybe_inject_fundamentals_for_factor_panel(
     data_map: dict[str, pd.DataFrame],
     config: dict,
 ) -> dict[str, pd.DataFrame]:
-    """Inject ``fund:*`` factor dependencies when selected factors request them."""
+    """Inject ``fund:*``/``val:*`` factor dependencies when selected factors request them."""
     selected_factors = _selected_factor_specs(config)
     fund_columns = _fund_columns_required(selected_factors)
-    if not fund_columns:
+    val_columns = _val_columns_required(selected_factors)
+    if not fund_columns and not val_columns:
         return data_map
 
     panel = _build_price_panel(data_map)
     close = panel.get("close")
     price_index = close.index if close is not None else pd.DatetimeIndex([])
     symbols = list(data_map)
-    _inject_fundamental_panel(
-        panel,
-        symbols=symbols,
-        fund_columns=fund_columns,
-        start=config.get("start_date", ""),
-        end=config.get("end_date", ""),
-        freq="ttm",
-        pit=True,
-        source="auto",
-        index=price_index,
+    if fund_columns:
+        _inject_fundamental_panel(
+            panel,
+            symbols=symbols,
+            fund_columns=fund_columns,
+            start=config.get("start_date", ""),
+            end=config.get("end_date", ""),
+            freq="ttm",
+            pit=True,
+            source="auto",
+            index=price_index,
+        )
+    if val_columns:
+        _inject_valuation_panel(
+            panel,
+            symbols=symbols,
+            val_columns=val_columns,
+            start=config.get("start_date", ""),
+            end=config.get("end_date", ""),
+            index=price_index,
+        )
+    return _project_panel_fields_to_data_map(
+        data_map, panel, [*fund_columns, *val_columns]
     )
-    return _project_panel_fields_to_data_map(data_map, panel, fund_columns)
 
 
 # --- Main entry ---
@@ -1307,8 +1420,17 @@ def main(run_dir: Path) -> None:
 
     # Every source has already been fetched, sanitized, and enriched above.
     # Reuse that exact snapshot so provider costs and run-card provenance stay
-    # aligned with the data consumed by the engine.
-    loader = _AutoLoader(data_map)
+    # aligned with the data consumed by the engine. A source that prohibits
+    # fallback keeps its own loader behind the snapshot: a declared benchmark
+    # is usually outside ``codes``, but must still come from that same source.
+    if is_no_network_fallback_source(source):
+        loader = _AutoLoader(
+            data_map,
+            inner=loader,
+            name=str(getattr(loader, "name", None) or source),
+        )
+    else:
+        loader = _AutoLoader(data_map)
 
     if engine_type == "options":
         from backtest.engines.options_portfolio import run_options_backtest
@@ -1965,14 +2087,68 @@ def _sanitize_data_map(data_map: dict) -> dict:
 
 
 class _AutoLoader:
-    """Loader adapter that returns a pre-fetched data map."""
+    """Loader adapter that returns a pre-fetched data map.
 
-    def __init__(self, data_map: dict):
+    With an ``inner`` loader, symbols outside the snapshot are fetched through
+    it, and ``name`` reports that loader's source so benchmark resolution can
+    tell the adapter apart from a network loader swapped in by a fallback.
+    """
+
+    def __init__(
+        self,
+        data_map: dict,
+        inner: Any = None,
+        name: str | None = None,
+    ) -> None:
+        """Wrap a fetched snapshot.
+
+        Args:
+            data_map: ``code -> DataFrame`` snapshot already consumed by the run.
+            inner: Loader that served the snapshot; consulted only for symbols
+                the snapshot does not hold. ``None`` serves the snapshot alone.
+            name: Source name of ``inner``. When ``None`` the adapter exposes no
+                ``name``: a bare snapshot does not stand for any one source.
+        """
         self._data = data_map
+        self._inner = inner
+        if name is not None:
+            self.name = name
 
-    def fetch(self, codes, start_date, end_date, fields=None, interval="1D"):
-        """Return preloaded rows for requested codes."""
-        return {c: df for c, df in self._data.items() if c in codes}
+    def fetch(
+        self,
+        codes: List[str],
+        start_date: str,
+        end_date: str,
+        fields: Optional[List[str]] = None,
+        interval: str = "1D",
+    ) -> dict:
+        """Return snapshot rows, fetching symbols it lacks through ``inner``.
+
+        Frames from ``inner`` go through the same OHLC sanitisation as the
+        snapshot, so a benchmark is held to the bar quality the strategy was.
+
+        Args:
+            codes: Requested symbols.
+            start_date: Window start, passed through to ``inner``.
+            end_date: Window end, passed through to ``inner``.
+            fields: Extra fields, passed through to ``inner``.
+            interval: Bar interval, passed through to ``inner``.
+
+        Returns:
+            ``code -> DataFrame`` for every requested symbol that could be served.
+        """
+        served = {c: df for c, df in self._data.items() if c in codes}
+        missing = [c for c in codes if c not in served]
+        if missing and self._inner is not None:
+            source = str(getattr(self, "name", "") or "")
+            requested = _normalize_codes(missing, source)
+            fetched = self._inner.fetch(
+                requested, start_date, end_date, fields=fields, interval=interval
+            )
+            if isinstance(fetched, dict):
+                restored = _restore_original_codes(fetched, missing, requested)
+                served.update(_sanitize_data_map(restored))
+        return served
 
 
 if __name__ == "__main__":

@@ -1031,10 +1031,12 @@ class _EvidenceMixin:
         arguments: Mapping[str, Any],
         payload: dict[str, Any] | None,
         call_id: str,
+        *,
+        tool_name: str = "get_market_data",
     ) -> None:
         """Convert full OHLCV payloads into source-linked evidence rows."""
         if payload is None:
-            self._record_tool_failure("get_market_data", call_id, "malformed JSON result")
+            self._record_tool_failure(tool_name, call_id, "malformed JSON result")
             return
         requested_source = str(arguments.get("source") or "auto")
         provenance = payload.get("_provenance")
@@ -1081,7 +1083,7 @@ class _EvidenceMixin:
                     self._evidence.append(
                         EvidenceRecord(
                             call_id=call_id,
-                            tool="get_market_data",
+                            tool=tool_name,
                             symbol=symbol,
                             source=actual_source,
                             timestamp=timestamp,
@@ -1100,7 +1102,7 @@ class _EvidenceMixin:
                 self._evidence.append(
                     EvidenceRecord(
                         call_id=call_id,
-                        tool="get_market_data",
+                        tool=tool_name,
                         symbol=symbol,
                         source=requested_source,
                         timestamp=None,

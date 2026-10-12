@@ -25,6 +25,9 @@ shape. The ticker->CIK table is fetched once per process and memoized.
 from __future__ import annotations
 
 import logging
+import json
+from copy import deepcopy
+from pathlib import Path
 import threading
 from typing import Any, Dict, Optional
 
@@ -224,7 +227,31 @@ def get_company_facts(cik: str | int) -> Dict[str, Any]:
         ValueError: If ``cik`` contains no digits.
         requests.RequestException: On a non-2xx status or undecodable body.
     """
-    return _sec_get_json(_COMPANY_FACTS_URL.format(cik=_pad_cik(cik)))
+    padded = _pad_cik(cik)
+    facts = _sec_get_json(_COMPANY_FACTS_URL.format(cik=padded))
+    # Resolve current filings through the SEC table; only the facts history is
+    # extended. Never redirect submissions or discard the successor's filings.
+    lineage = json.loads(Path(__file__).with_name("sec_filer_lineage.json").read_text())
+    predecessors = lineage.get(padded, [])
+    if not predecessors:
+        return facts
+    merged = deepcopy(facts)
+    for predecessor in predecessors:
+        old = _sec_get_json(_COMPANY_FACTS_URL.format(cik=predecessor["cik"]))
+        for namespace, concepts in old.get("facts", {}).items():
+            target = merged.setdefault("facts", {}).setdefault(namespace, {})
+            for concept, node in concepts.items():
+                for unit, rows in node.get("units", {}).items():
+                    # Post-reorganization subsidiary reports need not describe
+                    # the consolidated public company. Admit pre-change filings
+                    # only; keep their original dates for PIT extraction.
+                    eligible = [row for row in rows if row.get("filed")
+                                and row["filed"] < predecessor["before"]]
+                    if not eligible:
+                        continue
+                    destination = target.setdefault(concept, {"units": {}})
+                    destination.setdefault("units", {}).setdefault(unit, []).extend(eligible)
+    return merged
 
 
 def _reset_ticker_cache_for_tests() -> None:

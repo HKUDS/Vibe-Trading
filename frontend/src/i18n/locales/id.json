@@ -1049,7 +1049,7 @@
       "noMarkets": "Belum ada sumber data market yang terdaftar.",
       "howItWorksTitle": "Cara kerjanya",
       "howItWorks": "Untuk simbol yang terdeteksi otomatis, sumber dicoba dari atas ke bawah; jika satu sumber gagal, sumber berikutnya akan dicoba. Perubahan langsung berlaku setelah disimpan — tidak perlu restart.",
-      "caliberCaveat": "Catatan Caliber: sumber memiliki basis penyesuaian yang berbeda — misalnya Yahoo menyediakan OHLC mentah (tanpa penyesuaian), sedangkan Tencent/Eastmoney/Tushare/BaoStock menyediakan harga yang sudah disesuaikan — sehingga perubahan urutan sumber dapat mengubah hasil backtest.",
+      "caliberCaveat": "Penyesuaian harga dapat berbeda antar sumber. Periksa informasi penyesuaian, asal data, dan peringatan laporan; mengubah urutan sumber dapat mengubah hasil backtest.",
       "markets": {
         "a_share": "A-Shares (China)",
         "us_equity": "Saham AS",

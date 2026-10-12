@@ -53,15 +53,18 @@
 
 > ⚠️ **Peringatan keamanan:** Akun X `VibeTrading_HKU`, proyek Virtuals `101845`, dan kontrak token `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` bukan aset resmi Vibe-Trading. Kami tidak pernah meluncurkan atau mendukung token maupun memecoin apa pun. Jangan membeli, menghubungkan wallet, atau menandatangani apa pun. [Detail](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-12** 🧮 **Pembaruan riset dan backtest**: memperbaiki eksekusi pembukaan, atribusi saat likuidasi, durasi drawdown, toleransi valuasi, dan waktu laporan SEC dalam IC faktor ([#1780](https://github.com/HKUDS/Vibe-Trading/pull/1780)–[#1794](https://github.com/HKUDS/Vibe-Trading/pull/1794)). Menambahkan 13 faktor fundamental/valuasi, data dan backtest Brasil, templat ZimaOS dengan aktivasi eksplisit, serta progres Feishu. Cakupan dan batasan ada di [CHANGELOG](CHANGELOG.md).
+
+- **2026-10-11** 🛠️ **Lima perbaikan prioritas**: setiap nilai data dalam perhitungan turunan memerlukan bukti; opsi perdagangan riil yang belum didukung tetap diblokir. Benchmark luring mempertahankan sumber pilihan, catatan membedakan penutupan impas, dan alat Codex mempertahankan argumen opsional ([#1622](https://github.com/HKUDS/Vibe-Trading/issues/1622), [#1779](https://github.com/HKUDS/Vibe-Trading/pull/1779), [#1781](https://github.com/HKUDS/Vibe-Trading/pull/1781), [#1785](https://github.com/HKUDS/Vibe-Trading/pull/1785)).
+
 - **2026-10-10** 🛠️ **Pengaturan Slack/Discord dan riset yang dapat direproduksi**: Formulir terjemahan memverifikasi kredensial bot tanpa menyimpan perubahan ([#1764](https://github.com/HKUDS/Vibe-Trading/pull/1764), [#1777](https://github.com/HKUDS/Vibe-Trading/pull/1777)). Riset portofolio dapat memakai ulang snapshot yang tidak berubah; Web mengekspor JSON tanpa data sensitif ([#1769](https://github.com/HKUDS/Vibe-Trading/pull/1769)). Indikator mencatat batas tanggal dan sidik data masukan. Catatan sesi rusak dipulihkan tanpa menulis ulang berkas asli. Pencarian memori, penyamaran kredensial, dan impor transaksi juga diperbaiki. Lihat [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary>Berita sebelumnya</summary>
 
 - **2026-10-09** 🛠️ **Pengaturan kanal dan perbaikan backtest**: Pembaruan tanpa menyambungkan ulang mempertahankan kredensial URL dan alamat server WeChat hasil autentikasi; web menjelaskan hasil penyimpanan dan mulai ulang dalam sembilan bahasa ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). Volatilitas opsi lintas pasar hanya memakai waktu yang sudah diketahui pada setiap bar; drawdown mencakup modal awal. Perbaikan meliputi rute data kripto/logam mulia, duplikat saham Hong Kong, pemulihan cache, nominal notasi ilmiah, dan validasi nilai ekuitas yang hilang. mootdx dikeluarkan dari rantai saham A bawaan. Ketiga belas PR tercantum dalam [CHANGELOG](CHANGELOG.md).
 
 - **2026-10-08** 🔐 **Laporan PDF terlindungi dan pembacaan broker diperbaiki**: PDF Email terjadwal mendukung perlindungan AES-256 opsional melalui Web, CLI, dan konfirmasi agen; kata sandi hanya disimpan dalam konfigurasi privat kanal ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS menanyakan ketiga jalur perdagangan, memperbarui token yang secara eksplisit kedaluwarsa satu kali, dan menolak pembacaan yang tidak lengkap ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). Rumus turunan tetap utuh setelah label deskriptif dengan pemeriksaan bukti tetap berlaku ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
-
-
-<details>
-<summary>Berita sebelumnya</summary>
 
 - **2026-10-07** 🛠️ **Kesinambungan riset dan koreksi metrik risiko**: Status eksekusi dipindahkan dari prompt sistem agar prefiksnya tetap stabil ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). Tanggal lintas pasar, imbal hasil di sekitar harga yang hilang, dan Sortino opsi berdasarkan seluruh sampel diperbaiki ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). Pengujian loader memakai satu kontrak OHLCV, disertai koreksi valuasi kredit, eksposur, validasi berjalan, dan diagnosis audit.
 
@@ -499,7 +502,7 @@ Vibe-Trading dirancang untuk riset, simulasi, dan backtest — serta, jika Anda 
 | **Jalankan tim analis** | Review riset multi-agent untuk workflow investasi, quant, crypto, makro, dan risiko. |
 | **Bawa riset ke channel IM** | Jalankan runtime sesi yang sama melalui WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, dan Mochat dengan kontrol CLI, REST, dan Web UI. |
 | **Hasilkan artefak yang siap digunakan** | Laporan, TradingView Pine Script, TDX, MetaTrader 5, tool MCP, dan sesi riset lanjutan. |
-| **Benchmark alpha zoo siap pakai** | Satu baris untuk IC + kategorisasi alive/reversed/dead pada 462 alpha (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental PIT-safe) di universe Anda. |
+| **Benchmark alpha zoo siap pakai** | Satu baris untuk IC + kategorisasi alive/reversed/dead pada 475 alpha (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental PIT-safe) di universe Anda. |
 | **Deteksi regime korelasi** | Timeline edge-density + hysteresis pada surface `/correlation` yang menunjukkan kapan market menyatu menjadi satu blok — konteks risiko deskriptif, bukan sinyal. |
 
 ---
@@ -645,7 +648,7 @@ Satu call `get_market_data`, **29 sumber data market**, salah satunya marketplac
 | `tickerall` | forex / metals | key + akun (read-only) | feed broker MT5 yang sama, **hosted** — tanpa terminal lokal, OS apa pun (hanya eksplisit, tidak pernah auto fallback) |
 | `pykrx` | Korea (KRX: KOSPI/KOSDAQ) | tidak ada | bar harian KOSPI / KOSDAQ untuk `.KS` / `.KQ` (extra `krx` opsional) |
 | `india_broker` | India (NSE/BSE) | login broker | bar Zerodha / Shoonya / Dhan read-only untuk `.NS` / `.BO` (ujung fallback chain) |
-| `b3_cotahist` | Brazil (B3) | none | official B3 COTAHIST daily bars for every listed instrument, read from the local store filled by `python -m src.br_data sync`; offline tail of the `.SA` chain |
+| `b3_cotahist` | Brazil (B3) | none | bar harian resmi B3 untuk pasar tunai/odd-lot (mentah, BRL), diimpor dengan `python -m src.br_data sync`; cadangan luring untuk `.SA` |
 | `local` | apa pun | tidak ada | CSV / Parquet / DuckDB Anda sendiri melalui prefix `local:` |
 
 **Fallback chain (berdasarkan risiko IP-ban):**
@@ -830,9 +833,9 @@ bersama roster bawaan (file dengan nama sama akan override, seperti user skill) 
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>462 alpha quant siap pakai dalam 5 keluarga</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>475 alpha quant siap pakai dalam 5 keluarga</sub></summary>
 
-- 🧬 462 alpha cross-sectional, lookahead dilarang pada layer operator
+- 🧬 475 alpha cross-sectional, lookahead dilarang pada layer operator
 - 📈 IC + IR + kategorisasi alive/reversed/dead dalam satu perintah CLI
 - 🔬 AST purity gate + test sentinel lookahead 300 baris + network kill-switch `pytest-socket`
 - 📦 Atribusi Apache-2 untuk Qlib; `LICENSE.md` per-zoo menyatakan formula sebagai konten matematis
@@ -1199,7 +1202,7 @@ TUI interaktif (`vibe-trading`) kini memakai transcript native terminal: startup
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # browse 462 pre-built alphas; show / bench / compare / export-manifest sub-commands available
+vibe-trading alpha list    # browse 475 pre-built alphas; show / bench / compare / export-manifest sub-commands available
 vibe-trading playbook list # five scheduled-research templates; show / create sub-commands available
 vibe-trading channels status --local  # inspect IM channel config and install hints
 vibe-trading provider doctor  # print redacted provider/proxy/package diagnostics
@@ -2061,7 +2064,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 462 alphas across 5 families
+│   │   ├── factors/                # Alpha Zoo — 475 alphas across 5 families
 │   │   │   ├── base.py             #   19 operators (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST-only metadata load + lazy compute + sanity gates
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead categorisation
@@ -2145,7 +2148,7 @@ Vibe-Trading adalah bagian dari ekosistem agent **[HKUDS](https://github.com/HKU
 | **Data Bridge** | Bawa data sendiri: connector CSV/Parquet/SQL lokal dengan schema mapping | Loader lokal Dirilis |
 | **Options Lab** | Vol surface, dashboard Greeks, explorer payoff/scenario | Tool analitik payoff/scenario **Dirilis**; surface/dashboard Direncanakan |
 | **Portfolio Studio** | Risk x-ray, constraint, optimizer turnover-aware, catatan rebalance | Optimizer turnover-aware **Dirilis 0.1.11**; sisanya Direncanakan |
-| **Alpha Zoo** | 462 alpha siap pakai (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental) dengan bench satu baris, integrasi agent, dan Web UI | **Dirilis 0.1.8**, diperluas hingga 0.1.12 |
+| **Alpha Zoo** | 475 alpha siap pakai (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental) dengan bench satu baris, integrasi agent, dan Web UI | **Dirilis 0.1.8**, diperluas hingga 0.1.12 |
 | **Strategy Development Manager** | Daftarkan paper / riset broker sebagai faktor & strategi dengan store persisten + lifecycle decay IC/Sharpe otomatis | **Dirilis 0.1.11** |
 | **Correlation Regime** | Timeline regime edge-density + hysteresis di `/correlation` — deteksi saat market menyatu menjadi satu blok | **Dirilis 0.1.12** |
 | **Research Delivery** | Brief terjadwal dan sesi riset live melalui Slack / Telegram / channel IM bergaya email | Scheduler + IM Runtime Dirilis |

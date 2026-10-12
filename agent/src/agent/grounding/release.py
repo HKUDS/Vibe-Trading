@@ -88,6 +88,7 @@ _CORRECTION_REASONS = {
     "unparseable_declaration": "the declaration line could not be read as `value | role | note | ref`",
     "symbol_never_handled": "no tool call in this session passed in or returned that symbol",
     "additive_operand_not_observed": "a number its note adds or subtracts is not a value this session observed",
+    "operand_not_observed": "a data operand is missing from this session's evidence; fetch it, or explicitly declare and show a genuinely chosen coefficient with its note label",
     "role_in_price_column": "it sits in a price column, which holds only observed prints",
     "proposed_not_a_price": "a proposed level is a price, not a percentage; state the price it implies",
     "symbol_mismatch": "it is declared for one instrument but the sentence writes it about another",
@@ -242,7 +243,9 @@ class _ReleaseMixin:
                 "cell, one per line as `value | role | note | ref`, where role is one "
                 "of observed / derived / proposed / cited / count.",
                 "observed must appear in the tool results; derived needs a note that is "
-                "the arithmetic itself, with one operand this session observed; "
+                "the arithmetic itself, with every data operand observed. A chosen "
+                "multiplier/divisor needs a count declaration plus its value and note "
+                "label on the same visible line. Never relabel missing data as a parameter; "
                 "proposed must be derived or lie inside the observed price range; "
                 "cited needs a source in its note; count is not checked.",
                 "Reuse the exact locked symbol and venue.",

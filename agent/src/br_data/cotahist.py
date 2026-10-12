@@ -56,7 +56,10 @@ def _iso(field: str) -> Optional[str]:
     field = field.strip()
     if len(field) != 8 or not field.isdigit() or field == "99991231":
         return None
-    return f"{field[0:4]}-{field[4:6]}-{field[6:8]}"
+    try:
+        return date(int(field[:4]), int(field[4:6]), int(field[6:8])).isoformat()
+    except ValueError:
+        return None
 
 
 def parse_record(line: str) -> Optional[tuple]:
@@ -66,7 +69,14 @@ def parse_record(line: str) -> Optional[tuple]:
     trade_date = _iso(line[2:10])
     if trade_date is None:
         return None
-    factor = _num(line[210:217]) or 1
+    # Earlier COTAHIST history contains pre-real currencies. Never stamp those
+    # prices as BRL, nor fabricate missing quotation factors or OHLC values.
+    if line[52:56].strip() != "R$":
+        return None
+    factor = _num(line[210:217])
+    if factor <= 0 or any(not line[a:b].strip().isdigit()
+                          for a, b in ((56, 69), (69, 82), (82, 95), (108, 121))):
+        return None
 
     def price(start: int, end: int) -> float:
         return _num(line[start:end]) / 100.0 / factor

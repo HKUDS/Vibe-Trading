@@ -60,7 +60,9 @@ class OKXConfig:
         host: REST host (default ``https://www.okx.com``).
         expected_uid: Optional account UID to pin in ``check_status``.
         timeout: Network timeout in seconds.
-        readonly: Always true for this layer; order methods are not exposed.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     api_key: str = ""

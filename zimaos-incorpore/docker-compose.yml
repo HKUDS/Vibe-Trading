@@ -1,0 +1,187 @@
+# Vibe-Trading on ZimaOS - incorpore fork (App Store -> "+" -> Install a customized app -> Import).
+# Uses the image published by .github/workflows/zimaos-sync-and-publish.yml.
+# Updates come from the Watchtower already running on the host: both
+# long-running services carry the watchtower.enable label. See zimaos/README.md.
+#
+# All data lives under /media/URSUS/AppData/vibe-trading:
+#   home/      settings (.env), memory, skills, sessions index
+#   br-data/   Brazilian official datasets (SQLite, several GB)
+#   runs/ sessions/ swarm-runs/ uploads/   agent work files
+name: vibe-trading
+
+services:
+  # One-shot: creates the AppData folders and hands them to the image's
+  # unprivileged `vibe` user. Docker creates missing bind-mount folders as
+  # root, which `vibe` could not write to. Only files not already owned by
+  # `vibe` are touched, so restarts stay fast even with GBs of data.
+  vibe-trading-init:
+    image: ghcr.io/incorpore/vibe-trading:latest
+    container_name: vibe-trading-init
+    pull_policy: always
+    user: "0:0"
+    restart: "no"
+    # Plain argv, no shell and no variables: ZimaOS interpolates the compose
+    # file more than once, so an escaped shell variable reaches the shell as
+    # an empty string. find also descends into the nested br-data mount.
+    entrypoint: ["find"]
+    command:
+      - /app/agent/runs
+      - /app/agent/sessions
+      - /home/vibe/.vibe-trading
+      - /app/agent/.swarm/runs
+      - /app/agent/uploads
+      - "!"
+      - -user
+      - vibe
+      - -exec
+      - chown
+      - vibe:vibe
+      - "{}"
+      - +
+    healthcheck:
+      disable: true
+    volumes:
+      - /media/URSUS/AppData/vibe-trading/runs:/app/agent/runs
+      - /media/URSUS/AppData/vibe-trading/sessions:/app/agent/sessions
+      - /media/URSUS/AppData/vibe-trading/home:/home/vibe/.vibe-trading
+      - /media/URSUS/AppData/vibe-trading/br-data:/home/vibe/.vibe-trading/br-data
+      - /media/URSUS/AppData/vibe-trading/swarm-runs:/app/agent/.swarm/runs
+      - /media/URSUS/AppData/vibe-trading/uploads:/app/agent/uploads
+
+  vibe-trading:
+    image: ghcr.io/incorpore/vibe-trading:latest
+    container_name: vibe-trading
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      vibe-trading-init:
+        condition: service_completed_successfully
+    ports:
+      - "8899:8899"
+    environment:
+      # REQUIRED: the port is published on the LAN, and the API refuses
+      # non-loopback clients without a key. Use a long random value
+      # (e.g. `openssl rand -hex 32`) and enter it in the Web UI when asked.
+      API_AUTH_KEY: "change-me"
+      TZ: America/Sao_Paulo
+      # LLM via OpenRouter (https://openrouter.ai/keys). Values set here win
+      # over the Web UI Settings after every restart, so change the model
+      # here, not in the UI.
+      LANGCHAIN_PROVIDER: openrouter
+      LANGCHAIN_MODEL_NAME: deepseek/deepseek-v4-pro
+      OPENROUTER_API_KEY: "sk-or-v1-change-me"
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      # Do NOT set VIBE_TRADING_TRUST_DOCKER_LOOPBACK here: with a LAN-published
+      # port it would treat LAN clients as local.
+    volumes:
+      - /media/URSUS/AppData/vibe-trading/runs:/app/agent/runs
+      - /media/URSUS/AppData/vibe-trading/sessions:/app/agent/sessions
+      - /media/URSUS/AppData/vibe-trading/home:/home/vibe/.vibe-trading
+      - /media/URSUS/AppData/vibe-trading/br-data:/home/vibe/.vibe-trading/br-data
+      - /media/URSUS/AppData/vibe-trading/swarm-runs:/app/agent/.swarm/runs
+      - /media/URSUS/AppData/vibe-trading/uploads:/app/agent/uploads
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/vibe/.cache
+      - /home/vibe/.config
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 512
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    x-casaos:
+      envs:
+        - container: API_AUTH_KEY
+          description:
+            en_us: Required. Secret key for LAN access to the Web UI / API.
+            pt_br: Obrigatório. Chave secreta para acesso ao Web UI / API pela rede.
+        - container: OPENROUTER_API_KEY
+          description:
+            en_us: OpenRouter API key (https://openrouter.ai/keys)
+            pt_br: Chave da API do OpenRouter (https://openrouter.ai/keys)
+        - container: LANGCHAIN_MODEL_NAME
+          description:
+            en_us: OpenRouter model id, e.g. deepseek/deepseek-v4-pro
+            pt_br: Modelo do OpenRouter, ex. deepseek/deepseek-v4-pro
+        - container: TZ
+          description:
+            en_us: Time zone
+      ports:
+        - container: "8899"
+          description:
+            en_us: Web UI / API
+      volumes:
+        - container: /home/vibe/.vibe-trading
+          description:
+            en_us: Settings, memory and skills
+            pt_br: Configurações, memória e skills
+        - container: /home/vibe/.vibe-trading/br-data
+          description:
+            en_us: Brazilian official datasets (SQLite)
+            pt_br: Base oficial de dados brasileiros (SQLite)
+
+  # Daily sync of the official Brazilian datasets (B3 COTAHIST, CVM funds and
+  # companies, Banco Central, Tesouro Direto) into br-data/, where the app's
+  # get_br_market_data tool and the B3 loader read them. The first run
+  # downloads several GB and can take hours; later runs only fetch what changed.
+  vibe-trading-br-data:
+    image: ghcr.io/incorpore/vibe-trading:latest
+    container_name: vibe-trading-br-data
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      vibe-trading-init:
+        condition: service_completed_successfully
+    command: ["python", "-m", "src.br_data", "daemon"]
+    environment:
+      TZ: America/Sao_Paulo
+      # First years to download (B3 publishes from 1986; each year of
+      # COTAHIST is a few hundred MB in SQLite, options included).
+      VIBE_BR_COTAHIST_START_YEAR: "2015"
+      VIBE_BR_CVM_START_YEAR: "2022"
+      # Daily run time (Sao Paulo), after B3 and CVM publish the day's files.
+      VIBE_BR_SYNC_TIME: "21:30"
+    volumes:
+      - /media/URSUS/AppData/vibe-trading/home:/home/vibe/.vibe-trading
+      - /media/URSUS/AppData/vibe-trading/br-data:/home/vibe/.vibe-trading/br-data
+    # The image's healthcheck probes the web server, which this service does
+    # not run.
+    healthcheck:
+      disable: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 2g
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+x-casaos:
+  architectures:
+    - amd64
+  main: vibe-trading
+  author: incorpore
+  developer: HKUDS
+  category: Finance
+  icon: https://raw.githubusercontent.com/HKUDS/Vibe-Trading/main/assets/icon.png
+  index: /
+  port_map: "8899"
+  scheme: http
+  title:
+    en_us: Vibe-Trading
+  tagline:
+    en_us: Natural-language finance research agent with backtesting
+    pt_br: Agente de pesquisa financeira com backtesting
+  description:
+    en_us: Auto-updated build of incorpore/Vibe-Trading (synced from HKUDS/Vibe-Trading).

@@ -254,3 +254,81 @@ def test_stock_news_routes_b3_symbols_to_yahoo_with_full_symbol(monkeypatch) -> 
     out = json.loads(snt.StockNewsTool().execute(code="petr4.sa", scope="stock"))
     assert out["ok"] and out["market"] == "br" and out["source"] == "yahoo"
     assert queries == ["PETR4.SA"]
+
+@pytest.mark.parametrize('currency', ['CR$', 'US$', ''])
+def test_cotahist_does_not_relabel_other_currencies_as_brl(currency):
+    line = _cotahist_line('20250103', 'TEST3', 10, 1000)
+    line = line[:52] + currency.ljust(4) + line[56:]
+    assert cotahist.parse_record(line) is None
+
+
+def test_cotahist_rejects_missing_prices_and_quotation_factor():
+    line = _cotahist_line('20250103', 'TEST3', 10, 1000)
+    assert cotahist.parse_record(line[:108] + ' ' * 13 + line[121:]) is None
+    assert cotahist.parse_record(line[:210] + '0000000' + line[217:]) is None
+
+
+def test_bad_numeric_and_calendar_cells_are_not_fabricated():
+    assert to_float('NaN') is None
+    assert to_float('Infinity') is None
+    assert br_date('2025-02-31') is None
+
+
+def test_fund_subclasses_do_not_form_one_return_series(store):
+    from src.tools.br_market_data_tool import BrMarketDataTool
+    with connect(store, write=True) as conn:
+        conn.executemany(
+            'INSERT INTO cvm_fund_daily (cnpj, trade_date, subclass, quota) VALUES (?, ?, ?, ?)',
+            [('00000000000001', '2025-01-02', 'A', 1),
+             ('00000000000001', '2025-01-03', 'B', 100)],
+        )
+    result = json.loads(BrMarketDataTool().execute(action='fund', cnpj='00000000000001',
+                                                start_date='2025-01-01', end_date='2025-01-04'))
+    assert result['ok']
+    assert len(result['data']['rows']) == 2
+    assert 'quota_return' not in result['data']
+
+
+def test_br_tool_rejects_bad_dates_and_preserves_result_limit():
+    from src.tools.br_market_data_tool import _dates, _envelope, TOOL_RESULT_LIMIT
+    with pytest.raises(ValueError):
+        _dates({'start_date': '2025-03-01', 'end_date': '2025-02-01'})
+    result = _envelope('search', [], {'companies': [{'name': 'x' * (TOOL_RESULT_LIMIT * 2)}]})
+    assert len(result) <= TOOL_RESULT_LIMIT
+    assert json.loads(result)['ok'] is False
+
+
+def test_br_quotes_keep_per_symbol_brl_evidence(store, tmp_path):
+    from src.agent.grounding import GroundingLedger
+    from src.tools.br_market_data_tool import BrMarketDataTool
+    with connect(store, write=True) as conn:
+        cotahist.ingest_zip(conn, _zip('quotes.txt', '\n'.join([
+            _cotahist_line('20250103', 'TEST3', 10, 1000),
+            _cotahist_line('20250103', 'MOCK4', 10, 2000),
+        ])))
+    args = {'action': 'quotes', 'tickers': ['TEST3', 'MOCK4'],
+            'start_date': '2025-01-03', 'end_date': '2025-01-03'}
+    payload = BrMarketDataTool().execute(**args)
+    ledger = GroundingLedger(run_dir=tmp_path, user_message='Compare TEST3.SA and MOCK4.SA prices')
+    ledger.ingest_tool_result(tool_name='get_br_market_data', arguments=args,
+                             result=payload, call_id='b3', success=True)
+    closes = [r for r in ledger._evidence if r.field == 'close']
+    assert {(r.symbol, r.value, r.currency, r.timestamp, r.tool) for r in closes} == {
+        ('TEST3.SA', 10., 'BRL', '2025-01-03', 'get_br_market_data'),
+        ('MOCK4.SA', 20., 'BRL', '2025-01-03', 'get_br_market_data'),
+    }
+    assert ledger.validate_final_answer('Source: b3_cotahist. TEST3.SA closed at BRL 10.00. MOCK4.SA closed at BRL 20.00.').valid
+    assert not ledger.validate_final_answer('Source: b3_cotahist. TEST3.SA closed at BRL 20.00.').valid
+    malformed = json.loads(payload)
+    malformed['data']['currency'] = 'USD'
+    refused = GroundingLedger(run_dir=tmp_path/'refused', user_message='TEST3.SA price')
+    refused.ingest_tool_result(tool_name='get_br_market_data', arguments=args,
+                              result=json.dumps(malformed), call_id='bad', success=True)
+    assert not refused._evidence
+
+
+def test_brl_alias_is_unambiguous():
+    from src.agent.grounding import GroundingLedger
+    assert GroundingLedger._currency_is_surfaced("BRL", "R$ 10.00")
+    assert GroundingLedger._currency_is_surfaced("BRL", "10 reais")
+    assert not GroundingLedger._currency_is_surfaced("BRL", "These are real observed prices")

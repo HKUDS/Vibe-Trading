@@ -246,9 +246,9 @@ def test_connection_scoped_overrides_obey_the_connector_allowlist(tmp_path, monk
     """A vault-backed call must not widen what a caller may override.
 
     Every SDK connector narrows overrides on purpose: OKX and Binance both
-    exclude ``readonly`` ("always true for this layer") and ``timeout``, and
-    Longbridge's overlay is ``profile``/``region`` only so a caller "cannot mix
-    or bypass the shared resolver". ``build_config`` enforces that; a config
+    exclude ``readonly`` and ``timeout``, and Longbridge's overlay is
+    ``profile``/``region`` only so a caller "cannot mix or bypass the shared
+    resolver". ``build_config`` enforces that; a config
     built from a raw merged mapping would not — and ``overrides`` is the one
     part of that payload that arrives from an MCP tool argument or REST body.
     """

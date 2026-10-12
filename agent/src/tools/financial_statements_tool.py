@@ -454,7 +454,8 @@ def _fetch_cvm_statement(code: str, *, statement: str, period: str) -> dict[str,
         key=lambda rec: (rec["period_end"], rec["period_start"] or ""),
         reverse=True,
     )
-    return {"periods": _cap_periods(ordered)}
+    return {"periods": _cap_periods(ordered), "point_in_time": False,
+            "basis": "latest stored CVM revisions"}
 
 
 def _to_number(value: Any) -> float | None:

@@ -155,7 +155,7 @@ def _ensure_registered() -> None:
 # as if it were Toman — a caliber error of about six orders of magnitude, not a
 # missing-data error. An unreachable Iranian endpoint must be visible.
 _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset(
-    {"local", "qveris", "tickerall", "fmp", "nobitex", "wallex"}
+    {"local", "qveris", "tickerall", "fmp", "nobitex", "wallex", "b3_cotahist"}
 )  # QVERIS-INTEGRATION
 
 

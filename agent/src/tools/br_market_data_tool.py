@@ -48,6 +48,8 @@ def _limit(value: Any) -> int:
 def _dates(kwargs: dict) -> tuple[str, str]:
     end = str(kwargs.get("end_date") or datetime.now(ZoneInfo("America/Sao_Paulo")).date().isoformat())[:10]
     start = str(kwargs.get("start_date") or (date.fromisoformat(end) - timedelta(days=365)).isoformat())[:10]
+    if date.fromisoformat(start) > date.fromisoformat(end):
+        raise ValueError("start_date must not be after end_date")
     return start, end
 
 
@@ -65,8 +67,10 @@ def _envelope(action: str, rows: list[dict], extra: dict | None = None) -> str:
             data.update(extra)
         text = json.dumps({"ok": True, "market": "BR", "source": "br_data", "data": data},
                           ensure_ascii=False, default=str)
-        if len(text) <= TOOL_RESULT_LIMIT or count <= 1:
+        if len(text) <= TOOL_RESULT_LIMIT:
             return text
+        if count <= 1:
+            return _error("Result metadata exceeds the tool limit; narrow the query.")
         count = max(1, min(count - 1, int(count * TOOL_RESULT_LIMIT / len(text))))
 
 
@@ -131,6 +135,8 @@ class BrMarketDataTool(BaseTool):
             if action == "macro":
                 return self._macro(None, kwargs)
             return _error(str(exc))
+        except (ValueError, TypeError) as exc:
+            return _error(f"invalid request: {exc}")
         except sqlite3.Error as exc:
             return _error(f"store query failed: {exc}")
 
@@ -145,10 +151,10 @@ class BrMarketDataTool(BaseTool):
         rows = conn.execute(
             "SELECT trade_date, ticker, market_type, spec, open, high, low, close, avg, "
             "volume, turnover, trades, strike, expiry FROM b3_quotes "
-            f"WHERE ticker IN ({marks}) AND trade_date BETWEEN ? AND ? ORDER BY trade_date, ticker",
-            (*tickers, start, end),
+            f"WHERE ticker IN ({marks}) AND trade_date BETWEEN ? AND ? ORDER BY trade_date DESC, ticker DESC LIMIT ?",
+            (*tickers, start, end, _limit(kwargs.get("limit"))),
         ).fetchall()
-        out = [dict(r) for r in rows][-_limit(kwargs.get("limit")):]
+        out = [dict(r) for r in reversed(rows)]
         return _envelope("quotes", out, {"adjustment": "raw (as traded)", "currency": "BRL"})
 
     def _search(self, conn: sqlite3.Connection, kwargs: dict) -> str:
@@ -191,12 +197,12 @@ class BrMarketDataTool(BaseTool):
         info = conn.execute("SELECT * FROM cvm_funds WHERE cnpj = ?", (cnpj,)).fetchone()
         rows = conn.execute(
             "SELECT trade_date, subclass, quota, net_assets, total_value, inflows, outflows, holders "
-            "FROM cvm_fund_daily WHERE cnpj = ? AND trade_date BETWEEN ? AND ? ORDER BY trade_date",
-            (cnpj, start, end),
+            "FROM cvm_fund_daily WHERE cnpj = ? AND trade_date BETWEEN ? AND ? ORDER BY trade_date DESC, subclass DESC LIMIT ?",
+            (cnpj, start, end, _limit(kwargs.get("limit"))),
         ).fetchall()
-        out = [dict(r) for r in rows][-_limit(kwargs.get("limit")):]
+        out = [dict(r) for r in reversed(rows)]
         extra: dict[str, Any] = {"fund": dict(info) if info else None, "currency": "BRL"}
-        if len(out) >= 2 and out[0]["quota"] and out[-1]["quota"]:
+        if len({r["subclass"] for r in out}) == 1 and len(out) >= 2 and out[0]["quota"] and out[-1]["quota"]:
             extra["quota_return"] = round(out[-1]["quota"] / out[0]["quota"] - 1, 6)
         return _envelope("fund", out, extra)
 
@@ -214,7 +220,7 @@ class BrMarketDataTool(BaseTool):
         statement = str(kwargs.get("statement") or "DRE").upper()
         doc = str(kwargs.get("doc") or "DFP").upper()
         rows = conn.execute(
-            "SELECT period_end, period_start, account, description, value FROM cvm_statements "
+            "SELECT statement, period_end, period_start, account, description, value, version FROM cvm_statements "
             "WHERE cnpj = ? AND doc = ? AND statement IN (?, ?) ORDER BY period_end, account",
             (cnpj, doc, statement, f"{statement}_ind"),
         ).fetchall()
@@ -225,6 +231,7 @@ class BrMarketDataTool(BaseTool):
         return _envelope("financials", out, {
             "company": dict(company) if company else {"cnpj": cnpj},
             "doc": doc, "statement": statement, "currency": "BRL", "periods": sorted(keep),
+            "point_in_time": False, "basis": "latest stored restatement; scope is labelled per row",
         })
 
     def _macro(self, conn: sqlite3.Connection | None, kwargs: dict) -> str:
@@ -258,9 +265,9 @@ class BrMarketDataTool(BaseTool):
         rows = conn.execute(
             "SELECT base_date, bond, maturity, buy_rate, sell_rate, buy_price, sell_price "
             "FROM tesouro_prices WHERE UPPER(bond) LIKE ? AND base_date BETWEEN ? AND ? "
-            "ORDER BY base_date, bond, maturity", (query, start, end),
+            "ORDER BY base_date DESC, bond DESC, maturity DESC LIMIT ?", (query, start, end, _limit(kwargs.get("limit"))),
         ).fetchall()
-        return _envelope("tesouro", [dict(r) for r in rows][-_limit(kwargs.get("limit")):], {"currency": "BRL"})
+        return _envelope("tesouro", [dict(r) for r in reversed(rows)], {"currency": "BRL"})
 
     def _status(self, conn: sqlite3.Connection, kwargs: dict) -> str:
         out = []

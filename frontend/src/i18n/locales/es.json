@@ -1049,7 +1049,7 @@
       "noMarkets": "No hay fuentes de datos de mercado registradas.",
       "howItWorksTitle": "Cómo funciona",
       "howItWorks": "Para los símbolos detectados automáticamente, las fuentes se prueban de arriba abajo; una fuente que falla pasa a la siguiente. Al guardar se aplica de inmediato, sin reiniciar.",
-      "caliberCaveat": "Advertencia: las fuentes difieren en la base de ajuste — p. ej. Yahoo entrega OHLC sin ajustar mientras Tencent/Eastmoney/Tushare entregan precios ajustados — reordenar la cadena puede cambiar los números del backtest.",
+      "caliberCaveat": "Los ajustes de precios pueden variar según la fuente. Revisa los ajustes, la procedencia y las advertencias de la ejecución; cambiar el orden puede modificar los resultados del backtest.",
       "markets": {
         "a_share": "Acciones de China (A)",
         "us_equity": "Acciones de EE. UU.",

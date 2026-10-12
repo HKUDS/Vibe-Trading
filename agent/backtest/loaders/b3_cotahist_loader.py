@@ -83,7 +83,7 @@ class DataLoader:
                     frame = pd.DataFrame([tuple(r) for r in rows], columns=["trade_date", *_OUTPUT_COLUMNS])
                     frame["trade_date"] = pd.to_datetime(frame["trade_date"])
                     frame = frame.set_index("trade_date").astype(float)
-                    # Every B3 line settles in BRL (COTAHIST has no other unit).
+                    # The importer admits only explicit R$ records, excluding older currencies.
                     result[code] = normalize_declared_quote_currency(frame, code, "BRL")
         except FileNotFoundError as exc:
             logger.warning("b3_cotahist: %s", exc)

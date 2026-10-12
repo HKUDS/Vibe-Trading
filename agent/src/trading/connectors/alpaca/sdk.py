@@ -74,7 +74,9 @@ class AlpacaConfig:
         profile: ``paper``, ``live-readonly`` or ``live``.
         feed: Market-data feed, ``iex`` (free) or ``sip`` (paid).
         timeout: Network timeout in seconds.
-        readonly: Always true for this layer; order methods are not exposed.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     api_key: str = ""

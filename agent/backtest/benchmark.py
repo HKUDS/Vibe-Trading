@@ -12,6 +12,7 @@ from typing import Any, Optional
 import pandas as pd
 
 from backtest.loaders.base import resample_bars, source_interval
+from backtest.loaders.registry import is_no_network_fallback_source
 from backtest.loaders.yfinance_loader import DataLoader as YfinanceLoader
 from backtest.metrics import bar_returns, buy_and_hold_return
 
@@ -85,8 +86,8 @@ def resolve_benchmark(
         explicit:       Override ticker (e.g. "SPY" passed via config).
         loader:         Loader of the configured data source. When given, the
                         benchmark is fetched through it first, falling back to
-                        yfinance if it yields no data — except ``local``,
-                        which fails closed to keep offline runs offline.
+                        yfinance if it yields no data, except sources whose
+                        contract prohibits a fallback to a different source.
 
     Returns:
         BenchmarkResult with return series and total return, or None if no
@@ -96,18 +97,18 @@ def resolve_benchmark(
     if ticker is None:
         return None
 
-    offline = source == "local"
-    if offline and getattr(loader, "name", None) != source:
-        # The runtime fallback chain in fetch_data_map() may have swapped in a
-        # network loader while config["source"] still says local — never fetch
-        # the benchmark through it. Fail closed instead.
+    source_bound = is_no_network_fallback_source(source)
+    if source_bound and getattr(loader, "name", None) != source:
+        # Do not let a swapped loader bypass the configured source's boundary:
+        # local must stay offline, and source-specific quote currencies and
+        # explicit provider choices must not silently change for a benchmark.
         loader = None
 
     try:
         bench_df = _fetch_benchmark(
             ticker, start_date, end_date, interval,
             loader=loader,
-            allow_fallback=not offline,
+            allow_fallback=not source_bound,
         )
     except Exception:
         return None

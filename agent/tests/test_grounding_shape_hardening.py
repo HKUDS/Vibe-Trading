@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from src.agent.grounding import GroundingLedger
+from tests.grounding_parameter_helpers import declared_parameter
 from src.agent.grounding.figures import Figure, parse_figures_block, scan_figures, strip_figures_block
 
 pytestmark = pytest.mark.unit
@@ -479,10 +480,10 @@ def test_every_figures_block_declares_and_every_one_is_stripped(tmp_path: Path) 
     assert stripped == HDR + "\n\n第一档 0.646 元。"
 
     ledger = _ledger(tmp_path)
-    passed = ledger.validate_final_answer(HDR + _block(HDR_ROW) + "\n\n第一档 0.646 元。" + _block("0.646 | derived | 0.666 × 0.97 | c1"))
-    refused = ledger.validate_final_answer(HDR + _block(HDR_ROW) + "\n\n第一档 0.700 元。" + _block("0.700 | derived | 0.666 × 0.97 | c1"))
+    passed = ledger.validate_final_answer(HDR + declared_parameter("97%") + _block(HDR_ROW) + "\n\n第一档 0.646 元。" + _block("0.646 | derived | 0.666 × 0.97 | c1"))
+    refused = ledger.validate_final_answer(HDR + declared_parameter("97%") + _block(HDR_ROW) + "\n\n第一档 0.700 元。" + _block("0.700 | derived | 0.666 × 0.97 | c1"))
     assert passed.valid, passed.issues
-    assert passed.released_text == HDR + "\n\n第一档 0.646 元。"
+    assert passed.released_text == HDR + "\n\nChosen coefficient: 97%." + "\n\n第一档 0.646 元。"
     assert _values(refused) == ["0.700"]
     assert "```" not in refused.released_text
 

@@ -150,6 +150,8 @@ SEC_CONCEPT_MAP: dict[str, list[str]] = {
         "Cash",
         "CashAndDueFromBanks",
     ],
+    # Basic shares are not diluted shares, even when rounded EPS values match.
+    # Missing diluted counts remain unavailable instead of guessing dilution.
     "shares_diluted": [
         "WeightedAverageNumberOfDilutedSharesOutstanding",
         "WeightedAverageDilutedSharesOutstanding",
@@ -193,6 +195,31 @@ DERIVED_FIELDS: dict[str, DerivedFieldSpec] = {
             _lag_365d(data["total_assets"].astype("float64")),
         )
         - 1,
+    },
+    # Year-over-year revenue growth, looked up by the same calendar lag as
+    # asset_growth (see _lag_365d) rather than row position, since the real
+    # pipeline feeds this a daily-densified panel, not one row per annual
+    # period_end.
+    "revenue_growth": {
+        "dependencies": ["revenue"],
+        "compute": lambda data: _safe_divide(
+            data["revenue"].astype("float64"),
+            _lag_365d(data["revenue"].astype("float64")),
+        )
+        - 1,
+    },
+    # Year-over-year earnings growth, sign-safe: the denominator is the
+    # ABSOLUTE value of the lagged net_income, so a negative prior year does
+    # not flip the growth sign (NI -10 -> +5 must read as positive growth).
+    # A zero or NaN lag yields NaN via _safe_divide's zero-masking. Calendar
+    # lag for the same daily-densified-panel reason as asset_growth above.
+    "earnings_growth": {
+        "dependencies": ["net_income"],
+        "compute": lambda data: _safe_divide(
+            data["net_income"].astype("float64")
+            - _lag_365d(data["net_income"].astype("float64")),
+            _lag_365d(data["net_income"].astype("float64")).abs(),
+        ),
     },
     "accruals": {
         "dependencies": ["net_income", "cfo", "total_assets"],

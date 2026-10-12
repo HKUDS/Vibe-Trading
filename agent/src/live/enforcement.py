@@ -537,8 +537,18 @@ def check_mandate(
             detail=f"{intent.instrument_type.value} not in allowed_instruments",
         )
 
-    # 3. Asset-class allowance (universe bucket). OPTION has no bucket and is
-    #    governed by allowed_instruments alone. An explicit intent.asset_class
+    # Share-notional checks cannot bound an option's contract multiplier or
+    # maximum loss. Even an explicit instrument allowance cannot enable this
+    # unsupported path; both MCP and SDK orders pass through this check.
+    if intent.instrument_type == InstrumentType.OPTION:
+        return _breach(
+            broker=broker, remote_tool=remote_tool, intent=intent,
+            kind=BREACH_KIND_INSTRUMENT, limit="options_unsupported",
+            limit_value=0.0, attempted_value=0.0,
+            detail="options require an options-specific risk gate; order placement is unsupported",
+        )
+
+    # 3. Asset-class allowance (universe bucket). An explicit intent.asset_class
     #    (multi-market connectors: US/HK/CN equities) wins over the instrument
     #    default so the gate buckets HK/A-share correctly.
     asset_class = intent.asset_class or _INSTRUMENT_ASSET_CLASS.get(intent.instrument_type)

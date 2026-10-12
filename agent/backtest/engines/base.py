@@ -971,6 +971,7 @@ class BaseEngine(ABC):
         )
         bench_ret = ret_df.mean(axis=1) if ret_df.shape[1] > 0 else pd.Series(0.0, index=dates)
         benchmark_metadata = {}
+        benchmark_warning: str | None = None
 
         # ── External benchmark fetch ──────────────────────────────────────────
         bench_ticker = config.get("benchmark")
@@ -1006,6 +1007,16 @@ class BaseEngine(ABC):
                         window_ret if window_ret is not None else bench_result.total_ret
                     ),
                 }
+            else:
+                # The equal-weight basket stands in for the declared benchmark,
+                # so every benchmark-relative metric (excess_return,
+                # information_ratio, tracking_error, benchmark_beta) is graded
+                # against something the caller did not ask for. Say so.
+                benchmark_warning = (
+                    f"declared benchmark {bench_ticker!r} could not be resolved; "
+                    "benchmark-relative metrics are graded against the "
+                    "equal-weight basket of the traded symbols instead"
+                )
         # ── External benchmark fetch ──────────────────────────────────────────
 
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
@@ -1151,6 +1162,8 @@ class BaseEngine(ABC):
             card_warnings.append(config["_run_card_caliber_warning"])
         if config.get("_run_card_annualisation_warning"):
             card_warnings.append(config["_run_card_annualisation_warning"])
+        if benchmark_warning:
+            card_warnings.append(benchmark_warning)
         from backtest.run_card import write_run_card
         write_run_card(
             run_dir,
@@ -2013,6 +2026,8 @@ class BaseEngine(ABC):
             commission=entry_commission + order.exit_commission,
             entry_margin=order.released_margin,
             exit_margin=exit_margin,
+            open_price=before.open_price,
+            open_size=before.open_size,
         ))
         self._record_fill(
             symbol=before.symbol,
@@ -2053,6 +2068,8 @@ class BaseEngine(ABC):
             leverage=order.leverage,
             entry_bar_idx=self._bar_idx,
             entry_commission=order.commission,
+            open_price=order.price,
+            open_size=order.size,
         )
         self._record_fill(
             symbol=order.symbol,
@@ -2146,6 +2163,8 @@ class BaseEngine(ABC):
             commission=pos.entry_commission + exit_comm,
             entry_margin=margin,
             exit_margin=exit_margin,
+            open_price=pos.open_price,
+            open_size=pos.open_size,
         ))
         self._record_fill(
             symbol=symbol,
@@ -2273,21 +2292,28 @@ class BaseEngine(ABC):
         target_out.index.name = "timestamp"
         target_out.to_csv(out / "target_positions.csv")
 
-        # Trades (compatible format)
+        # Trades (compatible format): two rows per round trip, entry then exit.
+        # The entry row is the opening fill as executed. A TradeRecord's
+        # entry_price is the weighted cost after any scale-ins while its
+        # entry_time stays on the first open, so pairing those two would
+        # report a fill that never happened. Scale-ins stay in fills.jsonl.
         trade_rows = []
         for t in self.trades:
             # Entry event
+            entry_price = t.entry_price if t.open_price is None else t.open_price
+            entry_qty = t.size if t.open_size is None else t.open_size
             trade_rows.append({
                 "timestamp": str(t.entry_time.date()) if hasattr(t.entry_time, "date") else str(t.entry_time),
                 "code": t.symbol,
                 "side": "buy" if t.direction == 1 else "sell",
-                "price": round(t.entry_price, 4),
-                "qty": round(t.size, 6),
+                "price": round(entry_price, 4),
+                "qty": round(entry_qty, 6),
                 "reason": "signal",
                 "pnl": 0.0,
                 "holding_days": 0,
                 "holding_bars": 0.0,
                 "return_pct": 0.0,
+                "event": "entry",
             })
             # Exit event
             try:
@@ -2305,11 +2331,12 @@ class BaseEngine(ABC):
                 "holding_days": hold_days,
                 "holding_bars": t.holding_bars,
                 "return_pct": round(t.pnl_pct, 2),
+                "event": "exit",
             })
 
         trade_cols = [
             "timestamp", "code", "side", "price", "qty", "reason", "pnl",
-            "holding_days", "holding_bars", "return_pct",
+            "holding_days", "holding_bars", "return_pct", "event",
         ]
         pd.DataFrame(trade_rows or [], columns=trade_cols).to_csv(out / "trades.csv", index=False)
 

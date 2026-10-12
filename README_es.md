@@ -52,15 +52,18 @@
 
 > ⚠️ **Advertencia de seguridad:** la cuenta de X `VibeTrading_HKU`, el proyecto de Virtuals `101845` y el contrato de token `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` no son activos oficiales de Vibe-Trading. Nunca hemos lanzado ni respaldado ningún token o memecoin. No compres, conectes una wallet ni firmes nada. [Detalles](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-12** 🧮 **Actualizaciones de investigación y backtesting**: corregidos la ejecución inicial, la atribución al liquidar, la duración de caídas, la tolerancia de valoración y el momento de los informes SEC en el IC ([#1780](https://github.com/HKUDS/Vibe-Trading/pull/1780)–[#1794](https://github.com/HKUDS/Vibe-Trading/pull/1794)). Se añaden 13 factores fundamentales y de valoración, datos y backtests de Brasil, plantillas ZimaOS de activación explícita y progreso en Feishu. Alcance y límites en [CHANGELOG](CHANGELOG.md).
+
+- **2026-10-11** 🛠️ **Cinco correcciones prioritarias**: cada dato de un cálculo necesita evidencia; se bloquean las opciones reales aún no soportadas. Los índices de referencia sin conexión conservan su fuente, los registros distinguen cierres sin ganancias ni pérdidas y Codex conserva argumentos opcionales ([#1622](https://github.com/HKUDS/Vibe-Trading/issues/1622), [#1779](https://github.com/HKUDS/Vibe-Trading/pull/1779), [#1781](https://github.com/HKUDS/Vibe-Trading/pull/1781), [#1785](https://github.com/HKUDS/Vibe-Trading/pull/1785)).
+
 - **2026-10-10** 🛠️ **Configuración de Slack/Discord y análisis reproducible**: Los formularios traducidos verifican credenciales del bot sin guardar cambios ([#1764](https://github.com/HKUDS/Vibe-Trading/pull/1764), [#1777](https://github.com/HKUDS/Vibe-Trading/pull/1777)). El análisis de cartera reutiliza instantáneas inmutables y la Web exporta JSON sin datos sensibles ([#1769](https://github.com/HKUDS/Vibe-Trading/pull/1769)). Los indicadores informan la fecha límite y la huella de los datos. Los registros de sesión dañados se recuperan sin reescribir los originales. También se corrigen búsqueda de memoria, filtrado de credenciales e importación de operaciones. Consulta [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary>Noticias anteriores</summary>
 
 - **2026-10-09** 🛠️ **Configuración de canales y correcciones de backtests**: Las actualizaciones sin reconexión conservan las credenciales de las URL y la dirección del servidor autenticado de WeChat; la web explica guardados y reinicios en nueve idiomas ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). La volatilidad de opciones entre mercados usa solo marcas temporales conocidas en cada barra; la caída máxima incluye el capital inicial. Corregimos las rutas de criptoactivos y metales preciosos, los duplicados de Hong Kong, la recuperación de caché, los importes en notación científica y la validación de valores ausentes. mootdx sale de la cadena predeterminada de acciones A. Los trece PR están en [CHANGELOG](CHANGELOG.md).
 
 - **2026-10-08** 🔐 **Informes PDF protegidos y lecturas del bróker corregidas**: Los PDF de correo programado admiten protección AES-256 opcional en Web, CLI y confirmaciones del agente; la contraseña permanece en la configuración privada del canal ([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS consulta las tres rutas, renueva una sola vez un token explícitamente caducado y rechaza lecturas incompletas ([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). Las fórmulas conservan la expresión tras las etiquetas descriptivas y mantienen la verificación de evidencias ([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
-
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-10-07** 🛠️ **Continuidad de investigación y métricas de riesgo corregidas**: El estado de ejecución se separa del mensaje del sistema para preservar su prefijo estable ([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). Se corrigen las fechas entre mercados, los retornos alrededor de precios ausentes y el Sortino de opciones con toda la muestra ([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). Los cargadores comparten un contrato OHLCV; también se corrigen valoración crediticia, exposiciones, validación temporal y diagnóstico de auditoría.
 
@@ -376,7 +379,7 @@ Está diseñado para investigación, simulación y backtesting, y, cuando tú lo
 | **Ejecutar equipos de analistas** | Revisiones de investigación multiagente para flujos de trabajo de inversión, cuantitativo, cripto, macro y riesgo. |
 | **Llevar la investigación a canales de mensajería** | Ejecuta el mismo runtime de sesión a través de WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, correo electrónico y Mochat, con controles de CLI, REST y Web UI. |
 | **Entregar artefactos utilizables** | Informes, TradingView Pine Script, TDX, MetaTrader 5, herramientas MCP y sesiones de investigación posteriores. |
-| **Evaluar un zoológico de alfas preconstruido** | Clasificación IC + viva/invertida/muerta en una línea, en 462 alfas (Qlib 158 + Kakushadze 101 + GTJA 191 + académicas + fundamentales PIT-safe) sobre tu universo. |
+| **Evaluar un zoológico de alfas preconstruido** | Clasificación IC + viva/invertida/muerta en una línea, en 475 alfas (Qlib 158 + Kakushadze 101 + GTJA 191 + académicas + fundamentales PIT-safe) sobre tu universo. |
 | **Detectar regímenes de correlación** | Una línea de tiempo de densidad de aristas + histéresis en la superficie `/correlation` que muestra cuándo los mercados se fusionan en un solo bloque: contexto de riesgo descriptivo, no una señal. |
 
 ---
@@ -483,7 +486,7 @@ Una sola llamada `get_market_data`, **29 fuentes de datos de mercado**, una de e
 | `tickerall` | forex / metales | clave + cuenta (solo lectura) | el mismo feed MT5 del bróker, **alojado**: sin terminal local y en cualquier sistema operativo (solo por selección explícita, nunca en el respaldo automático) |
 | `pykrx` | Corea (KRX: KOSPI/KOSDAQ) | ninguna | barras diarias de KOSPI / KOSDAQ para `.KS` / `.KQ` (extra opcional `krx`) |
 | `india_broker` | India (NSE/BSE) | login de broker | barras de solo lectura de Zerodha / Shoonya / Dhan para `.NS` / `.BO` (al final de la cadena de fallback) |
-| `b3_cotahist` | Brazil (B3) | none | official B3 COTAHIST daily bars for every listed instrument, read from the local store filled by `python -m src.br_data sync`; offline tail of the `.SA` chain |
+| `b3_cotahist` | Brazil (B3) | none | barras diarias oficiales del mercado al contado y de lotes fraccionarios (sin ajustar, BRL), importadas con `python -m src.br_data sync`; alternativa local para `.SA` |
 | `local` | cualquiera | ninguna | tu propio CSV / Parquet / DuckDB mediante el prefijo `local:` |
 
 **Cadenas de fallback (por riesgo de bloqueo de IP):**
@@ -670,9 +673,9 @@ junto al catálogo incluido (los archivos con el mismo nombre lo sobrescriben, i
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>462 alphas cuantitativos preconstruidos en 5 familias</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>475 alphas cuantitativos preconstruidos en 5 familias</sub></summary>
 
-- 🧬 462 alphas cross-sectional, con prohibición de lookahead a nivel de la capa de operadores
+- 🧬 475 alphas cross-sectional, con prohibición de lookahead a nivel de la capa de operadores
 - 📈 Categorización de IC + IR + vivo/invertido/muerto en un solo comando de la CLI
 - 🔬 Puerta de pureza AST + test centinela de lookahead de 300 filas + interruptor de apagado de red `pytest-socket`
 - 📦 Atribución Apache-2 para Qlib; `LICENSE.md` por zoo que declara las fórmulas como contenido matemático
@@ -1012,7 +1015,7 @@ La TUI interactiva (`vibe-trading`) ahora usa una transcripción nativa de termi
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # explora 462 alphas preconstruidos; subcomandos show / bench / compare / export-manifest disponibles
+vibe-trading alpha list    # explora 475 alphas preconstruidos; subcomandos show / bench / compare / export-manifest disponibles
 vibe-trading playbook list # cinco plantillas de investigación programada; subcomandos show / create disponibles
 vibe-trading channels status --local  # inspecciona la configuración de canales IM y sugerencias de instalación
 vibe-trading provider doctor  # imprime diagnósticos redactados de provider/proxy/paquetes
@@ -1816,7 +1819,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   búsqueda web con DuckDuckGo
 │   │   │   └── ...                 #   bash, E/S de archivos, análisis de factores, opciones, navegador de alpha + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 462 alphas en 5 familias
+│   │   ├── factors/                # Alpha Zoo — 475 alphas en 5 familias
 │   │   │   ├── base.py             #   19 operadores (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   carga de metadatos solo por AST + cómputo diferido + puertas de sanidad
 │   │   │   ├── bench_runner.py     #   IC + categorización alive/reversed/dead
@@ -1899,7 +1902,7 @@ Vibe-Trading forma parte del ecosistema de agentes de **[HKUDS](https://github.c
 | **Data Bridge** | Trae tus propios datos: conectores locales CSV/Parquet/SQL con mapeo de esquema | Cargador local publicado |
 | **Options Lab** | Superficie de volatilidad, panel de Greeks, explorador de payoff/escenarios | Herramienta analítica de payoff/escenarios **publicada**; superficie/panel planificados |
 | **Portfolio Studio** | Risk x-ray, restricciones, optimizador con reducción de turnover, notas de rebalanceo | Optimizador con reducción de turnover **publicado en 0.1.11**; el resto planificado |
-| **Alpha Zoo** | 462 alphas preconstruidas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental) con benchmark en una línea, integración con el agente y Web UI | **Publicado en 0.1.8**, ampliado hasta 0.1.12 |
+| **Alpha Zoo** | 475 alphas preconstruidas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental) con benchmark en una línea, integración con el agente y Web UI | **Publicado en 0.1.8**, ampliado hasta 0.1.12 |
 | **Strategy Development Manager** | Registra papers / research de brokers como factores y estrategias con un almacén persistente + lifecycle automatizado de decaimiento de IC/Sharpe | **Publicado en 0.1.11** |
 | **Correlation Regime** | Línea temporal de régimen por edge-density + histéresis, superpuesta en `/correlation` — detecta cuándo los mercados se fusionan en un solo bloque | **Publicado en 0.1.12** |
 | **Research Delivery** | Briefs programados y sesiones de investigación en vivo a través de canales IM tipo Slack / Telegram / correo | Scheduler + runtime de IM publicados |

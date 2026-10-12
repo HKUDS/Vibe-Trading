@@ -89,6 +89,9 @@ def parse_statement(text: str, doc: str, statement: str) -> Iterator[tuple]:
         account = row.get("CD_CONTA", "")
         if not cnpj or not period_end or not account:
             continue
+        currency = row.get("MOEDA", "").upper()
+        if currency and currency not in {"REAL", "REAIS", "BRL", "R$"}:
+            raise ValueError(f"Unsupported CVM statement currency: {currency}")
         value = to_float(row.get("VL_CONTA"))
         if value is not None and row.get("ESCALA_MOEDA", "").upper() == "MIL":
             value *= 1000.0

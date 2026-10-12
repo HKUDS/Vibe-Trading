@@ -120,7 +120,7 @@ include = ["src*", "backtest*", "cli*", "evals*"]
     "shadow_account/assets/*.md",
 ]
 "evals.harness" = ["README.md", "cases/**/*.json"]
-"backtest" = ["*.py"]
+"backtest" = ["*.py", "loaders/*.json"]
 "src.factors" = ["zoo/**/*.yaml", "zoo/**/*.md", "zoo/**/NOTICE"]
 
 [project.optional-dependencies]

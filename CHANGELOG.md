@@ -5,6 +5,48 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Maintenance — 2026-10-12
+
+- Preserve the original opening fill after scale-ins (#1780), use the book
+  immediately before terminal liquidation for Brinson attribution (#1782),
+  and start drawdown duration at the latest visit to the peak (#1784).
+  Three-statement projections honor the caller's balance tolerance throughout
+  the model (#1786); existing balance checks remain enforced.
+- Add ten SEC fundamental factors and three A-share valuation factors
+  (`val:pb`, `val:ps_ttm`, `val:dv_ttm`) via Tushare daily_basic (#1787, #1788,
+  #1789). The registry now has 475 factors, 17 in the fundamental family.
+  Date-only SEC filings become usable one bar later on the IC path (#1790,
+  #1794). Prior IC measurements using same-day filings need to be rerun.
+  XOM keeps its current SEC identity while pre-reorganization filings extend
+  its history. Basic shares never substitute for missing diluted shares.
+  Price-times-diluted-shares ratios are valuation proxies, not reported market
+  capitalization. Missing input data remains missing.
+- Add Brazil `.SA`/BRL routing, an equity engine, local B3/CVM/BCB/Tesouro
+  ingestion and the `get_br_market_data` tool, plus market selection and
+  labels in all nine UI languages (#1783). COTAHIST bars remain raw;
+  CVM statements contain latest revisions, not point-in-time evidence.
+  ZimaOS Compose and a fork publishing template require explicit setup;
+  the upstream repository gains no automatic publishing schedule.
+- Forward active attempt status, tool hints and opt-in reasoning to IM
+  channels, including Feishu CardKit (#1792). Final answers still pass
+  grounding before delivery; draft text and tool-result payloads stay private.
+- Complete write-target helper extraction with actual loop delegation (#1791,
+  #1624), preserving runtime model provenance. Clarify that connector profiles,
+  not the legacy config.readonly field, govern order access (#1793).
+
+### Maintenance — 2026-10-11
+
+- Reject unsupported live options before broker dispatch (#1773). This is a
+  guard fix; live options execution is not enabled.
+- Require evidence for every data operand in derived figures (#1622).
+  Chosen multipliers/divisors need an explicit parameter declaration and
+  matching visible label; arithmetic checks remain enforced.
+- Keep explicit offline/source-bound benchmarks on their selected loader and
+  report unresolved benchmarks (#1781). Distinguish entry/exit events so
+  break-even closes remain in trade artifacts and downstream analysis (#1779).
+- Preserve optional Codex tool arguments with explicit non-strict schemas
+  (#1785).
+
 ### Maintenance — 2026-10-10
 
 - Slack and Discord gain localized connection forms and read-only credential

@@ -18,9 +18,10 @@ class InstrumentType(str, Enum):
     """Instrument classes the broker may report or accept.
 
     ``CFD`` covers margin contracts-for-difference that are not spot forex
-    pairs (MT5 metals like XAUUSD, index/energy/crypto CFDs). Like ``OPTION``
-    it has no universe asset-class bucket and is admitted only when the user's
-    mandate explicitly lists ``"cfd"`` in ``allowed_instruments``.
+    pairs (MT5 metals like XAUUSD, index/energy/crypto CFDs). It has no universe
+    asset-class bucket and requires ``"cfd"`` in ``allowed_instruments``.
+    ``OPTION`` is representable for classification, but order enforcement
+    refuses it until an options-specific risk gate is available.
     """
 
     EQUITY = "equity"

@@ -223,6 +223,18 @@ def test_unreadable_positions_fail_closed() -> None:
     assert breach.limit == "max_total_exposure_usd"
 
 
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_share_notional_gate_refuses_options_even_when_permitted(side: str) -> None:
+    """An instrument allowance does not supply an options risk calculation."""
+    breach = _check(
+        _intent(instrument_type=InstrumentType.OPTION, side=side),
+        _mandate(allowed_instruments=(InstrumentType.OPTION,)),
+    )
+    assert breach is not None
+    assert breach.kind == BREACH_KIND_INSTRUMENT
+    assert breach.limit == "options_unsupported"
+
+
 @pytest.mark.parametrize(
     "row",
     [
@@ -301,6 +313,23 @@ def test_guard_forwards_in_mandate_order(live_runtime: Path) -> None:
     # Daily counter incremented exactly once on confirmed forward.
     counter = json.loads((live_runtime / "live" / "robinhood" / "trade_counter.json").read_text())
     assert counter["count"] == 1
+
+
+@pytest.mark.parametrize("type_key", ["type", "instrument_type", "asset_class", "instrument_class"])
+def test_mcp_equity_entry_cannot_forward_an_option(
+    live_runtime: Path, type_key: str
+) -> None:
+    """Reject option aliases on the real gate path before any order is sent."""
+    _write_mandate(live_runtime, _mandate(allowed_instruments=(InstrumentType.OPTION,)))
+    adapter = _MockAdapter(positions=[], balance=5000.0)
+    result = json.loads(
+        _guard(adapter).execute(
+            symbol="AAPL", side="buy", notional_usd=100.0, **{type_key: "option"}
+        )
+    )
+    assert result["status"] == "blocked"
+    assert adapter.order_calls == []
+    assert not (live_runtime / "live" / "robinhood" / "trade_counter.json").exists()
 
 
 def test_mcp_guard_serializes_the_daily_cap_with_submission(live_runtime: Path) -> None:

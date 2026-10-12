@@ -52,15 +52,18 @@
 
 > ⚠️ **보안 경고:** X 계정 `VibeTrading_HKU`, Virtuals 프로젝트 `101845`, 토큰 컨트랙트 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4`는 모두 Vibe-Trading 공식과 무관합니다. Vibe-Trading은 어떠한 토큰이나 밈코인도 발행하거나 공식적으로 지지한 적이 없습니다. 해당 토큰을 구매하거나 지갑을 연결하거나 어떠한 서명도 하지 마세요. [자세히 보기](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-12** 🧮 **리서치와 백테스트 업데이트**: 최초 체결, 청산 시 성과 귀속, 낙폭 지속 기간, 가치평가 허용 오차, 팩터 IC의 SEC 공시 반영 시점을 수정했습니다([#1780](https://github.com/HKUDS/Vibe-Trading/pull/1780)–[#1794](https://github.com/HKUDS/Vibe-Trading/pull/1794)). 기본적·가치평가 팩터 13개, 브라질 데이터와 백테스트, 선택적으로 활성화하는 ZimaOS 템플릿, Feishu 실행 진행 표시를 추가했습니다. 범위와 제약은 [CHANGELOG](CHANGELOG.md)를 참고하세요.
+
+- **2026-10-11** 🛠️ **우선순위 수정 5건**: 계산에 쓰인 각 데이터 값에 근거를 요구하고 미지원 실거래 옵션 주문을 차단합니다. 오프라인 벤치마크는 지정 소스를 유지하며, 거래 기록은 손익 0 청산을 구분하고 Codex 도구는 선택 인수를 보존합니다([#1622](https://github.com/HKUDS/Vibe-Trading/issues/1622), [#1779](https://github.com/HKUDS/Vibe-Trading/pull/1779), [#1781](https://github.com/HKUDS/Vibe-Trading/pull/1781), [#1785](https://github.com/HKUDS/Vibe-Trading/pull/1785)).
+
 - **2026-10-10** 🛠️ **Slack/Discord 설정과 재현 가능한 연구**: 번역된 양식에서 봇 인증 정보를 검증하며 테스트는 변경 사항을 저장하지 않습니다([#1764](https://github.com/HKUDS/Vibe-Trading/pull/1764), [#1777](https://github.com/HKUDS/Vibe-Trading/pull/1777)). 포트폴리오 연구는 불변 스냅샷을 재사용하고 Web에서 인증 정보와 계좌 번호를 제거한 JSON을 내보냅니다([#1769](https://github.com/HKUDS/Vibe-Trading/pull/1769)). 지표는 조회 날짜와 입력 지문을 보고하며 손상된 세션 기록은 원본을 다시 쓰지 않고 복구합니다. 메모리 검색, 인증 정보 마스킹, 거래 내역 식별도 수정했습니다. [CHANGELOG](CHANGELOG.md)를 참조하세요.
+
+<details>
+<summary>이전 뉴스</summary>
 
 - **2026-10-09** 🛠️ **채널 설정 및 백테스트 수정**: 재연결 없는 설정 업데이트에서 URL 인증 정보와 WeChat 인증 후 서버 주소를 보존하며, 저장·재시작 결과를 웹에서 9개 언어로 표시합니다 ([#1737](https://github.com/HKUDS/Vibe-Trading/pull/1737), [#1742](https://github.com/HKUDS/Vibe-Trading/pull/1742), [#1744](https://github.com/HKUDS/Vibe-Trading/pull/1744)). 여러 시장의 옵션 변동성은 각 시점까지 알려진 타임스탬프만 사용하고, 낙폭은 초기 자금을 반영합니다. 암호화폐·귀금속 데이터 경로, 홍콩 주식 중복 판별, 캐시 복구, 과학적 표기 금액 및 누락된 자산 값 검증을 수정했습니다. 기본 A주 경로에서 mootdx를 제외했습니다. 13개 PR은 [CHANGELOG](CHANGELOG.md)를 참조하세요.
 
 - **2026-10-08** 🔐 **PDF 보고서 비밀번호 보호와 증권사 조회 수정**: 예약 이메일 PDF에 AES-256 보호를 선택할 수 있으며 Web, CLI 및 에이전트 확인에 반영됩니다. 비밀번호는 비공개 채널 설정에만 저장합니다([#1709](https://github.com/HKUDS/Vibe-Trading/pull/1709)). KIS는 세 거래 경로를 조회하고 명시적으로 만료된 토큰을 한 번만 갱신하며 불완전한 조회는 오류로 처리합니다([#1726](https://github.com/HKUDS/Vibe-Trading/pull/1726)). 설명 뒤의 전체 파생 수식을 보존하고 증거 검증을 유지합니다([#1728](https://github.com/HKUDS/Vibe-Trading/pull/1728)).
-
-
-<details>
-<summary>이전 뉴스</summary>
 
 - **2026-10-07** 🛠️ **리서치 연속성과 위험 지표 수정**: 실행 상태를 시스템 프롬프트 밖으로 옮겨 안정적인 접두부를 유지합니다([#1708](https://github.com/HKUDS/Vibe-Trading/pull/1708)). 시장 간 날짜 정렬, 누락 가격 주변의 수익률, 전체 표본을 사용하는 옵션 Sortino 계산을 수정했습니다([#1710](https://github.com/HKUDS/Vibe-Trading/pull/1710), [#1717](https://github.com/HKUDS/Vibe-Trading/pull/1717), [#1727](https://github.com/HKUDS/Vibe-Trading/pull/1727)). 데이터 로더 테스트는 공통 OHLCV 계약을 사용하며 신용 평가, 스타일 노출, 순차 검증 및 감사 진단도 개선했습니다.
 
@@ -377,7 +380,7 @@ Vibe-Trading은 금융 질문을 실행 가능한 분석으로 바꾸는 오픈�
 | **애널리스트 팀 실행하기** | 투자, 퀀트, 크립토, 매크로, 리스크 워크플로를 위한 멀티 에이전트 리서치 리뷰. |
 | **리서치를 IM 채널에 연결하기** | WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, Mochat에서 같은 session runtime을 CLI, REST, Web UI로 관리. |
 | **사용 가능한 artifacts 만들기** | 리포트, TradingView Pine Script, TDX, MetaTrader 5, MCP tools, 이후 리서치 세션. |
-| **사전 빌드된 alpha zoo 벤치** | 462개의 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental)에 대해 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행 |
+| **사전 빌드된 alpha zoo 벤치** | 475개의 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental)에 대해 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행 |
 | **상관관계 국면 포착하기** | `/correlation` 화면의 엣지 밀도 + 히스테리시스 타임라인으로 시장이 한 덩어리로 움직이기 시작하는 시점을 보여줍니다 — 시그널이 아니라 서술적 리스크 컨텍스트입니다. |
 
 ---
@@ -484,7 +487,7 @@ vibe-trading connector install /tmp/my-broker
 | `tickerall` | forex / metals | key + 계정(읽기 전용) | 동일 브로커의 MT5 피드를 **호스팅형**으로 — 로컬 터미널 불필요, OS 무관(명시 지정 전용, auto 폴백에는 절대 들어가지 않음) |
 | `pykrx` | 한국 (KRX: KOSPI/KOSDAQ) | 없음 | `.KS` / `.KQ`용 KOSPI / KOSDAQ 일봉 (선택적 `krx` extra) |
 | `india_broker` | 인도 (NSE/BSE) | 브로커 로그인 | `.NS` / `.BO`용 읽기 전용 Zerodha / Shoonya / Dhan 봉 (폴백 체인 말단) |
-| `b3_cotahist` | Brazil (B3) | none | official B3 COTAHIST daily bars for every listed instrument, read from the local store filled by `python -m src.br_data sync`; offline tail of the `.SA` chain |
+| `b3_cotahist` | Brazil (B3) | none | 로컬 B3 공식 현물·단주 일봉(미조정, BRL). `python -m src.br_data sync`로 가져오는 `.SA` 오프라인 대체 소스 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
 **폴백 체인 (IP 차단 위험 순):**
@@ -664,9 +667,9 @@ Paper-vs-live는 **구조적 브로커별 런타임 가드**(account-id 형식, 
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 462개 사전 빌드된 quant alpha</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 475개 사전 빌드된 quant alpha</sub></summary>
 
-- 🧬 operator 계층에서 lookahead가 금지된 462개 cross-sectional alpha
+- 🧬 operator 계층에서 lookahead가 금지된 475개 cross-sectional alpha
 - 📈 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행
 - 🔬 AST 순수성 게이트 + 300-row lookahead sentinel 테스트 + `pytest-socket` 네트워크 kill-switch
 - 📦 Qlib에 대한 Apache-2 출처 표기, zoo별 `LICENSE.md`에서 수식을 수학적 콘텐츠로 명시
@@ -977,7 +980,7 @@ Vibe-Trading은 tool-heavy agent입니다. skills, backtests, memory, swarms가 
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # 사전 빌드된 462개 alpha 탐색; show / bench / compare / export-manifest 서브커맨드 사용 가능
+vibe-trading alpha list    # 사전 빌드된 475개 alpha 탐색; show / bench / compare / export-manifest 서브커맨드 사용 가능
 vibe-trading playbook list # 예약 리서치 템플릿 5개; show / create 서브커맨드 사용 가능
 vibe-trading channels status --local  # IM 채널 설정과 설치 힌트 확인
 vibe-trading provider doctor  # 마스킹된 provider/proxy/패키지 진단 출력
@@ -1733,7 +1736,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 5개 패밀리에 걸친 462개 alpha
+│   │   ├── factors/                # Alpha Zoo — 5개 패밀리에 걸친 475개 alpha
 │   │   │   ├── base.py             #   19개 operator (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST-only 메타데이터 로딩 + lazy compute + sanity gate
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 분류
@@ -1816,7 +1819,7 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** agent ecosystem의 일부�
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | 로컬 로더 출시 |
 | **Options Lab** | Vol surface, Greeks dashboard, payoff/scenario explorer | Planned |
 | **Portfolio Studio** | Risk x-ray, constraints, turnover-aware optimizer, rebalance notes | Turnover-aware optimizer **0.1.11 출시 완료**; 나머지 Planned |
-| **Alpha Zoo** | 5개 패밀리에 걸친 462개의 사전 빌드된 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental), 한 줄 CLI 벤치, agent 통합, Web UI | **0.1.8 출시 완료**, 0.1.12까지 확장 |
+| **Alpha Zoo** | 5개 패밀리에 걸친 475개의 사전 빌드된 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental), 한 줄 CLI 벤치, agent 통합, Web UI | **0.1.8 출시 완료**, 0.1.12까지 확장 |
 | **Strategy Development Manager** | 논문 / 브로커 리서치를 영속 store + 자동 IC/Sharpe decay 라이프사이클과 함께 팩터 & 전략으로 등록 | **0.1.11 출시 완료** |
 | **Correlation Regime** | `/correlation` 위에 얹은 엣지 밀도 + 히스테리시스 레짐 타임라인 — 시장이 하나의 블록으로 융합되는 시점 포착 | **0.1.12 출시 완료** |
 | **Research Delivery** | Slack / Telegram / email-style IM channels를 통한 예약 brief와 live research sessions | 스케줄러 + IM Runtime 출시 |

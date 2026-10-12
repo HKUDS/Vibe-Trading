@@ -4,10 +4,9 @@ Builds on the artifact readers in :mod:`run_artifacts`; this module owns the
 regime labeling and the per-regime metrics. Conventions:
 
 * Trade counting — engine ``trades.csv`` artifacts hold TWO rows per round
-  trip (entry row ``pnl=0.0`` + exit row with realized pnl); only exit rows
-  are counted, so a round trip contributes exactly one trade. Legacy
-  one-row-per-trade artifacts are detected via the marker column and keep
-  counting every row (see :func:`run_artifacts.read_trade_activity`).
+  trip (``event=entry`` and ``event=exit``); only exits are counted, including
+  zero-PnL exits. Unmarked files keep their legacy PnL-based interpretation
+  (see :func:`run_artifacts.read_trade_activity`).
 * Regime labeling — each bar is labeled by the rolling cumulative benchmark
   return over the trailing ``benchmark_window`` bars ending at that bar
   (``<= bear_threshold`` → bear_market, ``>= bull_threshold`` → bull_market,

@@ -1,12 +1,5 @@
-# Vibe-Trading on ZimaOS (App Store -> "+" -> Install a customized app -> Import).
-# Uses the image published by .github/workflows/zimaos-sync-and-publish.yml.
-# Updates come from the Watchtower already running on the host: both
-# long-running services carry the watchtower.enable label. See zimaos/README.md.
-#
-# All data lives under /media/URSUS/AppData/vibe-trading:
-#   home/      settings (.env), memory, skills, sessions index
-#   br-data/   Brazilian official datasets (SQLite, several GB)
-#   runs/ sessions/ swarm-runs/ uploads/   agent work files
+# ZimaOS custom-app template. Configure required variables before importing.
+# Daily data sync and Watchtower updates are opt-in; see README.md.
 name: vibe-trading
 
 services:
@@ -15,7 +8,7 @@ services:
   # root, which `vibe` could not write to. Only files not already owned by
   # `vibe` are touched, so restarts stay fast even with GBs of data.
   vibe-trading-init:
-    image: ghcr.io/incorpore/vibe-trading:latest
+    image: ${VIBE_TRADING_IMAGE:?Set VIBE_TRADING_IMAGE to a reviewed image tag}
     container_name: vibe-trading-init
     pull_policy: always
     user: "0:0"
@@ -41,15 +34,15 @@ services:
     healthcheck:
       disable: true
     volumes:
-      - /media/URSUS/AppData/vibe-trading/runs:/app/agent/runs
-      - /media/URSUS/AppData/vibe-trading/sessions:/app/agent/sessions
-      - /media/URSUS/AppData/vibe-trading/home:/home/vibe/.vibe-trading
-      - /media/URSUS/AppData/vibe-trading/br-data:/home/vibe/.vibe-trading/br-data
-      - /media/URSUS/AppData/vibe-trading/swarm-runs:/app/agent/.swarm/runs
-      - /media/URSUS/AppData/vibe-trading/uploads:/app/agent/uploads
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/runs:/app/agent/runs
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/sessions:/app/agent/sessions
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/home:/home/vibe/.vibe-trading
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/br-data:/home/vibe/.vibe-trading/br-data
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/swarm-runs:/app/agent/.swarm/runs
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/uploads:/app/agent/uploads
 
   vibe-trading:
-    image: ghcr.io/incorpore/vibe-trading:latest
+    image: ${VIBE_TRADING_IMAGE:?Set VIBE_TRADING_IMAGE to a reviewed image tag}
     container_name: vibe-trading
     pull_policy: always
     restart: unless-stopped
@@ -62,24 +55,24 @@ services:
       # REQUIRED: the port is published on the LAN, and the API refuses
       # non-loopback clients without a key. Use a long random value
       # (e.g. `openssl rand -hex 32`) and enter it in the Web UI when asked.
-      API_AUTH_KEY: "change-me"
+      API_AUTH_KEY: "${API_AUTH_KEY:?Set a strong API_AUTH_KEY}"
       TZ: America/Sao_Paulo
       # LLM via OpenRouter (https://openrouter.ai/keys). Values set here win
       # over the Web UI Settings after every restart, so change the model
       # here, not in the UI.
       LANGCHAIN_PROVIDER: openrouter
-      LANGCHAIN_MODEL_NAME: deepseek/deepseek-v4-pro
-      OPENROUTER_API_KEY: "sk-or-v1-change-me"
+      LANGCHAIN_MODEL_NAME: "${LANGCHAIN_MODEL_NAME:-deepseek/deepseek-v3.2}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY}"
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
       # Do NOT set VIBE_TRADING_TRUST_DOCKER_LOOPBACK here: with a LAN-published
       # port it would treat LAN clients as local.
     volumes:
-      - /media/URSUS/AppData/vibe-trading/runs:/app/agent/runs
-      - /media/URSUS/AppData/vibe-trading/sessions:/app/agent/sessions
-      - /media/URSUS/AppData/vibe-trading/home:/home/vibe/.vibe-trading
-      - /media/URSUS/AppData/vibe-trading/br-data:/home/vibe/.vibe-trading/br-data
-      - /media/URSUS/AppData/vibe-trading/swarm-runs:/app/agent/.swarm/runs
-      - /media/URSUS/AppData/vibe-trading/uploads:/app/agent/uploads
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/runs:/app/agent/runs
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/sessions:/app/agent/sessions
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/home:/home/vibe/.vibe-trading
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/br-data:/home/vibe/.vibe-trading/br-data
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/swarm-runs:/app/agent/.swarm/runs
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/uploads:/app/agent/uploads
     cap_drop:
       - ALL
     cap_add:
@@ -96,7 +89,7 @@ services:
     cpus: 2
     pids_limit: 512
     labels:
-      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.enable: "false"
     x-casaos:
       envs:
         - container: API_AUTH_KEY
@@ -133,7 +126,8 @@ services:
   # get_br_market_data tool and the B3 loader read them. The first run
   # downloads several GB and can take hours; later runs only fetch what changed.
   vibe-trading-br-data:
-    image: ghcr.io/incorpore/vibe-trading:latest
+    profiles: ["br-data-sync"]
+    image: ${VIBE_TRADING_IMAGE:?Set VIBE_TRADING_IMAGE to a reviewed image tag}
     container_name: vibe-trading-br-data
     pull_policy: always
     restart: unless-stopped
@@ -150,8 +144,8 @@ services:
       # Daily run time (Sao Paulo), after B3 and CVM publish the day's files.
       VIBE_BR_SYNC_TIME: "21:30"
     volumes:
-      - /media/URSUS/AppData/vibe-trading/home:/home/vibe/.vibe-trading
-      - /media/URSUS/AppData/vibe-trading/br-data:/home/vibe/.vibe-trading/br-data
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/home:/home/vibe/.vibe-trading
+      - ${VIBE_TRADING_APPDATA:-/DATA/AppData/vibe-trading}/br-data:/home/vibe/.vibe-trading/br-data
     # The image's healthcheck probes the web server, which this service does
     # not run.
     healthcheck:
@@ -165,7 +159,7 @@ services:
       - /tmp
     mem_limit: 2g
     labels:
-      com.centurylinklabs.watchtower.enable: "true"
+      com.centurylinklabs.watchtower.enable: "false"
 
 x-casaos:
   architectures:
@@ -184,4 +178,4 @@ x-casaos:
     en_us: Natural-language finance research agent with backtesting
     pt_br: Agente de pesquisa financeira com backtesting
   description:
-    en_us: Auto-updated build of incorpore/Vibe-Trading (synced from HKUDS/Vibe-Trading).
+    en_us: Vibe-Trading with optional Brazilian dataset sync.

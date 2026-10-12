@@ -22,6 +22,7 @@ from typing import Any, Callable
 import pytest
 
 from src.agent.grounding import GroundingLedger, ValidationResult
+from tests.grounding_parameter_helpers import declared_parameter
 from src.agent.grounding.evidence import (
     _REGISTERED_PRICE_INDICATORS,
     _is_registered_price_indicator,
@@ -199,7 +200,7 @@ def test_a_declared_derivation_is_checked_by_its_own_arithmetic(tmp_path: Path) 
     ledger = _ledger(tmp_path)
 
     result = ledger.validate_final_answer(
-        HDR + " 建议买入价 1.136 元。"
+        HDR + declared_parameter("97%") + " 建议买入价 1.136 元。"
         + _block(HDR_ROW, "1.136 | derived | 1.171 × 0.97 | prices")
     )
 
@@ -211,7 +212,7 @@ def test_a_derivation_whose_arithmetic_misses_is_rejected(tmp_path: Path) -> Non
     ledger = _ledger(tmp_path)
 
     result = ledger.validate_final_answer(
-        HDR + " 建议买入价 1.20 元。"
+        HDR + declared_parameter("97%") + " 建议买入价 1.20 元。"
         + _block(HDR_ROW, "1.20 | derived | 1.171 × 0.97 | prices")
     )
 
@@ -225,7 +226,7 @@ def test_a_derivation_may_take_a_registered_indicator_as_its_input(tmp_path: Pat
     ledger = _ledger(tmp_path)
 
     result = ledger.validate_final_answer(
-        HDR + " 第一档 1.093 元。"
+        HDR + declared_parameter("95%") + " 第一档 1.093 元。"
         + _block(HDR_ROW, "1.093 | derived | 1.150 × 0.95 | indicators")
     )
 
@@ -1091,7 +1092,7 @@ def test_a_declaration_covers_its_own_value_and_nothing_beside_it(
     ledger = _ledger(tmp_path)
 
     riding_along = ledger.validate_final_answer(
-        HDR + " 建议买入价 0.95 元（收盘 1.171 × 0.97 = 1.136 参考）。"
+        HDR + declared_parameter("97%") + " 建议买入价 0.95 元（收盘 1.171 × 0.97 = 1.136 参考）。"
         + _block(
             HDR_ROW,
             "0.97 | count | 折扣系数",
@@ -1099,7 +1100,7 @@ def test_a_declaration_covers_its_own_value_and_nothing_beside_it(
         )
     )
     formula_only = ledger.validate_final_answer(
-        HDR + " 参考价 1.136 元。"
+        HDR + declared_parameter("97%") + " 参考价 1.136 元。"
         + _block(HDR_ROW, "1.136 | derived | 1.171 × 0.97 | prices")
     )
 
@@ -1454,7 +1455,7 @@ def test_a_declared_derivation_survives_the_cut_beside_a_rejected_figure(
     """
     ledger = _ledger(tmp_path)
     draft = (
-        HDR + " 第一档 1.093 元。建议买入价 0.95 元。"
+        HDR + declared_parameter("95%") + " 第一档 1.093 元。建议买入价 0.95 元。"
         + _block(
             HDR_ROW,
             "1.093 | derived | 1.150 × 0.95 | indicators",
@@ -1685,10 +1686,10 @@ def test_a_derivation_anchored_to_another_symbol_grounds_nothing(tmp_path: Path)
     )
 
     unattributed = _two_symbol_ledger(tmp_path).validate_final_answer(
-        header + "买入价 1377.4。" + block
+        header + "买入价 1377.4。" + block + declared_parameter("97%")
     )
     attributed = _two_symbol_ledger(tmp_path).validate_final_answer(
-        header + "600519.SH 买入价 1377.4。" + block
+        header + "600519.SH 买入价 1377.4。" + block + declared_parameter("97%")
     )
 
     assert "numeric_claim_conflict" in _codes(unattributed)
@@ -1786,7 +1787,7 @@ def test_a_restatement_of_a_rejected_figure_is_cut_where_it_stands(
     """
     ledger = _ledger(tmp_path)
     draft = (
-        HDR + " 第一档 1.093 元。\n\n| 档位 | 建议买入价 |\n|---|---|\n| 第一档 | 0.95 |\n"
+        HDR + declared_parameter("95%") + " 第一档 1.093 元。\n\n| 档位 | 建议买入价 |\n|---|---|\n| 第一档 | 0.95 |\n"
         + _block(HDR_ROW, "1.093 | derived | 1.150 × 0.95 | indicators", "0.95 | proposed | 系数")
     )
     validation = ledger.validate_final_answer(draft)
@@ -2375,6 +2376,7 @@ def test_the_correction_prompt_names_the_figures_to_keep(tmp_path: Path) -> None
         HDR
         + "昨日收盘 1.137 元，20 日均线 1.150 元，50 日均线 1.090 元。"
         + "参考买入价 1.136 元（1.171 × 0.97）。目标价 2.50 元，传闻报价 9.99 元。"
+        + declared_parameter("97%")
         + _block(
             HDR_ROW,
             "1.137 | observed | close 2026-06-23 | prices",

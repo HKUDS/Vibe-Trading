@@ -23,6 +23,10 @@ class Position:
         leverage: Effective leverage (1 for spot/stocks).
         entry_bar_idx: Index in the dates array at entry (for holding_bars).
         entry_commission: Commission paid at entry.
+        open_price: Execution price of the fill that opened the position.
+            ``entry_price`` becomes the weighted cost once the position is
+            scaled into; this keeps what was actually paid at the open.
+        open_size: Quantity of the fill that opened the position.
     """
 
     symbol: str
@@ -33,6 +37,8 @@ class Position:
     leverage: float = 1.0
     entry_bar_idx: int = 0
     entry_commission: float = 0.0
+    open_price: float | None = None
+    open_size: float | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +85,9 @@ class TradeRecord:
         commission: Total commission (entry + exit).
         entry_margin: Actual margin allocated at entry, after size rounding.
         exit_margin: Margin-equivalent value traded at the exit price.
+        open_price: Execution price of the fill that opened the position,
+            or ``None`` when the position did not record it.
+        open_size: Quantity of that opening fill, or ``None``.
     """
 
     symbol: str
@@ -96,6 +105,8 @@ class TradeRecord:
     commission: float
     entry_margin: float = 0.0
     exit_margin: float = 0.0
+    open_price: float | None = None
+    open_size: float | None = None
 
 
 @dataclass(frozen=True)

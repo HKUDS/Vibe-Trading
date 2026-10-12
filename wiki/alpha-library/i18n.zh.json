@@ -156,17 +156,69 @@
    "en": "Industry neutralization implemented via per-row sector group demean (panel['sector'] required). When sector tag is absent the registry rejects via SkipAlpha; the compute() also has a degraded global demean fallback. This is a partial approximation of the paper's IndClass.industry/subindustry/sector neutralization.",
    "zh": "行业中性化通过逐行按 sector 分组去均值实现（需要 panel['sector']）。缺少 sector 标签时，注册表通过 SkipAlpha 予以拒绝；compute() 中也带有降级的全局去均值回退。这是对论文 IndClass.industry/subindustry/sector 中性化的部分近似。"
   },
+  "fund_accruals": {
+   "en": "Balance-sheet accrual proxy: high accruals indicate low earnings quality; sign inverted so high score = low accruals. PIT-safe from the fundamental panel; missing statements remain NaN and are excluded from that date's cross-section.",
+   "zh": "资产负债表应计代理指标：高应计表明盈利质量低；符号取反，因此高得分 = 低应计。基于基本面面板的时点正确（PIT）数据；缺失的财务报表保持 NaN，并被排除在当日截面之外。"
+  },
   "fund_asset_growth": {
    "en": "Inverse PIT-safe asset-growth factor. High asset growth is treated as aggressive investment and receives lower scores; low/negative growth receives higher scores.",
    "zh": "反向的时点正确（PIT）资产增长因子。高资产增长被视为激进投资，得分较低；低 / 负增长得分较高。"
+  },
+  "fund_book_to_market": {
+   "en": "Valuation proxy: close times weighted-average diluted shares is not reported market capitalization; adjusted closes can change the level. Fama-French (1993) HML-style book-to-market proxy built from PIT-safe total equity and shares diluted aligned to the daily close panel; the academic_hml factor in the academic zoo is only a price proxy. High B/M (cheap relative to book value) scores high. market_cap = close x shares_diluted is computed here in the factor file by design: _fundamental_schema.py lines 210-212 deliberately keep price-dependent value factors such as book_to_market out of DERIVED_FIELDS because they need the aligned price panel. Zero or non-finite market cap becomes NaN via safe_div before cross-sectional z-scoring; missing statements remain NaN and are excluded from that date's cross-section.",
+   "zh": "此因子是估值代理：收盘价乘加权平均稀释股数不等于披露的市值，复权价格会影响数值水平。Fama-French (1993) HML 风格的账面市值比代理，由时点正确（PIT）的总股东权益与稀释后股数对齐到日度收盘价面板构建；academic zoo 中的 academic_hml 因子只是价格代理。高 B/M（相对账面价值便宜）得分高。market_cap = close x shares_diluted 按设计在因子文件内计算：_fundamental_schema.py 第 210-212 行有意将 book_to_market 等价格依赖型价值因子排除在 DERIVED_FIELDS 之外，因为它们需要对齐后的价格面板。为零或非有限的市值经 safe_div 置为 NaN，随后再做截面 z 打分；缺失的财务报表保持 NaN，并被排除在当日截面之外。"
+  },
+  "fund_cash_to_assets": {
+   "en": "Balance-sheet cash ratio (cash and equivalents / total assets): high cash holdings signal defensive capacity and financial flexibility. Zero or missing total assets become NaN via safe division before cross-sectional z-scoring; PIT-safe from the filed-date-anchored fundamental panel.",
+   "zh": "资产负债表现金比率（现金及等价物 / 总资产）：高现金持有量预示防御能力与财务灵活性。在截面 z 打分之前，为零或缺失的总资产经安全除法置为 NaN；基于按申报日锚定的基本面面板，时点正确（PIT）。"
+  },
+  "fund_cfo_yield": {
+   "en": "Valuation proxy: close times weighted-average diluted shares is not reported market capitalization; adjusted closes can change the level. Cash-flow return on assets: the cash-backed counterpart of ROA, so accrual-heavy earnings score lower here. Zero or missing total assets become NaN via safe division before cross-sectional z-scoring; PIT-safe from the filed-date-anchored fundamental panel.",
+   "zh": "此因子是估值代理：收盘价乘加权平均稀释股数不等于披露的市值，复权价格会影响数值水平。现金流总资产收益率：ROA 的现金支撑对应指标，因此应计占比高的盈利在此得分较低。在截面 z 打分之前，为零或缺失的总资产经安全除法置为 NaN；基于按申报日锚定的基本面面板，时点正确（PIT）。"
+  },
+  "fund_dividend_yield": {
+   "en": "Trailing dividend yield from the val: namespace (tushare daily_basic dv_ttm, CN A-share only), reported in percent units — cross-sectional z-scoring is scale-invariant, so no unit conversion is applied. High dividend yield scores high. Keyed by trade_date, so PIT-safe by construction with no filing lag. Missing dates or non-CN symbols stay NaN and are excluded from that date's cross-section. Lineage: JoinQuant style-pro divyild; akshare/Eastmoney dv_ttm convention.",
+   "zh": "来自 val: 命名空间的滚动股息率（tushare daily_basic dv_ttm，仅 CN A 股），以百分比单位报告——截面 z 打分具有尺度不变性，因此不做单位换算。高股息率得分高。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。缺失日期或非 CN 标的保持 NaN，并被排除在当日截面之外。血缘：JoinQuant style-pro divyild；akshare/东方财富 dv_ttm 口径。"
+  },
+  "fund_earnings_growth": {
+   "en": "PIT-safe earnings growth from the fundamental panel's derived field ``earnings_growth``. The schema-side formula is sign-safe: delta net_income / abs(lag_365d net_income), so a negative year-ago base does not flip the growth sign (the proposal #6 footnote resolution; the alternative NaN-on-negative-base was not chosen). Calendar-day lag per the #1564 lesson. High earnings growth scores high, matching the JoinQuant net_profit_growth_rate convention. Missing statements or a zero/missing year-ago base remain NaN and are excluded from that date's cross-section.",
+   "zh": "基于基本面面板派生字段 ``earnings_growth`` 的时点正确（PIT）盈利增长。schema 侧公式符号安全：净利润变化量 / abs(滞后 365 天净利润)，因此上年基数为负不会翻转增长符号（提案 #6 脚注的决议；未选择负基数置 NaN 的替代方案）。按 #1564 教训使用日历日滞后。高盈利增长得分高，与 JoinQuant net_profit_growth_rate 约定一致。缺失的财务报表或为零/缺失的上年基数保持 NaN，并被排除在当日截面之外。"
   },
   "fund_earnings_yield": {
    "en": "Hybrid value factor using PIT-safe net income and shares diluted aligned to the daily close panel. Division by zero/non-finite market cap becomes NaN before cross-sectional scoring.",
    "zh": "混合型价值因子：使用时点正确（PIT）的净利润与稀释后股数，并对齐到日度收盘价面板。截面打分之前，除以零 / 非有限市值的结果置为 NaN。"
   },
+  "fund_fcf_yield": {
+   "en": "Valuation proxy: close times weighted-average diluted shares is not reported market capitalization; adjusted closes can change the level. PIT-safe free-cash-flow yield: FCF = CFO - capex, scaled by market cap (close x shares_diluted) computed in the factor file per the _fundamental_schema.py price-dependent convention. Sign assumption: capex is reported as a positive magnitude (SEC concept PaymentsToAcquirePropertyPlantAndEquipment), so subtracting it from CFO yields FCF directly. High FCF yield (cheap on cash generation, cf. Lakonishok-Shleifer-Vishny 1994 cash-flow yield value factors) scores high. Zero/non-finite market cap becomes NaN via safe_div before cross-sectional z-scoring; missing statements remain NaN and are excluded from that date's cross-section.",
+   "zh": "此因子是估值代理：收盘价乘加权平均稀释股数不等于披露的市值，复权价格会影响数值水平。时点正确（PIT）的自由现金流收益率：FCF = 经营现金流 - 资本开支，再除以市值（close x shares_diluted，按 _fundamental_schema.py 价格依赖约定在因子文件内计算）。符号假设：资本开支以正值报告（SEC 概念 PaymentsToAcquirePropertyPlantAndEquipment），因此从经营现金流中减去即得 FCF。高 FCF 收益率（按现金生成能力衡量便宜，参见 Lakonishok-Shleifer-Vishny 1994 现金流收益率类价值因子）得分高。为零/非有限的市值经 safe_div 置为 NaN，随后再做截面 z 打分；缺失的财务报表保持 NaN，并被排除在当日截面之外。"
+  },
   "fund_gross_profitability": {
    "en": "PIT-safe Novy-Marx style gross profitability from the fundamental panel; cross-sectional z-score per date with missing issuers excluded.",
    "zh": "基于基本面面板的时点正确（PIT）Novy-Marx 式毛利盈利能力；按日期做截面 z 分数，缺失的发行人被排除在外。"
+  },
+  "fund_leverage": {
+   "en": "PIT-safe market leverage (total debt / total equity) from the fundamental panel; sign inverted so low leverage scores high — heavily levered firms carry distress risk and lower expected returns. Zero-equity or missing statements already yield NaN in the derived field and are excluded from that date's cross-section.",
+   "zh": "基于基本面面板的时点正确（PIT）市场杠杆率（总债务 / 总权益）；符号取反，因此低杠杆得分高——高杠杆公司带有财务困境风险且预期收益较低。零权益或缺失的财务报表在派生字段中已产生 NaN，并被排除在当日截面之外。"
+  },
+  "fund_operating_margin": {
+   "en": "Operating profitability (operating income / revenue), cross-sectionally z-scored per date. Captures pricing power and cost efficiency before financing and tax effects. Zero-revenue or missing statements become NaN via safe division and are excluded from that date's cross-section; PIT-safe from the fundamental panel.",
+   "zh": "营业盈利能力（营业利润 / 营业收入），按日期做截面 z 分数。捕捉融资与税收效应之前的定价能力和成本效率。零营收或缺失的财务报表经安全除法置为 NaN，并被排除在当日截面之外；基于基本面面板，时点正确（PIT）。"
+  },
+  "fund_pb": {
+   "en": "Nonpositive multiples are excluded rather than ranked as cheap. Inverse price-to-book from the val: namespace (tushare daily_basic pb, CN A-share only): low PB (cheap relative to book value) scores high, the daily-market-data counterpart of fund_book_to_market. Keyed by trade_date, so PIT-safe by construction with no filing lag. Missing dates or non-CN symbols stay NaN and are excluded from that date's cross-section. Lineage: JoinQuant style book_to_price_ratio; akshare/Eastmoney pb convention.",
+   "zh": "非正估值倍数不参与排名，不能当作低估。来自 val: 命名空间的反向市净率（tushare daily_basic pb，仅 CN A 股）：低 PB（相对账面价值便宜）得分高，是 fund_book_to_market 的日频市场口径对应因子。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。缺失日期或非 CN 标的保持 NaN，并被排除在当日截面之外。血缘：JoinQuant style book_to_price_ratio；akshare/东方财富 pb 口径。"
+  },
+  "fund_ps_ttm": {
+   "en": "Nonpositive multiples are excluded rather than ranked as cheap. Inverse trailing price-to-sales from the val: namespace (tushare daily_basic ps_ttm, CN A-share only): low PS scores high. PS stays informative for loss-making names where earnings yield fails. Keyed by trade_date, so PIT-safe by construction with no filing lag. Missing dates or non-CN symbols stay NaN and are excluded from that date's cross-section. Lineage: JoinQuant style-pro sales-to-price; akshare/Eastmoney ps_ttm convention.",
+   "zh": "非正估值倍数不参与排名，不能当作低估。来自 val: 命名空间的反向滚动市销率（tushare daily_basic ps_ttm，仅 CN A 股）：低 PS 得分高。PS 对亏损股依然有效（盈利收益率失效的场景）。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。缺失日期或非 CN 标的保持 NaN，并被排除在当日截面之外。血缘：JoinQuant style-pro sales-to-price；akshare/东方财富 ps_ttm 口径。"
+  },
+  "fund_revenue_growth": {
+   "en": "PIT-safe revenue growth from the fundamental panel's derived field ``revenue_growth`` (revenue / lag_365d(revenue) - 1, calendar-day lag per the #1564 lesson rather than a row-wise shift). High top-line growth scores high, matching the JoinQuant operating_revenue_growth_rate convention. Missing statements or a missing year-ago base remain NaN and are excluded from that date's cross-section.",
+   "zh": "基于基本面面板派生字段 ``revenue_growth`` 的时点正确（PIT）营收增长（revenue / lag_365d(revenue) - 1，按 #1564 教训使用日历日滞后而非按行位移）。高顶线增长得分高，与 JoinQuant operating_revenue_growth_rate 约定一致。缺失的财务报表或缺失的上年基数保持 NaN，并被排除在当日截面之外。"
+  },
+  "fund_roa": {
+   "en": "PIT-safe return on assets (net income / total assets) from the fundamental panel; cross-sectional z-score per date. Higher ROA means a more profitable asset base and scores higher. Missing statements remain NaN and are excluded from that date's cross-section.",
+   "zh": "基于基本面面板的时点正确（PIT）总资产收益率（净利润 / 总资产）；按日期做截面 z 分数。ROA 越高意味着资产基础盈利能力越强，得分越高。缺失的财务报表保持 NaN，并被排除在当日截面之外。"
   },
   "fund_roe": {
    "en": "PIT-safe return on equity from the fundamental panel; cross-sectional z-score per date. Missing statements remain NaN and are excluded from that date's cross-section.",
@@ -1218,17 +1270,69 @@
    "en": "Kakushadze Alpha #101",
    "zh": "Kakushadze 因子 Alpha #101"
   },
+  "fund_accruals": {
+   "en": "Accruals - inverse (NI-CFO)/TA, Sloan 1996",
+   "zh": "应计 - 反向 (NI-CFO)/TA，Sloan 1996"
+  },
   "fund_asset_growth": {
    "en": "Asset growth - inverse investment factor",
    "zh": "资产增长 - 反向投资因子"
+  },
+  "fund_book_to_market": {
+   "en": "Book-to-market - equity over market cap (FF HML characteristic)",
+   "zh": "账面市值比 - 股东权益除以市值（FF HML 特征）"
+  },
+  "fund_cash_to_assets": {
+   "en": "Cash to assets - balance-sheet cash ratio",
+   "zh": "现金总资产比 - 资产负债表现金比率"
+  },
+  "fund_cfo_yield": {
+   "en": "CFO yield - operating cash flow over total assets",
+   "zh": "经营现金流收益率 - 经营现金流除以总资产"
+  },
+  "fund_dividend_yield": {
+   "en": "Dividend yield TTM - dv_ttm (daily market data)",
+   "zh": "股息率 TTM - dv_ttm（日频市场数据）"
+  },
+  "fund_earnings_growth": {
+   "en": "Earnings growth - sign-safe YoY net income expansion",
+   "zh": "盈利增长 - 符号安全的同比净利润扩张"
   },
   "fund_earnings_yield": {
    "en": "Earnings yield - net income over market cap",
    "zh": "盈利收益率 - 净利润除以市值"
   },
+  "fund_fcf_yield": {
+   "en": "FCF yield - (CFO - capex) over market cap",
+   "zh": "自由现金流收益率 - （经营现金流 - 资本开支）除以市值"
+  },
   "fund_gross_profitability": {
    "en": "Gross profitability - gross profit over total assets",
    "zh": "毛利盈利能力 - 毛利除以总资产"
+  },
+  "fund_leverage": {
+   "en": "Leverage - inverse debt/equity (low leverage scores high)",
+   "zh": "杠杆 - 反向债务/权益比（低杠杆得分高）"
+  },
+  "fund_operating_margin": {
+   "en": "Operating margin - operating income over revenue",
+   "zh": "营业利润率 - 营业利润除以营业收入"
+  },
+  "fund_pb": {
+   "en": "P/B - inverse price-to-book (daily market data)",
+   "zh": "市净率 P/B - 反向市净率（日频市场数据）"
+  },
+  "fund_ps_ttm": {
+   "en": "P/S TTM - inverse price-to-sales (daily market data)",
+   "zh": "市销率 P/S TTM - 反向滚动市销率（日频市场数据）"
+  },
+  "fund_revenue_growth": {
+   "en": "Revenue growth - YoY top-line expansion",
+   "zh": "营收增长 - 同比顶线扩张"
+  },
+  "fund_roa": {
+   "en": "ROA - return on assets (PIT-safe fundamentals)",
+   "zh": "ROA - 总资产收益率，基于时点正确（PIT）基本面"
   },
   "fund_roe": {
    "en": "ROE - return on equity (PIT-safe fundamentals)",
@@ -1245,6 +1349,7 @@
   "liquidity": "流动性",
   "value": "价值",
   "growth": "成长",
-  "sentiment": "情绪"
+  "sentiment": "情绪",
+  "leverage": "杠杆"
  }
 }

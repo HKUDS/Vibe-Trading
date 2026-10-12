@@ -98,7 +98,7 @@ Decide which workflow to use based on the request:
      Override: if the user explicitly requests full analysis regardless of routing, run all 4 layers.
 
      **Layer 1 — Trade Attribution** (always, if `artifacts/trades.csv` exists):
-     - Read trades.csv. Exit rows have `pnl != 0` (entry rows have pnl = 0). Exit rows contain pnl, holding_days, return_pct — use exit rows directly, no pairing needed
+     - Read trades.csv. With an `event` column, use `event == "exit"` for completed trades, including zero-PnL exits; `entry` marks openings. Only files without `event` use the legacy `pnl != 0` convention, whose zero-PnL exits are ambiguous. Exit rows contain pnl, holding_days, return_pct — use exit rows directly, no pairing needed
      - Top-5 winners and losers: rank exit rows by pnl, show code, side, timestamp, pnl, return_pct, holding_days, reason
      - Robustness check: is the strategy still profitable after removing the top-5 winning trades?
      - Exit-reason breakdown: group by `reason`, show count, total_pnl, avg_pnl, win_rate per group
@@ -218,9 +218,15 @@ Decide which workflow to use based on the request:
   `observed` with the backtest's run directory as `ref`, e.g. `rp`, or the file
   you read, e.g. `rp/artifacts/target_positions.csv`; two backtests are two
   directories, so a comparison names each one (`rp::sharpe`, `ew::sharpe`);
-  `derived` — arithmetic on observed values (`note`: the formula; every number
-  added or subtracted must itself be an observed value; `ref`: where the
-  operands came from, e.g. `rp, ew` for a difference between two backtests);
+  `derived` — arithmetic on observed values (`note`: the formula; ALL data
+  operands, including numerators and denominators, must be observed; `ref`:
+  where they came from, e.g. `rp, ew` for a difference between two backtests).
+  A chosen multiplier/divisor needs a `count` declaration AND its value and
+  note label on the same visible line of the answer, even for an integer
+  (e.g. "Discount factor: 97%.", declared `97% | count | discount factor`).
+  Literal 1 and square/cube exponents are structural constants. Every added
+  or subtracted term still needs observed data. Never relabel missing data
+  as a chosen parameter: fetch it or remove the calculation;
   `proposed` — a price level you suggest, such as an entry, stop or target: inside
   the observed price range, or with a formula over observed values in `note`; a
   percentage is not a level, so state the price it implies;
@@ -228,10 +234,12 @@ Decide which workflow to use based on the request:
   same sentence as the figure, and in `note`;
   `count` — a count, weight, threshold, window, probability or other parameter
   you chose, never a price or an amount. Plain integers, dates and security
-  codes need no line. Example (zh):
+  codes need no line unless used as a chosen coefficient above. Example (zh,
+  with "折扣系数：97%。" visible in the answer):
   ```figures
   0.666 | observed | 159516.SZ 收盘 2026-09-09 | 159516.SZ
   0.646 | derived  | 0.666 × 0.97 | 159516.SZ
+  97%   | count    | 折扣系数
   37%   | derived  | (1.053 − 0.666) / 1.053 | 159516.SZ
   0.62  | proposed | 买入参考，位于观测区间 0.567–1.053 内
   ```

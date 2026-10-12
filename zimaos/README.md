@@ -1,130 +1,71 @@
-# Vibe-Trading no ZimaOS (atualização automática)
+# Vibe-Trading on ZimaOS
 
-```
-HKUDS/Vibe-Trading ──(a cada 30 min)──▶ incorpore/Vibe-Trading:main
-                                              │ build
-                                              ▼
-                              ghcr.io/incorpore/vibe-trading:latest
-                                              │ seu Watchtower (já instalado)
-                                              ▼
-                                         ZimaOS
-```
-
-Tudo é feito por `.github/workflows/zimaos-sync-and-publish.yml` + o
-`docker-compose.yml` desta pasta. Os arquivos ficam separados do código do
-upstream para que o merge automático não gere conflitos.
-
-## 1. Configuração única no GitHub
-
-1. **Actions habilitadas** no fork (aba *Actions* → "I understand… enable").
-   Em forks, workflows agendados ficam desligados até você habilitar.
-2. **Secret `UPSTREAM_SYNC_TOKEN`** (recomendado): *Settings → Secrets and
-   variables → Actions → New repository secret*. Use um *fine-grained PAT* só
-   para este repositório com **Contents: Read and write** e
-   **Workflows: Read and write**. Sem ele o sync funciona, mas falha quando o
-   upstream altera arquivos em `.github/workflows/`.
-3. Rode o workflow uma vez manualmente (*Actions → ZimaOS - Sync upstream and
-   publish image → Run workflow*) para publicar a primeira imagem.
-4. **Torne o pacote público** (uma vez): *github.com/incorpore → Packages →
-   vibe-trading → Package settings → Change visibility → Public*. Se preferir
-   privado, faça `docker login ghcr.io` no ZimaOS com um PAT `read:packages`
-   e dê as mesmas credenciais ao seu Watchtower.
-
-Variáveis opcionais (*Settings → Variables*): `UPSTREAM_REPO`,
-`UPSTREAM_BRANCH`, `ZIMAOS_PLATFORMS` (ex.: `linux/amd64,linux/arm64`).
-
-## 2. Instalar no ZimaOS
-
-1. App Store → **+** → *Install a customized app* → **Import** → cole o
-   conteúdo de `docker-compose.yml`.
-2. Troque `API_AUTH_KEY` por um valor aleatório (`openssl rand -hex 32`).
-   Ele é obrigatório: a porta 8899 fica acessível na rede local e a API
-   recusa clientes fora do loopback sem chave.
-3. Troque `OPENROUTER_API_KEY` pela sua chave (https://openrouter.ai/keys) e,
-   se quiser, `LANGCHAIN_MODEL_NAME` por outro modelo do OpenRouter (use o id
-   exato da lista em https://openrouter.ai/models, no formato `empresa/modelo`).
-   O modelo deve ser trocado aqui, não no *Settings* do Web UI: os valores do
-   compose voltam a valer a cada reinício.
-4. Instale e abra `http://<ip-do-zima>:8899`. O Web UI não pede a chave
-   sozinho: até ela ser informada aparece "O acesso remoto à API requer uma
-   chave de API". Vá em **Configurações → Chave de autenticação da API**, cole
-   o valor de `API_AUTH_KEY` e salve. A chave fica guardada só naquele
-   navegador; repita em cada computador/celular.
-
-### Pastas
-
-Tudo fica em `/media/URSUS/AppData/vibe-trading/`:
-
-| Pasta | Conteúdo |
-| --- | --- |
-| `home/` | configurações (`.env`), memória, skills, índice de sessões |
-| `br-data/` | base oficial brasileira (`br_data.db`, vários GB) |
-| `runs/`, `sessions/`, `swarm-runs/`, `uploads/` | arquivos de trabalho do agente |
-
-O container `vibe-trading-init` roda uma vez a cada início: cria as pastas e
-passa a posse para o usuário `vibe` da imagem (UID 1000), porque o Docker cria
-pastas novas como root. Se ele falhar no seu ZimaOS, rode uma vez no terminal:
+Import `docker-compose.yml` as a custom app, or run it with Docker Compose.
+Set `VIBE_TRADING_IMAGE` to an image and version you have reviewed,
+`VIBE_TRADING_APPDATA` to your persistent directory (default
+`/DATA/AppData/vibe-trading`), `API_AUTH_KEY` to a strong random key, and
+`OPENROUTER_API_KEY` to your provider key. `LANGCHAIN_MODEL_NAME` is optional.
+Compose refuses to start without the required values. Set these variables in
+ZimaOS before importing, or substitute their values in your private copy.
 
 ```bash
-mkdir -p /media/URSUS/AppData/vibe-trading/{home,br-data,runs,sessions,swarm-runs,uploads}
-chown -R 1000:1000 /media/URSUS/AppData/vibe-trading
+docker compose -f zimaos/docker-compose.yml config --quiet
+docker compose -f zimaos/docker-compose.yml up -d
 ```
 
-### Atualização
+Open `http://<zimaos-ip>:8899` and enter `API_AUTH_KEY` in Settings → API
+authentication key. The initialization container changes ownership only within
+the mounted application directories to the image's `vibe` user. It does not
+mount the Docker socket. Keep `home`, `runs`, `sessions`, `swarm-runs`, `uploads`
+and `br-data` on persistent storage.
 
-Os containers `vibe-trading` e `vibe-trading-br-data` têm o label
-`com.centurylinklabs.watchtower.enable=true`, então o Watchtower que você já
-tem instalado os atualiza (se ele estiver em modo `--label-enable`, só esses
-são atualizados; senão ele já monitora todos). Os dados ficam nas pastas acima
-e não são afetados.
+## Optional Brazilian data
 
-## Comportamento
+The application accepts B3 symbols such as `PETR4.SA`, `VALE3.SA` and
+`BOVA11.SA`. Yahoo/yfinance provide adjusted bars; the optional local COTAHIST
+store provides raw bars with their adjustment basis labelled. Backtests use
+BRL, configurable fees, share lots and tick rounding. They do not model
+personal income tax, stock-borrow availability/cost or settlement cash locks;
+review these assumptions before interpreting results.
 
-| Evento | Resultado |
-| --- | --- |
-| Upstream recebeu commits | merge em `main` → build → `:latest` → ZimaOS atualiza |
-| Você fez push em `main` | build → `:latest` → ZimaOS atualiza |
-| Conflito de merge | o job falha (GitHub te avisa por e-mail); resolva manualmente em `main` |
-| *Run workflow* manual | sincroniza e publica mesmo sem mudanças |
+The `get_br_market_data` agent tool reads B3 quotes, CVM company/fund data,
+Banco Central series and Tesouro Direto prices. CVM statements are the latest
+stored revisions, **not** point-in-time backtest inputs. Fund subclasses remain
+separate. Data is stored outside the checkout in `~/.vibe-trading/br-data/`,
+or at `VIBE_BR_DATA_DB`.
 
-Cada build também recebe a tag `:sha-<commit>`; para voltar a uma versão,
-troque `latest` por essa tag no compose.
-
-## Dados do mercado brasileiro
-
-### Ações da B3 em tempo quase real (Yahoo)
-Use o sufixo `.SA`: `PETR4.SA`, `VALE3.SA`, `BOVA11.SA` (ETF), `HGLG11.SA`
-(FII), `AAPL34.SA` (BDR), `PETR4F.SA` (fracionário). O backtest usa regras da
-B3: moeda BRL, taxas de negociação + liquidação (0,030% por ordem), corretagem
-configurável, lote de 1 ação (`br_lot_size: 100` para lote-padrão), tick de
-R$0,01 e venda a descoberto permitida. O benchmark padrão é o `BOVA11.SA`.
-Imposto de renda não é descontado por operação.
-
-### Base oficial completa (gratuita)
-O serviço `vibe-trading-br-data` do compose baixa e atualiza todo dia às
-21:30 (horário de Brasília):
-
-| Fonte | Conteúdo |
-| --- | --- |
-| B3 COTAHIST | cotação diária de **todos** os ativos da B3 (ações, FIIs, ETFs, BDRs, opções, termo) |
-| CVM – fundos | cadastro e informe diário de todos os fundos (cota, PL, captação, resgate, cotistas) |
-| CVM – companhias | cadastro, mapa ticker→CNPJ, DFP (anual) e ITR (trimestral) |
-| Banco Central (SGS) | Selic, CDI, IPCA, IGP-M, INPC, PTAX, euro, PIB, desemprego (outras séries sob demanda) |
-| Tesouro Direto | preços e taxas de todos os títulos, histórico completo |
-
-Os dados ficam em `/media/URSUS/AppData/vibe-trading/br-data/br_data.db`.
-O agente consulta tudo pela ferramenta `get_br_market_data`, e o backtest usa
-a COTAHIST como fonte reserva quando o Yahoo falha. Os preços da COTAHIST são
-os negociados, **sem ajuste** de proventos.
-
-A primeira execução baixa vários GB e pode levar horas. Variáveis do serviço:
-`VIBE_BR_COTAHIST_START_YEAR` (padrão 2015; mínimo 1986),
-`VIBE_BR_CVM_START_YEAR` (padrão 2022) e `VIBE_BR_SYNC_TIME`.
-
-Comandos manuais (no terminal do container):
+Run selected sources manually inside the application container:
 
 ```bash
-python -m src.br_data status                      # o que já foi baixado
-python -m src.br_data sync --only bcb tesouro     # só algumas fontes
-python -m src.br_data sync --cotahist-from 1986   # histórico completo da B3
+python -m src.br_data status
+python -m src.br_data sync --only bcb tesouro
+python -m src.br_data sync --only cotahist --cotahist-from 2025
 ```
+
+The initial full download can be several GB. The daily sync service is off by
+default; enable it explicitly with `--profile br-data-sync` when starting
+Compose. Its schedule is controlled by `VIBE_BR_SYNC_TIME` in São Paulo time.
+Historical coverage starts at `VIBE_BR_COTAHIST_START_YEAR` (default 2015) and
+`VIBE_BR_CVM_START_YEAR` (default 2022). No sync is launched by opening the UI.
+
+## Optional fork publishing
+
+`sync-and-publish.yml.example` is an inactive template for operators who want
+to maintain their own fork and GHCR image. It is outside `.github/workflows`
+and does not schedule anything in this repository. Review its write permissions,
+upstream merge behavior and publishing destination before copying it to your
+fork's workflow directory. Configure `UPSTREAM_REPO`, `UPSTREAM_BRANCH` and
+`ZIMAOS_PLATFORMS` there. The template supports a manual run and a 30-minute
+schedule after explicit installation; conflicts fail for manual resolution.
+
+Use your fork's image tag as `VIBE_TRADING_IMAGE`. Watchtower labels are off by
+default; opt in only if automatic replacement of that image is desired. To
+roll back, select a previous immutable `sha-<commit>` tag and restart Compose.
+
+## Resumo em português
+
+Configure a imagem, a pasta persistente e as chaves antes de importar o Compose.
+O aplicativo não inicia com chaves de exemplo. A sincronização diária dos dados
+brasileiros e as atualizações automáticas ficam desativadas por padrão. Ative o
+perfil `br-data-sync` somente se quiser baixar a base oficial e mantê-la atualizada.
+O workflow é um modelo inativo para seu próprio fork; não publica no upstream.

@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import logging
 import zipfile
+import math
+from datetime import datetime
 from typing import Optional
 
 from backtest.loaders._http import throttled_get
@@ -52,7 +54,8 @@ def to_float(value: str | None) -> Optional[float]:
     if "," in text:
         text = text.replace(".", "").replace(",", ".")
     try:
-        return float(text)
+        number = float(text)
+        return number if math.isfinite(number) else None
     except ValueError:
         return None
 
@@ -62,10 +65,11 @@ def br_date(value: str | None) -> Optional[str]:
     if not value:
         return None
     text = str(value).strip()[:10]
-    if len(text) == 10 and text[2] == "/" and text[5] == "/":
-        return f"{text[6:10]}-{text[3:5]}-{text[0:2]}"
-    if len(text) == 10 and text[4] == "-" and text[7] == "-":
-        return text
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
     return None
 
 

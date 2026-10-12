@@ -478,7 +478,9 @@ _LOADER_CACHE_TRUE_VALUES = {"1", "true", "yes", "on"}
 # forward walk hold tail-truncated multi-year series and must never be served.
 # v8: FMP/Tiingo keep one adjusted/raw basis and cached frames retain their
 # actual adjustment stamp. Older entries may contain artificial return jumps.
-_LOADER_CACHE_VERSION = 8
+# v9: SEC successor/predecessor facts extend historical coverage. Old cached
+# panels may omit the predecessor's filings and must be rebuilt.
+_LOADER_CACHE_VERSION = 9
 _LOADER_FRAME_METADATA_ATTRS = ("quote_currency", "currency_conversion", "adjustment")
 
 

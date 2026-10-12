@@ -1522,9 +1522,9 @@ def test_price_validation_ignores_symbol_date_and_quantity_digits(tmp_path: Path
 
     for draft in (
         "000543.SZ 截至 8 月 3 日收盘价 8.20 CNY（source: tencent）",
-        "000543.SZ 买入价 8.20 CNY（100 股成本 820 CNY；source: tencent）\n\n"
+        "000543.SZ 买入价 8.20 CNY（股数100，成本 820 CNY；source: tencent）\n\n"
         "```figures\n8.20 | observed | close | prices\n"
-        "820 | derived | 100 × 8.20 | prices\n```",
+        "820 | derived | 100 × 8.20 | prices\n100 | count | 股数\n```",
         "000543.SZ 建议持有 1–4 周，买入价 8.20 CNY（source: tencent）",
     ):
         result = ledger.validate_final_answer(draft)
@@ -1729,9 +1729,9 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
 
     assert market.calls == 1
     validation = agent._grounding.validate_final_answer(
-        "000543.SZ 买入价 8.20 CNY（100 股成本 820 CNY；source: tencent）\n\n"
+        "000543.SZ 买入价 8.20 CNY（股数100，成本 820 CNY；source: tencent）\n\n"
         "```figures\n8.20 | observed | close | prices\n"
-        "820 | derived | 100 × 8.20 | prices\n```"
+        "820 | derived | 100 × 8.20 | prices\n100 | count | 股数\n```"
     )
     assert validation.valid is True, validation.issues
 
@@ -1825,9 +1825,9 @@ def test_plan_level_alone_reaches_a_valid_answer(tmp_path: Path) -> None:
     assert inside_range.valid is True, inside_range.issues
 
     derived_outside = ledger.validate_final_answer(
-        "000543.SZ 收盘价 8.20 CNY（source: tencent）。目标位 9.02。\n\n"
+        "000543.SZ 收盘价 8.20 CNY（source: tencent）。目标位 9.02。选定系数110%。\n\n"
         "```figures\n8.20 | observed | close | prices\n"
-        "9.02 | proposed | 8.20 × 1.10 | prices\n```"
+        "9.02 | proposed | 8.20 × 1.10 | prices\n110% | count | 选定系数\n```"
     )
     assert derived_outside.valid is True, derived_outside.issues
 

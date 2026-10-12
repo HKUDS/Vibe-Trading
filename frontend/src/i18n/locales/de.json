@@ -1049,7 +1049,7 @@
       "noMarkets": "Keine Marktdatenquellen registriert.",
       "howItWorksTitle": "So funktioniert es",
       "howItWorks": "Bei automatisch erkannten Symbolen werden die Quellen von oben nach unten versucht; eine fehlgeschlagene Quelle fällt zur nächsten durch. Beim Speichern sofort wirksam — kein Neustart nötig.",
-      "caliberCaveat": "Hinweis: Die Quellen unterscheiden sich in der Adjustierungsbasis — z. B. liefert Yahoo unadjustierte OHLC-Kurse, während Tencent/Eastmoney/Tushare adjustierte Kurse liefern — das Umordnen der Kette kann daher Backtest-Zahlen verändern.",
+      "caliberCaveat": "Die Kursbereinigung kann je nach Quelle abweichen. Prüfe die Angaben zu Bereinigung und Herkunft sowie die Warnungen im Laufbericht; eine andere Reihenfolge kann die Backtest-Ergebnisse verändern.",
       "markets": {
         "a_share": "China-Aktien (A)",
         "us_equity": "US-Aktien",

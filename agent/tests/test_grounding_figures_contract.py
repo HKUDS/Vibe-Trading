@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from src.agent.grounding import GroundingLedger
+from tests.grounding_parameter_helpers import declared_parameter
 from src.agent.grounding.figures import (
     ROLES,
     parse_figures_block,
@@ -448,13 +449,13 @@ def test_derived_passes_on_its_own_arithmetic_and_fails_without_it(
     ledger = _ledger(tmp_path)
 
     correct = ledger.validate_final_answer(
-        HDR + " 第一档 0.646 元。" + _block(HDR_ROW, "0.646 | derived | 0.666 × 0.97 | c1")
+        HDR + declared_parameter("97%") + " 第一档 0.646 元。" + _block(HDR_ROW, "0.646 | derived | 0.666 × 0.97 | c1")
     )
     wrong_result = ledger.validate_final_answer(
-        HDR + " 第一档 0.700 元。" + _block(HDR_ROW, "0.700 | derived | 0.666 × 0.97 | c1")
+        HDR + declared_parameter("97%") + " 第一档 0.700 元。" + _block(HDR_ROW, "0.700 | derived | 0.666 × 0.97 | c1")
     )
     unanchored = ledger.validate_final_answer(
-        HDR + " 第一档 0.646 元。" + _block(HDR_ROW, "0.646 | derived | 0.500 × 1.292 | c1")
+        HDR + declared_parameter("97%") + " 第一档 0.646 元。" + _block(HDR_ROW, "0.646 | derived | 0.500 × 1.292 | c1")
     )
 
     assert correct.valid is True, correct.issues
@@ -467,7 +468,7 @@ def test_derived_covers_only_the_value_it_declares(tmp_path: Path) -> None:
     ledger = _ledger(tmp_path)
 
     result = ledger.validate_final_answer(
-        HDR + " 第一档 0.646 元，第二档 0.400 元。"
+        HDR + declared_parameter("97%") + " 第一档 0.646 元，第二档 0.400 元。"
         + _block(HDR_ROW, "0.646 | derived | 0.666 × 0.97 | c1", "0.400 | proposed | 第二档")
     )
 
@@ -500,7 +501,7 @@ def test_proposed_outside_the_range_passes_with_a_derivation(tmp_path: Path) -> 
     ledger = _ledger(tmp_path)
 
     result = ledger.validate_final_answer(
-        HDR + " 目标价 1.332 元。" + _block(HDR_ROW, "1.332 | proposed | 0.666 × 2 | c1")
+        HDR + declared_parameter("2") + " 目标价 1.332 元。" + _block(HDR_ROW, "1.332 | proposed | 0.666 × 2 | c1")
     )
 
     assert result.valid is True, result.issues
@@ -714,7 +715,7 @@ def test_the_chinese_prompt_example_passes_the_gate_it_describes(tmp_path: Path)
     ledger = _ledger(tmp_path)
     prose = (
         "159516.SZ（akshare，CNY）最新收盘 0.666 元，第一档 0.646 元，"
-        "较 5 月高点回撤 37%，买入参考 0.62 元。"
+        "折扣系数97%。较 5 月高点回撤 37%，买入参考 0.62 元。"
     )
 
     result = ledger.validate_final_answer(prose + "\n\n" + _prompt_blocks()[0])

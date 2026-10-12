@@ -90,6 +90,7 @@ _CURRENCY_ALIASES = {
     "CAD": ("cad", "c$", "加元", "加拿大元"),
     "GBP": ("gbp", "£", "英镑"),
     "VND": ("vnd", "₫", "越南盾"),
+    "BRL": ("brl", "r$", "real brasileiro", "reais", "巴西雷亚尔"),
     "ARS": ("ars", "ar$", "阿根廷比索"),
 }
 
@@ -493,6 +494,36 @@ class _PolicyMixin:
             if evaluated is not None
             for operand in evaluated[1]
         ]
+        # The hidden declaration alone cannot turn invented data into a free
+        # coefficient. A chosen parameter needs a count declaration AND its
+        # value and label in the visible answer. No prose vocabulary decides
+        # its role; the same label-matching contract already protects citations.
+        scalar_parameters: list[float] = []
+        for parameter in figures:
+            declared = block.match(parameter.value, parameter.percent, parameter.digits)
+            if (
+                declared is None
+                or declared.role != "count"
+                or parameter.shape not in ("measured", "bare")
+                or parameter.currency
+                or parameter.column
+            ):
+                continue
+            line = positions[parameter.line][0] if 0 <= parameter.line < len(positions) else ""
+            # Citation tokens cover labels embedded in ordinary prose. Also
+            # accept a complete label in any script, including a short symbol
+            # such as "w"; it must not match a letter inside an unrelated word.
+            label = declared.note.strip()
+            label_visible = bool(label) and (
+                bool(_note_tokens(label) & _note_tokens(line))
+                or re.search(
+                    r"(?<![^\W\d_])" + re.escape(label) + r"(?![^\W\d_])",
+                    line,
+                    re.IGNORECASE,
+                ) is not None
+            )
+            if label_visible:
+                scalar_parameters.append(parameter.value / 100 if parameter.percent else parameter.value)
         checked_price = False
         for figure in figures:
             if figure.shape not in ("measured", "bare"):
@@ -610,12 +641,12 @@ class _PolicyMixin:
             checked_price = True
             if role == "derived":
                 issues.extend(
-                    self._check_derived(figure, declaration, symbol, records)
+                    self._check_derived(figure, declaration, symbol, records, scalar_parameters)
                 )
                 continue
             if role == "proposed":
                 issues.extend(
-                    self._check_proposed(figure, declaration, symbol, records)
+                    self._check_proposed(figure, declaration, symbol, records, scalar_parameters)
                 )
                 continue
             issues.extend(self._check_observed(figure, declaration, symbol, records))
@@ -1743,13 +1774,16 @@ class _PolicyMixin:
         records: Sequence[EvidenceRecord],
         *,
         money: bool = False,
+        scalar_parameters: Sequence[float] = (),
     ) -> tuple[float, list[float]] | str | None:
         """Evaluate a declaration's note as an observation-anchored formula.
 
         Returns the ``(result, operands)`` pair when the note is arithmetic
-        over at least two operands, at least one of which the run observed and
-        every added or subtracted term of which holds an observed operand;
-        otherwise the reason it is not.
+        over at least two operands. Data operands must be observed; chosen
+        scalar parameters must be declared and visible. Every added or
+        subtracted term still needs an observed anchor. Literal 1 is the
+        multiplicative identity (also used in ratio-minus-one expressions),
+        and square/cube exponents belong to the operator, not the operands.
         """
         if declaration is None or not declaration.note.strip():
             return "no_formula"
@@ -1796,6 +1830,16 @@ class _PolicyMixin:
             return "no_symbol" if unattributed else "formula_not_anchored"
         if _unanchored_term(tree, observed):
             return "additive_operand_not_observed"
+        if any(
+            not observed(operand)
+            and operand != 1
+            and not any(
+                math.isclose(abs(operand), abs(parameter), rel_tol=1e-12, abs_tol=0.0)
+                for parameter in scalar_parameters
+            )
+            for operand in operands
+        ):
+            return "operand_not_observed"
         return result, operands
 
     @staticmethod
@@ -1826,9 +1870,13 @@ class _PolicyMixin:
         declaration: Declaration | None,
         symbol: str | None,
         records: Sequence[EvidenceRecord],
+        scalar_parameters: Sequence[float] = (),
     ) -> list[dict[str, Any]]:
         """A derived figure must be the arithmetic its note states."""
-        derivation = self._derivation(declaration, symbol, records, money=figure.currency)
+        derivation = self._derivation(
+            declaration, symbol, records, money=figure.currency,
+            scalar_parameters=scalar_parameters,
+        )
         if isinstance(derivation, str):
             return [
                 self._figure_issue(
@@ -1839,7 +1887,12 @@ class _PolicyMixin:
                     "derived",
                     symbol,
                     derivation,
-                    "is declared derived, but its note adds or subtracts an operand "
+                    "uses a data operand this session did not observe. Fetch the missing "
+                    "data; do not relabel a numerator or denominator as a parameter. "
+                    "For a genuinely chosen coefficient, declare its value as count and "
+                    "show that value and its note label in the answer"
+                    if derivation == "operand_not_observed"
+                    else "is declared derived, but its note adds or subtracts an operand "
                     "this session did not observe"
                     if derivation == "additive_operand_not_observed"
                     else "is declared derived, but its note is not arithmetic over at "
@@ -1875,6 +1928,7 @@ class _PolicyMixin:
         declaration: Declaration | None,
         symbol: str | None,
         records: Sequence[EvidenceRecord],
+        scalar_parameters: Sequence[float] = (),
     ) -> list[dict[str, Any]]:
         """A proposed level (entry, target, stop) is derived or inside the observed range.
 
@@ -1907,7 +1961,10 @@ class _PolicyMixin:
                     "instrument and nothing attributes it to one",
                 )
             ]
-        derivation = self._derivation(declaration, symbol, records, money=figure.currency)
+        derivation = self._derivation(
+            declaration, symbol, records, money=figure.currency,
+            scalar_parameters=scalar_parameters,
+        )
         if not isinstance(derivation, str) and self._result_matches(figure, derivation[0]):
             return []
         candidates = self._price_candidates(symbol, records)

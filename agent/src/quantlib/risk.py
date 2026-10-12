@@ -452,7 +452,8 @@ def max_drawdown_analysis(equity: pd.Series | np.ndarray | Sequence[float]) -> d
             max_drawdown (float): Worst decline as a **positive** fraction, so
                 0.25 means the curve fell 25% below its running peak. 0.0 when
                 the curve never declines.
-            peak_date: Index label of the running peak preceding the trough.
+            peak_date: Index label of the most recent running peak preceding
+                the trough; revisiting that peak resets the underwater period.
             trough_date: Index label of the deepest point.
             recovery_date: Index label of the first observation at or above the
                 peak value, searched from the trough onward; None if the series
@@ -491,7 +492,8 @@ def max_drawdown_analysis(equity: pd.Series | np.ndarray | Sequence[float]) -> d
     running_peak = np.maximum.accumulate(values)
     drawdown = values / running_peak - 1.0  # <= 0 everywhere
     trough_pos = int(np.argmin(drawdown))
-    peak_pos = int(np.argmax(values[: trough_pos + 1]))
+    # A revisit closes the previous drawdown: start at the latest peak.
+    peak_pos = int(np.flatnonzero(values[: trough_pos + 1] == running_peak[trough_pos])[-1])
 
     # A flat/rising curve has drawdown 0 at the trough, so the trough itself
     # already satisfies "back at the peak" and recovery is instantaneous.

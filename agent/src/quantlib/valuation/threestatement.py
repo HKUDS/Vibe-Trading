@@ -521,6 +521,7 @@ def _project_period(
     minimum_cash: float,
     circularity_tolerance: float,
     max_circularity_iterations: int,
+    balance_tolerance: float = BALANCE_TOLERANCE_REL,
 ) -> PeriodResult:
     """Project one period, solving the interest/revolver circularity by iteration.
 
@@ -650,7 +651,7 @@ def _project_period(
         paid_in_capital=prior_bs.paid_in_capital,
         retained_earnings=prior_bs.retained_earnings + net_income - dividends_paid,
     )
-    check_balance_sheet(balance_sheet)
+    check_balance_sheet(balance_sheet, balance_tolerance)
 
     return PeriodResult(
         period=period,
@@ -751,10 +752,10 @@ def project_three_statement(
             minimum_cash=float(drivers["minimum_cash"][index]),
             circularity_tolerance=circularity_tolerance,
             max_circularity_iterations=max_circularity_iterations,
+            balance_tolerance=balance_tolerance,
         )
-        # Defensive re-check with the caller's tolerance: _project_period already
-        # checked with the module default, but a caller-widened balance_tolerance
-        # must not be allowed to let a period through unchecked at its own bar.
+        # Defensive re-check: the inner check already enforces the
+        # same tolerance, so this second pass is a safety net for future edits.
         check_balance_sheet(result.balance_sheet, balance_tolerance)
         results.append(result)
         prior_bs = result.balance_sheet

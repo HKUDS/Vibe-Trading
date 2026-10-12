@@ -64,7 +64,9 @@ class EtoroConfig:
         user_key: eToro user key (shared across demo and real paths).
         profile: ``paper``, ``live-readonly`` or ``live``.
         timeout: Network timeout in seconds.
-        readonly: Always true for this layer unless trade profiles call writes.
+        readonly: Not consulted by the order methods. Whether a profile may place or
+            cancel orders is gated first by its ``TradingProfile.readonly`` in the
+            trading service.
     """
 
     api_key: str = ""

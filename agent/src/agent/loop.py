@@ -142,11 +142,11 @@ from src.agent.tool_results import (  # noqa: E402
     _FORCED_TEXT_TOOL_CALL_RE as _FORCED_TEXT_TOOL_CALL_RE,
     _DSML_BAR_TOOL_CALL_RE as _DSML_BAR_TOOL_CALL_RE,
     _TARGET_PATH_RE as _TARGET_PATH_RE,
-    _TARGET_ACTION_RE,
+    _TARGET_ACTION_RE as _TARGET_ACTION_RE,
     _failure_code,
     _is_tool_success,
     _looks_like_tool_call_syntax,
-    _named_target_paths,
+    _named_target_paths as _named_target_paths,
     _normalize_tool_run_dir,
     _previously_archived as _previously_archived,
     _archive_backtest_result,
@@ -2170,119 +2170,24 @@ class AgentLoop:
         return True
 
     def _record_written_target(self, arguments: Mapping[str, Any]) -> None:
-        """Remember a file written by write_file/edit_file for completion checks."""
-        raw = arguments.get("path") or arguments.get("file_path")
-        if not raw:
-            return
-        p = Path(str(raw))
-        if not p.is_absolute() and self.memory.run_dir:
-            p = Path(self.memory.run_dir) / p
-        try:
-            resolved = p.resolve()
-            self._written_files.add(str(resolved).casefold())
-        except (OSError, ValueError):
-            resolved = p
-            self._written_files.add(str(p).casefold())
+        """Track writes with the active response's model identity."""
+        from src.agent.write_targets import record_written_target
 
-        if not self.memory.run_dir:
-            return
-        run_root = Path(self.memory.run_dir).resolve()
-        try:
-            relative = resolved.relative_to(run_root).as_posix()
-        except ValueError:
-            return
-        if relative not in {"config.json", "code/signal_engine.py"}:
-            return
-
-        metadata_path = run_root / "strategy_provenance.json"
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            files = {}
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "Could not read strategy model provenance; update skipped: %s",
-                exc,
-            )
-            return
-        else:
-            if not isinstance(metadata, dict):
-                logger.warning("Invalid strategy model provenance; update skipped.")
-                return
-            files = metadata.get("files", {})
-            if not isinstance(files, dict):
-                logger.warning("Invalid strategy model provenance files; update skipped.")
-                return
-        files[relative] = {
-            "provider": self._llm_runtime.provider or None,
-            "model_id": self._active_model_id or None,
-            "model_source": self._active_model_source,
-        }
-        try:
-            metadata_path.write_text(
-                json.dumps({"files": files}, ensure_ascii=False, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-        except OSError as exc:
-            logger.warning("Could not write strategy model provenance: %s", exc)
+        record_written_target(
+            arguments, written_files=self._written_files,
+            run_dir=self.memory.run_dir, llm_runtime=self._llm_runtime,
+            active_model_id=self._active_model_id,
+            active_model_source=self._active_model_source,
+        )
 
     def _pending_write_directive(
         self, user_message: str, run_started_wall: float
     ) -> str:
-        """Return a directive naming task target files not yet written this run.
+        """Name task targets not yet written in this run."""
+        from src.agent.write_targets import pending_write_directive
 
-        Empty when the message names no .md targets, carries no create/update
-        intent, or every named target has been written (directly via
-        write_file/edit_file, or by any process whose mtime is newer than the
-        run start - which covers the bash workaround).
-        """
-        if not _TARGET_ACTION_RE.search(user_message or ""):
-            return ""
-        targets = _named_target_paths(user_message)
-        if not targets:
-            return ""
-        pending: list[str] = []
-        # A bare target ("create X.md at the same folder") carries no directory;
-        # resolve it against the folders of the absolute targets named in the
-        # same message, or the run would never see the file the model wrote to
-        # the intended folder and would report a false "not written".
-        base_dirs = [p.parent for p in targets if p.parent != Path(".")]
-        any_written = False
-        for p in targets:
-            candidates = [p]
-            if not p.is_absolute() and p.parent == Path("."):
-                candidates += [d / p.name for d in base_dirs]
-            written = False
-            for cand in candidates:
-                try:
-                    key = str(cand.resolve()).casefold()
-                except (OSError, ValueError):
-                    key = str(cand).casefold()
-                if key in self._written_files:
-                    written = True
-                    break
-                if not written:
-                    try:
-                        if cand.exists() and cand.stat().st_mtime >= run_started_wall:
-                            written = True
-                            break
-                    except OSError:
-                        pass
-            if written:
-                any_written = True
-            else:
-                pending.append(str(p))
-        # If any named target was written this run, the create/update task is
-        # addressed; reference files named alongside (e.g. "refer to A, create B")
-        # are never "written" and must not trigger the directive.
-        if any_written or not pending:
-            return ""
-        return (
-            "[SYSTEM] The following task target file(s) have NOT been written "
-            "yet in this run: " + ", ".join(pending) + ". Write them NOW using "
-            "write_file/edit_file (or bash for file operations). If your task "
-            "was to create or update a file, a plain-text answer without the "
-            "file write is a failure."
+        return pending_write_directive(
+            user_message, run_started_wall, written_files=self._written_files,
         )
 
     def _context_budget(self, messages: list) -> CompactionBudget:

@@ -84,7 +84,7 @@ describe("SourcePrioritySettings", () => {
     // Default badge — nothing customized yet.
     expect(screen.getByText("Default")).toBeInTheDocument();
     // Adjustment-caliber caveat is surfaced next to the setting (see PR review).
-    expect(screen.getByText(/adjustment basis/)).toBeInTheDocument();
+    expect(screen.getByText(/returned adjustment\/provenance/)).toBeInTheDocument();
   });
 
   it("sends all markets on save: reordered draft as order, default-equal as null", async () => {
