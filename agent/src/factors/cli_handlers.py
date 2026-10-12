@@ -547,6 +547,12 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
     from ``src.tools.alpha_bench_tool`` (we do NOT modify that module).
     """
     try:
+        horizon = getattr(args, "horizon", 1)
+        horizon = 1 if horizon is None else int(horizon)
+        if horizon < 1:
+            # Usage error → argparse's exit-code convention (2), not a traceback.
+            _err(f"alpha bench: --horizon must be an integer >= 1 (got {horizon}).")
+            return 2
         if (
             getattr(args, "oos_split", None)
             or getattr(args, "training_cutoff", None)
@@ -567,9 +573,12 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
                     n_random_seeds=max(1, int(getattr(args, "random_seeds", 5) or 5)),
                     oos_split=getattr(args, "oos_split", None),
                     training_cutoff=getattr(args, "training_cutoff", None),
+                    horizon=horizon,
                 )
             else:
-                from src.factors.bench_runner import run_bench
+                from src.factors.bench_runner import run_bench as _run_bench_plain
+
+                run_bench = functools.partial(_run_bench_plain, horizon=horizon)
         except ImportError as exc:
             _err(f"alpha bench failed: bench_runner unavailable ({exc})")
             return 1
@@ -927,6 +936,23 @@ def cmd_alpha_export_manifest(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- #
 
 
+def _horizon_arg(value: str) -> int:
+    """argparse type for ``--horizon``: integer >= 1.
+
+    Raising ``ArgumentTypeError`` makes argparse exit with its usage-error
+    code (2) instead of letting a bad value reach the bench engine.
+    """
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--horizon expects an integer >= 1, got {value!r}"
+        ) from None
+    if ivalue < 1:
+        raise argparse.ArgumentTypeError(f"--horizon must be >= 1 (got {ivalue})")
+    return ivalue
+
+
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "list": cmd_alpha_list,
     "show": cmd_alpha_show,
@@ -1019,6 +1045,16 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         help="Period spec: YYYY-YYYY or YYYY-MM-DD/YYYY-MM-DD (e.g. 2020-2025)",
     )
     p_bench.add_argument("--top", type=int, default=20, help="Top-N alphas to keep (default: 20)")
+    p_bench.add_argument(
+        "--horizon",
+        type=_horizon_arg,
+        default=1,
+        help=(
+            "Forward-return horizon in bars (default: 1 = next-bar). h>1 computes "
+            "h-bar forward returns and samples IC non-overlapping (end-anchored); "
+            "21 ≈ monthly, the conventional horizon for fundamental factors."
+        ),
+    )
     p_bench.add_argument(
         "--strict",
         action="store_true",

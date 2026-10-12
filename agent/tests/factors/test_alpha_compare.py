@@ -76,7 +76,7 @@ def _stub_panel(monkeypatch: pytest.MonkeyPatch, n_rows: int = 80, n_cols: int =
     )
     monkeypatch.setattr(
         "src.factors.bench_runner._compute_forward_returns",
-        lambda panel_in: panel_in["close"].pct_change().shift(-1),
+        lambda panel_in, horizon=1: panel_in["close"].pct_change().shift(-1),
     )
 
 

@@ -896,6 +896,7 @@ def alpha_bench(
     alpha_id: str | None = None,
     zoo: str | None = None,
     top: int = 20,
+    horizon: int = 1,
     output_dir: str | None = None,
 ) -> str:
     """Benchmark one Alpha Zoo alpha or a complete zoo on a universe.
@@ -906,6 +907,10 @@ def alpha_bench(
         alpha_id: Optional single alpha id; mutually exclusive with ``zoo``.
         zoo: Optional zoo id; mutually exclusive with ``alpha_id``.
         top: Number of top-ranked alphas to include in the report.
+        horizon: Forward-return horizon in bars (default 1 = next-bar).
+            ``h > 1`` computes h-bar forward returns and samples IC rows
+            non-overlapping (end-anchored); 21 ≈ monthly, the conventional
+            horizon for fundamental factors. Range 1-252.
         output_dir: Optional directory for the generated HTML report.
     """
     if not alpha_id and not zoo:
@@ -957,10 +962,22 @@ def alpha_bench(
             ensure_ascii=False,
         )
 
+    # 252 ≈ one trading year of bars — mirrors the tool-level cap in
+    # src.tools.alpha_bench_tool._MAX_HORIZON.
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= 252:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": "MCP alpha_bench horizon must be an integer between 1 and 252",
+            },
+            ensure_ascii=False,
+        )
+
     params: dict[str, Any] = {
         "universe": universe,
         "period": period,
         "top": top,
+        "horizon": horizon,
     }
     if alpha_id is not None:
         params["alpha_id"] = alpha_id

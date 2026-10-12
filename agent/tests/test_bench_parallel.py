@@ -80,7 +80,7 @@ class TestParallelBench:
         mock_reg.compute.side_effect = lambda aid, p: p["close"] * np.random.randn(*p["close"].shape)
 
         monkeypatch.setattr("src.factors.bench_runner._load_universe_panel", lambda u, p: panel)
-        monkeypatch.setattr("src.factors.bench_runner._compute_forward_returns", lambda p: return_df)
+        monkeypatch.setattr("src.factors.bench_runner._compute_forward_returns", lambda p, horizon=1: return_df)
         monkeypatch.setattr("src.factors.bench_runner.get_default_registry", lambda: mock_reg)
         return mock_reg
 

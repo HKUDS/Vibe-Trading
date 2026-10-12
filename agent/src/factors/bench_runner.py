@@ -143,6 +143,7 @@ def run_bench(
     registry: Registry | None = None,
     only: Iterable[str] | None = None,
     on_stage: Callable[[str], None] | None = None,
+    horizon: int = 1,
 ) -> dict[str, Any]:
     """Run a bench end-to-end and return the API-shaped summary.
 
@@ -161,11 +162,17 @@ def run_bench(
             alpha list is restricted to this set — used by ``alpha compare`` to
             bench just a handful of named alphas instead of the whole zoo. Ids
             not registered under ``zoo`` are silently dropped from the subset.
+        horizon: Forward-return horizon in bars (default 1 = next-bar,
+            unchanged behaviour). ``h > 1`` computes h-bar forward returns
+            sampled non-overlapping (end-anchored) so the naive-iid t-stat
+            stays honest; 21 ≈ monthly, the conventional horizon for
+            fundamental factors.
 
     Returns:
         Dict with keys: ``status``, ``zoo``, ``universe``, ``period``,
-        ``n_alphas_tested``, ``n_skipped``, ``alive``, ``reversed``, ``dead``,
-        ``by_theme``, ``top5_by_ir``, ``dead_examples``, ``wall_seconds`` —
+        ``horizon``, ``forward_return_sampling``, ``n_alphas_tested``,
+        ``n_skipped``, ``alive``, ``reversed``, ``dead``, ``by_theme``,
+        ``top5_by_ir``, ``dead_examples``, ``wall_seconds`` —
         and on failure: ``status="error"``, ``error``.
     """
     start = time.monotonic()
@@ -174,6 +181,8 @@ def run_bench(
         "zoo": zoo,
         "universe": universe,
         "period": period,
+        "horizon": horizon,
+        "forward_return_sampling": "non_overlapping" if horizon > 1 else "daily",
     }
 
     reg = registry if registry is not None else get_default_registry()
@@ -208,7 +217,7 @@ def run_bench(
         panel = _prepare_bench_panel(reg, alpha_ids, panel, universe, period)
         if on_stage:
             on_stage("preparing_returns")
-        return_df = _compute_forward_returns(panel)
+        return_df = _compute_forward_returns(panel, horizon=horizon)
     except Exception as exc:  # noqa: BLE001
         entry["status"] = "error"
         entry["error"] = f"forward returns failed: {exc}"

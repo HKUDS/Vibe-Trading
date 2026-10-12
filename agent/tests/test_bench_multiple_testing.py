@@ -42,7 +42,7 @@ def _setup(monkeypatch, n_alphas=8, n_days=120):
     )
 
     monkeypatch.setattr("src.factors.bench_runner._load_universe_panel", lambda u, p: panel)
-    monkeypatch.setattr("src.factors.bench_runner._compute_forward_returns", lambda p: return_df)
+    monkeypatch.setattr("src.factors.bench_runner._compute_forward_returns", lambda p, horizon=1: return_df)
     monkeypatch.setattr("src.factors.bench_runner.get_default_registry", lambda: reg)
     return reg
 

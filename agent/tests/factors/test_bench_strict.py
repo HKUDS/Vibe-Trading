@@ -235,7 +235,7 @@ def _stub_panel(monkeypatch: pytest.MonkeyPatch, n_rows: int = 80, n_cols: int =
         lambda universe, period: panel,  # noqa: ARG005
     )
 
-    def _fwd(panel_in: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    def _fwd(panel_in: dict[str, pd.DataFrame], horizon: int = 1) -> pd.DataFrame:
         c = panel_in["close"]
         return c.pct_change().shift(-1)
 
@@ -613,7 +613,7 @@ def test_run_bench_strict_catches_planted_alive_signal(
     )
     monkeypatch.setattr(
         "src.factors.bench_runner_strict._compute_forward_returns",
-        lambda p: p["close"].pct_change().shift(-1),
+        lambda p, horizon=1: p["close"].pct_change().shift(-1),
     )
 
     class PlantedReg:
@@ -651,7 +651,7 @@ def test_run_bench_strict_catches_planted_reversed_signal(
     )
     monkeypatch.setattr(
         "src.factors.bench_runner_strict._compute_forward_returns",
-        lambda p: p["close"].pct_change().shift(-1),
+        lambda p, horizon=1: p["close"].pct_change().shift(-1),
     )
 
     class ReversedReg:

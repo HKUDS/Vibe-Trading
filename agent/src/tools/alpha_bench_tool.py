@@ -803,13 +803,65 @@ def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, unive
     return enriched
 
 
-def _compute_forward_returns(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Next-bar forward simple returns from close, aligned to factor timestamp."""
+# Cap for the tool-level bench horizon parameter: 252 bars ≈ one trading year.
+# Beyond that a typical bench period leaves almost no non-overlapping IC
+# samples, so the t-stat stops meaning anything.
+_MAX_HORIZON = 252
+
+
+def _validate_horizon(value: Any) -> int:
+    """Validate the bench ``horizon`` parameter (integer, 1.._MAX_HORIZON).
+
+    ``None`` is treated as "not supplied" and defaults to 1, matching how
+    ``run_alpha_bench`` tolerates absent optional kwargs.
+    """
+    if value is None:
+        return 1
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"horizon must be an integer between 1 and {_MAX_HORIZON}, got {value!r}"
+        )
+    if not 1 <= value <= _MAX_HORIZON:
+        raise ValueError(
+            f"horizon must be an integer between 1 and {_MAX_HORIZON}, got {value}"
+        )
+    return value
+
+
+def _compute_forward_returns(panel: dict[str, pd.DataFrame], horizon: int = 1) -> pd.DataFrame:
+    """Forward simple returns over ``horizon`` bars, aligned to the factor timestamp.
+
+    ``horizon=1`` keeps the historical next-bar formula byte-for-byte. For
+    ``horizon=h > 1`` the return at row t is ``close[t+h]/close[t] - 1``,
+    sampled non-overlapping and end-anchored (see the inline comment) so the
+    naive-iid t-stat downstream stays honest.
+    """
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or horizon < 1:
+        raise ValueError(f"horizon must be an integer >= 1, got {horizon!r}")
     close = panel.get("close")
     if close is None:
         raise ValueError("panel missing 'close' — cannot derive forward returns")
-    # Next-period return aligned to current row (use t+1 close, shift back).
-    fwd = close.pct_change(fill_method=None).shift(-1)
+    if horizon == 1:
+        # Next-period return aligned to current row (use t+1 close, shift back).
+        fwd = close.pct_change(fill_method=None).shift(-1)
+        return fwd
+    # h-bar return aligned to row t: close[t+h]/close[t] - 1. Deliberately no
+    # pct_change/ffill anywhere: a NaN close at t or t+h must yield a NaN
+    # return, so halted names never bridge a return across a missing bar.
+    fwd = (close.shift(-horizon) / close) - 1
+    # Sample non-overlapping windows anchored to the END of the frame: keep
+    # row t iff (n_rows - 1 - t) % h == 0, so the most recent complete window
+    # is always sampled. Overlapping h-bar windows share h-1 bars of price
+    # data, which autocorrelates consecutive ICs and inflates the naive-iid
+    # t-stat by ~sqrt(h); keeping every h-th row makes the IC observations
+    # non-overlapping, so the existing t_stat/categorise math stays honest
+    # without inventing new statistics.
+    n_rows = len(fwd.index)
+    if n_rows:
+        positions = np.arange(n_rows)
+        drop = ((n_rows - 1 - positions) % horizon) != 0
+        if drop.any():
+            fwd.iloc[drop] = np.nan
     return fwd
 
 
@@ -1104,6 +1156,11 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     if top_n <= 0:
         return {"status": "error", "error": "top must be > 0"}
 
+    try:
+        horizon = _validate_horizon(kwargs.get("horizon", 1))
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}
+
     output_dir_raw = kwargs.get("output_dir") or str(_default_output_dir())
     output_dir = Path(output_dir_raw).expanduser().resolve()
 
@@ -1151,7 +1208,7 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
 
     try:
         panel = _prepare_bench_panel(registry, alpha_ids, panel, universe, period)
-        return_df = _compute_forward_returns(panel)
+        return_df = _compute_forward_returns(panel, horizon=horizon)
     except Exception as exc:
         return {"status": "error", "error": f"forward returns failed: {exc}"}
 
@@ -1235,6 +1292,16 @@ class AlphaBenchTool(BaseTool):
                 "type": "integer",
                 "default": 20,
                 "description": "Report the top-N alphas ranked by IR.",
+            },
+            "horizon": {
+                "type": "integer",
+                "default": 1,
+                "description": (
+                    "Forward-return horizon in bars. 1 = next-bar (default). "
+                    "h>1 computes h-bar forward returns and samples IC rows "
+                    "non-overlapping (end-anchored); 21 ≈ monthly, the "
+                    "conventional horizon for fundamental factors. Range 1-252."
+                ),
             },
             "output_dir": {
                 "type": "string",
