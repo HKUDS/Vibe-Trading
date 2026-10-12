@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 import api_server
@@ -73,6 +74,20 @@ def _fake_get_json(url: str, *, params: dict) -> dict:
     if secid == "0.159913":
         return _SLIST_159913_NO_BOARD
     raise AssertionError(f"unexpected secid: {secid}")
+
+
+def _symlink_or_skip(link: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """Create a symlink when the host allows it; otherwise skip the test.
+
+    Windows can reject symlink creation with WinError 1314 when the caller does
+    not hold the Developer Mode / elevated privilege required for symlinks.
+    The endpoint behavior under test is still valid; the host simply lacks the
+    primitive needed to exercise it here.
+    """
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (AttributeError, NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlinks unavailable on this platform: {exc}")
 
 
 # ============================================================================
@@ -269,7 +284,7 @@ def test_symlinked_artifacts_dir_returns_no_positions_note(tmp_path: Path, monke
     )
     run_dir = tmp_path / "runs" / RUN_ID
     run_dir.mkdir(parents=True)
-    (run_dir / "artifacts").symlink_to(real_artifacts)
+    _symlink_or_skip(run_dir / "artifacts", real_artifacts, target_is_directory=True)
     client = _client(tmp_path, monkeypatch)
 
     with patch("src.tools.sector_tool.resolve_secid") as resolve, patch(
@@ -298,7 +313,7 @@ def test_symlinked_cache_file_rejected_without_write_through(tmp_path: Path, mon
     run_dir = _make_run(tmp_path, "timestamp,600519.SH", ["2026-08-01T00:00:00,1.0"])
     target = tmp_path / "elsewhere.json"
     target.write_text("sentinel", encoding="utf-8")
-    (run_dir / "artifacts" / "sector_map.json").symlink_to(target)
+    _symlink_or_skip(run_dir / "artifacts" / "sector_map.json", target)
     client = _client(tmp_path, monkeypatch)
 
     with patch("src.tools.sector_tool.resolve_secid") as resolve, patch(
@@ -329,7 +344,7 @@ def test_symlinked_positions_csv_rejected_without_read(tmp_path: Path, monkeypat
     (run_dir / "artifacts").mkdir(parents=True)
     target = tmp_path / "secret.csv"
     target.write_text("timestamp,LEAKED.SECRET\n2026-08-01T00:00:00,1.0\n", encoding="utf-8")
-    (run_dir / "artifacts" / "positions.csv").symlink_to(target)
+    _symlink_or_skip(run_dir / "artifacts" / "positions.csv", target)
     client = _client(tmp_path, monkeypatch)
 
     with patch("src.tools.sector_tool.resolve_secid") as resolve, patch(
