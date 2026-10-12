@@ -55,7 +55,11 @@ def _frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
 
 
 class _FakeApi:
-    """Serves a fixed membership snapshot; records every call."""
+    """Serves a fixed membership snapshot; records every call.
+
+    Mirrors the real endpoint's ``is_new`` filtering (server default "Y"):
+    rows carry is_new = "Y" when out_date is null, "N" otherwise.
+    """
 
     def __init__(self, snapshot: pd.DataFrame | Exception) -> None:
         self.snapshot = snapshot
@@ -65,7 +69,14 @@ class _FakeApi:
         self.calls.append(kwargs)
         if isinstance(self.snapshot, Exception):
             raise self.snapshot
-        return self.snapshot
+        return _filter_is_new(self.snapshot, kwargs)
+
+
+def _filter_is_new(frame: pd.DataFrame, kwargs: dict[str, Any]) -> pd.DataFrame:
+    is_new = kwargs.get("is_new")
+    if is_new is not None and "is_new" in getattr(frame, "columns", []):
+        return frame[frame["is_new"] == is_new]
+    return frame
 
 
 def _load(api: Any, symbols: list[str] | None = None, **kwargs: Any) -> pd.DataFrame:
@@ -228,8 +239,10 @@ def test_exactly_2000_rows_triggers_the_per_l1_refetch() -> None:
         def index_member_all(self, **kwargs: Any) -> pd.DataFrame:
             self.member_calls.append(kwargs)
             if "l1_code" not in kwargs:
-                return truncated
-            return {"801780.SI": real_a, "801790.SI": real_b}[kwargs["l1_code"]]
+                return _filter_is_new(truncated, kwargs)
+            return _filter_is_new(
+                {"801780.SI": real_a, "801790.SI": real_b}[kwargs["l1_code"]], kwargs
+            )
 
         def index_classify(self, **kwargs: Any) -> pd.DataFrame:
             self.classify_calls.append(kwargs)
@@ -241,7 +254,12 @@ def test_exactly_2000_rows_triggers_the_per_l1_refetch() -> None:
     frame = _load(api)
 
     assert api.classify_calls == [{"level": "L1", "src": "SW2021"}]
-    assert [call.get("l1_code") for call in api.member_calls] == [None, "801780.SI", "801790.SI"]
+    assert [call.get("l1_code") for call in api.member_calls] == [
+        None,
+        "801780.SI",
+        "801790.SI",
+        None,
+    ]
     assert frame.loc["2024-01-01", "600000.SH"] == "银行"
     assert frame.loc["2024-01-01", "000001.SZ"] == "非银金融"
 
@@ -252,8 +270,20 @@ def test_below_the_cap_snapshot_is_used_as_is() -> None:
 
     frame = _load(api)
 
-    assert api.calls == [{"src": "SW2021"}]
+    assert api.calls == [{"is_new": "Y"}, {"is_new": "N"}]
     assert frame.loc["2024-01-01", "600000.SH"] == "银行"
+
+
+def test_src_is_never_passed_to_index_member_all() -> None:
+    """Pins the live-verified endpoint quirk: an undocumented ``src`` param
+    silently empties the index_member_all response (0 rows, HTTP 200)."""
+    api = _FakeApi(_frame([_row("600000.SH", "银行", "20240101")]))
+
+    _load(api, src="SW2021")
+
+    assert api.calls, "expected index_member_all to be called"
+    for call in api.calls:
+        assert "src" not in call
 
 
 # ------------------------------------------------------------- failure paths

@@ -16,11 +16,20 @@ a name reclassified in 2021 carries its 2021 industry back through the whole
 window. This is the same class of caveat the csi300 bench already discloses
 for PIT index membership, not a lookahead in the price/valuation data.
 
-Truncation guard: ``index_member_all`` documents a 2000-row cap per call. A
-live full-permission token returns the whole ~5900-row snapshot in one call,
-but a snapshot of exactly 2000 rows is treated as truncated and refetched
-per L1 industry (``index_classify(level='L1')`` then one
-``index_member_all(l1_code=...)`` call per industry, concatenated).
+Endpoint contract (pinned by tests, verified live 2026-10-12):
+``index_member_all`` accepts ONLY the documented ``l1_code``/``l2_code``/
+``l3_code``/``ts_code``/``is_new`` filters — passing ``src`` (undocumented)
+silently returns an empty 200-row-columns frame, so ``src`` is used for
+``index_classify`` in the truncation fallback only. ``is_new`` defaults to
+"Y" server-side (current members, no out_date rows), so the historical
+half ("N") is fetched separately and concatenated — without it every label
+would be today's classification and the PIT claim above false.
+
+Truncation guard: ``index_member_all`` documents a 2000-row cap per call.
+A live full-permission token returns the whole snapshot in one call (~5900
+current + ~2000 historical rows), but a response of exactly 2000 rows is
+treated as truncated and refetched per L1 industry (``index_classify`` then
+one ``index_member_all(l1_code=..., is_new=...)`` call per industry).
 
 Degradation: a provider failure after backoff warns and returns an all-None
 frame aligned to ``index`` x ``symbols`` — the caller benches without the
@@ -99,26 +108,15 @@ def _build_api() -> Any:
     return ts.pro_api(token)
 
 
-def _fetch_membership(api: Any, src: str) -> pd.DataFrame | None:
-    """Fetch the full membership snapshot, refetching per L1 if truncated.
-
-    Args:
-        api: Tushare pro API (real or injected fake).
-        src: Classification source passed through to the endpoint.
-
-    Returns:
-        The concatenated membership rows, or None if nothing was served.
-
-    Raises:
-        Exception: The endpoint's own exception after backoff — the caller
-            decides whether that degrades or propagates.
-    """
-    frame = _call_with_backoff(api.index_member_all, src=src)
+def _fetch_membership_part(api: Any, src: str, is_new: str) -> pd.DataFrame | None:
+    """Fetch one ``is_new`` half of the snapshot, refetching per L1 if truncated."""
+    frame = _call_with_backoff(api.index_member_all, is_new=is_new)
     if frame is None or len(frame) != _SNAPSHOT_ROW_CAP:
         return frame
     logger.warning(
-        "index_member_all returned exactly %d rows (documented per-call cap); "
+        "index_member_all(is_new=%s) returned exactly %d rows (documented per-call cap); "
         "refetching per L1 industry",
+        is_new,
         _SNAPSHOT_ROW_CAP,
     )
     classify = _call_with_backoff(api.index_classify, level="L1", src=src)
@@ -128,7 +126,33 @@ def _fetch_membership(api: Any, src: str) -> pd.DataFrame | None:
         )
     parts = []
     for code in classify["index_code"].astype(str):
-        part = _call_with_backoff(api.index_member_all, l1_code=code, src=src)
+        part = _call_with_backoff(api.index_member_all, l1_code=code, is_new=is_new)
+        if part is not None and not part.empty:
+            parts.append(part)
+    if not parts:
+        return None
+    return pd.concat(parts, ignore_index=True)
+
+
+def _fetch_membership(api: Any, src: str) -> pd.DataFrame | None:
+    """Fetch the full PIT membership snapshot (current "Y" + historical "N").
+
+    Args:
+        api: Tushare pro API (real or injected fake).
+        src: Classification source — passed to ``index_classify`` only;
+            ``index_member_all`` rejects an undocumented ``src`` with a
+            silently empty response (see the module docstring).
+
+    Returns:
+        The concatenated membership rows, or None if nothing was served.
+
+    Raises:
+        Exception: The endpoint's own exception after backoff — the caller
+            decides whether that degrades or propagates.
+    """
+    parts = []
+    for is_new in ("Y", "N"):
+        part = _fetch_membership_part(api, src, is_new)
         if part is not None and not part.empty:
             parts.append(part)
     if not parts:
