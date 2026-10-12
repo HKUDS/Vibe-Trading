@@ -40,6 +40,7 @@ from src.trading.connectors.longbridge.credentials import (
     LongbridgeCredentialError,
     resolve_longbridge_credentials,
 )
+from src.trading.connectors.longbridge.sdk import build_sdk_config
 
 logger = logging.getLogger(__name__)
 
@@ -84,30 +85,6 @@ def _require_longbridge():
             "Run: pip install 'vibe-trading-ai[longbridge]'"
         ) from exc
     return openapi
-
-
-def _build_sdk_config(
-    openapi: Any, app_key: str, app_secret: str, access_token: str
-) -> Any:
-    """Build a ``longbridge.openapi.Config`` on any SDK in the supported range.
-
-    From 4.0 the SDK refuses direct ``Config(...)`` construction and only offers
-    ``Config.from_apikey``; 0.2.x has no ``from_apikey``. ``longbridge>=0.2.5``
-    admits both, so pick by capability rather than by version number.
-
-    Args:
-        openapi: The ``longbridge.openapi`` module.
-        app_key: Longbridge OpenAPI app key.
-        app_secret: Longbridge OpenAPI app secret.
-        access_token: Longbridge OpenAPI access token.
-
-    Returns:
-        The SDK ``Config`` instance.
-    """
-    config_cls = openapi.Config
-    if hasattr(config_cls, "from_apikey"):
-        return config_cls.from_apikey(app_key, app_secret, access_token)
-    return config_cls(app_key, app_secret, access_token)
 
 
 def _to_longport_symbol(code: str) -> str:
@@ -358,7 +335,7 @@ class LongbridgeLoader:
         openapi = _require_longbridge()
         _init_error: str | None = None
         try:
-            cfg = _build_sdk_config(
+            cfg = build_sdk_config(
                 openapi, self._app_key, self._app_secret, self._access_token
             )
             ctx = openapi.QuoteContext(cfg)

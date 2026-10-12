@@ -186,6 +186,32 @@ def test_longbridge_invalid_region_rejected() -> None:
         lb.LongbridgeConfig.from_mapping({"region": "moon"})
 
 
+def test_longbridge_quote_context_uses_from_apikey_on_sdk_4(monkeypatch) -> None:
+    """SDK 4.0+ refuses ``Config(...)``; the connector must use the factory."""
+    factory_calls: list[tuple[str, ...]] = []
+    built = object()
+
+    class Sdk4Config:
+        def __new__(cls, *args: object, **kwargs: object) -> "Sdk4Config":
+            raise TypeError("cannot create 'builtins.Config' instances")
+
+        @staticmethod
+        def from_apikey(*args: str) -> object:
+            factory_calls.append(args)
+            return built
+
+    fake_openapi = SimpleNamespace(
+        Config=Sdk4Config, QuoteContext=lambda config: config
+    )
+    monkeypatch.setattr(lb, "_require_openapi", lambda: fake_openapi)
+    cfg = lb.LongbridgeConfig(
+        app_key="k", app_secret="s", access_token="t", _credential_source="environment"
+    )
+
+    assert lb._quote_context(cfg) is built
+    assert factory_calls == [("k", "s", "t")]
+
+
 def test_longbridge_with_overrides_preserves_atomic_credentials() -> None:
     cfg = lb.LongbridgeConfig(
         app_key="atomic-key",
