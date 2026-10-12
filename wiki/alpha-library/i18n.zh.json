@@ -180,6 +180,10 @@
    "en": "Trailing dividend yield from the val: namespace (tushare daily_basic dv_ttm, CN A-share only), reported in percent units — cross-sectional z-scoring is scale-invariant, so no unit conversion is applied. High dividend yield scores high. Keyed by trade_date, so PIT-safe by construction with no filing lag. Missing dates or non-CN symbols stay NaN and are excluded from that date's cross-section. Lineage: JoinQuant style-pro divyild; akshare/Eastmoney dv_ttm convention.",
    "zh": "来自 val: 命名空间的滚动股息率（tushare daily_basic dv_ttm，仅 CN A 股），以百分比单位报告——截面 z 打分具有尺度不变性，因此不做单位换算。高股息率得分高。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。缺失日期或非 CN 标的保持 NaN，并被排除在当日截面之外。血缘：JoinQuant style-pro divyild；akshare/东方财富 dv_ttm 口径。"
   },
+  "fund_dividend_yield_ind_neutral": {
+   "en": "Industry-neutralized trailing dividend yield: each name is z-scored against its Shenwan level-1 industry peers instead of the whole cross-section (sector tag from tushare index_member_all SW2021 membership, point-in-time via in_date/out_date). This removes the industry confounding that dominates raw A-share dividend yield — mature banks and utilities pay structurally high dividends while growth industries pay almost none, so a raw high-yield screen is largely an industry bet. High dividend yield relative to industry peers scores high; dv_ttm is reported in percent units and cross-sectional z-scoring is scale-invariant, so no unit conversion is applied. A name with no industry label on a date stays NaN and is excluded from that date's cross-section; an industry group with fewer than two labelled names cannot form a within-group z-score and stays NaN. Keyed by trade_date, so PIT-safe by construction with no filing lag. Lineage: industry-neutral variant of fund_dividend_yield (#1789 follow-up).",
+   "zh": "行业中性化的滚动股息率：每只股票在其申万一级行业同类中做 z 打分，而非在全截面上（sector 标签来自 tushare index_member_all SW2021 成分数据，通过 in_date/out_date 实现时点正确 PIT）。这消除了主导 A 股原始股息率的行业混淆——成熟的银行与公用事业结构性高分红，而成长行业几乎不分红，因此原始高股息筛选在很大程度上是行业押注。相对行业同类股息率高者得分高；dv_ttm 以百分比单位报告，截面 z 打分具有尺度不变性，因此不做单位换算。某日无行业标签的股票保持 NaN，并被排除在当日截面之外；标签成员不足两只的行业组无法构成组内 z 分数，保持 NaN。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。血缘：fund_dividend_yield 的行业中性变体（#1789 后续）。"
+  },
   "fund_earnings_growth": {
    "en": "PIT-safe earnings growth from the fundamental panel's derived field ``earnings_growth``. The schema-side formula is sign-safe: delta net_income / abs(lag_365d net_income), so a negative year-ago base does not flip the growth sign (the proposal #6 footnote resolution; the alternative NaN-on-negative-base was not chosen). Calendar-day lag per the #1564 lesson. High earnings growth scores high, matching the JoinQuant net_profit_growth_rate convention. Missing statements or a zero/missing year-ago base remain NaN and are excluded from that date's cross-section.",
    "zh": "基于基本面面板派生字段 ``earnings_growth`` 的时点正确（PIT）盈利增长。schema 侧公式符号安全：净利润变化量 / abs(滞后 365 天净利润)，因此上年基数为负不会翻转增长符号（提案 #6 脚注的决议；未选择负基数置 NaN 的替代方案）。按 #1564 教训使用日历日滞后。高盈利增长得分高，与 JoinQuant net_profit_growth_rate 约定一致。缺失的财务报表或为零/缺失的上年基数保持 NaN，并被排除在当日截面之外。"
@@ -208,9 +212,17 @@
    "en": "Nonpositive multiples are excluded rather than ranked as cheap. Inverse price-to-book from the val: namespace (tushare daily_basic pb, CN A-share only): low PB (cheap relative to book value) scores high, the daily-market-data counterpart of fund_book_to_market. Keyed by trade_date, so PIT-safe by construction with no filing lag. Missing dates or non-CN symbols stay NaN and are excluded from that date's cross-section. Lineage: JoinQuant style book_to_price_ratio; akshare/Eastmoney pb convention.",
    "zh": "非正估值倍数不参与排名，不能当作低估。来自 val: 命名空间的反向市净率（tushare daily_basic pb，仅 CN A 股）：低 PB（相对账面价值便宜）得分高，是 fund_book_to_market 的日频市场口径对应因子。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。缺失日期或非 CN 标的保持 NaN，并被排除在当日截面之外。血缘：JoinQuant style book_to_price_ratio；akshare/东方财富 pb 口径。"
   },
+  "fund_pb_ind_neutral": {
+   "en": "Industry-neutralized inverse price-to-book: each name is z-scored against its Shenwan level-1 industry peers instead of the whole cross-section (sector tag from tushare index_member_all SW2021 membership, point-in-time via in_date/out_date). This removes the industry confounding that dominates raw A-share PB — banks and cyclicals are structurally cheap on book value while technology names are structurally expensive, so a raw low-PB screen is largely an industry bet. Low PB relative to industry peers scores high. A name with no industry label on a date stays NaN and is excluded from that date's cross-section; an industry group with fewer than two labelled names cannot form a within-group z-score and stays NaN. Keyed by trade_date, so PIT-safe by construction with no filing lag. Lineage: industry-neutral variant of fund_pb (#1789 follow-up).",
+   "zh": "行业中性化的反向市净率：每只股票在其申万一级行业同类中做 z 打分，而非在全截面上（sector 标签来自 tushare index_member_all SW2021 成分数据，通过 in_date/out_date 实现时点正确 PIT）。这消除了主导 A 股原始 PB 的行业混淆——银行与周期股在账面价值口径上结构性便宜，而科技股结构性昂贵，因此原始低 PB 筛选在很大程度上是行业押注。相对行业同类 PB 低者得分高。某日无行业标签的股票保持 NaN，并被排除在当日截面之外；标签成员不足两只的行业组无法构成组内 z 分数，保持 NaN。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。血缘：fund_pb 的行业中性变体（#1789 后续）。"
+  },
   "fund_ps_ttm": {
    "en": "Nonpositive multiples are excluded rather than ranked as cheap. Inverse trailing price-to-sales from the val: namespace (tushare daily_basic ps_ttm, CN A-share only): low PS scores high. PS stays informative for loss-making names where earnings yield fails. Keyed by trade_date, so PIT-safe by construction with no filing lag. Missing dates or non-CN symbols stay NaN and are excluded from that date's cross-section. Lineage: JoinQuant style-pro sales-to-price; akshare/Eastmoney ps_ttm convention.",
    "zh": "非正估值倍数不参与排名，不能当作低估。来自 val: 命名空间的反向滚动市销率（tushare daily_basic ps_ttm，仅 CN A 股）：低 PS 得分高。PS 对亏损股依然有效（盈利收益率失效的场景）。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。缺失日期或非 CN 标的保持 NaN，并被排除在当日截面之外。血缘：JoinQuant style-pro sales-to-price；akshare/东方财富 ps_ttm 口径。"
+  },
+  "fund_ps_ttm_ind_neutral": {
+   "en": "Industry-neutralized inverse trailing price-to-sales: each name is z-scored against its Shenwan level-1 industry peers instead of the whole cross-section (sector tag from tushare index_member_all SW2021 membership, point-in-time via in_date/out_date). This removes the industry confounding that dominates raw A-share PS — software and platform names carry structurally high margins and high PS while distributors and manufacturers are structurally low, so a raw low-PS screen is largely an industry bet. Low PS relative to industry peers scores high, and PS stays informative for loss-making names where earnings yield fails. A name with no industry label on a date stays NaN and is excluded from that date's cross-section; an industry group with fewer than two labelled names cannot form a within-group z-score and stays NaN. Keyed by trade_date, so PIT-safe by construction with no filing lag. Lineage: industry-neutral variant of fund_ps_ttm (#1789 follow-up).",
+   "zh": "行业中性化的反向滚动市销率：每只股票在其申万一级行业同类中做 z 打分，而非在全截面上（sector 标签来自 tushare index_member_all SW2021 成分数据，通过 in_date/out_date 实现时点正确 PIT）。这消除了主导 A 股原始 PS 的行业混淆——软件与平台类公司毛利率结构性高、PS 也高，而分销与制造商结构性低，因此原始低 PS 筛选在很大程度上是行业押注。相对行业同类 PS 低者得分高，且 PS 对亏损股依然有效（盈利收益率失效的场景）。某日无行业标签的股票保持 NaN，并被排除在当日截面之外；标签成员不足两只的行业组无法构成组内 z 分数，保持 NaN。按 trade_date 键控，因此构造上即时点正确（PIT），无财报滞后。血缘：fund_ps_ttm 的行业中性变体（#1789 后续）。"
   },
   "fund_revenue_growth": {
    "en": "PIT-safe revenue growth from the fundamental panel's derived field ``revenue_growth`` (revenue / lag_365d(revenue) - 1, calendar-day lag per the #1564 lesson rather than a row-wise shift). High top-line growth scores high, matching the JoinQuant operating_revenue_growth_rate convention. Missing statements or a missing year-ago base remain NaN and are excluded from that date's cross-section.",
@@ -1294,6 +1306,10 @@
    "en": "Dividend yield TTM - dv_ttm (daily market data)",
    "zh": "股息率 TTM - dv_ttm（日频市场数据）"
   },
+  "fund_dividend_yield_ind_neutral": {
+   "en": "Dividend yield TTM industry-neutral - within-industry dv_ttm (daily market data)",
+   "zh": "股息率行业中性 - 行业内 dv_ttm（日频市场数据）"
+  },
   "fund_earnings_growth": {
    "en": "Earnings growth - sign-safe YoY net income expansion",
    "zh": "盈利增长 - 符号安全的同比净利润扩张"
@@ -1322,9 +1338,17 @@
    "en": "P/B - inverse price-to-book (daily market data)",
    "zh": "市净率 P/B - 反向市净率（日频市场数据）"
   },
+  "fund_pb_ind_neutral": {
+   "en": "P/B industry-neutral - inverse within-industry price-to-book (daily market data)",
+   "zh": "市净率行业中性 - 行业内反向市净率（日频市场数据）"
+  },
   "fund_ps_ttm": {
    "en": "P/S TTM - inverse price-to-sales (daily market data)",
    "zh": "市销率 P/S TTM - 反向滚动市销率（日频市场数据）"
+  },
+  "fund_ps_ttm_ind_neutral": {
+   "en": "P/S TTM industry-neutral - inverse within-industry price-to-sales (daily market data)",
+   "zh": "市销率行业中性 - 行业内反向滚动市销率（日频市场数据）"
   },
   "fund_revenue_growth": {
    "en": "Revenue growth - YoY top-line expansion",

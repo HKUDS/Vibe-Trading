@@ -379,7 +379,7 @@ Vibe-Trading 是一个开源研究工作台，用于把金融问题转化为可�
 | **运行分析师团队** | 面向投资、量化、加密、宏观和风控工作流的多智能体研究评审。 |
 | **把研究接入 IM 通道** | 通过 WebSocket、Telegram、Slack、Discord、Matrix、WhatsApp、Signal、QQ/NapCat、微信/企业微信、飞书/Lark、钉钉、Teams、email、Mochat，在 CLI、REST 和 Web UI 中管理同一套 session runtime。 |
 | **交付可用成果** | 报告、TradingView Pine Script、TDX、MetaTrader 5、MCP tools，以及可延续的研究 sessions。 |
-| **跑预置 alpha zoo 横评** | 475 个 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental），一行 CLI 在你选的 universe 上算 IC + IR + alive/reversed/dead 分类 |
+| **跑预置 alpha zoo 横评** | 478 个 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental），一行 CLI 在你选的 universe 上算 IC + IR + alive/reversed/dead 分类 |
 | **识别相关性状态** | `/correlation` 界面上的边密度 + 迟滞时间线，显示市场何时融合为一个板块——属于描述性风险上下文，而非交易信号。 |
 
 ---
@@ -680,9 +680,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>475 个预置 alpha，覆盖 5 个家族</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>478 个预置 alpha，覆盖 5 个家族</sub></summary>
 
-- 🧬 475 个横截面 alpha，算子层即禁用 lookahead
+- 🧬 478 个横截面 alpha，算子层即禁用 lookahead
 - 📈 一条 CLI 命令完成 IC + IR + alive/reversed/dead 分类
 - 🔬 AST 纯函数门禁 + 300 行 lookahead 哨兵测试 + `pytest-socket` 网络阻断
 - 📦 Qlib 部分附 Apache-2 出处声明；每个 zoo 一份 `LICENSE.md`，声明公式属于数学内容
@@ -987,7 +987,7 @@ Vibe-Trading 是高度依赖工具的智能体：skills、backtests、memory 和
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # 浏览 475 个预置 alpha；支持 show / bench / compare / export-manifest 子命令
+vibe-trading alpha list    # 浏览 478 个预置 alpha；支持 show / bench / compare / export-manifest 子命令
 vibe-trading playbook list # 五个定时研究模板；支持 show / create 子命令
 vibe-trading channels status --local  # 检查 IM 通道配置和依赖安装提示
 vibe-trading provider doctor  # 打印脱敏后的 provider/proxy/依赖诊断
@@ -1734,7 +1734,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo 网络搜索
 │   │   │   └── ...                 #   bash、文件 I/O、因子分析、期权、alpha 浏览 + 横评等
 │   │   │
-│   │   ├── factors/                # Alpha Zoo —— 5 个家族共 475 个 alpha
+│   │   ├── factors/                # Alpha Zoo —— 5 个家族共 478 个 alpha
 │   │   │   ├── base.py             #   19 个算子（rank/scale/ts_*/delta/decay_linear/safe_div/vwap）
 │   │   │   ├── registry.py         #   纯 AST 元数据加载 + 惰性计算 + sanity 校验
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 分类
@@ -1817,7 +1817,7 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 | **Data Bridge** | 自带数据：本地 CSV/Parquet/SQL connectors 与 schema mapping | 本地加载器已发布 |
 | **Options Lab** | Vol surface、Greeks dashboard、payoff/scenario explorer | Planned |
 | **Portfolio Studio** | Risk x-ray、constraints、turnover-aware optimizer、rebalance notes | Turnover-aware optimizer **已发布 0.1.11**；其余 Planned |
-| **Alpha Zoo** | 475 个预置 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental），一行 CLI 跑横评，agent 集成，Web UI 浏览 | **已发布 0.1.8**，延续至 0.1.12 |
+| **Alpha Zoo** | 478 个预置 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental），一行 CLI 跑横评，agent 集成，Web UI 浏览 | **已发布 0.1.8**，延续至 0.1.12 |
 | **Strategy Development Manager** | 把论文 / 券商研报注册为因子与策略，配持久化 store + 自动化 IC/Sharpe 衰减生命周期 | **已发布 0.1.11** |
 | **Correlation Regime** | 叠加在 `/correlation` 上的边密度 + 迟滞状态时间线——识别市场何时融合为一个板块 | **已发布 0.1.12** |
 | **Research Delivery** | 通过 Slack / Telegram / email-style IM channels 发送定时 briefs 与实时研究 sessions | 调度器 + IM Runtime 已发布 |

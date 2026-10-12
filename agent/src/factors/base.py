@@ -96,6 +96,75 @@ def zscore(df: pd.DataFrame) -> pd.DataFrame:
     return result.replace([np.inf, -np.inf], np.nan)
 
 
+def zscore_by_group(df: pd.DataFrame, groups: pd.DataFrame) -> pd.DataFrame:
+    """Per-row within-group z-score (axis=1 groups, sample std, ddof=1).
+
+    The z-scoring sibling of the per-row sector demean the industry-neutralized
+    alpha101 alphas use: instead of one cross-sectional mean/std per date, each
+    label group in the row gets its own. One difference is deliberate — there is
+    NO global fallback. A cell whose group cannot produce a statistic stays NaN
+    rather than silently degrading to a whole-cross-section z-score wearing an
+    industry-neutral label.
+
+    Contract:
+        * ``groups`` is a wide label frame with the SAME shape as ``df``,
+          positionally aligned (same precedent as the alpha101 ``sector`` tag);
+          labels may be any hashable value (str, int) and are compared by
+          position, never by index/column join.
+        * Per row: within each label group, ``(x - group_mean) / group_std``
+          with ``ddof=1`` over the group's finite observations.
+        * A group with fewer than two finite observations on that row → NaN for
+          that group's cells (no statistic exists); a zero-variance group → NaN
+          (never inf, never silent zero).
+        * NaN input cells stay NaN; cells whose label is None/NaN → NaN; ±inf
+          inputs are scrubbed to NaN before grouping.
+        * Output keeps ``df``'s shape, index and columns exactly.
+
+    Args:
+        df: Wide numeric frame (dates x symbols).
+        groups: Wide label frame, same shape as ``df``, positionally aligned.
+
+    Returns:
+        Wide frame of within-group z-scores, NaN wherever the contract above
+        refuses to produce a number.
+
+    Raises:
+        ValueError: If ``groups`` does not have the same shape as ``df``.
+    """
+    if df.shape != groups.shape:
+        raise ValueError(
+            f"zscore_by_group: groups shape {groups.shape} != df shape {df.shape}; "
+            "the label frame must be positionally aligned with the value frame"
+        )
+    values = _as_float(df).to_numpy(dtype=np.float64, na_value=np.nan).copy()
+    # ±inf is not an observation: scrub before it poisons a group mean/std.
+    values[~np.isnan(values) & ~np.isfinite(values)] = np.nan
+    labels = groups.to_numpy()
+    # Per-row python/numpy loop, same mechanics as the alpha101 precedent —
+    # correctness over cleverness; cross-sections are a few hundred cells wide.
+    for i in range(values.shape[0]):
+        row = values[i]
+        label_row = labels[i]
+        unlabeled = pd.isna(label_row)
+        if unlabeled.any():
+            row[unlabeled] = np.nan
+        for tag in pd.unique(label_row):
+            if tag is None or (isinstance(tag, float) and np.isnan(tag)) or pd.isna(tag):
+                continue  # handled by the unlabeled mask above
+            mask = label_row == tag
+            vals = row[mask]
+            finite = vals[~np.isnan(vals)]
+            if finite.size < 2:
+                row[mask] = np.nan
+                continue
+            std = finite.std(ddof=1)
+            if not np.isfinite(std) or std <= 0:
+                row[mask] = np.nan
+                continue
+            row[mask] = (vals - finite.mean()) / std
+    return pd.DataFrame(values, index=df.index, columns=df.columns)
+
+
 def scale(df: pd.DataFrame, a: float = 1.0) -> pd.DataFrame:
     """Per-row L1 normalize so sum of absolute values equals ``a``.
 

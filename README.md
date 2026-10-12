@@ -379,7 +379,7 @@ It is designed for research, simulation, and backtesting — and, when you choos
 | **Run analyst teams** | Multi-agent research reviews for investment, quant, crypto, macro, and risk workflows. |
 | **Put research into IM channels** | Run the same session runtime through WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, and Mochat with CLI, REST, and Web UI controls. |
 | **Ship usable artifacts** | Reports, TradingView Pine Script, TDX, MetaTrader 5, MCP tools, and later research sessions. |
-| **Bench a pre-built alpha zoo** | One-line IC + alive/reversed/dead categorisation across 475 alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) on your universe. |
+| **Bench a pre-built alpha zoo** | One-line IC + alive/reversed/dead categorisation across 478 alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) on your universe. |
 | **Spot correlation regimes** | An edge-density + hysteresis timeline on the `/correlation` surface showing when markets fuse into one bloc — descriptive risk context, not a signal. Undefined pair correlations keep edge density unknown, so constant-price histories cannot claim a measured zero density. |
 
 Daily correlation and regime requests align each source by its local calendar date, including mixed timezone-aware and timezone-naive histories.
@@ -798,9 +798,9 @@ alongside the bundled roster (same-name files override it, like user skills) and
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>475 pre-built quant alphas across 5 families</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>478 pre-built quant alphas across 5 families</sub></summary>
 
-- 🧬 475 cross-sectional alphas, lookahead-banned at the operator layer
+- 🧬 478 cross-sectional alphas, lookahead-banned at the operator layer
 - 📈 IC + IR + alive/reversed/dead categorisation in one CLI command
 - 🔬 AST purity gate + 300-row lookahead sentinel test + `pytest-socket` network kill-switch
 - 📦 Apache-2 attribution for Qlib; per-zoo `LICENSE.md` declaring formulas as mathematical content
@@ -1201,7 +1201,7 @@ The interactive TUI (`vibe-trading`) now uses a terminal-native transcript: a st
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # browse 475 pre-built alphas; show / bench / compare / export-manifest sub-commands available
+vibe-trading alpha list    # browse 478 pre-built alphas; show / bench / compare / export-manifest sub-commands available
 vibe-trading playbook list # five scheduled-research templates; show / create sub-commands available
 vibe-trading channels status --local  # inspect IM channel config and install hints
 vibe-trading provider doctor  # print redacted provider/proxy/package diagnostics
@@ -2126,7 +2126,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 475 alphas across 5 families
+│   │   ├── factors/                # Alpha Zoo — 478 alphas across 5 families
 │   │   │   ├── base.py             #   19 operators (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST-only metadata load + lazy compute + sanity gates
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead categorisation
@@ -2209,7 +2209,7 @@ Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosyste
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | Local loader Shipped |
 | **Options Lab** | Vol surface, Greeks dashboard, payoff/scenario explorer | Analytic payoff/scenario tool **Shipped**; surface/dashboard Planned |
 | **Portfolio Studio** | Risk x-ray, constraints, turnover-aware optimizer, rebalance notes | Turnover-aware optimizer **Shipped 0.1.11**; rest Planned |
-| **Alpha Zoo** | 475 pre-built alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental) with one-line bench, agent integration, and Web UI | **Shipped 0.1.8**, extended through 0.1.12 |
+| **Alpha Zoo** | 478 pre-built alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental) with one-line bench, agent integration, and Web UI | **Shipped 0.1.8**, extended through 0.1.12 |
 | **Strategy Development Manager** | Register papers / broker research as factors & strategies with a persistent store + automated IC/Sharpe decay lifecycle | **Shipped 0.1.11** |
 | **Correlation Regime** | Edge-density + hysteresis regime timeline layered on `/correlation` — spot when markets fuse into one bloc | **Shipped 0.1.12** |
 | **Research Delivery** | Scheduled briefs and live research sessions through Slack / Telegram / email-style IM channels | Scheduler + IM Runtime Shipped |

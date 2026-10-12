@@ -502,7 +502,7 @@ Vibe-Trading dirancang untuk riset, simulasi, dan backtest — serta, jika Anda 
 | **Jalankan tim analis** | Review riset multi-agent untuk workflow investasi, quant, crypto, makro, dan risiko. |
 | **Bawa riset ke channel IM** | Jalankan runtime sesi yang sama melalui WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, dan Mochat dengan kontrol CLI, REST, dan Web UI. |
 | **Hasilkan artefak yang siap digunakan** | Laporan, TradingView Pine Script, TDX, MetaTrader 5, tool MCP, dan sesi riset lanjutan. |
-| **Benchmark alpha zoo siap pakai** | Satu baris untuk IC + kategorisasi alive/reversed/dead pada 475 alpha (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental PIT-safe) di universe Anda. |
+| **Benchmark alpha zoo siap pakai** | Satu baris untuk IC + kategorisasi alive/reversed/dead pada 478 alpha (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental PIT-safe) di universe Anda. |
 | **Deteksi regime korelasi** | Timeline edge-density + hysteresis pada surface `/correlation` yang menunjukkan kapan market menyatu menjadi satu blok — konteks risiko deskriptif, bukan sinyal. |
 
 ---
@@ -833,9 +833,9 @@ bersama roster bawaan (file dengan nama sama akan override, seperti user skill) 
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>475 alpha quant siap pakai dalam 5 keluarga</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>478 alpha quant siap pakai dalam 5 keluarga</sub></summary>
 
-- 🧬 475 alpha cross-sectional, lookahead dilarang pada layer operator
+- 🧬 478 alpha cross-sectional, lookahead dilarang pada layer operator
 - 📈 IC + IR + kategorisasi alive/reversed/dead dalam satu perintah CLI
 - 🔬 AST purity gate + test sentinel lookahead 300 baris + network kill-switch `pytest-socket`
 - 📦 Atribusi Apache-2 untuk Qlib; `LICENSE.md` per-zoo menyatakan formula sebagai konten matematis
@@ -1202,7 +1202,7 @@ TUI interaktif (`vibe-trading`) kini memakai transcript native terminal: startup
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # browse 475 pre-built alphas; show / bench / compare / export-manifest sub-commands available
+vibe-trading alpha list    # browse 478 pre-built alphas; show / bench / compare / export-manifest sub-commands available
 vibe-trading playbook list # five scheduled-research templates; show / create sub-commands available
 vibe-trading channels status --local  # inspect IM channel config and install hints
 vibe-trading provider doctor  # print redacted provider/proxy/package diagnostics
@@ -2064,7 +2064,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 475 alphas across 5 families
+│   │   ├── factors/                # Alpha Zoo — 478 alphas across 5 families
 │   │   │   ├── base.py             #   19 operators (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST-only metadata load + lazy compute + sanity gates
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead categorisation
@@ -2148,7 +2148,7 @@ Vibe-Trading adalah bagian dari ekosistem agent **[HKUDS](https://github.com/HKU
 | **Data Bridge** | Bawa data sendiri: connector CSV/Parquet/SQL lokal dengan schema mapping | Loader lokal Dirilis |
 | **Options Lab** | Vol surface, dashboard Greeks, explorer payoff/scenario | Tool analitik payoff/scenario **Dirilis**; surface/dashboard Direncanakan |
 | **Portfolio Studio** | Risk x-ray, constraint, optimizer turnover-aware, catatan rebalance | Optimizer turnover-aware **Dirilis 0.1.11**; sisanya Direncanakan |
-| **Alpha Zoo** | 475 alpha siap pakai (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental) dengan bench satu baris, integrasi agent, dan Web UI | **Dirilis 0.1.8**, diperluas hingga 0.1.12 |
+| **Alpha Zoo** | 478 alpha siap pakai (Qlib 158 + Kakushadze 101 + GTJA 191 + akademik + fundamental) dengan bench satu baris, integrasi agent, dan Web UI | **Dirilis 0.1.8**, diperluas hingga 0.1.12 |
 | **Strategy Development Manager** | Daftarkan paper / riset broker sebagai faktor & strategi dengan store persisten + lifecycle decay IC/Sharpe otomatis | **Dirilis 0.1.11** |
 | **Correlation Regime** | Timeline regime edge-density + hysteresis di `/correlation` — deteksi saat market menyatu menjadi satu blok | **Dirilis 0.1.12** |
 | **Research Delivery** | Brief terjadwal dan sesi riset live melalui Slack / Telegram / channel IM bergaya email | Scheduler + IM Runtime Dirilis |

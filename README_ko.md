@@ -380,7 +380,7 @@ Vibe-Trading은 금융 질문을 실행 가능한 분석으로 바꾸는 오픈�
 | **애널리스트 팀 실행하기** | 투자, 퀀트, 크립토, 매크로, 리스크 워크플로를 위한 멀티 에이전트 리서치 리뷰. |
 | **리서치를 IM 채널에 연결하기** | WebSocket, Telegram, Slack, Discord, Matrix, WhatsApp, Signal, QQ/NapCat, WeChat/WeCom, Feishu/Lark, DingTalk, Teams, email, Mochat에서 같은 session runtime을 CLI, REST, Web UI로 관리. |
 | **사용 가능한 artifacts 만들기** | 리포트, TradingView Pine Script, TDX, MetaTrader 5, MCP tools, 이후 리서치 세션. |
-| **사전 빌드된 alpha zoo 벤치** | 475개의 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental)에 대해 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행 |
+| **사전 빌드된 alpha zoo 벤치** | 478개의 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental)에 대해 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행 |
 | **상관관계 국면 포착하기** | `/correlation` 화면의 엣지 밀도 + 히스테리시스 타임라인으로 시장이 한 덩어리로 움직이기 시작하는 시점을 보여줍니다 — 시그널이 아니라 서술적 리스크 컨텍스트입니다. |
 
 ---
@@ -667,9 +667,9 @@ Paper-vs-live는 **구조적 브로커별 런타임 가드**(account-id 형식, 
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 475개 사전 빌드된 quant alpha</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>5개 패밀리에 걸친 478개 사전 빌드된 quant alpha</sub></summary>
 
-- 🧬 operator 계층에서 lookahead가 금지된 475개 cross-sectional alpha
+- 🧬 operator 계층에서 lookahead가 금지된 478개 cross-sectional alpha
 - 📈 한 줄 CLI로 IC + IR + alive/reversed/dead 분류 수행
 - 🔬 AST 순수성 게이트 + 300-row lookahead sentinel 테스트 + `pytest-socket` 네트워크 kill-switch
 - 📦 Qlib에 대한 Apache-2 출처 표기, zoo별 `LICENSE.md`에서 수식을 수학적 콘텐츠로 명시
@@ -980,7 +980,7 @@ Vibe-Trading은 tool-heavy agent입니다. skills, backtests, memory, swarms가 
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # 사전 빌드된 475개 alpha 탐색; show / bench / compare / export-manifest 서브커맨드 사용 가능
+vibe-trading alpha list    # 사전 빌드된 478개 alpha 탐색; show / bench / compare / export-manifest 서브커맨드 사용 가능
 vibe-trading playbook list # 예약 리서치 템플릿 5개; show / create 서브커맨드 사용 가능
 vibe-trading channels status --local  # IM 채널 설정과 설치 힌트 확인
 vibe-trading provider doctor  # 마스킹된 provider/proxy/패키지 진단 출력
@@ -1736,7 +1736,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 5개 패밀리에 걸친 475개 alpha
+│   │   ├── factors/                # Alpha Zoo — 5개 패밀리에 걸친 478개 alpha
 │   │   │   ├── base.py             #   19개 operator (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST-only 메타데이터 로딩 + lazy compute + sanity gate
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 분류
@@ -1819,7 +1819,7 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** agent ecosystem의 일부�
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | 로컬 로더 출시 |
 | **Options Lab** | Vol surface, Greeks dashboard, payoff/scenario explorer | Planned |
 | **Portfolio Studio** | Risk x-ray, constraints, turnover-aware optimizer, rebalance notes | Turnover-aware optimizer **0.1.11 출시 완료**; 나머지 Planned |
-| **Alpha Zoo** | 5개 패밀리에 걸친 475개의 사전 빌드된 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental), 한 줄 CLI 벤치, agent 통합, Web UI | **0.1.8 출시 완료**, 0.1.12까지 확장 |
+| **Alpha Zoo** | 5개 패밀리에 걸친 478개의 사전 빌드된 alpha 인자(Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental), 한 줄 CLI 벤치, agent 통합, Web UI | **0.1.8 출시 완료**, 0.1.12까지 확장 |
 | **Strategy Development Manager** | 논문 / 브로커 리서치를 영속 store + 자동 IC/Sharpe decay 라이프사이클과 함께 팩터 & 전략으로 등록 | **0.1.11 출시 완료** |
 | **Correlation Regime** | `/correlation` 위에 얹은 엣지 밀도 + 히스테리시스 레짐 타임라인 — 시장이 하나의 블록으로 융합되는 시점 포착 | **0.1.12 출시 완료** |
 | **Research Delivery** | Slack / Telegram / email-style IM channels를 통한 예약 brief와 live research sessions | 스케줄러 + IM Runtime 출시 |

@@ -465,6 +465,11 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
         # Prices are corporate-action adjusted; raw pro.daily is not.
         "price_adjustment": "qfq",
         "dropped_unadjustable": len(dropped),
+        # Sector labels attach later, outside the pickled price panel (see
+        # _attach_sector_column); null/0.0 until then, and they stay that way
+        # when the loader degrades or the coverage gate refuses the tag.
+        "sector_source": None,
+        "sector_coverage": 0.0,
     }
     return panel
 
@@ -791,6 +796,69 @@ def _attach_valuation_columns(
     return enriched
 
 
+# Same gate as _SP500_MIN_SECTOR_COVERAGE, same reasoning: a mostly-unlabelled
+# panel would z-score one big bucket, which is the global cross-section wearing
+# an industry-neutral label. Below the gate the tag stays off and the
+# requires_sector alphas SkipAlpha cleanly.
+_CSI300_MIN_SECTOR_COVERAGE = 0.9
+
+
+def _attach_sector_column(enriched: dict, panel: dict, start: str, end: str) -> dict:
+    """Attach PIT SW2021 L1 industry labels as ``sector`` for a CN universe.
+
+    The csi300 counterpart of the sp500 Wikipedia-GICS attach: labels come
+    from tushare ``index_member_all`` (point-in-time via in_date/out_date),
+    align to the price panel and inherit its PIT membership mask through
+    ``.where(close.notna())`` — the same trick the ``val:*`` attach uses.
+    Attached here, not in ``_load_csi300_panel``, so the labels never enter
+    the pickled price-panel cache.
+
+    Never raises: no token or a provider failure leaves the tag off (the
+    loader degrades to an all-None frame; ``RuntimeError`` on a missing token
+    is caught here) and ``_meta`` keeps ``sector_source=None`` as disclosure.
+
+    Args:
+        enriched: Panel copy being extended.
+        panel: Observed price panel (source of the cross-section mask).
+        start: Period start (YYYY-MM-DD).
+        end: Period end (YYYY-MM-DD).
+
+    Returns:
+        The enriched panel, with ``sector`` and updated ``_meta`` when the
+        coverage gate passes.
+    """
+    from backtest.loaders.industry_loader import load_industry_frame
+
+    close = panel["close"]
+    try:
+        labels = load_industry_frame(
+            symbols=list(close.columns), start=start, end=end, index=close.index
+        )
+    except Exception as exc:  # noqa: BLE001 — enrichment, never fatal to the bench
+        logger.warning(
+            "csi300: industry loader failed (%s); benching without the sector tag", exc
+        )
+        return enriched
+
+    sector = labels.reindex(index=close.index, columns=close.columns).where(close.notna())
+    coverage = float(sector.notna().any(axis=0).mean()) if sector.shape[1] else 0.0
+    if coverage < _CSI300_MIN_SECTOR_COVERAGE:
+        logger.warning(
+            "csi300: sector coverage %.1f%% below %.0f%% — leaving the tag off so "
+            "industry-neutralized alphas skip rather than z-score one bucket",
+            coverage * 100,
+            _CSI300_MIN_SECTOR_COVERAGE * 100,
+        )
+    else:
+        enriched["sector"] = sector
+    enriched["_meta"] = {
+        **enriched.get("_meta", {}),
+        "sector_source": "tushare index_member_all SW2021 L1" if "sector" in enriched else None,
+        "sector_coverage": round(coverage, 4),
+    }
+    return enriched
+
+
 def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, universe: str, period: str) -> dict:
     """Load only the declared PIT fundamental inputs for the selected factors.
 
@@ -799,12 +867,15 @@ def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, unive
         alpha_ids: Selected factor identifiers.
         panel: Observed price panel; never mutated or filled with invented values.
         universe: Stock universe; SEC fundamentals currently cover US stocks,
-            ``val:*`` daily valuation columns cover the CN universe only —
-            other universes skip them and declaring alphas SkipAlpha.
+            ``val:*`` daily valuation columns and the PIT ``sector`` tag cover
+            the CN universe only — other universes skip them and declaring
+            alphas SkipAlpha.
         period: Requested historical period.
 
     Returns:
-        A panel including the required fundamental columns.
+        A panel including the required fundamental columns and, when a
+        selected csi300 alpha declares ``requires_sector``, the ``sector``
+        label frame.
 
     Raises:
         ValueError: If SEC inputs are requested for a non-US universe, or a
@@ -813,7 +884,12 @@ def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, unive
     """
     columns = [column for column in _validate_bench_data_requirements(registry, alpha_ids, universe) if column not in panel]
     val_columns = _val_columns_required(registry, alpha_ids, panel) if universe == "csi300" else []
-    if not columns and not val_columns:
+    needs_sector = (
+        universe == "csi300"
+        and "sector" not in panel
+        and any((registry.get(aid).meta or {}).get("requires_sector") for aid in alpha_ids)
+    )
+    if not columns and not val_columns and not needs_sector:
         return panel
 
     start, end = _parse_period(period)
@@ -834,6 +910,8 @@ def _prepare_bench_panel(registry: Any, alpha_ids: list[str], panel: dict, unive
         enriched["_meta"] = {**enriched.get("_meta", {}), "fundamental_source": "sec", "fundamental_pit": True, "fundamental_pit_lag_bars": 1}
     if val_columns:
         enriched = _attach_valuation_columns(enriched, panel, val_columns, start, end)
+    if needs_sector:
+        enriched = _attach_sector_column(enriched, panel, start, end)
     return enriched
 
 

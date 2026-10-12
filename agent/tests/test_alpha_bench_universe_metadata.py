@@ -91,6 +91,11 @@ def test_csi300_reports_point_in_time_membership(
         "constituent_count": 3,
         "price_adjustment": "qfq",
         "dropped_unadjustable": 0,
+        # Sector labels attach later in _prepare_bench_panel, outside the
+        # pickled price panel; the load-time defaults are the disclosure for
+        # a run where the attach never happens or degrades.
+        "sector_source": None,
+        "sector_coverage": 0.0,
     }
 
 
@@ -141,6 +146,8 @@ def test_csi300_reports_hand_picked_fallback(
         "constituent_count": 2,
         "price_adjustment": "qfq",
         "dropped_unadjustable": 0,
+        "sector_source": None,
+        "sector_coverage": 0.0,
     }
 
 

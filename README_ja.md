@@ -380,7 +380,7 @@ Vibe-Trading は、金融に関する問いを実行可能な分析へ変換す�
 | **アナリストチームを走らせる** | 投資、クオンツ、暗号資産、マクロ、リスクのワークフロー向けマルチエージェント・リサーチレビュー。 |
 | **リサーチを IM チャンネルへ接続する** | WebSocket、Telegram、Slack、Discord、Matrix、WhatsApp、Signal、QQ/NapCat、WeChat/WeCom、Feishu/Lark、DingTalk、Teams、email、Mochat から同じ session runtime を CLI、REST、Web UI で管理。 |
 | **使える artifacts を出力する** | レポート、TradingView Pine Script、TDX、MetaTrader 5、MCP tools、後続リサーチセッション。 |
-| **事前構築 alpha zoo をベンチ** | 475 個の alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental）に対し、1 行 CLI で IC + IR + alive/reversed/dead 分類を実行 |
+| **事前構築 alpha zoo をベンチ** | 478 個の alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental）に対し、1 行 CLI で IC + IR + alive/reversed/dead 分類を実行 |
 | **相関レジームを見抜く** | `/correlation` 面上のエッジ密度 + ヒステリシスのタイムライン。市場が 1 つのブロックに融合するタイミングを示す —— シグナルではなく記述的なリスクコンテキスト。 |
 
 ---
@@ -667,9 +667,9 @@ Paper-vs-live is a **structural per-broker runtime guard** (account-id format, h
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>5 つのファミリーに渡る 475 個の事前構築 quant alpha</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>5 つのファミリーに渡る 478 個の事前構築 quant alpha</sub></summary>
 
-- 🧬 475 個のクロスセクショナル alpha、オペレーター層でルックアヘッドを禁止
+- 🧬 478 個のクロスセクショナル alpha、オペレーター層でルックアヘッドを禁止
 - 📈 IC + IR + alive/reversed/dead 分類を 1 つの CLI コマンドで
 - 🔬 AST 純関数ゲート + 300 行のルックアヘッド sentinel テスト + `pytest-socket` によるネットワーク遮断
 - 📦 Qlib には Apache-2 帰属表示、各 zoo ごとに `LICENSE.md` で formula を数学的内容として宣言
@@ -982,7 +982,7 @@ Vibe-Trading は tool-heavy agent です。skills、backtests、memory、swarms 
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # 475 個の事前構築 alpha を閲覧；show / bench / compare / export-manifest サブコマンド利用可
+vibe-trading alpha list    # 478 個の事前構築 alpha を閲覧；show / bench / compare / export-manifest サブコマンド利用可
 vibe-trading playbook list # 定期リサーチのテンプレート 5 本；show / create サブコマンド利用可
 vibe-trading channels status --local  # IM チャンネル設定と install hints を確認
 vibe-trading provider doctor  # 秘匿処理済みの provider/proxy/package 診断を出力
@@ -1739,7 +1739,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo Web 検索
 │   │   │   └── ...                 #   bash、file I/O、factor analysis、options、alpha browser + bench など
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 5 つのファミリーにまたがる 475 個の alpha
+│   │   ├── factors/                # Alpha Zoo — 5 つのファミリーにまたがる 478 個の alpha
 │   │   │   ├── base.py             #   19 個のオペレーター (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   AST 限定のメタデータ読み込み + 遅延計算 + sanity gate
 │   │   │   ├── bench_runner.py     #   IC + alive/reversed/dead 分類
@@ -1822,7 +1822,7 @@ Vibe-Trading は **[HKUDS](https://github.com/HKUDS)** agent ecosystem の一部
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | ローカルローダー出荷済み |
 | **Options Lab** | Vol surface, Greeks dashboard, payoff/scenario explorer | Planned |
 | **Portfolio Studio** | Risk x-ray, constraints, turnover-aware optimizer, rebalance notes | Turnover を考慮したオプティマイザは **0.1.11 でリリース済み**；残りは Planned |
-| **Alpha Zoo** | 475 個の事前構築 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental）、1 行 CLI でベンチ、agent 統合、Web UI | **0.1.8 でリリース済み**、0.1.12 まで拡張 |
+| **Alpha Zoo** | 478 個の事前構築 alpha 因子（Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental）、1 行 CLI でベンチ、agent 統合、Web UI | **0.1.8 でリリース済み**、0.1.12 まで拡張 |
 | **Strategy Development Manager** | Register papers / broker research as factors & strategies with a persistent store + automated IC/Sharpe decay lifecycle | **0.1.11 でリリース済み** |
 | **Correlation Regime** | Edge-density + hysteresis regime timeline layered on `/correlation` — spot when markets fuse into one bloc | **0.1.12 でリリース済み** |
 | **Research Delivery** | Slack / Telegram / email-style IM channels 経由の scheduled briefs と live research sessions | スケジューラ + IM Runtime 出荷済み |

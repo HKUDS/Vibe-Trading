@@ -380,7 +380,7 @@ Vibe-Trading مساحة عمل بحثية مفتوحة المصدر تحول ا�
 | **تشغيل فرق محللين** | مراجعات بحث متعددة الوكلاء لتدفقات الاستثمار والكم والكريبتو والماكرو والمخاطر. |
 | **وصل الأبحاث بقنوات IM** | إدارة بيئة جلسة واحدة عبر WebSocket وTelegram وSlack وDiscord وMatrix وWhatsApp وSignal وQQ/NapCat وWeChat/WeCom وFeishu/Lark وDingTalk وTeams وemail وMochat من CLI وREST وWeb UI. |
 | **إنتاج مخرجات قابلة للاستخدام** | تقارير، وTradingView Pine Script، وTDX، وMetaTrader 5، وأدوات MCP، وجلسات بحث لاحقة. |
-| **bench ألفا zoo جاهزة** | تشغيل IC + IR + تصنيف alive/reversed/dead عبر 475 ألفا (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) بسطر أوامر واحد على universe الخاص بك. |
+| **bench ألفا zoo جاهزة** | تشغيل IC + IR + تصنيف alive/reversed/dead عبر 478 ألفا (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + PIT-safe fundamental) بسطر أوامر واحد على universe الخاص بك. |
 | **رصد أنظمة الارتباط** | جدول زمني قائم على كثافة الحواف + التباطؤ (hysteresis) على واجهة `/correlation` يُظهر متى تندمج الأسواق في كتلة واحدة — سياق مخاطر وصفي، لا إشارة تداول. |
 
 ---
@@ -667,9 +667,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 </details>
 
 <details>
-<summary><b>Alpha Zoo</b> <sub>475 ألفا كمّي جاهز عبر 5 families</sub></summary>
+<summary><b>Alpha Zoo</b> <sub>478 ألفا كمّي جاهز عبر 5 families</sub></summary>
 
-- 🧬 475 ألفا cross-sectional، مع منع lookahead على طبقة العوامل (operators)
+- 🧬 478 ألفا cross-sectional، مع منع lookahead على طبقة العوامل (operators)
 - 📈 IC + IR + تصنيف alive/reversed/dead بأمر CLI واحد
 - 🔬 بوابة نقاء AST + اختبار حماية lookahead بـ 300 صف + قاطع شبكة عبر `pytest-socket`
 - 📦 إسناد Apache-2 لـ Qlib؛ ملف `LICENSE.md` لكل zoo يصرّح بأن الصيغ محتوى رياضي
@@ -977,7 +977,7 @@ Vibe-Trading وكيل كثيف الأدوات؛ المهارات والاختب�
 vibe-trading               # interactive TUI
 vibe-trading run -p "..."  # single run
 vibe-trading serve         # API server
-vibe-trading alpha list    # استعرض 475 ألفا جاهز؛ متاح show / bench / compare / export-manifest
+vibe-trading alpha list    # استعرض 478 ألفا جاهز؛ متاح show / bench / compare / export-manifest
 vibe-trading playbook list # خمسة قوالب بحث مجدولة؛ متاح show / create
 vibe-trading channels status --local  # فحص إعدادات قنوات IM وتلميحات التثبيت
 vibe-trading provider doctor  # طباعة تشخيصات المزود/الوكيل/الحزم بعد إخفاء الأسرار
@@ -1731,7 +1731,7 @@ Vibe-Trading/
 │   │   │   ├── web_search_tool.py  #   DuckDuckGo web search
 │   │   │   └── ...                 #   bash, file I/O, factor analysis, options, alpha browser + bench, etc.
 │   │   │
-│   │   ├── factors/                # Alpha Zoo — 475 ألفا عبر 5 families
+│   │   ├── factors/                # Alpha Zoo — 478 ألفا عبر 5 families
 │   │   │   ├── base.py             #   19 عاملاً (rank/scale/ts_*/delta/decay_linear/safe_div/vwap)
 │   │   │   ├── registry.py         #   تحميل بيانات وصفية AST فقط + حساب كسول + بوابات سلامة
 │   │   │   ├── bench_runner.py     #   IC + تصنيف alive/reversed/dead
@@ -1814,7 +1814,7 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 | **Data Bridge** | أحضر بياناتك: موصلات CSV/Parquet/SQL محلية مع schema mapping | المُحمِّل المحلي شُحن |
 | **Options Lab** | سطح تقلب، ولوحة Greeks، ومستكشف payoff/scenario | مخطط |
 | **Portfolio Studio** | أشعة مخاطر، وقيود، ومحسن يراعي الدوران، وملاحظات إعادة توازن | محسن يراعي الدوران **تم الإطلاق 0.1.11**؛ الباقي مخطط |
-| **Alpha Zoo** | 475 ألفا كمّي جاهز (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental)، سطر أوامر واحد للـ bench، تكامل agent، وواجهة Web | **تم الإطلاق 0.1.8**، موسّع حتى 0.1.12 |
+| **Alpha Zoo** | 478 ألفا كمّي جاهز (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental)، سطر أوامر واحد للـ bench، تكامل agent، وواجهة Web | **تم الإطلاق 0.1.8**، موسّع حتى 0.1.12 |
 | **Strategy Development Manager** | تسجيل الأوراق البحثية / أبحاث الوسطاء كعوامل واستراتيجيات مع مخزن دائم + دورة حياة آلية لاضمحلال IC/Sharpe | **تم الإطلاق 0.1.11** |
 | **Correlation Regime** | جدول زمني لنظام الارتباط قائم على كثافة الحواف + التباطؤ (hysteresis) فوق `/correlation` — رصد متى تندمج الأسواق في كتلة واحدة | **تم الإطلاق 0.1.12** |
 | **Research Delivery** | موجزات مجدولة وجلسات بحث حي عبر Slack / Telegram / قنوات IM شبيهة بالبريد | المُجدوِل + IM Runtime شُحنا |
