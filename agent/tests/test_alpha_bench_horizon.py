@@ -447,3 +447,75 @@ def test_json_envelope_discloses_horizon_and_exclusions(
     assert envelope["horizon"] == 21
     assert envelope["forward_return_sampling"] == "non_overlapping"
     assert envelope["universe_excluded"] == ["fund_roa"]
+
+
+def test_parser_rejects_horizon_above_the_cap() -> None:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command")
+    cli_handlers.add_subparser(sub)
+
+    with pytest.raises(SystemExit) as excinfo:
+        parser.parse_args(["alpha", "bench", "--zoo", "alpha101", "--horizon", "253"])
+    assert excinfo.value.code == 2
+
+
+def test_cli_rejects_horizon_above_cap_with_usage_exit_code(capsys, _reg) -> None:
+    rc = cli_handlers.cmd_alpha_bench(_ns(horizon=253))
+
+    assert rc == 2
+    assert "--horizon" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("bad", [253, 10_000, True, "21"])
+def test_run_bench_rejects_out_of_range_horizon_before_panel_load(
+    monkeypatch: pytest.MonkeyPatch, bad: object
+) -> None:
+    from unittest.mock import Mock
+
+    fetch = Mock()
+    monkeypatch.setattr("src.factors.bench_runner._load_universe_panel", fetch)
+    reg = MagicMock()
+    reg.list.return_value = ["alpha_0"]
+    reg.get.return_value = MagicMock(meta={"theme": ["test"], "formula_latex": ""})
+
+    result = run_bench("test_zoo", "mock", "2020-2021", registry=reg, horizon=bad)
+
+    assert result["status"] == "error"
+    assert "horizon" in result["error"]
+    fetch.assert_not_called()
+
+
+def test_multi_zoo_aggregate_discloses_horizon_and_exclusions() -> None:
+    """The all-zoos aggregation must not drop the per-sub-run disclosure keys."""
+    import time
+    from types import SimpleNamespace
+
+    reg = SimpleNamespace(
+        get=lambda aid: SimpleNamespace(zoo="fundamental"),
+        list=lambda zoo=None: ["fund_cn"],
+    )
+
+    def fake_run_bench(**_kw: Any) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "rows": [{"id": "fund_cn", "ir": 0.5}],
+            "skipped": [],
+            "horizon": 21,
+            "forward_return_sampling": "non_overlapping",
+            "universe_excluded": ["fund_us"],
+        }
+
+    out = cli_handlers._run_all_zoos_with_progress(
+        target_ids=["fund_cn"],
+        universe="csi300",
+        period="2020-2021",
+        top=5,
+        start_ts=time.monotonic(),
+        reg=reg,
+        run_bench=fake_run_bench,
+    )
+
+    assert out["status"] == "ok"
+    assert out["horizon"] == 21
+    assert out["forward_return_sampling"] == "non_overlapping"
+    assert out["universe_excluded"] == ["fund_us"]

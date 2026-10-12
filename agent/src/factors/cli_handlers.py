@@ -477,6 +477,8 @@ def _run_all_zoos_with_progress(
     total_alphas = sum(len(reg.list(zoo=z)) for z in zoos)
     all_rows: list[dict[str, Any]] = []
     all_skipped: list[dict[str, Any]] = []
+    all_excluded: list[str] = []
+    run_config: dict[str, Any] = {}
 
     def _run_zoo(z: str, base: int, update: Callable[[int, str], None] | None) -> None:
         cb: Callable[[int, int, str], None] | None = None
@@ -491,6 +493,10 @@ def _run_all_zoos_with_progress(
             on_progress=cb,
             registry=reg,
         )
+        if not run_config and "horizon" in sub:
+            run_config["horizon"] = sub["horizon"]
+            run_config["forward_return_sampling"] = sub.get("forward_return_sampling")
+        all_excluded.extend(sub.get("universe_excluded", []) or [])
         if sub.get("status") == "ok":
             all_rows.extend(sub.get("rows", []) or [])
             all_skipped.extend(sub.get("skipped", []) or [])
@@ -534,6 +540,8 @@ def _run_all_zoos_with_progress(
         "skipped": all_skipped,
         "n_alphas_tested": len(all_rows),
         "n_skipped": len(all_skipped),
+        **run_config,
+        **({"universe_excluded": all_excluded} if all_excluded else {}),
         "wall_seconds": round(time.monotonic() - start_ts, 2),
         **({"error": "no alphas produced IC across any zoo"} if not all_rows else {}),
     }
@@ -547,11 +555,16 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
     from ``src.tools.alpha_bench_tool`` (we do NOT modify that module).
     """
     try:
+        from src.tools.alpha_bench_tool import _MAX_HORIZON
+
         horizon = getattr(args, "horizon", 1)
         horizon = 1 if horizon is None else int(horizon)
-        if horizon < 1:
+        if not 1 <= horizon <= _MAX_HORIZON:
             # Usage error → argparse's exit-code convention (2), not a traceback.
-            _err(f"alpha bench: --horizon must be an integer >= 1 (got {horizon}).")
+            _err(
+                f"alpha bench: --horizon must be an integer in 1..{_MAX_HORIZON} "
+                f"(got {horizon})."
+            )
             return 2
         if (
             getattr(args, "oos_split", None)
@@ -943,19 +956,23 @@ def cmd_alpha_export_manifest(args: argparse.Namespace) -> int:
 
 
 def _horizon_arg(value: str) -> int:
-    """argparse type for ``--horizon``: integer >= 1.
+    """argparse type for ``--horizon``: integer in 1.._MAX_HORIZON.
 
     Raising ``ArgumentTypeError`` makes argparse exit with its usage-error
     code (2) instead of letting a bad value reach the bench engine.
     """
+    from src.tools.alpha_bench_tool import _MAX_HORIZON
+
     try:
         ivalue = int(value)
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"--horizon expects an integer >= 1, got {value!r}"
+            f"--horizon expects an integer in 1..{_MAX_HORIZON}, got {value!r}"
         ) from None
-    if ivalue < 1:
-        raise argparse.ArgumentTypeError(f"--horizon must be >= 1 (got {ivalue})")
+    if not 1 <= ivalue <= _MAX_HORIZON:
+        raise argparse.ArgumentTypeError(
+            f"--horizon must be in 1..{_MAX_HORIZON} (got {ivalue})"
+        )
     return ivalue
 
 
@@ -1056,9 +1073,10 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         type=_horizon_arg,
         default=1,
         help=(
-            "Forward-return horizon in bars (default: 1 = next-bar). h>1 computes "
-            "h-bar forward returns and samples IC non-overlapping (end-anchored); "
-            "21 ≈ monthly, the conventional horizon for fundamental factors."
+            "Forward-return horizon in bars, range 1-252 (default: 1 = next-bar). "
+            "h>1 computes h-bar forward returns and samples IC non-overlapping "
+            "(end-anchored); 21 ≈ monthly, the conventional horizon for "
+            "fundamental factors."
         ),
     )
     p_bench.add_argument(

@@ -887,9 +887,10 @@ def _compute_forward_returns(panel: dict[str, pd.DataFrame], horizon: int = 1) -
     # row t iff (n_rows - 1 - t) % h == 0, so the most recent complete window
     # is always sampled. Overlapping h-bar windows share h-1 bars of price
     # data, which autocorrelates consecutive ICs and inflates the naive-iid
-    # t-stat by ~sqrt(h); keeping every h-th row makes the IC observations
-    # non-overlapping, so the existing t_stat/categorise math stays honest
-    # without inventing new statistics.
+    # t-stat by ~sqrt(h); keeping every h-th row removes that dominant
+    # mechanical inflation, so the existing t_stat/categorise math is a
+    # defensible approximation (standard monthly-IC practice). Residual
+    # autocorrelation from persistent factor exposures is not modeled.
     n_rows = len(fwd.index)
     if n_rows:
         positions = np.arange(n_rows)

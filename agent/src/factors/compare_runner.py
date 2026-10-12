@@ -166,6 +166,13 @@ def compare_alphas(
                 row.setdefault("zoo", zoo)
                 rows.append(row)
             skipped.extend(sub.get("skipped", []) or [])
+            skipped.extend(
+                {
+                    "id": aid,
+                    "reason": f"excluded on {universe}: fund:* inputs need SEC US filings (sp500)",
+                }
+                for aid in sub.get("universe_excluded", []) or []
+            )
         else:
             reason = sub.get("error", "bench failed")
             skipped.extend({"id": aid, "reason": reason} for aid in zids)

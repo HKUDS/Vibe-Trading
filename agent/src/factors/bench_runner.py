@@ -37,7 +37,7 @@ from src.factors.registry import (
     SkipAlpha,
     get_default_registry,
 )
-from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel, _prepare_bench_panel, _split_alphas_by_universe_support, _validate_bench_data_requirements
+from src.tools.alpha_bench_tool import _MAX_HORIZON, _compute_forward_returns, _load_universe_panel, _prepare_bench_panel, _split_alphas_by_universe_support, _validate_bench_data_requirements
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,12 @@ def t_stat(ic_mean: float, ic_std: float, n: int) -> float:
 
 
 def categorise(row: dict[str, Any]) -> str:
-    """Bucket a per-alpha row into alive / reversed / dead."""
+    """Bucket a per-alpha row into alive / reversed / dead.
+
+    Thresholds are calibrated on daily next-bar ICs; at horizon h > 1 the
+    |IC| > 0.02 floor is a looser bar (h-bar ICs are naturally larger in
+    magnitude). The run envelope states its own horizon.
+    """
     ic_mean = row["ic_mean"]
     pos = row["ic_positive_ratio"]
     t = t_stat(ic_mean, row["ic_std"], row["ic_count"])
@@ -182,8 +187,22 @@ def run_bench(
         "universe": universe,
         "period": period,
         "horizon": horizon,
-        "forward_return_sampling": "non_overlapping" if horizon > 1 else "daily",
+        "forward_return_sampling": (
+            "non_overlapping"
+            if isinstance(horizon, int) and not isinstance(horizon, bool) and horizon > 1
+            else "daily"
+        ),
     }
+
+    # Fail fast before any panel load (network): same 1.._MAX_HORIZON contract
+    # the tool and MCP wrapper enforce.
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= _MAX_HORIZON:
+        entry["status"] = "error"
+        entry["error"] = (
+            f"horizon must be an integer between 1 and {_MAX_HORIZON}, got {horizon!r}"
+        )
+        entry["wall_seconds"] = round(time.monotonic() - start, 2)
+        return entry
 
     reg = registry if registry is not None else get_default_registry()
     alpha_ids = reg.list(zoo=zoo)

@@ -933,7 +933,7 @@ def alpha_bench(
     try:
         from datetime import date
 
-        from src.tools.alpha_bench_tool import _parse_period
+        from src.tools.alpha_bench_tool import _MAX_HORIZON, _parse_period
 
         start_raw, end_raw = _parse_period(period)
         start_date = date.fromisoformat(start_raw)
@@ -962,13 +962,11 @@ def alpha_bench(
             ensure_ascii=False,
         )
 
-    # 252 ≈ one trading year of bars — mirrors the tool-level cap in
-    # src.tools.alpha_bench_tool._MAX_HORIZON.
-    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= 252:
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= _MAX_HORIZON:
         return json.dumps(
             {
                 "status": "error",
-                "error": "MCP alpha_bench horizon must be an integer between 1 and 252",
+                "error": f"MCP alpha_bench horizon must be an integer between 1 and {_MAX_HORIZON}",
             },
             ensure_ascii=False,
         )

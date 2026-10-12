@@ -350,3 +350,29 @@ def test_core_invalid_sort_falls_back_to_ir(monkeypatch) -> None:
     )
     assert env["sort"] == "ir"
     assert env["winner"] == "b"
+
+
+def test_compare_discloses_universe_excluded_alphas(monkeypatch, capsys) -> None:
+    """A compare shortlist must not silently swallow universe-excluded alphas."""
+    id_to_zoo = {"fund_us": "fundamental", "fund_cn": "fundamental"}
+    metrics = {"fund_cn": _metrics(0.01, 0.05, 0.20)}
+
+    def fake_run_bench(*, zoo, universe, period, top, only, registry, on_progress=None, on_stage=None):  # noqa: ARG001
+        rows = [{"id": aid, **metrics[aid]} for aid in only if aid in metrics]
+        excluded = [aid for aid in only if aid not in metrics]
+        return {
+            "status": "ok",
+            "zoo": zoo,
+            "rows": rows,
+            "skipped": [],
+            "universe_excluded": excluded,
+        }
+
+    _wire(monkeypatch, id_to_zoo, fake_run_bench)
+    rc, env = _run(capsys, _args(alpha_ids=["fund_us", "fund_cn"]))
+
+    assert rc == 0
+    assert env["n_compared"] == 1
+    assert env["n_skipped"] == 1
+    assert env["skipped"][0]["id"] == "fund_us"
+    assert "SEC US filings" in env["skipped"][0]["reason"]

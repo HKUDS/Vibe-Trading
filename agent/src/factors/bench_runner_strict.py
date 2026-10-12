@@ -63,7 +63,7 @@ from src.factors.registry import (
     SkipAlpha,
     get_default_registry,
 )
-from src.tools.alpha_bench_tool import _compute_forward_returns, _load_universe_panel
+from src.tools.alpha_bench_tool import _MAX_HORIZON, _compute_forward_returns, _load_universe_panel
 
 logger = logging.getLogger(__name__)
 
@@ -402,7 +402,11 @@ def run_bench_strict(
         "universe": universe,
         "period": period,
         "horizon": horizon,
-        "forward_return_sampling": "non_overlapping" if horizon > 1 else "daily",
+        "forward_return_sampling": (
+            "non_overlapping"
+            if isinstance(horizon, int) and not isinstance(horizon, bool) and horizon > 1
+            else "daily"
+        ),
         "random_control": random_control,
         "n_random_seeds": effective_seeds,
         "oos_split": effective_oos_split,
@@ -437,6 +441,13 @@ def run_bench_strict(
 
     if training_cutoff is not None and oos_split is not None:
         return _finish_error("pass either training_cutoff or oos_split, not both")
+
+    # Fail fast before any panel load (network): same 1.._MAX_HORIZON contract
+    # the tool and MCP wrapper enforce.
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= _MAX_HORIZON:
+        return _finish_error(
+            f"horizon must be an integer between 1 and {_MAX_HORIZON}, got {horizon!r}"
+        )
 
     reg = registry if registry is not None else get_default_registry()
     alpha_ids = reg.list(zoo=zoo)
