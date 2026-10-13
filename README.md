@@ -884,6 +884,10 @@ that is a bug, not a pattern.
 | `copula` | Gaussian and Archimedean copulas |
 | `microstructure` | VPIN, Roll spread, Amihud illiquidity, Kyle's lambda |
 
+Probabilistic Sharpe summaries require finite observed ratios, observation counts,
+benchmarks, skew and non-excess kurtosis. Undefined inputs are rejected with the
+parameter name rather than reported as research confidence.
+
 The read-only `quantlib_call` tool reaches all of it through one contract, so the
 finance math works on the CLI, the Web UI, the REST API and MCP — including
 deployments where `bash` is gated off. It is
