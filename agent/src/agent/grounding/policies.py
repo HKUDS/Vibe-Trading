@@ -166,6 +166,12 @@ def _explicit_sign(text: str) -> int:
     return 1 if head == "+" else -1 if head == "-" else 0
 
 
+def _is_percent_field(name: str) -> bool:
+    """Whether a field name says its value is already in percentage points."""
+    lowered = name.lower()
+    return "percent" in lowered or "pct" in lowered or lowered.endswith("%")
+
+
 def _is_plain_count(figure: Figure) -> bool:
     """Whether a figure can be a count or a parameter the model chose.
 
@@ -1805,17 +1811,20 @@ class _PolicyMixin:
         money: bool = False,
         percent: bool = False,
         scalar_parameters: Sequence[float] = (),
-    ) -> tuple[float, list[float]] | str | None:
+    ) -> tuple[float, list[float], bool] | str | None:
         """Evaluate a declaration's note as an observation-anchored formula.
 
-        Returns the ``(result, operands)`` pair when the note is arithmetic
-        over at least two operands. Data operands must be observed; chosen
-        scalar parameters must be declared and visible. Every added or
+        Returns the ``(result, operands, points)`` triple when the note is
+        arithmetic over at least two operands. Data operands must be observed;
+        chosen scalar parameters must be declared and visible. Every added or
         subtracted term still needs an observed anchor. Literal 1 is the
         multiplicative identity (also used in ratio-minus-one expressions),
         and square/cube exponents belong to the operator, not the operands.
         A percent claim's explicit trailing *100 is normalized as a unit
-        conversion before checking the remaining data operands.
+        conversion before checking the remaining data operands. ``points`` is
+        True when every data operand anchored only to percent-named fields
+        (``changepercent`` and friends already carry points, #1820), so the
+        caller compares the result against the percent figure directly.
         """
         if declaration is None or not declaration.note.strip():
             return "no_formula"
@@ -1827,6 +1836,7 @@ class _PolicyMixin:
         # Normalize ONLY an outer, trailing literal *100 back to a fraction;
         # do not broaden result matching or exempt any inner data operand.
         # Numeric magnitude elsewhere never decides whether an operand is data.
+        normalized_x100 = False
         if (
             percent
             and isinstance(tree.body, ast.BinOp)
@@ -1838,6 +1848,7 @@ class _PolicyMixin:
             result /= 100
             operands = operands[:-1]
             tree = ast.Expression(body=tree.body.left)
+            normalized_x100 = True
         # Two instruments' bars and no resolved symbol: arithmetic anchored on
         # the session's pools, or on one instrument's prints the ref names,
         # would look anchored with nothing to anchor it to. Only evidence that
@@ -1887,22 +1898,96 @@ class _PolicyMixin:
             for operand in operands
         ):
             return "operand_not_observed"
-        return result, operands
+        # The result's unit follows the evidence the operands anchored to:
+        # percent-named fields already carry points (#1820), an explicit
+        # trailing *100 was normalized above, anything else is a fraction.
+        points = (
+            percent
+            and not normalized_x100
+            and self._operands_read_as_points(
+                operands, symbol, records, scalar_parameters
+            )
+        )
+        return result, operands, points
+
+    def _operands_read_as_points(
+        self,
+        operands: Sequence[float],
+        symbol: str | None,
+        records: Sequence[EvidenceRecord],
+        scalar_parameters: Sequence[float],
+    ) -> bool:
+        """Whether every data operand anchored only to percent-named fields.
+
+        A field named ``changepercent`` already carries percentage points, so
+        a formula over such fields evaluates in points and a percent figure
+        must meet the result directly, not ``result * 100``. Conservative by
+        construction: an operand whose magnitude also appears under a
+        non-percent field makes the unit undecidable, and the caller keeps
+        the fraction reading.
+        """
+        data = [
+            operand
+            for operand in operands
+            if operand != 1
+            and not any(
+                math.isclose(abs(operand), abs(parameter), rel_tol=1e-12, abs_tol=0.0)
+                for parameter in scalar_parameters
+            )
+        ]
+        if not data:
+            return False
+        candidates = list(self._price_candidates(symbol, records))
+        candidates += [
+            record
+            for record in self._evidence
+            if record.status == "observed"
+            and record.value is not None
+            and record.tool in {"get_market_data", "bash"}
+            and (not symbol or record.symbol == symbol)
+        ]
+        candidates += [
+            record
+            for record in self._evidence
+            if record.status == "observed"
+            and record.value is not None
+            and _metric_kind_for_path(record.field) is not None
+            and (not symbol or not record.symbol or record.symbol == symbol)
+        ]
+        for operand in data:
+            saw_percent = saw_plain = False
+            for record in candidates:
+                if math.isclose(
+                    abs(float(record.value)), abs(operand), rel_tol=1e-9, abs_tol=1e-12
+                ):
+                    if _is_percent_field(record.field):
+                        saw_percent = True
+                    else:
+                        saw_plain = True
+            if not saw_percent or saw_plain:
+                return False
+        return True
 
     @staticmethod
-    def _result_matches(figure: Figure, result: float) -> bool:
+    def _result_matches(figure: Figure, result: float, *, points: bool = False) -> bool:
         """Whether a formula's result is the value the prose figure states.
 
         The band is half a unit of the last digit the PROSE was written with
         ("约 37%" for 36.75%), so a coarser declaration cannot widen it. A "%"
-        figure is compared only in percentage points, since against the fraction
-        a half-unit band spans fifty points; a bare figure is tried both ways.
+        figure is compared in one unit only, since against the other reading
+        a half-unit band spans fifty points: against the fraction
+        (``result * 100``) by default, against the points the formula
+        evaluates to when every data operand came from a percent-named field
+        (#1820). A bare figure is tried both ways.
         Magnitudes are compared, because a fall is noted either as
         ``(low − high) / high`` or as the drop, unless the prose wrote a sign.
         """
         # The normalized reading, so "0,666" is three decimals and "−5,13%" is signed.
         half_unit = _written_half_unit(figure.digits or figure.text)
-        targets = {result * 100.0} if figure.percent else {result, result * 100.0}
+        if figure.percent:
+            targets = {result} if points else {result * 100.0}
+        else:
+            targets = {result, result * 100.0}
         sign = _explicit_sign(figure.sign or figure.text)
         value = abs(figure.value)
         return any(
@@ -1949,16 +2034,19 @@ class _PolicyMixin:
                     "least two operands with one of them observed in this session",
                 )
             ]
-        result, _ = derivation
-        if self._result_matches(figure, result):
+        result, _, points = derivation
+        if self._result_matches(figure, result, points=points):
             return []
         # Reported in the figure's own units, as ``_result_matches`` compares it.
-        scaled = result * 100.0 if figure.percent else result
+        if figure.percent:
+            scaled = result if points else result * 100.0
+        else:
+            scaled = result
         shown = f"{scaled:.6g}%" if figure.percent else f"{scaled:.6g}"
         # "−1.51pp" beside "12.87% − 11.36%": the size is right and the formula
         # runs the other way. Still refused (the sign is part of the claim),
         # but said, or the model rewrites the number instead of the formula.
-        reversed_sign = self._result_matches(figure, -result)
+        reversed_sign = self._result_matches(figure, -result, points=points)
         return [
             self._figure_issue(
                 "numeric_claim_conflict",
