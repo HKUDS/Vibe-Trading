@@ -870,7 +870,7 @@ that is a bug, not a pattern.
 | Module | What it covers |
 |--------|----------------|
 | `options` | Black-Scholes price + greeks, implied-volatility inversion |
-| `fixedincome` | Bond math, Nelson-Siegel / Svensson curve fitting |
+| `fixedincome` | Bond math, Nelson-Siegel / Svensson curve fitting; schedules and accrued-interest inputs must be finite, including coupon frequency. |
 | `credit` | Altman Z-score, Merton / KMV distance-to-default; CDS premium dates retain their configured frequency, with a final stub when maturity falls between coupons. |
 | `timeseries` | Stationarity, cointegration, GARCH, bootstrap; OU fits use adjacent observed lag pairs; missing observations never become artificial one-step transitions. |
 | `risk` · `var_backtest` | VaR / CVaR / EVT and their backtests |

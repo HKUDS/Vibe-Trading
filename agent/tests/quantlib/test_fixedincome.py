@@ -582,3 +582,19 @@ def test_a_non_finite_input_is_named_not_priced(call, name, bad):
     """Each range check is a comparison, and NaN fails none of them: it came out as a NaN price."""
     with pytest.raises(ValueError, match=f"{name} must be finite"):
         call(bad)
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_nonfinite_bond_frequency_is_rejected(bad):
+    with pytest.raises(ValueError, match="freq.*finite"):
+        bond_price(100.0, 0.05, 0.04, 4, freq=bad)
+
+
+@pytest.mark.parametrize("field", ["face", "coupon_rate", "freq"])
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("settlement", [dt.date(2026, 1, 1), dt.date(2026, 4, 1)])
+def test_nonfinite_accrued_inputs_are_rejected_at_coupon_and_midperiod(field, bad, settlement):
+    params = dict(face=100.0, coupon_rate=0.05, freq=2, last_coupon=dt.date(2026, 1, 1),
+                  settlement=settlement, next_coupon=dt.date(2026, 7, 1))
+    params[field] = bad
+    with pytest.raises(ValueError, match=f"{field}.*finite"):
+        accrued_interest(**params)

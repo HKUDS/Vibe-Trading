@@ -177,6 +177,7 @@ def accrued_interest(
             ordered, if ``settlement`` falls outside the coupon period, or if
             ``day_count`` is not a recognised convention.
     """
+    _require_finite(face=face, coupon_rate=coupon_rate, freq=freq)
     if freq <= 0:
         raise ValueError(f"freq must be positive, got {freq}")
     if not last_coupon < next_coupon:
@@ -230,7 +231,7 @@ def bond_cashflows(
         ValueError: If ``face`` is not positive, if ``n_periods`` is not a
             positive integer, or if ``freq`` is not positive.
     """
-    _require_finite(face=face, coupon_rate=coupon_rate)
+    _require_finite(face=face, coupon_rate=coupon_rate, freq=freq)
     if face <= 0:
         raise ValueError(f"face must be positive, got {face}")
     if isinstance(n_periods, bool) or not isinstance(n_periods, (int, np.integer)) or n_periods <= 0:
