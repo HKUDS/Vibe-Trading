@@ -243,11 +243,21 @@ def probabilistic_sharpe_ratio(
         Probability in ``[0, 1]``.
 
     Raises:
-        ValueError: If ``n_observations`` is below :data:`MIN_OBSERVATIONS`, if
+        ValueError: If any summary input is non-finite, if ``n_observations``
+            is below :data:`MIN_OBSERVATIONS`, if
             ``kurtosis`` is below 1 (impossible for any distribution), or if the
             variance term is non-positive, which means the supplied moments are
             mutually inconsistent rather than merely extreme.
     """
+    for name, value in (
+        ("observed_sharpe", observed_sharpe),
+        ("n_observations", n_observations),
+        ("benchmark_sharpe", benchmark_sharpe),
+        ("skew", skew),
+        ("kurtosis", kurtosis),
+    ):
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
     if n_observations < MIN_OBSERVATIONS:
         raise ValueError(
             f"need at least {MIN_OBSERVATIONS} observations, got {n_observations}"
@@ -257,8 +267,6 @@ def probabilistic_sharpe_ratio(
             f"kurtosis must be the non-excess fourth moment (>= 1, 3 for a "
             f"Gaussian), got {kurtosis}. Excess kurtosis was probably passed."
         )
-    if not np.isfinite(observed_sharpe):
-        raise ValueError(f"observed_sharpe must be finite, got {observed_sharpe}")
 
     variance_term = (
         1.0 - skew * observed_sharpe + (kurtosis - 1.0) / 4.0 * observed_sharpe**2

@@ -340,3 +340,11 @@ def test_cscv_logits_and_pbo_agree():
     result = probability_of_backtest_overfitting(data, n_splits=6)
     assert result.pbo == pytest.approx((result.logits <= 0).mean())
     assert result.logits.size == result.n_splits
+
+@pytest.mark.parametrize("field", ["observed_sharpe", "n_observations", "benchmark_sharpe", "skew", "kurtosis"])
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_psr_rejects_nonfinite_summary_inputs(field, bad):
+    params = dict(observed_sharpe=0.1, n_observations=500, benchmark_sharpe=0.0, skew=0.0, kurtosis=3.0)
+    params[field] = bad
+    with pytest.raises(ValueError, match="finite"):
+        probabilistic_sharpe_ratio(**params)
