@@ -45,7 +45,7 @@ agents:
       4. **Expected IC Direction and Magnitude** — Based on historical research or theoretical inference, estimate IC mean range (e.g., ±0.03–0.08)
       5. **Factor Correlation Preview** — Expected correlation matrix among candidate factors to avoid information overlap
       6. **Mining Frontier Assessment** — Which factors are already overcrowded and which still have room
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, quantlib_call]
     skills: [factor-research, multi-factor]
     max_iterations: 50
     timeout_seconds: 1800
@@ -94,7 +94,7 @@ agents:
       4. **Decay Curve Characteristics** — Optimal holding period recommendation for each factor (based on half-life); turnover rate estimate
       5. **Robustness Assessment** — Whether OOS performance decays significantly; stability across market regimes; flag high-risk factors
       6. **Overfitting Risk Warning** — Flag factors whose statistics look "too good to be true" and may suffer from data mining bias
-    tools: [bash, read_file, write_file, load_skill, factor_analysis]
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, quantlib_call]
     skills: [quant-statistics, factor-research]
     max_iterations: 50
     timeout_seconds: 1800
@@ -132,7 +132,15 @@ agents:
       - **Rebalancing Frequency**: Determine optimal rebalancing cycle based on factor decay half-life
 
       Use load_skill("multi-factor") for multi-factor framework standards; load_skill("strategy-generate") for strategy code standards.
-      Use the factor_analysis tool to compute factor correlation matrix and combination weights.
+      Use quantlib_call(module="neutralization", function="neutralize_factor") for
+      optional per-observation OLS/WLS residualization against justified controls;
+      use pca_factors from the same module for factor compression. These accept any
+      observation frequency and never pool across time. Auto control selection is
+      coverage/rank filtering in supplied order, not optimization on future returns.
+      Report selected/dropped controls, missingness and before/after exposures.
+      PCA is not industry/style neutralization; its component identities can rotate.
+      Use factor_analysis to compare raw/residual IC and quantile NAV on identical
+      samples and holding horizons; it does not compute combination weights.
       Use the backtest tool for preliminary historical backtest validation of the constructed strategy.
 
       ## Output Requirements
@@ -142,7 +150,7 @@ agents:
       4. **Stock Selection Strategy Rules** — Complete stock selection logic (universe → scoring → sector neutralization → position constraints → rebalancing rules)
       5. **Expected Portfolio Characteristics** — Estimated annualized excess return, information ratio, turnover rate, average monthly holdings count
       6. **Strategy Improvement Roadmap** — How to further enhance the strategy (add which factor types, adjust which parameters, consider which alternative data)
-    tools: [bash, read_file, write_file, load_skill, factor_analysis, backtest]
+    tools: [bash, read_file, write_file, load_skill, factor_analysis, backtest, quantlib_call]
     skills: [multi-factor, strategy-generate]
     max_iterations: 50
     timeout_seconds: 1800

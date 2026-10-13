@@ -877,6 +877,7 @@ that is a bug, not a pattern.
 | `attribution` | Brinson-Fachler decomposition |
 | `performance` · `fundmath` | TWR / MWR / Modified Dietz; XIRR / MOIC / DPI / TVPI |
 | `factormodel` · `eventstudy` | Factor regressions, event studies; portfolio style exposure reports incomplete factor rows as unmatched weight. |
+| `neutralization` | Optional per-observation OLS/WLS factor residualization, audited control quality selection, and cross-sectional PCA at any panel frequency. [Workflow and examples](agent/src/skills/factor-research/references/neutralization.md). |
 | `multipletesting` · `crossvalidation` | Deflated significance, purged CV; purged walk-forward splits omit folds with no training observations left after purging. |
 | `impact` | Market-impact models |
 | `volatility` | Heston (1993) stochastic-volatility pricing; Heston pricing requires finite inputs and a positive integration limit; invalid inputs return a domain error. |

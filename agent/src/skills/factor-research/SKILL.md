@@ -102,6 +102,46 @@ First orthogonalize the factors with the Schmidt process to remove collinearity,
 4. Combine the orthogonalized factors with equal weights
 ```
 
+### Reusable Cross-Sectional Transforms
+
+Use `quantlib_call` with `module="neutralization"` (or import
+`src.quantlib.neutralization`) for tested transforms rather than retyping a
+regression. `neutralize_factor` removes named numeric/classification exposures
+with OLS or WLS. `pca_factors` compresses correlated factor columns into
+uncorrelated components; PCA alone does not make a factor industry/style neutral.
+
+Panels use observation-time rows and asset columns. Minute, hourly, daily,
+weekly, monthly and irregular observations all use the same contract: each row
+is fitted independently, with no resampling, forward filling or full-period fit.
+Single-asset time-series residualization is a different model and is not provided.
+Align controls, weights, classifications and the tradable mask to information
+available at that observation time; the library cannot verify publication dates.
+
+`control_selection="explicit"` is the default. Optional `"auto"` filters the
+supplied controls in insertion order by current coverage, rank and remaining
+degrees of freedom. It reports every selection/drop and never uses IC, returns
+or test-period performance. Supply economically justified controls: automatic
+quality filtering cannot decide which economic exposures should be removed.
+Missing/nonpositive WLS weights are excluded, not replaced. Missing exposures
+remain missing; rank-deficient explicit fits and empty auto selections skip the
+observation with diagnostics rather than silently changing the requested model.
+
+Inspect coverage and Pearson exposure before/after on the same sample. WLS
+reports weighted exposure; unweighted or rank correlations need not be zero.
+Residual standardization is linear (no post-fit clipping/ranking), preserving
+the fitted orthogonality. Exact zero residuals are reported as such, not as an
+effective new factor. Compare raw/residual IC and group backtests separately
+with `factor_analysis`, using identical universes, masks and holding horizons.
+The transform itself does not calculate Sharpe, trading costs or turnover.
+
+PCA reports per-time loadings, centering/scales, retained variance and component
+counts. Its loading-sign convention does not guarantee stable component identity
+across time; near-equal eigenvalues can rotate. Choose component counts/variance
+thresholds using research/training data rather than test-period performance.
+
+See [the neutralization workflow](references/neutralization.md) for
+Python and JSON-envelope examples, diagnostics and limits.
+
 ## Common Pitfalls
 
 ### Look-Ahead Bias
