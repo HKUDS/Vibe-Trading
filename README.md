@@ -604,6 +604,9 @@ One `get_market_data` call, **29 market-data sources**, one of them the optional
 | `b3_cotahist` | Brazil (B3) | none | official daily B3 cash/odd-lot bars (raw, BRL) from the local store populated by `python -m src.br_data sync`; offline fallback for `.SA` |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+Local Parquet sources can use a `DatetimeIndex` for bar dates, with or without
+a configured `date_format`. An explicitly mapped date column takes precedence.
+
 **Fallback chains (by IP-ban risk):**
 
 - **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`

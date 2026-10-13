@@ -214,8 +214,10 @@ def _read_csv(path: str, col_map: dict[str, str], date_fmt: str | None) -> pd.Da
 def _read_parquet(path: str, col_map: dict[str, str], date_fmt: str | None) -> pd.DataFrame | None:
     df = pd.read_parquet(path)
     if isinstance(df.index, pd.DatetimeIndex):
-        df = df.reset_index()
-        if date_fmt is None and col_map.get("date", "date") not in df.columns:
+        if col_map.get("date", "date") in df.columns:
+            df = df.reset_index(drop=True)
+        else:
+            df = df.reset_index()
             col_map = dict(col_map)
             col_map["date"] = df.columns[0]
     return _normalize_columns(df, col_map, date_fmt)

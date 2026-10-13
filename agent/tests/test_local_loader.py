@@ -297,3 +297,51 @@ def test_local_loader_normalizes_dst_offsets_to_naive_utc(
         pd.Timestamp("2026-01-15 14:30:00"),
         pd.Timestamp("2026-07-15 13:30:00"),
     ]
+
+
+@pytest.mark.parametrize("index_name", [None, "bar_time"])
+@pytest.mark.parametrize("date_format", [None, "%Y-%m-%d"])
+def test_parquet_datetime_index_with_date_format(
+    monkeypatch: pytest.MonkeyPatch, index_name: str | None, date_format: str | None
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "open": [10.0, 11.0],
+            "high": [12.0, 13.0],
+            "low": [9.0, 10.0],
+            "close": [11.0, 12.0],
+            "volume": [100.0, 200.0],
+        },
+        index=pd.date_range("2026-01-01", periods=2, name=index_name),
+    )
+    monkeypatch.setattr(pd, "read_parquet", lambda path: frame.copy())
+    loader = local_loader.DataLoader()
+    loader._source_by_symbol = {
+        "LOCAL": {"type": "parquet", "path": "bars.parquet", "date_format": date_format}
+    }
+    result = loader._fetch_one("LOCAL", "2026-01-01", "2026-01-02")
+    assert result is not None
+    pd.testing.assert_index_equal(result.index, frame.index.rename("trade_date"))
+    assert result["close"].tolist() == [11.0, 12.0]
+
+
+@pytest.mark.parametrize("index_name", ["bar_time", "Date"])
+def test_parquet_explicit_date_column_keeps_precedence(
+    monkeypatch: pytest.MonkeyPatch, index_name: str
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "Date": ["2026-02-01", "2026-02-02"],
+            "open": [10.0, 11.0],
+            "high": [12.0, 13.0],
+            "low": [9.0, 10.0],
+            "close": [11.0, 12.0],
+        },
+        index=pd.date_range("2026-01-01", periods=2, name=index_name),
+    )
+    monkeypatch.setattr(pd, "read_parquet", lambda path: frame.copy())
+    columns = dict(local_loader._DEFAULT_COLUMNS, date="Date")
+    result = local_loader._read_parquet("bars.parquet", columns, "%Y-%m-%d")
+    assert result is not None
+    assert result.index.tolist() == pd.date_range("2026-02-01", periods=2).tolist()
+    assert columns["date"] == "Date"
