@@ -169,6 +169,7 @@ class TestEnvConfigDefaults:
     def test_agent_tuning_defaults(self) -> None:
         c = EnvConfig()
         assert c.agent_tuning.token_threshold == 40000
+        assert c.agent_tuning.vibe_trading_agent_max_iterations == 50
         assert c.agent_tuning.vt_heartbeat_interval_s == 3.0
         assert c.agent_tuning.vt_reasoning_delta_min_interval_s == 1.0
         assert c.agent_tuning.vt_stream_retry_delay_s == 1.0

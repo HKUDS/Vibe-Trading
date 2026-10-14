@@ -540,11 +540,13 @@ class SessionService:
             ),
         )
 
+        from src.config.accessor import get_env_config
+
         agent = AgentLoop(
             registry=registry,
             llm=llm,
             event_callback=event_callback,
-            max_iterations=50,
+            max_iterations=get_env_config().agent_tuning.vibe_trading_agent_max_iterations,
             persistent_memory=pm,
         )
         self._active_loops[session_id] = agent

@@ -454,6 +454,11 @@ class AgentTuningConfig(_EnvBase):
     # tuned against it means anything under real-token accounting. Read only to
     # warn (src/agent/context_budget.py); compaction ignores it.
     token_threshold: int = Field(alias="TOKEN_THRESHOLD", default=40000)
+    # ReAct loop iteration cap for interactive/web sessions. Heavy pipelines
+    # (multi-layer scoring, batch research) legitimately exceed 50 turns.
+    vibe_trading_agent_max_iterations: int = Field(
+        alias="VIBE_TRADING_AGENT_MAX_ITERATIONS", default=50, ge=1,
+    )
     vibe_trading_context_window: int | None = Field(
         alias="VIBE_TRADING_CONTEXT_WINDOW", default=None, gt=0,
     )
