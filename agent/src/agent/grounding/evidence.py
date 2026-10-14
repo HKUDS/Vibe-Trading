@@ -126,6 +126,11 @@ _ANALYSIS_KIND_ALIASES = {
     "annualized_return": "return",
     "return": "return",
     "returns": "return",
+    "correlation_matrix": "correlation",
+    "contribution": "contribution",
+    "contribution_pct": "contribution",
+    "risk_contribution": "contribution",
+    "risk_contribution_pct": "contribution",
     "ic_positive_ratio": "win_rate",
     "var": "tail_risk",
     "var_95": "tail_risk",
@@ -569,6 +574,17 @@ def _metric_kind_for_path(path: str) -> str | None:
     kind = _ANALYSIS_KIND_ALIASES.get(leaf)
     if kind is not None:
         return kind
+    # Recognize explicitly named metric maps with ticker-keyed numeric leaves.
+    # A dotted venue suffix (AAPL.US) occupies multiple path components;
+    # only uppercase symbol-shaped components can follow the metric field.
+    parts = str(path or "").split(".")
+    for index, part in enumerate(parts[:-1]):
+        parent_kind = _ANALYSIS_KIND_ALIASES.get(part.casefold())
+        if parent_kind not in {"contribution", "correlation"}:
+            continue
+        labels = parts[index + 1 :]
+        if all(re.fullmatch(r"[A-Z][A-Z0-9]{0,14}", label) for label in labels):
+            return parent_kind
     # Compound leaves ("strategy_max_drawdown"): scan tokens from the right,
     # where English puts the head noun, so "return_vol" is vol, not return.
     # Only the head of a compound leaf says what it measures (#1426):
@@ -587,6 +603,29 @@ def _metric_kind_for_path(path: str) -> str | None:
             kind = None if key in _EXACT_ONLY_ALIASES else _ANALYSIS_KIND_ALIASES.get(key)
             if kind is not None:
                 return kind
+    return None
+
+
+def _keyed_metric_map_kind(path: str) -> str | None:
+    """Whether a field belongs to a per-instrument contribution or matrix map."""
+    return next(
+        (
+            kind
+            for part in str(path or "").split(".")
+            if (kind := _ANALYSIS_KIND_ALIASES.get(part.casefold()))
+            in {"contribution", "correlation"}
+        ),
+        None,
+    )
+
+
+def _analysis_symbol_key(key: str) -> str | None:
+    """Return a plausible instrument key, excluding common aggregate labels."""
+    if _CANONICAL_SYMBOL_RE.fullmatch(key) or (
+        re.fullmatch(r"[A-Z][A-Z0-9]{0,14}", key)
+        and key not in {"ALL", "PORTFOLIO", "TOTAL", "UNKNOWN"}
+    ):
+        return _normalize_symbol(key)
     return None
 
 
@@ -695,12 +734,20 @@ class _EvidenceMixin:
         """Record nested numeric leaves whose key names a metric kind."""
         recorded = 0
 
-        def visit(item: Any, path: str) -> None:
+        def visit(
+            item: Any,
+            path: str,
+            *,
+            metric_map: str | None = None,
+            keyed_symbol: str | None = None,
+            keyed_symbols: tuple[str, ...] = (),
+        ) -> None:
             nonlocal recorded
             if _is_number(item):
                 kind = _metric_kind_for_path(path)
                 if kind is None:
                     return
+                symbol = keyed_symbol if metric_map == "contribution" else None
                 self._analysis_metrics.append(
                     {
                         "metric": kind,
@@ -708,16 +755,48 @@ class _EvidenceMixin:
                         "tool": tool_name,
                         "call_id": call_id,
                         "field": path,
+                        "instrument_scoped": metric_map is not None,
+                        "symbol": symbol,
+                        "instrument_symbols": list(keyed_symbols),
                     }
                 )
                 recorded += 1
                 return
             if isinstance(item, dict):
                 for key, child in item.items():
-                    visit(child, f"{path}.{key}" if path else str(key))
+                    key_text = str(key)
+                    child_path = f"{path}.{key_text}" if path else key_text
+                    parent_kind = _ANALYSIS_KIND_ALIASES.get(key_text.casefold())
+                    child_metric_map = (
+                        parent_kind
+                        if parent_kind in {"contribution", "correlation"}
+                        else metric_map
+                    )
+                    child_symbol = keyed_symbol
+                    child_symbols = keyed_symbols
+                    if metric_map == "contribution":
+                        child_symbol = _analysis_symbol_key(key_text)
+                    elif metric_map == "correlation":
+                        child_symbol = None
+                        axis_symbol = _analysis_symbol_key(key_text)
+                        if axis_symbol and axis_symbol not in child_symbols:
+                            child_symbols = (*child_symbols, axis_symbol)
+                    visit(
+                        child,
+                        child_path,
+                        metric_map=child_metric_map,
+                        keyed_symbol=child_symbol,
+                        keyed_symbols=child_symbols,
+                    )
             elif isinstance(item, list):
                 for index, child in enumerate(item):
-                    visit(child, f"{path}[{index}]")
+                    visit(
+                        child,
+                        f"{path}[{index}]",
+                        metric_map=metric_map,
+                        keyed_symbol=keyed_symbol,
+                        keyed_symbols=keyed_symbols,
+                    )
 
         visit(value, field_prefix or "")
         return recorded

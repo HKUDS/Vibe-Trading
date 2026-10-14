@@ -28,6 +28,7 @@ from src.agent.grounding.evidence import (
     _is_metadata_count_leaf,
     _is_number,
     _is_price_kind,
+    _keyed_metric_map_kind,
     _metric_kind_for_path,
     _price_field_for_path,
     _timestamp_matches_claim_date,
@@ -718,13 +719,24 @@ class _PolicyMixin:
         segment precedes the line because a comparison report names both
         instruments on one header line and then writes about one of them.
         """
+        declared = None
         if declaration is not None:
             declared = self._symbol_for_claim(
                 f"{declaration.ref} {declaration.note}", records
             )
-            if declared:
-                return declared
-        return self._written_symbol(content, figure, line_symbols, records) or document_symbol
+        written = (
+            self._written_symbol(content, figure, line_symbols, records)
+            or document_symbol
+        )
+        if (
+            written
+            and declared
+            and written != declared
+            and declaration is not None
+            and _keyed_metric_map_kind(declaration.ref) is not None
+        ):
+            return written
+        return declared or written
 
     def _written_symbol(
         self,
@@ -871,9 +883,16 @@ class _PolicyMixin:
             if record.symbol and record.status == "observed":
                 call_symbols.setdefault(record.call_id, set()).add(record.symbol)
         return [
-            entry for entry in self._analysis_metrics
-            if not call_symbols.get(entry.get("call_id"))
-            or call_symbols[entry.get("call_id")] == {symbol}
+            entry
+            for entry in self._analysis_metrics
+            if (
+                entry.get("symbol") == symbol
+                if entry.get("instrument_scoped")
+                else (
+                    not call_symbols.get(entry.get("call_id"))
+                    or call_symbols[entry.get("call_id")] == {symbol}
+                )
+            )
         ]
 
     def _field_sources(
@@ -902,6 +921,7 @@ class _PolicyMixin:
             if named(record.field)
             and record.status == "observed"
             and record.value is not None
+            and _keyed_metric_map_kind(record.field) is None
             and (not symbol or not record.symbol or record.symbol == symbol)
         ]
         entries = [
@@ -1490,6 +1510,7 @@ class _PolicyMixin:
             if record.status == "observed"
             and record.value is not None
             and _metric_kind_for_path(record.field) is not None
+            and _keyed_metric_map_kind(record.field) is None
             and (not symbol or not record.symbol or record.symbol == symbol)
         )
         return values
@@ -2107,13 +2128,23 @@ class _PolicyMixin:
             ]
         return []
 
-    @staticmethod
     def _symbol_for_claim(
+        self,
         content: str,
         records: Sequence[EvidenceRecord],
     ) -> str | None:
         """Return one canonical evidence symbol explicitly named in a claim."""
         known = {record.symbol for record in records if record.symbol}
+        known.update(
+            entry.get("symbol")
+            for entry in self._analysis_metrics
+            if entry.get("symbol")
+        )
+        known.update(
+            symbol
+            for entry in self._analysis_metrics
+            for symbol in entry.get("instrument_symbols", ())
+        )
         matches = {
             _normalize_symbol(match.group(0))
             for match in _CANONICAL_SYMBOL_RE.finditer(content)
