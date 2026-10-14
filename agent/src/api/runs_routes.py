@@ -19,7 +19,7 @@ from typing import Any, Awaitable, Callable, Deque, Dict, Generator, List, Optio
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 
 # ---------------------------------------------------------------------------
@@ -648,6 +648,46 @@ def _run_response_payload(response: Any) -> Dict[str, Any]:
     return response.model_dump(mode="json")
 
 
+def _render_run_result(
+    run_dir: Path,
+    chart_symbol: Optional[str],
+    chart_payload: Optional[str],
+) -> Response:
+    """Build and serialize a run detail response.
+
+    Full responses reach tens of megabytes, so both the build and the JSON
+    encoding run here, off the event loop; returning the model instead would
+    leave FastAPI to encode it on the loop and stall every other request.
+
+    Args:
+        run_dir: Existing run directory.
+        chart_symbol: Optional single chart symbol.
+        chart_payload: Optional chart payload mode.
+
+    Returns:
+        A rendered JSON response.
+    """
+    wants_chart_meta = bool(chart_payload or chart_symbol)
+    chart_symbols: List[str] = []
+    response = _build_response_from_run_dir(
+        run_dir,
+        elapsed=0.0,
+        include_analysis=True,
+        chart_symbol=chart_symbol,
+        chart_payload=chart_payload or "full",
+        chart_symbols_out=chart_symbols if wants_chart_meta else None,
+    )
+
+    if wants_chart_meta:
+        payload = _run_response_payload(response)
+        payload["chart_symbols"] = chart_symbols
+        return JSONResponse(payload)
+
+    return Response(
+        content=response.model_dump_json(by_alias=True), media_type="application/json"
+    )
+
+
 def _build_response_from_run_dir(
     run_dir: Path,
     elapsed: float,
@@ -963,23 +1003,9 @@ def register_runs_routes(
                 detail=f"Run {run_id} not found"
             )
 
-        wants_chart_meta = bool(chart_payload or chart_symbol)
-        chart_symbols: List[str] = []
-        response = _build_response_from_run_dir(
-            run_dir,
-            elapsed=0.0,
-            include_analysis=True,
-            chart_symbol=chart_symbol,
-            chart_payload=chart_payload or "full",
-            chart_symbols_out=chart_symbols if wants_chart_meta else None,
+        return await run_in_threadpool(
+            _render_run_result, run_dir, chart_symbol, chart_payload
         )
-
-        if wants_chart_meta:
-            payload = _run_response_payload(response)
-            payload["chart_symbols"] = chart_symbols
-            return JSONResponse(payload)
-
-        return response
 
     @app.get("/runs/{run_id}/positions/sectors", dependencies=[Depends(require_auth)])
     async def get_run_positions_sectors(
