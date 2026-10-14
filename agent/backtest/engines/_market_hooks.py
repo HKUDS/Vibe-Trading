@@ -130,6 +130,10 @@ _MARKET_PATTERNS = [
     # perpetual. Bare metals/FX (XAUUSD) end in USD, not USDT/USDC/BUSD, so
     # they still reach the forex whitelist below.
     (re.compile(r"^[A-Z]{2,}(?:USDT|USDC|BUSD)$", re.I), "crypto"),
+    # Separated USDC/BUSD-quoted pairs (BTC-USDC, ETH/USDC). Only the USDT
+    # spellings above were separator-aware, so these fell through to the
+    # a_share default even though the unseparated BTCUSDC is crypto.
+    (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+[-/](?:USDC|BUSD)$", re.I), "crypto"),
     # China futures: product+delivery.exchange (e.g. IF2406.CFFEX, rb2410.SHFE)
     # Tushare suffix spellings (SHF/CZC/CFX/GFE) classify here too.
     (
