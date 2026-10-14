@@ -21,6 +21,14 @@ from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
+from src.api.run_artifacts import (
+    EQUITY_CURVE_MAX_POINTS,
+    build_run_preview,
+    equity_curve_from_rows,
+    load_backtest_metrics,
+)
+from src.ui_services import load_csv_records, load_json_file
+
 
 # ---------------------------------------------------------------------------
 # Helper functions (module-level; host Pydantic models resolved via sys.modules)
@@ -35,30 +43,6 @@ _FACTOR_MAX_TOTAL_ARTIFACT_BYTES = 8 * 1024 * 1024
 _FACTOR_MAX_ROWS_PER_CSV = 5000
 _FACTOR_MAX_TOTAL_ROWS = 20_000
 _FACTOR_MAX_GROUP_COLUMNS = 100
-
-
-def _load_json_file(path: Path) -> Optional[Dict[str, Any]]:
-    """Load JSON from disk if present."""
-    try:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return None
-
-
-def _load_csv_to_dict(path: Path, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Load CSV rows into a list of dictionaries."""
-    try:
-        if not path.exists():
-            return []
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            rows = [dict(row) for row in csv.DictReader(handle)]
-        if limit is not None:
-            rows = rows[:limit]
-        return rows
-    except Exception:
-        return []
 
 
 def _finite_float(value: Any) -> Optional[float]:
@@ -583,7 +567,7 @@ def _build_positions_sector_map(run_dir: Path, run_id: str, *, refresh: bool) ->
         return {"ok": True, "run_id": run_id, "symbols": {}, "note": "no positions artifact"}
 
     if not refresh:
-        cached = _load_json_file(cache_path)
+        cached = load_json_file(cache_path)
         if isinstance(cached, dict) and isinstance(cached.get("symbols"), dict):
             cached["cached"] = True
             cached["run_id"] = run_id
@@ -688,6 +672,11 @@ def _render_run_result(
     )
 
 
+def _render_run_preview(run_dir: Path) -> JSONResponse:
+    """Build and encode a run preview off the event loop."""
+    return JSONResponse(build_run_preview(run_dir))
+
+
 def _build_response_from_run_dir(
     run_dir: Path,
     elapsed: float,
@@ -702,7 +691,6 @@ def _build_response_from_run_dir(
 
     host = _sys.modules.get("api_server") or _sys.modules.get("agent.api_server")
     RunResponse = host.RunResponse
-    BacktestMetrics = host.BacktestMetrics
     RAGSelection = host.RAGSelection
     Artifact = host.Artifact
 
@@ -715,7 +703,7 @@ def _build_response_from_run_dir(
         run_directory=str(run_dir),
     )
 
-    state_data = _load_json_file(run_dir / "state.json")
+    state_data = load_json_file(run_dir / "state.json")
     if state_data:
         state_status = str(state_data.get("status") or "").lower()
         if state_status == "success":
@@ -728,17 +716,17 @@ def _build_response_from_run_dir(
     else:
         response.status = "unknown"
 
-    request_data = _load_json_file(run_dir / "req.json") or {}
+    request_data = load_json_file(run_dir / "req.json") or {}
     response.prompt = request_data.get("prompt") or request_data.get("request")
 
     planner_path = run_dir / "planner_output.json"
-    response.planner_output = _load_json_file(planner_path)
+    response.planner_output = load_json_file(planner_path)
 
     design_path = run_dir / "design_spec.json"
-    response.strategy_spec = _load_json_file(design_path)
+    response.strategy_spec = load_json_file(design_path)
 
     rag_path = run_dir / "rag_metadata.json"
-    rag_data = _load_json_file(rag_path)
+    rag_data = load_json_file(rag_path)
     if rag_data:
         response.rag_selection = RAGSelection(
             selected_api=rag_data.get("selected_api") or rag_data.get("api_code", ""),
@@ -746,25 +734,7 @@ def _build_response_from_run_dir(
             selected_score=float(rag_data.get("selected_score") or rag_data.get("score", 0.0)),
         )
 
-    metrics_path = run_dir / "artifacts" / "metrics.csv"
-    if metrics_path.exists():
-        metrics_dict_list = _load_csv_to_dict(metrics_path, limit=1)
-        if metrics_dict_list:
-            row = metrics_dict_list[0]
-            try:
-                # Pass ALL CSV columns to BacktestMetrics (extra="allow")
-                parsed: dict = {}
-                for k, v in row.items():
-                    if not k or not v:
-                        continue
-                    try:
-                        parsed[k] = int(float(v)) if k == "trade_count" or k == "max_consecutive_loss" else float(v)
-                    except (ValueError, TypeError):
-                        continue
-                if "final_value" in parsed:
-                    response.metrics = BacktestMetrics(**parsed)
-            except (ValueError, TypeError):
-                pass
+    response.metrics = load_backtest_metrics(run_dir)
 
     artifacts_dir = run_dir / "artifacts"
     if artifacts_dir.exists():
@@ -785,11 +755,11 @@ def _build_response_from_run_dir(
 
     equity_path = run_dir / "artifacts" / "equity.csv"
     if equity_path.exists():
-        response.artifacts_equity_csv = _load_csv_to_dict(equity_path)
+        response.artifacts_equity_csv = load_csv_records(equity_path)
 
     metrics_csv_path = run_dir / "artifacts" / "metrics.csv"
     if metrics_csv_path.exists():
-        response.artifacts_metrics_csv = _load_csv_to_dict(metrics_csv_path)
+        response.artifacts_metrics_csv = load_csv_records(metrics_csv_path)
 
     run_card_path = run_dir / "run_card.json"
     if run_card_path.exists():
@@ -798,10 +768,10 @@ def _build_response_from_run_dir(
         except (json.JSONDecodeError, OSError):
             pass
 
-    risk_xray = _load_json_file(run_dir / "artifacts" / "risk_xray.json")
+    risk_xray = load_json_file(run_dir / "artifacts" / "risk_xray.json")
     if risk_xray is not None:
         response.risk_xray = risk_xray
-    rebalance_notes = _load_json_file(run_dir / "artifacts" / "rebalance_notes.json")
+    rebalance_notes = load_json_file(run_dir / "artifacts" / "rebalance_notes.json")
     if rebalance_notes is not None:
         response.rebalance_notes = rebalance_notes
 
@@ -814,15 +784,17 @@ def _build_response_from_run_dir(
 
     trades_path = run_dir / "artifacts" / "trades.csv"
     if trades_path.exists():
-        response.artifacts_trades_csv = _load_csv_to_dict(trades_path)
+        response.artifacts_trades_csv = load_csv_records(trades_path)
 
     positions_path = run_dir / "artifacts" / "positions.csv"
     if positions_path.exists():
-        response.artifacts_positions_csv = _load_csv_to_dict(positions_path)
+        response.artifacts_positions_csv = load_csv_records(positions_path)
 
     target_positions_path = run_dir / "artifacts" / "target_positions.csv"
     if target_positions_path.exists():
-        response.artifacts_target_positions_csv = _load_csv_to_dict(target_positions_path)
+        response.artifacts_target_positions_csv = load_csv_records(
+            target_positions_path
+        )
 
     validation_path = run_dir / "artifacts" / "validation.json"
     if validation_path.exists():
@@ -832,17 +804,9 @@ def _build_response_from_run_dir(
             pass
 
     if response.artifacts_equity_csv:
-        filtered_equity = []
-        for row in response.artifacts_equity_csv[:1000]:
-            filtered_row: Dict[str, Any] = {}
-            if "timestamp" in row:
-                filtered_row["time"] = row["timestamp"]
-            if "equity" in row:
-                filtered_row["equity"] = row["equity"]
-            if "drawdown" in row:
-                filtered_row["drawdown"] = row["drawdown"]
-            filtered_equity.append(filtered_row)
-        response.equity_curve = filtered_equity
+        response.equity_curve = equity_curve_from_rows(
+            response.artifacts_equity_csv[:EQUITY_CURVE_MAX_POINTS]
+        )
 
     if response.artifacts_trades_csv:
         response.trade_log = response.artifacts_trades_csv[:500]
@@ -951,6 +915,25 @@ def register_runs_routes(
             "content": pine_path.read_text(encoding="utf-8"),
         }
 
+    @app.get("/runs/{run_id}/preview", dependencies=[Depends(require_auth)])
+    async def get_run_preview(run_id: str):
+        """Return the summary a chat card needs for a run.
+
+        Args:
+            run_id: Run identifier.
+
+        Returns:
+            ``metrics``, ``equity_curve`` and ``report_worthy``; see
+            :func:`src.api.run_artifacts.build_run_preview`.
+        """
+        _host_validate_path_param(run_id, "run_id")
+        run_dir = _host_RUNS_DIR() / run_id
+        if not run_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Run {run_id} not found"
+            )
+        return await run_in_threadpool(_render_run_preview, run_dir)
+
     @app.get("/runs/{run_id}/factor", dependencies=[Depends(require_auth)])
     async def get_run_factor(run_id: str):
         """Return factor-analysis artifacts for a run.
@@ -978,7 +961,14 @@ def register_runs_routes(
             "ic_correlation": _factor_ic_correlation(factors),
         }
 
-    @app.get("/runs/{run_id}", response_model=RunResponse, dependencies=[Depends(require_auth)])
+    # Pre-rendered off the event loop, so FastAPI does not re-validate the body;
+    # ``responses`` keeps the schema in the OpenAPI docs.
+    @app.get(
+        "/runs/{run_id}",
+        response_model=None,
+        responses={200: {"model": RunResponse}},
+        dependencies=[Depends(require_auth)],
+    )
     async def get_run_result(
         run_id: str,
         chart_symbol: Optional[str] = Query(None, description="Opt in to chart payloads for a single symbol"),
@@ -1067,7 +1057,7 @@ def register_runs_routes(
 
             # Status from state.json or artifacts
             status_val = "unknown"
-            state_file = _load_json_file(d / "state.json")
+            state_file = load_json_file(d / "state.json")
             if state_file:
                 status_val = str(state_file.get("status") or "unknown").lower()
             elif (d / "artifacts" / "equity.csv").exists():

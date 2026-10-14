@@ -181,11 +181,7 @@ app.middleware("http")(_apply_security_headers)
 from src.api.runs_routes import register_runs_routes  # noqa: E402
 register_runs_routes(app)
 
-from src.api.runs_routes import (  # noqa: F401, E402
-    _load_json_file,
-    _load_csv_to_dict,
-    _build_response_from_run_dir,
-)
+from src.api.runs_routes import _build_response_from_run_dir  # noqa: F401, E402
 from src.api.attribution_routes import register_attribution_routes  # noqa: E402
 register_attribution_routes(app)
 
