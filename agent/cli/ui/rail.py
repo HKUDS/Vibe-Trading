@@ -44,6 +44,7 @@ class RailStep:
     title: str
     tool: str = ""
     args: Any = None
+    call_id: str = ""
     status: StepStatus = "active"
     lines: list[str] = field(default_factory=list)
     started_at: float = field(default_factory=time.monotonic)
@@ -346,8 +347,9 @@ class RailRunDashboard:
             self.thinking_active = False
             tool = str(data.get("tool") or "tool")
             args = data.get("arguments") or {}
+            call_id = str(data.get("call_id") or "")
             self.iterations += 1
-            step = RailStep(title=_tool_title(tool, args), tool=tool, args=args)
+            step = RailStep(title=_tool_title(tool, args), tool=tool, args=args, call_id=call_id)
             detail = _initial_detail(tool, args)
             if detail:
                 step.lines.append(detail)
@@ -358,7 +360,7 @@ class RailRunDashboard:
 
         if event_type == "tool_progress":
             tool = str(data.get("tool") or "")
-            step = self._active_step(tool)
+            step = self._active_step(tool, call_id=str(data.get("call_id") or ""))
             pieces: list[str] = []
             stage = _collapse_ws(data.get("stage"))
             current = data.get("current")
@@ -381,14 +383,14 @@ class RailRunDashboard:
 
         if event_type == "tool_heartbeat":
             tool = str(data.get("tool") or "")
-            self._active_step(tool)
+            self._active_step(tool, call_id=str(data.get("call_id") or ""))
             self.refresh()
             return
 
         if event_type == "tool_result":
             tool = str(data.get("tool") or "")
             status = str(data.get("status") or "ok")
-            step = self._active_step(tool)
+            step = self._active_step(tool, call_id=str(data.get("call_id") or ""))
             step.status = "done" if status == "ok" else "error"
             step.duration_s = float(data.get("elapsed_ms") or 0.0) / 1000
             for line in _result_summary(tool, status, data.get("preview")):
@@ -458,12 +460,23 @@ class RailRunDashboard:
         lines = list(step.lines)
         return lines[-7:]
 
-    def _active_step(self, tool: str) -> RailStep:
+    def _active_step(self, tool: str, call_id: str = "") -> RailStep:
         raw_tool = str(tool or "")
+        raw_call_id = str(call_id or "")
+        # Concurrent calls to the same tool (the loop runs consecutive
+        # readonly tool calls in parallel) can have more than one step
+        # "active" at once with the same tool name. Matching on the call's
+        # own id -- always present on tool_call/tool_progress/tool_heartbeat/
+        # tool_result payloads -- keeps each event paired with the step it
+        # actually belongs to, instead of guessing by tool name and recency.
+        if raw_call_id:
+            for step in self.steps:
+                if step.call_id == raw_call_id:
+                    return step
         for step in reversed(self.steps):
             if step.status == "active" and (not raw_tool or step.tool == raw_tool):
                 return step
-        step = RailStep(title=_tool_title(raw_tool or "tool", None), tool=raw_tool)
+        step = RailStep(title=_tool_title(raw_tool or "tool", None), tool=raw_tool, call_id=raw_call_id)
         self.steps.append(step)
         self.steps = self.steps[-10:]
         return step
