@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 
 from src.live.mandate.model import (
     AssetClass,
@@ -30,6 +31,7 @@ from src.live.mandate.model import (
     HardCaps,
     InstrumentType,
     Mandate,
+    OptionLimits,
     UniverseConstraint,
 )
 from src.live.paths import broker_dir
@@ -117,7 +119,31 @@ def _parse_mandate(raw: object) -> Mandate:
         # old mandate.json → False (cancel-only, the safe default), keeping the
         # read backward-compatible. Read on a halt trip by src.live.runtime.flatten.
         flatten_on_halt=bool(raw.get("flatten_on_halt", False)),
+        option_limits=_parse_option_limits(raw.get("option_limits")),
     )
+
+
+def _parse_option_limits(raw: object) -> OptionLimits | None:
+    """Parse the optional ``option_limits`` section; absent or null -> options off."""
+    if raw is None:
+        return None
+    limits = _require_dict(raw, "option_limits")
+    allow_naked_short = limits.get("allow_naked_short", False)
+    if not isinstance(allow_naked_short, bool):
+        raise TypeError("option_limits.allow_naked_short must be a boolean")
+    amounts = {
+        key: float(limits[key])
+        for key in (
+            "max_premium_per_order_usd",
+            "max_loss_per_order_usd",
+            "max_premium_per_day_usd",
+            "max_loss_per_day_usd",
+        )
+    }
+    for key, value in amounts.items():
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"option_limits.{key} must be a finite non-negative number")
+    return OptionLimits(**amounts, allow_naked_short=allow_naked_short)
 
 
 def _require_dict(value: object, field: str) -> dict:
