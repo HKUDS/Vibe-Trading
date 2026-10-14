@@ -944,7 +944,7 @@ class TelegramChannel(BaseChannel):
 
         if meta.get("_stream_end"):
             buf = self._stream_bufs.get(chat_id)
-            if not buf or not buf.message_id or not buf.text:
+            if not buf or not buf.text:
                 return
             if stream_id is not None and buf.stream_id is not None and buf.stream_id != stream_id:
                 return
@@ -969,16 +969,34 @@ class TelegramChannel(BaseChannel):
                     int_chat_id, raw_text, reply_params, thread_kwargs, None,
                 )
                 if rich_ok:
-                    # Delete the streaming preview message
-                    try:
-                        await self._call_with_retry(
-                            self._app.bot.delete_message,
-                            chat_id=int_chat_id, message_id=buf.message_id,
-                        )
-                    except Exception:
-                        pass  # Preview stays if delete fails
+                    # Delete the streaming preview message, if the earlier
+                    # attempt to create one ever actually succeeded.
+                    if buf.message_id:
+                        try:
+                            await self._call_with_retry(
+                                self._app.bot.delete_message,
+                                chat_id=int_chat_id, message_id=buf.message_id,
+                            )
+                        except Exception:
+                            pass  # Preview stays if delete fails
                     self._stream_bufs.pop(chat_id, None)
                     return
+
+            if not buf.message_id:
+                # No streaming preview was ever created (the initial send
+                # kept failing) and rich-message delivery above was either
+                # disabled or itself failed. Send the accumulated text as a
+                # fresh message instead of falling into the edit path below,
+                # which requires a message_id that was never obtained.
+                reply_params = None
+                if reply_to_message_id := meta.get("message_id"):
+                    with suppress(ValueError):
+                        reply_params = ReplyParameters(
+                            message_id=int(reply_to_message_id), allow_sending_without_reply=True
+                        )
+                await self._send_text(int_chat_id, raw_text, reply_params, thread_kwargs)
+                self._stream_bufs.pop(chat_id, None)
+                return
 
             # Legacy path: edit existing streaming message with HTML
             html_chunks = _split_telegram_markdown_html(raw_text, TELEGRAM_HTML_MAX_LEN)
