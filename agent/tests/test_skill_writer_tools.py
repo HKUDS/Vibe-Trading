@@ -87,6 +87,25 @@ class TestSaveSkillTool:
         text = (user_dir / "custom" / "SKILL.md").read_text(encoding="utf-8")
         assert "description: Custom skill" in text
 
+    def test_save_forces_frontmatter_name_to_match_slug(self, tool: SaveSkillTool, user_dir: Path) -> None:
+        """A frontmatter name that disagrees with the slug this tool advertises
+        would make the skill unreachable under load_skill(slug) and cause
+        duplicate entries on every lookup; the saved name must always match.
+        """
+        content = "---\nname: MySkill\ndescription: mismatched name\ncategory: user\n---\n\nBody"
+        result = json.loads(tool.execute(name="My Skill", content=content))
+        assert result["status"] == "ok"
+        text = (user_dir / "my-skill" / "SKILL.md").read_text(encoding="utf-8")
+        assert "name: my-skill" in text
+        assert "name: MySkill" not in text
+
+    def test_save_inserts_name_when_frontmatter_lacks_it(self, tool: SaveSkillTool, user_dir: Path) -> None:
+        content = "---\ndescription: no name key\ncategory: user\n---\n\nBody"
+        result = json.loads(tool.execute(name="headless", content=content))
+        assert result["status"] == "ok"
+        text = (user_dir / "headless" / "SKILL.md").read_text(encoding="utf-8")
+        assert "name: headless" in text
+
     def test_save_missing_name(self, tool: SaveSkillTool) -> None:
         result = json.loads(tool.execute(content="body"))
         assert result["status"] == "error"

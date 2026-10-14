@@ -168,6 +168,27 @@ class TestSkillsLoader:
         assert "Error" in content
         assert "nonexistent" in content
 
+    def test_get_content_fallback_does_not_duplicate_entries(
+        self, tmp_path: Path, empty_user_dir: Path
+    ) -> None:
+        """A mid-session skill whose frontmatter name differs from its
+        directory slug must not grow loader.skills on every repeated lookup.
+        """
+        loader = SkillsLoader(tmp_path, user_skills_dir=empty_user_dir)
+        assert loader.skills == []
+
+        mismatched_dir = empty_user_dir / "my-skill"
+        mismatched_dir.mkdir()
+        (mismatched_dir / "SKILL.md").write_text(
+            "---\nname: MySkill\ncategory: user\ndescription: mismatched\n---\nBody",
+            encoding="utf-8",
+        )
+
+        for _ in range(5):
+            loader.get_content("my-skill")
+
+        assert len(loader.skills) == 1
+
     def test_empty_dir(self, tmp_path: Path, empty_user_dir: Path) -> None:
         loader = SkillsLoader(tmp_path, user_skills_dir=empty_user_dir)
         assert loader.skills == []

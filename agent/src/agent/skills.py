@@ -182,7 +182,8 @@ class SkillsLoader:
         if self._user_skills_dir:
             skill = _load_skill_dir(self._user_skills_dir / name)
             if skill:
-                self.skills.append(skill)
+                if not any(existing.name == skill.name for existing in self.skills):
+                    self.skills.append(skill)
                 return f'<skill name="{name}">\n{skill.body}\n</skill>'
 
         available = ", ".join(s.name for s in self.skills)

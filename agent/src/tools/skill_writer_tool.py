@@ -35,6 +35,11 @@ _NON_LATIN_SCRIPT_RANGES = (
 )
 _SKILL_SLUG_DISALLOWED_RE = re.compile(rf"[^a-z0-9\-{_NON_LATIN_SCRIPT_RANGES}]")
 
+_FRONTMATTER_BLOCK_RE = re.compile(
+    r"^---[ \t]*\r?\n(?:(.*?)\r?\n)?---[ \t]*(?:\r?\n(.*))?$",
+    re.DOTALL,
+)
+
 
 def _sanitize_skill_name(name: str) -> str:
     """Sanitize skill name to a safe directory slug."""
@@ -44,6 +49,34 @@ def _sanitize_skill_name(name: str) -> str:
     if slug.strip("-") == "":
         return hashlib.sha256(name.strip().encode("utf-8")).hexdigest()[:8]
     return slug
+
+
+def _with_forced_frontmatter_name(content: str, slug: str) -> str:
+    """Force the frontmatter ``name:`` field to match the directory slug.
+
+    SkillsLoader identifies a skill by its frontmatter ``name``, not by its
+    directory slug. If the caller supplies its own frontmatter with a
+    different name, the skill becomes unreachable under the slug this tool
+    just advertised, and every lookup under that slug falls through to a
+    disk-fallback path that appends a fresh duplicate entry with no
+    de-duplication.
+    """
+    match = _FRONTMATTER_BLOCK_RE.match(content)
+    if not match:
+        return content
+    header_lines = (match.group(1) or "").split("\n") if match.group(1) else []
+    body = match.group(2) or ""
+    new_lines = []
+    replaced = False
+    for line in header_lines:
+        if line.strip().startswith("name:"):
+            new_lines.append(f"name: {slug}")
+            replaced = True
+        else:
+            new_lines.append(line)
+    if not replaced:
+        new_lines.insert(0, f"name: {slug}")
+    return f"---\n{chr(10).join(new_lines)}\n---\n{body}"
 
 class SaveSkillTool(BaseTool):
     """Save a successful workflow as a reusable skill."""
@@ -95,13 +128,16 @@ class SaveSkillTool(BaseTool):
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_path = skill_dir / "SKILL.md"
 
-        # Ensure frontmatter exists
+        # Ensure frontmatter exists, and that its name always matches the
+        # directory slug this tool is about to advertise as load_skill(slug).
         if not content.strip().startswith("---"):
             content = (
                 f"---\nname: {slug}\n"
                 f"description: User-created skill\n"
                 f"category: {category}\n---\n\n{content}"
             )
+        else:
+            content = _with_forced_frontmatter_name(content, slug)
 
         skill_path.write_text(content, encoding="utf-8")
         return json.dumps({
