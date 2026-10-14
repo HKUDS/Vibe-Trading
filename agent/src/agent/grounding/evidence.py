@@ -607,16 +607,19 @@ def _metric_kind_for_path(path: str) -> str | None:
 
 
 def _keyed_metric_map_kind(path: str) -> str | None:
-    """Whether a field belongs to a per-instrument contribution or matrix map."""
-    return next(
-        (
-            kind
-            for part in str(path or "").split(".")
-            if (kind := _ANALYSIS_KIND_ALIASES.get(part.casefold()))
-            in {"contribution", "correlation"}
-        ),
-        None,
-    )
+    """Identify metric maps with instrument-shaped keys after the metric name.
+
+    Scalar fields such as ``positions[0].contribution_pct`` are not keyed
+    maps and must keep their ordinary indexed evidence references.
+    """
+    parts = str(path or "").split(".")
+    for index, part in enumerate(parts[:-1]):
+        kind = _ANALYSIS_KIND_ALIASES.get(part.casefold())
+        if kind not in {"contribution", "correlation"}:
+            continue
+        if all(re.fullmatch(r"[A-Z][A-Z0-9]{0,14}", key) for key in parts[index + 1 :]):
+            return kind
+    return None
 
 
 def _analysis_symbol_key(key: str) -> str | None:
