@@ -524,6 +524,7 @@ export const api = {
     const qs = q.toString();
     return request<RunData>(`/runs/${id}${qs ? `?${qs}` : ""}`);
   },
+  getRunPreview: (id: string) => request<RunPreview>(`/runs/${id}/preview`),
   getRunCode: (id: string) => request<Record<string, string>>(`/runs/${id}/code`),
   getRunFactor: (id: string) => request<FactorReportPayload>(`/runs/${id}/factor`),
   getRunAttribution: (id: string) => request<AttributionResponse>(`/runs/${encodeURIComponent(id)}/attribution`),
@@ -1164,6 +1165,14 @@ export interface EquityPoint {
   time: string;
   equity: string | number;
   drawdown: string | number;
+}
+
+/** What a chat run card needs from `GET /runs/{id}/preview`. */
+export interface RunPreview {
+  metrics: BacktestMetrics | null;
+  equity_curve: EquityPoint[];
+  /** False for plain chat replies, which own a run directory but no report. */
+  report_worthy: boolean;
 }
 
 /** Monte Carlo fan-chart payload: percentile envelope + sampled paths over trade order. */

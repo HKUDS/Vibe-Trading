@@ -15,7 +15,7 @@ import { useAgentStore } from "@/stores/agent";
 const apiMock = vi.hoisted(() => ({
   getGoal: vi.fn(),
   getLLMSettings: vi.fn(),
-  getRun: vi.fn(),
+  getRunPreview: vi.fn(),
   getSessionMessages: vi.fn(),
   sseUrl: vi.fn((sid: string) => `/sessions/${sid}/events`),
 }));

@@ -10,12 +10,12 @@ import {
   type StoredAgentMessage,
 } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type RunPreview } from "@/lib/api";
 import {
   extractUploadedAttachments,
 } from "@/lib/attachments";
+import { hasStoredMetrics, runCardFields } from "@/lib/runCards";
 import { buildChatPrompt, MAX_GOAL_CHARS, MAX_MESSAGE_CHARS, promptExceedsLimit, SWARM_PROMPT_PREFIX } from "@/lib/chatPrompt";
-import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, SwarmRunStatus, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
@@ -526,6 +526,17 @@ export function Agent() {
     try {
       const msgs = await api.getSessionMessages(sid);
       if (genRef.current !== gen) return;
+      // Every assistant turn owns a run directory, so most of these are plain
+      // replies. Request all previews up front rather than one per message.
+      const previews = new Map<string, Promise<RunPreview | null>>();
+      for (const m of msgs) {
+        const meta = m.metadata as Record<string, unknown> | undefined;
+        const runId = meta?.run_id as string | undefined;
+        const metrics = meta?.metrics as Record<string, number> | undefined;
+        if (m.role !== "user" && runId && !hasStoredMetrics(metrics) && !previews.has(runId)) {
+          previews.set(runId, api.getRunPreview(runId).catch(() => null));
+        }
+      }
       const agentMsgs: StoredAgentMessage[] = [];
       let latestRuntimeIdentity: RuntimeIdentity | null = null;
       for (const m of msgs) {
@@ -594,35 +605,12 @@ export function Agent() {
           if (m.content && m.content !== "Strategy execution completed.") {
             agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, elapsed_ms: elapsedMs, timestamp: assistantTs });
           }
-          if (metrics && Object.keys(metrics).length > 0) {
+          if (hasStoredMetrics(metrics)) {
             agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: assistantTs + 1 });
           } else {
-            // Fetch run data to check report-worthiness; show fallback card if fetch fails
-            let fetchedMetrics: Record<string, number> | undefined;
-            let fetchedCurve: Array<{ time: string; equity: number }> | undefined;
-            let showCard = false;
-            try {
-              const runData = await api.getRun(runId);
-              if (isReportWorthyRun(runData)) {
-                fetchedMetrics = runData.metrics;
-                fetchedCurve = runData.equity_curve?.map((e) => ({ time: e.time, equity: Number(e.equity) }));
-                showCard = true;
-              }
-              // succeeded but not report-worthy (plain chat turn) → skip card
-            } catch {
-              // fetch failed (auth/404/network) → can't tell, show link as fallback
-              showCard = true;
-            }
-            if (showCard) {
-              agentMsgs.push({
-                id: m.message_id,
-                type: "run_complete",
-                content: "",
-                runId,
-                metrics: fetchedMetrics,
-                equityCurve: fetchedCurve,
-                timestamp: assistantTs + 1,
-              });
+            const card = runCardFields((await previews.get(runId)) ?? null);
+            if (card) {
+              agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, ...card, timestamp: assistantTs + 1 });
             }
           }
         } else {
@@ -1044,24 +1032,12 @@ export function Agent() {
 
         // Show RunCompleteCard when the turn produced backtest metrics or a shadow report
         if (runId) {
-          let runMetrics: Record<string, number> | undefined;
-          let runCurve: Array<{ time: string; equity: number }> | undefined;
-          let showCard = false;
-          try {
-            const runData = await api.getRun(runId);
-            if (isReportWorthyRun(runData)) {
-              runMetrics = runData.metrics;
-              runCurve = runData.equity_curve?.map(e => ({ time: e.time, equity: Number(e.equity) }));
-              showCard = true;
-            }
-          } catch {
-            showCard = true; // fetch failed → show link as fallback
-          }
-          if (showCard || shadowId) {
+          const card = runCardFields(await api.getRunPreview(runId).catch(() => null));
+          if (card || shadowId) {
             s.addMessage({
               id: "", type: "run_complete", content: "", runId,
-              metrics: showCard ? runMetrics : undefined,
-              equityCurve: showCard ? runCurve : undefined,
+              metrics: card?.metrics,
+              equityCurve: card?.equityCurve,
               shadowId,
               timestamp: Date.now(),
             });

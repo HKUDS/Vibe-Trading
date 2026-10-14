@@ -4,7 +4,7 @@ import { RunCompleteCard } from "../RunCompleteCard";
 import { makeMessage } from "@/tests/helpers/factories";
 
 const apiMock = vi.hoisted(() => ({
-  getRun: vi.fn(),
+  getRunPreview: vi.fn(),
   getRunPine: vi.fn(),
 }));
 
@@ -12,7 +12,7 @@ vi.mock("@/lib/api", () => ({ api: apiMock }));
 
 describe("RunCompleteCard", () => {
   beforeEach(() => {
-    apiMock.getRun.mockResolvedValue({ status: "success", run_id: "strategy-run" });
+    apiMock.getRunPreview.mockResolvedValue({ metrics: null, equity_curve: [], report_worthy: true });
     apiMock.getRunPine.mockResolvedValue({ exists: false, content: null });
   });
 

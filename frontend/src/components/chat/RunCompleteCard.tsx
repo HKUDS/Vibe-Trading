@@ -37,8 +37,8 @@ export const RunCompleteCard = memo(function RunCompleteCard({ msg }: Props) {
 
     let cancelled = false;
     setCurveLoading(true);
-    api.getRun(msg.runId).then(r => {
-      if (!cancelled && r.equity_curve) {
+    api.getRunPreview(msg.runId).then(r => {
+      if (!cancelled) {
         setCurve(r.equity_curve.map(e => ({ time: e.time, equity: e.equity })));
       }
     }).catch(() => {}).finally(() => {
