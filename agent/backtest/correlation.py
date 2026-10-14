@@ -119,7 +119,7 @@ def _normalize_symbol(code: str, market: str) -> str:
     if market == "crypto":
         if cleaned.endswith("/USDT"):
             return cleaned.replace("/", "-")
-        if re.fullmatch(r"[A-Z]{2,}USDT", cleaned):
+        if re.fullmatch(r"(?!\d+USDT)[A-Z0-9]{2,}USDT", cleaned):
             return f"{cleaned[:-4]}-USDT"
         return cleaned
     if market == "hk_equity":

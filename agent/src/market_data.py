@@ -48,8 +48,8 @@ _SOURCE_PATTERNS = [
     # Korea: KOSPI (005930.KS) / KOSDAQ (247540.KQ), 6-digit codes. Served by
     # pykrx (KRX public data, no auth); registry falls back to Yahoo/yfinance.
     (re.compile(r"^\d{6}\.(KS|KQ)$", re.I), "pykrx"),
-    (re.compile(r"^[A-Z]+-USDT$", re.I), "okx"),
-    (re.compile(r"^[A-Z]+/USDT$", re.I), "ccxt"),
+    (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USDT$", re.I), "okx"),
+    (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+/USDT$", re.I), "ccxt"),
     # Iran: Nobitex IRT-quoted crypto pairs (BTCIRT / BTC-IRT). Toman-
     # denominated public UDF endpoint, no auth; explicit-source only (not in
     # the crypto fallback chain — non-IRT pairs would never resolve there).
@@ -89,7 +89,7 @@ def detect_source(code: str) -> str:
 def normalize_crypto_symbol(code: str) -> str:
     """Normalize USDT spot aliases without changing the requested quote asset."""
     cleaned = code.strip().upper()
-    match = re.fullmatch(r"([A-Z]{2,})[-/]?USDT", cleaned)
+    match = re.fullmatch(r"((?!\d+[-/]?USDT)[A-Z0-9]{2,})[-/]?USDT", cleaned)
     return f"{match.group(1)}-USDT" if match else code
 
 

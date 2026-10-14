@@ -115,7 +115,9 @@ def _run_card_data_sources(config: Dict[str, Any], loader: Any) -> List[str]:
 
 # ─── Market detection (lightweight, for signal alignment only) ───
 
-_CRYPTO_RE = _re.compile(r"^[A-Z]+-USDT$|^[A-Z]+/USDT$", _re.I)
+_CRYPTO_RE = _re.compile(
+    r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USDT$|^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+/USDT$", _re.I
+)
 # Forex / metals in their explicit Yahoo notations, plus the bare-6-char
 # whitelist for XAUUSD / XAGUSD / XPTUSD / XPDUSD and G10 currencies. Mirrors
 # ``backtest.engines._market_hooks._MARKET_PATTERNS`` so the ffill-limit

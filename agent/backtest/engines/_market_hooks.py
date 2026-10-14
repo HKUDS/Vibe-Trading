@@ -119,17 +119,17 @@ _MARKET_PATTERNS = [
     # Vietnam equities: HOSE (VIC.VN). Tickers are three letters in practice;
     # the class stays broad to admit fund certificates and ETF codes.
     (re.compile(r"^[A-Z0-9]+\.VN$", re.I), "vietnam_equity"),
-    (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
-    (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
+    (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USDT$", re.I), "crypto"),
+    (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+/USDT$", re.I), "crypto"),
     # yfinance's native crypto spelling (BTC-USD, ETH-USD). Distinct from
     # USDT pairs only in the quote currency; both belong to CryptoEngine.
-    (re.compile(r"^[A-Z]+-USD$", re.I), "crypto"),
+    (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USD$", re.I), "crypto"),
     # Concatenated spot pairs (BTCUSDT, ETHUSDC) with no separator. Same
     # quote-asset table the trade-journal parser uses; without it these fell
     # through every pattern and got a_share rules (T+1, no shorting) on a
     # perpetual. Bare metals/FX (XAUUSD) end in USD, not USDT/USDC/BUSD, so
     # they still reach the forex whitelist below.
-    (re.compile(r"^[A-Z]{2,}(?:USDT|USDC|BUSD)$", re.I), "crypto"),
+    (re.compile(r"^(?!\d+(?:USDT|USDC|BUSD)$)[A-Z0-9]{2,}(?:USDT|USDC|BUSD)$", re.I), "crypto"),
     # China futures: product+delivery.exchange (e.g. IF2406.CFFEX, rb2410.SHFE)
     # Tushare suffix spellings (SHF/CZC/CFX/GFE) classify here too.
     (
