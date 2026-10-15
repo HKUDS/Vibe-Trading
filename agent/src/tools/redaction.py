@@ -482,6 +482,19 @@ _TEXT_URL_USERINFO_PATTERN = re.compile(
     r"@"
 )
 
+#: PEM / PGP private-key blocks (``-----BEGIN RSA PRIVATE KEY----- ... -----END``).
+#: The base64 body has no key label and no recognised prefix, so nothing else
+#: here sees it. The whole block is replaced; a block whose END marker was
+#: truncated (clipped tool output) is redacted to the end of the text, which
+#: fails closed. The body is a lazy run to a fixed terminator or ``\Z``, so a
+#: single scan consumes it and matching stays linear. Public keys and
+#: certificates (``BEGIN PUBLIC KEY`` / ``BEGIN CERTIFICATE``) do not match.
+_TEXT_PRIVATE_KEY_PATTERN = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----"
+    r"[\s\S]*?"
+    r"(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\Z)"
+)
+
 
 def _sub_credential_pair(match: re.Match[str]) -> str:
     """Rebuild one ``key=value`` match with the value redacted.
@@ -546,6 +559,7 @@ def redact_text(text: object) -> str:
     s = text if isinstance(text, str) else str(text)
     if not s:
         return s
+    s = _TEXT_PRIVATE_KEY_PATTERN.sub(_REDACTED, s)
     s = _TEXT_BEARER_PATTERN.sub(r"\g<scheme> " + _REDACTED, s)
     s = _TEXT_AUTH_SCHEME_PATTERN.sub(r"\g<head>\g<scheme> " + _REDACTED, s)
     s = _TEXT_URL_USERINFO_PATTERN.sub(_REDACTED + "@", s)
