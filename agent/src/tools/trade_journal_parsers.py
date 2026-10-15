@@ -24,6 +24,14 @@ _CURRENCY_TOKEN_RE = re.compile(
     r"(?i)(?<![A-Za-z])(?:USDT|USDC|USD|EUR|GBP|JPY|CNY|HKD)(?![A-Za-z])|[$€£¥￥]"
 )
 
+# ISO codes of the fiat currencies a broker export can quote as a pair
+# (EUR/USD); a pair with two fiat legs is forex, never crypto.
+_FIAT_CODES = frozenset({
+    "USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "CNY", "CNH", "HKD",
+    "SGD", "SEK", "NOK", "DKK", "MXN", "ZAR", "INR", "KRW", "TRY", "PLN", "CZK",
+    "HUF", "ILS", "THB",
+})
+
 FormatName = str  # "tonghuashun" | "eastmoney" | "futu" | "generic" | "unknown"
 
 _A_SHARE_EXCHANGE_MAP = {
@@ -658,8 +666,14 @@ def _infer_market_from_symbol(symbol: str) -> str:
         return "uk"
     if s.endswith(".SH") or s.endswith(".SZ") or s.endswith(".BJ"):
         return "china_a"
-    if ("-" in s or "/" in s) and any(quote in s for quote in ("USDT", "USDC", "BTC", "USD")):
-        return "crypto"
+    if "-" in s or "/" in s:
+        legs = [leg for leg in re.split(r"[-/]", s) if leg]
+        if len(legs) == 2 and all(leg in _FIAT_CODES for leg in legs):
+            # EUR/USD, USD-JPY ...: a currency cross, not a crypto pair. The
+            # shadow-account markets have no forex bucket, so it stays "other".
+            return "other"
+        if any(quote in s for quote in ("USDT", "USDC", "BTC", "USD")):
+            return "crypto"
     # Binance-style concatenated pairs (BTCUSDT) are purely alphabetic, so the
     # isalpha() US-equity branch below would mis-label them without this check.
     for quote in ("USDT", "USDC", "BUSD"):
