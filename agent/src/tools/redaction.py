@@ -97,7 +97,15 @@ _SENSITIVE_ARG_KEYS = {
     "token",
 } | _PII_EXACT_KEYS
 
-_SENSITIVE_ARG_MARKERS = ("api_key", "authorization", "password", "secret", "token")
+_SENSITIVE_ARG_MARKERS = (
+    "api_key",
+    "authorization",
+    "cookie",
+    "password",
+    "private_key",
+    "secret",
+    "token",
+)
 
 #: Keys that stay sensitive in the ARGUMENTS / audit sink but are released in
 #: the tool-RESULT sink.
