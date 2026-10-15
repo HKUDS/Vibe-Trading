@@ -482,6 +482,21 @@ _TEXT_URL_USERINFO_PATTERN = re.compile(
     r"@"
 )
 
+#: ``Cookie:`` / ``Set-Cookie:`` header lines. A session cookie is a bearer
+#: credential, but its value is a ``name=value; name=value`` list that neither
+#: the key pattern (``cookie`` is not a credential key name) nor the token
+#: shapes can see, so ``curl -H "Cookie: sid=..."`` and a dumped response header
+#: both leaked it. The value runs to the end of the line or the closing quote of
+#: a quoted shell argument. An already-redacted value is skipped, which keeps the
+#: substitution idempotent.
+_TEXT_COOKIE_HEADER_PATTERN = re.compile(
+    r"(?P<head>(?<![\w-])(?:set-)?cookie\s*:)"
+    r"(?P<sp>[ \t]*)(?![ \t])"
+    r"(?!\[redacted\])"
+    r"[^\r\n\"']+",
+    re.IGNORECASE,
+)
+
 
 def _sub_credential_pair(match: re.Match[str]) -> str:
     """Rebuild one ``key=value`` match with the value redacted.
@@ -546,6 +561,7 @@ def redact_text(text: object) -> str:
     s = text if isinstance(text, str) else str(text)
     if not s:
         return s
+    s = _TEXT_COOKIE_HEADER_PATTERN.sub(r"\g<head>\g<sp>" + _REDACTED, s)
     s = _TEXT_BEARER_PATTERN.sub(r"\g<scheme> " + _REDACTED, s)
     s = _TEXT_AUTH_SCHEME_PATTERN.sub(r"\g<head>\g<scheme> " + _REDACTED, s)
     s = _TEXT_URL_USERINFO_PATTERN.sub(_REDACTED + "@", s)
