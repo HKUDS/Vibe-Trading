@@ -53,15 +53,19 @@ class SignalEngine:
     def _find_swings(
         self, high: pd.Series, low: pd.Series
     ) -> List[Dict]:
-        """用滚动窗口找局部高低点，生成交替的 Zigzag 序列。
+        """用滚动窗口找局部高低点（原始 Swing 点，未做 Zigzag 过滤）。
+
+        中心窗口的极值要等右侧 ``swing_window`` 根 K 线收盘后才能确认，
+        因此每个点带 ``confirmed``：该点实际可被观察到的那根 K 线。
 
         Args:
             high: 最高价序列。
             low: 最低价序列。
 
         Returns:
-            交替排列的 Swing 点列表，每个元素为
-            {"index": datetime, "price": float, "type": "H"|"L"}。
+            按时间排序的 Swing 点列表，每个元素为
+            {"index": datetime, "price": float, "type": "H"|"L",
+            "confirmed": datetime}。
         """
         w = self.swing_window
         full_w = w * 2 + 1
@@ -69,33 +73,44 @@ class SignalEngine:
         if len(high) < full_w:
             return []
 
-        # 检测局部极值
         roll_max = high.rolling(full_w, center=True).max()
         roll_min = low.rolling(full_w, center=True).min()
-        swing_high_mask = high == roll_max
-        swing_low_mask = low == roll_min
+        swing_high_mask = (high == roll_max).to_numpy()
+        swing_low_mask = (low == roll_min).to_numpy()
 
-        # 收集所有候选 Swing 点
         raw_points = []
-        for idx in high.index:
-            is_h = bool(swing_high_mask.get(idx, False))
-            is_l = bool(swing_low_mask.get(idx, False))
+        for position, idx in enumerate(high.index):
+            is_h = bool(swing_high_mask[position])
+            is_l = bool(swing_low_mask[position])
             if is_h and is_l:
-                # 同一根K线同时是高低点，取幅度更大的
-                pass
-            elif is_h:
-                raw_points.append({"index": idx, "price": float(high[idx]), "type": "H"})
-            elif is_l:
-                raw_points.append({"index": idx, "price": float(low[idx]), "type": "L"})
+                continue
+            if is_h or is_l:
+                raw_points.append(
+                    {
+                        "index": idx,
+                        "price": float(high.iloc[position] if is_h else low.iloc[position]),
+                        "type": "H" if is_h else "L",
+                        "confirmed": high.index[position + w],
+                    }
+                )
+        return raw_points
 
+    @staticmethod
+    def _zigzag(raw_points: List[Dict]) -> List[Dict]:
+        """把原始 Swing 点过滤为严格交替的 H/L 序列。
+
+        Args:
+            raw_points: ``_find_swings`` 返回的 Swing 点（可以是其前缀）。
+
+        Returns:
+            交替排列的 Swing 点列表；连续同类型点保留更极端的一个。
+        """
         if len(raw_points) < 2:
-            return raw_points
+            return list(raw_points)
 
-        # 过滤为严格交替的 H/L 序列
         zigzag = [raw_points[0]]
         for pt in raw_points[1:]:
             if pt["type"] == zigzag[-1]["type"]:
-                # 连续同类型：保留更极端的
                 if pt["type"] == "H" and pt["price"] > zigzag[-1]["price"]:
                     zigzag[-1] = pt
                 elif pt["type"] == "L" and pt["price"] < zigzag[-1]["price"]:
@@ -369,21 +384,24 @@ class SignalEngine:
         for code, df in data_map.items():
             signal = pd.Series(0, index=df.index, dtype=int)
 
-            swings = self._find_swings(df["high"], df["low"])
-            if len(swings) < 4:
-                result[code] = signal
-                continue
+            raw_points = self._find_swings(df["high"], df["low"])
+            for count in range(4, len(raw_points) + 1):
+                swings = self._zigzag(raw_points[:count])
+                newest = raw_points[count - 1]
+                if len(swings) < 4 or swings[-1]["index"] != newest["index"]:
+                    continue
+                confirmed = newest["confirmed"]
+                if confirmed not in signal.index:
+                    continue
 
-            # 5 浪推动结构
-            if len(swings) >= 6:
-                for idx, direction in self._find_impulse(swings):
-                    if idx in signal.index:
-                        signal[idx] = direction
+                if len(swings) >= 6:
+                    for idx, direction in self._find_impulse(swings):
+                        if idx == newest["index"]:
+                            signal[confirmed] = direction
 
-            # ABC 调整结构
-            for idx, direction in self._find_abc(swings):
-                if idx in signal.index:
-                    signal[idx] = direction
+                for idx, direction in self._find_abc(swings):
+                    if idx == newest["index"]:
+                        signal[confirmed] = direction
 
             result[code] = signal
 

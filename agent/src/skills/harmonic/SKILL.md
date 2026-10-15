@@ -41,3 +41,4 @@ engine falls back to the bundled detector.
 ## Signal Convention
 
 - `1` = long, `-1` = short, `0` = stand aside
+- A swing point is only known `swing_window` bars after it forms, so the signal is stamped on that confirmation bar, not on the swing bar itself (bundled detector only; the optional `pyharmonics` path is unchanged)

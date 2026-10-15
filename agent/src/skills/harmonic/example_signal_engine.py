@@ -192,15 +192,16 @@ def _detect_patterns_fallback(
         检测到的形态列表，每项含 pattern/direction/d_index/d_price 等字段。
     """
     swing_highs, swing_lows = _find_swings(df["high"], df["low"], swing_window)
-    merged = _merge_swings(swing_highs, swing_lows)
-
-    if len(merged) < 5:
-        return []
 
     found = []
-    # 滑动窗口，每次取5个连续摆动点作为 X-A-B-C-D 候选
-    for i in range(len(merged) - 4):
-        pts = merged[i : i + 5]
+    # 摆动点要等右侧 swing_window 根K线收盘才能确认，因此按时间逐点推进，
+    # 只使用截至该点为止已出现的摆动点，形态在确认那根K线上才算出现
+    for d_ts in sorted(set(swing_highs.index) | set(swing_lows.index)):
+        merged = _merge_swings(swing_highs.loc[:d_ts], swing_lows.loc[:d_ts])
+        if len(merged) < 5 or merged[-1][0] != d_ts:
+            continue
+
+        pts = merged[-5:]
         x_ts, x_price, x_type = pts[0]
         a_ts, a_price, a_type = pts[1]
         b_ts, b_price, b_type = pts[2]
@@ -225,6 +226,7 @@ def _detect_patterns_fallback(
         else:
             direction = "bearish"
 
+        confirmed = df.index[df.index.get_loc(d_ts) + swing_window]
         found.append(
             {
                 "pattern": pattern_name,
@@ -234,7 +236,7 @@ def _detect_patterns_fallback(
                 "b": (b_ts, b_price),
                 "c": (c_ts, c_price),
                 "d": (d_ts, d_price),
-                "d_index": d_ts,
+                "d_index": confirmed,
                 "d_price": d_price,
             }
         )
