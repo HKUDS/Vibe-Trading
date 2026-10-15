@@ -6,6 +6,7 @@ import { echarts } from "@/lib/echarts";
 import { getChartTheme } from "@/lib/chart-theme";
 import { useThemeDark } from "@/lib/theme-store";
 import type { RunData } from "@/lib/api";
+import { runTrades } from "@/lib/runReports";
 
 const BLUE = "#3676df";
 const DEEP_BLUE = "#2156ae";
@@ -133,9 +134,7 @@ export function StrategyResearchDashboard({ run }: { run: RunData }) {
       drawdown: String(row.drawdown ?? ""),
     }));
   }, [run.artifacts_equity_csv, run.equity_curve]);
-  const trades = run.artifacts_trades_csv?.length
-    ? run.artifacts_trades_csv
-    : run.trade_log || [];
+  const trades = runTrades(run);
   const identity = useMemo(() => getStrategyReportIdentity(run), [run]);
 
   useEffect(() => {

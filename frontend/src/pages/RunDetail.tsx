@@ -4,8 +4,10 @@ import { useTranslation } from "react-i18next";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   ArrowLeftRight,
+  ArrowUp,
   BarChart3,
   Braces,
   CalendarRange,
@@ -53,6 +55,7 @@ import { AttributionTab } from "@/components/charts/AttributionTab";
 import { PositionsTab } from "@/components/run/PositionsTab";
 import { RunCardPanel, RunCardStat, formatRunCardValue } from "@/components/run/RunCard";
 import { isDateColumn } from "@/lib/positions";
+import { runTrades } from "@/lib/runReports";
 
 const rehypePlugins = [rehypeHighlight];
 
@@ -241,6 +244,7 @@ export function RunDetail() {
   const ok = run.status === "success";
   const cancelled = run.status === "cancelled";
   const reportIdentity = getStrategyReportIdentity(run);
+  const allTrades = runTrades(run);
 
   async function loadChartSymbol(
     symbol: string,
@@ -406,9 +410,9 @@ export function RunDetail() {
           </div>
 
           <div className="ml-auto flex flex-wrap gap-1">
-            {run.trade_log && run.trade_log.length > 0 && (
+            {allTrades.length > 0 && (
               <button
-                onClick={() => downloadCsv(`trades_${runId}.csv`, buildTradesCsv(run.trade_log!))}
+                onClick={() => downloadCsv(`trades_${runId}.csv`, buildTradesCsv(allTrades))}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted/60 transition-colors"
                 title={i18n.t("runDetail.downloadTradesCsv")}
               >
@@ -978,6 +982,16 @@ function ChartTab({
 
 const TRADES_PAGE_SIZE = 100;
 
+function tradeTime(tr: Record<string, string>): string {
+  return tr.time || tr.timestamp || "";
+}
+
+// The engine writes ISO-shaped times ("YYYY-MM-DD[ HH:MM:SS]"), which order
+// correctly as strings; Date.parse would return NaN for the spaced form on Safari.
+function compareTradeTime(a: Record<string, string>, b: Record<string, string>): number {
+  return tradeTime(a).localeCompare(tradeTime(b));
+}
+
 function normalizeSide(value?: string): "BUY" | "SELL" | "" {
   const side = (value || "").trim().toUpperCase();
   if (side.startsWith("B")) return "BUY";
@@ -1001,10 +1015,14 @@ function formatSigned(value: number, suffix = ""): string {
 }
 
 function TradesTab({ run }: { run: RunData }) {
-  const trades = run.trade_log || [];
   const [sideFilter, setSideFilter] = useState<"" | "BUY" | "SELL">("");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [visibleCount, setVisibleCount] = useState(TRADES_PAGE_SIZE);
+  const [sortDesc, setSortDesc] = useState(true);
+  const source = runTrades(run);
+  const ascending = useMemo(() => [...source].sort(compareTradeTime), [source]);
+  // Reversing the stable ascending order keeps same-time fills in engine order.
+  const trades = useMemo(() => (sortDesc ? [...ascending].reverse() : ascending), [ascending, sortDesc]);
   if (trades.length === 0) return <div className="p-8 text-muted-foreground text-sm">{i18n.t("runDetail.noTrades")}</div>;
 
   const symbols = [...new Set(trades.map((tr) => tr.code).filter(Boolean))];
@@ -1081,7 +1099,18 @@ function TradesTab({ run }: { run: RunData }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground [&_th]:font-medium">
-              <th className="py-2 ps-4 pr-4">{i18n.t("runDetail.time")}</th>
+              <th className="py-2 ps-4 pr-4" aria-sort={sortDesc ? "descending" : "ascending"}>
+                <button
+                  type="button"
+                  onClick={() => { setSortDesc((desc) => !desc); setVisibleCount(TRADES_PAGE_SIZE); }}
+                  className="inline-flex items-center gap-1 uppercase hover:text-foreground"
+                >
+                  {i18n.t("runDetail.time")}
+                  {sortDesc
+                    ? <ArrowDown className="h-3 w-3" aria-hidden="true" />
+                    : <ArrowUp className="h-3 w-3" aria-hidden="true" />}
+                </button>
+              </th>
               <th className="py-2 pr-4">{i18n.t("runDetail.code2")}</th>
               <th className="py-2 pr-4">{i18n.t("runDetail.side")}</th>
               <th className="py-2 pr-4 text-right">{i18n.t("runDetail.price")}</th>
@@ -1099,7 +1128,7 @@ function TradesTab({ run }: { run: RunData }) {
               const returnPct = parseTradeNumber(tr.return_pct);
               return (
                 <tr key={i} className={cn("border-b last:border-0 hover:bg-muted/40", i % 2 === 1 && "bg-muted/10")}>
-                  <td className="py-2 ps-4 pr-4 font-mono text-xs">{tr.time || tr.timestamp}</td>
+                  <td className="py-2 ps-4 pr-4 font-mono text-xs">{tradeTime(tr)}</td>
                   <td className="py-2 pr-4 font-mono text-xs">{tr.code}</td>
                   <td className="py-2 pr-4">
                     <span className={cn(
