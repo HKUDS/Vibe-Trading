@@ -97,7 +97,15 @@ _SENSITIVE_ARG_KEYS = {
     "token",
 } | _PII_EXACT_KEYS
 
-_SENSITIVE_ARG_MARKERS = ("api_key", "authorization", "password", "secret", "token")
+_SENSITIVE_ARG_MARKERS = (
+    "api_key",
+    "authorization",
+    "cookie",
+    "password",
+    "private_key",
+    "secret",
+    "token",
+)
 
 #: Keys that stay sensitive in the ARGUMENTS / audit sink but are released in
 #: the tool-RESULT sink.
@@ -482,6 +490,34 @@ _TEXT_URL_USERINFO_PATTERN = re.compile(
     r"@"
 )
 
+#: PEM / PGP private-key blocks (``-----BEGIN RSA PRIVATE KEY----- ... -----END``).
+#: The base64 body has no key label and no recognised prefix, so nothing else
+#: here sees it. The whole block is replaced; a block whose END marker was
+#: truncated (clipped tool output) is redacted to the end of the text, which
+#: fails closed. The body is a lazy run to a fixed terminator or ``\Z``, so a
+#: single scan consumes it and matching stays linear. Public keys and
+#: certificates (``BEGIN PUBLIC KEY`` / ``BEGIN CERTIFICATE``) do not match.
+_TEXT_PRIVATE_KEY_PATTERN = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----"
+    r"[\s\S]*?"
+    r"(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\Z)"
+)
+
+#: ``Cookie:`` / ``Set-Cookie:`` header lines. A session cookie is a bearer
+#: credential, but its value is a ``name=value; name=value`` list that neither
+#: the key pattern (``cookie`` is not a credential key name) nor the token
+#: shapes can see, so ``curl -H "Cookie: sid=..."`` and a dumped response header
+#: both leaked it. The value runs to the end of the line or the closing quote of
+#: a quoted shell argument. An already-redacted value is skipped, which keeps the
+#: substitution idempotent.
+_TEXT_COOKIE_HEADER_PATTERN = re.compile(
+    r"(?P<head>(?<![\w-])(?:set-)?cookie\s*:)"
+    r"(?P<sp>[ \t]*)(?![ \t])"
+    r"(?!\[redacted\])"
+    r"[^\r\n\"']+",
+    re.IGNORECASE,
+)
+
 
 def _sub_credential_pair(match: re.Match[str]) -> str:
     """Rebuild one ``key=value`` match with the value redacted.
@@ -514,8 +550,14 @@ _TEXT_TOKEN_PATTERN = re.compile(
     r"sk-[A-Za-z0-9_-]{20,}"                 # OpenAI / Anthropic style
     r"|gh[pousr]_[A-Za-z0-9]{30,}"           # GitHub PAT family
     r"|xox[baprs]-[A-Za-z0-9-]{10,}"         # Slack
-    r"|AKIA[0-9A-Z]{16}"                     # AWS access key id
+    r"|(?:AKIA|ASIA)[0-9A-Z]{16}"            # AWS access key id (long/short-lived)
+    r"|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"  # Stripe secret / restricted key
+    r"|AIza[A-Za-z0-9_-]{35}"                # Google API key
     r"|pypi-[A-Za-z0-9_-]{16,}"              # PyPI upload token
+    r"|github_pat_[A-Za-z0-9_]{22,}"         # GitHub fine-grained PAT
+    r"|glpat-[A-Za-z0-9_-]{20,}"             # GitLab PAT
+    r"|npm_[A-Za-z0-9]{36}"                  # npm access token
+    r"|hf_[A-Za-z0-9]{30,}"                  # Hugging Face token
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}"  # JWT
     r")(?![A-Za-z0-9_-])"
 )
@@ -546,6 +588,8 @@ def redact_text(text: object) -> str:
     s = text if isinstance(text, str) else str(text)
     if not s:
         return s
+    s = _TEXT_PRIVATE_KEY_PATTERN.sub(_REDACTED, s)
+    s = _TEXT_COOKIE_HEADER_PATTERN.sub(r"\g<head>\g<sp>" + _REDACTED, s)
     s = _TEXT_BEARER_PATTERN.sub(r"\g<scheme> " + _REDACTED, s)
     s = _TEXT_AUTH_SCHEME_PATTERN.sub(r"\g<head>\g<scheme> " + _REDACTED, s)
     s = _TEXT_URL_USERINFO_PATTERN.sub(_REDACTED + "@", s)
