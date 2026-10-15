@@ -1380,6 +1380,10 @@ Saves write the `channels.<name>` section of `~/.vibe-trading/agent.json` atomic
 
 ### Strategy & Backtesting
 
+Average holding period includes completed same-bar trades (zero bars). The
+existing `avg_holding_days` compatibility key reports the engine's holding-bar
+measure; it is not a conversion to calendar days.
+
 Standalone revalidation (`python -m backtest.validation <run_dir>`) runs all
 three validation tools using saved `config.json` validation parameters; missing
 parameters use the existing defaults. This includes simulation counts, seeds,
