@@ -318,7 +318,16 @@ def _to_float(val: Any, default: float = 0.0) -> float:
         s = _CURRENCY_TOKEN_RE.sub("", s).replace(",", "").strip()
         if not s:
             return default
+        # Accounting exports write a negative as "(1,234.50)" (optionally
+        # "$(1,234.50)"); without this float() fails and the cell becomes 0.0.
+        negate = s.startswith("(") and s.endswith(")")
+        if negate:
+            s = s[1:-1].strip()
+            if not s or s[0] in "+-":
+                return default
         parsed = float(s)
+        if negate:
+            parsed = -parsed
         return parsed if math.isfinite(parsed) else default
     except (ValueError, TypeError):
         return default
