@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import numpy as np
 import pandas as pd
@@ -427,7 +428,7 @@ def test_periods_per_year_none_uses_calendar_day_annualization():
     bpy = int(len(port) / years)
     assert vol["annualized_vol"] == pytest.approx(port.std(ddof=1) * bpy**0.5)
     assert vol["downside_deviation_annualized"] == pytest.approx(
-        port[port < 0].std(ddof=1) * bpy**0.5
+        (port.clip(upper=0.0) ** 2).mean() ** 0.5 * bpy**0.5
     )
     _assert_strict_json(result)
 
@@ -514,3 +515,45 @@ def test_long_window_requests_full_history_without_sampling():
     assert payload["data"]["inputs"]["aligned_days"] == n
     assert payload["data"]["inputs"]["return_observations"] == n - 1
     _assert_strict_json(payload)
+
+
+# ---------------------------------------------------------------------------
+# Downside deviation: zero-target RMS over every return period
+# ---------------------------------------------------------------------------
+
+
+def _closes_from_returns(returns: list[float]) -> pd.DataFrame:
+    idx = pd.date_range("2026-01-01", periods=len(returns) + 1, freq="D")
+    path = [100.0]
+    for value in returns:
+        path.append(path[-1] * (1.0 + value))
+    series = pd.Series(path, index=idx)
+    return pd.DataFrame({"AAA": series, "BBB": series})
+
+
+def test_downside_deviation_counts_equal_losses():
+    # Every losing bar loses exactly 1%: the sample std of the losses is zero,
+    # but the downside risk is not. Per 3-bar cycle: (0.01**2 + 0.01**2) / 3.
+    returns = [-0.01, -0.01, 0.03] * 13
+    result = compute_risk_xray(
+        _closes_from_returns(returns), {"AAA": 0.5, "BBB": 0.5}, min_history=10
+    )
+    expected = math.sqrt(0.0002 / 3) * math.sqrt(252)
+    assert result["volatility"]["downside_deviation_annualized"] == pytest.approx(expected)
+    _assert_strict_json(result)
+
+
+def test_downside_deviation_defined_for_a_single_loss():
+    returns = [0.01] * 38 + [-0.02]
+    result = compute_risk_xray(
+        _closes_from_returns(returns), {"AAA": 0.5, "BBB": 0.5}, min_history=10
+    )
+    expected = math.sqrt(0.02**2 / 39) * math.sqrt(252)
+    assert result["volatility"]["downside_deviation_annualized"] == pytest.approx(expected)
+
+
+def test_downside_deviation_is_zero_without_losses():
+    result = compute_risk_xray(
+        _closes_from_returns([0.01] * 39), {"AAA": 0.5, "BBB": 0.5}, min_history=10
+    )
+    assert result["volatility"]["downside_deviation_annualized"] == 0.0
