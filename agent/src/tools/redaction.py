@@ -516,6 +516,10 @@ _TEXT_TOKEN_PATTERN = re.compile(
     r"|xox[baprs]-[A-Za-z0-9-]{10,}"         # Slack
     r"|AKIA[0-9A-Z]{16}"                     # AWS access key id
     r"|pypi-[A-Za-z0-9_-]{16,}"              # PyPI upload token
+    r"|github_pat_[A-Za-z0-9_]{22,}"         # GitHub fine-grained PAT
+    r"|glpat-[A-Za-z0-9_-]{20,}"             # GitLab PAT
+    r"|npm_[A-Za-z0-9]{36}"                  # npm access token
+    r"|hf_[A-Za-z0-9]{30,}"                  # Hugging Face token
     r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}"  # JWT
     r")(?![A-Za-z0-9_-])"
 )
