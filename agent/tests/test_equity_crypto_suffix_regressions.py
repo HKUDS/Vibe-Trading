@@ -49,6 +49,29 @@ def test_shared_engine_recognizes_known_slash_usd_crypto(symbol):
 
 
 @pytest.mark.parametrize(
+    "symbol",
+    [
+        "BTC-USDT-PERP",
+        "ETH-USDT-PERP",
+        # Numeric bases are legal on Binance USD-M (1000PEPE, 1MBABYDOGE)
+        # and ccxt_loader's own fullmatch allows [A-Z0-9]+ for the base.
+        "1000PEPE-USDT-PERP",
+        "1MBABYDOGE-USDT-PERP",
+    ],
+)
+def test_usdm_perpetual_symbols_route_to_crypto(symbol):
+    """BASE-USDT-PERP must run under CryptoEngine, not the a_share default.
+
+    Before #1863's fix the perpetual spelling matched no pattern, fell
+    through to ``a_share``, and the 100-share board-lot rounding turned
+    every computed size into a zero_size rejection.
+    """
+    from backtest.engines._market_hooks import _detect_market
+
+    assert _detect_market(symbol) == "crypto"
+
+
+@pytest.mark.parametrize(
     "symbol, expected",
     [
         ("GBP/USD", "forex"),

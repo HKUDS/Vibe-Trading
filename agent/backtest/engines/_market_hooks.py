@@ -120,6 +120,14 @@ _MARKET_PATTERNS = [
     # the class stays broad to admit fund certificates and ETF codes.
     (re.compile(r"^[A-Z0-9]+\.VN$", re.I), "vietnam_equity"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
+    # USD-M perpetuals in their documented BASE-USDT-PERP spelling
+    # (ccxt_loader._parse_ccxt_symbol / binance_loader). Without this entry
+    # the symbol matched nothing above and fell through to the a_share
+    # default, so a leveraged perpetual ran under China A-share rules
+    # (100-share board-lot rounding) and every computed size rounded to a
+    # zero_size rejection (#1863). Base alphabet matches the loader's own
+    # ``([A-Z0-9]+)-USDT-PERP`` fullmatch.
+    (re.compile(r"^[A-Z0-9]+-USDT-PERP$", re.I), "crypto"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
     # yfinance's native crypto spelling (BTC-USD, ETH-USD). Distinct from
     # USDT pairs only in the quote currency; both belong to CryptoEngine.
