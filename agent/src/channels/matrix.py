@@ -546,10 +546,16 @@ class MatrixChannel(BaseChannel):
 
         if meta.get("_stream_end"):
             buf = self._stream_bufs.pop(chat_id, None)
-            if not buf or not buf.event_id or not buf.text:
+            if not buf or not buf.text:
                 return
 
             await self._stop_typing_keepalive(chat_id, clear_typing=True)
+
+            # buf.event_id can still be None here: every periodic edit above
+            # is wrapped in try/except, so a transient send failure (or the
+            # client being briefly unset during a reconnect) leaves it unset
+            # while buf.text keeps accumulating. Send the accumulated reply
+            # as a brand-new message in that case instead of discarding it.
 
             content = _build_matrix_text_content(
                 buf.text,
