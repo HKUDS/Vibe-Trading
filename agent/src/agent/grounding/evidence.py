@@ -668,7 +668,14 @@ def _is_price_kind(record: EvidenceRecord) -> bool:
         amount/turnover leaves.
     """
     return (
-        record.field in _PRICE_FIELDS
+        (
+            record.tool == "get_sec_filings"
+            and record.source == "sec_edgar"
+            and record.field.startswith("data.metric.points[")
+            and record.field.endswith("].val")
+            and record.currency is not None
+        )
+        or record.field in _PRICE_FIELDS
         or _price_field_for_path(record.field) is not None
         or _is_registered_price_indicator(record.tool, record.field)
         or _leaf_name(record.field) in _AMOUNT_FIELDS
@@ -1236,7 +1243,29 @@ class _EvidenceMixin:
                         field=path or "value",
                         value=value,
                         status="observed",
-                        currency=_infer_currency(symbol or ""),
+                        currency=(
+                            (
+                                payload["data"]["metric"]["unit"].upper()
+                                if (
+                                    isinstance(payload["data"]["metric"].get("unit"), str)
+                                    and payload["data"]["metric"]["unit"].upper()
+                                    in {
+                                        "USD", "JPY", "EUR", "GBP", "CNY",
+                                        "CAD", "AUD", "HKD", "KRW", "INR",
+                                        "SGD", "TWD", "CHF", "NZD",
+                                    }
+                                )
+                                else None
+                            )
+                            if (
+                                tool_name == "get_sec_filings"
+                                and path.startswith("data.metric.points[")
+                                and path.endswith("].val")
+                                and isinstance(payload.get("data"), dict)
+                                and isinstance(payload["data"].get("metric"), dict)
+                            )
+                            else _infer_currency(symbol or "")
+                        ),
                         venue=_infer_venue(symbol or ""),
                     )
                 )

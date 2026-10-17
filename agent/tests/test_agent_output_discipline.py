@@ -205,6 +205,22 @@ class TestPrincipleOneReachesEveryTool:
         assert result.valid is False
         assert [issue["code"] for issue in result.issues] == ["numeric_claim_conflict"]
 
+    def test_unreferenced_currency_must_match_evidence(
+        self, tmp_path: Path
+    ) -> None:
+        """A USD market price cannot support an identical JPY claim."""
+        ledger = _ledger(
+            tmp_path,
+            tool="get_stock_profile",
+            result=_PROFILE_QUOTE,
+        )
+
+        result = ledger.validate_final_answer(
+            "AAPL.US 收盘价 212.5 JPY。"
+        )
+
+        assert result.valid is False, result.issues
+
     def test_a_non_price_field_does_not_become_price_evidence(self, tmp_path: Path) -> None:
         """The P/E in the same payload must not license quoting 31.4 as a price."""
         ledger = _ledger(tmp_path, tool="get_stock_profile", result=_PROFILE_QUOTE)
@@ -385,6 +401,212 @@ class TestTheGateDoesNotKillCorrectAnswers:
         )
 
         assert result.valid is True, result.issues
+
+
+    def test_sec_xbrl_usd_debt_is_grounded_by_exact_reference(
+        self, tmp_path: Path
+    ) -> None:
+        """A genuine SEC USD metric should support a referenced dollar claim."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Analyze HE.US debt from its June 2026 filing.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"ticker": "HE", "metric": "LongTermDebt"},
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "market": "US",
+                    "source": "sec_edgar",
+                    "data": {
+                        "ticker": "HE",
+                        "metric": {
+                            "concept": "LongTermDebt",
+                            "unit": "USD",
+                            "points": [
+                                {
+                                    "end": "2026-06-30",
+                                    "val": 2500000000,
+                                    "form": "10-Q",
+                                    "accession": "0000354707-26-000054",
+                                }
+                            ],
+                        },
+                    },
+                }
+            ),
+            call_id="sec1",
+            success=True,
+        )
+
+        answer = (
+            "HE.US reported $2,500,000,000 in long-term debt."
+            "\n\n```figures\n"
+            "2,500,000,000 | observed | data.metric.points[0].val | sec1\n"
+            "```"
+        )
+        result = ledger.validate_final_answer(answer)
+
+        assert result.valid is True, result.issues
+
+    @pytest.mark.parametrize(
+        ("unit", "claimed_amount", "expected_valid"),
+        [
+            ("USD", 3500000000, False),
+            ("shares", 2500000000, False),
+        ],
+    )
+    def test_sec_xbrl_rejects_invalid_monetary_claims(
+        self, tmp_path: Path, unit: str,
+        claimed_amount: int, expected_valid: bool
+    ) -> None:
+        """Incorrect values and nonmonetary units cannot support USD claims."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Analyze HE.US financial statements.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"ticker": "HE", "metric": "LongTermDebt"},
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "market": "US",
+                    "source": "sec_edgar",
+                    "data": {
+                        "ticker": "HE",
+                        "metric": {
+                            "concept": "LongTermDebt",
+                            "unit": unit,
+                            "points": [
+                                {
+                                    "end": "2026-06-30",
+                                    "val": 2500000000,
+                                    "form": "10-Q",
+                                }
+                            ],
+                        },
+                    },
+                }
+            ),
+            call_id="sec1",
+            success=True,
+        )
+
+        answer = (
+            f"HE.US reported ${claimed_amount:,} in long-term debt."
+            "\n\n```figures\n"
+            f"{claimed_amount:,} | observed | data.metric.points[0].val | sec1\n"
+            "```"
+        )
+        result = ledger.validate_final_answer(answer)
+
+        assert result.valid is expected_valid, result.issues
+
+    @pytest.mark.parametrize(
+        ("source_currency", "claimed_currency", "expected_valid"),
+        [
+            ("USD", "USD", True),
+            ("JPY", "JPY", True),
+            ("EUR", "EUR", True),
+            ("USD", "JPY", False),
+            ("JPY", "USD", False),
+            ("EUR", "USD", False),
+        ],
+    )
+    def test_sec_xbrl_currency_must_match_evidence(
+        self,
+        tmp_path: Path,
+        source_currency: str,
+        claimed_currency: str,
+        expected_valid: bool,
+    ) -> None:
+        """SEC financial claims must preserve the source currency."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Analyze HE.US financial statements.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"ticker": "HE", "metric": "LongTermDebt"},
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "market": "US",
+                    "source": "sec_edgar",
+                    "data": {
+                        "ticker": "HE",
+                        "metric": {
+                            "concept": "LongTermDebt",
+                            "unit": source_currency,
+                            "points": [
+                                {
+                                    "end": "2026-06-30",
+                                    "val": 2500000000,
+                                    "form": "10-Q",
+                                }
+                            ],
+                        },
+                    },
+                }
+            ),
+            call_id="sec1",
+            success=True,
+        )
+
+        answer = (
+            f"HE.US reported {claimed_currency} 2,500,000,000 in long-term debt."
+            "\n\n```figures\n"
+            "2,500,000,000 | observed | data.metric.points[0].val | sec1\n"
+            "```"
+        )
+        result = ledger.validate_final_answer(answer)
+
+        assert result.valid is expected_valid, result.issues
+
+    def test_sec_xbrl_rejects_wrong_source_reference(
+        self, tmp_path: Path
+    ) -> None:
+        """A real SEC figure cannot be attributed to a different call."""
+        ledger = GroundingLedger(
+            run_dir=tmp_path,
+            user_message="Analyze HE.US debt.",
+        )
+        ledger.ingest_tool_result(
+            tool_name="get_sec_filings",
+            arguments={"ticker": "HE", "metric": "LongTermDebt"},
+            result=json.dumps(
+                {
+                    "ok": True,
+                    "market": "US",
+                    "source": "sec_edgar",
+                    "data": {
+                        "ticker": "HE",
+                        "metric": {
+                            "concept": "LongTermDebt",
+                            "unit": "USD",
+                            "points": [
+                                {"end": "2026-06-30", "val": 2500000000}
+                            ],
+                        },
+                    },
+                }
+            ),
+            call_id="sec1",
+            success=True,
+        )
+
+        answer = (
+            "HE.US reported $2,500,000,000 in long-term debt."
+            "\n\n```figures\n"
+            "2,500,000,000 | observed | data.metric.points[0].val | wrong_call\n"
+            "```"
+        )
+        result = ledger.validate_final_answer(answer)
+
+        assert result.valid is False, result.issues
+
 
     def test_the_root_allowance_does_not_licence_an_untouched_ticker(
         self, tmp_path: Path

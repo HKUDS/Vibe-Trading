@@ -174,6 +174,29 @@ def test_an_iso_code_glued_to_digits_is_a_currency_mark(tmp_path: Path) -> None:
     assert _shapes("见 XUSD100 与 SMA20") == {}
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Cost USD100", "USD"),
+        ("Cost 100 JPY", "JPY"),
+        ("Cost 100 EUR", "EUR"),
+        ("Cost €100", "EUR"),
+        ("Cost £100", "GBP"),
+        ("Cost 100 CNY", "CNY"),
+        ("Cost 100 人民币", "CNY"),
+        ("Cost ¥100", None),
+        ("Cost $100", None),
+        ("Cost 100 shares", None),
+    ],
+)
+def test_currency_identity_is_preserved(
+    text: str, expected: str | None
+) -> None:
+    [figure] = _figures(text)
+
+    assert figure.currency_code == expected
+
+
 # ---------------------------------------------------------------------------
 # A2 — a decimal comma (#1418)
 # ---------------------------------------------------------------------------

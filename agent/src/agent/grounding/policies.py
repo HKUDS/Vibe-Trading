@@ -1374,12 +1374,19 @@ class _PolicyMixin:
         *,
         column: str | None = None,
         date: str | None = None,
+        currency_code: str | None = None,
     ) -> list[float]:
         """Observed price values a figure may be compared against."""
-        return [
-            float(record.value)
-            for record in self._price_candidates(symbol, records, column=column, date=date)
-        ]
+        candidates = self._price_candidates(
+            symbol, records, column=column, date=date
+        )
+        if currency_code is not None:
+            candidates = [
+                record
+                for record in candidates
+                if record.currency == currency_code
+            ]
+        return [float(record.value) for record in candidates]
 
     def _price_candidates(
         self,
@@ -1412,7 +1419,13 @@ class _PolicyMixin:
             ]
         return [record for record in candidates if record.value is not None]
 
-    def _row_pool(self, symbol: str | None, *, money_only: bool = False) -> list[float]:
+    def _row_pool(
+        self,
+        symbol: str | None,
+        *,
+        money_only: bool = False,
+        currency_code: str | None = None,
+    ) -> list[float]:
         """Numbers a market-data row carried (volume, amount, turnover, …).
 
         Only ``get_market_data`` and run-dir CSV rows count, so a generic tool's
@@ -1427,6 +1440,7 @@ class _PolicyMixin:
             and record.tool in {"get_market_data", "bash"}
             and (not symbol or record.symbol == symbol)
             and (not money_only or _is_price_kind(record))
+            and (currency_code is None or record.currency == currency_code)
         ]
 
     @staticmethod
@@ -1661,6 +1675,12 @@ class _PolicyMixin:
                             field_ref_candidates=unknown_scope_candidates,
                         )
                     ]
+            if figure.currency_code is not None:
+                scoped_records = [
+                    record
+                    for record in scoped_records
+                    if record.currency == figure.currency_code
+                ]
             values = [float(record.value) for record in scoped_records] + metric_values
             money = figure.currency and not figure.percent
             # A call- or tool-scoped ref pools every field that call returned,
@@ -1743,6 +1763,12 @@ class _PolicyMixin:
         candidates = self._price_candidates(
             symbol, records, column=figure.column, date=figure.date
         )
+        if figure.currency_code is not None:
+            candidates = [
+                record
+                for record in candidates
+                if record.currency == figure.currency_code
+            ]
         prices = [float(record.value) for record in candidates]
         if figure.percent:
             # A percent is a ratio; no price or volume may answer it.
@@ -1751,7 +1777,11 @@ class _PolicyMixin:
         elif figure.column:
             direct, scaled = prices, []
         elif figure.currency:
-            direct, scaled = prices + self._row_pool(symbol, money_only=True), []
+            direct, scaled = prices + self._row_pool(
+                symbol,
+                money_only=True,
+                currency_code=figure.currency_code,
+            ), []
         else:
             direct, scaled = prices + self._row_pool(symbol), self._metric_pool(symbol)
         # An undeclared tail-risk figure is matched against every tail-risk
@@ -1842,6 +1872,7 @@ class _PolicyMixin:
         records: Sequence[EvidenceRecord],
         *,
         money: bool = False,
+        currency_code: str | None = None,
         percent: bool = False,
         scalar_parameters: Sequence[float] = (),
     ) -> tuple[float, list[float], bool] | str | None:
@@ -1903,7 +1934,11 @@ class _PolicyMixin:
         if not unattributed:
             # A money-marked result is derived from money: an RSI or a volume
             # is not a price to take a discount of.
-            anchors = self._price_pool(symbol, records) + self._row_pool(symbol, money_only=money)
+            anchors = self._price_pool(
+                symbol, records, currency_code=currency_code
+            ) + self._row_pool(
+                symbol, money_only=money, currency_code=currency_code
+            )
             if not money:
                 anchors += self._metric_pool(symbol)
         # Arithmetic across two runs needs both runs' values: a field ref that
@@ -1934,7 +1969,9 @@ class _PolicyMixin:
             anchors.extend(
                 float(record.value)
                 for record in scoped[0]
-                if (not money or _is_price_kind(record)) and not (unattributed and record.symbol)
+                if (not money or _is_price_kind(record))
+                and (currency_code is None or record.currency == currency_code)
+                and not (unattributed and record.symbol)
             )
             if not money and not unattributed:
                 anchors.extend(scoped[1])
@@ -2090,7 +2127,8 @@ class _PolicyMixin:
     ) -> list[dict[str, Any]]:
         """A derived figure must be the arithmetic its note states."""
         derivation = self._derivation(
-            declaration, symbol, records, money=figure.currency, percent=figure.percent,
+            declaration, symbol, records, money=figure.currency,
+            currency_code=figure.currency_code, percent=figure.percent,
             scalar_parameters=scalar_parameters,
         )
         if isinstance(derivation, str):
@@ -2184,12 +2222,19 @@ class _PolicyMixin:
                 )
             ]
         derivation = self._derivation(
-            declaration, symbol, records, money=figure.currency, percent=figure.percent,
+            declaration, symbol, records, money=figure.currency,
+            currency_code=figure.currency_code, percent=figure.percent,
             scalar_parameters=scalar_parameters,
         )
         if not isinstance(derivation, str) and self._result_matches(figure, derivation[0]):
             return []
         candidates = self._price_candidates(symbol, records)
+        if figure.currency_code is not None:
+            candidates = [
+                record
+                for record in candidates
+                if record.currency == figure.currency_code
+            ]
         prices = [float(record.value) for record in candidates]
         if not prices:
             return [

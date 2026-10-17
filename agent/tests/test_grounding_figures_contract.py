@@ -463,6 +463,29 @@ def test_derived_passes_on_its_own_arithmetic_and_fails_without_it(
     assert [i["reason"] for i in unanchored.issues] == ["formula_not_anchored"]
 
 
+def test_derived_currency_must_match_evidence(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path)
+
+    formula = "0.666 × 0.97"
+    row = f"0.646 | derived | {formula} | c1"
+
+    matching = ledger.validate_final_answer(
+        HDR
+        + declared_parameter("97%")
+        + " 第一档 0.646 CNY。"
+        + _block(HDR_ROW, row)
+    )
+    mismatched = ledger.validate_final_answer(
+        HDR
+        + declared_parameter("97%")
+        + " 第一档 0.646 USD。"
+        + _block(HDR_ROW, row)
+    )
+
+    assert matching.valid is True, matching.issues
+    assert mismatched.valid is False, mismatched.issues
+
+
 def test_derived_covers_only_the_value_it_declares(tmp_path: Path) -> None:
     """§4: the exemption is the declaration, and a declaration names one value."""
     ledger = _ledger(tmp_path)
@@ -505,6 +528,22 @@ def test_proposed_outside_the_range_passes_with_a_derivation(tmp_path: Path) -> 
     )
 
     assert result.valid is True, result.issues
+
+
+def test_proposed_currency_must_match_evidence(tmp_path: Path) -> None:
+    ledger = _ledger(tmp_path)
+
+    matching = ledger.validate_final_answer(
+        HDR + " 建议买入价 0.65 CNY。"
+        + _block(HDR_ROW, "0.65 | proposed | entry")
+    )
+    mismatched = ledger.validate_final_answer(
+        HDR + " 建议买入价 0.65 USD。"
+        + _block(HDR_ROW, "0.65 | proposed | entry")
+    )
+
+    assert matching.valid is True, matching.issues
+    assert mismatched.valid is False, mismatched.issues
 
 
 def test_cited_needs_a_source_and_may_not_pose_as_a_print(tmp_path: Path) -> None:
