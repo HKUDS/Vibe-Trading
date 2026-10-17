@@ -560,7 +560,7 @@ class FinancialRigorTool(BaseTool):
                 result = cross_validate(
                     str(kwargs["field"]), kwargs["source_values"],
                     unit=str(kwargs.get("unit") or ""),
-                    tolerance_pct=float(kwargs.get("tolerance_pct") or 2.0),
+                    tolerance_pct=2.0 if kwargs.get("tolerance_pct") is None else float(kwargs["tolerance_pct"]),
                 )
             elif command == "benford":
                 vals = kwargs.get("values")
@@ -585,7 +585,7 @@ class FinancialRigorTool(BaseTool):
                     kwargs["price"], kwargs["eps"], kwargs["shares"],
                     growth[0], growth[1], growth[2],
                     pe[0], pe[1], pe[2],
-                    years=int(kwargs.get("years") or 3),
+                    years=3 if kwargs.get("years") is None else int(kwargs["years"]),
                     currency=str(kwargs.get("currency") or ""),
                 )
             else:

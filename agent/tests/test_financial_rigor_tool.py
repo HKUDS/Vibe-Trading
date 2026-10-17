@@ -308,6 +308,31 @@ def test_execute_three_scenario_validates_growth_shape() -> None:
     assert env["status"] == "error"
 
 
+def test_execute_cross_validate_honors_explicit_zero_tolerance() -> None:
+    # tolerance_pct=0 asks for exact agreement; it must not fall back to 2.0.
+    env = _run(command="cross_validate", field="revenue", source_values={"a": 100, "b": 101, "c": 100}, tolerance_pct=0)
+    assert env["tolerance_pct"] == 0.0
+    assert env["all_consistent"] is False
+    by_source = {row["source"]: row["consistent"] for row in env["per_source"]}
+    assert by_source == {"a": True, "b": False, "c": True}
+
+
+def test_execute_cross_validate_omitted_tolerance_defaults_to_two_percent() -> None:
+    for extra in ({}, {"tolerance_pct": None}):
+        env = _run(command="cross_validate", field="revenue", source_values={"a": 100, "b": 101, "c": 100}, **extra)
+        assert env["tolerance_pct"] == 2.0
+        assert env["all_consistent"] is True
+
+
+def test_execute_three_scenario_honors_explicit_zero_years() -> None:
+    # years=0 values the current EPS at the target PE; it must not become 3.
+    env = _run(command="three_scenario", price=100, eps=5, shares=1, growth=[0.1, 0.1, 0.1], pe=[20, 15, 10], years=0)
+    assert env["years"] == 0
+    base = next(s for s in env["scenarios"] if s["scenario"] == "base")
+    assert base["future_eps"] == 5.0
+    assert base["target_price"] == 75.0
+
+
 @pytest.mark.parametrize("value, digit", [
     (4999.9999999, 4), (1999.9999999, 1),
     (math.nextafter(5000.0, 0.0), 4), (math.nextafter(5000.0, math.inf), 5),
