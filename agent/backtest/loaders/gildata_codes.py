@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from src.config.writer import _write_json_atomically
+from src.config.paths import get_runtime_root
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def _normalize_ref(code: str) -> str:
 
 
 def _cache_path() -> Path:
-    return Path.home() / ".vibe-trading" / "cache" / _CACHE_FILENAME
+    return get_runtime_root() / "cache" / _CACHE_FILENAME
 
 
 def _load_cache() -> Dict[str, Any]:

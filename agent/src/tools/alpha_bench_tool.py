@@ -45,6 +45,7 @@ import pandas as pd
 from backtest.loaders.cn_adjust import apply_qfq as _apply_qfq
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
+from src.config.paths import get_runtime_root
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ def _load_universe_panel(
         )
     start, end = _parse_period(period)
 
-    cache_dir = Path.home() / ".vibe-trading" / "cache"
+    cache_dir = get_runtime_root() / "cache"
     cache_path = cache_dir / f"{universe}_{start}_{end}.pkl"
     if use_cache and cache_path.is_file():
         cached = _read_pickle_cache(cache_path)
@@ -1251,7 +1252,7 @@ def _render_html_manual(ctx: dict[str, Any]) -> str:
 
 
 def _default_output_dir() -> Path:
-    return Path.home() / ".vibe-trading" / "reports"
+    return get_runtime_root() / "reports"
 
 
 def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
