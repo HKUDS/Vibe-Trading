@@ -140,6 +140,10 @@ class LinkBacktestTool(BaseTool):
             "run_card_path": {"type": "string", "description": "Path to run_card.json"},
             "backtest_run_dir": {"type": "string", "description": "Backtest run directory"},
             "metrics": {"type": "object", "description": "Optional metrics summary"},
+            "validation": {
+                "type": "object",
+                "description": "Optional walk-forward/Monte-Carlo/bootstrap robustness results",
+            },
             "notes": {"type": "string", "description": "Optional link note"},
         },
         "required": ["hypothesis_id"],
@@ -153,6 +157,7 @@ class LinkBacktestTool(BaseTool):
                 run_card_path=str(kwargs.get("run_card_path", "")),
                 backtest_run_dir=str(kwargs.get("backtest_run_dir", "")),
                 metrics=kwargs.get("metrics"),
+                validation=kwargs.get("validation"),
                 notes=str(kwargs.get("notes", "")),
             )
             return _ok({"hypothesis": hyp.to_dict()})
