@@ -339,6 +339,7 @@ class TestMarketRouting:
             ("510050.SH", "CN"),
             ("159915.sz", "CN"),
             ("510050", "CN"),
+            ("510050.SS", "CN"),
             ("IVV", "US"),
             ("SOXX", "US"),
             ("BRK.B", "US"),
@@ -357,6 +358,11 @@ class TestMarketRouting:
         assert etf._cn_code_and_secid("510050") == ("510050", "1.510050")
         assert etf._cn_code_and_secid("159915") == ("159915", "0.159915")
         assert etf._cn_code_and_secid("123456")[1] is None
+
+    def test_yahoo_shanghai_suffix_resolves_like_sh(self):
+        # Yahoo spells Shanghai ``.SS``; the rest of the repo folds it onto ``.SH``.
+        assert etf._cn_code_and_secid("510050.SS") == ("510050", "1.510050")
+        assert etf._cn_code_and_secid("510050.ss") == ("510050", "1.510050")
 
     def test_explicit_market_overrides_detection(self):
         with patch.object(etf, "_sec_get_text", side_effect=_sec_router):

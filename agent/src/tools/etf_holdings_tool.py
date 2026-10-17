@@ -242,11 +242,12 @@ def _classify_market(symbol: str) -> str:
         symbol: An ETF symbol such as ``"510050.SH"``, ``"510050"`` or ``"IVV"``.
 
     Returns:
-        ``"CN"`` for a ``.SH`` / ``.SZ`` suffix or a bare six-digit code,
+        ``"CN"`` for a ``.SH`` / ``.SZ`` suffix (or Yahoo's ``.SS`` alias for
+        Shanghai) or a bare six-digit code,
         ``"US"`` otherwise.
     """
     upper = symbol.strip().upper()
-    if upper.endswith((".SH", ".SZ")):
+    if upper.endswith((".SH", ".SZ", ".SS")):
         return "CN"
     if len(upper) == 6 and upper.isdigit():
         return "CN"
@@ -286,6 +287,9 @@ def _cn_code_and_secid(symbol: str) -> tuple[str, str | None]:
         be determined.
     """
     upper = symbol.strip().upper()
+    if upper.endswith(".SS"):
+        # Yahoo's spelling of Shanghai; the shared resolver knows ``.SH`` only.
+        upper = f"{upper[: -len('.SS')]}.SH"
     if upper.endswith((".SH", ".SZ")):
         return upper.split(".")[0], resolve_secid(upper)
     exchange = _CN_PREFIX_EXCHANGE.get(upper[:2])
