@@ -517,6 +517,13 @@ class TestCalcMetrics:
         assert m["total_return"] == pytest.approx(999_999.0)
         assert m["annual_return"] == float("inf")
 
+    def test_explosive_equity_with_drawdown_keeps_calmar_finite(self) -> None:
+        """Infinite annual_return over a real drawdown must not leak inf Calmar."""
+        eq = pd.Series([1.0, 0.5, 1_000_000.0])
+        m = calc_metrics(eq, [], 1.0, 252)
+        assert m["annual_return"] == float("inf")
+        assert math.isfinite(m["calmar"])
+
     def test_zero_crossing_equity_keeps_risk_ratios_finite(self) -> None:
         """Equity that hits exactly 0 then recovers yields inf pct_change.
 

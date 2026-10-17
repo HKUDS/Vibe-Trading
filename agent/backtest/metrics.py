@@ -635,6 +635,8 @@ def calc_metrics(
     max_dd = float(dd.min())
 
     calmar = ann_ret / abs(max_dd) if abs(max_dd) > 1e-10 else 0.0
+    if not np.isfinite(calmar):
+        calmar = 0.0
 
     # Sortino: zero-target downside RMS, with all return periods in the divisor.
     if returns_finite:
