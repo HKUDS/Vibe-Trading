@@ -6,13 +6,14 @@ in the repo can adopt:
 * :mod:`src.scheduling.triggers` — pure, clock-injected trigger grammar
   (interval-ms + 5-field cron + IANA timezones with the DST gap-skip /
   fold=0 policy) and next-run math, plus the ``once`` trigger kind absorbed
-  from the live runtime scheduler (provided for future adoption; not wired).
+  from the live runtime scheduler (consumed by its kernel-backed façade).
 * :mod:`src.scheduling.types` — the shared vocabulary: ``ExecutorKind`` with
   its closed runtime domain, and the kernel callback type aliases.
 * :mod:`src.scheduling.kernel` — ``SchedulerKernel``: the generic tick loop
   with ``asyncio.Event`` wakeup, bounded exponential backoff, an injectable
-  clock and the ``on_tick`` seam for domain logic (consumed by the scheduled
-  research executor).
+  clock, the ``on_tick`` seam for domain logic and an optional
+  ``sleep_hint_fn`` seam for adaptive-sleep consumers (together consumed by
+  the scheduled-research executor and the live runtime scheduler).
 * :mod:`src.scheduling.registry` — the internal-callable allowlist: an
   explicit module-level dict mapping literal registry keys to zero-arg
   sync/async callables, with exact-key resolution only (no dynamic import,
@@ -64,6 +65,7 @@ from src.scheduling.types import (
     ExecutorKind,
     NowFn,
     OnTickFn,
+    SleepHintFn,
     is_executor_kind,
 )
 
@@ -84,6 +86,7 @@ __all__ = [
     "NowFn",
     "OnTickFn",
     "SchedulerKernel",
+    "SleepHintFn",
     "day_matches",
     "is_executor_kind",
     "is_interval_schedule",

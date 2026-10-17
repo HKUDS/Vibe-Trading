@@ -295,18 +295,19 @@ ONCE_SPEC = "once"
 
 #: Default cadence applied when a live-style trigger ``schedule`` is a
 #: bare/empty/unknown spec — the watch still fires on a sane interval rather
-#: than never. Mirrors ``DEFAULT_INTERVAL_MS`` in
-#: ``agent/src/live/runtime/scheduler.py`` (semantics absorbed here so the
-#: kernel is adoptable by the live runtime later; nothing is imported from
-#: ``src.live`` and no live behavior changes in this batch).
+#: than never. Single home of the semantics ``Job.interval_ms()`` in
+#: ``agent/src/live/runtime/scheduler.py`` originally carried; the live
+#: scheduler's kernel-backed façade delegates here (nothing is imported from
+#: ``src.live`` in the other direction).
 DEFAULT_TRIGGER_INTERVAL_MS = 60 * 1000
 
 
 def trigger_interval_ms(schedule: str | None) -> int | None:
     """Return the recurrence interval in ms for a live-style trigger spec.
 
-    Absorbs the semantics of ``Job.interval_ms()`` in
-    ``agent/src/live/runtime/scheduler.py``:
+    Single home of the semantics ``Job.interval_ms()`` in
+    ``agent/src/live/runtime/scheduler.py`` originally carried; that method is
+    now a delegate to this function:
 
     * ``"once"`` → ``None``: a one-shot trigger with no recurrence;
     * ``"interval:<ms>"`` → ``<ms>`` when it parses as a positive integer,

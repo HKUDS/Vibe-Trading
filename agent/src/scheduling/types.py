@@ -44,3 +44,15 @@ NowFn = Callable[[], int]
 #: kernel isolates exceptions per tick (one failing tick never kills the
 #: loop); ``asyncio.CancelledError`` propagates so ``stop()`` stays bounded.
 OnTickFn = Callable[[int], Awaitable[None]]
+
+#: Consumer-provided "next deadline" sleep hint, in epoch-ms and duration-ms.
+#: Called by the kernel after each tick with a freshly read ``now_ms``; the
+#: return value replaces the fixed ``tick_interval_ms`` as the inter-tick
+#: sleep (clamped to be non-negative). This is the seam that lets an
+#: adaptive-sleep consumer — one that sleeps until the earliest job deadline
+#: rather than polling on a fixed cadence — adopt the kernel without giving
+#: up its sleep shape. The kernel never interprets the number: bounding the
+#: sleep (e.g. a max re-check cap) is the consumer's own composition. A hint
+#: that raises is logged and falls back to ``tick_interval_ms`` so a buggy
+#: hint cannot kill the loop.
+SleepHintFn = Callable[[int], int]
