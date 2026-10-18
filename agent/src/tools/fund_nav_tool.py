@@ -166,7 +166,10 @@ class GildataFundNavTool(BaseTool):
             )
 
         try:
-            limit = int(kwargs.get("limit", _DEFAULT_LIMIT) or _DEFAULT_LIMIT)
+            # Only an omitted limit takes the default; an explicit 0 clamps to 1
+            # like any other out-of-range value instead of becoming 2000 rows.
+            raw_limit = kwargs.get("limit")
+            limit = _DEFAULT_LIMIT if raw_limit is None else int(raw_limit)
         except (TypeError, ValueError):
             limit = _DEFAULT_LIMIT
         limit = max(1, min(_MAX_LIMIT, limit))

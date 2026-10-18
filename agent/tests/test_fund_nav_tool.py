@@ -181,6 +181,31 @@ class TestExecute:
         assert fund["count"] == 3
         assert fund["rows"][-1]["date"] == "2024-01-10"  # newest kept
 
+    def test_explicit_zero_limit_clamps_to_one_row(self, monkeypatch):
+        rows = [
+            {
+                "enddate": f"2024-01-{day:02d}",
+                "fundname": "F",
+                "unitnv": 1.0,
+                "accumulatedunitnv": 1.0,
+                "unitnvrestored": 1.0,
+                "nvdailygrowthrate": 0.0,
+            }
+            for day in range(1, 11)
+        ]
+
+        def transport(tool, args):
+            if tool == "ParamCandidateRecall":
+                return {"candidates": [{"caption": "F", "code": "11363", "ref_code": "110022.OF"}]}
+            return _tool_entry(rows)
+
+        self._patch_transport(monkeypatch, transport)
+        for limit, count in ((0, 1), (-5, 1), (None, 10)):
+            out = json.loads(GildataFundNavTool().execute(funds=["110022"], limit=limit))
+            fund = out["funds"]["110022.OF"]
+            assert fund["count"] == count, limit
+            assert fund["rows"][-1]["date"] == "2024-01-10"
+
     def test_empty_window_reports_error(self, monkeypatch):
         def transport(tool, args):
             if tool == "ParamCandidateRecall":
