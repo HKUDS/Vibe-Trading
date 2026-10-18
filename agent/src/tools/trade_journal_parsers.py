@@ -700,8 +700,13 @@ def _infer_market_from_symbol(symbol: str) -> str:
         # LSE names (#1206); without this they landed in "other"
         # and shadow analysis silently degraded to NaN.
         return "uk"
-    if s.endswith(".SH") or s.endswith(".SZ") or s.endswith(".BJ"):
+    if s.endswith((".SH", ".SZ", ".BJ", ".SS")):
+        # .SS is Yahoo's alias for Shanghai.
         return "china_a"
+    if s.endswith(".US"):
+        # The project's canonical US form (AAPL.US, BF-B.US); checked before
+        # the pair split so a share-class hyphen is not read as a pair.
+        return "us"
     if "-" in s or "/" in s:
         legs = [leg for leg in re.split(r"[-/]", s) if leg]
         if len(legs) == 2 and all(leg in _FIAT_CODES for leg in legs):
