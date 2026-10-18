@@ -520,6 +520,33 @@ def write_validation_json(path: Path, results: Dict[str, Any]) -> Dict[str, Any]
     return safe_results
 
 
+def _saved_bars_per_year(config: Dict[str, Any]) -> int | None:
+    """Annualisation factor for a saved run, chosen the way the runner chose it.
+
+    The engine passes the run's ``bars_per_year`` into :func:`run_validation`;
+    standalone revalidation has only ``config.json``, so derive the same value
+    from its codes, source and interval. A cross-market run annualises from the
+    calendar (``None``), as in the runner. A config without codes keeps the
+    historical daily default.
+
+    Args:
+        config: The saved run config.
+
+    Returns:
+        Bars per year, or ``None`` for calendar-day annualisation.
+    """
+    codes = [code for code in config.get("codes") or [] if isinstance(code, str) and code]
+    if not codes:
+        return 252
+    from backtest.metrics import calc_bars_per_year
+    from backtest.runner import _detect_market, _detect_primary_source
+
+    if len({_detect_market(code) for code in codes}) > 1:
+        return None
+    source = _detect_primary_source(codes, config.get("source", "tushare"))
+    return calc_bars_per_year(config.get("interval", "1D"), source)
+
+
 def main(run_dir: Path) -> Dict[str, Any]:
     """Run all three validations on existing backtest artifacts.
 
@@ -549,7 +576,9 @@ def main(run_dir: Path) -> Dict[str, Any]:
     saved_settings = config.get("validation")
     if isinstance(saved_settings, dict):
         settings.update(saved_settings)
-    results = run_validation({"validation": settings}, equity, trades, initial_capital)
+    results = run_validation(
+        {"validation": settings}, equity, trades, initial_capital, _saved_bars_per_year(config)
+    )
 
     out = run_dir / "artifacts" / "validation.json"
     safe_results = write_validation_json(out, results)

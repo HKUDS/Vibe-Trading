@@ -122,3 +122,36 @@ def test_invalid_saved_settings_use_existing_errors(
 
     assert message in actual[tool]["error"]
     capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    "run_config, annualisation",
+    [
+        ({"source": "okx", "interval": "1H", "codes": ["BTC-USDT"]}, "interval"),
+        ({"source": "tushare", "interval": "1D", "codes": ["000001.SZ"]}, "interval"),
+        ({"source": "auto", "interval": "1D", "codes": ["000001.SZ", "BTC-USDT"]}, "calendar"),
+    ],
+)
+def test_main_annualises_like_the_saved_run(tmp_path: Path, capsys, run_config, annualisation) -> None:
+    from backtest.metrics import calc_bars_per_year
+
+    settings = {
+        "monte_carlo": {"n_simulations": 5, "seed": 1},
+        "bootstrap": {"n_bootstrap": 5, "seed": 2},
+        "walk_forward": {"n_windows": 2},
+    }
+    config = {"initial_cash": 1000, "validation": settings, **run_config}
+    _write_run(tmp_path, config)
+    if annualisation == "calendar":
+        bars = None
+    else:
+        bars = calc_bars_per_year(run_config["interval"], run_config["source"])
+
+    actual = validation.main(tmp_path)
+    capsys.readouterr()
+
+    expected = validation.run_validation(
+        config, validation._load_equity(tmp_path), validation._load_trades(tmp_path), 1000, bars
+    )
+    assert actual["bootstrap"]["observed_sharpe"] == expected["bootstrap"]["observed_sharpe"]
+    assert actual == expected
