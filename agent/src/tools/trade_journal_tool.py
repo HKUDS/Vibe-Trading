@@ -660,6 +660,9 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+_ANALYSIS_TYPES = frozenset({"full", "profile", "behavior", "strategy"})
+
+
 def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_expr: str = "") -> str:
     """Parse a trade journal and return a JSON analysis.
 
@@ -675,6 +678,17 @@ def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_ex
         JSON string. Keys: status, file, format_detected, total_records,
         date_range, market, profile / behavior (when applicable).
     """
+    if analysis_type not in _ANALYSIS_TYPES:
+        return json.dumps(
+            {
+                "status": "error",
+                "error": (
+                    f"Unknown analysis_type {analysis_type!r}. "
+                    f"Expected one of: {', '.join(sorted(_ANALYSIS_TYPES))}"
+                ),
+            },
+            ensure_ascii=False,
+        )
     try:
         path = safe_user_path(file_path)
     except ValueError as exc:
@@ -782,6 +796,6 @@ class TradeJournalTool(BaseTool):
     def execute(self, **kwargs: Any) -> str:
         return analyze_trade_journal(
             file_path=kwargs["file_path"],
-            analysis_type=kwargs.get("analysis_type", "full"),
+            analysis_type=kwargs.get("analysis_type") or "full",
             filter_expr=kwargs.get("filter_expr", ""),
         )
