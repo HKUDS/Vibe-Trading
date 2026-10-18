@@ -99,6 +99,11 @@ class WecomChannel(BaseChannel):
         self._generate_req_id = None
         # Store frame headers for each chat to enable replies
         self._chat_frames: dict[str, Any] = {}
+        # WeCom requires one stable stream_id reused across every reply_stream
+        # call of the same logical reply, finished only by the last one.
+        # Keyed by chat_id as a fallback for callers that never set the
+        # channel-wide "_stream_id" metadata (base.py's streaming contract).
+        self._stream_ids: dict[str, str] = {}
 
     async def start(self) -> None:
         """Start the WeCom bot with WebSocket long connection."""
@@ -531,13 +536,26 @@ class WecomChannel(BaseChannel):
                 # Both progress and final messages must use reply_stream (cmd="aibot_respond_msg").
                 # The plain reply() uses cmd="reply" which does not support "text" msgtype
                 # and causes errcode=40008 from WeCom API.
-                stream_id = self._generate_req_id("stream")
+                #
+                # reply_stream requires the SAME stream_id across every chunk
+                # of one logical reply, finished only by the last call -- a
+                # fresh id per call makes WeCom treat each progress update and
+                # the final answer as unrelated streams instead of one
+                # progressively updating message.
+                stream_id = (
+                    str(msg.metadata.get("_stream_id") or "")
+                    or self._stream_ids.get(msg.chat_id)
+                    or self._generate_req_id("stream")
+                )
+                self._stream_ids[msg.chat_id] = stream_id
                 await self._client.reply_stream(
                     frame,
                     stream_id,
                     content,
                     finish=not is_progress,
                 )
+                if not is_progress:
+                    self._stream_ids.pop(msg.chat_id, None)
                 self.logger.debug(
                     "%s sent to %s",
                     "progress" if is_progress else "message",
