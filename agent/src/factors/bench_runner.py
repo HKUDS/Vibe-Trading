@@ -79,7 +79,7 @@ def _compute_single_alpha(args: Any) -> dict[str, Any]:
         if ic.empty:
             return {"skip": {"id": alpha_id, "reason": "empty IC series", "kind": "typed"}}
         ic_mean = float(ic.mean())
-        ic_std = float(ic.std())
+        ic_std = float(ic.std()) if len(ic) > 1 else 0.0
         ir = ic_mean / ic_std if ic_std > 0 else 0.0
         meta = reg.get(alpha_id).meta or {}
         return {
@@ -330,7 +330,7 @@ def run_bench(
                     )
                 else:
                     ic_mean = float(ic.mean())
-                    ic_std = float(ic.std())
+                    ic_std = float(ic.std()) if len(ic) > 1 else 0.0
                     ir = ic_mean / ic_std if ic_std > 0 else 0.0
                     meta = reg.get(aid).meta or {}
                     rows.append(
