@@ -402,9 +402,15 @@ def three_scenario_valuation(
 
     Returns:
         Dict with the assumptions and a ``scenarios`` list, each carrying its
-        ``future_eps``, ``target_price`` and ``upside_pct``.
+        ``future_eps``, ``target_price`` and ``upside_pct`` (``None`` when the
+        current price is not positive).
+
+    Raises:
+        ValueError: If ``years`` is negative.
     """
     p, eps, shares = _exact(current_price), _exact(current_eps), _exact(shares_billion)
+    if int(years) < 0:
+        raise ValueError(f"years must be >= 0, got {years!r}")
     spec = [
         ("bull", growth_optimistic, pe_optimistic),
         ("base", growth_neutral, pe_neutral),
@@ -423,14 +429,16 @@ def three_scenario_valuation(
         for _ in range(int(years)):
             future_eps = _CTX.multiply(future_eps, _CTX.add(Decimal("1"), g))
         target_price = _CTX.multiply(future_eps, target_pe)
-        upside = float(target_price - p) / float(p) * 100 if p != 0 else 0.0
+        # Upside relative to a non-positive price is undefined; report null
+        # rather than a 0% that reads as "fairly valued".
+        upside = float(target_price - p) / float(p) * 100 if p > 0 else None
         scenarios.append({
             "scenario": name,
             "annual_growth": float(g),
             "target_pe": float(target_pe),
             "future_eps": float(future_eps),
             "target_price": float(target_price),
-            "upside_pct": round(upside, 2),
+            "upside_pct": round(upside, 2) if upside is not None else None,
         })
     result: dict[str, Any] = {
         "current_price": float(p),
