@@ -952,19 +952,19 @@ def preferred_return_amount(
 
     Raises:
         TypeError: If ``series`` is not a ``CashFlowSeries``.
-        ValueError: If the rate is negative, the compounding convention is
+        ValueError: If the rate is negative or non-finite, the compounding convention is
             unknown, ``as_of`` precedes a contribution, or ``as_of`` is omitted
             for an empty series.
     """
     _require_series(series)
-    if rate < 0.0:
-        raise ValueError(f"preferred rate must be non-negative, got {rate!r}")
+    if not math.isfinite(rate) or rate < 0.0:
+        raise ValueError(f"preferred rate must be finite and non-negative, got {rate!r}")
     if compounding not in PREFERRED_COMPOUNDING:
         raise ValueError(
             f"compounding={compounding!r} is not one of {PREFERRED_COMPOUNDING}"
         )
-    if days_per_year <= 0:
-        raise ValueError(f"days_per_year must be positive, got {days_per_year!r}")
+    if not math.isfinite(days_per_year) or days_per_year <= 0:
+        raise ValueError(f"days_per_year must be finite and positive, got {days_per_year!r}")
 
     contributions = tuple(series.filter(kind=contribution_kinds))
     if not contributions:
@@ -1160,7 +1160,7 @@ def waterfall_split(
         A :class:`WaterfallResult` whose tiers sum exactly to ``distributable``.
 
     Raises:
-        ValueError: If any amount is negative, if ``carry_rate`` is outside
+        ValueError: If any amount is negative or non-finite, if ``carry_rate`` is outside
             ``[0, 1)``, if ``catch_up_rate`` is outside ``[0, 1]``, or if a
             non-zero ``catch_up_rate`` does not exceed ``carry_rate``.
     """
@@ -1169,8 +1169,8 @@ def waterfall_split(
         ("contributed_capital", contributed_capital),
         ("preferred_amount", preferred_amount),
     ):
-        if value < 0.0:
-            raise ValueError(f"{label} must be non-negative, got {value!r}")
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError(f"{label} must be finite and non-negative, got {value!r}")
     if not 0.0 <= carry_rate < 1.0:
         raise ValueError(f"carry_rate must be in [0, 1), got {carry_rate!r}")
     if not 0.0 <= catch_up_rate <= 1.0:
