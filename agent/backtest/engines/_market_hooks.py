@@ -69,9 +69,11 @@ _MARKET_PATTERNS = [
     # UK equities: London Stock Exchange (VOD.L, SHEL.L). Yahoo carries the
     # suffix verbatim.
     (re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I), "uk_equity"),
-    # Vietnam equities: HOSE (VIC.VN). Tickers are three letters in practice;
-    # the class stays broad to admit fund certificates and ETF codes.
-    (re.compile(r"^[A-Z0-9]+\.VN$", re.I), "vietnam_equity"),
+    # Vietnam equities: HOSE (VIC.VN, Yahoo's suffix), HNX (PVS.HNX) and UPCoM
+    # (ACV.UPCOM). Tickers are three letters in practice; the class stays broad
+    # to admit fund certificates and ETF codes. HNX and UPCoM fell through to
+    # the a_share default, which priced them in CNY under T+1.
+    (re.compile(r"^[A-Z0-9]+\.(VN|HNX|UPCOM)$", re.I), "vietnam_equity"),
     (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
     # yfinance's native crypto spelling (BTC-USD, ETH-USD). Distinct from

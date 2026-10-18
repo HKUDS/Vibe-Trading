@@ -116,6 +116,8 @@ describe("classifyAssetClass parity with backend rules", () => {
     ["GOOGL.BA", "ar_equity"],
     ["VOD.L", "uk_equity"],
     ["VIC.VN", "vietnam_equity"],
+    ["PVS.HNX", "vietnam_equity"],
+    ["ACV.UPCOM", "vietnam_equity"],
     ["005930.KS", "kr_equity"],
     ["035720.KQ", "kr_equity"],
     ["RELIANCE.NS", "india_equity"],

@@ -162,6 +162,8 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "BA": "ar",
     "L": "uk",
     "VN": "vn",
+    "HNX": "vn",
+    "UPCOM": "vn",
 }
 
 # Hard caps so a broad query cannot bloat the envelope.

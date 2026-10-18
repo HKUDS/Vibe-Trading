@@ -49,6 +49,11 @@ _INTERVAL_MAP = {
     "30m": "30m",
 }
 
+# Vietnamese venues Yahoo does not list (HOSE is ``.VN``). Asking for them
+# costs a request and a "possibly delisted" error each, before the chain
+# reaches the ``local`` files that actually hold them.
+_NOT_ON_YAHOO = (".HNX", ".UPCOM")
+
 
 def _to_yfinance_symbol(code: str) -> str:
     """Convert project symbols into yfinance symbols.
@@ -307,6 +312,8 @@ class DataLoader:
 
         symbol_groups: Dict[str, List[str]] = defaultdict(list)
         for code in codes:
+            if code.strip().upper().endswith(_NOT_ON_YAHOO):
+                continue
             symbol_groups[_to_yfinance_symbol(code)].append(code)
 
         unique_symbols = list(symbol_groups.keys())

@@ -46,3 +46,20 @@ def test_identity_and_search_know_the_market(market: str) -> None:
     assert _infer_venue(symbol) is not None
     assert _infer_currency(symbol) == _MARKET_CURRENCY[market]
     assert _from_yahoo_symbol(yahoo_symbol, {"quoteType": "EQUITY"}) == (symbol, label)
+
+
+# Markets reached through more than one listing suffix. Each extra suffix needs
+# the same rows as the market's sample above; Yahoo does not list these, so
+# symbol search has nothing to map.
+_MORE_SUFFIXES: tuple[tuple[str, str], ...] = (
+    ("vietnam_equity", "PVS.HNX"),
+    ("vietnam_equity", "ACV.UPCOM"),
+)
+
+
+@pytest.mark.parametrize("market, symbol", _MORE_SUFFIXES)
+def test_identity_knows_every_suffix_of_a_market(market: str, symbol: str) -> None:
+    assert _detect_market(symbol) == market
+    assert _scan_symbols(f"What did {symbol} close at yesterday?") == {symbol}
+    assert _infer_venue(symbol) is not None
+    assert _infer_currency(symbol) == _MARKET_CURRENCY[market]

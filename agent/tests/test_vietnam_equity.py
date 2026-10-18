@@ -14,6 +14,7 @@ from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.registry import FALLBACK_CHAINS
 from backtest.loaders.yahoo_client import map_symbol
 from backtest.loaders.yahoo_loader import DataLoader, _is_supported
+from backtest.loaders.yfinance_loader import DataLoader as YfinanceLoader
 from backtest.loaders.yfinance_loader import _to_yfinance_symbol
 
 
@@ -23,6 +24,21 @@ class TestSymbolGating:
     def test_vn_suffix_supported(self) -> None:
         assert _is_supported("VIC.VN") is True
         assert _is_supported("vic.vn") is True
+
+    def test_hnx_and_upcom_are_not_yahoo_symbols(self) -> None:
+        # Yahoo lists HOSE only; the other two venues come from local files.
+        assert _is_supported("PVS.HNX") is False
+        assert _is_supported("ACV.UPCOM") is False
+
+    def test_yfinance_does_not_ask_yahoo_for_hnx_or_upcom(self) -> None:
+        with patch(
+            "backtest.loaders.yfinance_loader._download_history",
+            side_effect=AssertionError("asked Yahoo for a symbol it does not list"),
+        ):
+            result = YfinanceLoader().fetch(
+                ["PVS.HNX", "ACV.UPCOM"], "2024-01-01", "2024-01-31"
+            )
+        assert result == {}
 
     def test_vn_does_not_collide_with_tsx_venture(self) -> None:
         # ``.V`` (TSXV) and ``.VN`` (HOSE) are distinct suffixes; neither may
