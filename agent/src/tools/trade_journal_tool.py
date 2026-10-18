@@ -608,6 +608,10 @@ def _apply_filter(df: pd.DataFrame, expr: str) -> pd.DataFrame:
 
     Returns:
         Filtered DataFrame (may be empty).
+
+    Raises:
+        ValueError: For an inverted date range, a field that is not a journal
+            column, or an expression in none of the supported forms.
     """
     expr = expr.strip()
     if not expr:
@@ -641,7 +645,12 @@ def _apply_filter(df: pd.DataFrame, expr: str) -> pd.DataFrame:
         key, val = (p.strip() for p in expr.split("=", 1))
         if key in df.columns:
             return df[df[key].astype(str).str.upper() == val.upper()]
-    return df
+        raise ValueError(f"unsupported filter field {key!r}; use symbol= or market=")
+    # Returning the full journal here would report an unapplied filter as applied.
+    raise ValueError(
+        f"unsupported filter {expr!r}; use 'YYYY-MM[-DD] to YYYY-MM[-DD]', "
+        "'symbol=...' or 'market=...'"
+    )
 
 
 def _json_safe(value: Any) -> Any:
