@@ -55,9 +55,11 @@ def format_duration(value: Number | None, *, unit: str = "ms") -> str:
     else:
         raise ValueError(f"unit must be 'ms' or 's', got {unit!r}")
 
-    if seconds < 1.0:
+    # Compare the value as it will be printed, so 999.6ms reads "1.0s" rather
+    # than "1000ms" and 59.96s reads "1m 00s" rather than "60.0s".
+    if round(seconds * 1000) < 1000:
         return f"{int(round(seconds * 1000))}ms"
-    if seconds < 60:
+    if round(seconds, 1) < 60:
         # 1.4s, 12.0s — keep one decimal to communicate sub-second jitter
         return f"{seconds:.1f}s"
     minutes, rem = divmod(int(round(seconds)), 60)
@@ -93,9 +95,9 @@ def format_tokens(count: Number | None) -> str:
 
     if n < 1_000:
         return f"{n} tokens"
-    if n < 1_000_000:
+    if round(n / 1_000, 1) < 1_000:
         return f"{n / 1_000:.1f}k tokens"
-    if n < 1_000_000_000:
+    if round(n / 1_000_000, 1) < 1_000:
         return f"{n / 1_000_000:.1f}M tokens"
     return f"{n / 1_000_000_000:.1f}B tokens"
 
@@ -148,7 +150,7 @@ def abbreviate_num(value: Number | None, *, currency: str | None = None) -> str:
         return f"{sign}{prefix}{int(n_abs)}"
 
     for unit, divisor in (("k", 1_000), ("M", 1_000_000), ("B", 1_000_000_000), ("T", 1_000_000_000_000)):
-        if n_abs < divisor * 1_000:
+        if round(n_abs / divisor, 1) < 1_000:
             return f"{sign}{prefix}{n_abs / divisor:.1f}{unit}"
 
     return f"{sign}{prefix}{n_abs:.1e}"
