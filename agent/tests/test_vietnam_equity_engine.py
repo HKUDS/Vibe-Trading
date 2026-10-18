@@ -1,4 +1,4 @@
-"""Tests for the Vietnam (HOSE) equity engine."""
+"""Tests for the Vietnam (HOSE, HNX, UPCoM) equity engine."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ from backtest.engines.vietnam_equity import (
     hose_round_up,
     hose_tick_size,
     newest_opening_bar_idx,
+    vn_exchange,
+    vn_price_limits,
+    vn_tick_size,
 )
 from backtest.models import Position
 
@@ -271,3 +274,86 @@ class TestSlippage:
         filled = engine.apply_slippage(24_250.0, -1)
         assert filled == hose_round_down(24_250.0 * 0.999)
         assert filled % hose_tick_size(filled) == 0
+
+
+class TestHnxAndUpcom:
+    """HNX (±10%) and UPCoM (±15%) trade on a flat 100-VND grid.
+
+    Both used to fall through market detection to the A-share default, which
+    priced them in CNY under T+1 with a ±10% band on the wrong grid.
+    """
+
+    @pytest.mark.parametrize(
+        "symbol,exchange",
+        [("VIC.VN", "HOSE"), ("pvs.hnx", "HNX"), ("ACV.UPCOM", "UPCOM"), ("", "HOSE")],
+    )
+    def test_exchange_follows_the_suffix(self, symbol: str, exchange: str) -> None:
+        assert vn_exchange(symbol) == exchange
+
+    @pytest.mark.parametrize("symbol", ["PVS.HNX", "shs.hnx", "ACV.UPCOM", "bsr.upcom"])
+    def test_symbols_route_to_vietnam(self, symbol: str) -> None:
+        assert _detect_market(symbol) == "vietnam_equity"
+
+    @pytest.mark.parametrize("price", [700, 9_990, 24_250, 122_300])
+    def test_tick_is_flat(self, price: float) -> None:
+        assert vn_tick_size(price, "HNX") == 100.0
+        assert vn_tick_size(price, "UPCOM") == 100.0
+
+    def test_band_bounds_are_on_the_100_grid(self) -> None:
+        # Reference 24,200: +/-10% is 26,620 / 21,780, +/-15% is 27,830 / 20,570.
+        assert vn_price_limits(24_200, 0.10, "HNX") == (26_600, 21_800)
+        assert vn_price_limits(24_200, 0.15, "UPCOM") == (27_800, 20_600)
+
+    def test_band_narrower_than_a_tick_sits_one_tick_out(self) -> None:
+        # 10% of 700 VND is 70, under one tick: both bounds would round onto
+        # the reference price, and the stock could never move.
+        assert vn_price_limits(700, 0.10, "HNX") == (800, 600)
+
+    def test_hose_bounds_are_unchanged(self) -> None:
+        assert vn_price_limits(24_250, 0.07) == hose_price_limits(24_250, 0.07)
+
+    def test_each_exchange_takes_its_own_band(self) -> None:
+        engine = _engine()
+        assert engine.band_for("VIC.VN") == 0.07
+        assert engine.band_for("PVS.HNX") == 0.10
+        assert engine.band_for("ACV.UPCOM") == 0.15
+
+    def test_a_configured_band_applies_to_every_exchange(self) -> None:
+        # A first trading day, or a scenario test.
+        assert _engine(price_limit=0.40).band_for("ACV.UPCOM") == 0.40
+        assert _engine(price_limit=0).band_for("PVS.HNX") is None
+
+    def test_a_nine_percent_open_is_inside_hnx_band_only(self) -> None:
+        engine = _engine(slippage=0)
+        bar = pd.Series({"open": 26_400.0, "pre_close": 24_200.0})
+        assert engine.can_execute("VIC.VN", 1, bar) is False
+        assert engine.can_execute("PVS.HNX", 1, bar) is True
+
+    def test_hnx_buy_at_ceiling_is_blocked(self) -> None:
+        engine = _engine(slippage=0)
+        bar = pd.Series({"open": 26_600.0, "pre_close": 24_200.0})
+        assert engine.can_execute("PVS.HNX", 1, bar) is False
+
+    def test_upcom_sell_at_floor_is_blocked(self) -> None:
+        engine = _engine(slippage=0)
+        bar = pd.Series({"open": 20_600.0, "pre_close": 24_200.0})
+        assert engine.can_execute("ACV.UPCOM", 0, bar) is False
+        bar = pd.Series({"open": 20_700.0, "pre_close": 24_200.0})
+        assert engine.can_execute("ACV.UPCOM", 0, bar) is True
+
+    def test_reference_price_rounds_onto_the_symbols_grid(self) -> None:
+        bar = pd.Series({"open": 24_000.0, "pre_close": 24_250.0})
+        engine = _engine()
+        assert engine._base_price("VIC.VN", bar) == 24_250.0
+        assert engine._base_price("PVS.HNX", bar) == 24_200.0
+
+    def test_slippage_fills_on_the_active_symbols_grid(self) -> None:
+        # 24,000 slipped 0.1% is 24,024 up / 23,976 down: the next HOSE ticks
+        # (50 VND) are 24,050 / 23,950, the next HNX ticks 24,100 / 23,900.
+        engine = _engine(slippage=0.001)
+        engine._active_symbol = "VIC.VN"
+        assert engine.apply_slippage(24_000.0, 1) == 24_050.0
+        assert engine.apply_slippage(24_000.0, -1) == 23_950.0
+        engine._active_symbol = "PVS.HNX"
+        assert engine.apply_slippage(24_000.0, 1) == 24_100.0
+        assert engine.apply_slippage(24_000.0, -1) == 23_900.0

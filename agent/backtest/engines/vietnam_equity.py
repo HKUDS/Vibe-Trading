@@ -1,10 +1,13 @@
-"""Vietnam equity (HOSE) backtest engine.
+"""Vietnam equity (HOSE, HNX, UPCoM) backtest engine.
 
-Models the Ho Chi Minh Stock Exchange cash-equity segment on daily bars.
-Prices are assumed to be quoted in whole VND — the unit Yahoo's ``.VN`` series
-uses — on a coarse tick grid (bước giá) that is modelled explicitly, because a
-percentage-only model produces fill prices that cannot exist and mis-identifies
-locked-band bars.
+Models Vietnam's three cash-equity venues on daily bars: the Ho Chi Minh
+Stock Exchange (``VIC.VN``, Yahoo's suffix), the Hanoi Stock Exchange
+(``PVS.HNX``) and the UPCoM market (``ACV.UPCOM``). Yahoo lists HOSE only, so
+HNX and UPCoM bars come from the user's ``local`` files. Prices are assumed to
+be quoted in whole VND — the unit Yahoo's ``.VN`` series uses — on a coarse
+tick grid (bước giá) that is modelled explicitly, because a percentage-only
+model produces fill prices that cannot exist and mis-identifies locked-band
+bars.
 
 Market rules:
   - **Long-only.** Circular 120/2020 defines a covered-short framework, but
@@ -22,16 +25,23 @@ Market rules:
     the first lot's clock. ``vn_settlement_bars`` exists for scenario testing
     and to absorb a future rule change; no shorter equity cycle is in force
     today.
-  - Price band (biên độ dao động): ±7% on HOSE in normal sessions, measured
-    from the reference price (giá tham chiếu — ordinarily the preceding
-    session's close, though corporate actions and special sessions adjust it).
-    First trading days, resumptions after long suspensions and certain
-    ex-right sessions use ±20%; pass ``price_limit`` per run to model those.
-    Set it to ``0`` / ``None`` to disable. HNX (±10%) and UPCOM (±15%) are not
-    served by this engine's data path.
-  - Round lot: 100 shares. HOSE also accepts odd-lot orders of 1-99 shares in
-    a separate board that daily bars cannot represent, so odd-lot trading is
-    deliberately not modelled and sub-lot orders round to zero.
+  - Price band (biên độ dao động) in normal sessions: ±7% on HOSE, ±10% on
+    HNX and ±15% on UPCoM, measured from the reference price (giá tham chiếu
+    — ordinarily the preceding session's close, though corporate actions and
+    special sessions adjust it). UPCoM's reference is the preceding session's
+    volume-weighted average price, not its close: a bar's ``pre_close`` is
+    used when the source supplies the reference, otherwise the close stands
+    in for it. First trading days, resumptions after long suspensions and
+    certain ex-right sessions use wider bands (±20% on HOSE, ±30% on HNX,
+    ±40% on UPCoM); pass ``price_limit`` per run to apply one band to every
+    symbol. Set it to ``0`` / ``None`` to disable.
+  - Tick: 10/50/100 VND by price on HOSE; a flat 100 VND on HNX and UPCoM.
+    Where the band is narrower than one tick (a low-priced HNX or UPCoM
+    share), the rounded ceiling or floor would equal the reference price;
+    the exchange then sets it one tick away, so the stock can still move.
+  - Round lot: 100 shares. The exchanges also accept odd-lot orders of 1-99
+    shares in a separate board that daily bars cannot represent, so odd-lot
+    trading is deliberately not modelled and sub-lot orders round to zero.
 
 Cost stack (all config-driven; verify against your broker's current schedule
 before trusting absolute cost figures):
@@ -47,9 +57,10 @@ before trusting absolute cost figures):
     individual investor.
 
 The band arithmetic follows the exchange's published procedure rather than a
-naive ``base * 1.07``: the 7% amount is applied to the reference price and the
-resulting bound is truncated onto the tick unit of the price it lands on, so
-the ceiling (giá trần) and floor (giá sàn) are always tradeable prices.
+naive ``base * 1.07``: the band amount (7% on HOSE) is applied to the reference
+price and the resulting bound is truncated onto the tick unit of the price it
+lands on, so the ceiling (giá trần) and floor (giá sàn) are always tradeable
+prices.
 """
 
 from __future__ import annotations
@@ -73,7 +84,27 @@ HOSE_TICK_TABLE: tuple[tuple[float, float], ...] = (
     (50_000.0, 100.0),
 )
 
-# Board lot on HOSE's continuous session.
+# HNX and UPCoM quote shares on one 100-VND tick at every price.
+HNX_UPCOM_TICK_TABLE: tuple[tuple[float, float], ...] = ((0.0, 100.0),)
+
+_TICK_TABLES: dict[str, tuple[tuple[float, float], ...]] = {
+    "HOSE": HOSE_TICK_TABLE,
+    "HNX": HNX_UPCOM_TICK_TABLE,
+    "UPCOM": HNX_UPCOM_TICK_TABLE,
+}
+
+# Project symbol suffix -> exchange. ``.VN`` is Yahoo's suffix, and Yahoo
+# lists HOSE only; HNX and UPCoM symbols carry their exchange's name.
+VN_EXCHANGE_BY_SUFFIX: dict[str, str] = {
+    ".VN": "HOSE",
+    ".HNX": "HNX",
+    ".UPCOM": "UPCOM",
+}
+
+# Normal-session daily band (biên độ dao động) per exchange.
+VN_PRICE_BANDS: dict[str, float] = {"HOSE": 0.07, "HNX": 0.10, "UPCOM": 0.15}
+
+# Board lot on the continuous session, the same on all three exchanges.
 HOSE_LOT_SIZE = 100
 
 # Tick-grid comparisons only need to survive float representation error: every
@@ -90,17 +121,37 @@ _DEFAULT_SETTLEMENT_BARS = 2
 _OPENING_ACTIONS = frozenset({"open", "increase"})
 
 
-def hose_tick_size(price: float) -> float:
-    """Return the HOSE tick unit (bước giá) applying at *price*.
+def vn_exchange(symbol: str) -> str:
+    """Return the exchange *symbol* lists on: ``HOSE``, ``HNX`` or ``UPCOM``.
+
+    Args:
+        symbol: Project symbol, e.g. ``VIC.VN``, ``PVS.HNX`` or ``ACV.UPCOM``.
+
+    Returns:
+        The exchange name. A symbol with no Vietnamese suffix (the engine
+        driven directly, as unit tests do) reads as HOSE, the engine's
+        original venue.
+    """
+    upper = (symbol or "").strip().upper()
+    for suffix, exchange in VN_EXCHANGE_BY_SUFFIX.items():
+        if upper.endswith(suffix):
+            return exchange
+    return "HOSE"
+
+
+def vn_tick_size(price: float, exchange: str = "HOSE") -> float:
+    """Return the tick unit (bước giá) applying at *price* on *exchange*.
 
     Args:
         price: Price in VND.
+        exchange: ``HOSE``, ``HNX`` or ``UPCOM``.
 
     Returns:
         The tick unit in VND. Prices at or below zero take the finest tick.
     """
-    tick = HOSE_TICK_TABLE[0][1]
-    for lower, unit in HOSE_TICK_TABLE:
+    table = _TICK_TABLES[exchange]
+    tick = table[0][1]
+    for lower, unit in table:
         if price >= lower:
             tick = unit
         else:
@@ -108,36 +159,54 @@ def hose_tick_size(price: float) -> float:
     return tick
 
 
-def hose_round_down(price: float) -> float:
-    """Quantize *price* down onto the HOSE tick grid."""
-    tick = hose_tick_size(price)
+def vn_round_down(price: float, exchange: str = "HOSE") -> float:
+    """Quantize *price* down onto *exchange*'s tick grid."""
+    tick = vn_tick_size(price, exchange)
     return float(int((price + _PRICE_EPS) / tick) * tick)
 
 
-def hose_round_up(price: float) -> float:
-    """Quantize *price* up onto the HOSE tick grid."""
-    tick = hose_tick_size(price)
-    floored = hose_round_down(price)
+def vn_round_up(price: float, exchange: str = "HOSE") -> float:
+    """Quantize *price* up onto *exchange*'s tick grid."""
+    tick = vn_tick_size(price, exchange)
+    floored = vn_round_down(price, exchange)
     if abs(floored - price) < _PRICE_EPS:
         return floored
     return float(floored + tick)
 
 
-def hose_price_limits(base_price: float, band: float) -> tuple[float, float]:
+def vn_price_limits(
+    base_price: float, band: float, exchange: str = "HOSE"
+) -> tuple[float, float]:
     """Return the (ceiling, floor) prices for *base_price* under *band*.
 
     Args:
         base_price: Reference price (giá tham chiếu) in VND.
         band: Band as a fraction, e.g. ``0.07`` for HOSE's ±7%.
+        exchange: ``HOSE``, ``HNX`` or ``UPCOM``; selects the tick grid.
 
     Returns:
         ``(giá trần, giá sàn)`` — both quantized onto the tick grid, the
         ceiling truncated down and the floor truncated up so that neither
-        bound sits outside the legal band.
+        bound sits outside the legal band. When the band is narrower than one
+        tick, rounding would put a bound on the reference price itself; the
+        exchange then sets it one tick away, and so does this function.
     """
-    upper = hose_round_down(base_price * (1.0 + band))
-    lower = hose_round_up(base_price * (1.0 - band))
+    upper = vn_round_down(base_price * (1.0 + band), exchange)
+    lower = vn_round_up(base_price * (1.0 - band), exchange)
+    tick = vn_tick_size(base_price, exchange)
+    if upper <= base_price + _PRICE_EPS:
+        upper = base_price + tick
+    if lower >= base_price - _PRICE_EPS and base_price - tick > _PRICE_EPS:
+        lower = base_price - tick
     return upper, lower
+
+
+# HOSE-only spellings from before HNX and UPCoM were modelled; HOSE is the
+# default exchange of the functions they name.
+hose_tick_size = vn_tick_size
+hose_round_down = vn_round_down
+hose_round_up = vn_round_up
+hose_price_limits = vn_price_limits
 
 
 def newest_opening_bar_idx(engine: BaseEngine, symbol: str) -> Optional[int]:
@@ -256,7 +325,9 @@ def hose_base_price(
             if pd.notna(raw) and float(raw) > 0:
                 candidate = float(raw)
 
-    return None if candidate is None else hose_round_down(candidate)
+    if candidate is None:
+        return None
+    return vn_round_down(candidate, vn_exchange(symbol))
 
 
 def hose_can_execute(
@@ -266,7 +337,12 @@ def hose_can_execute(
     direction: int,
     bar: pd.Series,
 ) -> bool:
-    """Apply the HOSE execution rules, reading state and rules separately.
+    """Apply the Vietnam execution rules, reading state and rules separately.
+
+    The hold, the short ban and the board lot are the same on all three
+    exchanges; the band and tick grid are those of the symbol's own exchange
+    (``vn_exchange``): ±7% on HOSE's grid, ±10% and ±15% on HNX's and UPCoM's
+    flat 100-VND grid.
 
     A single-market run passes the same engine as both arguments. A composite
     run cannot: it owns the positions, fill ledger, bar cursor and close panel
@@ -280,7 +356,7 @@ def hose_can_execute(
     Args:
         state: Engine owning positions, fill ledger, bar cursor, close panel.
         rules: Vietnam engine supplying band, slippage and settlement lag.
-        symbol: HOSE symbol (e.g. ``VIC.VN``).
+        symbol: Vietnamese symbol (e.g. ``VIC.VN``, ``PVS.HNX``).
         direction: 1 (buy), -1 (short — always blocked), 0 (sell/close).
         bar: Current bar.
 
@@ -296,20 +372,23 @@ def hose_can_execute(
     if direction == 0 and not hose_settlement_ok(state, rules, symbol):
         return False
 
-    # 3. Daily price band ±7% (disabled when falsy).
-    if not rules.price_limit:
+    # 3. Daily price band: ±7% HOSE, ±10% HNX, ±15% UPCoM (disabled when falsy).
+    band = rules.band_for(symbol)
+    if not band:
         return True
 
+    exchange = vn_exchange(symbol)
     base_price = hose_base_price(state, symbol, bar)
     if base_price is None:
         if not rules._limit_base_warned:
             rules._limit_base_warned = True
             logger.warning(
                 "%s: no reference price available (no 'pre_close' column and "
-                "no prior close panel row) — the HOSE ±%.0f%% band check is "
+                "no prior close panel row) — the %s ±%.0f%% band check is "
                 "inactive for this run",
                 symbol,
-                float(rules.price_limit) * 100,
+                exchange,
+                band * 100,
             )
         return True
 
@@ -317,8 +396,10 @@ def hose_can_execute(
     if open_price <= 0:
         return True  # order sizing rejects non-positive prices downstream
 
-    upper, lower = hose_price_limits(base_price, float(rules.price_limit))
-    fill_price = rules.apply_slippage(open_price, direction if direction else -1)
+    upper, lower = vn_price_limits(base_price, band, exchange)
+    # A composite's rule book was last synced to whichever symbol it served
+    # before, so the fill is priced for this symbol's grid explicitly.
+    fill_price = rules.slipped_price(symbol, open_price, direction if direction else -1)
     if direction == 1 and fill_price >= upper - _PRICE_EPS:
         return False  # giá trần: no ask to buy from
     if direction == 0 and fill_price <= lower + _PRICE_EPS:
@@ -346,7 +427,7 @@ def hose_settlement_ok(
         if not rules._settlement_warned:
             rules._settlement_warned = True
             logger.warning(
-                "%s: no bar cursor available — the HOSE settlement hold is "
+                "%s: no bar cursor available — the T+2 settlement hold is "
                 "inactive for this run",
                 symbol,
             )
@@ -355,10 +436,12 @@ def hose_settlement_ok(
 
 
 class VietnamEquityEngine(BaseEngine):
-    """HOSE cash-equity engine — long-only, T+2 settled.
+    """Vietnam cash-equity engine (HOSE, HNX, UPCoM) — long-only, T+2 settled.
 
     Config keys (all optional; defaults shown in the module docstring):
-      - price_limit: float fraction or None, default 0.07
+      - price_limit: float fraction or None. Absent, each symbol takes its
+        exchange's normal band (0.07 HOSE, 0.10 HNX, 0.15 UPCoM); present, it
+        applies to every symbol, and ``0`` / ``None`` disables the check
       - slippage: default 0.001
       - vn_brokerage / vn_tax_sell
       - vn_settlement_bars: sessions a buy is held before it may be sold,
@@ -369,8 +452,8 @@ class VietnamEquityEngine(BaseEngine):
             not operationally available in the Vietnamese cash market, so
             shorting is refused instead of being simulated. A cross-market
             composite run shares one config across its sub-engines, so pairing
-            ``allow_short`` with a HOSE symbol fails the whole run —
-            deliberately, since the alternative is a HOSE leg that silently
+            ``allow_short`` with a Vietnamese symbol fails the whole run —
+            deliberately, since the alternative is a Vietnam leg that silently
             never shorts while the rest of the book does.
     """
 
@@ -385,6 +468,8 @@ class VietnamEquityEngine(BaseEngine):
                 "a mis-modelled short book."
             )
         self.price_limit = config.get("price_limit", 0.07)
+        # No configured band: every symbol takes its own exchange's.
+        self._band_per_exchange = "price_limit" not in config
         self.slippage_rate: float = config.get("slippage", 0.001)
         # Cost stack
         self.vn_brokerage: float = config.get("vn_brokerage", 0.0015)
@@ -396,8 +481,23 @@ class VietnamEquityEngine(BaseEngine):
         self._limit_base_warned = False
         self._settlement_warned = False
 
+    def band_for(self, symbol: str) -> Optional[float]:
+        """Return the daily price band applying to *symbol*.
+
+        Args:
+            symbol: Vietnamese symbol (``VIC.VN``, ``PVS.HNX``, ``ACV.UPCOM``).
+
+        Returns:
+            The exchange's normal-session band when the run configured no
+            ``price_limit``, the configured band for every symbol when it did,
+            and ``None`` when the configured band is ``0`` / ``None``.
+        """
+        if self._band_per_exchange:
+            return VN_PRICE_BANDS[vn_exchange(symbol)]
+        return float(self.price_limit) if self.price_limit else None
+
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
-        """HOSE execution rules.
+        """Vietnam execution rules (HOSE, HNX, UPCoM).
 
         The band test compares the *prospective fill price* — this bar's open
         plus slippage, which is what :class:`BaseEngine` fills at — against
@@ -406,7 +506,7 @@ class VietnamEquityEngine(BaseEngine):
         hook before the fill, and the decision bar's close is not known then.
 
         Args:
-            symbol: HOSE symbol (e.g. ``VIC.VN``).
+            symbol: Vietnamese symbol (e.g. ``VIC.VN``, ``PVS.HNX``).
             direction: 1 (buy), -1 (short — always blocked), 0 (sell/close).
             bar: Current bar (needs ``open``; the reference price comes from
                 ``pre_close`` when the source supplies it, else from the prior
@@ -446,8 +546,8 @@ class VietnamEquityEngine(BaseEngine):
     def round_size(self, raw_size: float, price: float) -> float:
         """Floor the order to whole 100-share board lots.
 
-        HOSE accepts odd-lot orders of 1-99 shares on a separate board that a
-        daily bar cannot represent, so odd-lot trading is deliberately not
+        The exchanges accept odd-lot orders of 1-99 shares on a separate board
+        that a daily bar cannot represent, so odd-lot trading is deliberately not
         modelled: a sub-lot order rounds to zero rather than being filled at
         the continuous-session price.
 
@@ -485,21 +585,36 @@ class VietnamEquityEngine(BaseEngine):
             comm += notional * self.vn_tax_sell
         return comm
 
-    def apply_slippage(self, price: float, direction: int) -> float:
-        """Vietnam slippage (configurable), quantized onto the HOSE tick grid.
+    def slipped_price(self, symbol: str, price: float, direction: int) -> float:
+        """Slip *price* against the trader onto *symbol*'s exchange tick grid.
 
         A slipped price is snapped away from the trader — buys up to the next
         valid ask, sells down to the next valid bid — because no fill can land
         between ticks.
 
         Args:
+            symbol: Vietnamese symbol; its exchange selects the tick grid.
             price: Reference price in VND.
             direction: 1 to buy, -1 to sell.
 
         Returns:
-            A valid HOSE price, never below one tick.
+            A valid price on the symbol's exchange, never below one tick.
         """
+        exchange = vn_exchange(symbol)
         slipped = price * (1 + direction * self.slippage_rate)
         if direction > 0:
-            return hose_round_up(slipped)
-        return max(hose_round_down(slipped), hose_tick_size(slipped))
+            return vn_round_up(slipped, exchange)
+        return max(vn_round_down(slipped, exchange), vn_tick_size(slipped, exchange))
+
+    def apply_slippage(self, price: float, direction: int) -> float:
+        """Vietnam slippage (configurable), quantized onto the tick grid.
+
+        Args:
+            price: Reference price in VND.
+            direction: 1 to buy, -1 to sell.
+
+        Returns:
+            A valid price on the exchange of the symbol being filled
+            (``BaseEngine`` sets ``_active_symbol`` before every fill).
+        """
+        return self.slipped_price(self._active_symbol, price, direction)

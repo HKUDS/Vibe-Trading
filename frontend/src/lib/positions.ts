@@ -48,6 +48,8 @@ const EQUITY_SUFFIX_MAP: Record<string, AssetClass> = {
   BA: "ar_equity",
   L: "uk_equity",
   VN: "vietnam_equity",
+  HNX: "vietnam_equity",
+  UPCOM: "vietnam_equity",
   KS: "kr_equity",
   KQ: "kr_equity",
   NS: "india_equity",
