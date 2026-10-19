@@ -14,13 +14,14 @@ from pathlib import Path
 
 import yaml
 
-from backtest.engines import vietnam_equity
+from backtest.engines import base, vietnam_equity
 from backtest.engines._market_hooks import _detect_market
 from backtest.engines.vietnam_equity import (
     VN_EXCHANGE_BY_SUFFIX,
     VN_PRICE_BANDS,
     VietnamEquityEngine,
 )
+from backtest.rebalance_mask import validate_rebalance_mask
 
 SKILL_DIR = Path(__file__).resolve().parents[1] / "src" / "skills" / "vietnam-equity"
 
@@ -49,6 +50,24 @@ def test_every_config_key_the_skill_names_is_read_by_the_engine() -> None:
     assert {"vn_brokerage", "vn_tax_sell", "vn_settlement_bars", "price_limit"} <= named
     for key in named:
         assert f'config.get("{key}"' in source, key
+
+
+def test_the_rebalancing_controls_the_skill_names_are_the_base_engine_ones() -> None:
+    """Position adjustment is a ``BaseEngine`` setting, so check it there."""
+    text = _text()
+    source = inspect.getsource(base)
+
+    for key in ("position_adjustment", "rebalance_mask", "rebalance_tolerance"):
+        assert key in text, key
+        assert f'config.get("{key}"' in source, key
+    metrics = set(re.findall(r"`(rebalance_[a-z_]+_fills)`", text))
+    assert {"rebalance_executed_fills", "rebalance_unchanged_target_fills"} <= metrics
+    for metric in metrics:
+        assert f'm["{metric}"]' in source, metric
+    assert '`"position_adjustment": "hold"`' in text
+    assert VietnamEquityEngine({}).position_adjustment == "hold"
+    assert '`"QS"`' in text
+    assert validate_rebalance_mask("QS") == "QS"
 
 
 def test_the_example_config_routes_to_the_engine_at_its_defaults() -> None:
