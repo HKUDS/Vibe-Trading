@@ -5,6 +5,7 @@
   "charts": {
     "noPriceData": "Bu sembol için henüz fiyat verisi yok",
     "noCorrelationData": "Karşılaştırmak için en az iki sembol seçin",
+    "correlationUndefined": "tanımsız (pencerede fiyat değişimi yok)",
     "noEquityData": "Henüz hesap değeri eğrisi yok; önce geriye dönük test çalıştırın"
   },
   "layout": {

@@ -244,10 +244,17 @@ def _rolling_correlation_matrix(
                 corr, _ = spearmanr(xi, xj)
             else:
                 corr = np.corrcoef(xi, xj)[0, 1]
+            # Undefined pairs (zero-variance leg: halted series, pegged
+            # stablecoin, fresh listing) are missing evidence, not a claim of
+            # no linear relationship. Publishing them as a real 0.0 silently
+            # drags portfolio-level readings ("diversified basket") that an
+            # operator may act on — the sibling regime path (regime.py
+            # compute_edge_density) already chose the conservative reading,
+            # so the two endpoints must agree on what unmeasurable means.
             if np.isnan(corr):
-                corr = 0.0
-            matrix[i][j] = round(corr, 4)
-            matrix[j][i] = round(corr, 4)
+                corr = None
+            matrix[i][j] = round(corr, 4) if corr is not None else None
+            matrix[j][i] = matrix[i][j]
 
     return labels, matrix
 

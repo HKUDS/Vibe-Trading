@@ -5,6 +5,7 @@
   "charts": {
     "noPriceData": "No price data for this symbol yet",
     "noCorrelationData": "Pick at least two symbols to compare",
+    "correlationUndefined": "undefined (no price variation in window)",
     "noEquityData": "No account-value curve yet — run a backtest first"
   },
   "navigation": {

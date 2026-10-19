@@ -311,6 +311,29 @@ class TestRollingCorrelationMatrix:
         assert labels == []
         assert matrix == []
 
+    def test_undefined_pairs_publish_null_not_zero(self):
+        # Regression for #1932: a zero-variance leg (halted every session,
+        # pegged stablecoin, fresh listing inside the window) makes the
+        # correlation mathematically undefined. Publishing a real 0.0 claims
+        # "no linear relationship" from what is actually missing evidence,
+        # and silently drags portfolio-level "diversified" readings. The
+        # regime path (regime.py compute_edge_density) already keeps NaN as
+        # missing; the matrix must agree on what unmeasurable means.
+        moving = [100.0, 102.0, 101.0, 103.5, 99.5, 104.0, 106.0, 101.5]
+        pegged = [1.0] * len(moving)  # zero variance: correlation undefined
+        price_series = {
+            "PEGGED": self._make_price_df(pegged),
+            "MOVER": self._make_price_df(moving),
+        }
+        for method in ("pearson", "spearman"):
+            labels, matrix = _rolling_correlation_matrix(price_series, window=30, method=method)
+            i, j = labels.index("PEGGED"), labels.index("MOVER")
+            assert matrix[i][j] is None, f"{method}: undefined pair must be None, got {matrix[i][j]!r}"
+            assert matrix[j][i] is None, f"{method}: matrix must stay symmetric"
+            # Diagonal stays 1.0 — self-correlation is always defined.
+            assert matrix[i][i] == 1.0
+            assert matrix[j][j] == 1.0
+
     def test_missing_close_column_raises(self):
         df = pd.DataFrame({"open": [1, 2, 3]})
         with pytest.raises(ValueError, match="No 'close' column"):

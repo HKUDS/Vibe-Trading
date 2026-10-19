@@ -1943,7 +1943,8 @@
   "charts": {
     "noPriceData": "このシンボルにはまだ価格データがありません",
     "noCorrelationData": "比較するシンボルを2つ以上選択してください",
-    "noEquityData": "口座価値の推移はまだありません。先にバックテストを実行してください"
+    "noEquityData": "口座価値の推移はまだありません。先にバックテストを実行してください",
+    "correlationUndefined": "未定義（期間内の価格変動なし）"
   },
   "toolProgress": {
     "step": "ステップ {{step}} · {{tool}}",

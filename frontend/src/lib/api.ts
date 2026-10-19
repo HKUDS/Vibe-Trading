@@ -89,7 +89,10 @@ export function isAuthRequiredError(error: unknown): boolean {
 
 export interface CorrelationResponse {
   labels: string[];
-  matrix: number[][];
+  // Undefined pairs (zero-variance leg — halted series, pegged stablecoin,
+  // fresh listing) come back as null: missing evidence, not 0.0. Mirrors the
+  // regime endpoint's (number | null)[] density convention.
+  matrix: (number | null)[][];
 }
 
 export interface CorrelationAnalysisResponse {

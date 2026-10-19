@@ -1943,6 +1943,7 @@
   "charts": {
     "noPriceData": "这个标的还没有价格数据",
     "noCorrelationData": "至少选两个标的才能比较",
+    "correlationUndefined": "无法计算（该标的在窗口内价格无波动）",
     "noEquityData": "还没有净值曲线——先跑一次回测"
   },
   "toolProgress": {

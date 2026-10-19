@@ -5,6 +5,7 @@
   "charts": {
     "noPriceData": "Belum ada data harga untuk simbol ini",
     "noCorrelationData": "Pilih setidaknya dua simbol untuk dibandingkan",
+    "correlationUndefined": "belum terdefinisi (tidak ada variasi harga pada jendela)",
     "noEquityData": "Belum ada kurva nilai akun — jalankan backtest terlebih dahulu"
   },
   "navigation": {

@@ -6,7 +6,7 @@ import { useChartLifecycle } from "@/hooks/useChartLifecycle";
 
 interface Props {
   labels: string[];
-  matrix: number[][];
+  matrix: (number | null)[][];
   height?: number;
 }
 
@@ -33,11 +33,19 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
   useChartLifecycle(ref, () => {
     const t = getChartTheme();
 
-    // Build heatmap data: [xIdx, yIdx, value] with per-cell label color for readability on saturated cells
-    const data: { value: [number, number, number]; label: { color: string } }[] = [];
+    // Build heatmap data: [xIdx, yIdx, value] with per-cell label color for readability on saturated cells.
+    // Undefined pairs (null — zero-variance leg such as a halted series) are missing
+    // evidence, not 0.0: render them as a muted "—" cell instead of cooling the
+    // heatmap with a fabricated "no linear relationship" reading.
+    const data: { value: [number, number, number]; label: { color: string }; itemStyle?: { color: string; opacity: number } }[] = [];
     for (let i = 0; i < labels.length; i++) {
       for (let j = 0; j < labels.length; j++) {
-        const val = parseFloat((matrix[i]?.[j] ?? 0).toFixed(4));
+        const raw = matrix[i]?.[j] ?? null;
+        if (raw === null) {
+          data.push({ value: [j, i, 0], label: { color: t.textColor }, itemStyle: { color: t.gridColor, opacity: 0.6 } });
+          continue;
+        }
+        const val = parseFloat(raw.toFixed(4));
         data.push({ value: [j, i, val], label: { color: cellTextColor(val) } });
       }
     }
@@ -55,7 +63,9 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
         formatter: (params: unknown) => {
           const p = params as { data: { value: [number, number, number] } };
           const [x, y, v] = p.data.value;
-          return `<b>${escapeHtml(labels[x] ?? "")}</b> vs <b>${escapeHtml(labels[y] ?? "")}</b><br/>r = <b>${v.toFixed(4)}</b>`;
+          const rawCell = matrix[y]?.[x] ?? null;
+          const rText = rawCell === null ? i18n.t("charts.correlationUndefined") : v.toFixed(4);
+          return `<b>${escapeHtml(labels[x] ?? "")}</b> vs <b>${escapeHtml(labels[y] ?? "")}</b><br/>r = <b>${escapeHtml(rText)}</b>`;
         },
       },
       grid: { left: "3%", right: "8%", top: "8%", bottom: "12%", containLabel: true },
@@ -101,7 +111,9 @@ export function CorrelationMatrix({ labels, matrix, height = 500 }: Props) {
             fontSize: 10,
             formatter: (params: unknown) => {
               const p = params as { value: [number, number, number] };
-              return p.value[2].toFixed(2);
+              const [x, y] = p.value;
+              const rawCell = matrix[y]?.[x] ?? null;
+              return rawCell === null ? "—" : p.value[2].toFixed(2);
             },
           },
           emphasis: {
