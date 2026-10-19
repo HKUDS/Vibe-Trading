@@ -1302,6 +1302,84 @@ def _maybe_inject_fundamentals_for_factor_panel(
 
 # --- Main entry ---
 
+_KNOWN_CONFIG_KEYS: frozenset | None = None
+
+
+def _ast_config_keys(path: Path) -> set:
+    """Collect string literals read off the backtest config dict in a module.
+
+    Matches ``config.get("key")``, ``config["key"]`` and the same two forms on
+    ``self.config``. Anything more dynamic is out of scope for this lint: it
+    only feeds a warning, never a rejection.
+    """
+    keys = set()
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr != "get" or not node.args:
+                continue
+            owner = node.func.value
+            owner_is_config = (isinstance(owner, ast.Name) and owner.id == "config") or (
+                isinstance(owner, ast.Attribute) and owner.attr == "config"
+            )
+            if owner_is_config and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                keys.add(node.args[0].value)
+        elif isinstance(node, ast.Subscript):
+            owner = node.value
+            owner_is_config = (isinstance(owner, ast.Name) and owner.id == "config") or (
+                isinstance(owner, ast.Attribute) and owner.attr == "config"
+            )
+            sub = node.slice
+            if owner_is_config and isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                keys.add(sub.value)
+    return keys
+
+
+def _known_config_keys() -> frozenset:
+    """Config keys understood anywhere on the backtest path: schema fields plus
+    whatever the engines, market hooks and loaders actually read."""
+    global _KNOWN_CONFIG_KEYS
+    if _KNOWN_CONFIG_KEYS is None:
+        known = set(BacktestConfigSchema.model_fields)
+        engines_dir = Path(__file__).parent / "engines"
+        loaders_dir = Path(__file__).parent / "loaders"
+        for module in sorted(engines_dir.glob("*.py")) + sorted(loaders_dir.glob("*.py")):
+            known |= _ast_config_keys(module)
+        _KNOWN_CONFIG_KEYS = frozenset(known)
+    return _KNOWN_CONFIG_KEYS
+
+
+def _unrecognized_config_keys(config: dict) -> list[str]:
+    """Config keys nothing on the path reads (misspellings included).
+
+    ``BacktestConfigSchema`` allows extras so engine-specific keys flow
+    through; the cost is that a misspelled key (``initial_capital`` for
+    ``initial_cash``) is silently dropped and the run proceeds on defaults.
+    Underscore-prefixed keys are runner internals, not user input.
+    """
+    known = _known_config_keys()
+    return sorted(k for k in config if not k.startswith("_") and k not in known)
+
+
+def _unrecognized_config_warning(config: dict) -> str | None:
+    import difflib
+
+    unknown = _unrecognized_config_keys(config)
+    if not unknown:
+        return None
+    known = sorted(_known_config_keys())
+    parts = []
+    for key in unknown:
+        guesses = difflib.get_close_matches(key, known, n=2, cutoff=0.6)
+        hint = f" (did you mean {', or '.join(repr(g) for g in guesses)}?)" if guesses else ""
+        parts.append(f"{key!r}{hint}")
+    return (
+        "Unrecognized config keys were silently ignored: "
+        + "; ".join(parts)
+        + ". The run proceeded on defaults for anything they were meant to set."
+    )
+
+
 def main(run_dir: Path) -> None:
     """Load config, fetch data, run the selected backtest engine.
 
@@ -1356,6 +1434,8 @@ def main(run_dir: Path) -> None:
         sys.exit(1)
 
     config = raw_config
+    if keys_warning := _unrecognized_config_warning(config):
+        config["_run_card_unrecognized_config_warning"] = keys_warning
     source = config.get("source", "tushare")
     codes = config.get("codes", [])
 
