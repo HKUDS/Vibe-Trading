@@ -1994,6 +1994,35 @@ pin an explicit tool allowlist and still passes through the live order guard.
 If IBKR issues a pre-registered OAuth client, add `clientId` and `clientSecret`
 inside `auth`.
 
+### Example: read-only crypto token checks (PumpPill)
+
+A remote server with no key and no OAuth, for Solana and Robinhood Chain
+tokens. Pin the read-only tools you want:
+
+```json
+{
+  "mcpServers": {
+    "pumppill": {
+      "type": "streamableHttp",
+      "url": "https://api.pumppill.org/mcp",
+      "enabledTools": ["pre_trade_check", "sol_token_detail", "rh_token_safety", "exit_check"]
+    }
+  }
+}
+```
+
+They arrive as `mcp_pumppill_pre_trade_check` and so on.
+`pre_trade_check` takes a Solana mint or a `0x` contract and returns
+`clear`, `caution`, `avoid` or `unknown` with the reasons, worst first.
+`unknown` means the server holds no read for the token, not that it is safe:
+
+```bash
+vibe-trading run "Before any position in <mint>, call mcp_pumppill_pre_trade_check and stop if the decision is avoid or unknown"
+```
+
+These tools read stored data only. They never place, simulate or approve an
+order, so the mandate gate and kill switch are unaffected.
+
 ### Trading connectors: fastest path
 
 For users who cannot wait for IBKR OAuth client approval, connect to a local
