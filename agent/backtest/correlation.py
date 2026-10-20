@@ -175,7 +175,7 @@ def _rolling_correlation_matrix(
     price_series: Dict[str, pd.DataFrame],
     window: int,
     method: Literal["pearson", "spearman"],
-) -> tuple[list[str], list[list[float]]]:
+) -> tuple[list[str], list[list[float | None]]]:
     """Compute correlation matrix for multiple price series.
 
     Args:
@@ -185,7 +185,7 @@ def _rolling_correlation_matrix(
 
     Returns:
         (labels, matrix) where labels is the sorted list of codes and matrix
-        is a symmetric NxN matrix of correlation coefficients.
+        is a symmetric NxN matrix, with None for undefined off-diagonal pairs.
     """
     if not price_series:
         return [], []
