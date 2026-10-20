@@ -993,13 +993,12 @@ def _bench_one_alpha(
 
     factor_df = registry.compute(alpha_id, panel)
     ic_series = compute_ic_series(factor_df, return_df)
-    if ic_series.empty:
+    if len(ic_series) < 2:
         raise RuntimeError(
-            f"{alpha_id}: IC series empty — insufficient overlap between factor and returns"
+            f"{alpha_id}: insufficient IC observations (need at least 2)"
         )
     ic_mean = float(ic_series.mean())
-    # ddof=1 on a single IC is NaN; match factor_analysis_tool's convention.
-    ic_std = float(ic_series.std()) if len(ic_series) > 1 else 0.0
+    ic_std = float(ic_series.std())
     ir = ic_mean / ic_std if ic_std > 0 else 0.0
     ic_pos = float((ic_series > 0).mean())
     alpha = registry.get(alpha_id)

@@ -76,10 +76,10 @@ def _compute_single_alpha(args: Any) -> dict[str, Any]:
     try:
         factor_df = reg.compute(alpha_id, panel)
         ic = compute_ic_series(factor_df, return_df)
-        if ic.empty:
-            return {"skip": {"id": alpha_id, "reason": "empty IC series", "kind": "typed"}}
+        if len(ic) < 2:
+            return {"skip": {"id": alpha_id, "reason": "insufficient IC observations (need at least 2)", "kind": "typed"}}
         ic_mean = float(ic.mean())
-        ic_std = float(ic.std()) if len(ic) > 1 else 0.0
+        ic_std = float(ic.std())
         ir = ic_mean / ic_std if ic_std > 0 else 0.0
         meta = reg.get(alpha_id).meta or {}
         return {
@@ -324,13 +324,13 @@ def run_bench(
             try:
                 factor_df = reg.compute(aid, panel)
                 ic = compute_ic_series(factor_df, return_df)
-                if ic.empty:
+                if len(ic) < 2:
                     skipped.append(
-                        {"id": aid, "reason": "empty IC series", "kind": "typed"}
+                        {"id": aid, "reason": "insufficient IC observations (need at least 2)", "kind": "typed"}
                     )
                 else:
                     ic_mean = float(ic.mean())
-                    ic_std = float(ic.std()) if len(ic) > 1 else 0.0
+                    ic_std = float(ic.std())
                     ir = ic_mean / ic_std if ic_std > 0 else 0.0
                     meta = reg.get(aid).meta or {}
                     rows.append(

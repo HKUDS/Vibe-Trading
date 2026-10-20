@@ -32,6 +32,9 @@ filing dates and require the S&P 500 universe. Results report observed coverage,
 missing symbols and current-constituent survivorship bias. A first large-universe
 download can take minutes; later evaluations reuse the existing panel cache.
 
+Factor benchmarks skip alphas with fewer than two IC observations and report
+the reason. They do not rank an unestimable sample standard deviation as zero.
+
 Analysis drafts and completed results survive navigation and reload in the same
 browser tab. Factor progress reports data loading separately from computation;
 Reconnect resumes the existing job or repeats its identical request ID. Running
