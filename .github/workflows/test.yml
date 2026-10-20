@@ -70,7 +70,11 @@ jobs:
   test:
     name: test / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 15, not the 10 the other jobs use: on ubuntu-latest the 3.11 leg's
+    # "Run tests" step alone takes about 8.5 minutes, and with setup and the
+    # install the job crossed 10 minutes a few seconds after pytest finished,
+    # so a fully passing run reported as `cancelled`.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
