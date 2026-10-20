@@ -163,6 +163,13 @@ def _ffill_2d(arr: np.ndarray, limit: int = 5) -> np.ndarray:
     return out
 
 
+def _has_positive_volume(frame: Optional[pd.DataFrame]) -> bool:
+    """Whether *frame* shows a positive traded volume on at least one bar."""
+    if frame is None or "volume" not in frame.columns:
+        return False
+    return bool((pd.to_numeric(frame["volume"], errors="coerce") > 0).any())
+
+
 # ─── Signal alignment (reused from daily_portfolio logic) ───
 
 
@@ -570,6 +577,19 @@ class BaseEngine(ABC):
         # (#1235); counting the causes is what makes that visible in the
         # metrics instead of only to a subclass that overrode the hook.
         self.plan_rejections: Counter = Counter()
+        # Orders that could not finish on their bar keep working on the
+        # following bars, as a trader's order would, for the symbols
+        # ``carries_unfilled_orders`` names: a fill ``fill_cap`` cut short, or
+        # a trade the market rules blocked. Maps symbol to the target weight
+        # still wanted; a new target for the symbol replaces its order.
+        self._working_orders: Dict[str, float] = {}
+        self._next_working_orders: Dict[str, float] = {}
+        # Orders ``fill_cap`` cut short, counted once per order and bar.
+        self.volume_capped_orders = 0
+        # Symbols whose data shows no positive volume on any bar, so a cap
+        # read from volume would block every fill (set by ``_execute_bars``).
+        self._volume_unknown: set[str] = set()
+        self._volume_unknown_warned: set[str] = set()
         self._bar_idx: int = 0
         # Timestamp of the bar being processed, for rules that depend on the
         # date (a dated listing exchange); None outside a run.
@@ -719,6 +739,52 @@ class BaseEngine(ABC):
             return None
         return base * (1.0 - float(limit)), base * (1.0 + float(limit))
 
+    def fill_cap(self, symbol: str, bar: pd.Series) -> Optional[float]:
+        """Return the largest size one order of *symbol* may fill on *bar*.
+
+        Default: no limit. A market whose fills are bounded by what the
+        session actually traded overrides this.
+
+        A larger order fills the cap, rounded down to the lot, and the rest
+        waits for the strategy's next target, or keeps working on the
+        following bars where :meth:`carries_unfilled_orders` says so. The cap
+        applies to each opening, increasing, reducing and closing order on its
+        own; the liquidation of the book when the run ends is not capped. A
+        symbol whose data shows no positive volume on any bar is exempt, so a
+        source that fills a missing volume column with zeros does not block
+        every fill.
+
+        Args:
+            symbol: Symbol being filled.
+            bar: Current bar.
+
+        Returns:
+            A size in the engine's units (before lot rounding), or ``None`` for
+            no limit.
+        """
+        return None
+
+    def carries_unfilled_orders(self, symbol: str) -> bool:
+        """Whether an order for *symbol* that could not finish keeps working.
+
+        Default False: an order cut by :meth:`fill_cap` or blocked by
+        :meth:`can_execute` waits for the strategy's next target, as it always
+        has. An engine returning True keeps such an order working on the
+        following bars until it fills or the strategy asks for a different
+        target: it runs on bars ``rebalance_mask`` skips, finishes inside the
+        ``rebalance_tolerance`` band, and under ``position_adjustment="hold"``
+        completes a position whose opening fill was cut. A fill that adds to
+        or cuts a position already held is a same-direction resize, recorded
+        with reason ``target_rebalance``.
+
+        Args:
+            symbol: Symbol of the order.
+
+        Returns:
+            True to keep the order working.
+        """
+        return False
+
     def on_bar(self, symbol: str, bar: pd.Series, timestamp: pd.Timestamp) -> None:
         """Per-bar market-rule hook (funding fees, liquidation, etc.).
 
@@ -771,6 +837,7 @@ class BaseEngine(ABC):
         "invalid_price",
         "zero_size",
         "insufficient_capital",
+        "volume_cap",
     )
 
     def _plan_rejection_metrics(self) -> Dict[str, Any]:
@@ -799,6 +866,22 @@ class BaseEngine(ABC):
             "unfilled_plan_rejections_by_symbol": by_symbol,
         }
 
+    def _working_order_metrics(self) -> Dict[str, Any]:
+        """Report orders that took more than one bar, when the run had any.
+
+        Returns:
+            ``volume_capped_orders`` (orders larger than :meth:`fill_cap`
+            allowed, once per order and bar) and ``unfinished_orders_at_end``
+            (orders still working when the run ended), or an empty dict when
+            no order was capped and none was left working.
+        """
+        if not self.volume_capped_orders and not self._working_orders:
+            return {}
+        return {
+            "volume_capped_orders": self.volume_capped_orders,
+            "unfinished_orders_at_end": len(self._working_orders),
+        }
+
     def _engine_diagnostics(self) -> Dict[str, Any]:
         """Per-engine facts about how this run was priced.
 
@@ -818,10 +901,10 @@ class BaseEngine(ABC):
 
         ``_plan_open_order`` returns ``None`` for several distinct reasons —
         nothing wanted, already held, missing data, missing bar, market rule
-        block, unusable price, or a target too small to fill after lot
-        rounding. Callers only see ``None``, so this hook is the only way for
-        an engine subclass to tell "nothing to do" apart from "wanted but
-        unfillable".
+        block, unusable price, a target too small to fill after lot rounding,
+        or a volume cap below one lot. Callers only see ``None``, so this hook
+        is the only way for an engine subclass to tell "nothing to do" apart
+        from "wanted but unfillable".
 
         The capital fit reports one more cause after the planner: a sleeve that
         was a real order at full scale and left the basket when every opening
@@ -832,8 +915,9 @@ class BaseEngine(ABC):
             symbol: Instrument the plan was for.
             reason: Machine-readable cause: ``no_target_weight``,
                 ``already_held``, ``no_data``, ``no_bar``,
-                ``execution_blocked``, ``invalid_price``, ``zero_size`` or
-                ``insufficient_capital``.
+                ``execution_blocked``, ``invalid_price``, ``zero_size``,
+                ``insufficient_capital`` or ``volume_cap`` (:meth:`fill_cap`
+                left less than one lot).
             timestamp: Decision bar timestamp.
         """
         self.plan_rejections[(symbol, reason)] += 1
@@ -1046,6 +1130,7 @@ class BaseEngine(ABC):
                 m["total_return"] - benchmark_metadata["benchmark_return"], 6
             )
         m.update(self._plan_rejection_metrics())
+        m.update(self._working_order_metrics())
         m.update(self._engine_diagnostics())
         if self.rebalance_mask is not None:
             m["rebalance_mask"] = self.rebalance_mask
@@ -1216,10 +1301,16 @@ class BaseEngine(ABC):
         self.actual_position_snapshots = []
         execution_dates = resolve_rebalance_dates(self.rebalance_mask, dates)
         self.rebalance_bars_executed = 0
+        self._working_orders = {}
+        self.volume_capped_orders = 0
+        self._volume_unknown = {
+            c for c in codes if not _has_positive_volume(data_map.get(c))
+        }
 
         for i, ts in enumerate(dates):
             self._bar_idx = i
             self._bar_ts = ts
+            self._next_working_orders = {}
 
             stop_run = self.before_rebalance_bar(ts, data_map, codes)
             execute_targets = execution_dates is None or ts in execution_dates
@@ -1241,14 +1332,26 @@ class BaseEngine(ABC):
                     target_weights[c] = None
                     logger.warning("Target weight failed for %s at %s: %s", c, ts, exc)
 
+            # Orders still working from earlier bars carry on, unless this
+            # bar's target for the symbol replaces them.
+            working = {} if stop_run else self._continue_working_orders(target_weights)
+
             if self.position_adjustment == "rebalance":
-                if execute_targets and not stop_run:
+                if not stop_run and (execute_targets or working):
                     first_fill = len(self.fill_records)
                     self._execute_target_rebalance(
-                        target_weights, data_map, ts, equity, codes
+                        {**target_weights, **working},
+                        data_map,
+                        ts,
+                        equity,
+                        codes,
+                        working=working,
                     )
-                    self.rebalance_bars_executed += 1
-                    self._count_unchanged_target_fills(target_weights, first_fill)
+                    if execute_targets:
+                        self.rebalance_bars_executed += 1
+                        self._count_unchanged_target_fills(
+                            target_weights, first_fill, skip=working
+                        )
                 target_weights = {}
             else:
                 self._record_dropped_target_adjustments(target_weights, ts)
@@ -1276,7 +1379,9 @@ class BaseEngine(ABC):
             # one common scale factor to all target weights.  This preserves
             # portfolio proportions and makes fills independent of input code
             # order; sequential cash clipping would privilege the first name.
-            open_targets: list[tuple[str, float, Optional[pd.DataFrame]]] = []
+            # Each entry: (symbol, target weight, bars, whether it adds to a
+            # held position).
+            open_targets: list[tuple[str, float, Optional[pd.DataFrame], bool]] = []
             for c in sorted(codes):
                 target_w = target_weights.get(c)
                 if target_w is None:
@@ -1288,14 +1393,28 @@ class BaseEngine(ABC):
                 ):
                     continue
                 if current_pos is None and target_dir != 0:
-                    open_targets.append((c, target_w, data_map.get(c)))
+                    open_targets.append((c, target_w, data_map.get(c), False))
+                elif current_pos is not None and c in working:
+                    # Hold mode never resizes a held position, but an opening
+                    # order the volume cap cut short keeps filling.
+                    frame = data_map.get(c)
+                    if frame is None or ts not in frame.index:
+                        self._note_unfinished(c, target_w)
+                    else:
+                        open_targets.append((c, target_w, frame, True))
 
             def _plans(scale: float, *, observe: bool) -> list[_OpenOrder]:
                 result: list[_OpenOrder] = []
-                for c, target_w, frame in open_targets:
+                for c, target_w, frame, increase in open_targets:
                     try:
                         order = self._plan_open_order(
-                            c, target_w * scale, frame, ts, equity, observe=observe
+                            c,
+                            target_w * scale,
+                            frame,
+                            ts,
+                            equity,
+                            observe=observe,
+                            increase=increase,
                         )
                     except Exception as exc:
                         logger.warning(
@@ -1334,9 +1453,17 @@ class BaseEngine(ABC):
                 for symbol in wanted:
                     if symbol not in fitted:
                         self._on_plan_rejected(symbol, "insufficient_capital", ts)
+                # Cash short on this bar does not cancel a working order.
+                for c, target_w, _, increase in open_targets:
+                    if increase:
+                        self._note_unfinished(c, target_w)
 
             for order in planned:
-                self._execute_open_order(order, ts)
+                if order.symbol in self.positions:
+                    self._execute_position_increase(order, ts)
+                else:
+                    self._execute_open_order(order, ts)
+            self._working_orders = self._next_working_orders
 
             # d. Apply post-execution hooks after all normal market fills.
             if not stop_run:
@@ -1535,17 +1662,100 @@ class BaseEngine(ABC):
         if current_pos is not None:
             need_close = target_dir == 0 or target_dir != current_pos.direction
             if need_close:
-                if self.can_execute(symbol, 0, bar):
-                    open_price = self.execution_open(bar)
-                    price = self.apply_slippage(open_price, -current_pos.direction)
-                    self._close_position(symbol, price, ts, "signal")
-                else:
+                if not self.can_execute(symbol, 0, bar):
+                    self._note_unfinished(symbol, target_weight)
                     return  # blocked (e.g. limit-down can't sell)
+                open_price = self.execution_open(bar)
+                price = self.apply_slippage(open_price, -current_pos.direction)
+                size = self._capped_size(symbol, bar, current_pos.size, price)
+                if size < current_pos.size:
+                    # The exit fills over several bars.
+                    self._note_unfinished(symbol, target_weight)
+                    if size > 0:
+                        self._execute_partial_reduction(
+                            self._plan_reduction(
+                                current_pos, current_pos.size - size, price
+                            ),
+                            ts,
+                        )
+                    return
+                self._close_position(symbol, price, ts, "signal")
 
         if target_dir != 0 and symbol not in self.positions:
             order = self._plan_open_order(symbol, target_weight, df, ts, equity)
             if order is not None and order.cost <= self.capital + 1e-9:
                 self._execute_open_order(order, ts)
+
+    # ── Orders that take more than one bar ──
+
+    def _capped_size(
+        self,
+        symbol: str,
+        bar: pd.Series,
+        size: float,
+        price: float,
+        *,
+        count: bool = True,
+    ) -> float:
+        """Return *size* cut to what one order of *symbol* may fill on *bar*.
+
+        Args:
+            symbol: Symbol being filled.
+            bar: Current bar.
+            size: Lot-rounded size the order wants.
+            price: Fill price, for rounding the cap to the lot.
+            count: Whether a cut counts toward ``volume_capped_orders``;
+                False for the trial plans of a capital-fit search.
+
+        Returns:
+            *size* when :meth:`fill_cap` sets no limit or the order fits it,
+            otherwise the cap rounded down to the lot, possibly zero.
+        """
+        cap = self.fill_cap(symbol, bar)
+        if cap is None or size <= cap + 1e-9:
+            return size
+        if symbol in self._volume_unknown:
+            if symbol not in self._volume_unknown_warned:
+                self._volume_unknown_warned.add(symbol)
+                logger.warning(
+                    "%s: the data shows no traded volume on any bar, so its "
+                    "fills are not limited by volume",
+                    symbol,
+                )
+            return size
+        if count:
+            self.volume_capped_orders += 1
+        return min(size, self.round_size(max(cap, 0.0), price))
+
+    def _note_unfinished(self, symbol: str, target_weight: float) -> None:
+        """Keep *symbol*'s order working on the next bar, if the engine carries it."""
+        if self.carries_unfilled_orders(symbol):
+            self._next_working_orders[symbol] = target_weight
+
+    def _continue_working_orders(
+        self, target_weights: Dict[str, Optional[float]]
+    ) -> Dict[str, float]:
+        """Return the orders from earlier bars that keep working on this bar.
+
+        An order keeps working while the strategy asks for nothing new for its
+        symbol, or for the same target again; a different target replaces it.
+
+        Args:
+            target_weights: This bar's target per symbol, ``None`` where the
+                strategy made no decision.
+
+        Returns:
+            ``{symbol: target weight}`` for the orders that carry on.
+        """
+        working: Dict[str, float] = {}
+        for symbol, weight in self._working_orders.items():
+            requested = target_weights.get(symbol)
+            if (
+                requested is None
+                or abs(requested - weight) <= self._TARGET_CHANGE_EPSILON
+            ):
+                working[symbol] = weight
+        return working
 
     def _plan_open_order(
         self,
@@ -1557,11 +1767,17 @@ class BaseEngine(ABC):
         *,
         allow_existing: bool = False, require_positive_price: bool = False,
         observe: bool = True,
+        increase: bool = False,
     ) -> Optional[_OpenOrder]:
         """Price an opening order without mutating portfolio state.
 
         ``observe=False`` plans a trial inside a capital-fit search: a rejection
-        there is not a finding and is not reported to ``_on_plan_rejected``.
+        there is not a finding and is not reported to ``_on_plan_rejected``,
+        and an order cut short is not recorded as working.
+
+        ``increase=True`` prices only what a held same-direction position
+        lacks to reach *target_weight*, and returns ``None`` once it has none
+        to add.
         """
         self._active_symbol = symbol
 
@@ -1569,11 +1785,15 @@ class BaseEngine(ABC):
             if observe:
                 self._on_plan_rejected(symbol, reason, ts)
 
+        def unfinished() -> None:
+            if observe:
+                self._note_unfinished(symbol, target_weight)
+
         direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
         if direction == 0:
             rejected("no_target_weight")
             return None
-        if symbol in self.positions and not allow_existing:
+        if symbol in self.positions and not (allow_existing or increase):
             rejected("already_held")
             return None
         if df is None:
@@ -1584,6 +1804,7 @@ class BaseEngine(ABC):
             return None
         bar = df.loc[ts]
         if not self.can_execute(symbol, direction, bar):
+            unfinished()
             rejected("execution_blocked")
             return None
         open_price = self.execution_open(bar)
@@ -1603,9 +1824,20 @@ class BaseEngine(ABC):
         size = self.round_size(
             self._calc_raw_size(symbol, target_notional, price), price
         )
-        if size <= 0:
+        if increase:
+            size = self.round_size(size - self.positions[symbol].size, price)
+            if size <= 0:
+                return None
+        elif size <= 0:
             rejected("zero_size")
             return None
+        capped = self._capped_size(symbol, bar, size, price, count=observe)
+        if capped < size:
+            unfinished()
+            if capped <= 0:
+                rejected("volume_cap")
+                return None
+            size = capped
         margin = self._calc_margin(symbol, size, price, leverage)
         commission = self.calc_commission(
             size, price, direction, is_open=True
@@ -1676,7 +1908,10 @@ class BaseEngine(ABC):
                 )
 
     def _count_unchanged_target_fills(
-        self, target_weights: Dict[str, Optional[float]], first_fill: int
+        self,
+        target_weights: Dict[str, Optional[float]],
+        first_fill: int,
+        skip: Iterable[str] = (),
     ) -> None:
         """Count this bar's resize fills whose symbol kept its previous target.
 
@@ -1690,9 +1925,12 @@ class BaseEngine(ABC):
                 strategy produced no decision and the previous target stands.
             first_fill: Length of ``fill_records`` before this bar executed,
                 so the fills from ``first_fill`` on are this bar's.
+            skip: Symbols whose order was still working from an earlier bar:
+                their fills finish that order, so they are not counted.
         """
+        skip = set(skip)
         for fill in self.fill_records[first_fill:]:
-            if fill.reason != "target_rebalance":
+            if fill.reason != "target_rebalance" or fill.symbol in skip:
                 continue
             previous = self._last_target_weight.get(fill.symbol)
             target_w = target_weights.get(fill.symbol)
@@ -1707,7 +1945,7 @@ class BaseEngine(ABC):
     def _position_adjustment_warnings(self, rebalance_executed_fills: int) -> List[str]:
         """Run-card warnings for runs whose trading did not follow their targets.
 
-        Two cases, neither visible in the headline metrics:
+        Three cases, none visible in the headline metrics:
 
         - ``hold`` dropped same-direction resizes the strategy asked for (#918).
         - ``rebalance`` with no drift band and no execution calendar spent more
@@ -1715,6 +1953,8 @@ class BaseEngine(ABC):
           changed: following price drift, or completing a target change that
           could not fill on its own bar. With a band or a calendar the drift
           fills are what the user configured, so they are not reported.
+        - :meth:`fill_cap` cut orders, so positions reached their targets
+          bars later than the strategy asked, or never did.
 
         Args:
             rebalance_executed_fills: The run's ``target_rebalance`` fill count.
@@ -1750,14 +1990,35 @@ class BaseEngine(ABC):
                 "rebalance_mask (an execution calendar) or rebalance_tolerance (a drift "
                 "band) if the strategy re-weights on a schedule."
             )
+        if self.volume_capped_orders:
+            warning = (
+                f"The volume limit cut {self.volume_capped_orders} order(s) to a share "
+                "of the bar's traded volume, so positions reached their targets later "
+                "than the strategy asked"
+            )
+            if self._working_orders:
+                warning += (
+                    f"; {len(self._working_orders)} order(s) were still working when "
+                    "the run ended"
+                )
+            warnings.append(warning + ".")
         return warnings
 
     def _execute_target_rebalance(
         self,
         target_weights: Dict[str, Optional[float]], data_map: Dict[str, pd.DataFrame],
         ts: pd.Timestamp, equity: float, codes: List[str],
+        *,
+        working: Iterable[str] = (),
     ) -> None:
-        """Plan every target delta, preflight capital, then commit the basket."""
+        """Plan every target delta, preflight capital, then commit the basket.
+
+        ``working`` names the symbols whose order is still working from an
+        earlier bar (see :meth:`carries_unfilled_orders`): the drift band does
+        not stop them short of their target, and neither a bar without data
+        nor a cash shortfall cancels them.
+        """
+        working = set(working)
         reductions: list[_ReductionOrder] = []
         opens: list[_OpenOrder] = []
 
@@ -1772,17 +2033,30 @@ class BaseEngine(ABC):
             target_direction = 1 if target_weight > 1e-9 else (-1 if target_weight < -1e-9 else 0)
             frame = data_map.get(symbol)
             if frame is None or ts not in frame.index:
+                if symbol in working:
+                    self._note_unfinished(symbol, target_weight)
                 continue
             bar = frame.loc[ts]
 
             if before is None or target_direction != before.direction:
                 if before is not None:
                     if not self.can_execute(symbol, 0, bar):
+                        self._note_unfinished(symbol, target_weight)
                         continue
                     raw_price = self.execution_open(bar)
                     self._validate_rebalance_values(raw_price, positive=True)
                     price = self.apply_slippage(raw_price, -before.direction)
                     self._validate_rebalance_values(price, positive=True)
+                    size = self._capped_size(symbol, bar, before.size, price)
+                    if size < before.size:
+                        # The exit fills over several bars, and a reversal
+                        # opens only once it has.
+                        self._note_unfinished(symbol, target_weight)
+                        if size > 0:
+                            reductions.append(
+                                self._plan_reduction(before, before.size - size, price)
+                            )
+                        continue
                     reductions.append(self._plan_reduction(before, 0.0, price))
                     if target_direction == 0:
                         continue
@@ -1826,8 +2100,9 @@ class BaseEngine(ABC):
             # outcome within that distance of the band edge, which is why no
             # test pins it: such a test would assert a coincidence.
             # A changed target moves this reference far past any sane band, so
-            # target changes still execute at every tolerance.
-            if self.rebalance_tolerance > 0.0:
+            # target changes still execute at every tolerance. A working order
+            # was placed outside the band, so it finishes.
+            if self.rebalance_tolerance > 0.0 and symbol not in working:
                 reference_size = self.round_size(
                     self._calc_raw_size(symbol, target_notional, raw_price), raw_price
                 )
@@ -1846,8 +2121,14 @@ class BaseEngine(ABC):
                 raise ValueError("cannot rebalance a position with changed leverage")
             if increase:
                 if not self.can_execute(symbol, target_direction, bar):
+                    self._note_unfinished(symbol, target_weight)
                     continue
-                size = target_size - before.size
+                wanted = target_size - before.size
+                size = self._capped_size(symbol, bar, wanted, price)
+                if size < wanted:
+                    self._note_unfinished(symbol, target_weight)
+                    if size <= 0:
+                        continue
                 order = _OpenOrder(
                     symbol=symbol,
                     direction=before.direction,
@@ -1863,7 +2144,16 @@ class BaseEngine(ABC):
                     order.price, order.leverage, order.size, order.margin, order.commission
                 )
                 opens.append(order)
-            elif self.can_execute(symbol, 0, bar):
+            elif not self.can_execute(symbol, 0, bar):
+                self._note_unfinished(symbol, target_weight)
+            else:
+                wanted = before.size - target_size
+                size = self._capped_size(symbol, bar, wanted, price)
+                if size < wanted:
+                    self._note_unfinished(symbol, target_weight)
+                    if size <= 0:
+                        continue
+                    target_size = before.size - size
                 reductions.append(self._plan_reduction(before, target_size, price))
 
         projected_capital = (
@@ -1892,6 +2182,10 @@ class BaseEngine(ABC):
                         ", ".join(sorted({order.symbol for order in opens})),
                     )
                 fitted = []
+            # Cash short on this bar does not cancel a working order.
+            for order in opens:
+                if order.symbol in working:
+                    self._note_unfinished(order.symbol, target_weights[order.symbol])
             opens = fitted
 
         for order in reductions:

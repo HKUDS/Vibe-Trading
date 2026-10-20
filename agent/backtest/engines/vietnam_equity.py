@@ -47,6 +47,11 @@ Market rules:
   - Round lot: 100 shares. The exchanges also accept odd-lot orders of 1-99
     shares in a separate board that daily bars cannot represent, so odd-lot
     trading is deliberately not modelled and sub-lot orders round to zero.
+  - Liquidity: one order fills at most ``vn_volume_cap`` (10%) of the
+    session's traded volume, and the rest keeps working on the following
+    sessions. An order the band or the T+2 hold blocks keeps working the same
+    way, as an order resting on the exchange would, until it fills or the
+    strategy's target for the symbol changes.
 
 Cost stack (all config-driven; verify against your broker's current schedule
 before trusting absolute cost figures):
@@ -72,6 +77,7 @@ from __future__ import annotations
 
 import bisect
 import logging
+import math
 from typing import Optional
 
 import pandas as pd
@@ -133,6 +139,9 @@ _PRICE_EPS = 1e-9
 # Settlement lag in sessions. Under the T+2 cycle shares normally arrive
 # before the afternoon session on T+2, so a buy at bar N releases at bar N+2.
 _DEFAULT_SETTLEMENT_BARS = 2
+
+# Share of a session's traded volume one order may fill.
+_DEFAULT_VOLUME_CAP = 0.10
 
 # Fill actions that add quantity to a position. Both start a settlement clock:
 # ``increase`` is a same-direction add that BaseEngine folds into the existing
@@ -561,6 +570,9 @@ class VietnamEquityEngine(BaseEngine):
         symbol's earliest date, use the suffix's exchange. ``price_limit``
         still sets the band of every bar; the history then moves only the
         tick grid
+      - vn_volume_cap: share of a session's traded volume one order may fill,
+        default 0.10; ``0`` / ``None`` disables it. The rest of a larger order
+        keeps working on the following sessions
 
     Raises:
         ValueError: When ``allow_short`` is truthy. Routine short selling is
@@ -596,6 +608,12 @@ class VietnamEquityEngine(BaseEngine):
         self.exchange_history = parse_exchange_history(
             config.get("vn_exchange_history")
         )
+        volume_cap = config.get("vn_volume_cap", _DEFAULT_VOLUME_CAP)
+        self.volume_cap = float(volume_cap or 0.0)
+        if not math.isfinite(self.volume_cap) or not 0.0 <= self.volume_cap <= 1.0:
+            raise ValueError(
+                f"vn_volume_cap must be a fraction from 0 to 1, got {volume_cap!r}"
+            )
         # One warning per engine when no reference price is derivable.
         self._limit_base_warned = False
         self._settlement_warned = False
@@ -671,6 +689,45 @@ class VietnamEquityEngine(BaseEngine):
         # This engine owns both the run state and the rule parameters. A
         # composite run splits them; see :func:`hose_can_execute`.
         return hose_can_execute(self, self, symbol, direction, bar)
+
+    def fill_cap(self, symbol: str, bar: pd.Series) -> Optional[float]:
+        """Return the shares one order may fill on *bar*: a share of its volume.
+
+        The limit compares share counts, and the engine's are notional divided
+        by the bar's price. Bars adjusted for dividends, bonus shares or splits
+        need their volume scaled by the same factor as the prices (the raw
+        close over the adjusted close), or the limit binds harder than the
+        market did on older bars.
+
+        Args:
+            symbol: Vietnamese symbol (the limit is the same for every symbol).
+            bar: Current bar; its ``volume`` is the session's traded volume.
+
+        Returns:
+            ``vn_volume_cap`` times the bar's volume, or ``None`` when the cap is
+            off or the bar has no volume.
+        """
+        if not self.volume_cap:
+            return None
+        volume = bar.get("volume")
+        if volume is None or pd.isna(volume):
+            return None
+        return max(float(volume), 0.0) * self.volume_cap
+
+    def carries_unfilled_orders(self, symbol: str) -> bool:
+        """Keep an unfinished order working, as an order resting on the exchange would.
+
+        An order :meth:`fill_cap` cut short, or one the band or the T+2 hold
+        blocked, stays working on the following sessions until it fills or the
+        strategy's target for the symbol changes.
+
+        Args:
+            symbol: Vietnamese symbol (every symbol carries its orders).
+
+        Returns:
+            True.
+        """
+        return True
 
     def _is_settled(self, symbol: str) -> bool:
         """Return whether *symbol*'s open position has cleared settlement.
