@@ -74,6 +74,11 @@ At the defaults a round trip costs at least 0.6%: 0.15% brokerage on each side, 
 5. **Respect foreign ownership limits.** Foreign investors face caps, commonly 30% of a bank and 49% of most other companies. A stock at its cap ("full room") can only be bought from another foreign holder, often at a premium. The engine does not model this; exclude capped names when simulating a foreign investor.
 6. **Express bearish views by not holding.** With no shorting, a Sell or Underweight view means cutting or exiting the position, so keep target weights between 0 and 1. VN30 index futures can hedge, but this engine does not cover them.
 7. **Mind the calendar.** The market closes for about a week at Tet (Lunar New Year), and liquidity thins before it. Sessions run roughly 9:00 to 11:30 and 13:00 to 14:45 local time (UTC+7). Index reviews and ETF rebalances (VN30, VNDiamond and foreign ETFs that track Vietnam) concentrate flows around known dates.
+8. **Choose how target changes execute.** The default `"position_adjustment": "hold"` opens and closes positions but never resizes one already held, so a quarterly re-weighting of names the book keeps is dropped. A strategy that re-weights on a schedule needs `"position_adjustment": "rebalance"` and one of two controls:
+   - `rebalance_mask` is an execution calendar, such as `"QS"` (the first session of each quarter) or a list of decision dates. Orders run only on those dates, so an order blocked by a band or the T+2 hold waits for the next one.
+   - `rebalance_tolerance` is a drift band, such as `0.05`: a position is resized only when its size is more than that fraction away from the size its target implies, and a blocked order retries the next session. The band also skips a target change smaller than the band, so keep it below the smallest re-weighting you mean to trade.
+
+   With neither, positions are traded back to their targets on many sessions as prices drift, and each of those trades pays brokerage, slippage and, on a sale, the sell tax. The run card warns in either case.
 
 ## Benchmarks
 
@@ -102,6 +107,7 @@ At the defaults a round trip costs at least 0.6%: 0.15% brokerage on each side, 
 
 ## Before Trusting a Result
 
+- Read the run card's warnings. They report re-weightings that `"hold"` dropped, and a `"rebalance"` run with neither control whose resize fills mostly re-traded unchanged targets (`rebalance_unchanged_target_fills` out of `rebalance_executed_fills` in the metrics).
 - Read `unfilled_plan_rejections_by_symbol` in the metrics: `execution_blocked` counts buys refused at the ceiling (and any short the strategy asked for), `zero_size` counts orders smaller than one lot.
 - Compare `target_positions.csv` with `positions.csv` to see exits the settlement hold or the floor delayed.
 - Measure the cost drag: re-run with `vn_brokerage`, `vn_tax_sell` and `slippage` at 0 and compare. At about 0.6% per round trip, rotating the whole book every week costs roughly 30% a year; `avg_turnover` in the metrics shows how often the book turns over.

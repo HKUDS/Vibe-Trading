@@ -558,6 +558,12 @@ class BaseEngine(ABC):
         # buy-and-hold position, whose weight drifts with price by design.
         self._last_target_weight: Dict[str, float] = {}
         self.dropped_target_adjustments: List[Dict[str, Any]] = []
+        # Rebalance mode has the opposite blind spot: it re-pins the book on
+        # every bar it executes, so a constant target trades whenever price
+        # drift moves the held size off it. Counting the resize fills whose
+        # target had not changed is what tells a run that traded drift from
+        # one that traded its decisions.
+        self.rebalance_unchanged_target_fills = 0
         # Opening plans the engine wanted but could not take, keyed
         # (symbol, reason). A sleeve whose target notional rounds below one
         # lot trades zero times while the run reports a normal result
@@ -1089,14 +1095,15 @@ class BaseEngine(ABC):
             }
             for event in self.dropped_target_adjustments[:20]
         ]
-        if self.dropped_target_adjustments:
-            logger.warning(
-                "position_adjustment='hold' dropped %d target change(s) across %d "
-                "symbol(s); the report's target_change_count describes requests, not "
-                "fills. Set position_adjustment='rebalance' to execute them.",
-                len(self.dropped_target_adjustments),
-                len({event["symbol"] for event in self.dropped_target_adjustments}),
-            )
+        m["rebalance_unchanged_target_fills"] = self.rebalance_unchanged_target_fills
+        # Dropped resizes (hold) and drift-driven resizes (rebalance with
+        # neither a band nor a calendar) both leave the headline metrics
+        # looking normal, so they go on the run card as well as to the log.
+        position_adjustment_warnings = self._position_adjustment_warnings(
+            m["rebalance_executed_fills"]
+        )
+        for warning in position_adjustment_warnings:
+            logger.warning("%s", warning)
 
         # Portfolio Studio: risk x-ray over the strategy's average basket.
         # Short runs and never-invested strategies raise ValueError in the
@@ -1151,6 +1158,7 @@ class BaseEngine(ABC):
             card_warnings.append(config["_run_card_caliber_warning"])
         if config.get("_run_card_annualisation_warning"):
             card_warnings.append(config["_run_card_annualisation_warning"])
+        card_warnings.extend(position_adjustment_warnings)
         from backtest.run_card import write_run_card
         write_run_card(
             run_dir,
@@ -1231,10 +1239,12 @@ class BaseEngine(ABC):
 
             if self.position_adjustment == "rebalance":
                 if execute_targets and not stop_run:
+                    first_fill = len(self.fill_records)
                     self._execute_target_rebalance(
                         target_weights, data_map, ts, equity, codes
                     )
                     self.rebalance_bars_executed += 1
+                    self._count_unchanged_target_fills(target_weights, first_fill)
                 target_weights = {}
             else:
                 self._record_dropped_target_adjustments(target_weights, ts)
@@ -1660,6 +1670,83 @@ class BaseEngine(ABC):
                     target_w,
                     previous,
                 )
+
+    def _count_unchanged_target_fills(
+        self, target_weights: Dict[str, Optional[float]], first_fill: int
+    ) -> None:
+        """Count this bar's resize fills whose symbol kept its previous target.
+
+        Called after a rebalance-mode bar has executed. A ``target_rebalance``
+        fill on a symbol whose target equals the one it had on the previous
+        executed bar traded price drift (or caught up with an earlier change
+        that could not fill then), not a new target from the strategy.
+
+        Args:
+            target_weights: This bar's target per symbol; ``None`` means the
+                strategy produced no decision and the previous target stands.
+            first_fill: Length of ``fill_records`` before this bar executed,
+                so the fills from ``first_fill`` on are this bar's.
+        """
+        for fill in self.fill_records[first_fill:]:
+            if fill.reason != "target_rebalance":
+                continue
+            previous = self._last_target_weight.get(fill.symbol)
+            target_w = target_weights.get(fill.symbol)
+            if previous is None or target_w is None:
+                continue
+            if abs(target_w - previous) <= self._TARGET_CHANGE_EPSILON:
+                self.rebalance_unchanged_target_fills += 1
+        for symbol, target_w in target_weights.items():
+            if target_w is not None:
+                self._last_target_weight[symbol] = target_w
+
+    def _position_adjustment_warnings(self, rebalance_executed_fills: int) -> List[str]:
+        """Run-card warnings for runs whose trading did not follow their targets.
+
+        Two cases, neither visible in the headline metrics:
+
+        - ``hold`` dropped same-direction resizes the strategy asked for (#918).
+        - ``rebalance`` with no drift band and no execution calendar spent more
+          than half of its resize fills re-trading targets that had not
+          changed: following price drift, or completing a target change that
+          could not fill on its own bar. With a band or a calendar the drift
+          fills are what the user configured, so they are not reported.
+
+        Args:
+            rebalance_executed_fills: The run's ``target_rebalance`` fill count.
+
+        Returns:
+            Warning strings, possibly empty.
+        """
+        warnings: List[str] = []
+        if self.dropped_target_adjustments:
+            symbols = {event["symbol"] for event in self.dropped_target_adjustments}
+            warnings.append(
+                f"position_adjustment='hold' dropped {len(self.dropped_target_adjustments)} "
+                f"target change(s) across {len(symbols)} symbol(s); the report's "
+                "target_change_count describes requests, not fills. Set "
+                "position_adjustment='rebalance' to execute them, with rebalance_mask "
+                "or rebalance_tolerance if the strategy re-weights on a schedule."
+            )
+        unchanged = self.rebalance_unchanged_target_fills
+        if (
+            self.position_adjustment == "rebalance"
+            and self.rebalance_tolerance == 0.0
+            and self.rebalance_mask is None
+            and 2 * unchanged > rebalance_executed_fills
+        ):
+            warnings.append(
+                "position_adjustment='rebalance' with rebalance_tolerance=0 and no "
+                f"rebalance_mask: {unchanged} of {rebalance_executed_fills} rebalance "
+                "fill(s) re-sized a position whose target weight had not changed since "
+                "the previous bar, so most rebalance trading did not execute a new "
+                "target. Such a fill follows price drift, or completes an earlier target "
+                "change that could not fill on its own bar (a halted or limit-locked "
+                "bar, a settlement hold, lot rounding or too little cash). Set "
+                "rebalance_mask (an execution calendar) or rebalance_tolerance (a drift "
+                "band) if the strategy re-weights on a schedule."
+            )
+        return warnings
 
     def _execute_target_rebalance(
         self,
