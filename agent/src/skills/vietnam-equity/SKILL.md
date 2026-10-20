@@ -32,7 +32,7 @@ sources:
 ```
 
 - **Prices are whole VND.** The band and tick arithmetic expects prices such as `24200`. Several Vietnamese data APIs return prices in thousands of VND (`24.2`); multiply those by 1,000 before writing a local file, or the tick and band arithmetic runs on numbers a thousand times too small. Check one known quote before the first run.
-- **Adjustment.** Yahoo's `.VN` bars are split- and dividend-adjusted, so older bars sit off the tick grid while the relative band checks still hold. Vietnamese issuers pay stock dividends and run rights issues often; adjust local files the same way, because an unadjusted ex-rights gap looks like a limit-down day.
+- **Adjustment.** Yahoo's `.VN` bars are split- and dividend-adjusted, so older bars sit off the tick grid while the relative band checks still hold. Fills still snap to the grid, and on a flat grid a tick weighs more on an adjusted price than it did on the traded one: HNX and UPCoM's 100 VND tick is 1.8% of an adjusted 5,550 VND but 0.4% of a traded 24,000 VND. Vietnamese issuers pay stock dividends and run rights issues often; adjust local files the same way, because an unadjusted ex-rights gap looks like a limit-down day.
 - yfinance is an unofficial Yahoo client, so treat availability as best-effort.
 
 ## What the Engine Enforces
@@ -44,16 +44,19 @@ Every `.VN`, `.HNX` and `.UPCOM` code runs on `VietnamEquityEngine`, alone or as
 | Long-only | a short order is refused; `allow_short` raises at construction | leave `allow_short` unset |
 | Settlement | a buy may be sold from the second following session (T+2: shares arrive for the afternoon session of T+2). Adding to a position restarts the hold for the whole position | `vn_settlement_bars` (2) |
 | Price band | a buy is blocked when its fill would be at or above the ceiling, a sell at or below the floor; bounds come from the previous close and are rounded onto the tick grid | `price_limit` (unset: each exchange's band; a value applies to every symbol; `0` disables) |
+| Listing history | a name that moved exchange takes, on each bar, the band and tick grid of the exchange it traded on that day; its first session after a move takes the new exchange's first-day band (±20% HOSE, ±30% HNX, ±40% UPCoM) | `vn_exchange_history` (unset: the suffix decides on every bar) |
 | Lots | orders floor to multiples of 100 shares; odd lots are not modelled | none |
 | Brokerage | charged on both sides | `vn_brokerage` (0.0015) |
 | Sell tax | 0.1% of gross proceeds on every sale, at a gain or a loss (individual investors) | `vn_tax_sell` (0.001) |
 | Slippage | fills slip against you and snap to the next valid tick | `slippage` (0.001) |
 | Leverage | forced to 1.0 (cash account) | none |
 
+A name that moved exchange keeps one code over its whole history, the one for the exchange it lists on now. `"vn_exchange_history": {"ACB.VN": {"2018-01-02": "HNX", "2020-12-09": "HOSE"}}` runs ACB under HNX's band and tick grid until its first HOSE session on 9 December 2020. Each date is the first session on that exchange, and the earliest only has to precede your data; exchanges are `HOSE` (or `HSX`), `HNX` and `UPCOM`.
+
 Known approximations:
 
 - **Reference price.** The engine uses the previous close. UPCoM's real reference is the previous session's volume-weighted average price, and the `local` loader keeps OHLCV columns only, so a `pre_close` column in your file is not used.
-- **Wider first-day bands.** First trading days and resumptions after long suspensions trade within ±20% (HOSE), ±30% (HNX) or ±40% (UPCoM). The engine does not detect them; set `price_limit` for a run that studies new listings.
+- **Wider first-day bands.** First trading days and resumptions after long suspensions trade within ±20% (HOSE), ±30% (HNX) or ±40% (UPCoM). The engine does not detect them; set `price_limit` for a run that studies new listings. The first session after a move in `vn_exchange_history` is the exception: it takes the new exchange's first-day band, measured from the previous close, although the exchange sets that day's reference price afresh, as for a new listing.
 - **ETF tick.** HOSE quotes ETFs and covered warrants on a 10 VND tick at every price, but the engine applies the share grid to every `.VN` code, so ETF fill rounding is coarser than reality.
 - **Daily bars.** The hold is counted in bars. Run on `"interval": "1D"`; on intraday bars a two-bar hold releases after two bars, not two sessions.
 
@@ -70,7 +73,7 @@ At the defaults a round trip costs at least 0.6%: 0.15% brokerage on each side, 
 1. **Hold for at least two sessions.** A signal that wants out the next day cannot be filled; the engine delays the sale until the hold clears. Overnight reversal and other one-day strategies are not implementable on the cash market.
 2. **Expect locked days.** A stock at the ceiling cannot be bought and one at the floor cannot be sold, sometimes for several sessions in a row. Stop-losses do not fill during a limit-down run, so size positions to survive a few sessions at the floor. Momentum strategies that chase ceiling stocks show many blocked buys.
 3. **Screen liquidity.** The engine fills at the open regardless of volume. Filter the universe by average daily traded value (for example, above 10 billion VND over 20 sessions) and keep each position a small fraction of it. Many HNX and UPCoM names trade too little to enter or exit at size.
-4. **Use a point-in-time universe.** Yahoo serves only symbols listed today, so delisted names and names that moved exchange vanish, and survivorship bias inflates results. Build index universes from historical constituents; VN30 membership is reviewed twice a year, in January and July.
+4. **Use a point-in-time universe.** Yahoo serves only symbols listed today, so delisted names and names that moved exchange vanish, and survivorship bias inflates results. Build index universes from historical constituents; VN30 membership is reviewed twice a year, in January and July. When a local file for a `.VN` name also holds its years on HNX or UPCoM, give the earlier exchange in `vn_exchange_history`; otherwise those sessions run under HOSE's ±7% band.
 5. **Respect foreign ownership limits.** Foreign investors face caps, commonly 30% of a bank and 49% of most other companies. A stock at its cap ("full room") can only be bought from another foreign holder, often at a premium. The engine does not model this; exclude capped names when simulating a foreign investor.
 6. **Express bearish views by not holding.** With no shorting, a Sell or Underweight view means cutting or exiting the position, so keep target weights between 0 and 1. VN30 index futures can hedge, but this engine does not cover them.
 7. **Mind the calendar.** The market closes for about a week at Tet (Lunar New Year), and liquidity thins before it. Sessions run roughly 9:00 to 11:30 and 13:00 to 14:45 local time (UTC+7). Index reviews and ETF rebalances (VN30, VNDiamond and foreign ETFs that track Vietnam) concentrate flows around known dates.

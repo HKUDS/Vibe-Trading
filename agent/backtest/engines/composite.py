@@ -237,6 +237,9 @@ class CompositeEngine(BaseEngine):
         """Delegate to active symbol's sub-engine."""
         sub = self._rule_for(self._active_symbol)
         sub._active_symbol = self._active_symbol
+        # A Vietnamese symbol's tick grid can depend on the bar's date (a
+        # dated listing exchange); the composite owns the bar cursor.
+        sub._bar_ts = self._bar_ts
         return sub.apply_slippage(price, direction)
 
     # ── PnL / margin dispatch (route by symbol, not _active_symbol) ──
