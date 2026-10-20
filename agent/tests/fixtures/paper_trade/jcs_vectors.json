@@ -1,0 +1,161 @@
+{
+  "$comment": "Frozen JCS interpretation vectors for paper_trade_step received_state_hash (T11, AM-4-2 / VD-4). These vectors are the SOLE cross-repo interpretation authority: VT and RM each assert their own JCS implementation against them. Per VD-14 re-baseline protocol, once RM adopts them they are IMMUTABLE — regenerating them requires explicit human sign-off named in the commit message. Canonical strings below were hand-derived from RFC 8785 / ECMAScript Number::toString rules; sha256 = lowercase hex digest of the UTF-8 canonical string.",
+  "algorithm": {
+    "canonicalization": "RFC 8785 JCS as frozen by VD-4: object keys sorted by Unicode code point (json.dumps sort_keys semantics; identical to UTF-16 code-unit order for the BMP-only keys used here), numbers in ECMAScript shortest round-trip form (100000.0 == 100000 -> 100000; -0.0 -> 0; 1e21 -> 1e+21; 1e16 -> 10000000000000000), strings escaped per json.dumps(ensure_ascii=False), arrays order-sensitive (never sorted).",
+    "hash": "sha256 over the UTF-8 encoding of the canonical string, lowercase hex digest"
+  },
+  "vectors": [
+    {
+      "name": "key_order_shuffle_a",
+      "input": {
+        "market": "cn_a",
+        "account_id": "pa_01",
+        "cash": 1000.5
+      },
+      "canonical": "{\"account_id\":\"pa_01\",\"cash\":1000.5,\"market\":\"cn_a\"}",
+      "sha256": "bfbd8652f4a6a35d9514b793cb26b93c27bb45f4c33964495483052f09f0a349"
+    },
+    {
+      "name": "key_order_shuffle_b",
+      "input": {
+        "cash": 1000.5,
+        "account_id": "pa_01",
+        "market": "cn_a"
+      },
+      "canonical": "{\"account_id\":\"pa_01\",\"cash\":1000.5,\"market\":\"cn_a\"}",
+      "sha256": "bfbd8652f4a6a35d9514b793cb26b93c27bb45f4c33964495483052f09f0a349"
+    },
+    {
+      "name": "float_int_equiv_float",
+      "input": {
+        "qty": 100000.0
+      },
+      "canonical": "{\"qty\":100000}",
+      "sha256": "1174edd4f8641f5f0f9550fb88e64688e6c17c68a5465d88ca27e5c36909ecd1"
+    },
+    {
+      "name": "float_int_equiv_int",
+      "input": {
+        "qty": 100000
+      },
+      "canonical": "{\"qty\":100000}",
+      "sha256": "1174edd4f8641f5f0f9550fb88e64688e6c17c68a5465d88ca27e5c36909ecd1"
+    },
+    {
+      "name": "large_and_exponent_forms",
+      "input": {
+        "a": 1e+16,
+        "b": 1.2345678901234567e+20,
+        "c": 1e+21,
+        "d": 1e-06,
+        "e": 1.5e-07
+      },
+      "canonical": "{\"a\":10000000000000000,\"b\":123456789012345670000,\"c\":1e+21,\"d\":0.000001,\"e\":1.5e-7}",
+      "sha256": "2e8225e26a05653d9170ebcc02880be9dceab33e6b8549bd631a24df94b1609b"
+    },
+    {
+      "name": "negative_zero",
+      "input": {
+        "x": -0.0,
+        "y": 0.0,
+        "z": 0
+      },
+      "canonical": "{\"x\":0,\"y\":0,\"z\":0}",
+      "sha256": "35461afe4a2d42dcc8948534195c5e79c22332615508a7a0627de91e52c3b5c8"
+    },
+    {
+      "name": "unicode_symbol",
+      "input": {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "note": "naïve café — ✓"
+      },
+      "canonical": "{\"name\":\"贵州茅台\",\"note\":\"naïve café — ✓\",\"symbol\":\"600519.SH\"}",
+      "sha256": "7998876ecec1a2204c0b9bdc5918a4bc799ab2343ce4bc985c1ffe898d068294"
+    },
+    {
+      "name": "empty_positions",
+      "input": {
+        "cash": 100000.0,
+        "positions": []
+      },
+      "canonical": "{\"cash\":100000,\"positions\":[]}",
+      "sha256": "78d7d86d7aa283ef41bed8aeec058cbf71a9728241f5ef3a6b8b0fc7e4b3d328"
+    },
+    {
+      "name": "array_order_ab",
+      "input": {
+        "positions": [
+          {
+            "symbol": "600519.SH",
+            "qty": 100,
+            "avg_cost": 1418.0
+          },
+          {
+            "symbol": "000001.SZ",
+            "qty": 200,
+            "avg_cost": 11.55
+          }
+        ]
+      },
+      "canonical": "{\"positions\":[{\"avg_cost\":1418,\"qty\":100,\"symbol\":\"600519.SH\"},{\"avg_cost\":11.55,\"qty\":200,\"symbol\":\"000001.SZ\"}]}",
+      "sha256": "3bbc93e93eb56ff41ce31f536e991cc9049311e5f77b6fc485ee80335b0f5b63"
+    },
+    {
+      "name": "array_order_ba",
+      "input": {
+        "positions": [
+          {
+            "symbol": "000001.SZ",
+            "qty": 200,
+            "avg_cost": 11.55
+          },
+          {
+            "symbol": "600519.SH",
+            "qty": 100,
+            "avg_cost": 1418.0
+          }
+        ]
+      },
+      "canonical": "{\"positions\":[{\"avg_cost\":11.55,\"qty\":200,\"symbol\":\"000001.SZ\"},{\"avg_cost\":1418,\"qty\":100,\"symbol\":\"600519.SH\"}]}",
+      "sha256": "b5009b3e3228d04e14d3fa3338124833ab79f9096dcb238a91cdb7ba6413c121"
+    },
+    {
+      "name": "json_base_tokens",
+      "input": {
+        "flag": true,
+        "other": false,
+        "nothing": null
+      },
+      "canonical": "{\"flag\":true,\"nothing\":null,\"other\":false}",
+      "sha256": "92d19a07cb5390c05daaed874239742c444fb8d6b76055a7d738d14d835b5737"
+    },
+    {
+      "name": "am4_hash_coverage_object",
+      "input": {
+        "to_date": "2026-10-20",
+        "from_date": "2026-10-20",
+        "fee_model": {
+          "transfer_fee": 1e-05,
+          "stamp_tax_sell": 0.0005,
+          "commission_min": 5.0,
+          "commission_rate": 0.00025
+        },
+        "market": "cn_a",
+        "account_state": {
+          "positions": [
+            {
+              "symbol": "600519.SH",
+              "avg_cost": 1418.0,
+              "qty": 100
+            }
+          ],
+          "cash": 98213.44
+        },
+        "account_id": "pa_deadbeefdeadbeefdeadbeef"
+      },
+      "canonical": "{\"account_id\":\"pa_deadbeefdeadbeefdeadbeef\",\"account_state\":{\"cash\":98213.44,\"positions\":[{\"avg_cost\":1418,\"qty\":100,\"symbol\":\"600519.SH\"}]},\"fee_model\":{\"commission_min\":5,\"commission_rate\":0.00025,\"stamp_tax_sell\":0.0005,\"transfer_fee\":0.00001},\"from_date\":\"2026-10-20\",\"market\":\"cn_a\",\"to_date\":\"2026-10-20\"}",
+      "sha256": "7314d251e44d563981b80d94c957f301a77b2c867fe229e7af264d39c643cac1"
+    }
+  ]
+}

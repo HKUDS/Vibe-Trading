@@ -1,0 +1,107 @@
+{
+  "schema": "paper_trade.market_manifest/v1",
+  "generator": "record_market_fixtures.py (manual tool; tests never run it)",
+  "description": "Tamper-evident index over agent/tests/fixtures/paper_trade/market/*.json. sha256 is of the exact on-disk bytes; test_paper_trade_fixtures.py re-verifies them. Recorded fixtures are byte-frozen snapshots of the listed request_url replies (VD-14); synthetic fixtures are authored, engine-facing inputs for T7/T5, and their construction is documented per file.",
+  "fixtures": [
+    {
+      "file": "hk_00700_tencent.json",
+      "sha256": "af5ecba70140d160f9770f4e513486880f70a65f6573d7bad96ad09a52f4106d",
+      "bytes": 40277,
+      "rows": 256,
+      "first_date": "2025-10-02",
+      "last_date": "2026-10-16",
+      "market": "hk_equity",
+      "symbol": "00700.HK",
+      "source": "tencent",
+      "price_caliber": "raw",
+      "volume_unit": "shares",
+      "request_url": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=hk00700,day,2025-10-01,2026-10-16,500,qfq",
+      "window": {
+        "start": "2025-10-01",
+        "end": "2026-10-16"
+      },
+      "recorded_at_utc": "2026-10-18T14:32:36Z",
+      "drop_stats": {
+        "wire_rows": 256,
+        "dropped_unparseable": 0,
+        "dropped_out_of_window": 0,
+        "dropped_duplicate_dates": 0,
+        "dropped_dirty_ohlc": 0
+      },
+      "caliber_note": "raw — Tencent serves no adjusted HK series: the fqkline reply carries only 'day' (never 'qfqday', #1493 / registry.py ('tencent',hk_equity)='raw'), so the ',qfq' request parameter changes nothing. Row layout is [date, open, close, high, low, volume]; a 7th event-dict element is ignored exactly like tencent_loader.py:206-217 (parses 6 fields).",
+      "construction": null
+    },
+    {
+      "file": "synthetic_holiday_gap.json",
+      "sha256": "88c5621fc27014b320d682c783e744ceeebe2878c1932757fb2500b7b759c360",
+      "bytes": 5069,
+      "rows": 24,
+      "first_date": "2026-03-02",
+      "last_date": "2026-04-10",
+      "market": "us_equity",
+      "symbol": "SYNTH-GAP",
+      "source": "synthetic",
+      "price_caliber": "raw",
+      "volume_unit": "shares",
+      "request_url": null,
+      "window": {
+        "start": "2026-03-02",
+        "end": "2026-04-10"
+      },
+      "recorded_at_utc": null,
+      "drop_stats": null,
+      "caliber_note": "authored unadjusted daily series for the calendar fail-closed seam (VD-5): weekends are implicit; the two documented gaps are trading-day absences, not calendar artifacts",
+      "construction": "24 weekday bars in five segments (5+4+5+5+5) from 2026-03-02 to 2026-04-10; open=prev close, close=100.0+0.25*i, high=max(o,c)+0.5, low=min(o,c)-0.5, volume=1000000.0; values binary-exact quarters. Gap 1 skips Mon 2026-03-09 (single holiday on a long weekend); Gap 2 skips the whole week 2026-03-23..2026-03-27 (multi-day closure, 5 trading days). gap_samples below pins both so tests can assert the authored gaps without hardcoding dates twice."
+    },
+    {
+      "file": "synthetic_split_4to1.json",
+      "sha256": "8c27a304aa4b125e04f23095e74f8777ff7274559770a1b6a80740b7fc5144fb",
+      "bytes": 22624,
+      "rows": 141,
+      "first_date": "2026-01-05",
+      "last_date": "2026-07-20",
+      "market": "us_equity",
+      "symbol": "SYNTH-4TO1",
+      "source": "synthetic",
+      "price_caliber": "raw",
+      "volume_unit": "shares",
+      "request_url": null,
+      "window": {
+        "start": "2026-01-05",
+        "end": "2026-07-20"
+      },
+      "recorded_at_utc": null,
+      "drop_stats": null,
+      "caliber_note": "authored unadjusted daily series: the 4:1 split cliff is present by construction and is NOT smoothed, mirroring the raw sina/us caliber the T7 detector must handle",
+      "construction": "141 consecutive weekdays from 2026-01-05; bars 0..19 pre-split with open=prev close, close=400.0+4.0*i, high=max(o,c)+1.0, low=min(o,c)-1.0, volume=1000000.0; bar 20 is the ex-date: every OHLC is exactly the prior close / 4 (476.0 -> 119.0, close-to-close ratio exactly 0.25) and volume is exactly 4x (1000000 -> 4000000, the same-direction multiple confirmation VD-6 requires); bars 21..140 drift with close=119.0+0.5*k and volume=4000000.0. All values are binary-exact quarters; no rounding anywhere. 120 bars follow the ex-date so a K=120 trading-day lookback (VD-6/B3 fetch window) puts the event exactly at the window edge."
+    },
+    {
+      "file": "us_AAPL_sina.json",
+      "sha256": "a16e75b1c115f47c29ee059687aa4ba4374919b5cb4d6d098aef07f75fa8bac5",
+      "bytes": 42223,
+      "rows": 263,
+      "first_date": "2025-10-01",
+      "last_date": "2026-10-16",
+      "market": "us_equity",
+      "symbol": "AAPL.US",
+      "source": "sina",
+      "price_caliber": "raw",
+      "volume_unit": null,
+      "request_url": "https://stock.finance.sina.com.cn/usstock/api/jsonp_v2.php/var%20x=/US_MinKService.getDailyK?symbol=AAPL",
+      "window": {
+        "start": "2025-10-01",
+        "end": "2026-10-16"
+      },
+      "recorded_at_utc": "2026-10-18T14:32:36Z",
+      "drop_stats": {
+        "wire_rows": 10055,
+        "dropped_unparseable": 0,
+        "dropped_out_of_window": 9792,
+        "dropped_duplicate_dates": 0,
+        "dropped_dirty_ohlc": 0
+      },
+      "caliber_note": "raw / unadjusted — no split scaling applied by the source; a close-to-close read across the 2020-08-31 4:1 ex-date reads ~0.2585. Pinned by registry.py PRICE_CALIBER_BY_SOURCE['sina']='raw' and live-confirmed 2026-10-18 (STEP0-LANE-A A1/A2); the recorded window itself does not contain that ex-date.",
+      "construction": null
+    }
+  ]
+}

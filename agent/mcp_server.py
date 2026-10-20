@@ -6,9 +6,9 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 81 tools: skills, research goals, strategy discovery,
+Surfaces 82 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
-analysis, market data, fundamentals & capital-flow & news & discovery
+analysis, deterministic paper-trading matching (paper_trade_step), market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_southbound_flow /
 get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
@@ -468,6 +468,7 @@ _lenient_str_list_opt = Annotated[list[str] | None, _lenient]
 _lenient_float_list_opt = Annotated[list[float] | None, _lenient]
 _lenient_dict_list = Annotated[list[dict[str, Any]], _lenient]
 _lenient_dict_list_opt = Annotated[list[dict[str, Any]] | None, _lenient]
+_lenient_dict_any = Annotated[dict[str, Any], _lenient]
 _lenient_dict_any_opt = Annotated[dict[str, Any] | None, _lenient]
 _lenient_dict_str_str = Annotated[dict[str, str], _lenient]
 
@@ -820,6 +821,69 @@ def backtest(run_dir: str) -> str:
     from src.tools.backtest_tool import run_backtest
 
     return run_backtest(run_dir)
+
+
+# ---------------------------------------------------------------------------
+# Paper-trading step tool (pt-v1.1, hand-written wrapper)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+def paper_trade_step(
+    account_id: str,
+    market: str,
+    account_state: _lenient_dict_any,
+    from_date: str,
+    to_date: str,
+    orders: _lenient_dict_list_opt = None,
+    strategy_path: str | None = None,
+    fee_model: _lenient_dict_any_opt = None,
+) -> str:
+    """Run one step of the deterministic paper-trading matching engine; never places real orders.
+
+    Matches the injected ``orders`` (or a ``strategy_path``'s per-day orders)
+    against daily bars under the market's frozen rules (T+1, price limits,
+    board lots, fees) and returns ONE in-band JSON document on
+    ``result.content[0].text``: the pt-v1.1 success result, or an error
+    envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
+    non-retryable) on the SAME channel — never a transport error. Research-only:
+    it reads market data and the injected ledger, matches on paper, and writes
+    nothing; no broker or trading-connector order path exists here.
+
+    Args:
+        account_id: Account identifier, echoed verbatim in the result.
+        market: One of ``cn_a`` / ``hk`` / ``us`` — selects the frozen rule set.
+        account_state: RM-injected ledger snapshot ``{cash, positions:[{symbol,
+            qty, avg_cost}]}``. Hashed raw for ``received_state_hash``.
+        from_date: Inclusive range start ``YYYY-MM-DD``. Orders mode requires
+            ``from_date == to_date`` (single day); multi-day ranges are
+            strategy_path mode only.
+        to_date: Inclusive range end ``YYYY-MM-DD`` (the target trading day).
+        orders: Orders mode — array of ``{symbol, side, qty, limit?}``. Exactly
+            one of ``orders`` / ``strategy_path`` must be given; an empty array
+            is the zero-order pure-valuation path.
+        strategy_path: Strategy mode — path to an AST-hardened strategy whose
+            per-day orders are matched. Exactly one of ``orders`` /
+            ``strategy_path``.
+        fee_model: Optional per-key fee overrides merged over the market
+            defaults.
+    """
+    from src.tools.paper_trade.tool import run_paper_trade_step
+
+    payload: dict[str, Any] = {
+        "account_id": account_id,
+        "market": market,
+        "account_state": account_state,
+        "from_date": from_date,
+        "to_date": to_date,
+    }
+    if orders is not None:
+        payload["orders"] = orders
+    if strategy_path is not None:
+        payload["strategy_path"] = strategy_path
+    if fee_model is not None:
+        payload["fee_model"] = fee_model
+    return run_paper_trade_step(payload)
 
 
 # ---------------------------------------------------------------------------

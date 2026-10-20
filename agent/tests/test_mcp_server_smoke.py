@@ -62,6 +62,7 @@ REQUIRED_TOOL_NAMES = {
     "trading_history",
     "alpha_zoo",
     "alpha_bench",
+    "paper_trade_step",
 }
 
 

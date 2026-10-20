@@ -1,0 +1,28 @@
+{
+  "schema": "paper_trade.golden_manifest/v1",
+  "generator": "one-off Step 5 (T5) generation from test_paper_trade_determinism.py scenarios; frozen at commit time",
+  "description": "T1 determinism goldens: exact wire bytes of dumps_payload(build_success_payload(assemble_result(...))) per market scenario. sha256 is of the exact on-disk bytes (single-line strict JSON, sorted keys, compact separators, raw UTF-8, no trailing newline). test_paper_trade_determinism.py regenerates each scenario and asserts byte equality. Frozen at Step 5; regeneration requires the VD-14 discipline (human-verified diff + commit message naming the reason).",
+  "goldens": [
+    {
+      "file": "cn_a_orders_single_day.json",
+      "sha256": "a19ac4342eaf37188567cd9a44e1e0ed67cf7ab5452a20b21a245b85388f1580",
+      "bytes": 919,
+      "market": "cn_a",
+      "scenario": "single-day orders run 2026-10-20: [{\"symbol\": \"600519.SH\", \"side\": \"buy\", \"qty\": 100}], cash 200000.0, fee_model = §4 cn_a defaults"
+    },
+    {
+      "file": "hk_orders_single_day.json",
+      "sha256": "9257ea18f4a25f5f9318f04468c0c0dc61e64e9ec92b6d0c05f553034cd09d0f",
+      "bytes": 898,
+      "market": "hk",
+      "scenario": "single-day orders run 2026-10-16: [{\"symbol\": \"00700.HK\", \"side\": \"buy\", \"qty\": 100}], cash 100000.0, fee_model = §4 hk defaults"
+    },
+    {
+      "file": "us_orders_single_day.json",
+      "sha256": "143896c9ada6bb437e9253fef124133ab3fd8fd74e3a0050af92492c2e8e0ca0",
+      "bytes": 777,
+      "market": "us",
+      "scenario": "single-day orders run 2026-10-16: [{\"symbol\": \"AAPL.US\", \"side\": \"buy\", \"qty\": 10}], cash 50000.0, fee_model = §4 us defaults"
+    }
+  ]
+}

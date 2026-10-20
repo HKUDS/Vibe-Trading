@@ -1,0 +1,230 @@
+{
+  "schema": "paper_trade.market_fixture/v1",
+  "market": "us_equity",
+  "symbol": "SYNTH-GAP",
+  "source": "synthetic",
+  "price_caliber": "raw",
+  "volume_unit": "shares",
+  "window": {
+    "start": "2026-03-02",
+    "end": "2026-04-10"
+  },
+  "caliber_note": "authored unadjusted daily series for the calendar fail-closed seam (VD-5): weekends are implicit; the two documented gaps are trading-day absences, not calendar artifacts",
+  "synthetic_construction": "24 weekday bars in five segments (5+4+5+5+5) from 2026-03-02 to 2026-04-10; open=prev close, close=100.0+0.25*i, high=max(o,c)+0.5, low=min(o,c)-0.5, volume=1000000.0; values binary-exact quarters. Gap 1 skips Mon 2026-03-09 (single holiday on a long weekend); Gap 2 skips the whole week 2026-03-23..2026-03-27 (multi-day closure, 5 trading days). gap_samples below pins both so tests can assert the authored gaps without hardcoding dates twice.",
+  "gap_samples": [
+    {
+      "after_date": "2026-03-06",
+      "resume_date": "2026-03-10",
+      "missing_weekdays": [
+        "2026-03-09"
+      ],
+      "label": "single_holiday_long_weekend"
+    },
+    {
+      "after_date": "2026-03-20",
+      "resume_date": "2026-03-30",
+      "missing_weekdays": [
+        "2026-03-23",
+        "2026-03-24",
+        "2026-03-25",
+        "2026-03-26",
+        "2026-03-27"
+      ],
+      "label": "multi_day_closure"
+    }
+  ],
+  "bars": [
+    {
+      "date": "2026-03-02",
+      "open": 100.0,
+      "high": 100.5,
+      "low": 99.5,
+      "close": 100.0,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-03",
+      "open": 100.0,
+      "high": 100.75,
+      "low": 99.5,
+      "close": 100.25,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-04",
+      "open": 100.25,
+      "high": 101.0,
+      "low": 99.75,
+      "close": 100.5,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-05",
+      "open": 100.5,
+      "high": 101.25,
+      "low": 100.0,
+      "close": 100.75,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-06",
+      "open": 100.75,
+      "high": 101.5,
+      "low": 100.25,
+      "close": 101.0,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-10",
+      "open": 101.0,
+      "high": 101.75,
+      "low": 100.5,
+      "close": 101.25,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-11",
+      "open": 101.25,
+      "high": 102.0,
+      "low": 100.75,
+      "close": 101.5,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-12",
+      "open": 101.5,
+      "high": 102.25,
+      "low": 101.0,
+      "close": 101.75,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-13",
+      "open": 101.75,
+      "high": 102.5,
+      "low": 101.25,
+      "close": 102.0,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-16",
+      "open": 102.0,
+      "high": 102.75,
+      "low": 101.5,
+      "close": 102.25,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-17",
+      "open": 102.25,
+      "high": 103.0,
+      "low": 101.75,
+      "close": 102.5,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-18",
+      "open": 102.5,
+      "high": 103.25,
+      "low": 102.0,
+      "close": 102.75,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-19",
+      "open": 102.75,
+      "high": 103.5,
+      "low": 102.25,
+      "close": 103.0,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-20",
+      "open": 103.0,
+      "high": 103.75,
+      "low": 102.5,
+      "close": 103.25,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-30",
+      "open": 103.25,
+      "high": 104.0,
+      "low": 102.75,
+      "close": 103.5,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-03-31",
+      "open": 103.5,
+      "high": 104.25,
+      "low": 103.0,
+      "close": 103.75,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-01",
+      "open": 103.75,
+      "high": 104.5,
+      "low": 103.25,
+      "close": 104.0,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-02",
+      "open": 104.0,
+      "high": 104.75,
+      "low": 103.5,
+      "close": 104.25,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-03",
+      "open": 104.25,
+      "high": 105.0,
+      "low": 103.75,
+      "close": 104.5,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-06",
+      "open": 104.5,
+      "high": 105.25,
+      "low": 104.0,
+      "close": 104.75,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-07",
+      "open": 104.75,
+      "high": 105.5,
+      "low": 104.25,
+      "close": 105.0,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-08",
+      "open": 105.0,
+      "high": 105.75,
+      "low": 104.5,
+      "close": 105.25,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-09",
+      "open": 105.25,
+      "high": 106.0,
+      "low": 104.75,
+      "close": 105.5,
+      "volume": 1000000.0
+    },
+    {
+      "date": "2026-04-10",
+      "open": 105.5,
+      "high": 106.25,
+      "low": 105.0,
+      "close": 105.75,
+      "volume": 1000000.0
+    }
+  ]
+}
