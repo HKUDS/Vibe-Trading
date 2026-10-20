@@ -47,7 +47,13 @@ def test_every_config_key_the_skill_names_is_read_by_the_engine() -> None:
     named = set(re.findall(r"`(vn_[a-z_]+|price_limit|slippage|allow_short)`", _text()))
     source = inspect.getsource(vietnam_equity)
 
-    assert {"vn_brokerage", "vn_tax_sell", "vn_settlement_bars", "price_limit"} <= named
+    assert {
+        "vn_brokerage",
+        "vn_tax_sell",
+        "vn_settlement_bars",
+        "vn_exchange_history",
+        "price_limit",
+    } <= named
     for key in named:
         assert f'config.get("{key}"' in source, key
 

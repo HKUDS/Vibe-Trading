@@ -35,6 +35,11 @@ Market rules:
     certain ex-right sessions use wider bands (±20% on HOSE, ±30% on HNX,
     ±40% on UPCoM); pass ``price_limit`` per run to apply one band to every
     symbol. Set it to ``0`` / ``None`` to disable.
+  - A name that moved exchange (UPCoM or HNX to HOSE, or the other way)
+    traded under its old exchange's band and tick grid until the move, but its
+    suffix names only the exchange it lists on now. ``vn_exchange_history``
+    gives the dated listing; the first session after a move lists the shares
+    on the new exchange afresh, so it takes that exchange's first-day band.
   - Tick: 10/50/100 VND by price on HOSE; a flat 100 VND on HNX and UPCoM.
     Where the band is narrower than one tick (a low-priced HNX or UPCoM
     share), the rounded ceiling or floor would equal the reference price;
@@ -65,6 +70,7 @@ prices.
 
 from __future__ import annotations
 
+import bisect
 import logging
 from typing import Optional
 
@@ -104,6 +110,19 @@ VN_EXCHANGE_BY_SUFFIX: dict[str, str] = {
 # Normal-session daily band (biên độ dao động) per exchange.
 VN_PRICE_BANDS: dict[str, float] = {"HOSE": 0.07, "HNX": 0.10, "UPCOM": 0.15}
 
+# First-day band per exchange: a new listing, a resumption after a long halt,
+# and the first session after a move to another exchange.
+VN_FIRST_DAY_BANDS: dict[str, float] = {"HOSE": 0.20, "HNX": 0.30, "UPCOM": 0.40}
+
+# Exchange names accepted in ``vn_exchange_history``. Vietnamese data sources
+# label HOSE "HSX" as often as "HOSE".
+_EXCHANGE_NAMES: dict[str, str] = {
+    "HOSE": "HOSE",
+    "HSX": "HOSE",
+    "HNX": "HNX",
+    "UPCOM": "UPCOM",
+}
+
 # Board lot on the continuous session, the same on all three exchanges.
 HOSE_LOT_SIZE = 100
 
@@ -137,6 +156,83 @@ def vn_exchange(symbol: str) -> str:
         if upper.endswith(suffix):
             return exchange
     return "HOSE"
+
+
+def _session_day(ts: object) -> Optional[pd.Timestamp]:
+    """Return *ts* as a tz-naive midnight timestamp, or ``None`` for no date.
+
+    A tz-aware bar keeps its local wall-clock date: converting a Vietnamese
+    session stamped at local midnight to UTC would move it to the day before.
+    """
+    if ts is None:
+        return None
+    day = pd.Timestamp(ts)
+    if pd.isna(day):
+        return None
+    if day.tzinfo is not None:
+        day = day.tz_localize(None)
+    return day.normalize()
+
+
+def parse_exchange_history(
+    history: object,
+) -> dict[str, tuple[tuple[pd.Timestamp, ...], tuple[str, ...]]]:
+    """Validate the ``vn_exchange_history`` config value.
+
+    Args:
+        history: ``{symbol: {date: exchange}}``, keyed by the run's codes,
+            where each date is the first session on that exchange (the
+            earliest only has to precede the data), e.g.
+            ``{"ACB.VN": {"2018-01-02": "HNX", "2020-12-09": "HOSE"}}``.
+            Exchanges are ``HOSE`` (or ``HSX``), ``HNX`` and ``UPCOM``, in any
+            letter case. ``None`` or an empty mapping means no history.
+
+    Returns:
+        Per symbol, its dates in ascending order and the exchange from each.
+
+    Raises:
+        ValueError: When the value is not a mapping of non-empty mappings, a
+            date does not parse, an exchange is unknown, or two entries fall
+            on the same day.
+    """
+    if not history:
+        return {}
+    if not isinstance(history, dict):
+        raise ValueError(
+            "vn_exchange_history must map each symbol to {date: exchange}, "
+            f"got {type(history).__name__}"
+        )
+    parsed: dict[str, tuple[tuple[pd.Timestamp, ...], tuple[str, ...]]] = {}
+    for symbol, listings in history.items():
+        if not isinstance(listings, dict) or not listings:
+            raise ValueError(
+                f"vn_exchange_history[{symbol!r}] must be a non-empty "
+                "{date: exchange} mapping"
+            )
+        by_day: dict[pd.Timestamp, str] = {}
+        for raw_day, raw_exchange in listings.items():
+            try:
+                day = _session_day(raw_day)
+            except (TypeError, ValueError):
+                day = None
+            if day is None:
+                raise ValueError(
+                    f"vn_exchange_history[{symbol!r}]: {raw_day!r} is not a date"
+                )
+            exchange = _EXCHANGE_NAMES.get(str(raw_exchange).strip().upper())
+            if exchange is None:
+                raise ValueError(
+                    f"vn_exchange_history[{symbol!r}][{raw_day!r}]: unknown "
+                    f"exchange {raw_exchange!r}; use HOSE, HNX or UPCOM"
+                )
+            if day in by_day:
+                raise ValueError(
+                    f"vn_exchange_history[{symbol!r}]: two entries on {day.date()}"
+                )
+            by_day[day] = exchange
+        days = tuple(sorted(by_day))
+        parsed[str(symbol)] = (days, tuple(by_day[d] for d in days))
+    return parsed
 
 
 def vn_tick_size(price: float, exchange: str = "HOSE") -> float:
@@ -288,7 +384,10 @@ def hose_is_settled(
 
 
 def hose_base_price(
-    state: BaseEngine, symbol: str, bar: pd.Series,
+    state: BaseEngine,
+    symbol: str,
+    bar: pd.Series,
+    exchange: Optional[str] = None,
 ) -> Optional[float]:
     """Resolve the reference price (giá tham chiếu) for *symbol* on this bar.
 
@@ -305,6 +404,8 @@ def hose_base_price(
         state: Engine holding the run's close panel and bar cursor.
         symbol: Symbol whose reference price is wanted.
         bar: Current bar.
+        exchange: Exchange whose tick grid the price is rounded onto; defaults
+            to the symbol's suffix (``vn_exchange``).
 
     Returns:
         The reference price in VND, or ``None`` when no historical close is
@@ -327,7 +428,7 @@ def hose_base_price(
 
     if candidate is None:
         return None
-    return vn_round_down(candidate, vn_exchange(symbol))
+    return vn_round_down(candidate, exchange or vn_exchange(symbol))
 
 
 def hose_can_execute(
@@ -340,9 +441,11 @@ def hose_can_execute(
     """Apply the Vietnam execution rules, reading state and rules separately.
 
     The hold, the short ban and the board lot are the same on all three
-    exchanges; the band and tick grid are those of the symbol's own exchange
-    (``vn_exchange``): ±7% on HOSE's grid, ±10% and ±15% on HNX's and UPCoM's
-    flat 100-VND grid.
+    exchanges; the band and tick grid are those of the exchange the symbol
+    trades on that day: ±7% on HOSE's grid, ±10% and ±15% on HNX's and UPCoM's
+    flat 100-VND grid. That exchange is the suffix's (``vn_exchange``) unless
+    the run's ``vn_exchange_history`` dates a move (see
+    :meth:`VietnamEquityEngine.listing_on`).
 
     A single-market run passes the same engine as both arguments. A composite
     run cannot: it owns the positions, fill ledger, bar cursor and close panel
@@ -372,13 +475,15 @@ def hose_can_execute(
     if direction == 0 and not hose_settlement_ok(state, rules, symbol):
         return False
 
-    # 3. Daily price band: ±7% HOSE, ±10% HNX, ±15% UPCoM (disabled when falsy).
-    band = rules.band_for(symbol)
+    # 3. Daily price band: ±7% HOSE, ±10% HNX, ±15% UPCoM (disabled when falsy),
+    #    on the exchange the symbol trades on at the state's bar.
+    ts = getattr(state, "_bar_ts", None)
+    band = rules.band_for(symbol, ts)
     if not band:
         return True
 
-    exchange = vn_exchange(symbol)
-    base_price = hose_base_price(state, symbol, bar)
+    exchange = rules.exchange_on(symbol, ts)
+    base_price = hose_base_price(state, symbol, bar, exchange)
     if base_price is None:
         if not rules._limit_base_warned:
             rules._limit_base_warned = True
@@ -397,9 +502,11 @@ def hose_can_execute(
         return True  # order sizing rejects non-positive prices downstream
 
     upper, lower = vn_price_limits(base_price, band, exchange)
-    # A composite's rule book was last synced to whichever symbol it served
-    # before, so the fill is priced for this symbol's grid explicitly.
-    fill_price = rules.slipped_price(symbol, open_price, direction if direction else -1)
+    # A composite's rule book was last synced to whichever symbol and bar it
+    # served before, so the fill is priced for this symbol's grid explicitly.
+    fill_price = rules.slipped_price(
+        symbol, open_price, direction if direction else -1, ts
+    )
     if direction == 1 and fill_price >= upper - _PRICE_EPS:
         return False  # giá trần: no ask to buy from
     if direction == 0 and fill_price <= lower + _PRICE_EPS:
@@ -446,6 +553,14 @@ class VietnamEquityEngine(BaseEngine):
       - vn_brokerage / vn_tax_sell
       - vn_settlement_bars: sessions a buy is held before it may be sold,
         default 2 (approximates the T+2 cycle on daily bars)
+      - vn_exchange_history: ``{symbol: {date: exchange}}`` for names that
+        moved exchange, each date being the first session there. A bar takes
+        the band and tick grid of the exchange in force on its date, and the
+        first session after a move takes that exchange's first-day band (0.20
+        HOSE, 0.30 HNX, 0.40 UPCoM). Unlisted symbols, and bars before a
+        symbol's earliest date, use the suffix's exchange. ``price_limit``
+        still sets the band of every bar; the history then moves only the
+        tick grid
 
     Raises:
         ValueError: When ``allow_short`` is truthy. Routine short selling is
@@ -477,24 +592,62 @@ class VietnamEquityEngine(BaseEngine):
         self.settlement_bars: int = int(
             config.get("vn_settlement_bars", _DEFAULT_SETTLEMENT_BARS)
         )
+        # Dated listing exchange for names that moved exchange.
+        self.exchange_history = parse_exchange_history(
+            config.get("vn_exchange_history")
+        )
         # One warning per engine when no reference price is derivable.
         self._limit_base_warned = False
         self._settlement_warned = False
 
-    def band_for(self, symbol: str) -> Optional[float]:
-        """Return the daily price band applying to *symbol*.
+    def listing_on(self, symbol: str, ts: object = None) -> tuple[str, bool]:
+        """Return the exchange *symbol* trades on at *ts*, and whether it moved.
 
         Args:
             symbol: Vietnamese symbol (``VIC.VN``, ``PVS.HNX``, ``ACV.UPCOM``).
+            ts: Bar timestamp; ``None`` (no bar, as outside a run) reads the
+                suffix.
 
         Returns:
-            The exchange's normal-session band when the run configured no
-            ``price_limit``, the configured band for every symbol when it did,
-            and ``None`` when the configured band is ``0`` / ``None``.
+            ``(exchange, moved)``. The exchange is the one the run's
+            ``vn_exchange_history`` dates on or before *ts*, and the suffix's
+            (``vn_exchange``) when the symbol has no history or *ts* falls
+            before its earliest date. ``moved`` is True only on a bar dated on
+            a later entry's own date: the first session on the new exchange.
         """
-        if self._band_per_exchange:
-            return VN_PRICE_BANDS[vn_exchange(symbol)]
-        return float(self.price_limit) if self.price_limit else None
+        history = self.exchange_history.get(symbol)
+        day = _session_day(ts)
+        if history is None or day is None:
+            return vn_exchange(symbol), False
+        days, exchanges = history
+        k = bisect.bisect_right(days, day) - 1
+        if k < 0:
+            return vn_exchange(symbol), False
+        return exchanges[k], k > 0 and days[k] == day
+
+    def exchange_on(self, symbol: str, ts: object = None) -> str:
+        """Return the exchange *symbol* trades on at *ts* (see :meth:`listing_on`)."""
+        return self.listing_on(symbol, ts)[0]
+
+    def band_for(self, symbol: str, ts: object = None) -> Optional[float]:
+        """Return the daily price band applying to *symbol* on the bar at *ts*.
+
+        Args:
+            symbol: Vietnamese symbol (``VIC.VN``, ``PVS.HNX``, ``ACV.UPCOM``).
+            ts: Bar timestamp; with a ``vn_exchange_history`` it selects the
+                exchange (see :meth:`listing_on`).
+
+        Returns:
+            The configured band for every symbol when the run set
+            ``price_limit``, and ``None`` when that band is ``0`` / ``None``.
+            Otherwise the band of the exchange the symbol trades on at *ts*:
+            its first-day band on the first session after a move, its
+            normal-session band on every other bar.
+        """
+        if not self._band_per_exchange:
+            return float(self.price_limit) if self.price_limit else None
+        exchange, moved = self.listing_on(symbol, ts)
+        return (VN_FIRST_DAY_BANDS if moved else VN_PRICE_BANDS)[exchange]
 
     def can_execute(self, symbol: str, direction: int, bar: pd.Series) -> bool:
         """Vietnam execution rules (HOSE, HNX, UPCoM).
@@ -541,7 +694,9 @@ class VietnamEquityEngine(BaseEngine):
             The reference price in VND, or ``None`` when no historical close is
             reachable (first bar of a run, or a composite sub-engine).
         """
-        return hose_base_price(self, symbol, bar)
+        return hose_base_price(
+            self, symbol, bar, self.exchange_on(symbol, self._bar_ts)
+        )
 
     def round_size(self, raw_size: float, price: float) -> float:
         """Floor the order to whole 100-share board lots.
@@ -585,7 +740,9 @@ class VietnamEquityEngine(BaseEngine):
             comm += notional * self.vn_tax_sell
         return comm
 
-    def slipped_price(self, symbol: str, price: float, direction: int) -> float:
+    def slipped_price(
+        self, symbol: str, price: float, direction: int, ts: object = None
+    ) -> float:
         """Slip *price* against the trader onto *symbol*'s exchange tick grid.
 
         A slipped price is snapped away from the trader — buys up to the next
@@ -596,11 +753,13 @@ class VietnamEquityEngine(BaseEngine):
             symbol: Vietnamese symbol; its exchange selects the tick grid.
             price: Reference price in VND.
             direction: 1 to buy, -1 to sell.
+            ts: Bar timestamp; with a ``vn_exchange_history`` it selects the
+                exchange (see :meth:`listing_on`).
 
         Returns:
             A valid price on the symbol's exchange, never below one tick.
         """
-        exchange = vn_exchange(symbol)
+        exchange = self.exchange_on(symbol, ts)
         slipped = price * (1 + direction * self.slippage_rate)
         if direction > 0:
             return vn_round_up(slipped, exchange)
@@ -615,6 +774,7 @@ class VietnamEquityEngine(BaseEngine):
 
         Returns:
             A valid price on the exchange of the symbol being filled
-            (``BaseEngine`` sets ``_active_symbol`` before every fill).
+            (``BaseEngine`` sets ``_active_symbol`` before every fill, and
+            ``_bar_ts`` on every bar).
         """
-        return self.slipped_price(self._active_symbol, price, direction)
+        return self.slipped_price(self._active_symbol, price, direction, self._bar_ts)
