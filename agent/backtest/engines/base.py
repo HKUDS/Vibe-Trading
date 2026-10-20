@@ -1708,7 +1708,8 @@ class BaseEngine(ABC):
         - ``hold`` dropped same-direction resizes the strategy asked for (#918).
         - ``rebalance`` with no drift band and no execution calendar spent more
           than half of its resize fills re-trading targets that had not
-          changed, i.e. following price drift. With a band or a calendar such
+          changed: following price drift, or completing a target change that
+          could not fill on its own bar. With a band or a calendar the drift
           fills are what the user configured, so they are not reported.
 
         Args:
@@ -1738,7 +1739,10 @@ class BaseEngine(ABC):
                 "position_adjustment='rebalance' with rebalance_tolerance=0 and no "
                 f"rebalance_mask: {unchanged} of {rebalance_executed_fills} rebalance "
                 "fill(s) re-sized a position whose target weight had not changed since "
-                "the previous bar, so most rebalance trading followed price drift. Set "
+                "the previous bar, so most rebalance trading did not execute a new "
+                "target. Such a fill follows price drift, or completes an earlier target "
+                "change that could not fill on its own bar (a halted or limit-locked "
+                "bar, a settlement hold, lot rounding or too little cash). Set "
                 "rebalance_mask (an execution calendar) or rebalance_tolerance (a drift "
                 "band) if the strategy re-weights on a schedule."
             )

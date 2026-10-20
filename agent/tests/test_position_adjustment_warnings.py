@@ -177,7 +177,7 @@ def test_unconfigured_drift_trading_is_warned() -> None:
     assert engine.rebalance_unchanged_target_fills == fills
     warnings = engine._position_adjustment_warnings(fills)
     assert len(warnings) == 1
-    assert "most rebalance trading followed price drift" in warnings[0]
+    assert "Such a fill follows price drift" in warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -218,6 +218,42 @@ def test_changed_targets_are_not_counted_as_drift() -> None:
     assert fills == 5
     assert engine.rebalance_unchanged_target_fills == 0
     assert engine._position_adjustment_warnings(fills) == []
+
+
+class _LockedOnceEngine(_Engine):
+    """Refuses every order on one bar, as a halt or a locked price limit would."""
+
+    def __init__(self, config, locked: pd.Timestamp) -> None:
+        super().__init__(config)
+        self._locked = locked
+
+    def can_execute(self, symbol, direction, bar):
+        return bar.name != self._locked
+
+
+def test_a_change_that_fills_late_is_counted_and_named() -> None:
+    """A target change refused on its own bar fills on the next one.
+
+    Prices are flat, so none of this is drift: the one counted fill is the
+    0.20 -> 0.40 change, refused on the locked bar and done a bar later, when
+    the target no longer changed. The warning must name that cause too.
+    """
+    dates = pd.bdate_range("2026-01-05", periods=6)
+    bars = pd.DataFrame({"open": [100.0] * 6, "close": [100.0] * 6}, index=dates)
+    close_df = pd.DataFrame({"A": bars["close"]}, index=dates)
+    targets = pd.DataFrame({"A": [0.20, 0.20, 0.40, 0.40, 0.40, 0.40]}, index=dates)
+    engine = _LockedOnceEngine(
+        {"initial_cash": 100_000.0, "position_adjustment": "rebalance"}, dates[2]
+    )
+
+    engine._execute_bars(dates, {"A": bars}, close_df, targets, ["A"])
+
+    fills = [fill for fill in engine.fill_records if fill.reason == "target_rebalance"]
+    assert [fill.timestamp for fill in fills] == [dates[3]]
+    assert engine.rebalance_unchanged_target_fills == 1
+    warnings = engine._position_adjustment_warnings(len(fills))
+    assert len(warnings) == 1
+    assert "completes an earlier target change that could not fill" in warnings[0]
 
 
 _VN_CODE = "VIC.VN"
