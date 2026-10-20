@@ -1343,7 +1343,12 @@ def _known_config_keys() -> frozenset:
         known = set(BacktestConfigSchema.model_fields)
         engines_dir = Path(__file__).parent / "engines"
         loaders_dir = Path(__file__).parent / "loaders"
-        for module in sorted(engines_dir.glob("*.py")) + sorted(loaders_dir.glob("*.py")):
+        modules = (
+            sorted(Path(__file__).parent.glob("*.py"))
+            + sorted(engines_dir.glob("*.py"))
+            + sorted(loaders_dir.glob("*.py"))
+        )
+        for module in modules:
             known |= _ast_config_keys(module)
         _KNOWN_CONFIG_KEYS = frozenset(known)
     return _KNOWN_CONFIG_KEYS

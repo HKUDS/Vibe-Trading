@@ -57,3 +57,11 @@ def test_known_keys_cover_engine_and_loader_reads() -> None:
     known = _known_config_keys()
     for key in ("initial_cash", "maker_rate", "taker_rate", "slippage", "funding_rate"):
         assert key in known
+
+
+def test_shared_path_config_is_not_reported_as_ignored() -> None:
+    """Constraints and provenance have real readers outside engine modules."""
+    assert _unrecognized_config_warning({
+        "constraints": [{"type": "turnover_aware", "max_turnover": 0.1}],
+        "model_training_cutoff": "2023-12-31",
+    }) is None
