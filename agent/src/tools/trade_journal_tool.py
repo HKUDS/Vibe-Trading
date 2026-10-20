@@ -678,7 +678,7 @@ def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_ex
         JSON string. Keys: status, file, format_detected, total_records,
         date_range, market, profile / behavior (when applicable).
     """
-    if analysis_type not in _ANALYSIS_TYPES:
+    if not isinstance(analysis_type, str) or analysis_type not in _ANALYSIS_TYPES:
         return json.dumps(
             {
                 "status": "error",
