@@ -50,6 +50,11 @@ optional dependencies before retrying. Explicit-only sources retain their
 existing currency and fallback boundaries. Missing observations are never
 replaced with invented prices or financial fields.
 
+Standalone revalidation reuses the annualisation factor saved in the run card,
+including the runner's corrections for actual bar spacing. For older cards
+without that field, it reconstructs the factor from the saved configuration and
+equity timestamps; the original per-symbol price indexes are not available.
+
 For AI-assisted or automation-assisted contributions, also see
 [`AGENT_CONTRIBUTOR_GUIDE.md`](AGENT_CONTRIBUTOR_GUIDE.md). It summarizes safe
 local checks, higher-risk broker/MCP/credential surfaces, and the expected PR

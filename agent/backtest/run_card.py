@@ -219,6 +219,8 @@ def write_run_card(
         "model_provenance": model_provenance,
         "artifacts": _list_artifacts(run_dir),
     }
+    if "_run_card_bars_per_year" in config:
+        card["annualisation"] = {"bars_per_year": config["_run_card_bars_per_year"]}
     normalized_refs = _normalize_artifact_refs(artifact_refs)
     if normalized_refs:
         card["artifact_refs"] = normalized_refs

@@ -1417,6 +1417,7 @@ def main(run_dir: Path) -> None:
         )
         if annualisation_warnings:
             config["_run_card_annualisation_warning"] = annualisation_warnings[0]
+    config["_run_card_bars_per_year"] = bars_per_year
 
     # Every source has already been fetched, sanitized, and enriched above.
     # Reuse that exact snapshot so provider costs and run-card provenance stay
