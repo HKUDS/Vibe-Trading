@@ -215,7 +215,7 @@ def _run_fill_and_reject_scenario(engine):
 
 
 class _PlainEngine(BaseEngine):
-    """No _on_plan_rejected override, and a lot rule that truncates to zero."""
+    """No _on_plan_rejected override, a lot rule that truncates to zero, and an optional fill cap."""
 
     def __init__(self, *, truncate: bool = False):
         super().__init__(
@@ -223,9 +223,13 @@ class _PlainEngine(BaseEngine):
         )
         self.execute_ok = True
         self._truncate = truncate
+        self.cap = None
 
     def can_execute(self, symbol, direction, bar):
         return self.execute_ok
+
+    def fill_cap(self, symbol, bar):
+        return self.cap
 
     def round_size(self, raw_size, price):
         return 0.0 if self._truncate else round(max(raw_size, 0.0), 6)
@@ -253,13 +257,19 @@ def test_wanted_but_unfillable_plans_are_counted_by_default():
     assert (
         engine._plan_open_order("A", 0.5, _frame(), _TS, 1_000.0) is None
     )  # execution_blocked
+    engine.execute_ok = True
+    engine._truncate = False
+    engine.cap = 0.0
+    assert (
+        engine._plan_open_order("A", 0.5, _frame(), _TS, 1_000.0) is None
+    )  # volume_cap
     # Benign causes must not be counted as findings.
     assert engine._plan_open_order("A", 0.0, _frame(), _TS, 1_000.0) is None
     # The capital fit, not the planner, reports a sleeve the cash could not hold.
     engine._on_plan_rejected("A", "insufficient_capital", _TS)
 
     metrics = engine._plan_rejection_metrics()
-    assert metrics["unfilled_plan_rejections"] == 6
+    assert metrics["unfilled_plan_rejections"] == 7
     assert metrics["unfilled_plan_rejections_by_symbol"] == {
         "A": {
             "no_data": 1,
@@ -267,6 +277,7 @@ def test_wanted_but_unfillable_plans_are_counted_by_default():
             "invalid_price": 1,
             "zero_size": 1,
             "execution_blocked": 1,
+            "volume_cap": 1,
             "insufficient_capital": 1,
         }
     }

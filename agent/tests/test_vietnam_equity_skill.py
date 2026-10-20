@@ -52,6 +52,7 @@ def test_every_config_key_the_skill_names_is_read_by_the_engine() -> None:
         "vn_tax_sell",
         "vn_settlement_bars",
         "vn_exchange_history",
+        "vn_volume_cap",
         "price_limit",
     } <= named
     for key in named:
@@ -74,6 +75,17 @@ def test_the_rebalancing_controls_the_skill_names_are_the_base_engine_ones() -> 
     assert VietnamEquityEngine({}).position_adjustment == "hold"
     assert '`"QS"`' in text
     assert validate_rebalance_mask("QS") == "QS"
+
+
+def test_the_volume_cap_and_its_metrics_are_the_engine_ones() -> None:
+    text = _text()
+    source = inspect.getsource(base)
+
+    assert "`vn_volume_cap` (0.10;" in text
+    assert VietnamEquityEngine({}).volume_cap == 0.10
+    for name in ("volume_capped_orders", "unfinished_orders_at_end", "volume_cap"):
+        assert f"`{name}`" in text, name
+        assert f'"{name}"' in source, name
 
 
 def test_the_example_config_routes_to_the_engine_at_its_defaults() -> None:

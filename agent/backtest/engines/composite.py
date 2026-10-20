@@ -8,7 +8,7 @@ All state (capital, positions, trades) lives in CompositeEngine.
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -241,6 +241,14 @@ class CompositeEngine(BaseEngine):
         # dated listing exchange); the composite owns the bar cursor.
         sub._bar_ts = self._bar_ts
         return sub.apply_slippage(price, direction)
+
+    def fill_cap(self, symbol: str, bar: pd.Series) -> Optional[float]:
+        """Delegate to the symbol's sub-engine (a volume limit reads the bar only)."""
+        return self._rule_for(symbol).fill_cap(symbol, bar)
+
+    def carries_unfilled_orders(self, symbol: str) -> bool:
+        """Delegate to the symbol's sub-engine."""
+        return self._rule_for(symbol).carries_unfilled_orders(symbol)
 
     # ── PnL / margin dispatch (route by symbol, not _active_symbol) ──
 
