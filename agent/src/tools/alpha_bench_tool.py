@@ -1274,8 +1274,10 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
         top_n = 20
     else:
         try:
+            if isinstance(top_raw, bool) or (isinstance(top_raw, float) and not top_raw.is_integer()):
+                raise ValueError
             top_n = int(top_raw)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return {"status": "error", "error": "top must be an integer > 0"}
         if top_n <= 0:
             return {"status": "error", "error": "top must be > 0"}
