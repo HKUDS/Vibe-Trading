@@ -24,6 +24,7 @@ from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Collection, Mapping
 
+import numpy as np
 import pandas as pd
 
 from . import calendar, corporate_actions, data, state_hash, wire
@@ -361,7 +362,7 @@ class _MatchSession:
                 return money(float(sym_data.frame.loc[pd.Timestamp(day), "close"]))
             if not sym_data.frame.empty:
                 prior = sym_data.frame.loc[: pd.Timestamp(day), "close"].dropna()
-                prior = prior[prior > 0]
+                prior = prior[np.isfinite(prior) & (prior > 0)]
                 if not prior.empty:
                     return money(float(prior.iloc[-1]))
         self.warnings.append(f"valuation: {symbol} has no usable close on or before {day}; "
@@ -384,7 +385,7 @@ def _prev_close(sym_data: data.SymbolData, day: str) -> float | None:
     prior = sym_data.frame.loc[: pd.Timestamp(day), "close"]
     prior = prior.iloc[:-1] if sym_data.has_bar(day) else prior
     prior = prior.dropna()
-    prior = prior[prior > 0]
+    prior = prior[np.isfinite(prior) & (prior > 0)]
     return float(prior.iloc[-1]) if not prior.empty else None
 
 

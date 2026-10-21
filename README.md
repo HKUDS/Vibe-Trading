@@ -1389,6 +1389,14 @@ Saves write the `channels.<name>` section of `~/.vibe-trading/agent.json` atomic
 
 ### Strategy & Backtesting
 
+The research-only `paper_trade_step` requires raw execution prices from
+production loaders. Adjusted or unknown network price series are rejected;
+if no raw target-day bar remains, the result is `PAPER_DATA_NOT_READY`.
+In particular, A-share adjusted network bars cannot fill a gap in the raw
+ClickHouse ledger feed. Non-finite OHLC prices reject that day's order, and
+valuation uses a finite prior close (or the disclosed average-cost fallback).
+
+
 Average holding period includes completed same-bar trades (zero bars). The
 existing `avg_holding_days` compatibility key reports the engine's holding-bar
 measure; it is not a conversion to calendar days.

@@ -23,10 +23,12 @@ itself whenever CH is healthy and recurses until RecursionError degrades the
 fetch to a CH-only frame (measured: ~490 wasted health checks, no current-day
 bar).  The loader registry is never modified (import-only, VD-2).
 
-Caliber (§3/§4): CH ``stk_factor_pro.close`` is raw (bfq); the cn_a network
-leg serves additive qfq whose offset ≈ 0 at the recent end, so the T-1/today
-boundary is level-consistent for daily runs; multi-day catch-up across
-ex-dividend dates is the disclosed AM-12-4 distortion.  hk/us serve raw.
+Production prices must be raw: the existing registry's frame/source caliber
+is checked before matching or merging. Adjusted and unknown network frames
+are refused, including A-share qfq fallback frames; a matching timestamp does
+not make them compatible with a raw-price cash ledger. Explicit injected
+clients/loaders are trusted test or embedding inputs and must supply raw bars.
+The ClickHouse adapter selects the raw OHLC columns explicitly.
 
 Determinism (R1-1): NO clock is read — every date is injected, so the CH UTC
 vs host CST 8h skew cannot leak into verdicts.  Zero side effects: no file
@@ -41,9 +43,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Mapping, Protocol
 
+import numpy as np
 import pandas as pd
 
-from backtest.loaders.registry import resolve_loader
+from backtest.loaders.registry import frame_caliber, resolve_loader
 
 from .schema import DataProvenance
 
@@ -161,7 +164,7 @@ def _untradable_dates(frame: pd.DataFrame) -> tuple[str, ...]:
     if frame.empty:
         return ()
     prices = frame[list(_PRICE_COLUMNS)]
-    bad = prices.isna().any(axis=1) | (prices <= 0).any(axis=1)
+    bad = (~np.isfinite(prices)).any(axis=1) | (prices <= 0).any(axis=1)
     return tuple(day.strftime("%Y-%m-%d") for day in frame.index[bad])
 
 
@@ -169,7 +172,7 @@ def _valuation(frame: pd.DataFrame) -> tuple[float | None, str, bool]:
     # Carry-forward valuation = last usable positive close in the window (B3);
     # zero bars — or no positive close — falls back to avg_cost + warning.
     closes = frame["close"].dropna() if not frame.empty else pd.Series(dtype="float64")
-    positives = closes[closes > 0]
+    positives = closes[np.isfinite(closes) & (closes > 0)]
     if positives.empty:
         return None, "avg_cost", True
     return float(positives.iloc[-1]), "last_close", False
@@ -253,7 +256,8 @@ def _resolve_network_loader(chain_key: str, exclude: frozenset[str] = frozenset(
 
 
 def _fetch_leg(
-    loader: Any, symbols: tuple[str, ...], start_date: str, end_date: str, warnings: list[str]
+    loader: Any, symbols: tuple[str, ...], start_date: str, end_date: str, warnings: list[str],
+    *, production_market: str | None = None,
 ) -> dict[str, pd.DataFrame]:
     # One batch fetch over the sorted symbol list (VD-10); failures degrade
     # to an empty leg with a structured warning, never a crash.
@@ -266,6 +270,14 @@ def _fetch_leg(
         return {}
     frames = {}
     for symbol in symbols:
+        if production_market is not None:
+            caliber = frame_caliber(served.get(symbol), loader.name, production_market, symbol)
+            if caliber != "raw":
+                warnings.append(
+                    f"paper matching requires raw prices for {symbol}; "
+                    f"{loader.name} supplied {caliber}; frame rejected"
+                )
+                continue
         frame = _canonical_frame(served.get(symbol))
         if not frame.empty:
             frames[symbol] = frame
@@ -366,7 +378,7 @@ def fetch_market_data(
         price, basis, needs_warning = _valuation(frame)
         if untradable:
             warnings.append(
-                f"price sanity: {symbol} has {len(untradable)} non-positive bar(s) in the fetch "
+                f"price sanity: {symbol} has {len(untradable)} invalid price bar(s) in the fetch "
                 f"window ({untradable[0]}..{untradable[-1]}); orders on those days are rejected"
             )
         if needs_warning:
@@ -419,7 +431,8 @@ def _fetch_cn_a(
         )
     )
     net_frames = (
-        _fetch_leg(net_loader, symbols, window_start, to_date, warnings)
+        _fetch_leg(net_loader, symbols, window_start, to_date, warnings,
+                   production_market=MARKET_LOADER_KEYS[_CN_A_MARKET] if loader is _AUTO else None)
         if net_loader is not None
         else {}
     )
@@ -468,7 +481,8 @@ def _fetch_single_leg(
     if net_loader is None:
         warnings.append(f"no available data source for market {market!r}; frames are empty")
         return {}, DataProvenance(source="unavailable")
-    frames = _fetch_leg(net_loader, symbols, window_start, to_date, warnings)
+    frames = _fetch_leg(net_loader, symbols, window_start, to_date, warnings,
+                        production_market=MARKET_LOADER_KEYS[market] if loader is _AUTO else None)
     as_of = _max_as_of(frames)
     provenance = DataProvenance(
         source=str(getattr(net_loader, "name", "network")) if frames else "unavailable",
