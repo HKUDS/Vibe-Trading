@@ -186,6 +186,30 @@ def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, 
     return results
 
 
+def _without_fenced_code(lines: list[str]) -> list[str]:
+    """Blank fenced examples without changing the report's line numbers."""
+    result = []
+    fence = ""
+    for line in lines:
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            result.append("")
+            if (
+                match
+                and match[1][0] == fence[0]
+                and len(match[1]) >= len(fence)
+                and not match[2].strip()
+            ):
+                fence = ""
+            continue
+        if match and (match[1][0] != "`" or "`" not in match[2]):
+            fence = match[1]
+            result.append("")
+        else:
+            result.append(line)
+    return result
+
+
 def extract_data_points(md_text: str) -> list[dict[str, Any]]:
     """Extract recognizable financial data points from a markdown report.
 
@@ -225,8 +249,7 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
             }
         )
 
-    lines = md_text.split("\n")
-    in_code = False
+    lines = _without_fenced_code(md_text.split("\n"))
 
     # 1. Multi-column tables.
     _YOY_HEADERS = {"YOY", "YOY增速", "增速", "同比", "变化", "趋势", "说明", "备注"}
@@ -245,10 +268,7 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
     # 2. ``label: value unit`` lines.
     for lineno, line in enumerate(lines, start=1):
         stripped = line.strip()
-        if stripped.startswith("```"):
-            in_code = not in_code
-            continue
-        if in_code or stripped.startswith("> ") or re.match(r"^#{1,6}\s", stripped):
+        if stripped.startswith("> ") or re.match(r"^#{1,6}\s", stripped):
             continue
         if "|" in stripped:
             continue  # handled as a table above
