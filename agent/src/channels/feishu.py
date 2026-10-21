@@ -2054,9 +2054,13 @@ class FeishuChannel(BaseChannel):
                 if buf and buf.card_id:
                     # Delegate to send_delta so tool hints get the same
                     # throttling (and card creation) as regular text deltas.
+                    # Metadata must be forwarded too, otherwise send_delta
+                    # resolves a different stream key than the one just
+                    # checked above and writes to an orphaned buffer/card.
                     await self.send_delta(
                         msg.chat_id,
                         "\n\n" + self._format_tool_hint_delta(hint) + "\n\n",
+                        msg.metadata,
                     )
                     return
                 # No active streaming card — send as a regular interactive card
