@@ -25,7 +25,7 @@ from src.quantlib.risk import (
 )
 
 # 20 observations, already ascending: -0.10, -0.09, ..., 0.09.
-# The 95% VaR order statistic is index floor(0.05 * 20) = 1, i.e. -0.09.
+# The 95% lower tail has one observation: index ceil(0.05 * 20) - 1 = 0.
 FIXED_RETURNS = np.round(np.arange(-0.10, 0.10, 0.01), 10)
 
 
@@ -42,8 +42,8 @@ def test_fixture_is_the_array_the_hand_computations_assume():
 
 
 def test_historical_var_is_the_hand_computed_order_statistic():
-    # index floor((1 - 0.95) * 20) = 1 -> second smallest = -0.09 -> loss 0.09
-    assert historical_var(FIXED_RETURNS, confidence=0.95) == pytest.approx(0.09)
+    # index ceil((1 - 0.95) * 20) - 1 = 0 -> smallest = -0.10
+    assert historical_var(FIXED_RETURNS, confidence=0.95) == pytest.approx(0.10)
 
 
 def test_historical_var_at_99_takes_the_worst_observation():
@@ -66,7 +66,7 @@ def test_historical_var_scales_with_square_root_of_time():
 
 def test_historical_var_ignores_nan():
     with_nan = np.concatenate([FIXED_RETURNS, [np.nan, np.inf, -np.inf]])
-    assert historical_var(with_nan, confidence=0.95) == pytest.approx(0.09)
+    assert historical_var(with_nan, confidence=0.95) == pytest.approx(0.10)
 
 
 # --------------------------------------------------------------------------
@@ -175,9 +175,8 @@ def test_a_bigger_loss_is_a_bigger_number_for_every_measure():
 
 
 def test_historical_cvar_is_the_hand_computed_tail_mean():
-    # Tail at 95% is everything at or below the VaR order statistic (-0.09),
-    # i.e. {-0.10, -0.09}; mean -0.095 -> loss 0.095.
-    assert historical_cvar(FIXED_RETURNS, confidence=0.95) == pytest.approx(0.095)
+    # Tail at 95% is the single worst observation (-0.10).
+    assert historical_cvar(FIXED_RETURNS, confidence=0.95) == pytest.approx(0.10)
 
 
 def test_historical_cvar_at_99_is_the_single_worst_observation():
@@ -393,9 +392,11 @@ def _paths_with_terminal_returns(returns):
 
 
 def test_analyze_mc_results_reuses_the_var_convention():
-    summary = analyze_mc_results(_paths_with_terminal_returns(FIXED_RETURNS), confidence=0.95)
-    assert summary["var"] == pytest.approx(0.09)
-    assert summary["cvar"] == pytest.approx(0.095)
+    summary = analyze_mc_results(
+        _paths_with_terminal_returns(FIXED_RETURNS), confidence=0.95
+    )
+    assert summary["var"] == pytest.approx(0.10)
+    assert summary["cvar"] == pytest.approx(0.10)
     assert summary["cvar"] >= summary["var"]
     assert summary["mean_return"] == pytest.approx(FIXED_RETURNS.mean())
     assert summary["median_return"] == pytest.approx(np.median(FIXED_RETURNS))
@@ -412,8 +413,8 @@ def test_analyze_mc_results_tail_mask_is_not_fooled_by_an_all_negative_sample():
     summary = analyze_mc_results(_paths_with_terminal_returns(returns), confidence=0.95)
     assert summary["prob_loss"] == pytest.approx(1.0)
     assert summary["cvar"] >= summary["var"] > 0
-    # Tail of 5 worst of 100: index floor(0.05 * 100) = 5 -> 6 observations.
-    assert summary["cvar"] == pytest.approx(-np.sort(returns)[:6].mean())
+    # Tail of five worst of 100: index ceil(0.05 * 100) - 1 = 4.
+    assert summary["cvar"] == pytest.approx(-np.sort(returns)[:5].mean())
 
 
 def test_analyze_mc_results_on_a_simulated_run():

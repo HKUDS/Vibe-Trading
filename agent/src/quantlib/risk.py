@@ -39,6 +39,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import math
+from decimal import Decimal
 
 import numpy as np
 import pandas as pd
@@ -132,15 +133,14 @@ def _tail_index(n: int, confidence: float) -> int:
     Returns:
         The index ``ceil((1 - confidence) * n) - 1`` clamped into ``[0, n - 1]``.
 
-        This is the textbook lower quantile. The floor form ``floor((1-c)*n)``
-        agrees with it at every confidence level anyone uses -- 0.90, 0.95,
-        0.99 and friends are not exact binary fractions, so ``(1-c)*n`` is never
-        exactly an integer and the two expressions coincide. They diverge only
-        at levels like 0.5, 0.6 and 0.75, where the floor form picks the next
-        observation up and understates the loss. Being right by construction
-        rather than by floating-point accident costs nothing here.
+        Interpret the confidence's decimal spelling before subtracting. Binary
+        cancellation can otherwise move an exact rank above its integer (for
+        example ``(1 - 0.95) * 100 > 5``) and select an extra observation. No
+        rounding tolerance is applied, so nearby distinct probabilities keep
+        their own ranks.
     """
-    return int(min(max(math.ceil((1.0 - confidence) * n) - 1, 0), n - 1))
+    rank = (Decimal(1) - Decimal(str(confidence))) * n
+    return int(min(max(math.ceil(rank) - 1, 0), n - 1))
 
 
 def historical_var(
