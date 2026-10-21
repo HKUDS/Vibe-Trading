@@ -360,7 +360,7 @@ def _attribution_factor_section(
     dates: List[str],
     portfolio_returns: List[float],
     benchmark_returns: Optional[List[float]],
-    bars_per_year: int,
+    bars_per_year: float,
     notes: List[str],
 ) -> Optional[Dict[str, Any]]:
     """Build the factor section: full-sample OLS plus rolling and cumulative series.
@@ -787,6 +787,17 @@ def _build_attribution_payload(run_dir: Path) -> Dict[str, Any]:
     if isinstance(raw_codes, list):
         codes = [str(code) for code in raw_codes if str(code).strip()]
     bars_per_year = _attribution_bars_per_year(config.get("interval"))
+    # The run card records the actual source/served-spacing convention, which
+    # can differ from the requested interval (e.g. crypto trades 365 days/year).
+    card = _attribution_load_json(run_dir / "run_card.json") or {}
+    annualisation = card.get("annualisation")
+    if isinstance(annualisation, dict):
+        raw_rate = annualisation.get("bars_per_year")
+        recorded_rate = (
+            None if isinstance(raw_rate, bool) else _attribution_finite_float(raw_rate)
+        )
+        if recorded_rate is not None and recorded_rate > 0:
+            bars_per_year = recorded_rate
 
     # Mirror the factor scan's symlink rejection: a symlinked artifacts dir is
     # treated as having no readable artifacts rather than followed.
