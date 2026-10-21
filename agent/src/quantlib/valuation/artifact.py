@@ -1008,6 +1008,16 @@ def diff_artifacts(baseline: ModelArtifact, updated: ModelArtifact) -> ArtifactD
 # ---------------------------------------------------------------------------
 
 
+def _save_value_workbook(wb: Workbook, path: Path) -> None:
+    """Preserve text literally: these exports contain values, not formulas."""
+    for sheet in wb:
+        for row in sheet:
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
+    wb.save(str(path))
+
+
 def _bold_row(ws: Worksheet, row: int = 1) -> None:
     """Bold every cell in one worksheet row (typically a header row)."""
     for cell in ws[row]:
@@ -1205,7 +1215,7 @@ def export_dcf_workbook(
 
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(str(out_path))
+    _save_value_workbook(wb, out_path)
     return out_path
 
 
@@ -1325,7 +1335,7 @@ def export_comps_workbook(artifact: ModelArtifact, path: str | Path) -> Path:
 
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(str(out_path))
+    _save_value_workbook(wb, out_path)
     return out_path
 
 
@@ -1442,7 +1452,7 @@ def export_three_statement_workbook(artifact: ModelArtifact, path: str | Path) -
 
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(str(out_path))
+    _save_value_workbook(wb, out_path)
     return out_path
 
 

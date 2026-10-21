@@ -930,3 +930,66 @@ class TestModelArtifactConstruction:
                 capital_structure_basis="target", discounting_convention="mid_year",
                 terminal_value_method="perpetuity_growth",
             )
+
+@pytest.mark.parametrize("text", ["= 2% inflation + 1% real growth", "#N/A"])
+def test_dcf_workbook_preserves_assumption_text(tmp_path, text):
+    """An exported justification is literal provenance, not a spreadsheet expression."""
+    import xml.etree.ElementTree as ET
+    from zipfile import ZipFile
+
+    inputs = _dcf_inputs()
+    inputs["terminal_growth"] = Assumption(
+        "terminal_growth", 0.03, basis=text, source=text
+    )
+    artifact = _build_dcf_artifact(inputs)
+    path = export_dcf_workbook(
+        artifact,
+        tmp_path / "valuation.xlsx",
+        sensitivity_grid=pd.DataFrame([[42.0]], index=[0.1], columns=[0.03]),
+    )
+    with ZipFile(path) as archive:
+        xml = ET.fromstring(archive.read("xl/worksheets/sheet5.xml"))
+        ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        for coordinate in ("D9", "E9"):
+            cell = xml.find(f".//s:c[@r='{coordinate}']", ns)
+            assert cell is not None
+            assert cell.get("t") == "inlineStr"
+            assert cell.find("s:f", ns) is None
+            assert cell.find("s:is/s:t", ns).text == text
+    for data_only in (False, True):
+        workbook = openpyxl.load_workbook(path, data_only=data_only)
+        try:
+            sheet = workbook["Assumptions & Data Quality"]
+            assert sheet["D9"].value == text
+            assert sheet["E9"].value == text
+            assert sheet["C9"].value == 0.03
+            assert sheet["C9"].data_type == "n"
+            assert sheet["D10"].value == "Median EV/EBITDA of the comparable peer set"
+            assert workbook["Sensitivity"]["B2"].value == 42.0
+        finally:
+            workbook.close()
+
+
+@pytest.mark.parametrize("name", ["= Comparable Holdings", "#N/A"])
+def test_comps_workbook_preserves_peer_names(tmp_path, name):
+    from dataclasses import replace
+
+    target = _comps_target()
+    peers = _comps_peers()
+    peers[0] = replace(peers[0], name=name)
+    result = run_comps(target, peers, calendarisation_policy="ltm")
+    artifact = build_comps_artifact(
+        target=target,
+        peers=peers,
+        result=result,
+        calendarisation_policy="ltm",
+        generated_at=FIXED_TIME,
+    )
+    path = export_comps_workbook(artifact, tmp_path / "comps.xlsx")
+    for data_only in (False, True):
+        workbook = openpyxl.load_workbook(path, data_only=data_only)
+        try:
+            assert workbook["Peer Detail"]["A2"].value == name
+            assert workbook["Peer Detail"]["A2"].data_type == "s"
+        finally:
+            workbook.close()
