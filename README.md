@@ -1557,6 +1557,9 @@ and FIFO matching; Excel date serials and time fractions are supported.
 A complete `datetime` column takes precedence when all three are present.
 Journal analysis rejects missing or invalid dates in any parsed record,
 including dividends, before applying filters. Correct those dates and retry.
+Buy/sell records also require finite, positive quantities before any filter is
+applied; correct missing or invalid quantities and retry. Cash dividends may
+have zero quantity.
 Rows with equal timestamps retain their source-file order for FIFO matching.
 This preserves the supplied sequence; it does not reconstruct missing fill order.
 

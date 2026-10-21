@@ -729,6 +729,15 @@ def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_ex
             )},
             ensure_ascii=False,
         )
+    quantities = df.loc[df["side"].isin(("buy", "sell")), "quantity"]
+    if not (quantities.map(math.isfinite) & (quantities > 0)).all():
+        return json.dumps(
+            {"status": "error", "error": (
+                "Trade journal contains missing or invalid buy/sell quantities. "
+                "Correct quantity values to finite positive numbers before analysis."
+            )},
+            ensure_ascii=False,
+        )
     try:
         filtered = _apply_filter(df, filter_expr)
     except ValueError as exc:
