@@ -74,13 +74,23 @@ def _artifact_to_dict(artifact: Any) -> dict[str, Any]:
     return d
 
 
+# Manual lifecycle steps: action -> (required starting status, target status).
+_TRANSITIONS: dict[str, tuple[ArtifactStatus, ArtifactStatus]] = {
+    "bench": (ArtifactStatus.CREATED, ArtifactStatus.BENCHING),
+    "activate": (ArtifactStatus.BENCHING, ArtifactStatus.ACTIVE),
+    "enable": (ArtifactStatus.DISABLED, ArtifactStatus.ACTIVE),
+}
+
+
 class SdmStatusTool(BaseTool):
     """Query or update factor/strategy status in the strategy store."""
 
     name = "sdm_status"
     description = (
         "Query or update factor/strategy status in the strategy store. "
-        "Actions: list, detail, disable, enable, decay_check."
+        "Actions: list, detail, bench, activate, disable, enable, decay_check. "
+        "bench (created -> benching) closes Phase 3; activate (benching -> active) "
+        "records a passed Phase 4; enable only re-enables a disabled artifact."
     )
     is_readonly = False
     repeatable = True
@@ -89,12 +99,12 @@ class SdmStatusTool(BaseTool):
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["list", "detail", "disable", "enable", "decay_check"],
+                "enum": ["list", "detail", "bench", "activate", "disable", "enable", "decay_check"],
                 "description": "Action to perform",
             },
             "artifact_id": {
                 "type": "string",
-                "description": "Artifact ID (required for detail/disable/enable/decay_check)",
+                "description": "Artifact ID (required for every action except list)",
             },
             "artifact_type": {
                 "type": "string",
@@ -129,8 +139,8 @@ class SdmStatusTool(BaseTool):
                 return self._handle_detail(store, kwargs)
             if action == "disable":
                 return self._handle_disable(store, kwargs)
-            if action == "enable":
-                return self._handle_enable(store, kwargs)
+            if action in _TRANSITIONS:
+                return self._handle_transition(store, kwargs, action)
             if action == "decay_check":
                 return self._handle_decay_check(store, kwargs)
 
@@ -199,18 +209,35 @@ class SdmStatusTool(BaseTool):
 
         return _ok({"artifact": _artifact_to_dict(updated)})
 
-    def _handle_enable(
-        self, store: Any, kwargs: dict[str, Any]
+    def _handle_transition(
+        self,
+        store: Any,
+        kwargs: dict[str, Any],
+        action: str,
     ) -> str:
-        """Re-enable a disabled artifact."""
+        """Move one manual lifecycle step; any other starting status is refused.
+
+        ``disable`` stays unrestricted, so created -> disabled -> active is
+        still a way around Phase 4; only the direct created -> active move
+        is closed.
+        """
+        source, target = _TRANSITIONS[action]
         artifact_id = str(kwargs.get("artifact_id", ""))
         if not artifact_id:
-            return _error(ValueError("artifact_id is required for enable"))
+            return _error(ValueError(f"artifact_id is required for {action}"))
 
-        updated = store.update_status(artifact_id, ArtifactStatus.ACTIVE)
+        artifact = store.get_artifact(artifact_id)
+        if artifact is None:
+            return _error(ValueError(f"Artifact not found: {artifact_id}"))
+        if artifact.status is not source:
+            return _error(ValueError(
+                f"{action} expects status {source.value!r}, "
+                f"artifact {artifact_id} is {artifact.status.value!r}"
+            ))
+
+        updated = store.update_status(artifact_id, target)
         if updated is None:
             return _error(ValueError(f"Artifact not found: {artifact_id}"))
-
         return _ok({"artifact": _artifact_to_dict(updated)})
 
     def _handle_decay_check(

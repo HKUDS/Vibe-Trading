@@ -119,6 +119,8 @@ monitoring -> active:  rolling Sharpe > 1.0 for 2 consecutive periods (recovery)
 | monitoring -> decayed | Rolling Sharpe < 0.0 OR Max DD > 40% | 2 additional consecutive periods |
 | monitoring -> active | Rolling Sharpe > 1.0 AND Max DD < 15% | 2 consecutive periods (recovery) |
 | decayed -> disabled | Rolling Sharpe < 0.0 | 3 monitoring periods |
+| created -> benching | Manual bench via `sdm_status(action="bench")` after the initial backtest is recorded | -- |
+| benching -> active | Manual activate via `sdm_status(action="activate")` after Phase 4 passes | -- |
 | disabled -> active | Manual enable via `sdm_status(action="enable")` | -- |
 
 ### 2.4 Combined Metric Evaluation
