@@ -232,7 +232,11 @@ def _walk_forward_weights(
                 estimates[name] = value
         if not estimates:
             if insufficient == "equal":
-                frame.iloc[position] = 1.0
+                # Normalised like every other weight path, and like
+                # method="equal": an un-normalised 1.0 per factor leaves the
+                # row summing to the factor count, which reads as a full-book
+                # rebalance in weight_turnover once a real estimate replaces it.
+                frame.iloc[position] = 1.0 / len(names)
             continue
         total = float(sum(abs(value) for value in estimates.values()))
         if not np.isfinite(total) or total <= 0:
