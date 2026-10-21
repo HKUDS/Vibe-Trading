@@ -95,7 +95,10 @@ class ReadFileTool(BaseTool):
                     "resolves against the skill that owns it."
                 ),
             },
-            "limit": {"type": "integer", "description": "Max number of lines to return (default: all)"},
+            "limit": {
+                "type": "integer",
+                "description": "Max number of lines to return (default: all)",
+            },
         },
         "required": ["path"],
     }
@@ -205,29 +208,33 @@ class ReadFileTool(BaseTool):
                 error_code = "outside_readable_roots"
                 reason = f"{file_path} is outside what read_file may open."
             return json.dumps(
-                {"status": "error", "error_code": error_code, "error": f"{reason} {_READABLE}"},
-                ensure_ascii=False,
-            )
-
-        if resolved.is_dir():
-            # A directory is a question about what is in it.
-            entries = sorted(
-                child.name + ("/" if child.is_dir() else "")
-                for child in resolved.iterdir()
-                if not child.name.startswith(".")
-            )
-            return json.dumps(
                 {
-                    "status": "ok",
-                    "path": str(resolved),
-                    "kind": "directory",
-                    "entries": entries[:_LISTING_LIMIT],
-                    "truncated": len(entries) > _LISTING_LIMIT,
+                    "status": "error",
+                    "error_code": error_code,
+                    "error": f"{reason} {_READABLE}",
                 },
                 ensure_ascii=False,
             )
 
         try:
+            if resolved.is_dir():
+                # A directory is a question about what is in it.
+                entries = sorted(
+                    child.name + ("/" if child.is_dir() else "")
+                    for child in resolved.iterdir()
+                    if not child.name.startswith(".")
+                )
+                return json.dumps(
+                    {
+                        "status": "ok",
+                        "path": str(resolved),
+                        "kind": "directory",
+                        "entries": entries[:_LISTING_LIMIT],
+                        "truncated": len(entries) > _LISTING_LIMIT,
+                    },
+                    ensure_ascii=False,
+                )
+
             text = resolved.read_text(encoding="utf-8")
             if limit and limit > 0:
                 lines = text.splitlines(keepends=True)

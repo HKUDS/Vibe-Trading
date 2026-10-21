@@ -40,7 +40,7 @@ _MULTIPLIER: dict[str, float] = {
     # Currencies (CME)
     "6E": 125000, "6J": 12500000, "6B": 62500, "6A": 100000, "6C": 100000,
     # Softs (ICE)
-    "KC": 37500, "SB": 112000, "CC": 10, "CT": 50000,
+    "KC": 375, "SB": 1120, "CC": 10, "CT": 500,
     # Livestock (CME)
     "LE": 400, "HE": 400, "GF": 500,
     # Eurex

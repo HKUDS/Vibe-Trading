@@ -7,6 +7,37 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Maintenance — 2026-10-20
+
+- Warn about unrecognized backtest configuration keys and include the warning
+  in the run card (#1935). Runs still proceed. This is not engine-specific
+  validation: a key read by another engine can still go unused for the selected
+  engine, including `commission_rate` for crypto; #1934 remains open.
+- Return undefined off-diagonal correlations as `null` and show them as muted
+  dashes in the chart, keeping genuine zero correlations distinct (#1933).
+- Save the runner's annualisation factor in the run card and reuse it for
+  standalone revalidation, including calendar-day annualisation (#1915).
+  Legacy cards reconstruct it from configuration and equity timestamps because
+  the original per-symbol price indexes are unavailable; invalid saved factors
+  are rejected.
+- Skip factor benchmarks with fewer than two IC observations and report why,
+  rather than ranking an unestimable sample dispersion as zero (#1918).
+- Reject zero, boolean, fractional and non-finite alpha-benchmark `top` limits
+  instead of substituting a default, truncating or raising unexpectedly (#1910).
+- Reject unknown journal analysis types and unsupported filters instead of
+  returning empty success or claiming a filter was applied (#1911, #1924).
+  Classify `.US` and `.SS` journal symbols by market, preserving share classes
+  such as `BF-B.US` (#1916).
+- Return structured JSON errors for malformed pattern-tool arguments (#1923).
+- Report three-scenario upside as `null` when the current price is nonpositive
+  and reject negative integer projection years (#1921). Reject non-finite hurdle and
+  waterfall inputs while retaining valid finite calculations (#1919).
+- Clamp an explicit zero fund-NAV row limit to one instead of falling back to
+  the 2,000-row default (#1927). Switch CLI numeric units when rounding reaches
+  the next unit boundary (#1926).
+- Reuse one WeCom stream ID throughout each logical reply so streamed chunks
+  update the same response (#1929).
+
 ### Maintenance — 2026-10-19
 
 - Weight the newest observation most heavily in `decay_linear`, retaining

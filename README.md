@@ -52,6 +52,8 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-20** 🛠️ **Backtest diagnostics and research correctness**: Warn about unrecognized backtest config keys, show undefined correlations as unknown instead of zero, and reuse the saved annualisation factor when revalidating runs ([#1935](https://github.com/HKUDS/Vibe-Trading/pull/1935), [#1933](https://github.com/HKUDS/Vibe-Trading/pull/1933), [#1915](https://github.com/HKUDS/Vibe-Trading/pull/1915)). Also improve factor sample checks, tool input validation, journal market classification, numeric formatting and WeCom streaming. All 14 fixes and remaining limits are in [CHANGELOG](CHANGELOG.md).
+
 - **2026-10-19** 🛠️ **Nine financial correctness fixes**: Correct recency weights in factor decay, A-share board limits and Beijing symbol routing, SEC Q4 flow derivation, and event-study estimation windows. Preserve Futu holdings identity and tiny MACD/Bollinger values; reject negative specific variances and apply pair-specific fees to Yahoo forex symbols ([#1912](https://github.com/HKUDS/Vibe-Trading/pull/1912), [#1920](https://github.com/HKUDS/Vibe-Trading/pull/1920), [#1930](https://github.com/HKUDS/Vibe-Trading/pull/1930)). See [CHANGELOG](CHANGELOG.md) for all nine fixes and limits.
 
 - **2026-10-17** 🛠️ **Token usage and research reliability**: View LLM usage in Run Detail, chat and swarm ([#1890](https://github.com/HKUDS/Vibe-Trading/pull/1890)). Shared scheduling now powers research and optional background jobs ([#1893](https://github.com/HKUDS/Vibe-Trading/pull/1893)); live scheduling is unchanged. Fix journal date/time pairing, evidence paths, factor ties, memory roots, numeric error handling and channel progress. See [CHANGELOG](CHANGELOG.md).
@@ -1396,6 +1398,13 @@ In particular, A-share adjusted network bars cannot fill a gap in the raw
 ClickHouse ledger feed. Non-finite OHLC prices reject that day's order, and
 valuation uses a finite prior close (or the disclosed average-cost fallback).
 
+Daily-engine backtests report engine-specific unused settings in the run-card
+warnings. For example, crypto reads `maker_rate` and `taker_rate`, so supplying
+the A-share `commission_rate` setting warns instead of silently implying that
+it configured crypto fees. Shared runner/loader settings and keys read by a
+composite engine's selected sub-engines remain accepted. This conservative
+source-reader check does not trace conditional branches inside an engine and
+does not change options-engine configuration handling.
 
 Average holding period includes completed same-bar trades (zero bars). The
 existing `avg_holding_days` compatibility key reports the engine's holding-bar
@@ -1488,6 +1497,10 @@ Generic journals accept a complete `datetime` column or separate `date` and
 `time` columns (case-insensitive). Split columns are combined before sorting
 and FIFO matching; Excel date serials and time fractions are supported.
 A complete `datetime` column takes precedence when all three are present.
+Journal analysis rejects missing or invalid dates in any parsed record,
+including dividends, before applying filters. Correct those dates and retry.
+Rows with equal timestamps retain their source-file order for FIFO matching.
+This preserves the supplied sequence; it does not reconstruct missing fill order.
 
 ### Market Research
 

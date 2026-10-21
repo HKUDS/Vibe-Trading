@@ -52,6 +52,8 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
+- **2026-10-20** 🛠️ **回测诊断与研究正确性**：对无法识别的回测配置键发出告警，将未定义的相关性显示为未知而非零，并在重新验证时复用已保存的年化因子（[#1935](https://github.com/HKUDS/Vibe-Trading/pull/1935), [#1933](https://github.com/HKUDS/Vibe-Trading/pull/1933), [#1915](https://github.com/HKUDS/Vibe-Trading/pull/1915)）。同时改进因子样本检查、工具输入校验、交易日志市场分类、数值格式和企业微信流式回复。完整 14 项修复及剩余限制见 [CHANGELOG](CHANGELOG.md)。
+
 - **2026-10-19** 🛠️ **九项金融计算修复**：纠正因子衰减的新旧数据权重、A 股板块涨跌幅与北交所代码识别、SEC 第四季度流量推导及事件研究估计窗口。保留富途持仓代码身份和极小 MACD／布林带数值；拒绝负特异方差，让 Yahoo 外汇代码使用对应货币对的点差与隔夜费（[#1912](https://github.com/HKUDS/Vibe-Trading/pull/1912)、[#1920](https://github.com/HKUDS/Vibe-Trading/pull/1920)、[#1930](https://github.com/HKUDS/Vibe-Trading/pull/1930)）。完整九项修复与限制见 [CHANGELOG](CHANGELOG.md)。
 
 - **2026-10-17** 🛠️ **Token 用量与研究可靠性**：运行详情、聊天和 swarm 展示模型用量（[#1890](https://github.com/HKUDS/Vibe-Trading/pull/1890)）。研究任务与可选后台任务采用共享调度内核（[#1893](https://github.com/HKUDS/Vibe-Trading/pull/1893)），实盘调度保持不变。修复交易日志日期时间配对、证据路径、因子并列值、记忆目录、数值错误处理与渠道进度。详见 [CHANGELOG](CHANGELOG.md)。

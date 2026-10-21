@@ -721,6 +721,14 @@ def analyze_trade_journal(file_path: str, analysis_type: str = "full", filter_ex
         )
 
     df = records_to_dataframe(records)
+    if df["datetime"].isna().any():
+        return json.dumps(
+            {"status": "error", "error": (
+                "Trade journal contains missing or invalid dates. "
+                "Correct the datetime/date values before analysis."
+            )},
+            ensure_ascii=False,
+        )
     try:
         filtered = _apply_filter(df, filter_expr)
     except ValueError as exc:
