@@ -34,6 +34,9 @@ is: a square-root impact function.
 
 from __future__ import annotations
 
+from numbers import Real
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
@@ -68,23 +71,52 @@ DEFAULT_DELAY_BARS = 1
 _BPS_PER_UNIT = 10_000.0
 
 
+def _scalar(value: Any, name: str) -> float:
+    """Return ``value`` as a float, refusing any container.
+
+    This module is scalar-only (see the module docstring). Broadcasting would
+    return an array of fills from a function documented to return one ``float``,
+    and a :class:`pandas.Series` would lose its index on the way out, so the
+    container is refused here rather than silently reshaped.
+
+    Args:
+        value: Candidate scalar.
+        name: Argument name, for the error message.
+
+    Returns:
+        ``value`` as a ``float``.
+
+    Raises:
+        TypeError: If ``value`` is not a real scalar -- a list, tuple, numpy
+            array (0-d included), or pandas object. ``bool`` is refused too: it
+            is a :class:`numbers.Real` by inheritance, but a price or a size
+            given as ``True`` is a caller error, not a 1.0.
+    """
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(
+            f"{name} must be a real scalar, got {type(value).__name__}; "
+            "this module is scalar-only and does not broadcast"
+        )
+    return float(value)
+
+
 def _check_order(price: ArrayLike, direction: int) -> np.ndarray:
     """Validate the price and side shared by every price-impact model.
 
     Args:
-        price: Reference price before impact; scalar or array-like.
+        price: Reference price before impact; a scalar.
         direction: 1 to buy, -1 to sell.
 
     Returns:
-        ``price`` as a float array (0-d for a scalar input).
+        ``price`` as a 0-d float array.
 
     Raises:
-        ValueError: If any ``price`` is not strictly positive, or if
-            ``direction`` is anything other than 1 or -1. Direction multiplies
-            the impact, so a value such as 2 would silently double the modelled
-            cost.
+        TypeError: If ``price`` is not a real scalar.
+        ValueError: If ``price`` is not strictly positive, or if ``direction``
+            is anything other than 1 or -1. Direction multiplies the impact, so
+            a value such as 2 would silently double the modelled cost.
     """
-    prices = np.asarray(price, dtype=float)
+    prices = np.asarray(_scalar(price, "price"), dtype=float)
     if not np.all(np.isfinite(prices)) or not np.all(prices > 0.0):
         raise ValueError(f"price must be strictly positive, got {price!r}")
     if direction not in (1, -1):
@@ -100,15 +132,16 @@ def _participation_rate(volume_traded: ArrayLike, adv: ArrayLike) -> np.ndarray:
         adv: Average daily volume, strictly positive.
 
     Returns:
-        ``volume_traded / adv``, broadcast over both arguments.
+        ``volume_traded / adv`` as a 0-d float array.
 
     Raises:
-        ValueError: If any ``volume_traded`` is negative or any ``adv`` is not
-            strictly positive. A zero ``adv`` means the instrument does not
-            trade, for which no impact model has an answer.
+        TypeError: If either argument is not a real scalar.
+        ValueError: If ``volume_traded`` is negative or ``adv`` is not strictly
+            positive. A zero ``adv`` means the instrument does not trade, for
+            which no impact model has an answer.
     """
-    volumes = np.asarray(volume_traded, dtype=float)
-    advs = np.asarray(adv, dtype=float)
+    volumes = np.asarray(_scalar(volume_traded, "volume_traded"), dtype=float)
+    advs = np.asarray(_scalar(adv, "adv"), dtype=float)
     if not np.all(np.isfinite(volumes)) or not np.all(volumes >= 0.0):
         raise ValueError(f"volume_traded must be non-negative, got {volume_traded!r}")
     if not np.all(np.isfinite(advs)) or not np.all(advs > 0.0):
@@ -162,11 +195,13 @@ def fixed_slippage(price: float, direction: int, bps: float = DEFAULT_SLIPPAGE_B
         The fill price after slippage: worse than ``price`` for both sides.
 
     Raises:
+        TypeError: If any argument is not a real scalar; this model does not
+            broadcast.
         ValueError: If ``price`` is not strictly positive, ``direction`` is not 1
             or -1, or ``bps`` is negative.
     """
     prices = _check_order(price, direction)
-    rates = np.asarray(bps, dtype=float)
+    rates = np.asarray(_scalar(bps, "bps"), dtype=float)
     if not np.all(np.isfinite(rates)) or not np.all(rates >= 0.0):
         raise ValueError(f"bps must be non-negative, got {bps!r}")
     return _fill(prices, direction, rates / _BPS_PER_UNIT)
@@ -197,12 +232,14 @@ def linear_impact(
         The fill price after impact.
 
     Raises:
+        TypeError: If any argument is not a real scalar; this model does not
+            broadcast.
         ValueError: If ``price`` is not strictly positive, ``direction`` is not 1
             or -1, ``volume_traded`` is negative, ``adv`` is not strictly
             positive, or ``impact_coeff`` is negative.
     """
     prices = _check_order(price, direction)
-    coeffs = np.asarray(impact_coeff, dtype=float)
+    coeffs = np.asarray(_scalar(impact_coeff, "impact_coeff"), dtype=float)
     if not np.all(np.isfinite(coeffs)) or not np.all(coeffs >= 0.0):
         raise ValueError(f"impact_coeff must be non-negative, got {impact_coeff!r}")
     return _fill(prices, direction, coeffs * _participation_rate(volume_traded, adv))
@@ -238,13 +275,15 @@ def sqrt_impact(
         The fill price after impact.
 
     Raises:
+        TypeError: If any argument is not a real scalar; this model does not
+            broadcast.
         ValueError: If ``price`` is not strictly positive, ``direction`` is not 1
             or -1, ``volume_traded`` is negative, ``adv`` is not strictly
             positive, or ``volatility`` or ``eta`` is negative.
     """
     prices = _check_order(price, direction)
-    vols = np.asarray(volatility, dtype=float)
-    etas = np.asarray(eta, dtype=float)
+    vols = np.asarray(_scalar(volatility, "volatility"), dtype=float)
+    etas = np.asarray(_scalar(eta, "eta"), dtype=float)
     if not np.all(np.isfinite(vols)) or not np.all(vols >= 0.0):
         raise ValueError(f"volatility must be non-negative, got {volatility!r}")
     if not np.all(np.isfinite(etas)) or not np.all(etas >= 0.0):
