@@ -4,12 +4,10 @@ The reference strategy for the ``paper_trade_step`` strategy_path mode: an
 SMA(5)/SMA(20) crossover over the served universe.  It exercises exactly the
 frozen minimal ctx surface and nothing more (R-V11):
 
-* ``ctx.account_state`` — read-only ledger snapshot received at call start
-  (identical for every day of a multi-day call: all days are pre-executed
-  before the engine matches any of them).
+* ``ctx.account_state`` — read-only ledger after previous days have matched.
 * ``ctx.symbols`` — the served universe, sorted.
-* ``ctx.history(symbol)`` — OHLCV bars up to and including ``trade_date``
-  (a completed trading day; fills price at its close), as a copy.
+* ``ctx.history(symbol)`` — OHLCV bars strictly before ``trade_date``
+  (orders fill at the execution day’s close), as a copy.
 * ``ctx.sma(close, period)`` — the technical_indicators pure-function surface.
 
 Declares the optional module-level ``UNIVERSE`` literal (the strategy-universe

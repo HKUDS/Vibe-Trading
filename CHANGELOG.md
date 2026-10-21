@@ -7,6 +7,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Daily paper trading — 2026-10-21
+
+- Add the deterministic `paper_trade_step` agent/MCP tool plus local paper
+  accounts through CLI, authenticated REST and the Web sidebar (all UI locales).
+  Accounts start today or next session with configurable cash and positions;
+  atomic revisions protect saved ledgers from duplicate or concurrent steps.
+- Strategies receive only prior bars and the ledger after preceding fills.
+  Failures discard the whole call. Raw execution feeds reject adjusted and
+  non-finite prices; incomplete A-share calendars and unverified split-like
+  events fail visibly. Corporate-action reconciliation and dividends remain
+  outside this daily-close model (#1939).
+
 ### Maintenance — 2026-10-20
 
 - Warn about unrecognized backtest configuration keys and include the warning

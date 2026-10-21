@@ -36,7 +36,8 @@
     "mainNavigation": "Ana gezinme",
     "about": "Hakkında",
     "sessionsLoadFailed": "Konuşmalar yüklenemiyor.",
-    "pixelOffice": "Piksel Ofis"
+    "pixelOffice": "Piksel Ofis",
+    "paperTrading": "Sanal işlem"
   },
   "runtime": {
     "monitorBadge": "Çalışma durumu izleyicisi",
@@ -2334,7 +2335,8 @@
       "scheduled": "Bir araştırma görevini zamanlayarak tekrarlayın.",
       "runtime": "Aracı kurum bağlantılarını ve işlem çalışma durumunu kontrol edin.",
       "settings": "Modelleri, veri kaynaklarını ve aracı kurum bağlantılarını yapılandırın.",
-      "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez."
+      "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez.",
+      "paperTrading": "Günlük işlemleri sanal fonlarla deneyin. Aracı kuruma emir gönderilmez. Sonuçlar nakit temettüleri içermez ve toplam getiriyi göstermez."
     },
     "instructions": {
       "reports": "Önce araştırma asistanından bir stratejiyi geriye dönük test etmesini isteyin, ardından sonuçları burada açın. PDF ve diğer sohbet belgelerini özgün konuşmadan indirin.",
@@ -2345,7 +2347,8 @@
       "scheduled": "Araştırma talimatını girin, sıklığını seçip kaydedin. Çalıştırma için yerel zamanlayıcı etkin olmalıdır; gönderim için de yapılandırılmış bir kanal gerekir.",
       "runtime": "Önce Ayarlar veya Portföy’de bir aracı kurum bağlantısı kurun. Kullanılabilir işlemler, kurumun yeteneklerine ve verdiğiniz yetkiye bağlıdır.",
       "settings": "Başlamak için bir model yapılandırın. Gerektikçe veri kaynakları veya aracı kurum bağlantıları ekleyin; kamuya açık piyasa araştırması için aracı kurum hesabı gerekmez.",
-      "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez."
+      "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez.",
+      "paperTrading": "Yalnızca tamamlanmış günlük mumlar işlenir. Stratejiler önceki günleri okur ve işlem gününün kapanışında gerçekleşir. Normal kapanıştan 30 dakika sonrasını bekleyin; otomatik çalıştırma planlanmaz."
     }
   },
   "analysis": {
@@ -2487,5 +2490,49 @@
     "limitsNote": "Her karar yeni bir konuşma başlatır. Sınırlar yanıttan sonra kontrol edilir ve o yanıt kadar aşılabilir. Eksik kullanım veya aşım mevcut durdurma anahtarını tetikler.",
     "pricesNote": "Fiyatlar operatör tahminidir. En yüksek girdi/önbellek yazma ücretini kullanın; önbellek indirimleri ve yardımcı çağrılar dahil değildir.",
     "stopToEdit": "Ayarları değiştirmeden önce çalıştırıcıyı durdurun."
+  },
+  "paper": {
+    "title": "Sanal işlem",
+    "description": "Günlük işlemleri sanal fonlarla deneyin. Aracı kuruma emir gönderilmez. Sonuçlar nakit temettüleri içermez ve toplam getiriyi göstermez.",
+    "accounts": "Hesaplar",
+    "newAccount": "Yeni sanal hesap",
+    "eligible": "{{date}} tarihinden itibaren; tatillerde sonraki uygun seans beklenir.",
+    "cash": "Nakit",
+    "pending": "İlk hesaplama bekleniyor",
+    "label": "Hesap adı",
+    "market": "Piyasa",
+    "start": "Başlangıç",
+    "today": "Bugün",
+    "nextSession": "Sonraki işlem seansı",
+    "initialPositions": "Başlangıç pozisyonları (miktar ve ortalama maliyet)",
+    "symbol": "Sembol (ör. AAPL.US)",
+    "quantity": "Miktar",
+    "cost": "Ortalama maliyet",
+    "remove": "Kaldır",
+    "addPosition": "Pozisyon ekle",
+    "create": "Hesap oluştur",
+    "working": "İşleniyor…",
+    "advance": "Günlük adımı hesapla",
+    "executionNote": "Yalnızca tamamlanmış günlük mumlar işlenir. Stratejiler önceki günleri okur ve işlem gününün kapanışında gerçekleşir. Normal kapanıştan 30 dakika sonrasını bekleyin; otomatik çalıştırma planlanmaz.",
+    "date": "İşlem tarihi",
+    "mode": "Giriş modu",
+    "orders": "Doğrudan emirler",
+    "strategy": "Strateji dosyası",
+    "strategyPath": "Çalışma ortamının strategies klasöründeki yol",
+    "side": "Yön",
+    "buy": "Al",
+    "sell": "Sat",
+    "addOrder": "Emir ekle",
+    "emptyOrders": "Emir yoksa yalnızca değerleme yapılır. Piyasa emirleri günlük kapanışta gerçekleşir; gün içi işlem simülasyonu değildir.",
+    "saved": "Hesap kaydedildi.",
+    "notSaved": "Hesap değişmedi. Yeniden denemeden önce sonucu inceleyin.",
+    "result": "Adım sonucu",
+    "price": "Fiyat",
+    "fee": "Ücret",
+    "history": "Hesap değeri geçmişi",
+    "nav": "Net varlık değeri",
+    "us": "ABD hisseleri · USD",
+    "hk": "Hong Kong hisseleri · HKD",
+    "cn_a": "Çin A hisseleri · CNY"
   }
 }

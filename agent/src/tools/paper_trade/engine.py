@@ -5,10 +5,9 @@ Frozen surfaces: per-day atomicity (R1-2), AM-14 rejection order
 order = matching order; fills/rejected day-ascending then input index;
 nav_series day-ascending), AM-3 orders-mode single-day gate, AM-9 readiness
 on the merged frame, AM-6 calendar matrix (cn_a = injected calendar truth,
-hk/us = zero-calendar fail-closed).  ``strategy_path`` (T7, :mod:`strategy_exec`) pre-executes
-per matching day, then drives :func:`run_day_loop` via the public plan/readiness/error seams.
+hk/us = zero-calendar fail-closed).  ``strategy_path`` (T7, :mod:`strategy_exec`) generates orders from prior bars and the current private ledger, then drives :func:`run_day_loop` via the public plan/readiness/error seams.
 Step 4 (T4) threads :mod:`corporate_actions`: simulated-day boundaries only
-(note 2), clean splits adjust before the day's orders, unresolved → slot 4.
+(note 2), unverified split-like discontinuities stop the call; unresolved moves reject orders.
 Step-3 interpretations (R-V3 → ``suspended``; empty-universe short-circuit;
 unknown band skips the check + warns; rejected qty echoed; avg_cost
 fee-exclusive 4dp; positions symbol-sorted) live in the STEP3 receipt and
@@ -22,7 +21,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Collection, Mapping
+from typing import Callable, Collection, Mapping
 
 import numpy as np
 import pandas as pd
@@ -171,7 +170,6 @@ class _MatchSession:
         self.market_data = market_data
         self.limits_client = limits_client
         self.ca_by_day = corporate_action_unresolved_by_day
-        self.ca_plan = ca_plan
         self.cash = quantize_money(money(account_state.cash))
         self.positions: dict[str, _LedgerPosition] = {}
         for position in account_state.positions:
@@ -197,16 +195,6 @@ class _MatchSession:
         basis = merged / new_qty if new_qty > _ZERO else avg_cost
         self.positions[symbol] = _LedgerPosition(
             new_qty, basis.quantize(_Q4, rounding=ROUND_HALF_UP))
-
-    def apply_corporate_actions(self, day: str) -> None:
-        # T4/R6-2: clean splits adjust the ledger BEFORE the day's orders
-        # (qty x mult, avg_cost / mult 4dp HALF_UP); unresolved events only
-        # warn here — slot 4 rejects the symbol's orders fail-closed.
-        for event in self.ca_plan.clean_by_day.get(day, ()):
-            position = self.positions.get(event.symbol)
-            if position is not None and position.qty > _ZERO:
-                position.qty, position.avg_cost = corporate_actions.adjust_position(
-                    position.qty, position.avg_cost, event.qty_multiplier)
 
     def match_order(self, day: DayPlan, order: Order) -> None:
         # The AM-14 ladder: first match wins, one reason per order.
@@ -455,6 +443,7 @@ def run_day_loop(
     from_date: str,
     to_date: str,
     orders_by_day: Mapping[str, Collection[Order]],
+    order_provider: Callable[[str, AccountState], Collection[Order]] | None = None,
     market_data: data.MarketDataResult,
     fee_model: Mapping[str, float] | None = None,
     calendar_client: calendar.TradeCalendarClient | None = None,
@@ -475,12 +464,19 @@ def run_day_loop(
     if (error := readiness_error(to_date, market_data, plan)) is not None:
         return error_outcome(error, account_state, market_data, market, fee_model)
 
-    # T4/R6 corporate-action plan: scan only the simulated-day boundaries
-    # (note 2 — lookback history never fires); cn_a is exempt at the call site
-    # (additive qfq already embeds split adjustment, R6 scope row).
-    ca_plan = (corporate_actions.build_plan(
+    # OHLC/volume ratios identify discontinuities, not authoritative actions.
+    # All production execution series are raw, including A-shares. Never
+    # multiply a holding based only on a price crash that resembles a split.
+    ca_plan = corporate_actions.build_plan(
         market_data, [e.date for e in plan if e.skip_reason is None], account_state.positions)
-        if market != calendar.CN_A_MARKET else corporate_actions.EMPTY_PLAN)
+    if ca_plan.clean_by_day:
+        day = min(ca_plan.clean_by_day)
+        symbols = ", ".join(event.symbol for event in ca_plan.clean_by_day[day])
+        return error_outcome(EngineError(
+            "PAPER_DATA_NOT_READY",
+            f"Unverified corporate action on {day} for {symbols}; "
+            "price/volume ratios cannot establish a split. Reconcile against an authoritative action record."),
+            account_state, market_data, market, fee_model)
     session = _MatchSession(
         market, rules, market_data, account_state, limits_client,
         corporate_actions.merge_unresolved(
@@ -492,12 +488,13 @@ def run_day_loop(
             session.skipped.append(SkippedDay(date=entry.date, reason=entry.skip_reason))
             if entry.warning:
                 session.warnings.append(entry.warning)
-        else:
-            session.apply_corporate_actions(entry.date)  # T4: before the day's orders
         # Orders run the ladder on EVERY day: a cn_a non-trading day rejects
         # at slot 2; an inferred-closed hk/us day rejects at slot 3
         # (suspended — never non_trading_day, which is cn_a-only vocabulary).
-        for order in tuple(orders_by_day.get(entry.date, ())):
+        orders = (order_provider(entry.date, session.end_state())
+                  if order_provider is not None and entry.skip_reason is None
+                  else orders_by_day.get(entry.date, ()))
+        for order in tuple(orders):
             session.match_order(entry, order)
         if entry.skip_reason is None:
             session.add_nav_row(entry.date)  # per-day commit: fills + one nav row

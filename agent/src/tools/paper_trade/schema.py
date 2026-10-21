@@ -110,12 +110,7 @@ SIDES: tuple[str, ...] = ("buy", "sell")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 #: Repo-root-relative location of the wire-contract jsonschema (VD-13).
-_CONTRACT_SCHEMA_PATH = (
-    Path(__file__).resolve().parents[4]
-    / "schema"
-    / "tool_contracts"
-    / "paper_trade_step-v1.1.json"
-)
+_CONTRACT_SCHEMA_PATH = Path(__file__).with_name("paper_trade_step-v1.1.json")
 
 
 class PaperTradeSchemaError(ValueError):

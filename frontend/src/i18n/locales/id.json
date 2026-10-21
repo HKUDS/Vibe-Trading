@@ -28,7 +28,8 @@
       "scheduled": "Ulangi tugas riset sesuai jadwal.",
       "runtime": "Periksa koneksi broker dan status pelaksanaan perdagangan.",
       "settings": "Atur model, sumber data, dan koneksi broker.",
-      "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi."
+      "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi.",
+      "paperTrading": "Uji transaksi harian dengan dana virtual. Tidak ada pesanan yang dikirim ke broker. Hasil tidak mencakup dividen tunai dan bukan imbal hasil total."
     },
     "instructions": {
       "reports": "Minta asisten melakukan backtest strategi terlebih dahulu, lalu buka hasilnya di sini. Unduh PDF dan dokumen yang dibuat di chat dari percakapan asal.",
@@ -39,7 +40,8 @@
       "scheduled": "Isi instruksi riset, pilih frekuensi, dan simpan. Penjadwal lokal harus diaktifkan agar tugas berjalan; pengiriman juga memerlukan kanal yang telah diatur.",
       "runtime": "Atur koneksi broker di Pengaturan atau Portofolio terlebih dahulu. Tindakan perdagangan yang tersedia bergantung pada kemampuan broker dan otorisasi Anda.",
       "settings": "Atur model untuk memulai. Tambahkan data atau koneksi broker sesuai kebutuhan; riset data pasar publik tidak memerlukan akun broker.",
-      "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi."
+      "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi.",
+      "paperTrading": "Hanya candle harian yang selesai dapat diproses. Strategi membaca hari sebelumnya dan dieksekusi pada penutupan hari eksekusi. Tunggu 30 menit setelah penutupan reguler; tidak ada eksekusi otomatis yang dijadwalkan."
     }
   },
   "layout": {
@@ -70,7 +72,8 @@
     "mainNavigation": "Navigasi utama",
     "about": "Tentang",
     "sessionsLoadFailed": "Percakapan tidak dapat dimuat.",
-    "pixelOffice": "Kantor piksel"
+    "pixelOffice": "Kantor piksel",
+    "paperTrading": "Trading simulasi"
   },
   "runtime": {
     "monitorBadge": "Monitor Runtime",
@@ -2487,5 +2490,49 @@
     "limitsNote": "Setiap keputusan memakai percakapan baru. Batas diperiksa setelah respons dan dapat terlampaui sebesar respons itu. Penggunaan yang hilang atau anggaran terlampaui memicu sakelar penghentian yang ada.",
     "pricesNote": "Harga adalah perkiraan operator. Gunakan tarif masukan/penulisan cache tertinggi; diskon cache dan panggilan tambahan tidak termasuk.",
     "stopToEdit": "Hentikan runner sebelum mengubah pengaturan."
+  },
+  "paper": {
+    "title": "Trading simulasi",
+    "description": "Uji transaksi harian dengan dana virtual. Tidak ada pesanan yang dikirim ke broker. Hasil tidak mencakup dividen tunai dan bukan imbal hasil total.",
+    "accounts": "Akun",
+    "newAccount": "Akun simulasi baru",
+    "eligible": "Mulai paling awal {{date}}; hari libur menunggu sesi berikutnya yang tersedia.",
+    "cash": "Kas",
+    "pending": "Menunggu penyelesaian pertama",
+    "label": "Nama akun",
+    "market": "Pasar",
+    "start": "Mulai",
+    "today": "Hari ini",
+    "nextSession": "Sesi perdagangan berikutnya",
+    "initialPositions": "Posisi awal (jumlah dan biaya rata-rata)",
+    "symbol": "Simbol (mis. AAPL.US)",
+    "quantity": "Jumlah",
+    "cost": "Biaya rata-rata",
+    "remove": "Hapus",
+    "addPosition": "Tambah posisi",
+    "create": "Buat akun",
+    "working": "Memproses…",
+    "advance": "Selesaikan langkah harian",
+    "executionNote": "Hanya candle harian yang selesai dapat diproses. Strategi membaca hari sebelumnya dan dieksekusi pada penutupan hari eksekusi. Tunggu 30 menit setelah penutupan reguler; tidak ada eksekusi otomatis yang dijadwalkan.",
+    "date": "Tanggal eksekusi",
+    "mode": "Mode masukan",
+    "orders": "Pesanan langsung",
+    "strategy": "Berkas strategi",
+    "strategyPath": "Jalur dalam folder strategies lingkungan runtime",
+    "side": "Sisi",
+    "buy": "Beli",
+    "sell": "Jual",
+    "addOrder": "Tambah pesanan",
+    "emptyOrders": "Tanpa pesanan, hanya valuasi. Pesanan pasar dieksekusi pada penutupan harian; bukan simulasi intrahari.",
+    "saved": "Buku akun tersimpan.",
+    "notSaved": "Buku akun tidak berubah. Tinjau hasil sebelum mencoba lagi.",
+    "result": "Hasil langkah",
+    "price": "Harga",
+    "fee": "Biaya",
+    "history": "Riwayat nilai akun",
+    "nav": "Nilai aset bersih",
+    "us": "Saham AS · USD",
+    "hk": "Saham Hong Kong · HKD",
+    "cn_a": "Saham A Tiongkok · CNY"
   }
 }

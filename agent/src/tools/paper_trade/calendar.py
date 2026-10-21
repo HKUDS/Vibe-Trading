@@ -247,3 +247,37 @@ def classify_zero_calendar_day(
         )
     suspended = tuple(symbol for symbol in universe if symbol not in with_bars)
     return ZeroCalendarDayVerdict(day, VERDICT_TRADING_DAY, suspended_symbols=suspended)
+
+
+class CalendarUnavailableError(RuntimeError):
+    """A calendar query failed or did not establish every requested date."""
+
+
+@dataclass(frozen=True)
+class CalendarSnapshot:
+    frame: "pd.DataFrame"
+
+    def get_trade_calendar(self, start_date: str, end_date: str) -> "pd.DataFrame":
+        return self.frame.copy()
+
+
+def snapshot_calendar(client: TradeCalendarClient, start_date: str, end_date: str) -> CalendarSnapshot:
+    """Read once; a missing row is unknown, never a confirmed market closure."""
+    import pandas as pd
+
+    try:
+        frame = client.get_trade_calendar(start_date, end_date)
+        observed = {}
+        for row in frame.to_dict("records"):
+            day = _normalize_date(row["cal_date"])
+            if str(row["is_open"]) not in ("0", "1", "False", "True"):
+                raise ValueError("invalid open flag")
+            observed[day] = True
+        required = {day.strftime("%Y-%m-%d") for day in pd.date_range(start_date, end_date)}
+        if not required.issubset(observed):
+            raise ValueError("incomplete date coverage")
+        frame = frame.copy()
+        frame["is_open"] = frame["is_open"].map(lambda value: int(str(value) in ("1", "True")))
+        return CalendarSnapshot(frame)
+    except Exception as exc:
+        raise CalendarUnavailableError("Trading calendar query failed or has incomplete date coverage") from exc

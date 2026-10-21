@@ -28,7 +28,8 @@
       "scheduled": "Repita uma pesquisa em horários definidos.",
       "runtime": "Confira conexões de corretoras e o estado de execução das operações.",
       "settings": "Configure modelos, fontes de dados e conexões de corretoras.",
-      "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação."
+      "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação.",
+      "paperTrading": "Teste operações diárias com recursos fictícios. Nenhuma ordem é enviada à corretora. Os resultados excluem dividendos em dinheiro e não representam retorno total."
     },
     "instructions": {
       "reports": "Primeiro peça ao assistente um backtest de uma estratégia e abra os resultados aqui. Baixe PDFs e documentos gerados no chat na conversa original.",
@@ -39,7 +40,8 @@
       "scheduled": "Informe a instrução de pesquisa, escolha a frequência e salve. O agendador local deve estar habilitado para executar tarefas; a entrega também requer um canal configurado.",
       "runtime": "Primeiro configure uma conexão de corretora em Configurações ou Carteira. As operações disponíveis dependem dos recursos da corretora e da sua autorização.",
       "settings": "Configure um modelo para começar. Adicione dados ou conexões de corretoras conforme necessário; pesquisas com dados públicos de mercado não exigem conta em corretora.",
-      "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação."
+      "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação.",
+      "paperTrading": "Somente candles diários completos são liquidados. As estratégias leem dias anteriores e executam no fechamento do dia indicado. Aguarde 30 minutos após o fechamento regular; nenhuma execução automática é agendada."
     }
   },
   "layout": {
@@ -70,7 +72,8 @@
     "mainNavigation": "Navegação principal",
     "about": "Sobre",
     "sessionsLoadFailed": "Não foi possível carregar as conversas.",
-    "pixelOffice": "Escritório pixel"
+    "pixelOffice": "Escritório pixel",
+    "paperTrading": "Negociação simulada"
   },
   "runtime": {
     "monitorBadge": "Monitor de Runtime",
@@ -2487,5 +2490,49 @@
     "limitsNote": "Cada decisão usa uma nova conversa. Os limites são verificados após a resposta e podem exceder pelo valor dessa resposta. Uso desconhecido ou excesso aciona a parada de emergência existente.",
     "pricesNote": "Os preços são estimativas do operador. Use a maior tarifa de entrada/gravação em cache; descontos de cache e chamadas auxiliares não estão incluídos.",
     "stopToEdit": "Pare o executor antes de alterar as configurações."
+  },
+  "paper": {
+    "title": "Negociação simulada",
+    "description": "Teste operações diárias com recursos fictícios. Nenhuma ordem é enviada à corretora. Os resultados excluem dividendos em dinheiro e não representam retorno total.",
+    "accounts": "Contas",
+    "newAccount": "Nova conta simulada",
+    "eligible": "Disponível a partir de {{date}}; feriados aguardam a próxima sessão disponível.",
+    "cash": "Saldo em dinheiro",
+    "pending": "Aguardando a primeira liquidação",
+    "label": "Nome da conta",
+    "market": "Mercado",
+    "start": "Início",
+    "today": "Hoje",
+    "nextSession": "Próximo pregão",
+    "initialPositions": "Posições iniciais (quantidade e custo médio)",
+    "symbol": "Símbolo (ex.: AAPL.US)",
+    "quantity": "Quantidade",
+    "cost": "Custo médio",
+    "remove": "Remover",
+    "addPosition": "Adicionar posição",
+    "create": "Criar conta",
+    "working": "Processando…",
+    "advance": "Liquidar etapa diária",
+    "executionNote": "Somente candles diários completos são liquidados. As estratégias leem dias anteriores e executam no fechamento do dia indicado. Aguarde 30 minutos após o fechamento regular; nenhuma execução automática é agendada.",
+    "date": "Data de execução",
+    "mode": "Modo de entrada",
+    "orders": "Ordens explícitas",
+    "strategy": "Arquivo de estratégia",
+    "strategyPath": "Caminho na pasta strategies do ambiente",
+    "side": "Lado",
+    "buy": "Comprar",
+    "sell": "Vender",
+    "addOrder": "Adicionar ordem",
+    "emptyOrders": "Sem ordens, apenas avalia a conta. Ordens a mercado executam no fechamento diário; não há simulação intradiária.",
+    "saved": "Registro salvo.",
+    "notSaved": "O registro não mudou. Confira o resultado antes de tentar novamente.",
+    "result": "Resultado da etapa",
+    "price": "Preço",
+    "fee": "Taxa",
+    "history": "Histórico do valor da conta",
+    "nav": "Patrimônio líquido",
+    "us": "Ações dos EUA · USD",
+    "hk": "Ações de Hong Kong · HKD",
+    "cn_a": "Ações A da China · CNY"
   }
 }

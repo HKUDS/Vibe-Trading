@@ -28,7 +28,8 @@
       "scheduled": "Eine Recherche nach Zeitplan wiederholen.",
       "runtime": "Brokerverbindungen und den Betriebsstatus des Handels prüfen.",
       "settings": "Modelle, Datenquellen und Brokerverbindungen konfigurieren.",
-      "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte."
+      "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte.",
+      "paperTrading": "Tägliche Trades mit virtuellem Kapital testen. Es werden keine Brokeraufträge gesendet. Bardividenden sind nicht enthalten; die Ergebnisse zeigen keine Gesamtrendite."
     },
     "instructions": {
       "reports": "Bitte den Assistenten zuerst um einen Strategie-Backtest und öffne hier die Ergebnisse. Im Chat erstellte PDFs und andere Dokumente lädst du in der ursprünglichen Unterhaltung herunter.",
@@ -39,7 +40,8 @@
       "scheduled": "Gib einen Rechercheauftrag ein, wähle die Häufigkeit und speichere. Für die Ausführung muss der lokale Planer aktiviert sein; zur Zustellung ist ein eingerichteter Kanal nötig.",
       "runtime": "Richte zuerst unter Einstellungen oder Portfolio eine Brokerverbindung ein. Verfügbare Handelsaktionen hängen von den Brokerfunktionen und deiner Autorisierung ab.",
       "settings": "Richte zunächst ein Modell ein. Ergänze Datenquellen oder Brokerverbindungen nach Bedarf; für öffentliche Marktrecherche ist kein Brokerkonto nötig.",
-      "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte."
+      "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte.",
+      "paperTrading": "Nur abgeschlossene Tageskerzen werden abgerechnet. Strategien sehen vorherige Tage und handeln zum Schlusskurs des Ausführungstags. Bitte 30 Minuten nach regulärem Börsenschluss warten; es wird keine automatische Ausführung geplant."
     }
   },
   "layout": {
@@ -70,7 +72,8 @@
     "about": "Über",
     "portfolio": "Kontopositionen",
     "sessionsLoadFailed": "Gespräche können nicht geladen werden.",
-    "pixelOffice": "Pixelbüro"
+    "pixelOffice": "Pixelbüro",
+    "paperTrading": "Simulierter Handel"
   },
   "runtime": {
     "monitorBadge": "Runtime-Monitor",
@@ -2487,5 +2490,49 @@
     "limitsNote": "Jede Entscheidung beginnt eine neue Unterhaltung. Limits werden nach der Antwort geprüft und können um diese Antwort überschritten werden. Fehlender Verbrauch oder eine Überschreitung löst den vorhandenen Notstopp aus.",
     "pricesNote": "Preise sind Betreiberschätzungen. Den höchsten Eingabe-/Cache-Schreibpreis verwenden; Cache-Rabatte und zusätzliche Modellaufrufe sind nicht enthalten.",
     "stopToEdit": "Vor Änderungen den Runner stoppen."
+  },
+  "paper": {
+    "title": "Simulierter Handel",
+    "description": "Tägliche Trades mit virtuellem Kapital testen. Es werden keine Brokeraufträge gesendet. Bardividenden sind nicht enthalten; die Ergebnisse zeigen keine Gesamtrendite.",
+    "accounts": "Konten",
+    "newAccount": "Neues Simulationskonto",
+    "eligible": "Ab {{date}} möglich; an Feiertagen wird auf die nächste verfügbare Sitzung gewartet.",
+    "cash": "Bargeld",
+    "pending": "Erste Abrechnung ausstehend",
+    "label": "Kontoname",
+    "market": "Markt",
+    "start": "Beginn",
+    "today": "Heute",
+    "nextSession": "Nächster Handelstag",
+    "initialPositions": "Anfangspositionen (Menge und Durchschnittskosten)",
+    "symbol": "Symbol (z. B. AAPL.US)",
+    "quantity": "Menge",
+    "cost": "Durchschnittskosten",
+    "remove": "Entfernen",
+    "addPosition": "Position hinzufügen",
+    "create": "Konto erstellen",
+    "working": "Wird verarbeitet…",
+    "advance": "Tagesschritt abrechnen",
+    "executionNote": "Nur abgeschlossene Tageskerzen werden abgerechnet. Strategien sehen vorherige Tage und handeln zum Schlusskurs des Ausführungstags. Bitte 30 Minuten nach regulärem Börsenschluss warten; es wird keine automatische Ausführung geplant.",
+    "date": "Ausführungsdatum",
+    "mode": "Eingabemodus",
+    "orders": "Explizite Aufträge",
+    "strategy": "Strategiedatei",
+    "strategyPath": "Pfad im strategies-Ordner der Laufzeitumgebung",
+    "side": "Richtung",
+    "buy": "Kaufen",
+    "sell": "Verkaufen",
+    "addOrder": "Auftrag hinzufügen",
+    "emptyOrders": "Ohne Aufträge wird nur bewertet. Marktaufträge werden zum Tagesschluss ausgeführt; keine Intraday-Simulation.",
+    "saved": "Kontobuch gespeichert.",
+    "notSaved": "Kontobuch unverändert. Ergebnis vor erneutem Versuch prüfen.",
+    "result": "Schrittergebnis",
+    "price": "Preis",
+    "fee": "Gebühr",
+    "history": "Kontowertverlauf",
+    "nav": "Nettovermögenswert",
+    "us": "US-Aktien · USD",
+    "hk": "Hongkong-Aktien · HKD",
+    "cn_a": "Chinesische A-Aktien · CNY"
   }
 }

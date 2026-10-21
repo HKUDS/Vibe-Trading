@@ -1,9 +1,10 @@
 """Market-agnostic split detector for ``paper_trade_step`` (Step 4 / T4).
 
 R6 / AM-2 / VD-6 (frozen, G1-approved): hk/us serve RAW (unadjusted) prices,
-so a split ex-date breaks the ledger unless the engine detects it.  cn_a is
-EXEMPT at the call site (additive qfq already embeds the split adjustment);
-the detector itself is market-agnostic (no market branch lives here).
+so a split ex-date can break the ledger. All three markets now use raw
+execution bars. This module identifies candidate discontinuities only;
+OHLC/volume is not authoritative corporate-action evidence. The engine
+refuses a split-like candidate without changing holdings.
 
 Triple gate for a CLEAN hit (all three must hold; exact rational arithmetic
 via ``Fraction``/``Decimal`` — never the built-in rounding function, VD-9):
@@ -51,7 +52,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence
 
@@ -67,7 +68,6 @@ __all__ = [
     "CorporateActionPlan",
     "EMPTY_PLAN",
     "SplitEvent",
-    "adjust_position",
     "build_plan",
     "classify_boundary",
     "detect_symbol",
@@ -101,7 +101,6 @@ PRICE_RATIO_REL_TOL = Fraction(1, 1000)
 VOLUME_RATIO_REL_TOL = Fraction(1, 100)
 NAV_CONTINUITY_REL_TOL = Fraction(1, 10000)
 
-_Q4 = Decimal("0.0001")
 _ZERO_DEC = Decimal(0)
 
 KIND_CLEAN = "clean"
@@ -124,7 +123,7 @@ class SplitEvent:
 
     symbol: str
     date: str  # ex-date = the AFTER bar's date (a simulated day, note 2)
-    detected: bool  # True = clean split applied; False = unresolved fail-closed
+    detected: bool  # True = ratio candidate, not authority to adjust a ledger
     qty_multiplier: Fraction | None  # clean ratio; None when unresolved
     observed_ratio: Decimal  # observed close_after/close_before (provenance fact)
 
@@ -332,14 +331,3 @@ def merge_unresolved(
         for day, symbols in source.items():
             merged.setdefault(day, set()).update(str(symbol) for symbol in symbols)
     return {day: tuple(sorted(symbols)) for day, symbols in sorted(merged.items())}
-
-
-def adjust_position(qty: Decimal, avg_cost: Decimal, mult: Fraction) -> tuple[Decimal, Decimal]:
-    """Apply a clean split to one ledger position (the engine calls this on
-    the matching day BEFORE its orders).  ``qty ×= mult``; ``avg_cost /= mult``
-    quantized 4dp ROUND_HALF_UP (the engine's avg_cost discipline).  Decimal
-    end-to-end — never the built-in rounding function (VD-9)."""
-    new_qty = qty * Decimal(mult.numerator) / Decimal(mult.denominator)
-    new_cost = (avg_cost * Decimal(mult.denominator) / Decimal(mult.numerator)).quantize(
-        _Q4, rounding=ROUND_HALF_UP)
-    return new_qty, new_cost

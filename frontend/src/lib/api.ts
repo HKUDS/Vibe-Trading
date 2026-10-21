@@ -2140,3 +2140,29 @@ export interface OfficeSnapshot {
   agents: { id: string; name: string; role: string; color: string; rank: "Operator" | "Senior" | "Lead"; load: number }[];
   tasks: { id: string; title: string; description: string; priority: "low" | "normal" | "high"; assigned_to: string | null; status: "queued" | "assigned" | "completed"; result: string }[];
 }
+
+export interface PaperPosition { symbol: string; qty: number; avg_cost: number }
+export interface PaperOrder { symbol: string; side: "buy" | "sell"; qty: number; limit?: number }
+export interface PaperResult {
+  code?: string; message?: string;
+  end_state?: { cash: number; positions: PaperPosition[] };
+  fills?: { trade_date: string; symbol: string; side: string; qty: number; price: number; fee: number }[];
+  rejected_orders?: { trade_date: string; symbol: string; reason_code: string }[];
+  nav_series?: { date: string; nav: number; cash: number }[];
+  warnings?: string[];
+  data_provenance?: { source: string; bars_as_of: string | null };
+}
+export interface PaperAccount {
+  id: string; label: string; market: "cn_a" | "hk" | "us"; currency: string;
+  start_on: string; last_date: string | null; revision: number;
+  account_state: { cash: number; positions: PaperPosition[] };
+  last_result: PaperResult | null;
+}
+export const paperApi = {
+  list: () => request<PaperAccount[]>("/api/paper-accounts"),
+  create: (body: { label: string; market: string; start: string; account_state: { cash: number; positions: PaperPosition[] } }) =>
+    request<PaperAccount>("/api/paper-accounts", { method: "POST", body: JSON.stringify(body) }),
+  advance: (id: string, body: { expected_revision: number; to_date: string; orders?: PaperOrder[]; strategy_path?: string }) =>
+    request<{ account: PaperAccount; result: PaperResult; committed: boolean }>(`/api/paper-accounts/${encodeURIComponent(id)}/advance`, { method: "POST", body: JSON.stringify(body) }),
+  history: (id: string) => request<PaperResult[]>(`/api/paper-accounts/${encodeURIComponent(id)}/history`),
+};

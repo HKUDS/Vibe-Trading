@@ -261,6 +261,8 @@ register_live_routes(app)
 # --- Read-only portfolio dashboard ---
 from src.api.portfolio_routes import register_portfolio_routes  # noqa: E402
 register_portfolio_routes(app)
+from src.api.paper_trade_routes import register_paper_trade_routes  # noqa: E402
+register_paper_trade_routes(app)
 
 from src.api.connection_routes import register_connection_routes  # noqa: E402
 register_connection_routes(app)

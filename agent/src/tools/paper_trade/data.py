@@ -231,24 +231,30 @@ def default_ch_client() -> CnABarsClient | None:
 
 
 def _resolve_network_loader(chain_key: str, exclude: frozenset[str] = frozenset()) -> Any | None:
-    # First available loader of the chain, skipping excluded names.  The
+    # First raw-capable loader of the chain, skipping excluded names. The
     # registry's resolve_loader cannot exclude the chain head, and cn_a must
     # exclude clickhouse (recursion — module docstring).
     from backtest.loaders.base import NoAvailableSourceError
-    from backtest.loaders.registry import FALLBACK_CHAINS, LOADER_REGISTRY
+    from backtest.loaders.registry import FALLBACK_CHAINS, LOADER_REGISTRY, price_caliber
 
     try:
         head = resolve_loader(chain_key)
     except NoAvailableSourceError:
         return None
-    if head.name not in exclude:
+    if head.name == "tencent":
+        from .raw_loader import TencentRawLoader
+        return TencentRawLoader()
+    if head.name not in exclude and price_caliber(head.name, chain_key) == "raw":
         return head
     for name in FALLBACK_CHAINS.get(chain_key, []):
         if name in exclude or name not in LOADER_REGISTRY:
             continue
         try:
             loader = LOADER_REGISTRY[name]()
-            if loader.is_available():
+            if (loader.name == "tencent" or price_caliber(loader.name, chain_key) == "raw") and loader.is_available():
+                if loader.name == "tencent":
+                    from .raw_loader import TencentRawLoader
+                    return TencentRawLoader()
                 return loader
         except Exception:  # noqa: BLE001 — unavailable candidates keep the walk going
             continue

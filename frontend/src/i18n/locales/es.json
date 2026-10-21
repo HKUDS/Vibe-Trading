@@ -28,7 +28,8 @@
       "scheduled": "Repite una investigación según un horario.",
       "runtime": "Comprueba conexiones de brókeres y el estado de ejecución de operaciones.",
       "settings": "Configura modelos, fuentes de datos y conexiones de brókeres.",
-      "pixelOffice": "Planifica y asigna tareas de investigación. La asignación no inicia la ejecución; los rangos son etiquetas y no conceden permisos de negociación."
+      "pixelOffice": "Planifica y asigna tareas de investigación. La asignación no inicia la ejecución; los rangos son etiquetas y no conceden permisos de negociación.",
+      "paperTrading": "Prueba operaciones diarias con fondos ficticios. No se envían órdenes al bróker. Los resultados excluyen dividendos en efectivo y no representan la rentabilidad total."
     },
     "instructions": {
       "reports": "Primero pide al asistente un backtest de una estrategia y abre aquí sus resultados. Descarga los PDF y documentos generados en el chat desde la conversación original.",
@@ -39,7 +40,8 @@
       "scheduled": "Introduce la instrucción de investigación, elige la frecuencia y guarda. El programador local debe estar activado para ejecutar tareas; el envío requiere un canal configurado.",
       "runtime": "Primero configura una conexión de bróker en Ajustes o Cartera. Las operaciones disponibles dependen de sus capacidades y de tu autorización.",
       "settings": "Configura un modelo para empezar. Añade datos o conexiones de brókeres según lo necesites; investigar datos públicos de mercado no requiere una cuenta de bróker.",
-      "pixelOffice": "Planifica y asigna tareas de investigación. La asignación no inicia la ejecución; los rangos son etiquetas y no conceden permisos de negociación."
+      "pixelOffice": "Planifica y asigna tareas de investigación. La asignación no inicia la ejecución; los rangos son etiquetas y no conceden permisos de negociación.",
+      "paperTrading": "Solo se liquidan velas diarias completas. Las estrategias leen días anteriores y ejecutan al cierre del día indicado. Espera 30 minutos tras el cierre habitual; no se programa ejecución automática."
     }
   },
   "layout": {
@@ -70,7 +72,8 @@
     "mainNavigation": "Navegación principal",
     "about": "Acerca de",
     "sessionsLoadFailed": "No se pueden cargar las conversaciones.",
-    "pixelOffice": "Oficina de píxeles"
+    "pixelOffice": "Oficina de píxeles",
+    "paperTrading": "Trading simulado"
   },
   "runtime": {
     "monitorBadge": "Monitor de Runtime",
@@ -2487,5 +2490,49 @@
     "limitsNote": "Cada decisión usa una conversación nueva. Los límites se comprueban tras la respuesta y pueden excederse en ese importe. El uso desconocido o un exceso activa el interruptor de parada existente.",
     "pricesNote": "Las tarifas son estimaciones del operador. Use la mayor tarifa de entrada/escritura en caché; se excluyen los descuentos de caché y las llamadas auxiliares.",
     "stopToEdit": "Detenga el ejecutor antes de cambiar estos ajustes."
+  },
+  "paper": {
+    "title": "Trading simulado",
+    "description": "Prueba operaciones diarias con fondos ficticios. No se envían órdenes al bróker. Los resultados excluyen dividendos en efectivo y no representan la rentabilidad total.",
+    "accounts": "Cuentas",
+    "newAccount": "Nueva cuenta simulada",
+    "eligible": "Disponible desde {{date}}; los festivos esperan a la siguiente sesión disponible.",
+    "cash": "Efectivo",
+    "pending": "Pendiente de la primera liquidación",
+    "label": "Nombre de la cuenta",
+    "market": "Mercado",
+    "start": "Inicio",
+    "today": "Hoy",
+    "nextSession": "Próxima sesión bursátil",
+    "initialPositions": "Posiciones iniciales (cantidad y coste medio)",
+    "symbol": "Símbolo (p. ej. AAPL.US)",
+    "quantity": "Cantidad",
+    "cost": "Coste medio",
+    "remove": "Eliminar",
+    "addPosition": "Añadir posición",
+    "create": "Crear cuenta",
+    "working": "Procesando…",
+    "advance": "Liquidar paso diario",
+    "executionNote": "Solo se liquidan velas diarias completas. Las estrategias leen días anteriores y ejecutan al cierre del día indicado. Espera 30 minutos tras el cierre habitual; no se programa ejecución automática.",
+    "date": "Fecha de ejecución",
+    "mode": "Modo de entrada",
+    "orders": "Órdenes explícitas",
+    "strategy": "Archivo de estrategia",
+    "strategyPath": "Ruta dentro de la carpeta strategies del entorno",
+    "side": "Lado",
+    "buy": "Comprar",
+    "sell": "Vender",
+    "addOrder": "Añadir orden",
+    "emptyOrders": "Sin órdenes, solo se valora la cuenta. Las órdenes de mercado se ejecutan al cierre diario; no se simula la ejecución intradía.",
+    "saved": "Libro guardado.",
+    "notSaved": "El libro no cambió. Revisa el resultado antes de reintentar.",
+    "result": "Resultado del paso",
+    "price": "Precio",
+    "fee": "Comisión",
+    "history": "Historial del valor de la cuenta",
+    "nav": "Valor liquidativo",
+    "us": "Acciones de EE. UU. · USD",
+    "hk": "Acciones de Hong Kong · HKD",
+    "cn_a": "Acciones A de China · CNY"
   }
 }

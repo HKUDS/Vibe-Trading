@@ -203,26 +203,13 @@ def test_missing_or_non_positive_closes_are_insufficient_evidence(
     assert verdict.kind == corporate_actions.KIND_NONE  # no event, no crash
 
 
-def test_adjust_position_exact_and_non_terminating() -> None:
-    qty, cost = corporate_actions.adjust_position(Decimal(100), Decimal(400), Fraction(4))
-    assert (qty, cost) == (Decimal(400), Decimal("100.0000"))
-    qty, cost = corporate_actions.adjust_position(Decimal(400), Decimal(100), Fraction(1, 4))
-    assert (qty, cost) == (Decimal(100), Decimal("400.0000"))
-    # Non-terminating multiplier (1:3 reverse): deterministic 28-digit Decimal
-    # quotient; avg_cost still quantizes 4dp ROUND_HALF_UP.
-    qty, cost = corporate_actions.adjust_position(Decimal(100), Decimal(300), Fraction(1, 3))
-    assert qty == Decimal(100) / Decimal(3)
-    assert cost == Decimal("900.0000")
-
-
 # ── Engine integration: the clean 4:1 path (dual market, one fixture) ──
 
 
 @pytest.mark.parametrize("market", ["hk", "us"])
-def test_clean_4to1_split_adjusts_ledger_and_keeps_nav_continuous(market: str) -> None:
-    # Two-day loop over the ex-date boundary: 2026-01-30 (close 476.0) →
-    # 2026-02-02 (close 119.0).  Position 100 @ 400 → 400 @ 100; the position
-    # value 47600.0 is identical on both days (continuity exact ⇒ ≤ ±0.01%).
+def test_clean_price_ratio_cannot_authorize_a_ledger_split(market: str) -> None:
+    # The fixture resembles a 4:1 split, but the same OHLC/volume can be a
+    # crash. It cannot authorize creating 300 additional shares.
     market_data = _fetch(market, {_SYM: _fixture_frame()}, _PREV, _EX)
     outcome = engine.run_day_loop(
         market=market,
@@ -230,22 +217,16 @@ def test_clean_4to1_split_adjusts_ledger_and_keeps_nav_continuous(market: str) -
                                    positions=(_position(_SYM, 100, 400.0),)),
         from_date=_PREV, to_date=_EX, orders_by_day={}, market_data=market_data,
     )
-    assert outcome.error is None
-    assert outcome.skipped_days == ()
-    position = outcome.end_state.positions[0]
-    assert (position.qty, position.avg_cost) == (400, 100.0)  # qty ×4, avg_cost ÷4
-    assert [nav.date for nav in outcome.nav_series] == [_PREV, _EX]
-    assert outcome.nav_series[0].position_value == 47600.0
-    assert outcome.nav_series[1].position_value == 47600.0
-    drift = abs(outcome.nav_series[1].nav - outcome.nav_series[0].nav)
-    assert drift / outcome.nav_series[0].nav <= 1e-4  # R6-1 ±0.01%
-    entries = outcome.data_provenance.corporate_actions
-    assert entries == ({"symbol": _SYM, "date": _EX, "ratio": "4:1", "detected": True},)
-    assert any("corporate action" in w and "4:1" in w and _EX in w for w in outcome.warnings)
+    assert outcome.error is not None
+    assert outcome.error.code == "PAPER_DATA_NOT_READY"
+    assert "cannot establish a split" in outcome.error.message
+    assert outcome.fills == ()
+    assert outcome.nav_series == ()
+    assert outcome.end_state.positions[0].qty == 100
 
 
 @pytest.mark.parametrize(("market", "fee"), [("hk", 63.71), ("us", 1.96)])
-def test_split_day_order_fills_after_the_adjustment(market: str, fee: float) -> None:
+def test_no_sale_of_inferred_extra_shares(market: str, fee: float) -> None:
     # from_date IS the ex-date: the BEFORE bar (2026-01-30) lives in the K=120
     # lookback — the note-2 window requirement.  Selling 400 (the ADJUSTED qty)
     # can only fill if the split applied BEFORE matching; without it the ladder
@@ -256,13 +237,12 @@ def test_split_day_order_fills_after_the_adjustment(market: str, fee: float) -> 
                  [{"symbol": _SYM, "side": "sell", "qty": 400}], _EX),
         market_data=market_data,
     )
-    assert outcome.error is None
-    assert _codes(outcome) == []
-    fill = outcome.fills[0]
-    assert (fill.qty, fill.price, fill.fee) == (400, 119.0, fee)
-    assert outcome.end_state.positions == ()
-    assert outcome.data_provenance.corporate_actions == (
-        {"symbol": _SYM, "date": _EX, "ratio": "4:1", "detected": True},)
+    assert outcome.error is not None
+    assert outcome.error.code == "PAPER_DATA_NOT_READY"
+    assert "cannot establish a split" in outcome.error.message
+    assert outcome.fills == ()
+    assert outcome.nav_series == ()
+    assert outcome.end_state.positions[0].qty == 100
 
 
 def test_clean_split_run_is_deterministic_and_warning_timestamp_free() -> None:
@@ -416,10 +396,9 @@ def test_non_positive_prior_close_yields_no_event_not_a_crash() -> None:
 # ── cn_a exemption (call-site) ──
 
 
-def test_cn_a_is_exempt_from_detection() -> None:
-    # The same dirty 0.4x discontinuity that rejects fail-closed on hk/us is
-    # NEVER scanned for cn_a (additive qfq already embeds split adjustment):
-    # the order fills and no corporate-action material is produced.
+def test_raw_cn_a_is_not_exempt_from_detection() -> None:
+    # Raw A-share execution must reject the same unresolved discontinuity
+    # as HK/US. It cannot use the former adjusted-series exemption.
     frames = {"600000.SH": _frame([(_PREV, 100.0, 1_000_000.0), (_EX, 40.0, 2_500_000.0)])}
     market_data = fetch_market_data("cn_a", ["600000.SH"], _EX, _EX,
                                     loader=FakeLoader(frames, name="tencent"),
@@ -430,10 +409,8 @@ def test_cn_a_is_exempt_from_detection() -> None:
         calendar_client=FakeCalendarClient(frozenset({_EX})),
     )
     assert outcome.error is None
-    assert _codes(outcome) == []
-    assert len(outcome.fills) == 1  # close 40.0 is below the 110.0 up band → buy fills
-    assert outcome.data_provenance.corporate_actions == ()
-    assert not any("corporate action" in w for w in outcome.warnings)
+    assert _codes(outcome) == ["corporate_action_unresolved"]
+    assert outcome.fills == ()
 
 
 # ── Skipped semantics with the CA plan active (extends the T3 matrix) ──
@@ -479,15 +456,12 @@ def test_suspended_symbol_carries_forward_beside_a_clean_split() -> None:
         orders_by_day={_EX: (Order("HALT.US", "buy", 10),)},
         market_data=market_data,
     )
-    assert outcome.error is None
-    assert _codes(outcome) == ["suspended"]
-    by_symbol = {p.symbol: p for p in outcome.end_state.positions}
-    assert (by_symbol[_SYM].qty, by_symbol[_SYM].avg_cost) == (400, 100.0)  # split applied
-    assert (by_symbol["HALT.US"].qty, by_symbol["HALT.US"].avg_cost) == (100, 48.0)  # untouched
-    assert len(outcome.nav_series) == 2
-    # Ex-date position value: 400×119.0 (adjusted) + 100×50.0 (carry-forward).
-    assert outcome.nav_series[1].position_value == 47600.0 + 5000.0
-    assert [e["symbol"] for e in outcome.data_provenance.corporate_actions] == [_SYM]
+    assert outcome.error is not None
+    assert outcome.error.code == "PAPER_DATA_NOT_READY"
+    assert "cannot establish a split" in outcome.error.message
+    assert outcome.fills == ()
+    assert outcome.nav_series == ()
+    assert outcome.end_state.positions[0].qty == 100
 
 
 # ── helpers ──

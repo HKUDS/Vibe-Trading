@@ -48,7 +48,7 @@ _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # The T7 synthetic fixture day (index 39: close 128.5, sma5 127.5, sma20
 # 123.75 — the golden SMA cross) and the §4 us default fee matrix (AM-4-3).
-_US_DAY = "2026-02-27"
+_US_DAY = "2026-03-02"
 _US_FEES = {"commission_per_share": 0.0049, "commission_min": 0.99, "sec_fee_rate": 0.0}
 _FIXTURES = Path(__file__).parent / "fixtures" / "paper_trade"
 _SYNTH_FIXTURE = _FIXTURES / "market" / "synthetic_split_4to1.json"
@@ -382,13 +382,13 @@ def test_strategy_path_cash_only_account_fills_via_declared_universe() -> None:
 
     assert "status" not in doc, doc  # success document, not an error envelope
     # Hand-computed us golden: close 128.5, fee max(100×0.0049, 0.99) = 0.99;
-    # cash 50000 − 12850.00 − 0.99 = 37149.01 (mirrors the direct T7 gate).
+    # cash 50000 − 12850.00 − 0.99 = 37099.01 (mirrors the direct T7 gate).
     assert doc["fills"] == [{
         "trade_date": _US_DAY, "symbol": "SYNTH-4TO1", "side": "buy",
-        "qty": 100.0, "price": 128.5, "fee": 0.99,
+        "qty": 100.0, "price": 129.0, "fee": 0.99,
         "reason": "golden sma5 127.5000 > sma20 123.7500",
     }]
-    assert doc["end_state"]["cash"] == 37149.01
+    assert doc["end_state"]["cash"] == 37099.01
     assert [(p["symbol"], p["qty"]) for p in doc["end_state"]["positions"]] == [
         ("SYNTH-4TO1", 100.0)]
     assert validate_payload(doc, load_contract_schema("result")) == []

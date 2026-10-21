@@ -28,7 +28,8 @@
       "scheduled": "Repeat a research task on a schedule.",
       "runtime": "Check broker connections and trading runtime status.",
       "settings": "Configure models, data sources, and broker connections.",
-      "pixelOffice": "Plan and assign research tasks. Assignment does not start execution; ranks are labels and grant no trading permissions."
+      "pixelOffice": "Plan and assign research tasks. Assignment does not start execution; ranks are labels and grant no trading permissions.",
+      "paperTrading": "Test daily trades with simulated funds. No broker orders are sent. Results exclude cash dividends and are not a total-return record."
     },
     "instructions": {
       "reports": "Ask the research assistant to backtest a strategy first, then open its results here. Download PDFs and other chat-generated documents from the original conversation.",
@@ -39,7 +40,8 @@
       "scheduled": "Enter a research instruction, choose its cadence, and save. The local scheduler must be enabled for jobs to run; delivery also needs a configured channel.",
       "runtime": "Configure a broker connection in Settings or Portfolio first. Available trading actions depend on that broker's capabilities and your authorization.",
       "settings": "Configure a model to start. Add data sources or broker connections as your task needs them; public-market research does not require a broker account.",
-      "pixelOffice": "Plan and assign research tasks. Assignment does not start execution; ranks are labels and grant no trading permissions."
+      "pixelOffice": "Plan and assign research tasks. Assignment does not start execution; ranks are labels and grant no trading permissions.",
+      "paperTrading": "Only completed daily bars can settle. Strategies see prior days only and fill at the execution day’s close. Wait until 30 minutes after the regular market close; no background execution is scheduled."
     }
   },
   "layout": {
@@ -70,7 +72,8 @@
     "mainNavigation": "Main navigation",
     "about": "About",
     "sessionsLoadFailed": "Cannot load conversations.",
-    "pixelOffice": "Pixel Office"
+    "pixelOffice": "Pixel Office",
+    "paperTrading": "Paper trading"
   },
   "runtime": {
     "monitorBadge": "Runtime Monitor",
@@ -2487,5 +2490,49 @@
     "limitsNote": "Each decision starts a fresh conversation. Usage limits stop after a response and may overshoot by that response. Missing usage or an exceeded budget trips the existing kill switch.",
     "pricesNote": "Prices are operator estimates. Use the highest applicable input/cache-write rate; cache discounts and auxiliary model calls are not included in the estimate.",
     "stopToEdit": "Stop the runner before editing these settings."
+  },
+  "paper": {
+    "title": "Paper trading",
+    "description": "Test daily trades with simulated funds. No broker orders are sent. Results exclude cash dividends and are not a total-return record.",
+    "accounts": "Accounts",
+    "newAccount": "New paper account",
+    "eligible": "Eligible from {{date}}; holidays wait for the next available session.",
+    "cash": "Cash",
+    "pending": "Awaiting first session",
+    "label": "Account name",
+    "market": "Market",
+    "start": "Start",
+    "today": "Today",
+    "nextSession": "Next trading session",
+    "initialPositions": "Initial positions (quantity and average cost)",
+    "symbol": "Symbol (e.g. AAPL.US)",
+    "quantity": "Quantity",
+    "cost": "Average cost",
+    "remove": "Remove",
+    "addPosition": "Add position",
+    "create": "Create account",
+    "working": "Working…",
+    "advance": "Settle daily step",
+    "executionNote": "Only completed daily bars can settle. Strategies see prior days only and fill at the execution day’s close. Wait until 30 minutes after the regular market close; no background execution is scheduled.",
+    "date": "Execution date",
+    "mode": "Input mode",
+    "orders": "Explicit orders",
+    "strategy": "Strategy file",
+    "strategyPath": "Path within your runtime strategies folder",
+    "side": "Side",
+    "buy": "Buy",
+    "sell": "Sell",
+    "addOrder": "Add order",
+    "emptyOrders": "No orders means valuation only. Market orders fill at the daily close; this is not an intraday execution simulator.",
+    "saved": "Ledger saved.",
+    "notSaved": "No ledger change. Review the result before retrying.",
+    "result": "Step result",
+    "price": "Price",
+    "fee": "Fee",
+    "history": "Account value history",
+    "nav": "Net asset value",
+    "us": "US equities · USD",
+    "hk": "Hong Kong equities · HKD",
+    "cn_a": "A-shares · CNY"
   }
 }

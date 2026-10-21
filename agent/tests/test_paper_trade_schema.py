@@ -557,3 +557,11 @@ def test_dumps_payload_keeps_utf8_raw_and_refuses_non_finite() -> None:
         wire.dumps_payload({"nav": float("nan")})
     with pytest.raises(ValueError):
         wire.dumps_payload({"nav": float("inf")})
+
+
+def test_packaged_schema_matches_the_published_wire_contract():
+    from pathlib import Path
+    import src.tools.paper_trade.schema as schema
+    public = Path(__file__).resolve().parents[2] / "schema" / "tool_contracts" / "paper_trade_step-v1.1.json"
+    packaged = Path(schema.__file__).with_name("paper_trade_step-v1.1.json")
+    assert packaged.read_bytes() == public.read_bytes()

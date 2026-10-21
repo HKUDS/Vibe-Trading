@@ -9,9 +9,7 @@ mode rule maps a violation to the in-band ``INVALID_REQUEST`` envelope.
 Error discipline (AM-5 / VD-7): every input-contract violation and every
 data-not-ready condition returns an in-band envelope on the SAME
 ``result.content[0].text`` channel as the success document — never a transport
-error.  Transport-level faults stay reserved for engine-internal bugs (and for
-cn_a ClickHouse being unreachable, which the engine's calendar gate refuses to
-paper over).  Messages are deterministic English with no timestamps.
+error.  Transport-level faults stay reserved for engine-internal bugs (not external calendar unavailability, which returns PAPER_DATA_NOT_READY).  Messages are deterministic English with no timestamps.
 
 Two registration surfaces share :func:`run_paper_trade_step` as the single
 source of truth (VD-12, the backtest two-layer pattern): the auto-discovered
@@ -36,7 +34,7 @@ from typing import Any
 from src.agent.tools import BaseTool
 
 from . import data, engine, wire
-from .calendar import CN_A_MARKET
+from .calendar import CN_A_MARKET, CalendarUnavailableError, snapshot_calendar
 from .data import ClickHouseBarsClient
 from .limits_cn_a import ClickHouseLimitsClient
 from .schema import (
@@ -114,9 +112,8 @@ def _default_cn_a_connector() -> Any | None:
     sends no credentials and 403s against a password-protected server even when
     the configured credentials are valid (issues pit 18, observed live).  An
     unreachable server degrades to None: the bar leg then falls back to the
-    network source, while the cn_a calendar gate raises by engine design (the
-    frozen vocabulary has no code for "calendar unavailable", so that infra
-    fault stays a transport error the RM retries on its own chain).
+    network source. The tool returns PAPER_DATA_NOT_READY when the calendar
+    is unavailable or cannot cover the requested dates.
     """
     try:
         from src.clickhouse_connector import ClickHouseConnector
@@ -172,6 +169,7 @@ def run_paper_trade_step(
     corporate_action_unresolved_by_day: Any = None,
     hk_lot_sizes: Any = None,
     timeout_seconds: float | None = None,
+    _orders_at_end: bool = False,
 ) -> str:
     """Run one paper-trading step and return the single in-band JSON document.
 
@@ -226,6 +224,19 @@ def run_paper_trade_step(
     #    behavior and T7's B1 path still owns a genuinely unusable universe.
     #    Orders mode never consults it.)
     cal, lim, ch = _resolve_clients(request.market, calendar_client, limits_client, ch_client)
+    if request.market == CN_A_MARKET and cal is None:
+        return _error_document(
+            "PAPER_DATA_NOT_READY", request.account_id, request.market,
+            request.from_date, request.to_date,
+            "A-share trading calendar unavailable; configure a reachable ClickHouse trade_calendar and retry",
+            raw_payload)
+    if request.market == CN_A_MARKET:
+        try:
+            cal = snapshot_calendar(cal, request.from_date, request.to_date)
+        except CalendarUnavailableError as exc:
+            return _error_document(
+                "PAPER_DATA_NOT_READY", request.account_id, request.market,
+                request.from_date, request.to_date, str(exc), raw_payload)
     symbols = data.symbols_for_request(request.account_state, request.orders)
     if has_strategy:
         from .strategy_exec import strategy_universe
@@ -261,6 +272,15 @@ def run_paper_trade_step(
             hk_lot_sizes=hk_lot_sizes,
             timeout_seconds=timeout_seconds,
         )
+    elif _orders_at_end:
+        # Saved accounts must scan every intervening day, including actions,
+        # while applying explicit orders only at the chosen execution close.
+        outcome = engine.run_day_loop(
+            market=request.market, account_state=request.account_state,
+            from_date=request.from_date, to_date=request.to_date, market_data=market_data,
+            orders_by_day={request.to_date: request.orders or ()}, fee_model=request.fee_model,
+            calendar_client=cal, limits_client=lim, hk_lot_sizes=hk_lot_sizes,
+            corporate_action_unresolved_by_day=corporate_action_unresolved_by_day)
     else:
         outcome = engine.match_orders(
             request,

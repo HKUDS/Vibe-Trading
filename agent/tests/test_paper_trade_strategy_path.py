@@ -173,19 +173,20 @@ class SignalEngine:
 
 
 def test_golden_sample_strategy_runs_and_wires_reason() -> None:
+    day = "2026-03-02"
     outcome = strategy_exec.run_strategy_path(
-        request=_request(_install_golden()), market_data=_fetch(_DAY, _DAY))
+        request=_request(_install_golden(), from_date=day, to_date=day), market_data=_fetch(day, day))
     assert outcome.error is None
-    # Hand-computed: close 128.5, sma5 127.5 > sma20 123.75 → buy 100;
+    # Hand-computed: close 129.0, sma5 127.5 > sma20 123.75 → buy 100;
     # us fee max(100×0.0049, 0.99) = 0.99; cash 50000 − 12850.00 − 0.99.
     assert [(f.trade_date, f.symbol, f.side, f.qty, f.price, f.fee) for f in outcome.fills] == [
-        (_DAY, _SYM, "buy", 100, 128.5, 0.99)]
+        (day, _SYM, "buy", 100, 129.0, 0.99)]
     # VD-15/B2 strategy mode: the strategy's reason text reaches the fill.
     assert outcome.fills[0].reason == "golden sma5 127.5000 > sma20 123.7500"
     assert len(outcome.fills[0].reason) <= 200
-    assert outcome.end_state.cash == 37149.01
-    assert [(p.symbol, p.qty, p.avg_cost) for p in outcome.end_state.positions] == [(_SYM, 100, 128.5)]
-    assert [(n.date, n.nav) for n in outcome.nav_series] == [(_DAY, 49999.01)]
+    assert outcome.end_state.cash == 37099.01
+    assert [(p.symbol, p.qty, p.avg_cost) for p in outcome.end_state.positions] == [(_SYM, 100, 129.0)]
+    assert [(n.date, n.nav) for n in outcome.nav_series] == [(day, 49999.01)]
     assert outcome.rejected_orders == ()
 
 
@@ -235,17 +236,11 @@ class SignalEngine:
         request=_request(path, from_date="2026-01-30", to_date="2026-02-03", cash=1000.0,
                          positions=({"symbol": _SYM, "qty": 100, "avg_cost": 476.0},)),
         market_data=_fetch("2026-01-30", "2026-02-03"))
-    assert outcome.error is None
-    assert [(f.trade_date, f.side, f.qty, f.price, f.fee, f.reason) for f in outcome.fills] == [
-        ("2026-02-03", "sell", 400, 119.5, 1.96, "post-split exit")]
-    assert outcome.rejected_orders == ()
-    # NAV is split-neutral on the ex-date: 1000 + 100×476 == 1000 + 400×119.
-    assert [(n.date, n.nav) for n in outcome.nav_series] == [
-        ("2026-01-30", 48600.0), ("2026-02-02", 48600.0), ("2026-02-03", 48798.04)]
-    assert outcome.end_state.cash == 48798.04
-    assert outcome.end_state.positions == ()
-    assert outcome.data_provenance.corporate_actions == (
-        {"symbol": _SYM, "date": "2026-02-02", "ratio": "4:1", "detected": True},)
+    assert outcome.error is not None
+    assert outcome.error.code == "PAPER_DATA_NOT_READY"
+    assert outcome.end_state.positions[0].qty == 100
+    assert outcome.fills == ()
+    assert outcome.nav_series == ()
 
 
 @pytest.mark.parametrize("kind", ["busy_loop", "blocked_sleep"])
@@ -630,3 +625,26 @@ class SignalEngine:
     assert outcome.error is None
     assert [(f.side, f.qty, f.reason) for f in outcome.fills] == [
         ("buy", 1, "NO-DATA-SYM+SYNTH-4TO1")]
+
+
+def test_strategy_uses_prior_bars_and_receives_previous_fills():
+    path = _install_strategy("causal_state.py", '''
+class SignalEngine:
+    def generate_signals(self, ctx, trade_date):
+        history = ctx.history(ctx.symbols[0])
+        if str(history.index[-1].date()) >= trade_date:
+            raise AssertionError("execution bar leaked")
+        if ctx.account_state.positions:
+            if ctx.account_state.cash >= 50000:
+                raise AssertionError("stale cash")
+            return [{"symbol": ctx.symbols[0], "side": "sell",
+                     "qty": ctx.account_state.positions[0].qty}]
+        return [{"symbol": ctx.symbols[0], "side": "buy", "qty": 10}]
+''')
+    request = _request(path, from_date="2026-02-05", to_date="2026-02-06")
+    outcome = strategy_exec.run_strategy_path(
+        request=request, market_data=_fetch(request.from_date, request.to_date))
+    assert outcome.error is None
+    assert [(fill.trade_date, fill.side, fill.qty) for fill in outcome.fills] == [
+        ("2026-02-05", "buy", 10), ("2026-02-06", "sell", 10)]
+    assert outcome.end_state.positions == ()
