@@ -52,6 +52,8 @@
 
 > ⚠️ **セキュリティ警告：** Xアカウント `VibeTrading_HKU`、Virtualsプロジェクト `101845`、およびトークンコントラクト `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` は、いずれもVibe-Trading公式のものではありません。Vibe-Tradingはこれまで、いかなるトークンやミームコインも発行・公認していません。購入、ウォレットの接続、署名は行わないでください。[詳細](SECURITY.md#official-channels--impersonation)
 
+- **2026-10-21** 🛠️ **ペーパー口座とコミュニティの問題修正**：日次ペーパー取引に Agent/MCP、CLI、API、Web の入口を追加（[#1939](https://github.com/HKUDS/Vibe-Trading/pull/1939)）。選択したエンジンが無視する設定を警告します（[#1947](https://github.com/HKUDS/Vibe-Trading/pull/1947)）。資金フローの日次空レスポンスでも代替ソースを試し、実際の出所を表示して総純流入と大口純流入を区別します。Telegram の設定手順を補足。その他の修正と制約は [CHANGELOG](CHANGELOG.md) を参照してください。
+
 - **2026-10-20** 🛠️ **バックテスト診断と研究結果の正確性**：認識されない設定キーを警告し、未定義の相関をゼロではなく不明として表示。再検証では保存済みの年率換算係数を再利用します（[#1935](https://github.com/HKUDS/Vibe-Trading/pull/1935), [#1933](https://github.com/HKUDS/Vibe-Trading/pull/1933), [#1915](https://github.com/HKUDS/Vibe-Trading/pull/1915)）。因子のサンプル数チェック、ツール入力検証、取引日誌の市場分類、数値表示、WeComのストリーミング返信も改善。全14件の修正と残る制約は [CHANGELOG](CHANGELOG.md)。
 
 - **2026-10-19** 🛠️ **金融計算の9件の修正**：因子の減衰ウェイト、A株の市場別値幅制限と北京銘柄コード、SEC第4四半期のフロー推計、イベント分析の推定期間を修正。Futu保有銘柄の識別と微小なMACD・ボリンジャーバンドの値を保持し、負の固有分散を拒否。Yahooの為替コードにも通貨ペア別スプレッドとスワップを適用します（[#1912](https://github.com/HKUDS/Vibe-Trading/pull/1912)、[#1920](https://github.com/HKUDS/Vibe-Trading/pull/1920)、[#1930](https://github.com/HKUDS/Vibe-Trading/pull/1930)）。全9件の詳細と制約は [CHANGELOG](CHANGELOG.md)。

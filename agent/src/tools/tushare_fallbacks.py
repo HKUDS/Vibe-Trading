@@ -7,6 +7,7 @@ same research workflow through a separate provider with a compatible envelope.
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 from typing import Any
 
@@ -79,11 +80,12 @@ def _to_float(value: Any) -> float | None:
 def _net_amount(row: dict[str, Any], buy_key: str, sell_key: str) -> float | None:
     buy = _to_float(row.get(buy_key))
     sell = _to_float(row.get(sell_key))
-    if buy is None and sell is None:
+    if buy is None or sell is None or not math.isfinite(buy) or not math.isfinite(sell):
         return None
     # Tushare moneyflow amount fields are in 10k CNY; the Eastmoney tool emits
     # CNY, so convert to keep the existing bucket units.
-    return ((buy or 0.0) - (sell or 0.0)) * 10_000
+    value = (buy - sell) * 10_000
+    return value if math.isfinite(value) else None
 
 
 def _ts_code(code: str) -> str:
@@ -111,6 +113,18 @@ def _ts_code(code: str) -> str:
 
 
 def fetch_fund_flow(symbol: str, *, days: int) -> dict[str, Any]:
+    """Read daily Tushare buckets with explicit units and missing observations.
+
+    Args:
+        symbol: A-share instrument accepted by the Tushare adapter.
+        days: Maximum number of recent trading days to return.
+
+    Returns:
+        Source-labelled rows in CNY, with total flow separate from main orders.
+
+    Raises:
+        TushareFallbackUnavailable: Symbol, credentials or data are unavailable.
+    """
     ts_code = _ts_code(symbol)
     start_date, end_date = _date_window(days)
     rows = _records(
@@ -118,19 +132,43 @@ def fetch_fund_flow(symbol: str, *, days: int) -> dict[str, Any]:
     )
     parsed: list[dict[str, Any]] = []
     for row in rows:
+        large = _net_amount(row, "buy_lg_amount", "sell_lg_amount")
+        super_large = _net_amount(row, "buy_elg_amount", "sell_elg_amount")
+        net_total = _to_float(row.get("net_mf_amount"))
+        net_total = net_total * 10_000 if net_total is not None else None
+        if net_total is not None and not math.isfinite(net_total):
+            net_total = None
+        # moneyflow.net_mf_amount is total net flow, not the main-order bucket.
+        # https://tushare.pro/document/2?doc_id=170
+        main = large + super_large if large is not None and super_large is not None else None
+        if main is not None and not math.isfinite(main):
+            main = None
         parsed.append(
             {
                 "timestamp": _dashed_date(row.get("trade_date")),
-                "main": (_to_float(row.get("net_mf_amount")) or 0.0) * 10_000,
+                "main": main,
+                "net_total": net_total,
                 "small": _net_amount(row, "buy_sm_amount", "sell_sm_amount"),
                 "medium": _net_amount(row, "buy_md_amount", "sell_md_amount"),
-                "large": _net_amount(row, "buy_lg_amount", "sell_lg_amount"),
-                "super_large": _net_amount(row, "buy_elg_amount", "sell_elg_amount"),
+                "large": large,
+                "super_large": super_large,
             }
         )
+    if not parsed:
+        raise TushareFallbackUnavailable("tushare returned no fund-flow rows")
     parsed.sort(key=lambda item: item.get("timestamp") or "")
     parsed = parsed[-days:]
-    return {"symbol": symbol, "ts_code": ts_code, "source": "tushare", "rows": parsed}
+    return {
+        "symbol": symbol,
+        "ts_code": ts_code,
+        "source": "tushare",
+        "rows": parsed,
+        "methodology": (
+            "Tushare moneyflow active buy/sell buckets in CNY; main = large + "
+            "super_large; net_total is the provider's total net flow. "
+            "Provider classifications may differ from Eastmoney."
+        ),
+    }
 
 
 def fetch_dragon_tiger(trade_date: str, code: str | None) -> dict[str, Any]:

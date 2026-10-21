@@ -9,6 +9,10 @@ are delegated to :mod:`backtest.loaders.eastmoney_client` (every request routes
 through the shared per-host throttle — Eastmoney rate-limits by IP and bans
 bursting clients).
 
+Daily A-share requests fall back to Tushare on failed or empty responses;
+source labels identify the provider actually used. Minute data is never
+substituted with daily bars.
+
 Markets: A-share (``.SH`` / ``.SZ`` / ``.BJ``), Hong Kong (``.HK``) and US
 (``.US``). One unresolvable or failing symbol never aborts the batch.
 """
@@ -17,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
@@ -80,9 +85,33 @@ def _parse_flow_row(raw: str) -> dict[str, Any] | None:
         values = [float(parts[i + 1]) for i in range(len(_BUCKETS))]
     except (ValueError, TypeError):
         return None
+    if not all(math.isfinite(value) for value in values):
+        return None
     row: dict[str, Any] = {"timestamp": timestamp}
     row.update(dict(zip(_BUCKETS, values)))
     return row
+
+
+def _fallback_flow(symbol: str, *, period: str, days: int, reason: str) -> dict[str, Any]:
+    """Recover daily data without disguising errors as observations.
+
+    Args:
+        symbol: Requested instrument, including its market suffix.
+        period: Requested granularity; only daily data has a fallback.
+        days: Maximum number of daily bars to retrieve.
+        reason: Why the primary source could not provide usable data.
+
+    Returns:
+        Labelled fallback data or a per-symbol error with both failure reasons.
+    """
+    result: dict[str, Any] = {"symbol": symbol, "error": reason}
+    if period == "daily":
+        try:
+            fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
+            return {**fallback, "warning": f"{reason}; used tushare fallback"}
+        except Exception as exc:  # noqa: BLE001 - preserve per-symbol failures
+            result["fallback_error"] = str(exc)
+    return result
 
 
 def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]:
@@ -99,18 +128,7 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
     """
     secid = resolve_secid(symbol)
     if secid is None:
-        if period == "daily":
-            try:
-                fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
-                fallback["warning"] = "eastmoney symbol resolution failed; used tushare fallback"
-                return fallback
-            except Exception as exc:  # noqa: BLE001 - fallback details belong in the symbol result
-                return {
-                    "symbol": symbol,
-                    "error": "unresolvable symbol",
-                    "fallback_error": str(exc),
-                }
-        return {"symbol": symbol, "error": "unresolvable symbol"}
+        return _fallback_flow(symbol, period=period, days=days, reason="unresolvable symbol")
 
     is_daily = period == "daily"
     url = _DAILY_URL if is_daily else _MINUTE_URL
@@ -125,25 +143,12 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
         payload = get_json(url, params=params)
     except Exception as exc:  # noqa: BLE001 - one bad symbol must not kill the batch
         logger.warning("fund flow fetch failed for %s: %s", symbol, exc)
-        if period == "daily":
-            try:
-                fallback = tushare_fallbacks.fetch_fund_flow(symbol, days=days)
-                fallback["warning"] = f"eastmoney failed ({exc}); used tushare fallback"
-                return fallback
-            except Exception as fallback_exc:  # noqa: BLE001 - keep per-symbol isolation
-                return {
-                    "symbol": symbol,
-                    "error": str(exc),
-                    "fallback_error": str(fallback_exc),
-                }
-        return {"symbol": symbol, "error": str(exc)}
+        return _fallback_flow(symbol, period=period, days=days, reason=str(exc))
 
     data = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(data, dict):
-        return {"symbol": symbol, "secid": secid, "rows": []}
-    klines = data.get("klines")
+    klines = data.get("klines") if isinstance(data, dict) else None
     if not isinstance(klines, list):
-        return {"symbol": symbol, "secid": secid, "rows": []}
+        klines = []
 
     rows: list[dict[str, Any]] = []
     for raw in klines:
@@ -153,12 +158,16 @@ def _fetch_symbol_flow(symbol: str, *, period: str, days: int) -> dict[str, Any]
         if parsed is not None:
             rows.append(parsed)
 
+    if not rows and is_daily:
+        return _fallback_flow(
+            symbol, period=period, days=days, reason="eastmoney returned no valid fund-flow rows"
+        )
     if is_daily and days < len(rows):
         rows = rows[-days:]
     if len(rows) > _MAX_ROWS_PER_SYMBOL:
         rows = rows[-_MAX_ROWS_PER_SYMBOL:]
 
-    return {"symbol": symbol, "secid": secid, "rows": rows}
+    return {"symbol": symbol, "secid": secid, "source": "eastmoney", "rows": rows}
 
 
 class FundFlowTool(BaseTool):
@@ -172,7 +181,9 @@ class FundFlowTool(BaseTool):
         "this for one or more named stocks to gauge whether large/main-force money "
         "is flowing into or out of that specific symbol. NOT market-wide aggregate "
         "flow (for Stock-Connect 北向 use get_northbound_flow). Markets: A-share "
-        "(.SH/.SZ/.BJ), Hong Kong (.HK) and US (.US). Example: "
+        "(.SH/.SZ/.BJ), Hong Kong (.HK) and US (.US). Daily A-share fallback uses "
+        "TUSHARE_TOKEN; source and methodology are labelled per symbol. Missing "
+        "buckets remain null, not zero. Example: "
         '{"codes": ["600519.SH", "00700.HK"], "period": "daily", "days": 30}.'
     )
     parameters = {
@@ -239,10 +250,15 @@ class FundFlowTool(BaseTool):
             symbol: _fetch_symbol_flow(symbol, period=period, days=days)
             for symbol in (c.strip() for c in codes)
         }
+        sources = {
+            result["source"] for result in results.values()
+            if result.get("rows") and result.get("source")
+        }
+        source = next(iter(sources)) if len(sources) == 1 else ("mixed" if sources else None)
         envelope = {
             "ok": True,
             "market": "stock",
-            "source": "eastmoney",
+            "source": source,
             "fallback_sources": ["tushare"],
             "period": period,
             "buckets": list(_BUCKETS),

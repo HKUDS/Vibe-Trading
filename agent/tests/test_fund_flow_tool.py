@@ -7,6 +7,8 @@ All HTTP is mocked at the Eastmoney client functions the tool imports
 from __future__ import annotations
 
 import json
+
+import pytest
 from unittest.mock import patch
 
 from src.tools.fund_flow_tool import FundFlowTool
@@ -204,3 +206,50 @@ class TestRoutingDescription:
 
     def test_description_keeps_a_concrete_example(self):
         assert '{"codes": ["600519.SH"' in FundFlowTool().description
+
+
+@pytest.mark.parametrize("response", [None, {"data": None}, {"data": {}},
+                                     {"data": {"klines": []}},
+                                     {"data": {"klines": ["bad", "2024-01-03,nan,1,2,3,4"]}}])
+def test_daily_empty_or_invalid_response_recovers_with_labelled_fallback(response):
+    fallback = {"symbol": "600519.SH", "source": "tushare",
+                "rows": [{"timestamp": "2024-01-03", "main": 100.0}]}
+    with patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"), \
+         patch("src.tools.fund_flow_tool.get_json", return_value=response), \
+         patch("src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow", return_value=fallback):
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH"]))
+    assert payload["source"] == "tushare"
+    assert payload["data"]["600519.SH"]["rows"] == fallback["rows"]
+    assert "warning" in payload["data"]["600519.SH"]
+
+
+def test_mixed_sources_are_reported_per_symbol():
+    with patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"), \
+         patch("src.tools.fund_flow_tool.get_json", side_effect=[_DAILY_PAYLOAD, RuntimeError("offline")]), \
+         patch("src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow", return_value={
+             "source": "tushare", "rows": [{"timestamp": "2024-01-03", "main": 1.0}]}):
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH", "000001.SZ"]))
+    assert payload["source"] == "mixed"
+    assert payload["data"]["600519.SH"]["source"] == "eastmoney"
+    assert payload["data"]["000001.SZ"]["source"] == "tushare"
+
+
+def test_no_daily_data_reports_both_sources_without_fabricating_rows():
+    with patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"), \
+         patch("src.tools.fund_flow_tool.get_json", return_value={"data": None}), \
+         patch("src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow",
+               side_effect=RuntimeError("TUSHARE_TOKEN is not configured")):
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH"]))
+    result = payload["data"]["600519.SH"]
+    assert payload["source"] is None
+    assert "error" in result and "TUSHARE_TOKEN" in result["fallback_error"]
+    assert not result.get("rows")
+
+
+def test_minute_empty_response_does_not_substitute_daily_data():
+    with patch("src.tools.fund_flow_tool.resolve_secid", return_value="1.600519"), \
+         patch("src.tools.fund_flow_tool.get_json", return_value={"data": None}), \
+         patch("src.tools.fund_flow_tool.tushare_fallbacks.fetch_fund_flow") as fallback:
+        payload = json.loads(FundFlowTool().execute(codes=["600519.SH"], period="min"))
+    fallback.assert_not_called()
+    assert not payload["data"]["600519.SH"].get("rows")

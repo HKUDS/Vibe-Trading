@@ -6,6 +6,8 @@ touch the network or require a real token.
 
 from __future__ import annotations
 
+import pytest
+
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -37,7 +39,8 @@ def test_fund_flow_maps_moneyflow_buckets_to_existing_schema() -> None:
     row = result["rows"][0]
     assert result["source"] == "tushare"
     assert row["timestamp"] == "2024-01-03"
-    assert row["main"] == 125000.0
+    assert row["main"] == 330000.0
+    assert row["net_total"] == 125000.0
     assert row["small"] == 20000.0
     assert row["medium"] == -30000.0
     assert row["large"] == 130000.0
@@ -127,3 +130,34 @@ def test_ts_code_routes_beijing_920_codes_to_bj() -> None:
     assert tf._ts_code("900901") == "900901.SH"
     assert tf._ts_code("600519") == "600519.SH"
     assert tf._ts_code("000001") == "000001.SZ"
+
+
+@pytest.mark.parametrize("missing", [None, "-", float("nan"), float("inf")])
+def test_fund_flow_missing_side_is_not_zero_or_total_flow(missing):
+    pro = SimpleNamespace(moneyflow=lambda **_: [{
+        "trade_date": "20240103", "net_mf_amount": 999,
+        "buy_lg_amount": missing, "sell_lg_amount": 7,
+        "buy_elg_amount": 30, "sell_elg_amount": 10,
+    }])
+    with patch.object(tf, "_pro_api", return_value=pro):
+        row = tf.fetch_fund_flow("600519.SH", days=5)["rows"][0]
+    assert row["large"] is None
+    assert row["main"] is None
+    assert row["small"] is None
+    assert row["super_large"] == 200000
+
+
+def test_empty_tushare_fund_flow_is_unavailable():
+    with patch.object(tf, "_pro_api", return_value=SimpleNamespace(moneyflow=lambda **_: [])):
+        with pytest.raises(tf.TushareFallbackUnavailable, match="no.*rows"):
+            tf.fetch_fund_flow("600519.SH", days=5)
+
+
+def test_real_zero_buckets_stay_zero_and_absent_total_stays_unknown():
+    data = {"trade_date": "20240103"}
+    for size in ("sm", "md", "lg", "elg"):
+        data[f"buy_{size}_amount"] = data[f"sell_{size}_amount"] = 0
+    with patch.object(tf, "_pro_api", return_value=SimpleNamespace(moneyflow=lambda **_: [data])):
+        row = tf.fetch_fund_flow("600519.SH", days=5)["rows"][0]
+    assert all(row[key] == 0 for key in ("main", "small", "medium", "large", "super_large"))
+    assert row["net_total"] is None

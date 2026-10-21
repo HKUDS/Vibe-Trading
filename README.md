@@ -52,6 +52,8 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-21** 🛠️ **Paper accounts and community fixes**: Daily paper trading now has Agent/MCP, CLI, API and Web entries ([#1939](https://github.com/HKUDS/Vibe-Trading/pull/1939)). Backtests warn when the selected engine ignores a setting ([#1947](https://github.com/HKUDS/Vibe-Trading/pull/1947)). Fund-flow fallback handles empty daily responses, identifies its actual source and keeps total flow separate from main-order flow. Telegram setup instructions are clarified; journal, futures-unit, attribution, upload-cancellation and directory-error fixes are in [CHANGELOG](CHANGELOG.md).
+
 - **2026-10-20** 🛠️ **Backtest diagnostics and research correctness**: Warn about unrecognized backtest config keys, show undefined correlations as unknown instead of zero, and reuse the saved annualisation factor when revalidating runs ([#1935](https://github.com/HKUDS/Vibe-Trading/pull/1935), [#1933](https://github.com/HKUDS/Vibe-Trading/pull/1933), [#1915](https://github.com/HKUDS/Vibe-Trading/pull/1915)). Also improve factor sample checks, tool input validation, journal market classification, numeric formatting and WeCom streaming. All 14 fixes and remaining limits are in [CHANGELOG](CHANGELOG.md).
 
 - **2026-10-19** 🛠️ **Nine financial correctness fixes**: Correct recency weights in factor decay, A-share board limits and Beijing symbol routing, SEC Q4 flow derivation, and event-study estimation windows. Preserve Futu holdings identity and tiny MACD/Bollinger values; reject negative specific variances and apply pair-specific fees to Yahoo forex symbols ([#1912](https://github.com/HKUDS/Vibe-Trading/pull/1912), [#1920](https://github.com/HKUDS/Vibe-Trading/pull/1920), [#1930](https://github.com/HKUDS/Vibe-Trading/pull/1930)). See [CHANGELOG](CHANGELOG.md) for all nine fixes and limits.
@@ -1324,6 +1326,40 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 <summary><b>IM channels</b></summary>
 
 IM channel adapters connect outside chat apps to the same session runtime used by the Web UI and CLI. Configure enabled adapters under `channels` in `~/.vibe-trading/agent.json`; SDK-backed adapters are optional extras, and missing SDKs report recovery hints instead of crashing the runtime.
+
+**Telegram quick start (pip installation):** activate the same virtual environment
+in both terminals, then upgrade the package and install its Telegram adapter:
+
+```bash
+python -m pip install -U "vibe-trading-ai[telegram]"
+vibe-trading channels --help
+```
+
+Create a bot with `@BotFather`. Merge the following into
+`~/.vibe-trading/agent.json`, replacing the token and sender ID (do not overwrite
+other channel settings). `allow_from` accepts your numeric Telegram user ID or
+username without `@`; listed senders do not need pairing approval.
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOTFATHER_TOKEN",
+      "allow_from": ["YOUR_TELEGRAM_USER_ID"]
+    }
+  }
+}
+```
+
+Run `vibe-trading channels status --local` to check configuration and adapter
+availability. Start `vibe-trading serve --port 8000` in terminal 1, then run
+`vibe-trading channels start` in terminal 2 and send your bot a message.
+For another port, set `VIBE_TRADING_API_URL` to that server's URL in terminal 2.
+If `channels` is missing, check `python -m pip show vibe-trading-ai` in that
+same environment and upgrade there; installing into one environment does not
+update another environment's command. Missing SDK hints from `status --local`
+mean the optional adapter still needs installation.
 
 For long-running channel tasks, tune the central assistant-reply wait budget with `replyTimeoutS` (seconds, default `600`):
 

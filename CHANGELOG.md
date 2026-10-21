@@ -7,6 +7,37 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Community feedback follow-up — 2026-10-21
+
+- Fund-flow daily requests now try Tushare when Eastmoney returns no usable
+  rows, as well as on request/resolution failure (discussion #486). Every
+  successful symbol names its actual source; mixed batches report `mixed`.
+  Minute requests never substitute daily data. Missing tokens, permissions or
+  data remain visible per-symbol failures.
+- Correct Tushare `moneyflow` mapping: `main` is large plus super-large net
+  flow, while `net_mf_amount` is retained separately as `net_total`. Missing or
+  non-finite buy/sell amounts remain unknown rather than becoming zero.
+  Provider classifications may differ; the result states its methodology.
+  Field definitions: https://tushare.pro/document/2?doc_id=170.
+- Add a complete pip/Telegram setup example with sender authorization, matching
+  API ports and recovery for commands installed in a different environment
+  (discussion #702). Intel Mac's base-install fix remains the optional `[smc]`
+  dependency introduced in 0.1.14 (discussion #1035).
+- Verify the existing evidence/identity guards, Feishu progress dispatch (#1792)
+  and bounded chat-history previews (#1852) against current main. This does
+  not claim an on-device Intel Mac installation or authenticated Feishu delivery
+  test, or guarantee that every model answer is correct.
+- Complete engine-specific unused-setting warnings (#1947, closes #1934),
+  following the path-wide unknown-key warnings in #1935. Crypto now warns about
+  ignored `commission_rate`; it still uses `maker_rate`/`taker_rate`, and valid
+  shared settings remain accepted.
+- Reject invalid journal dates and retain input order for equal timestamps
+  (#1942, #1941); price ICE coffee, sugar and cotton multipliers in cents
+  (#1944); stabilize Carino attribution near coincident returns (#1943) and
+  honor saved annualisation in attribution (#1948). Clean unpublished uploads
+  on cancellation (#1945) and return structured directory listing errors
+  (#1946).
+
 ### Daily paper trading — 2026-10-21
 
 - Add the deterministic `paper_trade_step` agent/MCP tool plus local paper
@@ -24,7 +55,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Warn about unrecognized backtest configuration keys and include the warning
   in the run card (#1935). Runs still proceed. This is not engine-specific
   validation: a key read by another engine can still go unused for the selected
-  engine, including `commission_rate` for crypto; #1934 remains open.
+  engine, including `commission_rate` for crypto. This remaining #1934 gap
+  was subsequently addressed by #1947 on October 21 (see above).
 - Return undefined off-diagonal correlations as `null` and show them as muted
   dashes in the chart, keeping genuine zero correlations distinct (#1933).
 - Save the runner's annualisation factor in the run card and reuse it for
