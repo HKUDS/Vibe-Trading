@@ -1391,6 +1391,14 @@ Saves write the `channels.<name>` section of `~/.vibe-trading/agent.json` atomic
 
 ### Strategy & Backtesting
 
+Daily-engine backtests report engine-specific unused settings in the run-card
+warnings. For example, crypto reads `maker_rate` and `taker_rate`, so supplying
+the A-share `commission_rate` setting warns instead of silently implying that
+it configured crypto fees. Shared runner/loader settings and keys read by a
+composite engine's selected sub-engines remain accepted. This conservative
+source-reader check does not trace conditional branches inside an engine and
+does not change options-engine configuration handling.
+
 Average holding period includes completed same-bar trades (zero bars). The
 existing `avg_holding_days` compatibility key reports the engine's holding-bar
 measure; it is not a conversion to calendar days.

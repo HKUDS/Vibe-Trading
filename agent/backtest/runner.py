@@ -16,6 +16,7 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Literal, Optional
 
@@ -1385,6 +1386,47 @@ def _unrecognized_config_warning(config: dict) -> str | None:
     )
 
 
+@lru_cache(maxsize=1)
+def _engine_specific_config_keys() -> frozenset[str]:
+    """Keys read by engines, excluding keys with shared runner/loader readers."""
+    root = Path(__file__).parent
+    shared = set(BacktestConfigSchema.model_fields)
+    for path in [*root.glob("*.py"), *(root / "loaders").glob("*.py")]:
+        shared.update(_ast_config_keys(path))
+    # These helpers support several market engines, including delegated rules.
+    shared.update(_ast_config_keys(root / "engines" / "_market_hooks.py"))
+    engine_keys = set()
+    for path in (root / "engines").glob("*.py"):
+        engine_keys.update(_ast_config_keys(path))
+    return frozenset(engine_keys - shared)
+
+
+def _unused_engine_config_warning(config: dict, engine: Any) -> str | None:
+    """Warn about known engine-only keys with no reader in the selected rules."""
+    selected = set()
+    pending = [engine]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        pending.extend(getattr(current, "_rule_engines", {}).values())
+        for cls in type(current).__mro__:
+            if cls.__module__.startswith("backtest.engines."):
+                path = inspect.getsourcefile(cls)
+                if path:
+                    selected.update(_ast_config_keys(Path(path)))
+    unused = sorted(set(config) & (_engine_specific_config_keys() - selected))
+    if not unused:
+        return None
+    return (
+        f"Config keys unused by selected {type(engine).__name__}: "
+        + ", ".join(repr(key) for key in unused)
+        + ". These settings do not affect this engine; its defaults still apply."
+    )
+
+
 def main(run_dir: Path) -> None:
     """Load config, fetch data, run the selected backtest engine.
 
@@ -1687,6 +1729,18 @@ def _annualisation_bars(
 
 
 def _create_market_engine(source: str, config: dict, codes: List[str]):
+    """Select real market rules and surface engine-specific unused settings."""
+    engine = _select_market_engine(source, config, codes)
+    warning = _unused_engine_config_warning(config, engine)
+    if warning:
+        previous = config.get("_run_card_unrecognized_config_warning")
+        config["_run_card_unrecognized_config_warning"] = (
+            f"{previous} {warning}" if previous else warning
+        )
+    return engine
+
+
+def _select_market_engine(source: str, config: dict, codes: List[str]):
     """Create the appropriate market engine based on data source and market type.
 
     Routing priority:
