@@ -5,6 +5,7 @@ Mounted by ``agent/api_server.py`` via ``register_uploads_routes(app, ...)``.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from pathlib import Path
@@ -25,13 +26,40 @@ _UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 _BLOCKED_UPLOAD_EXT = {
     # binaries / executables we should never accept
-    ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".app", ".dmg",
-    ".so", ".dll", ".dylib",
+    ".exe",
+    ".msi",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".scr",
+    ".app",
+    ".dmg",
+    ".so",
+    ".dll",
+    ".dylib",
     # executable-adjacent source, shell, config, and template files
-    ".py", ".pyw", ".sh", ".bash", ".zsh", ".fish", ".ps1",
-    ".yaml", ".yml", ".j2", ".jinja", ".jinja2", ".template",
+    ".py",
+    ".pyw",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".yaml",
+    ".yml",
+    ".j2",
+    ".jinja",
+    ".jinja2",
+    ".template",
     # archives — don't auto-extract; user can unpack locally
-    ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".tgz",
+    ".bz2",
+    ".xz",
 }
 
 _BLOCKED_UPLOAD_NAMES = {
@@ -97,6 +125,7 @@ def register_uploads_routes(
     async def get_generated_report(report_id: str):
         """Download only a staged generated PDF via an opaque ID."""
         from src.tools.report_artifacts import report_path
+
         path = report_path(report_id)
         if path is None:
             raise HTTPException(status_code=404, detail="Report not found")
@@ -118,9 +147,13 @@ def register_uploads_routes(
         reports_dir = get_runtime_root() / "shadow_reports"
         path = reports_dir / f"{shadow_id}.{format}"
         if not path.exists():
-            raise HTTPException(status_code=404, detail=f"Shadow report not found: {shadow_id}.{format}")
+            raise HTTPException(
+                status_code=404, detail=f"Shadow report not found: {shadow_id}.{format}"
+            )
 
-        media_type = "text/html; charset=utf-8" if format == "html" else "application/pdf"
+        media_type = (
+            "text/html; charset=utf-8" if format == "html" else "application/pdf"
+        )
         return FileResponse(
             path,
             media_type=media_type,
@@ -170,6 +203,11 @@ def register_uploads_routes(
                             detail=f"File too large (limit {max_size // (1024 * 1024)} MB)",
                         )
                     handle.write(chunk)
+        except asyncio.CancelledError:
+            # The destination is not published until the route returns. A
+            # cancelled read must not leave that partial upload orphaned.
+            dest.unlink(missing_ok=True)
+            raise
         except HTTPException:
             raise
         except OSError as exc:

@@ -762,9 +762,9 @@ def parse_file(path: str | Path) -> tuple[FormatName, list[TradeRecord]]:
 
 
 def records_to_dataframe(records: list[TradeRecord]) -> pd.DataFrame:
-    """Convert records to a standardized DataFrame (datetime column parsed)."""
+    """Parse and sort datetimes, retaining source order for equal timestamps."""
     if not records:
         return pd.DataFrame(columns=[f.name for f in TradeRecord.__dataclass_fields__.values()])
     df = pd.DataFrame([asdict(r) for r in records])
     df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-    return df.sort_values("datetime").reset_index(drop=True)
+    return df.sort_values("datetime", kind="stable").reset_index(drop=True)
