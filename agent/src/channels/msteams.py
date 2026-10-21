@@ -463,10 +463,15 @@ class MSTeamsChannel(BaseChannel):
         if lines and lines[0].strip().startswith("Reply wrapper"):
             body = normalized_newlines.split("\n", 1)[1] if "\n" in normalized_newlines else ""
             body = body.lstrip()
-            parts = re.split(r"\n\s*\n", body, maxsplit=1)
-            if len(parts) == 2:
-                quoted = re.sub(r"\s+", " ", parts[0]).strip()
-                reply = re.sub(r"\s+", " ", parts[1]).strip()
+            # Split on every blank-line boundary, not just the first: a
+            # multi-paragraph quoted message has its own internal blank
+            # lines, and splitting on the first one leaves the remaining
+            # quoted paragraphs mixed into what gets reported as the
+            # user's own reply. Only the final block is the actual reply.
+            parts = re.split(r"\n\s*\n", body)
+            if len(parts) >= 2:
+                quoted = re.sub(r"\s+", " ", "\n\n".join(parts[:-1])).strip()
+                reply = re.sub(r"\s+", " ", parts[-1]).strip()
                 if quoted or reply:
                     return self._format_reply_with_quote(quoted, reply)
 
