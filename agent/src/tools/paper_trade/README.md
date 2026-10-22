@@ -83,6 +83,35 @@ fills. The spawned child receives no current/future bars and retains its instanc
 across dates in one call. Source validation and process timeouts apply. Any
 strategy failure discards the whole call, including earlier uncommitted results.
 
+## Five-minute cn_a steps
+
+`paper_trade_step` accepts `interval="5m"` for A-shares. One step covers exactly
+one completed session and matches against that session's single assembled bar,
+built from the 48 continuous five-minute bars. The 09:30 opening-auction print is
+excluded, as is any label inside 09:15-09:25 or 14:57-15:00; an excluded auction
+label is reported as an `auction_window` event. A symbol with no continuous bar
+on a calendar-open day is `halted` (its position is valued carry-forward), and an
+order on it is rejected `suspended` with one `canceled_after_failed_match` row.
+
+| Field | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `interval` | `1d`, `5m` | `1d` | `5m` is cn_a-only and accepts one date per step |
+| `session` | `auto`, `cn_a` | `auto` | `cn_a` requires `market="cn_a"` |
+| `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from the session bar |
+| `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
+
+The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
+chain: Tencent's raw loader serves daily bars only. The measured provider limit
+is one symbol per step (2 calls/day, 1/minute), so a 5m step with two order
+symbols is refused; split the orders across steps or use `interval="1d"`. Orders
+mode derives the 5m universe from the order symbols; strategy mode requires a
+non-empty `UNIVERSE` and refuses any order outside it. When no 5m-capable loader
+is configured, the step returns `PAPER_DATA_NOT_READY` naming the loader instead
+of reading the daily source as a 5m source.
+
+The daily close still anchors price-limit bands and NAV; `path_model` selects the
+5m fill reference only. Corporate actions remain fail-closed.
+
 ## Data and model limits
 
 Execution requires raw prices. Tencent's unadjusted endpoint serves A-shares/HK;
@@ -98,8 +127,9 @@ discontinuities reject affected orders and disclose the issue. Automatic action
 reconciliation and cash dividends are not implemented. NAV is not total return.
 A-shares are included in the raw-price discontinuity checks.
 
-Matching is daily close, all-or-none, with simplified fees, price limits, board
-lots and T+1 checks. HK lot fallback is disclosed. Invalid OHLC prevents fills;
-valuation uses a finite prior close or the disclosed average-cost fallback.
-This is not intraday or broker-execution simulation. The 5-minute, settlement,
-margin, options and cross-market phases in #1938 remain follow-up work.
+Matching is all-or-none, with simplified fees, price limits, board lots and T+1
+checks. HK lot fallback is disclosed. Invalid OHLC prevents fills; valuation
+uses a finite prior close or the disclosed average-cost fallback. This is not
+broker-execution simulation. Settlement, margin, options and cross-market phases
+in #1938 remain follow-up work, as does the intraday order lifecycle (partial
+fills, resting orders across bars).

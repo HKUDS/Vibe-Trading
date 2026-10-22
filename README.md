@@ -1437,8 +1437,19 @@ and inspect fills, rejections and NAV history. Strategy history stops before the
 execution date, and each day receives the ledger after preceding fills. The
 agent/MCP `paper_trade_step` remains a stateless research primitive.
 
-Execution uses raw prices (Tencent raw for A-shares/HK, raw-capable US providers).
-A-shares require a complete ClickHouse calendar. Unavailable data/calendar and
+`paper_trade_step` also takes `interval="5m"` for A-shares: one step covers one
+completed session and matches against that session's single assembled bar, built
+from the 48 continuous five-minute bars (the 09:30 opening-auction print and the
+call-auction windows are excluded). The 5m leg uses Tushare `stk_mins` — separate
+from the daily chain, which serves daily bars only — accepts one order symbol per
+step (the measured provider limit is 2 calls/day), fills all-or-none at the
+`path_model` reference (`bar_median` or `bar_close`), and requires a non-empty
+`UNIVERSE` in strategy mode. `session`, `path_model` and `fill_model` default to
+the daily behaviour, so every existing call is unchanged.
+
+Execution uses raw prices (Tencent raw for A-shares/HK, raw-capable US providers;
+Tushare `stk_mins` for the A-share 5m leg). A-shares require a complete ClickHouse
+calendar. Unavailable data/calendar and
 unverified split-like events fail visibly without committing a saved ledger;
 price/volume ratios never authorize multiplying a position. Cash dividends and
 automatic corporate-action reconciliation are not implemented. See the
