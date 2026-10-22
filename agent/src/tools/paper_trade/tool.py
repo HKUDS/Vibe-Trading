@@ -294,14 +294,6 @@ def _execute_step(
             raw_payload,
         ), None
 
-    # 3. Fetch universe (positions ∪ orders).  strategy_path mode ALSO unions
-    #    the strategy file's declared UNIVERSE literal — a cash-only account
-    #    carries no position symbols and there are no orders, so without the
-    #    declaration the fetch universe would be empty.  strategy_universe is a
-    #    pure AST read (never an execution) and degrades to ().  Orders mode
-    #    never consults it.  Every 5m gate below runs BEFORE client resolution
-    #    and before any fetch, so a refusal never spends provider budget.
-
     # 3. Market data over the frozen window (universe = positions ∪ orders;
     #    strategy_path mode ALSO unions the strategy file's declared UNIVERSE
     #    literal — a cash-only account carries no position symbols and there
@@ -309,7 +301,8 @@ def _execute_step(
     #    empty.  strategy_universe is a pure AST read (never an execution) and
     #    degrades to (); the empty-declaration fallback keeps the existing
     #    behavior and T7's B1 path still owns a genuinely unusable universe.
-    #    Orders mode never consults it.)
+    #    Orders mode never consults it.  Every 5m gate below runs BEFORE the
+    #    fetch, so a refusal never spends provider budget.)
     cal, lim, ch = _resolve_clients(request.market, calendar_client, limits_client, ch_client)
     if request.market == CN_A_MARKET and cal is None:
         return _error_document(
@@ -380,7 +373,6 @@ def _execute_step(
                 "ETFs, funds and indices have no 5m leg",
                 raw_payload,
             ), None
-    cal, lim, ch = _resolve_clients(request.market, calendar_client, limits_client, ch_client)
     try:
         market_data = data.fetch_market_data(
             request.market, symbols, request.from_date, request.to_date,

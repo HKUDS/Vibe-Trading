@@ -123,6 +123,12 @@ NOT_READY_CODE = "PAPER_DATA_NOT_READY"
 _CN_A_MARKET = "cn_a"
 _CLICKHOUSE_LOADER_NAME = "clickhouse"
 
+#: The only loader with a measured ``stk_mins`` leg.  The a_share daily chain
+#: head (tencent) is wrapped as ``TencentRawLoader``, which refuses every
+#: interval but ``1D`` — sharing that instance would make every 5m step a
+#: permanent data-not-ready.  The 5m leg therefore resolves its own loader.
+_FIVE_MINUTE_LOADER_NAME = "tushare"
+
 # Sentinel distinguishing "not injected" from an explicit None.
 _AUTO = object()
 
@@ -377,6 +383,11 @@ class MarketDataResult:
     #: leg values positions), the declared universe in strategy mode.  Empty
     #: for a pure-valuation step, which issues no 5m request at all.
     five_minute_symbols: tuple[str, ...] = ()
+    #: Why the 5m leg produced no data when the cause is the LOADER (none
+    #: available, or the fetch raised), never when the provider simply omitted
+    #: a halted day.  Readiness surfaces this verbatim instead of blaming the
+    #: provider's quota for a source that cannot serve 5m at all.
+    five_minute_error: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,6 +409,25 @@ def symbols_for_request(
     for order in orders or ():
         universe.add(order.symbol)
     return tuple(sorted(universe))
+
+
+def _resolve_five_minute_loader(loader: Any) -> Any | None:
+    """Return the loader that serves ``interval="5m"``, or ``None`` when none can.
+
+    An injected loader is honoured verbatim — tests and embedders own their
+    source, and substituting another one would hide the failure.  Only the
+    ``_AUTO`` sentinel resolves the Tushare ``stk_mins`` loader; the daily
+    chain is deliberately never consulted for 5m.
+    """
+    if loader is not _AUTO:
+        return loader
+    try:
+        from backtest.loaders.tushare import DataLoader
+
+        candidate = DataLoader()
+        return candidate if candidate.is_available() else None
+    except Exception:  # noqa: BLE001 — an unavailable 5m source is data-not-ready
+        return None
 
 
 def fetch_market_data(
@@ -448,9 +478,8 @@ def fetch_market_data(
     ).isoformat()
 
     warnings: list[str] = []
-    net_loader: Any = None
     if market == _CN_A_MARKET:
-        frames, provenance, net_loader = _fetch_cn_a(
+        frames, provenance = _fetch_cn_a(
             ordered, window_start, end, loader=loader, ch_client=ch_client, warnings=warnings
         )
     else:
@@ -459,8 +488,25 @@ def fetch_market_data(
         )
 
     five = FiveMinuteFacts()
+    five_minute_error = ""
     if interval == "5m" and ordered_five:
-        five = fetch_five_minute(ordered_five, start, end, loader=net_loader, warnings=warnings)
+        five_loader = _resolve_five_minute_loader(loader)
+        if five_loader is None:
+            five_minute_error = (
+                "5m data: no available 5m loader; interval 5m requires the Tushare "
+                "stk_mins source (daily sources such as tencent serve 1D only)")
+            warnings.append(five_minute_error)
+            five = FiveMinuteFacts(
+                bar_fingerprint=state_hash.state_hash([]), fetch_failed=True,
+                missing_symbols=ordered_five)
+        else:
+            five = fetch_five_minute(
+                ordered_five, start, end, loader=five_loader, warnings=warnings)
+            if five.fetch_failed:
+                five_minute_error = (
+                    "5m data: the 5m fetch through "
+                    f"{getattr(five_loader, 'name', 'the loader')!r} failed; "
+                    "the step is data-not-ready, retry later")
 
     data: dict[str, SymbolData] = {}
     for symbol in ordered:
@@ -510,6 +556,7 @@ def fetch_market_data(
         five_minute_contradiction=_five_minute_contradictions(
             data, ordered_five, start, end, interval, five),
         five_minute_symbols=ordered_five,
+        five_minute_error=five_minute_error,
     )
 
 
@@ -606,7 +653,7 @@ def _fetch_cn_a(
     loader: Any,
     ch_client: Any,
     warnings: list[str],
-) -> tuple[dict[str, pd.DataFrame], DataProvenance, Any]:
+) -> tuple[dict[str, pd.DataFrame], DataProvenance]:
     # Explicit two-leg federation (AM-9): CH history + network current day,
     # merged CH-priority.  Legs are fetched sequentially over sorted symbols
     # (deterministic; no ordering hazard to freeze).
@@ -666,7 +713,7 @@ def _fetch_cn_a(
     provenance = DataProvenance(
         source=source, bars_as_of=_max_as_of(merged), ch_as_of=ch_as_of, network_as_of=network_as_of
     )
-    return merged, provenance, net_loader
+    return merged, provenance
 
 
 def _fetch_single_leg(
@@ -721,6 +768,9 @@ def _assess_five_minute_readiness(result: MarketDataResult, day: str) -> Readine
     # D6 fail-closed: a leg mismatch is a provider/federation fault, and an
     # all-symbol zero-bar day cannot be told apart from a market-wide outage;
     # both are PAPER_DATA_NOT_READY (retryable), never a silent halted day.
+    if result.five_minute_error:
+        return ReadinessVerdict(
+            ready=False, code=NOT_READY_CODE, message=result.five_minute_error)
     five = result.five_minute_symbols
     if not five:
         # An explicitly empty 5m universe (pure-valuation step) issues no 5m

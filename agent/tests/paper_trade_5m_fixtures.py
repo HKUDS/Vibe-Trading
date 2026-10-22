@@ -224,4 +224,3 @@ class FixtureCalendar:
             for day in pd.date_range(start_date, end_date)
         ]
         return pd.DataFrame(rows, columns=["exchange", "cal_date", "is_open", "pretrade_date"])
-

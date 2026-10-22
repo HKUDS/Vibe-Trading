@@ -70,7 +70,11 @@ def is_open_day(calendar_client: Any, market: str, day: str) -> bool:
     """Whether ``day`` is a trading day, per the market's AM-6 strategy."""
     if market == trade_calendar.CN_A_MARKET:
         return trade_calendar.is_trading_day(calendar_client, market, day)
-    return True
+    # Zero-calendar markets: weekends are non-trading by Gregorian fact.  A
+    # weekday holiday still needs bar evidence, which the engine owns; but a
+    # Saturday can never be a session, so it must advance the watermark instead
+    # of calling step_fn.
+    return dt.date.fromisoformat(day).weekday() < 5
 
 
 def latest_completed_trading_day(

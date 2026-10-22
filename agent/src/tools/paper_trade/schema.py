@@ -181,9 +181,11 @@ SIDES: tuple[str, ...] = ("buy", "sell")
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-#: Repo-root-relative locations of the wire-contract jsonschemas (VD-13).
-#: The v1.1 file stays frozen and untouched; v1.2 is its additive copy.
-_CONTRACT_SCHEMA_DIR = Path(__file__).resolve().parents[4] / "schema" / "tool_contracts"
+#: Contract jsonschemas ship INSIDE the package (``tools/paper_trade/*.json`` is
+#: declared package-data) so an installed wheel or sdist resolves them without
+#: the repository root.  ``schema/tool_contracts/`` keeps the published mirror;
+#: a test pins the two copies byte-identical.
+_CONTRACT_SCHEMA_DIR = Path(__file__).resolve().parent
 _CONTRACT_SCHEMA_PATHS: dict[str, Path] = {
     SCHEMA_VERSION: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.1.json",
     SCHEMA_VERSION_V1_2: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.2.json",

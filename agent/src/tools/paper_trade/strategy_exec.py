@@ -556,7 +556,8 @@ def run_strategy_path(
             orders_by_day={}, fee_model=request.fee_model,
             calendar_client=calendar_client, limits_client=limits_client,
             corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-            hk_lot_sizes=hk_lot_sizes, **kwargs)
+            hk_lot_sizes=hk_lot_sizes,
+            path_model=request.path_model, fill_model=request.fill_model, **kwargs)
     allowed_five = (
         frozenset(market_data.five_minute_symbols)
         if request.interval == "5m" else None)

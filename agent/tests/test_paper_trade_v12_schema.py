@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from src.tools.paper_trade import rules, state_hash, wire
+from src.tools.paper_trade import rules, schema as schema_module, state_hash, wire
 from src.tools.paper_trade.engine import MatchOutcome
 from src.tools.paper_trade.schema import (
     CANCELED_REASON_CODE,
@@ -31,6 +31,7 @@ from src.tools.paper_trade.schema import (
     PATH_MODELS,
     SCHEMA_VERSION,
     SCHEMA_VERSION_V1_2,
+    SCHEMA_VERSIONS,
     SESSION_EVENT_TYPES,
     SESSIONS,
     AccountState,
@@ -50,7 +51,8 @@ from src.tools.paper_trade.schema import (
 )
 from src.tools.paper_trade.tool import PaperTradeStepTool, run_paper_trade_step
 
-_CONTRACT_DIR = Path(__file__).resolve().parents[2] / "schema" / "tool_contracts"
+_CONTRACT_DIR = Path(__file__).resolve().parents[1] / "src" / "tools" / "paper_trade"
+_PUBLISHED_CONTRACT_DIR = Path(__file__).resolve().parents[2] / "schema" / "tool_contracts"
 _V12_KEYS = {"engine_fingerprint", "canceled_orders", "events"}
 _V11_KEYS = {
     "schema_version", "tool", "account_id", "market", "range", "received_state_hash",
@@ -451,6 +453,26 @@ def test_v11_contract_file_is_not_edited() -> None:
     result = document["schemas"]["result"]
     assert result["properties"]["schema_version"]["const"] == "pt-v1.1"
     assert not (_V12_KEYS & set(result["properties"]))
+
+
+def test_packaged_contracts_mirror_the_published_copies() -> None:
+    for name in ("paper_trade_step-v1.1.json", "paper_trade_step-v1.2.json"):
+        packaged = (_CONTRACT_DIR / name).read_bytes()
+        published = (_PUBLISHED_CONTRACT_DIR / name).read_bytes()
+        assert packaged == published, name
+
+
+def test_loader_resolves_contracts_from_inside_the_package() -> None:
+    # The wheel/sdist ships ``tools/paper_trade/*.json`` as package-data; a
+    # loader that reached the repository root would work in CI and break in an
+    # installed copy.
+    package_dir = Path(schema_module.__file__).resolve().parent
+    for version in SCHEMA_VERSIONS:
+        path = schema_module._CONTRACT_SCHEMA_PATHS[version]
+        assert path.parent == package_dir
+        assert path.is_file()
+        schema = schema_module.load_contract_schema("result", version=version)
+        assert schema["properties"]["schema_version"]
 
 
 def test_loader_defaults_to_v11_and_rejects_an_unknown_version() -> None:

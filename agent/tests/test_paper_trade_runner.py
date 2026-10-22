@@ -497,6 +497,32 @@ def test_catch_up_advances_serially_through_a_weekend(tmp_path: Path) -> None:
     assert store.load(ACCOUNT_ID).non_trading_days == ("2026-03-07", "2026-03-08")
 
 
+def test_catch_up_skips_the_weekend_for_a_zero_calendar_market(tmp_path: Path) -> None:
+    store = _store(
+        tmp_path, market="us", interval="1d",
+        start_date="2026-03-06", today="2026-03-06", next_trading_day="2026-03-09")
+    step_fn = RecordingStep()
+
+    result = catch_up(
+        ACCOUNT_ID,
+        step_fn=step_fn,
+        calendar_client=None,
+        today="2026-03-09",
+        now=NOW,
+        store=store,
+    )
+
+    assert result.status == "caught_up"
+    assert [item.status for item in result.results] == [
+        STATUS_APPLIED,
+        STATUS_NON_TRADING_DAY,
+        STATUS_NON_TRADING_DAY,
+        STATUS_APPLIED,
+    ]
+    assert step_fn.days == ["2026-03-06", "2026-03-09"]
+    assert store.load(ACCOUNT_ID).non_trading_days == ("2026-03-07", "2026-03-08")
+
+
 def test_catch_up_stops_at_the_first_data_missing_day(tmp_path: Path) -> None:
     store = _store(tmp_path)
     calendar = FakeCalendar(FIVE_DAYS)
