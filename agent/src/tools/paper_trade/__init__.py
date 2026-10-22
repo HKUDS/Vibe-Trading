@@ -1,17 +1,27 @@
-"""paper_trade — deterministic paper-trading matching engine (pt-v1.1).
+"""paper_trade — deterministic paper-trading matching engine (pt-v1.1/pt-v1.2).
 
 Research-only engine that matches injected orders (or a strategy's per-day
-orders) against daily bars under each market's frozen rules and returns one
-in-band JSON document.  It NEVER places a real order and touches no broker /
+orders) against bars under each market's frozen rules and returns one in-band
+JSON document.  It NEVER places a real order and touches no broker /
 trading connector (REQUIREMENTS R1).
 
-Module map: ``schema.py`` (wire contract + boundary parse), ``state_hash.py``
-(JCS ``received_state_hash``), ``calendar.py`` (cn_a CH truth / hk-us zero
-calendar), ``limits_cn_a.py`` (cn_a limit/ST/suspension), ``data.py`` (market
-data supply + AM-9 federation), ``rules.py`` (three-market rule matrix),
+Module map — matching and wire (pt-v1.1 core): ``schema.py`` (wire contract +
+boundary parse), ``state_hash.py`` (JCS ``received_state_hash`` and the D3
+engine fingerprint), ``calendar.py`` (cn_a CH truth / hk-us zero calendar),
+``limits_cn_a.py`` (cn_a limit/ST/suspension), ``data.py`` (market data supply +
+AM-9 federation), ``rules.py`` (three-market rule matrix + ``RULES_VERSION``),
 ``engine.py`` (day-loop matching), ``corporate_actions.py`` (split detector),
 ``wire.py`` (success/error serialization), ``tool.py`` (the ``paper_trade_step``
 entry), ``strategy_exec.py`` (Step 7 strategy_path execution).
+
+pt-v1.2 additive surface (cn_a 5m post-close step, P0): ``data_5m.py`` (stk_mins
+fetch + continuous-session assembly), ``trading_days.py`` (cn_a session clock and
+completed-day resolution), ``engine_adapter.py`` (wire document ↔
+:class:`StepOutcome`), ``account.py`` / ``store.py`` / ``storage_io.py``
+(incremental ledger, atomic account writes, append-only step directories),
+``runner.py`` (single-day ``step`` + serial ``catch_up``), ``recovery.py``
+(crash-window adoption).  All of it is opt-in: a call that omits every v1.2
+request field is byte-identical to pt-v1.1.
 
 The tool registry's auto-discovery (``src/tools/__init__.py``) imports this
 package at agent startup and collects :class:`PaperTradeStepTool` via

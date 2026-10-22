@@ -34,21 +34,48 @@ Determinism (R1-1): NO clock is read — every date is injected, so the CH UTC
 vs host CST 8h skew cannot leak into verdicts.  Zero side effects: no file
 writes, network only to market-data sources; CH credentials come solely from
 the existing ``CLICKHOUSE_*`` env config (zero-credential red line).
+
+pt-v1.2 ``interval="5m"`` (T3/T4): the DAILY leg above is fetched unchanged
+(K=120 lookback, valuation, price-limit bands, corporate actions) and exactly
+ONE extra ranged 5m call covers the ORDER symbols — never one call per day and
+never one call per position (T1: the provider allows 2 stk_mins calls/day, the
+Tushare loader loops per code, and a refused call still burns the budget, so a
+whole-universe request makes any two-symbol account unadvanceable).  The 5m
+request end is ``to_date + 1 day`` because the provider's end
+bound is exclusive at midnight.  Each symbol-day is split by the cn_a session
+clock (:func:`calendar.classify_cn_a_session_label`): the 09:30 opening
+auction print is dropped silently, an auction-window label is dropped and
+reported as an ``auction_window`` event source, and the continuous bars are
+assembled into ONE session bar (D1: open = first bar's open, high/low = extremes,
+close = last bar's close, volume = sum).  Zero continuous bars on a
+calendar-open day is a ``halted`` candidate; zero for the whole universe is
+``PAPER_DATA_NOT_READY`` (D6).  A symbol with a daily bar but no 5m session
+bar is a provider omission (``stk_mins`` quota or permission) ONLY when the
+provider returned no row for it at all, and is reported as
+``PAPER_DATA_NOT_READY`` naming it — a provider error must never be read as
+a halt.  A symbol whose only 5m row is the 09:30 opening-auction print is a
+halt candidate instead: the provider served the symbol, the exchange simply
+had no continuous session (N3).  Unsupported instruments (ETFs, funds,
+indices) are rejected by the tool before the fetch
+(``data_5m.is_supported_five_minute_symbol``).
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Mapping, Protocol
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Protocol
 
 import numpy as np
 import pandas as pd
 
 from backtest.loaders.registry import frame_caliber, resolve_loader
 
-from .schema import DataProvenance
+from . import state_hash
+from .data_5m import FiveMinuteFacts, SessionBar, fetch_five_minute
+from .schema import DEFAULT_INTERVAL, INTERVALS, DataProvenance
 
 if TYPE_CHECKING:
     from .schema import AccountState, Order
@@ -63,6 +90,7 @@ __all__ = [
     "CnABarsClient",
     "MarketDataResult",
     "ReadinessVerdict",
+    "SessionBar",
     "SymbolData",
     "assess_readiness",
     "day_bar_availability",
@@ -300,9 +328,28 @@ class SymbolData:
     untradable_dates: tuple[str, ...] = ()  # R-V3 flagged dates, ascending
     valuation_price: float | None = None  # None ⇒ value at avg_cost
     valuation_basis: str = "last_close"
+    #: Day -> continuous 5m bars (empty for interval="1d"); for a single-day
+    #: orders-mode step this is exactly the target day's continuous bars.
+    bars_5m: Mapping[str, pd.DataFrame] = field(default_factory=dict)
+    #: Day -> assembled session bar (the D1 matched bar), interval="5m" only.
+    session_bars: Mapping[str, SessionBar] = field(default_factory=dict)
+    #: The TARGET day's session bar (``to_date``), or None when it has none.
+    session_bar: SessionBar | None = None
+    #: Day -> auction-window labels excluded from matching (T4 events).
+    auction_labels: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Days with at least one 5m row of ANY kind, the 09:30 opening-auction
+    #: print included.  Distinguishes a halt (rows, no continuous bar) from a
+    #: provider omission (no row at all) — N3.
+    five_minute_days: frozenset[str] = frozenset()
 
     def has_bar(self, day: str) -> bool:
         return day in self.bar_dates
+
+    def has_session_bar(self, day: str) -> bool:
+        return day in self.session_bars
+
+    def has_five_minute_rows(self, day: str) -> bool:
+        return day in self.five_minute_days
 
 
 @dataclass(frozen=True, eq=False)
@@ -317,6 +364,19 @@ class MarketDataResult:
     data: Mapping[str, SymbolData] = field(default_factory=dict)
     provenance: DataProvenance = field(default_factory=lambda: DataProvenance(source=""))
     warnings: tuple[str, ...] = ()
+    #: "1d" (frozen pt-v1.1 path) or "5m" (pt-v1.2 cn_a session path).
+    interval: str = DEFAULT_INTERVAL
+    #: D3 bar fingerprint over the bars actually served: the continuous 5m
+    #: bars when a 5m step orders symbols, the day bars otherwise (a
+    #: pure-valuation 5m step issues no 5m request and is valued on them).
+    bar_fingerprint: str = ""
+    #: Day -> symbols whose daily bar and 5m session bar disagree on whether
+    #: the symbol traded (a provider fault, never a halt: D6 fail-closed).
+    five_minute_contradiction: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    #: Symbols the 5m leg covers — the ORDER symbols in orders mode (the daily
+    #: leg values positions), the declared universe in strategy mode.  Empty
+    #: for a pure-valuation step, which issues no 5m request at all.
+    five_minute_symbols: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,34 +408,59 @@ def fetch_market_data(
     *,
     loader: Any = _AUTO,
     ch_client: Any = _AUTO,
+    interval: str = DEFAULT_INTERVAL,
+    five_minute_symbols: Iterable[str] | None = None,
 ) -> MarketDataResult:
     """Fetch the frozen window for every symbol; assemble merged provenance.
 
     ``loader`` injects the network leg (cn_a: clickhouse-named loaders are
     refused — recursion guard; hk/us: the single leg); ``ch_client`` injects
-    the cn_a CH leg (``None`` forces network-only).  ValueError for an unknown
-    market, bad dates or a clickhouse injection → in-band INVALID_REQUEST (T6).
+    the cn_a CH leg (``None`` forces network-only).  ``interval="1d"`` is the
+    frozen pt-v1.1 path and never issues a 5m request; ``interval="5m"`` keeps
+    the daily leg (K=120 lookback, valuation, limits, corporate actions) and
+    adds exactly ONE ranged 5m fetch (T1 quota: the provider allows 2 calls/day,
+    so a per-day loop is forbidden, and the Tushare loader loops per symbol —
+    a whole-universe request would burn the budget on the first account with
+    two names).  ``five_minute_symbols`` therefore narrows that ONE request to
+    the symbols whose session bar is actually matched (orders mode: the order
+    symbols); ``None`` keeps the legacy whole-universe request.  ValueError
+    for an unknown market, bad dates, an unknown interval, a non-cn_a 5m
+    request or a clickhouse injection → in-band INVALID_REQUEST (T6).
     """
     if market not in MARKET_LOADER_KEYS:
         raise ValueError(f"unknown market for paper data fetch: {market!r}")
+    if interval not in INTERVALS:
+        raise ValueError(f"unknown interval for paper data fetch: {interval!r}")
+    if interval == "5m" and market != _CN_A_MARKET:
+        raise ValueError("interval '5m' is cn_a-only in pt-v1.2")
     start = _normalize_day(from_date)
     end = _normalize_day(to_date)
     if start > end:
         raise ValueError(f"from_date ({start}) > to_date ({end})")
     ordered = tuple(sorted({str(symbol) for symbol in symbols}))
+    ordered_five = (
+        ordered
+        if five_minute_symbols is None
+        else tuple(dict.fromkeys(str(symbol) for symbol in five_minute_symbols))
+    )
     window_start = (
         dt.date.fromisoformat(start) - dt.timedelta(days=LOOKBACK_CALENDAR_SPAN_DAYS)
     ).isoformat()
 
     warnings: list[str] = []
+    net_loader: Any = None
     if market == _CN_A_MARKET:
-        frames, provenance = _fetch_cn_a(
+        frames, provenance, net_loader = _fetch_cn_a(
             ordered, window_start, end, loader=loader, ch_client=ch_client, warnings=warnings
         )
     else:
         frames, provenance = _fetch_single_leg(
             market, ordered, window_start, end, loader=loader, warnings=warnings
         )
+
+    five = FiveMinuteFacts()
+    if interval == "5m" and ordered_five:
+        five = fetch_five_minute(ordered_five, start, end, loader=net_loader, warnings=warnings)
 
     data: dict[str, SymbolData] = {}
     for symbol in ordered:
@@ -389,15 +474,128 @@ def fetch_market_data(
             )
         if needs_warning:
             warnings.append(f"valuation: {symbol} has no usable positive close in the fetch window; positions value at avg_cost")
+        bars_5m, session_bars = five.for_symbol(symbol)
         data[symbol] = SymbolData(
             symbol=symbol, frame=frame,
             bar_dates=frozenset(day.strftime("%Y-%m-%d") for day in frame.index),
             untradable_dates=untradable, valuation_price=price, valuation_basis=basis,
+            bars_5m=bars_5m, session_bars=session_bars,
+            session_bar=session_bars.get(end),
+            auction_labels=five.auction_by_symbol.get(symbol, {}),
+            five_minute_days=frozenset(five.observed_days_by_symbol.get(symbol, ())),
         )
+
+    omitted_5m = tuple(
+        symbol for symbol in five.missing_symbols
+        if symbol in data and data[symbol].has_bar(end)
+    )
+    if omitted_5m:
+        warnings.append(
+            f"5m data: provider omitted the 5m leg for {', '.join(omitted_5m)} even though the "
+            "daily bar exists; stk_mins quota or permission likely; retry after the quota window")
+
+    # D3 covers the bars that actually produced this step's output.  With 5m
+    # order symbols that is the continuous 5m leg; a pure-valuation 5m step
+    # issues no 5m request at all, so its NAV comes from the daily leg and the
+    # daily digest is the honest one (otherwise every such step shares the
+    # empty-tape hash and the fingerprint cannot tell two days apart).
+    bar_fingerprint = (
+        five.bar_fingerprint if interval == "5m" and ordered_five
+        else _daily_bar_fingerprint(data, ordered, start, end)
+    )
     return MarketDataResult(
         market=market, from_date=start, to_date=end, symbols=ordered,
         data=data, provenance=provenance, warnings=tuple(warnings),
+        interval=interval, bar_fingerprint=bar_fingerprint,
+        five_minute_contradiction=_five_minute_contradictions(
+            data, ordered_five, start, end, interval, five),
+        five_minute_symbols=ordered_five,
     )
+
+
+def _days_in_range(from_date: str, to_date: str) -> tuple[str, ...]:
+    start = dt.date.fromisoformat(from_date)
+    end = dt.date.fromisoformat(to_date)
+    return tuple(
+        (start + dt.timedelta(days=offset)).isoformat()
+        for offset in range((end - start).days + 1)
+    )
+
+
+def _finite_float(value: Any) -> float:
+    numeric = float(value)
+    return numeric if math.isfinite(numeric) else 0.0
+
+
+def _daily_bar_fingerprint(
+    data: Mapping[str, SymbolData],
+    symbols: tuple[str, ...],
+    from_date: str,
+    to_date: str,
+) -> str:
+    # D3 for interval="1d": the day bars actually served in [from, to], sorted
+    # by (symbol, date) so input order cannot change the digest.  Rows are
+    # [symbol, "YYYY-MM-DD", open, high, low, close, volume] with finite
+    # floats (a non-finite cell, e.g. a missing volume, canonicalizes as 0.0
+    # instead of raising inside the JCS serializer).
+    start = pd.Timestamp(from_date)
+    end = pd.Timestamp(to_date)
+    payload: list[list[Any]] = []
+    for symbol in sorted(symbols):
+        sym_data = data.get(symbol)
+        if sym_data is None or sym_data.frame.empty:
+            continue
+        window = sym_data.frame[(sym_data.frame.index >= start) & (sym_data.frame.index <= end)]
+        for timestamp, row in window.iterrows():
+            payload.append([
+                symbol, timestamp.strftime("%Y-%m-%d"),
+                _finite_float(row["open"]), _finite_float(row["high"]),
+                _finite_float(row["low"]), _finite_float(row["close"]),
+                _finite_float(row["volume"]),
+            ])
+    return state_hash.state_hash(payload)
+
+
+def _five_minute_leg_mismatch(sym_data: SymbolData, day: str) -> bool:
+    """True when the daily and 5m legs disagree in a way a halt cannot explain.
+
+    A daily bar with no continuous 5m bar is a provider omission only when the
+    symbol produced NO 5m row that day.  A symbol the provider DID serve (even
+    just the 09:30 opening-auction print) is a halt candidate: the exchange had
+    no continuous session, the provider did not fail (N3).  A session bar with
+    no daily bar is a mismatch in both directions.
+    """
+    has_daily = sym_data.has_bar(day)
+    has_session = sym_data.has_session_bar(day)
+    if has_daily == has_session:
+        return False
+    return has_session or not sym_data.has_five_minute_rows(day)
+
+
+def _five_minute_contradictions(
+    data: Mapping[str, SymbolData],
+    symbols: tuple[str, ...],
+    from_date: str,
+    to_date: str,
+    interval: str,
+    five: FiveMinuteFacts,
+) -> dict[str, tuple[str, ...]]:
+    # A daily bar with no 5m session bar (or the reverse) cannot be a halt when
+    # the provider served no 5m row at all for that symbol: Tushare omits
+    # suspended days from BOTH endpoints.  It is a provider / federation fault,
+    # so the day fails closed as data-not-ready rather than reading a provider
+    # error as "halted" (D6).
+    if interval != "5m" or five.fetch_failed or not symbols:
+        return {}
+    contradictions: dict[str, tuple[str, ...]] = {}
+    for day in _days_in_range(from_date, to_date):
+        mismatched = tuple(sorted(
+            symbol for symbol in symbols
+            if symbol in data and _five_minute_leg_mismatch(data[symbol], day)
+        ))
+        if mismatched:
+            contradictions[day] = mismatched
+    return contradictions
 
 
 def _fetch_cn_a(
@@ -408,7 +606,7 @@ def _fetch_cn_a(
     loader: Any,
     ch_client: Any,
     warnings: list[str],
-) -> tuple[dict[str, pd.DataFrame], DataProvenance]:
+) -> tuple[dict[str, pd.DataFrame], DataProvenance, Any]:
     # Explicit two-leg federation (AM-9): CH history + network current day,
     # merged CH-priority.  Legs are fetched sequentially over sorted symbols
     # (deterministic; no ordering hazard to freeze).
@@ -468,7 +666,7 @@ def _fetch_cn_a(
     provenance = DataProvenance(
         source=source, bars_as_of=_max_as_of(merged), ch_as_of=ch_as_of, network_as_of=network_as_of
     )
-    return merged, provenance
+    return merged, provenance, net_loader
 
 
 def _fetch_single_leg(
@@ -508,12 +706,68 @@ def assess_readiness(result: MarketDataResult, target_day: str) -> ReadinessVerd
     vacuously ready.
     """
     day = _normalize_day(target_day)
-    if result.symbols and not any(
-        result.data[symbol].has_bar(day) for symbol in result.symbols
-    ):
+    if not result.symbols:
+        return ReadinessVerdict(ready=True)
+    if result.interval == "5m":
+        return _assess_five_minute_readiness(result, day)
+    if not any(result.data[symbol].has_bar(day) for symbol in result.symbols):
         ends = result.provenance.bars_as_of or "empty"
         message = f"target bar {day} not available from served sources ({result.provenance.source} frame ends {ends})"
         return ReadinessVerdict(ready=False, code=NOT_READY_CODE, message=message)
+    return ReadinessVerdict(ready=True)
+
+
+def _assess_five_minute_readiness(result: MarketDataResult, day: str) -> ReadinessVerdict:
+    # D6 fail-closed: a leg mismatch is a provider/federation fault, and an
+    # all-symbol zero-bar day cannot be told apart from a market-wide outage;
+    # both are PAPER_DATA_NOT_READY (retryable), never a silent halted day.
+    five = result.five_minute_symbols
+    if not five:
+        # An explicitly empty 5m universe (pure-valuation step) issues no 5m
+        # request and has nothing to gate.  A result built before the field
+        # existed carries session evidence instead; fall back to the whole
+        # universe only in that legacy shape.
+        if not any(result.data[s].session_bars for s in result.symbols):
+            return ReadinessVerdict(ready=True)
+        five = result.symbols
+    traded = [symbol for symbol in five if result.data[symbol].has_session_bar(day)]
+    # Provider omission = the daily leg proves the symbol traded and the 5m
+    # response carried NO row for it at all.  A symbol served only an auction
+    # print has 5m evidence, so its empty continuous session is a halt (N3).
+    provider_missing = [
+        symbol for symbol in five
+        if symbol not in traded
+        and result.data[symbol].has_bar(day)
+        and not result.data[symbol].has_five_minute_rows(day)
+    ]
+    if provider_missing:
+        return ReadinessVerdict(
+            ready=False, code=NOT_READY_CODE,
+            message=(f"5m data: provider omitted the 5m leg on {day} for "
+                     f"{', '.join(provider_missing)} although the daily bar exists; "
+                     "stk_mins quota or permission likely; retry after the quota window"),
+        )
+    if not traded:
+        # No order symbol carries a 5m session bar.  A universe symbol with a
+        # daily bar proves the exchange traded that day, so the zero-bar order
+        # symbols are genuine halts; with no bar anywhere it is an outage.
+        if not any(result.data[symbol].has_bar(day) for symbol in result.symbols):
+            ends = result.provenance.bars_as_of or "empty"
+            return ReadinessVerdict(
+                ready=False, code=NOT_READY_CODE,
+                message=(f"no 5m session bar for {day} from served sources "
+                         f"({result.provenance.source}; daily frame ends {ends})"),
+            )
+        return ReadinessVerdict(ready=True)
+    mismatched = tuple(
+        symbol for symbol in result.five_minute_contradiction.get(day, ()) if symbol in five)
+    if mismatched:
+        return ReadinessVerdict(
+            ready=False, code=NOT_READY_CODE,
+            message=(f"5m data is inconsistent on {day}: {', '.join(mismatched)} has a daily bar "
+                     "and a 5m session bar is missing (or the reverse); refusing to read a "
+                     "provider fault as a halt"),
+        )
     return ReadinessVerdict(ready=True)
 
 
