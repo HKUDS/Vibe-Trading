@@ -21,12 +21,10 @@ The class MUST be named ``SignalEngine``: that is the entry the runner's
 runtime-reachable scrubber scans (its methods + transitively called module
 helpers), so reusing the name reuses the hardened deep pass verbatim — no
 second, weaker scanner.  ``ctx`` (:class:`StrategyContext`) exposes exactly
-the VD-8 minimal surface: the read-only ``account_state`` received at call
-start (identical for every day — all days are pre-executed before the engine
-matches any of them), ``symbols`` (the sorted union of the served universe
-and the file's declared ``UNIVERSE`` literal, below), ``history(symbol)``
-(bars ≤ ``trade_date`` from the injected frame, copied), and indicator
-helpers reusing the technical_indicators pure-function surface.
+the read-only ledger after preceding days' fills, ``symbols``, and
+``history(symbol)`` containing only bars strictly before the execution date.
+Orders fill at the execution day's close. The parent advances a private
+ledger between calls; failure discards the entire result.
 
 Optional universe declaration: a strategy file MAY declare a module-level
 literal ``UNIVERSE = ("SYM-A", "SYM-B")`` (a list/tuple of non-empty
@@ -133,16 +131,10 @@ class StrategyOrder(Order):
 
 @dataclass(frozen=True, eq=False)
 class StrategyContext:
-    """VD-8 minimal ctx: read-only state + market reader + indicator helpers.
+    """Read-only current ledger and prior completed bars for close execution.
 
-    ``account_state`` is the snapshot received at call start, identical for
-    every day of the call (all days pre-execute before the engine matches any
-    of them — B1 no-partial-results — so intra-call fills are deliberately
-    invisible).  ``history`` serves bars up to and including ``trade_date``
-    (a completed trading day; fills price at its close, D16) as a COPY of the
-    injected frame — a strategy can never mutate the served data.  Indicator
-    helpers reuse the technical_indicators pure-function surface (VD-8),
-    imported lazily so a strategy that never calls one never pays the import.
+    History is copied and excludes the execution day. The child receives no
+    current or future bars, including through the private frame mapping.
     """
 
     account_state: AccountState
@@ -154,7 +146,7 @@ class StrategyContext:
         frame = self._frames.get(symbol)
         if frame is None or frame.empty:
             return _empty_history()
-        return frame.loc[: pd.Timestamp(self.trade_date)].copy()
+        return frame.loc[frame.index < pd.Timestamp(self.trade_date)].copy()
 
     def sma(self, close: pd.Series, period: int) -> float | None:
         from src.tools.technical_indicator_tool import _compute_sma
@@ -377,8 +369,9 @@ def _child_main(conn: Any, payload: dict[str, Any]) -> None:
     conn.send(("ready",))
     for day in days:
         try:
-            ctx = StrategyContext(account_state=payload["account_state"], trade_date=day,
-                                  symbols=payload["symbols"], _frames=payload["frames"])
+            state, frames = conn.recv()
+            ctx = StrategyContext(account_state=state, trade_date=day,
+                                  symbols=payload["symbols"], _frames=frames)
             raw = generate(ctx, day)
             if not isinstance(raw, (list, tuple)):
                 raise StrategyOrderError(
@@ -415,6 +408,17 @@ class _StrategyDayFailure(RuntimeError):
         self.class_name = class_name
 
 
+class _UniverseViolation(RuntimeError):
+    # Internal carrier from _execute_days to run_strategy_path; a strategy
+    # order outside the declared 5m UNIVERSE is an authoring error, not a
+    # suspended symbol.  The whole call fails in-band before any fill.
+    def __init__(self, day: str, symbols: tuple[str, ...], allowed: Collection[str]) -> None:
+        super().__init__(f"strategy order outside the 5m universe on {day}")
+        self.day = day
+        self.symbols = tuple(symbols)
+        self.allowed = tuple(sorted(allowed))
+
+
 def _execute_days(
     request: PaperTradeStepRequest,
     market_data: data.MarketDataResult,
@@ -423,28 +427,26 @@ def _execute_days(
     source: str,
     day_timeout: float,
     ctx_symbols: tuple[str, ...],
-) -> dict[str, tuple[StrategyOrder, ...]]:
+    run_loop: Any,
+    allowed_five: frozenset[str] | None = None,
+) -> MatchOutcome:
     payload = {
         "source": source,
         "filename": str(path),
         "days": days,
-        "account_state": request.account_state,
-        "frames": {symbol: market_data.data[symbol].frame for symbol in market_data.symbols},
         "symbols": ctx_symbols,
     }
     # spawn (never fork): forking a threaded MCP server is POSIX-undefined
     # behavior (#1355 lesson); spawn is the only start method on Windows and
     # the default on macOS, pinned here so Linux behaves identically.
     context = multiprocessing.get_context("spawn")
-    parent_conn, child_conn = context.Pipe(duplex=False)
+    parent_conn, child_conn = context.Pipe(duplex=True)
     proc = context.Process(target=_child_main, args=(child_conn, payload), daemon=True)
-    orders_by_day: dict[str, tuple[StrategyOrder, ...]] = {}
     started = False
     try:
         proc.start()
         started = True
-        # The parent must hold ONLY the recv end: closing its copy of the
-        # send end is what makes the child's death read as EOF.
+        # Close the parent's duplicate child endpoint so child death reads as EOF.
         child_conn.close()
         msg = _recv(parent_conn, max(_STARTUP_TIMEOUT_SECONDS, day_timeout))
         if msg is _TIMEOUT:
@@ -453,7 +455,13 @@ def _execute_days(
             raise _StrategyDayFailure(msg[1], msg[2])
         if msg is _EOF or msg[0] != "ready":
             raise _StrategyDayFailure(days[0], StrategyProcessError.__name__)
-        for day in days:
+        def provide_orders(day: str, state: AccountState) -> tuple[StrategyOrder, ...]:
+            frames = {symbol: item.frame.loc[item.frame.index < pd.Timestamp(day)].copy()
+                      for symbol, item in market_data.data.items()}
+            try:
+                parent_conn.send((state, frames))
+            except (BrokenPipeError, EOFError, OSError) as exc:
+                raise _StrategyDayFailure(day, StrategyProcessError.__name__) from exc
             msg = _recv(parent_conn, day_timeout)
             if msg is _TIMEOUT:
                 raise _StrategyDayFailure(day, None)
@@ -463,7 +471,13 @@ def _execute_days(
                 raise _StrategyDayFailure(msg[1], msg[2])
             if msg[0] != "day" or msg[1] != day:
                 raise _StrategyDayFailure(day, StrategyProcessError.__name__)
-            orders_by_day[day] = tuple(StrategyOrder(**item) for item in msg[2])
+            orders = tuple(StrategyOrder(**item) for item in msg[2])
+            if allowed_five is not None:
+                outside = sorted({order.symbol for order in orders} - allowed_five)
+                if outside:
+                    raise _UniverseViolation(day, tuple(outside), allowed_five)
+            return orders
+        return run_loop(order_provider=provide_orders)
     finally:
         if started:
             if proc.is_alive():
@@ -472,7 +486,6 @@ def _execute_days(
             proc.close()
         parent_conn.close()
         child_conn.close()
-    return orders_by_day
 
 
 def _resolve_timeout(timeout_seconds: float | None) -> float:
@@ -505,13 +518,7 @@ def run_strategy_path(
     hk_lot_sizes: Mapping[str, int] | None = None,
     timeout_seconds: float | None = None,
 ) -> MatchOutcome:
-    """Execute the strategy file per matching day, then match once (T7 seam).
-
-    Pre-executes EVERY day before the single :func:`engine.run_day_loop` call,
-    so a day-k timeout/exception cannot leak days 1..k-1 (B1).  T6's tool
-    dispatch calls exactly this seam; ``MatchOutcome.error`` material is the
-    in-band envelope source (AM-5), never a transport error.
-    """
+    """Generate and match each day against a private ledger; publish only success."""
     if request.strategy_path is None:
         raise ValueError(
             "run_strategy_path requires request.strategy_path "
@@ -542,7 +549,17 @@ def run_strategy_path(
                        type(exc).__name__, exc)
         return _strategy_error(request, market_data,
                                f"strategy_execution_error:{anchor}:{type(exc).__name__}")
-    orders_by_day: dict[str, tuple[StrategyOrder, ...]] = {}
+    def run_loop(**kwargs: Any) -> MatchOutcome:
+        return run_day_loop(
+            market=request.market, account_state=request.account_state,
+            from_date=request.from_date, to_date=request.to_date, market_data=market_data,
+            orders_by_day={}, fee_model=request.fee_model,
+            calendar_client=calendar_client, limits_client=limits_client,
+            corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
+            hk_lot_sizes=hk_lot_sizes, **kwargs)
+    allowed_five = (
+        frozenset(market_data.five_minute_symbols)
+        if request.interval == "5m" else None)
     if days:
         # The declared UNIVERSE joins the child's ctx.symbols (sorted union
         # with the served universe), extracted from THE SAME single source
@@ -550,38 +567,21 @@ def run_strategy_path(
         # data reads an empty history: the child never fetches per symbol.
         ctx_symbols = tuple(sorted(set(market_data.symbols) | set(_declared_universe(source))))
         try:
-            orders_by_day = _execute_days(
-                request, market_data, days, path, source, day_timeout, ctx_symbols)
+            return _execute_days(
+                request, market_data, days, path, source, day_timeout, ctx_symbols, run_loop,
+                allowed_five=allowed_five)
+        except _UniverseViolation as violation:
+            message = (
+                f"strategy orders on {', '.join(violation.symbols)} are outside the 5m UNIVERSE "
+                f"({', '.join(violation.allowed) or 'empty'}); declare them in UNIVERSE "
+                "or use interval=1d")
+            logger.warning("paper_trade strategy 5m universe violation on %s: %s",
+                           violation.day, message)
+            return _strategy_error(request, market_data, message)
         except _StrategyDayFailure as failure:
             message = (f"strategy_execution_timeout:{failure.day}"
                        if failure.class_name is None
                        else f"strategy_execution_error:{failure.day}:{failure.class_name}")
             logger.warning("paper_trade strategy failed on %s (%s)", failure.day, message)
             return _strategy_error(request, market_data, message)
-    if request.interval == "5m":
-        # N1-B: the engine's 5m session-fact universe is the declared UNIVERSE,
-        # so an order on any other symbol has no session bar to match and would
-        # be reported as a FALSE `suspended` halt while the step still
-        # succeeded — a position the strategy can never exit.  An undeclared
-        # order is an authoring error, and the whole call fails in-band: no
-        # in-universe order is partially matched.
-        allowed = set(market_data.five_minute_symbols)
-        outside = sorted({
-            order.symbol
-            for day_orders in orders_by_day.values()
-            for order in day_orders
-        } - allowed)
-        if outside:
-            return _strategy_error(
-                request, market_data,
-                f"strategy orders on {', '.join(outside)} are outside the 5m UNIVERSE "
-                f"({', '.join(sorted(allowed)) or 'empty'}); declare them in UNIVERSE "
-                "or use interval=1d")
-    return run_day_loop(
-        market=request.market, account_state=request.account_state,
-        from_date=request.from_date, to_date=request.to_date, market_data=market_data,
-        orders_by_day=orders_by_day, fee_model=request.fee_model,
-        calendar_client=calendar_client, limits_client=limits_client,
-        corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-        hk_lot_sizes=hk_lot_sizes,
-        path_model=request.path_model, fill_model=request.fill_model)
+    return run_loop()

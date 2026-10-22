@@ -316,14 +316,14 @@ def _execute_step(
             "PAPER_DATA_NOT_READY", request.account_id, request.market,
             request.from_date, request.to_date,
             "A-share trading calendar unavailable; configure a reachable ClickHouse trade_calendar and retry",
-            raw_payload)
+            raw_payload), None
     if request.market == CN_A_MARKET:
         try:
             cal = snapshot_calendar(cal, request.from_date, request.to_date)
         except CalendarUnavailableError as exc:
             return _error_document(
                 "PAPER_DATA_NOT_READY", request.account_id, request.market,
-                request.from_date, request.to_date, str(exc), raw_payload)
+                request.from_date, request.to_date, str(exc), raw_payload), None
     symbols = data.symbols_for_request(request.account_state, request.orders)
     declared: tuple[str, ...] = ()
     if has_strategy:
