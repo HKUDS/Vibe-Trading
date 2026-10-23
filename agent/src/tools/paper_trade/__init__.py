@@ -15,13 +15,13 @@ AM-9 federation), ``rules.py`` (three-market rule matrix + ``RULES_VERSION``),
 entry), ``strategy_exec.py`` (Step 7 strategy_path execution).
 
 pt-v1.2 additive surface (cn_a 5m post-close step, P0): ``data_5m.py`` (stk_mins
-fetch + continuous-session assembly), ``trading_days.py`` (cn_a session clock and
-completed-day resolution), ``engine_adapter.py`` (wire document ↔
-:class:`StepOutcome`), ``account.py`` / ``store.py`` / ``storage_io.py``
-(incremental ledger, atomic account writes, append-only step directories),
-``runner.py`` (single-day ``step`` + serial ``catch_up``), ``recovery.py``
-(crash-window adoption).  All of it is opt-in: a call that omits every v1.2
-request field is byte-identical to pt-v1.1.
+fetch + continuous-session assembly).  It is opt-in: a call that omits every
+v1.2 request field is byte-identical to pt-v1.1.
+
+The persistent v1.2 runner/account/store layer (``runner.py``, ``account.py``,
+``store.py``, ``storage_io.py``, ``engine_adapter.py``, ``recovery.py``,
+``trading_days.py``) is a follow-up branch (``paper-trade-v12-persistence``),
+not part of this change: it is not wired to any CLI, API or MCP surface yet.
 
 The tool registry's auto-discovery (``src/tools/__init__.py``) imports this
 package at agent startup and collects :class:`PaperTradeStepTool` via
