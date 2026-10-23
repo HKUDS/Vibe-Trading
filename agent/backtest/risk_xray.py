@@ -238,7 +238,12 @@ def _drawdown(port: pd.Series) -> dict[str, Any]:
     dd = (equity - peak) / peak
     trough_idx = dd.idxmin()
     pre_trough = equity.loc[:trough_idx]
-    start_idx = port.index[0] if float(pre_trough.max()) < 1.0 else pre_trough.idxmax()
+    peak_level = float(peak.loc[trough_idx])
+    # Reprinting the same peak closes the earlier underwater spell. idxmax()
+    # keeps the first printing, so a full recovery was still reported as the
+    # start of the later drawdown.
+    at_peak = pre_trough[np.isclose(pre_trough.to_numpy(dtype=float), peak_level)]
+    start_idx = port.index[0] if at_peak.empty else at_peak.index[-1]
     return {
         "max_drawdown": _finite(float(dd.loc[trough_idx])),
         "max_drawdown_start": str(start_idx),

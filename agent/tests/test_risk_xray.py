@@ -130,6 +130,17 @@ def test_drawdown_uses_initial_wealth_before_first_return():
     assert result["max_drawdown_start"] == str(dates[0])
 
 
+def test_drawdown_starts_at_the_latest_visit_to_the_peak():
+    dates = pd.date_range("2026-01-02", periods=4, freq="D")
+    # Wealth path 1.2, 1.0, 1.2, 0.8. The recovery to 1.2 closes the first dip,
+    # so the drawdown that ends at 0.8 starts at the second peak.
+    result = _drawdown(pd.Series([0.2, 100 / 120 - 1, 0.2, 80 / 120 - 1], index=dates))
+
+    assert result["max_drawdown"] == pytest.approx(-1 / 3)
+    assert result["max_drawdown_start"] == str(dates[2])
+    assert result["max_drawdown_trough"] == str(dates[3])
+
+
 def test_drawdown_remains_negative_after_wealth_crosses_zero():
     dates = pd.date_range("2026-01-02", periods=3, freq="D")
 
