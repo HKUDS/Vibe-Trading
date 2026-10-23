@@ -244,7 +244,19 @@ class SessionService:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session."""
         self.event_bus.clear(session_id)
-        return self.store.delete_session(session_id)
+        deleted = self.store.delete_session(session_id)
+        if deleted:
+            # The search index is always on, so leftover rows would keep the
+            # deleted conversation's title and text searchable.
+            try:
+                self._search_index.remove_session(session_id)
+            except Exception:  # noqa: BLE001
+                logger.debug(
+                    "Search index remove_session failed for %s",
+                    session_id,
+                    exc_info=True,
+                )
+        return deleted
 
     async def send_message(
         self,

@@ -301,6 +301,24 @@ class SessionSearchIndex:
         )
         conn.commit()
 
+    @_serialized_operation
+    def remove_session(self, session_id: str) -> None:
+        """Remove a session and all of its messages from the index.
+
+        The ``messages_ad`` trigger propagates each message deletion into
+        ``messages_fts``, so the derived index clears with the base rows.
+
+        Args:
+            session_id: Session ID.
+        """
+        conn = self._get_conn()
+        try:
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            logger.debug("remove_session failed for %s: %s", session_id, exc)
+
     @staticmethod
     def _sanitize_fts_query(query: str) -> str:
         """Sanitize a user query for FTS5 MATCH syntax.
