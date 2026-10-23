@@ -871,3 +871,27 @@ def test_a_5m_strategy_honours_the_declared_path_model() -> None:
     assert median_document["fills"][0]["price"] == 1421.50
     assert close_document["fills"][0]["price"] == 1422.00
     assert median_document["engine_fingerprint"] != close_document["engine_fingerprint"]
+
+
+# ── A malformed provider payload is data-not-ready, not a caller error ──
+
+
+class _MalformedPayloadLoader(FixtureLoader):
+    def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+        if interval == "5m":
+            return {
+                codes[0]: pd.DataFrame({
+                    "trade_time": ["not-a-timestamp"],
+                    "open": [1.0], "high": [1.0], "low": [1.0],
+                    "close": [1.0], "vol": [1.0],
+                })
+            }
+        return super().fetch(codes, start_date, end_date, interval=interval, fields=fields)
+
+
+def test_a_malformed_5m_payload_is_data_not_ready_not_invalid_request() -> None:
+    document, _ = _run(_payload(), loader=_MalformedPayloadLoader())
+
+    assert document["status"] == "error"
+    assert document["code"] == "PAPER_DATA_NOT_READY", document
+    assert "could not be parsed" in document["message"]

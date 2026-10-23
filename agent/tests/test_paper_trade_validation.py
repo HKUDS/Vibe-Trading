@@ -169,22 +169,20 @@ def test_run_day_loop_rejects_a_reversed_range_deterministically() -> None:
 
 
 @pytest.mark.parametrize(("market", "symbol"), [("hk", "00700.HK"), ("us", "AAPL.US")])
-def test_zero_bar_target_day_returns_in_band_not_ready_never_a_raise(market: str, symbol: str) -> None:
-    # AM-9/AM-6① regression (orchestrator-found): the target day has only a
-    # prior-day bar, so the merged frame is all-market zero on the target —
-    # the readiness gate must return the in-band PAPER_DATA_NOT_READY
-    # material, never the transport-class RuntimeError the day-plan builder
-    # used to raise before the gate ran.
+def test_zero_bar_target_day_is_untradeable_never_a_raise(market: str, symbol: str) -> None:
+    # HIL1: a zero-calendar weekday whose symbols all lack a bar is an
+    # untradeable day (market_closed_inferred), not a stalled watermark.  The
+    # regression this still pins is the transport-class raise the day-plan
+    # builder used to produce before the readiness gate existed.
     frames = {symbol: _frame([(_PREV, 100.0)])}
     market_data = fetch_market_data(market, [symbol], _DAY, _DAY, loader=FakeLoader(frames))
     outcome = engine.run_day_loop(
         market=market, account_state=AccountState(cash=1000.0),
         from_date=_DAY, to_date=_DAY, orders_by_day={}, market_data=market_data,
     )
-    assert outcome.error is not None
-    assert outcome.error.code == "PAPER_DATA_NOT_READY"
-    assert outcome.error.code in ERROR_CODES
-    assert f"target bar {_DAY}" in outcome.error.message
+    assert outcome.error is None
+    assert [(item.date, item.reason) for item in outcome.skipped_days] == [
+        (_DAY, "market_closed_inferred")]
     assert outcome.fills == () and outcome.rejected_orders == ()
-    assert outcome.nav_series == () and outcome.skipped_days == ()
+    assert outcome.nav_series == ()
     assert outcome.end_state.cash == 1000.0  # state untouched — no half-day

@@ -28,10 +28,11 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pytest
 
 from src.tools.paper_trade import tool as tool_module
 from src.tools.paper_trade.account import create_account
-from src.tools.paper_trade.engine_adapter import engine_step_fn
+from src.tools.paper_trade.engine_adapter import PaperStepRefused, engine_step_fn
 from src.tools.paper_trade.runner import STATUS_APPLIED, STATUS_DATA_MISSING, step
 from src.tools.paper_trade.schema import CANCELED_REASON_CODE, REASON_CODES
 from src.tools.paper_trade.store import AccountStore
@@ -279,7 +280,7 @@ def test_manifest_indexes_every_fixture_and_matches_its_bytes() -> None:
     assert listed[f"{_SYM}/{_HALTED}.csv"]["continuous_rows"] == 0
 
 
-def _store_with_account(tmp_path: Path) -> AccountStore:
+def _store_with_account(tmp_path: Path, **account_overrides) -> AccountStore:
     store = AccountStore(base_dir=tmp_path / "paper_trade")
     store.create(
         create_account(
@@ -291,6 +292,7 @@ def _store_with_account(tmp_path: Path) -> AccountStore:
             next_trading_day=_DAY,
             now=_NOW,
             interval="5m",
+            **account_overrides,
         )
     )
     return store
@@ -328,6 +330,10 @@ def test_default_adapter_writes_the_day_bars_and_lists_them(tmp_path: Path, monk
     assert entry["sha256"] == hashlib.sha256(data).hexdigest()
     assert entry["lines"] == data.count(b"\n") == 49
     assert store.verify_step(record) == ()
+    # The step itself must name the 5m source; a complete session carries no
+    # coverage warning.
+    assert record.five_minute_source == "fixture"
+    assert not any("continuous bars" in warning for warning in record.warnings)
     assert record.step["counts"]["bars"] == 1
     assert record.step["interval"] == "5m"
     assert record.step["engine_fingerprint"] == result.engine_fingerprint
@@ -335,6 +341,41 @@ def test_default_adapter_writes_the_day_bars_and_lists_them(tmp_path: Path, monk
     fills = (Path(result.step_dir) / "fills.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(fills) == 1
     assert json.loads(fills[0])["price"] == float(fixture_reference(_SYM, _DAY))
+
+
+class _TruncatedLoader(FixtureLoader):
+    """Serves the real fixture's first 30 rows: a provider-truncated session."""
+
+    def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+        served = super().fetch(codes, start_date, end_date, interval=interval, fields=fields)
+        if interval != "5m":
+            return served
+        return {code: frame.iloc[:30] for code, frame in served.items()}
+
+
+def test_a_truncated_session_persists_its_coverage_warning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(tool_module, "_default_cn_a_connector", lambda: None)
+    store = _store_with_account(tmp_path)
+    calendar = FixtureCalendar((_DAY,))
+    step_fn = engine_step_fn(
+        orders_by_date={_DAY: [{"symbol": _SYM, "side": "buy", "qty": 100}]},
+        loader=_TruncatedLoader(),
+        ch_client=NullChClient(),
+        calendar_client=calendar,
+    )
+
+    result = step(
+        "acct_5m_bars", _DAY, step_fn=step_fn, calendar_client=calendar,
+        today=_DAY, now=_NOW, store=store,
+    )
+
+    assert result.status == STATUS_APPLIED, result
+    record = store.read_step("acct_5m_bars", _DAY)
+    assert record.five_minute_source == "fixture"
+    assert any("/48 continuous bars" in warning for warning in record.warnings)
+    assert len(pd.read_csv(Path(result.step_dir) / "bars" / f"{_SYM}.csv")) == 29
 
 
 def test_provider_fault_reaches_the_runner_as_data_missing(
@@ -366,3 +407,54 @@ def test_provider_fault_reaches_the_runner_as_data_missing(
     assert result.watermark is None
     assert store.list_steps("acct_5m_bars") == ()
     assert store.account_path("acct_5m_bars").read_bytes() == before
+
+
+# ── HIL6: the fee parameters are part of the account contract ──
+
+
+def test_the_first_step_locks_the_fee_model_on_a_legacy_account(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(tool_module, "_default_cn_a_connector", lambda: None)
+    store = _store_with_account(tmp_path)
+    calendar = FixtureCalendar((_DAY,))
+    step_fn = engine_step_fn(
+        orders_by_date={_DAY: [{"symbol": _SYM, "side": "buy", "qty": 100}]},
+        fee_model={"commission_rate": 0.001},
+        loader=FixtureLoader(),
+        ch_client=NullChClient(),
+        calendar_client=calendar,
+    )
+
+    result = step(
+        "acct_5m_bars", _DAY, step_fn=step_fn, calendar_client=calendar,
+        today=_DAY, now=_NOW, store=store,
+    )
+
+    assert result.status == STATUS_APPLIED, result
+    assert dict(store.load("acct_5m_bars").fee_model) == {"commission_rate": 0.001}
+
+
+def test_a_different_fee_model_is_refused_before_any_step(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(tool_module, "_default_cn_a_connector", lambda: None)
+    store = _store_with_account(tmp_path, fee_model={"commission_rate": 0.001})
+    calendar = FixtureCalendar((_DAY,))
+    step_fn = engine_step_fn(
+        orders_by_date={_DAY: [{"symbol": _SYM, "side": "buy", "qty": 100}]},
+        fee_model={"commission_rate": 0.002},
+        loader=FixtureLoader(),
+        ch_client=NullChClient(),
+        calendar_client=calendar,
+    )
+
+    with pytest.raises(PaperStepRefused) as caught:
+        step(
+            "acct_5m_bars", _DAY, step_fn=step_fn, calendar_client=calendar,
+            today=_DAY, now=_NOW, store=store,
+        )
+
+    assert caught.value.code == "fee_model_mismatch"
+    assert store.list_steps("acct_5m_bars") == ()
+    assert store.load("acct_5m_bars").watermark is None

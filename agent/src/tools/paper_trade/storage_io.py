@@ -261,8 +261,12 @@ def _resolve_manifest_path(directory: Path, relative: Any) -> Path | None:
 
 def verify_files(directory: Path, manifest: Mapping[str, Any]) -> tuple[str, ...]:
     """Return ``missing:`` / ``sha256:`` / ``lines:`` / ``path:`` mismatches."""
-    files = manifest.get("files") or {}
-    if not isinstance(files, Mapping):
+    if not isinstance(manifest, Mapping):
+        return ("manifest:<object>",)
+    files = manifest.get("files")
+    if not isinstance(files, Mapping) or not files:
+        # A missing manifest (or one that names no files) proves nothing: an
+        # empty result would let a truncated step pass verification.
         return ("manifest:<files>",)
     problems: list[str] = []
     for relative, entry in sorted(files.items()):

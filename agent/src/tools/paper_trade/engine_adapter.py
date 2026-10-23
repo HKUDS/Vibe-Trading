@@ -100,6 +100,15 @@ class StepOutcome:
     bars: Mapping[str, str] = field(default_factory=dict)
     effective_fee_model: Mapping[str, float] | None = None
     nav_series: tuple[Any, ...] = ()
+    #: Wire ``warnings``/``skipped_days`` carried verbatim.  They are the only
+    #: durable record of 5m session coverage ("30/48 continuous bars") and of
+    #: the zero-calendar skip reasons, so the runner persists them with the step.
+    warnings: tuple[str, ...] = ()
+    skipped_days: tuple[Any, ...] = ()
+    five_minute_source: str = ""
+    #: Raw fee parameters the caller injected (not the engine's normalized
+    #: echo).  The runner locks them onto a legacy account on the first step.
+    request_fee_model: Mapping[str, float] | None = None
 
     @classmethod
     def from_wire(
@@ -108,6 +117,8 @@ class StepOutcome:
         *,
         orders: Sequence[Any] = (),
         bars: Mapping[str, str] | None = None,
+        five_minute_source: str = "",
+        request_fee_model: Mapping[str, float] | None = None,
     ) -> "StepOutcome":
         """Build an outcome from one success document of ``paper_trade_step``."""
         return cls(
@@ -123,6 +134,10 @@ class StepOutcome:
             bars=dict(bars or {}),
             effective_fee_model=dict(document.get("effective_fee_model") or {}),
             nav_series=tuple(document.get("nav_series") or ()),
+            warnings=tuple(document.get("warnings") or ()),
+            skipped_days=tuple(document.get("skipped_days") or ()),
+            five_minute_source=five_minute_source,
+            request_fee_model=request_fee_model,
         )
 
 
@@ -174,6 +189,14 @@ def engine_step_fn(
         # The tool derives the 5m fetch universe from exactly these order
         # symbols; positions are valued from the daily leg, so a positions-only
         # day issues no stk_mins call (one call per symbol and 2/day budget).
+        if account.fee_model and dict(fee_model or {}) != dict(account.fee_model):
+            # HIL6: the fee parameters are part of the account contract.  A
+            # different mapping would silently re-price every later day.
+            raise PaperStepRefused(
+                "fee_model_mismatch",
+                "the injected fee_model differs from the one locked on the "
+                f"account at creation ({dict(account.fee_model)}); refusing to step",
+            )
         payload: dict[str, Any] = {
             "account_id": account.account_id,
             "market": account.market,
@@ -210,7 +233,11 @@ def engine_step_fn(
                 raise PaperDataNotReady(message)
             raise PaperStepRefused(code, message)
         return StepOutcome.from_wire(
-            document, orders=orders, bars=_bars_csv(market_data, trade_date)
+            document,
+            orders=orders,
+            bars=_bars_csv(market_data, trade_date),
+            five_minute_source=getattr(market_data, "five_minute_source", ""),
+            request_fee_model=dict(fee_model or {}),
         )
 
     return step_fn

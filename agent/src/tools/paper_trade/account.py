@@ -35,7 +35,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from .schema import (
@@ -204,6 +204,9 @@ class PaperTradeAccount:
     fill_model: str = "all_or_none"
     schema_version: str = ACCOUNT_SCHEMA_VERSION
     non_trading_days: tuple[str, ...] = ()
+    #: Fee parameters locked at creation (HIL6).  Empty on an account written
+    #: before this field existed; the first successful step backfills it.
+    fee_model: Mapping[str, float] = field(default_factory=dict)
 
     # ── ledger views ──
 
@@ -302,6 +305,7 @@ class PaperTradeAccount:
             "interval": self.interval,
             "path_model": self.path_model,
             "fill_model": self.fill_model,
+            "fee_model": dict(self.fee_model),
             "non_trading_days": list(self.non_trading_days),
         }
 
@@ -335,22 +339,96 @@ class PaperTradeAccount:
         days: list[str] = []
         for index, day in enumerate(non_trading_days):
             days.append(require_date(day, f"non_trading_days[{index}]"))
+        fee_model = _fee_model(document.get("fee_model"), "fee_model")
+        interval = str(document.get("interval") or "5m")
+        path_model = str(document.get("path_model") or "bar_median")
+        fill_model = str(document.get("fill_model") or "all_or_none")
+        _validate_tracking_choices(market, interval, path_model, fill_model)
+        initial_positions = _positions(document.get("initial_positions"), "initial_positions")
+        positions = _positions(document.get("positions"), "positions")
+        _validate_position_rows(initial_positions, "initial_positions", INVALID_ACCOUNT)
+        _validate_position_rows(positions, "positions", INVALID_ACCOUNT)
         return cls(
             account_id=account_id,
             market=market,
             start_date=require_date(document.get("start_date"), "start_date"),
             initial_cash=_require_number(document.get("initial_cash"), "initial_cash", minimum=0.0),
-            initial_positions=_positions(document.get("initial_positions"), "initial_positions"),
+            initial_positions=initial_positions,
             cash=_require_number(document.get("cash"), "cash", minimum=0.0),
-            positions=_positions(document.get("positions"), "positions"),
+            positions=positions,
             watermark=watermark,
             engine_fingerprint=str(document.get("engine_fingerprint") or ""),
             created_at=str(document.get("created_at") or ""),
-            interval=str(document.get("interval") or "5m"),
-            path_model=str(document.get("path_model") or "bar_median"),
-            fill_model=str(document.get("fill_model") or "all_or_none"),
+            interval=interval,
+            path_model=path_model,
+            fill_model=fill_model,
             schema_version=version,
             non_trading_days=tuple(days),
+            fee_model=fee_model,
+        )
+
+
+def _fee_model(value: Any, name: str) -> dict[str, float]:
+    """Parse a fee-parameter mapping into a sorted ``{str: float}`` dict.
+
+    ``None`` is an empty model (the legacy account shape).  Every value must be
+    a finite non-negative number; the mapping is stored as given so a later
+    step can prove the same parameters were used.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise AccountError(INVALID_ACCOUNT, f"{name} must be an object")
+    parsed: dict[str, float] = {}
+    for key, raw in value.items():
+        if not isinstance(key, str) or not key:
+            raise AccountError(INVALID_ACCOUNT, f"{name} keys must be non-empty strings")
+        parsed[key] = _require_number(raw, f"{name}[{key}]", minimum=0.0)
+    return dict(sorted(parsed.items()))
+
+
+def _validate_position_rows(positions: Any, field: str, code: str) -> None:
+    """Reject duplicate symbols and non-positive rows in either position list."""
+    symbols = [item.symbol for item in positions]
+    if len(symbols) != len(set(symbols)):
+        raise AccountError(
+            code,
+            f"{field} must not list the same symbol twice: "
+            f"{sorted({symbol for symbol in symbols if symbols.count(symbol) > 1})}",
+        )
+    for index, item in enumerate(positions):
+        if item.qty <= 0:
+            raise AccountError(code, f"{field}[{index}].qty must be > 0, got {item.qty}")
+        if item.avg_cost < 0:
+            raise AccountError(
+                code, f"{field}[{index}].avg_cost must be >= 0, got {item.avg_cost}"
+            )
+
+
+def _validate_tracking_choices(
+    market: str, interval: str, path_model: str, fill_model: str
+) -> None:
+    """Market/interval/model coherence, shared by creation and reload.
+
+    A document that only fails at the FIRST STEP leaves the operator believing
+    the account exists and is tradable, so the reader enforces the same rules
+    the writer does.
+    """
+    if interval not in INTERVALS:
+        raise AccountError(
+            INVALID_ACCOUNT, f"interval must be one of {INTERVALS}, got {interval!r}"
+        )
+    if interval == "5m" and market != "cn_a":
+        raise AccountError(
+            INVALID_ACCOUNT, f"interval 5m is cn_a-only in pt-v1.2, got market {market!r}"
+        )
+    if path_model not in PATH_MODELS:
+        raise AccountError(
+            INVALID_ACCOUNT, f"path_model must be one of {PATH_MODELS}, got {path_model!r}"
+        )
+    if fill_model not in FILL_MODELS:
+        raise AccountError(
+            INVALID_ACCOUNT, f"fill_model must be one of {FILL_MODELS}, got {fill_model!r}"
         )
 
 
@@ -368,6 +446,7 @@ def create_account(
     interval: str = "5m",
     path_model: str = "bar_median",
     fill_model: str = "all_or_none",
+    fee_model: Mapping[str, Any] | None = None,
 ) -> PaperTradeAccount:
     """Build a fresh account, enforcing the start-date rule (planbook §0.2).
 
@@ -403,43 +482,9 @@ def create_account(
 
     cash = _require_number(initial_cash, "initial_cash", minimum=0.0)
     positions = _positions(list(initial_positions or ()), "initial_positions")
-    symbols = [item.symbol for item in positions]
-    if len(symbols) != len(set(symbols)):
-        raise AccountError(
-            INVALID_INITIAL_POSITIONS,
-            "initial_positions must not list the same symbol twice: "
-            f"{sorted({s for s in symbols if symbols.count(s) > 1})}",
-        )
-    for index, item in enumerate(positions):
-        if item.qty <= 0:
-            raise AccountError(
-                INVALID_INITIAL_POSITIONS,
-                f"initial_positions[{index}].qty must be > 0, got {item.qty}",
-            )
-        if item.avg_cost < 0:
-            raise AccountError(
-                INVALID_INITIAL_POSITIONS,
-                f"initial_positions[{index}].avg_cost must be >= 0, got {item.avg_cost}",
-            )
-
-    if interval not in INTERVALS:
-        raise AccountError(
-            INVALID_ACCOUNT, f"interval must be one of {INTERVALS}, got {interval!r}"
-        )
-    if interval == "5m" and market != "cn_a":
-        # D5: 5m is cn_a-only in pt-v1.2; creating an incoherent account would
-        # fail only at the first step, after the operator believes it exists.
-        raise AccountError(
-            INVALID_ACCOUNT, f"interval 5m is cn_a-only in pt-v1.2, got market {market!r}"
-        )
-    if path_model not in PATH_MODELS:
-        raise AccountError(
-            INVALID_ACCOUNT, f"path_model must be one of {PATH_MODELS}, got {path_model!r}"
-        )
-    if fill_model not in FILL_MODELS:
-        raise AccountError(
-            INVALID_ACCOUNT, f"fill_model must be one of {FILL_MODELS}, got {fill_model!r}"
-        )
+    _validate_position_rows(positions, "initial_positions", INVALID_INITIAL_POSITIONS)
+    _validate_tracking_choices(market, interval, path_model, fill_model)
+    locked_fees = _fee_model(fee_model, "fee_model")
 
     return PaperTradeAccount(
         account_id=account_id,
@@ -456,4 +501,5 @@ def create_account(
         path_model=path_model,
         fill_model=fill_model,
         non_trading_days=(),
+        fee_model=locked_fees,
     )

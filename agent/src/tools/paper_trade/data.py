@@ -388,6 +388,10 @@ class MarketDataResult:
     #: a halted day.  Readiness surfaces this verbatim instead of blaming the
     #: provider's quota for a source that cannot serve 5m at all.
     five_minute_error: str = ""
+    #: Loader that served the 5m leg (empty when no 5m request was made).  It
+    #: stays OFF the wire — the account-layer step.json records it, so the
+    #: audit trail names the 5m source without changing the frozen response.
+    five_minute_source: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +493,7 @@ def fetch_market_data(
 
     five = FiveMinuteFacts()
     five_minute_error = ""
+    five_minute_source = ""
     if interval == "5m" and ordered_five:
         five_loader = _resolve_five_minute_loader(loader)
         if five_loader is None:
@@ -502,8 +507,9 @@ def fetch_market_data(
         else:
             five = fetch_five_minute(
                 ordered_five, start, end, loader=five_loader, warnings=warnings)
+            five_minute_source = str(getattr(five_loader, "name", ""))
             if five.fetch_failed:
-                five_minute_error = (
+                five_minute_error = five.failure_reason or (
                     "5m data: the 5m fetch through "
                     f"{getattr(five_loader, 'name', 'the loader')!r} failed; "
                     "the step is data-not-ready, retry later")
@@ -557,6 +563,7 @@ def fetch_market_data(
             data, ordered_five, start, end, interval, five),
         five_minute_symbols=ordered_five,
         five_minute_error=five_minute_error,
+        five_minute_source=five_minute_source,
     )
 
 
@@ -758,6 +765,13 @@ def assess_readiness(result: MarketDataResult, target_day: str) -> ReadinessVerd
     if result.interval == "5m":
         return _assess_five_minute_readiness(result, day)
     if not any(result.data[symbol].has_bar(day) for symbol in result.symbols):
+        if result.market != _CN_A_MARKET:
+            # HIL1: a zero-calendar market has no holiday authority beyond the
+            # weekday.  A weekday with no served bar is untradeable (every
+            # instrument suspended-equivalent) and the day still advances; the
+            # day plan carries market_closed_inferred.  cn_a keeps the
+            # fail-closed calendar truth below.
+            return ReadinessVerdict(ready=True)
         ends = result.provenance.bars_as_of or "empty"
         message = f"target bar {day} not available from served sources ({result.provenance.source} frame ends {ends})"
         return ReadinessVerdict(ready=False, code=NOT_READY_CODE, message=message)

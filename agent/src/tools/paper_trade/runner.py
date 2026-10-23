@@ -290,6 +290,9 @@ def _step_locked(
         "effective_fee_model": dict(outcome.effective_fee_model or {}),
         "data_provenance": dict(outcome.data_provenance or {}),
         "nav_series": _rows(outcome.nav_series),
+        "warnings": list(outcome.warnings),
+        "five_minute_source": outcome.five_minute_source,
+        "skipped_days": _rows(outcome.skipped_days),
         "counts": {
             "orders": len(outcome.orders),
             "fills": len(outcome.fills),
@@ -316,13 +319,17 @@ def _step_locked(
         # The step is durable; raising here leaves the account on its previous
         # watermark, and recover()/the next step adopts the step if it chains.
         before_account_save(account, record.directory)
-    store.save_account_atomic(
-        account.with_advance(
-            end_state=end_state,
-            watermark=target,
-            engine_fingerprint=outcome.engine_fingerprint or None,
-        )
+    advanced = account.with_advance(
+        end_state=end_state,
+        watermark=target,
+        engine_fingerprint=outcome.engine_fingerprint or None,
     )
+    if not advanced.fee_model and outcome.request_fee_model:
+        # HIL6 backfill: a legacy account locks the parameters of its first
+        # successful step, so every later day is provably priced the same way.
+        advanced = dataclasses.replace(
+            advanced, fee_model=dict(sorted(outcome.request_fee_model.items())))
+    store.save_account_atomic(advanced)
     return result(
         STATUS_APPLIED,
         "",

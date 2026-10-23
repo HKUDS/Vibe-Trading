@@ -164,6 +164,18 @@ class StepRecord:
         return str(self.step.get("end_state_hash") or "")
 
     @property
+    def warnings(self) -> tuple[str, ...]:
+        return tuple(str(item) for item in (self.step.get("warnings") or ()))
+
+    @property
+    def five_minute_source(self) -> str:
+        return str(self.step.get("five_minute_source") or "")
+
+    @property
+    def skipped_days(self) -> tuple[Any, ...]:
+        return tuple(self.step.get("skipped_days") or ())
+
+    @property
     def end_state(self) -> Any:
         try:
             return parse_account_state(self.step.get("end_state"), "end_state")
@@ -231,7 +243,20 @@ class AccountStore:
         return self._base_dir / ACCOUNTS_DIRNAME
 
     def account_dir(self, account_id: str) -> Path:
-        return self.accounts_dir / validate_account_id(account_id)
+        # ``is_symlink`` must be checked before anything follows the path: a
+        # linked account directory would let a step write outside the store.
+        path = self.accounts_dir / validate_account_id(account_id)
+        if path.is_symlink():
+            raise StoreError(
+                "account_corrupt",
+                f"account {account_id!r} is a symbolic link; refusing to follow it",
+            )
+        if path.exists() and not path.is_dir():
+            raise StoreError(
+                "account_corrupt",
+                f"account {account_id!r} exists but is not a directory",
+            )
+        return path
 
     def account_path(self, account_id: str) -> Path:
         return self.account_dir(account_id) / ACCOUNT_FILE
@@ -269,11 +294,18 @@ class AccountStore:
         if not path.is_file():
             raise AccountNotFound(account_id)
         try:
-            return PaperTradeAccount.from_dict(read_json(path, "account_corrupt"))
+            account = PaperTradeAccount.from_dict(read_json(path, "account_corrupt"))
         except AccountError as exc:
             raise StoreError(
                 "account_corrupt", f"account.json for {account_id}: {exc.message}"
             ) from exc
+        if account.account_id != account_id:
+            raise StoreError(
+                "account_corrupt",
+                f"account.json for {account_id} carries account_id "
+                f"{account.account_id!r}; refusing a mislabelled ledger",
+            )
+        return account
 
     def save_account_atomic(self, account: PaperTradeAccount) -> Path:
         """Replace ``account.json`` atomically (temp file + rename + fsync).
@@ -364,6 +396,11 @@ class AccountStore:
             raise StoreError(
                 "step_corrupt", f"{step_path} carries trade_date {step.get('trade_date')!r}"
             )
+        if step.get("account_id") not in (None, account_id):
+            raise StoreError(
+                "step_corrupt",
+                f"{step_path} carries account_id {step.get('account_id')!r}",
+            )
         manifest_path = directory / MANIFEST_FILE
         manifest = read_json(manifest_path, "step_corrupt") if manifest_path.is_file() else {}
         return StepRecord(account_id, day, directory, step, manifest)
@@ -400,7 +437,17 @@ class AccountStore:
         directory = self.account_dir(account_id)
         if not directory.is_dir():
             raise AccountNotFound(account_id)
-        fd = os.open(str(directory / LOCK_FILE), os.O_RDWR | os.O_CREAT, 0o600)
+        lock_path = directory / LOCK_FILE
+        if lock_path.is_symlink():
+            raise StoreError(
+                "account_corrupt",
+                f"lock file for {account_id!r} is a symbolic link; refusing to follow it",
+            )
+        fd = os.open(
+            str(lock_path),
+            os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
         try:
             if msvcrt is not None and os.fstat(fd).st_size == 0:  # pragma: no cover
                 try:

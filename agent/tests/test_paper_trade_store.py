@@ -252,6 +252,17 @@ def test_manifest_verification_detects_tampering(tmp_path: Path) -> None:
     assert "sha256:fills.jsonl" in store.verify_step(record)
 
 
+def test_manifest_verification_fails_closed_without_a_manifest(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.create(_account())
+    account = store.load(ACCOUNT_ID)
+    record = store.write_step(ACCOUNT_ID, TODAY, step=_step_document(account, TODAY, 1.0))
+    (record.directory / "manifest.json").unlink()
+
+    reread = store.read_step(ACCOUNT_ID, TODAY)
+    assert store.verify_step(reread) == ("manifest:<files>",)
+
+
 def test_manifest_verification_refuses_paths_outside_the_step(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.create(_account())
@@ -548,3 +559,66 @@ def test_default_base_dir_falls_back_to_the_sandboxed_home(monkeypatch) -> None:
     expected = get_runtime_root() / "paper_trade"
     assert AccountStore().base_dir == expected
     assert str(expected).startswith(str(Path.home()))
+
+
+# ── Identity and link guards (the ledger must describe the thing it names) ──
+
+
+def test_load_refuses_a_mislabelled_account_json(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.create(_account())
+    path = store.account_path(ACCOUNT_ID)
+    document = json.loads(path.read_text("utf-8"))
+    document["account_id"] = "someone_else"
+    path.write_text(json.dumps(document), "utf-8")
+
+    with pytest.raises(StoreError) as caught:
+        store.load(ACCOUNT_ID)
+    assert caught.value.code == "account_corrupt"
+    assert "someone_else" in caught.value.message
+
+
+def test_read_step_refuses_a_mislabelled_step(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.create(_account())
+    account = store.load(ACCOUNT_ID)
+    store.write_step(ACCOUNT_ID, TODAY, step=_step_document(account, TODAY, 99999.0))
+    step_path = store.step_dir(ACCOUNT_ID, TODAY) / STEP_FILE
+    document = json.loads(step_path.read_text("utf-8"))
+    document["account_id"] = "someone_else"
+    step_path.write_text(json.dumps(document), "utf-8")
+
+    with pytest.raises(StoreError) as caught:
+        store.read_step(ACCOUNT_ID, TODAY)
+    assert caught.value.code == "step_corrupt"
+    assert "someone_else" in caught.value.message
+
+
+def test_account_directory_symlink_is_refused(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.accounts_dir.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = store.accounts_dir / "linked"
+    target.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(StoreError) as caught:
+        store.load("linked")
+    assert caught.value.code == "account_corrupt"
+    assert "symbolic link" in caught.value.message
+
+
+def test_lock_file_symlink_is_refused(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.create(_account())
+    outside = tmp_path / "outside.lock"
+    outside.write_text("", "utf-8")
+    lock_path = store.account_dir(ACCOUNT_ID) / ".lock"
+    lock_path.unlink(missing_ok=True)
+    lock_path.symlink_to(outside)
+
+    with pytest.raises(StoreError) as caught:
+        with store.lock(ACCOUNT_ID):
+            pass
+    assert caught.value.code == "account_corrupt"
+    assert "symbolic link" in caught.value.message

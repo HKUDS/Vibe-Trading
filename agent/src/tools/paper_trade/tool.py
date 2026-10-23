@@ -425,7 +425,8 @@ def _execute_step(
             from_date=request.from_date, to_date=request.to_date, market_data=market_data,
             orders_by_day={request.to_date: request.orders or ()}, fee_model=request.fee_model,
             calendar_client=cal, limits_client=lim, hk_lot_sizes=hk_lot_sizes,
-            corporate_action_unresolved_by_day=corporate_action_unresolved_by_day)
+            corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
+            path_model=request.path_model, fill_model=request.fill_model)
     else:
         outcome = engine.match_orders(
             request,

@@ -55,6 +55,49 @@ def test_start_date_today_is_admissible() -> None:
     assert account.schema_version == ACCOUNT_SCHEMA_VERSION
 
 
+def test_from_dict_refuses_a_market_interval_mismatch() -> None:
+    document = _create(market="us", interval="1d").to_dict()
+    document["interval"] = "5m"
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "cn_a-only" in caught.value.message
+
+
+def test_from_dict_refuses_duplicate_position_symbols() -> None:
+    document = _create().to_dict()
+    document["positions"] = [
+        {"symbol": "600519.SH", "qty": 100.0, "avg_cost": 1400.0},
+        {"symbol": "600519.SH", "qty": 100.0, "avg_cost": 1400.0},
+    ]
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "same symbol twice" in caught.value.message
+
+
+def test_from_dict_refuses_a_non_positive_position() -> None:
+    document = _create().to_dict()
+    document["positions"] = [{"symbol": "600519.SH", "qty": 0.0, "avg_cost": 1400.0}]
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "qty must be > 0" in caught.value.message
+
+
+def test_from_dict_refuses_an_unknown_path_model() -> None:
+    document = _create().to_dict()
+    document["path_model"] = "vwap"
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "path_model" in caught.value.message
+
+
 def test_start_date_next_trading_day_is_admissible() -> None:
     account = _create(start_date=NEXT_TRADING_DAY)
     assert account.start_date == NEXT_TRADING_DAY
@@ -204,3 +247,18 @@ def test_account_is_frozen() -> None:
     account = _create()
     with pytest.raises(dataclasses.FrozenInstanceError):
         account.cash = 1.0  # type: ignore[misc]
+
+
+def test_fee_model_is_locked_and_round_trips() -> None:
+    account = _create(fee_model={"transfer_fee": 0.00001, "commission_rate": 0.00025})
+    assert dict(account.fee_model) == {
+        "commission_rate": 0.00025, "transfer_fee": 0.00001,
+    }
+    assert PaperTradeAccount.from_dict(account.to_dict()) == account
+
+
+def test_fee_model_rejects_a_negative_value() -> None:
+    with pytest.raises(AccountError) as caught:
+        _create(fee_model={"commission_rate": -0.0001})
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "fee_model[commission_rate]" in caught.value.message

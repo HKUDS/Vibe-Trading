@@ -2,8 +2,7 @@
 
 Frozen data proof for the 5m paper-trade engine (T2-T6). Everything under
 VERIFIED was read from the live ``stk_mins`` endpoint through the production
-loader path ``backtest.loaders.tushare.DataLoader.fetch(..., interval="5m")``;
-the raw transcript is ``.omo/evidence/p0-5m/T1_successful_call.log``.
+loader path ``backtest.loaders.tushare.DataLoader.fetch(..., interval="5m")``.
 
 PROBE A (executed 2026-10-21 07:44 CST, one provider call)
     ``600519.SH``, 2026-10-13..2026-10-20 -> 245 rows over 5 trading days.
@@ -123,8 +122,6 @@ AGENT_DIR = Path(__file__).resolve().parents[3]
 AUCTION_LABEL = "09:30"
 
 #: Continuous 5-minute bars in one cn_a session pair (09:30-11:30, 13:00-15:00).
-CONTINUOUS_BARS_PER_DAY = 48
-
 #: Hard cap on the symbols ONE 5m step may request.  ``stk_mins`` is measured
 #: at 1 call/minute and 1/hour, 2/day; the loader is per-code, so a second
 #: symbol in the SAME step is rate-limited immediately — and the refused call
@@ -290,6 +287,10 @@ class FiveMinuteFacts:
     observed_days_by_symbol: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     bar_fingerprint: str = ""
     fetch_failed: bool = False
+    #: Deterministic reason for ``fetch_failed`` — surfaced verbatim as the
+    #: in-band message so a payload fault is never reported as a generic fetch
+    #: failure (or, worse, as a caller-contract violation).
+    failure_reason: str = ""
     #: Requested symbols for which the provider yielded no 5m row at all.
     missing_symbols: tuple[str, ...] = ()
 
@@ -425,13 +426,13 @@ def fetch_five_minute(
     try:
         served = loader.fetch(list(symbols), from_date, end_exclusive, interval="5m")
     except Exception as exc:  # noqa: BLE001 — a provider fault is data-not-ready, never a halt
-        warnings.append(
-            f"5m fetch ({getattr(loader, 'name', 'network')}) failed: {type(exc).__name__}; "
-            "the step is data-not-ready"
-        )
+        reason = (
+            f"5m fetch ({getattr(loader, 'name', 'network')}) failed: "
+            f"{type(exc).__name__}; the step is data-not-ready")
+        warnings.append(reason)
         return FiveMinuteFacts(
             bar_fingerprint=state_hash.state_hash([]), fetch_failed=True,
-            missing_symbols=tuple(symbols))
+            failure_reason=reason, missing_symbols=tuple(symbols))
     if not served:
         return FiveMinuteFacts(
             bar_fingerprint=state_hash.state_hash([]), missing_symbols=tuple(symbols))
@@ -442,19 +443,31 @@ def fetch_five_minute(
     session_by_symbol: dict[str, Mapping[str, SessionBar]] = {}
     auction_by_symbol: dict[str, Mapping[str, tuple[str, ...]]] = {}
     observed_days_by_symbol: dict[str, tuple[str, ...]] = {}
+    payload_error = ""
     for symbol in symbols:
-        frame = _canonical_intraday_frame(served.get(symbol))
-        if not frame.empty:
-            frame = frame[(frame.index >= start_ts) & (frame.index < end_ts)]
-        if not frame.empty:
-            observed_days_by_symbol[symbol] = tuple(
-                sorted(set(frame.index.strftime("%Y-%m-%d"))))
-        bars, sessions, auctions = _split_session_days(symbol, frame, warnings)
+        try:
+            frame = _canonical_intraday_frame(served.get(symbol))
+            if not frame.empty:
+                frame = frame[(frame.index >= start_ts) & (frame.index < end_ts)]
+            if not frame.empty:
+                observed_days_by_symbol[symbol] = tuple(
+                    sorted(set(frame.index.strftime("%Y-%m-%d"))))
+            bars, sessions, auctions = _split_session_days(symbol, frame, warnings)
+        except Exception as exc:  # noqa: BLE001 — a malformed payload is a provider fault
+            payload_error = (
+                f"5m payload ({getattr(loader, 'name', 'network')}) for {symbol} "
+                f"could not be parsed ({type(exc).__name__}); the step is data-not-ready")
+            warnings.append(payload_error)
+            break
         if bars:
             bars_by_symbol[symbol] = bars
             session_by_symbol[symbol] = sessions
         if auctions:
             auction_by_symbol[symbol] = auctions
+    if payload_error:
+        return FiveMinuteFacts(
+            bar_fingerprint=state_hash.state_hash([]), fetch_failed=True,
+            failure_reason=payload_error, missing_symbols=tuple(symbols))
     facts = FiveMinuteFacts(
         bars_by_symbol=bars_by_symbol, session_by_symbol=session_by_symbol,
         auction_by_symbol=auction_by_symbol,
