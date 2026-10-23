@@ -389,8 +389,8 @@ class MarketDataResult:
     #: provider's quota for a source that cannot serve 5m at all.
     five_minute_error: str = ""
     #: Loader that served the 5m leg (empty when no 5m request was made).  It
-    #: stays OFF the wire — the account-layer step.json records it, so the
-    #: audit trail names the 5m source without changing the frozen response.
+    #: stays OFF the wire so the frozen response shape is unchanged; a future
+    #: persistent runner can record it in its step audit trail.
     five_minute_source: str = ""
 
 
