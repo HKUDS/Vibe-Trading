@@ -22,7 +22,7 @@ Decision tree for routing user requests:
 - User says "evaluate results" or "check if it works" → **Phase 4: EVALUATE**
 - User says "check decay" or "monitor factors" → **Phase 5: MONITOR**
 - User says "disable factor" → `sdm_status(action="disable", artifact_id=...)`
-- User says "enable factor" → `sdm_status(action="enable", artifact_id=...)`
+- User says "enable factor" → `sdm_status(action="enable", artifact_id=...)` (re-enables a `disabled` artifact only; a new artifact reaches `active` through Phase 3 `bench` and Phase 4 `activate`)
 - User says "list my factors" or "show status" → `sdm_status(action="list")`
 
 When the user's intent spans multiple phases (for example "read this paper and build a factor"), run the phases sequentially from INGEST through EVALUATE.
@@ -92,7 +92,7 @@ Build the SignalEngine, run the backtest, and link results.
 5. Validate syntax: `bash("python -c \"import ast; ast.parse(open('code/signal_engine.py').read()); print('OK')\"")`
 6. Call `backtest(run_dir)` to execute the backtest. When `config.json` declares an `artifact_id`, the result carries a `bench_record` that reports whether the run was `recorded`, `skipped` (failed run, no trades, missing metrics, or the same measurement already stored (even in another directory)) or `failed` (for example an unregistered `artifact_id`), with a `reason`.
 7. Call `link_autopilot_backtest(hypothesis_id, run_dir)` to link the run results back to the hypothesis.
-8. Call `sdm_status(action="detail", artifact_id=...)` and update the artifact status to "benching".
+8. Call `sdm_status(action="detail", artifact_id=...)` to confirm the bench row, then `sdm_status(action="bench", artifact_id=...)` to move the artifact from `created` to `benching`.
 
 ### Phase 4: EVALUATE
 
@@ -109,8 +109,9 @@ Judge the backtest output against quality thresholds.
    - Win rate and profit factor for additional context
 
 3. **If the artifact is alive** (meets thresholds):
-   - For factors: register into `factors/zoo/` and update status to "active"
-   - For strategies: update status to "active" with the run metrics attached
+   - For factors: register into `factors/zoo/` and call `sdm_status(action="activate", artifact_id=...)`
+   - For strategies: call `sdm_status(action="activate", artifact_id=...)`; the metrics are already attached through the `initial` bench row
+   - `activate` only accepts a `benching` artifact, so Phase 3 must have completed first
 
 4. **If the artifact is dead** (fails thresholds):
    - Update status to "disabled" with a reason string

@@ -463,6 +463,43 @@ class TestSdmTools:
         assert en["status"] == "ok"
         assert en["artifact"]["status"] == "active"
 
+    def test_status_tool_bench_then_activate_follows_phases(self):
+        """Phase 3 step 8 sets benching; Phase 4 promotes benching to active."""
+        from src.tools.sdm_register_tool import SdmRegisterTool
+        from src.tools.sdm_status_tool import SdmStatusTool
+
+        aid = json.loads(
+            SdmRegisterTool().execute(artifact_type="strategy", name="s1", universe="HK")
+        )["artifact"]["id"]
+        tool = SdmStatusTool()
+
+        early = json.loads(tool.execute(action="activate", artifact_id=aid))
+        assert early["status"] == "error"
+        assert "benching" in early["error"]
+
+        bench = json.loads(tool.execute(action="bench", artifact_id=aid))
+        assert bench["status"] == "ok"
+        assert bench["artifact"]["status"] == "benching"
+
+        act = json.loads(tool.execute(action="activate", artifact_id=aid))
+        assert act["status"] == "ok"
+        assert act["artifact"]["status"] == "active"
+
+        again = json.loads(tool.execute(action="bench", artifact_id=aid))
+        assert again["status"] == "error"
+
+    def test_status_tool_enable_only_reenables_disabled(self):
+        """enable must not promote a created artifact past Phase 3/4."""
+        from src.tools.sdm_register_tool import SdmRegisterTool
+        from src.tools.sdm_status_tool import SdmStatusTool
+
+        aid = json.loads(
+            SdmRegisterTool().execute(artifact_type="strategy", name="s2", universe="HK")
+        )["artifact"]["id"]
+        result = json.loads(SdmStatusTool().execute(action="enable", artifact_id=aid))
+        assert result["status"] == "error"
+        assert "disabled" in result["error"]
+
     def test_status_tool_decay_check_insufficient(self):
         from src.tools.sdm_register_tool import SdmRegisterTool
         from src.tools.sdm_status_tool import SdmStatusTool
