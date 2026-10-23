@@ -141,9 +141,17 @@ def build_day_plan(
     plan: list[DayPlan] = []
     for day in candidates:
         verdict = calendar.classify_zero_calendar_day(
-            market, day,
+            market, day, is_target_day=(day == to_date),
             symbols=market_data.symbols, symbols_with_bars=availability[day])
-        if verdict.kind == calendar.VERDICT_MARKET_CLOSED_INFERRED:
+        if verdict.kind == calendar.VERDICT_NOT_READY:
+            # Target-day all-market zero bar (AM-6①).  The AM-9 readiness
+            # gate in run_day_loop runs BEFORE the loop over the same bar
+            # facts (assess_readiness ⇔ this verdict) and returns the in-band
+            # PAPER_DATA_NOT_READY material; this entry is a placeholder the
+            # loop never reaches.  Never a transport-class raise — a not-ready
+            # target day is a retryable data fact, not an engine fault (AM-5).
+            plan.append(DayPlan(day, None, None))
+        elif verdict.kind == calendar.VERDICT_MARKET_CLOSED_INFERRED:
             plan.append(DayPlan(day, _SKIP_MARKET_CLOSED, verdict.warning))
         else:
             plan.append(DayPlan(day, None, None))

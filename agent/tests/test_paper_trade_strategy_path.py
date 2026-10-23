@@ -435,30 +435,15 @@ def test_path_policy_rejects_before_any_read_or_execute(tmp_path) -> None:
     assert "SECRET_MARKER" not in outcome.error.message
 
 
-class _OpenCalendar:
-    """Every requested date is an open session; the bars are what is missing."""
-
-    def get_trade_calendar(self, start_date: str, end_date: str) -> pd.DataFrame:
-        return pd.DataFrame([
-            {"exchange": "SSE", "cal_date": day.strftime("%Y-%m-%d"),
-             "is_open": 1, "pretrade_date": ""}
-            for day in pd.date_range(start_date, end_date)
-        ])
-
-
 def test_readiness_gate_outranks_a_hanging_strategy() -> None:
     # AM-9 runs BEFORE validation/execution: a retryable data fact is never
     # masked by the non-retryable timeout of a strategy that never runs.
-    # cn_a keeps the fail-closed zero-bar gate (HIL1 relaxed it for hk/us).
     truncated = _fixture_frame().loc[: pd.Timestamp("2026-02-20")]
     path = _install_strategy("hang_notready.py", _HANG_SOURCE)
-    request = _request(path, from_date="2026-02-20", to_date="2026-02-23", market="cn_a")
-    market_data = fetch_market_data(
-        "cn_a", [_SYM], "2026-02-20", "2026-02-23",
-        loader=FakeLoader({_SYM: truncated}), ch_client=None)
+    request = _request(path, from_date="2026-02-20", to_date="2026-02-23")
     started = time.monotonic()
     outcome = strategy_exec.run_strategy_path(
-        request=request, market_data=market_data, calendar_client=_OpenCalendar())
+        request=request, market_data=_fetch("2026-02-20", "2026-02-23", frame=truncated))
     assert time.monotonic() - started < 30.0  # no spawn, no 1s budget wait
     assert outcome.error is not None
     assert outcome.error.code == "PAPER_DATA_NOT_READY"

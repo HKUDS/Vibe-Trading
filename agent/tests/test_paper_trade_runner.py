@@ -685,7 +685,7 @@ def test_engine_adapter_raises_through_an_invalid_request(monkeypatch) -> None:
     assert excinfo.value.code == "INVALID_REQUEST"
 
 
-# ── HIL1: a zero-calendar weekday without bars is untradeable, not a stall ──
+# ── a zero-calendar weekday without bars is a retryable data fact ──
 
 
 class _StaleZeroCalendarLoader:
@@ -708,7 +708,7 @@ class _StaleZeroCalendarLoader:
         return {code: frame for code in codes}
 
 
-def test_zero_calendar_day_without_bars_advances_as_untradeable(tmp_path: Path) -> None:
+def test_zero_calendar_target_day_without_bars_is_data_not_ready(tmp_path: Path) -> None:
     store = _store(
         tmp_path, market="us", interval="1d",
         start_date="2026-03-06", today="2026-03-06", next_trading_day="2026-03-09")
@@ -722,16 +722,9 @@ def test_zero_calendar_day_without_bars_advances_as_untradeable(tmp_path: Path) 
         today="2026-03-06", now=NOW, store=store,
     )
 
-    assert result.status == STATUS_APPLIED, (result.status, result.code, result.message)
-    record = store.read_step(ACCOUNT_ID, "2026-03-06")
-    assert record.skipped_days == (
-        {"date": "2026-03-06", "reason": "market_closed_inferred"},
-    )
-    assert any("inferred closed" in warning for warning in record.warnings)
-    rejects = [json.loads(line) for line in
-               (record.directory / "rejected.jsonl").read_text().splitlines()]
-    assert [row["reason_code"] for row in rejects] == ["suspended"]
-    assert (record.directory / "fills.jsonl").read_text() == ""
+    assert (result.status, result.code) == (STATUS_DATA_MISSING, STATUS_DATA_MISSING)
+    assert "target bar 2026-03-06 not available" in result.message
+    assert store.list_steps(ACCOUNT_ID) == ()
     ledger = store.load(ACCOUNT_ID)
-    assert ledger.watermark == "2026-03-06"
+    assert ledger.watermark is None
     assert ledger.cash == 100000.0

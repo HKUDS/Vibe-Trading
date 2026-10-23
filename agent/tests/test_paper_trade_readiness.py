@@ -8,10 +8,10 @@ network (``--disable-socket`` is a hard gate).  Contract anchors:
   target day while the network leg serves it ⇒ READY (judging on the CH frame
   alone would false-alarm every trading day); both legs missing ⇒ in-band
   ``PAPER_DATA_NOT_READY`` material (never an exception).
-* AM-6 / HIL1 — hk/us zero-calendar matrix: all-market zero bar on a
-  candidate weekday ⇒ ``market_closed_inferred`` + warning and the day still
-  advances (untradeable; never silently ``non_trading_day``, never a stalled
-  watermark); single-symbol zero bar ⇒ suspended fact + carry-forward.
+* AM-6 — hk/us zero-calendar three-state matrix: target-day all-market zero
+  bar ⇒ not_ready; mid-range all-market zero bar ⇒ ``market_closed_inferred``
+  + warning (NOT a failure, never silently ``non_trading_day``); single-symbol
+  zero bar ⇒ suspended fact + carry-forward valuation.
 * R-V3 — non-positive OHLC bars flag the symbol-day untradable + structured
   warning, no crash.
 * VD-6/B3 — K=120 lookback trim; VD-10 — sorted symbols, frozen order.
@@ -28,6 +28,7 @@ import pytest
 from src.tools.paper_trade import data as data_layer
 from src.tools.paper_trade.calendar import (
     VERDICT_MARKET_CLOSED_INFERRED,
+    VERDICT_NOT_READY,
     VERDICT_TRADING_DAY,
     classify_zero_calendar_day,
     hk_us_candidate_days,
@@ -237,7 +238,7 @@ def test_mid_range_zero_bars_are_market_closed_inferred_not_a_failure() -> None:
     for gap in document["gap_samples"]:
         for day in gap["missing_weekdays"]:
             verdict = classify_zero_calendar_day(
-                "us", day, symbols=("SYNTH-GAP",),
+                "us", day, is_target_day=False, symbols=("SYNTH-GAP",),
                 symbols_with_bars=availability[day],
             )
             assert verdict.kind == VERDICT_MARKET_CLOSED_INFERRED
@@ -249,7 +250,7 @@ def test_mid_range_zero_bars_are_market_closed_inferred_not_a_failure() -> None:
     assert availability["2026-04-10"] == ("SYNTH-GAP",)
     assert assess_readiness(result, "2026-04-10").ready is True
     trading = classify_zero_calendar_day(
-        "us", "2026-04-10", symbols=("SYNTH-GAP",),
+        "us", "2026-04-10", is_target_day=True, symbols=("SYNTH-GAP",),
         symbols_with_bars=availability["2026-04-10"],
     )
     assert trading.kind == VERDICT_TRADING_DAY
@@ -258,15 +259,15 @@ def test_mid_range_zero_bars_are_market_closed_inferred_not_a_failure() -> None:
 
 def test_target_day_all_market_zero_bar_classifies_as_not_ready() -> None:
     verdict = classify_zero_calendar_day(
-        "hk", "2026-10-20", symbols=("00700.HK",), symbols_with_bars=()
+        "hk", "2026-10-20", is_target_day=True, symbols=("00700.HK",), symbols_with_bars=()
     )
-    assert verdict.kind == VERDICT_MARKET_CLOSED_INFERRED
-    assert verdict.warning is not None and "2026-10-20" in verdict.warning
+    assert verdict.kind == VERDICT_NOT_READY
+    assert verdict.warning is None
 
 
 def test_single_symbol_zero_bar_on_trading_day_is_suspended_set() -> None:
     verdict = classify_zero_calendar_day(
-        "hk", "2026-10-20",
+        "hk", "2026-10-20", is_target_day=False,
         symbols=("00700.HK", "09988.HK"), symbols_with_bars=("00700.HK",),
     )
     assert verdict.kind == VERDICT_TRADING_DAY
@@ -276,7 +277,7 @@ def test_single_symbol_zero_bar_on_trading_day_is_suspended_set() -> None:
 def test_classify_refuses_cn_a_and_candidate_days_are_weekdays_only() -> None:
     with pytest.raises(ValueError, match="hk/us only"):
         classify_zero_calendar_day(
-            "cn_a", "2026-10-20", symbols=("600519.SH",),
+            "cn_a", "2026-10-20", is_target_day=True, symbols=("600519.SH",),
             symbols_with_bars=(),
         )
     assert hk_us_candidate_days("2026-10-15", "2026-10-20") == (
@@ -286,7 +287,7 @@ def test_classify_refuses_cn_a_and_candidate_days_are_weekdays_only() -> None:
         hk_us_candidate_days("2026-10-20", "2026-10-15")
 
 
-def test_hk_target_day_zero_bar_is_a_ready_untradeable_day() -> None:
+def test_hk_target_day_zero_bar_through_fetch_is_not_ready() -> None:
     result = fetch_market_data(
         "hk",
         ["00700.HK"],
@@ -295,9 +296,8 @@ def test_hk_target_day_zero_bar_is_a_ready_untradeable_day() -> None:
         loader=FakeLoader({"00700.HK": _CH_HISTORY}, name="tencent"),
     )
     verdict = assess_readiness(result, "2026-10-20")
-    # HIL1: a zero-calendar weekday without a served bar is untradeable, not a
-    # stalled watermark; the day plan records market_closed_inferred.
-    assert verdict.ready is True
+    assert verdict.ready is False
+    assert verdict.code == "PAPER_DATA_NOT_READY"
     assert result.provenance.source == "tencent"
     assert result.provenance.ch_as_of is None
 

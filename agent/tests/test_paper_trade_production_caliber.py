@@ -47,13 +47,9 @@ def test_resolved_loader_requires_raw_prices(
         "2026-10-20",
         ch_client=None,
     )
-    # HIL1 made hk/us readiness lenient about a zero-bar target day, so the
-    # caliber rule is asserted where it actually applies: the frame itself.
-    assert result.data["TEST"].has_bar("2026-10-20") is accepted
+    assert data.assess_readiness(result, "2026-10-20").ready is accepted
     if not accepted:
         assert any("requires raw prices" in warning for warning in result.warnings)
-    else:
-        assert data.assess_readiness(result, "2026-10-20").ready is True
 
 
 def test_tencent_execution_adapter_reads_only_the_raw_endpoint(monkeypatch):

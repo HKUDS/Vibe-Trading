@@ -765,13 +765,6 @@ def assess_readiness(result: MarketDataResult, target_day: str) -> ReadinessVerd
     if result.interval == "5m":
         return _assess_five_minute_readiness(result, day)
     if not any(result.data[symbol].has_bar(day) for symbol in result.symbols):
-        if result.market != _CN_A_MARKET:
-            # HIL1: a zero-calendar market has no holiday authority beyond the
-            # weekday.  A weekday with no served bar is untradeable (every
-            # instrument suspended-equivalent) and the day still advances; the
-            # day plan carries market_closed_inferred.  cn_a keeps the
-            # fail-closed calendar truth below.
-            return ReadinessVerdict(ready=True)
         ends = result.provenance.bars_as_of or "empty"
         message = f"target bar {day} not available from served sources ({result.provenance.source} frame ends {ends})"
         return ReadinessVerdict(ready=False, code=NOT_READY_CODE, message=message)
@@ -788,10 +781,16 @@ def _assess_five_minute_readiness(result: MarketDataResult, day: str) -> Readine
     five = result.five_minute_symbols
     if not five:
         # An explicitly empty 5m universe (pure-valuation step) issues no 5m
-        # request and has nothing to gate.  A result built before the field
-        # existed carries session evidence instead; fall back to the whole
-        # universe only in that legacy shape.
+        # request, so its NAV comes from the daily leg and that leg must carry
+        # the target day — exactly the interval="1d" contract.  A result built
+        # before the field existed carries session evidence instead; fall back
+        # to the whole universe only in that legacy shape.
         if not any(result.data[s].session_bars for s in result.symbols):
+            if not any(result.data[s].has_bar(day) for s in result.symbols):
+                ends = result.provenance.bars_as_of or "empty"
+                message = (f"target bar {day} not available from served sources "
+                           f"({result.provenance.source} frame ends {ends})")
+                return ReadinessVerdict(ready=False, code=NOT_READY_CODE, message=message)
             return ReadinessVerdict(ready=True)
         five = result.symbols
     traded = [symbol for symbol in five if result.data[symbol].has_session_bar(day)]

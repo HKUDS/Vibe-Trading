@@ -52,6 +52,7 @@ __all__ = [
     "SESSION_OUTSIDE",
     "US_MARKET",
     "VERDICT_MARKET_CLOSED_INFERRED",
+    "VERDICT_NOT_READY",
     "VERDICT_TRADING_DAY",
     "TradeCalendarClient",
     "ZeroCalendarDayVerdict",
@@ -157,6 +158,7 @@ _HK_US_NOT_IMPLEMENTED = (
 #: by test); ``not_ready`` maps to the frozen ``PAPER_DATA_NOT_READY`` envelope
 #: code at the tool layer (AM-5).
 VERDICT_TRADING_DAY = "trading_day"
+VERDICT_NOT_READY = "not_ready"
 VERDICT_MARKET_CLOSED_INFERRED = "market_closed_inferred"
 
 _MARKET_CLOSED_WARNING = (
@@ -293,18 +295,20 @@ def classify_zero_calendar_day(
     market: str,
     date: str,
     *,
+    is_target_day: bool,
     symbols: "object",
     symbols_with_bars: "object",
 ) -> ZeroCalendarDayVerdict:
-    """AM-6 matrix for one hk/us candidate day (HIL1: no target-day exception).
+    """AM-6 fail-closed three-state matrix for one hk/us candidate day.
 
-    ① all-market zero bar → ``VERDICT_MARKET_CLOSED_INFERRED`` + mandatory
-    warning: a zero-calendar market has no holiday authority beyond the
-    weekday, so the day is treated as untradeable and still advances — never
-    silently ``non_trading_day`` (cn_a-only vocabulary), never a stalled
-    watermark.  ② any symbol has a bar → ``VERDICT_TRADING_DAY``; zero-bar
-    symbols come back as ``suspended_symbols`` (engine rejects their orders
-    ``suspended`` and values their positions carry-forward).
+    ① target day, all-market zero bar → ``VERDICT_NOT_READY`` (the tool layer
+    emits the retryable ``PAPER_DATA_NOT_READY`` envelope; data delays are
+    absorbed by the RM retry chain).  ② mid-range day, all-market zero bar →
+    ``VERDICT_MARKET_CLOSED_INFERRED`` + mandatory warning — never silently a
+    ``non_trading_day`` (that reason is cn_a-only, CH calendar truth).  ③ any
+    symbol has a bar → ``VERDICT_TRADING_DAY``; zero-bar symbols come back as
+    ``suspended_symbols`` (engine rejects their orders ``suspended`` and
+    values their positions carry-forward).
 
     ``symbols`` is the account universe (positions ∪ orders);
     ``symbols_with_bars`` comes from :func:`data.day_bar_availability`.
@@ -318,6 +322,8 @@ def classify_zero_calendar_day(
     universe = tuple(sorted({str(symbol) for symbol in symbols}))
     with_bars = frozenset(universe) & {str(symbol) for symbol in symbols_with_bars}
     if not with_bars:
+        if is_target_day:
+            return ZeroCalendarDayVerdict(day, VERDICT_NOT_READY)
         return ZeroCalendarDayVerdict(
             day, VERDICT_MARKET_CLOSED_INFERRED, warning=_MARKET_CLOSED_WARNING.format(date=day)
         )
