@@ -104,6 +104,23 @@ def test_flows_can_be_loaded_from_a_file_and_internal_kinds_are_ignored(
     assert payload["summary"]["time_weighted_return"] == pytest.approx(-0.01, abs=1e-9)
 
 
+@pytest.mark.parametrize("flag", ["false", "False", "0", "no"])
+def test_a_string_false_invert_sign_leaves_file_amounts_alone(
+    tmp_path: Path, flag: str
+) -> None:
+    """A JSON-string "false" must not be read as truthy and negate every row."""
+    payload = json.loads(
+        CashFlowPerformanceTool().execute(
+            valuations=_valuations(),
+            flows_path=str(_write_flow_file(tmp_path)),
+            flows_invert_sign=flag,
+        )
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["summary"]["net_external_flow"] == pytest.approx(900.0)
+
+
 def test_a_bad_path_returns_a_clean_error_envelope(tmp_path: Path) -> None:
     """A missing file is an explicit error, never a silent null result."""
     payload = json.loads(
