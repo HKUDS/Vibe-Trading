@@ -136,7 +136,8 @@ _PUNCT_FOLD = {
 #   * a period inside an abbreviation ("the U.S. Treasury yield", "J. Smith")
 #     is not a boundary -- splitting there truncates the sentence and detaches a
 #     metric name from its number;
-#   * a period with no space after it ("... 15 files.The IC engine ...") IS a
+#   * a period with no space after it ("... 15 files.The IC engine ...",
+#     "... ratio is 1.5.The sample ...", "... was 12%.The drawdown ...") IS a
 #     boundary; feeds do emit these, and leaving the two sentences glued lets a
 #     number from one corroborate a keyword in the other.
 # Only abbreviations that essentially never END a sentence are guarded. "et al."
@@ -151,7 +152,10 @@ _ABBREV_GUARD = (
 )
 _SENTENCE_SPLIT = re.compile(
     rf"(?<=[.!?]){_ABBREV_GUARD}"
-    rf"(?:\s+(?=[A-Z(\"$\\])|(?<=[a-z][a-z][.!?])(?=[A-Z][a-z]))"
+    rf"(?:\s+(?=[A-Z(\"$\\])"
+    rf"|(?<=[a-z][a-z][.!?])(?=[A-Z][a-z])"
+    rf"|(?<=\d[.!?])(?=[A-Z][a-z])"
+    rf"|(?<=%[.!?])(?=[A-Z][a-z]))"
 )
 
 # ---------------------------------------------------------------------------

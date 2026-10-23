@@ -956,6 +956,30 @@ def test_a_period_with_no_space_after_it_still_splits():
     assert sentences == ["The run wrote 15 files.", "The IC of 0.06 holds."]
 
 
+def test_a_period_after_a_number_with_no_space_still_splits():
+    # Numeric endings are the same missing-space boundary as "files.The".
+    # "Sec. 2" must stay intact; the break is the period after the digit.
+    assert rpt._split_sentences(
+        "Costs are discussed in Sec. 2.The Sharpe ratio is 1.5."
+    ) == ["Costs are discussed in Sec. 2.", "The Sharpe ratio is 1.5."]
+    assert rpt._split_sentences(
+        "The Sharpe ratio is 1.5.The sample ends in 2019."
+    ) == ["The Sharpe ratio is 1.5.", "The sample ends in 2019."]
+    assert rpt._split_sentences(
+        "Annualized return was 12%.The drawdown stayed small."
+    ) == ["Annualized return was 12%.", "The drawdown stayed small."]
+
+
+def test_a_numeric_glued_boundary_does_not_widen_the_evidence_quote():
+    rows = rpt._extract_performance(rpt._segments(
+        "",
+        "Costs are discussed in Sec. 2.The Sharpe ratio is 1.5.",
+    ))
+    sharpe = next(r for r in rows if r["metric"] == "sharpe_ratio")
+    assert sharpe["value"] == 1.5
+    assert sharpe["evidence"]["quote"] == "The Sharpe ratio is 1.5."
+
+
 def test_a_glued_boundary_does_not_leak_a_number_into_the_next_claim():
     rows = rpt._extract_performance(
         rpt._segments("", "The IC engine processed 15 files.The strategy is simple.")
