@@ -135,6 +135,33 @@ def test_a_v1_1_call_keeps_the_frozen_document() -> None:
     assert document["fills"][0]["price"] == session_values(load_5m(_SYM, _DAY))["close"]
 
 
+def test_a_v1_2_field_silently_downgraded_to_v1_1_shows_up_only_in_the_hash() -> None:
+    """A v1.2 payload sent to a v1.1 parser runs the daily path, but the hash differs.
+
+    The v1.1 parser has no fields for the four selectors, so it ignores them. The
+    successful document is the frozen v1.1 shape; the non-default interval changes
+    ``received_state_hash``, which is the client-side downgrade signal.
+    """
+
+    v12_document, _ = _run(_payload())
+    v11_payload = _payload()
+    for key in ("interval", "path_model", "fill_model", "session"):
+        v11_payload.pop(key, None)
+    v11_document, _ = _run(v11_payload)
+
+    assert v12_document["schema_version"] == "pt-v1.2"
+    assert v11_document["schema_version"] == "pt-v1.1"
+    assert isinstance(v12_document["received_state_hash"], str)
+    assert isinstance(v11_document["received_state_hash"], str)
+    assert len(v12_document["received_state_hash"]) == 64
+    assert len(v11_document["received_state_hash"]) == 64
+    for key in ("engine_fingerprint", "canceled_orders", "events"):
+        assert key not in v11_document
+    assert v11_document["received_state_hash"] != v12_document["received_state_hash"]
+    assert v11_document["fills"][0]["price"] == session_values(load_5m(_SYM, _DAY))["close"]
+    assert v12_document["fills"][0]["price"] == fixture_reference(_SYM, _DAY, "bar_median")
+
+
 def test_fixture_loader_serves_both_legs_and_the_step_issues_one_5m_call() -> None:
     loader = FixtureLoader()
     document, same = _run(_payload(), loader=loader)
