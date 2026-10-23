@@ -19,16 +19,25 @@ days are absent from BOTH endpoints).
 
 The fixtures are SYNTHETIC (see ``MANIFEST.json``); no test may present their
 prices as market data.  No network, no clock, no writes.
+
+The module also hosts the shared step harness for the three 5m tool suites
+(``test_paper_trade_5m_tool``, ``test_paper_trade_5m_scope``,
+``test_paper_trade_5m_strategy``): the seed constants, the payload builders,
+and the strategy-file helpers, so a split suite cannot drift apart.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 import pandas as pd
+
+from src.config.paths import get_runtime_root
+from src.tools.paper_trade.tool import run_paper_trade_step
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "paper_trade" / "5m"
 
@@ -224,3 +233,101 @@ class FixtureCalendar:
             for day in pd.date_range(start_date, end_date)
         ]
         return pd.DataFrame(rows, columns=["exchange", "cal_date", "is_open", "pretrade_date"])
+
+
+# ── Shared step harness: one seed payload, the strategy sources, the helpers ──
+
+_DAY = "2026-10-20"
+_HALTED = "2026-10-19"
+_SYM = "600519.SH"
+_WITNESS = "000001.SZ"
+_THIRD = "600000.SH"
+_SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+_FEES = {
+    "commission_rate": 0.00025,
+    "commission_min": 5.0,
+    "stamp_tax_sell": 0.0005,
+    "transfer_fee": 0.00001,
+}
+
+
+def _payload(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "account_id": "pa_5m_tool",
+        "market": "cn_a",
+        "account_state": {"cash": 1_000_000.0, "positions": []},
+        "orders": [{"symbol": _SYM, "side": "buy", "qty": 100}],
+        "from_date": _DAY,
+        "to_date": _DAY,
+        "fee_model": dict(_FEES),
+        "interval": "5m",
+    }
+    base.update(overrides)
+    return base
+
+
+def _run(payload: dict[str, Any], *, loader: Any = None, calendar: Any = None):
+    loader = FixtureLoader() if loader is None else loader
+    calendar = FixtureCalendar((payload["to_date"],)) if calendar is None else calendar
+    document = run_paper_trade_step(
+        payload,
+        loader=loader,
+        ch_client=None,
+        calendar_client=calendar,
+        limits_client=None,
+    )
+    return json.loads(document), loader
+
+
+def _strategy_payload(path: str, **overrides: Any) -> dict[str, Any]:
+    payload = _payload(**overrides)
+    payload.pop("orders")
+    payload["strategy_path"] = path
+    return payload
+
+
+def _install_strategy(name: str, source: str) -> str:
+    # The path policy only admits <runtime_root>/strategies; the conftest HOME
+    # sandbox makes that a per-session temp dir.
+    root = get_runtime_root() / "strategies"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / name
+    path.write_text(source, encoding="utf-8")
+    return str(path)
+
+
+def _strategy_source(*universe: str) -> str:
+    """A minimal SignalEngine selling each target symbol held at call start.
+
+    With ``universe`` it declares UNIVERSE and orders exactly those symbols;
+    without it, orders ``ctx.symbols`` (the served universe fallback).
+    """
+    declaration = f"UNIVERSE = {universe!r}\n\n" if universe else ""
+    target = repr(universe) if universe else "ctx.symbols"
+    return (
+        declaration
+        + "class SignalEngine:\n"
+        + "\n"
+        + "    def generate_signals(self, ctx, trade_date):\n"
+        + "        held = {position.symbol: position.qty\n"
+        + "                for position in ctx.account_state.positions}\n"
+        + "        return [\n"
+        + '            {"symbol": symbol, "side": "sell", "qty": held[symbol]}\n'
+        + f"            for symbol in {target} if symbol in held\n"
+        + "        ]\n"
+    )
+
+
+def _outside_universe_source(declared: tuple[str, ...], target: str) -> str:
+    """Declare one 5m UNIVERSE but order a held symbol, possibly outside it."""
+    return (
+        f"UNIVERSE = {declared!r}\n\n"
+        "class SignalEngine:\n"
+        "\n"
+        "    def generate_signals(self, ctx, trade_date):\n"
+        "        held = {position.symbol: position.qty\n"
+        "                for position in ctx.account_state.positions}\n"
+        f"        if {target!r} not in held:\n"
+        "            return []\n"
+        f"        return [{{'symbol': {target!r}, 'side': 'sell', 'qty': held[{target!r}]}}]\n"
+    )
