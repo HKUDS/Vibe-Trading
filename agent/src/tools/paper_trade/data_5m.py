@@ -219,7 +219,11 @@ def _labels(frame: Any) -> list[str]:
 
 
 def _continuous(day_frame: Any) -> Any:
-    """Drop the opening call-auction row, leaving the continuous bars."""
+    """Drop the opening call-auction row, leaving the continuous bars.
+
+    G3 policy: the 09:30 row is the opening call-auction print, not a
+    continuous 5-minute bar, so it never participates in matching (T1/T4).
+    """
     return day_frame[day_frame.index.strftime("%H:%M") != AUCTION_LABEL]
 
 
@@ -322,11 +326,25 @@ def _split_session_days(
     """Split one symbol's continuous 5m frame into per-day session facts (T4).
 
     Continuous windows only: the 09:30 opening-auction print is dropped
-    silently (it is expected), an auction-window label is dropped AND recorded
-    for the ``auction_window`` event, and an out-of-session label is dropped
-    with a warning.  A day with zero continuous bars has no session bar (the
-    ``halted`` candidate); 1..47 bars are legitimate for an illiquid stock and
-    produce one deterministic ``<n>/48`` warning naming the count.
+    silently (it is expected, G3), an auction-window label is dropped AND
+    recorded for the ``auction_window`` event, and an out-of-session label is
+    dropped with a warning.  A day with zero continuous bars has no session bar
+    (the ``halted`` candidate); 1..47 bars are legitimate for an illiquid stock
+    and produce one deterministic ``<n>/48`` warning naming the count.
+
+    Payload integrity (G4) is enforced here rather than trusted downstream:
+
+    * a continuous label off the 5-minute grid (a finer interval served as
+      5m) raises ``ValueError``;
+    * a continuous day whose every row fails the price sanity gate raises
+      ``ValueError`` (an all-NaN payload is a provider fault, not a halt);
+    * a non-finite session volume raises ``ValueError``;
+    * a zero-volume session is a genuine halt: the day is dropped (warned
+      about) so the engine's existing halted/suspended path handles it.
+
+    ``fetch_five_minute`` catches these ``ValueError``\\ s and routes them to
+    ``failure_reason``, so they surface as ``PAPER_DATA_NOT_READY`` — never as
+    a transport error and never as a tradable session.
     """
     bars_by_day: dict[str, pd.DataFrame] = {}
     session_by_day: dict[str, SessionBar] = {}
@@ -343,6 +361,8 @@ def _split_session_days(
     framed["_kind"] = kinds
 
     for day, chunk in framed.groupby("_day", sort=True):
+        # G3: only SESSION_CONTINUOUS rows build the session bar.  The 09:30
+        # opening call-auction print is classified separately and excluded.
         continuous = chunk[chunk["_kind"] == calendar.SESSION_CONTINUOUS]
         auction_labels = tuple(sorted(set(chunk.loc[
             chunk["_kind"] == calendar.SESSION_AUCTION_WINDOW, "_label"])))
@@ -359,7 +379,18 @@ def _split_session_days(
                 f"5m data: {symbol} on {day} has {len(outside_labels)} bar label(s) "
                 f"outside the cn_a session windows (first: {outside_labels[0]}); excluded"
             )
+        # A 1m payload served as 5m produces labels off the 5-minute grid;
+        # accepting them would assemble a ~240-row "session" the matching
+        # contract never priced.  Legitimate partial sessions (09:35, 09:40,
+        # ..., 11:30, 13:05, ..., 15:00) are all on the grid.
+        off_grid = sorted({label for label in continuous["_label"] if int(label[3:5]) % 5 != 0})
+        if off_grid:
+            raise ValueError(
+                f"5m data: {symbol} on {day} has off-grid continuous label(s) "
+                f"{', '.join(off_grid[:3])}; labels must sit on the 5-minute grid"
+            )
         price_columns = list(_PRICE_COLUMNS)
+        had_continuous = not continuous.empty
         bad = continuous[price_columns].isna().any(axis=1) | (continuous[price_columns] <= 0).any(axis=1)
         if bad.any():
             warnings.append(
@@ -367,13 +398,29 @@ def _split_session_days(
                 "price sanity gate (R-V3)"
             )
             continuous = continuous[~bad]
+            if had_continuous and continuous.empty:
+                # Every served continuous row was unusable: a provider fault,
+                # not a halt.  Fail the payload closed instead of inventing a
+                # suspended session from prices that were never valid.
+                raise ValueError("all continuous 5m bars failed the price sanity gate")
         if continuous.empty:
             continue
-        bars_by_day[day] = continuous[list(_OHLCV_COLUMNS)].copy()
-        session_by_day[day] = _assemble_session_bar(bars_by_day[day])
-        if len(bars_by_day[day]) < calendar.CONTINUOUS_BARS_PER_DAY:
+        day_bars = continuous[list(_OHLCV_COLUMNS)].copy()
+        session = _assemble_session_bar(day_bars)
+        if not math.isfinite(session.volume):
+            raise ValueError("5m data has a non-finite session volume")
+        if session.volume <= 0:
+            # No shares traded across the whole continuous session: a halt.
+            # Dropping the day lets the engine's halted/suspended path value
+            # positions carry-forward and reject orders `suspended`.
             warnings.append(
-                f"5m data: {symbol} on {day} has {len(bars_by_day[day])}/48 continuous "
+                f"5m data: {symbol} on {day} has a zero-volume session; treated as halted")
+            continue
+        bars_by_day[day] = day_bars
+        session_by_day[day] = session
+        if len(day_bars) < calendar.CONTINUOUS_BARS_PER_DAY:
+            warnings.append(
+                f"5m data: {symbol} on {day} has {len(day_bars)}/48 continuous "
                 "bars; session bar assembled from what exists"
             )
     return bars_by_day, session_by_day, auction_by_day
