@@ -358,13 +358,16 @@ def _resolve_flows(kwargs: dict[str, Any]) -> CashFlowSeries | None:
         columns = kwargs.get("flows_columns")
         if columns is not None and not isinstance(columns, dict):
             raise ValueError("flows_columns must be an object mapping field to column name")
+        invert_sign = kwargs.get("flows_invert_sign", False)
+        if isinstance(invert_sign, str):
+            invert_sign = invert_sign.strip().lower() in {"true", "1", "yes"}
         return load_cashflows(
             str(path),
             columns=columns,
             currency=currency,
             default_kind=kwargs.get("flows_default_kind"),
             date_format=kwargs.get("flows_date_format"),
-            invert_sign=bool(kwargs.get("flows_invert_sign", False)),
+            invert_sign=bool(invert_sign),
         )
 
     if not inline:
