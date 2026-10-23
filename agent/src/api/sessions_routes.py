@@ -25,6 +25,63 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Web composer prompt wrappers
+# ============================================================================
+# Web chat creates the session with the raw prompt (``prompt.trim().slice(0, 50)``
+# in frontend/src/pages/Agent.tsx) but POSTs a wrapped first message. These
+# mirror frontend/src/lib/chatPrompt.ts (SWARM_PROMPT_PREFIX),
+# frontend/src/lib/attachments.ts (the ``[Uploaded files: ...]`` envelope) and
+# Agent.tsx (GOAL_KICKOFF_PREFIX), and are stripped the way ``toDisplayPrompt``
+# strips them, so the auto-title route can tell a wrapped first prompt from a
+# genuine manual rename.
+_SWARM_PROMPT_PREFIX = (
+    "[Swarm Team Mode] Use the swarm tool to assemble the best specialist team "
+    "for this task. Auto-select the most appropriate preset.\n\n"
+)
+_GOAL_KICKOFF_PREFIX = "\n".join(
+    [
+        "Start working on this research goal now.",
+        "Keep it research-only, use available tools when evidence is needed, "
+        "add concrete evidence to the goal ledger, and keep going until the "
+        "goal is complete, blocked, waiting for user input, or budget-limited.",
+        "",
+        "Goal: ",
+    ]
+)
+_ATTACHMENTS_OPEN = "[Uploaded files: "
+_ATTACHMENTS_CLOSE = "]\n\n"
+_LEGACY_ATTACHMENT = re.compile(r"^\[Uploaded file: (.+), path: [^\n]*\]\n\n")
+
+
+def _strip_prompt_wrappers(content: str) -> str:
+    """Return the prompt the user typed, without the composer's envelopes."""
+    unwrapped = False
+    if content.startswith(_ATTACHMENTS_OPEN):
+        close = content.find(_ATTACHMENTS_CLOSE, len(_ATTACHMENTS_OPEN))
+        if close >= 0:
+            try:
+                payload = json.loads(content[len(_ATTACHMENTS_OPEN):close])
+            except ValueError:
+                payload = None  # Malformed envelopes stay verbatim.
+            if isinstance(payload, list) and any(
+                isinstance(item, dict) and isinstance(item.get("filename"), str)
+                and item.get("filename")
+                for item in payload
+            ):
+                content = content[close + len(_ATTACHMENTS_CLOSE):]
+                unwrapped = True
+    if not unwrapped:
+        legacy = _LEGACY_ATTACHMENT.match(content)
+        if legacy:
+            content = content[legacy.end():]
+    if content.startswith(_SWARM_PROMPT_PREFIX):
+        content = content[len(_SWARM_PROMPT_PREFIX):]
+    if content.startswith(_GOAL_KICKOFF_PREFIX):
+        content = content[len(_GOAL_KICKOFF_PREFIX):]
+    return content
+
+
+# ============================================================================
 # Pydantic Models
 # ============================================================================
 
@@ -705,7 +762,7 @@ def register_sessions_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=409, detail="Session has no user message to summarize")
 
         current = (session.title or "").strip()
-        auto_prefix = first_user.content.strip()[:50].strip()
+        auto_prefix = _strip_prompt_wrappers(first_user.content).strip()[:50].strip()
         if current and current != auto_prefix:
             return {"status": "kept", "session_id": session_id, "title": current}
 
