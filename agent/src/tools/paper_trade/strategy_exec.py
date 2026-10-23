@@ -408,6 +408,17 @@ class _StrategyDayFailure(RuntimeError):
         self.class_name = class_name
 
 
+class _UniverseViolation(RuntimeError):
+    # Internal carrier from _execute_days to run_strategy_path; a strategy
+    # order outside the declared 5m UNIVERSE is an authoring error, not a
+    # suspended symbol.  The whole call fails in-band before any fill.
+    def __init__(self, day: str, symbols: tuple[str, ...], allowed: Collection[str]) -> None:
+        super().__init__(f"strategy order outside the 5m universe on {day}")
+        self.day = day
+        self.symbols = tuple(symbols)
+        self.allowed = tuple(sorted(allowed))
+
+
 def _execute_days(
     request: PaperTradeStepRequest,
     market_data: data.MarketDataResult,
@@ -417,6 +428,7 @@ def _execute_days(
     day_timeout: float,
     ctx_symbols: tuple[str, ...],
     run_loop: Any,
+    allowed_five: frozenset[str] | None = None,
 ) -> MatchOutcome:
     payload = {
         "source": source,
@@ -459,7 +471,12 @@ def _execute_days(
                 raise _StrategyDayFailure(msg[1], msg[2])
             if msg[0] != "day" or msg[1] != day:
                 raise _StrategyDayFailure(day, StrategyProcessError.__name__)
-            return tuple(StrategyOrder(**item) for item in msg[2])
+            orders = tuple(StrategyOrder(**item) for item in msg[2])
+            if allowed_five is not None:
+                outside = sorted({order.symbol for order in orders} - allowed_five)
+                if outside:
+                    raise _UniverseViolation(day, tuple(outside), allowed_five)
+            return orders
         return run_loop(order_provider=provide_orders)
     finally:
         if started:
@@ -539,7 +556,11 @@ def run_strategy_path(
             orders_by_day={}, fee_model=request.fee_model,
             calendar_client=calendar_client, limits_client=limits_client,
             corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-            hk_lot_sizes=hk_lot_sizes, **kwargs)
+            hk_lot_sizes=hk_lot_sizes,
+            path_model=request.path_model, fill_model=request.fill_model, **kwargs)
+    allowed_five = (
+        frozenset(market_data.five_minute_symbols)
+        if request.interval == "5m" else None)
     if days:
         # The declared UNIVERSE joins the child's ctx.symbols (sorted union
         # with the served universe), extracted from THE SAME single source
@@ -548,7 +569,16 @@ def run_strategy_path(
         ctx_symbols = tuple(sorted(set(market_data.symbols) | set(_declared_universe(source))))
         try:
             return _execute_days(
-                request, market_data, days, path, source, day_timeout, ctx_symbols, run_loop)
+                request, market_data, days, path, source, day_timeout, ctx_symbols, run_loop,
+                allowed_five=allowed_five)
+        except _UniverseViolation as violation:
+            message = (
+                f"strategy orders on {', '.join(violation.symbols)} are outside the 5m UNIVERSE "
+                f"({', '.join(violation.allowed) or 'empty'}); declare them in UNIVERSE "
+                "or use interval=1d")
+            logger.warning("paper_trade strategy 5m universe violation on %s: %s",
+                           violation.day, message)
+            return _strategy_error(request, market_data, message)
         except _StrategyDayFailure as failure:
             message = (f"strategy_execution_timeout:{failure.day}"
                        if failure.class_name is None

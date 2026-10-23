@@ -1,0 +1,87 @@
+{
+  "schema": "paper_trade.five_minute_fixture_manifest/v1",
+  "description": "Synthetic cn_a 5-minute bar fixtures for the pt-v1.2 paper-trade tests. Every file here is AUTHORED, not recorded from a provider: the live stk_mins probe (T1) supplied the SHAPE (49 raw rows per session = 09:30 opening-auction print + 48 continuous bars, labels are bar ENDS, volume in shares), and the prices are synthetic. Tests must never present these numbers as market data. sha256 is of the exact on-disk bytes; test_paper_trade_5m_golden.py re-verifies them and fails when a fixture changes without this manifest.",
+  "conventions": {
+    "columns": [
+      "bar_time",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "label_semantics": "bar END in Asia/Shanghai wall clock (09:35 covers 09:30-09:35)",
+    "auction_row": "the 09:30 row is the opening call-auction print and is excluded from the matched session bar",
+    "continuous_bars_per_day": 48,
+    "volume_unit": "shares (5m caliber, T1) - the derived daily frame divides by 100 to reach lots",
+    "empty_day_sentinel": "a header-only CSV is a zero-bar session, not a missing fixture"
+  },
+  "fixtures": [
+    {
+      "file": "600519.SH/2026-10-16.csv",
+      "symbol": "600519.SH",
+      "trade_date": "2026-10-16",
+      "kind": "normal",
+      "rows": 49,
+      "continuous_rows": 48,
+      "session_bar": {
+        "open": 1419.0,
+        "high": 1421.0,
+        "low": 1417.0,
+        "close": 1420.0,
+        "volume": 5760000.0
+      },
+      "sha256": "856310b990402645d3a317183fddc96015690b35b076160eb2f8020214c382da",
+      "bytes": 2926,
+      "construction": "09:30 opening-auction print at 1418.00 (single price, matches the daily open); 48 continuous bars at 1419.00 with a 1421.00 high at 10:05, a 1417.00 low at 11:00 and a 1420.00 close at 15:00; volume 120000 shares per continuous bar. Provides the previous close for the 2026-10-20 price-limit band and the carry-forward mark for the 2026-10-19 halt."
+    },
+    {
+      "file": "600519.SH/2026-10-19.csv",
+      "symbol": "600519.SH",
+      "trade_date": "2026-10-19",
+      "kind": "halted",
+      "rows": 0,
+      "continuous_rows": 0,
+      "session_bar": null,
+      "sha256": "450689727ec7fa6c04ba4309b4dcbf094e96e04a34e4bb10432baa9bb9f22be9",
+      "bytes": 36,
+      "construction": "Header-only file: the documented zero-bar sentinel for a suspended session (T1: a suspended day is absent from BOTH the daily and the 5m endpoint). Readers must treat it as zero bars, never as a missing fixture."
+    },
+    {
+      "file": "600519.SH/2026-10-20.csv",
+      "symbol": "600519.SH",
+      "trade_date": "2026-10-20",
+      "kind": "normal",
+      "rows": 49,
+      "continuous_rows": 48,
+      "session_bar": {
+        "open": 1421.0,
+        "high": 1422.0,
+        "low": 1421.0,
+        "close": 1422.0,
+        "volume": 5760000.0
+      },
+      "sha256": "f453ab6fadd19a7d9f2cc5894374d99b85d240dbccf900a77492158f157d164a",
+      "bytes": 2926,
+      "construction": "09:30 opening-auction print at 1423.00 (single price, equals the daily open); 48 continuous bars at 1421.00 with a 1422.00 close at 15:00; volume 120000 shares per continuous bar."
+    },
+    {
+      "file": "000001.SZ/2026-10-19.csv",
+      "symbol": "000001.SZ",
+      "trade_date": "2026-10-19",
+      "kind": "normal",
+      "rows": 49,
+      "continuous_rows": 48,
+      "session_bar": {
+        "open": 10.0,
+        "high": 10.05,
+        "low": 9.98,
+        "close": 10.02,
+        "volume": 24000000.0
+      },
+      "sha256": "38bbc01c64a1c70513160aca54b96104b91cc31d777a9303d9d9bdb6fca0a10d",
+      "bytes": 2534,
+      "construction": "Witness session for the halted-day case: 09:30 auction print at 10.00 plus 48 continuous bars around 10.00 (high 10.05 at 10:30, low 9.98 at 14:00, close 10.02 at 15:00), volume 500000 shares per continuous bar. Its presence keeps the 2026-10-19 whole-universe check from collapsing a one-symbol halt into PAPER_DATA_NOT_READY (D6)."
+    }
+  ]
+}
