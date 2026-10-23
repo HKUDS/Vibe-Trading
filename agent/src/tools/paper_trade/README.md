@@ -87,47 +87,75 @@ strategy failure discards the whole call, including earlier uncommitted results.
 
 `paper_trade_step` accepts `interval="5m"` for A-shares. One step covers exactly
 one completed session and matches against that session's single assembled bar,
-built from the 48 continuous five-minute bars. The 09:30 opening-auction print is
-excluded, as is any label inside 09:15-09:25 or 14:57-15:00; an excluded auction
-label is reported as an `auction_window` event. A symbol with no continuous bar
-on a calendar-open day is `halted` (its position is valued carry-forward), and an
-order on it is rejected `suspended` with one `canceled_after_failed_match` row.
+built from the 48 continuous five-minute bars. The 09:30 label is the opening
+call-auction print, single-priced on 4 of 5 probed days, and is excluded by
+policy without an event. A label in 09:15-09:25 or from 14:57 up to but not
+including 15:00 is an auction-window anomaly, excluded from matching and
+reported as an `auction_window` event; the 15:00 label is a continuous bar.
+
+A symbol with 5m rows but no continuous session bar on a calendar-open day is
+`halted`: its position is valued at the last available close (carry-forward),
+and an order on it is rejected `suspended` with one
+`canceled_after_failed_match` row. A requested 5m symbol whose response carried
+no row at all while its daily bar exists is a provider omission and returns
+`PAPER_DATA_NOT_READY`, not a halt.
 
 | Field | Values | Default | Meaning |
 | --- | --- | --- | --- |
 | `interval` | `1d`, `5m` | `1d` | `5m` is cn_a-only and accepts one date per step |
-| `session` | `auto`, `cn_a` | `auto` | `cn_a` requires `market="cn_a"` |
+| `session` | `auto`, `cn_a` | `auto` | coherence selector only: `cn_a` requires `market="cn_a"` and does not change the day boundary |
 | `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from the session bar |
 | `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
 
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
-is one symbol per step (2 calls/day, 1/minute), so a 5m step with two order
-symbols is refused; split the orders across steps or use `interval="1d"`. Orders
-mode derives the 5m universe from the order symbols; strategy mode requires a
-non-empty `UNIVERSE` and refuses any order outside it. When no 5m-capable loader
-is configured, the step returns `PAPER_DATA_NOT_READY` naming the loader instead
-of reading the daily source as a 5m source.
+is one symbol per step (1 call/minute, 1 call/hour and 2 calls/day; a refused
+call still consumes the daily budget), so a 5m step with two order symbols is
+refused before any fetch. Split the orders across steps or use `interval="1d"`.
+Orders mode derives the 5m universe from the order symbols; strategy mode
+requires a non-empty `UNIVERSE` and refuses any order outside it. When no
+5m-capable loader is configured, the step returns `PAPER_DATA_NOT_READY` naming
+the loader instead of reading the daily source as a 5m source.
+
+A step with `"orders": []` issues no `stk_mins` request. Its NAV comes from the
+daily leg and follows the `interval="1d"` contract exactly: without the target
+daily bar it returns the same `PAPER_DATA_NOT_READY`; with the target daily bar
+it produces the NAV row from that day's closes.
+
+The 5m leg is stateless. It is exposed through the agent/MCP step tool,
+`POST /api/paper-trade/step` and `vibe-trading paper step`; saved accounts
+remain daily-only. The persistent v1.2 runner/account/store layer is a follow-up
+branch (`paper-trade-v12-persistence`) and is not wired to any CLI, API or MCP
+surface in this PR.
 
 The daily close still anchors price-limit bands and NAV; `path_model` selects the
 5m fill reference only. Corporate actions remain fail-closed.
 
 ## Known limits
 
-- **Zero-calendar markets (HK/US).** A candidate weekday with no bar for any
-  symbol is treated as untradeable: the day is recorded as
-  `market_closed_inferred`, its orders are rejected `suspended`, positions are
-  valued carry-forward and the watermark still advances. A provider outage looks
-  identical, so cross-check a surprising closure against the exchange calendar.
+- **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
+  for any symbol is inferred closed: the day is recorded as
+  `market_closed_inferred` with a warning, no NAV row is produced for it, its
+  orders are rejected `suspended` and positions carry the last available close
+  forward. An all-market zero bar
+  on the target day is `PAPER_DATA_NOT_READY` (retryable), because a provider
+  outage looks identical; a saved-account advance then returns `committed:
+  false` and leaves the account unchanged, since a result with an empty
+  `nav_series` is never committed. A single-symbol zero bar on a day another
+  symbol traded is `suspended` with carry-forward valuation.
+- **5m payload integrity.** A zero-volume 48-bar session is a halt: the day is
+  dropped with a warning, orders are rejected `suspended` and positions are
+  valued at the last available close. Off-grid continuous labels (for example a
+  1m payload served as 5m) and continuous bars that are all NaN are provider
+  faults, so the step returns `PAPER_DATA_NOT_READY` instead of a session.
 - **The provider's bar count is authoritative.** There is no 48-bar gate: a
   session assembled from fewer bars still fills, and the `N/48 continuous bars`
-  warning is stored with the step (`warnings` in `step.json`). Run a same-day
-  step only after the session has settled, or the stored ledger freezes a
-  partial-session price.
-- **5m halt detection needs a witness.** A symbol with no continuous bar is
-  `halted` only when another symbol in the same request traded that day. With
-  one order symbol per 5m step, a single-symbol account whose symbol is halted
-  reports `PAPER_DATA_NOT_READY` instead of `suspended`.
+  warning is returned in the step's `warnings`. Run a same-day step only after
+  the session has settled, or the step prices a partial-session bar.
+- **5m halt detection needs 5m evidence.** A requested 5m symbol with no row at
+  all while its daily bar exists is a provider omission and returns
+  `PAPER_DATA_NOT_READY`. A symbol that produced any 5m row (the 09:30 auction
+  print counts) but no continuous session is `halted`, not data-not-ready.
 - **5m strategy UNIVERSE is strict.** An order on a position outside the
   declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
   by a 5m strategy step; use the 1d step for that.

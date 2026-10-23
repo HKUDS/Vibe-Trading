@@ -55,11 +55,18 @@ def _normalize_day(value: str) -> str:
 def assess_readiness(result: MarketDataResult, target_day: str) -> ReadinessVerdict:
     """Target-day readiness on the merged frame (AM-9), never on a leg alone.
 
-    Ready when ANY served symbol carries the target-day bar (single-symbol
-    absence is a suspended fact for the engine, AM-6③); all-market zero bar →
-    the frozen PAPER_DATA_NOT_READY material (message follows the R1-4 example
+    Ready when ANY served symbol carries the target-day bar (a zero-bar symbol
+    is a suspended fact for the engine, AM-6③); all-market zero bar → the
+    frozen PAPER_DATA_NOT_READY material (message follows the R1-4 example
     shape; deterministic English, no timestamps — VD-7).  An empty universe is
     vacuously ready.
+
+    ``interval="5m"`` judges the order symbols on the 5m leg instead: a
+    provider omission (daily bar present, no 5m row at all) and a day with no
+    session bar anywhere are PAPER_DATA_NOT_READY, while a served symbol with
+    no continuous session stays a halt for the engine.  A zero-order 5m step
+    issues no 5m request, so it falls back to the 1d contract above and must
+    carry the target daily bar.
     """
     day = _normalize_day(target_day)
     if not result.symbols:

@@ -80,8 +80,9 @@ CN_A_SESSION_TIMEZONE = "Asia/Shanghai"
 CONTINUOUS_MORNING = ("09:30", "11:30")
 CONTINUOUS_AFTERNOON = ("13:00", "15:00")
 
-#: Opening call auction 09:15-09:25 and closing call auction 14:57-15:00.
-#: Neither is matched (T4 "竞价段不撮合").
+#: Opening call auction 09:15-09:25 and closing call auction 14:57-15:00
+#: (``14:57 <= label < 15:00``; the 15:00 label is a continuous bar).
+#: Neither auction window is matched (T4 "竞价段不撮合").
 OPENING_AUCTION = ("09:15", "09:25")
 CLOSING_AUCTION = ("14:57", "15:00")
 
@@ -111,11 +112,12 @@ def classify_cn_a_session_label(label: str) -> str:
     :data:`SESSION_OPENING_AUCTION_PRINT`, :data:`SESSION_AUCTION_WINDOW` or
     :data:`SESSION_OUTSIDE`.
 
-    * ``09:30`` is the opening call-auction print: expected, excluded from the
-      session bar, never an event.
+    * ``09:30`` is the opening call-auction print, single-priced on 4 of 5
+      probed days (data_5m.py T1): expected, excluded from the session bar by
+      policy, never an event.
     * A label inside the opening auction (09:15-09:25 inclusive, because no
-      continuous label lives there) or strictly inside the closing auction
-      (14:57 < t < 15:00 — 15:00 itself is the real closing bar per T1) is an
+      continuous label lives there) or inside the closing auction
+      (14:57 <= t < 15:00; 15:00 itself is the real closing bar per T1) is an
       auction-window anomaly: excluded from matching AND reported as an
       ``auction_window`` event.
     * Continuous windows are half-open at the start (``09:30 < t <= 11:30``,

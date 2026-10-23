@@ -72,8 +72,10 @@ NOT MEASURED — blocked by that 2-calls/day cap; do not present as fact
       603517.SH is suspended on 2026-10-19 (``api.suspend_d`` type S, and no
       ``daily()`` bar that day) while 10-16 and 10-20 traded. Running the
       command below on a fresh quota probes exactly that window; expect 0
-      rows on 10-19. Until then, a zero-bar trading day must be reported as
-      ``halted`` — never as fabricated or forward-filled bars.
+      rows on 10-19. Until then, 5m rows with no continuous session (or a
+      zero-volume session) are reported as ``halted``, never as fabricated or
+      forward-filled bars; a symbol with no 5m row at all is a provider
+      omission and stays ``PAPER_DATA_NOT_READY``.
 
 ENGINE RULE — the P0 matched bar (D1, binding for T3/T4)
     pt-v1.2 adds NO order-level bar/timestamp field, so an order cannot be
@@ -82,10 +84,10 @@ ENGINE RULE — the P0 matched bar (D1, binding for T3/T4)
     bar's open, high/low = the session extremes, close = the 15:00 bar's
     close, volume = their sum.  The 09:30 opening-auction print is EXCLUDED
     (T4: the auction window never matches), and a label inside 09:15-09:25 or
-    strictly inside 14:57-15:00 is excluded and reported as an
-    ``auction_window`` event.  Every order is terminal in that single session
-    bar: no partial fills, no resting orders across bars, no re-submission on
-    the next bar.  Per-bar order re-submission (planbook F2) needs an
+    from 14:57 up to but not including 15:00 is excluded and reported as an
+    ``auction_window`` event (the 15:00 label is a continuous bar).  Every order
+    is terminal in that single session bar: no partial fills, no resting orders
+    across bars, no re-submission on the next bar.  Per-bar order re-submission (planbook F2) needs an
     order-level bar field and is explicitly deferred — it is a P0 limitation,
     not a missing implementation.
 
