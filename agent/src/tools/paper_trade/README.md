@@ -112,6 +112,26 @@ of reading the daily source as a 5m source.
 The daily close still anchors price-limit bands and NAV; `path_model` selects the
 5m fill reference only. Corporate actions remain fail-closed.
 
+## Known limits
+
+- **Zero-calendar markets (HK/US).** A candidate weekday with no bar for any
+  symbol is treated as untradeable: the day is recorded as
+  `market_closed_inferred`, its orders are rejected `suspended`, positions are
+  valued carry-forward and the watermark still advances. A provider outage looks
+  identical, so cross-check a surprising closure against the exchange calendar.
+- **The provider's bar count is authoritative.** There is no 48-bar gate: a
+  session assembled from fewer bars still fills, and the `N/48 continuous bars`
+  warning is stored with the step (`warnings` in `step.json`). Run a same-day
+  step only after the session has settled, or the stored ledger freezes a
+  partial-session price.
+- **5m halt detection needs a witness.** A symbol with no continuous bar is
+  `halted` only when another symbol in the same request traded that day. With
+  one order symbol per 5m step, a single-symbol account whose symbol is halted
+  reports `PAPER_DATA_NOT_READY` instead of `suspended`.
+- **5m strategy UNIVERSE is strict.** An order on a position outside the
+  declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
+  by a 5m strategy step; use the 1d step for that.
+
 ## Data and model limits
 
 Execution requires raw prices. Tencent's unadjusted endpoint serves A-shares/HK;

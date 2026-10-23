@@ -1445,7 +1445,11 @@ from the daily chain, which serves daily bars only — accepts one order symbol 
 step (the measured provider limit is 2 calls/day), fills all-or-none at the
 `path_model` reference (`bar_median` or `bar_close`), and requires a non-empty
 `UNIVERSE` in strategy mode. `session`, `path_model` and `fill_model` default to
-the daily behaviour, so every existing call is unchanged.
+the daily behaviour, so every existing call is unchanged. Known limits: a
+zero-calendar (HK/US) weekday with no bars is treated as untradeable and still
+advances the date; the provider's bar count is authoritative (a partial session
+fills and records its coverage warning); and a single-symbol 5m account cannot
+distinguish a halt from missing data.
 
 Execution uses raw prices (Tencent raw for A-shares/HK, raw-capable US providers;
 Tushare `stk_mins` for the A-share 5m leg). A-shares require a complete ClickHouse
