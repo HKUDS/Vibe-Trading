@@ -23,6 +23,10 @@ from src.goal.policy import reject_live_execution_objective
         "Now analyze short interest in TSLA",
         "Immediately evaluate a long AAPL thesis",
         "Right away assess whether to sell TSLA",
+        # Horizons, not orders: "long"/"short" here are adjectives.
+        "Update the long-term thesis immediately",
+        "Refresh the short-term model right away",
+        "Revisit the long term allocation now",
     ],
 )
 def test_ordinary_research_objectives_are_accepted(objective: str) -> None:
@@ -54,6 +58,8 @@ def test_ordinary_research_objectives_are_accepted(objective: str) -> None:
         "Now, please buy AAPL",
         "Research the setup; immediately sell TSLA",
         "Please immediately short TSLA",
+        "Short TSLA immediately",
+        "Go long now",
     ],
 )
 def test_genuine_execution_requests_are_still_rejected(objective: str) -> None:

@@ -11,14 +11,17 @@ _EXECUTION_PATTERNS = (
     # security, so "buy NVDA shares" alone in a research objective is the
     # normal case, not an execution request. Only fire on an actual
     # execution-imminent cue alongside the buy/sell verb.
+    # "long-term" / "short-term" (and "long term" / "short term") are horizons.
+    # A hyphen or space is a word boundary, so "update the long-term thesis
+    # immediately" used to match long ... immediately and was rejected as an order.
     re.compile(
-        r"\b(buy|sell|short|long)\b.{0,40}\b(now|immediately|right away|market order|limit order)\b",
+        r"\b(?:buy|sell|short(?![\s-]*term\b)|long(?![\s-]*term\b))\b.{0,40}\b(?:now|immediately|right away|market order|limit order)\b",
         re.I,
     ),
     # Same cue, reversed order ("immediately buy TSLA", "right away sell
     # AAPL"): the pattern above only fires when the verb comes first.
     re.compile(
-        r"\b(now|immediately|right away)\b[\s,:-]+(?:please\s+)?(?:buy|sell|short|long)\b",
+        r"\b(?:now|immediately|right away)\b[\s,:-]+(?:please\s+)?(?:buy|sell|short(?![\s-]*term\b)|long(?![\s-]*term\b))\b",
         re.I,
     ),
     re.compile(r"(下单|市价单|限价单|马上买|立即买|现在买|马上卖|立即卖|现在卖)"),
