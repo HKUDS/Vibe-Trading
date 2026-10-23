@@ -56,15 +56,14 @@ _NORMAL_BAR = {"open": 1421.0, "high": 1422.0, "low": 1421.0, "close": 1422.0}
     ("path_model", "expected"),
     [("bar_median", 1421.50), ("bar_close", 1422.00)],
 )
-def test_normal_day_fills_exactly_at_the_recomputed_reference(
-    path_model: str, expected: float
-) -> None:
+def test_normal_day_fills_exactly_at_the_recomputed_reference(path_model: str, expected: float) -> None:
     document, _ = _run(_payload(path_model=path_model))
 
     assert document["schema_version"] == "pt-v1.2"
     assert _SHA_RE.match(document["engine_fingerprint"])
     assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
-        (_SYM, "buy", 100.0, expected)]
+        (_SYM, "buy", 100.0, expected)
+    ]
     assert document["fills"][0]["price"] == float(fixture_reference(_SYM, _DAY, path_model))
     assert document["canceled_orders"] == []
     assert document["events"] == []
@@ -87,10 +86,12 @@ def test_non_marketable_limit_is_rejected_and_emergency_canceled() -> None:
 
     assert document["fills"] == []
     assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_SYM, "limit_not_marketable")]
+        (_SYM, "limit_not_marketable")
+    ]
     assert document["rejected_orders"][0]["detail"] == "ref 1421.50 > limit 1.00"
     assert [(row["symbol"], row["reason_code"]) for row in document["canceled_orders"]] == [
-        (_SYM, CANCELED_REASON_CODE)]
+        (_SYM, CANCELED_REASON_CODE)
+    ]
     assert document["events"] == []
 
 
@@ -110,10 +111,8 @@ def test_halted_session_fills_nothing_and_reports_only_halted() -> None:
     )
 
     assert document["fills"] == []
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_SYM, "suspended")]
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_SYM, "halted")]
+    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [(_SYM, "suspended")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_SYM, "halted")]
     assert len(document["canceled_orders"]) == 1
     assert document["end_state"]["cash"] == 1_000_000.0
     assert {row["symbol"]: row["qty"] for row in document["end_state"]["positions"]} == {
@@ -278,10 +277,8 @@ def test_an_order_symbol_with_no_bar_at_all_is_halted_not_data_not_ready() -> No
     )
 
     assert "status" not in document
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_WITNESS, "halted")]
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_WITNESS, "suspended")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_WITNESS, "halted")]
+    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [(_WITNESS, "suspended")]
     assert document["fills"] == []
 
 
@@ -290,15 +287,17 @@ def test_an_order_symbol_with_no_bar_at_all_is_halted_not_data_not_ready() -> No
 
 def test_a_5m_valuation_step_without_orders_hashes_the_daily_bars() -> None:
     def valuation(day: str) -> dict[str, Any]:
-        document, _ = _run(_payload(
-            orders=[],
-            from_date=day,
-            to_date=day,
-            account_state={
-                "cash": 1_000_000.0,
-                "positions": [{"symbol": _SYM, "qty": 100, "avg_cost": 1421.0}],
-            },
-        ))
+        document, _ = _run(
+            _payload(
+                orders=[],
+                from_date=day,
+                to_date=day,
+                account_state={
+                    "cash": 1_000_000.0,
+                    "positions": [{"symbol": _SYM, "qty": 100, "avg_cost": 1421.0}],
+                },
+            )
+        )
         return document
 
     earlier = valuation("2026-10-16")
@@ -351,9 +350,7 @@ def test_an_auction_only_symbol_with_a_daily_bar_is_halted_not_data_not_ready() 
     )
 
     assert "status" not in document, document
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_WITNESS, "halted")]
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_WITNESS, "suspended")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_WITNESS, "halted")]
+    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [(_WITNESS, "suspended")]
     assert document["fills"] == []
     assert not any("provider omitted" in warning for warning in document["warnings"])

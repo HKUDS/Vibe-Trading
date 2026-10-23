@@ -35,10 +35,7 @@ _FEES = {
 
 def _grid(start: str, step_minutes: int, count: int) -> list[str]:
     first = dt.datetime.fromisoformat(f"{_DAY}T{start}:00")
-    return [
-        (first + dt.timedelta(minutes=step_minutes * index)).strftime("%Y-%m-%d %H:%M")
-        for index in range(count)
-    ]
+    return [(first + dt.timedelta(minutes=step_minutes * index)).strftime("%Y-%m-%d %H:%M") for index in range(count)]
 
 
 def _session_labels() -> list[str]:
@@ -51,8 +48,9 @@ def _minute_labels() -> list[str]:
     return _grid("09:31", 1, 120) + _grid("13:01", 1, 120)
 
 
-def _intraday(labels: list[str], *, price: float = 10.0, volume: float = 120_000.0,
-              all_nan: bool = False) -> pd.DataFrame:
+def _intraday(
+    labels: list[str], *, price: float = 10.0, volume: float = 120_000.0, all_nan: bool = False
+) -> pd.DataFrame:
     records = [
         {
             "bar_time": label,
@@ -70,12 +68,12 @@ def _intraday(labels: list[str], *, price: float = 10.0, volume: float = 120_000
 
 
 def _daily(close: float = 10.0) -> pd.DataFrame:
-    frame = pd.DataFrame([
-        {"trade_date": _PREV, "open": close, "high": close, "low": close,
-         "close": close, "volume": 1_000.0},
-        {"trade_date": _DAY, "open": close, "high": close, "low": close,
-         "close": close, "volume": 1_000.0},
-    ])
+    frame = pd.DataFrame(
+        [
+            {"trade_date": _PREV, "open": close, "high": close, "low": close, "close": close, "volume": 1_000.0},
+            {"trade_date": _DAY, "open": close, "high": close, "low": close, "close": close, "volume": 1_000.0},
+        ]
+    )
     frame["trade_date"] = pd.to_datetime(frame["trade_date"])
     return frame.set_index("trade_date")
 
@@ -144,14 +142,11 @@ def test_zero_volume_48_bar_session_is_halted_not_filled() -> None:
 
     assert "status" not in document, document
     assert document["fills"] == []
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_SYM, "suspended")]
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_SYM, "halted")]
+    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [(_SYM, "suspended")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_SYM, "halted")]
     assert len(document["canceled_orders"]) == 1
     assert document["end_state"]["cash"] == 1_000_000.0
-    assert any(
-        "zero-volume session; treated as halted" in warning for warning in document["warnings"])
+    assert any("zero-volume session; treated as halted" in warning for warning in document["warnings"])
 
 
 def test_one_minute_payload_is_data_not_ready_not_a_session() -> None:
@@ -184,12 +179,12 @@ def test_partial_5m_session_still_fills_with_coverage_warning() -> None:
     document = _run(loader)
 
     assert "status" not in document, document
-    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"])
-            for fill in document["fills"]] == [(_SYM, "buy", 100.0, 10.0)]
+    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
+        (_SYM, "buy", 100.0, 10.0)
+    ]
     assert document["rejected_orders"] == []
     assert document["events"] == []
-    assert any(
-        "30/48 continuous bars" in warning for warning in document["warnings"])
+    assert any("30/48 continuous bars" in warning for warning in document["warnings"])
 
 
 def test_auction_only_symbol_with_a_daily_bar_is_still_halted() -> None:
@@ -200,9 +195,7 @@ def test_auction_only_symbol_with_a_daily_bar_is_still_halted() -> None:
 
     assert "status" not in document, document
     assert document["fills"] == []
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_SYM, "suspended")]
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_SYM, "halted")]
+    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [(_SYM, "suspended")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_SYM, "halted")]
     assert not any("zero-volume" in warning for warning in document["warnings"])
     assert not any("continuous bars;" in warning for warning in document["warnings"])

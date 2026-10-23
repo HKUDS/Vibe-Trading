@@ -36,19 +36,34 @@ def _session_labels(day: str = _DAY) -> list[str]:
     stamps: list[str] = []
     for hour, minute in ((9, 30), (13, 0)):
         start = dt.datetime.fromisoformat(f"{day}T{hour:02d}:{minute:02d}:00")
-        stamps.extend((start + dt.timedelta(minutes=5 * step)).strftime("%H:%M")
-                      for step in range(1, 25))
+        stamps.extend((start + dt.timedelta(minutes=5 * step)).strftime("%H:%M") for step in range(1, 25))
     return stamps
 
 
 def _intraday(day: str, prices: dict[str, float], auction: float | None = None) -> pd.DataFrame:
     records = []
     if auction is not None:
-        records.append({"bar_time": f"{day} 09:30", "open": auction, "high": auction,
-                        "low": auction, "close": auction, "volume": 48000.0})
+        records.append(
+            {
+                "bar_time": f"{day} 09:30",
+                "open": auction,
+                "high": auction,
+                "low": auction,
+                "close": auction,
+                "volume": 48000.0,
+            }
+        )
     for label, price in prices.items():
-        records.append({"bar_time": f"{day} {label}", "open": price, "high": price,
-                        "low": price, "close": price, "volume": 120000.0})
+        records.append(
+            {
+                "bar_time": f"{day} {label}",
+                "open": price,
+                "high": price,
+                "low": price,
+                "close": price,
+                "volume": 120000.0,
+            }
+        )
     frame = pd.DataFrame(records)
     frame["bar_time"] = pd.to_datetime(frame["bar_time"])
     return frame.set_index("bar_time")
@@ -67,8 +82,7 @@ def _flat_5m(day: str, price: float) -> pd.DataFrame:
 
 def _daily(rows: list[tuple[str, float]]) -> pd.DataFrame:
     records = [
-        {"trade_date": day, "open": close, "high": close, "low": close,
-         "close": close, "volume": 1000.0}
+        {"trade_date": day, "open": close, "high": close, "low": close, "close": close, "volume": 1000.0}
         for day, close in rows
     ]
     frame = pd.DataFrame(records)
@@ -103,18 +117,26 @@ class FakeCalendarClient:
 
     def get_trade_calendar(self, start_date: str, end_date: str) -> pd.DataFrame:
         rows = [
-            {"exchange": "SSE", "cal_date": day.strftime("%Y-%m-%d"),
-             "is_open": int(day.strftime("%Y-%m-%d") in self._open), "pretrade_date": ""}
+            {
+                "exchange": "SSE",
+                "cal_date": day.strftime("%Y-%m-%d"),
+                "is_open": int(day.strftime("%Y-%m-%d") in self._open),
+                "pretrade_date": "",
+            }
             for day in pd.date_range(start_date, end_date)
         ]
         return pd.DataFrame(rows, columns=["exchange", "cal_date", "is_open", "pretrade_date"])
 
 
-def _market_data(daily: dict[str, pd.DataFrame], five: dict[str, pd.DataFrame], *,
-                 symbols: tuple[str, ...] = (_SYM,)):
+def _market_data(daily: dict[str, pd.DataFrame], five: dict[str, pd.DataFrame], *, symbols: tuple[str, ...] = (_SYM,)):
     return fetch_market_data(
-        "cn_a", list(symbols), _DAY, _DAY,
-        loader=FakeLoader(daily, five), ch_client=FakeChClient(), interval="5m",
+        "cn_a",
+        list(symbols),
+        _DAY,
+        _DAY,
+        loader=FakeLoader(daily, five),
+        ch_client=FakeChClient(),
+        interval="5m",
     )
 
 
@@ -131,19 +153,32 @@ def _cn_a_data(**overrides) -> tuple[object, FakeLoader]:
     return _market_data(daily, five, symbols=symbols), FakeLoader(daily, five)
 
 
-def _outcome(*, orders, cash=100000.0, positions=(), path_model="bar_median",
-             market_data=None, open_days=frozenset({_DAY}), **frames):
+def _outcome(
+    *,
+    orders,
+    cash=100000.0,
+    positions=(),
+    path_model="bar_median",
+    market_data=None,
+    open_days=frozenset({_DAY}),
+    **frames,
+):
     if market_data is None:
         market_data, _ = _cn_a_data(**frames)
-    request = parse_request({
-        "account_id": "pa_5m", "market": "cn_a",
-        "account_state": {"cash": cash, "positions": list(positions)},
-        "orders": list(orders), "from_date": _DAY, "to_date": _DAY,
-        "fee_model": dict(_FEE_MODEL), "interval": "5m", "path_model": path_model,
-    })
-    return engine.match_orders(
-        request, market_data=market_data,
-        calendar_client=FakeCalendarClient(open_days))
+    request = parse_request(
+        {
+            "account_id": "pa_5m",
+            "market": "cn_a",
+            "account_state": {"cash": cash, "positions": list(positions)},
+            "orders": list(orders),
+            "from_date": _DAY,
+            "to_date": _DAY,
+            "fee_model": dict(_FEE_MODEL),
+            "interval": "5m",
+            "path_model": path_model,
+        }
+    )
+    return engine.match_orders(request, market_data=market_data, calendar_client=FakeCalendarClient(open_days))
 
 
 def _buy(limit=None, qty=100, symbol=_SYM):
@@ -201,8 +236,7 @@ def test_buy_limit_marketability_at_the_reference(limit: float, fills: bool) -> 
 
 @pytest.mark.parametrize(("limit", "fills"), [(10.00, True), (10.10, True), (10.20, False)])
 def test_sell_limit_marketability_at_the_reference(limit: float, fills: bool) -> None:
-    outcome = _outcome(orders=[_sell(limit=limit)],
-                       positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
+    outcome = _outcome(orders=[_sell(limit=limit)], positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
     if fills:
         assert [(f.side, f.price) for f in outcome.fills] == [("sell", 10.10)]
@@ -234,14 +268,13 @@ def test_fill_price_equals_the_reference_under_both_path_models(path_model: str)
     expected = 10.20 if path_model == "bar_close" else 10.10
     assert (bar.open, bar.high, bar.low, bar.close) == (10.00, 10.20, 10.00, 10.20)
 
-    outcome = _outcome(orders=[_buy(), _buy(qty=200)], market_data=market_data,
-                       path_model=path_model, cash=1000000.0)
+    outcome = _outcome(orders=[_buy(), _buy(qty=200)], market_data=market_data, path_model=path_model, cash=1000000.0)
 
     assert [f.price for f in outcome.fills] == [expected, expected]
     assert outcome.canceled_orders == ()
     assert outcome.engine_fingerprint == state_hash.engine_fingerprint(
-        interval="5m", path_model=path_model, fill_model="all_or_none",
-        bar_fingerprint=market_data.bar_fingerprint)
+        interval="5m", path_model=path_model, fill_model="all_or_none", bar_fingerprint=market_data.bar_fingerprint
+    )
 
 
 def test_insufficient_cash_rejects_and_cancels() -> None:
@@ -256,8 +289,7 @@ def test_insufficient_cash_rejects_and_cancels() -> None:
 
 
 def test_insufficient_position_rejects_and_cancels() -> None:
-    outcome = _outcome(orders=[_sell(qty=200)],
-                       positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
+    outcome = _outcome(orders=[_sell(qty=200)], positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
     assert outcome.fills == ()
     assert [r.reason_code for r in outcome.rejected_orders] == ["insufficient_position"]
@@ -288,8 +320,9 @@ def test_limit_up_buy_rejects_with_a_price_limit_event() -> None:
 def test_limit_down_sell_rejects_with_a_price_limit_event() -> None:
     daily = {_SYM: _daily([(_PREV, 10.00), (_DAY, 9.00)])}
     five = {_SYM: _flat_5m(_DAY, 9.00)}
-    outcome = _outcome(orders=[_sell()], daily=daily, five=five,
-                       positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
+    outcome = _outcome(
+        orders=[_sell()], daily=daily, five=five, positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}]
+    )
 
     assert outcome.fills == ()
     assert [r.reason_code for r in outcome.rejected_orders] == ["limit_down"]
@@ -305,8 +338,10 @@ def test_halted_symbol_rejects_suspended_and_its_position_is_untouched() -> None
     five = {_SYM: _normal_5m()}
     market_data, _ = _cn_a_data(daily=daily, five=five, symbols=(_SYM, _OTHER))
     outcome = _outcome(
-        orders=[_buy(symbol=_OTHER)], market_data=market_data,
-        positions=[{"symbol": _OTHER, "qty": 100, "avg_cost": 20.0}])
+        orders=[_buy(symbol=_OTHER)],
+        market_data=market_data,
+        positions=[{"symbol": _OTHER, "qty": 100, "avg_cost": 20.0}],
+    )
 
     assert outcome.fills == ()
     assert [(r.symbol, r.reason_code) for r in outcome.rejected_orders] == [(_OTHER, "suspended")]
@@ -319,36 +354,40 @@ def test_halted_symbol_rejects_suspended_and_its_position_is_untouched() -> None
 
 def test_every_order_is_terminal_and_every_failure_has_a_reason() -> None:
     orders = [
-        _buy(),                 # fills
-        _buy(limit=10.00),      # limit_not_marketable
-        _buy(qty=150),          # lot_size
+        _buy(),  # fills
+        _buy(limit=10.00),  # limit_not_marketable
+        _buy(qty=150),  # lot_size
         _buy(symbol="999999.SZ"),  # unknown_symbol
-        _sell(qty=200),         # insufficient_position
+        _sell(qty=200),  # insufficient_position
     ]
-    outcome = _outcome(orders=orders,
-                       positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
+    outcome = _outcome(orders=orders, positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
     assert len(outcome.fills) + len(outcome.rejected_orders) == len(orders)
     assert all(r.reason_code in REASON_CODES for r in outcome.rejected_orders)
     assert len(outcome.canceled_orders) == len(outcome.rejected_orders)
     assert {c.reason_code for c in outcome.canceled_orders} == {CANCELED_REASON_CODE}
     assert [(c.symbol, c.side, c.qty) for c in outcome.canceled_orders] == [
-        (r.symbol, r.side, r.qty) for r in outcome.rejected_orders]
+        (r.symbol, r.side, r.qty) for r in outcome.rejected_orders
+    ]
 
 
 def test_1d_mode_is_unchanged_and_never_cancels_or_events() -> None:
     daily = {_SYM: _daily([(_PREV, 10.00), (_DAY, 10.20)])}
-    market_data = fetch_market_data(
-        "cn_a", [_SYM], _DAY, _DAY,
-        loader=FakeLoader(daily), ch_client=FakeChClient())
-    request = parse_request({
-        "account_id": "pa_5m_1d", "market": "cn_a",
-        "account_state": {"cash": 100000.0, "positions": []},
-        "orders": [_buy(limit=10.00)], "from_date": _DAY, "to_date": _DAY,
-        "fee_model": dict(_FEE_MODEL),
-    })
+    market_data = fetch_market_data("cn_a", [_SYM], _DAY, _DAY, loader=FakeLoader(daily), ch_client=FakeChClient())
+    request = parse_request(
+        {
+            "account_id": "pa_5m_1d",
+            "market": "cn_a",
+            "account_state": {"cash": 100000.0, "positions": []},
+            "orders": [_buy(limit=10.00)],
+            "from_date": _DAY,
+            "to_date": _DAY,
+            "fee_model": dict(_FEE_MODEL),
+        }
+    )
     outcome = engine.match_orders(
-        request, market_data=market_data, calendar_client=FakeCalendarClient(frozenset({_DAY})))
+        request, market_data=market_data, calendar_client=FakeCalendarClient(frozenset({_DAY}))
+    )
 
     assert outcome.fills == ()
     assert outcome.rejected_orders[0].detail == "close 10.20 > limit 10.00"
@@ -360,16 +399,22 @@ def test_1d_mode_is_unchanged_and_never_cancels_or_events() -> None:
 
 def test_5m_request_refuses_a_daily_frame() -> None:
     daily = {_SYM: _daily([(_PREV, 10.00), (_DAY, 10.20)])}
-    market_data = fetch_market_data(
-        "cn_a", [_SYM], _DAY, _DAY, loader=FakeLoader(daily), ch_client=FakeChClient())
-    request = parse_request({
-        "account_id": "pa_5m_gate", "market": "cn_a",
-        "account_state": {"cash": 100000.0, "positions": []},
-        "orders": [_buy()], "from_date": _DAY, "to_date": _DAY,
-        "fee_model": dict(_FEE_MODEL), "interval": "5m",
-    })
+    market_data = fetch_market_data("cn_a", [_SYM], _DAY, _DAY, loader=FakeLoader(daily), ch_client=FakeChClient())
+    request = parse_request(
+        {
+            "account_id": "pa_5m_gate",
+            "market": "cn_a",
+            "account_state": {"cash": 100000.0, "positions": []},
+            "orders": [_buy()],
+            "from_date": _DAY,
+            "to_date": _DAY,
+            "fee_model": dict(_FEE_MODEL),
+            "interval": "5m",
+        }
+    )
     outcome = engine.match_orders(
-        request, market_data=market_data, calendar_client=FakeCalendarClient(frozenset({_DAY})))
+        request, market_data=market_data, calendar_client=FakeCalendarClient(frozenset({_DAY}))
+    )
 
     assert outcome.error is not None
     assert outcome.error.code == "INVALID_REQUEST"

@@ -366,10 +366,8 @@ def _split_session_days(
         # G3: only SESSION_CONTINUOUS rows build the session bar.  The 09:30
         # opening call-auction print is classified separately and excluded.
         continuous = chunk[chunk["_kind"] == calendar.SESSION_CONTINUOUS]
-        auction_labels = tuple(sorted(set(chunk.loc[
-            chunk["_kind"] == calendar.SESSION_AUCTION_WINDOW, "_label"])))
-        outside_labels = tuple(sorted(set(chunk.loc[
-            chunk["_kind"] == calendar.SESSION_OUTSIDE, "_label"])))
+        auction_labels = tuple(sorted(set(chunk.loc[chunk["_kind"] == calendar.SESSION_AUCTION_WINDOW, "_label"])))
+        outside_labels = tuple(sorted(set(chunk.loc[chunk["_kind"] == calendar.SESSION_OUTSIDE, "_label"])))
         if auction_labels:
             auction_by_day[day] = auction_labels
             warnings.append(
@@ -396,8 +394,7 @@ def _split_session_days(
         bad = continuous[price_columns].isna().any(axis=1) | (continuous[price_columns] <= 0).any(axis=1)
         if bad.any():
             warnings.append(
-                f"5m data: {symbol} on {day} dropped {int(bad.sum())} bar(s) failing the "
-                "price sanity gate (R-V3)"
+                f"5m data: {symbol} on {day} dropped {int(bad.sum())} bar(s) failing the " "price sanity gate (R-V3)"
             )
             continuous = continuous[~bad]
             if had_continuous and continuous.empty:
@@ -415,8 +412,7 @@ def _split_session_days(
             # No shares traded across the whole continuous session: a halt.
             # Dropping the day lets the engine's halted/suspended path value
             # positions carry-forward and reject orders `suspended`.
-            warnings.append(
-                f"5m data: {symbol} on {day} has a zero-volume session; treated as halted")
+            warnings.append(f"5m data: {symbol} on {day} has a zero-volume session; treated as halted")
             continue
         bars_by_day[day] = day_bars
         session_by_day[day] = session
@@ -442,11 +438,18 @@ def _bar_fingerprint(facts: FiveMinuteFacts) -> str:
         for day in sorted(facts.bars_by_symbol[symbol]):
             frame = facts.bars_by_symbol[symbol][day]
             for timestamp, row in frame.iterrows():
-                payload.append([
-                    symbol, day, timestamp.strftime("%H:%M"),
-                    float(row["open"]), float(row["high"]), float(row["low"]),
-                    float(row["close"]), _finite(row["volume"]),
-                ])
+                payload.append(
+                    [
+                        symbol,
+                        day,
+                        timestamp.strftime("%H:%M"),
+                        float(row["open"]),
+                        float(row["high"]),
+                        float(row["low"]),
+                        float(row["close"]),
+                        _finite(row["volume"]),
+                    ]
+                )
     return state_hash.state_hash(payload)
 
 
@@ -477,14 +480,17 @@ def fetch_five_minute(
     except Exception as exc:  # noqa: BLE001 — a provider fault is data-not-ready, never a halt
         reason = (
             f"5m fetch ({getattr(loader, 'name', 'network')}) failed: "
-            f"{type(exc).__name__}; the step is data-not-ready")
+            f"{type(exc).__name__}; the step is data-not-ready"
+        )
         warnings.append(reason)
         return FiveMinuteFacts(
-            bar_fingerprint=state_hash.state_hash([]), fetch_failed=True,
-            failure_reason=reason, missing_symbols=tuple(symbols))
+            bar_fingerprint=state_hash.state_hash([]),
+            fetch_failed=True,
+            failure_reason=reason,
+            missing_symbols=tuple(symbols),
+        )
     if not served:
-        return FiveMinuteFacts(
-            bar_fingerprint=state_hash.state_hash([]), missing_symbols=tuple(symbols))
+        return FiveMinuteFacts(bar_fingerprint=state_hash.state_hash([]), missing_symbols=tuple(symbols))
 
     start_ts = pd.Timestamp(from_date)
     end_ts = pd.Timestamp(end_exclusive)
@@ -499,13 +505,13 @@ def fetch_five_minute(
             if not frame.empty:
                 frame = frame[(frame.index >= start_ts) & (frame.index < end_ts)]
             if not frame.empty:
-                observed_days_by_symbol[symbol] = tuple(
-                    sorted(set(frame.index.strftime("%Y-%m-%d"))))
+                observed_days_by_symbol[symbol] = tuple(sorted(set(frame.index.strftime("%Y-%m-%d"))))
             bars, sessions, auctions = _split_session_days(symbol, frame, warnings)
         except Exception as exc:  # noqa: BLE001 — a malformed payload is a provider fault
             payload_error = (
                 f"5m payload ({getattr(loader, 'name', 'network')}) for {symbol} "
-                f"could not be parsed ({type(exc).__name__}); the step is data-not-ready")
+                f"could not be parsed ({type(exc).__name__}); the step is data-not-ready"
+            )
             warnings.append(payload_error)
             break
         if bars:
@@ -515,15 +521,19 @@ def fetch_five_minute(
             auction_by_symbol[symbol] = auctions
     if payload_error:
         return FiveMinuteFacts(
-            bar_fingerprint=state_hash.state_hash([]), fetch_failed=True,
-            failure_reason=payload_error, missing_symbols=tuple(symbols))
+            bar_fingerprint=state_hash.state_hash([]),
+            fetch_failed=True,
+            failure_reason=payload_error,
+            missing_symbols=tuple(symbols),
+        )
     facts = FiveMinuteFacts(
-        bars_by_symbol=bars_by_symbol, session_by_symbol=session_by_symbol,
+        bars_by_symbol=bars_by_symbol,
+        session_by_symbol=session_by_symbol,
         auction_by_symbol=auction_by_symbol,
         observed_days_by_symbol=observed_days_by_symbol,
         missing_symbols=tuple(
-            symbol for symbol in symbols
-            if symbol not in bars_by_symbol and symbol not in observed_days_by_symbol),
+            symbol for symbol in symbols if symbol not in bars_by_symbol and symbol not in observed_days_by_symbol
+        ),
     )
     return _with_fingerprint(facts)
 
@@ -561,10 +571,7 @@ def main(argv: list[str] | None = None) -> int:
     for day, chunk in frame.groupby(frame.index.normalize()):
         labels = _labels(chunk)
         row = daily.loc[day] if daily is not None and day in daily.index else None
-        print(
-            f"{day.date()} n={len(chunk)} first={labels[0]} last={labels[-1]} "
-            f"labels={' '.join(labels)}"
-        )
+        print(f"{day.date()} n={len(chunk)} first={labels[0]} last={labels[-1]} " f"labels={' '.join(labels)}")
         if row is not None:
             print(
                 f"    vol5m_sum={chunk['volume'].sum():.2f} daily_vol={row['volume']:.2f} "
@@ -582,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nauction row vs first continuous bar ({demo_day.date()})")
     print(day_frame.head(2).to_string())
     print("\nlunch boundary rows")
-    print(day_frame.loc[f"{demo_day.date()} {_LUNCH_START}":f"{demo_day.date()} {_LUNCH_END}"].to_string())
+    print(day_frame.loc[f"{demo_day.date()} {_LUNCH_START}" :f"{demo_day.date()} {_LUNCH_END}"].to_string())
 
     continuous = _continuous(day_frame)
     print(f"\nCSV: full frame ({len(frame)} rows)")

@@ -40,8 +40,7 @@ class FakeLoader:
 class FakeCalendarClient:
     def get_trade_calendar(self, start_date: str, end_date: str) -> pd.DataFrame:
         rows = [
-            {"exchange": "SSE", "cal_date": day.strftime("%Y-%m-%d"), "is_open": 1,
-             "pretrade_date": ""}
+            {"exchange": "SSE", "cal_date": day.strftime("%Y-%m-%d"), "is_open": 1, "pretrade_date": ""}
             for day in pd.date_range(start_date, end_date)
         ]
         return pd.DataFrame(rows, columns=["exchange", "cal_date", "is_open", "pretrade_date"])
@@ -49,8 +48,7 @@ class FakeCalendarClient:
 
 def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
     records = [
-        {"trade_date": day, "open": close, "high": close, "low": close,
-         "close": close, "volume": 1000.0}
+        {"trade_date": day, "open": close, "high": close, "low": close, "close": close, "volume": 1000.0}
         for day, close in rows
     ]
     frame = pd.DataFrame(records)
@@ -60,22 +58,31 @@ def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
 
 def _valuation(interval: str, rows: list[tuple[str, float]]):
     market_data = fetch_market_data(
-        "cn_a", [_SYM], _DAY, _DAY,
-        loader=FakeLoader({_SYM: _frame(rows)}), ch_client=FakeChClient(),
+        "cn_a",
+        [_SYM],
+        _DAY,
+        _DAY,
+        loader=FakeLoader({_SYM: _frame(rows)}),
+        ch_client=FakeChClient(),
         interval=interval,
         five_minute_symbols=() if interval == "5m" else None,
     )
-    request = parse_request({
-        "account_id": "pa_5m_readiness", "market": "cn_a",
-        "account_state": {
-            "cash": 1000.0,
-            "positions": [{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}],
-        },
-        "orders": [], "from_date": _DAY, "to_date": _DAY,
-        "fee_model": {}, "interval": interval,
-    })
-    return engine.match_orders(
-        request, market_data=market_data, calendar_client=FakeCalendarClient())
+    request = parse_request(
+        {
+            "account_id": "pa_5m_readiness",
+            "market": "cn_a",
+            "account_state": {
+                "cash": 1000.0,
+                "positions": [{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}],
+            },
+            "orders": [],
+            "from_date": _DAY,
+            "to_date": _DAY,
+            "fee_model": {},
+            "interval": interval,
+        }
+    )
+    return engine.match_orders(request, market_data=market_data, calendar_client=FakeCalendarClient())
 
 
 def test_5m_valuation_without_target_daily_bar_is_not_ready() -> None:

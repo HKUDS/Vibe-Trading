@@ -55,9 +55,20 @@ _CONTRACT_DIR = Path(__file__).resolve().parents[1] / "src" / "tools" / "paper_t
 _PUBLISHED_CONTRACT_DIR = Path(__file__).resolve().parents[2] / "schema" / "tool_contracts"
 _V12_KEYS = {"engine_fingerprint", "canceled_orders", "events"}
 _V11_KEYS = {
-    "schema_version", "tool", "account_id", "market", "range", "received_state_hash",
-    "effective_fee_model", "fills", "rejected_orders", "end_state", "nav_series",
-    "skipped_days", "warnings", "data_provenance",
+    "schema_version",
+    "tool",
+    "account_id",
+    "market",
+    "range",
+    "received_state_hash",
+    "effective_fee_model",
+    "fills",
+    "rejected_orders",
+    "end_state",
+    "nav_series",
+    "skipped_days",
+    "warnings",
+    "data_provenance",
 }
 _DAY = "2026-10-20"
 _HEX_A = "a" * 64
@@ -90,10 +101,12 @@ def _v11_result(**overrides) -> PaperTradeStepResult:
         range=DateRange(from_=_DAY, to=_DAY),
         received_state_hash="0" * 64,
         effective_fee_model=state_hash.effective_fee_model("cn_a"),
-        fills=(Fill(trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0,
-                    price=1421.0, fee=36.95, reason=""),),
-        rejected_orders=(RejectedOrder(trade_date=_DAY, symbol="000001.SZ", side="sell",
-                                       qty=200.0, reason_code="insufficient_position"),),
+        fills=(Fill(trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0, price=1421.0, fee=36.95, reason=""),),
+        rejected_orders=(
+            RejectedOrder(
+                trade_date=_DAY, symbol="000001.SZ", side="sell", qty=200.0, reason_code="insufficient_position"
+            ),
+        ),
         end_state=AccountState(cash=100000.0),
         nav_series=(NavPoint(date=_DAY, nav=100000.0, cash=100000.0, position_value=0.0),),
         skipped_days=(SkippedDay(date="2026-10-18", reason="non_trading_day"),),
@@ -109,12 +122,17 @@ def _v12_result(**overrides) -> PaperTradeStepResult:
         schema_version=SCHEMA_VERSION_V1_2,
         engine_fingerprint="d" * 64,
         canceled_orders=(
-            CanceledOrder(trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0,
-                          detail="limit 1000.0 not marketable"),
+            CanceledOrder(
+                trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0, detail="limit 1000.0 not marketable"
+            ),
         ),
         events=(
-            SessionEvent(trade_date=_DAY, symbol="600519.SH", event_type="auction_window",
-                         detail="09:30 opening auction excluded"),
+            SessionEvent(
+                trade_date=_DAY,
+                symbol="600519.SH",
+                event_type="auction_window",
+                detail="09:30 opening auction excluded",
+            ),
         ),
     )
     fields.update(overrides)
@@ -127,10 +145,16 @@ def _v12_result(**overrides) -> PaperTradeStepResult:
 def test_absent_new_fields_take_the_v11_defaults() -> None:
     request = parse_request(_payload())
     assert (request.interval, request.session, request.path_model, request.fill_model) == (
-        DEFAULT_INTERVAL, DEFAULT_SESSION, DEFAULT_PATH_MODEL, DEFAULT_FILL_MODEL,
+        DEFAULT_INTERVAL,
+        DEFAULT_SESSION,
+        DEFAULT_PATH_MODEL,
+        DEFAULT_FILL_MODEL,
     )
     assert (request.interval, request.session, request.path_model, request.fill_model) == (
-        "1d", "auto", "bar_median", "all_or_none",
+        "1d",
+        "auto",
+        "bar_median",
+        "all_or_none",
     )
     assert request.uses_v1_2 is False
     assert request.schema_version == SCHEMA_VERSION == "pt-v1.1"
@@ -144,7 +168,9 @@ def test_explicit_null_is_the_same_as_absent(field: str) -> None:
 
 def test_any_non_default_field_selects_v12() -> None:
     for field, value in (
-        ("interval", "5m"), ("session", "cn_a"), ("path_model", "bar_close"),
+        ("interval", "5m"),
+        ("session", "cn_a"),
+        ("path_model", "bar_close"),
         ("fill_model", "all_or_none"),
     ):
         request = parse_request(_payload(**{field: value}))
@@ -222,38 +248,43 @@ def test_session_is_inert_for_interval_1d_and_cn_a() -> None:
 
 def test_engine_fingerprint_matches_the_frozen_formula() -> None:
     actual = state_hash.engine_fingerprint(
-        interval="5m", path_model="bar_close", fill_model="all_or_none",
+        interval="5m",
+        path_model="bar_close",
+        fill_model="all_or_none",
         bar_fingerprint=_HEX_A,
     )
-    manual = state_hash.state_hash({
-        "interval": "5m",
-        "path_model": "bar_close",
-        "fill_model": "all_or_none",
-        "rules_version": rules.RULES_VERSION,
-        "bar_fingerprint": _HEX_A,
-    })
+    manual = state_hash.state_hash(
+        {
+            "interval": "5m",
+            "path_model": "bar_close",
+            "fill_model": "all_or_none",
+            "rules_version": rules.RULES_VERSION,
+            "bar_fingerprint": _HEX_A,
+        }
+    )
     assert rules.RULES_VERSION == "pt-rules-v1"
     assert actual == manual
     assert re.fullmatch(r"[0-9a-f]{64}", actual)
 
 
 def test_engine_fingerprint_is_deterministic_and_input_sensitive() -> None:
-    base_kwargs = dict(interval="5m", path_model="bar_median", fill_model="all_or_none",
-                       bar_fingerprint=_HEX_A)
+    base_kwargs = dict(interval="5m", path_model="bar_median", fill_model="all_or_none", bar_fingerprint=_HEX_A)
     base = state_hash.engine_fingerprint(**base_kwargs)
     assert state_hash.engine_fingerprint(**base_kwargs) == base
     assert state_hash.engine_fingerprint(**{**base_kwargs, "interval": "1d"}) != base
     assert state_hash.engine_fingerprint(**{**base_kwargs, "path_model": "bar_close"}) != base
     assert state_hash.engine_fingerprint(**{**base_kwargs, "fill_model": "x"}) != base
     assert state_hash.engine_fingerprint(**{**base_kwargs, "bar_fingerprint": "b" * 64}) != base
-    assert state_hash.engine_fingerprint(
-        **{**base_kwargs, "rules_version": "pt-rules-v0"}) != base
+    assert state_hash.engine_fingerprint(**{**base_kwargs, "rules_version": "pt-rules-v0"}) != base
 
 
 def test_engine_fingerprint_defaults_are_the_pt_v11_parameters() -> None:
     assert state_hash.engine_fingerprint() == state_hash.engine_fingerprint(
-        interval="1d", path_model="bar_median", fill_model="all_or_none",
-        bar_fingerprint="", rules_version=rules.RULES_VERSION,
+        interval="1d",
+        path_model="bar_median",
+        fill_model="all_or_none",
+        bar_fingerprint="",
+        rules_version=rules.RULES_VERSION,
     )
 
 
@@ -263,22 +294,29 @@ def test_engine_fingerprint_defaults_are_the_pt_v11_parameters() -> None:
 def test_v11_hash_is_the_frozen_coverage_object() -> None:
     request = parse_request(_payload())
     result = wire.assemble_result(request, _outcome(), raw_account_state=_payload()["account_state"])
-    manual = state_hash.state_hash({
-        "account_id": "pa_v12_01",
-        "market": "cn_a",
-        "account_state": _payload()["account_state"],
-        "fee_model": state_hash.effective_fee_model("cn_a"),
-        "from_date": _DAY,
-        "to_date": _DAY,
-    })
+    manual = state_hash.state_hash(
+        {
+            "account_id": "pa_v12_01",
+            "market": "cn_a",
+            "account_state": _payload()["account_state"],
+            "fee_model": state_hash.effective_fee_model("cn_a"),
+            "from_date": _DAY,
+            "to_date": _DAY,
+        }
+    )
     assert result.received_state_hash == manual
 
 
 def test_explicit_defaults_do_not_change_the_hash() -> None:
     base = wire.received_state_hash_from_payload(_payload())
-    respelled = wire.received_state_hash_from_payload(_payload(
-        interval="1d", session="auto", path_model="bar_median", fill_model="all_or_none",
-    ))
+    respelled = wire.received_state_hash_from_payload(
+        _payload(
+            interval="1d",
+            session="auto",
+            path_model="bar_median",
+            fill_model="all_or_none",
+        )
+    )
     assert base is not None and base == respelled
 
 
@@ -286,16 +324,18 @@ def test_non_default_fields_join_the_hash() -> None:
     baseline = wire.received_state_hash_from_payload(_payload())
     v12 = wire.received_state_hash_from_payload(_payload(interval="5m", path_model="bar_close"))
     assert v12 is not None and v12 != baseline
-    manual = state_hash.state_hash({
-        "account_id": "pa_v12_01",
-        "market": "cn_a",
-        "account_state": _payload()["account_state"],
-        "fee_model": state_hash.effective_fee_model("cn_a"),
-        "from_date": _DAY,
-        "to_date": _DAY,
-        "interval": "5m",
-        "path_model": "bar_close",
-    })
+    manual = state_hash.state_hash(
+        {
+            "account_id": "pa_v12_01",
+            "market": "cn_a",
+            "account_state": _payload()["account_state"],
+            "fee_model": state_hash.effective_fee_model("cn_a"),
+            "from_date": _DAY,
+            "to_date": _DAY,
+            "interval": "5m",
+            "path_model": "bar_close",
+        }
+    )
     assert v12 == manual
 
 
@@ -339,9 +379,7 @@ def test_v11_result_stays_valid_under_the_additive_v12_document() -> None:
 
 def test_the_subset_validator_defers_the_v12_version_gate_to_the_wire_builder() -> None:
     unversioned = _v11_result_payload() | {"schema_version": "pt-v1.2"}
-    assert validate_payload(
-        unversioned, load_contract_schema("result", version="pt-v1.2")
-    ) == []
+    assert validate_payload(unversioned, load_contract_schema("result", version="pt-v1.2")) == []
     with pytest.raises(ValueError, match="engine_fingerprint"):
         wire.build_success_payload(_v12_result(engine_fingerprint=""))
 
@@ -366,13 +404,11 @@ def test_v12_assembly_reads_the_engine_populated_outcome_fields() -> None:
         data_provenance=base.data_provenance,
         limit_provenance=base.limit_provenance,
         engine_fingerprint="e" * 64,
-        canceled_orders=(CanceledOrder(trade_date=_DAY, symbol="600519.SH", side="buy",
-                                       qty=100.0),),
+        canceled_orders=(CanceledOrder(trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0),),
         events=(SessionEvent(trade_date=_DAY, symbol="600519.SH", event_type="halted"),),
     )
     request = parse_request(_payload(interval="5m"))
-    result = wire.assemble_result(
-        request, outcome, raw_account_state=_payload()["account_state"])
+    result = wire.assemble_result(request, outcome, raw_account_state=_payload()["account_state"])
     assert result.engine_fingerprint == "e" * 64
     assert result.canceled_orders[0].reason_code == CANCELED_REASON_CODE
     assert result.events[0].event_type == "halted"
@@ -380,17 +416,16 @@ def test_v12_assembly_reads_the_engine_populated_outcome_fields() -> None:
 
 def test_v12_assembly_computes_a_fingerprint_before_the_engine_populates_it() -> None:
     request = parse_request(_payload(interval="5m", path_model="bar_close"))
-    result = wire.assemble_result(
-        request, _outcome(), raw_account_state=_payload()["account_state"])
+    result = wire.assemble_result(request, _outcome(), raw_account_state=_payload()["account_state"])
     assert result.schema_version == SCHEMA_VERSION_V1_2
     assert result.engine_fingerprint == state_hash.engine_fingerprint(
-        interval="5m", path_model="bar_close", fill_model="all_or_none")
+        interval="5m", path_model="bar_close", fill_model="all_or_none"
+    )
 
 
 def test_v11_assembly_never_carries_v12_fields() -> None:
     request = parse_request(_payload())
-    result = wire.assemble_result(
-        request, _outcome(), raw_account_state=_payload()["account_state"])
+    result = wire.assemble_result(request, _outcome(), raw_account_state=_payload()["account_state"])
     assert result.schema_version == SCHEMA_VERSION
     assert (result.engine_fingerprint, result.canceled_orders, result.events) == ("", (), ())
 
@@ -404,8 +439,7 @@ def test_v12_without_a_fingerprint_fails_closed() -> None:
 
 
 def test_wrong_cancel_token_fails_closed() -> None:
-    bad = CanceledOrder(trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0,
-                        reason_code="insufficient_cash")
+    bad = CanceledOrder(trade_date=_DAY, symbol="600519.SH", side="buy", qty=100.0, reason_code="insufficient_cash")
     with pytest.raises(ValueError, match="canceled reason_code"):
         wire.build_success_payload(_v12_result(canceled_orders=(bad,)))
 
@@ -496,7 +530,10 @@ def test_tool_parameters_expose_the_four_optional_fields() -> None:
     assert properties["fill_model"]["enum"] == ["all_or_none"]
     assert properties["fill_model"]["default"] == "all_or_none"
     assert parameters["required"] == [
-        "account_id", "market", "account_state", "from_date", "to_date",
+        "account_id",
+        "market",
+        "account_state",
+        "from_date",
+        "to_date",
     ]
-    assert "deterministic paper-trading matching engine; never places real orders" in (
-        PaperTradeStepTool.description)
+    assert "deterministic paper-trading matching engine; never places real orders" in (PaperTradeStepTool.description)

@@ -41,7 +41,6 @@ from tests.paper_trade_5m_fixtures import (
     _strategy_source,
 )
 
-
 # ── F2/b: unsupported 5m instruments are refused before any fetch ──
 
 
@@ -50,15 +49,12 @@ def test_supported_five_minute_symbols(symbol: str) -> None:
     assert data_5m.is_supported_five_minute_symbol(symbol) is True
 
 
-@pytest.mark.parametrize(
-    "symbol", ["510300.SH", "159915.SZ", "000001.SH", "399001.SZ", "00700.HK", "830799.BJ"])
+@pytest.mark.parametrize("symbol", ["510300.SH", "159915.SZ", "000001.SH", "399001.SZ", "00700.HK", "830799.BJ"])
 def test_unsupported_five_minute_symbols(symbol: str) -> None:
     assert data_5m.is_supported_five_minute_symbol(symbol) is False
 
 
-@pytest.mark.parametrize(
-    "symbol",
-    ["510300.SH", "159915.SZ", "000001.SH", "399001.SZ", "00700.HK", "830799.BJ"])
+@pytest.mark.parametrize("symbol", ["510300.SH", "159915.SZ", "000001.SH", "399001.SZ", "00700.HK", "830799.BJ"])
 def test_an_unsupported_5m_instrument_is_an_in_band_refusal_before_fetch(symbol: str) -> None:
     loader = FixtureLoader()
     document, _ = _run(
@@ -112,8 +108,7 @@ class _RateLimitedLoader(FixtureLoader):
         fields: Sequence[str] | None = None,
     ) -> Mapping[str, Any]:
         if str(interval).lower() in ("5m", "5min", "5") and self.five_minute_calls():
-            self.calls.append(
-                (tuple(str(code) for code in codes), start_date, end_date, str(interval)))
+            self.calls.append((tuple(str(code) for code in codes), start_date, end_date, str(interval)))
             raise RuntimeError("stk_mins: 1 call/minute budget exhausted")
         return super().fetch(codes, start_date, end_date, interval=interval, fields=fields)
 
@@ -121,11 +116,13 @@ class _RateLimitedLoader(FixtureLoader):
 def test_three_5m_order_symbols_are_refused_before_any_fetch() -> None:
     loader = FixtureLoader()
     document, _ = _run(
-        _payload(orders=[
-            {"symbol": _SYM, "side": "buy", "qty": 100},
-            {"symbol": _WITNESS, "side": "buy", "qty": 1000},
-            {"symbol": _THIRD, "side": "buy", "qty": 100},
-        ]),
+        _payload(
+            orders=[
+                {"symbol": _SYM, "side": "buy", "qty": 100},
+                {"symbol": _WITNESS, "side": "buy", "qty": 1000},
+                {"symbol": _THIRD, "side": "buy", "qty": 100},
+            ]
+        ),
         loader=loader,
     )
 
@@ -141,10 +138,12 @@ def test_three_5m_order_symbols_are_refused_before_any_fetch() -> None:
 def test_two_5m_order_symbols_are_refused_before_any_fetch() -> None:
     loader = FixtureLoader()
     document, _ = _run(
-        _payload(orders=[
-            {"symbol": _SYM, "side": "buy", "qty": 100},
-            {"symbol": _THIRD, "side": "buy", "qty": 100},
-        ]),
+        _payload(
+            orders=[
+                {"symbol": _SYM, "side": "buy", "qty": 100},
+                {"symbol": _THIRD, "side": "buy", "qty": 100},
+            ]
+        ),
         loader=loader,
     )
 
@@ -162,15 +161,13 @@ def test_one_5m_order_symbol_issues_exactly_one_provider_call() -> None:
     loader = _RateLimitedLoader()
     document, _ = _run(_payload(), loader=loader)
 
-    assert [(fill["symbol"], fill["price"]) for fill in document["fills"]] == [
-        (_SYM, 1421.50)]
+    assert [(fill["symbol"], fill["price"]) for fill in document["fills"]] == [(_SYM, 1421.50)]
     assert len(loader.five_minute_calls()) == 1
     assert loader.five_minute_calls()[0][0] == (_SYM,)
 
 
 def test_a_5m_strategy_universe_over_the_budget_is_refused_before_any_fetch() -> None:
-    path = _install_strategy(
-        "wide_universe_5m.py", _strategy_source(_SYM, _WITNESS, _THIRD))
+    path = _install_strategy("wide_universe_5m.py", _strategy_source(_SYM, _WITNESS, _THIRD))
     loader = FixtureLoader()
     document, _ = _run(_strategy_payload(path), loader=loader)
 
@@ -229,8 +226,13 @@ def test_a_missing_5m_loader_names_the_loader_not_the_provider(monkeypatch) -> N
     monkeypatch.setattr(data_module, "_resolve_five_minute_loader", lambda loader: None)
 
     result = data_module.fetch_market_data(
-        "cn_a", (_SYM,), _DAY, _DAY,
-        loader=FixtureLoader(), ch_client=None, interval="5m",
+        "cn_a",
+        (_SYM,),
+        _DAY,
+        _DAY,
+        loader=FixtureLoader(),
+        ch_client=None,
+        interval="5m",
         five_minute_symbols=(_SYM,),
     )
     verdict = data_module.assess_readiness(result, _DAY)
@@ -312,11 +314,16 @@ class _MalformedPayloadLoader(FixtureLoader):
     def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
         if interval == "5m":
             return {
-                codes[0]: pd.DataFrame({
-                    "trade_time": ["not-a-timestamp"],
-                    "open": [1.0], "high": [1.0], "low": [1.0],
-                    "close": [1.0], "vol": [1.0],
-                })
+                codes[0]: pd.DataFrame(
+                    {
+                        "trade_time": ["not-a-timestamp"],
+                        "open": [1.0],
+                        "high": [1.0],
+                        "low": [1.0],
+                        "close": [1.0],
+                        "vol": [1.0],
+                    }
+                )
             }
         return super().fetch(codes, start_date, end_date, interval=interval, fields=fields)
 

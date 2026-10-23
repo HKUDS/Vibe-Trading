@@ -153,9 +153,7 @@ def fixture_reference(symbol: str, day: str, path_model: str = "bar_median") -> 
     wrong price.
     """
     bar = session_values(load_5m(symbol, day))
-    prices = sorted(
-        Decimal(str(bar[key])) for key in ("open", "high", "low", "close")
-    )
+    prices = sorted(Decimal(str(bar[key])) for key in ("open", "high", "low", "close"))
     raw = prices[3] if path_model == "bar_close" else (prices[1] + prices[2]) / Decimal(2)
     return raw.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -165,9 +163,7 @@ def _window(frame: pd.DataFrame, start_date: str, end_date: str, *, end_inclusiv
         return frame
     start = pd.Timestamp(start_date)
     end = pd.Timestamp(end_date)
-    mask = (frame.index >= start) & (
-        (frame.index <= end) if end_inclusive else (frame.index < end)
-    )
+    mask = (frame.index >= start) & ((frame.index <= end) if end_inclusive else (frame.index < end))
     return frame[mask]
 
 

@@ -31,7 +31,6 @@ from tests.paper_trade_5m_fixtures import (
     _strategy_source,
 )
 
-
 # ── N1: 5m strategy mode requires an explicit UNIVERSE ──
 
 
@@ -75,14 +74,13 @@ def test_a_5m_strategy_with_a_universe_fills_and_leaves_an_outside_position_alon
     )
 
     assert "status" not in document
-    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"])
-            for fill in document["fills"]] == [(_SYM, "sell", 100.0, 1421.50)]
+    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
+        (_SYM, "sell", 100.0, 1421.50)
+    ]
     assert document["events"] == []
     assert document["rejected_orders"] == []
     assert loader.five_minute_calls()[0][0] == (_SYM,)
-    witness = next(
-        position for position in document["end_state"]["positions"]
-        if position["symbol"] == _WITNESS)
+    witness = next(position for position in document["end_state"]["positions"] if position["symbol"] == _WITNESS)
     assert (witness["qty"], witness["avg_cost"]) == (1000.0, 10.0)
 
 
@@ -100,16 +98,16 @@ def test_a_1d_strategy_without_a_universe_keeps_running() -> None:
     document, _ = _run(payload)
 
     assert document["schema_version"] == "pt-v1.1"
-    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"])
-            for fill in document["fills"]] == [(_SYM, "sell", 100.0, 1422.0)]
+    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
+        (_SYM, "sell", 100.0, 1422.0)
+    ]
 
 
 # ── N1-B: a 5m strategy may not order outside its declared UNIVERSE ──
 
 
 def test_a_5m_strategy_order_outside_its_universe_is_refused_not_suspended() -> None:
-    path = _install_strategy(
-        "outside_order_5m.py", _outside_universe_source((_SYM,), _WITNESS))
+    path = _install_strategy("outside_order_5m.py", _outside_universe_source((_SYM,), _WITNESS))
     payload = _strategy_payload(
         path,
         account_state={
@@ -137,8 +135,7 @@ def test_a_5m_strategy_order_outside_its_universe_is_refused_not_suspended() -> 
 
 
 def test_a_5m_strategy_order_inside_its_universe_still_fills() -> None:
-    path = _install_strategy(
-        "inside_order_5m.py", _outside_universe_source((_SYM,), _SYM))
+    path = _install_strategy("inside_order_5m.py", _outside_universe_source((_SYM,), _SYM))
     document, _ = _run(
         _strategy_payload(
             path,
@@ -150,15 +147,15 @@ def test_a_5m_strategy_order_inside_its_universe_still_fills() -> None:
     )
 
     assert "status" not in document
-    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"])
-            for fill in document["fills"]] == [(_SYM, "sell", 100.0, 1421.50)]
+    assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
+        (_SYM, "sell", 100.0, 1421.50)
+    ]
     assert document["rejected_orders"] == []
     assert document["events"] == []
 
 
 def test_a_1d_strategy_order_outside_its_universe_is_not_gated() -> None:
-    path = _install_strategy(
-        "outside_order_1d.py", _outside_universe_source((_SYM,), _WITNESS))
+    path = _install_strategy("outside_order_1d.py", _outside_universe_source((_SYM,), _WITNESS))
     payload = _strategy_payload(
         path,
         account_state={
@@ -173,8 +170,7 @@ def test_a_1d_strategy_order_outside_its_universe_is_not_gated() -> None:
     assert document["schema_version"] == "pt-v1.1"
     assert "status" not in document
     assert document["fills"] == []
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_WITNESS, "suspended")]
+    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [(_WITNESS, "suspended")]
     assert loader.five_minute_calls() == []
 
 
@@ -188,10 +184,8 @@ def test_a_5m_strategy_honours_the_declared_path_model() -> None:
         "positions": [{"symbol": _SYM, "qty": 100, "avg_cost": 1421.0}],
     }
 
-    median_document, _ = _run(_strategy_payload(
-        path, account_state=account_state, path_model="bar_median"))
-    close_document, _ = _run(_strategy_payload(
-        path, account_state=account_state, path_model="bar_close"))
+    median_document, _ = _run(_strategy_payload(path, account_state=account_state, path_model="bar_median"))
+    close_document, _ = _run(_strategy_payload(path, account_state=account_state, path_model="bar_close"))
 
     assert median_document["fills"][0]["price"] == 1421.50
     assert close_document["fills"][0]["price"] == 1422.00

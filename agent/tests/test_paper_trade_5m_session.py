@@ -37,19 +37,34 @@ def _labels(day: str = _DAY) -> list[str]:
     stamps: list[str] = []
     for hour, minute in ((9, 30), (13, 0)):
         start = dt.datetime.fromisoformat(f"{day}T{hour:02d}:{minute:02d}:00")
-        stamps.extend((start + dt.timedelta(minutes=5 * step)).strftime("%H:%M")
-                      for step in range(1, 25))
+        stamps.extend((start + dt.timedelta(minutes=5 * step)).strftime("%H:%M") for step in range(1, 25))
     return stamps
 
 
 def _intraday(day: str, prices: dict[str, float], auction: float | None = None) -> pd.DataFrame:
     records = []
     if auction is not None:
-        records.append({"bar_time": f"{day} 09:30", "open": auction, "high": auction,
-                        "low": auction, "close": auction, "volume": 48000.0})
+        records.append(
+            {
+                "bar_time": f"{day} 09:30",
+                "open": auction,
+                "high": auction,
+                "low": auction,
+                "close": auction,
+                "volume": 48000.0,
+            }
+        )
     for label, price in prices.items():
-        records.append({"bar_time": f"{day} {label}", "open": price, "high": price,
-                        "low": price, "close": price, "volume": 120000.0})
+        records.append(
+            {
+                "bar_time": f"{day} {label}",
+                "open": price,
+                "high": price,
+                "low": price,
+                "close": price,
+                "volume": 120000.0,
+            }
+        )
     frame = pd.DataFrame(records)
     frame["bar_time"] = pd.to_datetime(frame["bar_time"])
     return frame.set_index("bar_time")
@@ -57,8 +72,7 @@ def _intraday(day: str, prices: dict[str, float], auction: float | None = None) 
 
 def _daily(rows: list[tuple[str, float]]) -> pd.DataFrame:
     records = [
-        {"trade_date": day, "open": close, "high": close, "low": close,
-         "close": close, "volume": 1000.0}
+        {"trade_date": day, "open": close, "high": close, "low": close, "close": close, "volume": 1000.0}
         for day, close in rows
     ]
     frame = pd.DataFrame(records)
@@ -93,8 +107,12 @@ class FakeCalendarClient:
 
     def get_trade_calendar(self, start_date: str, end_date: str) -> pd.DataFrame:
         rows = [
-            {"exchange": "SSE", "cal_date": day.strftime("%Y-%m-%d"),
-             "is_open": int(day.strftime("%Y-%m-%d") in self._open), "pretrade_date": ""}
+            {
+                "exchange": "SSE",
+                "cal_date": day.strftime("%Y-%m-%d"),
+                "is_open": int(day.strftime("%Y-%m-%d") in self._open),
+                "pretrade_date": "",
+            }
             for day in pd.date_range(start_date, end_date)
         ]
         return pd.DataFrame(rows, columns=["exchange", "cal_date", "is_open", "pretrade_date"])
@@ -102,25 +120,32 @@ class FakeCalendarClient:
 
 def _fetch(daily, five, *, symbols=(_SYM,), interval="5m", from_date=_DAY, to_date=_DAY):
     loader = FakeLoader(daily, five)
-    return fetch_market_data(
-        "cn_a", list(symbols), from_date, to_date,
-        loader=loader, ch_client=FakeChClient(), interval=interval), loader
+    return (
+        fetch_market_data(
+            "cn_a", list(symbols), from_date, to_date, loader=loader, ch_client=FakeChClient(), interval=interval
+        ),
+        loader,
+    )
 
 
 def _daily_tape(*symbols: str, day_close: float = 1422.0) -> dict[str, pd.DataFrame]:
     return {symbol: _daily([(_PREV, 1421.0), (_DAY, day_close)]) for symbol in symbols}
 
 
-def _run(market_data, orders=(), *, cash=1000000.0, positions=(),
-         open_days=frozenset({_DAY}), path_model="bar_median"):
-    request = parse_request({
-        "account_id": "pa_5m_session", "market": "cn_a",
-        "account_state": {"cash": cash, "positions": list(positions)},
-        "orders": list(orders), "from_date": _DAY, "to_date": _DAY,
-        "interval": "5m", "path_model": path_model,
-    })
-    return engine.match_orders(
-        request, market_data=market_data, calendar_client=FakeCalendarClient(open_days))
+def _run(market_data, orders=(), *, cash=1000000.0, positions=(), open_days=frozenset({_DAY}), path_model="bar_median"):
+    request = parse_request(
+        {
+            "account_id": "pa_5m_session",
+            "market": "cn_a",
+            "account_state": {"cash": cash, "positions": list(positions)},
+            "orders": list(orders),
+            "from_date": _DAY,
+            "to_date": _DAY,
+            "interval": "5m",
+            "path_model": path_model,
+        }
+    )
+    return engine.match_orders(request, market_data=market_data, calendar_client=FakeCalendarClient(open_days))
 
 
 def test_normal_day_has_48_continuous_bars_and_no_events() -> None:
@@ -132,8 +157,7 @@ def test_normal_day_has_48_continuous_bars_and_no_events() -> None:
     assert continuous.index.strftime("%H:%M").tolist() == _labels()
     assert symbol_data.session_bar is not None
     bar = symbol_data.session_bar
-    assert (bar.open, bar.high, bar.low, bar.close, bar.bar_count) == (
-        1421.0, 1422.0, 1421.0, 1422.0, 48)
+    assert (bar.open, bar.high, bar.low, bar.close, bar.bar_count) == (1421.0, 1422.0, 1421.0, 1422.0, 48)
     assert bar.volume == 47 * 120000.0 + 120000.0
 
     outcome = _run(market_data)
@@ -168,15 +192,13 @@ def test_closing_auction_window_label_is_excluded_and_reported() -> None:
     assert any("auction-window label(s) 14:58" in warning for warning in market_data.warnings)
 
     outcome = _run(market_data)
-    assert [(e.trade_date, e.symbol, e.event_type) for e in outcome.events] == [
-        (_DAY, _SYM, "auction_window")]
+    assert [(e.trade_date, e.symbol, e.event_type) for e in outcome.events] == [(_DAY, _SYM, "auction_window")]
     assert "14:58" in outcome.events[0].detail
 
 
 def test_partial_gap_warns_with_the_bar_count_and_still_matches() -> None:
     partial = {label: 10.0 for label in _labels()[:30]}
-    market_data, _ = _fetch(
-        {_SYM: _daily([(_PREV, 10.0), (_DAY, 10.0)])}, {_SYM: _intraday(_DAY, partial)})
+    market_data, _ = _fetch({_SYM: _daily([(_PREV, 10.0), (_DAY, 10.0)])}, {_SYM: _intraday(_DAY, partial)})
 
     symbol_data = market_data.data[_SYM]
     assert len(symbol_data.bars_5m[_DAY]) == 30
@@ -193,11 +215,14 @@ def test_halted_symbol_emits_only_halted_and_leaves_the_ledger_alone() -> None:
     # suspended day from both endpoints); the other symbol traded, so the day
     # is ready and the halt is a per-symbol fact.
     daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, 10.2)]), _OTHER: _daily([(_PREV, 20.0)])}
-    market_data, _ = _fetch(daily, {_SYM: _intraday(_DAY, {label: 10.0 for label in _labels()})},
-                            symbols=(_SYM, _OTHER))
+    market_data, _ = _fetch(
+        daily, {_SYM: _intraday(_DAY, {label: 10.0 for label in _labels()})}, symbols=(_SYM, _OTHER)
+    )
     outcome = _run(
-        market_data, orders=[{"symbol": _OTHER, "side": "buy", "qty": 100}],
-        positions=[{"symbol": _OTHER, "qty": 100, "avg_cost": 20.0}])
+        market_data,
+        orders=[{"symbol": _OTHER, "side": "buy", "qty": 100}],
+        positions=[{"symbol": _OTHER, "qty": 100, "avg_cost": 20.0}],
+    )
 
     assert [(e.symbol, e.event_type) for e in outcome.events] == [(_OTHER, "halted")]
     assert [(r.symbol, r.reason_code) for r in outcome.rejected_orders] == [(_OTHER, "suspended")]
@@ -221,8 +246,7 @@ def test_whole_universe_zero_bars_is_data_not_ready() -> None:
 def test_daily_bar_without_a_5m_bar_is_a_provider_fault_not_a_halt() -> None:
     # The daily bar proves the symbol traded; a provider error that returns
     # no 5m bars must fail closed as data-not-ready, never as "halted" (D6).
-    daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, 10.2)]),
-             _OTHER: _daily([(_PREV, 20.0), (_DAY, 20.0)])}
+    daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, 10.2)]), _OTHER: _daily([(_PREV, 20.0), (_DAY, 20.0)])}
     five = {_OTHER: _intraday(_DAY, {label: 20.0 for label in _labels()})}
     market_data, _ = _fetch(daily, five, symbols=(_SYM, _OTHER))
 
@@ -239,11 +263,9 @@ def test_daily_bar_without_a_5m_bar_is_a_provider_fault_not_a_halt() -> None:
 
 def test_calendar_closed_day_emits_non_trading_day_and_never_fills() -> None:
     market_data, _ = _fetch(_daily_tape(_SYM), {_SYM: _fixture_5m()})
-    outcome = _run(market_data, orders=[{"symbol": _SYM, "side": "buy", "qty": 100}],
-                   open_days=frozenset())
+    outcome = _run(market_data, orders=[{"symbol": _SYM, "side": "buy", "qty": 100}], open_days=frozenset())
 
-    assert [(e.trade_date, e.symbol, e.event_type) for e in outcome.events] == [
-        (_DAY, "", "non_trading_day")]
+    assert [(e.trade_date, e.symbol, e.event_type) for e in outcome.events] == [(_DAY, "", "non_trading_day")]
     assert [(s.date, s.reason) for s in outcome.skipped_days] == [(_DAY, "non_trading_day")]
     assert [r.reason_code for r in outcome.rejected_orders] == ["non_trading_day"]
     assert [c.reason_code for c in outcome.canceled_orders] == ["canceled_after_failed_match"]
@@ -306,20 +328,23 @@ def test_5m_is_refused_outside_cn_a_and_unknown_intervals_are_refused() -> None:
         fetch_market_data("cn_a", [_SYM], _DAY, _DAY, loader=FakeLoader({}), interval="1m")
 
 
-@pytest.mark.parametrize(("label", "kind"), [
-    ("09:30", calendar.SESSION_OPENING_AUCTION_PRINT),
-    ("09:15", calendar.SESSION_AUCTION_WINDOW),
-    ("09:25", calendar.SESSION_AUCTION_WINDOW),
-    ("09:35", calendar.SESSION_CONTINUOUS),
-    ("11:30", calendar.SESSION_CONTINUOUS),
-    ("11:35", calendar.SESSION_OUTSIDE),
-    ("13:00", calendar.SESSION_OUTSIDE),
-    ("13:05", calendar.SESSION_CONTINUOUS),
-    ("14:57", calendar.SESSION_AUCTION_WINDOW),
-    ("14:59", calendar.SESSION_AUCTION_WINDOW),
-    ("15:00", calendar.SESSION_CONTINUOUS),
-    ("15:05", calendar.SESSION_OUTSIDE),
-])
+@pytest.mark.parametrize(
+    ("label", "kind"),
+    [
+        ("09:30", calendar.SESSION_OPENING_AUCTION_PRINT),
+        ("09:15", calendar.SESSION_AUCTION_WINDOW),
+        ("09:25", calendar.SESSION_AUCTION_WINDOW),
+        ("09:35", calendar.SESSION_CONTINUOUS),
+        ("11:30", calendar.SESSION_CONTINUOUS),
+        ("11:35", calendar.SESSION_OUTSIDE),
+        ("13:00", calendar.SESSION_OUTSIDE),
+        ("13:05", calendar.SESSION_CONTINUOUS),
+        ("14:57", calendar.SESSION_AUCTION_WINDOW),
+        ("14:59", calendar.SESSION_AUCTION_WINDOW),
+        ("15:00", calendar.SESSION_CONTINUOUS),
+        ("15:05", calendar.SESSION_OUTSIDE),
+    ],
+)
 def test_session_label_classification_matrix(label: str, kind: str) -> None:
     assert calendar.classify_cn_a_session_label(label) == kind
 

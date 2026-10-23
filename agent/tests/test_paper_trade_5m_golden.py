@@ -96,9 +96,7 @@ def test_the_same_input_yields_byte_identical_documents() -> None:
 
     assert isinstance(first, str)
     assert first == second
-    assert hashlib.sha256(first.encode("utf-8")).hexdigest() == hashlib.sha256(
-        second.encode("utf-8")
-    ).hexdigest()
+    assert hashlib.sha256(first.encode("utf-8")).hexdigest() == hashlib.sha256(second.encode("utf-8")).hexdigest()
     assert document["engine_fingerprint"] == json.loads(second)["engine_fingerprint"]
     assert len(document["fills"]) == 1
 
@@ -154,10 +152,15 @@ def test_cash_and_positions_are_conserved_and_every_fee_is_non_negative() -> Non
 
 def test_every_fill_price_is_the_reference_recomputed_from_the_csv() -> None:
     for path_model in ("bar_median", "bar_close"):
-        _, document = _run(_payload(path_model=path_model, orders=[
-            {"symbol": _SYM, "side": "buy", "qty": 100},
-            {"symbol": _SYM, "side": "buy", "qty": 200},
-        ]))
+        _, document = _run(
+            _payload(
+                path_model=path_model,
+                orders=[
+                    {"symbol": _SYM, "side": "buy", "qty": 100},
+                    {"symbol": _SYM, "side": "buy", "qty": 200},
+                ],
+            )
+        )
         expected = float(fixture_reference(_SYM, _DAY, path_model))
         assert [fill["price"] for fill in document["fills"]] == [expected, expected]
 
@@ -203,8 +206,7 @@ def test_halted_session_carries_the_marks_forward_untouched() -> None:
     )
 
     assert document["fills"] == []
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_SYM, "halted")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_SYM, "halted")]
     assert document["nav_series"] == [
         {
             "date": _HALTED,
@@ -245,8 +247,7 @@ def test_auction_window_label_is_excluded_and_reported() -> None:
     _, clean = _run(_payload())
     _, document = _run(_payload(), loader=_AuctionLoader(_SYM, tainted))
 
-    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [
-        (_SYM, "auction_window")]
+    assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_SYM, "auction_window")]
     assert "14:58" in document["events"][0]["detail"]
     assert document["fills"][0]["price"] == clean["fills"][0]["price"] == 1421.50
 

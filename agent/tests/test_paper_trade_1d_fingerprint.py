@@ -94,8 +94,9 @@ def test_a_v1_1_document_still_has_no_engine_fingerprint() -> None:
         "to_date": _DAY_B,
     }
 
-    document = json.loads(run_paper_trade_step(
-        payload, loader=loader, ch_client=None, calendar_client=None, limits_client=None))
+    document = json.loads(
+        run_paper_trade_step(payload, loader=loader, ch_client=None, calendar_client=None, limits_client=None)
+    )
 
     assert document["schema_version"] == "pt-v1.1"
     assert "engine_fingerprint" not in document
