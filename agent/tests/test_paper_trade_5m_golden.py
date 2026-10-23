@@ -432,7 +432,9 @@ def test_the_first_step_locks_the_fee_model_on_a_legacy_account(
     )
 
     assert result.status == STATUS_APPLIED, result
-    assert dict(store.load("acct_5m_bars").fee_model) == {"commission_rate": 0.001}
+    locked = dict(store.load("acct_5m_bars").fee_model)
+    assert locked == store.read_step("acct_5m_bars", _DAY).step["effective_fee_model"]
+    assert locked["commission_rate"] == 0.001
 
 
 def test_a_different_fee_model_is_refused_before_any_step(
@@ -458,3 +460,43 @@ def test_a_different_fee_model_is_refused_before_any_step(
     assert caught.value.code == "fee_model_mismatch"
     assert store.list_steps("acct_5m_bars") == ()
     assert store.load("acct_5m_bars").watermark is None
+
+
+def test_locked_fee_model_is_reused_when_a_later_step_omits_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake(payload: Any, **kwargs: Any) -> str:
+        captured["payload"] = payload
+        return json.dumps(
+            {
+                "account_id": payload["account_id"],
+                "market": payload["market"],
+                "effective_fee_model": {"commission_rate": 0.00025},
+                "end_state": {"cash": 999.0, "positions": []},
+            }
+        )
+
+    monkeypatch.setattr(tool_module, "run_paper_trade_step", fake)
+    store = _store_with_account(tmp_path, fee_model={"commission_rate": 0.001})
+    account = store.load("acct_5m_bars")
+
+    engine_step_fn(orders_by_date={_DAY: []})(account, _DAY)
+
+    assert captured["payload"]["fee_model"] == {"commission_rate": 0.001}
+
+
+def test_an_explicit_empty_fee_model_is_refused_against_a_locked_account(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake(payload: Any, **kwargs: Any) -> str:
+        raise AssertionError("the engine must not be called")
+
+    monkeypatch.setattr(tool_module, "run_paper_trade_step", fake)
+    store = _store_with_account(tmp_path, fee_model={"commission_rate": 0.001})
+
+    with pytest.raises(PaperStepRefused) as caught:
+        engine_step_fn(fee_model={})(store.load("acct_5m_bars"), _DAY)
+
+    assert caught.value.code == "fee_model_mismatch"

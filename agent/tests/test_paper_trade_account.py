@@ -262,3 +262,33 @@ def test_fee_model_rejects_a_negative_value() -> None:
         _create(fee_model={"commission_rate": -0.0001})
     assert caught.value.code == INVALID_ACCOUNT
     assert "fee_model[commission_rate]" in caught.value.message
+
+
+def test_from_dict_requires_interval() -> None:
+    document = _create().to_dict()
+    del document["interval"]
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "interval is required" in caught.value.message
+
+
+def test_from_dict_requires_path_model() -> None:
+    document = _create().to_dict()
+    del document["path_model"]
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "path_model is required" in caught.value.message
+
+
+def test_from_dict_requires_fill_model() -> None:
+    document = _create().to_dict()
+    del document["fill_model"]
+
+    with pytest.raises(AccountError) as caught:
+        PaperTradeAccount.from_dict(document)
+    assert caught.value.code == INVALID_ACCOUNT
+    assert "fill_model is required" in caught.value.message

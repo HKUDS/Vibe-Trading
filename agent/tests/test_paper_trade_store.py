@@ -14,7 +14,6 @@ import os
 import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -418,14 +417,16 @@ def test_lock_on_a_missing_account(tmp_path: Path) -> None:
 
 _CHILD_LOCK_PROBE = """
 import sys
+import time
 from src.tools.paper_trade.store import AccountLocked, AccountStore
 
 store = AccountStore(sys.argv[1])
+started = time.monotonic()
 try:
     with store.lock(sys.argv[2]):
         print("acquired")
 except AccountLocked:
-    print("locked")
+    print(f"locked {(time.monotonic() - started) * 1000:.3f}")
 """
 
 
@@ -434,7 +435,6 @@ def test_lock_is_exclusive_across_processes_and_fails_fast(tmp_path: Path) -> No
     store.create(_account())
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (str(AGENT_DIR), os.environ.get("PYTHONPATH", ""))))}
     with store.lock(ACCOUNT_ID):
-        started = time.monotonic()
         completed = subprocess.run(
             [sys.executable, "-c", _CHILD_LOCK_PROBE, str(store.base_dir), ACCOUNT_ID],
             capture_output=True,
@@ -443,12 +443,13 @@ def test_lock_is_exclusive_across_processes_and_fails_fast(tmp_path: Path) -> No
             env=env,
             check=False,
         )
-        elapsed = time.monotonic() - started
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "locked"
-    # Fail fast, not "block until the parent exits": the probe returns while the
-    # parent still holds the lock.
-    assert elapsed < 10
+    stdout = completed.stdout.strip()
+    assert stdout.startswith("locked "), stdout
+    # The child measures its OWN lock attempt: interpreter startup and import
+    # cost are excluded, so this asserts fail-fast rather than parent wall clock.
+    # A blocking child would still exceed the subprocess timeout above.
+    assert float(stdout.split()[1]) < 5000
 
 
 # ── recovery ──

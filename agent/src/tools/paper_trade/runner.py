@@ -324,11 +324,13 @@ def _step_locked(
         watermark=target,
         engine_fingerprint=outcome.engine_fingerprint or None,
     )
-    if not advanced.fee_model and outcome.request_fee_model:
-        # HIL6 backfill: a legacy account locks the parameters of its first
-        # successful step, so every later day is provably priced the same way.
+    if not advanced.fee_model and outcome.effective_fee_model:
+        # HIL6 backfill: a legacy account locks the EFFECTIVE parameters of its
+        # first successful step (the engine's normalized echo), so every later
+        # day is provably priced the same way.  Sorted for a stable hash.
         advanced = dataclasses.replace(
-            advanced, fee_model=dict(sorted(outcome.request_fee_model.items())))
+            advanced, fee_model=dict(sorted(outcome.effective_fee_model.items()))
+        )
     store.save_account_atomic(advanced)
     return result(
         STATUS_APPLIED,

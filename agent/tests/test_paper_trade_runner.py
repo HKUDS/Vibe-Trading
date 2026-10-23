@@ -728,3 +728,59 @@ def test_zero_calendar_target_day_without_bars_is_data_not_ready(tmp_path: Path)
     ledger = store.load(ACCOUNT_ID)
     assert ledger.watermark is None
     assert ledger.cash == 100000.0
+
+
+# ── B3/HIL6: the first successful step locks the EFFECTIVE fee model ──
+
+
+def test_first_step_without_fee_model_locks_the_engine_effective_model(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured = {}
+
+    def fake(payload, **kwargs):
+        captured["payload"] = payload
+        return _wire_success(payload)
+
+    monkeypatch.setattr(tool, "run_paper_trade_step", fake)
+    store = _store(tmp_path)
+    assert store.load(ACCOUNT_ID).fee_model == {}
+    step_fn = engine_adapter.engine_step_fn(orders_by_date={MONDAY: []})
+
+    result = _run(store, FakeCalendar(FIVE_DAYS), step_fn, MONDAY, today=MONDAY)
+
+    assert result.status == STATUS_APPLIED, result
+    document = store.read_step(ACCOUNT_ID, MONDAY).step
+    locked = dict(store.load(ACCOUNT_ID).fee_model)
+    assert "fee_model" not in captured["payload"]
+    assert locked
+    assert locked == document["effective_fee_model"]
+
+
+def test_a_later_different_fee_model_is_refused_without_writing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(tool, "run_paper_trade_step", _wire_success)
+    store = _store(tmp_path)
+    calendar = FakeCalendar(FIVE_DAYS)
+    first = _run(
+        store,
+        calendar,
+        engine_adapter.engine_step_fn(orders_by_date={MONDAY: []}),
+        MONDAY,
+        today=MONDAY,
+    )
+    assert first.status == STATUS_APPLIED, first
+    locked = dict(store.load(ACCOUNT_ID).fee_model)
+    assert locked
+
+    second_fn = engine_adapter.engine_step_fn(
+        orders_by_date={FIVE_DAYS[1]: []}, fee_model={"commission_rate": 0.002}
+    )
+    with pytest.raises(PaperStepRefused) as caught:
+        _run(store, calendar, second_fn, FIVE_DAYS[1], today=FIVE_DAYS[1])
+
+    assert caught.value.code == "fee_model_mismatch"
+    assert store.list_steps(ACCOUNT_ID) == (MONDAY,)
+    assert store.load(ACCOUNT_ID).watermark == MONDAY
+    assert dict(store.load(ACCOUNT_ID).fee_model) == locked

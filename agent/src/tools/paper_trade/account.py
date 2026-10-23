@@ -199,9 +199,9 @@ class PaperTradeAccount:
     watermark: str | None
     engine_fingerprint: str
     created_at: str
-    interval: str = "5m"
-    path_model: str = "bar_median"
-    fill_model: str = "all_or_none"
+    interval: str
+    path_model: str
+    fill_model: str
     schema_version: str = ACCOUNT_SCHEMA_VERSION
     non_trading_days: tuple[str, ...] = ()
     #: Fee parameters locked at creation (HIL6).  Empty on an account written
@@ -340,9 +340,16 @@ class PaperTradeAccount:
         for index, day in enumerate(non_trading_days):
             days.append(require_date(day, f"non_trading_days[{index}]"))
         fee_model = _fee_model(document.get("fee_model"), "fee_model")
-        interval = str(document.get("interval") or "5m")
-        path_model = str(document.get("path_model") or "bar_median")
-        fill_model = str(document.get("fill_model") or "all_or_none")
+        for name in ("interval", "path_model", "fill_model"):
+            if name not in document:
+                raise AccountError(
+                    INVALID_ACCOUNT,
+                    f"{name} is required in an account document; a missing tracking field "
+                    "cannot be defaulted without silently changing how the ledger settles",
+                )
+        interval = str(document["interval"])
+        path_model = str(document["path_model"])
+        fill_model = str(document["fill_model"])
         _validate_tracking_choices(market, interval, path_model, fill_model)
         initial_positions = _positions(document.get("initial_positions"), "initial_positions")
         positions = _positions(document.get("positions"), "positions")
