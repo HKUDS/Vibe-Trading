@@ -492,7 +492,10 @@ class ScaffoldSignalEngineTool(BaseTool):
                     ensure_ascii=False,
                 )
 
-            overwrite = bool(kwargs.get("overwrite", False))
+            overwrite = kwargs.get("overwrite", False)
+            if isinstance(overwrite, str):
+                overwrite = overwrite.strip().lower() in {"true", "1", "yes"}
+            overwrite = bool(overwrite)
             code_dir = run_path / "code"
             code_dir.mkdir(parents=True, exist_ok=True)
             signal_path = code_dir / "signal_engine.py"
