@@ -5251,7 +5251,10 @@ def cmd_connector_history(
         console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
         return EXIT_RUN_FAILED
     rows = result.get("bars", [])
-    if not rows:
+    # The table used to keep only the last 20 bars, so --limit 40 still
+    # printed 20. Honor the same limit that was sent to the connector.
+    shown = rows[-limit:] if isinstance(limit, int) and limit >= 1 else []
+    if not shown:
         console.print("[dim]No historical bars returned.[/dim]")
         return EXIT_SUCCESS
     table = Table(title=f"History {result.get('symbol', symbol)} · {result.get('profile_id')}", box=box.SIMPLE_HEAVY)
@@ -5261,7 +5264,7 @@ def cmd_connector_history(
     table.add_column("Low", justify="right")
     table.add_column("Close", justify="right")
     table.add_column("Volume", justify="right")
-    for row in rows[-20:]:
+    for row in shown:
         table.add_row(
             str(row.get("date") or ""),
             str(row.get("open") or ""),
