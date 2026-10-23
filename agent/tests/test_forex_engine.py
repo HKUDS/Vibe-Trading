@@ -60,6 +60,7 @@ class TestNormalize:
             ("EURUSD=X", "EUR/USD"),
             ("usdjpy=x", "USD/JPY"),
             ("XAUUSD=X", "XAU/USD"),
+            ("JPY=X", "USD/JPY"),
             ("  eurusd.fx  ", "EUR/USD"),
         ],
     )

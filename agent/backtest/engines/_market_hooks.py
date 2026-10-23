@@ -620,6 +620,9 @@ def _normalize_symbol(symbol: str) -> str:
     # suffix the pair misses the spread and swap tables and gets the defaults.
     if s.upper().endswith("=X"):
         s = s[:-2]
+        # Yahoo's three-letter form (JPY=X) is the pair quoted against USD.
+        if len(s) == 3:
+            s = "USD" + s
     if "/" in s:
         return s.upper()
     if len(s) == 6:
