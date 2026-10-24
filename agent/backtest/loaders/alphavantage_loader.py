@@ -189,6 +189,10 @@ class DataLoader:
             requests.RequestException: Network failure, propagated unchanged.
         """
         symbol = code.strip().upper()
+        # Alpha Vantage carries US tickers bare; ``.US`` is not one of its
+        # exchange suffixes, so the project's US marker must be dropped.
+        if symbol.endswith(".US"):
+            symbol = symbol[: -len(".US")]
         if not symbol:
             return None
 

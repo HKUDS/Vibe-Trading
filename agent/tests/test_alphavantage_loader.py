@@ -108,6 +108,15 @@ class TestFetch:
         _, kwargs = mock_get.call_args
         assert kwargs["params"]["symbol"] == "AAPL"
 
+    def test_project_us_suffix_is_stripped_for_the_request(self, monkeypatch):
+        monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "ABC123")
+        payload = _payload(("2024-01-02", 1, 1, 1, 1, 1))
+        with patch.object(av, "throttled_get_json", return_value=payload) as mock_get:
+            out = av.DataLoader().fetch(["AAPL.US"], "2024-01-01", "2024-01-31")
+        _, kwargs = mock_get.call_args
+        assert kwargs["params"]["symbol"] == "AAPL"
+        assert set(out) == {"AAPL.US"}
+
     def test_no_key_returns_empty_without_http(self):
         with patch.object(av, "throttled_get_json") as mock_get:
             out = av.DataLoader().fetch(["AAPL"], "2024-01-01", "2024-01-31")
