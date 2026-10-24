@@ -382,6 +382,9 @@ class DataLoader:
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
+                # stk_mins documents vol in shares; ``volume_units`` declares
+                # A-share volume in board lots (100 shares), as daily() returns.
+                df["volume"] = df["volume"] / 100.0
                 ohlcv = df[["open", "high", "low", "close", "volume"]].dropna(
                     subset=["open", "high", "low", "close"]
                 )

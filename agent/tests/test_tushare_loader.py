@@ -286,6 +286,13 @@ class TestFetchMinutesRouting:
         loader.api.stk_mins.assert_called_once()
         assert "000001.SZ" in result
 
+    def test_minute_volume_is_reported_in_declared_board_lots(self) -> None:
+        loader = self._make_loader()
+        loader.api.stk_mins.return_value = _make_minute_df()
+        result = loader._fetch_minutes(["000001.SZ"], "2025-01-02", "2025-01-03", "5m")
+        assert DataLoader.volume_units["a_share"] == "lots"
+        assert result["000001.SZ"]["volume"].tolist() == [10.0, 12.0, 11.0]
+
     def test_etf_warns_and_skips(self) -> None:
         loader = self._make_loader()
         result = loader._fetch_minutes(["510050.SH"], "2025-01-02", "2025-01-03", "5m")
