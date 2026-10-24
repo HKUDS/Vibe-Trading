@@ -524,6 +524,33 @@ def test_corrado_rank_and_cowan_sign_detect_positive_reaction():
     assert result.corrado_rank_p_value < 0.05
 
 
+def test_corrado_rank_sk_spans_the_combined_estimation_and_event_days():
+    from scipy.stats import rankdata
+
+    returns, market = _panel(seed=804)
+    position = 250
+    returns.iloc[position] += 0.03
+    events = [(s, returns.index[position]) for s in returns.columns]
+    result = event_study(
+        returns, market, events, event_window=(0, 2), estimation_window=120, estimation_gap=10
+    )
+
+    est_rows = slice(position - 10 - 120, position - 10)
+    deviations = []
+    for outcome in result.events:
+        fit = outcome.fit
+        residuals = (
+            returns[outcome.symbol].iloc[est_rows] - (fit.alpha + fit.beta * market.iloc[est_rows])
+        ).to_numpy()
+        combined = np.concatenate([residuals, outcome.abnormal_returns.to_numpy()])
+        deviations.append(rankdata(combined) - (len(combined) + 1) / 2)
+    mean_dev = np.vstack(deviations).mean(axis=0)
+    s_k = np.sqrt(np.mean(mean_dev**2))
+    expected_z = mean_dev[-3:].sum() / (np.sqrt(3) * s_k)
+
+    assert result.corrado_rank_z == pytest.approx(expected_z, rel=1e-9)
+
+
 def test_corrado_rank_and_cowan_sign_single_event_safe_nan():
     returns, market = _panel(seed=802)
     event_day = returns.index[250]

@@ -552,11 +552,13 @@ def event_study(
         and len(rank_dev_est_list[0]) > 0
         and all(len(r) == len(rank_dev_est_list[0]) for r in rank_dev_est_list)
     ):
-        est_rank_matrix = np.vstack(rank_dev_est_list)  # (n_events, T_est)
-        mean_est_ranks = est_rank_matrix.mean(axis=0)  # mean rank dev per estimation day
-        s_k = float(np.sqrt(np.mean(mean_est_ranks**2)))
-
         evt_rank_matrix = np.vstack(rank_dev_evt_list)  # (n_events, L2)
+        # Corrado (1989): S(K) averages the squared mean rank deviation over
+        # every day of the combined estimation + event period.
+        all_rank_matrix = np.hstack([np.vstack(rank_dev_est_list), evt_rank_matrix])
+        mean_all_ranks = all_rank_matrix.mean(axis=0)  # mean rank dev per day
+        s_k = float(np.sqrt(np.mean(mean_all_ranks**2)))
+
         mean_evt_ranks = evt_rank_matrix.mean(axis=0)  # mean rank dev per event day
         cum_evt_rank_dev = float(np.sum(mean_evt_ranks))
 
