@@ -178,6 +178,29 @@ def test_invalid_input_returns_an_error_envelope(
     assert fragment in payload["error"]
 
 
+def test_transfer_into_the_portfolio_rejects_the_wrong_holder_sign() -> None:
+    """A positive portfolio inflow is not accepted as a holder cash inflow."""
+    payload = json.loads(
+        CashFlowPerformanceTool().execute(
+            valuations=[
+                {"date": "2024-01-01", "value": 100.0},
+                {"date": "2024-12-31", "value": 200.0},
+            ],
+            flows=[
+                {
+                    "date": "2024-07-01",
+                    "amount": 100.0,
+                    "kind": "transfer_in",
+                    "currency": "USD",
+                }
+            ],
+        )
+    )
+
+    assert payload["status"] == "error"
+    assert "negative (cash out)" in payload["error"]
+
+
 def test_reclassifying_a_custom_kind_makes_it_external() -> None:
     """The escape hatch from the unclassified-kind error actually works."""
     payload = json.loads(

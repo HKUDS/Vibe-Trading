@@ -84,8 +84,9 @@ class CashFlowPerformanceTool(BaseTool):
                 "description": (
                     "Inline cash flows. Amounts are from the client's point of "
                     "view: a contribution is NEGATIVE (cash leaves the client) "
-                    "and a distribution is POSITIVE. Mutually exclusive with "
-                    "flows_path."
+                    "and a distribution is POSITIVE. A transfer into the "
+                    "portfolio is NEGATIVE; a transfer out is POSITIVE. "
+                    "Mutually exclusive with flows_path."
                 ),
                 "items": {
                     "type": "object",

@@ -949,6 +949,8 @@ Beyond bars, `src/entities` ingests irregular dated cash flows (NAVs, capital
 calls, coupons) and `cashflow_performance` reports XIRR / MOIC / DPI / TVPI /
 TWR / Modified Dietz / MWR over them. This path is deliberately parallel to the
 bar engines so a `nav` column can never reach one and get priced as a close.
+Flows use the holder's sign convention: a transfer into the portfolio is
+negative, and a transfer out is positive.
 
 </details>
 

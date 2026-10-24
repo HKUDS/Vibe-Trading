@@ -129,6 +129,21 @@ def test_sign_convention_rejects_negative_distribution():
         CashFlow(date=date(2024, 1, 1), amount=-500.0, kind="distribution", currency="USD")
 
 
+@pytest.mark.parametrize(
+    ("kind", "amount", "direction"),
+    [("transfer_in", 100.0, "negative"), ("transfer_out", -100.0, "positive")],
+)
+def test_portfolio_transfer_signs_follow_holder_perspective(kind, amount, direction):
+    with pytest.raises(ValueError, match=direction):
+        CashFlow(date=date(2024, 1, 1), amount=amount, kind=kind, currency="USD")
+
+
+@pytest.mark.parametrize(("kind", "amount"), [("transfer_in", -100.0), ("transfer_out", 100.0)])
+def test_portfolio_transfer_signs_accept_holder_perspective(kind, amount):
+    flow = CashFlow(date=date(2024, 1, 1), amount=amount, kind=kind, currency="USD")
+    assert flow.amount == amount
+
+
 def test_sign_convention_applies_after_kind_normalization():
     """'Capital Call' must be checked as capital_call, not treated as custom."""
     with pytest.raises(ValueError, match="negative"):

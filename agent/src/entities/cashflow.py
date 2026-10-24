@@ -69,6 +69,10 @@ KIND_DIRECTION: Mapping[str, int] = MappingProxyType(
         "capital_call": -1,
         "purchase": -1,
         "subscription": -1,
+        # A transfer into the portfolio leaves the holder's pocket; a transfer
+        # out of the portfolio reaches it. Keep these aligned with the same
+        # holder-perspective convention as contributions and distributions.
+        "transfer_in": -1,
         "fee": -1,
         "expense": -1,
         # Cash arriving at the holder.
@@ -78,6 +82,7 @@ KIND_DIRECTION: Mapping[str, int] = MappingProxyType(
         "interest": 1,
         "principal": 1,
         "redemption": 1,
+        "transfer_out": 1,
         "proceeds": 1,
     }
 )
