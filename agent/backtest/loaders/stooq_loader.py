@@ -134,12 +134,21 @@ def map_symbol(symbol: str) -> str:
     """Translate a Vibe-Trading symbol into Stooq's ticker convention.
 
     Args:
-        symbol: Project-side symbol, e.g. ``AAPL.US``.
+        symbol: Project-side symbol, e.g. ``AAPL.US`` or ``BRK.B.US``.
 
     Returns:
-        The lower-cased Stooq ticker, e.g. ``aapl.us``.
+        The lower-cased Stooq ticker, e.g. ``aapl.us`` or ``brk-b.us``.
+        Stooq hyphenates a US class share; ``brk.b.us`` is a different symbol
+        from Berkshire class B.
     """
-    return symbol.strip().lower()
+    cleaned = symbol.strip().lower()
+    if cleaned.endswith(".us"):
+        base = cleaned[:-3]
+        if "." in base and "-" not in base:
+            left, right = base.split(".", 1)
+            if left.isalpha() and right.isalpha() and len(right) == 1:
+                return f"{left}-{right}.us"
+    return cleaned
 
 
 def _compact_date(value: str) -> str:
