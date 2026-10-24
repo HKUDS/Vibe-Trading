@@ -323,6 +323,10 @@ def _to_float(val: Any, default: float = 0.0) -> float:
             # "1.234,56": the rightmost separator is the decimal one, so dots
             # group thousands. Stripping only commas read it as 1.23456.
             s = s.replace(".", "").replace(",", ".")
+        elif s.count(",") == 1 and "." not in s and len(s.rsplit(",", 1)[1].rstrip(")")) != 3:
+            # "12,50": a lone comma not followed by a three-digit group cannot
+            # be thousands grouping, so it is the decimal separator.
+            s = s.replace(",", ".")
         else:
             s = s.replace(",", "")
         s = s.strip()
