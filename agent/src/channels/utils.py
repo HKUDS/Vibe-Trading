@@ -16,6 +16,8 @@ from src.config.paths import get_data_dir
 logger = logging.getLogger(__name__)
 
 _UNSAFE_CHARS = re.compile(r"[/\\:*?\"<>|]")
+# A CommonMark fence line: up to three leading spaces, then ``` or ~~~.
+_FENCE_LINE = re.compile(r"^( {0,3})(`{3,}|~{3,})([^`~]*)$")
 
 # Static client identification for the RFC 2971 IMAP ``ID`` command. NetEase
 # mailboxes (163/126/yeah.net) accept ``LOGIN`` but reject the first ``SELECT``
@@ -61,12 +63,87 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
         return False
 
 
-def split_message(content: str, max_len: int = 2000) -> list[str]:
+def _unclosed_fence(text: str) -> tuple[str, str] | None:
+    """Return ``(opener line, marker)`` when a fence is still open.
+
+    A trailing partial line is ignored, so a cut through the middle of a line
+    cannot be mistaken for a fence opener or closer.
+    """
+    if not text.endswith("\n"):
+        newline = text.rfind("\n")
+        if newline < 0:
+            return None
+        text = text[: newline + 1]
+    opener: str | None = None
+    marker: str | None = None
+    for line in text.split("\n"):
+        match = _FENCE_LINE.match(line)
+        if match is None:
+            continue
+        ticks = match.group(2)
+        if marker is None:
+            marker = ticks
+            opener = line
+            continue
+        if ticks[0] == marker[0] and len(ticks) >= len(marker):
+            marker = None
+            opener = None
+    if opener is None or marker is None:
+        return None
+    return opener, marker
+
+
+def _close_open_fence(
+    piece: str, rest: str, content: str, max_len: int
+) -> tuple[str, str]:
+    """Close a fence at the end of ``piece`` and reopen it on ``rest``.
+
+    Does nothing when the closer would exceed ``max_len`` or when reopening
+    would make the remainder longer than the text just split. The second
+    guard is what keeps a long opener from looping.
+    """
+    found = _unclosed_fence(piece)
+    if found is None:
+        return piece, rest
+    opener, marker = found
+    suffix = "\n" + marker
+    # Pull complete lines back onto the remainder until the closer fits.
+    # Leaving the fence open would show the rest of the code as chat.
+    while len(piece) + len(suffix) > max_len:
+        newline = piece.rfind("\n")
+        if newline <= 0:
+            return piece, rest
+        moved = piece[newline + 1 :]
+        piece = piece[:newline]
+        rest = f"{moved}\n{rest}" if moved else rest
+        found = _unclosed_fence(piece)
+        if found is None:
+            return piece, rest
+        opener, marker = found
+        suffix = "\n" + marker
+    if len(opener) + 1 >= max_len or not piece:
+        return piece, rest
+    candidate = opener + "\n" + rest
+    if len(candidate) >= len(content):
+        return piece, rest
+    return piece + suffix, candidate
+
+
+def split_message(
+    content: str, max_len: int = 2000, *, repair_fences: bool = False
+) -> list[str]:
     """Split content into chunks within max_len, preferring line breaks.
 
     Args:
         content: The text content to split.
         max_len: Maximum length per chunk (default 2000 for Discord compatibility).
+        repair_fences: When true, a chunk that ends inside a fenced code block
+            closes the fence, and the next chunk reopens it with the same
+            opener. Discord and Slack render each chunk as its own message, so
+            an unclosed fence turns the rest of the code into chat text and
+            swallows the following prose as code. Callers that split plain
+            text or HTML leave this off, because the inserted markers would
+            shift their own offsets.
 
     Returns:
         List of message chunks, each within max_len.
@@ -90,12 +167,15 @@ def split_message(content: str, max_len: int = 2000) -> list[str]:
             pos = cut.rfind(" ")
         if pos <= 0:
             pos = max_len
-        chunks.append(content[:pos])
+        piece = content[:pos]
         # Drop only the separator we broke on. A blanket lstrip() also ate
         # indentation on the next line (code blocks / nested markdown).
         rest = content[pos:]
         if rest.startswith("\n") or rest.startswith(" "):
             rest = rest[1:]
+        if repair_fences:
+            piece, rest = _close_open_fence(piece, rest, content, max_len)
+        chunks.append(piece)
         content = rest
     return chunks
 

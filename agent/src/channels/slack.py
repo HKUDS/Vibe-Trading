@@ -193,7 +193,7 @@ class SlackChannel(BaseChannel):
             elif msg.content or not (msg.media or []):
                 mrkdwn = self._to_mrkdwn(msg.content) if msg.content else " "
                 buttons = getattr(msg, "buttons", None) or []
-                chunks = split_message(mrkdwn, SLACK_MAX_MESSAGE_LEN)
+                chunks = split_message(mrkdwn, SLACK_MAX_MESSAGE_LEN, repair_fences=True)
                 for index, chunk in enumerate(chunks):
                     kwargs: dict[str, Any] = dict(
                         channel=target_chat_id, text=chunk, thread_ts=thread_ts_param,

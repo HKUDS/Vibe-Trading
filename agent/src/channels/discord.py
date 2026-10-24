@@ -322,7 +322,7 @@ if DISCORD_AVAILABLE:
         @staticmethod
         def _build_chunks(content: str, failed_media: list[str], sent_media: bool) -> list[str]:
             """Build outbound text chunks, including attachment-failure fallback text."""
-            chunks = split_message(content, MAX_MESSAGE_LEN)
+            chunks = split_message(content, MAX_MESSAGE_LEN, repair_fences=True)
             if chunks or not failed_media or sent_media:
                 return chunks
             fallback = "\n".join(f"[attachment: {name} - send failed]" for name in failed_media)
