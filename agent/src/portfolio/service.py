@@ -1002,7 +1002,7 @@ class PortfolioService:
                             f"Select a {broker} account for this connection before refreshing"
                         )
                     read_options["account"] = connection.account_ref
-            elif profile.transport in {"broker_sdk", "local_plugin"} and (
+            elif profile.transport in {"broker_sdk", "local_plugin", "local_tws"} and (
                 profile.transport == "local_plugin" or self._use_connection_scoped_reads
             ):
                 read_options["connection_id"] = connection.id
@@ -1083,7 +1083,7 @@ class PortfolioService:
                         **(
                             {"connection_id": connection.id}
                             if profile.transport == "local_plugin"
-                            or (profile.transport == "broker_sdk" and self._use_connection_scoped_quotes)
+                            or (profile.transport in {"broker_sdk", "local_tws"} and self._use_connection_scoped_quotes)
                             else {}
                         ),
                     )

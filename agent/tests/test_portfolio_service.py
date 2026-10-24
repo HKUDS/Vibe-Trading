@@ -32,6 +32,50 @@ def _settings_store(tmp_path):
     return store
 
 
+def test_refresh_uses_each_ibkr_connections_endpoint_for_account_positions_and_quotes(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from src.trading import connections
+    from src.trading.connectors.ibkr import local
+
+    registry = connections.ConnectionStore(tmp_path / "connections.json")
+    for name, port in (("first", 4002), ("second", 7497)):
+        connection = registry.create(name, "ibkr-paper-local", name)
+        registry.save(replace(connection, endpoint={"host": f"{name}.local", "port": port}))
+    monkeypatch.setattr(connections, "ConnectionStore", lambda: registry)
+    monkeypatch.setattr(local, "config_path", lambda: tmp_path / "ibkr-local.json")
+    calls = []
+
+    def account(cfg):
+        calls.append(("account", cfg.host, cfg.port))
+        return {"summary": [{"tag": "NetLiquidation", "value": "1000", "currency": "USD"}]}
+
+    def positions(cfg):
+        calls.append(("positions", cfg.host, cfg.port))
+        return {"positions": [{"symbol": "AAPL", "sec_type": "STK", "exchange": "SMART", "currency": "USD", "position": 1, "avg_cost": 100}]}
+
+    def quote(symbol, *, config, **kwargs):
+        calls.append(("quote", config.host, config.port))
+        return {"quote": {"last": 150}}
+
+    monkeypatch.setattr(local, "get_account_snapshot", account)
+    monkeypatch.setattr(local, "get_positions", positions)
+    monkeypatch.setattr(local, "get_quote", quote)
+    settings = PortfolioSettingsStore(tmp_path / "portfolio.json", connection_store=registry)
+    settings.save({"display_currency": "USD", "sources": [{"connection_id": name, "label": name} for name in ("first", "second")]})
+    service = PortfolioService(
+        PortfolioStore(tmp_path / "portfolio.sqlite3"),
+        settings_store=settings,
+        fx_fetcher=lambda: (Decimal("7.2"), Decimal("7.8"), "2026-08-09T00:00:00+00:00"),
+    )
+    snapshot = service.refresh()
+    assert snapshot["complete"] is True
+    assert calls == [
+        (operation, f"{name}.local", port)
+        for name, port in (("first", 4002), ("second", 7497))
+        for operation in ("account", "positions", "quote")
+    ]
+
+
 def test_refresh_aggregates_three_readonly_connectors(tmp_path):
     accounts = {
         "ibkr-live-local-readonly": {"summary": [{"tag": "NetLiquidation", "value": "1000", "currency": "USD"}]},

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+from ipaddress import ip_address
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,8 +138,9 @@ class TradingConnection:
     credential_ref: str
     created_at: str
     account_ref: str = ""
+    endpoint: dict[str, Any] | None = None
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         """Return the connection as a JSON-serializable mapping.
 
         Returns:
@@ -387,6 +389,32 @@ class ConnectionStore:
         account_ref = validate_account_ref(raw.get("account_ref"))
         if account_ref and not requires_account_selection(profile):
             raise ValueError(f"connection profile does not take an account: {profile.id}")
+        endpoint = raw.get("endpoint")
+        if endpoint is not None:
+            if (profile.connector, profile.transport) not in {("ibkr", "local_tws"), ("futu", "broker_sdk")}:
+                raise ValueError("socket endpoint settings are only available for local IBKR and Futu connections")
+            if not isinstance(endpoint, dict) or set(endpoint) != {"host", "port"}:
+                raise ValueError("endpoint must contain host and port only")
+            host, port = endpoint["host"], endpoint["port"]
+            if (
+                not isinstance(host, str)
+                or not host.strip()
+                or len(host.strip()) > 253
+                or any(character.isspace() or ord(character) < 32 or character in "/\\@?#" for character in host.strip())
+            ):
+                raise ValueError("host must be a hostname or IP address without a scheme or path")
+            host = host.strip()
+            try:
+                ip_address(host)
+            except ValueError:
+                if not all(
+                    re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                    for label in host.removesuffix(".").split(".")
+                ):
+                    raise ValueError("host must be a hostname or IP address without a scheme or path")
+            if type(port) is not int or not 1 <= port <= 65535:
+                raise ValueError("port must be an integer from 1 to 65535")
+            endpoint = {"host": host, "port": port}
         return TradingConnection(
             id=connection_id,
             profile_id=profile.id,
@@ -394,6 +422,7 @@ class ConnectionStore:
             credential_ref=credential_ref,
             created_at=str(raw.get("created_at") or _now()),
             account_ref=account_ref,
+            endpoint=endpoint,
         )
 
     def _write(self, connections: list[TradingConnection]) -> None:

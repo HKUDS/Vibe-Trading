@@ -18,7 +18,7 @@ from src.trading.connections import (
 )
 from src.trading.local_plugins import plugin_root
 from src.trading.profiles import profile_by_id
-from src.trading.service import check_connection
+from src.trading.service import _ibkr_config, _sdk_config, _sdk_module, check_connection
 
 
 class ConnectionRequest(BaseModel):
@@ -39,6 +39,14 @@ class CredentialRequest(BaseModel):
     """Payload carrying credential values for one connection instance."""
 
     values: dict[str, str] = Field(default_factory=dict)
+
+
+class SocketEndpointRequest(BaseModel):
+    """Host and socket port for a broker gateway; never broker credentials."""
+
+    model_config = {"extra": "forbid"}
+    host: str = Field(min_length=1, max_length=253)
+    port: int = Field(strict=True, ge=1, le=65535)
 
 
 def register_connection_routes(app: FastAPI) -> None:
@@ -65,6 +73,18 @@ def register_connection_routes(app: FastAPI) -> None:
             }
             for row in store().public_list()
         ]
+        for row in connections:
+            try:
+                if row["connector"] == "ibkr" and row["transport"] == "local_tws":
+                    config = _ibkr_config(profile_by_id(row["profile_id"]), {"connection_id": row["id"]})
+                elif row["connector"] == "futu" and row["transport"] == "broker_sdk":
+                    config = _sdk_config(profile_by_id(row["profile_id"]), _sdk_module("futu"), {"connection_id": row["id"]})
+                else:
+                    continue
+            except (ValueError, TypeError, RuntimeError) as exc:
+                row["endpoint_error"] = str(exc)
+                continue
+            row["effective_endpoint"] = {"host": config.host, "port": config.port}
         profiles = []
         for row in readonly_profile_catalog():
             if row.get("invalid_plugin"):
@@ -111,6 +131,20 @@ def register_connection_routes(app: FastAPI) -> None:
             # replace() keeps every field the rename does not name, including
             # the selected account.
             updated = instance.save(replace(current, label=payload.label))
+            return {"status": "ok", "connection": updated.to_dict()}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put(
+        "/api/connections/{connection_id}/endpoint",
+        dependencies=[Depends(require_settings_write_auth)],
+    )
+    def save_connection_endpoint(connection_id: str, payload: SocketEndpointRequest):
+        """Save a connection's socket address without contacting the broker."""
+        try:
+            instance = store()
+            current = instance.get(connection_id)
+            updated = instance.save(replace(current, endpoint=payload.model_dump()))
             return {"status": "ok", "connection": updated.to_dict()}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

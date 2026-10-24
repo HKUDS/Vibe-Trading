@@ -107,6 +107,9 @@ def _sdk_config(
     if connection.profile_id != profile.id:
         raise ValueError("local connection profile does not match the requested SDK profile")
 
+    if profile.connector == "futu" and connection.endpoint is not None:
+        options = {**connection.endpoint, **{key: value for key, value in options.items() if value not in (None, "")}}
+
     fields = credential_fields(profile.id)
     direct_secret_fields = set(fields).intersection(options)
     if direct_secret_fields:
@@ -1441,6 +1444,15 @@ def _ibkr_config(profile: TradingProfile, overrides: dict[str, Any]):
         cfg = base
     else:
         cfg = default_cfg
+    connection_id = _clean(overrides.get("connection_id"))
+    if connection_id is not None:
+        from src.trading.connections import ConnectionStore
+
+        connection = ConnectionStore().get(connection_id)
+        if connection.profile_id != profile.id:
+            raise ValueError("local connection profile does not match the requested IBKR profile")
+        if connection.endpoint is not None:
+            cfg = cfg.with_overrides(**connection.endpoint)
     return cfg.with_overrides(
         host=_clean(overrides.get("host")),
         port=_int_or_none(overrides.get("port")),
