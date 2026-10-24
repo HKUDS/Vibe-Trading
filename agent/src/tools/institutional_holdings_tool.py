@@ -1940,7 +1940,10 @@ class InstitutionalHoldingsTool(BaseTool):
         if candidates:
             data["other_name_matches"] = candidates
 
-        if kwargs.get("include_changes"):
+        include_changes = kwargs.get("include_changes")
+        if isinstance(include_changes, str):
+            include_changes = include_changes.strip().lower() in {"true", "1", "yes"}
+        if include_changes:
             data["changes"] = self._changes_block(cik, filings, target, positions, budget)
 
         return _envelope("manager_holdings", data, positions[:top_n], "positions", offset)
