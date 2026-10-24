@@ -214,6 +214,12 @@ class TestCommission:
         comm = engine.calc_commission_for_symbol(symbol, 1, 5000.0, is_open=True)
         assert comm == pytest.approx(0.62)
 
+    def test_micro_silver_pays_the_micro_metals_rate(self) -> None:
+        """SIL is priced like MGC, not like the full-size default."""
+        engine = _make_engine()
+        comm = engine.calc_commission_for_symbol("SILZ4", 1, 30.0, is_open=True)
+        assert comm == pytest.approx(_COMMISSION_PER_CONTRACT["MGC"])
+
     def test_unlisted_product_keeps_the_default(self) -> None:
         engine = _make_engine()
         comm = engine.calc_commission_for_symbol("XYZF25", 1, 5000.0, is_open=True)
