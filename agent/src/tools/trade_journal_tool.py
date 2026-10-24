@@ -282,7 +282,14 @@ def _compute_profile(df: pd.DataFrame) -> dict[str, Any]:
     dividend_rows_missing_cash = int((dividend_amounts == 0).sum())
 
     total_trades = len(trades_df)
-    span_days = max(1, (df["datetime"].max() - df["datetime"].min()).days)
+    # Timedelta.days drops the partial day, so a journal that runs Monday
+    # morning through Wednesday afternoon is counted as two days and its
+    # trades-per-week comes out a third too high. A same-timestamp journal
+    # has no measured span; one day keeps the rate finite.
+    elapsed_days = (
+        df["datetime"].max() - df["datetime"].min()
+    ).total_seconds() / 86400.0
+    span_days = elapsed_days if elapsed_days > 0 else 1.0
     freq_per_week = round(total_trades / span_days * 7, 2)
 
     currencies = sorted(
