@@ -366,11 +366,14 @@ class TradingOrdersTool(BaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         """Read open orders."""
+        include_executions = kwargs.get("include_executions", False)
+        if isinstance(include_executions, str):
+            include_executions = include_executions.strip().lower() in {"true", "1", "yes"}
         try:
             return _json_result(
                 get_open_orders(
                     _connection(kwargs.get("connection")),
-                    include_executions=bool(kwargs.get("include_executions", False)),
+                    include_executions=bool(include_executions),
                     **_overrides(kwargs),
                 )
             )
