@@ -89,6 +89,15 @@ def test_invalid_broker_fails_closed(live_runtime: Path) -> None:
     assert halt.halt_flag_set("../evil") is True
 
 
+@pytest.mark.parametrize("broker", [".", " . "])
+def test_dot_broker_cannot_clear_the_global_halt(live_runtime: Path, broker: str) -> None:
+    halt.trip_halt(by="cli", reason="global")
+    with pytest.raises(ValueError):
+        halt.clear_halt(broker=broker)
+    assert halt.halt_path().exists()
+    assert halt.halt_flag_set(broker) is True
+
+
 def test_trip_is_idempotent_latest_wins(live_runtime: Path) -> None:
     halt.trip_halt(by="cli", reason="first")
     halt.trip_halt(by="frontend", reason="second")

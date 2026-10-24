@@ -41,12 +41,13 @@ def broker_dir(broker: str) -> Path:
         ``<runtime_root>/live/<broker>``. Not created here.
 
     Raises:
-        ValueError: If ``broker`` is empty/whitespace or contains a path
-            separator or ``..`` segment (a broker key is never a path).
+        ValueError: If ``broker`` is empty/whitespace, is ``.``, or contains a
+            path separator or ``..`` segment (a broker key is never a path).
     """
     key = broker.strip().lower()
     if not key:
         raise ValueError("broker key must not be empty")
-    if "/" in key or "\\" in key or ".." in key:
+    # "." would resolve to the live root itself, aliasing the global HALT.
+    if key == "." or "/" in key or "\\" in key or ".." in key:
         raise ValueError(f"invalid broker key: {broker!r}")
     return live_root() / key
