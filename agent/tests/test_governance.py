@@ -207,6 +207,18 @@ def test_manifest_verify_hash_detects_tampering_after_deserialize() -> None:
     assert tampered.verify_hash() is False
 
 
+def test_manifest_verify_hash_detects_an_edited_tool_list() -> None:
+    original = build_run_manifest(**_base_manifest_kwargs())
+    data = original.to_dict()
+    # Tamper: add a tool name while keeping the stored tools_hash/manifest_hash.
+    data["tools"]["tool_names"].append("zz_injected_tool")
+    assert RunManifest.from_dict(data).verify_hash() is False
+
+    data = original.to_dict()
+    data["tools"]["tool_names"] = data["tools"]["tool_names"][1:]
+    assert RunManifest.from_dict(data).verify_hash() is False
+
+
 def test_manifest_rejects_duplicate_skill_names_in_sequence_form() -> None:
     from src.governance.manifest import SkillRecord
 

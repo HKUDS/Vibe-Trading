@@ -259,6 +259,9 @@ class RunManifest:
             ``True`` when the stored ``manifest_hash`` matches a fresh
             recomputation, ``False`` if the manifest was hand-edited/corrupted.
         """
+        # manifest_hash covers tools_hash, not the name list it summarizes.
+        if ToolRegistrySnapshot.from_names(self.tools.tool_names) != self.tools:
+            return False
         expected = _compute_manifest_hash(
             system_prompt_hash=self.system_prompt_hash,
             skills=self.skills,
