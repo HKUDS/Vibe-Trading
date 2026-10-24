@@ -76,6 +76,12 @@ class TestMapSymbol:
     def test_strips_and_lowercases(self):
         assert stooq_loader.map_symbol("  MSFT.US ") == "msft.us"
 
+    def test_class_share_is_hyphenated(self):
+        # Stooq lists Berkshire class B as brk-b.us; brk.b.us is not that symbol.
+        assert stooq_loader.map_symbol("BRK.B.US") == "brk-b.us"
+        assert stooq_loader.map_symbol("BF.A.US") == "bf-a.us"
+        assert stooq_loader.map_symbol("BRK-B.US") == "brk-b.us"
+
 
 # ---------------------------------------------------------------------------
 # CSV parsing via fetch
