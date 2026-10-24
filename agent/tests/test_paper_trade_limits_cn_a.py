@@ -105,6 +105,23 @@ def test_st_from_table_overrides_heuristic_ratio_to_five_percent() -> None:
     assert PROV_ST_ROW in status.provenance
 
 
+@pytest.mark.parametrize(
+    ("ts_code", "expected"),
+    [
+        ("300001.SZ", (12.0, 8.0)),  # ChiNext ST keeps ±20%
+        ("688001.SH", (12.0, 8.0)),  # STAR ST keeps ±20%
+        ("830799.BJ", (13.0, 7.0)),  # BSE ST keeps ±30%
+    ],
+)
+def test_st_keeps_the_board_ratio_outside_the_main_board(
+    ts_code: str, expected: tuple[float, float]
+) -> None:
+    client = FakeLimitsClient(st=[{"type": "ST", "type_name": "ST"}])
+    status = get_limit_status(client, ts_code, _TRADE_DATE, prev_close=10.0)
+    assert status.is_st is True
+    assert (status.up_limit, status.down_limit) == expected
+
+
 def test_heuristic_quantizes_half_up_not_banker() -> None:
     # VD-9 trap pin: 10.05 × 1.1 = 11.055 → HALF_UP → 11.06.
     # Builtin round(11.055, 2) gives 11.05 (float 11.0549999… + banker's).

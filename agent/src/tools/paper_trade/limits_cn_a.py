@@ -64,6 +64,7 @@ PROV_LIMIT_LIST_ROW = "limit_list:stk_limit_list_d"
 #: ST price-limit ratio (REQUIREMENTS §4: ST ±5%).  The board heuristic in
 #: china_a.py cannot detect ST from the code alone; the table can.
 _ST_LIMIT_RATIO = Decimal("0.05")
+_MAIN_BOARD_RATIO = Decimal("0.1")
 
 _TICK = Decimal("0.01")
 
@@ -111,14 +112,18 @@ def heuristic_limit_prices(ts_code: str, prev_close: float, is_st: bool) -> tupl
     """Derive (up_limit, down_limit) from the board ratio and previous close.
 
     Ratio source: ``china_a._price_limit`` (main board 10%, ChiNext/STAR
-    20%, BSE 30%), overridden to 5% when the ST table says the symbol is
-    ST that day.  Quantized to the 0.01 tick with ROUND_HALF_UP (VD-9).
+    20%, BSE 30%), overridden to 5% on the main board when the ST table
+    says the symbol is ST that day.  Quantized to the 0.01 tick with ROUND_HALF_UP (VD-9).
     ``prev_close`` must be positive — non-positive prices are a data-layer
     sanity gate (plan R-V3), not something to derive bands from.
     """
     if prev_close <= 0:
         raise ValueError(f"prev_close must be positive to derive a heuristic band, got {prev_close!r}")
-    ratio = _ST_LIMIT_RATIO if is_st else Decimal(str(_price_limit(ts_code)))
+    ratio = Decimal(str(_price_limit(ts_code)))
+    # ST status narrows only the main-board band; ChiNext, STAR and BSE
+    # risk-warning stocks keep their board's ratio.
+    if is_st and ratio == _MAIN_BOARD_RATIO:
+        ratio = _ST_LIMIT_RATIO
     base = Decimal(str(prev_close))
     up = (base * (Decimal(1) + ratio)).quantize(_TICK, rounding=ROUND_HALF_UP)
     down = (base * (Decimal(1) - ratio)).quantize(_TICK, rounding=ROUND_HALF_UP)
