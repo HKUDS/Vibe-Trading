@@ -630,10 +630,10 @@ def _flatten_data_map(data_map: Dict[str, Any], start_date: str) -> List[Dict[st
                     "time": pd.Timestamp(timestamp).strftime("%Y-%m-%d"),
                     "timestamp": pd.Timestamp(timestamp).strftime("%Y-%m-%d"),
                     "code": code,
-                    "open": round(float(row.get("open") or 0.0), 6),
-                    "high": round(float(row.get("high") or 0.0), 6),
-                    "low": round(float(row.get("low") or 0.0), 6),
-                    "close": round(float(row.get("close") or 0.0), 6),
+                    "open": float(row.get("open") or 0.0),
+                    "high": float(row.get("high") or 0.0),
+                    "low": float(row.get("low") or 0.0),
+                    "close": float(row.get("close") or 0.0),
                     "volume": round(float(row.get("volume") or 0.0), 6),
                 }
             )

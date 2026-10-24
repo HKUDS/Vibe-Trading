@@ -388,3 +388,24 @@ def test_fetch_stops_when_fallbacks_leave_symbols_missing(
                 "source": "primary",
             }
         )
+
+
+def test_reconstructed_price_rows_keep_sub_micro_prices() -> None:
+    from src.ui_services import _flatten_data_map
+
+    frame = pd.DataFrame(
+        {
+            "open": [0.00000912],
+            "high": [0.00000951],
+            "low": [0.00000887],
+            "close": [0.00000934],
+            "volume": [1.0],
+        },
+        index=pd.DatetimeIndex([pd.Timestamp("2026-01-01")]),
+    )
+
+    [row] = _flatten_data_map({"PEPE-USDT": frame}, start_date="2026-01-01")
+
+    assert (row["open"], row["high"], row["low"], row["close"]) == pytest.approx(
+        (0.00000912, 0.00000951, 0.00000887, 0.00000934)
+    )
