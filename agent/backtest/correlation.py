@@ -195,7 +195,7 @@ def _rolling_correlation_matrix(
     codes = sorted(price_series.keys())
 
     # Build a aligned returns DataFrame (row index = date)
-    returns_frames = []
+    close_frames = []
     closes = {}
     for code, df in price_series.items():
         closes[code] = _close_series(code, df)
@@ -206,15 +206,19 @@ def _rolling_correlation_matrix(
         # (e.g. crypto via OKX/CCXT at UTC midnight vs US equity via
         # yfinance at EDT midnight = 04:00 UTC) align correctly.
         ts.index = ts.index.tz_localize(None).normalize()
-        # ``fill_method=None`` is explicit because under the project's
-        # pandas>=2,<3 pin the ``pct_change`` default forward-fills missing
-        # prices, silently manufacturing 0% returns on halted sessions.
-        rets = ts.pct_change(fill_method=None).dropna()
-        rets.name = code
-        returns_frames.append(rets)
+        ts.name = code
+        close_frames.append(ts)
 
-    # Align all series to a common index (inner join)
-    aligned = pd.concat(returns_frames, axis=1).dropna()
+    # Align closes on common dates before differencing, so every column's
+    # return spans the same interval (a crypto Sun->Mon return must not be
+    # paired with an equity Fri->Mon return). ``fill_method=None`` is
+    # explicit because under the project's pandas>=2,<3 pin the
+    # ``pct_change`` default forward-fills missing prices.
+    aligned = (
+        pd.concat(close_frames, axis=1, join="inner")
+        .pct_change(fill_method=None)
+        .dropna()
+    )
     if aligned.empty:
         ranges = {
             code: f"{closes[code].index.min()} .. {closes[code].index.max()}"

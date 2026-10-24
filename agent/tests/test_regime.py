@@ -149,6 +149,20 @@ class TestAlignedReturns:
         assert len(aligned) == 3
         assert not (aligned["GAP"] == 0.0).any()
 
+    def test_weekend_bars_do_not_shift_the_return_interval(self):
+        # Mon 2024-01-01 .. Mon 2024-01-15. The crypto Monday return must span
+        # Fri->Mon like the equity one, not Sun->Mon.
+        days = pd.date_range("2024-01-01", periods=15, freq="D")
+        coin = pd.Series(np.arange(100.0, 115.0), index=days)
+        weekdays = days[days.dayofweek < 5]
+        aligned = _aligned_returns({
+            "COIN": pd.DataFrame({"close": coin.to_numpy()}, index=pd.Index(days, name="trade_date")),
+            "EQ": pd.DataFrame({"close": coin[weekdays].to_numpy()}, index=pd.Index(weekdays, name="trade_date")),
+        })
+        monday = pd.Timestamp("2024-01-08")
+        assert aligned.loc[monday, "COIN"] == pytest.approx(107.0 / 104.0 - 1.0)
+        assert aligned["COIN"].to_numpy() == pytest.approx(aligned["EQ"].to_numpy())
+
 
 class _ServesPanelLoader:
     """Fake loader serving a prebuilt panel, keyed by normalized symbol."""

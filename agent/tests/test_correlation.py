@@ -316,6 +316,26 @@ class TestRollingCorrelationMatrix:
         i, j = labels.index("GAP"), labels.index("PEER")
         assert matrix[i][j] == pytest.approx(1.0)
 
+    def test_weekend_bars_do_not_shift_the_return_interval(self):
+        # A 7-day crypto series paired with a weekday equity series: the
+        # equity Monday return spans Fri->Mon, so the crypto return paired
+        # with it must too. COIN closes at twice EQ on every shared date and
+        # wanders only on weekends, so on shared dates they are identical.
+        days = pd.date_range("2024-01-01", periods=56, freq="D")
+        rng = np.random.default_rng(3)
+        eq = pd.Series(100.0 * np.cumprod(1.0 + rng.normal(0, 0.01, len(days))), index=days)
+        coin = 2.0 * eq
+        coin[days.dayofweek == 5] *= 1.08
+        coin[days.dayofweek == 6] *= 0.93
+        weekdays = days[days.dayofweek < 5]
+        price_series = {
+            "COIN": pd.DataFrame({"close": coin.to_numpy()}, index=pd.Index(days, name="trade_date")),
+            "EQ": pd.DataFrame({"close": eq[weekdays].to_numpy()}, index=pd.Index(weekdays, name="trade_date")),
+        }
+        labels, matrix = _rolling_correlation_matrix(price_series, window=100, method="pearson")
+        i, j = labels.index("COIN"), labels.index("EQ")
+        assert matrix[i][j] == pytest.approx(1.0)
+
     def test_empty_dict_returns_empty(self):
         labels, matrix = _rolling_correlation_matrix({}, window=30, method="pearson")
         assert labels == []

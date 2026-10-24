@@ -112,15 +112,18 @@ def _aligned_returns(price_series: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     pandas>=2,<3 pin the ``pct_change`` default forward-fills missing
     prices, silently manufacturing 0% returns.
     """
-    returns_frames = []
+    close_frames = []
     for code in sorted(price_series):
         ts = _close_series(code, price_series[code])
         ts.index = ts.index.tz_localize(None).normalize()
-        rets = ts.pct_change(fill_method=None).dropna()
-        rets.name = code
-        returns_frames.append(rets)
+        ts.name = code
+        close_frames.append(ts)
 
-    aligned = pd.concat(returns_frames, axis=1).dropna()
+    aligned = (
+        pd.concat(close_frames, axis=1, join="inner")
+        .pct_change(fill_method=None)
+        .dropna()
+    )
     if aligned.empty:
         raise ValueError("No overlapping return data between assets")
     return aligned
