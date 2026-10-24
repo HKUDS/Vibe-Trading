@@ -162,4 +162,8 @@ class WebReaderTool(BaseTool):
 
     def execute(self, **kwargs) -> str:
         """Fetch web page."""
-        return read_url(kwargs["url"], no_cache=bool(kwargs.get("no_cache", False)))
+        no_cache = kwargs.get("no_cache", False)
+        if isinstance(no_cache, str):
+            # Tool calls often arrive as JSON strings. bool("false") is True.
+            no_cache = no_cache.strip().lower() in {"true", "1", "yes"}
+        return read_url(kwargs["url"], no_cache=bool(no_cache))
