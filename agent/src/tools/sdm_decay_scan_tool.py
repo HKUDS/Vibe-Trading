@@ -70,7 +70,10 @@ class SdmDecayScanTool(BaseTool):
             type_filter = None
             if kwargs.get("artifact_type"):
                 type_filter = ArtifactType(kwargs["artifact_type"])
-            dry_run = bool(kwargs.get("dry_run", False))
+            dry_run = kwargs.get("dry_run", False)
+            if isinstance(dry_run, str):
+                dry_run = dry_run.strip().lower() in {"true", "1", "yes"}
+            dry_run = bool(dry_run)
 
             # Collect ACTIVE and MONITORING artifacts
             active = store.list_artifacts(
