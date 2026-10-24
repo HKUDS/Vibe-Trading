@@ -1916,6 +1916,30 @@ OpenSpace will auto-discover all 90 skills, enabling auto-fix, auto-improve, and
 
 </details>
 
+<details>
+<summary><b>HPSILab — US options analytics & pre-trade risk scan (remote MCP, OAuth)</b></summary>
+
+[HPSILab](https://hpsilab.com) is a remote MCP server for US equities and options research: implied-volatility structure and skew, option-chain pressure (max pain, gamma walls), Monte Carlo price ranges and a pre-trade risk scan. Its tools are research-only and never place orders. A free account is required; sign-in happens over OAuth the first time Vibe-Trading connects.
+
+Add it to `~/.vibe-trading/agent.json`:
+
+```json
+{
+  "mcpServers": {
+    "hpsilab": {
+      "type": "streamableHttp",
+      "url": "https://hpsilab.com/mcp?auth=required",
+      "auth": { "type": "oauth", "clientName": "Vibe-Trading" },
+      "toolTimeout": 120
+    }
+  }
+}
+```
+
+Use the `?auth=required` URL: the plain endpoint also serves anonymous callers, so it never sends the 401 that starts Vibe-Trading's OAuth flow. The tools appear as `mcp_hpsilab_<tool>` (for example `mcp_hpsilab_get_iv_radar`, `mcp_hpsilab_get_pretrade_risk_scan`). For `run_swarm` workers, add the same entry to `swarm-agent.json` as described above.
+
+</details>
+
 ---
 
 ### MetaTrader 5 (Exness and other MT5 brokers)
