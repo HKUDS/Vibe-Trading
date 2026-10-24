@@ -84,7 +84,7 @@ _MARGIN_PER_CONTRACT: dict[str, float] = {
 _PRICE_LIMIT: dict[str, float] = {
     # Equity index: 7% (Level 1), simplified to single level
     "ES": 0.07, "NQ": 0.07, "YM": 0.07, "RTY": 0.07,
-    "MES": 0.07, "MNQ": 0.07,
+    "MES": 0.07, "MNQ": 0.07, "MYM": 0.07, "M2K": 0.07,
     # Energy: varies, typically ~$10-15 for CL
     # Not easily expressed as %, skip for most commodities
 }

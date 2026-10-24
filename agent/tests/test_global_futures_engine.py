@@ -138,6 +138,15 @@ class TestPriceLimits:
         bar = _make_bar(close=5200.0, pre_close=5000.0)  # +4%
         assert engine.can_execute("ESZ4", 1, bar) is True
 
+    @pytest.mark.parametrize("symbol", ["MYMZ4", "M2KZ4"])
+    def test_every_micro_equity_index_carries_the_limit(self, symbol: str) -> None:
+        """Micro Dow and micro Russell share the E-mini price limit, as MES/MNQ do."""
+        engine = _make_engine(codes=[symbol])
+        up = _make_bar(close=5400.0, pre_close=5000.0)  # +8% > 7%
+        down = _make_bar(close=4600.0, pre_close=5000.0)  # -8% > 7%
+        assert engine.can_execute(symbol, 1, up) is False
+        assert engine.can_execute(symbol, -1, down) is False
+
     def test_commodity_no_limit(self) -> None:
         """CL has no configured price limit; always allowed."""
         engine = _make_engine(codes=["CLF25"])
