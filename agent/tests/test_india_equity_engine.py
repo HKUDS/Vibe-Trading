@@ -167,6 +167,17 @@ class TestCommission:
         )
 
 
+    def test_short_round_trip_charges_stamp_duty_on_the_cover_buy(self) -> None:
+        engine = _engine(allow_short=True, in_dp_charge=13.5)
+        long_buy = engine.calc_commission(100, 1000.0, 1, is_open=True)
+        long_sell = engine.calc_commission(100, 1000.0, 1, is_open=False)
+        short_sell = engine.calc_commission(100, 1000.0, -1, is_open=True)
+        short_cover = engine.calc_commission(100, 1000.0, -1, is_open=False)
+        # Opening a short is a sale and covering it is a purchase.
+        assert short_sell == pytest.approx(long_sell, abs=1e-6)
+        assert short_cover == pytest.approx(long_buy, abs=1e-6)
+
+
 # ---------------------------------------------------------------------------
 # apply_slippage + leverage
 # ---------------------------------------------------------------------------

@@ -79,11 +79,13 @@ class IndiaEquityEngine(BaseEngine):
         """Cash equity trades in 1-share lots."""
         return float(max(int(raw_size), 0))
 
-    def calc_commission(self, size: float, price: float, _direction: int, is_open: bool) -> float:
+    def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
         """India delivery cost stack (see module docstring).
 
-        ``_direction`` is unused — reserved for future asymmetric long/short
-        (intraday MIS) schedules.
+        Stamp duty and the DP charge follow the actual trade side rather than
+        open/close: with ``allow_short`` an opening short is a sale and its
+        cover is the purchase. ``BaseEngine`` passes the position direction on
+        both hooks, so the side is derivable.
         """
         notional = size * price
         brokerage = notional * self.in_brokerage
@@ -92,7 +94,8 @@ class IndiaEquityEngine(BaseEngine):
         gst = (brokerage + exchange_txn + sebi_fee) * self.in_gst
         stt = notional * self.in_stt                          # bilateral (delivery)
         comm = brokerage + exchange_txn + sebi_fee + gst + stt
-        if is_open:
+        is_buy = (direction > 0) if is_open else (direction < 0)
+        if is_buy:
             comm += notional * self.in_stamp_duty             # stamp duty: buy-only
         else:
             comm += self.in_dp_charge                         # DP charge: sell-only, flat
