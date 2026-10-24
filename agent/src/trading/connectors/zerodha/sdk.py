@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -591,9 +592,14 @@ def place_order(
         return {"status": "error", "error": "side must be 'buy' or 'sell'"}
     buy_or_sell = side_map[side_token]
 
-    if quantity is None or float(quantity) <= 0:
-        return {"status": "error", "error": "quantity must be positive"}
-    qty = int(float(quantity))
+    try:
+        amount = Decimal(str(quantity))
+        valid_quantity = amount.is_finite() and amount >= 1 and amount == amount.to_integral_value()
+    except (InvalidOperation, ValueError):
+        valid_quantity = False
+    if not valid_quantity:
+        return {"status": "error", "error": "quantity must be a positive whole number of shares"}
+    qty = int(amount)
 
     return {
         "status": "ok",

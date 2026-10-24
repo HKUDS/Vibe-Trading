@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
@@ -467,10 +468,15 @@ def place_order(
         return {"status": "error", "error": "order_type must be 'market' or 'limit'"}
     price_type = type_map[type_token]
 
-    if quantity is None or float(quantity) <= 0:
-        return {"status": "error", "error": "quantity must be positive"}
+    try:
+        amount = Decimal(str(quantity))
+        valid_quantity = amount.is_finite() and amount >= 1 and amount == amount.to_integral_value()
+    except (InvalidOperation, ValueError):
+        valid_quantity = False
+    if not valid_quantity:
+        return {"status": "error", "error": "quantity must be a positive whole number of shares"}
 
-    qty = int(float(quantity))
+    qty = int(amount)
     price = float(limit_price) if limit_price is not None else 0.0
 
     if price_type == "LMT" and limit_price is None:

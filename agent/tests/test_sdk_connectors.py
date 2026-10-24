@@ -1203,6 +1203,15 @@ def test_dhan_whole_quantity_is_preserved_in_the_paper_fill(quantity, expected) 
     assert result["paper_guard"] == "simulated_locally"
 
 
+@pytest.mark.parametrize("quantity", [0.5, 1.5, "1.5", float("nan"), "invalid"])
+def test_shoonya_place_order_rejects_non_whole_quantity(quantity) -> None:
+    result = sh.place_order(
+        sh.ShoonyaConfig(profile="paper"), symbol="RELIANCE", side="buy", quantity=quantity
+    )
+    assert result["status"] == "error"
+    assert "whole number" in result["error"]
+
+
 @pytest.mark.parametrize("mod, Config", [(dh, dh.DhanConfig), (sh, sh.ShoonyaConfig)])
 def test_in_broker_paper_cancel_order_simulated(mod, Config) -> None:
     placed = mod.place_order(Config(profile="paper"), symbol="RELIANCE", side="buy", quantity=10)

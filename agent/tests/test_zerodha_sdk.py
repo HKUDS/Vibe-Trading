@@ -12,6 +12,8 @@ import datetime as dt
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pytest
+
 from src.trading.connectors.zerodha import sdk as zsdk
 
 
@@ -284,6 +286,13 @@ def test_place_order_accepts_service_surface_kwargs() -> None:
     )
     assert out["status"] == "ok"
     assert out["is_paper"] is True
+
+
+@pytest.mark.parametrize("quantity", [0.5, 1.5, "1.5", float("nan"), "invalid"])
+def test_place_order_rejects_non_whole_quantity(quantity) -> None:
+    out = zsdk.place_order(_cfg(), symbol="RELIANCE", side="buy", quantity=quantity)
+    assert out["status"] == "error"
+    assert "whole number" in out["error"]
 
 
 def test_cancel_order_paper_only_and_validation() -> None:
