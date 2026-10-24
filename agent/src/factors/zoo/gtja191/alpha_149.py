@@ -79,6 +79,6 @@ def compute(panel):
     mask = (bench < bench.shift(1)).astype("float64")
     cr_g = cr * mask
     br_g = br * mask
-    n = 20
+    n = 252
     out = safe_div(ts_cov(cr_g, br_g, n), ts_std(br_g, n) ** 2)
     return out
