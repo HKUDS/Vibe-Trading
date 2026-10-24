@@ -1888,6 +1888,11 @@ def _detect_primary_source(codes: List[str], source: str) -> str:
     """
     if source != "auto":
         return source
+    if {_detect_market(c) for c in codes} == {"forex"}:
+        # Annualise on the instrument's 24x5 session (the mt5/tickerall feed
+        # the forex chain leads with), not on the A-share table of the
+        # legacy akshare fallback name.
+        return "mt5"
     groups = _group_codes_by_source(codes)
     if len(groups) == 1:
         return list(groups.keys())[0]
