@@ -282,6 +282,25 @@ def test_30_360_treats_every_month_as_thirty_days():
     )
 
 
+def test_30_360_us_treats_a_february_month_end_as_day_30():
+    # 28 Feb 2023 is the month end, so US NASD clips it to day 30 and then
+    # clips 31 Mar. The period is one twelfth. 30E/360 only clips the 31st.
+    assert year_fraction(dt.date(2023, 2, 28), dt.date(2023, 3, 31), "30/360") == (
+        pytest.approx(30 / 360)
+    )
+    assert year_fraction(dt.date(2023, 2, 28), dt.date(2023, 3, 31), "30E/360") == (
+        pytest.approx(32 / 360)
+    )
+    # 29 Feb to the next non-leap 28 Feb is a whole year, not 359/360.
+    assert year_fraction(dt.date(2024, 2, 29), dt.date(2025, 2, 28), "30/360") == (
+        pytest.approx(1.0)
+    )
+    # 28 Feb in a leap year is not the month end, so the 31st end stays.
+    assert year_fraction(dt.date(2024, 2, 28), dt.date(2024, 3, 31), "30/360") == (
+        pytest.approx(33 / 360)
+    )
+
+
 def test_30_360_us_and_eurobond_differ_when_only_the_end_leg_is_the_31st():
     start, end = dt.date(2024, 1, 15), dt.date(2024, 3, 31)
     # US basis leaves D2 = 31 because D1 was not clipped to 30; 30E/360 clips it.

@@ -95,10 +95,15 @@ def year_fraction(
     if day_count in ("30/360", "30E/360"):
         d1, d2 = start.day, end.day
         if day_count == "30/360":
-            # US bond basis: clip D1 to 30, then clip D2 when adjusted D1 is 30.
-            if d1 == 31:
+            # US NASD bond basis. A 31st clips to 30, and so does a February
+            # month-end. Without that, 28 Feb to 31 Mar accrues 33/360 instead
+            # of a twelfth, and 29 Feb to the next 28 Feb accrues 359/360.
+            start_eom = _is_february_month_end(start)
+            if d1 == 31 or start_eom:
                 d1 = 30
             if d2 == 31 and d1 == 30:
+                d2 = 30
+            elif start_eom and _is_february_month_end(end):
                 d2 = 30
         else:  # 30E/360 (Eurobond basis) clips both legs unconditionally.
             d1 = min(d1, 30)
@@ -131,6 +136,13 @@ def _require_finite(**values: float | np.ndarray) -> None:
     for name, value in values.items():
         if not np.all(np.isfinite(np.asarray(value, dtype=float))):
             raise ValueError(f"{name} must be finite, got {value!r}")
+
+
+def _is_february_month_end(day: _dt.date) -> bool:
+    """Whether ``day`` is the last civil day of February."""
+    if day.month != 2:
+        return False
+    return day.day == (29 if _is_leap(day.year) else 28)
 
 
 def _is_leap(year: int) -> bool:
