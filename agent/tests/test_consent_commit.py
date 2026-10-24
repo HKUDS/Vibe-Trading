@@ -564,6 +564,28 @@ def test_propose_opt_in_flatten_on_halt_stamps_profiles(live_runtime: Path) -> N
         assert profile["flatten_on_halt"] is True
 
 
+@pytest.mark.parametrize("flag", ["false", "False", "0", "no", ""])
+def test_propose_string_false_flatten_on_halt_stays_cancel_only(
+    live_runtime: Path, flag: str
+) -> None:
+    """A JSON-string "false" must not opt every profile into flattening."""
+    tool = ProposeMandateProfilesTool()
+    payload = json.loads(
+        tool.execute(broker="robinhood", ceilings=dict(_CEILINGS), flatten_on_halt=flag)
+    )
+    for profile in payload["profiles"]:
+        assert profile["flatten_on_halt"] is False
+
+
+def test_propose_string_true_flatten_on_halt_opts_in(live_runtime: Path) -> None:
+    tool = ProposeMandateProfilesTool()
+    payload = json.loads(
+        tool.execute(broker="robinhood", ceilings=dict(_CEILINGS), flatten_on_halt="true")
+    )
+    for profile in payload["profiles"]:
+        assert profile["flatten_on_halt"] is True
+
+
 def test_commit_persists_flatten_on_halt_from_profile(live_runtime: Path) -> None:
     """An opted-in proposal commits a mandate.json carrying flatten_on_halt=True."""
     tool = ProposeMandateProfilesTool()
