@@ -124,7 +124,10 @@ class ProposeMandateProfilesTool(BaseTool):
         intent = str(kwargs.get("intent") or "").strip()
         session_id = kwargs.get("session_id")
         reauth_for = kwargs.get("reauth_for") if isinstance(kwargs.get("reauth_for"), dict) else None
-        flatten_on_halt = bool(kwargs.get("flatten_on_halt", False))
+        flatten_on_halt = kwargs.get("flatten_on_halt", False)
+        if isinstance(flatten_on_halt, str):
+            flatten_on_halt = flatten_on_halt.strip().lower() in {"true", "1", "yes"}
+        flatten_on_halt = bool(flatten_on_halt)
 
         try:
             profiles = self._synthesize_profiles(ceilings, reauth_for, flatten_on_halt)
