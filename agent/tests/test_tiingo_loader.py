@@ -33,9 +33,13 @@ from tests.loader_contract import assert_loader_contract
         ("AAPL", "aapl"),
         ("msft", "msft"),
         ("BRK", "brk"),
+        ("BRK.B.US", "brk-b"),  # class share; Tiingo hyphenates
+        ("BRK.B", "brk-b"),
+        ("brk-b", "brk-b"),
         ("00700.HK", None),  # HK suffix
         ("000001.SZ", None),  # A-share suffix
         ("BTC-USDT", None),  # crypto pair
+        ("ETH-USD", None),
         ("", None),
     ],
 )

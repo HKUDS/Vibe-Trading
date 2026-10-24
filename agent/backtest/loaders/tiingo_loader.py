@@ -61,23 +61,45 @@ def _resolve_key() -> str:
     return "" if key.lower() in _KEY_PLACEHOLDERS else key
 
 
+# Market suffixes that remain after the project ``.US`` marker is removed.
+# A class-share dot (``BRK.B``) is not one of these.
+_NON_US_SUFFIXES = (
+    ".HK", ".SZ", ".SH", ".BJ", ".SS", ".NS", ".BO", ".KS", ".KQ",
+    ".TO", ".V", ".VN", ".SA", ".L", ".T", ".TW", ".TWO", ".FX",
+)
+
+
 def _to_tiingo_symbol(code: str) -> Optional[str]:
     """Map a project symbol to a Tiingo ticker, or ``None`` when unsupported.
 
     Args:
-        code: Project symbol such as ``AAPL.US`` or ``AAPL``.
+        code: Project symbol such as ``AAPL.US``, ``BRK.B.US``, or ``AAPL``.
 
     Returns:
-        The bare lower-cased ticker Tiingo expects (e.g. ``aapl``), or ``None``
-        for symbols that are clearly not US equities (HK/crypto/A-share).
+        The bare lower-cased ticker Tiingo expects (``aapl``, ``brk-b``), or
+        ``None`` for symbols that are clearly not US equities (HK/crypto/A-share).
+        Tiingo hyphenates class shares; the dotted form is not a ticker.
     """
     upper = code.strip().upper()
     if not upper:
         return None
     if upper.endswith(".US"):
         upper = upper[:-3]
-    # Reject non-US market suffixes and crypto pairs outright.
+    if any(upper.endswith(suffix) for suffix in _NON_US_SUFFIXES):
+        return None
+    # Crypto pairs (BTC-USDT, ETH-USD) share a separator with class shares.
+    # A class is one letter (BRK.B / BRK-B); a quote currency is longer.
     if "." in upper or "-" in upper:
+        separator = "." if "." in upper else "-"
+        left, right = upper.split(separator, 1)
+        if (
+            left.isalpha()
+            and right.isalpha()
+            and len(right) == 1
+            and "." not in left
+            and "-" not in left
+        ):
+            return f"{left}-{right}".lower()
         return None
     if not upper.isalnum():
         return None
