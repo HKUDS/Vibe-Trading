@@ -207,6 +207,14 @@ class TestCommission:
         expected = 2 * 5000 * 300 * 0.000023
         assert comm == pytest.approx(expected, rel=0.01)
 
+    @pytest.mark.parametrize("symbol", ["T2412.CFFEX", "TF2412.CFFEX", "TS2412.CFFEX", "TL2412.CFFEX"])
+    def test_every_treasury_future_pays_the_treasury_fee(self, symbol: str) -> None:
+        """The 30-year TL is charged per lot like T/TF/TS, not the generic default."""
+        engine = _make_engine(codes=[symbol])
+        comm = engine.calc_commission_for_symbol(symbol, 2, 100.0, is_open=True)
+        assert comm == pytest.approx(2 * 3.0)
+        assert "pricing_assumptions" not in engine._engine_diagnostics()
+
     def test_commission_override(self) -> None:
         engine = _make_engine(commission_override=0.001)
         comm = engine.calc_commission(5, 4000.0, 1, is_open=True)

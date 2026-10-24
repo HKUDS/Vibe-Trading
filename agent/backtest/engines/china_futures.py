@@ -95,6 +95,7 @@ _COMMISSION: dict[str, tuple[str, float]] = {
     "IH": ("rate", 0.000023), "IM": ("rate", 0.000023),
     # CFFEX bonds
     "T": ("fixed", 3.0), "TF": ("fixed", 3.0), "TS": ("fixed", 3.0),
+    "TL": ("fixed", 3.0),
     # Metals
     "au": ("fixed", 10.0), "ag": ("fixed", 3.0), "cu": ("fixed", 5.0),
     "al": ("fixed", 3.0), "zn": ("fixed", 3.0), "ni": ("fixed", 3.0),
