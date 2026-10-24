@@ -117,6 +117,69 @@ def test_final_answer_maps_to_content(fake_cli, monkeypatch) -> None:
     assert not response.has_tool_calls
 
 
+def test_native_tool_refusal_is_fed_back_instead_of_success(fake_cli) -> None:
+    set_replies, calls = fake_cli
+    refused = payload(
+        {
+            "action": "final",
+            "content": "No such tool available. backtest cannot run.",
+        }
+    )
+    set_replies(
+        {"payload": refused},
+        {
+            "payload": payload(
+                {
+                    "action": "tool_calls",
+                    "tool_calls": [
+                        {"name": "get_market_data", "arguments": {"codes": ["AAPL"]}}
+                    ],
+                }
+            )
+        },
+    )
+
+    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        [{"role": "user", "content": "backtest AAPL"}]
+    )
+
+    assert message.tool_calls[0]["name"] == "get_market_data"
+    assert "Native tool calls are disabled" in calls()[1]["stdin"]
+
+
+def test_permission_denial_is_not_a_finished_answer(fake_cli) -> None:
+    set_replies, calls = fake_cli
+    denied = payload({"action": "final", "content": "The tools are broken."})
+    denied["permission_denials"] = [{"tool_name": "bash"}]
+    set_replies(
+        {"payload": denied},
+        {"payload": payload({"action": "final", "content": "AAPL closed at 190."})},
+    )
+
+    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        [{"role": "user", "content": "price?"}]
+    )
+
+    assert message.content == "AAPL closed at 190."
+    assert "Native tool calls are disabled" in calls()[1]["stdin"]
+
+
+def test_the_refusal_phrase_is_ordinary_text_when_no_tools_are_offered(fake_cli) -> None:
+    set_replies, calls = fake_cli
+    set_replies(
+        {
+            "payload": payload(
+                {"action": "final", "content": "The log says No such tool available."}
+            )
+        }
+    )
+
+    message = claude_cli.ClaudeCliLLM().invoke([{"role": "user", "content": "what happened?"}])
+
+    assert message.content == "The log says No such tool available."
+    assert len(calls()) == 1
+
+
 def test_final_without_content_is_fed_back_and_retried(fake_cli) -> None:
     set_replies, calls = fake_cli
     set_replies(

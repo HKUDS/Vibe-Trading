@@ -75,8 +75,11 @@ _PROTOCOL = (
     "results in the next turn. Respond with action=tool_calls and the calls you "
     "want (name + arguments that match the tool's JSON schema), or action=final "
     "with your complete answer in content once you have what you need.\n"
+    "Do not call tools natively. A native call is refused with "
+    "\"No such tool available\" and is not executed.\n"
     "Available tools (OpenAI function format):\n"
 )
+_NATIVE_TOOL_REFUSAL = "No such tool available"
 _FINAL_ONLY = (
     "\n\n## Output protocol\n"
     "No tools are available in this turn. Respond with action=final and your "
@@ -351,6 +354,20 @@ def _usage(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _native_tool_refusal(payload: dict[str, Any], output: dict[str, Any]) -> bool:
+    """Whether this CLI result tried the disabled native tools.
+
+    ``claude -p --tools ""`` still lets the model call the CLI's own tools.
+    Those calls die inside the process with "No such tool available", and the
+    structured final then reports that the host tools are broken. A non-empty
+    ``permission_denials`` list is the same attempt when the CLI records it.
+    """
+    denials = payload.get("permission_denials")
+    if isinstance(denials, list) and denials:
+        return True
+    return _NATIVE_TOOL_REFUSAL in str(output.get("content") or "")
+
+
 def _decide(
     *,
     model: str,
@@ -409,6 +426,13 @@ def _decide(
             # Under --json-schema, payload["result"] is the structured output as text, so
             # an empty content must not fall back to it: the user would see raw JSON.
             content = str(output.get("content") or "")
+            if allow_tools and _native_tool_refusal(payload, output):
+                user_input += (
+                    "\n\n[host] Native tool calls are disabled and were not executed. "
+                    "Return every tool as action=tool_calls in structured_output."
+                )
+                failure = "native tool calls were refused by the CLI"
+                continue
             if content.strip():
                 decision.content = content
                 return decision

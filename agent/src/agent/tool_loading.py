@@ -79,7 +79,7 @@ class DeferredToolRegistry(ToolRegistry):
             self._loaded.update(dict.fromkeys(names))
         result: dict[str, Any] = {
             "status": "ok", "loaded": list(dict.fromkeys(names)),
-            "message": "Full schemas are available in the next request. Call the tools directly; loading has not executed them.",
+            "message": "Full schemas are available in the next request. Request them in your next reply; loading has not executed them.",
         }
         return result
 
@@ -90,8 +90,8 @@ class LoadToolsTool(BaseTool):
     name = "load_tools"
     description = (
         "Load full argument schemas for tools named in the system catalog. "
-        "Select all tools needed for the next steps in one call, then call them "
-        "directly in the next turn. This only exposes schemas; it executes no tool."
+        "Select all tools needed for the next steps in one call, then request them "
+        "in your next reply. This only exposes schemas; it executes no tool."
     )
     parameters = {
         "type": "object", "properties": {
