@@ -68,6 +68,43 @@ def test_exported_trades_keep_zero_pnl_exits(
         )
 
 
+def test_exported_trades_keep_sub_penny_fill_prices(tmp_path: Path) -> None:
+    engine = ChinaAEngine({"initial_cash": 1000.0})
+    dates = pd.date_range("2026-01-01", periods=2)
+    engine.trades = [
+        TradeRecord(
+            symbol="PEPE-USDT",
+            direction=1,
+            entry_price=0.00000912,
+            exit_price=0.00001037,
+            entry_time=dates[0],
+            exit_time=dates[1],
+            size=50_000_000.0,
+            leverage=1.0,
+            pnl=62.5,
+            pnl_pct=13.71,
+            exit_reason="signal",
+            holding_bars=1,
+            commission=0.0,
+        )
+    ]
+    equity = pd.Series(1000.0, index=dates)
+    engine._write_artifacts(
+        tmp_path,
+        {},
+        dates,
+        equity,
+        equity,
+        pd.Series(0.0, index=dates),
+        pd.DataFrame(index=dates),
+        {},
+        ["PEPE-USDT"],
+    )
+
+    frame = pd.read_csv(tmp_path / "artifacts/trades.csv")
+    assert frame["price"].tolist() == pytest.approx([0.00000912, 0.00001037])
+
+
 def test_explicit_events_override_pnl_and_skip_unknown_rows(tmp_path: Path) -> None:
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
