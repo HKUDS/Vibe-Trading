@@ -10,7 +10,7 @@ import sys
 import time as _time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator, List, Optional
 
@@ -192,6 +192,9 @@ def _parse_timestamp(value: object, fallback: float) -> float:
     if isinstance(value, str):
         try:
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                # Memory writers stamp time.gmtime() without an offset.
+                dt = dt.replace(tzinfo=timezone.utc)
             return dt.timestamp()
         except (ValueError, TypeError):
             pass
