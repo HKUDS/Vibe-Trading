@@ -214,6 +214,18 @@ class TestCommission:
         comm = engine.calc_commission_for_symbol(symbol, 1, 5000.0, is_open=True)
         assert comm == pytest.approx(0.62)
 
+    @pytest.mark.parametrize(
+        "symbol",
+        ["RBF25", "HOF25", "PLF25", "PAH25", "ZMF25", "ZLF25", "6AZ4", "6CZ4"],
+    )
+    def test_full_size_products_pay_their_family_rate(self, symbol: str) -> None:
+        """Products the engine lists are priced with their family, not the generic default."""
+        engine = _make_engine(codes=[symbol])
+        comm = engine.calc_commission_for_symbol(symbol, 2, 100.0, is_open=True)
+        assert comm == pytest.approx(2 * 2.25)
+        assumed = engine._engine_diagnostics().get("pricing_assumptions", [])
+        assert not [entry for entry in assumed if entry["field"] == "commission"]
+
     def test_unlisted_product_keeps_the_default(self) -> None:
         engine = _make_engine()
         comm = engine.calc_commission_for_symbol("XYZF25", 1, 5000.0, is_open=True)
