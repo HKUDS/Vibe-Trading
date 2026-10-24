@@ -548,6 +548,23 @@ class TestManagerHoldingsMode:
         assert changes["prior_quarter"] == "2025Q4"
         assert changes["counts"] == {"reduced": 1, "closed": 1}
 
+    def test_string_false_include_changes_skips_the_prior_quarter_diff(self) -> None:
+        for flag in ("false", "False", "0", "no"):
+            with patch.object(iht, "_sec_get", side_effect=_router()):
+                payload = json.loads(
+                    InstitutionalHoldingsTool().execute(
+                        manager="0001067983", quarter="2026Q1", include_changes=flag
+                    )
+                )
+            assert "changes" not in payload["data"], flag
+
+    def test_string_true_include_changes_still_diffs(self) -> None:
+        with patch.object(iht, "_sec_get", side_effect=_router()):
+            payload = json.loads(
+                InstitutionalHoldingsTool().execute(manager="0001067983", quarter="2026Q1", include_changes="true")
+            )
+        assert payload["data"]["changes"]["prior_quarter"] == "2025Q4"
+
     def test_a_busy_diff_stays_inside_the_result_budget(self) -> None:
         """The change list rides outside the paged position list, so it needs its own cap.
 
