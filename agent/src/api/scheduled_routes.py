@@ -550,6 +550,15 @@ def register_scheduled_routes(
             delivery_channel = resolved_target.channel
             delivery_target = resolved_target.target
             delivery_target_label = resolved_target.label
+        delivery_channel = (delivery_channel or "").strip() or None
+        delivery_target = (delivery_target or "").strip() or None
+        if delivery_channel is None:
+            delivery_target = None
+        elif delivery_target is None:
+            raise HTTPException(
+                status_code=422,
+                detail="delivery_target is required when delivery_channel is set",
+            )
 
         if request.delivery_format is not None and delivery_channel != "email":
             raise HTTPException(

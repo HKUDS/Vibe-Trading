@@ -292,6 +292,24 @@ def test_patch_rejects_incomplete_delivery_target(
     assert "delivery_target" in response.json()["detail"]
 
 
+@pytest.mark.parametrize("target", [None, "", "   "])
+def test_create_rejects_channel_without_delivery_target(
+    client: TestClient, store: ScheduledResearchJobStore, target
+):
+    body = {
+        "id": "no-target",
+        "prompt": "daily briefing",
+        "schedule": "3600000",
+        "delivery_channel": "telegram",
+    }
+    if target is not None:
+        body["delivery_target"] = target
+    response = client.post("/scheduled-runs", json=body)
+    assert response.status_code == 422
+    assert "delivery_target" in response.json()["detail"]
+    assert store.get("no-target") is None
+
+
 def test_patch_unknown_job_returns_404(client: TestClient):
     response = client.patch("/scheduled-runs/missing", json={"prompt": "updated"})
     assert response.status_code == 404
