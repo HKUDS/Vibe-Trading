@@ -89,6 +89,16 @@ class TestSuccessEnvelope:
         assert params["pz"] == "5"
         assert params["fs"] == "m:105,m:106,m:107"  # US universe
 
+    def test_requests_decimal_prices_and_percents(self):
+        # The row parser reads f2/f3/f4/f8 as decimals (1688.0, 9.98). push2
+        # only sends them that way with fltt=2; otherwise 3.03 arrives as 303.
+        with patch(
+            "src.tools.market_screener_tool.get_json", return_value=_CLIST_PAYLOAD
+        ) as mock_get:
+            MarketScreenerTool().execute(market="a", sort_by="change_pct", top_n=5)
+
+        assert mock_get.call_args.kwargs["params"]["fltt"] == "2"
+
     def test_diff_as_dict_is_normalized(self):
         dict_diff = {"data": {"diff": {"0": _CLIST_PAYLOAD["data"]["diff"][0]}}}
         with patch(
