@@ -61,3 +61,18 @@ def test_us_daily_interval_still_fetches() -> None:
     assert frame is not None
     assert len(frame) == 2
     ak.stock_us_hist.assert_called()
+
+
+def test_us_fetch_reaches_the_amex_arca_market_id() -> None:
+    """SPY lists on NYSE Arca, which Eastmoney files under market 107."""
+
+    def stock_us_hist(symbol: str, **_: object) -> pd.DataFrame:
+        return _us_daily_frame() if symbol == "107.SPY" else pd.DataFrame()
+
+    ak = MagicMock()
+    ak.stock_us_hist.side_effect = stock_us_hist
+    loader = DataLoader()
+    with patch.dict("sys.modules", {"akshare": ak}):
+        frame = loader._fetch_one("SPY.US", "2024-01-01", "2024-01-31", "1D")
+    assert frame is not None
+    assert len(frame) == 2

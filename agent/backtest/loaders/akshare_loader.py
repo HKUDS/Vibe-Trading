@@ -271,9 +271,9 @@ class DataLoader:
     def _fetch_us(self, ak, code: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch US stock via stock_us_hist."""
         symbol = code.replace(".US", "")
-        # akshare uses the format like "105.AAPL" for NASDAQ
-        # Try common prefixes
-        for prefix in ["105.", "106.", ""]:
+        # akshare uses Eastmoney market ids: 105 NASDAQ, 106 NYSE, 107 AMEX /
+        # NYSE Arca (where most US ETFs such as SPY list).
+        for prefix in ["105.", "106.", "107.", ""]:
             try:
                 df = ak.stock_us_hist(
                     symbol=f"{prefix}{symbol}",
