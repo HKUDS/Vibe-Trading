@@ -144,6 +144,15 @@ def _num_or_none(value: Any, field: str = "value") -> float | None:
     return _finite_float(value, field)
 
 
+def _flag(value: Any, default: bool = False) -> bool:
+    """Read a boolean argument that may arrive as a JSON string ("false")."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
 TRADING_COMMON_PARAMETERS = {
     "connection": {
         "type": "string",
@@ -1026,9 +1035,9 @@ class EtoroEditPositionStopsTool(BaseTool):
                     _connection(kwargs.get("connection")),
                     stop_loss=stop_loss,
                     take_profit=take_profit,
-                    trailing_stop_loss=bool(trailing) if trailing is not None else None,
-                    clear_stop_loss=bool(kwargs.get("clear_stop_loss", False)),
-                    clear_take_profit=bool(kwargs.get("clear_take_profit", False)),
+                    trailing_stop_loss=_flag(trailing) if trailing is not None else None,
+                    clear_stop_loss=_flag(kwargs.get("clear_stop_loss")),
+                    clear_take_profit=_flag(kwargs.get("clear_take_profit")),
                     request_id=_connection(kwargs.get("request_id")),
                     **overrides,
                 )
