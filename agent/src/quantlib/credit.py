@@ -529,7 +529,9 @@ def edf_reference_band(dd: float) -> tuple[float, float]:
 
     This is the skill's published rule of thumb, not a fitted mapping. A real
     KMV EDF comes from a proprietary default database; treat the output as a
-    sanity band and never as a calibrated probability.
+    sanity band and never as a calibrated probability. The cuts follow the
+    published lines: ``DD > 4``, then ``2–4``, then ``1–2``, then ``DD < 1``.
+    A distance that sits on a shared edge belongs to the safer band.
 
     Args:
         dd: Distance to default.
@@ -543,8 +545,14 @@ def edf_reference_band(dd: float) -> tuple[float, float]:
     """
     if not math.isfinite(dd):
         raise ValueError(f"dd must be finite, got {dd}")
-    for floor, low, high in EDF_REFERENCE_BANDS:
-        if dd > floor:
+    # Published table: DD > 4, then 2–4, then 1–2, then DD < 1. The top cut
+    # is exclusive, so 4 stays in "2–4". Every lower cut is inclusive, and a
+    # shared edge belongs to the safer band, so 2 stays in "2–4" and 1 stays
+    # in "1–2". A strict ">" on every floor put DD == 1 in the worst band
+    # (EDF > 5%) and DD == 2 in the 1%–5% band.
+    for index, (floor, low, high) in enumerate(EDF_REFERENCE_BANDS):
+        on_floor = dd > floor if index == 0 else dd >= floor
+        if on_floor:
             return low, high
     return EDF_REFERENCE_BANDS[-1][1], EDF_REFERENCE_BANDS[-1][2]
 
