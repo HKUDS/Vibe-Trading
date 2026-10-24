@@ -75,3 +75,11 @@ def test_no_cache_header_opt_in_only(captured):
     assert "x-no-cache" not in {k.lower() for k in captured["headers"]}
     read_url(URL, no_cache=True)
     assert captured["headers"].get("x-no-cache") == "true"
+
+
+@pytest.mark.parametrize("flag", ["false", "False", "0", "no"])
+def test_string_false_no_cache_does_not_bypass_the_cache(captured, flag):
+    """A JSON-string "false" must not be read as truthy and skip the cache."""
+    captured["resp"] = _Resp(200, "Title: X\n\nbody")
+    wr.WebReaderTool().execute(url=URL, no_cache=flag)
+    assert "x-no-cache" not in {k.lower() for k in captured["headers"]}
