@@ -557,6 +557,27 @@ def test_universe_defaults_to_active_only(
     ]
 
 
+@pytest.mark.parametrize("flag", [False, "false", "False", "0", "no"])
+def test_universe_active_only_false_includes_inactive_stocks(
+    tmp_path: Path,
+    flag: object,
+) -> None:
+    db_path = _create_test_database(tmp_path)
+    tool = TaiwanStockDataTool(db_path)
+
+    payload = json.loads(
+        tool.execute(
+            action="universe",
+            active_only=flag,
+            limit=20,
+        )
+    )
+
+    records = payload["data"]["records"]
+
+    assert sorted(row["stock_id"] for row in records) == ["0054", "2330"]
+
+
 def test_lookup_reports_unknown_stock_ids(
     tmp_path: Path,
 ) -> None:
