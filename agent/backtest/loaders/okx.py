@@ -60,6 +60,8 @@ BASE_URL = "https://www.okx.com/api/v5"
 CANDLES_PATH = f"{BASE_URL}/market/candles"
 HISTORY_CANDLES_PATH = f"{BASE_URL}/market/history-candles"
 _MAX_PER_PAGE = 300
+# history-candles serves at most 100 rows per request whatever limit is sent.
+_HISTORY_MAX_PER_PAGE = 100
 # Recent endpoint typically only covers ~months of 1D bars; beyond this age
 # always hit history-candles first.
 _RECENT_ONLY_DAYS = 400
@@ -276,6 +278,9 @@ class DataLoader:
     ) -> Optional[pd.DataFrame]:
         all_rows: list = []
         after = str(end_ts)
+        page_size = (
+            _HISTORY_MAX_PER_PAGE if endpoint == HISTORY_CANDLES_PATH else _MAX_PER_PAGE
+        )
         deadline = time.monotonic() + _OKX_FETCH_BUDGET_S
         label = f"OKX fetch for {inst_id} via {endpoint.rsplit('/', 1)[-1]}"
 
@@ -284,7 +289,7 @@ class DataLoader:
             params = {
                 "instId": inst_id,
                 "bar": bar,
-                "limit": str(_MAX_PER_PAGE),
+                "limit": str(page_size),
                 "after": after,
             }
 
@@ -331,7 +336,7 @@ class DataLoader:
             all_rows.extend(rows)
 
             oldest_ts = int(raw_rows[-1][0])
-            if oldest_ts <= start_ts or len(raw_rows) < _MAX_PER_PAGE:
+            if oldest_ts <= start_ts or len(raw_rows) < page_size:
                 break
             after = str(oldest_ts)
 
