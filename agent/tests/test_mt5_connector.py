@@ -355,6 +355,12 @@ class TestConfig:
         assert cfg.max_order_volume == pytest.approx(1.0)
         assert cfg.max_order_notional_usd == pytest.approx(10_000.0)
 
+    def test_from_mapping_keeps_zero_deviation(self) -> None:
+        from src.trading.connectors.mt5._client import MT5Config
+
+        assert MT5Config.from_mapping({"deviation_points": 0}).deviation_points == 0
+        assert MT5Config.from_mapping({"deviation_points": None}).deviation_points == 20
+
     def test_from_mapping_rejects_unknown_profile(self) -> None:
         from src.trading.connectors.mt5._client import MT5Config, MT5ConfigError
 
@@ -640,6 +646,17 @@ class TestPlaceOrder:
         assert request["price"] == pytest.approx(1.0801)  # buy at ask
         assert request["deviation"] == 20
         assert request["type_filling"] == FakeMT5.ORDER_FILLING_IOC
+
+    def test_zero_deviation_is_sent_as_zero(self, fake_mt5: FakeMT5) -> None:
+        from src.trading.connectors.mt5 import sdk
+
+        result = sdk.place_order(
+            _paper_config(deviation_points=0), symbol="EURUSD", side="buy",
+            quantity=0.05, notional=None, order_type="market",
+            limit_price=None, time_in_force="day",
+        )
+        assert result["status"] == "ok"
+        assert fake_mt5.order_send_requests[-1]["deviation"] == 0
 
     def test_market_sell_priced_at_bid(self, fake_mt5: FakeMT5) -> None:
         self._place(fake_mt5, side="sell")

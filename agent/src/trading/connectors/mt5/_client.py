@@ -93,6 +93,7 @@ class MT5Config:
         profile = str(payload.get("profile") or "paper").strip().lower()
         if profile not in PROFILE_ENVIRONMENTS:
             raise MT5ConfigError("profile must be 'paper', 'live-readonly' or 'live'")
+        deviation = payload.get("deviation_points")
         return cls(
             login=int(payload.get("login") or 0),
             password=str(payload.get("password") or ""),
@@ -100,7 +101,7 @@ class MT5Config:
             terminal_path=str(payload.get("terminal_path") or "").strip(),
             profile=profile,
             symbol_suffix=str(payload.get("symbol_suffix") or "").strip(),
-            deviation_points=int(payload.get("deviation_points") or 20),
+            deviation_points=20 if deviation in (None, "") else int(deviation),
             max_order_volume=float(payload.get("max_order_volume") or 1.0),
             max_order_notional_usd=float(payload.get("max_order_notional_usd") or 10_000.0),
             timeout=float(payload.get("timeout") or 15.0),
