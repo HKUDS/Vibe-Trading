@@ -55,6 +55,29 @@ def test_unclosed_fence_hides_remainder_but_keeps_earlier_fact():
     ]
 
 
+def test_html_comments_and_inline_examples_are_not_facts():
+    report = (
+        "Actual revenue: 120M\n"
+        "<!-- Example profit: 888M -->\n"
+        "`Example margin: 77%`\n"
+        "Actual profit: 25M\n"
+    )
+    points = extract_data_points(report)
+    assert [(p["label"], p["reported_value"]) for p in points] == [
+        ("Actual revenue", 120.0),
+        ("Actual profit", 25.0),
+    ]
+    assert points[-1]["line_number"] == 4
+
+
+def test_an_unclosed_html_comment_hides_the_rest():
+    report = "Actual revenue: 120M\n<!--\nExample profit: 888M\n"
+    points = extract_data_points(report)
+    assert [(p["label"], p["reported_value"]) for p in points] == [
+        ("Actual revenue", 120.0)
+    ]
+
+
 def test_real_table_and_inline_code_marker_remain_auditable():
     report = (
         "The inline marker `~~~` is not a fence.\n\n"

@@ -186,6 +186,27 @@ def _parse_md_tables(lines: list[str]) -> list[tuple[str, str, float, str, int, 
     return results
 
 
+def _blank_html_comments(text: str) -> str:
+    """Replace HTML comments with spaces, keeping every newline.
+
+    A comment is not part of the rendered report. Blanking it in place leaves
+    the line numbers of the facts that follow unchanged. An unclosed comment
+    hides the rest of the file, the same way an unclosed fence does.
+    """
+    def hide(match: re.Match[str]) -> str:
+        return "".join(ch if ch == "\n" else " " for ch in match.group(0))
+
+    blanked = re.sub(r"<!--.*?-->", hide, text, flags=re.DOTALL)
+    start = blanked.find("<!--")
+    if start < 0:
+        return blanked
+    tail = blanked[start:]
+    return blanked[:start] + "".join(ch if ch == "\n" else " " for ch in tail)
+
+
+_INLINE_CODE_LINE = re.compile(r"^`[^`\n]+`$")
+
+
 def _without_fenced_code(lines: list[str]) -> list[str]:
     """Blank fenced examples without changing the report's line numbers."""
     result = []
@@ -249,7 +270,7 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
             }
         )
 
-    lines = _without_fenced_code(md_text.split("\n"))
+    lines = _without_fenced_code(_blank_html_comments(md_text).split("\n"))
 
     # 1. Multi-column tables.
     _YOY_HEADERS = {"YOY", "YOY增速", "增速", "同比", "变化", "趋势", "说明", "备注"}
@@ -269,6 +290,8 @@ def extract_data_points(md_text: str) -> list[dict[str, Any]]:
     for lineno, line in enumerate(lines, start=1):
         stripped = line.strip()
         if stripped.startswith("> ") or re.match(r"^#{1,6}\s", stripped):
+            continue
+        if _INLINE_CODE_LINE.fullmatch(stripped):
             continue
         if "|" in stripped:
             continue  # handled as a table above
