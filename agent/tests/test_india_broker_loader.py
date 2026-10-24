@@ -111,6 +111,42 @@ def test_lowercase_1h_maps_like_project_token(monkeypatch) -> None:
     assert fake.calls[0]["period"] == "1h"
 
 
+class _TrailingSDK:
+    """Serves daily bars for the last ``limit * 2`` days before today, like the connectors."""
+
+    def __init__(self) -> None:
+        self.limits: list[int] = []
+
+    def get_historical_bars(self, symbol, *, exchange="NSE", period="1d", limit=90):
+        self.limits.append(limit)
+        today = pd.Timestamp.now().normalize()
+        days = pd.date_range(today - pd.Timedelta(days=limit * 2), today, freq="D")
+        return {
+            "status": "ok",
+            "bars": [
+                {"time": _epoch(str(day.date())), "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
+                for day in days
+            ],
+        }
+
+
+def test_past_window_is_reached_from_today(monkeypatch) -> None:
+    """A window that ended months ago must still be covered by the bar request."""
+    fake = _TrailingSDK()
+    monkeypatch.setattr(mod, "_resolve_broker", lambda: ("zerodha", fake))
+    today = pd.Timestamp.now().normalize()
+    start = (today - pd.Timedelta(days=300)).strftime("%Y-%m-%d")
+    end = (today - pd.Timedelta(days=240)).strftime("%Y-%m-%d")
+
+    out = DataLoader().fetch(["RELIANCE.NS"], start, end)
+
+    assert "RELIANCE.NS" in out
+    df = out["RELIANCE.NS"]
+    assert df.index.min() == pd.Timestamp(start)
+    assert df.index.max() == pd.Timestamp(end)
+    assert fake.limits[0] >= 300
+
+
 def test_lowercase_1d_maps_to_daily(monkeypatch) -> None:
     fake = _FakeSDK()
     monkeypatch.setattr(mod, "_resolve_broker", lambda: ("shoonya", fake))

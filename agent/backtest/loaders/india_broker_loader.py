@@ -171,7 +171,10 @@ class DataLoader:
             )
             return {}
         # Request enough bars to cover the window (business days + headroom).
-        span_days = max((pd.Timestamp(end_date) - pd.Timestamp(start_date)).days, 1)
+        # The connectors count ``limit`` back from today, not from end_date, so
+        # the span must reach start_date from today.
+        reach_end = max(pd.Timestamp(end_date), pd.Timestamp.now().normalize())
+        span_days = max((reach_end - pd.Timestamp(start_date)).days, 1)
         limit = min(max(span_days, 30), 2000)
 
         result: Dict[str, pd.DataFrame] = {}
