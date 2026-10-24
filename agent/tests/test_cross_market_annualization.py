@@ -87,6 +87,17 @@ class TestConsumersShareTheConvention:
             returns.mean() / returns.std() * math.sqrt(self.expected_bpy), abs=5e-5
         )
 
+    def test_options_metrics_on_the_runs_date_string_index(self):
+        # run_options_backtest indexes its equity series by str(ts.date()).
+        labels = [str(ts.date()) for ts in self.idx]
+        equity = pd.Series(_zigzag(120, 100_000.0, 500.0, 5), index=labels)
+        metrics = _calc_options_metrics(equity, 100_000.0, [], bars_per_year=None)
+
+        returns = period_returns(equity.set_axis(self.idx), 100_000.0)
+        assert metrics["sharpe"] == pytest.approx(
+            returns.mean() / returns.std() * math.sqrt(self.expected_bpy), abs=5e-5
+        )
+
     def test_validation(self):
         equity = pd.Series(_zigzag(120, 100_000.0, 500.0, 5), index=self.idx)
         result = run_validation(

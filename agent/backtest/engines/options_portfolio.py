@@ -727,7 +727,12 @@ def _calc_options_metrics(
     # comparison below (<= 0 / > 0) raises TypeError instead of returning
     # metrics.
     if bars_per_year is None:
-        bars_per_year = effective_bars_per_year(equity_vals.index)
+        span_index = equity_vals.index
+        if span_index.dtype == object:
+            # run_options_backtest labels equity rows with "YYYY-MM-DD" strings,
+            # whose span cannot be measured until they are parsed back to dates.
+            span_index = pd.to_datetime(span_index)
+        bars_per_year = effective_bars_per_year(span_index)
 
     final_raw: float | None = None
     final_value: float | None = None
