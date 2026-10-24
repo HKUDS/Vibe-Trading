@@ -1178,14 +1178,12 @@ class TaiwanStockDataTool(BaseTool):
                 )
 
             else:
+                active_only = kwargs.get("active_only", True)
+                if isinstance(active_only, str):
+                    active_only = active_only.strip().lower() in {"true", "1", "yes"}
                 data = self._universe(
                     connection,
-                    active_only=bool(
-                        kwargs.get(
-                            "active_only",
-                            True,
-                        )
-                    ),
+                    active_only=bool(active_only),
                     market=kwargs.get("market"),
                     industry=kwargs.get("industry"),
                     limit=limit,
