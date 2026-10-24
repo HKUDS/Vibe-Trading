@@ -136,6 +136,27 @@ class TestFetch:
         assert recorder.calls[0]["params"]["resolution"] == "D"
         assert recorder.calls[0]["params"]["page"] == 1
 
+    def test_daily_bars_carry_the_tehran_date_they_cover(self, monkeypatch):
+        # Live daily epochs: 20:30 UTC = Tehran midnight of the next date.
+        recorder = _patch(
+            monkeypatch,
+            {
+                1: _udf_payload(
+                    [1792614600, 1792701000, 1792787400],  # 2026-10-21/22/23 20:30 UTC
+                    ["1", "2", "3"],
+                    ["2", "3", "4"],
+                    ["0.5", "1", "2"],
+                    ["1.5", "2.5", "3.5"],
+                    ["10", "20", "30"],
+                )
+            },
+        )
+        out = nobitex.DataLoader().fetch(["BTC-IRT"], "2026-10-22", "2026-10-23")
+        df = out["BTC-IRT"]
+        assert list(df.index) == [pd.Timestamp("2026-10-22"), pd.Timestamp("2026-10-23")]
+        assert df["close"].tolist() == [1.5, 2.5]
+        assert recorder.calls[0]["params"]["from"] < 1792614600
+
     def test_no_data_yields_empty_result(self, monkeypatch):
         _patch(monkeypatch, {1: {"s": "no_data"}})
         out = nobitex.DataLoader().fetch(["BTC-IRT"], "2024-01-01", "2024-01-03")

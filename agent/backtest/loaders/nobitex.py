@@ -73,6 +73,8 @@ _NOBITEX_PROBE_TIMEOUT_S = positive_env_int("NOBITEX_PROBE_TIMEOUT_S", 8)
 
 _OUTPUT_COLUMNS = ["open", "high", "low", "close", "volume"]
 
+_TEHRAN_TZ = "Asia/Tehran"
+
 _HEADERS = {"User-Agent": "TraderBot/vibe-trading-loader"}
 
 
@@ -192,6 +194,8 @@ class DataLoader:
         """Paginated UDF download; pages walk older batches of <=500 bars."""
         deadline = time.monotonic() + _NOBITEX_FETCH_BUDGET_S
         label = f"Nobitex fetch for {symbol}"
+        # The first Tehran day's bar opens before start_ts (UTC midnight).
+        request_from = start_ts - 12 * 3600 if resolution == "D" else start_ts
         frames: list[pd.DataFrame] = []
         page = 1
 
@@ -204,7 +208,7 @@ class DataLoader:
                     params={
                         "symbol": symbol,
                         "resolution": resolution,
-                        "from": start_ts,
+                        "from": request_from,
                         "to": end_ts,
                         "page": page,
                     },
@@ -247,7 +251,7 @@ class DataLoader:
             )
             frame["volume"] = frame["volume"].fillna(0)
             frames.append(frame)
-            if len(times) < _MAX_PER_PAGE or int(times[0]) <= start_ts:
+            if len(times) < _MAX_PER_PAGE or int(times[0]) <= request_from:
                 break
             page += 1
             time.sleep(_PAGE_SLEEP_S)
@@ -257,6 +261,16 @@ class DataLoader:
 
         df = pd.concat(frames).set_index("trade_date").sort_index()
         df = df[~df.index.duplicated(keep="last")]
+        if resolution == "D":
+            # Daily bars open at Tehran midnight (20:30 UTC the day before);
+            # label each with the Tehran date it covers.
+            df.index = (
+                df.index.tz_localize("UTC")
+                .tz_convert(_TEHRAN_TZ)
+                .tz_localize(None)
+                .normalize()
+                .rename("trade_date")
+            )
         start_dt = pd.Timestamp(start_ts, unit="s")
         end_dt = pd.Timestamp(end_ts, unit="s")
         df = df[(df.index >= start_dt) & (df.index < end_dt)]
