@@ -441,6 +441,9 @@ class TradingHistoryTool(BaseTool):
 
     def execute(self, **kwargs: Any) -> str:
         """Read historical bars."""
+        use_rth = kwargs.get("use_rth", True)
+        if isinstance(use_rth, str):
+            use_rth = use_rth.strip().lower() in {"true", "1", "yes"}
         try:
             return _json_result(
                 get_history(
@@ -452,7 +455,7 @@ class TradingHistoryTool(BaseTool):
                     duration=str(kwargs.get("duration") or "30 D"),
                     bar_size=str(kwargs.get("bar_size") or "1 day"),
                     what_to_show=str(kwargs.get("what_to_show") or "TRADES"),
-                    use_rth=bool(kwargs.get("use_rth", True)),
+                    use_rth=bool(use_rth),
                     period=str(kwargs.get("period") or "1d"),
                     limit=int(kwargs.get("limit") or 90),
                     **_overrides(kwargs),
