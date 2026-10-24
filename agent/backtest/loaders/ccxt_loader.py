@@ -47,6 +47,22 @@ _TIMEFRAME_DELTA = {
     "1M": pd.Timedelta(days=31),
 }
 
+
+def _page_limit(exchange) -> int:
+    """OHLCV page size to request: 1000, or less when the exchange caps lower.
+
+    Pagination stops on a page shorter than the request, so asking OKX (300)
+    or Kraken (720) for 1000 rows would end the history after one page.
+    """
+    features = getattr(exchange, "features", None)
+    spot = features.get("spot") if isinstance(features, dict) else None
+    spec = spot.get("fetchOHLCV") if isinstance(spot, dict) else None
+    cap = spec.get("limit") if isinstance(spec, dict) else None
+    if isinstance(cap, int) and not isinstance(cap, bool) and 0 < cap < 1000:
+        return cap
+    return 1000
+
+
 # P12-b: ccxt had no request timeout and an unbounded paginated fetch with
 # no retry budget, so a transient disconnect hung get_market_data for 10+
 # minutes. Cap each HTTP call, bound transient retries, and enforce a hard
@@ -438,7 +454,7 @@ class DataLoader:
 
         all_rows: list = []
         cursor = since_ms
-        limit = 1000
+        limit = _page_limit(exchange)
         deadline = time.monotonic() + _CCXT_FETCH_BUDGET_S
         label = f"ccxt fetch for {symbol}"
         hit_page_cap = True
