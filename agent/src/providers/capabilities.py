@@ -39,6 +39,13 @@ class ProviderCapabilities:
             request to it succeed. Leave it False until then — the cost of False
             is that ``LANGCHAIN_REASONING_EFFORT`` has no effect there, and the
             cost of a wrong True is that every request fails.
+        reasoning_effort_models: Optional per-model scoping for
+            ``top_level_reasoning_effort``. ``None`` (the default) means every
+            model of the provider accepts the field; a tuple means only models
+            whose name starts with one of the entries do — prefixes, so
+            ``"kimi-k3.1-pro"`` also covers ``kimi-k3.1-pro-highspeed``. An
+            unmatched model is a no-op, not an error, mirroring the asymmetry
+            of the provider-level flag. Ignored when the flag is False.
         default_headers: Provider-scoped headers passed to ChatOpenAI.
         native_adapter_package: Optional native adapter package to report.
     """
@@ -52,6 +59,7 @@ class ProviderCapabilities:
     normalize_assistant_content: bool = False
     openrouter_reasoning_body: bool = False
     top_level_reasoning_effort: bool = False
+    reasoning_effort_models: tuple[str, ...] | None = None
     default_headers: Mapping[str, str] = field(default_factory=dict)
     native_adapter_package: Optional[str] = None
 
@@ -87,10 +95,7 @@ def _gh_cli_token() -> str:
 
     with _gh_cli_token_lock:
         now = monotonic()
-        if (
-            _gh_cli_token_cache is not None
-            and now - _gh_cli_token_cache[0] < _GH_CLI_TOKEN_TTL_SECONDS
-        ):
+        if _gh_cli_token_cache is not None and now - _gh_cli_token_cache[0] < _GH_CLI_TOKEN_TTL_SECONDS:
             return _gh_cli_token_cache[1]
 
         from src.providers.copilot_auth import resolve_copilot_token
@@ -100,6 +105,15 @@ def _gh_cli_token() -> str:
         return token
 
 
+# Moonshot publishes a top-level ``reasoning_effort`` (low/high/max only —
+# there is no medium/minimal) for the kimi-k3.1 model family on its chat
+# completions endpoint: https://platform.kimi.ai/docs/guide/use-reasoning-effort.md
+# Enabled per published contract; live endpoint verification pending (no
+# Moonshot key available to contributor) — issue #2020. The model tuple scopes
+# the flag to kimi-k3.1*, and ``llm.py`` additionally gates on the official
+# api.moonshot.ai host, so a relayed ``MOONSHOT_BASE_URL`` receives nothing.
+# The "kimi" alias shares this record; kimi-coding serves a different endpoint
+# and stays off the allowlist.
 _MOONSHOT_CAPABILITIES = ProviderCapabilities(
     "moonshot",
     "MOONSHOT_API_KEY",
@@ -107,6 +121,8 @@ _MOONSHOT_CAPABILITIES = ProviderCapabilities(
     capture_reasoning=True,
     send_reasoning_content=True,
     normalize_assistant_content=True,
+    top_level_reasoning_effort=True,
+    reasoning_effort_models=("kimi-k3.1-pro",),
     default_headers={"User-Agent": _VIBE_USER_AGENT},
 )
 
@@ -164,9 +180,7 @@ _SPARK_CAPABILITIES = ProviderCapabilities(
     "SPARK_BASE_URL",
 )
 
-_OPENAI_CODEX_CAPABILITIES = ProviderCapabilities(
-    "openai-codex", None, "OPENAI_CODEX_BASE_URL"
-)
+_OPENAI_CODEX_CAPABILITIES = ProviderCapabilities("openai-codex", None, "OPENAI_CODEX_BASE_URL")
 
 # GitHub Copilot is routed through the official SDK in ``build_llm``.
 _COPILOT_CAPABILITIES = ProviderCapabilities(
@@ -179,9 +193,7 @@ _COPILOT_CAPABILITIES = ProviderCapabilities(
 # The local Claude Code CLI is driven as a subprocess in ``build_llm``; it has
 # no HTTP endpoint or key of its own. The base-URL variable is never read — the
 # settings UI requires one per provider.
-_CLAUDE_CLI_CAPABILITIES = ProviderCapabilities(
-    "claude-cli", None, "CLAUDE_CLI_BASE_URL"
-)
+_CLAUDE_CLI_CAPABILITIES = ProviderCapabilities("claude-cli", None, "CLAUDE_CLI_BASE_URL")
 
 
 _PROVIDERS: dict[str, ProviderCapabilities] = {
@@ -243,9 +255,7 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     # naming. The v1 chat path exposes no reasoning fields, so no capability
     # flags are set and it rides the generic OpenAI-compatible path.
     "novita": ProviderCapabilities("novita", "NOVITA_API_KEY", "NOVITA_BASE_URL"),
-    "dashscope": ProviderCapabilities(
-        "dashscope", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"
-    ),
+    "dashscope": ProviderCapabilities("dashscope", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
     "qwen": ProviderCapabilities("qwen", "DASHSCOPE_API_KEY", "DASHSCOPE_BASE_URL"),
     "zhipu": _ZHIPU_CAPABILITIES,
     "glm": _ZHIPU_CAPABILITIES,
@@ -269,12 +279,8 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "openai-codex": _OPENAI_CODEX_CAPABILITIES,
     "openai_codex": _OPENAI_CODEX_CAPABILITIES,
     "opencode": _OPENCODE_CAPABILITIES,
-    "opencode-zen": ProviderCapabilities(
-        "opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"
-    ),
-    "opencode-go": ProviderCapabilities(
-        "opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"
-    ),
+    "opencode-zen": ProviderCapabilities("opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
+    "opencode-go": ProviderCapabilities("opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
 }
 
 
@@ -336,9 +342,7 @@ def get_provider_capabilities(
     return _PROVIDERS.get(normalized, _PROVIDERS["openai"])
 
 
-def provider_env_names(
-    provider: str | None, model: str | None = None
-) -> tuple[str | None, str]:
+def provider_env_names(provider: str | None, model: str | None = None) -> tuple[str | None, str]:
     """Return the API-key and base-URL env names for a provider/model pair."""
     caps = get_provider_capabilities(provider, model)
     return caps.api_key_env, caps.base_url_env

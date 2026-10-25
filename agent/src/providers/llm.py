@@ -61,9 +61,7 @@ def _build_proxy_free_http_clients() -> tuple[Any, Any]:
         RuntimeError: If HTTPX is unavailable while proxy disabling is enabled.
     """
     if httpx is None:
-        raise RuntimeError(
-            "VIBE_TRADING_DISABLE_HTTP_PROXY requires the httpx package"
-        )
+        raise RuntimeError("VIBE_TRADING_DISABLE_HTTP_PROXY requires the httpx package")
     sync_transport = httpx.HTTPTransport(proxy=None, trust_env=True)
     async_transport = httpx.AsyncHTTPTransport(proxy=None, trust_env=True)
     return (
@@ -116,9 +114,7 @@ class _ResponsesMappingEvent:
     def model_dump(self, *, exclude_none: bool = False, **_: Any) -> dict[str, Any]:
         """Expose the Pydantic method expected by LangChain's converter."""
         if exclude_none:
-            return {
-                key: value for key, value in self._values.items() if value is not None
-            }
+            return {key: value for key, value in self._values.items() if value is not None}
         return dict(self._values)
 
 
@@ -303,9 +299,7 @@ if ChatOpenAI is not None:
             """Initialize while retaining the resolved provider name."""
             explicit_headers = kwargs.get("default_headers")
             explicit_names = (
-                {str(name) for name in explicit_headers}
-                if isinstance(explicit_headers, Mapping)
-                else set()
+                {str(name) for name in explicit_headers} if isinstance(explicit_headers, Mapping) else set()
             )
             explicit_names_lower = {name.lower() for name in explicit_names}
             ambient_names = _openai_custom_header_names(
@@ -326,20 +320,14 @@ if ChatOpenAI is not None:
             # case-insensitive merge; openai 2.53 (the lock) and 3.19.0 merge
             # with a plain dict and would send the ambient ``user-agent``
             # beside ``User-Agent`` (#1573).
-            self._vibe_ambient_header_names = tuple(
-                name for name in ambient_names if name not in explicit_names
-            )
+            self._vibe_ambient_header_names = tuple(name for name in ambient_names if name not in explicit_names)
             ambient_names_lower = {name.lower() for name in self._vibe_ambient_header_names}
             self._vibe_explicit_twin_headers = {
                 str(name): value
-                for name, value in (
-                    explicit_headers.items() if isinstance(explicit_headers, Mapping) else ()
-                )
+                for name, value in (explicit_headers.items() if isinstance(explicit_headers, Mapping) else ())
                 if str(name).lower() in ambient_names_lower
             }
-            self._vibe_has_explicit_authorization = (
-                "authorization" in explicit_names_lower
-            )
+            self._vibe_has_explicit_authorization = "authorization" in explicit_names_lower
 
         def _opencode_session_headers(self) -> dict[str, str]:
             """Return the ``x-opencode-session`` header for opencode.ai relays.
@@ -369,9 +357,7 @@ if ChatOpenAI is not None:
             ambient_authorization = False
             for name in self._vibe_ambient_header_names:
                 overrides[name] = OpenAIOmit()
-                ambient_authorization = (
-                    ambient_authorization or name.lower() == "authorization"
-                )
+                ambient_authorization = ambient_authorization or name.lower() == "authorization"
             # openai >= 3.19.2 applies an omit case-insensitively, so the omit for an
             # ambient ``user-agent`` also took the provider's ``User-Agent``.
             # Inserted after the omits, the explicit value is the one that stays.
@@ -381,11 +367,7 @@ if ChatOpenAI is not None:
             # Remove every captured spelling, then restore the selected provider
             # credential under one canonical name so casing variants cannot
             # produce duplicate Authorization values.
-            if (
-                ambient_authorization
-                and not self._vibe_has_explicit_authorization
-                and self._vibe_api_key
-            ):
+            if ambient_authorization and not self._vibe_has_explicit_authorization and self._vibe_api_key:
                 overrides["Authorization"] = f"Bearer {self._vibe_api_key}"
             return overrides
 
@@ -407,9 +389,7 @@ if ChatOpenAI is not None:
             if isinstance(extra_content, dict):
                 google = extra_content.get("google")
                 if isinstance(google, dict):
-                    value = google.get("thought_signature") or google.get(
-                        "thoughtSignature"
-                    )
+                    value = google.get("thought_signature") or google.get("thoughtSignature")
                     if value:
                         return value
 
@@ -418,17 +398,13 @@ if ChatOpenAI is not None:
             if isinstance(function, dict):
                 containers.append(function)
             for container in containers:
-                value = container.get("thought_signature") or container.get(
-                    "thoughtSignature"
-                )
+                value = container.get("thought_signature") or container.get("thoughtSignature")
                 if value:
                     return value
             return None
 
         @classmethod
-        def _collect_tool_call_thought_signatures(
-            cls, tool_calls: Any
-        ) -> list[dict[str, Any]]:
+        def _collect_tool_call_thought_signatures(cls, tool_calls: Any) -> list[dict[str, Any]]:
             if not isinstance(tool_calls, list):
                 return []
 
@@ -452,14 +428,10 @@ if ChatOpenAI is not None:
             if not isinstance(src, dict):
                 return
             caps = self._capabilities()
-            if caps.capture_reasoning and (
-                value := src.get("reasoning_content") or src.get("reasoning")
-            ):
+            if caps.capture_reasoning and (value := src.get("reasoning_content") or src.get("reasoning")):
                 msg.additional_kwargs["reasoning_content"] = value
             if caps.gemini_thought_signatures and (
-                signatures := self._collect_tool_call_thought_signatures(
-                    src.get("tool_calls")
-                )
+                signatures := self._collect_tool_call_thought_signatures(src.get("tool_calls"))
             ):
                 msg.additional_kwargs["tool_call_thought_signatures"] = signatures
 
@@ -492,17 +464,11 @@ if ChatOpenAI is not None:
                         if (
                             isinstance(raw, dict)
                             and getattr(msg, "type", None) == "ai"
-                            and not getattr(msg, "additional_kwargs", {}).get(
-                                "tool_call_thought_signatures"
-                            )
+                            and not getattr(msg, "additional_kwargs", {}).get("tool_call_thought_signatures")
                         ):
-                            sigs = self._collect_tool_call_thought_signatures(
-                                raw.get("tool_calls")
-                            )
+                            sigs = self._collect_tool_call_thought_signatures(raw.get("tool_calls"))
                             if sigs:
-                                msg.additional_kwargs[
-                                    "tool_call_thought_signatures"
-                                ] = sigs
+                                msg.additional_kwargs["tool_call_thought_signatures"] = sigs
             return prompt_value
 
         @classmethod
@@ -554,9 +520,7 @@ if ChatOpenAI is not None:
             google["thought_signature"] = signature
 
         @classmethod
-        def _inject_tool_call_thought_signatures(
-            cls, outbound: Any, source_message: Any
-        ) -> None:
+        def _inject_tool_call_thought_signatures(cls, outbound: Any, source_message: Any) -> None:
             if not isinstance(outbound, list):
                 return
 
@@ -618,8 +582,7 @@ if ChatOpenAI is not None:
             model = str(self.model_name)
             if model not in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
                 logger.info(
-                    "Model %s rejects `temperature`; retrying without it "
-                    "and omitting it for subsequent calls.",
+                    "Model %s rejects `temperature`; retrying without it and omitting it for subsequent calls.",
                     model,
                 )
                 _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(model)
@@ -710,17 +673,13 @@ if ChatOpenAI is not None:
             _STREAM_USAGE_UNSUPPORTED.add(model)
             yield from super()._stream(*args, stream_usage=False, **kwargs)
 
-        async def _astream_with_usage_fallback(
-            self, *args: Any, **kwargs: Any
-        ) -> AsyncIterator[Any]:
+        async def _astream_with_usage_fallback(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
             # stream_usage=True is set at build time so streamed calls report
             # real token counts (issue #1224); an endpoint that rejects
             # stream_options is remembered and retried without it.
             model = str(self.model_name)
             if model in _STREAM_USAGE_UNSUPPORTED:
-                async for chunk in super()._astream(
-                    *args, stream_usage=False, **kwargs
-                ):
+                async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
                     yield chunk
                 return
             try:
@@ -768,9 +727,7 @@ if ChatOpenAI is not None:
             default_chunk_class: type,
             base_generation_info: Optional[dict],
         ):
-            gen = super()._convert_chunk_to_generation_chunk(
-                chunk, default_chunk_class, base_generation_info
-            )
+            gen = super()._convert_chunk_to_generation_chunk(chunk, default_chunk_class, base_generation_info)
             if gen is None:
                 return None
             choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices")
@@ -812,15 +769,11 @@ if ChatOpenAI is not None:
                     if caps.normalize_assistant_content and m.get("content") is None:
                         m["content"] = ""
                     if caps.send_reasoning_content:
-                        m["reasoning_content"] = source_message.additional_kwargs.get(
-                            "reasoning_content", ""
-                        )
+                        m["reasoning_content"] = source_message.additional_kwargs.get("reasoning_content", "")
                     else:
                         m.pop("reasoning_content", None)
                     if caps.gemini_thought_signatures:
-                        self._inject_tool_call_thought_signatures(
-                            m.get("tool_calls"), source_message
-                        )
+                        self._inject_tool_call_thought_signatures(m.get("tool_calls"), source_message)
                     else:
                         self._strip_tool_call_extra_content(m.get("tool_calls"))
 
@@ -833,9 +786,7 @@ if ChatOpenAI is not None:
             session_headers = self._opencode_session_headers()
             if session_headers:
                 existing_headers = payload.get("extra_headers")
-                merged: dict[str, Any] = (
-                    dict(existing_headers) if isinstance(existing_headers, Mapping) else {}
-                )
+                merged: dict[str, Any] = dict(existing_headers) if isinstance(existing_headers, Mapping) else {}
                 present = {str(name).lower() for name in merged}
                 for name, value in session_headers.items():
                     if name.lower() not in present:
@@ -969,14 +920,9 @@ def _validate_explicit_headers(headers: Mapping[str, str], *, source: str) -> No
     """Reject explicit provider headers that HTTPX cannot encode safely."""
     for name, value in headers.items():
         if not name.isascii() or not value.isascii():
-            raise RuntimeError(
-                f"{source} produces a non-ASCII HTTP header ({name!r}). "
-                "Use an ASCII-only header value."
-            )
+            raise RuntimeError(f"{source} produces a non-ASCII HTTP header ({name!r}). Use an ASCII-only header value.")
         if "\r" in value or "\n" in value:
-            raise RuntimeError(
-                f"{source} produces an invalid multiline HTTP header ({name!r})."
-            )
+            raise RuntimeError(f"{source} produces an invalid multiline HTTP header ({name!r}).")
 
 
 def _redact_proxy_url(name: str, raw: str | None) -> str:
@@ -1016,9 +962,7 @@ def _build_native_deepseek(
         module = import_module("langchain_deepseek")
         chat_deepseek = getattr(module, "ChatDeepSeek")
     except Exception as exc:  # noqa: BLE001 - optional adapter fallback
-        logger.info(
-            "DeepSeek native adapter unavailable; using OpenAI-compatible path: %s", exc
-        )
+        logger.info("DeepSeek native adapter unavailable; using OpenAI-compatible path: %s", exc)
         return None
 
     creds = get_llm_credentials("deepseek", model)
@@ -1082,6 +1026,7 @@ def _is_stream_usage_unsupported_error(exc: BaseException) -> bool:
         or "not allowed" in message
     )
 
+
 # Models whose Chat Completions endpoint refused function tools and named
 # /v1/responses as the way out (issue #1473). OpenAI's gpt-5.6-* answer HTTP 400
 # "Function tools with reasoning_effort are not supported for <model> in
@@ -1124,12 +1069,7 @@ def _is_anthropic_temperature_unsupported_error(exc: BaseException) -> bool:
     message = str(getattr(exc, "message", "") or exc).lower()
     if "temperature" not in message:
         return False
-    return (
-        "deprecated" in message
-        or "not supported" in message
-        or "unsupported" in message
-        or "not allowed" in message
-    )
+    return "deprecated" in message or "not supported" in message or "unsupported" in message or "not allowed" in message
 
 
 def _make_temperature_safe_anthropic(base_cls: type) -> type:
@@ -1318,11 +1258,7 @@ def _build_anthropic(
         ) from exc
 
     safe_anthropic = _make_temperature_safe_anthropic(chat_anthropic)
-    use_effort = (
-        bool(effort)
-        and _anthropic_supports_effort(model)
-        and _adapter_accepts_effort(chat_anthropic)
-    )
+    use_effort = bool(effort) and _anthropic_supports_effort(model) and _adapter_accepts_effort(chat_anthropic)
     # Effort makes langchain-anthropic enable adaptive thinking, and the API
     # then rejects any temperature other than 1:
     #   `temperature` may only be set to 1 when thinking is enabled or in
@@ -1440,15 +1376,20 @@ def _sync_provider_env() -> None:
         os.environ["OPENAI_BASE_URL"] = base_url
 
 
-def _supports_top_level_reasoning_effort(caps: ProviderCapabilities) -> bool:
+def _supports_top_level_reasoning_effort(caps: ProviderCapabilities, model: str | None = None) -> bool:
     """Report whether a provider accepts a top-level ``reasoning_effort`` field.
 
     Reads the ``top_level_reasoning_effort`` capability flag, which is a
     positive allowlist: a provider is listed only once a real request to it has
-    been observed to succeed. Speaking the OpenAI wire format does not imply
-    accepting every OpenAI field, and an endpoint that validates its body
-    strictly rejects the unknown key outright — so the default is off and the
-    consequence of that default is a no-op, not a failed call.
+    been observed to succeed or its published contract documents the field (the
+    Moonshot kimi-k3.1 entry, issue #2020). Speaking the OpenAI wire format
+    does not imply accepting every OpenAI field, and an endpoint that validates
+    its body strictly rejects the unknown key outright — so the default is off
+    and the consequence of that default is a no-op, not a failed call.
+
+    Providers carrying ``reasoning_effort_models`` scope the field further to
+    those model-name prefixes; an unmatched model is a no-op, not an error,
+    the same asymmetry the provider-level flag has.
 
     Relays that take the effort inside ``extra_body.reasoning`` (OpenRouter)
     use that path instead and are excluded here.
@@ -1459,12 +1400,22 @@ def _supports_top_level_reasoning_effort(caps: ProviderCapabilities) -> bool:
             ``deepseek-*`` model arrives here as DeepSeek, and an unrecognised
             provider name arrives as OpenAI — which is why callers must also
             check the base URL before trusting the OpenAI entry.
+        model: Model name the request would carry, matched against
+            ``reasoning_effort_models`` when the provider sets one. Only the
+            Moonshot entry sets one today.
 
     Returns:
-        True when the provider is on the allowlist and does not use the
-        ``extra_body.reasoning`` relay path.
+        True when the provider is on the allowlist, the model is covered by
+        the provider's model scoping (if any), and the provider does not use
+        the ``extra_body.reasoning`` relay path.
     """
-    return caps.top_level_reasoning_effort and not caps.openrouter_reasoning_body
+    if not caps.top_level_reasoning_effort or caps.openrouter_reasoning_body:
+        return False
+    models = caps.reasoning_effort_models
+    if models is None:
+        return True
+    lowered = (model or "").strip().lower()
+    return any(lowered.startswith(prefix) for prefix in models)
 
 
 def _openai_label_points_at_openai(caps: ProviderCapabilities) -> bool:
@@ -1481,9 +1432,7 @@ def _openai_label_points_at_openai(caps: ProviderCapabilities) -> bool:
         return True
     try:
         base_url = (
-            get_llm_credentials("openai", get_env_config().llm.langchain_model_name)
-            .get("base_url")
-            or ""
+            get_llm_credentials("openai", get_env_config().llm.langchain_model_name).get("base_url") or ""
         ).strip()
     except Exception:  # noqa: BLE001 - a credential lookup must not break the check
         return False
@@ -1493,9 +1442,66 @@ def _openai_label_points_at_openai(caps: ProviderCapabilities) -> bool:
     return host.lower() in {"api.openai.com", "openai.com"}
 
 
-def _sends_top_level_reasoning_effort(caps: ProviderCapabilities) -> bool:
-    """Combine the allowlist flag with the OpenAI base-URL check."""
-    return _supports_top_level_reasoning_effort(caps) and _openai_label_points_at_openai(caps)
+def _moonshot_label_points_at_moonshot(caps: ProviderCapabilities) -> bool:
+    """Report whether the Moonshot capability is actually talking to Moonshot.
+
+    Mirrors ``_openai_label_points_at_openai``: ``MOONSHOT_BASE_URL`` can point
+    the provider at a relay or a self-hosted gateway that speaks the OpenAI
+    wire format without promising to accept ``reasoning_effort``, and the
+    kimi-k3.1 contract (issue #2020) is published for api.moonshot.ai only.
+    Non-Moonshot capabilities are unaffected.
+    """
+    if caps.name != "moonshot":
+        return True
+    try:
+        base_url = (
+            get_llm_credentials("moonshot", get_env_config().llm.langchain_model_name).get("base_url") or ""
+        ).strip()
+    except Exception:  # noqa: BLE001 - a credential lookup must not break the check
+        return False
+    if not base_url:
+        return True
+    host = urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
+    return host.lower() == "api.moonshot.ai"
+
+
+def _sends_top_level_reasoning_effort(caps: ProviderCapabilities, model: str | None = None) -> bool:
+    """Combine the allowlist flag with the endpoint-host checks."""
+    return (
+        _supports_top_level_reasoning_effort(caps, model)
+        and _openai_label_points_at_openai(caps)
+        and _moonshot_label_points_at_moonshot(caps)
+    )
+
+
+_MOONSHOT_REASONING_EFFORT_LEVELS = ("low", "high", "max")
+
+
+def _validate_moonshot_reasoning_effort(caps: ProviderCapabilities, model: str, effort: str) -> None:
+    """Reject an effort level the kimi-k3.1 API would reject (issue #2020).
+
+    Moonshot publishes ``reasoning_effort`` for kimi-k3.1 as one of
+    ``low``/``high``/``max`` — there is no ``medium`` or ``minimal`` — and an
+    unknown value fails the request server-side. When the field is about to be
+    sent (Moonshot capabilities, a covered model, the official endpoint), a
+    value outside the published set is a configuration error and fails here,
+    where the message names the accepted values, instead of surfacing as an
+    opaque API 400 on the first call. Configurations the field is never sent
+    to — other models, relays, other providers — are not validated.
+    """
+    if caps.name != "moonshot" or not effort:
+        return
+    if not _sends_top_level_reasoning_effort(caps, model):
+        return
+    if effort in _MOONSHOT_REASONING_EFFORT_LEVELS:
+        return
+    accepted = ", ".join(repr(level) for level in _MOONSHOT_REASONING_EFFORT_LEVELS)
+    raise ValueError(
+        f"LANGCHAIN_REASONING_EFFORT={effort!r} is not valid for {model} on "
+        f"api.moonshot.ai: kimi-k3.1 accepts only {accepted}. There is no "
+        "'medium' or 'minimal' level "
+        "(https://platform.kimi.ai/docs/guide/use-reasoning-effort.md)."
+    )
 
 
 def uses_responses_api(
@@ -1555,11 +1561,7 @@ def provider_diagnostics() -> dict[str, Any]:
         "openai",
         "langchain-deepseek",
     ]
-    native_package_version = (
-        _package_version(caps.native_adapter_package)
-        if caps.native_adapter_package
-        else None
-    )
+    native_package_version = _package_version(caps.native_adapter_package) if caps.native_adapter_package else None
     adapter_mode = (
         _deepseek_adapter_mode()
         if caps.name == "deepseek"
@@ -1609,7 +1611,8 @@ def provider_diagnostics() -> dict[str, Any]:
         },
         "proxy": {
             name: _redact_proxy_url(
-                name, os.getenv(name)  # noqa: env-gate — proxy env iteration
+                name,
+                os.getenv(name),  # noqa: env-gate — proxy env iteration
             )
             for name in proxy_names
             if os.getenv(name)  # noqa: env-gate — proxy env filter
@@ -1617,9 +1620,7 @@ def provider_diagnostics() -> dict[str, Any]:
         "packages": {name: _package_version(name) for name in package_names},
         "timeout_seconds": get_env_config().llm.timeout_seconds,
         "max_retries": get_env_config().llm.max_retries,
-        "reasoning_effort": get_env_config()
-        .llm.langchain_reasoning_effort.strip()
-        .lower(),
+        "reasoning_effort": get_env_config().llm.langchain_reasoning_effort.strip().lower(),
         "adapter": {
             "type": adapter_type,
             "mode": adapter_mode,
@@ -1632,8 +1633,7 @@ def provider_diagnostics() -> dict[str, Any]:
             "gemini_thought_signatures": caps.gemini_thought_signatures,
             "openrouter_reasoning_body": caps.openrouter_reasoning_body,
             "top_level_reasoning_effort": (
-                adapter_type == "openai-compatible"
-                and _sends_top_level_reasoning_effort(caps)
+                adapter_type == "openai-compatible" and _sends_top_level_reasoning_effort(caps, model)
             ),
         },
     }
@@ -1651,6 +1651,9 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
 
     Raises:
         RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
+        ValueError: If a Moonshot kimi-k3.1 configuration carries a
+            ``LANGCHAIN_REASONING_EFFORT`` outside the published
+            low/high/max set.
     """
     _sync_provider_env()
     name = model_name or get_env_config().llm.langchain_model_name.strip()
@@ -1707,9 +1710,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
             if native_llm is not None:
                 return native_llm
             if adapter_mode == "native":
-                raise RuntimeError(
-                    "VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek"
-                )
+                raise RuntimeError("VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek")
 
     if ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
@@ -1719,11 +1720,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         temperature = 0.01
     # Kimi reasoning models reject any temperature other than 1
     # ("invalid temperature: only 1 is allowed for this model").
-    if (
-        caps.name in {"moonshot", "kimi-coding"}
-        and _KIMI_FORCED_TEMPERATURE_RE.match(name)
-        and temperature != 1.0
-    ):
+    if caps.name in {"moonshot", "kimi-coding"} and _KIMI_FORCED_TEMPERATURE_RE.match(name) and temperature != 1.0:
         logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
         temperature = 1.0
     effort = get_env_config().llm.langchain_reasoning_effort.strip().lower()
@@ -1733,6 +1730,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
     creds = get_llm_credentials(provider, name)
     if provider == "custom":
         name = model_name or creds["model"]
+    _validate_moonshot_reasoning_effort(caps, name, effort)
     api_key = creds["api_key"]
     _validate_authorization_credential(
         api_key,
@@ -1751,24 +1749,14 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "stream_usage": True,
         "output_version": "responses/v1" if use_responses_api else None,
         "use_responses_api": use_responses_api,
-        "reasoning": (
-            {"effort": effort}
-            if use_responses_api and effort
-            else None
-        ),
+        "reasoning": ({"effort": effort} if use_responses_api and effort else None),
         "extra_body": (
             {"reasoning": {"effort": effort}}
             if effort and not use_responses_api and caps.openrouter_reasoning_body
             else None
         ),
         "reasoning_effort": (
-            effort
-            if (
-                effort
-                and not use_responses_api
-                and _sends_top_level_reasoning_effort(caps)
-            )
-            else None
+            effort if (effort and not use_responses_api and _sends_top_level_reasoning_effort(caps, name)) else None
         ),
         "vibe_provider": provider,
         "vibe_api_key": api_key,
