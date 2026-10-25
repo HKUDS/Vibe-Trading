@@ -193,11 +193,13 @@ def _attribution_load_equity(
     has_benchmark_column = "benchmark_equity" in fieldnames
     benchmark_all_blank = True
     for row in rows:
-        ret = _attribution_finite_float(row.get("ret"))
-        if ret is None:
-            continue
+        # Keep one entry per equity row. Dropping only an invalid portfolio
+        # return would make adjacent benchmark equity values span a longer
+        # interval, then pair that multi-bar benchmark return with one bar of
+        # portfolio return below.
         dates.append(str(row.get("timestamp") or ""))
-        portfolio_returns.append(ret)
+        ret = _attribution_finite_float(row.get("ret"))
+        portfolio_returns.append(ret if ret is not None else float("nan"))
         if has_benchmark_column:
             benchmark_value = _attribution_finite_float(row.get("benchmark_equity"))
             if benchmark_value is not None:
@@ -206,7 +208,7 @@ def _attribution_load_equity(
             else:
                 benchmark_equity.append(float("nan"))
 
-    if not portfolio_returns:
+    if not any(math.isfinite(value) for value in portfolio_returns):
         return None, None, None, "missing"
 
     if not has_benchmark_column or benchmark_all_blank:

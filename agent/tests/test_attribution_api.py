@@ -422,3 +422,29 @@ def test_attribution_artifact_symbol_path_traversal_is_contained(
     assert brinson["mode"] == "symbol"
     sectors = {sector["sector"]: sector for sector in brinson["sectors"]}
     assert set(sectors) == {SYMBOL_A, "Cash"}
+
+
+def test_attribution_skips_invalid_portfolio_rows_without_shifting_benchmark_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    run_dir = tmp_path / "runs" / "attr-invalid-return"
+    rng = np.random.default_rng(23)
+    benchmark = rng.normal(0.0005, 0.01, N_BARS)
+    benchmark[0] = 0.0
+    portfolio = 0.001 + 1.2 * benchmark
+    portfolio[5] = np.nan
+    dates = _trading_dates(N_BARS)
+
+    _write_equity(run_dir, dates, portfolio, benchmark)
+    _write_config(run_dir, [SYMBOL_A])
+    _write_metrics(run_dir)
+
+    response = client.get("/runs/attr-invalid-return/attribution")
+
+    assert response.status_code == 200
+    factor = response.json()["factor"]
+    assert factor is not None
+    assert factor["n_obs"] == N_BARS - 1
+    assert factor["beta"] == pytest.approx(1.2, abs=1e-8)
+    assert factor["alpha_per_period"] == pytest.approx(0.001, abs=1e-8)
