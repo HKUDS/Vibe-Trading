@@ -264,8 +264,12 @@ def _static_weights(weights: Mapping[str, float], names: list[str], index: pd.In
         values[name] = float(value)
     if not any(values.values()):
         raise ValueError("at least one weight must be nonzero")
-    total = float(sum(abs(value) for value in values.values()))
-    return _constant_weights(names, index, {name: values[name] / total for name in names})
+    scale = max(abs(value) for value in values.values())
+    scaled = {name: value / scale for name, value in values.items()}
+    total = float(sum(abs(value) for value in scaled.values()))
+    return _constant_weights(
+        names, index, {name: scaled[name] / total for name in names}
+    )
 
 
 def _table_weights(weights: pd.DataFrame, names: list[str], index: pd.Index) -> pd.DataFrame:
@@ -285,9 +289,16 @@ def _table_weights(weights: pd.DataFrame, names: list[str], index: pd.Index) -> 
     except (TypeError, ValueError) as exc:
         raise ValueError("weight table must contain numeric values") from exc
     table = np.where(np.isfinite(table), table, np.nan)
+    scale = np.max(
+        np.where(np.isfinite(table), np.abs(table), 0.0), axis=1, keepdims=True
+    )
+    scale = np.where(scale > 0, scale, 1.0)
+    table = table / scale
     total = np.nansum(np.abs(table), axis=1, keepdims=True)
     with np.errstate(invalid="ignore", divide="ignore"):
-        table = np.divide(table, total, out=np.full_like(table, np.nan), where=total > 0)
+        table = np.divide(
+            table, total, out=np.full_like(table, np.nan), where=total > 0
+        )
     return pd.DataFrame(table, index=index, columns=names).ffill()
 
 

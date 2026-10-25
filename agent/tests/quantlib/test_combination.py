@@ -120,6 +120,24 @@ def test_static_weights_are_normalised_and_must_cover_every_factor():
         combine_factors({"a": first, "b": second}, method="explicit", weights={"a": 0.0, "b": 0.0})
 
 
+@pytest.mark.parametrize("weight_kind", ["mapping", "table"])
+def test_large_finite_explicit_weights_are_normalised_without_overflow(weight_kind):
+    first, second = sample(rows=5)
+    if weight_kind == "mapping":
+        weights = {"a": 1e308, "b": 1e308}
+    else:
+        weights = pd.DataFrame(
+            {"a": [1e308] * len(first), "b": [1e308] * len(first)}, index=first.index
+        )
+
+    result = combine_factors(
+        {"a": first, "b": second}, method="explicit", weights=weights
+    )
+
+    np.testing.assert_allclose(result.weights.to_numpy(), 0.5, atol=1e-12)
+    assert result.composite.notna().all().all()
+
+
 def test_a_weight_table_changes_the_composite_over_time():
     first, second = sample(rows=6)
     weights = pd.DataFrame(
