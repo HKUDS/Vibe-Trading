@@ -564,9 +564,18 @@ def monte_carlo_gbm(
         return over the whole simulation.
 
     Raises:
-        ValueError: If ``s0`` is not positive, ``sigma`` is negative, or any of
+        ValueError: If ``s0``, ``mu``, ``sigma`` or ``steps_per_year`` is
+            non-finite, ``s0`` is not positive, ``sigma`` is negative, or any of
             ``n_steps`` / ``n_paths`` / ``steps_per_year`` is below 1.
     """
+    for name, value in (
+        ("s0", s0),
+        ("mu", mu),
+        ("sigma", sigma),
+        ("steps_per_year", steps_per_year),
+    ):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
     if s0 <= 0.0:
         raise ValueError(f"s0 must be > 0, got {s0}")
     if sigma < 0.0:

@@ -392,6 +392,27 @@ def test_gbm_rejects_impossible_parameters(kwargs, match):
         monte_carlo_gbm(**args, seed=0)
 
 
+@pytest.mark.parametrize(
+    "parameter,value",
+    [
+        ("s0", np.nan),
+        ("s0", np.inf),
+        ("mu", np.nan),
+        ("mu", np.inf),
+        ("mu", -np.inf),
+        ("sigma", np.nan),
+        ("sigma", np.inf),
+        ("steps_per_year", np.nan),
+        ("steps_per_year", np.inf),
+    ],
+)
+def test_gbm_rejects_nonfinite_model_parameters(parameter, value):
+    args = {"s0": 100.0, "mu": 0.05, "sigma": 0.2, "n_steps": 2, "n_paths": 3}
+    args[parameter] = value
+    with pytest.raises(ValueError, match=parameter):
+        monte_carlo_gbm(**args, seed=0)
+
+
 # --------------------------------------------------------------------------
 # analyze_mc_results
 # --------------------------------------------------------------------------
