@@ -241,6 +241,15 @@ def test_negative_delay_is_rejected_as_lookahead_bias():
         delayed_execution(pd.Series([1.0, 2.0]), delay_bars=-1)
 
 
+def test_delayed_execution_rejects_unsorted_index_before_shifting():
+    """A positional shift on unsorted dates can move a future signal into the past."""
+    index = pd.to_datetime(["2024-01-03", "2024-01-01", "2024-01-02"])
+    signal = pd.Series([3.0, 1.0, 2.0], index=index)
+
+    with pytest.raises(ValueError, match="chronological"):
+        delayed_execution(signal, delay_bars=1)
+
+
 def test_delayed_execution_rejects_a_non_series():
     """A DataFrame or list would shift with different semantics, so reject it."""
     with pytest.raises(TypeError, match="pandas Series"):

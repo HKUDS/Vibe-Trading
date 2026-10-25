@@ -309,12 +309,16 @@ def delayed_execution(signal_series: pd.Series, delay_bars: int = DEFAULT_DELAY_
 
     Raises:
         TypeError: If ``signal_series`` is not a :class:`pandas.Series`.
-        ValueError: If ``delay_bars`` is negative. A negative shift would pull
-            future signal values into the past, which is look-ahead bias and
-            silently inflates every backtest that contains it.
+        ValueError: If ``delay_bars`` is negative, or if a positive delay is
+            requested for a non-chronological index. Either case could move
+            future signal values into the past and introduce look-ahead bias.
     """
     if not isinstance(signal_series, pd.Series):
         raise TypeError(f"signal_series must be a pandas Series, got {type(signal_series).__name__}")
     if delay_bars < 0:
         raise ValueError(f"delay_bars must be non-negative; a negative shift is look-ahead bias, got {delay_bars!r}")
+    if delay_bars > 0 and not signal_series.index.is_monotonic_increasing:
+        raise ValueError(
+            "signal_series index must be in chronological order before applying a positive delay"
+        )
     return signal_series.shift(delay_bars)
