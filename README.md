@@ -1085,7 +1085,7 @@ Authentication priority is `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, s
 
 ### Claude Code CLI provider
 
-The `claude-cli` provider uses the [Claude Code](https://claude.com/claude-code) CLI you already have installed and logged in. Each agent step runs one headless `claude -p` process that only chooses the next step — call these tools, or give the final answer. Vibe-Trading runs the tools itself, so the evidence ledger, grounding checks and swarm deliverable checks behave exactly as with an API provider. It does not read `ANTHROPIC_API_KEY`.
+The `claude-cli` provider uses the [Claude Code](https://claude.com/claude-code) CLI you already have installed and logged in. Each agent step runs one headless `claude -p` process that only chooses the next step — call these tools, or give the final answer. Vibe-Trading runs the tools itself, so the evidence ledger, grounding checks and swarm deliverable checks behave exactly as with an API provider. It does not read `ANTHROPIC_API_KEY`. Native CLI tools stay disabled. If the model tries one, Vibe-Trading feeds the refusal back and asks for a host tool call instead of accepting a claim that the tools are unavailable.
 
 Log in once with Claude Code, then check that Vibe-Trading can see the login:
 

@@ -350,8 +350,10 @@ class ContextBuilder:
             tool_discovery = (
                 "The complete available-tool catalog follows. Only loaded tools have full schemas "
                 "in this request. Use load_tools(names=[...]) to load the exact names you need, "
-                "preferably together, then call them directly. Loading does not execute a tool. "
-                "No catalog entry is hidden by search or ranking.\n\n" + self.registry.catalog()
+                "preferably together, then request them through the host's tool-call protocol. "
+                "Loading does not execute a tool. "
+                "No catalog entry is hidden by search or ranking.\n\n"
+                + self.registry.catalog()
             )
 
         return _SYSTEM_PROMPT.format(

@@ -72,7 +72,9 @@ def child_env() -> dict[str, str]:
 _PROTOCOL = (
     "\n\n## Tool-calling protocol\n"
     "You cannot execute tools yourself; the host executes them and returns the "
-    "results in the next turn. Respond with action=tool_calls and the calls you "
+    "results in the next turn. The CLI's native tools are disabled: never call "
+    "them, and never interpret their refusal as host tools being unavailable. "
+    "Respond with action=tool_calls and the calls you "
     "want (name + arguments that match the tool's JSON schema), or action=final "
     "with your complete answer in content once you have what you need.\n"
     "Available tools (OpenAI function format):\n"
@@ -351,6 +353,18 @@ def _usage(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _native_attempt_reason(payload: dict[str, Any]) -> str:
+    """Identify a native tool attempt without parsing the model's prose."""
+    if payload.get("permission_denials"):
+        return "permission_denials is non-empty"
+    turns = payload.get("num_turns")
+    if isinstance(turns, int) and turns > 1:
+        # Native tools are disabled for a one-decision request. Extra turns are
+        # the remaining signal when the CLI does not itemize the denied calls.
+        return f"num_turns={turns}"
+    return ""
+
+
 def _decide(
     *,
     model: str,
@@ -406,6 +420,17 @@ def _decide(
             else []
         )
         if not calls:
+            native_reason = _native_attempt_reason(payload) if allow_tools else ""
+            if native_reason:
+                user_input += (
+                    "\n\n[host] Native tool calls were attempted and refused; none was executed "
+                    f"({native_reason}). This does not mean the host tools are unavailable or broken. "
+                    "Do not call the CLI's native tools. Reply again with action=tool_calls "
+                    "using the host-provided schemas, or action=final with a complete answer "
+                    "in content if no tool is needed."
+                )
+                failure = f"native tool calls kept bypassing the host protocol ({native_reason})"
+                continue
             # Under --json-schema, payload["result"] is the structured output as text, so
             # an empty content must not fall back to it: the user would see raw JSON.
             content = str(output.get("content") or "")

@@ -47,6 +47,21 @@ def test_every_tool_is_visible_and_loading_preserves_exact_schema():
     assert len(deferred.get_definitions()) == len(source) + 1  # Full manifest.
 
 
+def test_loading_message_uses_the_host_tool_protocol():
+    deferred = DeferredToolRegistry(registry())
+
+    result = deferred.expose(["read_observation_2"])
+
+    assert result["message"] == (
+        "Full schemas are available in the next request. Request them through "
+        "the host's tool-call protocol in your next reply; loading has not executed them."
+    )
+    assert "host's tool-call protocol" in deferred.get("load_tools").description
+    prompt = ContextBuilder(deferred, WorkspaceMemory()).build_system_prompt()
+    assert "then request them through the host's tool-call protocol" in prompt
+    assert "then call them directly" not in prompt
+
+
 def test_loading_cannot_add_a_tool_outside_the_current_registry():
     deferred = DeferredToolRegistry(registry())
     before = request_definitions(deferred)

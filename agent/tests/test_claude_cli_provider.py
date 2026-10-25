@@ -136,6 +136,103 @@ def test_final_without_content_is_fed_back_and_retried(fake_cli) -> None:
     assert message.usage_metadata["output_tokens"] == 10
 
 
+def test_native_attempt_is_fed_back_with_the_original_prompt(fake_cli) -> None:
+    first = payload({"action": "final", "content": "No such tool available"})
+    first["num_turns"] = 2
+    set_replies, calls = fake_cli
+    set_replies(
+        {"payload": first},
+        {
+            "payload": payload(
+                {
+                    "action": "tool_calls",
+                    "tool_calls": [
+                        {
+                            "name": "get_market_data",
+                            "arguments": {"codes": ["HYPE-USDT"]},
+                        }
+                    ],
+                }
+            )
+        },
+    )
+
+    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        [{"role": "user", "content": "run the backtest"}]
+    )
+
+    assert message.tool_calls[0]["name"] == "get_market_data"
+    stdin = calls()[1]["stdin"]
+    assert "run the backtest" in stdin
+    assert "Native tool calls" in stdin
+    assert "action=tool_calls" in stdin
+
+
+def test_permission_denials_are_fed_back_instead_of_accepting_final(fake_cli) -> None:
+    first = payload({"action": "final", "content": "tools are unavailable"})
+    first["permission_denials"] = [{"tool_name": "bash"}]
+    set_replies, calls = fake_cli
+    set_replies(
+        {"payload": first},
+        {"payload": payload({"action": "final", "content": "recovered"})},
+    )
+
+    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        [{"role": "user", "content": "x"}]
+    )
+
+    assert message.content == "recovered"
+    assert "Native tool calls" in calls()[1]["stdin"]
+
+
+def test_repeated_native_attempts_exhaust_the_existing_retry_budget(fake_cli) -> None:
+    reply = payload({"action": "final", "content": "tools are broken"})
+    reply["num_turns"] = 2
+    set_replies, calls = fake_cli
+    set_replies({"payload": reply})
+
+    with pytest.raises(RuntimeError, match="native tool calls kept bypassing"):
+        claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+            [{"role": "user", "content": "x"}]
+        )
+
+    assert len(calls()) == claude_cli._MAX_RETRIES + 1
+
+
+def test_valid_structured_calls_are_not_retried_after_native_metadata(fake_cli) -> None:
+    reply = payload(
+        {
+            "action": "tool_calls",
+            "tool_calls": [{"name": "get_market_data", "arguments": {}}],
+        }
+    )
+    reply["permission_denials"] = [{"tool_name": "bash"}]
+    set_replies, calls = fake_cli
+    set_replies({"payload": reply})
+
+    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        [{"role": "user", "content": "x"}]
+    )
+
+    assert message.tool_calls[0]["name"] == "get_market_data"
+    assert len(calls()) == 1
+
+
+def test_single_turn_final_answer_does_not_trigger_native_retry(fake_cli) -> None:
+    reply = payload({"action": "final", "content": "done"})
+    reply["num_turns"] = 1
+    reply["permission_denials"] = []
+    set_replies, calls = fake_cli
+    set_replies({"payload": reply})
+
+    message = claude_cli.ClaudeCliLLM(tools=[tool("get_market_data")]).invoke(
+        [{"role": "user", "content": "x"}]
+    )
+
+    assert message.content == "done"
+    assert len(calls()) == 1
+
+
 def test_final_never_echoes_the_structured_output_as_content(fake_cli) -> None:
     set_replies, _ = fake_cli
     set_replies({"payload": payload({"action": "final", "content": "  "})})

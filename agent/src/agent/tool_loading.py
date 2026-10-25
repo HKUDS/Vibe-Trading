@@ -78,8 +78,9 @@ class DeferredToolRegistry(ToolRegistry):
             # prefix/order for providers that cache common prompt prefixes.
             self._loaded.update(dict.fromkeys(names))
         result: dict[str, Any] = {
-            "status": "ok", "loaded": list(dict.fromkeys(names)),
-            "message": "Full schemas are available in the next request. Call the tools directly; loading has not executed them.",
+            "status": "ok",
+            "loaded": list(dict.fromkeys(names)),
+            "message": "Full schemas are available in the next request. Request them through the host's tool-call protocol in your next reply; loading has not executed them.",
         }
         return result
 
@@ -90,13 +91,16 @@ class LoadToolsTool(BaseTool):
     name = "load_tools"
     description = (
         "Load full argument schemas for tools named in the system catalog. "
-        "Select all tools needed for the next steps in one call, then call them "
-        "directly in the next turn. This only exposes schemas; it executes no tool."
+        "Select all tools needed for the next steps in one call, then request them "
+        "through the host's tool-call protocol in the next turn. This only exposes "
+        "schemas; it executes no tool."
     )
     parameters = {
-        "type": "object", "properties": {
+        "type": "object",
+        "properties": {
             "names": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-        }, "required": ["names"],
+        },
+        "required": ["names"],
     }
     repeatable = True
 
