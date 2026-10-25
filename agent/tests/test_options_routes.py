@@ -141,6 +141,13 @@ def test_payoff_rejects_empty_legs() -> None:
     assert _client().post("/options/payoff", json=_long_call_body(legs=[])).status_code == 422
 
 
+def test_payoff_rejects_boolean_qty() -> None:
+    body = _long_call_body(
+        legs=[{"option_type": "call", "strike": 100.0, "qty": True}],
+    )
+    assert _client().post("/options/payoff", json=body).status_code == 422
+
+
 def test_payoff_rejects_zero_qty_and_spot_points_below_min() -> None:
     client = _client()
     zero_qty = _long_call_body(legs=[{"option_type": "call", "strike": 100.0, "qty": 0}])

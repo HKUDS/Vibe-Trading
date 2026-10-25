@@ -76,6 +76,13 @@ class PayoffLeg(BaseModel):
     qty: int
     premium: float | None = Field(None, ge=0)
 
+    @field_validator("qty", mode="before")
+    @classmethod
+    def _qty_not_bool(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            raise ValueError("qty must be a non-zero integer")
+        return value
+
     @field_validator("qty")
     @classmethod
     def _qty_nonzero(cls, v: int) -> int:
