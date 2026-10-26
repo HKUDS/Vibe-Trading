@@ -185,6 +185,7 @@ class AgentLoop(ToolCallLifecycle):
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         max_iterations: int = 50,
         persistent_memory: Optional[Any] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -195,6 +196,8 @@ class AgentLoop(ToolCallLifecycle):
             event_callback: Event callback (event_type, data).
             max_iterations: Maximum number of loop iterations.
             persistent_memory: PersistentMemory for cross-session recall.
+            cancel_event: Optional cancel signal shared with tools that run
+                long work (e.g. swarm). Created internally when omitted.
         """
         self.registry = prepare_registry(registry)
         self.llm = llm
@@ -232,7 +235,7 @@ class AgentLoop(ToolCallLifecycle):
         # Capture successful identities before context collapse can stub args.
         # Skipped/error call IDs never enter this ledger.
         self._successful_call_keys: dict[str, tuple[str, str]] = {}
-        self._cancel_event = threading.Event()
+        self._cancel_event = cancel_event if cancel_event is not None else threading.Event()
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
         self._run_iteration: int = 0

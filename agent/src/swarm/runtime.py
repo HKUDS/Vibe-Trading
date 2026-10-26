@@ -53,6 +53,12 @@ from src.swarm.worker import agent_artifact_dir, clear_agent_artifacts, run_work
 
 logger = logging.getLogger(__name__)
 
+# Cancel signals are process-wide: SwarmTool builds a fresh SwarmRuntime per
+# call, so an instance-level registry would hide live runs from cancel_run()
+# called on a different instance (e.g. the /swarm/runs/{id}/cancel route).
+_ACTIVE_CANCEL_EVENTS: dict[str, threading.Event] = {}
+_ACTIVE_CANCEL_LOCK = threading.Lock()
+
 
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
     """Return the capped exponential ceiling for a one-based retry number."""
@@ -296,7 +302,6 @@ class SwarmRuntime:
         self._store = store
         self._max_workers = max_workers
         self._agent_config = agent_config
-        self._cancel_events: dict[str, threading.Event] = {}
         self._live_callbacks: dict[str, Callable] = {}
         self._lock = threading.Lock()
 
@@ -361,8 +366,9 @@ class SwarmRuntime:
         self._store.create_run(run)
 
         cancel_event = threading.Event()
+        with _ACTIVE_CANCEL_LOCK:
+            _ACTIVE_CANCEL_EVENTS[run.id] = cancel_event
         with self._lock:
-            self._cancel_events[run.id] = cancel_event
             if live_callback is not None:
                 self._live_callbacks[run.id] = live_callback
 
@@ -385,8 +391,8 @@ class SwarmRuntime:
         Returns:
             True if cancellation was signalled, False if run not found.
         """
-        with self._lock:
-            cancel_event = self._cancel_events.get(run_id)
+        with _ACTIVE_CANCEL_LOCK:
+            cancel_event = _ACTIVE_CANCEL_EVENTS.get(run_id)
         if cancel_event is None:
             return False
         cancel_event.set()
@@ -684,8 +690,9 @@ class SwarmRuntime:
         self._emit_event(run_id, self._make_event("run_completed", data={"status": final_status.value}))
 
         # Cleanup cancel event and live callback
+        with _ACTIVE_CANCEL_LOCK:
+            _ACTIVE_CANCEL_EVENTS.pop(run_id, None)
         with self._lock:
-            self._cancel_events.pop(run_id, None)
             self._live_callbacks.pop(run_id, None)
 
     def _sync_run_tasks_snapshot(self, run: SwarmRun, task_store: TaskStore) -> None:

@@ -552,6 +552,7 @@ class SessionService:
             """Forward MCP server-name collision warnings to the operator event channel."""
             self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
 
+        cancel_event = threading.Event()
         registry = await loop.run_in_executor(
             _AGENT_EXECUTOR,
             lambda: build_registry(
@@ -561,6 +562,7 @@ class SessionService:
                 session_id=session_id,
                 event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
+                cancel_event=cancel_event,
             ),
         )
 
@@ -572,6 +574,7 @@ class SessionService:
             event_callback=event_callback,
             max_iterations=get_env_config().agent_tuning.vibe_trading_agent_max_iterations,
             persistent_memory=pm,
+            cancel_event=cancel_event,
         )
         self._active_loops[session_id] = agent
 

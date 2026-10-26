@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+import threading
 from collections.abc import Mapping
 from collections import deque
 from pathlib import Path
@@ -82,6 +83,7 @@ def build_registry(
     event_callback: Callable[[str, dict], None] | None = None,
     warn_callback: Callable[[str], None] | None = None,
     interactive: bool | None = None,
+    cancel_event: threading.Event | None = None,
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
@@ -118,6 +120,8 @@ def build_registry(
             channel rather than blocking on a browser that cannot open
             (SPEC Transport §4). ``None`` (default) auto-detects via
             ``sys.stdin.isatty()``.
+        cancel_event: Optional session cancel signal forwarded to SwarmTool so
+            a stopped chat turn also stops its in-flight swarm run.
 
     Returns:
         ToolRegistry containing all available local tools followed by any
@@ -164,7 +168,13 @@ def build_registry(
             elif cls in session_injected_classes:
                 registry.register(cls(default_session_id=session_id, event_callback=event_callback))
             elif cls is SwarmTool:
-                registry.register(cls(include_shell_tools=include_shell_tools, event_callback=event_callback))
+                registry.register(
+                    cls(
+                        include_shell_tools=include_shell_tools,
+                        event_callback=event_callback,
+                        cancel_event=cancel_event,
+                    )
+                )
             else:
                 registry.register(cls())
         except Exception as exc:

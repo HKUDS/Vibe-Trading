@@ -9,16 +9,37 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.agent.tools import BaseTool
 from src.tools.swarm_variables import build_variables as _build_variables
 from src.tools.swarm_variables import merge_variables as _merge_variables
 
+if TYPE_CHECKING:
+    from src.swarm.models import SwarmRun
+    from src.swarm.runtime import SwarmRuntime
+    from src.swarm.store import SwarmStore
+
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 5
+_CANCEL_GRACE_SECONDS = 30
+_CANCEL_POLL_SECONDS = 0.5
+_TERMINAL_RUN_STATUSES = ("completed", "failed", "cancelled")
+
+
+def _poll_run(store: "SwarmStore", run_id: str, *, write: bool) -> "SwarmRun | None":
+    """Load and reconcile a run; None when the run no longer exists."""
+    loaded = store.load_run(run_id)
+    if loaded is None:
+        return None
+    return store.reconcile_run(loaded, write=write)
+
+
+def _is_terminal(run: "SwarmRun") -> bool:
+    return run.status.value in _TERMINAL_RUN_STATUSES
 
 
 def _max_wait_seconds() -> int:
@@ -499,6 +520,7 @@ class SwarmTool(BaseTool):
         *,
         include_shell_tools: bool = False,
         event_callback: Any | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         """Initialize the swarm launcher.
 
@@ -506,9 +528,12 @@ class SwarmTool(BaseTool):
             include_shell_tools: Whether worker registries may include shell
                 execution tools requested by presets.
             event_callback: Optional session event bridge used by the web chat.
+            cancel_event: Optional session cancel signal. When set while the
+                run is in flight, the swarm is cancelled and the call returns.
         """
         self.include_shell_tools = include_shell_tools
         self._event_callback = event_callback
+        self._cancel_event = cancel_event
 
     def _emit_session_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Forward swarm status to the hosting session SSE channel if present."""
@@ -518,6 +543,59 @@ class SwarmTool(BaseTool):
             self._event_callback(event_type, data)
         except Exception:
             logger.warning("Failed to forward %s to session event stream", event_type, exc_info=True)
+
+    def _wait_for_poll(self) -> bool:
+        """Sleep one poll interval; return True if the session cancel fired."""
+        if self._cancel_event is None:
+            time.sleep(_POLL_INTERVAL_SECONDS)
+            return False
+        return self._cancel_event.wait(_POLL_INTERVAL_SECONDS)
+
+    def _cancel_and_report(
+        self,
+        runtime: "SwarmRuntime",
+        store: "SwarmStore",
+        run_id: str,
+        preset: str,
+        variables: dict[str, str],
+    ) -> str:
+        """Signal the in-flight swarm to stop and report where it stands.
+
+        Returns ``cancelled`` once the run is terminal, or ``cancelling`` if it
+        is still stopping after the grace period, so the caller never reads a
+        stopped turn's swarm as still running.
+        """
+        runtime.cancel_run(run_id)
+        logger.info("SwarmTool: session cancelled, cancelling run %s", run_id)
+        deadline = time.monotonic() + _CANCEL_GRACE_SECONDS
+        reconciled = _poll_run(store, run_id, write=False)
+        while (
+            reconciled is None or not _is_terminal(reconciled)
+        ) and time.monotonic() < deadline:
+            time.sleep(_CANCEL_POLL_SECONDS)
+            reconciled = _poll_run(store, run_id, write=False)
+        if reconciled is None:
+            return json.dumps(
+                {
+                    "status": "cancelled",
+                    "run_id": run_id,
+                    "error": "Swarm run was cancelled",
+                },
+                ensure_ascii=False,
+            )
+        if not _is_terminal(reconciled):
+            return json.dumps(
+                {
+                    "status": "cancelling",
+                    "run_id": run_id,
+                    "preset": preset,
+                    "error": "Cancel requested; the swarm is still stopping",
+                },
+                ensure_ascii=False,
+            )
+        return _format_result(
+            store.reconcile_run(reconciled, write=True), preset, variables
+        )
 
     def execute(self, **kwargs: Any) -> str:
         """Start a swarm run: auto-match preset, extract variables, wait for completion.
@@ -638,17 +716,18 @@ class SwarmTool(BaseTool):
         t0 = time.monotonic()
         max_wait = _max_wait_seconds()
         while time.monotonic() - t0 < max_wait:
-            time.sleep(_POLL_INTERVAL_SECONDS)
+            if self._wait_for_poll():
+                return self._cancel_and_report(
+                    runtime, store, run_id, preset, variables
+                )
 
-            loaded = store.load_run(run_id)
-            if loaded is None:
+            reconciled = _poll_run(store, run_id, write=True)
+            if reconciled is None:
                 return json.dumps(
                     {"status": "error", "error": f"Run {run_id} disappeared"},
                     ensure_ascii=False,
                 )
-
-            reconciled = store.reconcile_run(loaded, write=True)
-            if reconciled.status.value in ("completed", "failed", "cancelled"):
+            if _is_terminal(reconciled):
                 return _format_result(reconciled, preset, variables)
 
         # Wait budget elapsed but the run is still in flight. Do NOT cancel —

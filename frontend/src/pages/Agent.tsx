@@ -240,6 +240,9 @@ export function Agent() {
   const prevSseStatusRef = useRef<string>("disconnected");
   const genRef = useRef(0);
   const pendingGoalSessionRef = useRef<string | null>(null);
+  // Set when the user stops the in-flight turn; late swarm events must not
+  // flip the composer back to streaming. Cleared when a new turn starts.
+  const userStoppedRef = useRef(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const lastEventRef = useRef(0);
   const sseTimeoutMsRef = useRef(90_000);
@@ -1169,7 +1172,7 @@ export function Agent() {
       "swarm.event": (d) => {
         touch();
         replayAttemptSeenRef.current = true;
-        if (act().status !== "streaming") act().setStatus("streaming");
+        if (!userStoppedRef.current && act().status !== "streaming") act().setStatus("streaming");
         const runId = String(d.run_id || "");
         const event = d.event;
         if (!runId || !event) return;
@@ -1439,6 +1442,7 @@ export function Agent() {
     attachments: ComposerAttachment[] = [],
   ) => {
     if ((!prompt.trim() && attachments.length === 0) || status === "streaming") return;
+    userStoppedRef.current = false;
     const finalPrompt = buildChatPrompt(prompt, attachments, Boolean(swarmPreset));
     const limit = goalComposerActive ? MAX_GOAL_CHARS : MAX_MESSAGE_CHARS;
     if (promptExceedsLimit(goalComposerActive ? prompt : finalPrompt, limit)) {
@@ -1550,6 +1554,7 @@ export function Agent() {
   }, []);
 
   const handleCancel = useCallback(async () => {
+    userStoppedRef.current = true;
     if (!sessionId) {
       flushPendingStreamUpdate();
       const partialAnswer = act().streamingText;
@@ -1571,6 +1576,7 @@ export function Agent() {
     } catch {
       // The attempt is still live. Preserve its activity, buffered text and
       // streaming status so a failed cancel request does not strand the turn.
+      userStoppedRef.current = false;
       toast.error(t('agent.cancelFailed'));
     }
   }, [
@@ -1594,6 +1600,7 @@ export function Agent() {
 
   const handleContinueGoal = useCallback(async () => {
     if (!sessionId || !goalSnapshot || status === "streaming") return;
+    userStoppedRef.current = false;
     const prompt = goalContinuePrompt(goalSnapshot);
     act().addMessage({
       id: "",
