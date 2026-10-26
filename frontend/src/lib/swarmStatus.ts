@@ -188,7 +188,31 @@ export function buildSwarmStatusFromStarted(data: AnyRecord): SwarmRunStatus | n
   };
 }
 
+/**
+ * Mark a run as stopped by the user. The cancel request reaches the runtime
+ * asynchronously, so the card is settled locally first — otherwise it keeps
+ * showing "running" until the last worker notices the flag.
+ */
+export function stopSwarmRun(status: SwarmRunStatus, at = Date.now()): SwarmRunStatus {
+  return {
+    ...status,
+    status: "cancelled",
+    completedAt: status.completedAt ?? at,
+    agents: status.agents.map((agent) => (
+      agent.status === "running" || agent.status === "waiting"
+        ? { ...agent, status: "cancelled" }
+        : agent
+    )),
+  };
+}
+
 export function applySwarmEvent(current: SwarmRunStatus, rawEvent: unknown): SwarmRunStatus {
+  // A stopped run is terminal. Events already in flight when the user pressed
+  // stop (a worker finishing its iteration, the runtime's own run_completed)
+  // arrive afterwards and would repaint the card as running or completed, so
+  // they are dropped rather than applied.
+  if (current.status === "cancelled") return current;
+
   const event = asRecord(rawEvent);
   const data = asRecord(event.data);
   const type = asString(event.type);

@@ -46,6 +46,7 @@ import {
   buildSwarmStatusFromStarted,
   buildSwarmStatusFromToolResultPreview,
   mergeSwarmRunUsage,
+  stopSwarmRun,
 } from "@/lib/swarmStatus";
 import { buildToolTimelineMessages } from "@/pages/agentToolTimeline";
 
@@ -1561,6 +1562,20 @@ export function Agent() {
     }
     try {
       await api.cancelSession(sessionId);
+      // Cancelling the session only stops the ReAct loop; a swarm tool call that
+      // already returned keeps its workers running. Tell the swarm endpoint too
+      // and settle the cards locally, so the user sees "cancelled" immediately
+      // instead of a card that stays "running" until the last worker notices.
+      const activeSwarmRuns = Object.values(swarmRuns).filter(
+        (run) => run.status === "pending" || run.status === "running",
+      );
+      for (const run of activeSwarmRuns) {
+        act().updateSwarmStatus(run.runId, stopSwarmRun);
+        void api.cancelSwarmRun(run.runId).catch(() => {
+          // Already finished or unknown to this runtime — the local status is
+          // what the card shows either way.
+        });
+      }
       flushPendingStreamUpdate();
       const partialAnswer = act().streamingText;
       const stoppedActivity = archiveActivity("stopped");
@@ -1578,6 +1593,7 @@ export function Agent() {
     flushPendingStreamUpdate,
     persistPartialAnswer,
     sessionId,
+    swarmRuns,
     t,
   ]);
 

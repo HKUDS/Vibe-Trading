@@ -2,6 +2,7 @@ import {
   applySwarmEvent,
   buildSwarmStatusFromStarted,
   buildSwarmStatusFromToolResultPreview,
+  stopSwarmRun,
 } from "../swarmStatus";
 
 describe("swarmStatus server timestamps", () => {
@@ -116,5 +117,53 @@ describe("swarmStatus cancellation events", () => {
       data: { iterations: 1 },
     });
     expect(cancelled.agents[0].status).toBe("cancelled");
+  });
+});
+
+describe("swarmStatus user stop", () => {
+  const runningRun = () => {
+    const initial = buildSwarmStatusFromStarted({
+      run_id: "run-stop",
+      status: "running",
+      agents: [{ id: "analyst" }, { id: "trader" }],
+      tasks: [
+        { id: "task-1", agent_id: "analyst", status: "in_progress" },
+        { id: "task-2", agent_id: "trader", status: "completed" },
+      ],
+    })!;
+    return initial;
+  };
+
+  it("settles the run and its in-flight workers as cancelled", () => {
+    const stopped = stopSwarmRun(runningRun(), 1_700_000_005_000);
+
+    expect(stopped.status).toBe("cancelled");
+    expect(stopped.completedAt).toBe(1_700_000_005_000);
+    expect(stopped.agents.map((agent) => agent.status)).toEqual([
+      "cancelled",
+      "done",
+    ]);
+  });
+
+  it("ignores events that were already in flight when the user pressed stop", () => {
+    const stopped = stopSwarmRun(runningRun(), 1_700_000_005_000);
+    const late = applySwarmEvent(stopped, {
+      type: "run_completed",
+      timestamp: "2026-08-22T09:00:09Z",
+      data: { status: "completed" },
+    });
+
+    // A late completion must not repaint a stopped card as a finished run.
+    expect(late.status).toBe("cancelled");
+    expect(late.completedAt).toBe(1_700_000_005_000);
+  });
+
+  it("still lets a cancelled run report its own cancellation event", () => {
+    const stopped = stopSwarmRun(runningRun(), 1_700_000_005_000);
+    const echoed = applySwarmEvent(stopped, {
+      type: "run_completed",
+      data: { status: "cancelled" },
+    });
+    expect(echoed.status).toBe("cancelled");
   });
 });
