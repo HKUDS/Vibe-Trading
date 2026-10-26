@@ -15,7 +15,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
-from src.agent.grounding.figures import _CURRENCY_CODES
+from src.agent.grounding.figures import (
+    Figure,
+    _CURRENCY_CODES,
+    parse_figures_block,
+    scan_figures,
+)
 from src.agent.grounding.identity import (
     _CANONICAL_SYMBOL_RE,
     _infer_currency,
@@ -29,6 +34,10 @@ _PRICE_FIELDS = {"open", "high", "low", "close", "adj_close", "price"}
 _TIMESTAMP_FIELDS = ("trade_date", "date", "datetime", "timestamp", "time", "index")
 
 _MAX_GENERIC_EVIDENCE = 2_000
+
+#: Figures one document may contribute. A filing's text carries far more
+#: numbers than a tool result, and one long document must not crowd the ledger.
+_MAX_DOCUMENT_FIGURES = 400
 
 #: Top-level fields of a code-running tool's envelope (backtest, bash, ...). They
 #: describe the process, not the market, so they never become observed evidence.
@@ -681,6 +690,21 @@ def _is_price_kind(record: EvidenceRecord) -> bool:
         or _is_registered_price_indicator(record.tool, record.field)
         or _leaf_name(record.field) in _AMOUNT_FIELDS
     )
+
+
+def _document_field(figure: Figure) -> str:
+    """The evidence field a document's figure is recorded under.
+
+    The name carries the figure's written shape and nothing more. A document
+    does not say whether a number is revenue or a price, so a made-up semantic
+    name would let the gate's money and percent filters act on a distinction the
+    file never drew — while the shape is exactly what the reader did see.
+    """
+    if figure.percent:
+        return "document.ratio"
+    if figure.currency:
+        return "document.amount"
+    return "document.figure"
 
 
 class _EvidenceMixin:
@@ -1390,3 +1414,96 @@ class _EvidenceMixin:
                 continue
             records.append(replace(record, field=field_name))
         return records
+
+    def _ingest_document_text(
+        self,
+        arguments: Mapping[str, Any],
+        payload: dict[str, Any],
+        call_id: str,
+        *,
+        tool_name: str = "read_document",
+    ) -> None:
+        """Record the figures a document states as observed evidence.
+
+        ``read_document`` answers with one prose blob, so the numeric-leaf
+        flattening every other tool goes through found nothing: a PDF's figures
+        never became evidence and the gate redacted each of them as unsourced.
+
+        Only numbers carrying a mark of measurement count. A page number, a
+        section heading or a year in running text is not a finding, and
+        admitting bare integers would let an invented small figure match by
+        chance. The document must not be one this run wrote — reading back its
+        own draft is not observation — and nothing under the run directory is
+        read as a document, so the ledger's own artifacts cannot launder
+        themselves through the reader.
+
+        Args:
+            arguments: The reader's arguments; its ``file_path`` names the source.
+            payload: The document reader's envelope.
+            call_id: The reader call that showed this text to the model.
+            tool_name: The reader that returned the text.
+        """
+        text = next(
+            (
+                payload[key]
+                for key in ("text", "content", "markdown")
+                if isinstance(payload.get(key), str)
+            ),
+            None,
+        )
+        if not text:
+            return
+        path: Path | None = None
+        raw_path = arguments.get("file_path")
+        if isinstance(raw_path, str) and raw_path.strip():
+            try:
+                path = Path(raw_path).resolve()
+            except OSError:
+                path = None
+            if path is not None:
+                if self._is_model_written(path):
+                    return
+                try:
+                    path.relative_to(self.run_dir.resolve())
+                except ValueError:
+                    pass
+                else:
+                    return
+        artifact = path.name if path is not None else None
+        if artifact is None and isinstance(payload.get("file"), str):
+            artifact = payload["file"]
+        room = min(
+            _MAX_DOCUMENT_FIGURES,
+            _MAX_GENERIC_EVIDENCE - len(self._evidence),
+        )
+        if room <= 0:
+            return
+        seen: set[tuple[float, bool, str | None]] = set()
+        for figure in scan_figures(text, parse_figures_block(text)):
+            if room <= 0:
+                return
+            if figure.shape != "measured":
+                continue
+            value = float(figure.value) * float(figure.scale or 1.0)
+            if not math.isfinite(value):
+                continue
+            key = (round(value, 6), bool(figure.percent), figure.currency_code)
+            if key in seen:
+                continue
+            seen.add(key)
+            self._evidence.append(
+                EvidenceRecord(
+                    call_id=call_id,
+                    tool=tool_name,
+                    symbol=None,
+                    source="document",
+                    timestamp=None,
+                    field=_document_field(figure),
+                    value=value,
+                    status="observed",
+                    currency=figure.currency_code,
+                    artifact=artifact,
+                )
+            )
+            room -= 1
+

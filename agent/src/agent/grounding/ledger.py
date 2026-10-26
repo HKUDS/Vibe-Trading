@@ -347,6 +347,11 @@ class GroundingLedger(
             self._ingest_engine_table(payload, call_id)
         elif tool_name == "read_run_artifact" and payload is not None:
             self._ingest_engine_table(payload, call_id, tool_name=tool_name)
+        elif tool_name == "read_document" and payload is not None:
+            # A document answers in prose, so the numeric-leaf walk below never
+            # reached its numbers: every figure quoted from an uploaded PDF came
+            # back as unsourced (#2050).
+            self._ingest_document_text(arguments, payload, call_id)
         elif payload is not None:
             self._ingest_generic_numeric(tool_name, arguments, payload, call_id)
         self.persist()
