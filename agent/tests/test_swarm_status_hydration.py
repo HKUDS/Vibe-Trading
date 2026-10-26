@@ -534,15 +534,28 @@ def test_swarm_tool_format_result_preserves_running_status_on_budget_out():
 
 
 def test_swarm_tool_no_longer_cancels_on_budget_out():
-    """Source-level guard: the SwarmTool wait loop must not call cancel_run
-    when its budget elapses — that used to throw away in-flight LLM work."""
+    """Source-level guard: the budget-exhaustion branch of the SwarmTool wait
+    loop must not call cancel_run — that used to throw away in-flight LLM work.
+
+    Cancelling the run is allowed only when the *user* stops it, so the guard now
+    covers the tail of ``execute`` (everything after the budget note) instead of
+    the whole method.
+    """
     import inspect
     import src.tools.swarm_tool as swarm_tool
 
     source = inspect.getsource(swarm_tool.SwarmTool.execute)
-    assert "cancel_run" not in source, (
+    marker = "# Wait budget elapsed"
+    assert marker in source, "budget-exhaustion branch marker is gone"
+    tail = source[source.index(marker) :]
+    assert "cancel_run" not in tail, (
         "SwarmTool.execute must not cancel the run on budget exhaustion; "
         "return partial state and let the agent decide."
+    )
+    # The only legitimate trigger is the session cancel flag shared with AgentLoop.
+    assert "_cancel_event" in source, (
+        "SwarmTool.execute must watch the session cancel flag so a user stop "
+        "reaches the run."
     )
 
 

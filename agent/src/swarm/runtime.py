@@ -54,6 +54,83 @@ from src.swarm.worker import agent_artifact_dir, clear_agent_artifacts, run_work
 logger = logging.getLogger(__name__)
 
 
+# Swarm runs that are still in flight, keyed by run id and owned by the session
+# that started them. ``SwarmRuntime`` keeps its cancel events per instance, and
+# ``run_swarm`` builds one instance per tool call — so an HTTP cancel handler
+# holding a different runtime cannot reach a run started by the agent, and once
+# the tool call returns (wait budget exhausted) nobody polls that instance at
+# all. This module-level index is the only handle that outlives both: the owning
+# session can still stop the run while its worker threads are burning tokens.
+_ACTIVE_RUNS: dict[str, tuple[str, Callable[[], bool]]] = {}
+_ACTIVE_RUNS_LOCK = threading.Lock()
+
+
+def register_active_run(run_id: str, session_id: str, cancel: Callable[[], bool]) -> None:
+    """Index a freshly started run under the session that owns it."""
+    with _ACTIVE_RUNS_LOCK:
+        _ACTIVE_RUNS[run_id] = (session_id, cancel)
+
+
+def unregister_active_run(run_id: str) -> None:
+    """Drop a run from the index once it is terminal or no longer ours."""
+    with _ACTIVE_RUNS_LOCK:
+        _ACTIVE_RUNS.pop(run_id, None)
+
+
+def cancel_indexed_run(run_id: str) -> bool:
+    """Signal one indexed run regardless of which runtime started it.
+
+    The HTTP cancel endpoint owns an app-level ``SwarmRuntime`` singleton, while
+    agent-initiated runs live in the instance built inside the tool call. Without
+    this fallback the endpoint answers 404 for exactly the runs a user is most
+    likely to want stopped.
+    """
+    with _ACTIVE_RUNS_LOCK:
+        entry = _ACTIVE_RUNS.pop(run_id, None)
+    if entry is None:
+        return False
+    try:
+        return bool(entry[1]())
+    except Exception:
+        logger.warning("Swarm cancel callback failed for run %s", run_id, exc_info=True)
+        return False
+
+
+def active_run_ids(session_id: str) -> list[str]:
+    """Return the run ids currently indexed for ``session_id``."""
+    with _ACTIVE_RUNS_LOCK:
+        return [rid for rid, (sid, _) in _ACTIVE_RUNS.items() if sid == session_id]
+
+
+def cancel_runs_for_session(session_id: str) -> int:
+    """Signal every indexed run of ``session_id``; return how many were reached.
+
+    Cancellation is requested for all of them before any is waited on, so a
+    session with parallel runs stops them together instead of serially. Runs
+    that accepted the signal leave the index: nothing else can be done for them,
+    and keeping dead ids around would make ``cancel_current`` report success for
+    a stop that changes nothing.
+    """
+    with _ACTIVE_RUNS_LOCK:
+        targets = [
+            (rid, cancel)
+            for rid, (sid, cancel) in _ACTIVE_RUNS.items()
+            if sid == session_id
+        ]
+    signalled: list[str] = []
+    for run_id, cancel in targets:
+        try:
+            if cancel():
+                signalled.append(run_id)
+        except Exception:
+            logger.warning("Swarm cancel callback failed for session %s", session_id, exc_info=True)
+    if signalled:
+        with _ACTIVE_RUNS_LOCK:
+            for run_id in signalled:
+                _ACTIVE_RUNS.pop(run_id, None)
+    return len(signalled)
+
+
 def _worker_retry_delay_ceiling_s(retry_number: int) -> float:
     """Return the capped exponential ceiling for a one-based retry number."""
     if retry_number < 1:

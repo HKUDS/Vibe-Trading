@@ -229,6 +229,12 @@ def register_swarm_routes(
         runtime = _get_swarm_runtime()
         ok = runtime.cancel_run(run_id)
         if not ok:
+            # Runs started by the agent are owned by a runtime created inside the
+            # tool call; the module index is the only handle that reaches them.
+            from src.swarm.runtime import cancel_indexed_run
+
+            ok = cancel_indexed_run(run_id)
+        if not ok:
             raise HTTPException(status_code=404, detail=f"No active run {run_id}")
         return {"status": "cancelled"}
 

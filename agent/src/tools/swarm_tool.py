@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 5
 
+# How long a user-cancelled run gets to reach a terminal state before the tool
+# reports "cancelling" instead of a settled result. Workers honour the cancel
+# flag between iterations, so this only covers one in-flight LLM call.
+_CANCEL_SETTLE_SECONDS = 20
+
 
 def _max_wait_seconds() -> int:
     import sys as _sys
@@ -499,6 +504,8 @@ class SwarmTool(BaseTool):
         *,
         include_shell_tools: bool = False,
         event_callback: Any | None = None,
+        session_id: str | None = None,
+        cancel_event: Any | None = None,
     ) -> None:
         """Initialize the swarm launcher.
 
@@ -506,9 +513,16 @@ class SwarmTool(BaseTool):
             include_shell_tools: Whether worker registries may include shell
                 execution tools requested by presets.
             event_callback: Optional session event bridge used by the web chat.
+            session_id: Session that owns this call. Used to index the run so a
+                later user stop from the same session can still reach it.
+            cancel_event: Cancellation flag shared with the hosting AgentLoop.
+                Polled while waiting on the run so a user stop ends the wait
+                instead of leaving the tool blocked for the whole budget.
         """
         self.include_shell_tools = include_shell_tools
         self._event_callback = event_callback
+        self._session_id = session_id
+        self._cancel_event = cancel_event
 
     def _emit_session_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Forward swarm status to the hosting session SSE channel if present."""
@@ -559,7 +573,7 @@ class SwarmTool(BaseTool):
         )
 
         from src.config import load_swarm_agent_config
-        from src.swarm.runtime import SwarmRuntime
+        from src.swarm.runtime import SwarmRuntime, register_active_run, unregister_active_run
         from src.swarm.store import SwarmStore, swarm_runs_root
 
         swarm_base_dir = swarm_runs_root()
@@ -637,33 +651,113 @@ class SwarmTool(BaseTool):
 
         t0 = time.monotonic()
         max_wait = _max_wait_seconds()
-        while time.monotonic() - t0 < max_wait:
-            time.sleep(_POLL_INTERVAL_SECONDS)
+        # Index the run so a user stop arriving after this call returns (budget
+        # exhausted, or from the HTTP cancel endpoint holding a different
+        # runtime) can still reach it.
+        if self._session_id is not None:
+            register_active_run(run_id, self._session_id, lambda: runtime.cancel_run(run_id))
+        # Only a terminal run leaves the index. On the timeout path the worker
+        # threads are still alive, so dropping the entry there would make a
+        # later user stop unable to reach them.
+        settled = False
+        try:
+            while time.monotonic() - t0 < max_wait:
+                if self._cancel_event is not None:
+                    # wait() returns as soon as the flag is set, so a stop does
+                    # not have to sit out the poll interval.
+                    if self._cancel_event.wait(_POLL_INTERVAL_SECONDS):
+                        settled = True
+                        return self._stop_cancelled_run(
+                            runtime, store, run_id, preset, variables
+                        )
+                else:
+                    time.sleep(_POLL_INTERVAL_SECONDS)
 
+                loaded = store.load_run(run_id)
+                if loaded is None:
+                    settled = True
+                    return json.dumps(
+                        {"status": "error", "error": f"Run {run_id} disappeared"},
+                        ensure_ascii=False,
+                    )
+
+                reconciled = store.reconcile_run(loaded, write=True)
+                if reconciled.status.value in ("completed", "failed", "cancelled"):
+                    settled = True
+                    return _format_result(reconciled, preset, variables)
+
+            # Wait budget elapsed but the run is still in flight. Do NOT cancel —
+            # the daemon thread keeps working and the agent can decide to wait
+            # more (re-invoke with the returned run_id) or hand off partial state
+            # to the user. Cancelling here used to throw away minutes of LLM cost
+            # whenever a preset legitimately ran past the budget.
             loaded = store.load_run(run_id)
-            if loaded is None:
-                return json.dumps(
-                    {"status": "error", "error": f"Run {run_id} disappeared"},
-                    ensure_ascii=False,
+            if loaded is not None:
+                return _format_result(
+                    store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
                 )
 
-            reconciled = store.reconcile_run(loaded, write=True)
-            if reconciled.status.value in ("completed", "failed", "cancelled"):
-                return _format_result(reconciled, preset, variables)
+            return json.dumps(
+                {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},
+                ensure_ascii=False,
+            )
+        finally:
+            if settled:
+                unregister_active_run(run_id)
 
-        # Wait budget elapsed but the run is still in flight. Do NOT cancel —
-        # the daemon thread keeps working and the agent can decide to wait
-        # more (re-invoke with the returned run_id) or hand off partial state
-        # to the user. Cancelling here used to throw away minutes of LLM cost
-        # whenever a preset legitimately ran past the budget.
+    def _stop_cancelled_run(
+        self,
+        runtime: Any,
+        store: Any,
+        run_id: str,
+        preset: str,
+        variables: dict[str, str],
+    ) -> str:
+        """Stop a run after a user cancel and report its terminal state.
+
+        The runtime owns the per-run cancel event; signalling it makes workers
+        mark their tasks ``cancelled`` instead of failing, so the persisted run
+        stays internally consistent (and resumable) rather than looking crashed.
+        """
+        runtime.cancel_run(run_id)
+        self._emit_session_event(
+            "swarm.cancelled",
+            {"run_id": run_id, "reason": "user_cancelled"},
+        )
+
+        deadline = time.monotonic() + _CANCEL_SETTLE_SECONDS
         loaded = store.load_run(run_id)
-        if loaded is not None:
-            return _format_result(
-                store.reconcile_run(loaded, write=True), preset, variables, timed_out=True
+        while loaded is not None and loaded.status.value not in (
+            "completed",
+            "failed",
+            "cancelled",
+        ):
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(_POLL_INTERVAL_SECONDS)
+            loaded = store.load_run(run_id)
+
+        if loaded is None:
+            return json.dumps(
+                {"status": "cancelled", "cancelled_by_user": True, "run_id": run_id},
+                ensure_ascii=False,
             )
 
+        settled = store.reconcile_run(loaded, write=True)
+        if settled.status.value in ("completed", "failed", "cancelled"):
+            return _format_result(settled, preset, variables, cancelled_by_user=True)
+
+        # The cancel flag is set but a worker was mid-LLM-call when the settle
+        # window closed. Report what we know instead of claiming a terminal
+        # state the store does not have.
         return json.dumps(
-            {"status": "timeout", "error": f"Swarm run {run_id} timed out after {max_wait}s"},
+            {
+                "status": "cancelling",
+                "cancelled_by_user": True,
+                "run_id": run_id,
+                "preset": preset,
+                "auto_variables": variables,
+            },
             ensure_ascii=False,
         )
 
@@ -673,6 +767,7 @@ def _format_result(
     preset: str,
     variables: dict[str, str],
     timed_out: bool = False,
+    cancelled_by_user: bool = False,
 ) -> str:
     """Format a SwarmRun into a JSON result string.
 
@@ -681,6 +776,7 @@ def _format_result(
         preset: Matched preset name.
         variables: Extracted variables.
         timed_out: Whether the run was terminated due to timeout.
+        cancelled_by_user: Whether the user stopped the run before it finished.
 
     Returns:
         JSON string with run status, report, task summaries, and token usage.
@@ -696,6 +792,7 @@ def _format_result(
     result = {
         "status": run.status.value,
         "wait_budget_exhausted": timed_out,
+        "cancelled_by_user": cancelled_by_user,
         "run_id": run.id,
         "preset": preset,
         "auto_variables": variables,

@@ -23,7 +23,7 @@ class _DummyIndex:
 
 
 class _DummyAgentLoop:
-    def __init__(self, *, registry, llm, event_callback, max_iterations, persistent_memory) -> None:
+    def __init__(self, *, registry, llm, event_callback, max_iterations, persistent_memory, cancel_event=None) -> None:
         del registry, llm, event_callback, max_iterations, persistent_memory
 
     def run(self, *, user_message: str, history, session_id: str) -> dict[str, str]:
