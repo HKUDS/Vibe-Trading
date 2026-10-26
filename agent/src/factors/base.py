@@ -276,6 +276,31 @@ def ts_std(df: pd.DataFrame, n: int) -> pd.DataFrame:
     return df.rolling(window=n, min_periods=n).std(ddof=1)
 
 
+def ts_slope(df: pd.DataFrame, n: int) -> pd.DataFrame:
+    """Rolling OLS slope against ``0, ..., n - 1``, requiring a full window."""
+    if n < 2:
+        raise ValueError(f"ts_slope window must be >= 2, got {n}")
+    arr = _as_float(df).to_numpy(dtype=np.float64, na_value=np.nan)
+    T, C = arr.shape
+    result = np.full((T, C), np.nan)
+    if T < n:
+        return pd.DataFrame(result, index=df.index, columns=df.columns)
+
+    x = np.arange(n, dtype=np.float64)
+    x -= x.mean()
+    windows = sliding_window_view(arr, window_shape=n, axis=0)
+    slopes = np.einsum("ijk,k->ij", windows, x) / np.dot(x, x)
+    result[n - 1 :] = slopes
+    return pd.DataFrame(result, index=df.index, columns=df.columns)
+
+
+def ts_resi(df: pd.DataFrame, n: int) -> pd.DataFrame:
+    """Latest observation's residual from the same trailing OLS fit."""
+    slope = ts_slope(df, n)
+    fitted_at_last = ts_mean(df, n) + slope * ((n - 1) / 2.0)
+    return df - fitted_at_last
+
+
 def ts_max(df: pd.DataFrame, n: int) -> pd.DataFrame:
     """Rolling max per column, warmup → NaN."""
     if n < 1:

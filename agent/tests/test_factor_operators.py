@@ -278,6 +278,58 @@ class TestDecayLinear:
             base.decay_linear(pd.DataFrame(), 0)
 
 
+# ── Rolling OLS tests ──
+
+
+class TestRollingRegression:
+    @pytest.mark.parametrize("n", [2, 5, 20])
+    def test_matches_polyfit(self, random_df, n):
+        base = _reload_base_with_bottleneck(True)
+        df = random_df.iloc[:30, :3]
+        slope = base.ts_slope(df, n)
+        resi = base.ts_resi(df, n)
+        expected_slope = np.full(df.shape, np.nan)
+        expected_resi = np.full(df.shape, np.nan)
+        x = np.arange(n, dtype=np.float64)
+
+        for end in range(n - 1, len(df)):
+            for column in range(df.shape[1]):
+                values = df.iloc[end - n + 1 : end + 1, column].to_numpy()
+                fit = np.polyfit(x, values, 1)
+                expected_slope[end, column] = fit[0]
+                expected_resi[end, column] = values[-1] - np.polyval(fit, x[-1])
+
+        np.testing.assert_allclose(
+            slope.to_numpy(), expected_slope, rtol=1e-12, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            resi.to_numpy(), expected_resi, rtol=1e-12, atol=1e-12
+        )
+
+    def test_gap_invalidates_only_overlapping_windows(self, random_df):
+        base = _reload_base_with_bottleneck(True)
+        df = random_df.iloc[:20, :2].copy()
+        df.iloc[6, 0] = np.nan
+
+        slope = base.ts_slope(df, 5)
+        resi = base.ts_resi(df, 5)
+
+        for result in (slope, resi):
+            assert result.iloc[6:11, 0].isna().all()
+            assert result.iloc[11:, 0].notna().all()
+            assert result.iloc[4:, 1].notna().all()
+
+    def test_short_input_and_invalid_window(self, random_df):
+        base = _reload_base_with_bottleneck(True)
+        short = random_df.iloc[:3, :2]
+        assert base.ts_slope(short, 5).isna().all().all()
+        assert base.ts_resi(short, 5).isna().all().all()
+        with pytest.raises(ValueError, match="window must be >= 2"):
+            base.ts_slope(short, 1)
+        with pytest.raises(ValueError, match="window must be >= 2"):
+            base.ts_resi(short, 1)
+
+
 # ── Backend detection tests ──
 
 

@@ -2,19 +2,19 @@
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
 # ============================================================
 # 中文名称: Beta系数 10日
-# 简要说明: ts_cov(close, ts_mean(close, 10), 10) / ts_var(close, 10)，个股相对于自身的10日Beta。
-# 典型用途: 衡量个股在10日窗口内的弹性/风险，高Beta意味着高波动和高弹性。
+# 简要说明: Slope(close, 10) / close，收盘价对时间的10日线性回归斜率，按最新收盘价归一化。
+# 典型用途: 衡量10日价格趋势的速度和方向，正值表示上涨趋势。
 # ============================================================
-"""qlib158 BETA10: formula = (\\mathrm{close}_t - \\mathrm{close}_{{t-10}}) / (10\\,\\mathrm{close})."""
+"""qlib158 BETA10: formula = \\mathrm{Slope}(\\mathrm{close}, 10) / \\mathrm{close}."""
 from __future__ import annotations
 
 import pandas as pd
-from src.factors.base import safe_div, delta
+from src.factors.base import safe_div, ts_slope
 
 __alpha_meta__ = {
     'id': 'qlib158_beta10',
     'theme': ['momentum'],
-    'formula_latex': '(\\\\mathrm{close}_t - \\\\mathrm{close}_{{t-10}}) / (10\\\\,\\\\mathrm{close})',
+    'formula_latex': '\\\\mathrm{Slope}(\\\\mathrm{close}, 10) / \\\\mathrm{close}',
     'columns_required': ['close'],
     'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
     'frequency': ['1d'],
@@ -26,4 +26,4 @@ __alpha_meta__ = {
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 BETA10 on the supplied OHLCV panel."""
     c = panel['close']
-    return safe_div(delta(c, 10), c) / float(10)
+    return safe_div(ts_slope(c, 10), c)
