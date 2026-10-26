@@ -2,10 +2,10 @@
 # (Apache-2.0). Copyright (c) Microsoft Corporation.
 # ============================================================
 # 中文名称: 变动率 5日
-# 简要说明: close_t / close_{t-5} - 1，5日收益率。
+# 简要说明: close_t / close_{t-5}，Qlib 原版 5 日价格比（无 -1 偏移）。
 # 典型用途: 经典的5日动量因子，正值为上涨趋势，负值为下跌趋势。
 # ============================================================
-"""qlib158 ROC5: formula = \\mathrm{close}_t / \\mathrm{close}_{{t-5}} - 1."""
+"""qlib158 ROC5: formula = \\mathrm{close}_t / \\mathrm{close}_{{t-5}}."""
 from __future__ import annotations
 
 import pandas as pd
@@ -14,7 +14,7 @@ from src.factors.base import safe_div
 __alpha_meta__ = {
     'id': 'qlib158_roc5',
     'theme': ['momentum'],
-    'formula_latex': '\\\\mathrm{close}_t / \\\\mathrm{close}_{{t-5}} - 1',
+    'formula_latex': '\\\\mathrm{close}_t / \\\\mathrm{close}_{{t-5}}',
     'columns_required': ['close'],
     'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
     'frequency': ['1d'],
@@ -26,4 +26,4 @@ __alpha_meta__ = {
 def compute(panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Return qlib158 ROC5 on the supplied OHLCV panel."""
     c = panel['close']
-    return safe_div(c, c.shift(5)) - 1.0
+    return safe_div(c, c.shift(5))
