@@ -3,9 +3,10 @@
 Upstream contract (microsoft/qlib@d5379c520f66a39953bad76234a7019a72796fd0,
 qlib/contrib/data/loader.py):
 
-- ROC is ``Ref($close, N)/$close`` — the plain N-day price ratio, no ``-1``
-  offset. Vibe used to compute ``close/close.shift(N) - 1``, a different
-  quantity rather than an algebraic rearrangement.
+- ROC is ``Ref($close, N)/$close`` — the past close over the latest close
+  (old/new), no ``-1`` offset. Vibe used to compute
+  ``close/close.shift(N) - 1`` (new/old minus one) — a different quantity
+  rather than an algebraic rearrangement.
 - CORD is ``Corr($close/Ref($close,1), Log($volume/Ref($volume,1)+1), N)`` —
   the ``+1`` sits *outside* the volume ratio. Vibe used to push it inside
   (``log((v+1)/(v_prev+1))``), which can flip the correlation sign, not just
@@ -37,8 +38,8 @@ from src.factors.zoo.qlib158.roc60 import compute as roc60
 ROC_CASES = [(roc5, 5), (roc10, 10), (roc20, 20), (roc30, 30), (roc60, 60)]
 CORD_CASES = [(cord5, 5), (cord10, 10), (cord20, 20), (cord30, 30), (cord60, 60)]
 
-# Deterministic multiplicative steps in [0.94, 1.06]: close_t/close_{t-N} is
-# exactly prod(steps[t-N:t]), so the oracle below needs no pandas. 140 bars
+# Deterministic multiplicative steps in [0.94, 1.06]: close_{t-N}/close_t is
+# exactly 1/prod(steps[t-N:t]), so the oracle below needs no pandas. 140 bars
 # is long enough that even the 60-day window has pre-gap, in-gap and
 # post-gap bars to assert on.
 _CLOSE_STEPS = [1.0 + (((i * 7) % 13) - 6) / 100.0 for i in range(140)]
@@ -56,11 +57,12 @@ def test_roc_first_valid_bar_matches_upstream(compute, window: int) -> None:
     """At the first bar with a full lookback, ROC is the pure price ratio."""
     panel = _close_panel(_CLOSE_STEPS)
     out = compute(panel)
-    t = window  # first bar where close.shift(N) exists
-    expected = math.prod(_CLOSE_STEPS[0:window])
+    t = window  # first bar where the N-bar-old close exists
+    expected = 1.0 / math.prod(_CLOSE_STEPS[0:window])
     assert out["AAA"].iloc[t] == pytest.approx(expected, rel=1e-12)
-    # and it is NOT the ratio-minus-one Vibe used to compute
-    assert out["AAA"].iloc[t] != pytest.approx(expected - 1.0, rel=1e-9, abs=1e-12)
+    # and it is NOT the new/old-minus-one Vibe used to compute
+    old_expr = math.prod(_CLOSE_STEPS[0:window]) - 1.0
+    assert out["AAA"].iloc[t] != pytest.approx(old_expr, rel=1e-9, abs=1e-12)
 
 
 @pytest.mark.parametrize("compute,window", ROC_CASES)
@@ -68,7 +70,7 @@ def test_roc_second_endpoint_matches_upstream(compute, window: int) -> None:
     panel = _close_panel(_CLOSE_STEPS)
     out = compute(panel)
     t = window + 3  # a later, independent window
-    expected = math.prod(_CLOSE_STEPS[t - window:t])
+    expected = 1.0 / math.prod(_CLOSE_STEPS[t - window:t])
     assert out["AAA"].iloc[t] == pytest.approx(expected, rel=1e-12)
 
 
@@ -93,7 +95,7 @@ def test_roc_gap_propagates_nan(compute, window: int) -> None:
     # every other bar — before, between, and after — stays exact
     for t in list(range(window, g)) + list(range(g + 1, g + window)) + [g + window + 1]:
         assert out["AAA"].iloc[t] == pytest.approx(
-            math.prod(steps[t - window:t]), rel=1e-12
+            1.0 / math.prod(steps[t - window:t]), rel=1e-12
         ), f"bar {t} should be exact"
 
 
