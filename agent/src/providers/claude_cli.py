@@ -40,6 +40,10 @@ DEFAULT_MODEL = "claude-opus-5-5"
 _TIMEOUT_FLOOR_S = 600
 _AUTH_STATUS_TIMEOUT_S = 15
 _MAX_RETRIES = 3
+# Under --json-schema an ordinary answer already costs two turns: the model turn
+# plus the StructuredOutput step. Anything above that baseline means the CLI kept
+# working, which is the only turn-based evidence of a native tool attempt.
+_STRUCTURED_TURN_BASELINE = 2
 _POLL_INTERVAL_S = 0.5
 _HEARTBEAT_S = 1.0
 
@@ -358,9 +362,12 @@ def _native_attempt_reason(payload: dict[str, Any]) -> str:
     if payload.get("permission_denials"):
         return "permission_denials is non-empty"
     turns = payload.get("num_turns")
-    if isinstance(turns, int) and turns > 1:
+    if isinstance(turns, int) and turns > _STRUCTURED_TURN_BASELINE:
         # Native tools are disabled for a one-decision request. Extra turns are
         # the remaining signal when the CLI does not itemize the denied calls.
+        # A plain answer under --json-schema already reports two turns (the model
+        # turn plus the StructuredOutput step), so the baseline must be skipped
+        # or ordinary finals are retried until the budget runs out.
         return f"num_turns={turns}"
     return ""
 
