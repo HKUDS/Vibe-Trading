@@ -8,6 +8,8 @@ hash; a different window deliberately misses.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from src.shadow_account.backtester import _cache_key, _cache_result, load_cached_result
 from src.shadow_account.models import (
     AttributionBreakdown,
@@ -83,6 +85,65 @@ def test_cache_hits_only_on_exact_window_and_journal(tmp_path, monkeypatch) -> N
     # A re-extracted journal (different hash) must miss too.
     other = ShadowProfile(**{**profile.__dict__, "journal_hash": "hash-v2"})
     assert load_cached_result(other, window_start="2025-01-01", window_end="2026-01-01") is None
+
+
+def test_cached_run_keeps_the_currency_disclosure(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    profile = _profile()
+    from src.shadow_account.storage import runs_dir
+
+    cached = _result()
+    result = replace(
+        cached,
+        attribution=replace(cached.attribution, excluded_currencies={"HKD": 7}),
+    )
+    _cache_result(
+        runs_dir(profile.shadow_id), result,
+        profile=profile, window_start="2025-01-01", window_end="2026-01-01",
+    )
+
+    hit = load_cached_result(profile, window_start="2025-01-01", window_end="2026-01-01")
+    assert hit is not None
+    # The disclosure that HKD was left out must survive the cache, otherwise a
+    # cached report silently reads as if every currency had been summed.
+    assert hit.attribution.excluded_currencies == {"HKD": 7}
+
+
+def test_cache_key_changes_with_the_rules_not_only_the_journal() -> None:
+    profile = _profile()
+    base = _cache_key(profile, "2025-01-01", "2026-01-01")
+
+    original = profile.rules[0]
+    edited = ShadowRule(**{
+        **original.__dict__,
+        "entry_condition": {"market": "us", "prior_5d_return": {"min": -0.8, "max": -0.1}},
+    })
+    assert edited.entry_condition != original.entry_condition
+
+    edited_profile = ShadowProfile(**{**profile.__dict__, "rules": (edited,)})
+    # Same journal, same window, different rule: the cached run is stale.
+    assert base != _cache_key(edited_profile, "2025-01-01", "2026-01-01")
+
+
+def test_cache_key_tracks_the_market_selection() -> None:
+    profile = _profile()
+    base = _cache_key(profile, "2025-01-01", "2026-01-01")
+    # The selected markets decide which symbols are pooled into the run.
+    wider = ShadowProfile(
+        **{**profile.__dict__, "preferred_markets": ("us", "hk")}
+    )
+    assert base != _cache_key(wider, "2025-01-01", "2026-01-01")
+
+
+def test_cache_key_tracks_the_engine_epoch(monkeypatch) -> None:
+    from src.shadow_account import backtester
+
+    profile = _profile()
+    base = _cache_key(profile, "2025-01-01", "2026-01-01")
+    monkeypatch.setattr(backtester, "_CACHE_EPOCH", backtester._CACHE_EPOCH + 1)
+    # A semantics change in the extractor or the generated engine cannot reuse
+    # results produced by the previous one.
+    assert base != _cache_key(profile, "2025-01-01", "2026-01-01")
 
 
 def test_cache_key_changes_with_window_and_hash() -> None:

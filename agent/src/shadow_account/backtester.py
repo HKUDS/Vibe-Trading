@@ -305,11 +305,42 @@ def run_shadow_backtest(
 
 
 
+_CACHE_EPOCH = 1
+"""Bumped when the extractor or the generated engine changes meaning.
+
+A cached run is derived from (profile inputs, engine semantics, journal,
+window); when one of those changes, results produced before the change must
+miss instead of being served as current.
+"""
+
+
+def _run_inputs_digest(profile: ShadowProfile) -> str:
+    """Stable digest of the profile inputs a cached result was produced from."""
+    payload = json.dumps(
+        {
+            "source_market": profile.source_market,
+            "preferred_markets": list(profile.preferred_markets),
+            "rules": [rule.__dict__ for rule in profile.rules],
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha1(payload.encode()).hexdigest()[:12]
+
+
 def _cache_key(profile: ShadowProfile, window_start: str, window_end: str) -> str:
-    """Digest for the result cache: window plus the journal hash the profile
-    was extracted from, so a re-render with a different window or an edited
-    journal cannot silently reuse a stale run."""
-    raw = f"{window_start}|{window_end}|{profile.journal_hash}"
+    """Digest for the result cache.
+
+    Covers the window, the journal the profile was extracted from, the profile
+    inputs (rules, markets) and the engine epoch, so neither a re-render with
+    another window nor an edited journal, an edited rule or market selection,
+    or a change in how rules are turned into an engine can silently reuse a
+    stale run.
+    """
+    raw = (
+        f"{_CACHE_EPOCH}|{window_start}|{window_end}|"
+        f"{profile.journal_hash}|{_run_inputs_digest(profile)}"
+    )
     return hashlib.sha1(raw.encode()).hexdigest()[:12]
 
 
@@ -348,6 +379,7 @@ def load_cached_result(
             late_exit_pnl=float(attr.get("late_exit_pnl", 0.0)),
             overtrading_pnl=float(attr.get("overtrading_pnl", 0.0)),
             counterfactual_trades=tuple(attr.get("counterfactual_trades") or ()),
+            excluded_currencies=dict(attr.get("excluded_currencies") or {}),
         ),
         shadow_total_pnl=(None if data.get("shadow_total_pnl") is None else float(data["shadow_total_pnl"])),
         real_total_pnl=float(data.get("real_total_pnl", 0.0)),
