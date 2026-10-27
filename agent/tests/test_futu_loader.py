@@ -95,6 +95,16 @@ class TestSymbolMapping:
     def test_case_insensitive(self):
         assert _to_futu_symbol("700.hk") == "HK.00700"
 
+    def test_us_suffix(self):
+        assert _to_futu_symbol("SMCI.US") == "US.SMCI"
+        assert _to_futu_symbol("brk.b.us") == "US.BRK.B"
+
+    def test_bare_ticker_is_us(self):
+        assert _to_futu_symbol("SPY") == "US.SPY"
+
+    def test_bare_non_us_code_is_not_us(self):
+        assert _to_futu_symbol("600519") == "600519"
+
 
 # ---------------------------------------------------------------------------
 # Interval mapping

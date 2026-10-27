@@ -1,4 +1,4 @@
-"""Futu OpenAPI-backed loader for HK and China A-share OHLCV data."""
+"""Futu OpenAPI-backed loader for HK, China A-share and US OHLCV data."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.base import (
     NoAvailableSourceError,
     loader_cache_get,
@@ -44,14 +45,21 @@ def _to_futu_symbol(code: str) -> str:
         5.HK      -> HK.00005
         000001.SZ -> SZ.000001
         600519.SH -> SH.600519
+        SMCI.US   -> US.SMCI
+        BRK.B.US  -> US.BRK.B
+        SPY       -> US.SPY
     """
     upper = code.strip().upper()
+    if upper.endswith(".US"):
+        return f"US.{upper[:-3]}"
     if upper.endswith(".HK"):
         return f"HK.{upper[:-3].zfill(5)}"
     if upper.endswith(".SZ"):
         return f"SZ.{upper[:-3].zfill(6)}"
     if upper.endswith(".SH"):
         return f"SH.{upper[:-3].zfill(6)}"
+    if _detect_market(upper) == "us_equity":
+        return f"US.{upper}"
     return upper
 
 
@@ -105,7 +113,7 @@ def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 @register
 class FutuLoader:
-    """Fetch HK and China A-share bars from Futu OpenAPI.
+    """Fetch HK, China A-share and US bars from Futu OpenAPI.
 
     Requires FutuOpenD running locally (https://www.futunn.com/download/openAPI)
     and the environment variables ``FUTU_HOST`` / ``FUTU_PORT`` to be set.
