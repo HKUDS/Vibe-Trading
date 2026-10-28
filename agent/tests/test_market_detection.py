@@ -387,6 +387,12 @@ class TestIsChinaFutures:
         assert _is_china_futures("CF2412") is True
         assert _is_china_futures("M2412") is True
 
+    def test_bare_code_of_every_priced_product(self) -> None:
+        from backtest.engines.china_futures import _MULTIPLIER
+
+        for product in _MULTIPLIER:
+            assert _is_china_futures(f"{product}2501") is True, product
+
 
 # ---------------------------------------------------------------------------
 # _detect_market — task-required exhaustive assertions
