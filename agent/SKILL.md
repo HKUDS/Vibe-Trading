@@ -142,6 +142,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `start_research_goal` | Create an auditable research goal | None |
 | `get_research_goal` | Read the current research goal | None |
 | `add_goal_evidence` | Attach evidence to a research goal | None |
+| `update_research_goal` | Edit a research goal's objective or summary in place | None |
 | `update_research_goal_status` | Update goal lifecycle status | None |
 | `backtest` | Run vectorized backtest engine | None* |
 | `paper_trade_step` | Deterministic paper-trading matching engine; never places real orders | None* |
