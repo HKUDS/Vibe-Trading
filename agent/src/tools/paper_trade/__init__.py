@@ -15,8 +15,9 @@ AM-9 federation), ``rules.py`` (three-market rule matrix + ``RULES_VERSION``),
 entry), ``strategy_exec.py`` (Step 7 strategy_path execution).
 
 pt-v1.2 additive surface (cn_a 5m post-close step, P0): ``data_5m.py`` (stk_mins
-fetch + continuous-session assembly).  It is opt-in: a call that omits every
-v1.2 request field is byte-identical to pt-v1.1.
+fetch + continuous-session assembly) and ``session_5m.py`` (per-bar
+``OrderBook`` wiring).  It is opt-in: a call that omits every v1.2 request field
+is byte-identical to pt-v1.1.
 
 The persistent v1.2 runner/account/store layer (``runner.py``, ``account.py``,
 ``store.py``, ``storage_io.py``, ``engine_adapter.py``, ``recovery.py``,

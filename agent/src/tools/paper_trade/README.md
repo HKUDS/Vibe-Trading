@@ -86,8 +86,8 @@ strategy failure discards the whole call, including earlier uncommitted results.
 ## Five-minute cn_a steps
 
 `paper_trade_step` accepts `interval="5m"` for A-shares. One step covers exactly
-one completed session and matches against that session's single assembled bar,
-built from the 48 continuous five-minute bars. The 09:30 label is the opening
+one completed session and matches bar by bar against its 48 continuous
+five-minute bars. The 09:30 label is the opening
 call-auction print, single-priced on 4 of 5 probed days, and is excluded by
 policy without an event. A label in 09:15-09:25 or from 14:57 up to but not
 including 15:00 is an auction-window anomaly, excluded from matching and
@@ -104,8 +104,13 @@ no row at all while its daily bar exists is a provider omission and returns
 | --- | --- | --- | --- |
 | `interval` | `1d`, `5m` | `1d` | `5m` is cn_a-only and accepts one date per step |
 | `session` | `auto`, `cn_a` | `auto` | coherence selector only: `cn_a` requires `market="cn_a"` and does not change the day boundary |
-| `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from the session bar |
+| `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from each bar |
 | `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
+
+A market order fills at the first continuous bar whose fill gates pass; a
+limit order rests until a bar satisfies its price and is canceled at session end
+(15:00 on a complete session) if none does. Every fill is all-or-none; partial
+fills and volume share are Phase 3.
 
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
@@ -179,5 +184,5 @@ Matching is all-or-none, with simplified fees, price limits, board lots and T+1
 checks. HK lot fallback is disclosed. Invalid OHLC prevents fills; valuation
 uses a finite prior close or the disclosed average-cost fallback. This is not
 broker-execution simulation. Settlement, margin, options and cross-market phases
-in #1938 remain follow-up work, as does the intraday order lifecycle (partial
-fills, resting orders across bars).
+in #1938 remain follow-up work, as do partial fills and the volume-share policy
+(Phase 3).

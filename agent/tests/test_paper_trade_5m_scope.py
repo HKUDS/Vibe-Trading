@@ -161,7 +161,7 @@ def test_one_5m_order_symbol_issues_exactly_one_provider_call() -> None:
     loader = _RateLimitedLoader()
     document, _ = _run(_payload(), loader=loader)
 
-    assert [(fill["symbol"], fill["price"]) for fill in document["fills"]] == [(_SYM, 1421.50)]
+    assert [(fill["symbol"], fill["price"]) for fill in document["fills"]] == [(_SYM, 1421.00)]
     assert len(loader.five_minute_calls()) == 1
     assert loader.five_minute_calls()[0][0] == (_SYM,)
 

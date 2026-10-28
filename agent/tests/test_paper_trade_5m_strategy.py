@@ -21,7 +21,9 @@ import json
 
 from src.tools.paper_trade.wire import received_state_hash_from_payload
 from tests.paper_trade_5m_fixtures import (
+    DispersedFirstBarLoader,
     FixtureLoader,
+    _DAY,
     _SYM,
     _WITNESS,
     _install_strategy,
@@ -75,7 +77,7 @@ def test_a_5m_strategy_with_a_universe_fills_and_leaves_an_outside_position_alon
 
     assert "status" not in document
     assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
-        (_SYM, "sell", 100.0, 1421.50)
+        (_SYM, "sell", 100.0, 1421.00)
     ]
     assert document["events"] == []
     assert document["rejected_orders"] == []
@@ -148,7 +150,7 @@ def test_a_5m_strategy_order_inside_its_universe_still_fills() -> None:
 
     assert "status" not in document
     assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
-        (_SYM, "sell", 100.0, 1421.50)
+        (_SYM, "sell", 100.0, 1421.00)
     ]
     assert document["rejected_orders"] == []
     assert document["events"] == []
@@ -184,8 +186,14 @@ def test_a_5m_strategy_honours_the_declared_path_model() -> None:
         "positions": [{"symbol": _SYM, "qty": 100, "avg_cost": 1421.0}],
     }
 
-    median_document, _ = _run(_strategy_payload(path, account_state=account_state, path_model="bar_median"))
-    close_document, _ = _run(_strategy_payload(path, account_state=account_state, path_model="bar_close"))
+    median_document, _ = _run(
+        _strategy_payload(path, account_state=account_state, path_model="bar_median"),
+        loader=DispersedFirstBarLoader(_SYM, _DAY),
+    )
+    close_document, _ = _run(
+        _strategy_payload(path, account_state=account_state, path_model="bar_close"),
+        loader=DispersedFirstBarLoader(_SYM, _DAY),
+    )
 
     assert median_document["fills"][0]["price"] == 1421.50
     assert close_document["fills"][0]["price"] == 1422.00

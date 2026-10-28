@@ -21,12 +21,12 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Callable, Collection, Mapping
+from typing import Any, Callable, Collection, Mapping
 
 import numpy as np
 import pandas as pd
 
-from . import calendar, corporate_actions, data, state_hash, wire
+from . import calendar, corporate_actions, data, session_5m, state_hash, wire
 from .limits_cn_a import (
     PROV_LIMITS_HEURISTIC, CnALimitsClient, get_limit_status, heuristic_limit_prices)
 from .rules import MarketRules, money, quantize_money
@@ -266,41 +266,36 @@ class _MatchSession:
                 detail=(f"no 5m session bar for {symbol} on {day.date}; "
                         + ("other universe symbols traded" if traded else "no symbol traded"))))
 
-    def match_order(self, day: DayPlan, order: Order) -> None:
-        # The AM-14 ladder: first match wins, one reason per order.
+    def _day_gate(self, day: DayPlan, order: Order) -> tuple[str, str] | None:
+        # Slots 1-6 of the frozen AM-14 ladder.
         symbol = order.symbol
         sym_data = self.market_data.data.get(symbol)
         # Slot 1 unknown_symbol: no served data at all in the fetch window.
         if sym_data is None or not (sym_data.bar_dates or sym_data.session_bars):
-            self._reject(day, order, "unknown_symbol", f"no market data for {symbol} in the fetch window")
-            return
+            return ("unknown_symbol", f"no market data for {symbol} in the fetch window")
         # Slot 2 non_trading_day: cn_a calendar truth (AM-6).
         if day.skip_reason == _SKIP_NON_TRADING:
-            self._reject(day, order, "non_trading_day", f"{self.market} calendar closed on {day.date}")
-            return
+            return ("non_trading_day", f"{self.market} calendar closed on {day.date}")
         # Slot 3 suspended: zero bar today, or an R-V3 untradable bar
         # (documented mapping: suspended is the closest frozen code).  In 5m
-        # mode the session bar is the matched bar, so its absence is the halt.
+        # mode a missing session bar is the day-level halt gate; matching
+        # itself walks the continuous bars in bars_5m.
         if self._bar_missing(day.date, sym_data):
             detail = (f"no 5m session bar for {symbol} on {day.date}; session halted, position valued carry-forward"
                       if self._five_minute
                       else f"no bar for {symbol} on {day.date}; position valued carry-forward")
-            self._reject(day, order, "suspended", detail)
-            return
+            return ("suspended", detail)
         if self._bar_untradable(day.date, sym_data):
-            self._reject(day, order, "suspended", f"bar for {symbol} on {day.date} failed the price sanity gate (R-V3)")
-            return
+            return ("suspended", f"bar for {symbol} on {day.date} failed the price sanity gate (R-V3)")
         # Slot 4 corporate_action_unresolved: T4 detector union + injected seam.
         if symbol in self.ca_by_day.get(day.date, ()):
-            self._reject(day, order, "corporate_action_unresolved",
-                         f"unexplained price discontinuity for {symbol} on {day.date}; "
-                         "fail-closed rejection (no clean split ratio resolved)")
-            return
+            return ("corporate_action_unresolved",
+                    f"unexplained price discontinuity for {symbol} on {day.date}; "
+                    "fail-closed rejection (no clean split ratio resolved)")
         # Slot 5 lot_size.
         if self.rules.lot_violation(symbol, order.qty):
-            self._reject(day, order, "lot_size", f"qty {order.qty} violates the "
-                         f"{self.rules.lot_size(symbol)}-share lot rule for {symbol}")
-            return
+            return ("lot_size", f"qty {order.qty} violates the "
+                    f"{self.rules.lot_size(symbol)}-share lot rule for {symbol}")
         close = self._close_price(day.date, sym_data)
         # Slot 6 limit_up / limit_down: cn_a bands, BEFORE the AM-7 check.
         # Price limits are about the official daily close, so 5m mode keeps
@@ -313,16 +308,13 @@ class _MatchSession:
                 up, down = self._band(symbol, day.date, sym_data)
                 code = self.rules.band_rejection(order.side, close, up, down)
                 if code == "limit_up":
-                    self._reject(day, order, code, f"close {close:.2f} at or above up limit {up:.2f}; buy rejected")
-                    return
+                    return (code, f"close {close:.2f} at or above up limit {up:.2f}; buy rejected")
                 if code == "limit_down":
-                    self._reject(day, order, code, f"close {close:.2f} at or below down limit {down:.2f}; sell rejected")
-                    return
-        # 5m: every price decision below uses the session reference price
-        # (D1 path model); 1d keeps the daily close byte-identically.
-        ref = self._reference_price(day.date, sym_data) if self._five_minute else close
-        # Slot 7 limit_not_marketable (AM-7: buy fills only ref ≤ limit,
-        # sell only ref ≥ limit; fill price = ref).
+                    return (code, f"close {close:.2f} at or below down limit {down:.2f}; sell rejected")
+        return None
+
+    def _fill_gate(self, day: DayPlan, order: Order, ref: float | Decimal) -> tuple[str, str] | None:
+        # Slots 7-10 of the frozen AM-14 ladder.
         if self.rules.limit_order_violation(order.side, ref, order.limit):
             anchor = "ref" if self._five_minute else "close"
             detail = (
@@ -330,25 +322,36 @@ class _MatchSession:
                 if order.side == "buy"
                 else f"{anchor} {ref:.2f} < limit {order.limit:.2f}"
             )
-            self._reject(day, order, "limit_not_marketable", detail)
-            return
+            return ("limit_not_marketable", detail)
+        symbol = order.symbol
         # Slots 8/9 t_plus_1 → insufficient_position (disjoint conditions;
         # available = total − bought_today, cn_a sells only).
         total = self.positions[symbol].qty if symbol in self.positions else _ZERO
         bought = self.bought_today.get(symbol, _ZERO)
         code = self.rules.sell_position_rejection(order.side, order.qty, total, bought)
         if code == "t_plus_1":
-            self._reject(day, order, code, f"sell qty {order.qty} exceeds available position "
-                         f"{total - bought} (T+1: {bought} share(s) bought today are not sellable)")
-            return
+            return (code, f"sell qty {order.qty} exceeds available position "
+                    f"{total - bought} (T+1: {bought} share(s) bought today are not sellable)")
         if code == "insufficient_position":
-            self._reject(day, order, code, f"sell qty {order.qty} exceeds position {total}")
-            return
+            return (code, f"sell qty {order.qty} exceeds position {total}")
         # Slot 10 insufficient_cash (§4: qty×price+fee ≤ cash).
         code = self.rules.cash_rejection(order.side, order.qty, ref, self.cash)
         if code == "insufficient_cash":
             cost = self.rules.buy_cost(order.qty, ref)
-            self._reject(day, order, code, f"buy cost {cost} exceeds cash {self.cash}")
+            return (code, f"buy cost {cost} exceeds cash {self.cash}")
+        return None
+
+    def match_order(self, day: DayPlan, order: Order) -> None:
+        # The AM-14 ladder: first match wins, one reason per order.
+        if (gate := self._day_gate(day, order)) is not None:
+            self._reject(day, order, *gate)
+            return
+        sym_data = self.market_data.data[order.symbol]
+        close = self._close_price(day.date, sym_data)
+        ref = self._reference_price(day.date, sym_data) if self._five_minute else close
+        assert ref is not None
+        if (gate := self._fill_gate(day, order, ref)) is not None:
+            self._reject(day, order, *gate)
             return
         self._fill(day.date, order, ref)
 
@@ -369,18 +372,23 @@ class _MatchSession:
             return None
         return float(sym_data.frame.loc[pd.Timestamp(day), "close"])
 
-    def _reference_price(self, day: str, sym_data: data.SymbolData) -> Decimal:
-        # D1: the matched bar is the assembled session bar.  bar_median is the
-        # median of its four prices (two middle values averaged) and bar_close
-        # its close; both quantize to the 0.01 money tick so no half-cent or
-        # float residue can reach the fill, the notional or the fee.
-        bar = sym_data.session_bars[day]
+    def _reference_price_values(self, open_: float, high: float, low: float, close: float) -> Decimal:
+        # D1: bar_median averages the two middle prices; both models quantize
+        # to the 0.01 money tick before the fill, notional or fee arithmetic.
         if self.path_model == "bar_close":
-            raw = money(bar.close)
+            raw = money(close)
         else:
-            prices = sorted((money(bar.open), money(bar.high), money(bar.low), money(bar.close)))
+            prices = sorted((money(open_), money(high), money(low), money(close)))
             raw = (prices[1] + prices[2]) / Decimal(2)
         return quantize_money(raw)
+
+    def _reference_price(self, day: str, sym_data: data.SymbolData) -> Decimal:
+        bar = sym_data.session_bars[day]
+        return self._reference_price_values(bar.open, bar.high, bar.low, bar.close)
+
+    def _reference_price_from_bar(self, bar: Any) -> Decimal:
+        return self._reference_price_values(
+            float(bar["open"]), float(bar["high"]), float(bar["low"]), float(bar["close"]))
 
     def _reject(self, day: DayPlan, order: Order, code: str, detail: str) -> None:
         self.rejected.append(
@@ -629,8 +637,11 @@ def run_day_loop(
         orders = (order_provider(entry.date, session.end_state())
                   if order_provider is not None and entry.skip_reason is None
                   else orders_by_day.get(entry.date, ()))
-        for order in tuple(orders):
-            session.match_order(entry, order)
+        if market_data.interval == "5m":
+            session_5m.match_orders_5m(session, entry, tuple(orders))
+        else:
+            for order in tuple(orders):
+                session.match_order(entry, order)
         if entry.skip_reason is None:
             session.add_nav_row(entry.date)  # per-day commit: fills + one nav row
 

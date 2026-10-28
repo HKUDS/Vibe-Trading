@@ -1,9 +1,10 @@
-"""T3 gate — cn_a 5m reference price, all-or-none fills and emergency cancel.
+"""T3 gate — cn_a per-bar 5m reference, all-or-none fills and day settlement.
 
-Every order matches ONE assembled session bar (D1: the 48 continuous 5m bars
-of the day, 09:30 opening-auction print excluded).  The reference price is
-``bar_median`` (median of open/high/low/close) or ``bar_close``; it drives
-limit marketability, the cash gate, the fill price, the notional and the fee.
+Every continuous 5m bar (09:30 opening-auction print excluded) is a matching
+opportunity.  A market order fills at the first bar whose fill gates pass; a
+limit order rests until a bar satisfies its price and is canceled at session
+end if none does.  ``bar_median`` / ``bar_close`` drive the reference, limit
+marketability, the cash gate, the fill price, the notional and the fee.
 A failed order keeps its specific pt-v1.1 reason in ``rejected_orders`` AND
 gets one ``canceled_after_failed_match`` row in ``canceled_orders`` (D2).
 Offline: synthetic frames through a fake loader, never the network.
@@ -78,6 +79,14 @@ def _normal_5m(day: str = _DAY, *, close: float = 10.20) -> pd.DataFrame:
 
 def _flat_5m(day: str, price: float) -> pd.DataFrame:
     return _intraday(day, {label: price for label in _session_labels(day)}, auction=price)
+
+
+def _dispersed_5m(day: str = _DAY) -> pd.DataFrame:
+    labels = _session_labels(day)
+    frame = _intraday(day, {label: 10.20 for label in labels}, auction=10.05)
+    first = pd.Timestamp(f"{day} {labels[0]}")
+    frame.loc[first, ["open", "high", "low", "close"]] = [10.00, 10.20, 10.00, 10.20]
+    return frame
 
 
 def _daily(rows: list[tuple[str, float]]) -> pd.DataFrame:
@@ -195,78 +204,80 @@ def _sell(limit=None, qty=100, symbol=_SYM):
     return order
 
 
-def test_market_buy_fills_at_the_session_median() -> None:
-    # Session bar o/h/l/c = 10.00/10.20/10.00/10.20 → median 10.10.  The 09:30
-    # auction print (10.05) is excluded; including it would move the median.
+def test_market_buy_fills_at_the_first_continuous_bar() -> None:
     outcome = _outcome(orders=[_buy()])
 
     assert outcome.error is None
-    assert [(f.side, f.qty, f.price, f.fee) for f in outcome.fills] == [("buy", 100.0, 10.10, 5.01)]
+    assert [(f.side, f.qty, f.price, f.fee) for f in outcome.fills] == [("buy", 100.0, 10.00, 5.01)]
     assert outcome.rejected_orders == ()
     assert outcome.canceled_orders == ()
-    assert outcome.end_state.cash == 98984.99
-    assert outcome.end_state.positions[0].avg_cost == 10.10
+    assert outcome.end_state.cash == 98994.99
+    assert outcome.end_state.positions[0].avg_cost == 10.00
     assert outcome.events == ()
-    assert outcome.nav_series[0].nav == 100004.99
+    assert outcome.nav_series[0].nav == 100014.99
 
 
-def test_market_sell_fills_at_the_session_median() -> None:
+def test_market_sell_fills_at_the_first_continuous_bar() -> None:
     outcome = _outcome(orders=[_sell()], positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
     assert outcome.error is None
-    assert [(f.side, f.qty, f.price, f.fee) for f in outcome.fills] == [("sell", 100.0, 10.10, 5.52)]
-    assert outcome.end_state.cash == 101004.48
+    assert [(f.side, f.qty, f.price, f.fee) for f in outcome.fills] == [("sell", 100.0, 10.00, 5.51)]
+    assert outcome.end_state.cash == 100994.49
     assert outcome.end_state.positions == ()
     assert outcome.canceled_orders == ()
 
 
-@pytest.mark.parametrize(("limit", "fills"), [(10.50, True), (10.10, True), (10.00, False)])
-def test_buy_limit_marketability_at_the_reference(limit: float, fills: bool) -> None:
+@pytest.mark.parametrize(("limit", "expected"), [(10.50, 10.00), (10.10, 10.00), (10.00, 10.00), (9.90, None)])
+def test_buy_limit_fills_at_the_first_marketable_bar(limit: float, expected: float | None) -> None:
     outcome = _outcome(orders=[_buy(limit=limit)])
 
-    if fills:
-        assert [(f.side, f.price) for f in outcome.fills] == [("buy", 10.10)]
+    if expected is not None:
+        assert [(f.side, f.price) for f in outcome.fills] == [("buy", expected)]
         assert outcome.rejected_orders == ()
+        assert outcome.canceled_orders == ()
         return
     assert outcome.fills == ()
-    assert [r.reason_code for r in outcome.rejected_orders] == ["limit_not_marketable"]
-    assert outcome.rejected_orders[0].detail == "ref 10.10 > limit 10.00"
-    assert [c.reason_code for c in outcome.canceled_orders] == [CANCELED_REASON_CODE]
+    assert outcome.rejected_orders == ()
+    assert [(c.reason_code, c.detail) for c in outcome.canceled_orders] == [
+        (CANCELED_REASON_CODE, "unfilled day order canceled at session end")
+    ]
 
 
-@pytest.mark.parametrize(("limit", "fills"), [(10.00, True), (10.10, True), (10.20, False)])
-def test_sell_limit_marketability_at_the_reference(limit: float, fills: bool) -> None:
+@pytest.mark.parametrize(("limit", "expected"), [(10.00, 10.00), (10.10, 10.20), (10.20, 10.20), (10.30, None)])
+def test_sell_limit_fills_at_the_first_marketable_bar(limit: float, expected: float | None) -> None:
     outcome = _outcome(orders=[_sell(limit=limit)], positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
-    if fills:
-        assert [(f.side, f.price) for f in outcome.fills] == [("sell", 10.10)]
+    if expected is not None:
+        assert [(f.side, f.price) for f in outcome.fills] == [("sell", expected)]
         assert outcome.rejected_orders == ()
+        assert outcome.canceled_orders == ()
         return
     assert outcome.fills == ()
-    assert [r.reason_code for r in outcome.rejected_orders] == ["limit_not_marketable"]
-    assert outcome.rejected_orders[0].detail == "ref 10.10 < limit 10.20"
-    assert [c.reason_code for c in outcome.canceled_orders] == [CANCELED_REASON_CODE]
+    assert outcome.rejected_orders == ()
+    assert [(c.reason_code, c.detail) for c in outcome.canceled_orders] == [
+        (CANCELED_REASON_CODE, "unfilled day order canceled at session end")
+    ]
 
 
 def test_path_model_changes_the_reference_and_the_verdict() -> None:
-    market_data, _ = _cn_a_data()
+    market_data, _ = _cn_a_data(five={_SYM: _dispersed_5m()})
     median = _outcome(orders=[_buy(limit=10.15)], market_data=market_data)
     close = _outcome(orders=[_buy(limit=10.15)], market_data=market_data, path_model="bar_close")
 
-    assert [(f.price) for f in median.fills] == [10.10]
+    assert [f.price for f in median.fills] == [10.10]
     assert median.rejected_orders == ()
     assert close.fills == ()
-    assert [r.reason_code for r in close.rejected_orders] == ["limit_not_marketable"]
-    assert close.rejected_orders[0].detail == "ref 10.20 > limit 10.15"
+    assert close.rejected_orders == ()
+    assert [(c.reason_code, c.detail) for c in close.canceled_orders] == [
+        (CANCELED_REASON_CODE, "unfilled day order canceled at session end")
+    ]
     assert median.engine_fingerprint != close.engine_fingerprint
 
 
 @pytest.mark.parametrize("path_model", ["bar_median", "bar_close"])
-def test_fill_price_equals_the_reference_under_both_path_models(path_model: str) -> None:
-    market_data, _ = _cn_a_data()
-    bar = market_data.data[_SYM].session_bar
+def test_fill_price_equals_the_first_bar_reference_under_both_path_models(path_model: str) -> None:
+    market_data, _ = _cn_a_data(five={_SYM: _dispersed_5m()})
     expected = 10.20 if path_model == "bar_close" else 10.10
-    assert (bar.open, bar.high, bar.low, bar.close) == (10.00, 10.20, 10.00, 10.20)
 
     outcome = _outcome(orders=[_buy(), _buy(qty=200)], market_data=market_data, path_model=path_model, cash=1000000.0)
 
@@ -282,7 +293,7 @@ def test_insufficient_cash_rejects_and_cancels() -> None:
 
     assert outcome.fills == ()
     assert [r.reason_code for r in outcome.rejected_orders] == ["insufficient_cash"]
-    assert "1015.01" in outcome.rejected_orders[0].detail
+    assert "1005.01" in outcome.rejected_orders[0].detail
     assert len(outcome.canceled_orders) == 1
     assert outcome.canceled_orders[0].detail == "rejected: insufficient_cash"
     assert outcome.end_state.cash == 500.0
@@ -354,21 +365,22 @@ def test_halted_symbol_rejects_suspended_and_its_position_is_untouched() -> None
 
 def test_every_order_is_terminal_and_every_failure_has_a_reason() -> None:
     orders = [
-        _buy(),  # fills
-        _buy(limit=10.00),  # limit_not_marketable
-        _buy(qty=150),  # lot_size
-        _buy(symbol="999999.SZ"),  # unknown_symbol
-        _sell(qty=200),  # insufficient_position
+        _buy(),
+        _buy(limit=9.90),
+        _buy(qty=150),
+        _buy(symbol="999999.SZ"),
+        _sell(qty=200),
     ]
     outcome = _outcome(orders=orders, positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
-    assert len(outcome.fills) + len(outcome.rejected_orders) == len(orders)
+    assert len(outcome.fills) == 1
+    assert len(outcome.rejected_orders) == 3
     assert all(r.reason_code in REASON_CODES for r in outcome.rejected_orders)
-    assert len(outcome.canceled_orders) == len(outcome.rejected_orders)
+    assert len(outcome.canceled_orders) == 4
     assert {c.reason_code for c in outcome.canceled_orders} == {CANCELED_REASON_CODE}
-    assert [(c.symbol, c.side, c.qty) for c in outcome.canceled_orders] == [
-        (r.symbol, r.side, r.qty) for r in outcome.rejected_orders
-    ]
+    day_end = [c for c in outcome.canceled_orders
+               if c.detail == "unfilled day order canceled at session end"]
+    assert [(c.symbol, c.side, c.qty) for c in day_end] == [(_SYM, "buy", 100.0)]
 
 
 def test_1d_mode_is_unchanged_and_never_cancels_or_events() -> None:
