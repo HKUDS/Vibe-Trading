@@ -297,6 +297,10 @@ class AgentLoop(ToolCallLifecycle):
         next cooperative checkpoint instead of only at the next iteration.
         """
         self._cancel_event.set()
+        # Stop must reach commands the current or an earlier turn spawned, not
+        # only the ReAct cycle. Normal successful turns do not call cancel().
+        if self._background_manager is not None:
+            self._background_manager.cancel_all()
 
     def _write_run_manifest(self, trace_dir: "Path", messages: List[Dict[str, Any]]) -> None:
         """Record what methodology produced this run, beside its trace.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -11,7 +12,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.tools import BaseTool
 from src.tools._shell_safety import broad_python_kill_error
@@ -90,11 +91,10 @@ def _taskkill_windows_process_tree(process: subprocess.Popen[str]) -> None:
 
 def _force_stop_process_tree(process: subprocess.Popen[str]) -> None:
     """Force-stop one tracked process tree without draining its pipes."""
-    if process.poll() is not None:
-        return
     if os.name == "nt":
         _taskkill_windows_process_tree(process)
     else:
+        # Descendants can keep the group's pipes open after its shell exits.
         _signal_posix_process_group(process, signal.SIGKILL)
 
 
@@ -136,12 +136,20 @@ class BackgroundManager:
     session sees none of them.
     """
 
-    def __init__(self, scope: Optional[BackgroundScope] = None) -> None:
+    def __init__(
+        self,
+        scope: Optional[BackgroundScope] = None,
+        *,
+        on_completion: Optional[Callable[[str, dict], None]] = None,
+    ) -> None:
         self.tasks: Dict[str, dict] = {}
         # (owner_id, payload). Kept as pairs so the payload shape consumers and
         # existing tests see stays exactly what it was; routing is internal.
         self._notifications: List[tuple[str, dict]] = []
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._accepting = [True]
+        self._on_completion = on_completion
         self._scope = scope or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
 
     @property
@@ -149,12 +157,22 @@ class BackgroundManager:
         """The owner this handle reads and writes under."""
         return self._scope
 
-    def for_scope(self, scope: BackgroundScope) -> "BackgroundManager":
+    def for_scope(
+        self,
+        scope: BackgroundScope,
+        *,
+        on_completion: Optional[Callable[[str, dict], None]] = None,
+    ) -> "BackgroundManager":
         """Return a handle over the same task table bound to another owner."""
         other = BackgroundManager(scope=scope)
         other.tasks = self.tasks
         other._notifications = self._notifications
         other._lock = self._lock
+        other._condition = self._condition
+        other._accepting = self._accepting
+        other._on_completion = (
+            self._on_completion if on_completion is None else on_completion
+        )
         return other
 
     def _owns(self, task: dict) -> bool:
@@ -179,6 +197,8 @@ class BackgroundManager:
         task_id = uuid.uuid4().hex[:8]
         started_at = time.monotonic()
         with self._lock:
+            if not self._accepting[0]:
+                return json.dumps({"status": "error", "error": "Background host is shutting down"})
             self.tasks[task_id] = {
                 "status": "running",
                 "result": None,
@@ -199,35 +219,40 @@ class BackgroundManager:
         output = ""
         status = "error"
         try:
-            process = _start_process(command)
             with self._lock:
                 task = self.tasks.get(task_id)
-                if task is None:
+                skip_spawn = task is None or bool(task.get("cancel_requested"))
+            if not skip_spawn:
+                process = _start_process(command)
+                with self._lock:
+                    task = self.tasks[task_id]
+                    task["process"] = process
+                    cancel_requested = bool(task.get("cancel_requested"))
+                if cancel_requested:
                     _force_stop_process_tree(process)
-                    return
-                task["process"] = process
-                cancel_requested = bool(task.get("cancel_requested"))
-            if cancel_requested:
-                _force_stop_process_tree(process)
 
-            try:
-                stdout, stderr = process.communicate(timeout=_COMMAND_TIMEOUT_SECONDS)
-                output = _combined_output(stdout, stderr)
-                exit_code = process.returncode
-                status = "completed" if exit_code == 0 else "error"
-            except subprocess.TimeoutExpired:
-                stdout, stderr = _terminate_process_tree(process)
-                partial_output = _combined_output(stdout, stderr)
-                timeout_message = f"Timeout ({_COMMAND_TIMEOUT_SECONDS:g}s)"
-                output = (
-                    f"{partial_output}\n{timeout_message}"
-                    if partial_output
-                    else timeout_message
-                )
-                output = output[:_MAX_OUTPUT_CHARS]
-                status = "timeout"
+                try:
+                    stdout, stderr = process.communicate(timeout=_COMMAND_TIMEOUT_SECONDS)
+                    output = _combined_output(stdout, stderr)
+                    exit_code = process.returncode
+                    status = "completed" if exit_code == 0 else "error"
+                except subprocess.TimeoutExpired:
+                    stdout, stderr = _terminate_process_tree(process)
+                    partial_output = _combined_output(stdout, stderr)
+                    timeout_message = f"Timeout ({_COMMAND_TIMEOUT_SECONDS:g}s)"
+                    output = (
+                        f"{partial_output}\n{timeout_message}"
+                        if partial_output
+                        else timeout_message
+                    )[:_MAX_OUTPUT_CHARS]
+                    exit_code = process.returncode
+                    status = "timeout"
         except Exception as e:
             output, status = str(e), "error"
+            if process is not None:
+                # Do not publish a terminal cancellation before its root is reaped.
+                _terminate_process_tree(process)
+                exit_code = process.returncode
 
         with self._lock:
             task = self.tasks.get(task_id)
@@ -252,14 +277,51 @@ class BackgroundManager:
                     max(0.0, time.monotonic() - started_at),
                     3,
                 )
-            self._notifications.append((
-                task["owner_id"],
-                {
-                    "task_id": task_id, "status": status,
-                    "command": command[:80], "result": (output or "")[:500],
-                    "exit_code": exit_code,
-                },
-            ))
+            payload = {
+                "task_id": task_id, "status": status,
+                "command": command[:80], "result": (output or "")[:500],
+                "exit_code": exit_code,
+            }
+            self._notifications.append((task["owner_id"], payload))
+            self._condition.notify_all()
+        if self._on_completion is not None:
+            try:
+                self._on_completion(task["owner_id"], {**payload, "attempt_id": task.get("attempt_id")})
+            except Exception:
+                logging.getLogger(__name__).exception("Could not publish background task completion")
+
+    def cancel_all(self, *, timeout: float = 0.0) -> dict:
+        """Request owner-scoped cancellation and optionally wait for actual reaping."""
+        with self._lock:
+            task_ids = [tid for tid, task in self.tasks.items()
+                        if self._owns(task) and task["status"] in {"running", "cancelling"}]
+        for task_id in task_ids:
+            self.cancel(task_id)
+        with self._condition:
+            def pending():
+                return [tid for tid in task_ids
+                        if self.tasks[tid]["status"] in {"running", "cancelling"}]
+
+            self._condition.wait_for(lambda: not pending(), timeout=max(0.0, timeout))
+            return {"requested": len(task_ids), "pending": pending()}
+
+    def shutdown(self, *, timeout: float = 5.0) -> list[str]:
+        """Close this host's shared table, not other managers in the process."""
+        with self._lock:
+            self._accepting[0] = False
+            owners = {task["owner_id"] for task in self.tasks.values()
+                      if task["status"] in {"running", "cancelling"}}
+        deadline = time.monotonic() + max(0.0, timeout)
+        for owner in owners:
+            remaining = max(0.0, deadline - time.monotonic())
+            self.for_scope(BackgroundScope(owner)).cancel_all(timeout=remaining)
+        with self._condition:
+            def pending():
+                return [tid for tid, task in self.tasks.items()
+                        if task["status"] in {"running", "cancelling"}]
+
+            self._condition.wait_for(lambda: not pending(), timeout=max(0.0, deadline - time.monotonic()))
+            return pending()
 
     def cancel(self, task_id: str) -> str:
         """Cancel one task by its tracked process group.
@@ -296,13 +358,6 @@ class BackgroundManager:
                 })
 
             process = task.get("process")
-            if process is not None and process.poll() is not None:
-                return json.dumps({
-                    "status": "error",
-                    "error": f"Task {task_id} is already finishing",
-                    "task_status": task_status,
-                })
-
             task["cancel_requested"] = True
             task["status"] = "cancelling"
 

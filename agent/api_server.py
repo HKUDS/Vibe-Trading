@@ -156,6 +156,14 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await _stop_scheduled_research_on_shutdown()
+        # Reap background work this host owns before its runtime disappears.
+        # Read the existing service rather than _get_session_service(): a
+        # shutdown must not create the very object it is trying to release.
+        import src.api.state as _api_state
+
+        service = getattr(_api_state, "_session_service", None)
+        if service is not None:
+            service.shutdown(timeout=5.0)
 
 
 app = FastAPI(
