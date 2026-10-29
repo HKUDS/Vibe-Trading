@@ -205,6 +205,23 @@ def allowed_write_roots() -> list[Path]:
     return roots
 
 
+def _resolve_fallback_candidate(file_path: str, base: Path) -> Path:
+    """Resolve `file_path` for the allowed-roots fallback in `resolve_safe_path`.
+
+    A relative `file_path` resolves against `base` (run_dir), matching the
+    "relative to run_dir" contract those tools document, instead of against
+    the server process's current working directory. Resolving against CWD
+    made the fallback's containment check depend on ambient process state:
+    the same relative, run_dir-escaping path could land inside a different
+    allowed root -- or be wrongly accepted instead of rejected -- purely
+    because of where the process happened to be chdir'd.
+    """
+    candidate = Path(file_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    return candidate.resolve()
+
+
 def resolve_safe_path(
     file_path: str,
     run_dir: str | None,
@@ -237,7 +254,7 @@ def resolve_safe_path(
             run_root = safe_run_dir(run_dir)
         except ValueError as exc:
             # If safe_run_dir fails, check if the path is in allowed_roots first
-            candidate = Path(file_path).expanduser().resolve()
+            candidate = _resolve_fallback_candidate(file_path, Path(run_dir).expanduser())
             for root in allowed_roots:
                 contained = _contained_path(candidate, root)
                 if contained is not None:
@@ -248,7 +265,7 @@ def resolve_safe_path(
             return safe_path(file_path, run_root)
         except ValueError as exc:
             # Fallback to allowed roots if safe_path containment fails
-            candidate = Path(file_path).expanduser().resolve()
+            candidate = _resolve_fallback_candidate(file_path, run_root)
             for root in allowed_roots:
                 contained = _contained_path(candidate, root)
                 if contained is not None:
