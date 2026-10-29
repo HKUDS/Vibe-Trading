@@ -539,6 +539,9 @@ class AgentTuningConfig(_EnvBase):
     )
     vibe_trading_bench_workers: int = Field(alias="VIBE_TRADING_BENCH_WORKERS", default=0)
     vibe_trading_search_backends: str = Field(alias="VIBE_TRADING_SEARCH_BACKENDS", default="")
+    vibe_trading_search_parallel: EnvBool = Field(
+        alias="VIBE_TRADING_SEARCH_PARALLEL", default=False,
+    )
     vibe_trading_slash_arg_max: int = Field(alias="VIBE_TRADING_SLASH_ARG_MAX", default=600)
     vibe_trading_search_bing_fallback: EnvBool = Field(
         alias="VIBE_TRADING_SEARCH_BING_FALLBACK", default=True,

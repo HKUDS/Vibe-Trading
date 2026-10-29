@@ -1932,6 +1932,20 @@ This chain returns an empty result only when its enabled sources finish without
 an unresolved error; an unavailable source produces an actionable error if no
 other source returns results.
 
+To try [Parallel's hosted search MCP](https://docs.parallel.ai/integrations/mcp/quickstart)
+inside `web_search`, set `VIBE_TRADING_SEARCH_PARALLEL=1`. This is off by default.
+When enabled, searches try IQS first if `ALIYUN_IQS_API_KEY` is set, then Parallel,
+then the existing ddgs and regional fallbacks. Parallel receives the search query;
+no account or API key is required. Anonymous searches use Fast mode at lower rate
+limits intended for personal agents and exploration. Initialisation and tool-call
+timeouts are 5 and 10 seconds respectively, with no retry; these are not an overall
+time limit. Errors, invalid responses, and empty results fall through to the
+existing sources. Results keep
+the same title, URL, snippet, and security-warning format; Parallel snippets are
+capped at 300 characters. Unset `VIBE_TRADING_SEARCH_PARALLEL` or set it to `0`
+to restore the existing search path. `VIBE_TRADING_SEARCH_BACKENDS` still controls
+only the ddgs engine list.
+
 `quantlib_call` attribution requires finite sector weights and returns, finite Carino return inputs, and a finite non-negative weight-sum tolerance. Invalid data is rejected explicitly rather than returned as an attribution result containing `NaN`. Missing returns for a zero-weight sector may still be inferred from the other side.
 
 `quantlib_call` maximum-drawdown analysis measures underwater duration from the latest visit to the peak before the worst trough. An earlier drawdown that already recovered is excluded from that duration.
