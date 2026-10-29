@@ -18,6 +18,10 @@ from src.agent.tools import BaseTool
 from src.tools._shell_safety import broad_python_kill_error
 
 WORKDIR = Path(__file__).resolve().parents[2]
+#: Task ids with a live process anywhere in this interpreter. Restart recovery
+#: must not mistake a sibling manager's running task for a previous process's.
+_LIVE_TASK_IDS: set[str] = set()
+_LIVE_TASK_IDS_LOCK = threading.Lock()
 _COMMAND_TIMEOUT_SECONDS = 300.0
 _TERMINATION_GRACE_SECONDS = 2.0
 _MAX_OUTPUT_CHARS = 50_000
@@ -141,8 +145,10 @@ class BackgroundManager:
         scope: Optional[BackgroundScope] = None,
         *,
         on_completion: Optional[Callable[[str, dict], None]] = None,
+        store: Optional[Any] = None,
     ) -> None:
         self.tasks: Dict[str, dict] = {}
+        self._store = store
         # (owner_id, payload). Kept as pairs so the payload shape consumers and
         # existing tests see stays exactly what it was; routing is internal.
         self._notifications: List[tuple[str, dict]] = []
@@ -170,6 +176,7 @@ class BackgroundManager:
         other._lock = self._lock
         other._condition = self._condition
         other._accepting = self._accepting
+        other._store = self._store
         other._on_completion = (
             self._on_completion if on_completion is None else on_completion
         )
@@ -177,6 +184,43 @@ class BackgroundManager:
 
     def _owns(self, task: dict) -> bool:
         return task.get("owner_id") == self._scope.owner_id
+
+    def _persist(self, task_id: str) -> None:
+        """Best effort: a full or unwritable runtime root must not break the run."""
+        if self._store is None:
+            return
+        task = self.tasks.get(task_id)
+        if task is None:
+            return
+        try:
+            from src.tools.background_store import record_from_task
+
+            self._store.save(record_from_task(task_id, task))
+        except Exception:
+            logging.getLogger(__name__).exception("Could not persist background task %s", task_id)
+
+    def recover_on_start(self) -> dict:
+        """Reconcile records left by a previous process, once and without reruns.
+
+        A task id this interpreter is already running is left alone: a second
+        service constructed in the same process must not declare the first
+        one's live work interrupted.
+        """
+        if self._store is None:
+            return {"recovered": 0, "unchanged": 0, "unreadable": []}
+        from src.tools.background_store import reconcile_after_restart
+
+        records, unreadable = self._store.load_all()
+        with _LIVE_TASK_IDS_LOCK:
+            live = set(_LIVE_TASK_IDS)
+        stale = [record for record in records if record.task_id not in live]
+        recovered, unchanged = reconcile_after_restart(stale)
+        for record in recovered:
+            try:
+                self._store.save(record)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not persist recovered task %s", record.task_id)
+        return {"recovered": len(recovered), "unchanged": len(unchanged), "unreadable": unreadable}
 
     def run(self, command: str) -> str:
         """Start a background task and return its task_id.
@@ -210,6 +254,9 @@ class BackgroundManager:
                 "owner_id": self._scope.owner_id,
                 "attempt_id": self._scope.attempt_id,
             }
+            with _LIVE_TASK_IDS_LOCK:
+                _LIVE_TASK_IDS.add(task_id)
+        self._persist(task_id)
         threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
         return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command[:80]}"})
 
@@ -283,7 +330,12 @@ class BackgroundManager:
                 "exit_code": exit_code,
             }
             self._notifications.append((task["owner_id"], payload))
+            task["ended_at"] = time.time()
+            task["pid"] = getattr(process, "pid", None)
             self._condition.notify_all()
+        with _LIVE_TASK_IDS_LOCK:
+            _LIVE_TASK_IDS.discard(task_id)
+        self._persist(task_id)
         if self._on_completion is not None:
             try:
                 self._on_completion(task["owner_id"], {**payload, "attempt_id": task.get("attempt_id")})
@@ -436,6 +488,25 @@ class BackgroundManager:
 
 
 _BG = BackgroundManager()
+_BG_STORE: Optional[Any] = None
+
+
+def init_background_store(root: Path) -> Any:
+    """Attach durable task records to the process-wide table, once per process.
+
+    Recovery runs here and only here, so a second service constructed in the
+    same interpreter cannot declare the first one's live work interrupted.
+    """
+    global _BG_STORE
+    with _LIVE_TASK_IDS_LOCK:
+        if _BG_STORE is not None:
+            return _BG_STORE
+        from src.tools.background_store import BackgroundTaskStore
+
+        _BG_STORE = BackgroundTaskStore(Path(root))
+        _BG._store = _BG_STORE
+    _BG.recover_on_start()
+    return _BG_STORE
 
 
 def get_background_manager() -> BackgroundManager:
