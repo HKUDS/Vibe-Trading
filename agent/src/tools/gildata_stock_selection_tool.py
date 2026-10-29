@@ -15,9 +15,7 @@ class GildataStockSelectionTool(BaseTool):
 
     name = "gildata_stock_selection"
     description = (
-        "Gildata/聚源 stock screening and Top-N ranking within a stock universe. "
-        "A single natural-language query can select stocks and return additional "
-        "financial, valuation or market indicators across multiple report periods. "
+        "聚源智能选股：一次查询完成指定日期的股票筛选/TopN排名，并返回所选股票跨报告期的财务金额、估值或行情指标。 "
         "Example: 沪深300权重最高的10只成分股及2023、2024年全年营业收入. "
         "Use gildata_fin_query for attribute/history queries without screening. "
         "Requires GILDATA_TOKEN; read-only."
@@ -25,7 +23,7 @@ class GildataStockSelectionTool(BaseTool):
     parameters = {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Full question including universe, selection/ranking criteria and requested indicators and periods."},
+            "query": {"type": "string", "description": "One complete question: universe, screening/ranking criteria and date, plus all requested indicators and report periods. Specify monetary units for amounts; distinguish amounts from growth rates."},
             "topk": {"type": "integer", "description": "Optional result count; positive integer, or -1 only when all results are explicitly requested."},
         },
         "required": ["query"],
