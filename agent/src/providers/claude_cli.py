@@ -335,22 +335,27 @@ def _run_cli(
     return payload
 
 
-def _usage(payload: dict[str, Any]) -> dict[str, int]:
+def _usage(payload: dict[str, Any]) -> dict[str, Any]:
     usage = payload.get("usage") or {}
-    tokens_in = sum(
-        int(usage.get(k) or 0)
-        for k in (
-            "input_tokens",
-            "cache_creation_input_tokens",
-            "cache_read_input_tokens",
-        )
+    cache_creation = int(
+        (usage.get("cache_creation_input_tokens") or 0)
+        + (usage.get("ephemeral_5m_input_tokens") or 0)
+        + (usage.get("ephemeral_1h_input_tokens") or 0)
     )
+    cache_read = int(usage.get("cache_read_input_tokens") or 0)
+    tokens_in = int(usage.get("input_tokens") or 0) + cache_creation + cache_read
     tokens_out = int(usage.get("output_tokens") or 0)
-    return {
+    result: dict[str, Any] = {
         "input_tokens": tokens_in,
         "output_tokens": tokens_out,
         "total_tokens": tokens_in + tokens_out,
     }
+    if cache_creation or cache_read:
+        result["input_token_details"] = {
+            "cache_read": cache_read,
+            "cache_creation": cache_creation,
+        }
+    return result
 
 
 def _native_attempt_reason(payload: dict[str, Any]) -> str:

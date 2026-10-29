@@ -524,3 +524,31 @@ def test_preflight_uses_cli_login(monkeypatch) -> None:
 
     assert result.status == "not_configured"
     assert "claude auth login" in result.impact
+
+
+def test_usage_preserves_cache_split_as_input_token_details() -> None:
+    result = claude_cli._usage({
+        "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 5,
+            "cache_read_input_tokens": 20,
+            "output_tokens": 3,
+        },
+    })
+    assert result == {
+        "input_tokens": 35,
+        "output_tokens": 3,
+        "total_tokens": 38,
+        "input_token_details": {"cache_read": 20, "cache_creation": 5},
+    }
+
+
+def test_usage_omits_details_when_no_cache() -> None:
+    result = claude_cli._usage({
+        "usage": {"input_tokens": 10, "output_tokens": 3},
+    })
+    assert result == {
+        "input_tokens": 10,
+        "output_tokens": 3,
+        "total_tokens": 13,
+    }
