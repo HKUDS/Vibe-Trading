@@ -204,6 +204,14 @@ def test_a_declaration_matches_by_value_at_written_precision() -> None:
     assert block.match(36.9, True) is None
 
 
+def test_percent_point_figure_binds_bare_number_declaration() -> None:
+    """§2 (#2107): ``1.13个百分点`` grounds a declaration of ``1.13``."""
+    block = parse_figures_block("t\n\n```figures\n1.13 | observed | ROE同比 | c1\n```")
+
+    assert block.match(1.13, True) is not None
+    assert block.match(1.13, False) is not None
+
+
 def test_every_role_in_the_contract_is_accepted() -> None:
     """The five roles are the contract; nothing else parses."""
     for role in ROLES:

@@ -166,6 +166,9 @@ class FiguresBlock:
         without decimals is only ever an exact match, so a coarse "39" cannot borrow
         38.68's declaration.
 
+        A percent-or-pp figure also matches a bare-number declaration at the same
+        value, so ``1.13个百分点`` grounds a declaration of ``1.13`` (#2107).
+
         Args:
             value: The prose figure's numeric value.
             percent: Whether the prose figure carries a percent sign.
@@ -177,6 +180,8 @@ class FiguresBlock:
             same figure), or None.
         """
         candidates = [item for item in self.declarations if item.percent == percent]
+        if percent:
+            candidates.extend(item for item in self.declarations if not item.percent)
         for declaration in candidates:
             if abs(declaration.value - value) <= max(abs(value) * 1e-9, 1e-9):
                 return declaration
