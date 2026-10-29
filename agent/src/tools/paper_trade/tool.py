@@ -33,7 +33,7 @@ from typing import Any
 
 from src.agent.tools import BaseTool
 
-from . import data, engine, wire
+from . import data, data_5m, engine, wire
 from .calendar import CN_A_MARKET, CalendarUnavailableError, snapshot_calendar
 from .data import ClickHouseBarsClient
 from .limits_cn_a import ClickHouseLimitsClient
@@ -46,7 +46,30 @@ from .schema import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["PaperTradeStepTool", "run_paper_trade_step"]
+__all__ = ["PaperTradeDocument", "PaperTradeStepTool", "run_paper_trade_step"]
+
+
+class PaperTradeDocument(str):
+    """The in-band result document text, carrying the fetch evidence when any.
+
+    The wire contract is a JSON *string*, and this subclass IS one: ``json.loads``,
+    string equality, indexing and every ``str`` operation see exactly the bytes a
+    plain ``str`` would carry.  On the success path it additionally carries the
+    :class:`data.MarketDataResult` that produced it.  The runner's default step
+    adapter needs that evidence to write ``steps/<date>/bars/<symbol>.csv``
+    (T5 gap): the wire contract deliberately does not echo bars, and re-fetching
+    them would double the provider cost (``stk_mins`` is capped at 2 calls/day and
+    a refused call still burns the budget — T1).  Attaching the already-fetched
+    frame is the only single-fetch path to them.
+
+    A caller that only wants the wire bytes treats this as ``str``; the attribute
+    is additive and never serialized.
+    """
+
+    def __new__(cls, text: str, market_data: Any = None) -> "PaperTradeDocument":
+        document = super().__new__(cls, text)
+        document.market_data = market_data
+        return document
 
 # Sentinel distinguishing "not injected" (resolve for production) from an
 # explicit None.  It MUST be data._AUTO by identity: run_paper_trade_step
@@ -60,10 +83,12 @@ _DESCRIPTION = (
     "Run one deterministic paper-trading step for a single account: a "
     "deterministic paper-trading matching engine; never places real orders. "
     "Matches the injected orders (or a strategy_path's per-day orders, Step 7) "
-    "against daily bars under the market's frozen rules (T+1, price limits, "
+    "against bars under the market's frozen rules (T+1, price limits, "
     "board lots, fees), and returns one in-band JSON document — the success "
     "result or an AM-5 error envelope (PAPER_DATA_NOT_READY / INVALID_REQUEST) "
-    "on the same channel, never a transport error. Research-only."
+    "on the same channel, never a transport error. Optional pt-v1.2 selectors "
+    "(interval/session/path_model/fill_model) default to the pt-v1.1 daily "
+    "behaviour; interval='5m' is cn_a-only. Research-only."
 )
 
 
@@ -182,7 +207,38 @@ def run_paper_trade_step(
     ``PAPER_DATA_NOT_READY``).  Injection seams (``loader``/``ch_client``/
     ``calendar_client``/``limits_client``/…) default to ``_AUTO`` production
     resolution; tests pass fakes so nothing touches the network.
+
+    The returned :class:`PaperTradeDocument` is the wire string plus the
+    fetched :class:`data.MarketDataResult` (``None`` on every error envelope),
+    so an in-process caller can record the day's bars without a second fetch.
     """
+    document, market_data = _execute_step(
+        payload,
+        loader=loader,
+        ch_client=ch_client,
+        calendar_client=calendar_client,
+        limits_client=limits_client,
+        corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
+        hk_lot_sizes=hk_lot_sizes,
+        timeout_seconds=timeout_seconds,
+        orders_at_end=_orders_at_end,
+    )
+    return PaperTradeDocument(document, market_data)
+
+
+def _execute_step(
+    payload: Any,
+    *,
+    loader: Any,
+    ch_client: Any,
+    calendar_client: Any,
+    limits_client: Any,
+    corporate_action_unresolved_by_day: Any,
+    hk_lot_sizes: Any,
+    timeout_seconds: float | None,
+    orders_at_end: bool,
+) -> tuple[str, Any | None]:
+    """The step pipeline: ``(wire document text, fetched market data or None)``."""
     raw_payload = payload if isinstance(payload, dict) else {}
 
     # 1. Boundary parse (shape contract).  A violation is non-retryable input.
@@ -197,7 +253,7 @@ def run_paper_trade_step(
             _as_str(raw_payload.get("to_date")),
             str(exc),
             raw_payload,
-        )
+        ), None
 
     # 2. Semantic gate owned by the tool (schema.py defers it): exactly one of
     #    orders / strategy_path.  ``orders=()`` (empty array) is the valid
@@ -213,7 +269,30 @@ def run_paper_trade_step(
         return _error_document(
             "INVALID_REQUEST", request.account_id, request.market,
             request.from_date, request.to_date, message, raw_payload,
-        )
+        ), None
+
+    # 2b. pt-v1.2 cross-field gates (D5).  Shape/vocabulary checks already ran
+    #     in parse_request; these are the market-combination rules the shape
+    #     parser cannot own.  Both stay in-band and non-retryable.
+    if request.interval == "5m" and request.market != CN_A_MARKET:
+        return _error_document(
+            "INVALID_REQUEST", request.account_id, request.market,
+            request.from_date, request.to_date,
+            "interval 5m is cn_a-only in pt-v1.2", raw_payload,
+        ), None
+    if request.session == "cn_a" and request.market != CN_A_MARKET:
+        return _error_document(
+            "INVALID_REQUEST", request.account_id, request.market,
+            request.from_date, request.to_date,
+            "session cn_a requires market cn_a in pt-v1.2", raw_payload,
+        ), None
+    if request.interval == "5m" and request.from_date != request.to_date:
+        return _error_document(
+            "INVALID_REQUEST", request.account_id, request.market,
+            request.from_date, request.to_date,
+            "interval 5m supports one trading day per step; the runner advances one day at a time",
+            raw_payload,
+        ), None
 
     # 3. Market data over the frozen window (universe = positions ∪ orders;
     #    strategy_path mode ALSO unions the strategy file's declared UNIVERSE
@@ -222,32 +301,85 @@ def run_paper_trade_step(
     #    empty.  strategy_universe is a pure AST read (never an execution) and
     #    degrades to (); the empty-declaration fallback keeps the existing
     #    behavior and T7's B1 path still owns a genuinely unusable universe.
-    #    Orders mode never consults it.)
+    #    Orders mode never consults it.  Every 5m gate below runs BEFORE the
+    #    fetch, so a refusal never spends provider budget.)
     cal, lim, ch = _resolve_clients(request.market, calendar_client, limits_client, ch_client)
     if request.market == CN_A_MARKET and cal is None:
         return _error_document(
             "PAPER_DATA_NOT_READY", request.account_id, request.market,
             request.from_date, request.to_date,
             "A-share trading calendar unavailable; configure a reachable ClickHouse trade_calendar and retry",
-            raw_payload)
+            raw_payload), None
     if request.market == CN_A_MARKET:
         try:
             cal = snapshot_calendar(cal, request.from_date, request.to_date)
         except CalendarUnavailableError as exc:
             return _error_document(
                 "PAPER_DATA_NOT_READY", request.account_id, request.market,
-                request.from_date, request.to_date, str(exc), raw_payload)
+                request.from_date, request.to_date, str(exc), raw_payload), None
     symbols = data.symbols_for_request(request.account_state, request.orders)
+    declared: tuple[str, ...] = ()
     if has_strategy:
         from .strategy_exec import strategy_universe
 
         declared = strategy_universe(request.strategy_path or "")
         if declared:
             symbols = tuple(sorted(set(symbols) | set(declared)))
+        five_minute_symbols = declared
+    else:
+        five_minute_symbols = tuple(
+            dict.fromkeys(order.symbol for order in request.orders or ()))
+    if request.interval == "5m":
+        # 3a. Strategy mode needs an explicit 5m universe.  Falling back to the
+        #     positions would hide every order the strategy places on a symbol
+        #     it does not hold, and a silent empty universe rejects EVERY order
+        #     as `suspended` while the step still succeeds (N1).  This is the
+        #     one place the empty-declaration fallback must not apply.
+        if has_strategy and not declared:
+            return _error_document(
+                "INVALID_REQUEST", request.account_id, request.market,
+                request.from_date, request.to_date,
+                "interval 5m strategy mode requires an explicit non-empty UNIVERSE "
+                "in the strategy source",
+                raw_payload,
+            ), None
+        # 3b. The provider budget, not a nicety: stk_mins is measured at
+        #     1 call/minute, 1/hour and 2 calls/day, and the loader issues one
+        #     call per code.  A second symbol in the SAME step is rate-limited
+        #     immediately (and the refused call still burns the 2/day budget),
+        #     so it could never complete on a retry either (N2/F2R3-1).
+        limit = data_5m.MAX_FIVE_MINUTE_SYMBOLS
+        if len(five_minute_symbols) > limit:
+            return _error_document(
+                "INVALID_REQUEST", request.account_id, request.market,
+                request.from_date, request.to_date,
+                f"interval 5m supports at most {limit} "
+                f"symbol{'s' if limit != 1 else ''} per step (measured stk_mins "
+                "budget: 1 call/minute, 1/hour, 2/day); split the orders across "
+                f"steps or use 1d (received {len(five_minute_symbols)}: "
+                f"{', '.join(five_minute_symbols)})",
+                raw_payload,
+            ), None
+        unsupported = [
+            symbol for symbol in five_minute_symbols
+            if not data_5m.is_supported_five_minute_symbol(symbol)
+        ]
+        if unsupported:
+            return _error_document(
+                "INVALID_REQUEST", request.account_id, request.market,
+                request.from_date, request.to_date,
+                f"interval 5m does not support {', '.join(unsupported)}: stk_mins serves cn_a "
+                "stocks only (SH 600/601/603/605/688/689, SZ 000/001/002/003/300/301); "
+                "ETFs, funds and indices have no 5m leg",
+                raw_payload,
+            ), None
     try:
         market_data = data.fetch_market_data(
             request.market, symbols, request.from_date, request.to_date,
             loader=loader, ch_client=ch,
+            interval=request.interval,
+            five_minute_symbols=(
+                five_minute_symbols if request.interval == "5m" else None),
         )
     except ValueError as exc:
         # Data-layer input guards (from_date > to_date, unknown market, a
@@ -255,7 +387,20 @@ def run_paper_trade_step(
         return _error_document(
             "INVALID_REQUEST", request.account_id, request.market,
             request.from_date, request.to_date, str(exc), raw_payload,
-        )
+        ), None
+    except Exception as exc:  # noqa: BLE001 — provider fault (network/quota/permission)
+        # U6: a fetch fault that is NOT an input-contract violation is late
+        # data, never a transport crash and never a halt.  The message carries
+        # the exception CLASS only — provider text can embed hosts, quotes and
+        # timings, and the envelope must stay deterministic (VD-7).
+        logger.warning("paper_trade market data fetch failed: %s", type(exc).__name__)
+        return _error_document(
+            "PAPER_DATA_NOT_READY", request.account_id, request.market,
+            request.from_date, request.to_date,
+            f"market data fetch failed ({type(exc).__name__}); the step is data-not-ready, "
+            "retry later",
+            raw_payload,
+        ), None
 
     # 4. Mode dispatch.  strategy_exec is T7 and imported lazily so this module
     #    stays importable (and the agent registry stays buildable) while T7 is
@@ -272,7 +417,7 @@ def run_paper_trade_step(
             hk_lot_sizes=hk_lot_sizes,
             timeout_seconds=timeout_seconds,
         )
-    elif _orders_at_end:
+    elif orders_at_end:
         # Saved accounts must scan every intervening day, including actions,
         # while applying explicit orders only at the chosen execution close.
         outcome = engine.run_day_loop(
@@ -280,7 +425,8 @@ def run_paper_trade_step(
             from_date=request.from_date, to_date=request.to_date, market_data=market_data,
             orders_by_day={request.to_date: request.orders or ()}, fee_model=request.fee_model,
             calendar_client=cal, limits_client=lim, hk_lot_sizes=hk_lot_sizes,
-            corporate_action_unresolved_by_day=corporate_action_unresolved_by_day)
+            corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
+            path_model=request.path_model, fill_model=request.fill_model)
     else:
         outcome = engine.match_orders(
             request,
@@ -297,11 +443,11 @@ def run_paper_trade_step(
         return _error_document(
             outcome.error.code, request.account_id, request.market,
             request.from_date, request.to_date, outcome.error.message, raw_payload,
-        )
+        ), None
     result = wire.assemble_result(
         request, outcome, raw_account_state=raw_payload.get("account_state")
     )
-    return wire.dumps_payload(wire.build_success_payload(result))
+    return wire.dumps_payload(wire.build_success_payload(result)), market_data
 
 
 class PaperTradeStepTool(BaseTool):
@@ -367,6 +513,43 @@ class PaperTradeStepTool(BaseTool):
                 "description": (
                     "Optional per-key fee overrides merged over the market defaults "
                     "(AM-4-3: RM always injects it explicitly)."
+                ),
+            },
+            "interval": {
+                "type": "string",
+                "enum": ["1d", "5m"],
+                "default": "1d",
+                "description": (
+                    "Optional pt-v1.2 bar interval. '1d' (default) keeps the pt-v1.1 "
+                    "daily close-price path; '5m' is cn_a-only and matches the whole "
+                    "continuous session as one bar (D1)."
+                ),
+            },
+            "session": {
+                "type": "string",
+                "enum": ["auto", "cn_a"],
+                "default": "auto",
+                "description": (
+                    "Optional pt-v1.2 session selector. 'auto' resolves to cn_a for "
+                    "market=cn_a and is inert for hk/us; 'cn_a' requires market=cn_a (D5)."
+                ),
+            },
+            "path_model": {
+                "type": "string",
+                "enum": ["bar_median", "bar_close"],
+                "default": "bar_median",
+                "description": (
+                    "Optional pt-v1.2 reference-price model for interval='5m': "
+                    "median(open, high, low, close) or the bar close (D1). Ignored for '1d'."
+                ),
+            },
+            "fill_model": {
+                "type": "string",
+                "enum": ["all_or_none"],
+                "default": "all_or_none",
+                "description": (
+                    "Optional pt-v1.2 fill model: 'all_or_none' is the only P0 value — "
+                    "no partial fills, every order terminal in its bar."
                 ),
             },
         },

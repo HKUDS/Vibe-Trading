@@ -37,13 +37,26 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CN_A_MARKET",
+    "CN_A_AUCTION_WINDOWS",
+    "CN_A_CONTINUOUS_WINDOWS",
+    "CN_A_SESSION_TIMEZONE",
+    "CLOSING_AUCTION",
+    "CONTINUOUS_AFTERNOON",
+    "CONTINUOUS_MORNING",
     "HK_MARKET",
+    "OPENING_AUCTION",
+    "OPENING_AUCTION_PRINT",
+    "SESSION_AUCTION_WINDOW",
+    "SESSION_CONTINUOUS",
+    "SESSION_OPENING_AUCTION_PRINT",
+    "SESSION_OUTSIDE",
     "US_MARKET",
     "VERDICT_MARKET_CLOSED_INFERRED",
     "VERDICT_NOT_READY",
     "VERDICT_TRADING_DAY",
     "TradeCalendarClient",
     "ZeroCalendarDayVerdict",
+    "classify_cn_a_session_label",
     "classify_zero_calendar_day",
     "hk_us_candidate_days",
     "is_trading_day",
@@ -53,6 +66,77 @@ __all__ = [
 CN_A_MARKET = "cn_a"
 HK_MARKET = "hk"
 US_MARKET = "us"
+
+# ── cn_a session clock (T4) ──
+#
+# Fixed Asia/Shanghai (UTC+08:00, no DST): mainland China observes no daylight
+# saving, so a fixed offset is exact and no tz database lookup is needed at
+# import.  Labels are bar ENDS (T1, data_5m.py): the first continuous bar ends
+# at 09:35 and the last at 11:30 / 15:00.
+CN_A_SESSION_TIMEZONE = "Asia/Shanghai"
+
+#: Continuous call-auction (撮合) windows, half-open at the opening edge:
+#: a bar label t trades continuously when ``start < t <= end``.
+CONTINUOUS_MORNING = ("09:30", "11:30")
+CONTINUOUS_AFTERNOON = ("13:00", "15:00")
+
+#: Opening call auction 09:15-09:25 and closing call auction 14:57-15:00
+#: (``14:57 <= label < 15:00``; the 15:00 label is a continuous bar).
+#: Neither auction window is matched (T4 "竞价段不撮合").
+OPENING_AUCTION = ("09:15", "09:25")
+CLOSING_AUCTION = ("14:57", "15:00")
+
+CN_A_CONTINUOUS_WINDOWS = (CONTINUOUS_MORNING, CONTINUOUS_AFTERNOON)
+CN_A_AUCTION_WINDOWS = (OPENING_AUCTION, CLOSING_AUCTION)
+
+#: Continuous 5-minute bars in one cn_a session pair, measured by T1
+#: (data_5m.CONTINUOUS_BARS_PER_DAY): 09:35..11:30 and 13:05..15:00.
+CONTINUOUS_BARS_PER_DAY = 48
+
+#: The single expected opening-auction print label (T1: 49 raw rows/day; this
+#: row is single-priced and equals the daily open).  It is excluded from the
+#: session bar but is NOT an anomaly, so it raises no event.
+OPENING_AUCTION_PRINT = "09:30"
+
+# ``classify_cn_a_session_label`` verdicts.
+SESSION_CONTINUOUS = "continuous"
+SESSION_OPENING_AUCTION_PRINT = "opening_auction_print"
+SESSION_AUCTION_WINDOW = "auction_window"
+SESSION_OUTSIDE = "outside"
+
+
+def classify_cn_a_session_label(label: str) -> str:
+    """Classify one ``HH:MM`` bar label against the cn_a session clock (T4).
+
+    Returns one of :data:`SESSION_CONTINUOUS`,
+    :data:`SESSION_OPENING_AUCTION_PRINT`, :data:`SESSION_AUCTION_WINDOW` or
+    :data:`SESSION_OUTSIDE`.
+
+    * ``09:30`` is the opening call-auction print, single-priced on 4 of 5
+      probed days (data_5m.py T1): expected, excluded from the session bar by
+      policy, never an event.
+    * A label inside the opening auction (09:15-09:25 inclusive, because no
+      continuous label lives there) or inside the closing auction
+      (14:57 <= t < 15:00; 15:00 itself is the real closing bar per T1) is an
+      auction-window anomaly: excluded from matching AND reported as an
+      ``auction_window`` event.
+    * Continuous windows are half-open at the start (``09:30 < t <= 11:30``,
+      ``13:00 < t <= 15:00``), so 09:35..11:30 and 13:05..15:00 are continuous
+      and 13:00 / the lunch labels are not.
+    * Anything else (lunch, pre-open, post-close) is outside: excluded with a
+      warning, never matched.
+    """
+    if not isinstance(label, str) or len(label) != 5 or label[2] != ":":
+        raise ValueError(f"bar label must be HH:MM, got {label!r}")
+    if label == OPENING_AUCTION_PRINT:
+        return SESSION_OPENING_AUCTION_PRINT
+    if OPENING_AUCTION[0] <= label <= OPENING_AUCTION[1]:
+        return SESSION_AUCTION_WINDOW
+    if CLOSING_AUCTION[0] <= label < CLOSING_AUCTION[1]:
+        return SESSION_AUCTION_WINDOW
+    if any(start < label <= end for start, end in CN_A_CONTINUOUS_WINDOWS):
+        return SESSION_CONTINUOUS
+    return SESSION_OUTSIDE
 
 _CALENDAR_MARKETS = (CN_A_MARKET, HK_MARKET, US_MARKET)
 

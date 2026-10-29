@@ -28,6 +28,12 @@ Canonicalization rules (RFC 8785 JCS as frozen by VD-4):
 
 Determinism: this module reads no clock, no environment, no network and
 writes nothing — the same input always produces the same bytes.
+
+pt-v1.2 (D3/D4): :func:`compute_received_state_hash` accepts the four new
+request fields and adds each to the coverage object ONLY when it is
+non-default, so every pt-v1.1 call hashes byte-identically; and
+:func:`engine_fingerprint` hashes the engine-parameter tuple with the same
+JCS helper.  Neither function changes matching.
 """
 
 from __future__ import annotations
@@ -38,10 +44,18 @@ import math
 from decimal import Decimal
 from typing import Any
 
+from .schema import (
+    DEFAULT_FILL_MODEL,
+    DEFAULT_INTERVAL,
+    DEFAULT_PATH_MODEL,
+    DEFAULT_SESSION,
+)
+
 __all__ = [
     "canonicalize",
     "compute_received_state_hash",
     "effective_fee_model",
+    "engine_fingerprint",
     "state_hash",
 ]
 
@@ -161,14 +175,23 @@ def compute_received_state_hash(
     fee_model: Any,
     from_date: str,
     to_date: str,
+    interval: str = DEFAULT_INTERVAL,
+    session: str = DEFAULT_SESSION,
+    path_model: str = DEFAULT_PATH_MODEL,
+    fill_model: str = DEFAULT_FILL_MODEL,
 ) -> str:
-    """Hash the frozen AM-4-1 coverage object (non-order tool inputs).
+    """Hash the AM-4-1 coverage object plus any non-default pt-v1.2 field.
 
     ``fee_model`` must be the EFFECTIVE value (see :func:`effective_fee_model`)
     — AM-4-3: the RM dispatch always injects fee_model explicitly, so the hash
     covers every non-order parameter.
+
+    D4: the four pt-v1.2 fields enter the coverage object ONLY when explicitly
+    non-default, so a call that omits them (or passes the default value) hashes
+    exactly as pt-v1.1 did.  A v1.2 call can never hide a non-default field
+    from the hash.
     """
-    coverage = {
+    coverage: dict[str, Any] = {
         "account_id": account_id,
         "market": market,
         "account_state": account_state,
@@ -176,7 +199,49 @@ def compute_received_state_hash(
         "from_date": from_date,
         "to_date": to_date,
     }
+    for key, value, default in (
+        ("interval", interval, DEFAULT_INTERVAL),
+        ("session", session, DEFAULT_SESSION),
+        ("path_model", path_model, DEFAULT_PATH_MODEL),
+        ("fill_model", fill_model, DEFAULT_FILL_MODEL),
+    ):
+        if value != default:
+            coverage[key] = value
     return state_hash(coverage)
+
+
+def engine_fingerprint(
+    *,
+    interval: str = DEFAULT_INTERVAL,
+    path_model: str = DEFAULT_PATH_MODEL,
+    fill_model: str = DEFAULT_FILL_MODEL,
+    bar_fingerprint: str = "",
+    rules_version: str | None = None,
+) -> str:
+    """D3: ``sha256(JCS({interval, path_model, fill_model, rules_version,
+    bar_fingerprint}))`` as lowercase hex.
+
+    ``bar_fingerprint`` is supplied by the engine (T3/T4) as a hex digest of
+    the bars actually used; ``""`` means no bar fingerprint was supplied (e.g.
+    a cash-only account with no matched bar).  ``rules_version`` defaults to
+    :data:`rules.RULES_VERSION` — imported lazily because ``rules`` imports
+    this module — and is injectable so the fingerprint can be audited against
+    a past rule set.  No clock, no paths, no environment: the same arguments
+    always produce the same hex string.
+    """
+    if rules_version is None:
+        from .rules import RULES_VERSION
+
+        rules_version = RULES_VERSION
+    return state_hash(
+        {
+            "interval": interval,
+            "path_model": path_model,
+            "fill_model": fill_model,
+            "rules_version": rules_version,
+            "bar_fingerprint": bar_fingerprint,
+        }
+    )
 
 
 def effective_fee_model(market: str, fee_model: dict[str, Any] | None = None) -> dict[str, Any]:
