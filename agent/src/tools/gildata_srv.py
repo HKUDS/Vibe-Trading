@@ -40,8 +40,8 @@ def _url() -> str:
     return f"{base}{'&' if '?' in base else '?'}format=json"
 
 
-def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict[str, Any]:
-    """Invoke one srv-tool NL tool and return its merged structured payload.
+def call_srv_tool_results(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> list[dict[str, Any]]:
+    """Invoke one srv-tool query, preserving each result table and its metadata.
 
     Args:
         name: Tool name, e.g. ``"MacroIndustryData"``.
@@ -49,8 +49,7 @@ def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict
         timeout: Per-request socket timeout; NL research calls are slow.
 
     Returns:
-        ``{"api_names": [...], "rows": [...]}`` — rows of every result entry
-        concatenated, with the routed ``api_names`` surfaced for the agent.
+        The vendor's result tables, without flattening their columns or rows.
 
     Raises:
         RuntimeError: Token missing, or the vendor answered a non-zero
@@ -83,7 +82,12 @@ def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict
         timeout=timeout,
     )
 
-    results = _response_results(outer)
+    return _response_results(outer)
+
+
+def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict[str, Any]:
+    """Return merged rows for the existing macro, announcement and report tools."""
+    results = call_srv_tool_results(name, query, timeout=timeout)
 
     api_names: list[str] = []
     rows: list[dict[str, Any]] = []
