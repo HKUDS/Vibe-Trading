@@ -49,6 +49,8 @@ export function Settings() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelListHint, setModelListHint] = useState<string | null>(null);
   const [effortLevelsByModel, setEffortLevelsByModel] = useState<Record<string, string[]> | null>(null);
+  const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
+  const [defaultEffortsByModel, setDefaultEffortsByModel] = useState<Record<string, string>>({});
   const [localApiKey, setLocalApiKeyState] = useState(() => getApiAuthKey());
   const [clearApiKey, setClearApiKey] = useState(false);
   const [tushareToken, setTushareToken] = useState("");
@@ -127,6 +129,9 @@ export function Settings() {
     });
     setModelOptions([provider.default_model]);
     setModelListHint(null);
+    setEffortLevelsByModel(null);
+    setModelLabels({});
+    setDefaultEffortsByModel({});
   };
 
   const onProviderChange = (name: string) => {
@@ -143,6 +148,8 @@ export function Settings() {
     setModelOptions([provider.default_model]);
     setModelListHint(null);
     setEffortLevelsByModel(null);
+    setModelLabels({});
+    setDefaultEffortsByModel({});
   };
 
   // The provider the form shows now; a model list answering for an earlier one
@@ -169,6 +176,8 @@ export function Settings() {
         ...result.models,
       ].filter(Boolean))));
       setEffortLevelsByModel(result.effort_levels ?? null);
+      setModelLabels(result.model_labels ?? {});
+      setDefaultEffortsByModel(result.default_effort_levels ?? {});
       const warningMessages = {
         oauth_discovery_unsupported: t("settings.modelDiscoveryOauthUnsupported"),
         api_key_required: t("settings.modelDiscoveryApiKeyRequired"),
@@ -189,12 +198,13 @@ export function Settings() {
 
   // The CLI reports which models the login can run and the levels each accepts,
   // so fetch that as soon as the provider is shown rather than on a button press.
-  const isClaudeCli = selectedProvider?.auth_type === "claude_cli";
+  const hasAutomaticModelList = selectedProvider?.auth_type === "claude_cli"
+    || selectedProvider?.name === "openai-codex";
   useEffect(() => {
-    if (isClaudeCli) void refreshModels({ refresh: false });
+    if (hasAutomaticModelList) void refreshModels({ refresh: false });
     // refreshModels reads the form at call time; re-run only when the provider changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClaudeCli]);
+  }, [hasAutomaticModelList, selectedProvider?.name]);
 
   // A model's own levels when the provider reports them, else the provider's.
   const visibleEffortLevels =
@@ -423,10 +433,11 @@ export function Settings() {
 
             <label className="grid gap-2">
               <span className={labelClass}>{t("settings.model")}</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <ModelPicker
                   value={form.model_name}
                   options={modelOptions}
+                  labels={modelLabels}
                   onChange={(modelName) => setForm({ ...form, model_name: modelName })}
                   ariaLabel={t("settings.model")}
                   optionsAriaLabel={t("settings.modelOptions")}
@@ -579,6 +590,14 @@ export function Settings() {
                 })}
               </select>
               <span className={hintClass}>{t("settings.reasoningEffortDesc")}</span>
+              {form.provider === "openai-codex" && defaultEffortsByModel[form.model_name] && (
+                <span className={hintClass}>
+                  {t("settings.providerDefault")}:
+                  {" "}{effortLabelKey(defaultEffortsByModel[form.model_name])
+                    ? t(effortLabelKey(defaultEffortsByModel[form.model_name])!)
+                    : defaultEffortsByModel[form.model_name]}
+                </span>
+              )}
               {unsupportedEffort && (
                 <span className={hintClass}>
                   {t("settings.reasoningEffortReset", {

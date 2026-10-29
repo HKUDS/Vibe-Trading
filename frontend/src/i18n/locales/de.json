@@ -29,7 +29,8 @@
       "runtime": "Brokerverbindungen und den Betriebsstatus des Handels prüfen.",
       "settings": "Modelle, Datenquellen und Brokerverbindungen konfigurieren.",
       "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte.",
-      "paperTrading": "Tägliche Trades mit virtuellem Kapital testen. Es werden keine Brokeraufträge gesendet. Bardividenden sind nicht enthalten; die Ergebnisse zeigen keine Gesamtrendite."
+      "paperTrading": "Tägliche Trades mit virtuellem Kapital testen. Es werden keine Brokeraufträge gesendet. Bardividenden sind nicht enthalten; die Ergebnisse zeigen keine Gesamtrendite.",
+      "researchArtifacts": "Beleggestützte Analysen sitzungsübergreifend speichern und wiederverwenden."
     },
     "instructions": {
       "reports": "Bitte den Assistenten zuerst um einen Strategie-Backtest und öffne hier die Ergebnisse. Im Chat erstellte PDFs und andere Dokumente lädst du in der ursprünglichen Unterhaltung herunter.",
@@ -41,7 +42,8 @@
       "runtime": "Richte zuerst unter Einstellungen oder Portfolio eine Brokerverbindung ein. Verfügbare Handelsaktionen hängen von den Brokerfunktionen und deiner Autorisierung ab.",
       "settings": "Richte zunächst ein Modell ein. Ergänze Datenquellen oder Brokerverbindungen nach Bedarf; für öffentliche Marktrecherche ist kein Brokerkonto nötig.",
       "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte.",
-      "paperTrading": "Nur abgeschlossene Tageskerzen werden abgerechnet. Strategien sehen vorherige Tage und handeln zum Schlusskurs des Ausführungstags. Bitte 30 Minuten nach regulärem Börsenschluss warten; es wird keine automatische Ausführung geplant."
+      "paperTrading": "Nur abgeschlossene Tageskerzen werden abgerechnet. Strategien sehen vorherige Tage und handeln zum Schlusskurs des Ausführungstags. Bitte 30 Minuten nach regulärem Börsenschluss warten; es wird keine automatische Ausführung geplant.",
+      "researchArtifacts": "Frühere Analysen suchen, Revisionen öffnen oder mit neuen Belegen eine verknüpfte Revision erstellen. Ältere Schlussfolgerungen bleiben unverändert."
     }
   },
   "layout": {
@@ -73,7 +75,41 @@
     "portfolio": "Kontopositionen",
     "sessionsLoadFailed": "Gespräche können nicht geladen werden.",
     "pixelOffice": "Pixelbüro",
-    "paperTrading": "Simulierter Handel"
+    "paperTrading": "Simulierter Handel",
+    "researchArtifacts": "Recherche-Artefakte"
+  },
+  "researchArtifacts": {
+    "subject": "Forschungsthema",
+    "dataAsOf": "Datenstand",
+    "saving": "Speichern…",
+    "saveError": "Recherche-Artefakt konnte nicht gespeichert werden.",
+    "evidenceMissing": "Keine Belegreferenzen vorhanden",
+    "createdNotice": "Revision {{id}} erstellt.",
+    "emptyHint": "Speichere eine Analyse, um ihre Schlussfolgerungen und Belege in späteren Sitzungen wiederzuverwenden.",
+    "emptyTitle": "Noch keine Recherche-Artefakte",
+    "save": "Recherche speichern",
+    "universe": "Universum (optional)",
+    "loadError": "Recherche-Artefakte konnten nicht geladen werden.",
+    "formTitleNew": "Recherche speichern",
+    "verification": "Verifizierung",
+    "additionalEvidence": "Zusätzliche Beleg-URIs (eine pro Zeile)",
+    "revise": "Ausgehend von dieser Revision überarbeiten",
+    "completeness": "Vollständigkeit",
+    "searchPlaceholder": "Thema, Universum oder Inhalt suchen",
+    "newResearch": "Neue Recherche",
+    "formTitleRevision": "Verknüpfte Revision erstellen",
+    "content": "Inhalt der Recherche",
+    "subtitle": "Beleggestützte Analysen sitzungsübergreifend wiederverwenden, ohne frühere Revisionen zu überschreiben.",
+    "history": "Revisionsverlauf",
+    "optionalLinks": "Optionale verknüpfte IDs",
+    "title": "Recherche-Artefakte",
+    "close": "Schließen",
+    "idempotentNotice": "Identischer Inhalt und identische Provenienz existieren bereits in {{id}}.",
+    "evidence": "Belegquellen",
+    "hypothesis_id": "Hypothesen-ID",
+    "goal_id": "Ziel-ID",
+    "session_id": "Sitzungs-ID",
+    "run_id": "Lauf-ID"
   },
   "runtime": {
     "monitorBadge": "Runtime-Monitor",
@@ -455,6 +491,9 @@
     "reasoningEffortHigh": "Hoch",
     "reasoningEffortXhigh": "Sehr hoch",
     "reasoningEffortMax": "Maximal",
+    "reasoningEffortMinimal": "Minimal",
+    "reasoningEffortUltra": "Ultra",
+    "reasoningEffortPersistent": "Anhaltend",
     "reasoningEffortDesc": "Steuert die Reasoning-Tiefe bei unterstützten Modellen. Höhere Stufen können die komplexe Analyse verbessern, dauern aber länger; nicht unterstützte Anbieter ignorieren diese Einstellung möglicherweise. Keine (explizit) sendet das Feld mit deaktiviertem Reasoning — einige OpenAI-Modelle benötigen dies, um Tools zu verwenden.",
     "reasoningEffortReset": "Das gewählte Modell unterstützt {{level}} nicht; auf den Anbieter-Standard zurückgesetzt.",
     "useDefaultModel": "Standardmodell verwenden",

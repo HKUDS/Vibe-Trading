@@ -301,8 +301,8 @@
    "zh": "成交量排名与 vwap 排名的滚动相关系数，其排名在 5 日内的最大值。"
   },
   "gtja191_017": {
-   "en": "rank(vwap - 15d max(vwap)) is non-positive; we use signed_power for safety.",
-   "zh": "rank(vwap - 15 日 max(vwap)) 非正；为稳妥起见使用 signed_power（带符号幂）。"
+   "en": "The base is a percentile rank in (0, 1], so a negative 5-day close change is a real power, not a complex one.",
+   "zh": "底数是 (0, 1] 范围内的横截面百分位排名，因此五日收盘价变化即使为负，也能直接计算实数幂；幂指数保留原符号。"
   },
   "gtja191_018": {
    "en": "5d price ratio.",

@@ -12,9 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import pytest
-
-import src.agent.loop as loop_mod
 from src.agent.loop import AgentLoop
 from src.agent.trace import TraceWriter
 
@@ -68,7 +65,12 @@ class _StubLLM:
         return self._Response()
 
 
-def _build_agent(llm: Any, max_iter: int = 3, tmp_run_dir: Path | None = None) -> AgentLoop:
+def _build_agent(
+    llm: Any,
+    max_iter: int = 3,
+    tmp_run_dir: Path | None = None,
+    background_manager: Any = None,
+) -> AgentLoop:
     from src.tools import build_registry
     from src.memory.persistent import PersistentMemory
 
@@ -79,6 +81,7 @@ def _build_agent(llm: Any, max_iter: int = 3, tmp_run_dir: Path | None = None) -
         event_callback=None,
         max_iterations=max_iter,
         persistent_memory=pm,
+        background_manager=background_manager,
     )
     if tmp_run_dir is not None:
         tmp_run_dir.mkdir(parents=True, exist_ok=True)
@@ -101,7 +104,6 @@ def test_agent_run_messages_never_end_with_assistant(tmp_path: Path) -> None:
 
 def test_background_notifications_are_reintroduced_as_user_messages(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Background notifications used to append a trailing assistant ack."""
 
@@ -116,8 +118,12 @@ def test_background_notifications_are_reintroduced_as_user_messages(
             ]
 
     llm = _StubLLM()
-    monkeypatch.setattr(loop_mod, "get_background_manager", lambda: _BackgroundManager())
-    agent = _build_agent(llm, max_iter=1, tmp_run_dir=tmp_path / "run")
+    agent = _build_agent(
+        llm,
+        max_iter=1,
+        tmp_run_dir=tmp_path / "run",
+        background_manager=_BackgroundManager(),
+    )
 
     result = agent.run("Check background work")
 

@@ -941,6 +941,82 @@ class TestFxPairAlignment:
         )
 
 
+class TestBareUsEtfResolution:
+    """US-listed ETFs and funds resolve like equities, not as ``global``.
+
+    Yahoo carries US ETFs bare (``QQQ``, ``SPY``) while the fetch layer already
+    routes a bare ticker as ``us_equity`` and expects ``<SYM>.US``. The resolver
+    used to emit the bare symbol under market ``global``, so the two layers
+    disagreed and the identity lock rejected every ETF call (#2084).
+    """
+
+    @pytest.mark.parametrize(
+        ("yahoo_symbol", "quote"),
+        [
+            ("QQQ", {"quoteType": "ETF", "exchange": "NGM"}),
+            ("SPY", {"quoteType": "ETF", "exchange": "PCX"}),
+            ("VFIAX", {"quoteType": "MUTUALFUND", "exchange": "NAS"}),
+            # OTC Bulletin Board listings are US listings too.
+            ("ABCD", {"quoteType": "ETF", "exchange": "OBB"}),
+            # Search payloads do not always carry an exchange row.
+            ("QQQ", {"quoteType": "ETF"}),
+        ],
+    )
+    def test_bare_us_fund_gets_us_suffix(self, yahoo_symbol, quote) -> None:
+        assert ss._from_yahoo_symbol(yahoo_symbol, quote) == (
+            f"{yahoo_symbol}.US",
+            "us",
+        )
+
+    def test_bare_fund_on_foreign_venue_stays_native(self) -> None:
+        """A bare symbol Yahoo files under a non-US venue keeps its own form."""
+        assert ss._from_yahoo_symbol(
+            "XIC", {"quoteType": "ETF", "exchange": "TOR"}
+        ) == ("XIC", "global")
+
+    def test_bare_equity_on_foreign_venue_is_not_us(self) -> None:
+        """A bare non-US equity must not be relabelled as a US listing.
+
+        Before the exchange guard, every bare ``EQUITY`` became ``<SYM>.US``,
+        so ``RY`` (Toronto) was published as a US ticker.
+        """
+        assert ss._from_yahoo_symbol(
+            "RY", {"quoteType": "EQUITY", "exchange": "TOR"}
+        ) == ("RY", "global")
+
+    def test_crypto_and_index_unchanged(self) -> None:
+        assert ss._from_yahoo_symbol(
+            "BTC-USD", {"quoteType": "CRYPTOCURRENCY"}
+        ) == ("BTC-USD", "global")
+        assert ss._from_yahoo_symbol("^SPX", {"quoteType": "INDEX"}) == (
+            "^SPX",
+            "index",
+        )
+
+    def test_us_etf_candidate_row_is_fetchable(self) -> None:
+        """End to end: ``QQQ`` surfaces as ``QQQ.US`` / ``us``."""
+        quotes = [
+            {
+                "symbol": "QQQ",
+                "shortname": "Invesco QQQ Trust",
+                "exchange": "NGM",
+                "exchDisp": "NASDAQ",
+                "quoteType": "ETF",
+            }
+        ]
+        with patch.object(
+            ss.eastmoney_client,
+            "get_json",
+            return_value={"QuotationCodeTable": {"Data": []}},
+        ), patch.object(ss.yahoo_client, "search", return_value=quotes), patch.object(
+            ss.sec_edgar_client, "cik_for", return_value=None
+        ):
+            data = json.loads(ss.SymbolSearchTool().execute(query="QQQ"))["data"]
+
+        row = next(c for c in data["candidates"] if c["symbol"] == "QQQ.US")
+        assert row["market"] == "us"
+
+
 class TestCryptoUsdBaseWhitelist:
     """``USD`` quote leg on the crypto resolver is gated on a base whitelist.
 

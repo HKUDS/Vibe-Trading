@@ -23,7 +23,8 @@
       "runtime": "브로커 연결과 거래 실행 상태를 확인합니다.",
       "settings": "모델, 데이터 소스, 브로커 연결을 설정합니다.",
       "pixelOffice": "리서치 작업을 계획하고 배정합니다. 배정만으로 실행되지는 않으며, 직급은 거래 권한을 부여하지 않는 표시에 불과합니다.",
-      "paperTrading": "가상 자금으로 일별 거래를 테스트합니다. 증권사에 주문을 보내지 않습니다. 현금 배당을 제외하므로 총수익이 아닙니다."
+      "paperTrading": "가상 자금으로 일별 거래를 테스트합니다. 증권사에 주문을 보내지 않습니다. 현금 배당을 제외하므로 총수익이 아닙니다.",
+      "researchArtifacts": "근거 기반 분석을 세션 간에 저장하고 재사용합니다."
     },
     "instructions": {
       "reports": "먼저 도우미에게 전략 백테스트를 요청한 후 여기에서 결과를 엽니다. 대화에서 생성한 PDF 등은 원래 대화에서 다운로드하세요.",
@@ -35,7 +36,8 @@
       "runtime": "먼저 설정 또는 보유 자산 페이지에서 브로커를 연결하세요. 사용 가능한 거래 작업은 브로커 기능과 사용자의 승인에 따라 달라집니다.",
       "settings": "먼저 모델을 설정하세요. 필요에 따라 데이터 소스나 브로커 연결을 추가하면 됩니다. 공개 시장 리서치에는 브로커 계좌가 필요하지 않습니다.",
       "pixelOffice": "리서치 작업을 계획하고 배정합니다. 배정만으로 실행되지는 않으며, 직급은 거래 권한을 부여하지 않는 표시에 불과합니다.",
-      "paperTrading": "완료된 일봉만 결산합니다. 전략은 이전 날짜의 데이터만 읽고 실행일 종가로 체결됩니다. 정규장 종료 후 30분을 기다리세요. 자동 실행은 예약되지 않습니다."
+      "paperTrading": "완료된 일봉만 결산합니다. 전략은 이전 날짜의 데이터만 읽고 실행일 종가로 체결됩니다. 정규장 종료 후 30분을 기다리세요. 자동 실행은 예약되지 않습니다.",
+      "researchArtifacts": "이전 분석을 검색하고,원하는 리비전을 열거나, 새 증거로 연결된 리비전을 만드세요. 이전 결론은 변경되지 않습니다."
     }
   },
   "layout": {
@@ -67,7 +69,41 @@
     "about": "소개",
     "sessionsLoadFailed": "대화를 불러올 수 없습니다.",
     "pixelOffice": "픽셀 오피스",
-    "paperTrading": "모의 거래"
+    "paperTrading": "모의 거래",
+    "researchArtifacts": "연구 산출물"
+  },
+  "researchArtifacts": {
+    "completeness": "완전성",
+    "optionalLinks": "선택적 연결 ID",
+    "formTitleNew": "연구 저장",
+    "verification": "검증 상태",
+    "subject": "연구 주제",
+    "createdNotice": "리비전 {{id}}을(를) 만들었습니다.",
+    "emptyHint": "분석을 저장하면 이후 세션에서 결론과 근거를 재사용할 수 있습니다.",
+    "newResearch": "새 연구",
+    "emptyTitle": "아직 연구 산출물이 없습니다",
+    "save": "연구 저장",
+    "evidenceMissing": "첨부된 증거 참조가 없습니다",
+    "saveError": "연구 산출물을 저장하지 못했습니다.",
+    "additionalEvidence": "추가 증거 URI(줄당 하나)",
+    "subtitle": "이전 리비전을 덮어쓰지 않고 근거 기반 분석을 세션 간에 재사용합니다.",
+    "revise": "이 리비전을 바탕으로 수정",
+    "history": "리비전 기록",
+    "searchPlaceholder": "주제, 유니버스 또는 내용 검색",
+    "loadError": "연구 산출물을 불러오지 못했습니다.",
+    "close": "닫기",
+    "universe": "유니버스(선택 사항)",
+    "title": "연구 산출물",
+    "dataAsOf": "데이터 기준일",
+    "content": "연구 내용",
+    "saving": "저장 중…",
+    "idempotentNotice": "동일한 내용과 출처 정보가 {{id}}에 이미 있습니다.",
+    "formTitleRevision": "연결된 리비전 만들기",
+    "evidence": "근거 자료",
+    "hypothesis_id": "가설 ID",
+    "goal_id": "목표 ID",
+    "session_id": "세션 ID",
+    "run_id": "실행 ID"
   },
   "runtime": {
     "monitorBadge": "거래 모니터",
@@ -465,6 +501,9 @@
     "reasoningEffortHigh": "높음",
     "reasoningEffortXhigh": "매우 높음",
     "reasoningEffortMax": "최대",
+    "reasoningEffortMinimal": "최소",
+    "reasoningEffortUltra": "초고",
+    "reasoningEffortPersistent": "지속",
     "reasoningEffortDesc": "지원되는 모델의 추론 깊이를 조절합니다. 높을수록 복잡한 분석에 도움이 될 수 있지만 더 오래 걸리며, 지원하지 않는 제공자는 이 설정을 무시할 수 있습니다. '없음(명시)'은 추론을 끈 상태로 필드를 명시적으로 전송하며, 일부 OpenAI 모델은 도구를 사용할 때 이 값이 필요합니다.",
     "reasoningEffortReset": "선택한 모델은 {{level}}을(를) 지원하지 않아 제공자 기본값으로 되돌렸습니다.",
     "localApiAccess": "로컬 API 액세스",

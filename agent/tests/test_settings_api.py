@@ -76,13 +76,6 @@ def test_extract_model_ids_normalizes_openai_compatible_payloads() -> None:
             {"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1"},
             "api_key_required",
         ),
-        (
-            {
-                "provider": "openai-codex",
-                "base_url": "https://chatgpt.com/backend-api/codex/responses",
-            },
-            "oauth_discovery_unsupported",
-        ),
         # gh_cli used to build "gh_cli_discovery_unsupported", which the response
         # model rejects; it shares the OAuth code instead.
         ({"provider": "copilot"}, "oauth_discovery_unsupported"),
@@ -913,3 +906,36 @@ def test_other_providers_still_reject_xhigh(client: TestClient) -> None:
     response = client.put("/settings/llm", json=payload)
 
     assert response.status_code == 400
+
+
+def test_codex_model_discovery_uses_fixed_oauth_catalog_not_form_url(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = []
+
+    async def fake_catalog(provider):
+        called.append(provider.name)
+        return settings_routes.LLMModelsResponse(
+            provider=provider.name,
+            models=["openai-codex/gpt-6-sol"],
+            source="provider",
+            model_labels={"openai-codex/gpt-6-sol": "GPT-6 Sol"},
+            effort_levels={"openai-codex/gpt-6-sol": ["low", "medium", "ultra"]},
+            default_effort_levels={"openai-codex/gpt-6-sol": "medium"},
+        )
+
+    monkeypatch.setattr(settings_routes, "_list_openai_codex_models", fake_catalog)
+    response = client.post(
+        "/settings/llm/models",
+        json={
+            "provider": "openai-codex",
+            "base_url": "https://untrusted.example/should-not-receive-token",
+            "api_key": "untrusted-form-value",
+        },
+    )
+    assert response.status_code == 200
+    assert called == ["openai-codex"]
+    assert response.json()["models"] == ["openai-codex/gpt-6-sol"]
+    assert response.json()["model_labels"]["openai-codex/gpt-6-sol"] == "GPT-6 Sol"
+    assert response.json()["effort_levels"]["openai-codex/gpt-6-sol"] == ["low", "medium", "ultra"]
+    assert response.json()["default_effort_levels"]["openai-codex/gpt-6-sol"] == "medium"

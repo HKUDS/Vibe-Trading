@@ -5,8 +5,91 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Versioned research artifacts** can be saved, searched and explicitly revised
+  through agent tools, CLI, API and Web (all 11 locales). Revisions preserve
+  content, evidence references and data-as-of identity; unchanged saves are
+  idempotent and changed research defaults to unverified. Saving is not
+  automatic evidence verification or freshness renewal (#2079, #1909).
+- **BYMA cash-equity backtests** support ARS shares and declared CEDEAR ratio
+  histories, settlement cash netting, credit-date protection and explicit tick
+  table/panel assumptions. Settlement is approximated from observed sessions;
+  fees and lots are labelled assumptions. No blanket holding-period ban is
+  imposed on acquired ordinary shares (#2071).
+- **Codex OAuth model discovery** uses account-returned model and effort metadata
+  in Web Settings, including OAuth-only visible models. A failed catalog request
+  keeps the configured/default model and manual entry available (#2080).
+- **Factor research provenance** adds explicit mode, stage and lineage metadata
+  to bench/compare results across CLI, API, agent tools and MCP. It records
+  declarations and does not certify an evaluation lock (#2067).
+
+- **`list_backtest_runs` finds the backtests earlier turns and sessions already
+  ran**, so a follow-up turn reads their artifacts with `read_run_artifact`
+  instead of re-running them. It lists runs from `req.json` and `run_card.json`
+  (paged, current session by default, also over MCP) with each backtest's
+  absolute `run_dir`. Assistant replies in the history now carry
+  `[prev_run: <id>]` from the message metadata, and the grounding ledger adopts
+  a prior run read through `read_run_artifact` (run card and `metrics.csv` must
+  agree, metrics and summary artifacts must match the run card manifest). The session filter is not an
+  access control: runs have no owner. A run forged by the model in an earlier
+  turn is not detected.
+
 ### Fixed
 
+- **Document figure grounding** accepts document-scoped currency restatements
+  and magnitude-aware arithmetic, including percentage-point declarations.
+  Ratios, wrong values and wrong currencies remain distinct; undeclared
+  evidence is not broadened. Missing `read_document.file_path` now gives an
+  actionable uploaded-file handle example (#2050).
+- **Spot crypto backtests** no longer apply implicit perpetual funding. Explicit
+  perpetual codes/mode and a nonzero configured funding proxy retain it.
+  Generic commission applies unless a side-specific fee overrides it, and
+  signed `crypto_funding_pnl` makes applied funding visible (#2088).
+- **Binance all-symbol open orders** acknowledge CCXT's symbol-less warning while
+  preserving rate limiting and exchange/authentication/network failures. Fill
+  history still reports its symbol requirement explicitly (#2090).
+- **Paper strategies use a fresh process with private stdio pipes**, so an MCP
+  host blocked reading stdin cannot capture the worker's bootstrap. Startup and
+  per-day deadlines, sandboxing and hard teardown remain enforced. Native
+  Windows confirmation remains pending (#2089).
+- **Background ownership** isolates task reads, cancellation and completion
+  notices by host-supplied session/worker scope. Shared queue mutation preserves
+  other owners' notices and later attempts can read prior tasks in their session.
+  Cancellation/shutdown cleanup and durable restart reconciliation remain
+  separate roadmap stages (#2092, #2091).
+- **Explicit tool deny-list and bash policies** apply at registry execution
+  across Agent, Swarm and MCP, and advertised schemas match them. Other
+  providers keep their prior unconfigured defaults; Claude keeps its legacy
+  defaults. Generic settings and explicit legacy aliases work across providers
+  (#2087, #2085).
+- **GTJA191 alpha 17** preserves the signed five-day exponent, with an independent
+  golden calculation and NaN-safe power (#2051). WhatsApp voice notes use the
+  existing media fallback (#2078), and the Windows heredoc refusal no longer
+  blocks POSIX shells (#2077).
+
+- **Forex symbol detection** no longer depends on AKShare's module layout:
+  `akshare.forex` was deleted in 1.20.0 and the symbol map moved to
+  `akshare.fx.cons_forex`, so the single hard-coded import turned every FX pair
+  into an A-share lookup. Both layouts are now probed, and a wholly missing map
+  degrades to "not a forex pair" instead of silently matching nothing.
+- **Bare US ETF and fund symbols** such as `QQQ` and `SPY` now resolve to
+  `QQQ.US` / market `us` instead of a suffix-less `global` candidate. The fetch
+  layer already routed bare US tickers as US equities, so the resolver was the
+  only place that disagreed: the identity lock then rejected the follow-up call
+  ("consumer symbol/venue differs from the locked resolver identity"). ETFs and
+  mutual funds on non-US venues keep their native form (#2084).
+- **`etf_holdings` accepts the `.US` market suffix** on US symbols, so the
+  identity locked as `QQQ.US` still reaches the SEC series/class ticker `QQQ`
+  instead of being reported as an unknown share class.
+- **JSONP-wrapped provider bodies** decode instead of raising: the throttled
+  JSON GET helper unwraps a `callback(...)` envelope when `response.json()`
+  cannot parse the body, so A-share news search keeps working when Eastmoney
+  switches to JSONP (#2081).
+- **Degraded Eastmoney news indexes** get one throttled browser-TLS retry before
+  an actionable error instead of
+  reading as an empty article list: the Guba user index (`passportWeb`) can no
+  longer masquerade as "this stock has no news" (#2081).
 - **Global futures routing and pricing**: digit-bearing contracts such as
   `M2K=F` and `6EZ2026.CME`, including `local:` inputs, reach the global
   futures engine with their full product code. OJ and ZR use quote-unit

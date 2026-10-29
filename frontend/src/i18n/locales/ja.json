@@ -23,7 +23,8 @@
       "runtime": "ブローカーの接続と取引の稼働状況を確認します。",
       "settings": "モデル、データソース、ブローカー接続を設定します。",
       "pixelOffice": "調査タスクを計画・割り当てます。割り当てでは実行は始まりません。役職はラベルであり、取引権限を付与しません。",
-      "paperTrading": "仮想資金で日次取引を検証します。証券会社へ注文は送りません。現金配当を含まず、総収益ではありません。"
+      "paperTrading": "仮想資金で日次取引を検証します。証券会社へ注文は送りません。現金配当を含まず、総収益ではありません。",
+      "researchArtifacts": "証拠に基づく分析をセッション間で保存して再利用します。"
     },
     "instructions": {
       "reports": "まずアシスタントに戦略のバックテストを依頼し、ここで結果を開きます。会話で作成した PDF などは元の会話からダウンロードします。",
@@ -35,7 +36,8 @@
       "runtime": "先に設定または保有資産ページでブローカーを接続します。利用できる取引操作はブローカーの機能とあなたの許可に依存します。",
       "settings": "まずモデルを設定します。必要に応じてデータソースやブローカー接続を追加します。公開市場のリサーチにはブローカー口座は不要です。",
       "pixelOffice": "調査タスクを計画・割り当てます。割り当てでは実行は始まりません。役職はラベルであり、取引権限を付与しません。",
-      "paperTrading": "確定した日足のみを使用します。戦略は前日までのデータを読み、執行日の終値で約定します。通常の取引終了から30分お待ちください。自動実行は設定されません。"
+      "paperTrading": "確定した日足のみを使用します。戦略は前日までのデータを読み、執行日の終値で約定します。通常の取引終了から30分お待ちください。自動実行は設定されません。",
+      "researchArtifacts": "過去の分析を検索し、任意のリビジョンを開くか、新しい証拠で関連リビジョンを作成します。古い結論は変更されません。"
     }
   },
   "layout": {
@@ -67,7 +69,41 @@
     "about": "概要",
     "sessionsLoadFailed": "会話を読み込めません。",
     "pixelOffice": "ピクセルオフィス",
-    "paperTrading": "模擬取引"
+    "paperTrading": "模擬取引",
+    "researchArtifacts": "リサーチ成果物"
+  },
+  "researchArtifacts": {
+    "subject": "研究主題",
+    "dataAsOf": "データ基準日",
+    "saving": "保存中…",
+    "saveError": "リサーチ成果物を保存できません。",
+    "evidenceMissing": "証拠参照がありません",
+    "createdNotice": "リビジョン {{id}} を作成しました。",
+    "emptyHint": "分析を保存すると、後のセッションで結論と証拠を再利用できます。",
+    "emptyTitle": "リサーチ成果物はまだありません",
+    "save": "リサーチを保存",
+    "universe": "ユニバース（任意）",
+    "loadError": "リサーチ成果物を読み込めません。",
+    "formTitleNew": "リサーチを保存",
+    "verification": "検証状態",
+    "additionalEvidence": "追加の証拠 URI（1行に1件）",
+    "revise": "このリビジョンから新しいリビジョンを作成",
+    "completeness": "完全性",
+    "searchPlaceholder": "主題・ユニバース・本文を検索",
+    "newResearch": "新規リサーチ",
+    "formTitleRevision": "関連リビジョンを作成",
+    "content": "研究本文",
+    "subtitle": "証拠に基づく分析をセッション間で再利用し、過去のリビジョンを上書きしません。",
+    "history": "リビジョン履歴",
+    "optionalLinks": "任意の関連 ID",
+    "title": "リサーチ成果物",
+    "close": "閉じる",
+    "idempotentNotice": "同一の内容と 出典情報 は {{id}} に既に存在します。",
+    "evidence": "根拠資料",
+    "hypothesis_id": "仮説 ID",
+    "goal_id": "目標 ID",
+    "session_id": "セッション ID",
+    "run_id": "実行 ID"
   },
   "runtime": {
     "monitorBadge": "取引モニター",
@@ -465,6 +501,9 @@
     "reasoningEffortHigh": "高",
     "reasoningEffortXhigh": "超高",
     "reasoningEffortMax": "最大",
+    "reasoningEffortMinimal": "最小",
+    "reasoningEffortUltra": "超高",
+    "reasoningEffortPersistent": "持続",
     "reasoningEffortDesc": "対応モデルの推論の深さを調整します。高いほど複雑な分析に有効な場合がありますが、時間がかかります。未対応のプロバイダーでは無視されることがあります。「なし（明示）」は推論を無効にしたままフィールドを明示送信し、一部の OpenAI モデルはツール利用時にこれが必要です。",
     "reasoningEffortReset": "選択したモデルは {{level}} に対応していないため、プロバイダーのデフォルトに戻しました。",
     "localApiAccess": "ローカル API アクセス",

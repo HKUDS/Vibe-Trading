@@ -161,7 +161,8 @@ def _fetch_eastmoney_news(query: str, limit: int) -> list[dict[str, Any]]:
     Raises:
         requests.RequestException: Network failure, propagated to the caller.
         requests.HTTPError: Non-2xx response status.
-        ValueError: Body is not valid JSON.
+        ValueError: Body is not valid JSON, or Eastmoney answered with its
+            degraded user index instead of the CMS article index.
     """
     param = json.dumps(
         {
@@ -181,9 +182,10 @@ def _fetch_eastmoney_news(query: str, limit: int) -> list[dict[str, Any]]:
         },
         ensure_ascii=False,
     )
+    params = {"cb": "", "param": param, "_": "0"}
     payload = eastmoney_client.get_json(
         _EM_NEWS_URL,
-        params={"cb": "", "param": param, "_": "0"},
+        params=params,
     )
     decoded = _decode_jsonp(payload)
     if not isinstance(decoded, dict):
@@ -193,6 +195,23 @@ def _fetch_eastmoney_news(query: str, limit: int) -> list[dict[str, Any]]:
         return []
     articles = result.get("cmsArticleWebOld")
     if not isinstance(articles, list):
+        # Eastmoney swaps the CMS article index for its Guba user index
+        # ("passportWeb") when it distrusts the caller, so a degraded answer is
+        # shaped like a valid but empty one. Reading it as ``[]`` would turn a
+        # blocked upstream into a silent "no news for this stock" (#2081).
+        if result:
+            # Retry once with a browser TLS fingerprint, through the SAME
+            # provider throttle. A genuine empty CMS list never reaches here.
+            retry = eastmoney_client.get_json(_EM_NEWS_URL, params=params, browser=True)
+            retry = _decode_jsonp(retry)
+            result = retry.get("result", {}) if isinstance(retry, dict) else {}
+            if isinstance(result, dict) and isinstance(result.get("cmsArticleWebOld"), list):
+                return [_em_article(a) for a in result["cmsArticleWebOld"] if isinstance(a, dict)][:limit]
+            raise ValueError(
+                "eastmoney returned no cmsArticleWebOld section "
+                f"(result keys: {sorted(result) if isinstance(result, dict) else []}):"
+                " the search index remained degraded after the browser TLS retry"
+            )
         return []
     return [_em_article(a) for a in articles if isinstance(a, dict)][:limit]
 

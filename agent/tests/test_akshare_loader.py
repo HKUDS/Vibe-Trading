@@ -8,6 +8,7 @@ network — real-data smoke is in tests/_smoke_akshare_real.py if/when needed.
 
 from __future__ import annotations
 
+import importlib
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -15,15 +16,17 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from backtest.loaders import akshare_loader
 from backtest.loaders.akshare_loader import (
     DataLoader,
-    _is_a_share,
     _is_etf_listed,
     _is_forex,
-    _is_hk,
-    _is_us,
 )
 from tests.loader_contract import assert_loader_contract
+
+#: Captured once, before any test monkeypatches importlib, so the layout tests
+#: can delegate unknown module names to the real loader.
+_REAL_IMPORT = importlib.import_module
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +77,47 @@ class TestIsForex:
     def test_unknown_pair_does_not_match(self) -> None:
         # "ZZZZZZ" isn't in akshare's symbol_market_map
         assert not _is_forex("ZZZZZZ")
+
+    def test_akshare_120_cons_namespace(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "akshare.forex.cons", None)
+        monkeypatch.setitem(
+            sys.modules,
+            "akshare.fx.cons_forex",
+            SimpleNamespace(symbol_market_map={"EURUSD": 119}),
+        )
+        assert _is_forex("EURUSD")
+        assert not _is_forex("ZZZZZZ")
+
+
+class TestForexSymbolMapLocation:
+    """AKShare 1.20.0 deleted ``akshare.forex`` and moved the symbol map to
+    ``akshare.fx.cons_forex``. Detection must survive either layout, otherwise
+    every FX pair silently routes to the A-share endpoint (CI red on 1.20.x)."""
+
+    @staticmethod
+    def _patch_blocked(monkeypatch: pytest.MonkeyPatch, *blocked: str) -> None:
+        def fake_import(name: str, *args: object, **kwargs: object) -> object:
+            if name in blocked:
+                raise ModuleNotFoundError(f"No module named {name!r}")
+            return _REAL_IMPORT(name, *args, **kwargs)
+
+        monkeypatch.setattr(akshare_loader.importlib, "import_module", fake_import)
+
+    def test_newer_layout_alone_still_detects_pairs(self, monkeypatch) -> None:
+        pytest.importorskip("akshare.fx.cons_forex", reason="akshare >= 1.20 only")
+        self._patch_blocked(monkeypatch, "akshare.forex.cons")
+        assert _is_forex("EURUSD")
+
+    def test_legacy_layout_alone_still_detects_pairs(self, monkeypatch) -> None:
+        pytest.importorskip("akshare.forex.cons", reason="akshare <= 1.19 only")
+        self._patch_blocked(monkeypatch, "akshare.fx.cons_forex")
+        assert _is_forex("EURUSD")
+
+    def test_missing_symbol_map_degrades_to_false(self, monkeypatch) -> None:
+        self._patch_blocked(monkeypatch, "akshare.fx.cons_forex", "akshare.forex.cons")
+        assert not _is_forex("EURUSD")
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,7 @@ except Exception:  # pragma: no cover — rich is a project dep, fallback only
 
 from src.factors.compare_runner import SORT_KEYS as _COMPARE_SORT_KEYS, compare_alphas
 from src.factors.registry import Registry, RegistryError
+from src.factors.research_contract import RESEARCH_MODES, RESEARCH_STAGES
 
 
 # Resolve repo root once: this file lives at
@@ -603,11 +604,22 @@ def cmd_alpha_bench(args: argparse.Namespace) -> int:
                     oos_split=getattr(args, "oos_split", None),
                     training_cutoff=getattr(args, "training_cutoff", None),
                     horizon=horizon,
+                    research_stage=getattr(
+                        args, "research_stage", "single_factor_evaluation"
+                    ),
+                    research_mode=getattr(args, "research_mode", None) or "strict",
                 )
             else:
                 from src.factors.bench_runner import run_bench as _run_bench_plain
 
-                run_bench = functools.partial(_run_bench_plain, horizon=horizon)
+                run_bench = functools.partial(
+                    _run_bench_plain,
+                    horizon=horizon,
+                    research_stage=getattr(
+                        args, "research_stage", "single_factor_evaluation"
+                    ),
+                    research_mode=getattr(args, "research_mode", None) or "explore",
+                )
         except ImportError as exc:
             _err(f"alpha bench failed: bench_runner unavailable ({exc})")
             return 1
@@ -1121,6 +1133,16 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
         type=int,
         default=5,
         help="Strict mode only: row-shuffled random controls per alpha (default: 5)",
+    )
+    p_bench.add_argument(
+        "--research-mode", choices=RESEARCH_MODES, default=None,
+        help="Declared research mode (default: strict for --strict, otherwise explore; does not enforce locked evaluation)",
+    )
+    p_bench.add_argument(
+        "--research-stage",
+        choices=RESEARCH_STAGES,
+        default="single_factor_evaluation",
+        help="Research stage recorded in the factor-research contract",
     )
     p_bench.add_argument(
         "--yes",

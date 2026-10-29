@@ -6,6 +6,7 @@ data aggregator covering Chinese and global markets.  No API token required.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import re
 from typing import Dict, List, Optional
@@ -66,12 +67,20 @@ def _sina_contract(code: str) -> str:
 
 _CN_FUTURES_MAIN_RE = re.compile(r"^[A-Z]{1,2}0$")
 
-
-
+#: AKShare moved the forex symbol map between releases: ``akshare.forex.cons``
+#: existed up to 1.19.x and ``akshare.fx.cons_forex`` carries it from 1.20.0 on,
+#: where the whole ``akshare.forex`` package was deleted. requirements only pin
+#: ``akshare>=1.12.0``, so both layouts have to be probed — importing a single
+#: hard-coded path silently degrades forex detection to "never a forex pair",
+#: which routes FX symbols to the A-share endpoint.
+_FOREX_SYMBOL_MAP_MODULES = (
+    "akshare.fx.cons_forex",  # akshare >= 1.20.0
+    "akshare.forex.cons",  # akshare <= 1.19.x
+)
 
 
 def _is_forex(code: str) -> bool:
-    """Detect forex pairs by matching against AKShare's symbol_market_map.
+    """Detect forex pairs by matching against AKShare's symbol map.
 
     Issue #54 — forex symbols (EURUSD, GBPUSD, etc.) have no exchange suffix
     and previously fell through to the A-share endpoint.
@@ -79,11 +88,15 @@ def _is_forex(code: str) -> bool:
     # Accept the canonical slash form (EUR/USD) too, so the forex fallback
     # chain (mt5 → akshare) actually engages for project-style codes.
     upper = code.upper().removesuffix(".FX").replace("/", "")
-    try:
-        from akshare.forex.cons import symbol_market_map
-    except Exception:
-        return False
-    return upper in symbol_market_map
+    for module_name in _FOREX_SYMBOL_MAP_MODULES:
+        try:
+            module = importlib.import_module(module_name)
+            symbol_market_map = module.symbol_market_map
+        except (ImportError, AttributeError):  # layout moved again, or module unavailable
+            continue
+        if upper in symbol_market_map:
+            return True
+    return False
 
 
 @register

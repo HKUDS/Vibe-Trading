@@ -165,6 +165,33 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "VN": "vn",
 }
 
+# Quote types Yahoo lists under a plain US ticker (``QQQ``, ``SPY``, ``VFIAX``).
+# The data layer already treats a bare ticker as ``us_equity``; only the
+# resolver used to disagree, which is what #2084 reported.
+_US_LISTED_QUOTE_TYPES = frozenset({"EQUITY", "ETF", "MUTUALFUND"})
+
+# Yahoo exchange codes for US venues. Used only to keep a bare symbol that
+# belongs to a non-US venue on its native form; an empty exchange is treated as
+# US because Yahoo suffixes every non-US listing it lists.
+_US_YAHOO_EXCHANGES = frozenset(
+    {
+        "NMS",  # Nasdaq Global Select
+        "NGM",  # Nasdaq Global Market
+        "NCM",  # Nasdaq Capital Market
+        "NAS",  # Nasdaq (unspecified tier)
+        "NYQ",  # NYSE
+        "NYE",  # NYSE (older payload spelling)
+        "PCX",  # NYSE Arca (most ETFs)
+        "ASE",  # NYSE American
+        "BTS",  # Cboe BZX
+        "OQX",  # OTCQX
+        "OQB",  # OTCQB
+        "OBB",  # OTC Bulletin Board
+        "PNK",  # Pink Sheets
+        "OTC",  # OTC (unspecified tier)
+    }
+)
+
 # Hard caps so a broad query cannot bloat the envelope.
 _MAX_LIMIT = 25
 _DEFAULT_LIMIT = 10
@@ -835,8 +862,10 @@ def _from_yahoo_symbol(raw_symbol: str, quote: Dict[str, Any]) -> tuple[str, str
     Args:
         raw_symbol: The Yahoo-side symbol (e.g. ``AAPL``, ``0700.HK``,
             ``TD.TO``, ``PNG.V``, or ``BTC-USD``).
-        quote: The full Yahoo quote, used to distinguish a bare US equity from a
-            crypto/index instrument via ``quoteType``.
+        quote: The full Yahoo quote, used to classify the instrument via
+            ``quoteType`` (bare US equity/ETF/fund vs crypto/index/FX) and to
+            keep a bare symbol filed under a non-US venue on its native form
+            via ``exchange``.
 
     Returns:
         ``(symbol, market)`` in the project convention.
@@ -866,9 +895,21 @@ def _from_yahoo_symbol(raw_symbol: str, quote: Dict[str, Any]) -> tuple[str, str
         return raw_symbol, "global"
     if raw_symbol.startswith("^"):
         return raw_symbol, "index"
-    if quote_type == "EQUITY" and "." not in raw_symbol and "-" not in raw_symbol:
+    exchange = str(quote.get("exchange") or "").strip().upper()
+    if (
+        quote_type in _US_LISTED_QUOTE_TYPES
+        and "." not in raw_symbol
+        and "-" not in raw_symbol
+        and (not exchange or exchange in _US_YAHOO_EXCHANGES)
+    ):
+        # ETFs and mutual funds are US listings just like equities: Yahoo
+        # carries them bare (``QQQ``, ``SPY``), and the fetch layer already
+        # routes a bare ticker as ``us_equity``. Leaving them on Yahoo's
+        # native symbol with market ``global`` split the two layers — the
+        # resolver locked ``QQQ`` while ``get_market_data`` demands
+        # ``QQQ.US``, so every ETF question ended degraded (#2084).
         return f"{upper}.US", "us"
-    # Crypto, indices, FX, ETFs on non-HK exchanges: keep Yahoo's native symbol.
+    # Crypto, indices, FX, ETFs on non-US exchanges: keep Yahoo's native symbol.
     return raw_symbol, "global"
 
 

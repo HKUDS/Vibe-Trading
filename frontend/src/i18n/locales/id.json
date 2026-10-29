@@ -29,7 +29,8 @@
       "runtime": "Periksa koneksi broker dan status pelaksanaan perdagangan.",
       "settings": "Atur model, sumber data, dan koneksi broker.",
       "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi.",
-      "paperTrading": "Uji transaksi harian dengan dana virtual. Tidak ada pesanan yang dikirim ke broker. Hasil tidak mencakup dividen tunai dan bukan imbal hasil total."
+      "paperTrading": "Uji transaksi harian dengan dana virtual. Tidak ada pesanan yang dikirim ke broker. Hasil tidak mencakup dividen tunai dan bukan imbal hasil total.",
+      "researchArtifacts": "Simpan dan gunakan kembali analisis berbasis bukti antarsesi."
     },
     "instructions": {
       "reports": "Minta asisten melakukan backtest strategi terlebih dahulu, lalu buka hasilnya di sini. Unduh PDF dan dokumen yang dibuat di chat dari percakapan asal.",
@@ -41,7 +42,8 @@
       "runtime": "Atur koneksi broker di Pengaturan atau Portofolio terlebih dahulu. Tindakan perdagangan yang tersedia bergantung pada kemampuan broker dan otorisasi Anda.",
       "settings": "Atur model untuk memulai. Tambahkan data atau koneksi broker sesuai kebutuhan; riset data pasar publik tidak memerlukan akun broker.",
       "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi.",
-      "paperTrading": "Hanya candle harian yang selesai dapat diproses. Strategi membaca hari sebelumnya dan dieksekusi pada penutupan hari eksekusi. Tunggu 30 menit setelah penutupan reguler; tidak ada eksekusi otomatis yang dijadwalkan."
+      "paperTrading": "Hanya candle harian yang selesai dapat diproses. Strategi membaca hari sebelumnya dan dieksekusi pada penutupan hari eksekusi. Tunggu 30 menit setelah penutupan reguler; tidak ada eksekusi otomatis yang dijadwalkan.",
+      "researchArtifacts": "Cari analisis sebelumnya, buka revisi apa pun, atau buat revisi tertaut dengan bukti baru. Kesimpulan lama tetap tidak berubah."
     }
   },
   "layout": {
@@ -73,7 +75,41 @@
     "about": "Tentang",
     "sessionsLoadFailed": "Percakapan tidak dapat dimuat.",
     "pixelOffice": "Kantor piksel",
-    "paperTrading": "Trading simulasi"
+    "paperTrading": "Trading simulasi",
+    "researchArtifacts": "Artefak riset"
+  },
+  "researchArtifacts": {
+    "completeness": "Kelengkapan",
+    "optionalLinks": "ID tertaut opsional",
+    "formTitleNew": "Simpan riset",
+    "verification": "Verifikasi",
+    "subject": "Subjek riset",
+    "createdNotice": "Revisi {{id}} dibuat.",
+    "emptyHint": "Simpan analisis untuk menggunakan kembali kesimpulan dan buktinya di sesi berikutnya.",
+    "newResearch": "Riset baru",
+    "emptyTitle": "Belum ada artefak riset",
+    "save": "Simpan riset",
+    "evidenceMissing": "Tidak ada referensi bukti terlampir",
+    "saveError": "Tidak dapat menyimpan artefak riset.",
+    "additionalEvidence": "URI bukti tambahan (satu per baris)",
+    "subtitle": "Gunakan kembali analisis berbasis bukti antarsesi tanpa menimpa revisi sebelumnya.",
+    "revise": "Revisi dari revisi ini",
+    "history": "Riwayat revisi",
+    "searchPlaceholder": "Cari subjek, universe, atau konten",
+    "loadError": "Tidak dapat memuat artefak riset.",
+    "close": "Tutup",
+    "universe": "Universe (opsional)",
+    "title": "Artefak riset",
+    "dataAsOf": "Data per",
+    "content": "Konten riset",
+    "saving": "Menyimpan…",
+    "idempotentNotice": "Konten dan asal-usul yang sama sudah ada di {{id}}.",
+    "formTitleRevision": "Buat revisi tertaut",
+    "evidence": "Referensi bukti",
+    "hypothesis_id": "ID hipotesis",
+    "goal_id": "ID tujuan",
+    "session_id": "ID sesi",
+    "run_id": "ID proses"
   },
   "runtime": {
     "monitorBadge": "Monitor Runtime",
@@ -455,6 +491,9 @@
     "reasoningEffortHigh": "Tinggi",
     "reasoningEffortXhigh": "Sangat tinggi",
     "reasoningEffortMax": "Maksimum",
+    "reasoningEffortMinimal": "Minimal",
+    "reasoningEffortUltra": "Ultra",
+    "reasoningEffortPersistent": "Berkelanjutan",
     "reasoningEffortDesc": "Mengatur kedalaman reasoning pada model yang mendukung. Tingkat yang lebih tinggi dapat meningkatkan analisis kompleks tetapi bisa membutuhkan waktu lebih lama; provider yang tidak mendukung dapat mengabaikan pengaturan ini. Tidak ada (eksplisit) mengirim field dengan reasoning dinonaktifkan — beberapa model OpenAI memerlukannya agar dapat menggunakan tool.",
     "reasoningEffortReset": "Model yang dipilih tidak mendukung {{level}}; dikembalikan ke Provider bawaan.",
     "useDefaultModel": "Gunakan model default",

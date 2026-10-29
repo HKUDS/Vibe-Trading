@@ -53,16 +53,20 @@
 
 > ⚠️ **Peringatan keamanan:** Akun X `VibeTrading_HKU`, proyek Virtuals `101845`, dan kontrak token `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` bukan aset resmi Vibe-Trading. Kami tidak pernah meluncurkan atau mendukung token maupun memecoin apa pun. Jangan membeli, menghubungkan wallet, atau menandatangani apa pun. [Detail](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-29** 🛠️ **Penggunaan ulang riset dan perbaikan eksekusi (belum dirilis)**: Simpan riset berversi dan gunakan kembali artefak backtest sebelumnya yang diverifikasi terhadap manifest ([#2079](https://github.com/HKUDS/Vibe-Trading/pull/2079), [#2074](https://github.com/HKUDS/Vibe-Trading/pull/2074)).
+  Perbaiki angka uang dan satuan dokumen serta biaya backtest kripto spot; pulihkan kueri order terbuka Binance dan kompatibilitas AKShare ([#2050](https://github.com/HKUDS/Vibe-Trading/issues/2050), [#2088](https://github.com/HKUDS/Vibe-Trading/issues/2088), [#2090](https://github.com/HKUDS/Vibe-Trading/issues/2090), [#2083](https://github.com/HKUDS/Vibe-Trading/pull/2083)).
+  Tambahkan penemuan model Codex, aturan BYMA, isolasi tugas latar belakang menurut pemilik, dan kebijakan alat bersama. Strategi simulasi memakai pipa privat ke proses pekerja; verifikasi Windows native masih menunggu ([#2089](https://github.com/HKUDS/Vibe-Trading/issues/2089), [CHANGELOG](CHANGELOG.md)).
+
 - **2026-10-28** 🛠️ **Perbaikan paper trading, portofolio, dan routing pasar (belum dirilis)**: Menambahkan state machine lifecycle order paper trading Fase 1 yang tidak bergantung pada bar, dengan replay ID stabil, pembatalan fail-closed, penyelesaian harian, partial fill opsional, dan snapshot deterministik ([#2066](https://github.com/HKUDS/Vibe-Trading/pull/2066)). Portofolio Robinhood read-only kini mendukung pemilihan akun eksplisit, pemetaan kuotasi, dan pagination berbasis cursor ([#2054](https://github.com/HKUDS/Vibe-Trading/pull/2054); menutup [#1428](https://github.com/HKUDS/Vibe-Trading/issues/1428)). Memperbaiki invalidasi cache dan kondisi masuk yang dideklarasikan pada Shadow Account ([#2075](https://github.com/HKUDS/Vibe-Trading/pull/2075), [#2073](https://github.com/HKUDS/Vibe-Trading/pull/2073)); memetakan simbol AS untuk Futu dan mengonfigurasi endpoint gateway IBKR/Futu ([#2076](https://github.com/HKUDS/Vibe-Trading/pull/2076), [#1983](https://github.com/HKUDS/Vibe-Trading/pull/1983)). Juga memulihkan final terstruktur dua giliran, semantik faktor Qlib, serta batas input numerik dan grounding ([#2064](https://github.com/HKUDS/Vibe-Trading/pull/2064), [#2069](https://github.com/HKUDS/Vibe-Trading/pull/2069), [#2072](https://github.com/HKUDS/Vibe-Trading/pull/2072), [#2053](https://github.com/HKUDS/Vibe-Trading/pull/2053)). Semua perbaikan sudah masuk ke `main` untuk rilis berikutnya.
 
 - **2026-10-27** 🛠️ **Koneksi portofolio dan ketepatan riset (belum dirilis)**: Menyimpan alamat gateway IBKR/Futu per koneksi melalui Web atau CLI, termasuk untuk pembacaan oleh agen ([#1983](https://github.com/HKUDS/Vibe-Trading/pull/1983)). Pembacaan portofolio Robinhood mendukung pemilihan akun, paginasi, dan kuotasi saham; perbaikan lanjutan memeriksa simbol yang diminta, memilih transaksi reguler/di luar jam reguler yang lebih baru, dan menampilkan waktu harga ([#2054](https://github.com/HKUDS/Vibe-Trading/pull/2054), [011a555ed](https://github.com/HKUDS/Vibe-Trading/commit/011a555ed)). Memulihkan rumus Qlib ROC/CORD dan menerapkan batas masuk strategi bayangan ([#2069](https://github.com/HKUDS/Vibe-Trading/pull/2069), [#2073](https://github.com/HKUDS/Vibe-Trading/pull/2073)). Mempertahankan satuan keuangan dan bukti angka, membatasi deklarasi mata uang pada objeknya, menolak input keuangan non-finit atau boolean, dan menerima jawaban akhir terstruktur dua giliran biasa dari `claude-cli` ([#2072](https://github.com/HKUDS/Vibe-Trading/pull/2072), [#2053](https://github.com/HKUDS/Vibe-Trading/pull/2053), [#2064](https://github.com/HKUDS/Vibe-Trading/pull/2064)). Sudah tersedia di `main` untuk rilis berikutnya.
 
+<details>
+<summary>Berita sebelumnya</summary>
+
 - **2026-10-26** 🛠️ **Perbaikan pembatalan Agent, verifikasi angka, dan data pasar (belum dirilis)**: Menghentikan chat membatalkan Swarm yang sedang berjalan dan mengabaikan peristiwa status yang terlambat ([#2059](https://github.com/HKUDS/Vibe-Trading/pull/2059), [#2060](https://github.com/HKUDS/Vibe-Trading/pull/2060)). Memulihkan definisi OLS bergulir Qlib BETA/RESI, memasukkan angka dokumen yang memenuhi syarat ke catatan bukti, dan memulihkan pemanggilan alat native `claude-cli` yang ditolak ([#2062](https://github.com/HKUDS/Vibe-Trading/pull/2062), [#2058](https://github.com/HKUDS/Vibe-Trading/pull/2058), [#2048](https://github.com/HKUDS/Vibe-Trading/pull/2048)). Menambahkan metadata ketersediaan data per bidang di alpha-bench serta memperbaiki luapan bobot, skala peringkat studi peristiwa, dan penyelarasan periode atribusi ([#2057](https://github.com/HKUDS/Vibe-Trading/pull/2057), [#2046](https://github.com/HKUDS/Vibe-Trading/pull/2046), [#2000](https://github.com/HKUDS/Vibe-Trading/pull/2000), [#2044](https://github.com/HKUDS/Vibe-Trading/pull/2044)). Juga memperbaiki perutean tingkat penalaran Moonshot, validasi input jurnal/opsi, simbol kelas saham Stooq, desimal screener, dan batas harga saham ST sesuai papan perdagangan ([#2043](https://github.com/HKUDS/Vibe-Trading/pull/2043), [#2052](https://github.com/HKUDS/Vibe-Trading/pull/2052), [#2049](https://github.com/HKUDS/Vibe-Trading/pull/2049), [#2012](https://github.com/HKUDS/Vibe-Trading/pull/2012), [#1988](https://github.com/HKUDS/Vibe-Trading/pull/1988), [#1984](https://github.com/HKUDS/Vibe-Trading/pull/1984)). Sudah tersedia di `main` untuk rilis berikutnya.
 
 - **2026-10-25** 🛠️ **Perbaikan sesi, data pasar, dan perhitungan (belum dirilis)**: Menghapus sesi juga menghapus catatan pencariannya, dan judul chat diperbarui dengan benar saat pesan pertama berisi lampiran atau instruksi Swarm ([#1970](https://github.com/HKUDS/Vibe-Trading/pull/1970), [#1969](https://github.com/HKUDS/Vibe-Trading/pull/1969)). Memperbaiki riwayat CCXT yang terpotong terlalu cepat, tanggal harian Nobitex, dan simbol kelas saham Tiingo ([#1999](https://github.com/HKUDS/Vibe-Trading/pull/1999), [#1989](https://github.com/HKUDS/Vibe-Trading/pull/1989), [#2010](https://github.com/HKUDS/Vibe-Trading/pull/2010)). Mempertahankan presisi harga kecil pada transaksi dan grafik, memperbaiki rumus faktor GTJA serta satuan VWAP, dan menolak parameter boolean ambigu sebelum mengubah status ([perbaikan](https://github.com/HKUDS/Vibe-Trading/commit/6dafa4cde)). Semua sudah masuk ke `main` untuk rilis berikutnya.
-
-<details>
-<summary>Berita sebelumnya</summary>
 
 - **2026-10-24** 🛠️ **Perbaikan MCP, backtest, dan pencarian (belum dirilis)**: MCP memuat `.env` runtime; alat shell tetap harus diaktifkan secara eksplisit saat startup ([#1974](https://github.com/HKUDS/Vibe-Trading/pull/1974)). Leverage default kontrak berjangka dilaporkan sebagai asumsi ([#1972](https://github.com/HKUDS/Vibe-Trading/pull/1972)), pecahan hari dipertahankan dalam perhitungan tahunan ([#1971](https://github.com/HKUDS/Vibe-Trading/pull/1971)), dan sumber cadangan Sogou/Bing yang diaktifkan dicoba saat ddgs tidak mengembalikan hasil ([perbaikan](https://github.com/HKUDS/Vibe-Trading/commit/0d946491c)).
 
@@ -889,7 +893,7 @@ Jalankan `vibe-trading alpha list` untuk menjelajah, `vibe-trading alpha show <i
 </details>
 
 <details>
-<summary><b>Engine Backtest</b> <sub>11 engine + portofolio opsi, komposit lintas market</sub></summary>
+<summary><b>Engine Backtest</b> <sub>12 engine + portofolio opsi, komposit lintas market</sub></summary>
 
 | Engine | Market | Catatan |
 |--------|--------|-------|
@@ -899,6 +903,7 @@ Jalankan `vibe-trading alpha list` untuk menjelajah, `vibe-trading alpha show <i
 | **KoreaEquity** | Korea (KRX: KOSPI/KOSDAQ) | long-only, ±30% band judged at execution time on the unified tick grid, 2026 0.20% transaction tax |
 | **VietnamEquity** | Vietnam (HOSE) | long-only, T+2 settlement hold, ±7% band on the 10/50/100-VND tick grid, 100-share lots, 0.1% sell-side tax |
 | **BrazilEquity** | Brazil (B3) | BRL, B3 trading + settlement fees, configurable broker fee, 1- or 100-share lots, R$0.01 tick, shorting allowed |
+| **ArgentinaEquity** | Argentina (BYMA) | ARS, hanya posisi beli; T+2 → T+1 (2024-05-27), penyelesaian diperkirakan dari sesi teramati; netting hasil penjualan hari yang sama; rasio CEDEAR dan tanggal kredit dinyatakan; tabel/panel tick eksplisit (`ar_tick_table`) atau tick per instrumen |
 | **Crypto** | crypto spot / USD-M perps | funding settlements, execution/mark split |
 | **ChinaFutures** · **GlobalFutures** | futures | margin, contract multipliers |
 | **Forex** | FX / metals | via the `mt5` loader (local terminal) or the hosted `tickerall` loader (no terminal, any OS) |
@@ -1067,6 +1072,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 - **Python 3.11+** untuk Jalur B
 - **Docker** untuk Jalur A
 - OpenAI Codex juga dapat digunakan dengan ChatGPT OAuth: atur `LANGCHAIN_PROVIDER=openai-codex`, lalu jalankan `vibe-trading provider login openai-codex`. Ini tidak menggunakan `OPENAI_API_KEY`.
+  Di Pengaturan Web, pemilih model Codex menemukan model dan tingkat penalaran dari sesi ChatGPT yang terautentikasi. Jika gagal, model bawaan dan input manual tetap tersedia.
 - GitHub Copilot dapat digunakan dengan subscription Copilot aktif tanpa LLM API key yang ditagihkan terpisah. Lihat [provider GitHub Copilot SDK](#github-copilot-sdk-provider).
 
 > **Provider LLM yang didukung:** OpenRouter, OpenAI, Anthropic (native Messages API), DeepSeek, OpenCode (Go / Zen), Gemini, Groq, DashScope/Qwen, Zhipu, Moonshot/Kimi, MiniMax, SiliconFlow (CN + Global), Xiaomi MIMO, Novita AI, iFlytek Spark, Z.ai, NVIDIA NIM, ModelScope, GitHub Copilot, Ollama (lokal). Jika `*_BASE_URL` tidak diatur, setiap provider fallback ke endpoint canonical-nya, jadi cukup key saja. Lihat `.env.example` untuk config.
@@ -1632,7 +1638,7 @@ Mengirim `{}` akan menjadwalkan template memakai cadence yang disarankan beserta
 <a id="-mcp-plugin"></a>
 ## 🔌 Plugin MCP
 
-Vibe-Trading mengekspos 82 tool MCP untuk client yang kompatibel MCP. Berjalan sebagai subprocess stdio — tidak perlu setup server. Tool riset inti bekerja tanpa API key untuk HK/AS/crypto; tool connector trading menggunakan profil connector terpilih, dan `run_swarm` memerlukan LLM key.
+Vibe-Trading mengekspos 83 tool MCP untuk client yang kompatibel MCP. Berjalan sebagai subprocess stdio — tidak perlu setup server. Tool riset inti bekerja tanpa API key untuk HK/AS/crypto; tool connector trading menggunakan profil connector terpilih, dan `run_swarm` memerlukan LLM key.
 
 **Environment variable:** client menjalankan server sendiri, sehingga `export` dari shell tidak pernah sampai ke proses tersebut — atur di block `env` client. Kode backtest yang dihasilkan dibatasi ke root run yang diizinkan, jadi menulis hasil ke workspace Anda sendiri memerlukan `VIBE_TRADING_ALLOWED_RUN_ROOTS`:
 
@@ -1701,7 +1707,7 @@ dengan `--host` / `--port`.
 
 </details>
 
-**Tool MCP yang diekspos (82):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
+**Tool MCP yang diekspos (83):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
 
 ### Tool MCP eksternal untuk SWARM
 
@@ -2075,7 +2081,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 82 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 83 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
@@ -2090,7 +2096,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # Cross-session persistent memory
 │   │   │   └── persistent.py       #   file-based memory (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 113 auto-discovered agent tools
+│   │   ├── tools/                  # 117 auto-discovered agent tools
 │   │   │   ├── backtest_tool.py    #   run backtests
 │   │   │   ├── remember_tool.py    #   cross-session memory (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)
@@ -2115,7 +2121,7 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider abstraction
 │   │
 │   └── backtest/                   # Backtest engines
-│       ├── engines/                #   10 engines + composite cross-market engine + options_portfolio
+│       ├── engines/                #   11 engines + composite cross-market engine + options_portfolio
 │       ├── loaders/                #   29 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains

@@ -20,7 +20,7 @@ import math
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 import numpy as np
 
@@ -38,6 +38,7 @@ from src.factors.registry import (
     get_default_registry,
 )
 from src.factors.data_availability import build_availability_contract
+from src.factors.research_contract import build_bench_research_contract
 from src.tools.alpha_bench_tool import _MAX_HORIZON, _compute_forward_returns, _load_universe_panel, _prepare_bench_panel, _split_alphas_by_universe_support, _validate_bench_data_requirements
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,10 @@ def run_bench(
     only: Iterable[str] | None = None,
     on_stage: Callable[[str], None] | None = None,
     horizon: int = 1,
+    research_mode: str = "explore",
+    research_stage: str = "single_factor_evaluation",
+    research_lineage: Iterable[str | Mapping[str, Any]] | None = None,
+    research_transformations: Iterable[str | Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run a bench end-to-end and return the API-shaped summary.
 
@@ -173,6 +178,14 @@ def run_bench(
             sampled non-overlapping (end-anchored) so the naive-iid t-stat
             stays honest; 21 ≈ monthly, the conventional horizon for
             fundamental factors.
+        research_mode: Declared evidence mode for the additive research
+            contract (``explore``, ``strict`` or ``locked``). It is metadata
+            only in this version and does not change the bench math.
+        research_stage: Stage name recorded in the research contract.
+        research_lineage: Optional structured inputs for future artifact
+            lineage. Strings are accepted as a compact form.
+        research_transformations: Optional transformations applied before the
+            bench, such as neutralization or factor combination.
 
     Returns:
         Dict with keys: ``status``, ``zoo``, ``universe``, ``period``,
@@ -407,6 +420,18 @@ def run_bench(
         universe=universe,
         period=period,
         required_fields=required_fields,
+    )
+    universe_meta["research"] = build_bench_research_contract(
+        mode=research_mode,
+        stage=research_stage,
+        universe=universe,
+        period=period,
+        factor_ids=alpha_ids,
+        zoo=zoo,
+        lineage=research_lineage,
+        transformations=research_transformations,
+        horizon=horizon,
+        method="rank_ic",
     )
 
     # Multiple-testing correction. `n_alphas_tested` has always been carried

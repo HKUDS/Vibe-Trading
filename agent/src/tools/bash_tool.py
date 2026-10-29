@@ -99,8 +99,9 @@ class BashTool(BaseTool):
         # cmd.exe has no heredocs; return a clear message instead of the
         # cryptic "<< was unexpected at this time." stderr. Only multi-line
         # commands with a heredoc delimiter are flagged, so a single-line
-        # bit shift (python -c "print(1 << 2)") is unaffected.
-        if "\n" in command and re.search(
+        # bit shift (python -c "print(1 << 2)") is unaffected. POSIX shells
+        # support heredocs natively, so this only applies on Windows.
+        if os.name == "nt" and "\n" in command and re.search(
             r"<<\s*['\"]?[A-Za-z_][A-Za-z0-9_]*", command
         ):
             return json.dumps(

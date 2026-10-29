@@ -171,6 +171,11 @@ thresholds using research/training data rather than test-period performance.
 See [the neutralization workflow](references/neutralization.md) for
 Python and JSON-envelope examples, diagnostics and limits.
 
+For a shared stage, mode and lineage envelope across alpha bench entry points,
+see [the factor-research run contract](references/research_contract.md).
+The v1 modes are declarative; they do not replace the availability contract or
+enforce locked evaluation by themselves.
+
 ## Common Pitfalls
 
 ### Look-Ahead Bias

@@ -23,7 +23,8 @@
       "runtime": "查看券商连接和交易运行状态。",
       "settings": "配置模型、数据源和券商连接。",
       "pixelOffice": "规划和分配研究任务。分配任务不会启动执行；职级只是标签，不授予交易权限。",
-      "paperTrading": "使用模拟资金测试每日交易，不向券商发送订单。结果不含现金分红，不代表总回报。"
+      "paperTrading": "使用模拟资金测试每日交易，不向券商发送订单。结果不含现金分红，不代表总回报。",
+      "researchArtifacts": "跨会话保存并复用有证据支持的分析。"
     },
     "instructions": {
       "reports": "先在研究助手中描述策略并完成回测，再到这里打开结果。聊天生成的 PDF 等文档在原对话中下载。",
@@ -35,7 +36,8 @@
       "runtime": "先在设置或持仓页配置券商连接。可用的交易操作取决于该券商的能力和你的授权。",
       "settings": "初次使用先配置模型。按任务需要添加数据源或券商连接；研究公开行情无需连接券商账户。",
       "pixelOffice": "规划和分配研究任务。分配任务不会启动执行；职级只是标签，不授予交易权限。",
-      "paperTrading": "仅结算已完成的日线。策略只读取此前数据，在执行日收盘价成交。请等正常收市后 30 分钟；不会自动安排后台执行。"
+      "paperTrading": "仅结算已完成的日线。策略只读取此前数据，在执行日收盘价成交。请等正常收市后 30 分钟；不会自动安排后台执行。",
+      "researchArtifacts": "搜索历史分析，展开任意修订，或添加新证据创建关联修订。旧结论保持不变。"
     }
   },
   "layout": {
@@ -67,7 +69,41 @@
     "about": "关于",
     "sessionsLoadFailed": "无法加载会话。",
     "pixelOffice": "像素办公室",
-    "paperTrading": "模拟交易"
+    "paperTrading": "模拟交易",
+    "researchArtifacts": "研究资料"
+  },
+  "researchArtifacts": {
+    "subject": "研究主题",
+    "dataAsOf": "数据截至",
+    "saving": "正在保存…",
+    "saveError": "无法保存研究资料。",
+    "evidenceMissing": "未附证据引用",
+    "createdNotice": "已创建修订 {{id}}。",
+    "emptyHint": "保存一份分析，在以后的会话中复用其中的结论和证据。",
+    "emptyTitle": "还没有研究资料",
+    "save": "保存研究",
+    "universe": "研究范围（可选）",
+    "loadError": "无法加载研究资料。",
+    "formTitleNew": "保存研究",
+    "verification": "验证状态",
+    "additionalEvidence": "新增证据 URI（每行一个）",
+    "revise": "基于此修订继续修订",
+    "completeness": "完整程度",
+    "searchPlaceholder": "搜索主题、范围或正文",
+    "newResearch": "新建研究",
+    "formTitleRevision": "创建关联修订",
+    "content": "研究正文",
+    "subtitle": "跨会话保存并复用有证据支持的分析，不覆盖历史修订。",
+    "history": "修订历史",
+    "optionalLinks": "可选关联 ID",
+    "title": "研究资料",
+    "close": "关闭",
+    "idempotentNotice": "相同内容和来源信息已存在于 {{id}}。",
+    "evidence": "证据引用",
+    "hypothesis_id": "假设 ID",
+    "goal_id": "目标 ID",
+    "session_id": "会话 ID",
+    "run_id": "运行 ID"
   },
   "runtime": {
     "monitorBadge": "交易监控",
@@ -465,6 +501,9 @@
     "reasoningEffortHigh": "高",
     "reasoningEffortXhigh": "超高",
     "reasoningEffortMax": "最大",
+    "reasoningEffortMinimal": "最低",
+    "reasoningEffortUltra": "极高",
+    "reasoningEffortPersistent": "持续",
     "reasoningEffortDesc": "控制支持该功能的模型所使用的推理深度。强度越高，复杂分析可能更充分，但耗时也可能更长；不支持的提供商可能会忽略此设置。选择「无（显式）」会显式发送该字段并关闭推理——部分 OpenAI 模型需要这样才能调用工具。",
     "reasoningEffortReset": "所选模型不支持 {{level}}，已改回提供商默认。",
     "localApiAccess": "本地 API 访问",

@@ -24,6 +24,8 @@ def _execute(manager: BackgroundManager, task_id: str, command: str) -> dict:
         "result": None,
         "command": command,
         "exit_code": None,
+        "owner_id": manager.scope.owner_id,
+        "attempt_id": manager.scope.attempt_id,
     }
     manager._execute(task_id, command)
     return manager.tasks[task_id]
@@ -75,6 +77,8 @@ def test_check_running_task_reports_timeout_context(
         "process": None,
         "cancel_requested": False,
         "started_at": 100.0,
+        "owner_id": manager.scope.owner_id,
+        "attempt_id": manager.scope.attempt_id,
     }
     monkeypatch.setattr(background_tools.time, "monotonic", lambda: 297.0)
 
@@ -105,6 +109,8 @@ def test_cancel_targets_only_the_tracked_process(
             "exit_code": None,
             "process": target,
             "cancel_requested": False,
+            "owner_id": manager.scope.owner_id,
+            "attempt_id": manager.scope.attempt_id,
         },
         "sibling": {
             "status": "running",
@@ -113,6 +119,8 @@ def test_cancel_targets_only_the_tracked_process(
             "exit_code": None,
             "process": sibling,
             "cancel_requested": False,
+            "owner_id": manager.scope.owner_id,
+            "attempt_id": manager.scope.attempt_id,
         },
     }
     stopped: list[object] = []
@@ -149,6 +157,8 @@ def test_cancel_completed_task_does_not_touch_process(
         "exit_code": 0,
         "process": process,
         "cancel_requested": False,
+        "owner_id": manager.scope.owner_id,
+        "attempt_id": manager.scope.attempt_id,
     }
     stop = MagicMock()
     monkeypatch.setattr(background_tools, "_force_stop_process_tree", stop)

@@ -1,4 +1,4 @@
-"""Crypto perpetual-contract backtest engine.
+"""Crypto spot and perpetual-contract backtest engine.
 
 Market rules:
   - 24/7 trading, no restrictions on direction
@@ -41,7 +41,7 @@ from backtest.perpetual_risk import (
 
 
 class CryptoEngine(BaseEngine):
-    """Crypto perpetual contract engine.
+    """Crypto engine with opt-in funding for bare spot-pair proxies.
 
     Config keys:
       - leverage: default 1.0
@@ -49,13 +49,15 @@ class CryptoEngine(BaseEngine):
       - taker_rate: default 0.0005
       - slippage: default 0.0005
       - margin_mode: "isolated" (default) or "cross"
-      - funding_rate: fixed rate per settlement, default 0.0001
+      - commission: fallback for both fee sides; explicit maker/taker rates win
+      - funding_rate: fixed rate per settlement, default 0.0001 for perpetuals;
+        bare spot pairs have no funding unless a nonzero rate is explicit
     """
 
     def __init__(self, config: dict):
         super().__init__(config)
-        self.maker_rate: float = config.get("maker_rate", 0.0002)
-        self.taker_rate: float = config.get("taker_rate", 0.0005)
+        self.maker_rate: float = config.get("maker_rate", config.get("commission", 0.0002))
+        self.taker_rate: float = config.get("taker_rate", config.get("commission", 0.0005))
         self.slippage_rate: float = config.get("slippage", 0.0005)
         self.funding_rate: float = config.get("funding_rate", 0.0001)
         self.perpetual_strict = bool(config.get("perpetual_strict", False))
@@ -83,6 +85,32 @@ class CryptoEngine(BaseEngine):
         self._rebalance_risk_checked = False
         self._funding_applied: set = set()   # (symbol, date, hour) — per-slot dedup
         self._funding_daily_done: set = set()  # (symbol, date) — daily fallback dedup
+        self.funding_pnl = 0.0
+
+    def funding_enabled(self, symbol: str) -> bool:
+        """Whether the instrument or explicit config requests funding.
+
+        Args:
+            symbol: Project or CCXT instrument code.
+
+        Returns:
+            True for perpetual codes, strict mode, or an explicit nonzero
+            funding-rate assumption used to model a perpetual with spot bars.
+        """
+        return (
+            self.perpetual_strict
+            or symbol.upper().endswith(("-PERP", "-SWAP"))
+            or ("/" in symbol and ":" in symbol)
+            or bool(self.config.get("funding_rate", 0.0))
+        )
+
+    def _engine_diagnostics(self) -> dict[str, Any]:
+        """Expose applied fee rates and signed funding P&L in scalar metrics."""
+        return {
+            "crypto_funding_pnl": self.funding_pnl,
+            "crypto_maker_rate": self.maker_rate,
+            "crypto_taker_rate": self.taker_rate,
+        }
 
     def _validate_strict_resolution(self, config: dict[str, Any]) -> None:
         if not self.perpetual_strict or self.default_leverage < 100:
@@ -257,6 +285,7 @@ class CryptoEngine(BaseEngine):
                 * float(frame.funding_rate)
             )
             self.capital -= payment
+            self.funding_pnl -= payment
             if self.margin_mode == "isolated":
                 self._isolated_margins[symbol] -= payment
             self._strict_funding_applied.add(key)
@@ -608,8 +637,9 @@ class CryptoEngine(BaseEngine):
             symbol, bar, timestamp, self.positions,
             self.funding_rate, self._funding_applied, self._funding_daily_done,
             _interval_span_hours(self._run_interval),
-        )
+        ) if self.funding_enabled(symbol) else 0.0
         self.capital -= fee
+        self.funding_pnl -= fee
 
         if check_crypto_liquidation(symbol, bar, self.positions):
             pos = self.positions.get(symbol)

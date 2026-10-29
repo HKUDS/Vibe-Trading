@@ -40,7 +40,18 @@
     "default_base_url": "https://chatgpt.com/backend-api/codex/responses",
     "api_key_required": false,
     "auth_type": "oauth",
-    "login_command": "vibe-trading provider login openai-codex"
+    "login_command": "vibe-trading provider login openai-codex",
+    "reasoning_efforts": [
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+      "persistent"
+    ]
   },
   {
     "name": "deepseek",
@@ -183,7 +194,10 @@
     "api_key_env": "MINIMAX_API_KEY",
     "base_url_env": "MINIMAX_BASE_URL",
     "default_model": "MiniMax-M3.1-Flash",
-    "model_options": ["MiniMax-M3.1-Flash", "MiniMax-M3"],
+    "model_options": [
+      "MiniMax-M3.1-Flash",
+      "MiniMax-M3"
+    ],
     "default_base_url": "https://api.minimax.io/v1",
     "base_url_options": [
       "https://api.minimax.io/v1",
@@ -257,6 +271,12 @@
     "api_key_required": false,
     "auth_type": "claude_cli",
     "login_command": "claude auth login",
-    "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"]
+    "reasoning_efforts": [
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max"
+    ]
   }
 ]

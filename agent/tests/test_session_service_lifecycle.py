@@ -273,6 +273,30 @@ def test_normal_history_is_untouched():
     assert [m["content"] for m in history] == ["first", "second"]
 
 
+def _turn(role, content, run_id=None):
+    return type("M", (), {"role": role, "content": content, "metadata": {"run_id": run_id} if run_id else {}})()
+
+
+def test_assistant_reply_carries_its_run_id_into_the_next_turn():
+    """The run id lives only in message metadata; the marker survives truncation and is not duplicated."""
+    run_id = "20261026_230021_46_a7d6f2"
+    history = SessionService._convert_messages_to_history(
+        [_turn("user", "backtest"), _turn("assistant", "done", run_id), _turn("user", "deeper")]
+    )
+    assert [m["content"] for m in history] == ["backtest", f"[prev_run: {run_id}]\ndone"]
+
+    long_reply = SessionService._convert_messages_to_history([_turn("assistant", "x" * 20000, run_id), _turn("user", "now")])
+    assert long_reply[-1]["content"].startswith(f"[prev_run: {run_id}]")
+    marked = _turn("assistant", f"see [prev_run: {run_id}]", run_id)
+    assert SessionService._convert_messages_to_history([marked, _turn("user", "now")])[0]["content"].count("[prev_run:") == 1
+
+
+@pytest.mark.parametrize("run_id", ["../../etc/passwd", "a b", "x\ny", "", 42])
+def test_hostile_run_ids_in_metadata_never_reach_the_prompt(run_id):
+    message = type("M", (), {"role": "assistant", "content": "reply", "metadata": {"run_id": run_id}})()
+    assert SessionService._convert_messages_to_history([message, _turn("user", "now")])[0]["content"] == "reply"
+
+
 def test_claim_is_released_when_pre_run_bookkeeping_fails(tmp_path, monkeypatch):
     """A failure before the agent even starts must not brick the session.
 

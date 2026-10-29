@@ -1,6 +1,9 @@
 // i18n key for each reasoning effort level; a level missing here has no label.
 export const EFFORT_LABEL_KEYS = {
   none: "settings.reasoningEffortNone",
+  minimal: "settings.reasoningEffortMinimal",
+  ultra: "settings.reasoningEffortUltra",
+  persistent: "settings.reasoningEffortPersistent",
   low: "settings.reasoningEffortLow",
   medium: "settings.reasoningEffortMedium",
   high: "settings.reasoningEffortHigh",

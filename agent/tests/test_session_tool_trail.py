@@ -145,6 +145,7 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
             max_iterations,
             persistent_memory,
             cancel_event=None,
+            background_manager=None,
         ) -> None:
             del registry, llm, max_iterations, persistent_memory, cancel_event
             self._event_callback = event_callback
