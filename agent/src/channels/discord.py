@@ -551,9 +551,14 @@ class DiscordChannel(BaseChannel):
 
         now = time.monotonic()
         if buf.message is None:
+            chunks = DiscordBotClient._build_chunks(buf.text, [], False)
+            if not chunks:
+                return
             try:
-                buf.message = await target.send(content=buf.text)
+                buf.message = await target.send(content=chunks[0])
                 buf.last_edit = now
+                for extra_chunk in chunks[1:]:
+                    await target.send(content=extra_chunk)
             except Exception as e:
                 self.logger.warning("stream initial send failed: %s", e)
                 raise
