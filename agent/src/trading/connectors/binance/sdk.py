@@ -379,6 +379,10 @@ def get_open_orders(config: BinanceConfig | None = None, *, include_executions: 
     # Only the "this call needs a symbol" family degrades to a note; auth /
     # network / rate-limit errors must propagate so the caller sees a real
     # failure instead of a misleading status:ok with an empty list.
+    # Listing every open order needs the symbol-less call, so acknowledge
+    # ccxt's client-side rate-limit warning, which otherwise raises an
+    # ExchangeError before any request is sent.
+    ex.options.setdefault("fetchOpenOrders", {})["warnWithoutSymbol"] = False
     try:
         open_orders = ex.fetch_open_orders()
         result["open_orders"] = [_order_to_dict(item) for item in _as_iter(open_orders)]

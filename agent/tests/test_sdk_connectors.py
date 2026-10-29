@@ -782,6 +782,28 @@ def test_binance_positions_replace_ld_wrappers_with_simple_earn(monkeypatch) -> 
     ]
 
 
+def test_binance_open_orders_lists_all_symbols_with_real_ccxt_client(monkeypatch) -> None:
+    ccxt = pytest.importorskip("ccxt")
+    requests = []
+    ex = ccxt.binance({"apiKey": "key", "secret": "secret"})
+    monkeypatch.setattr(ex, "load_markets", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        ex,
+        "privateGetOpenOrders",
+        lambda request: requests.append(request) or [],
+        raising=False,
+    )
+    monkeypatch.setattr(bn, "_exchange", lambda _cfg: ex)
+
+    result = bn.get_open_orders(
+        bn.BinanceConfig(api_key="key", api_secret="secret", profile="live-readonly")
+    )
+
+    assert result["open_orders"] == []
+    assert "open_orders_note" not in result
+    assert requests == [{}]
+
+
 def test_binance_exchange_adjusts_for_server_time(monkeypatch) -> None:
     captured = {}
 
