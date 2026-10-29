@@ -582,12 +582,11 @@ class WhatsAppChannel(BaseChannel):
         if media is not None:
             path = await self._download_media(client, event, media)
             if media.kind == "audio" and media.is_voice:
-                transcription = await self.transcribe_audio(path)
-                if transcription:
-                    text = transcription
-                else:
-                    media_paths.append(path)
-                    text = self._append_media_tag(text, "audio", path)
+                # No transcription backend is wired up for this channel, so
+                # treat a voice note like any other attachment instead of
+                # calling an undefined method and dropping the message.
+                media_paths.append(path)
+                text = self._append_media_tag(text, "audio", path)
             else:
                 media_paths.append(path)
                 text = self._append_media_tag(text, media.kind, path)

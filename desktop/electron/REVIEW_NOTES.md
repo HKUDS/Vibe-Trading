@@ -67,6 +67,12 @@ Observed package licenses:
 | Apache-2.0 | `sumchecker`, `typescript` |
 | BSD-2-Clause | `@electron-internal/extract-zip` |
 
+Security refresh on 2026-10-29: Electron is pinned to 43.8.4. Compatible
+overrides patch the installed undici, brace-expansion, and fast-uri major
+lines. A fresh `npm ci` and `npm audit --package-lock-only --json` report zero
+known desktop npm vulnerabilities. The package counts and license table above
+describe the earlier baseline; regenerate the SBOM for the current inventory.
+
 The CycloneDX JSON output is generated from the committed lock file for PR
 review rather than hand-maintained. Electron's Chromium/Node third-party
 notices become a packaging deliverable and are intentionally deferred.

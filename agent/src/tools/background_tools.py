@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,27 @@ WORKDIR = Path(__file__).resolve().parents[2]
 _COMMAND_TIMEOUT_SECONDS = 300.0
 _TERMINATION_GRACE_SECONDS = 2.0
 _MAX_OUTPUT_CHARS = 50_000
+
+
+@dataclass(frozen=True)
+class BackgroundScope:
+    """Which conversation or worker owns a background task.
+
+    The host that builds the tool registry supplies this. It never appears in a
+    model-visible tool schema: a model must not be able to claim another
+    session's task, or read its output, by naming an owner.
+
+    Ownership is by ``owner_id`` alone. ``attempt_id`` records which attempt
+    started the task so later bookkeeping can attribute it; a later attempt of
+    the same owner still sees tasks started by the earlier one.
+    """
+
+    owner_id: str
+    attempt_id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not str(self.owner_id).strip():
+            raise ValueError("a background scope must have a non-empty owner_id")
 
 
 def _start_process(command: str) -> subprocess.Popen[str]:
@@ -106,12 +128,37 @@ def _combined_output(stdout: str | None, stderr: str | None) -> str:
 
 
 class BackgroundManager:
-    """Background thread execution + notification queue."""
+    """Background thread execution + notification queue, addressed by owner.
 
-    def __init__(self) -> None:
+    One instance is a *handle*: it carries the scope its methods read and write
+    under. :meth:`for_scope` hands out another handle over the same task table,
+    so a session and its later attempts share their tasks while a different
+    session sees none of them.
+    """
+
+    def __init__(self, scope: Optional[BackgroundScope] = None) -> None:
         self.tasks: Dict[str, dict] = {}
-        self._notifications: List[dict] = []
+        # (owner_id, payload). Kept as pairs so the payload shape consumers and
+        # existing tests see stays exactly what it was; routing is internal.
+        self._notifications: List[tuple[str, dict]] = []
         self._lock = threading.Lock()
+        self._scope = scope or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
+
+    @property
+    def scope(self) -> BackgroundScope:
+        """The owner this handle reads and writes under."""
+        return self._scope
+
+    def for_scope(self, scope: BackgroundScope) -> "BackgroundManager":
+        """Return a handle over the same task table bound to another owner."""
+        other = BackgroundManager(scope=scope)
+        other.tasks = self.tasks
+        other._notifications = self._notifications
+        other._lock = self._lock
+        return other
+
+    def _owns(self, task: dict) -> bool:
+        return task.get("owner_id") == self._scope.owner_id
 
     def run(self, command: str) -> str:
         """Start a background task and return its task_id.
@@ -140,6 +187,8 @@ class BackgroundManager:
                 "process": None,
                 "cancel_requested": False,
                 "started_at": started_at,
+                "owner_id": self._scope.owner_id,
+                "attempt_id": self._scope.attempt_id,
             }
         threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
         return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command[:80]}"})
@@ -203,11 +252,14 @@ class BackgroundManager:
                     max(0.0, time.monotonic() - started_at),
                     3,
                 )
-            self._notifications.append({
-                "task_id": task_id, "status": status,
-                "command": command[:80], "result": (output or "")[:500],
-                "exit_code": exit_code,
-            })
+            self._notifications.append((
+                task["owner_id"],
+                {
+                    "task_id": task_id, "status": status,
+                    "command": command[:80], "result": (output or "")[:500],
+                    "exit_code": exit_code,
+                },
+            ))
 
     def cancel(self, task_id: str) -> str:
         """Cancel one task by its tracked process group.
@@ -220,7 +272,9 @@ class BackgroundManager:
         """
         with self._lock:
             task = self.tasks.get(task_id)
-            if task is None:
+            # A task owned by another session is reported exactly like a task id
+            # that never existed, so probing cannot confirm one exists.
+            if task is None or not self._owns(task):
                 return json.dumps({
                     "status": "error",
                     "error": f"Unknown task {task_id}",
@@ -267,11 +321,12 @@ class BackgroundManager:
         with self._lock:
             if task_id:
                 t = self.tasks.get(task_id)
-                task = dict(t) if t is not None else None
+                task = dict(t) if t is not None and self._owns(t) else None
             else:
                 task_summaries = [
                     (tid, t["status"], t["command"])
                     for tid, t in self.tasks.items()
+                    if self._owns(t)
                 ]
 
         if task_id:
@@ -285,6 +340,7 @@ class BackgroundManager:
                 "command": t["command"][:60],
                 "result": result or "(running)",
                 "exit_code": t.get("exit_code"),
+                "attempt_id": t.get("attempt_id"),
             }
             started_at = t.get("started_at")
             if isinstance(started_at, (int, float)):
@@ -311,18 +367,32 @@ class BackgroundManager:
         return "\n".join(lines) if lines else "No background tasks."
 
     def drain_notifications(self) -> List[dict]:
+        """Return this owner's queued notifications, oldest first.
+
+        Notifications belonging to other owners stay queued for them; draining
+        one session can never consume another's result.
+        """
         with self._lock:
-            notifs = list(self._notifications)
-            self._notifications.clear()
-        return notifs
+            mine = [payload for owner, payload in self._notifications
+                    if owner == self._scope.owner_id]
+            self._notifications[:] = [(owner, payload) for owner, payload in self._notifications
+                                      if owner != self._scope.owner_id]
+        return mine
 
 
 _BG = BackgroundManager()
 
 
 def get_background_manager() -> BackgroundManager:
-    """Return the global BackgroundManager singleton."""
-    return _BG
+    """Return an unowned handle over the process-wide task table.
+
+    Every call binds its own isolated scope, so two callers each get a private
+    view and cannot see, read or cancel each other's tasks. A host that wants a
+    session or worker to receive its own completion notifications must build a
+    scoped handle with :meth:`BackgroundManager.for_scope` and hand the same
+    object to both the tool registry and ``AgentLoop``.
+    """
+    return _BG.for_scope(BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}"))
 
 
 class BackgroundRunTool(BaseTool):
@@ -338,8 +408,11 @@ class BackgroundRunTool(BaseTool):
     }, "required": ["command"]}
     is_readonly = False
 
+    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
+        self.background = background if background is not None else get_background_manager()
+
     def execute(self, **kw: Any) -> str:
-        return _BG.run(kw["command"])
+        return self.background.run(kw["command"])
 
 
 class CheckBackgroundTool(BaseTool):
@@ -354,8 +427,11 @@ class CheckBackgroundTool(BaseTool):
     }, "required": []}
     repeatable = True
 
+    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
+        self.background = background if background is not None else get_background_manager()
+
     def execute(self, **kw: Any) -> str:
-        return _BG.check(kw.get("task_id"))
+        return self.background.check(kw.get("task_id"))
 
 
 class CancelBackgroundTool(BaseTool):
@@ -378,5 +454,8 @@ class CancelBackgroundTool(BaseTool):
     }
     is_readonly = False
 
+    def __init__(self, background: Optional[BackgroundManager] = None) -> None:
+        self.background = background if background is not None else get_background_manager()
+
     def execute(self, **kw: Any) -> str:
-        return _BG.cancel(kw["task_id"])
+        return self.background.cancel(kw["task_id"])

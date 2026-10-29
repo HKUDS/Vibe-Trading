@@ -543,6 +543,7 @@ class SessionService:
             Result dictionary containing status, run_dir, run_id, metrics, and related fields.
         """
         from src.tools import build_registry
+        from src.tools.background_tools import BackgroundScope, get_background_manager
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
         from src.memory.persistent import PersistentMemory
@@ -586,6 +587,14 @@ class SessionService:
         # without a second cancellation channel that can drift out of sync.
         turn_cancel = threading.Event()
 
+        # Background tasks belong to the session, not to the attempt: a later
+        # attempt must still read what an earlier one started. The attempt id is
+        # kept on each task so cancellation can be attributed later.
+        background_scope = BackgroundScope(
+            owner_id=f"session:{session_id}", attempt_id=attempt_id
+        )
+        background = get_background_manager().for_scope(background_scope)
+
         registry = await loop.run_in_executor(
             _AGENT_EXECUTOR,
             lambda: build_registry(
@@ -596,6 +605,8 @@ class SessionService:
                 event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
                 cancel_event=turn_cancel,
+                background_manager=background,
+                background_scope=background_scope,
             ),
         )
 
@@ -608,6 +619,7 @@ class SessionService:
             max_iterations=get_env_config().agent_tuning.vibe_trading_agent_max_iterations,
             persistent_memory=pm,
             cancel_event=turn_cancel,
+            background_manager=background,
         )
         self._active_loops[session_id] = agent
 
@@ -724,7 +736,8 @@ class SessionService:
         """Convert Session messages into OpenAI-format history.
 
         Keeps the readable ``[prev_run: {run_id}]`` marker instead of removing it
-        completely, and trims by character budget instead of a hard six-message cap
+        completely (and adds it to assistant replies whose metadata records the
+        run, so a later turn can find that run's artifacts), and trims by character budget instead of a hard six-message cap
         so the LLM can still see previous artifact paths and strategy content during
         iterative updates.
 
@@ -749,6 +762,18 @@ class SessionService:
             if not content.strip() or role not in ("user", "assistant"):
                 continue
             content = re.sub(r"Run directory:\s*\S+", _shorten_run_dir, content).strip()
+            # The run id is only in message metadata; without it the next turn cannot name the run to reuse.
+            meta = msg.get("metadata") if isinstance(msg, dict) else getattr(msg, "metadata", None)
+            run_id = (meta or {}).get("run_id")
+            marker = f"[prev_run: {run_id}]"
+            if (
+                role == "assistant"
+                and content
+                and isinstance(run_id, str)
+                and re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", run_id)
+                and marker not in content
+            ):
+                content = f"{marker}\n{content}"
             if content:
                 history.append({"role": role, "content": content})
 

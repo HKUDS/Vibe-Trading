@@ -800,6 +800,7 @@ def test_binance_exchange_adjusts_for_server_time(monkeypatch) -> None:
     assert captured["options"] == {
         "adjustForTimeDifference": True,
         "recvWindow": 10_000,
+        "fetchOpenOrders": {"warnWithoutSymbol": False},
     }
     assert captured["sandbox"] is False
 

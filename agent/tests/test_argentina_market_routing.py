@@ -32,6 +32,12 @@ def test_argentina_fallback_chain_is_yahoo_first() -> None:
     assert FALLBACK_CHAINS["ar_equity"] == ["yahoo", "yfinance", "local"]
 
 
-def test_argentina_backtest_fails_closed_until_execution_rules_exist() -> None:
-    with pytest.raises(ValueError, match="Argentina backtest execution rules are not modeled"):
-        _create_market_engine("yahoo", {}, ["GGAL.BA"])
+def test_argentina_backtest_routes_to_the_byma_engine() -> None:
+    from backtest.engines.argentina_equity import ArgentinaEquityEngine
+
+    assert isinstance(_create_market_engine("yahoo", {}, ["GGAL.BA"]), ArgentinaEquityEngine)
+
+
+def test_ba_codes_cannot_share_a_composite_pool_with_other_markets() -> None:
+    with pytest.raises(ValueError, match="cannot share a composite pool"):
+        _create_market_engine("yahoo", {}, ["GGAL.BA", "AAPL.US"])

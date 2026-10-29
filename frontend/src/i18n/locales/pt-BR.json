@@ -29,7 +29,8 @@
       "runtime": "Confira conexões de corretoras e o estado de execução das operações.",
       "settings": "Configure modelos, fontes de dados e conexões de corretoras.",
       "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação.",
-      "paperTrading": "Teste operações diárias com recursos fictícios. Nenhuma ordem é enviada à corretora. Os resultados excluem dividendos em dinheiro e não representam retorno total."
+      "paperTrading": "Teste operações diárias com recursos fictícios. Nenhuma ordem é enviada à corretora. Os resultados excluem dividendos em dinheiro e não representam retorno total.",
+      "researchArtifacts": "Salve e reutilize análises baseadas em evidências entre sessões."
     },
     "instructions": {
       "reports": "Primeiro peça ao assistente um backtest de uma estratégia e abra os resultados aqui. Baixe PDFs e documentos gerados no chat na conversa original.",
@@ -41,7 +42,8 @@
       "runtime": "Primeiro configure uma conexão de corretora em Configurações ou Carteira. As operações disponíveis dependem dos recursos da corretora e da sua autorização.",
       "settings": "Configure um modelo para começar. Adicione dados ou conexões de corretoras conforme necessário; pesquisas com dados públicos de mercado não exigem conta em corretora.",
       "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação.",
-      "paperTrading": "Somente candles diários completos são liquidados. As estratégias leem dias anteriores e executam no fechamento do dia indicado. Aguarde 30 minutos após o fechamento regular; nenhuma execução automática é agendada."
+      "paperTrading": "Somente candles diários completos são liquidados. As estratégias leem dias anteriores e executam no fechamento do dia indicado. Aguarde 30 minutos após o fechamento regular; nenhuma execução automática é agendada.",
+      "researchArtifacts": "Pesquise análises anteriores, abra qualquer revisão ou crie uma revisão vinculada com novas evidências. Conclusões antigas permanecem inalteradas."
     }
   },
   "layout": {
@@ -73,7 +75,41 @@
     "about": "Sobre",
     "sessionsLoadFailed": "Não foi possível carregar as conversas.",
     "pixelOffice": "Escritório pixel",
-    "paperTrading": "Negociação simulada"
+    "paperTrading": "Negociação simulada",
+    "researchArtifacts": "Artefatos de pesquisa"
+  },
+  "researchArtifacts": {
+    "subject": "Assunto da pesquisa",
+    "dataAsOf": "Dados em",
+    "saving": "Salvando…",
+    "saveError": "Não foi possível salvar o artefato de pesquisa.",
+    "evidenceMissing": "Nenhuma referência de evidência anexada",
+    "createdNotice": "Revisão {{id}} criada.",
+    "emptyHint": "Salve uma análise para reutilizar suas conclusões e evidências em outra sessão.",
+    "emptyTitle": "Ainda não há artefatos de pesquisa",
+    "save": "Salvar pesquisa",
+    "universe": "Universo (opcional)",
+    "loadError": "Não foi possível carregar os artefatos de pesquisa.",
+    "formTitleNew": "Salvar pesquisa",
+    "verification": "Verificação",
+    "additionalEvidence": "URIs de evidência adicionais (uma por linha)",
+    "revise": "Revisar a partir desta revisão",
+    "completeness": "Completude",
+    "searchPlaceholder": "Pesquisar assunto, universo ou conteúdo",
+    "newResearch": "Nova pesquisa",
+    "formTitleRevision": "Criar revisão vinculada",
+    "content": "Conteúdo da pesquisa",
+    "subtitle": "Reutilize análises baseadas em evidências entre sessões sem sobrescrever revisões anteriores.",
+    "history": "Histórico de revisões",
+    "optionalLinks": "IDs vinculados opcionais",
+    "title": "Artefatos de pesquisa",
+    "close": "Fechar",
+    "idempotentNotice": "Conteúdo e proveniência idênticos já existem em {{id}}.",
+    "evidence": "Referências de evidências",
+    "hypothesis_id": "ID da hipótese",
+    "goal_id": "ID do objetivo",
+    "session_id": "ID da sessão",
+    "run_id": "ID da execução"
   },
   "runtime": {
     "monitorBadge": "Monitor de Runtime",
@@ -455,6 +491,9 @@
     "reasoningEffortHigh": "Alto",
     "reasoningEffortXhigh": "Muito alto",
     "reasoningEffortMax": "Máx.",
+    "reasoningEffortMinimal": "Mínimo",
+    "reasoningEffortUltra": "Ultra",
+    "reasoningEffortPersistent": "Persistente",
     "reasoningEffortDesc": "Controla a profundidade do raciocínio nos modelos suportados. Níveis mais elevados podem melhorar análises complexas, mas podem demorar mais; provedores não suportados podem ignorar esta configuração. Nenhum (explícito) envia o campo com o raciocínio desabilitado — alguns modelos OpenAI precisam disso para usar ferramentas.",
     "reasoningEffortReset": "O modelo selecionado não suporta {{level}}; redefinido para o padrão do provedor.",
     "useDefaultModel": "Usar modelo padrão",

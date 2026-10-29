@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 from src.config.accessor import get_env_config
 from src.providers.content_filter import is_content_filter_triggered
 from src.providers.llm import build_llm
+from src.providers.tool_policy import offered_tools
 
 logger = logging.getLogger(__name__)
 
@@ -468,7 +469,8 @@ class ChatLLM:
         Returns:
             LLMResponse.
         """
-        llm = self._llm.bind_tools(tools) if tools else self._llm
+        available = offered_tools(tools) if tools else []
+        llm = self._llm.bind_tools(available) if available else self._llm
         config = {"timeout": timeout} if timeout else {}
         messages, call_kwargs = self._prompt_cache_request(messages)
         ai_message = llm.invoke(messages, config=config, **call_kwargs)
@@ -511,7 +513,8 @@ class ChatLLM:
         """
         accumulated = None
         try:
-            llm = self._llm.bind_tools(tools) if tools else self._llm
+            available = offered_tools(tools) if tools else []
+            llm = self._llm.bind_tools(available) if available else self._llm
             config = {"timeout": timeout} if timeout else {}
             messages, call_kwargs = self._prompt_cache_request(messages)
             accumulated = None

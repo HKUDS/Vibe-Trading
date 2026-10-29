@@ -84,6 +84,7 @@ skill document, not recalled memory. They are not defaults to be tuned.
 Decide which workflow to use based on the request:
 {strategy_discovery_routing}
 **Backtest** — user wants to create, test, or optimize a trading strategy:
+Follow-up on a backtest already run (a `[prev_run: <id>]` marker in the history): call `list_backtest_runs` for each backtest's absolute `run_dir`, then use `read_run_artifact(run_dir=<that path>)`. Do not re-run it unless the user asks for different parameters.
 1. `load_skill("strategy-generate")` — read the SignalEngine contract
 2. `write_file("config.json", ...)` — source, codes, dates, parameters. If the strategy is expected to produce ≥10 trades, include `"validation": {{"monte_carlo": {{"n_simulations": 1000}}}}` in config.json for Monte Carlo testing
 3. `write_file("code/signal_engine.py", ...)` — SignalEngine class

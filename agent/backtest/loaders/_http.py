@@ -18,8 +18,10 @@ machines. For batch jobs raise the relevant ``*_MIN_INTERVAL`` env var.
 
 from __future__ import annotations
 
+import json
 import logging
 import random
+import re
 import threading
 import time
 from typing import Any
@@ -173,6 +175,46 @@ def throttled_get(
     return session.get(url, params=params, headers=merged_headers, timeout=timeout)
 
 
+# A JSONP envelope is a JS callback identifier followed by a parenthesized body,
+# optionally terminated by ';'. The identifier is restricted to legal JS names
+# (incl. dotted namespaces like "jQuery.cb") so a plain JSON array/object body —
+# which never starts this way — is left untouched.
+_JSONP_WRAPPER = re.compile(
+    r"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\((.*)\)\s*;?\s*$",
+    re.DOTALL,
+)
+
+
+def decode_jsonp_body(text: str) -> Any:
+    """Decode a body that may be bare JSON or a JSONP ``callback(...)`` envelope.
+
+    Free provider surfaces sometimes answer with a JSONP envelope rather than
+    JSON — Eastmoney's news search does so whenever it distrusts the caller —
+    and ``response.json()`` cannot parse that. Plain JSON is decoded as-is
+    first, so parentheses inside string values (article titles are full of
+    them) are never mistaken for an envelope.
+
+    Args:
+        text: Raw response body.
+
+    Returns:
+        The decoded payload, or ``None`` when the body is neither JSON nor a
+        JSONP-wrapped JSON value.
+    """
+    stripped = text.strip()
+    try:
+        return json.loads(stripped)
+    except ValueError:
+        pass
+    match = _JSONP_WRAPPER.match(stripped)
+    if match is None:
+        return None
+    try:
+        return json.loads(match.group(1))
+    except ValueError:
+        return None
+
+
 def throttled_get_json(
     url: str,
     *,
@@ -187,6 +229,10 @@ def throttled_get_json(
     Same contract as :func:`throttled_get`, plus ``response.raise_for_status()``
     and ``response.json()``. A non-2xx status or undecodable body raises, which
     the caller's bounded-retry wrapper treats as transient.
+
+    A body that fails to parse as JSON is retried as a JSONP envelope (see
+    :func:`decode_jsonp_body`); anything else re-raises the original error, so a
+    genuinely malformed body keeps its old failure mode.
     """
     response = throttled_get(
         url,
@@ -197,7 +243,47 @@ def throttled_get_json(
         timeout=timeout,
     )
     response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError:
+        decoded = decode_jsonp_body(response.text)
+        if decoded is None:
+            raise
+        return decoded
+
+
+def throttled_browser_get_json(
+    url: str, *, host_key: str, min_interval: float,
+    params: dict[str, Any] | None = None, timeout: float = 15.0,
+) -> Any:
+    """Retry a fingerprint-filtered public GET through the same host throttle.
+
+    Args:
+        url: Public provider endpoint.
+        host_key: Shared throttle bucket, also used by the plain client.
+        min_interval: Minimum spacing between requests to this provider.
+        params: Query parameters.
+        timeout: Bounded request timeout in seconds.
+
+    Returns:
+        Decoded JSON or JSONP payload.
+
+    Raises:
+        RuntimeError: Optional browser transport is unavailable.
+        ValueError: The response is not JSON or JSONP.
+    """
+    try:
+        from curl_cffi import requests as browser_requests
+    except ImportError as exc:
+        raise RuntimeError("Eastmoney filtered the client TLS fingerprint; install curl_cffi to enable the browser transport.") from exc
+    _THROTTLE.wait(host_key, min_interval)
+    with browser_requests.Session(impersonate="chrome") as session:
+        response = session.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+        decoded = decode_jsonp_body(response.text)
+    if decoded is None:
+        raise ValueError("Browser transport returned neither JSON nor JSONP")
+    return decoded
 
 
 def throttled_post_json(

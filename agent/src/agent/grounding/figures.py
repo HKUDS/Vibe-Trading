@@ -97,7 +97,7 @@ _CURRENCY_CODES = frozenset(
 _PERCENT_CHARS = "%％"
 
 # Glued percentage-point and basis-point marks, and the percent each one is.
-_POINT_MARKS = (("bps", 0.01), ("pp", 1.0), ("bp", 0.01))
+_POINT_MARKS = (("个百分点", 1.0), ("bps", 0.01), ("pp", 1.0), ("bp", 0.01))
 
 # Magnitude marks glued to a figure ("24.6M", "2.4万"): a symbol set like the
 # currency marks. They scale the comparison with evidence and never decide shape.

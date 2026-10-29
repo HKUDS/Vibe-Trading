@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from src.tools.doc_reader_tool import read_document
+from src.tools.doc_reader_tool import DocReaderTool, read_document
 from src.tools.path_utils import safe_document_path, safe_user_path
 
 
@@ -46,3 +46,22 @@ def test_read_document_allows_configured_import_root(
     assert result["status"] == "ok"
     assert result["text"] == "VT_DOC_OK"
     assert safe_document_path(str(doc)) == doc.resolve()
+
+
+@pytest.mark.parametrize("arguments", [{}, {"file_path": ""}, {"file_path": None}])
+def test_missing_document_path_names_the_required_argument(arguments) -> None:
+    result = _read_json(DocReaderTool().execute(**arguments))
+    assert result["status"] == "error"
+    assert "file_path is required" in result["error"]
+
+
+def test_uploaded_handle_uses_upload_root_even_when_a_run_dir_is_supplied(tmp_path, monkeypatch) -> None:
+    from src.config.paths import get_uploads_dir
+
+    monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
+    doc = get_uploads_dir() / "report.txt"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text("UPLOADED_REPORT", encoding="utf-8")
+    result = _read_json(DocReaderTool().execute(file_path="uploads/report.txt", run_dir=str(tmp_path / "runs/r1")))
+    assert result["status"] == "ok"
+    assert result["text"] == "UPLOADED_REPORT"

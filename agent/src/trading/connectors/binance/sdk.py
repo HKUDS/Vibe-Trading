@@ -813,6 +813,11 @@ def _exchange(cfg: BinanceConfig):
             "recvWindow": 10_000,
         },
     }
+    if cfg.market_type == "spot":
+        # This read deliberately lists every symbol. Acknowledge CCXT's
+        # client-side weight warning; its rate limiter remains enabled and
+        # real exchange/auth/network failures still propagate to the caller.
+        client_config["options"]["fetchOpenOrders"] = {"warnWithoutSymbol": False}
     # ``requests``/ccxt does not consistently inherit the macOS System Proxy.
     # urllib resolves both conventional proxy environment variables and the
     # active macOS network proxy, so local desktop connectors follow the same

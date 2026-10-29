@@ -450,6 +450,14 @@ class TestUsHoldings:
         assert "balance" not in holdings[1]
         assert "ticker" not in holdings[0]
 
+    def test_a_us_suffixed_symbol_still_reaches_the_sec_ticker(self):
+        # The resolver publishes US listings as ``<SYM>.US``, so callers pass
+        # the suffixed form back in; the SEC index only knows bare tickers.
+        with patch.object(etf, "_sec_get_text", side_effect=_sec_router):
+            payload = json.loads(EtfHoldingsTool().execute(mode="holdings", symbol="IVV.US"))
+        assert payload["ok"] is True
+        assert payload["data"]["symbol"] == "IVV"
+
     def test_series_mismatch_refuses_to_attribute_the_filing(self):
         def router(url, params=None):
             if "primary_doc" in url:
@@ -518,6 +526,11 @@ class TestUsLookup:
     def test_rows_without_a_ticker_are_dropped(self):
         records = etf._parse_series_index(_SERIES_CSV)
         assert {r["ticker"] for r in records} == {"IVV", "SOXX"}
+
+    def test_a_us_suffixed_query_still_matches_the_ticker(self):
+        with patch.object(etf, "_sec_get_text", side_effect=_sec_router):
+            payload = json.loads(EtfHoldingsTool().execute(mode="lookup", query="SOXX.US"))
+        assert payload["data"]["matches"][0]["ticker"] == "SOXX"
 
     def test_etf_share_classes_outrank_mutual_fund_classes_on_a_theme_query(self):
         # Live check: "semiconductor" matches 31 classes, and in filer order the

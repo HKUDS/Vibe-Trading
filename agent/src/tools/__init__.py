@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+import uuid
 from collections.abc import Mapping
 from collections import deque
 from pathlib import Path
@@ -83,6 +84,8 @@ def build_registry(
     warn_callback: Callable[[str], None] | None = None,
     interactive: bool | None = None,
     cancel_event: Any | None = None,
+    background_manager: Any | None = None,
+    background_scope: Any | None = None,
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
@@ -106,7 +109,8 @@ def build_registry(
             tool discovery. Pass ``None`` (default) to preserve existing
             behavior with no MCP integration.
         session_id: Optional current session id injected into local tools that
-            persist per-session state.
+            persist per-session state. Also used as the background-task owner
+            when no explicit ``background_scope`` is given.
         event_callback: Optional event callback injected into local tools that
             mutate session-scoped state.
         warn_callback: Optional callable invoked with operator-facing warning
@@ -119,11 +123,26 @@ def build_registry(
             channel rather than blocking on a browser that cannot open
             (SPEC Transport §4). ``None`` (default) auto-detects via
             ``sys.stdin.isatty()``.
+        background_manager: Shared background task table. Defaults to the
+            process-wide one.
+        background_scope: Who owns the background tasks this registry can
+            start. When omitted the scope is derived from ``session_id``, or is
+            private to this registry when there is no session either. The
+            resolved handle is exposed as ``registry.background`` so the host
+            can give the same one to ``AgentLoop`` and keep task results and
+            completion notifications inside one conversation.
 
     Returns:
         ToolRegistry containing all available local tools followed by any
         successfully discovered MCP tools.
     """
+    from src.tools.background_tools import (
+        BackgroundScope,
+        BackgroundRunTool,
+        CancelBackgroundTool,
+        CheckBackgroundTool,
+        get_background_manager,
+    )
     from src.tools.goal_tool import (
         AddGoalEvidenceTool,
         GetResearchGoalTool,
@@ -149,6 +168,17 @@ def build_registry(
     }
     classes = _discover_subclasses()
     registry = ToolRegistry()
+
+    bg_scope = background_scope or (
+        BackgroundScope(owner_id=f"session:{session_id}")
+        if session_id
+        else getattr(background_manager, "scope", None)
+        or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
+    )
+    bg = (background_manager or get_background_manager()).for_scope(bg_scope)
+    # The loop drains the same handle the tools write to, so a task's result
+    # reaches the conversation that started it and no other.
+    registry.background = bg
     for module_name, reason in _DISCOVERY_FAILURES.items():
         registry.record_import_failure(module_name, reason)
 
@@ -162,6 +192,8 @@ def build_registry(
                 continue
             if cls is RememberTool and persistent_memory is not None:
                 registry.register(cls(memory=persistent_memory))
+            elif cls in (BackgroundRunTool, CheckBackgroundTool, CancelBackgroundTool):
+                registry.register(cls(background=bg))
             elif cls in session_injected_classes:
                 registry.register(cls(default_session_id=session_id, event_callback=event_callback))
             elif cls is SwarmTool:
@@ -288,6 +320,8 @@ def build_filtered_registry(
     *,
     include_shell_tools: bool = False,
     skill_allowlist: list[str] | None = None,
+    background_manager: Any | None = None,
+    background_scope: Any | None = None,
 ) -> ToolRegistry:
     """Build a ToolRegistry with only specified tools.
 
@@ -302,11 +336,17 @@ def build_filtered_registry(
         skill_allowlist: When not ``None``, the ``load_skill`` tool (if
             whitelisted) is rebuilt to refuse skill names outside this list,
             so a documented skill boundary is enforced at runtime.
+        background_manager: Shared background task table.
+        background_scope: Owner of the background tasks this registry starts.
 
     Returns:
         ToolRegistry containing only the requested tools.
     """
-    full = build_registry(include_shell_tools=include_shell_tools)
+    full = build_registry(
+        include_shell_tools=include_shell_tools,
+        background_manager=background_manager,
+        background_scope=background_scope,
+    )
     return _filter_registry(
         full,
         tool_names,
@@ -321,6 +361,8 @@ def build_swarm_registry(
     agent_config: "AgentConfig | None" = None,
     include_shell_tools: bool = False,
     skill_allowlist: list[str] | None = None,
+    background_manager: Any | None = None,
+    background_scope: Any | None = None,
 ) -> ToolRegistry:
     """Build a per-worker registry that merges local + remote MCP tools.
 
@@ -346,6 +388,11 @@ def build_swarm_registry(
         skill_allowlist: When not ``None``, the ``load_skill`` tool (if
             whitelisted) is rebuilt to refuse skill names outside this list,
             enforcing the per-worker ``skills:`` boundary at runtime.
+        background_manager: Shared background task table.
+        background_scope: Owner of the background tasks this worker starts.
+            Swarm workers should pass one scoped to their run and identity so
+            concurrent workers never see each other's tasks. Omitting it gives
+            the worker a private scope rather than a shared one.
 
     Returns:
         ToolRegistry containing the whitelist intersection of local tools
@@ -358,6 +405,8 @@ def build_swarm_registry(
     full = build_registry(
         agent_config=swarm_agent_config,
         include_shell_tools=include_shell_tools,
+        background_manager=background_manager,
+        background_scope=background_scope,
         _mcp_server_tool_name_segments=swarm_local_server_names,
     )
     return _filter_registry(
@@ -408,6 +457,7 @@ def _filter_registry(
 ) -> ToolRegistry:
     """Project a full registry down to a whitelist with consistent drop logging."""
     filtered = ToolRegistry()
+    filtered.background = getattr(full, "background", None)
     for name in tool_names:
         tool = full.get(name)
         if tool:

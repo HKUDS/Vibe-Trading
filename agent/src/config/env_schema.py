@@ -185,6 +185,12 @@ class LLMConfig(_EnvBase):
         default="https://chatgpt.com/backend-api/codex/responses",
     )
     claude_cli_path: str = Field(alias="CLAUDE_CLI_PATH", default="")
+    vibe_trading_deny_tool_prefixes: str | None = Field(
+        alias="VIBE_TRADING_DENY_TOOL_PREFIXES", default=None
+    )
+    vibe_trading_bash_policy: str | None = Field(
+        alias="VIBE_TRADING_BASH_POLICY", default=None
+    )
     # A convenience filter, not a security boundary: live orders are still bound
     # by the mandate gate whatever this list hides.
     claude_cli_deny_tool_prefixes: str = Field(
@@ -565,6 +571,9 @@ class PathConfig(_EnvBase):
 
     vibe_trading_hypotheses_path: str = Field(alias="VIBE_TRADING_HYPOTHESES_PATH", default="")
     vibe_trading_goal_db_path: str = Field(alias="VIBE_TRADING_GOAL_DB_PATH", default="")
+    vibe_trading_research_artifact_db_path: str = Field(
+        alias="VIBE_TRADING_RESEARCH_ARTIFACT_DB_PATH", default="",
+    )
     vibe_trading_playbook_dir: str = Field(alias="VIBE_TRADING_PLAYBOOK_DIR", default="")
     vibe_trading_swarm_agent_config: str = Field(
         alias="VIBE_TRADING_SWARM_AGENT_CONFIG", default="",

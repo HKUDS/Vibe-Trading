@@ -662,11 +662,23 @@ def _run_worker_impl(
     #    ``load_skill`` with the allowlist baked in; an empty ``skills`` list
     #    means unrestricted, matching the prompt-side filter semantics
     #    (``_filter_skill_descriptions`` treats empty as include-all).
+    # Each worker owns its background tasks. Two workers running the same
+    # preset concurrently must never read or cancel each other's commands, and
+    # neither may see the tasks of the session that launched the swarm.
+    from src.tools.background_tools import BackgroundScope, get_background_manager
+
+    background_scope = BackgroundScope(
+        owner_id=f"swarm:{Path(run_dir).resolve()}:{agent_id}:{task_id}",
+        attempt_id=task_id,
+    )
+    background = get_background_manager().for_scope(background_scope)
     registry = build_swarm_registry(
         agent_spec.tools,
         agent_config=agent_config,
         include_shell_tools=include_shell_tools,
         skill_allowlist=agent_spec.skills or None,
+        background_manager=background,
+        background_scope=background_scope,
     )
 
     # 2. Build system prompt with filtered skills

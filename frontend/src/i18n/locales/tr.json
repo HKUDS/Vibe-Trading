@@ -37,7 +37,41 @@
     "about": "Hakkında",
     "sessionsLoadFailed": "Konuşmalar yüklenemiyor.",
     "pixelOffice": "Piksel Ofis",
-    "paperTrading": "Sanal işlem"
+    "paperTrading": "Sanal işlem",
+    "researchArtifacts": "Araştırma çıktıları"
+  },
+  "researchArtifacts": {
+    "completeness": "Tamlık",
+    "optionalLinks": "İsteğe bağlı bağlantılı kimlikler",
+    "formTitleNew": "Araştırmayı kaydet",
+    "verification": "Doğrulama",
+    "subject": "Araştırma konusu",
+    "createdNotice": "{{id}} revizyonu oluşturuldu.",
+    "emptyHint": "Sonraki oturumlarda sonuçlarını ve kanıtlarını yeniden kullanmak için bir analiz kaydedin.",
+    "newResearch": "Yeni araştırma",
+    "emptyTitle": "Henüz araştırma çıktısı yok",
+    "save": "Araştırmayı kaydet",
+    "evidenceMissing": "Kanıt referansı eklenmemiş",
+    "saveError": "Araştırma çıktısı kaydedilemedi.",
+    "additionalEvidence": "Ek kanıt URI’leri (satır başına bir)",
+    "subtitle": "Önceki revizyonların üzerine yazmadan kanıta dayalı analizleri oturumlar arasında yeniden kullanın.",
+    "revise": "Bu revizyondan yola çıkarak düzenle",
+    "history": "Revizyon geçmişi",
+    "searchPlaceholder": "Konu, evren veya içerik ara",
+    "loadError": "Araştırma çıktıları yüklenemedi.",
+    "close": "Kapat",
+    "universe": "Evren (isteğe bağlı)",
+    "title": "Araştırma çıktıları",
+    "dataAsOf": "Veri tarihi",
+    "content": "Araştırma içeriği",
+    "saving": "Kaydediliyor…",
+    "idempotentNotice": "Aynı içerik ve kaynak bilgisi {{id}} içinde zaten var.",
+    "formTitleRevision": "Bağlantılı revizyon oluştur",
+    "evidence": "Kanıt referansları",
+    "hypothesis_id": "Hipotez kimliği",
+    "goal_id": "Hedef kimliği",
+    "session_id": "Oturum kimliği",
+    "run_id": "Çalıştırma kimliği"
   },
   "runtime": {
     "monitorBadge": "Çalışma durumu izleyicisi",
@@ -418,6 +452,9 @@
     "reasoningEffortMedium": "Orta",
     "reasoningEffortHigh": "Yüksek",
     "reasoningEffortMax": "Maksimum",
+    "reasoningEffortMinimal": "En düşük",
+    "reasoningEffortUltra": "Çok yüksek",
+    "reasoningEffortPersistent": "Sürekli",
     "reasoningEffortDesc": "Desteklenen modellerde akıl yürütme derinliğini kontrol eder. Yüksek düzeyler karmaşık analizi iyileştirebilir ancak daha uzun sürebilir; desteklemeyen sağlayıcılar bu ayarı yok sayabilir. “Yok (açıkça belirtilmiş)” seçeneği alanı göndererek akıl yürütmeyi kapatır; bazı OpenAI modelleri araç kullanımı için bunu gerektirir.",
     "useDefaultModel": "Varsayılan modeli kullan",
     "useDefaultUrl": "Varsayılan URL’yi kullan",
@@ -2348,7 +2385,8 @@
       "runtime": "Aracı kurum bağlantılarını ve işlem çalışma durumunu kontrol edin.",
       "settings": "Modelleri, veri kaynaklarını ve aracı kurum bağlantılarını yapılandırın.",
       "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez.",
-      "paperTrading": "Günlük işlemleri sanal fonlarla deneyin. Aracı kuruma emir gönderilmez. Sonuçlar nakit temettüleri içermez ve toplam getiriyi göstermez."
+      "paperTrading": "Günlük işlemleri sanal fonlarla deneyin. Aracı kuruma emir gönderilmez. Sonuçlar nakit temettüleri içermez ve toplam getiriyi göstermez.",
+      "researchArtifacts": "Kanıta dayalı analizleri oturumlar arasında kaydedin ve yeniden kullanın."
     },
     "instructions": {
       "reports": "Önce araştırma asistanından bir stratejiyi geriye dönük test etmesini isteyin, ardından sonuçları burada açın. PDF ve diğer sohbet belgelerini özgün konuşmadan indirin.",
@@ -2360,7 +2398,8 @@
       "runtime": "Önce Ayarlar veya Portföy’de bir aracı kurum bağlantısı kurun. Kullanılabilir işlemler, kurumun yeteneklerine ve verdiğiniz yetkiye bağlıdır.",
       "settings": "Başlamak için bir model yapılandırın. Gerektikçe veri kaynakları veya aracı kurum bağlantıları ekleyin; kamuya açık piyasa araştırması için aracı kurum hesabı gerekmez.",
       "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez.",
-      "paperTrading": "Yalnızca tamamlanmış günlük mumlar işlenir. Stratejiler önceki günleri okur ve işlem gününün kapanışında gerçekleşir. Normal kapanıştan 30 dakika sonrasını bekleyin; otomatik çalıştırma planlanmaz."
+      "paperTrading": "Yalnızca tamamlanmış günlük mumlar işlenir. Stratejiler önceki günleri okur ve işlem gününün kapanışında gerçekleşir. Normal kapanıştan 30 dakika sonrasını bekleyin; otomatik çalıştırma planlanmaz.",
+      "researchArtifacts": "Önceki analizleri arayın, herhangi bir revizyonu açın veya yeni kanıtla bağlantılı revizyon oluşturun. Eski sonuçlar değişmez."
     }
   },
   "analysis": {

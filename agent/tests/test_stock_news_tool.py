@@ -12,7 +12,6 @@ import json
 from typing import Any
 from unittest.mock import patch
 
-import pytest
 
 from backtest.loaders import eastmoney_client, yahoo_client
 from src.tools.stock_news_tool import (
@@ -243,3 +242,66 @@ class TestExecuteError:
         assert out["ok"] is False
         assert "yahoo 429" in out["error"]
         assert "yahoo news fetch failed" in out["error"]
+
+
+class TestEastmoneyDegradedIndex:
+    """A degraded Eastmoney answer must not read as "this stock has no news".
+
+    Eastmoney serves its Guba user index (``passportWeb``) instead of the CMS
+    article index when it distrusts the caller, and that degraded answer is
+    shaped like a valid but empty one (see issue #2081).
+    """
+
+    def test_degraded_user_index_raises_instead_of_empty(self) -> None:
+        payload = {"code": 0, "result": {"passportWeb": [], "userWeb": []}}
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=payload), patch.object(
+            eastmoney_client, "throttled_browser_get_json", return_value=payload
+        ):
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+
+        assert out["ok"] is False
+        assert "degraded" in out["error"]
+
+    def test_empty_cms_section_is_a_clean_empty_result(self) -> None:
+        payload = {"code": 0, "result": {"cmsArticleWebOld": []}}
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=payload):
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+
+        assert out["ok"] is True
+        assert out["data"]["articles"] == []
+
+    def test_jsonp_enveloped_body_is_parsed_into_articles(self) -> None:
+        body = "jQuery3700123_456(" + json.dumps(_em_news_payload(), ensure_ascii=False) + ")"
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=body):
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+
+        assert out["ok"] is True
+        assert len(out["data"]["articles"]) == 2
+
+    def test_filtered_plain_client_recovers_through_one_browser_retry(self) -> None:
+        filtered = {"result": {"passportWeb": []}}
+        with patch.object(eastmoney_client, "throttled_get_json", return_value=filtered), patch.object(
+            eastmoney_client, "throttled_browser_get_json", return_value=_em_news_payload()
+        ) as browser:
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+        assert out["ok"] is True
+        assert len(out["data"]["articles"]) == 2
+        browser.assert_called_once()
+        assert browser.call_args.kwargs["host_key"] == eastmoney_client._HOST_KEY
+
+    def test_genuine_empty_news_does_not_invoke_browser_transport(self) -> None:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value={"result": {"cmsArticleWebOld": []}}), patch.object(
+            eastmoney_client, "throttled_browser_get_json"
+        ) as browser:
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+        assert out["ok"] is True
+        assert out["data"]["articles"] == []
+        browser.assert_not_called()
+
+    def test_unavailable_browser_retry_is_an_error_not_empty_news(self) -> None:
+        with patch.object(eastmoney_client, "throttled_get_json", return_value={"result": {"passportWeb": []}}), patch.object(
+            eastmoney_client, "throttled_browser_get_json", side_effect=RuntimeError("install curl_cffi")
+        ):
+            out = json.loads(StockNewsTool().execute(code="600519.SH"))
+        assert out["ok"] is False
+        assert "install curl_cffi" in out["error"]

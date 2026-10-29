@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 interface ModelPickerProps {
   value: string;
   options: string[];
+  labels?: Record<string, string>;
   onChange: (value: string) => void;
   ariaLabel: string;
   optionsAriaLabel: string;
@@ -12,6 +13,7 @@ interface ModelPickerProps {
 export function ModelPicker({
   value,
   options,
+  labels = {},
   onChange,
   ariaLabel,
   optionsAriaLabel,
@@ -67,7 +69,7 @@ export function ModelPicker({
   };
 
   return (
-    <div ref={rootRef} className="relative min-w-0 flex-1">
+    <div ref={rootRef} className="relative min-w-0 basis-full flex-1 sm:basis-auto">
       <div className="relative">
         <input
           value={value}
@@ -123,7 +125,9 @@ export function ModelPicker({
                   active ? "bg-muted text-foreground" : "text-foreground hover:bg-muted/70"
                 }`}
               >
-                <span className="min-w-0 whitespace-normal break-words font-medium">{model}</span>
+                <span className="min-w-0 flex-1 whitespace-normal break-words font-medium">
+                  {labels[model] ? <>{labels[model]} <span className="text-xs font-normal text-muted-foreground">({model})</span></> : model}
+                </span>
                 <Check className={`h-4 w-4 shrink-0 text-primary ${selected ? "opacity-100" : "opacity-0"}`} />
               </button>
             );

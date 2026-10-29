@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Mapping
 from typing import Dict, List, Optional, Union
 
 import pandas as pd
@@ -110,7 +111,8 @@ def _declared_currency(symbol: str) -> Optional[str]:
         meta = yf.Ticker(symbol).history_metadata
     except Exception:  # noqa: BLE001 — a metadata probe failure is not data
         return None
-    currency = meta.get("currency") if isinstance(meta, dict) else None
+    # yfinance>=1.x returns a lazy HistoryMetadata Mapping, not a dict.
+    currency = meta.get("currency") if isinstance(meta, Mapping) else None
     return currency if isinstance(currency, str) and currency else None
 
 

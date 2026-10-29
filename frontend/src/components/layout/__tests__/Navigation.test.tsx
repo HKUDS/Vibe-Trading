@@ -13,7 +13,7 @@ function renderNavigation(path = "/", collapsed = false) {
 it("keeps every feature directly reachable and distinguishes tasks from tools and setup", () => {
   renderNavigation();
   expect(within(screen.getByRole("region", { name: "Everyday research" })).getAllByRole("link").map((link) => link.getAttribute("href")))
-    .toEqual(["/", "/reports", "/paper-trading", "/portfolio"]);
+    .toEqual(["/", "/reports", "/research-artifacts", "/paper-trading", "/portfolio"]);
   expect(within(screen.getByRole("region", { name: "Specialized analysis" })).getAllByRole("link").map((link) => link.getAttribute("href")))
     .toEqual(["/alpha-zoo", "/options", "/correlation"]);
   expect(within(screen.getByRole("region", { name: "Automation & setup" })).getAllByRole("link").map((link) => link.getAttribute("href")))
@@ -54,7 +54,7 @@ it("opens a labeled feature menu in compact mode and returns focus on Escape", (
   expect(within(menu).getByText("Options analysis")).toBeVisible();
   expect(within(menu).getByText("Pixel Office")).toBeVisible();
   expect(within(menu).getByText("Trading status")).toBeVisible();
-  expect(within(menu).getAllByRole("link")).toHaveLength(11);
+  expect(within(menu).getAllByRole("link")).toHaveLength(12);
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("navigation", { name: "Browse features" })).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();

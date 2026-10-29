@@ -37,6 +37,10 @@
     "tailwind-merge": "^3.7.0",
     "zustand": "^5.0.15"
   },
+  "overrides": {
+    "postcss-selector-parser@^6.0.0": "^6.1.5",
+    "undici@^8.0.0": "^8.12.2"
+  },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.20",
     "@testing-library/jest-dom": "^7.0.1",

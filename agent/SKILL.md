@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (82)
+## Available MCP Tools (83)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -184,6 +184,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `write_file` | Write files (config, strategy code) | None |
 | `read_file` | Read file contents | None |
 | `read_run_artifact` | Structured run-artifact reads (rows / downsample / meta) | None |
+| `list_backtest_runs` | Discover earlier backtest runs (paged, per session or all) and their `run_dir`s | None |
 | `list_strategies` | Browse discoverable strategies (Alpha Zoo + SDM store) | None |
 | `query_strategies` | Evidence-gated query: regime / Sharpe / quality / cost filters | None |
 | `get_strategy_evidence` | Per-regime evidence rows for one strategy | None |

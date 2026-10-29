@@ -47,6 +47,11 @@ from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
 from src.factors.data_availability import build_availability_contract
+from src.factors.research_contract import (
+    RESEARCH_MODES,
+    RESEARCH_STAGES,
+    build_bench_research_contract,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1269,6 +1274,19 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
     if not period or not isinstance(period, str):
         return {"status": "error", "error": "period is required (string)"}
 
+    research_mode = kwargs.get("research_mode", "explore")
+    research_stage = kwargs.get("research_stage", "single_factor_evaluation")
+    if research_mode not in RESEARCH_MODES:
+        return {
+            "status": "error",
+            "error": f"research mode must be one of {RESEARCH_MODES}",
+        }
+    if research_stage not in RESEARCH_STAGES:
+        return {
+            "status": "error",
+            "error": f"research stage must be one of {RESEARCH_STAGES}",
+        }
+
     try:
         _parse_period(period)
     except ValueError as exc:
@@ -1395,6 +1413,19 @@ def run_alpha_bench(**kwargs: Any) -> dict[str, Any]:
         period=period,
         required_fields=required_fields,
     )
+    try:
+        universe_meta["research"] = build_bench_research_contract(
+            mode=research_mode,
+            stage=research_stage,
+            universe=universe,
+            period=period,
+            factor_ids=alpha_ids,
+            zoo=kwargs.get("zoo"),
+            horizon=horizon,
+            method="rank_ic",
+        )
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}
 
     context = {
         "csp": _CSP,
@@ -1475,6 +1506,16 @@ class AlphaBenchTool(BaseTool):
                     "non-overlapping (end-anchored); 21 ≈ monthly, the "
                     "conventional horizon for fundamental factors. Range 1-252."
                 ),
+            },
+            "research_stage": {
+                "type": "string",
+                "enum": list(RESEARCH_STAGES),
+                "default": "single_factor_evaluation",
+                "description": "Stage recorded in the factor-research contract.",
+            },
+            "research_mode": {
+                "type": "string", "enum": list(RESEARCH_MODES), "default": "explore",
+                "description": "Declared research mode; metadata only, does not enforce locked evaluation.",
             },
             "output_dir": {
                 "type": "string",

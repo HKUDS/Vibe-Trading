@@ -7,7 +7,7 @@ langchain-core>=1.0.0,<2
 langchain-openai>=1.0.0,<2
 # optional: pip install "vibe-trading-ai[deepseek]" — native DeepSeek adapter (langchain-deepseek)
 # optional: pip install "vibe-trading-ai[anthropic]" — native Anthropic Messages API adapter (langchain-anthropic)
-langgraph>=1.2.5,<1.3
+langgraph>=1.2.14,<1.3
 langgraph-checkpoint>=2.1.0,<5
 python-dotenv>=1.0.0
 httpx>=0.28.0
@@ -26,8 +26,8 @@ openpyxl>=3.1.0
 python-docx>=1.1.0
 python-pptx>=0.6.23
 pypdfium2>=4.0.0
-pypdf>=6.0.0
-Pillow>=12.2.0
+pypdf>=6.21.2
+Pillow>=13.0.0
 
 # ML Strategy
 scikit-learn>=1.3.0
@@ -44,8 +44,17 @@ defusedxml>=0.7.1
 yfinance>=0.2.30
 akshare>=1.12.0
 ccxt>=4.5.71
-aiohttp>=3.14.3
+aiohttp>=3.14.4
 cryptography>=50.0.0
+# Security floors shared with pyproject.toml for MCP/auth and HTTP dependencies.
+authlib>=1.9.1
+brotli>=1.2.1; platform_python_implementation == 'CPython'
+brotlicffi>=1.2.1.0; platform_python_implementation != 'CPython'
+certifi>=2026.10.18
+dnspython>=2.9.0
+langgraph-sdk>=0.4.6
+urllib3>=2.8.0
+opentelemetry-api>=1.45.1
 # optional: pip install "vibe-trading-ai[mt5]" — MetaTrader 5 terminal bridge (Windows only): forex/metals data + broker connector
 
 # REST API & SSE
@@ -58,7 +67,7 @@ sse-starlette>=1.6.0
 # optional: pip install "vibe-trading-ai[openbb]" — OpenBB Workspace custom-agent bridge (openbb-ai protocol models + SSE helpers)
 
 # MCP Server
-fastmcp>=2.14.0
+fastmcp>=3.4.10,<4.0.0
 
 # Web Search
 ddgs>=6.0.0

@@ -52,16 +52,20 @@
 
 > ⚠️ **セキュリティ警告：** Xアカウント `VibeTrading_HKU`、Virtualsプロジェクト `101845`、およびトークンコントラクト `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` は、いずれもVibe-Trading公式のものではありません。Vibe-Tradingはこれまで、いかなるトークンやミームコインも発行・公認していません。購入、ウォレットの接続、署名は行わないでください。[詳細](SECURITY.md#official-channels--impersonation)
 
+- **2026-10-29** 🛠️ **リサーチの再利用と実行修正（未リリース）**：版管理されたリサーチ資料を保存し、manifest で検証した過去のバックテスト成果物を再利用できます（[#2079](https://github.com/HKUDS/Vibe-Trading/pull/2079)、[#2074](https://github.com/HKUDS/Vibe-Trading/pull/2074)）。
+  文書内の金額・単位、暗号資産現物のバックテスト費用を修正し、Binance の未約定注文取得と AKShare 互換性を復旧しました（[#2050](https://github.com/HKUDS/Vibe-Trading/issues/2050)、[#2088](https://github.com/HKUDS/Vibe-Trading/issues/2088)、[#2090](https://github.com/HKUDS/Vibe-Trading/issues/2090)、[#2083](https://github.com/HKUDS/Vibe-Trading/pull/2083)）。
+  Codex モデル検出、BYMA ルール、バックグラウンド処理の所有元分離、共通ツールポリシーも追加。模擬戦略は専用ワーカーパイプを使います。Windows 実機での確認は未完了です（[#2089](https://github.com/HKUDS/Vibe-Trading/issues/2089)、[CHANGELOG](CHANGELOG.md)）。
+
 - **2026-10-28** 🛠️ **ペーパー取引・ポートフォリオ・市場ルーティングの修正（未リリース）**：Phase 1 のバーに依存しないペーパー注文ライフサイクル状態機械を追加し、安定した replay ID、終端注文の fail-closed キャンセル、日次決済、任意の partial fill、決定的な snapshot を実装しました（[#2066](https://github.com/HKUDS/Vibe-Trading/pull/2066)）。Robinhood の読み取り専用ポートフォリオは、明示的な口座選択、クォート変換、カーソルページングに対応しました（[#2054](https://github.com/HKUDS/Vibe-Trading/pull/2054)、[#1428](https://github.com/HKUDS/Vibe-Trading/issues/1428) を完了）。Shadow Account のキャッシュ無効化と宣言済みエントリー条件を修正し（[#2075](https://github.com/HKUDS/Vibe-Trading/pull/2075)、[#2073](https://github.com/HKUDS/Vibe-Trading/pull/2073)）、Futu の米国銘柄コードと IBKR/Futu gateway の接続先設定を修正しました（[#2076](https://github.com/HKUDS/Vibe-Trading/pull/2076)、[#1983](https://github.com/HKUDS/Vibe-Trading/pull/1983)）。構造化された 2 ターン最終回答、Qlib 因子の意味、数値・grounding 入力境界も修正しました（[#2064](https://github.com/HKUDS/Vibe-Trading/pull/2064)、[#2069](https://github.com/HKUDS/Vibe-Trading/pull/2069)、[#2072](https://github.com/HKUDS/Vibe-Trading/pull/2072)、[#2053](https://github.com/HKUDS/Vibe-Trading/pull/2053)）。これらの修正は `main` に入り、次のリリースに含まれます。
 
 - **2026-10-27** 🛠️ **ポートフォリオ接続と研究の正確性（未リリース）**：Web または CLI で IBKR／Futu の接続別ゲートウェイを保存し、Agent の読み取りにも使用します（[#1983](https://github.com/HKUDS/Vibe-Trading/pull/1983)）。Robinhood のポートフォリオ読み取りが口座選択、ページング、株価に対応。追加修正では銘柄を照合し、通常／時間外取引の新しい方を選び、価格の時刻を表示します（[#2054](https://github.com/HKUDS/Vibe-Trading/pull/2054), [011a555ed](https://github.com/HKUDS/Vibe-Trading/commit/011a555ed)）。Qlib ROC／CORD の式とシャドー戦略のエントリー境界を修正（[#2069](https://github.com/HKUDS/Vibe-Trading/pull/2069), [#2073](https://github.com/HKUDS/Vibe-Trading/pull/2073)）。金融単位と数値証拠を保持し、通貨宣言を同一オブジェクト内に限定。非有限数・真偽値の金融入力を拒否し、通常の 2 ターンの `claude-cli` 構造化最終回答を受け入れます（[#2072](https://github.com/HKUDS/Vibe-Trading/pull/2072), [#2053](https://github.com/HKUDS/Vibe-Trading/pull/2053), [#2064](https://github.com/HKUDS/Vibe-Trading/pull/2064)）。`main` に反映済みで、次のリリースに含まれます。
 
+<details>
+<summary>過去のニュース</summary>
+
 - **2026-10-26** 🛠️ **Agent の停止・数値検証・市場データの修正（未リリース）**：チャット停止時に実行中の Swarm をキャンセルし、遅れて届く状態イベントを無視します（[#2059](https://github.com/HKUDS/Vibe-Trading/pull/2059), [#2060](https://github.com/HKUDS/Vibe-Trading/pull/2060)）。Qlib BETA／RESI のローリング OLS 定義を復元し、条件を満たす文書内の数値を証拠台帳に取り込み、拒否された `claude-cli` ネイティブツール呼び出しから復旧します（[#2062](https://github.com/HKUDS/Vibe-Trading/pull/2062), [#2058](https://github.com/HKUDS/Vibe-Trading/pull/2058), [#2048](https://github.com/HKUDS/Vibe-Trading/pull/2048)）。alpha-bench にフィールド別のデータ可用性情報を追加し、重みのオーバーフロー、イベント分析の順位尺度、要因分解の期間整合性を修正（[#2057](https://github.com/HKUDS/Vibe-Trading/pull/2057), [#2046](https://github.com/HKUDS/Vibe-Trading/pull/2046), [#2000](https://github.com/HKUDS/Vibe-Trading/pull/2000), [#2044](https://github.com/HKUDS/Vibe-Trading/pull/2044)）。Moonshot の推論強度ルーティング、取引記録／オプションの入力検証、Stooq の種類株式コード、スクリーナーの小数値、ST 銘柄の市場区分別値幅制限も修正しました（[#2043](https://github.com/HKUDS/Vibe-Trading/pull/2043), [#2052](https://github.com/HKUDS/Vibe-Trading/pull/2052), [#2049](https://github.com/HKUDS/Vibe-Trading/pull/2049), [#2012](https://github.com/HKUDS/Vibe-Trading/pull/2012), [#1988](https://github.com/HKUDS/Vibe-Trading/pull/1988), [#1984](https://github.com/HKUDS/Vibe-Trading/pull/1984)）。`main` に反映済みで、次のリリースに含まれます。
 
 - **2026-10-25** 🛠️ **セッション・市場データ・計算の修正（未リリース）**：セッション削除時に検索記録も削除し、最初のメッセージに添付ファイルや Swarm 指示があってもチャットタイトルを正しく更新します（[#1970](https://github.com/HKUDS/Vibe-Trading/pull/1970)、[#1969](https://github.com/HKUDS/Vibe-Trading/pull/1969)）。CCXT 履歴の早期打ち切り、Nobitex 日足の日付、Tiingo の種類株式コードを修正しました（[#1999](https://github.com/HKUDS/Vibe-Trading/pull/1999)、[#1989](https://github.com/HKUDS/Vibe-Trading/pull/1989)、[#2010](https://github.com/HKUDS/Vibe-Trading/pull/2010)）。小さな約定・チャート価格の精度を保持し、GTJA 因子式と VWAP の単位を修正。状態変更前に曖昧な真偽値引数を拒否します（[修正](https://github.com/HKUDS/Vibe-Trading/commit/6dafa4cde)）。これらは `main` に反映済みで、次のリリースに含まれます。
-
-<details>
-<summary>過去のニュース</summary>
 
 - **2026-10-24** 🛠️ **MCP・バックテスト・検索の修正（未リリース）**：MCP が実行時の `.env` を読み込みます。シェルツールは引き続き起動時の明示的な有効化が必要です（[#1974](https://github.com/HKUDS/Vibe-Trading/pull/1974)）。先物の既定レバレッジを仮定値として報告し（[#1972](https://github.com/HKUDS/Vibe-Trading/pull/1972)）、年率換算で日数の小数部分を保持します（[#1971](https://github.com/HKUDS/Vibe-Trading/pull/1971)）。ddgs が空の結果を返した場合も、有効な Sogou／Bing の代替検索を試みます（[修正](https://github.com/HKUDS/Vibe-Trading/commit/0d946491c)）。
 
@@ -723,7 +727,7 @@ Paper-vs-live is a **structural per-broker runtime guard** (account-id format, h
 </details>
 
 <details>
-<summary><b>Backtest Engines</b> <sub>11 engines + options portfolio, cross-market composite</sub></summary>
+<summary><b>Backtest Engines</b> <sub>12 engines + options portfolio, cross-market composite</sub></summary>
 
 | Engine | Market | Notes |
 |--------|--------|-------|
@@ -733,6 +737,7 @@ Paper-vs-live is a **structural per-broker runtime guard** (account-id format, h
 | **KoreaEquity** | 韓国（KRX：KOSPI/KOSDAQ） | ロングオンリー、統一呼値グリッド上で ±30% 制限値幅を約定時点に判定、2026 年 0.20% の証券取引税 |
 | **VietnamEquity** | ベトナム（HOSE） | ロングオンリー、T+2 決済ホールド、10/50/100 ドンの呼値グリッド上で ±7% 制限値幅、100 株単元、売却側 0.1% 課税 |
 | **BrazilEquity** | Brazil (B3) | BRL, B3 trading + settlement fees, configurable broker fee, 1- or 100-share lots, R$0.01 tick, shorting allowed |
+| **ArgentinaEquity** | Argentina (BYMA) | ARS、ロングのみ。T+2 → T+1（2024-05-27）、観測取引日による概算決済。同日売却代金の相殺、宣言した CEDEAR 比率と入庫日、明示した tick 表・市場区分（`ar_tick_table`）または銘柄別 tick |
 | **Crypto** | crypto spot / USD-M perps | funding settlements, execution/mark split |
 | **ChinaFutures** · **GlobalFutures** | futures | margin, contract multipliers |
 | **Forex** | FX / metals | via the `mt5` loader |
@@ -895,6 +900,7 @@ vibe-trading-mcp               # start MCP server (stdio)
 - Path B では **Python 3.11+**
 - Path A では **Docker**
 - OpenAI Codex は ChatGPT OAuth でも利用できます。`LANGCHAIN_PROVIDER=openai-codex` を設定し、`vibe-trading provider login openai-codex` を実行してください。`OPENAI_API_KEY` は使いません。
+  Web 設定の Codex モデル選択は、認証済み ChatGPT セッションから利用可能なモデルと推論レベルを取得します。取得できない場合も既定モデルと手入力を利用できます。
 
 > **Supported LLM providers:** OpenRouter、OpenAI、Anthropic（ネイティブ Messages API）、DeepSeek、Gemini、Groq、DashScope/Qwen、Zhipu、Moonshot/Kimi、MiniMax、SiliconFlow（CN + Global）、Xiaomi MIMO、Novita AI、iFlytek Spark、Z.ai、NVIDIA NIM、ModelScope、GitHub Copilot、Ollama（local）。`*_BASE_URL` が未設定の場合、各プロバイダーは canonical なエンドポイントにフォールバックするため、key だけで十分です。設定は `.env.example` を参照してください。
 
@@ -1328,7 +1334,7 @@ curl -X POST http://localhost:8899/scheduled-runs/playbooks/premarket-brief \
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading は MCP-compatible client 向けに 82 MCP tools を公開します。stdio subprocess として動作し、server setup は不要です。Core research tools は HK/US/crypto で API key なしに動作し、trading connector tools は選択中の connector profile を使います。LLM key が必要なのは `run_swarm` のみです。
+Vibe-Trading は MCP-compatible client 向けに 83 MCP tools を公開します。stdio subprocess として動作し、server setup は不要です。Core research tools は HK/US/crypto で API key なしに動作し、trading connector tools は選択中の connector profile を使います。LLM key が必要なのは `run_swarm` のみです。
 
 **環境変数:** server は client 自身が spawn するため、shell の `export` は届きません —— client の `env` block に設定してください。生成された backtest code は allowed run roots 内に制限されるので、結果を自分の作業 directory に書き出すには `VIBE_TRADING_ALLOWED_RUN_ROOTS` が必要です:
 
@@ -1384,7 +1390,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**公開される MCP tools（82）:** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
+**公開される MCP tools（83）:** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
 
 ### SWARM の外部 MCP tools
 
@@ -1750,7 +1756,7 @@ Vibe-Trading/
 ├── agent/                          # バックエンド (Python)
 │   ├── cli/                        # CLI パッケージ — インタラクティブ TUI + サブコマンド
 │   ├── api_server.py               # FastAPI サーバー — runs、sessions、upload、swarm、SSE
-│   ├── mcp_server.py               # MCP サーバー — OpenClaw / Claude Desktop 向け 82 tools
+│   ├── mcp_server.py               # MCP サーバー — OpenClaw / Claude Desktop 向け 83 tools
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct エージェントコア
@@ -1765,7 +1771,7 @@ Vibe-Trading/
 │   │   ├── memory/                 # クロスセッション永続メモリ
 │   │   │   └── persistent.py       #   ファイルベースメモリ (~/.vibe-trading/memory/)
 │   │   │
-│   │   ├── tools/                  # 113 個の自動検出エージェントツール
+│   │   ├── tools/                  # 117 個の自動検出エージェントツール
 │   │   │   ├── backtest_tool.py    #   バックテスト実行
 │   │   │   ├── remember_tool.py    #   クロスセッションメモリ (save/recall/forget)
 │   │   │   ├── skill_writer_tool.py #  skill CRUD (save/patch/delete/file)
@@ -1790,7 +1796,7 @@ Vibe-Trading/
 │   │   └── providers/              # LLM プロバイダー抽象化
 │   │
 │   └── backtest/                   # バックテストエンジン
-│       ├── engines/                #   10 エンジン + クロスマーケット composite engine + options_portfolio
+│       ├── engines/                #   11 エンジン + クロスマーケット composite engine + options_portfolio
 │       ├── loaders/                #   29 ソース: tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker、tickerall、gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自動フォールバックチェーン

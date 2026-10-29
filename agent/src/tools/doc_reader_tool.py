@@ -475,7 +475,10 @@ class DocReaderTool(BaseTool):
     parameters = {
         "type": "object",
         "properties": {
-            "file_path": {"type": "string", "description": "Absolute path to the file."},
+            "file_path": {
+                "type": "string",
+                "description": "Absolute file path or the uploads/<name> handle returned by upload.",
+            },
             "pages": {
                 "type": "string",
                 "description": "PDF only: page range (e.g. '1-10', '5', '1,3,5-8'). Ignored for other formats.",
@@ -492,8 +495,11 @@ class DocReaderTool(BaseTool):
     repeatable = True
 
     def execute(self, **kwargs: Any) -> str:
+        file_path = kwargs.get("file_path")
+        if not isinstance(file_path, str) or not file_path.strip():
+            return _err("file_path is required: pass the uploaded uploads/<name> handle or an absolute file path.")
         return read_document(
-            kwargs["file_path"],
+            file_path,
             kwargs.get("pages", ""),
             min_text_per_page=kwargs.get("min_text_per_page", _MIN_TEXT_PER_PAGE),
         )

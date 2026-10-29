@@ -10,6 +10,7 @@ import importlib.util
 import logging
 import json
 import os
+import re
 import sys as _sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
@@ -115,6 +116,9 @@ class LLMModelsResponse(BaseModel):
     # Model id -> reasoning effort levels it accepts; an empty list means the
     # model takes no effort setting. Only providers that report it fill this.
     effort_levels: Optional[Dict[str, List[str]]] = None
+    # Optional display metadata. IDs remain canonical and editable.
+    model_labels: Optional[Dict[str, str]] = None
+    default_effort_levels: Optional[Dict[str, str]] = None
 
 
 class SourceOrderEntry(BaseModel):
@@ -313,6 +317,95 @@ def _extract_model_ids(payload: Any) -> List[str]:
         if model_id:
             model_ids.add(model_id)
     return sorted(model_ids, key=str.casefold)[:1000]
+
+
+# Codex CLI model discovery requires a client_version query parameter. Keep
+# this value explicit and review it when updating Codex OAuth compatibility.
+# Verified with the ChatGPT Codex catalog on 2026-10-27.
+_CODEX_MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
+_CODEX_MODELS_CLIENT_VERSION = "0.159.0"
+_CODEX_EFFORT_LEVELS = frozenset(LLM_PROVIDER_BY_NAME["openai-codex"].reasoning_efforts)
+
+
+async def _list_openai_codex_models(provider: LLMProviderOption) -> LLMModelsResponse:
+    """Discover ChatGPT OAuth models without sharing the token with form URLs."""
+    from src.providers.openai_codex import _build_headers, _get_codex_token
+
+    fallback = LLMModelsResponse(
+        provider=provider.name,
+        models=[provider.default_model],
+        source="default",
+        warning_code="model_list_unavailable",
+    )
+    try:
+        token = await asyncio.to_thread(_get_codex_token)
+        async with httpx.AsyncClient(timeout=12.0, follow_redirects=False, trust_env=False) as client:
+            for attempt in range(2):
+                headers = _build_headers(token.account_id, token.access)
+                headers["Accept"] = "application/json"
+                response = await client.get(
+                    _CODEX_MODELS_URL,
+                    params={"client_version": _CODEX_MODELS_CLIENT_VERSION},
+                    headers=headers,
+                )
+                if response.status_code == 401 and attempt == 0:
+                    token = await asyncio.to_thread(
+                        _get_codex_token, force_refresh=True, rejected_access=token.access
+                    )
+                    continue
+                response.raise_for_status()
+                payload = response.json()
+                break
+        if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+            return fallback
+
+        models: list[str] = []
+        efforts: dict[str, list[str]] = {}
+        labels: dict[str, str] = {}
+        defaults: dict[str, str] = {}
+        for item in payload["models"][:1000]:
+            if not isinstance(item, dict):
+                continue
+            # supported_in_api is an API-key catalog filter, not a ChatGPT
+            # entitlement check (Codex ModelPreset::filter_by_auth).
+            if item.get("visibility") != "list":
+                continue
+            slug = item.get("slug")
+            if not isinstance(slug, str) or not slug or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", slug):
+                continue
+            model_id = f"openai-codex/{slug}"
+            if model_id in models:
+                continue
+            models.append(model_id)
+            label = item.get("display_name")
+            if isinstance(label, str) and label.strip():
+                labels[model_id] = label.strip()[:128]
+            levels = item.get("supported_reasoning_levels")
+            if isinstance(levels, list):
+                supported = []
+                for level in levels:
+                    effort = level.get("effort") if isinstance(level, dict) else None
+                    if isinstance(effort, str) and effort in _CODEX_EFFORT_LEVELS and effort not in supported:
+                        supported.append(effort)
+                efforts[model_id] = supported
+            default = item.get("default_reasoning_level")
+            if (isinstance(default, str) and default in _CODEX_EFFORT_LEVELS
+                    and (model_id not in efforts or default in efforts[model_id])):
+                defaults[model_id] = default
+        if not models:
+            return fallback
+        return LLMModelsResponse(
+            provider=provider.name,
+            models=models,
+            source="provider",
+            effort_levels=efforts,
+            model_labels=labels,
+            default_effort_levels=defaults,
+        )
+    except (RuntimeError, AttributeError, httpx.HTTPError, ValueError, TypeError) as exc:
+        # Never log exception bodies here: the HTTP response could contain secrets.
+        logger.warning("OpenAI Codex model discovery unavailable (%s)", type(exc).__name__)
+        return fallback
 
 
 async def _list_provider_models(
@@ -827,6 +920,10 @@ def register_settings_routes(
         if provider.auth_type == "claude_cli":
             # No HTTP endpoint: the base URL checks below would reject it outright.
             return await _list_claude_cli_models(provider, refresh=payload.refresh)
+        if provider.name == "openai-codex":
+            # OAuth credentials only go to our fixed Codex catalog endpoint.
+            # Do not use base_url or api_key values supplied by the settings form.
+            return await _list_openai_codex_models(provider)
 
         current_values = _read_settings_env_values()
         requested_base_url = (payload.base_url or "").strip()

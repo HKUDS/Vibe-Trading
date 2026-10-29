@@ -1581,6 +1581,8 @@ def provider_diagnostics() -> dict[str, Any]:
         )
         else "openai-compatible"
     )
+    from src.providers.tool_policy import policy_status
+
     return {
         "provider": caps.name if provider in {"kimi", "openai_codex"} else provider,
         "model": model,
@@ -1620,6 +1622,7 @@ def provider_diagnostics() -> dict[str, Any]:
         "packages": {name: _package_version(name) for name in package_names},
         "timeout_seconds": get_env_config().llm.timeout_seconds,
         "max_retries": get_env_config().llm.max_retries,
+        "tool_policy": policy_status(),
         "reasoning_effort": get_env_config().llm.langchain_reasoning_effort.strip().lower(),
         "adapter": {
             "type": adapter_type,

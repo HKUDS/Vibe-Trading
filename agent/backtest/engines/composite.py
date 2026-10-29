@@ -51,10 +51,8 @@ def _build_rule_engines(config: dict, codes: List[str]) -> Dict[str, BaseEngine]
             from backtest.engines.vietnam_equity import VietnamEquityEngine
             engines["vietnam_equity"] = VietnamEquityEngine(config)
         elif market == "ar_equity":
-            raise ValueError(
-                "Argentina .BA market data is supported, but Argentina backtest "
-                "execution rules are not modeled yet"
-            )
+            from backtest.engines.argentina_equity import ArgentinaEquityEngine
+            engines["ar_equity"] = ArgentinaEquityEngine(config)
         elif market == "br_equity":
             from backtest.engines.brazil_equity import BrazilEquityEngine
             engines["br_equity"] = BrazilEquityEngine(config)
@@ -136,17 +134,30 @@ class CompositeEngine(BaseEngine):
         # Build symbol -> market mapping
         self._symbol_market: Dict[str, str] = {c: _detect_market(c) for c in codes}
 
+        # BYMA buying power, sell eligibility and terminal liquidation read the
+        # whole pool's fill ledger against one ARS settlement calendar; another
+        # market's fills in that ledger would be settled by BYMA's rules.
+        markets = set(self._symbol_market.values())
+        if "ar_equity" in markets and len(markets) > 1:
+            raise ValueError(
+                "Argentina .BA codes cannot share a composite pool with other "
+                f"markets ({', '.join(sorted(markets - {'ar_equity'}))}): BYMA "
+                "settlement cash and certificate rules apply to the whole ledger"
+            )
+
         # Build sub-engines (one per market type)
         self._rule_engines = _build_rule_engines(config, codes)
 
         # Crypto dedup state (owned by CompositeEngine, not sub-engine)
         self._funding_applied: set = set()
         self._funding_daily_done: set = set()
+        self._crypto_funding_pnl = 0.0
 
         # Forex dedup state
         self._last_swap_dates: dict = {}
 
         self._run_interval = str(config.get("interval", "1D"))
+        self._ar_rules = self._rule_engines.get("ar_equity")
 
     def run_backtest(self, config: dict, *args, **kwargs):
         """Run the pipeline, refusing a code set that spans currencies.
@@ -180,11 +191,20 @@ class CompositeEngine(BaseEngine):
         """
         by_market = {
             market: details for market, engine in self._rule_engines.items()
-            if (details := engine._engine_diagnostics())
+            if market != "ar_equity" and (details := engine._engine_diagnostics())
         }
+        if self._ar_rules is not None:
+            from backtest.engines.argentina_equity import argentina_diagnostics
+
+            # The rule book holds no fills; the pool's ledger is evaluated.
+            if details := argentina_diagnostics(self, self._ar_rules):
+                by_market["ar_equity"] = details
         if not by_market:
             return {}
         result: Dict[str, Any] = {"market_diagnostics": by_market}
+        if "crypto" in by_market:
+            by_market["crypto"]["crypto_funding_pnl"] = self._crypto_funding_pnl
+            result["crypto_funding_pnl"] = self._crypto_funding_pnl
         for details in by_market.values():
             for key, value in details.items():
                 if isinstance(value, list):
@@ -202,6 +222,34 @@ class CompositeEngine(BaseEngine):
                 raise ValueError("No sub-engines available for composite backtest")
             engine = next(iter(self._rule_engines.values()))
         return engine
+
+    # ── BYMA state/rules hooks (pool ledger evaluated by the rule book) ──
+
+    def _write_artifacts(self, run_dir, *args, **kwargs) -> None:
+        super()._write_artifacts(run_dir, *args, **kwargs)
+        if self._ar_rules is not None:
+            from backtest.engines.argentina_equity import write_byma_artifacts
+
+            write_byma_artifacts(run_dir, self, self._ar_rules)
+
+    def prepare_market_data(self, data_map):
+        if self._ar_rules is None:
+            return super().prepare_market_data(data_map)
+        return self._ar_rules.prepare_market_data(data_map)
+
+    def available_cash(self, timestamp: pd.Timestamp) -> float:
+        if self._ar_rules is None:
+            return super().available_cash(timestamp)
+        from backtest.engines.argentina_equity import argentina_available_cash
+
+        return argentina_available_cash(self, self._ar_rules, timestamp)
+
+    def can_liquidate_at_end(self, symbol: str, timestamp: pd.Timestamp) -> bool:
+        if self._symbol_market.get(symbol) != "ar_equity" or self._ar_rules is None:
+            return super().can_liquidate_at_end(symbol, timestamp)
+        from backtest.engines.argentina_equity import argentina_sell_allowed
+
+        return argentina_sell_allowed(self, self._ar_rules, symbol, timestamp)
 
     # ── Stateless method dispatch ──
 
@@ -235,6 +283,11 @@ class CompositeEngine(BaseEngine):
 
                 return india_can_execute(self, sub, symbol, direction, bar)
 
+        if market == "ar_equity" and self._ar_rules is not None:
+            from backtest.engines.argentina_equity import argentina_can_execute
+
+            return argentina_can_execute(self, self._ar_rules, symbol, direction, bar)
+
         # Delegate remaining checks (price limits, short-sell block, etc.)
         return self._rule_for(symbol).can_execute(symbol, direction, bar)
 
@@ -246,6 +299,7 @@ class CompositeEngine(BaseEngine):
         # sub-engine instance keeps whatever symbol last synced it, so it
         # must be refreshed on every dispatch, not just in apply_slippage.
         sub._active_symbol = self._active_symbol
+        sub._bar_ts = self._bar_ts
         return sub.round_size(raw_size, price)
 
     def calc_commission(
@@ -260,6 +314,7 @@ class CompositeEngine(BaseEngine):
         """Delegate to active symbol's sub-engine."""
         sub = self._rule_for(self._active_symbol)
         sub._active_symbol = self._active_symbol
+        sub._bar_ts = self._bar_ts
         return sub.apply_slippage(price, direction)
 
     # ── PnL / margin dispatch (route by symbol, not _active_symbol) ──
@@ -298,8 +353,9 @@ class CompositeEngine(BaseEngine):
                 crypto_sub.funding_rate,
                 self._funding_applied, self._funding_daily_done,
                 _interval_span_hours(self._run_interval),
-            )
+            ) if crypto_sub.funding_enabled(symbol) else 0.0
             self.capital -= fee
+            self._crypto_funding_pnl -= fee
 
             if check_crypto_liquidation(symbol, bar, self.positions):
                 pos = self.positions.get(symbol)
