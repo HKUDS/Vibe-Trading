@@ -12,6 +12,7 @@ Validates:
 from __future__ import annotations
 
 import json
+import logging
 import math
 
 import pandas as pd
@@ -1308,3 +1309,52 @@ class TestStrictPerpetualLifecycle:
         ] == ["open", "increase", "reduce", "close"]
         assert first_summary["total_trading_fee"] == pytest.approx(9.975)
         assert first_metrics["perpetual_trading_fees"] == pytest.approx(9.975)
+
+
+# ---------------------------------------------------------------------------
+# Spot instruments pay no funding (#2088)
+# ---------------------------------------------------------------------------
+
+
+class TestSpotInstrumentsPayNoFunding:
+    def test_spot_run_is_not_charged_funding(self):
+        """A long spot position owes no funding, so capital must not move."""
+        engine = _make_engine(instrument="spot", funding_rate=0.0001)
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0
+        )
+        before = engine.capital
+
+        engine.on_bar("BTC-USDT", _make_bar(), pd.Timestamp("2025-01-01 08:00:00"))
+
+        assert engine.capital == before
+
+    def test_perpetual_run_still_pays_funding(self):
+        """The opt-out must not drop funding for the default contract engine."""
+        engine = _make_engine(funding_rate=0.0001, interval="1H")
+        engine.positions["BTC-USDT"] = Position(
+            "BTC-USDT", 1, 60000.0, pd.Timestamp("2025-01-01"), 1.0, leverage=10.0
+        )
+        before = engine.capital
+
+        engine.on_bar("BTC-USDT", _make_bar(), pd.Timestamp("2025-01-01 08:00:00"))
+
+        assert engine.capital < before
+
+    def test_unknown_instrument_is_rejected(self):
+        with pytest.raises(ValueError, match="instrument"):
+            _make_engine(instrument="futures")
+
+
+class TestCommissionKeyIsNotSilentlyDiscarded:
+    def test_warns_when_commission_is_set_but_ignored(self, caplog):
+        # _make_engine always sets maker/taker, so build the config by hand:
+        # only  present is the case where it is silently dropped.
+        with caplog.at_level(logging.WARNING, logger="backtest.engines.crypto"):
+            CryptoEngine({"initial_cash": 1000, "commission": 0.001})
+        assert any("ignores the" in record.message for record in caplog.records)
+
+    def test_stays_quiet_when_fee_rates_are_explicit(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="backtest.engines.crypto"):
+            _make_engine(commission=0.001, maker_rate=0.001, taker_rate=0.001)
+        assert not any("ignores the" in record.message for record in caplog.records)

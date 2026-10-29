@@ -10,6 +10,7 @@ Market rules:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,8 @@ from backtest.perpetual_risk import (
 )
 
 
+logger = logging.getLogger(__name__)
+
 class CryptoEngine(BaseEngine):
     """Crypto perpetual contract engine.
 
@@ -58,6 +61,18 @@ class CryptoEngine(BaseEngine):
         self.taker_rate: float = config.get("taker_rate", 0.0005)
         self.slippage_rate: float = config.get("slippage", 0.0005)
         self.funding_rate: float = config.get("funding_rate", 0.0001)
+        # A symbol alone cannot say whether it is a spot pair or a perpetual:
+        # `BTC-USDT` is spot on OKX yet this engine's contracts are named the
+        # same way. Guessing from the name would silently drop or invent
+        # funding, so the instrument kind is explicit (#2088).
+        self.instrument: str = str(config.get("instrument", "perpetual"))
+        if self.instrument not in {"perpetual", "spot"}:
+            raise ValueError("instrument must be 'perpetual' or 'spot'")
+        if self.instrument == "spot" and self.funding_rate:
+            logger.warning(
+                "instrument='spot' pays no funding; funding_rate=%s is ignored",
+                self.funding_rate,
+            )
         self.perpetual_strict = bool(config.get("perpetual_strict", False))
         self.funding_mode = str(config.get("funding_mode", "fixed"))
         self.margin_mode = str(config.get("margin_mode", "isolated"))
@@ -83,6 +98,17 @@ class CryptoEngine(BaseEngine):
         self._rebalance_risk_checked = False
         self._funding_applied: set = set()   # (symbol, date, hour) — per-slot dedup
         self._funding_daily_done: set = set()  # (symbol, date) — daily fallback dedup
+        # `commission` is a generic key other engines honour; this one prices
+        # off maker/taker rates and slippage. Silently discarding it left runs
+        # charging a fee the operator never configured (#2088).
+        if "commission" in config and not any(
+            key in config for key in ("maker_rate", "taker_rate", "slippage")
+        ):
+            logger.warning(
+                "CryptoEngine ignores the 'commission' key and prices off "
+                "maker_rate/taker_rate/slippage instead. Set those explicitly "
+                "if you meant to control the fee."
+            )
 
     def _validate_strict_resolution(self, config: dict[str, Any]) -> None:
         if not self.perpetual_strict or self.default_leverage < 100:
@@ -604,12 +630,13 @@ class CryptoEngine(BaseEngine):
 
     def on_bar(self, symbol: str, bar: pd.Series, timestamp: pd.Timestamp) -> None:
         """Crypto per-bar hooks: funding fee + liquidation check."""
-        fee = calc_crypto_funding_fee(
-            symbol, bar, timestamp, self.positions,
-            self.funding_rate, self._funding_applied, self._funding_daily_done,
-            _interval_span_hours(self._run_interval),
-        )
-        self.capital -= fee
+        if self.instrument == "perpetual":
+            fee = calc_crypto_funding_fee(
+                symbol, bar, timestamp, self.positions,
+                self.funding_rate, self._funding_applied, self._funding_daily_done,
+                _interval_span_hours(self._run_interval),
+            )
+            self.capital -= fee
 
         if check_crypto_liquidation(symbol, bar, self.positions):
             pos = self.positions.get(symbol)
