@@ -43,13 +43,9 @@ class TestRecoveryIsConservative:
         def explode(*args, **kwargs):
             raise AssertionError(f"recovery must not call {kwargs or args}")
 
-        for module, names in [
-            (store_mod, []),
-        ]:
-            for name in names:
-                monkeypatch.setattr(module, name, explode)
-        monkeypatch.setattr(store_mod.os, "kill", explode)
-        monkeypatch.setattr(store_mod.os, "killpg", explode)
+        from tests.module_os_helpers import patch_module_os
+
+        patch_module_os(monkeypatch, store_mod, kill=explode, killpg=explode)
         monkeypatch.setattr(store_mod.time, "sleep", explode)
 
     def test_running_becomes_interrupted_without_rerun(self):
@@ -206,7 +202,16 @@ class TestManagerWiring:
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline and _json.loads(manager.check(task_id))["status"] == "running":
             time.sleep(0.01)
-        records, unreadable = manager._store.load_all()
+        # The in-memory status flips inside the lock while the best-effort write
+        # happens after it, so reading the store the moment check() moves on
+        # races the persist. Wait for the record to land.
+        records: list = []
+        unreadable: list = []
+        while time.monotonic() < deadline:
+            records, unreadable = manager._store.load_all()
+            if records and records[0].status != "running":
+                break
+            time.sleep(0.01)
         assert unreadable == []
         assert records[0].task_id == task_id
         assert records[0].status == "completed"
