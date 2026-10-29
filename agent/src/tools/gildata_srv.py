@@ -40,13 +40,15 @@ def _url() -> str:
     return f"{base}{'&' if '?' in base else '?'}format=json"
 
 
-def call_srv_tool_results(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> list[dict[str, Any]]:
+def call_srv_tool_results(name: str, query: str, *, timeout: float = _TIMEOUT_S,
+                          topk: int | None = None) -> list[dict[str, Any]]:
     """Invoke one srv-tool query, preserving each result table and its metadata.
 
     Args:
         name: Tool name, e.g. ``"MacroIndustryData"``.
         query: Natural-language question (authored by the agent).
         timeout: Per-request socket timeout; NL research calls are slow.
+        topk: Optional vendor-side screening result count.
 
     Returns:
         The vendor's result tables, without flattening their columns or rows.
@@ -70,6 +72,8 @@ def call_srv_tool_results(name: str, query: str, *, timeout: float = _TIMEOUT_S)
         "method": "tools/call",
         "params": {"name": name, "arguments": {"query": query}},
     }
+    if topk is not None:
+        payload["params"]["arguments"]["topk"] = topk
     outer = throttled_post_json(
         url,
         host_key=_HOST_KEY,

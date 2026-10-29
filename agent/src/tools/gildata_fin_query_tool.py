@@ -65,7 +65,7 @@ def _normalize_table(table: dict[str, Any], table_index: int) -> dict[str, Any]:
             label = columns.get(field, "")
             target = renames.get(field, field)
             leaf = None
-            if re.search(r"代码|内码", label):
+            if re.search(r"代码|内码|编码", label) or field.casefold() == "innercode":
                 converted[target] = str(value) if value is not None else None
                 continue
             number = _numeric(value)
