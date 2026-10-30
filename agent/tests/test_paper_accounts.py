@@ -1,5 +1,6 @@
 """Forward account clocks, real matching, persistence and concurrent writes."""
 
+import inspect
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -122,6 +123,44 @@ def test_failure_does_not_save_or_consume_revision(service):
     assert not reply["committed"]
     assert service.get(account["id"]) == account
     assert service.history(account["id"]) == []
+
+
+def test_advance_stays_v1_1_and_cannot_ask_for_an_interval(service):
+    account = create(service)
+    seen: list[dict] = []
+
+    def step(payload: dict) -> str:
+        seen.append(payload)
+        return matching(payload)
+
+    service.step = step
+    signature = inspect.signature(PaperAccounts.advance).parameters
+    assert "interval" not in signature
+    assert not any(param.kind is inspect.Parameter.VAR_KEYWORD for param in signature.values())
+
+    with pytest.raises(TypeError):
+        service.advance(
+            account["id"],
+            expected_revision=0,
+            to_date="2026-10-20",
+            orders=[],
+            interval="5m",
+        )
+    assert seen == []
+
+    reply = service.advance(
+        account["id"],
+        expected_revision=0,
+        to_date="2026-10-20",
+        orders=[],
+    )
+    assert seen and set(seen[0]).isdisjoint({"interval", "session", "path_model", "fill_model"})
+    assert reply["committed"] is True
+    assert reply["account"]["revision"] == 1
+    assert reply["result"]["schema_version"] == "pt-v1.1"
+    assert [row["date"] for row in reply["result"]["nav_series"]] == ["2026-10-20"]
+    assert "engine_fingerprint" not in reply["result"]
+    assert "interval" not in reply["result"]
 
 
 def test_concurrent_match_commits_only_once(service):

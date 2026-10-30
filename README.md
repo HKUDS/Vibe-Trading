@@ -1489,8 +1489,39 @@ and inspect fills, rejections and NAV history. Strategy history stops before the
 execution date, and each day receives the ledger after preceding fills. The
 agent/MCP `paper_trade_step` remains a stateless research primitive.
 
-Execution uses raw prices (Tencent raw for A-shares/HK, raw-capable US providers).
-A-shares require a complete ClickHouse calendar. Unavailable data/calendar and
+`paper_trade_step` also takes `interval="5m"` for A-shares: one step covers one
+completed session and matches against that session's single assembled bar, built
+from the 48 continuous five-minute bars. The 09:30 label is the opening
+call-auction print, single-priced on 4 of 5 probed days, and is excluded by
+policy; labels in 09:15-09:25 or from 14:57 up to but not including 15:00 are
+auction-window anomalies, and 15:00 is a continuous bar. The 5m leg uses Tushare
+`stk_mins`, separate from the daily chain, which serves daily bars only. It
+accepts one order symbol per step: the measured provider budget is 1
+call/minute, 1 call/hour and 2 calls/day, and a refused call still consumes the
+daily budget. It fills all-or-none at the `path_model` reference (`bar_median` or
+`bar_close`) and requires a non-empty `UNIVERSE` in strategy mode. `session`,
+`path_model` and `fill_model` default to the daily behaviour, so every existing
+call is unchanged; `session` is a coherence selector only (`cn_a` requires
+`market="cn_a"`) and does not change the day boundary.
+
+Known limits: a mid-range zero-calendar (HK/US) weekday with no bar for any
+symbol is inferred closed (`market_closed_inferred` with a warning) with no NAV
+row, its orders reject `suspended` and positions carry the last available close
+forward; an all-market zero bar on the target day is `PAPER_DATA_NOT_READY`
+(retryable), and
+a saved account advance reports `committed: false` instead of moving the
+watermark. The provider's bar count is authoritative: a partial session still
+fills with its `N/48` coverage warning. Payload faults fail closed: off-grid
+labels (for example a 1m payload served as 5m) and all-NaN continuous bars are
+`PAPER_DATA_NOT_READY`, while a zero-volume session is a halt. A 5m step with no
+orders issues no `stk_mins` request and follows the 1d valuation contract: it
+needs the target daily bar and values from that day's closes. The persistent v1.2
+runner/account/store layer is a follow-up branch (`paper-trade-v12-persistence`)
+and is not wired to any CLI, API or MCP surface in this PR.
+
+Execution uses raw prices (Tencent raw for A-shares/HK, raw-capable US providers;
+Tushare `stk_mins` for the A-share 5m leg). A-shares require a complete ClickHouse
+calendar. Unavailable data/calendar and
 unverified split-like events fail visibly without committing a saved ledger;
 price/volume ratios never authorize multiplying a position. Cash dividends and
 automatic corporate-action reconciliation are not implemented. See the

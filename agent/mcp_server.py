@@ -855,7 +855,7 @@ def backtest(run_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Paper-trading step tool (pt-v1.1, hand-written wrapper)
+# Paper-trading step tool (pt-v1.1/pt-v1.2, VD-12 hand-written wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -869,14 +869,18 @@ def paper_trade_step(
     orders: _lenient_dict_list_opt = None,
     strategy_path: str | None = None,
     fee_model: _lenient_dict_any_opt = None,
+    interval: str | None = None,
+    session: str | None = None,
+    path_model: str | None = None,
+    fill_model: str | None = None,
 ) -> str:
     """Run one step of the deterministic paper-trading matching engine; never places real orders.
 
-    Matches the injected ``orders`` (or a ``strategy_path``'s per-day orders)
-    against daily bars under the market's frozen rules (T+1, price limits,
-    board lots, fees) and returns ONE in-band JSON document on
-    ``result.content[0].text``: the pt-v1.1 success result, or an error
-    envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
+    Matches the injected ``orders`` (or, in Step 7, a ``strategy_path``'s
+    per-day orders) against bars under the market's frozen rules (T+1, price
+    limits, board lots, fees) and returns ONE in-band JSON document on
+    ``result.content[0].text``: the pt-v1.1/pt-v1.2 success result, or an AM-5
+    error envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
     non-retryable) on the SAME channel — never a transport error. Research-only:
     it reads market data and the injected ledger, matches on paper, and writes
     nothing; no broker or trading-connector order path exists here.
@@ -897,7 +901,15 @@ def paper_trade_step(
             per-day orders are matched. Exactly one of ``orders`` /
             ``strategy_path``.
         fee_model: Optional per-key fee overrides merged over the market
-            defaults.
+            defaults (AM-4-3: RM always injects it explicitly).
+        interval: Optional pt-v1.2 bar interval — ``1d`` (default) or ``5m``;
+            ``5m`` is cn_a-only.
+        session: Optional pt-v1.2 session selector — ``auto`` (default) or
+            ``cn_a``; ``cn_a`` requires market ``cn_a``.
+        path_model: Optional pt-v1.2 reference-price model — ``bar_median``
+            (default) or ``bar_close``; ignored for ``1d``.
+        fill_model: Optional pt-v1.2 fill model — ``all_or_none`` (default and
+            only P0 value).
     """
     from src.tools.paper_trade.tool import run_paper_trade_step
 
@@ -914,6 +926,14 @@ def paper_trade_step(
         payload["strategy_path"] = strategy_path
     if fee_model is not None:
         payload["fee_model"] = fee_model
+    if interval is not None:
+        payload["interval"] = interval
+    if session is not None:
+        payload["session"] = session
+    if path_model is not None:
+        payload["path_model"] = path_model
+    if fill_model is not None:
+        payload["fill_model"] = fill_model
     return run_paper_trade_step(payload)
 
 
