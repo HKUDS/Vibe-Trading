@@ -729,11 +729,7 @@ class WeixinChannel(BaseChannel):
                         has_top_level_downloadable_media = True
                     file_path = await self._download_media_item(voice_item, "voice")
                     if file_path:
-                        transcription = await self.transcribe_audio(file_path)
-                        if transcription:
-                            content_parts.append(f"[voice] {transcription}")
-                        else:
-                            content_parts.append(f"[voice]\n[Audio: source: {file_path}]")
+                        content_parts.append(f"[voice]\n[Audio: source: {file_path}]")
                         media_paths.append(file_path)
                     else:
                         content_parts.append("[voice]")
@@ -791,11 +787,7 @@ class WeixinChannel(BaseChannel):
                     voice_item = ref_media_item.get("voice_item") or {}
                     file_path = await self._download_media_item(voice_item, "voice")
                     if file_path:
-                        transcription = await self.transcribe_audio(file_path)
-                        if transcription:
-                            content_parts.append(f"[voice] {transcription}")
-                        else:
-                            content_parts.append(f"[voice]\n[Audio: source: {file_path}]")
+                        content_parts.append(f"[voice]\n[Audio: source: {file_path}]")
                         media_paths.append(file_path)
                 elif ref_type == ITEM_FILE:
                     file_item = ref_media_item.get("file_item") or {}

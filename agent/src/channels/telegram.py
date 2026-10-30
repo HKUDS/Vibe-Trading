@@ -1263,12 +1263,8 @@ class TelegramChannel(BaseChannel):
             file_path = media_dir / f"{unique_id}{ext}"
             await file.download_to_drive(str(file_path))
             path_str = str(file_path)
-            if media_type in ("voice", "audio"):
-                transcription = await self.transcribe_audio(file_path)
-                if transcription:
-                    self.logger.info("Transcribed %s: %s...", media_type, transcription[:50])
-                    return [path_str], [f"[transcription: {transcription}]"]
-                return [path_str], [f"[{media_type}: {path_str}]"]
+            # No transcription backend is wired up, so voice/audio notes are
+            # forwarded as attachments like any other media.
             return [path_str], [f"[{media_type}: {path_str}]"]
         except Exception as e:
             self.logger.warning("Failed to download message media: %s", e)

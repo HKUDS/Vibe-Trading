@@ -1013,13 +1013,7 @@ class MatrixChannel(BaseChannel):
         if isinstance(body := getattr(event, "body", None), str) and body.strip():
             parts.append(body.strip())
 
-        if attachment and attachment.get("type") == "audio":
-            transcription = await self.transcribe_audio(attachment["path"])
-            if transcription:
-                parts.append(f"[transcription: {transcription}]")
-            else:
-                parts.append(marker)
-        elif marker:
+        if marker:
             parts.append(marker)
 
         await self._start_typing_keepalive(room.room_id)
