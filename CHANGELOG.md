@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Optional Parallel hosted search in `web_search`, enabled with
+  `VIBE_TRADING_SEARCH_PARALLEL=1`. Default search behavior and configured IQS
+  priority are preserved; no new dependency or API key is required.
 - **Versioned research artifacts** can be saved, searched and explicitly revised
   through agent tools, CLI, API and Web (all 11 locales). Revisions preserve
   content, evidence references and data-as-of identity; unchanged saves are

@@ -40,6 +40,7 @@ def _patch_ddgs(monkeypatch, text_impl):
 
 @pytest.fixture(autouse=True)
 def _clear_backend_env(monkeypatch):
+    monkeypatch.delenv("VIBE_TRADING_SEARCH_PARALLEL", raising=False)
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BACKENDS", raising=False)
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BING_FALLBACK", raising=False)
     monkeypatch.delenv("ALIYUN_IQS_API_KEY", raising=False)

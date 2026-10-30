@@ -1298,7 +1298,7 @@ def read_document(file_path: str) -> str:
 
 @mcp.tool
 def web_search(query: str, max_results: int = 5) -> str:
-    """Search the web via DuckDuckGo and return top results.
+    """Search the web with configured providers and free search engines.
 
     Returns titles, URLs, and snippets. Use read_url() to fetch full content
     from any result URL. Free, no API key required.
