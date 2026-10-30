@@ -11,13 +11,14 @@ import inspect
 import logging
 import os
 import re
-import time as _time
+from contextlib import closing
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from src.config.accessor import get_env_config
 from src.providers.content_filter import is_content_filter_triggered
 from src.providers.llm import build_llm
+from src.providers.stream_guard import StreamInterrupted, supervised_pulls
 from src.providers.tool_policy import offered_tools
 
 logger = logging.getLogger(__name__)
@@ -512,6 +513,9 @@ class ChatLLM:
             Parsed ``LLMResponse``.
         """
         accumulated = None
+        cancelled = False
+        cancelled_usage = None
+        interrupted = None
         try:
             available = offered_tools(tools) if tools else []
             llm = self._llm.bind_tools(available) if available else self._llm
@@ -522,45 +526,46 @@ class ChatLLM:
             possible_dsml_text = True
             cancelled = False
             cancelled_usage = None
-            last_chunk_ts = _time.monotonic()
-            for chunk in llm.stream(messages, config=config, **call_kwargs):
-                now = _time.monotonic()
-                if idle_timeout_s and now - last_chunk_ts > idle_timeout_s:
-                    # No delta for too long: the provider is stalled, not
-                    # thinking. Raising a bare TimeoutError lets the wrapper
-                    # below convert it into a retryable ProviderStreamError.
-                    raise TimeoutError(
-                        f"no stream delta for {idle_timeout_s:.0f}s"
-                    )
-                last_chunk_ts = now
-                if should_cancel and should_cancel():
-                    cancelled = True
-                    # This chunk already arrived. Preserve any reported usage
-                    # while still dropping its text and tool-call deltas.
-                    if getattr(chunk, "usage_metadata", None):
-                        usage_chunk = chunk if accumulated is None else accumulated + chunk
-                        cancelled_usage = usage_chunk.usage_metadata
-                    break
-                if getattr(chunk, "additional_kwargs", {}).get("provider_waiting") is True and on_waiting_chunk:
-                    on_waiting_chunk()
-                chunk_text = _text_content(chunk.content)
-                if chunk_text and on_text_chunk:
-                    if possible_dsml_text:
-                        pending_text += chunk_text
-                        if _is_possible_dsml_tool_call_prefix(pending_text):
-                            pass
+            interrupted: Optional["StreamInterrupted"] = None
+            stream_chunks = supervised_pulls(
+                llm.stream(messages, config=config, **call_kwargs),
+                idle_timeout_s=idle_timeout_s,
+                total_timeout_s=timeout,
+                should_cancel=should_cancel,
+            )
+            with closing(stream_chunks):
+                for chunk in stream_chunks:
+                    if should_cancel and should_cancel():
+                        cancelled = True
+                        # This chunk already arrived. Preserve any reported usage
+                        # while still dropping its text and tool-call deltas.
+                        if getattr(chunk, "usage_metadata", None):
+                            usage_chunk = chunk if accumulated is None else accumulated + chunk
+                            cancelled_usage = usage_chunk.usage_metadata
+                        break
+                    if getattr(chunk, "additional_kwargs", {}).get("provider_waiting") is True and on_waiting_chunk:
+                        on_waiting_chunk()
+                    chunk_text = _text_content(chunk.content)
+                    if chunk_text and on_text_chunk:
+                        if possible_dsml_text:
+                            pending_text += chunk_text
+                            if _is_possible_dsml_tool_call_prefix(pending_text):
+                                pass
+                            else:
+                                possible_dsml_text = False
+                                on_text_chunk(pending_text)
+                                pending_text = ""
                         else:
-                            possible_dsml_text = False
-                            on_text_chunk(pending_text)
-                            pending_text = ""
-                    else:
-                        on_text_chunk(chunk_text)
-                reasoning = getattr(chunk, "additional_kwargs", {}).get("reasoning_content")
-                if reasoning and not chunk.content and on_reasoning_chunk:
-                    on_reasoning_chunk(reasoning)
-                accumulated = chunk if accumulated is None else accumulated + chunk
+                            on_text_chunk(chunk_text)
+                    reasoning = getattr(chunk, "additional_kwargs", {}).get("reasoning_content")
+                    if reasoning and not chunk.content and on_reasoning_chunk:
+                        on_reasoning_chunk(reasoning)
+                    accumulated = chunk if accumulated is None else accumulated + chunk
             if accumulated is None:
-                if cancelled:
+                if cancelled or interrupted is not None:
+                    # Stopping is not a compatibility case: falling back to a
+                    # plain invoke here would resend the request the caller
+                    # just asked to abandon.
                     return LLMResponse(
                         content="", tool_calls=[], finish_reason="stop",
                         usage_metadata=cancelled_usage,
@@ -586,8 +591,32 @@ class ChatLLM:
             if pending_text and not (response.has_tool_calls and response.content == ""):
                 on_text_chunk(pending_text)
             return response
+        except StreamInterrupted as stop:
+            interrupted = stop
+            if stop.reason == "cancelled":
+                # A user stop is not an outage. Hand back whatever arrived
+                # rather than raising, and never fall back to a second request.
+                if cancelled_usage is None and getattr(stop.pending, "usage_metadata", None):
+                    cancelled_usage = stop.pending.usage_metadata
+                response = (
+                    self._parse_response(accumulated)
+                    if accumulated is not None
+                    else LLMResponse(content="", tool_calls=[], finish_reason="stop")
+                )
+                if cancelled_usage is not None:
+                    response.usage_metadata = cancelled_usage
+                return response
+            _cfg = get_env_config()
+            provider = _cfg.llm.langchain_provider.strip().lower() or "openai"
+            model = self.model_name or _cfg.llm.langchain_model_name.strip() or "(unset)"
+            raise ProviderStreamError(
+                provider=provider, model=model,
+                original=TimeoutError(f"provider stream stopped: {stop.reason}"),
+                usage_metadata=getattr(accumulated, "usage_metadata", None),
+            ) from stop
         except Exception as exc:
-            if _is_no_stream_chunk_error(exc):
+            if (_is_no_stream_chunk_error(exc) and accumulated is None
+                    and interrupted is None and not cancelled):
                 # Provider streamed zero chunks (endpoint lacks real SSE); a
                 # non-streaming invoke still returns a valid response.
                 logger.warning(

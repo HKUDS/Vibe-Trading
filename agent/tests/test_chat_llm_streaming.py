@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any
 from unittest.mock import patch
 
@@ -178,17 +179,22 @@ def test_should_cancel_stops_stream_early() -> None:
         _FakeChunk(content="c"),
     ])
     seen: list[str] = []
-    calls = {"n": 0}
+    cancelled = threading.Event()
 
     def should_cancel() -> bool:
-        # Polled at the top of each chunk: let the first through, cancel after.
-        n = calls["n"]
-        calls["n"] += 1
-        return n >= 1
+        # Let the first chunk through, then stop. Signalled from the delivery
+        # callback rather than counted here: the supervisor polls this while a
+        # stream is silent, so a call-counting predicate would fire before the
+        # first chunk purely from the polling cadence.
+        return cancelled.is_set()
+
+    def on_text(text: str) -> None:
+        seen.append(text)
+        cancelled.set()
 
     response = _client(fake).stream_chat(
         [{"role": "user", "content": "hi"}],
-        on_text_chunk=seen.append,
+        on_text_chunk=on_text,
         should_cancel=should_cancel,
     )
 
