@@ -52,6 +52,8 @@
 
 > ⚠️ **セキュリティ警告：** Xアカウント `VibeTrading_HKU`、Virtualsプロジェクト `101845`、およびトークンコントラクト `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` は、いずれもVibe-Trading公式のものではありません。Vibe-Tradingはこれまで、いかなるトークンやミームコインも発行・公認していません。購入、ウォレットの接続、署名は行わないでください。[詳細](SECURITY.md#official-channels--impersonation)
 
+- **2026-10-30** 🛠️ **チャネルの信頼性と中国株の数量ルール（未リリース）**：Telegram、Feishu、Matrix、Weixin の音声メッセージを添付としてエージェントへ渡します。科創板と北京市場のバックテストに市場別の最低株数と1株単位の増分を適用し、パス境界の回帰テストを追加しました。 ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)). 追加対応：ストリームのキャンセル、再試行とキャッシュ使用量、バックグラウンドタスクの復旧、Discord の重複分割を修正。証拠を保持して調査目標を編集できます。中国株の5分足ペーパーステップはバーごとに約定し、保存口座は引き続き日足のみです。Parallel 検索は既定で無効です。 ([#2099](https://github.com/HKUDS/Vibe-Trading/pull/2099), [#2109](https://github.com/HKUDS/Vibe-Trading/pull/2109), [#2111](https://github.com/HKUDS/Vibe-Trading/pull/2111), [#2113](https://github.com/HKUDS/Vibe-Trading/pull/2113)).
+
 - **2026-10-29** 🛠️ **リサーチの再利用と実行修正（未リリース）**：版管理されたリサーチ資料を保存し、manifest で検証した過去のバックテスト成果物を再利用できます（[#2079](https://github.com/HKUDS/Vibe-Trading/pull/2079)、[#2074](https://github.com/HKUDS/Vibe-Trading/pull/2074)）。
   文書内の金額・単位、暗号資産現物のバックテスト費用を修正し、Binance の未約定注文取得と AKShare 互換性を復旧しました（[#2050](https://github.com/HKUDS/Vibe-Trading/issues/2050)、[#2088](https://github.com/HKUDS/Vibe-Trading/issues/2088)、[#2090](https://github.com/HKUDS/Vibe-Trading/issues/2090)、[#2083](https://github.com/HKUDS/Vibe-Trading/pull/2083)）。
   Codex モデル検出、BYMA ルール、バックグラウンド処理の所有元分離、共通ツールポリシーも追加。模擬戦略は専用ワーカーパイプを使います。Windows 実機での確認は未完了です（[#2089](https://github.com/HKUDS/Vibe-Trading/issues/2089)、[CHANGELOG](CHANGELOG.md)）。
