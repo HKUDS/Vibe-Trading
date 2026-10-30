@@ -97,8 +97,10 @@ def test_excess_return_matches_corrected_benchmark_return(monkeypatch, tmp_path)
 
 
 def test_excess_return_unaffected_when_no_external_benchmark(tmp_path):
-    """No config["benchmark"] set: benchmark_metadata stays empty, so the fix
-    must not touch excess_return at all on the ordinary, unconfigured path."""
+    """No config["benchmark"] set: the fallback basket is now labelled (#2123)
+    but carries no benchmark_return, so calc_metrics() stays the sole source of
+    benchmark_return / excess_return and the #872 re-derivation is skipped here.
+    """
     dates = pd.bdate_range("2026-01-05", periods=3)
     bars = pd.DataFrame(
         {
@@ -121,5 +123,11 @@ def test_excess_return_unaffected_when_no_external_benchmark(tmp_path):
     engine = ChinaAEngine({"initial_cash": 1_000_000.0})
     metrics = engine.run_backtest(config, _FakeLoader(bars), _FlatSignal(), tmp_path)
 
-    assert "benchmark_return" not in metrics or metrics.get("benchmark_ticker") is None
+    # #2123: the stand-in is labelled, never left under an index-sounding name.
+    assert "(stand-in)" in metrics["benchmark_ticker"]
+    # The fallback carries no benchmark_return into metadata, so excess_return
+    # is still calc_metrics()'s own value, untouched by the #872 re-derivation.
     assert metrics["excess_return"] == pytest.approx(0.0)
+    assert metrics["excess_return"] == pytest.approx(
+        metrics["total_return"] - metrics["benchmark_return"]
+    )

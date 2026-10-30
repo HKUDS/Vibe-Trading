@@ -1031,6 +1031,15 @@ class BaseEngine(ABC):
         benchmark_metadata = {}
         benchmark_warning: str | None = None
 
+        # The internal equal-weight basket of the traded symbols is the fallback
+        # reference whenever no external benchmark applies. For a single-symbol
+        # run it degenerates to that instrument's own buy-and-hold, so it must
+        # never be published under an index-sounding name without saying so (#2123).
+        if len(codes) == 1:
+            standin_label = f"{codes[0]} buy-and-hold (stand-in)"
+        else:
+            standin_label = f"equal-weight basket of {len(codes)} traded symbols (stand-in)"
+
         # ── External benchmark fetch ──────────────────────────────────────────
         bench_ticker = config.get("benchmark")
         if bench_ticker and bench_ticker != "auto":
@@ -1070,11 +1079,27 @@ class BaseEngine(ABC):
                 # so every benchmark-relative metric (excess_return,
                 # information_ratio, tracking_error, benchmark_beta) is graded
                 # against something the caller did not ask for. Say so.
+                benchmark_metadata = {"benchmark_ticker": standin_label}
                 benchmark_warning = (
                     f"declared benchmark {bench_ticker!r} could not be resolved; "
                     "benchmark-relative metrics are graded against the "
-                    "equal-weight basket of the traded symbols instead"
+                    f"equal-weight basket of the traded symbols ({standin_label}), "
+                    "not an external index"
                 )
+        else:
+            # No benchmark declared (or "auto"): the basket stands in. Emit the
+            # stand-in marker and a warning (#2123) so benchmark-relative metrics
+            # are never published under an index-sounding name silently. The
+            # fallback carries no benchmark_return, so calc_metrics() remains the
+            # sole source of benchmark_return / excess_return here (#872).
+            benchmark_metadata = {"benchmark_ticker": standin_label}
+            benchmark_warning = (
+                "no benchmark declared in config; benchmark_return / excess_return "
+                "/ information_ratio / tracking_error / benchmark_beta are graded "
+                "against the equal-weight basket of the traded symbols "
+                f"({standin_label}), not an external index (set "
+                'config["benchmark"] to use one)'
+            )
         # ── External benchmark fetch ──────────────────────────────────────────
 
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
