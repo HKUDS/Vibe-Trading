@@ -528,7 +528,7 @@ Una sola llamada `get_market_data`, **29 fuentes de datos de mercado**, una de e
 | `b3_cotahist` | Brazil (B3) | none | barras diarias oficiales del mercado al contado y de lotes fraccionarios (sin ajustar, BRL), importadas con `python -m src.br_data sync`; alternativa local para `.SA` |
 | `local` | cualquiera | ninguna | tu propio CSV / Parquet / DuckDB mediante el prefijo `local:` |
 
-Al configurar `GILDATA_TOKEN`, se habilitan las consultas combinadas de Gildata mediante `gildata_fin_query` y se añaden candidatos de acciones de Gildata a `search_symbol`.
+Al configurar `GILDATA_TOKEN`, se habilitan las consultas combinadas con `gildata_fin_query`, el filtrado de acciones con indicadores de varios periodos mediante `gildata_stock_selection` y los candidatos de acciones de Gildata en `search_symbol`.
 
 **Cadenas de fallback (por riesgo de bloqueo de IP):**
 

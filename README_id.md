@@ -690,7 +690,7 @@ Satu call `get_market_data`, **29 sumber data market**, salah satunya marketplac
 | `b3_cotahist` | Brazil (B3) | none | bar harian resmi B3 untuk pasar tunai/odd-lot (mentah, BRL), diimpor dengan `python -m src.br_data sync`; cadangan luring untuk `.SA` |
 | `local` | apa pun | tidak ada | CSV / Parquet / DuckDB Anda sendiri melalui prefix `local:` |
 
-Mengatur `GILDATA_TOKEN` mengaktifkan kueri gabungan Gildata melalui `gildata_fin_query` dan menambahkan kandidat saham Gildata ke `search_symbol`.
+Mengatur `GILDATA_TOKEN` mengaktifkan kueri gabungan melalui `gildata_fin_query`, penyaringan saham dengan indikator lintas periode melalui `gildata_stock_selection`, dan kandidat saham Gildata di `search_symbol`.
 
 **Fallback chain (berdasarkan risiko IP-ban):**
 
