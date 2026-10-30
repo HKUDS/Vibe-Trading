@@ -8,6 +8,7 @@ vi.mock("@/lib/api", () => ({ api: apiMock }));
 vi.mock("@/components/charts/CorrelationMatrix", () => ({
   CorrelationMatrix: ({ labels }: { labels: string[] }) => <div data-testid="correlation-result">{labels.join(",")}</div>,
 }));
+vi.mock("@/components/charts/ShannonPortfolio", () => ({ ShannonPortfolio: () => <div>Shannon diagnosis panel</div> }));
 vi.mock("@/components/charts/RegimeTimeline", () => ({ RegimeTimeline: () => <div>timeline</div> }));
 
 function response(label: string): CorrelationAnalysisResponse {
@@ -49,4 +50,18 @@ it("rejects duplicate assets and accepts Chinese delimiters", () => {
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "AAPL；SPY MSFT" } });
   fireEvent.click(screen.getByRole("button", { name: "Compute" }));
   expect(apiMock.getCorrelationAnalysis).toHaveBeenCalledWith("AAPL,SPY,MSFT", 90, "pearson", false, expect.any(AbortSignal));
+});
+
+it("keeps correlation as default and retains its result across diagnosis tab switches", async () => {
+  apiMock.getCorrelationAnalysis.mockResolvedValue(response("RETAINED"));
+  render(<Correlation />);
+  expect(screen.queryByText("Shannon diagnosis panel")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Compute" }));
+  expect(await screen.findByTestId("correlation-result")).toHaveTextContent("RETAINED");
+  fireEvent.click(screen.getByRole("tab", { name: "Portfolio diagnosis (Shannon)" }));
+  expect(screen.getByText("Shannon diagnosis panel")).toBeVisible();
+  expect(screen.getByTestId("correlation-result")).not.toBeVisible();
+  fireEvent.click(screen.getByRole("tab", { name: "Correlation Matrix" }));
+  expect(screen.getByTestId("correlation-result")).toBeVisible();
+  expect(apiMock.getCorrelationAnalysis).toHaveBeenCalledTimes(1);
 });

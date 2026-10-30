@@ -692,6 +692,8 @@ Satu call `get_market_data`, **29 sumber data market**, salah satunya marketplac
 
 Mengatur `GILDATA_TOKEN` mengaktifkan kueri gabungan melalui `gildata_fin_query`, penyaringan saham dengan indikator lintas periode melalui `gildata_stock_selection`, dan kandidat saham Gildata di `search_symbol`.
 
+Tab diagnosis portofolio Shannon opsional pada halaman korelasi menggunakan `GILDATA_TOKEN` untuk menampilkan eksposur gaya portofolio saham A, peta panas eksposur per saham, dan porsi kontribusi volatilitas. Tanggal analisis dan bobot kepemilikan dapat ditentukan; kontribusi ini bukan probabilitas kerugian.
+
 **Fallback chain (berdasarkan risiko IP-ban):**
 
 - **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`

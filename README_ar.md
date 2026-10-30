@@ -531,6 +531,8 @@ vibe-trading connector install /tmp/my-broker
 
 يؤدي ضبط `GILDATA_TOKEN` إلى تفعيل الاستعلامات المجمعة عبر `gildata_fin_query`، وفرز الأسهم مع مؤشرات لفترات تقارير متعددة عبر `gildata_stock_selection`، وإضافة مرشحي الأسهم من Gildata إلى `search_symbol`.
 
+تستخدم علامة تبويب تشخيص المحفظة الاختيارية Shannon في صفحة الارتباط `GILDATA_TOKEN` لعرض تعرض محفظة أسهم A لعوامل النمط، وخريطة حرارية لكل سهم، وحصص المساهمة في التقلب. يمكن تحديد تاريخ التحليل وأوزان الحيازات؛ وهذه الحصص ليست احتمالات خسارة.
+
 **سلاسل التراجع (بحسب خطر حظر عنوان IP):**
 
 - **أسهم A** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
