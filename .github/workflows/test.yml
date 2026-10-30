@@ -210,6 +210,21 @@ jobs:
           agent/tests/test_paper_trade_process_transport.py
           -q
 
+
+      - name: Run scoped cancellation and restart recovery on native Windows
+        env:
+          PYTHONPATH: agent
+        run: >-
+          python -m pytest
+          agent/tests/test_background_host_lifecycle.py::test_cancel_all_reaps_only_its_owner
+          agent/tests/test_background_host_lifecycle.py::test_shutdown_closes_all_handles_and_reaps
+          agent/tests/test_background_host_lifecycle.py::test_cancellation_during_spawn_is_reaped
+          agent/tests/test_background_host_lifecycle.py::test_cancel_before_spawn_never_starts_command
+          agent/tests/test_background_host_lifecycle.py::test_completion_callback_keeps_originating_attempt
+          agent/tests/test_background_store_recovery.py::TestRecoveryIsConservative
+          agent/tests/test_background_store_recovery.py::test_cancel_intent_is_persisted_before_reaping
+          -q
+
   desktop-electron-windows:
     name: Windows desktop source lifecycle
     runs-on: windows-2025
