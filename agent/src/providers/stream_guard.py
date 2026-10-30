@@ -143,6 +143,8 @@ def supervised_pulls(
     iterator receives a bounded cleanup attempt; a busy generator is closed
     by its owning thread when next() returns. Queued late text is not emitted.
     """
+    idle_timeout_s = idle_timeout_s or None
+    total_timeout_s = total_timeout_s or None
     if idle_timeout_s is None and total_timeout_s is None and should_cancel is None:
         yield from iterator
         return

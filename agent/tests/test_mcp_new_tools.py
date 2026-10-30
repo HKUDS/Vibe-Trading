@@ -51,6 +51,7 @@ KNOWN_MUTATING_MCP_TOOLS = frozenset(
         "start_research_goal",
         "trading_select_connection",
         "update_research_goal_status",
+        "update_research_goal",
         "write_file",
     }
 )

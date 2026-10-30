@@ -251,3 +251,8 @@ def test_partial_stream_no_chunk_error_never_replays():
     with pytest.raises(Exception):
         client.stream_chat([], idle_timeout_s=1)
     assert not provider.invoke_called
+
+
+def test_zero_timeout_keeps_the_existing_disabled_convention():
+    from src.providers.stream_guard import supervised_pulls
+    assert list(supervised_pulls(iter([1, 2]), idle_timeout_s=0, total_timeout_s=0)) == [1, 2]

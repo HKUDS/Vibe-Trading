@@ -60,7 +60,9 @@ def test_request_for_unoffered_tool_is_fed_back_and_retried(fake_cli) -> None:
     assert "trading_place_order: not an available tool" in calls()[1]["stdin"]
     # input_tokens is the last prompt's size (what the context meter reads);
     # output_tokens is what both attempts generated.
-    assert message.usage_metadata["input_tokens"] == 10
+    assert message.usage_metadata["input_tokens"] == 20
+    assert message.usage_metadata["context_input_tokens"] == 10
+    assert message.usage_metadata["calls"] == 2
     assert message.usage_metadata["output_tokens"] == 10
 
 

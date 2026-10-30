@@ -136,7 +136,7 @@ class TestStore:
         directory.mkdir()
         outside = tmp_path / "outside.json"
         outside.write_text(json.dumps(__import__("dataclasses").asdict(make(task_id="deadbeef"))))
-        link = directory / f"{'0' * 16}-deadbeef.json"
+        link = store._path_for(make(task_id="deadbeef"))
         link.symlink_to(outside)
         _records, unreadable = store.load_all()
         assert len(unreadable) == 1

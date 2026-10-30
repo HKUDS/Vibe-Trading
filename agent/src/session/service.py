@@ -253,7 +253,7 @@ class SessionService:
         deadline = time.monotonic() + max(0.0, timeout)
         while any(not task.done() for task in tasks) and time.monotonic() < deadline:
             time.sleep(0.01)
-        pending = [f"attempt:{session_id}" for session_id, task in self._active_tasks.items()
+        pending = [f"attempt:{session_id}" for session_id, task in list(self._active_tasks.items())
                    if not task.done()]
         for background in list(self._background_handles.values()):
             remaining = max(0.0, deadline - time.monotonic())
@@ -612,118 +612,121 @@ class SessionService:
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
         llm = ChatLLM()
-        pm = PersistentMemory()
-
-        session_id = attempt.session_id
-        attempt_id = attempt.attempt_id
-        loop = asyncio.get_running_loop()
-        tool_trail: list[Dict[str, Any]] = []
-        checkpoint = ResponseCheckpoint(self.store, attempt)
-
-        safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
-        agent_config = load_runtime_agent_config(overrides=safe_overrides)
-
-        def event_callback(event_type: str, data: Dict[str, Any]) -> None:
-            """Forward AgentLoop events to the SSE event bus."""
-            try:
-                checkpoint.handle_event(event_type, data)
-            except OSError as exc:
-                # A checkpoint failure must not hide the live response or stop
-                # the agent. The terminal attempt write still gets a chance.
-                logger.warning(
-                    "Could not checkpoint response for attempt %s: %s",
-                    attempt_id,
-                    exc,
-                )
-            if event_type in {"tool_call", "tool_result"}:
-                self._record_tool_trail_event(tool_trail, event_type, data)
-            data["attempt_id"] = attempt_id
-            self.event_bus.emit(session_id, event_type, data)
-
-        def _mcp_collision_warn(msg: str) -> None:
-            """Forward MCP server-name collision warnings to the operator event channel."""
-            self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
-
-        # One flag per turn, shared by the AgentLoop and the swarm tool. The
-        # loop's own cancel() sets it, so a user stop reaches long-running tools
-        # without a second cancellation channel that can drift out of sync.
-        turn_cancel = threading.Event()
-
-        # Background tasks belong to the session, not to the attempt: a later
-        # attempt must still read what an earlier one started. The attempt id is
-        # kept on each task so cancellation can be attributed later.
-        background_scope = BackgroundScope(
-            owner_id=f"session:{session_id}", attempt_id=attempt_id
-        )
-        background = get_background_manager(Path(self.runs_dir).parent).for_scope(
-            background_scope,
-            on_completion=self._publish_background_completion,
-        )
-        self._background_handles[session_id] = background
-
-        registry = await loop.run_in_executor(
-            _AGENT_EXECUTOR,
-            lambda: build_registry(
-                persistent_memory=pm,
-                include_shell_tools=include_shell_tools,
-                agent_config=agent_config,
-                session_id=session_id,
-                event_callback=event_callback,
-                warn_callback=_mcp_collision_warn,
-                cancel_event=turn_cancel,
-                background_manager=background,
-                background_scope=background_scope,
-            ),
-        )
-
-        from src.config.accessor import get_env_config
-
-        agent = AgentLoop(
-            registry=registry,
-            llm=llm,
-            event_callback=event_callback,
-            max_iterations=get_env_config().agent_tuning.vibe_trading_agent_max_iterations,
-            persistent_memory=pm,
-            cancel_event=turn_cancel,
-            background_manager=background,
-        )
-        self._active_loops[session_id] = agent
-
-        # Build the message history context.
-        history = self._convert_messages_to_history(messages) if messages else None
-
         try:
-            result = await loop.run_in_executor(
+            pm = PersistentMemory()
+
+            session_id = attempt.session_id
+            attempt_id = attempt.attempt_id
+            loop = asyncio.get_running_loop()
+            tool_trail: list[Dict[str, Any]] = []
+            checkpoint = ResponseCheckpoint(self.store, attempt)
+
+            safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
+            agent_config = load_runtime_agent_config(overrides=safe_overrides)
+
+            def event_callback(event_type: str, data: Dict[str, Any]) -> None:
+                """Forward AgentLoop events to the SSE event bus."""
+                try:
+                    checkpoint.handle_event(event_type, data)
+                except OSError as exc:
+                    # A checkpoint failure must not hide the live response or stop
+                    # the agent. The terminal attempt write still gets a chance.
+                    logger.warning(
+                        "Could not checkpoint response for attempt %s: %s",
+                        attempt_id,
+                        exc,
+                    )
+                if event_type in {"tool_call", "tool_result"}:
+                    self._record_tool_trail_event(tool_trail, event_type, data)
+                data["attempt_id"] = attempt_id
+                self.event_bus.emit(session_id, event_type, data)
+
+            def _mcp_collision_warn(msg: str) -> None:
+                """Forward MCP server-name collision warnings to the operator event channel."""
+                self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
+
+            # One flag per turn, shared by the AgentLoop and the swarm tool. The
+            # loop's own cancel() sets it, so a user stop reaches long-running tools
+            # without a second cancellation channel that can drift out of sync.
+            turn_cancel = threading.Event()
+
+            # Background tasks belong to the session, not to the attempt: a later
+            # attempt must still read what an earlier one started. The attempt id is
+            # kept on each task so cancellation can be attributed later.
+            background_scope = BackgroundScope(
+                owner_id=f"session:{session_id}", attempt_id=attempt_id
+            )
+            background = get_background_manager(Path(self.runs_dir).parent).for_scope(
+                background_scope,
+                on_completion=self._publish_background_completion,
+            )
+            self._background_handles[session_id] = background
+
+            registry = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
-                lambda: agent.run(
-                    user_message=attempt.prompt,
-                    history=history,
+                lambda: build_registry(
+                    persistent_memory=pm,
+                    include_shell_tools=include_shell_tools,
+                    agent_config=agent_config,
                     session_id=session_id,
+                    event_callback=event_callback,
+                    warn_callback=_mcp_collision_warn,
+                    cancel_event=turn_cancel,
+                    background_manager=background,
+                    background_scope=background_scope,
                 ),
             )
-        except asyncio.CancelledError:
-            agent.cancel()
-            raise
-        finally:
-            self._active_loops.pop(session_id, None)
+
+            from src.config.accessor import get_env_config
+
+            agent = AgentLoop(
+                registry=registry,
+                llm=llm,
+                event_callback=event_callback,
+                max_iterations=get_env_config().agent_tuning.vibe_trading_agent_max_iterations,
+                persistent_memory=pm,
+                cancel_event=turn_cancel,
+                background_manager=background,
+            )
+            self._active_loops[session_id] = agent
+
+            # Build the message history context.
+            history = self._convert_messages_to_history(messages) if messages else None
+
             try:
-                checkpoint.flush()
-            except OSError as exc:
-                logger.warning(
-                    "Could not flush response checkpoint for attempt %s: %s",
-                    attempt_id,
-                    exc,
+                result = await loop.run_in_executor(
+                    _AGENT_EXECUTOR,
+                    lambda: agent.run(
+                        user_message=attempt.prompt,
+                        history=history,
+                        session_id=session_id,
+                    ),
                 )
+            except asyncio.CancelledError:
+                agent.cancel()
+                raise
+            finally:
+                self._active_loops.pop(session_id, None)
+                try:
+                    checkpoint.flush()
+                except OSError as exc:
+                    logger.warning(
+                        "Could not flush response checkpoint for attempt %s: %s",
+                        attempt_id,
+                        exc,
+                    )
 
-        result["tool_trail"] = tool_trail
+            result["tool_trail"] = tool_trail
 
-        # Load metrics from the run output when available.
-        if result.get("run_dir"):
-            metrics = self._load_metrics(Path(result["run_dir"]))
-            if metrics:
-                result["metrics"] = metrics
+            # Load metrics from the run output when available.
+            if result.get("run_dir"):
+                metrics = self._load_metrics(Path(result["run_dir"]))
+                if metrics:
+                    result["metrics"] = metrics
 
-        return result
+            return result
+        finally:
+            await llm.aclose()
 
     @staticmethod
     def _record_tool_trail_event(

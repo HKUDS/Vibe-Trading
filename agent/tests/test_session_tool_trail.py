@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import asyncio
 from pathlib import Path
 
@@ -194,7 +197,8 @@ def test_run_with_agent_consolidates_tool_events_by_call_id(
             pass
 
     monkeypatch.setattr("src.tools.build_registry", lambda **kwargs: object())
-    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: object())
+    llm = SimpleNamespace(aclose=AsyncMock())
+    monkeypatch.setattr("src.providers.chat.ChatLLM", lambda: llm)
     monkeypatch.setattr("src.memory.persistent.PersistentMemory", lambda: object())
     monkeypatch.setattr("src.agent.loop.AgentLoop", _DummyAgentLoop)
     monkeypatch.setattr(
