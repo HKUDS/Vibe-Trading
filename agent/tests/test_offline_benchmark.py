@@ -148,7 +148,7 @@ def test_networked_run_keeps_the_snapshot_wrapper_away_from_its_loader(
     card, calls = _run_main(tmp_path, monkeypatch, source="yahoo", frames=frames)
 
     assert calls == [["AAPL.US"]]
-    assert "benchmark_ticker" not in card["metrics"]
+    assert "(stand-in)" in card["metrics"]["benchmark_ticker"]
 
 
 def test_snapshot_wrapper_without_inner_loader_serves_only_the_snapshot() -> None:
@@ -166,7 +166,7 @@ def test_unresolvable_declared_benchmark_is_reported_on_the_run_card(
 
     card, _ = _run_main(tmp_path, monkeypatch, source="local", frames=frames)
 
-    assert "benchmark_ticker" not in card["metrics"]
+    assert "(stand-in)" in card["metrics"]["benchmark_ticker"]
     warnings = [w for w in card.get("warnings") or [] if _UNRESOLVED_MARKER in w]
     assert len(warnings) == 1
     assert repr(_BENCH) in warnings[0]
@@ -257,5 +257,7 @@ def test_real_local_csv_benchmark_reaches_run_metrics(tmp_path, monkeypatch, ben
         assert card["metrics"]["excess_return"] == pytest.approx(-0.02)
         assert not any(_UNRESOLVED_MARKER in w for w in card.get("warnings") or [])
     else:
-        assert "benchmark_ticker" not in card["metrics"]
+        # #2123: the fallback is labelled, never left under an index-sounding
+        # name, and the unresolvable-declared warning is still surfaced.
+        assert "(stand-in)" in card["metrics"]["benchmark_ticker"]
         assert any(_UNRESOLVED_MARKER in w for w in card["warnings"])
