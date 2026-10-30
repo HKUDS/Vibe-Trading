@@ -12,4 +12,3 @@ it.each(["", "600000.SH 60%\n000001.SZ", "600000.SH 40%\n000001.SZ 40%", "600000
 it("distinguishes missing percentages from zero", () => {
   expect(percent(null)).toBe("—"); expect(percent(0)).toBe("0.00%");
 });
-
