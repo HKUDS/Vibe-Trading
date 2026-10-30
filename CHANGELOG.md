@@ -37,6 +37,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Forward Telegram, Feishu, Matrix and Weixin voice notes as attachments instead of calling an unavailable transcription method (#2106).
+- Apply STAR and Beijing board-specific minimum order sizes and one-share increments in A-share backtests (#2105); add channel path-containment regressions (#2094).
+
 - **Document figure grounding** accepts document-scoped currency restatements
   and magnitude-aware arithmetic, including percentage-point declarations.
   Ratios, wrong values and wrong currencies remain distinct; undeclared

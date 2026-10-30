@@ -52,6 +52,8 @@
 
 > ⚠️ **Security warning:** The X account `VibeTrading_HKU`, Virtuals project `101845`, and token contract `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` are not official Vibe-Trading assets. We have never launched or endorsed any token or memecoin. Do not buy, connect a wallet, or sign anything. [Details](SECURITY.md#official-channels--impersonation).
 
+- **2026-10-30** 🛠️ **Channel reliability and A-share sizing (unreleased)**: Voice notes reach the agent as attachments in Telegram, Feishu, Matrix and Weixin; STAR and Beijing backtests follow their board-specific minimum sizes and one-share increments. Add path-containment regressions. ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)).
+
 - **2026-10-29** 🛠️ **Research reuse and execution fixes (unreleased)**: Save versioned research artifacts and reuse manifest-checked prior backtests ([#2079](https://github.com/HKUDS/Vibe-Trading/pull/2079), [#2074](https://github.com/HKUDS/Vibe-Trading/pull/2074)).
   Fix document amounts/units and spot-crypto costs; restore Binance open orders and AKShare compatibility ([#2050](https://github.com/HKUDS/Vibe-Trading/issues/2050), [#2088](https://github.com/HKUDS/Vibe-Trading/issues/2088), [#2090](https://github.com/HKUDS/Vibe-Trading/issues/2090), [#2083](https://github.com/HKUDS/Vibe-Trading/pull/2083)).
   Also add Codex model discovery, BYMA rules, background-owner isolation and shared tool policy. Paper strategies use private worker pipes; native Windows confirmation remains pending ([#2089](https://github.com/HKUDS/Vibe-Trading/issues/2089), [CHANGELOG](CHANGELOG.md)).

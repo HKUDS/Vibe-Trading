@@ -52,6 +52,8 @@
 
 > ⚠️ **安全警告：** X 账号 `VibeTrading_HKU`、Virtuals 项目 `101845` 及代币合约 `0x640BDBF77b6447E8b7DB7894cED84BD1c40571f4` 均非 Vibe-Trading 官方。我们从未发行或背书任何代币或 meme 币。请勿购买、连接钱包或签名。[详细说明](SECURITY.md#official-channels--impersonation)。
 
+- **2026-10-30** 🛠️ **渠道可靠性与 A 股数量规则（尚未发版）**：Telegram、飞书、Matrix 和微信语音消息以附件形式送达 Agent；科创板与北交所回测遵循各自最低申报数量及一股递增规则，并补充路径边界回归测试。 ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)).
+
 - **2026-10-29** 🛠️ **研究复用与执行修复（尚未发版）**：保存带版本的研究资料，复用经 manifest 校验的历史回测产物（[#2079](https://github.com/HKUDS/Vibe-Trading/pull/2079)、[#2074](https://github.com/HKUDS/Vibe-Trading/pull/2074)）。
   修复文档金额与单位、现货加密货币回测成本，恢复 Binance 挂单查询及 AKShare 兼容性（[#2050](https://github.com/HKUDS/Vibe-Trading/issues/2050)、[#2088](https://github.com/HKUDS/Vibe-Trading/issues/2088)、[#2090](https://github.com/HKUDS/Vibe-Trading/issues/2090)、[#2083](https://github.com/HKUDS/Vibe-Trading/pull/2083)）。
   新增 Codex 模型发现、BYMA 规则、后台任务归属隔离及共享工具策略。模拟策略改用独立工作进程管道；Windows 原生复测仍待完成（[#2089](https://github.com/HKUDS/Vibe-Trading/issues/2089)、[CHANGELOG](CHANGELOG.md)）。
