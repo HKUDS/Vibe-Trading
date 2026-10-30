@@ -17,6 +17,7 @@ Accept header) but goes through its own throttle bucket: these calls cost
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from typing import Any
@@ -40,17 +41,18 @@ def _url() -> str:
     return f"{base}{'&' if '?' in base else '?'}format=json"
 
 
-def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict[str, Any]:
-    """Invoke one srv-tool NL tool and return its merged structured payload.
+def call_srv_tool_results(name: str, query: str, *, timeout: float = _TIMEOUT_S,
+                          topk: int | None = None) -> list[dict[str, Any]]:
+    """Invoke one srv-tool query, preserving each result table and its metadata.
 
     Args:
         name: Tool name, e.g. ``"MacroIndustryData"``.
         query: Natural-language question (authored by the agent).
         timeout: Per-request socket timeout; NL research calls are slow.
+        topk: Optional vendor-side screening result count.
 
     Returns:
-        ``{"api_names": [...], "rows": [...]}`` — rows of every result entry
-        concatenated, with the routed ``api_names`` surfaced for the agent.
+        The vendor's result tables, without flattening their columns or rows.
 
     Raises:
         RuntimeError: Token missing, or the vendor answered a non-zero
@@ -58,6 +60,14 @@ def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict
         requests.RequestException: Propagated from the HTTP layer.
         ValueError: Unrecognizable response shape.
     """
+    arguments = {"query": query}
+    if topk is not None:
+        arguments["topk"] = topk
+    return _response_results(_call_srv(name, arguments, timeout=timeout))
+
+
+def _call_srv(name: str, arguments: dict[str, Any], *, timeout: float) -> Any:
+    """Share authenticated MCP transport without changing existing table callers."""
     token = get_env_config().data.gildata_token
     if not token:
         raise RuntimeError("GILDATA_TOKEN is not configured")
@@ -69,7 +79,7 @@ def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
-        "params": {"name": name, "arguments": {"query": query}},
+        "params": {"name": name, "arguments": arguments},
     }
     outer = throttled_post_json(
         url,
@@ -83,7 +93,33 @@ def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict
         timeout=timeout,
     )
 
-    results = _response_results(outer)
+    return outer
+
+
+def call_srv_arguments(name: str, arguments: dict[str, Any], *, timeout: float = _TIMEOUT_S) -> dict[str, Any]:
+    """Preserve analysis status, metadata and asynchronous job IDs."""
+    outer = _call_srv(name, arguments, timeout=timeout)
+    result = outer.get("result") if isinstance(outer, dict) else None
+    if not isinstance(result, dict) or result.get("isError"):
+        raise RuntimeError("Gildata analysis failed; check access and parameters")
+    content = result.get("content")
+    if not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict):
+        raise ValueError("Unsupported analysis envelope")
+
+    def invalid_constant(value):
+        raise ValueError("Non-finite analysis data")
+
+    inner = json.loads(content[0].get("text", ""), parse_constant=invalid_constant)
+    if not isinstance(inner, dict) or inner.get("error") or inner.get("status") not in {
+        "completed", "queued", "pending", "running", "submitted",
+    }:
+        raise RuntimeError("Gildata analysis unavailable; check access and parameters")
+    return inner
+
+
+def call_srv_tool(name: str, query: str, *, timeout: float = _TIMEOUT_S) -> dict[str, Any]:
+    """Return merged rows for the existing macro, announcement and report tools."""
+    results = call_srv_tool_results(name, query, timeout=timeout)
 
     api_names: list[str] = []
     rows: list[dict[str, Any]] = []

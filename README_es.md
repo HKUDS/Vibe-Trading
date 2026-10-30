@@ -528,6 +528,10 @@ Una sola llamada `get_market_data`, **29 fuentes de datos de mercado**, una de e
 | `b3_cotahist` | Brazil (B3) | none | barras diarias oficiales del mercado al contado y de lotes fraccionarios (sin ajustar, BRL), importadas con `python -m src.br_data sync`; alternativa local para `.SA` |
 | `local` | cualquiera | ninguna | tu propio CSV / Parquet / DuckDB mediante el prefijo `local:` |
 
+Al configurar `GILDATA_TOKEN`, se habilitan las consultas combinadas con `gildata_fin_query`, el filtrado de acciones con indicadores de varios periodos mediante `gildata_stock_selection` y los candidatos de acciones de Gildata en `search_symbol`.
+
+La pestaña opcional de diagnóstico Shannon en la página de correlación usa `GILDATA_TOKEN` para mostrar exposiciones de estilo de una cartera de acciones A, un mapa de calor por acción y contribuciones a la volatilidad. Admite fecha y pesos de cartera; estas contribuciones no son probabilidades de pérdida.
+
 **Cadenas de fallback (por riesgo de bloqueo de IP):**
 
 - **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`

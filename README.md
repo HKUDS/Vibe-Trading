@@ -664,6 +664,10 @@ One `get_market_data` call, **29 market-data sources**, one of them the optional
 | `b3_cotahist` | Brazil (B3) | none | official daily B3 cash/odd-lot bars (raw, BRL) from the local store populated by `python -m src.br_data sync`; offline fallback for `.SA` |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+Setting `GILDATA_TOKEN` enables combined queries via `gildata_fin_query`, stock screening with cross-period indicators via `gildata_stock_selection`, and Gildata stock candidates in `search_symbol`.
+
+The optional Shannon portfolio diagnosis tab on the correlation page uses `GILDATA_TOKEN` to show A-share portfolio style exposures, a stock exposure heatmap and volatility contribution shares. An optional as-of date and entered weights define the snapshot; these shares are not loss probabilities.
+
 Local sources can read bar dates from a `DatetimeIndex`, with or without a
 configured `date_format`; an explicitly mapped date column takes precedence.
 

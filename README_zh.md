@@ -553,6 +553,10 @@ vibe-trading research-artifact search --query "NVDA"
 | `b3_cotahist` | Brazil (B3) | none | 本地 B3 官方现货／零股日线（原始价格、BRL），由 `python -m src.br_data sync` 导入；`.SA` 的离线后备源 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+配置 `GILDATA_TOKEN` 后，可使用聚源综合问数 `gildata_fin_query`、支持跨期指标的智能选股 `gildata_stock_selection`，并为证券检索 `search_symbol` 增加聚源候选来源。
+
+相关性页面提供可选的香农持仓诊断：配置 `GILDATA_TOKEN` 后，可查看 A 股组合风格暴露、个股暴露热力图和组合波动贡献占比；支持可选截至日期及持仓权重，波动贡献占比不是亏损概率。
+
 **Fallback 链（按被封 IP 风险排序）：**
 
 - **A股** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`

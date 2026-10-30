@@ -5,10 +5,22 @@ import { CorrelationMatrix } from "@/components/charts/CorrelationMatrix";
 import { RegimeTimeline } from "@/components/charts/RegimeTimeline";
 import { api, type CorrelationAnalysisResponse } from "@/lib/api";
 import { useAnalysisState } from "@/hooks/useAnalysisState";
+import { ShannonPortfolio } from "@/components/charts/ShannonPortfolio";
 
 const WINDOWS = [30, 60, 90, 180, 365] as const;
 
 export function Correlation() {
+  const [tab, setTab] = useState("correlation");
+  return <>
+    <div className="mx-auto flex max-w-5xl gap-2 px-6 pt-6" role="tablist" aria-label={i18n.language.startsWith("zh") ? "分析类型" : "Analysis type"}>
+      {[["correlation", i18n.t("correlation.title")], ["shannon", i18n.language.startsWith("zh") ? "持仓诊断（香农）" : "Portfolio diagnosis (Shannon)"]].map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`rounded-lg border px-4 py-2 text-sm ${tab === key ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{label}</button>)}
+    </div>
+    <div hidden={tab !== "correlation"}><CorrelationAnalysis /></div>
+    {tab === "shannon" && <div className="mx-auto max-w-5xl p-6"><ShannonPortfolio /></div>}
+  </>;
+}
+
+function CorrelationAnalysis() {
   const [draft, setDraft] = useAnalysisState("correlation", {
     codes: "000001.SZ,600519.SH,000858.SZ,601318.SH", days: 90,
     method: "pearson" as "pearson" | "spearman", showRegime: false,
