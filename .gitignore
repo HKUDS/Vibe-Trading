@@ -188,3 +188,6 @@ agent/tests/artifacts/
 
 # Local simulated account ledgers
 /paper-trading/
+
+# Runtime background command previews and restart outcomes
+/background-tasks/

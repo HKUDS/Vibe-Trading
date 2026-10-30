@@ -18,6 +18,10 @@ from src.agent.tools import BaseTool
 from src.tools._shell_safety import broad_python_kill_error
 
 WORKDIR = Path(__file__).resolve().parents[2]
+#: Task ids with a live process anywhere in this interpreter. Restart recovery
+#: must not mistake a sibling manager's running task for a previous process's.
+_LIVE_TASK_IDS: set[str] = set()
+_LIVE_TASK_IDS_LOCK = threading.Lock()
 _COMMAND_TIMEOUT_SECONDS = 300.0
 _TERMINATION_GRACE_SECONDS = 2.0
 _MAX_OUTPUT_CHARS = 50_000
@@ -141,8 +145,11 @@ class BackgroundManager:
         scope: Optional[BackgroundScope] = None,
         *,
         on_completion: Optional[Callable[[str, dict], None]] = None,
+        store: Optional[Any] = None,
     ) -> None:
         self.tasks: Dict[str, dict] = {}
+        self._store = store
+        self._persist_lock = threading.Lock()
         # (owner_id, payload). Kept as pairs so the payload shape consumers and
         # existing tests see stays exactly what it was; routing is internal.
         self._notifications: List[tuple[str, dict]] = []
@@ -170,6 +177,8 @@ class BackgroundManager:
         other._lock = self._lock
         other._condition = self._condition
         other._accepting = self._accepting
+        other._store = self._store
+        other._persist_lock = self._persist_lock
         other._on_completion = (
             self._on_completion if on_completion is None else on_completion
         )
@@ -177,6 +186,57 @@ class BackgroundManager:
 
     def _owns(self, task: dict) -> bool:
         return task.get("owner_id") == self._scope.owner_id
+
+    def _persist(self, task_id: str) -> None:
+        """Best effort: a full or unwritable runtime root must not break the run."""
+        if self._store is None:
+            return
+        with self._persist_lock:
+            with self._lock:
+                task = dict(self.tasks.get(task_id) or {})
+            if not task:
+                return
+            try:
+                from src.tools.background_store import record_from_task
+                self._store.save(record_from_task(task_id, task))
+            except Exception:
+                logging.getLogger(__name__).exception("Could not persist background task %s", task_id)
+
+    def recover_on_start(self) -> dict:
+        """Reconcile records left by a previous process, once and without reruns.
+
+        A task id this interpreter is already running is left alone: a second
+        service constructed in the same process must not declare the first
+        one's live work interrupted.
+        """
+        if self._store is None:
+            return {"recovered": 0, "unchanged": 0, "unreadable": []}
+        from src.tools.background_store import reconcile_after_restart
+
+        records, unreadable = self._store.load_all()
+        with _LIVE_TASK_IDS_LOCK:
+            live = set(_LIVE_TASK_IDS)
+        stale = [record for record in records if record.task_id not in live]
+        recovered, unchanged = reconcile_after_restart(stale)
+        for record in recovered:
+            try:
+                self._store.save(record)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not persist recovered task %s", record.task_id)
+        with self._lock:
+            for record in recovered + unchanged:
+                if record.task_id in self.tasks:
+                    continue
+                self.tasks[record.task_id] = {
+                    "status": record.status, "command": record.command_preview,
+                    "result": record.result_preview, "exit_code": record.exit_code,
+                    "owner_id": record.owner_id, "attempt_id": record.attempt_id,
+                    "process": None, "started_at": None,
+                    "started_wall_time": record.started_at, "ended_at": record.ended_at,
+                    "duration_seconds": record.duration_seconds,
+                    "recovery_reason": record.recovery_reason,
+                }
+        return {"recovered": len(recovered), "unchanged": len(unchanged), "unreadable": unreadable}
 
     def run(self, command: str) -> str:
         """Start a background task and return its task_id.
@@ -207,9 +267,13 @@ class BackgroundManager:
                 "process": None,
                 "cancel_requested": False,
                 "started_at": started_at,
+                "started_wall_time": time.time(),
                 "owner_id": self._scope.owner_id,
                 "attempt_id": self._scope.attempt_id,
             }
+            with _LIVE_TASK_IDS_LOCK:
+                _LIVE_TASK_IDS.add(task_id)
+        self._persist(task_id)
         threading.Thread(target=self._execute, args=(task_id, command), daemon=True).start()
         return json.dumps({"status": "ok", "task_id": task_id, "message": f"Started: {command[:80]}"})
 
@@ -227,7 +291,9 @@ class BackgroundManager:
                 with self._lock:
                     task = self.tasks[task_id]
                     task["process"] = process
+                    task["pid"] = process.pid
                     cancel_requested = bool(task.get("cancel_requested"))
+                self._persist(task_id)
                 if cancel_requested:
                     _force_stop_process_tree(process)
 
@@ -283,7 +349,12 @@ class BackgroundManager:
                 "exit_code": exit_code,
             }
             self._notifications.append((task["owner_id"], payload))
+            task["ended_at"] = time.time()
+            task["pid"] = getattr(process, "pid", None)
             self._condition.notify_all()
+        self._persist(task_id)
+        with _LIVE_TASK_IDS_LOCK:
+            _LIVE_TASK_IDS.discard(task_id)
         if self._on_completion is not None:
             try:
                 self._on_completion(task["owner_id"], {**payload, "attempt_id": task.get("attempt_id")})
@@ -361,6 +432,7 @@ class BackgroundManager:
             task["cancel_requested"] = True
             task["status"] = "cancelling"
 
+        self._persist(task_id)
         if process is not None:
             _force_stop_process_tree(process)
         return json.dumps({
@@ -397,6 +469,10 @@ class BackgroundManager:
                 "exit_code": t.get("exit_code"),
                 "attempt_id": t.get("attempt_id"),
             }
+            if t.get("recovery_reason"):
+                payload["recovery_reason"] = t["recovery_reason"]
+            if t.get("started_wall_time") is not None:
+                payload["started_at"] = t["started_wall_time"]
             started_at = t.get("started_at")
             if isinstance(started_at, (int, float)):
                 duration = t.get("duration_seconds")
@@ -435,19 +511,35 @@ class BackgroundManager:
         return mine
 
 
-_BG = BackgroundManager()
+_STORE_MANAGERS: dict[Path, BackgroundManager] = {}
+_STORE_MANAGERS_LOCK = threading.Lock()
 
 
-def get_background_manager() -> BackgroundManager:
-    """Return an unowned handle over the process-wide task table.
+def _manager_for_root(root: Path) -> BackgroundManager:
+    from src.tools.background_store import BackgroundTaskStore
 
-    Every call binds its own isolated scope, so two callers each get a private
-    view and cannot see, read or cancel each other's tasks. A host that wants a
-    session or worker to receive its own completion notifications must build a
-    scoped handle with :meth:`BackgroundManager.for_scope` and hand the same
-    object to both the tool registry and ``AgentLoop``.
-    """
-    return _BG.for_scope(BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}"))
+    key = Path(root).resolve()
+    with _STORE_MANAGERS_LOCK:
+        if key not in _STORE_MANAGERS:
+            manager = BackgroundManager(store=BackgroundTaskStore(key))
+            summary = manager.recover_on_start()
+            if summary["unreadable"]:
+                logging.getLogger(__name__).warning("Unreadable background records: %s", summary["unreadable"])
+            _STORE_MANAGERS[key] = manager
+        return _STORE_MANAGERS[key]
+
+
+def init_background_store(root: Path) -> Any:
+    """Initialize and reconcile one runtime root exactly once in this process."""
+    return _manager_for_root(root)._store
+
+
+def get_background_manager(root: Path | None = None) -> BackgroundManager:
+    """Return a private handle over this runtime root's durable task table."""
+    if root is None:
+        from src.config.paths import get_runtime_root
+        root = get_runtime_root()
+    return _manager_for_root(root).for_scope(BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}"))
 
 
 class BackgroundRunTool(BaseTool):

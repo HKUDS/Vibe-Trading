@@ -119,6 +119,11 @@ class SessionService:
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
         self._shutting_down = False
+        # Durable records live under the runtime root that owns runs_dir, so a
+        # test pointing runs_dir at a temp root gets its own isolated store.
+        from src.tools.background_tools import init_background_store
+
+        self._background_store = init_background_store(Path(runs_dir).parent)
         self._recover_interrupted_attempts()
 
     def _recover_interrupted_attempts(self) -> None:
@@ -650,7 +655,7 @@ class SessionService:
         background_scope = BackgroundScope(
             owner_id=f"session:{session_id}", attempt_id=attempt_id
         )
-        background = get_background_manager().for_scope(
+        background = get_background_manager(Path(self.runs_dir).parent).for_scope(
             background_scope,
             on_completion=self._publish_background_completion,
         )
