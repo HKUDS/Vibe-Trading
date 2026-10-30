@@ -117,6 +117,8 @@ class SessionService:
         self._inflight: set[str] = set()
         self._inflight_lock = threading.Lock()
         self._search_index = get_shared_index()
+        self._background_handles: Dict[str, Any] = {}
+        self._shutting_down = False
         self._recover_interrupted_attempts()
 
     def _recover_interrupted_attempts(self) -> None:
@@ -207,11 +209,54 @@ class SessionService:
             SessionBusyError: If the session is already claimed.
         """
         with self._inflight_lock:
+            if self._shutting_down:
+                raise SessionBusyError("shutting down; no new runs are accepted")
             if session_id in self._inflight:
                 raise SessionBusyError(
                     f"Session {session_id} already has a run in progress"
                 )
             self._inflight.add(session_id)
+
+    def _publish_background_completion(self, owner_id: str, payload: dict) -> None:
+        """Route a background task's terminal state to its owning session.
+
+        The AgentLoop that started the task may already have exited by the time
+        the command finishes, so this cannot depend on a later iteration draining
+        the queue. The payload keeps the attempt that started the task, which is
+        the attempt the completion belongs to, not whichever one is current.
+        """
+        if not owner_id.startswith("session:"):
+            return
+        session_id = owner_id[len("session:"):]
+        self.event_bus.emit(session_id, "background.completed", payload)
+
+    def shutdown(self, *, timeout: float = 5.0) -> list[str]:
+        """Stop accepting work, cancel owned background work, and wait for reaping.
+
+        Does not tear down the event bus or thread pools this service may share
+        with other hosts. Returns task ids still running after the wait, so an
+        incomplete cleanup is reported instead of being called a success.
+        """
+        with self._inflight_lock:
+            self._shutting_down = True
+        with self._inflight_lock:
+            tasks = [task for task in self._active_tasks.values() if not task.done()]
+        for active_loop in list(self._active_loops.values()):
+            active_loop.cancel()
+        for task in tasks:
+            task.get_loop().call_soon_threadsafe(task.cancel)
+        deadline = time.monotonic() + max(0.0, timeout)
+        while any(not task.done() for task in tasks) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        pending = [f"attempt:{session_id}" for session_id, task in self._active_tasks.items()
+                   if not task.done()]
+        for background in list(self._background_handles.values()):
+            remaining = max(0.0, deadline - time.monotonic())
+            # cancel_all, not shutdown: these handles sit over the process-wide
+            # table, and closing it would stop unrelated hosts in this process.
+            # New work is refused by the _shutting_down gate in send_message.
+            pending.extend(background.cancel_all(timeout=remaining)["pending"])
+        return pending
 
     def _release_session(self, session_id: str) -> None:
         """Release a session claim. Safe to call when no claim is held.
@@ -284,6 +329,9 @@ class SessionService:
             self._search_index.remove_session(session_id)
             deleted = self.store.delete_session(session_id)
             self.event_bus.clear(session_id)
+            background = self._background_handles.pop(session_id, None)
+            if background is not None:
+                background.cancel_all()
             return deleted
 
     async def send_message(
@@ -314,6 +362,8 @@ class SessionService:
         session = self.store.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
+        if self._shutting_down:
+            raise SessionBusyError("shutting down; no new runs are accepted")
 
         # Claim the session before persisting anything. Reserving after the
         # user message is appended (or relying on _active_loops, which is only
@@ -364,6 +414,9 @@ class SessionService:
         Returns:
             Whether cancellation succeeded. True means an active loop existed and received a cancel signal.
         """
+        background_handle = self._background_handles.get(session_id)
+        if background_handle is not None:
+            background_handle.cancel_all()
         loop = self._active_loops.get(session_id)
         if loop is not None:
             loop.cancel()
@@ -515,6 +568,10 @@ class SessionService:
             self.store.delete_partial_response(session.session_id, attempt.attempt_id)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
         finally:
+            if attempt.status != AttemptStatus.COMPLETED:
+                background = self._background_handles.get(session.session_id)
+                if background is not None:
+                    background.cancel_all()
             # The only release path for the claim taken in send_message.
             self._active_tasks.pop(session.session_id, None)
             self._user_cancel_requests.discard(session.session_id)
@@ -593,7 +650,11 @@ class SessionService:
         background_scope = BackgroundScope(
             owner_id=f"session:{session_id}", attempt_id=attempt_id
         )
-        background = get_background_manager().for_scope(background_scope)
+        background = get_background_manager().for_scope(
+            background_scope,
+            on_completion=self._publish_background_completion,
+        )
+        self._background_handles[session_id] = background
 
         registry = await loop.run_in_executor(
             _AGENT_EXECUTOR,
@@ -635,6 +696,9 @@ class SessionService:
                     session_id=session_id,
                 ),
             )
+        except asyncio.CancelledError:
+            agent.cancel()
+            raise
         finally:
             self._active_loops.pop(session_id, None)
             try:

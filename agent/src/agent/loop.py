@@ -297,6 +297,10 @@ class AgentLoop(ToolCallLifecycle):
         next cooperative checkpoint instead of only at the next iteration.
         """
         self._cancel_event.set()
+        # Stop must reach commands the current or an earlier turn spawned, not
+        # only the ReAct cycle. Normal successful turns do not call cancel().
+        if self._background_manager is not None:
+            self._background_manager.cancel_all()
 
     def _write_run_manifest(self, trace_dir: "Path", messages: List[Dict[str, Any]]) -> None:
         """Record what methodology produced this run, beside its trace.
@@ -371,10 +375,14 @@ class AgentLoop(ToolCallLifecycle):
             Execution result dict.
         """
         token = bind_llm_session_id(session_id)
+        result = None
         try:
-            return self._run_bound(user_message, history, session_id)
+            result = self._run_bound(user_message, history, session_id)
+            return result
         finally:
             reset_llm_session_id(token)
+            if result is None or result.get("status") not in {"success", "waiting_user"}:
+                self._background_manager.cancel_all()
 
     def _run_bound(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
         """Run the ReAct loop with the LLM session already bound.

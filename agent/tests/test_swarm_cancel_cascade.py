@@ -200,6 +200,8 @@ def _bare_service():
     service._active_loops = {}
     service._active_tasks = {}
     service._user_cancel_requests = set()
+    service._background_handles = {}
+    service._shutting_down = False
     return service
 
 
