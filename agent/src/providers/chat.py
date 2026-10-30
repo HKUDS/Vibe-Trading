@@ -630,7 +630,8 @@ class ChatLLM:
             model = self.model_name or _cfg.llm.langchain_model_name.strip() or "(unset)"
             raise ProviderStreamError(
                 provider=provider, model=model, original=exc,
-                usage_metadata=getattr(accumulated, "usage_metadata", None),
+                usage_metadata=(getattr(exc, "usage_metadata", None)
+                                or getattr(accumulated, "usage_metadata", None)),
             ) from exc
 
     @staticmethod

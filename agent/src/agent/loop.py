@@ -770,7 +770,7 @@ class AgentLoop(ToolCallLifecycle):
                 current_response_model = getattr(response, "response_model", None)
                 # `messages` is still exactly what this request sent.
                 self._context_meter.observe(
-                    usage.get("input_tokens") if isinstance(usage, dict) else None,
+                    usage.get("context_input_tokens", usage.get("input_tokens")) if isinstance(usage, dict) else None,
                     messages,
                     tool_schema_tokens=estimate_tokens(tool_defs) if tool_defs else 0,
                 )

@@ -29,6 +29,36 @@ def test_completed_event_exposes_codex_token_usage() -> None:
     }
 
 
+def test_completed_event_passes_cached_and_reasoning_tokens() -> None:
+    [chunk] = list(
+        _message_chunks_from_events(
+            [
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "status": "completed",
+                        "usage": {
+                            "input_tokens": 12,
+                            "output_tokens": 7,
+                            "total_tokens": 19,
+                            "input_tokens_details": {"cached_tokens": 5},
+                            "output_tokens_details": {"reasoning_tokens": 3},
+                        },
+                    },
+                }
+            ]
+        )
+    )
+
+    assert chunk.usage_metadata == {
+        "input_tokens": 12,
+        "output_tokens": 7,
+        "total_tokens": 19,
+        "input_token_details": {"cache_read": 5},
+        "output_token_details": {"reasoning": 3},
+    }
+
+
 def test_completed_event_exposes_codex_response_model() -> None:
     [chunk] = list(
         _message_chunks_from_events(

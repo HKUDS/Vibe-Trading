@@ -54,6 +54,10 @@ def _normalize_llm_usage(usage: Any) -> dict[str, int] | None:
         "output_tokens": output_tokens,
         "total_tokens": total_tokens,
     }
+    if "calls" in usage:
+        normalized["calls"] = max(1, _coerce_usage_int(usage["calls"]))
+    if "context_input_tokens" in usage:
+        normalized["context_input_tokens"] = _coerce_usage_int(usage["context_input_tokens"])
     details = usage.get("input_token_details")
     if isinstance(details, dict):
         if details.get("cache_read") is not None:
@@ -105,7 +109,7 @@ def _record_llm_usage(
     totals["input_tokens"] = int(totals.get("input_tokens") or 0) + normalized["input_tokens"]
     totals["output_tokens"] = int(totals.get("output_tokens") or 0) + normalized["output_tokens"]
     totals["total_tokens"] = int(totals.get("total_tokens") or 0) + normalized["total_tokens"]
-    totals["calls"] = int(totals.get("calls") or 0) + 1
+    totals["calls"] = int(totals.get("calls") or 0) + normalized.get("calls", 1)
     for key in ("cache_read_tokens", "cache_creation_tokens", "reasoning_tokens"):
         if key in normalized:
             totals[key] = int(totals.get(key) or 0) + normalized[key]

@@ -141,13 +141,16 @@ def test_cancelled_agent_response_keeps_reported_usage(tmp_path):
 
 def test_cancelled_stream_keeps_usage_from_already_received_chunk():
     client = object.__new__(ChatLLM)
-    client._llm = SimpleNamespace(stream=lambda *args, **kwargs: iter([
-        AIMessageChunk(content="", usage_metadata=USAGE),
-    ]))
+    import threading
+    cancel = threading.Event()
+    def stream(*args, **kwargs):
+        cancel.set()  # Usage arrived before cancellation was observed by the host.
+        yield AIMessageChunk(content="", usage_metadata=USAGE)
+    client._llm = SimpleNamespace(stream=stream)
     client._prompt_cache_request = lambda messages: (messages, {})
     on_text = Mock()
     response = client.stream_chat(
-        [{"role": "user", "content": "hello"}], should_cancel=lambda: True,
+        [{"role": "user", "content": "hello"}], should_cancel=cancel.is_set,
         on_text_chunk=on_text,
     )
     assert response.usage_metadata == USAGE
@@ -371,3 +374,17 @@ def test_a_text_answer_that_crosses_the_goal_budget_is_released(tmp_path, monkey
     agent.run("Continue.", session_id="cost-test")
     llm.stream_chat.assert_called_once()
 
+
+
+def test_retry_billing_does_not_inflate_context_meter(tmp_path, monkeypatch):
+    agent, llm = _agent(tmp_path, lambda *args: None)
+    llm.stream_chat.side_effect = lambda *args, **kwargs: LLMResponse(
+        content="Hello.", usage_metadata={"input_tokens": 3000, "output_tokens": 90,
+            "total_tokens": 3090, "calls": 3, "context_input_tokens": 1000})
+    observed = []
+    monkeypatch.setattr(type(agent._context_meter), "observe", lambda self, n, *a, **kw: observed.append(n))
+    agent.run("Say hello.")
+    assert observed == [1000]
+    report = json.loads((tmp_path / "llm_usage.json").read_text())
+    assert report["totals"]["input_tokens"] == 3000
+    assert report["totals"]["calls"] == 3
