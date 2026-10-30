@@ -16,7 +16,7 @@ resolution) live in ``test_paper_trade_5m_scope``; the strategy-mode gates
 shared from ``paper_trade_5m_fixtures``.
 
 Every price is re-derived from the committed CSV fixtures by the test (see
-``paper_trade_5m_fixtures.fixture_reference``), so a wrong reference inside
+``paper_trade_5m_fixtures.fixture_first_bar_reference``), so a wrong reference inside
 the engine cannot make an assertion agree with it.  Offline: no network, no
 clock, no writes.
 """
@@ -32,6 +32,7 @@ from src.tools.paper_trade import tool as tool_module
 from src.tools.paper_trade.schema import CANCELED_REASON_CODE
 from src.tools.paper_trade.tool import PaperTradeDocument, run_paper_trade_step
 from tests.paper_trade_5m_fixtures import (
+    DispersedFirstBarLoader,
     FixtureCalendar,
     FixtureLoader,
     _DAY,
@@ -42,7 +43,7 @@ from tests.paper_trade_5m_fixtures import (
     _payload,
     _run,
     derive_daily,
-    fixture_reference,
+    fixture_first_bar_reference,
     load_5m,
     load_5m_all,
     session_values,
@@ -54,7 +55,7 @@ _NORMAL_BAR = {"open": 1421.0, "high": 1422.0, "low": 1421.0, "close": 1422.0}
 
 @pytest.mark.parametrize(
     ("path_model", "expected"),
-    [("bar_median", 1421.50), ("bar_close", 1422.00)],
+    [("bar_median", 1421.00), ("bar_close", 1421.00)],
 )
 def test_normal_day_fills_exactly_at_the_recomputed_reference(path_model: str, expected: float) -> None:
     document, _ = _run(_payload(path_model=path_model))
@@ -64,7 +65,7 @@ def test_normal_day_fills_exactly_at_the_recomputed_reference(path_model: str, e
     assert [(fill["symbol"], fill["side"], fill["qty"], fill["price"]) for fill in document["fills"]] == [
         (_SYM, "buy", 100.0, expected)
     ]
-    assert document["fills"][0]["price"] == float(fixture_reference(_SYM, _DAY, path_model))
+    assert document["fills"][0]["price"] == float(fixture_first_bar_reference(_SYM, _DAY, path_model))
     assert document["canceled_orders"] == []
     assert document["events"] == []
     assert document["rejected_orders"] == []
@@ -73,24 +74,21 @@ def test_normal_day_fills_exactly_at_the_recomputed_reference(path_model: str, e
 
 
 def test_the_two_path_models_produce_different_prices_and_fingerprints() -> None:
-    median, _ = _run(_payload(path_model="bar_median"))
-    close, _ = _run(_payload(path_model="bar_close"))
+    median, _ = _run(_payload(path_model="bar_median"), loader=DispersedFirstBarLoader(_SYM, _DAY))
+    close, _ = _run(_payload(path_model="bar_close"), loader=DispersedFirstBarLoader(_SYM, _DAY))
 
     assert median["fills"][0]["price"] == 1421.50
     assert close["fills"][0]["price"] == 1422.00
     assert median["engine_fingerprint"] != close["engine_fingerprint"]
 
 
-def test_non_marketable_limit_is_rejected_and_emergency_canceled() -> None:
+def test_non_marketable_limit_rests_and_is_canceled_at_session_end() -> None:
     document, _ = _run(_payload(orders=[{"symbol": _SYM, "side": "buy", "qty": 100, "limit": 1.0}]))
 
     assert document["fills"] == []
-    assert [(row["symbol"], row["reason_code"]) for row in document["rejected_orders"]] == [
-        (_SYM, "limit_not_marketable")
-    ]
-    assert document["rejected_orders"][0]["detail"] == "ref 1421.50 > limit 1.00"
-    assert [(row["symbol"], row["reason_code"]) for row in document["canceled_orders"]] == [
-        (_SYM, CANCELED_REASON_CODE)
+    assert document["rejected_orders"] == []
+    assert [(row["symbol"], row["reason_code"], row["detail"]) for row in document["canceled_orders"]] == [
+        (_SYM, CANCELED_REASON_CODE, "unfilled day order canceled at session end")
     ]
     assert document["events"] == []
 
@@ -159,7 +157,7 @@ def test_a_v1_2_field_silently_downgraded_to_v1_1_shows_up_only_in_the_hash() ->
         assert key not in v11_document
     assert v11_document["received_state_hash"] != v12_document["received_state_hash"]
     assert v11_document["fills"][0]["price"] == session_values(load_5m(_SYM, _DAY))["close"]
-    assert v12_document["fills"][0]["price"] == fixture_reference(_SYM, _DAY, "bar_median")
+    assert v12_document["fills"][0]["price"] == fixture_first_bar_reference(_SYM, _DAY, "bar_median")
 
 
 def test_fixture_loader_serves_both_legs_and_the_step_issues_one_5m_call() -> None:

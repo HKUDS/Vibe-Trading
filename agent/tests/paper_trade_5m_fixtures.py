@@ -47,12 +47,14 @@ _VOLUME_LOTS_PER_SHARE = 100.0
 
 __all__ = [
     "AUCTION_LABEL",
+    "DispersedFirstBarLoader",
     "FIXTURE_ROOT",
     "FixtureCalendar",
     "FixtureLoader",
     "continuous_bars",
     "derive_daily",
     "fixture_files",
+    "fixture_first_bar_reference",
     "fixture_manifest",
     "fixture_reference",
     "fixture_days",
@@ -158,6 +160,17 @@ def fixture_reference(symbol: str, day: str, path_model: str = "bar_median") -> 
     return raw.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def fixture_first_bar_reference(symbol: str, day: str, path_model: str = "bar_median") -> Decimal:
+    """The first continuous 5m bar's reference price (per-bar Phase 2)."""
+    frame = continuous_bars(load_5m(symbol, day))
+    if frame.empty:
+        raise ValueError("no continuous 5m bars to take a first bar from")
+    bar = frame.iloc[0]
+    prices = sorted(Decimal(str(bar[key])) for key in ("open", "high", "low", "close"))
+    raw = prices[3] if path_model == "bar_close" else (prices[1] + prices[2]) / Decimal(2)
+    return raw.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _window(frame: pd.DataFrame, start_date: str, end_date: str, *, end_inclusive: bool):
     if frame.empty:
         return frame
@@ -210,6 +223,32 @@ class FixtureLoader:
             if not frame.empty:
                 served[code] = frame
         return served
+
+
+class DispersedFirstBarLoader(FixtureLoader):
+    """The committed session with a dispersed first continuous bar.
+
+    The real fixtures start flat at 09:35, so ``bar_median`` and ``bar_close``
+    agree there.  This loader widens that one bar to 1421.00/1422.00/1421.00/
+    1422.00 so a test can still distinguish the two path models.
+    """
+
+    def __init__(self, symbol: str, day: str) -> None:
+        super().__init__()
+        self._symbol = symbol
+        self._day = day
+
+    def fetch(self, codes, start_date, end_date, *, interval="1D", fields=None):
+        if str(interval).lower() not in ("5m", "5min", "5"):
+            return super().fetch(codes, start_date, end_date, interval=interval, fields=fields)
+        ordered = tuple(str(code) for code in codes)
+        self.calls.append((ordered, start_date, end_date, str(interval)))
+        if self._symbol not in ordered:
+            return {}
+        frame = load_5m(self._symbol, self._day).copy()
+        first = continuous_bars(frame).index[0]
+        frame.loc[first, ["open", "high", "low", "close"]] = [1421.0, 1422.0, 1421.0, 1422.0]
+        return {self._symbol: frame}
 
 
 class FixtureCalendar:

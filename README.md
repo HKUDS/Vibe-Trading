@@ -1490,16 +1490,17 @@ execution date, and each day receives the ledger after preceding fills. The
 agent/MCP `paper_trade_step` remains a stateless research primitive.
 
 `paper_trade_step` also takes `interval="5m"` for A-shares: one step covers one
-completed session and matches against that session's single assembled bar, built
-from the 48 continuous five-minute bars. The 09:30 label is the opening
+completed session and matches bar by bar against its 48 continuous five-minute
+bars. The 09:30 label is the opening
 call-auction print, single-priced on 4 of 5 probed days, and is excluded by
 policy; labels in 09:15-09:25 or from 14:57 up to but not including 15:00 are
 auction-window anomalies, and 15:00 is a continuous bar. The 5m leg uses Tushare
 `stk_mins`, separate from the daily chain, which serves daily bars only. It
 accepts one order symbol per step: the measured provider budget is 1
 call/minute, 1 call/hour and 2 calls/day, and a refused call still consumes the
-daily budget. It fills all-or-none at the `path_model` reference (`bar_median` or
-`bar_close`) and requires a non-empty `UNIVERSE` in strategy mode. `session`,
+daily budget. It fills all-or-none at each bar's `path_model` reference
+(`bar_median` or `bar_close`) and requires a non-empty `UNIVERSE` in strategy
+mode. `session`,
 `path_model` and `fill_model` default to the daily behaviour, so every existing
 call is unchanged; `session` is a coherence selector only (`cn_a` requires
 `market="cn_a"`) and does not change the day boundary.

@@ -9,7 +9,7 @@ What this suite pins, all through the stateless tool surface:
   every fill fee non-negative;
 * every fill price equals the reference recomputed here from the CSV;
 * every rejected order carries a frozen reason code and, in 5m mode, exactly
-  one emergency-cancel row;
+  one emergency-cancel row; an unfilled limit order gets one day-end cancel;
 * a halted session leaves the ledger and the marks alone;
 * an auction-window label is excluded from the session bar and reported;
 * the fixture manifest indexes every committed file and matches its bytes.
@@ -36,8 +36,8 @@ from tests.paper_trade_5m_fixtures import (
     FixtureCalendar,
     FixtureLoader,
     fixture_files,
+    fixture_first_bar_reference,
     fixture_manifest,
-    fixture_reference,
     load_5m,
 )
 
@@ -106,8 +106,8 @@ def test_two_sessions_have_different_engine_fingerprints() -> None:
     _, today = _run(_payload(_DAY))
 
     assert prior["engine_fingerprint"] != today["engine_fingerprint"]
-    assert prior["fills"][0]["price"] == 1419.50
-    assert today["fills"][0]["price"] == 1421.50
+    assert prior["fills"][0]["price"] == 1419.00
+    assert today["fills"][0]["price"] == 1421.00
 
 
 def test_cash_and_positions_are_conserved_and_every_fee_is_non_negative() -> None:
@@ -147,7 +147,8 @@ def test_cash_and_positions_are_conserved_and_every_fee_is_non_negative() -> Non
     held = {row["symbol"]: _money(row["qty"]) for row in document["end_state"]["positions"]}
     assert held == {_SYM: Decimal("200") + bought - sold} == {_SYM: Decimal("400")}
     assert [fill["side"] for fill in document["fills"]] == ["buy", "buy", "sell"]
-    assert len(document["rejected_orders"]) == 3
+    assert len(document["rejected_orders"]) == 2
+    assert len(document["canceled_orders"]) == 3
 
 
 def test_every_fill_price_is_the_reference_recomputed_from_the_csv() -> None:
@@ -161,7 +162,7 @@ def test_every_fill_price_is_the_reference_recomputed_from_the_csv() -> None:
                 ],
             )
         )
-        expected = float(fixture_reference(_SYM, _DAY, path_model))
+        expected = float(fixture_first_bar_reference(_SYM, _DAY, path_model))
         assert [fill["price"] for fill in document["fills"]] == [expected, expected]
 
 
@@ -175,18 +176,18 @@ def test_every_rejection_is_frozen_and_emergency_canceled() -> None:
     _, document = _run(_payload(orders=orders))
 
     assert document["fills"] == []
-    assert len(document["rejected_orders"]) == len(orders)
+    assert len(document["rejected_orders"]) == 3
     assert {row["reason_code"] for row in document["rejected_orders"]} == {
         "lot_size",
-        "limit_not_marketable",
         "insufficient_position",
     }
     for row in document["rejected_orders"]:
         assert row["reason_code"] in REASON_CODES
         assert row["reason_code"]
-    assert [(row["symbol"], row["side"], row["qty"]) for row in document["canceled_orders"]] == [
-        (row["symbol"], row["side"], row["qty"]) for row in document["rejected_orders"]
-    ]
+    assert len(document["canceled_orders"]) == len(document["rejected_orders"]) + 1
+    day_end = [row for row in document["canceled_orders"]
+               if row["detail"] == "unfilled day order canceled at session end"]
+    assert [(row["symbol"], row["side"], row["qty"]) for row in day_end] == [(_SYM, "buy", 100.0)]
     assert {row["reason_code"] for row in document["canceled_orders"]} == {CANCELED_REASON_CODE}
 
 
@@ -249,7 +250,7 @@ def test_auction_window_label_is_excluded_and_reported() -> None:
 
     assert [(row["symbol"], row["event_type"]) for row in document["events"]] == [(_SYM, "auction_window")]
     assert "14:58" in document["events"][0]["detail"]
-    assert document["fills"][0]["price"] == clean["fills"][0]["price"] == 1421.50
+    assert document["fills"][0]["price"] == clean["fills"][0]["price"] == 1421.00
 
 
 def test_manifest_indexes_every_fixture_and_matches_its_bytes() -> None:

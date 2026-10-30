@@ -77,19 +77,20 @@ NOT MEASURED — blocked by that 2-calls/day cap; do not present as fact
       forward-filled bars; a symbol with no 5m row at all is a provider
       omission and stays ``PAPER_DATA_NOT_READY``.
 
-ENGINE RULE — the P0 matched bar (D1, binding for T3/T4)
-    pt-v1.2 adds NO order-level bar/timestamp field, so an order cannot be
-    attributed to an individual 5m bar.  The engine therefore assembles ONE
-    session bar per symbol-day from the 48 CONTINUOUS bars: open = the 09:35
-    bar's open, high/low = the session extremes, close = the 15:00 bar's
-    close, volume = their sum.  The 09:30 opening-auction print is EXCLUDED
-    (T4: the auction window never matches), and a label inside 09:15-09:25 or
-    from 14:57 up to but not including 15:00 is excluded and reported as an
-    ``auction_window`` event (the 15:00 label is a continuous bar).  Every order
-    is terminal in that single session bar: no partial fills, no resting orders
-    across bars, no re-submission on the next bar.  Per-bar order re-submission (planbook F2) needs an
-    order-level bar field and is explicitly deferred — it is a P0 limitation,
-    not a missing implementation.
+ENGINE RULE — the day-level session bar (D1, binding for T3/T4)
+    pt-v1.2 adds NO order-level bar/timestamp field, so a fill is attributed to
+    the bar whose reference price produced it, not to a client order timestamp.
+    The engine still assembles ONE session bar per symbol-day from the 48
+    CONTINUOUS bars as the day-level gate and summary: open = the 09:35 bar's
+    open, high/low = the session extremes, close = the 15:00 bar's close,
+    volume = their sum.  The 09:30 opening-auction print is EXCLUDED (T4: the
+    auction window never matches), and a label inside 09:15-09:25 or from 14:57
+    up to but not including 15:00 is excluded and reported as an
+    ``auction_window`` event (the 15:00 label is a continuous bar).  Phase 2
+    matching walks the continuous ``bars_by_symbol`` per bar: a market order
+    fills at the first marketable bar, a limit order rests until a bar satisfies
+    its price and is canceled at session end if none does, and no partial fills
+    or volume share are modeled (Phase 3).
 
 Reproduce (repository root, once the daily ``stk_mins`` quota has reset):
 
@@ -391,7 +392,10 @@ def _split_session_days(
             )
         price_columns = list(_PRICE_COLUMNS)
         had_continuous = not continuous.empty
-        bad = continuous[price_columns].isna().any(axis=1) | (continuous[price_columns] <= 0).any(axis=1)
+        bad = (~continuous[price_columns].apply(lambda col: col.map(math.isfinite))).any(axis=1) | (continuous[price_columns] <= 0).any(axis=1)
+        bad |= (continuous["high"] < continuous[price_columns].max(axis=1)) | (continuous["low"] > continuous[price_columns].min(axis=1))
+        if not continuous["volume"].map(math.isfinite).all() or (continuous["volume"] < 0).any():
+            raise ValueError("5m data has invalid bar volume")
         if bad.any():
             warnings.append(
                 f"5m data: {symbol} on {day} dropped {int(bad.sum())} bar(s) failing the " "price sanity gate (R-V3)"

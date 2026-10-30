@@ -46,8 +46,10 @@ bound is exclusive at midnight.  Each symbol-day is split by the cn_a session
 clock (:func:`calendar.classify_cn_a_session_label`): the 09:30 opening
 auction print is dropped silently, an auction-window label is dropped and
 reported as an ``auction_window`` event source, and the continuous bars are
-assembled into ONE session bar (D1: open = first bar's open, high/low = extremes,
-close = last bar's close, volume = sum).  Zero continuous bars on a
+assembled into one day-level session bar (D1: open = first bar's open,
+high/low = extremes, close = last bar's close, volume = sum).  The per-bar
+engine keeps each continuous bar as its own matching opportunity; the session
+bar is the day-level gate and summary.  Zero continuous bars on a
 calendar-open day is a ``halted`` candidate; zero for the whole universe is
 ``PAPER_DATA_NOT_READY`` (D6).  A symbol with a daily bar but no 5m session
 bar is a provider omission (``stk_mins`` quota or permission) ONLY when the
