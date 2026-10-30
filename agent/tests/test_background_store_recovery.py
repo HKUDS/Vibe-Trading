@@ -7,6 +7,7 @@ import os
 import stat
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -45,8 +46,9 @@ class TestRecoveryIsConservative:
 
         from tests.module_os_helpers import patch_module_os
 
-        patch_module_os(monkeypatch, store_mod, kill=explode, killpg=explode)
-        monkeypatch.setattr(store_mod.time, "sleep", explode)
+        signals = {name: explode for name in ("kill", "killpg") if hasattr(os, name)}
+        patch_module_os(monkeypatch, store_mod, **signals)
+        monkeypatch.setattr(store_mod, "time", SimpleNamespace(time=time.time, sleep=explode))
 
     def test_running_becomes_interrupted_without_rerun(self):
         recovered, unchanged = reconcile_after_restart([make(status="running")])
