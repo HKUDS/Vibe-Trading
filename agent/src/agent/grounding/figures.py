@@ -1062,7 +1062,7 @@ def _currency_code_for_figure(text: str, start: int, end: int) -> str | None:
 
 
 def magnitude_suffix(text: str, end: int) -> tuple[float, int]:
-    """The magnitude mark glued to the right of a figure, if any.
+    """The magnitude mark following a figure, allowing horizontal spacing.
 
     ``K`` / ``M`` / ``B`` count only when no further letter follows, so "5MB"
     and "3Mn" are not millions.
@@ -1074,13 +1074,16 @@ def magnitude_suffix(text: str, end: int) -> tuple[float, int]:
     Returns:
         ``(multiplier, end past the mark)``, or ``(1.0, end)`` without one.
     """
-    mark = text[end : end + 1]
+    start = end
+    while start < len(text) and text[start] in " \t\u00a0\u202f\u3000":
+        start += 1
+    mark = text[start : start + 1]
     if not mark or mark not in _MAGNITUDES:
         return 1.0, end
-    after = text[end + 1 : end + 2]
+    after = text[start + 1 : start + 2]
     if mark.isascii() and after.isascii() and after.isalpha():
         return 1.0, end
-    return _MAGNITUDES[mark], end + 1
+    return _MAGNITUDES[mark], start + 1
 
 
 def _currency_prefix_start(text: str, start: int) -> int:

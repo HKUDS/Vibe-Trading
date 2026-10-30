@@ -529,6 +529,8 @@ vibe-trading connector install /tmp/my-broker
 | `b3_cotahist` | Brazil (B3) | none | شموع B3 اليومية المحلية للسوق النقدي والكسور (خام، BRL)، عبر `python -m src.br_data sync`؛ مصدر بديل دون اتصال لـ `.SA` |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+يؤدي ضبط `GILDATA_TOKEN` إلى تفعيل الاستعلامات المجمعة عبر `gildata_fin_query`، وفرز الأسهم مع مؤشرات لفترات تقارير متعددة عبر `gildata_stock_selection`، وإضافة مرشحي الأسهم من Gildata إلى `search_symbol`.
+
 **سلاسل التراجع (بحسب خطر حظر عنوان IP):**
 
 - **أسهم A** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
