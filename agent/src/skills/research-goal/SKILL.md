@@ -26,7 +26,8 @@ Do not start a goal for a tiny one-shot answer unless the user explicitly asks.
 3. Before continuing an existing task, call `get_research_goal`.
 4. After a market-data lookup, backtest, document read, web source, or manual reasoning step, call `add_goal_evidence`.
 5. Link evidence to a criterion using `criterion_id` or `criterion_index`.
-6. When all required criteria have been audited, call `update_research_goal_status`.
+6. If the objective wording needs tightening or correcting mid-research, call `update_research_goal` instead of starting a new goal; it edits the objective in place and keeps existing criteria and evidence.
+7. When all required criteria have been audited, call `update_research_goal_status`.
 
 ## Criteria Template
 

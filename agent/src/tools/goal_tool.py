@@ -314,6 +314,75 @@ class UpdateResearchGoalStatusTool(_GoalToolBase):
             return _json_error(str(exc))
 
 
+class UpdateResearchGoalTool(_GoalToolBase):
+    """Edit the current research goal's objective or summary in place."""
+
+    name = "update_research_goal"
+    description = (
+        "Refine the current finance research goal's objective or display summary "
+        "without superseding it. Use this to tighten or correct the objective wording "
+        "as research progresses; it keeps the same goal id, criteria, and evidence. "
+        "To replace the goal entirely, use start_research_goal instead."
+    )
+    is_readonly = False
+    parameters = {
+        "type": "object",
+        "properties": {
+            "session_id": {
+                "type": "string",
+                "description": "Optional session id. Omit when the host runtime injected the current session.",
+            },
+            "goal_id": {"type": "string", "description": "Optional goal id. Defaults to the current goal."},
+            "expected_goal_id": {
+                "type": "string",
+                "description": "Optional stale-write guard. Defaults to goal_id.",
+            },
+            "objective": {"type": "string", "description": "Replacement research objective."},
+            "ui_summary": {"type": "string", "description": "Replacement compact display summary."},
+        },
+    }
+
+    def execute(self, **kwargs: Any) -> str:
+        """Edit the current research goal's objective or summary.
+
+        Args:
+            **kwargs: Tool arguments from the model.
+
+        Returns:
+            JSON envelope with the updated goal snapshot or an error.
+        """
+        session_id = self._session_id(kwargs)
+        if not session_id:
+            return _json_error("session_id is required")
+        objective = kwargs.get("objective")
+        ui_summary = kwargs.get("ui_summary")
+        if objective is None and ui_summary is None:
+            return _json_error("objective or ui_summary is required")
+        try:
+            snapshot = self._store.get_current_snapshot(session_id)
+            goal_id = str(kwargs.get("goal_id") or "").strip()
+            if not goal_id:
+                if snapshot is None:
+                    return _json_error("no current goal for this session", error_type="not_found")
+                goal_id = str(snapshot["goal"]["goal_id"])
+            expected_goal_id = str(kwargs.get("expected_goal_id") or goal_id).strip()
+            self._store.update_goal(
+                session_id=session_id,
+                goal_id=goal_id,
+                expected_goal_id=expected_goal_id,
+                objective=objective,
+                ui_summary=ui_summary,
+            )
+            updated = self._store.get_goal_snapshot(goal_id)
+            if updated is not None:
+                self._emit("goal.updated", {"goal": updated["goal"], "snapshot": updated})
+            return json.dumps({"status": "ok", "snapshot": updated}, ensure_ascii=False)
+        except StaleGoalError as exc:
+            return _json_error(str(exc), error_type="stale_goal")
+        except (TypeError, ValueError) as exc:
+            return _json_error(str(exc))
+
+
 class GetResearchGoalTool(_GoalToolBase):
     """Read the current research goal snapshot."""
 

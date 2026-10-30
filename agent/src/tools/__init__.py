@@ -148,6 +148,7 @@ def build_registry(
         GetResearchGoalTool,
         StartResearchGoalTool,
         UpdateResearchGoalStatusTool,
+        UpdateResearchGoalTool,
     )
     from src.tools.autopilot_tool import RunResearchAutopilotTool
     from src.tools.remember_tool import RememberTool
@@ -159,6 +160,7 @@ def build_registry(
         GetResearchGoalTool,
         AddGoalEvidenceTool,
         UpdateResearchGoalStatusTool,
+        UpdateResearchGoalTool,
     }
     # Tools that need the host session id injected: they create or mutate the
     # session's research goal, and the LLM never knows the session id.

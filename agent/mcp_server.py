@@ -730,6 +730,36 @@ def add_goal_evidence(
 
 
 @mcp.tool
+def update_research_goal(
+    objective: str | None = None,
+    ui_summary: str | None = None,
+    goal_id: str = "",
+    expected_goal_id: str = "",
+    session_id: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """Edit the current research goal without discarding criteria or evidence.
+
+    Args:
+        objective: Replacement objective; omit to keep the current text.
+        ui_summary: Replacement display summary; omit to keep it.
+        goal_id: Optional current goal id.
+        expected_goal_id: Optional stale-write guard, defaulting to goal_id.
+        session_id: Optional conversation id; defaults to this MCP connection.
+        ctx: MCP request context supplied by the server.
+
+    Returns:
+        Updated snapshot or a structured validation/stale-goal error.
+    """
+    from src.tools.goal_tool import UpdateResearchGoalTool
+
+    return UpdateResearchGoalTool(
+        default_session_id=_resolve_session_id(session_id, ctx), store=_get_goal_store()
+    ).execute(objective=objective, ui_summary=ui_summary, goal_id=goal_id,
+              expected_goal_id=expected_goal_id)
+
+
+@mcp.tool
 def update_research_goal_status(
     status: str,
     goal_id: str = "",

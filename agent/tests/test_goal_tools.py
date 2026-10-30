@@ -13,6 +13,7 @@ from src.tools.goal_tool import (
     GetResearchGoalTool,
     StartResearchGoalTool,
     UpdateResearchGoalStatusTool,
+    UpdateResearchGoalTool,
 )
 
 
@@ -307,6 +308,61 @@ def test_goal_status_tool_can_cancel_current_goal(tmp_path: Path) -> None:
     assert result["status"] == "ok"
     assert result["snapshot"]["goal"]["status"] == "cancelled"
     assert store.get_current_snapshot("session-1") is None
+
+
+def test_update_goal_tool_edits_objective_without_resetting_progress(tmp_path: Path) -> None:
+    """The agent can refine an objective in place, unlike start_research_goal
+    which would mint a new goal and reset all criteria to pending.
+    """
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    add_evidence = AddGoalEvidenceTool(default_session_id="session-1", store=store)
+    update = UpdateResearchGoalTool(default_session_id="session-1", store=store)
+
+    created = json.loads(
+        start.execute(
+            objective="Evaluate NVDA momentum as a research-only thesis.",
+            criteria=["Define thesis", "Check price action"],
+        )
+    )
+    goal_id = created["snapshot"]["goal"]["goal_id"]
+    add_evidence.execute(criterion_index=1, text="NVDA shows strong momentum.")
+
+    result = json.loads(
+        update.execute(objective="Evaluate NVDA and AMD momentum as a research-only thesis.")
+    )
+
+    assert result["status"] == "ok"
+    snapshot = result["snapshot"]
+    assert snapshot["goal"]["goal_id"] == goal_id
+    assert snapshot["goal"]["objective"] == "Evaluate NVDA and AMD momentum as a research-only thesis."
+    assert snapshot["evidence_count"] == 1
+    assert [c["status"] for c in snapshot["criteria"]] == ["covered", "pending"]
+
+
+def test_update_goal_tool_requires_a_field_to_change(tmp_path: Path) -> None:
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    update = UpdateResearchGoalTool(default_session_id="session-1", store=store)
+    start.execute(objective="Evaluate NVDA momentum.", criteria=["Define thesis"])
+
+    result = json.loads(update.execute())
+
+    assert result == {"status": "error", "error_type": "validation", "error": "objective or ui_summary is required"}
+
+
+def test_update_goal_tool_rejects_a_stale_expected_goal_id(tmp_path: Path) -> None:
+    store = GoalStore(tmp_path / "goals.db")
+    start = StartResearchGoalTool(default_session_id="session-1", store=store)
+    update = UpdateResearchGoalTool(default_session_id="session-1", store=store)
+    start.execute(objective="Evaluate NVDA momentum.", criteria=["Define thesis"])
+
+    result = json.loads(
+        update.execute(objective="A different objective.", expected_goal_id="not-the-real-id")
+    )
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "stale_goal"
 
 
 def test_registry_injects_goal_event_callback() -> None:

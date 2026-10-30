@@ -48,3 +48,25 @@ def test_two_concurrent_clients_do_not_share_a_goal_session(tmp_path, monkeypatc
     )
     assert objective_b == "USER B thesis: bond duration hedge"
     assert snap_a["snapshot"]["goal"]["session_id"] != snap_b["snapshot"]["goal"]["session_id"]
+
+
+
+def test_edit_goal_over_mcp_keeps_evidence_and_rejects_other_sessions(tmp_path, monkeypatch):
+    from src.goal import GoalStore
+    monkeypatch.setattr(ms, "_goal_store", GoalStore(db_path=tmp_path / "edit.db"))
+    async def scenario():
+        async with Client(ms.mcp) as a, Client(ms.mcp) as b:
+            first = await a.call_tool("start_research_goal", {"objective": "Research NVDA", "criteria": ["Check thesis"]})
+            first = json.loads(first.content[0].text)["snapshot"]
+            goal_id = first["goal"]["goal_id"]
+            await a.call_tool("add_goal_evidence", {"text": "Initial evidence"})
+            edited = await a.call_tool("update_research_goal", {"objective": "Research NVDA and AMD", "goal_id": goal_id})
+            edited = json.loads(edited.content[0].text)
+            refused = await b.call_tool("update_research_goal", {"objective": "Cross-session edit", "goal_id": goal_id})
+            refused = json.loads(refused.content[0].text)
+            assert edited["status"] == "ok"
+            assert edited["snapshot"]["goal"]["goal_id"] == goal_id
+            assert edited["snapshot"]["evidence_count"] == 1
+            assert edited["snapshot"]["criteria"] == first["criteria"]
+            assert refused["status"] == "error"
+    asyncio.run(scenario())
