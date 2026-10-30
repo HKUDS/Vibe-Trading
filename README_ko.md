@@ -529,6 +529,8 @@ vibe-trading connector install /tmp/my-broker
 | `b3_cotahist` | Brazil (B3) | none | 로컬 B3 공식 현물·단주 일봉(미조정, BRL). `python -m src.br_data sync`로 가져오는 `.SA` 오프라인 대체 소스 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+`GILDATA_TOKEN`을 설정하면 `gildata_fin_query`로 Gildata 통합 데이터 질의를 사용할 수 있으며, `search_symbol`에 Gildata 종목 후보가 추가됩니다.
+
 **폴백 체인 (IP 차단 위험 순):**
 
 - **A주** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
