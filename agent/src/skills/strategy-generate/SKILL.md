@@ -77,6 +77,7 @@ class SignalEngine:
 - Do not include an `if __name__ == "__main__"` block
 - Pure pandas / numpy implementation, with no external signal libraries
 - Output plain Python code, not Markdown fences
+- Set each bar's signal from data up to that bar's close, and do not shift it yourself. The engine already delays signals by one bar: a signal set on bar `t` is filled at the open of bar `t+1`. A strategy that shifts its own signal (`.shift(1)`, or `signal[i]` taken from the condition at `i - 1`) fills every trade one bar later than intended, even when a "next open" rule is described
 
 ## Quality Checklist
 
@@ -87,6 +88,7 @@ Self-check after writing `signal_engine.py`:
 - [ ] Boundary handling: for empty data or insufficient history before the lookback window, use `fillna(0)` or skip
 - [ ] Portfolio strategy: once N stocks are selected, each weight = 1/N (for example top 10 → each 0.1), unselected names = 0
 - [ ] Signal values stay within `[-1.0, 1.0]`
+- [ ] The signal is not shifted: the engine fills a signal set on bar `t` at the open of bar `t+1`
 
 ## Instrument Code Normalization
 
@@ -206,6 +208,7 @@ Self-check after writing `signal_engine.py`:
 2. **Late first trade** (first trade > 2 years after backtest start): data-filtering bug or overly long lookback window
 3. **Capital utilization < 50%**: position-management bug, portfolio is flat most of the time
 4. **Open position at the end** (positions still open when backtest ends): exit-signal timing bug
+5. **Double delay** (`signal_engine.py` shifts its own signal): every fill lands one bar later than the strategy describes, because the engine already fills a signal set on bar `t` at the open of bar `t+1`
 
 ### `action_items` Format
 
