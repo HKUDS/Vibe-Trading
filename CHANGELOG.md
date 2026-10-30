@@ -37,6 +37,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Percentage-point figures ground against the bare declaration** the
+  convention writes (#2107). A CN filing states its moves in `个百分点`; the
+  scan marks the prose figure a percent while the model's own block declares
+  `1.13` bare, and the gate redacted every such figure even when the document
+  held the value. The borrow is one-way and exact: `1.13` grounds
+  `1.13个百分点`, while `37%` in the prose still needs a percent declaration.
+  `pct` / `ppt` / `ppts` / `百分点` now read as point marks, and a declared
+  percent range `20%-30%` becomes two endpoint declarations instead of a
+  malformed line plus a bogus `-30%` figure.
 - **Document figure grounding** accepts document-scoped currency restatements
   and magnitude-aware arithmetic, including percentage-point declarations.
   Ratios, wrong values and wrong currencies remain distinct; undeclared

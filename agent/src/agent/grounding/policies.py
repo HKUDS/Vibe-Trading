@@ -544,7 +544,9 @@ class _PolicyMixin:
         for figure in figures:
             if figure.shape not in ("measured", "bare"):
                 continue
-            declaration = block.match(figure.value, figure.percent, figure.digits)
+            declaration = block.match(
+                figure.value, figure.percent, figure.digits, figure.point_marked
+            )
             symbol = self._figure_symbol(
                 content,
                 figure,
