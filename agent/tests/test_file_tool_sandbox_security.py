@@ -193,6 +193,30 @@ def test_resolve_safe_path_run_dir_escapes_fallback(tmp_path: Path, monkeypatch)
     assert "escapes run_dir" in str(excinfo.value)
 
 
+def test_resolve_safe_path_fallback_ignores_process_cwd(tmp_path: Path, monkeypatch) -> None:
+    """A relative, run_dir-escaping path must resolve against run_dir in the
+    allowed-roots fallback, not against the server process's CWD. Otherwise
+    the same path's accept/reject outcome -- and even which allowed root it
+    lands in -- depends on where the process happens to be chdir'd.
+    """
+    run_dir = tmp_path / "runs" / "run_1"
+    run_dir.mkdir(parents=True)
+    allowed_root = tmp_path / "allowed"
+    fake_cwd = allowed_root / "nested" / "cwd"
+    fake_cwd.mkdir(parents=True)
+
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path / "runs"))
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_WRITE_ROOTS", str(allowed_root))
+    monkeypatch.chdir(fake_cwd)
+
+    # "../../rest.txt" relative to run_dir lands outside every allowed root,
+    # so it must be rejected -- even though the same string relative to the
+    # mocked CWD would land inside allowed_root.
+    with pytest.raises(ValueError) as excinfo:
+        resolve_safe_path("../../rest.txt", str(run_dir), allowed_write_roots(), purpose="write")
+    assert "escapes run_dir" in str(excinfo.value)
+
+
 def test_write_rejection_names_the_write_roots_env(tmp_path: Path, monkeypatch) -> None:
     # The escape hatch must be discoverable from the error itself: a model
     # told only "escapes the workspace" cannot tell the user how to allow
