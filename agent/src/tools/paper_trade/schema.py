@@ -48,6 +48,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,7 @@ __all__ = [
     "CANCELED_REASON_CODE",
     "DEFAULT_FILL_MODEL",
     "DEFAULT_INTERVAL",
+    "DEFAULT_ORDER_VOLUME_RATIO",
     "DEFAULT_PATH_MODEL",
     "DEFAULT_SESSION",
     "ERROR_CODES",
@@ -66,6 +68,7 @@ __all__ = [
     "SCHEMA_VERSIONS",
     "SCHEMA_VERSION",
     "SCHEMA_VERSION_V1_2",
+    "SCHEMA_VERSION_V1_3",
     "SESSION_EVENT_TYPES",
     "SESSIONS",
     "SIDES",
@@ -101,6 +104,14 @@ SCHEMA_VERSION = "pt-v1.1"
 #: request field is non-default.
 SCHEMA_VERSION_V1_2 = "pt-v1.2"
 
+#: Additive bump version (volume-share plan T7): emitted when the request
+#: selects ``fill_model="volume_share"`` or a non-default
+#: ``order_volume_ratio``.  The wire contract file, its loader entry and the
+#: result fields land with the pt-v1.3 contract todo, so :data:`SCHEMA_VERSIONS`
+#: stays the v1.1/v1.2 pair for now; the request slice already knows the
+#: version its result must carry.
+SCHEMA_VERSION_V1_3 = "pt-v1.3"
+
 #: Every version this loader can resolve, oldest first.
 SCHEMA_VERSIONS: tuple[str, ...] = (SCHEMA_VERSION, SCHEMA_VERSION_V1_2)
 
@@ -122,9 +133,15 @@ DEFAULT_SESSION = "auto"
 PATH_MODELS: tuple[str, ...] = ("bar_median", "bar_close")
 DEFAULT_PATH_MODEL = "bar_median"
 
-#: ``fill_model`` — the only P0 value: all-or-nothing, no partial fills.
-FILL_MODELS: tuple[str, ...] = ("all_or_none",)
+#: ``fill_model`` — ``all_or_none`` keeps the frozen pt-v1.1/pt-v1.2 fill;
+#: ``volume_share`` (pt-v1.3) caps each order by a share of bar volume.
+FILL_MODELS: tuple[str, ...] = ("all_or_none", "volume_share")
 DEFAULT_FILL_MODEL = "all_or_none"
+
+#: ``order_volume_ratio`` — pt-v1.3 per-order share of bar volume.  1.0 is
+#: the pt-v1.2 behaviour (an order may consume the whole tradable volume);
+#: only ``fill_model="volume_share"`` may select a different value.
+DEFAULT_ORDER_VOLUME_RATIO = 1.0
 
 #: ``events[].event_type`` — pt-v1.2 session facts (T4, D2). Not an AM-14
 #: vocabulary and not part of any frozen pt-v1.1 table.
@@ -256,6 +273,9 @@ class PaperTradeStepRequest:
     session: str = DEFAULT_SESSION
     path_model: str = DEFAULT_PATH_MODEL
     fill_model: str = DEFAULT_FILL_MODEL
+    # pt-v1.3 additive field: only legal with fill_model="volume_share"
+    # (parse_request enforces it); the default keeps the v1.2 behaviour.
+    order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO
 
     @property
     def uses_v1_2(self) -> bool:
@@ -263,6 +283,8 @@ class PaperTradeStepRequest:
 
         True iff at least one new request field is non-default.  A False
         request must keep the pt-v1.1 byte-identical output and hash (D4).
+        A pt-v1.3 call selects a non-default ``fill_model`` too, so it is
+        true there as well; :attr:`schema_version` still resolves to v1.3.
         """
         return (
             self.interval != DEFAULT_INTERVAL
@@ -272,9 +294,25 @@ class PaperTradeStepRequest:
         )
 
     @property
+    def uses_v1_3(self) -> bool:
+        """Whether this call selects the additive pt-v1.3 volume policy."""
+        return (
+            self.fill_model == "volume_share"
+            or self.order_volume_ratio != DEFAULT_ORDER_VOLUME_RATIO
+        )
+
+    @property
     def schema_version(self) -> str:
-        """The wire ``schema_version`` this request's result must carry."""
-        return SCHEMA_VERSION_V1_2 if self.uses_v1_2 else SCHEMA_VERSION
+        """The wire ``schema_version`` this request's result must carry.
+
+        Precedence is explicit: any pt-v1.3 field outranks every pt-v1.2
+        selector, so a request selecting both is never a pt-v1.2 document.
+        """
+        if self.uses_v1_3:
+            return SCHEMA_VERSION_V1_3
+        if self.uses_v1_2:
+            return SCHEMA_VERSION_V1_2
+        return SCHEMA_VERSION
 
 
 def _require_number(value: Any, path: str) -> float:
@@ -318,6 +356,17 @@ def _parse_choice(value: Any, path: str, allowed: tuple[str, ...], default: str)
     if text not in allowed:
         raise PaperTradeSchemaError(f"{path} must be one of {allowed}, got {text!r}")
     return text
+
+
+def _parse_order_volume_ratio(value: Any, path: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PaperTradeSchemaError(f"{path} must be a JSON number, got {type(value).__name__}")
+    ratio = Decimal(str(value))
+    if not ratio.is_finite():
+        raise PaperTradeSchemaError(f"{path} must be a finite JSON number, got {value!r}")
+    if ratio <= 0 or ratio > 1:
+        raise PaperTradeSchemaError(f"{path} must be > 0 and <= 1, got {value!r}")
+    return float(ratio)
 
 
 def _parse_position(raw: Any, path: str) -> Position:
@@ -401,6 +450,27 @@ def parse_request(payload: dict[str, Any]) -> PaperTradeStepRequest:
         for key, value in fee_model_raw.items()
     }
 
+    interval = _parse_choice(payload.get("interval"), "interval", INTERVALS, DEFAULT_INTERVAL)
+    session = _parse_choice(payload.get("session"), "session", SESSIONS, DEFAULT_SESSION)
+    path_model = _parse_choice(
+        payload.get("path_model"), "path_model", PATH_MODELS, DEFAULT_PATH_MODEL
+    )
+    fill_model = _parse_choice(
+        payload.get("fill_model"), "fill_model", FILL_MODELS, DEFAULT_FILL_MODEL
+    )
+    # A PRESENT ratio is a pt-v1.3 opt-in: null/absent means "not supplied".
+    ratio_raw = payload.get("order_volume_ratio")
+    order_volume_ratio = (
+        DEFAULT_ORDER_VOLUME_RATIO
+        if ratio_raw is None
+        else _parse_order_volume_ratio(ratio_raw, "order_volume_ratio")
+    )
+    if ratio_raw is not None and fill_model != "volume_share":
+        raise PaperTradeSchemaError(
+            "order_volume_ratio requires fill_model='volume_share'; "
+            f"got fill_model={fill_model!r}"
+        )
+
     return PaperTradeStepRequest(
         account_id=_require_str(payload.get("account_id"), "account_id"),
         market=market,
@@ -410,14 +480,11 @@ def parse_request(payload: dict[str, Any]) -> PaperTradeStepRequest:
         orders=orders,
         strategy_path=strategy_path,
         fee_model=fee_model,
-        interval=_parse_choice(payload.get("interval"), "interval", INTERVALS, DEFAULT_INTERVAL),
-        session=_parse_choice(payload.get("session"), "session", SESSIONS, DEFAULT_SESSION),
-        path_model=_parse_choice(
-            payload.get("path_model"), "path_model", PATH_MODELS, DEFAULT_PATH_MODEL
-        ),
-        fill_model=_parse_choice(
-            payload.get("fill_model"), "fill_model", FILL_MODELS, DEFAULT_FILL_MODEL
-        ),
+        interval=interval,
+        session=session,
+        path_model=path_model,
+        fill_model=fill_model,
+        order_volume_ratio=order_volume_ratio,
     )
 
 
