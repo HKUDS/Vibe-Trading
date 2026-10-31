@@ -855,7 +855,7 @@ def backtest(run_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Paper-trading step tool (pt-v1.1/pt-v1.2, VD-12 hand-written wrapper)
+# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3, VD-12 hand-written wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -873,13 +873,14 @@ def paper_trade_step(
     session: str | None = None,
     path_model: str | None = None,
     fill_model: str | None = None,
+    order_volume_ratio: float | None = None,
 ) -> str:
     """Run one step of the deterministic paper-trading matching engine; never places real orders.
 
     Matches the injected ``orders`` (or, in Step 7, a ``strategy_path``'s
     per-day orders) against bars under the market's frozen rules (T+1, price
     limits, board lots, fees) and returns ONE in-band JSON document on
-    ``result.content[0].text``: the pt-v1.1/pt-v1.2 success result, or an AM-5
+    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3 success result, or an AM-5
     error envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
     non-retryable) on the SAME channel — never a transport error. Research-only:
     it reads market data and the injected ledger, matches on paper, and writes
@@ -908,8 +909,11 @@ def paper_trade_step(
             ``cn_a``; ``cn_a`` requires market ``cn_a``.
         path_model: Optional pt-v1.2 reference-price model — ``bar_median``
             (default) or ``bar_close``; ignored for ``1d``.
-        fill_model: Optional pt-v1.2 fill model — ``all_or_none`` (default and
-            only P0 value).
+        fill_model: Optional fill model — ``all_or_none`` (default) or
+            ``volume_share`` (pt-v1.3; requires ``interval='5m'`` and cn_a).
+        order_volume_ratio: Optional pt-v1.3 per-order share of available
+            volume, ``0 < r <= 1``; only with ``fill_model='volume_share'``.
+            Omitted means 1.0.
     """
     from src.tools.paper_trade.tool import run_paper_trade_step
 
@@ -934,6 +938,8 @@ def paper_trade_step(
         payload["path_model"] = path_model
     if fill_model is not None:
         payload["fill_model"] = fill_model
+    if order_volume_ratio is not None:
+        payload["order_volume_ratio"] = order_volume_ratio
     return run_paper_trade_step(payload)
 
 

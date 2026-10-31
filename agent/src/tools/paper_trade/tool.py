@@ -271,9 +271,19 @@ def _execute_step(
             request.from_date, request.to_date, message, raw_payload,
         ), None
 
-    # 2b. pt-v1.2 cross-field gates (D5).  Shape/vocabulary checks already ran
-    #     in parse_request; these are the market-combination rules the shape
-    #     parser cannot own.  Both stay in-band and non-retryable.
+    # 2b. pt-v1.2/pt-v1.3 cross-field gates (D5).  Shape/vocabulary checks
+    #     already ran in parse_request; these are the market-combination rules
+    #     the shape parser cannot own.  All stay in-band and non-retryable.
+    if request.fill_model == "volume_share" and (
+        request.interval != "5m" or request.market != CN_A_MARKET
+    ):
+        return _error_document(
+            "INVALID_REQUEST", request.account_id, request.market,
+            request.from_date, request.to_date,
+            "fill_model 'volume_share' is a 5m cn_a-only policy; "
+            f"got interval={request.interval!r} market={request.market!r}",
+            raw_payload,
+        ), None
     if request.interval == "5m" and request.market != CN_A_MARKET:
         return _error_document(
             "INVALID_REQUEST", request.account_id, request.market,
@@ -426,7 +436,8 @@ def _execute_step(
             orders_by_day={request.to_date: request.orders or ()}, fee_model=request.fee_model,
             calendar_client=cal, limits_client=lim, hk_lot_sizes=hk_lot_sizes,
             corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-            path_model=request.path_model, fill_model=request.fill_model)
+            path_model=request.path_model, fill_model=request.fill_model,
+            order_volume_ratio=request.order_volume_ratio)
     else:
         outcome = engine.match_orders(
             request,
@@ -545,11 +556,25 @@ class PaperTradeStepTool(BaseTool):
             },
             "fill_model": {
                 "type": "string",
-                "enum": ["all_or_none"],
+                "enum": ["all_or_none", "volume_share"],
                 "default": "all_or_none",
                 "description": (
-                    "Optional pt-v1.2 fill model: 'all_or_none' is the only P0 value — "
-                    "no partial fills, every order terminal in its bar."
+                    "Optional fill model: 'all_or_none' (the default) fills every "
+                    "order whole or not at all. 'volume_share' opts into pt-v1.3 "
+                    "per-order partial fills capped by each order's own share of "
+                    "the matched volume; it requires interval='5m' and market='cn_a'."
+                ),
+            },
+            "order_volume_ratio": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1,
+                "default": 1.0,
+                "description": (
+                    "Optional pt-v1.3 per-order share of available volume, 0 < r <= 1. "
+                    "Accepted only together with fill_model='volume_share' (a ratio "
+                    "without it is INVALID_REQUEST); omitted or null means 1.0, which "
+                    "does not reduce fills. Each order is capped independently."
                 ),
             },
         },

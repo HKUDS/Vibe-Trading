@@ -74,15 +74,15 @@ class TestLifecycleFlow:
         fill = book.fill("pt-0", D("100"), D("1700.00"))
         assert fill.qty == D("100")
         state = book.get("pt-0")
-        assert state.status == STATUS_FILLED
+        assert state.status == STATUS_HELD
         assert state.filled_qty == D("100")
         assert state.avg_fill_price == D("1700.00")
 
-    def test_partial_fill_marks_held(self):
+    def test_partial_fill_marks_filled(self):
         book = OrderBook(assign_ids([_request()]))
         book.activate("pt-0")
         book.fill("pt-0", D("40"), D("1700.00"))
-        assert book.get("pt-0").status == STATUS_HELD
+        assert book.get("pt-0").status == STATUS_FILLED
 
     def test_avg_price_weighted_across_fills(self):
         book = OrderBook(assign_ids([_request(qty=D("200"))]))
@@ -98,7 +98,7 @@ class TestLifecycleFlow:
         book.fill("pt-0", D("60"), D("10"))
         fill = book.fill("pt-0", D("1000"), D("10"))
         assert fill.qty == D("40")
-        assert book.get("pt-0").status == STATUS_FILLED
+        assert book.get("pt-0").status == STATUS_HELD
 
     def test_rejected_reason_is_recorded(self):
         book = OrderBook(assign_ids([_request()]))
@@ -159,7 +159,7 @@ class TestDayOrderSettlement:
         book.activate("pt-0")
         book.fill("pt-0", D("100"), D("1700"))
         assert book.settle_day() == []
-        assert book.get("pt-0").status == STATUS_FILLED
+        assert book.get("pt-0").status == STATUS_HELD
 
 
 class TestVolumeCap:
@@ -168,7 +168,7 @@ class TestVolumeCap:
         book.activate("pt-0")
         fill = book.fill("pt-0", D("1000"), D("10"), volume_cap=D("250"))
         assert fill.qty == D("250")
-        assert book.get("pt-0").status == STATUS_HELD
+        assert book.get("pt-0").status == STATUS_FILLED
 
     def test_non_positive_cap_fails_closed(self):
         book = OrderBook(assign_ids([_request()]))

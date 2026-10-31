@@ -32,6 +32,13 @@ ABSENT (not empty), while a request with at least one non-default field emits
 and ``events``.  AM-4-4's error-path hash follows the same rule: the new
 fields join the coverage object only when non-default (D4).
 
+pt-v1.3 (volume share) is additive on top: a ``fill_model="volume_share"``
+(or non-default ``order_volume_ratio``) call emits the same three v1.2 keys
+plus ``order_states`` (always present, even empty) and may carry the
+``canceled_after_volume_cap`` residual-cancel token.  Its coverage object and
+engine fingerprint gain ``order_volume_ratio``; every pt-v1.2 document and
+hash stays byte-identical.
+
 Determinism (R1-1): no clock, no randomness, no I/O — every input injected.
 """
 
@@ -48,6 +55,7 @@ from .schema import (
     CANCELED_REASON_CODE,
     DEFAULT_FILL_MODEL,
     DEFAULT_INTERVAL,
+    DEFAULT_ORDER_VOLUME_RATIO,
     DEFAULT_PATH_MODEL,
     DEFAULT_SESSION,
     ERROR_CODES,
@@ -57,14 +65,18 @@ from .schema import (
     PATH_MODELS,
     SCHEMA_VERSIONS,
     SCHEMA_VERSION_V1_2,
+    SCHEMA_VERSION_V1_3,
     SESSION_EVENT_TYPES,
     SESSIONS,
     DateRange,
     ErrorEnvelope,
+    OrderStateRow,
     PaperTradeSchemaError,
     PaperTradeStepResult,
     parse_account_state,
+    parse_order_volume_ratio,
 )
+from .session_5m import VOLUME_CAP_REASON
 from .state_hash import compute_received_state_hash, effective_fee_model
 
 if TYPE_CHECKING:
@@ -103,14 +115,15 @@ def strategy_fill_reason(reason: str | None) -> str:
     return reason[:FILL_REASON_MAX_CHARS]
 
 
-def _payload_choices(payload: dict[str, Any]) -> dict[str, str] | None:
-    """Read the four pt-v1.2 request enums from a raw payload, or ``None``.
+def _payload_choices(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Read the four pt-v1.2 request enums (and the pt-v1.3 ratio) or ``None``.
 
     Absent/null is the default (D8).  A present non-string or out-of-vocabulary
     value makes the AM-4-4 coverage object not computable, exactly like a
-    malformed fee_model.
+    malformed fee_model; the same rule applies to a malformed
+    ``order_volume_ratio`` (pt-v1.3).
     """
-    choices: dict[str, str] = {}
+    choices: dict[str, Any] = {}
     for key, allowed, default in (
         ("interval", INTERVALS, DEFAULT_INTERVAL),
         ("session", SESSIONS, DEFAULT_SESSION),
@@ -123,6 +136,16 @@ def _payload_choices(payload: dict[str, Any]) -> dict[str, str] | None:
         elif not isinstance(value, str) or value not in allowed:
             return None
         choices[key] = value
+    ratio_raw = payload.get("order_volume_ratio")
+    if ratio_raw is None:
+        choices["order_volume_ratio"] = DEFAULT_ORDER_VOLUME_RATIO
+    else:
+        try:
+            choices["order_volume_ratio"] = parse_order_volume_ratio(
+                ratio_raw, "order_volume_ratio"
+            )
+        except PaperTradeSchemaError:
+            return None
     return choices
 
 
@@ -131,13 +154,15 @@ def received_state_hash_from_payload(payload: Any) -> str | None:
 
     Not computable = the received ``account_state`` fails the shape parse, or
     the coverage object cannot be extracted (account_id/from_date/to_date not
-    strings, market outside the frozen enum, malformed fee_model, or a pt-v1.2
-    field that is present but outside its vocabulary).  The error envelope then
+    strings, market outside the frozen enum, malformed fee_model, a pt-v1.2
+    field that is present but outside its vocabulary, or a malformed pt-v1.3
+    ``order_volume_ratio``).  The error envelope then
     OMITS ``received_state_hash`` — RM reads the absence as "state unparseable"
     and must not burn its retry chain on a corrupt snapshot.  The hash covers
     the RAW ``account_state`` value (see the module docstring) with the
     effective fee model merged over the market defaults; non-default pt-v1.2
-    fields join the coverage object (D4).
+    fields join the coverage object (D4), and the pt-v1.3
+    ``order_volume_ratio`` joins it for a v1.3 call.
     """
     if not isinstance(payload, dict):
         return None
@@ -196,6 +221,32 @@ def received_state_hash_from_payload(payload: Any) -> str | None:
         return None
 
 
+def _order_states_from_outcome(
+    request: PaperTradeStepRequest, states: Any
+) -> tuple[OrderStateRow, ...]:
+    """Map the engine's lifecycle states onto the pt-v1.3 wire rows.
+
+    ``states`` arrive in submission order (``pt-9`` before ``pt-10``) and are
+    mapped as-is, never sorted.  ``add_time`` is the cn_a session open of the
+    request's ``to_date`` — no clock is read.  ``amount`` is the requested
+    quantity, ``filled`` the executed quantity, and ``price`` the average fill
+    price, or ``0.0`` when the order never filled.
+    """
+    add_time = f"{request.to_date}T09:30:00+08:00"
+    return tuple(
+        OrderStateRow(
+            order_id=state.order_id,
+            status=state.status,
+            add_time=add_time,
+            amount=float(state.request.qty),
+            filled=float(state.filled_qty),
+            price=0.0 if state.avg_fill_price is None else float(state.avg_fill_price),
+            side=state.request.side,
+        )
+        for state in states
+    )
+
+
 def assemble_result(
     request: PaperTradeStepRequest,
     outcome: MatchOutcome,
@@ -214,7 +265,9 @@ def assemble_result(
     works before T3/T4 populate ``MatchOutcome``.  A v1.2 request whose
     outcome carries no ``engine_fingerprint`` gets the D3 fingerprint of the
     declared engine parameters with an empty bar fingerprint (no bar evidence
-    claimed); a v1.1 request never carries any of the three fields (D8).
+    claimed); a v1.1 request never carries any of the three fields (D8).  A
+    pt-v1.3 call additionally maps ``outcome.order_states`` onto
+    :class:`~.schema.OrderStateRow` rows in submission order (never sorted).
     """
     if outcome.error is not None:
         raise ValueError(
@@ -232,6 +285,7 @@ def assemble_result(
         session=request.session,
         path_model=request.path_model,
         fill_model=request.fill_model,
+        order_volume_ratio=request.order_volume_ratio,
     )
     version = request.schema_version
     if request.uses_v1_2:
@@ -241,11 +295,17 @@ def assemble_result(
                 interval=request.interval,
                 path_model=request.path_model,
                 fill_model=request.fill_model,
+                order_volume_ratio=request.order_volume_ratio,
             )
         canceled_orders = tuple(getattr(outcome, "canceled_orders", ()))
         events = tuple(getattr(outcome, "events", ()))
     else:
         fingerprint, canceled_orders, events = "", (), ()
+    order_states = (
+        _order_states_from_outcome(request, getattr(outcome, "order_states", ()))
+        if request.uses_v1_3
+        else ()
+    )
     return PaperTradeStepResult(
         account_id=request.account_id,
         market=request.market,
@@ -265,6 +325,7 @@ def assemble_result(
         engine_fingerprint=fingerprint,
         canceled_orders=canceled_orders,
         events=events,
+        order_states=order_states,
     )
 
 
@@ -288,13 +349,25 @@ def _provenance_payload(result: PaperTradeStepResult) -> dict[str, Any]:
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _canceled_payload(orders: tuple[Any, ...]) -> list[dict[str, Any]]:
-    """Serialize ``canceled_orders``, failing closed on the frozen token."""
+def _canceled_payload(
+    orders: tuple[Any, ...], *, allow_volume_cap: bool = False
+) -> list[dict[str, Any]]:
+    """Serialize ``canceled_orders``, failing closed on an unknown token.
+
+    A pt-v1.2 document accepts only :data:`~.schema.CANCELED_REASON_CODE`; a
+    pt-v1.3 document additionally accepts the residual-cancel token
+    :data:`~.session_5m.VOLUME_CAP_REASON` (``canceled_after_volume_cap``).
+    """
+    allowed = (
+        (CANCELED_REASON_CODE, VOLUME_CAP_REASON)
+        if allow_volume_cap
+        else (CANCELED_REASON_CODE,)
+    )
     rows: list[dict[str, Any]] = []
     for row in orders:
-        if row.reason_code != CANCELED_REASON_CODE:
+        if row.reason_code not in allowed:
             raise ValueError(
-                f"canceled reason_code must be {CANCELED_REASON_CODE!r}, "
+                f"canceled reason_code must be one of {allowed}, "
                 f"got {row.reason_code!r}"
             )
         rows.append(
@@ -330,6 +403,22 @@ def _events_payload(events: tuple[Any, ...]) -> list[dict[str, Any]]:
     return rows
 
 
+def _order_states_payload(rows: tuple[OrderStateRow, ...]) -> list[dict[str, Any]]:
+    """Serialize the pt-v1.3 ``order_states`` rows (exactly seven fields)."""
+    return [
+        {
+            "order_id": row.order_id,
+            "status": row.status,
+            "add_time": row.add_time,
+            "amount": row.amount,
+            "filled": row.filled,
+            "price": row.price,
+            "side": row.side,
+        }
+        for row in rows
+    ]
+
+
 def build_success_payload(result: PaperTradeStepResult) -> dict[str, Any]:
     """Serialize the success document (AMENDMENT §2.2 wire shape).
 
@@ -337,16 +426,21 @@ def build_success_payload(result: PaperTradeStepResult) -> dict[str, Any]:
     fields are omitted (never null) when unset; arrays keep the engine's
     frozen order (VD-10: day-ascending, then input index).
 
-    The three pt-v1.2 keys are emitted ONLY when ``schema_version`` is
-    ``pt-v1.2`` (D8), so the pt-v1.1 byte stream is untouched.  A v1.2
-    document without a 64-hex fingerprint, with a cancel token other than the
-    frozen one, or with an unknown event type raises (engine bug / transport
-    class), never shipping a document RM cannot verify.
+    The three pt-v1.2 keys are emitted ONLY for a versioned document
+    (``pt-v1.2`` / ``pt-v1.3``; D8), so the pt-v1.1 byte stream is untouched.
+    A versioned document without a 64-hex fingerprint, with a cancel token
+    outside its accepted vocabulary, or with an unknown event type raises
+    (engine bug / transport class), never shipping a document RM cannot
+    verify.  A ``pt-v1.3`` document additionally always carries
+    ``order_states`` (present even when empty) and accepts the
+    ``canceled_after_volume_cap`` residual-cancel token; a ``pt-v1.2``
+    document rejects that token and never carries ``order_states``.
     """
-    if result.schema_version not in SCHEMA_VERSIONS:
+    wire_versions = (*SCHEMA_VERSIONS, SCHEMA_VERSION_V1_3)
+    if result.schema_version not in wire_versions:
         raise ValueError(
             f"unknown schema_version {result.schema_version!r}; "
-            f"expected one of {SCHEMA_VERSIONS}"
+            f"expected one of {wire_versions}"
         )
     payload: dict[str, Any] = {
         "schema_version": result.schema_version,
@@ -410,6 +504,18 @@ def build_success_payload(result: PaperTradeStepResult) -> dict[str, Any]:
         payload["engine_fingerprint"] = result.engine_fingerprint
         payload["canceled_orders"] = _canceled_payload(result.canceled_orders)
         payload["events"] = _events_payload(result.events)
+    elif result.schema_version == SCHEMA_VERSION_V1_3:
+        if not _FINGERPRINT_RE.match(result.engine_fingerprint):
+            raise ValueError(
+                "a pt-v1.3 result requires a 64-character lowercase hex "
+                f"engine_fingerprint (D3), got {result.engine_fingerprint!r}"
+            )
+        payload["engine_fingerprint"] = result.engine_fingerprint
+        payload["canceled_orders"] = _canceled_payload(
+            result.canceled_orders, allow_volume_cap=True
+        )
+        payload["events"] = _events_payload(result.events)
+        payload["order_states"] = _order_states_payload(result.order_states)
     return payload
 
 
