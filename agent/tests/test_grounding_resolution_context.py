@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.agent.grounding import GroundingLedger
+from src.agent.resolution_context import ResolutionContext
 
 
 def _resolver_payload(query: str, candidates: list[dict[str, Any]]) -> str:
@@ -306,3 +309,28 @@ def test_feature_flag_can_restore_previous_resolution_behavior(tmp_path: Path) -
 
     assert ledger.identity_status == "ambiguous"
     assert ledger.authorized_symbols == set()
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["分析NVDA股票", "分析 NVDA 股票", "比较NVDA和HOOD的表现", "compare NVDA/HOOD performance"],
+)
+def test_a_ticker_ending_in_a_is_not_a_market_constraint(tmp_path: Path, message: str) -> None:
+    assert ResolutionContext.from_messages(message).constraints == ()
+    ledger = GroundingLedger(run_dir=tmp_path, user_message=message)
+    _ingest(ledger, "NVDA", [{"symbol": "NVDA.US", "name": "NVIDIA", "market": "us", "source": "yahoo"}])
+    assert ledger.authorized_symbols == {"NVDA.US"}
+
+
+@pytest.mark.parametrize(
+    "message, expected",
+    [
+        ("请分析A股恒瑞医药", {"cn"}),
+        ("看 A 股", {"cn"}),
+        ("比较恒瑞医药 A/H 两地上市表现", {"cn", "hk"}),
+        ("恒瑞医药A股/H股", {"cn", "hk"}),
+        ("比较AH股溢价", {"cn", "hk"}),
+    ],
+)
+def test_written_market_words_still_constrain(message: str, expected: set[str]) -> None:
+    assert {c.value for c in ResolutionContext.from_messages(message).constraints} == expected

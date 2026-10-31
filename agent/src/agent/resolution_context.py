@@ -16,7 +16,7 @@ _MARKET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "cn",
         re.compile(
-            r"A\s*股|沪深(?:市场)?|上交所|深交所|上海证券交易所|深圳证券交易所|"
+            r"(?<![A-Za-z])A\s*股|沪深(?:市场)?|上交所|深交所|上海证券交易所|深圳证券交易所|"
             r"\bA[- ]?shares?\b|\bmainland China (?:stock|listing|market)s?\b",
             re.IGNORECASE,
         ),
@@ -38,8 +38,11 @@ _MARKET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
 )
+# Letter boundaries keep a ticker's last letter out: "NVDA股票" is not A股,
+# "NVDA和HOOD" / "NVDA/HOOD" are not an A/H cross-listing.
 _CROSS_LISTING_RE = re.compile(
-    r"(?:A\s*股?\s*[/／和与、]\s*H\s*股?|H\s*股?\s*[/／和与、]\s*A\s*股?|A\s*H\s*股)",
+    r"(?<![A-Za-z])(?:A\s*股?\s*[/／和与、]\s*H\s*股?|H\s*股?\s*[/／和与、]\s*A\s*股?|A\s*H\s*股)"
+    r"(?![A-Za-z])",
     re.IGNORECASE,
 )
 _NEGATED_RE = re.compile(
