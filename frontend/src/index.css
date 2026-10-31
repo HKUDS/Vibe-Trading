@@ -5,27 +5,27 @@
 @layer base {
   :root {
     /* Light mode surfaces */
-    --background: 220 20% 98%;
-    --foreground: 220 20% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --background: 38 24% 97%;
+    --foreground: 28 18% 14%;
+    --card: 40 30% 99%;
+    --card-foreground: 28 18% 14%;
 
     /* Popover: a slightly elevated surface used for floating menus,
        tooltips, and the language switcher dropdown. Falls back to a
        solid white (light) or surface-1 (dark) so dropdowns never
        appear transparent and let underlying content bleed through. */
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover: 40 30% 99%;
+    --popover-foreground: 28 18% 14%;
 
     /* Brand accent */
-    --primary: 27 90% 52%;
+    --primary: 24 45% 38%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 14% 92%;
-    --muted-foreground: 220 14% 46%;
+    --muted: 36 16% 92%;
+    --muted-foreground: 28 10% 46%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 14% 87%;
+    --border: 32 16% 85%;
     --radius: 0.5rem;
 
     /* Semantic colors */
@@ -35,9 +35,9 @@
     --info: 217 91% 60%;
 
     /* Chart tokens */
-    --chart-grid: 220 14% 90%;
-    --chart-text: 220 14% 46%;
-    --chart-axis: 220 14% 80%;
+    --chart-grid: 32 16% 89%;
+    --chart-text: 28 10% 46%;
+    --chart-axis: 32 16% 79%;
     --chart-compare-a: #3b82f6;
     --chart-compare-b: #f59e0b;
   }
@@ -46,22 +46,22 @@
     /* Dark mode: 4-level surface system. Keep >=5 lightness points between
        adjacent surfaces — smaller deltas are indistinguishable on most
        panels (sidebar vs main blended at 5%/8%). */
-    --background: 220 20% 5%;       /* bg-base */
-    --foreground: 220 10% 93%;
-    --card: 220 18% 10%;            /* surface-1 */
-    --card-foreground: 220 10% 93%;
+    --background: 28 16% 6%;       /* bg-base */
+    --foreground: 32 20% 93%;
+    --card: 28 15% 11%;            /* surface-1 */
+    --card-foreground: 32 20% 93%;
 
-    --popover: 220 18% 12%;         /* surface-1.5 (slightly lighter than card) */
-    --popover-foreground: 220 10% 93%;
+    --popover: 28 15% 13%;         /* surface-1.5 (slightly lighter than card) */
+    --popover-foreground: 32 20% 93%;
 
-    --primary: 27 90% 52%;
+    --primary: 28 52% 65%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 16% 16%;           /* surface-2 */
-    --muted-foreground: 220 10% 64%;
+    --muted: 28 14% 17%;           /* surface-2 */
+    --muted-foreground: 32 12% 64%;
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 14% 24%;          /* surface-3 */
+    --border: 28 12% 25%;          /* surface-3 */
 
     /* Semantic colors */
     --success: 142 71% 45%;
@@ -70,9 +70,9 @@
     --info: 217 91% 60%;
 
     /* Chart tokens */
-    --chart-grid: 220 20% 14%;
-    --chart-text: 220 10% 55%;
-    --chart-axis: 220 20% 26%;
+    --chart-grid: 28 16% 15%;
+    --chart-text: 32 12% 55%;
+    --chart-axis: 28 16% 27%;
     --chart-compare-a: #60a5fa;
     --chart-compare-b: #fbbf24;
   }
