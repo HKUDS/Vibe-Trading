@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem, Search, WalletCards } from "lucide-react";
+import { ArrowUpRight, ChevronDown, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark, Gem, Search, WalletCards } from "lucide-react";
 import { BrandMark } from "@/components/common/BrandMark";
 
 interface Example {
@@ -244,131 +244,195 @@ export function WelcomeScreen({ onExample }: Props) {
   const examplesTriggerRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="flex w-full flex-col items-center px-4 pb-14 text-center">
-      <div className="w-full max-w-3xl">
-        <div className="mx-auto max-w-2xl">
-          <div className="flex items-center justify-center gap-3">
-            <BrandMark className="h-9 w-9 shrink-0" />
-            <h1 className="font-serif text-[34px] font-normal leading-tight sm:text-[40px]">
+    <div className="w-full px-4 pb-14 pt-6 text-left sm:px-6 lg:px-8">
+      <div className="mx-auto grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-12">
+        <main className="min-w-0">
+          <div className="mb-8 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+            <BrandMark className="h-6 w-6 shrink-0" />
+            <span>{t("welcome.categories.researchAnalysis" as any)}</span>
+          </div>
+
+          <div className="max-w-3xl">
+            <h1 className="font-serif text-[38px] font-normal leading-[1.08] tracking-[-0.025em] sm:text-[52px]">
               {t(greetingKey as any)}
             </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+              {t("welcome.taskSubtitle" as any)}
+            </p>
+            <p className="mt-3 max-w-xl text-xs leading-5 text-muted-foreground/80">
+              {t("welcome.tasks.hint")}
+            </p>
           </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {t("welcome.taskSubtitle" as any)}
-            <span className="mt-2 block text-xs">{t("welcome.tasks.hint")}</span>
-          </p>
-        </div>
 
-        <div
-          className="mt-8 flex flex-wrap justify-center gap-2"
-          role="group"
-          aria-label={t("welcome.quickActions" as any)}
-        >
-          {QUICK_ACTIONS.map((action) => {
-            const isActive = action.titleKey === activeAction;
-            return (
-              <button
-                key={action.titleKey}
-                type="button"
-                aria-pressed={isActive}
-                onClick={() => {
-                  setActiveAction(action.titleKey);
-                  onExample(t(action.promptKey as any));
-                }}
-                className={
-                  isActive
-                    ? "inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/[0.08] px-4 py-2 text-sm text-primary transition-colors hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                    : "inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-2 text-sm transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                }
-              >
-                {action.icon}
-                <span>{t(action.titleKey as any)}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <button
-          ref={examplesTriggerRef}
-          type="button"
-          aria-expanded={isExamplesOpen}
-          aria-controls="welcome-example-library"
-          onClick={() => setIsExamplesOpen((open) => !open)}
-          className="mt-10 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <span>{t("welcome.browseAllExamples" as any)}</span>
-          <ChevronDown
-            className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
-            aria-hidden="true"
-          />
-        </button>
-
-        <div
-          id="welcome-example-library"
-          aria-hidden={!isExamplesOpen}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape" || !isExamplesOpen) return;
-            event.preventDefault();
-            event.stopPropagation();
-            setIsExamplesOpen(false);
-            examplesTriggerRef.current?.focus();
-          }}
-          className={`grid text-left transition-[grid-template-rows,opacity] duration-300 ease-out ${
-            isExamplesOpen
-              ? "grid-rows-[1fr] opacity-100"
-              : "grid-rows-[0fr] opacity-0"
-          }`}
-        >
-          <div className="min-h-0 overflow-hidden">
-            {/* One category at a time: a chip tab bar + that category's cards.
-                Rendering all 8 categories at once (grid or masonry) reads as
-                an unstructured wall — categories have uneven card counts. */}
-            <div className="pt-6">
-              <div
-                className="flex flex-wrap justify-center gap-1.5"
-                role="tablist"
-                aria-label={t("welcome.browseAllExamples" as any)}
-              >
-                {CATEGORIES.map((cat, index) => (
+          <div className="mt-10 border-y border-border/70 py-5">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                {t("welcome.quickActions" as any)}
+              </span>
+              <span className="text-[11px] text-muted-foreground/70">01 / 03</span>
+            </div>
+            <div
+              className="grid gap-2 sm:grid-cols-3"
+              role="group"
+              aria-label={t("welcome.quickActions" as any)}
+            >
+              {QUICK_ACTIONS.map((action) => {
+                const isActive = action.titleKey === activeAction;
+                return (
                   <button
-                    key={cat.labelKey}
+                    key={action.titleKey}
                     type="button"
-                    role="tab"
-                    aria-selected={index === activeCategory}
-                    tabIndex={isExamplesOpen ? 0 : -1}
-                    onClick={() => setActiveCategory(index)}
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      setActiveAction(action.titleKey);
+                      onExample(t(action.promptKey as any));
+                    }}
                     className={
-                      index === activeCategory
-                        ? "inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
-                        : "inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/60 hover:text-foreground"
+                      isActive
+                        ? "group flex min-h-24 items-center justify-between rounded-xl border border-primary/35 bg-primary/[0.08] px-4 py-3 text-left text-primary shadow-sm transition-all hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        : "group flex min-h-24 items-center justify-between rounded-xl border border-border/70 bg-card/70 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     }
                   >
-                    {cat.icon}
-                    <span>{t(cat.labelKey as any)}</span>
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:text-primary">
+                        {action.icon}
+                      </span>
+                      {t(action.titleKey as any)}
+                    </span>
+                    <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
                   </button>
-                ))}
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-9">
+            <div className="mb-3 flex items-end justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold tracking-tight">{t("welcome.categories.researchAnalysis" as any)}</h2>
+                <p className="mt-1 text-xs text-muted-foreground">{t("welcome.tasks.hint")}</p>
               </div>
-              <div role="tabpanel" className="mt-4 grid gap-2 text-left sm:grid-cols-2">
-                {CATEGORIES[activeCategory].examples.map((ex) => (
-                  <button
-                    key={ex.titleKey}
-                    type="button"
-                    tabIndex={isExamplesOpen ? 0 : -1}
-                    onClick={() => onExample(t(ex.promptKey as any))}
-                    className="block w-full rounded-xl border border-border/60 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              <button
+                ref={examplesTriggerRef}
+                type="button"
+                aria-expanded={isExamplesOpen}
+                aria-controls="welcome-example-library"
+                onClick={() => setIsExamplesOpen((open) => !open)}
+                className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <span>{t("welcome.browseAllExamples" as any)}</span>
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[CATEGORIES[1].examples[0], CATEGORIES[0].examples[1], CATEGORIES[2].examples[2]].map((ex) => (
+                <button
+                  key={ex.titleKey}
+                  type="button"
+                  onClick={() => onExample(t(ex.promptKey as any))}
+                  className="group min-h-32 rounded-xl border border-border/70 bg-card/50 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
+                  <span className="text-sm font-medium leading-snug text-foreground">{t(ex.titleKey as any)}</span>
+                  <span className="mt-2 block text-xs leading-5 text-muted-foreground">{t(ex.descKey as any)}</span>
+                  <ArrowUpRight className="mt-3 h-4 w-4 text-muted-foreground/60 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+
+            <div
+              id="welcome-example-library"
+              aria-hidden={!isExamplesOpen}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" || !isExamplesOpen) return;
+                event.preventDefault();
+                event.stopPropagation();
+                setIsExamplesOpen(false);
+                examplesTriggerRef.current?.focus();
+              }}
+              className={`grid text-left transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                isExamplesOpen
+                  ? "mt-5 grid-rows-[1fr] opacity-100"
+                  : "grid-rows-[0fr] opacity-0"
+              }`}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="border-t border-border/70 pt-5">
+                  <div
+                    className="flex flex-wrap gap-1.5"
+                    role="tablist"
+                    aria-label={t("welcome.browseAllExamples" as any)}
                   >
-                    <span className="text-sm font-medium leading-snug text-foreground">
-                      {t(ex.titleKey as any)}
-                    </span>
-                    <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
-                      {t(ex.descKey as any)}
-                    </span>
-                  </button>
-                ))}
+                    {CATEGORIES.map((cat, index) => (
+                      <button
+                        key={cat.labelKey}
+                        type="button"
+                        role="tab"
+                        aria-selected={index === activeCategory}
+                        tabIndex={isExamplesOpen ? 0 : -1}
+                        onClick={() => setActiveCategory(index)}
+                        className={
+                          index === activeCategory
+                            ? "inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+                            : "inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/60 hover:text-foreground"
+                        }
+                      >
+                        {cat.icon}
+                        <span>{t(cat.labelKey as any)}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div role="tabpanel" className="mt-4 grid gap-2 text-left sm:grid-cols-2">
+                    {CATEGORIES[activeCategory].examples.map((ex) => (
+                      <button
+                        key={ex.titleKey}
+                        type="button"
+                        tabIndex={isExamplesOpen ? 0 : -1}
+                        onClick={() => onExample(t(ex.promptKey as any))}
+                        className="block w-full rounded-xl border border-border/60 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      >
+                        <span className="text-sm font-medium leading-snug text-foreground">{t(ex.titleKey as any)}</span>
+                        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{t(ex.descKey as any)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </main>
+
+        <aside className="self-start lg:sticky lg:top-8">
+          <div className="rounded-2xl border border-border/70 bg-card/55 p-5 shadow-sm">
+            <div className="flex items-center justify-between border-b border-border/60 pb-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("welcome.categories.valueInvesting" as any)}</span>
+              <span className="h-2 w-2 rounded-full bg-emerald-500/80" aria-hidden="true" />
+            </div>
+            <div className="space-y-5 pt-5">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t("welcome.categories.docWebResearch" as any)}</p>
+                <p className="mt-1.5 text-sm font-medium leading-6">{t("welcome.examples.earningsReport" as any)}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("welcome.examples.earningsReportDesc" as any)}</p>
+              </div>
+              <div className="border-t border-border/60 pt-5">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t("welcome.categories.multiMarketBacktest" as any)}</p>
+                <p className="mt-1.5 text-sm font-medium leading-6">{t("welcome.examples.crossMarketPortfolio" as any)}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("welcome.examples.crossMarketPortfolioDesc" as any)}</p>
+              </div>
+              <div className="border-t border-border/60 pt-5">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t("welcome.categories.valueInvesting" as any)}</p>
+                <p className="mt-1.5 text-sm font-medium leading-6">{t("welcome.examples.thesisTracker" as any)}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("welcome.examples.thesisTrackerDesc" as any)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 rounded-xl border border-dashed border-border/80 p-4">
+            <p className="text-xs font-medium">{t("welcome.tasks.hint")}</p>
+          </div>
+        </aside>
       </div>
     </div>
   );
