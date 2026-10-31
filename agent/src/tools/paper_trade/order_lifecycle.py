@@ -101,6 +101,7 @@ class OrderState:
     avg_fill_price: Decimal | None = None
     fills: list[Fill] = field(default_factory=list)
     rejected_reason: str | None = None
+    cancel_reason: str | None = None
 
 
 def assign_ids(requests: Iterable[OrderRequest]) -> dict[str, OrderState]:
@@ -174,6 +175,31 @@ class OrderBook:
                 f"order {order_id!r} cannot activate from status {state.status!r}"
             )
         state.status = STATUS_OPEN
+        return state
+
+    def cancel_order(self, order_id: str, reason: str) -> OrderState:
+        """Cancel an unfinished order outright (terminal ``canceled``).
+
+        This is the synchronous cancel the 5m matcher uses when a market
+        order's volume cap leaves a residual that will never be matched (the
+        session-level volume basis is fixed for the day).  Unlike
+        :meth:`request_cancel` — a request that waits for the venue — the
+        order leaves the book immediately, so :meth:`settle_day` (which only
+        touches unfinished orders) never cancels it a second time.
+
+        Args:
+            order_id: The order to cancel.
+            reason: Why the order was canceled; recorded on the state for
+                replay/diagnostics (e.g. ``canceled_after_volume_cap``).
+
+        Raises:
+            OrderLifecycleError: The order is terminal
+                (``held``/``canceled``/``rejected``).
+        """
+        state = self._require(order_id)
+        self._require_unfinished(state, "cancel")
+        state.status = STATUS_CANCELED
+        state.cancel_reason = reason
         return state
 
     def request_cancel(self, order_id: str) -> OrderState:
