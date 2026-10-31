@@ -1522,6 +1522,21 @@ a non-empty `UNIVERSE` in strategy mode. `session`, `path_model` and
 so every existing call is unchanged; `session` is a coherence selector only
 (`cn_a` requires `market="cn_a"`) and does not change the day boundary.
 
+**JoinQuant parity.** The guide's
+[parity matrix](agent/src/tools/paper_trade/README.md#joinquant-parity) maps
+`fill_model` / `order_volume_ratio` (opt-in, default `1.0`, a deliberate choice
+because the cited 2018 PDF states no default and its example uses `0.25`),
+per-order caps (`floor(volume × ratio / lot) × lot`), the full continuous-session
+market cap plus residual cancel (our reading of synchronous completion, not a
+verbatim PDF rule), per-bar limit caps filled at the 委托价 on a strict
+`bar.low < limit` / `bar.high > limit` trigger, the `filled` (partial) / `held`
+(full) names, and the seven-field `order_states`. The 09:30 opening auction is
+excluded and a short session caps at its served volume; committed v1.1/v1.2
+goldens are unchanged, while v1.2 5m resting-limit fill prices change. Open
+items (price-limit market-order status, slippage, cancel API, platform order
+IDs, `pending_cancel`) and the per-fill minimum-commission divergence are in
+the [parity backlog](agent/src/tools/paper_trade/README.md#parity-backlog).
+
 Known limits: a mid-range zero-calendar (HK/US) weekday with no bar for any
 symbol is inferred closed (`market_closed_inferred` with a warning) with no NAV
 row, its orders reject `suspended` and positions carry the last available close
