@@ -313,22 +313,26 @@ class _MatchSession:
                     return (code, f"close {close:.2f} at or below down limit {down:.2f}; sell rejected")
         return None
 
-    def _fill_gate(self, day: DayPlan, order: Order, ref: float | Decimal) -> tuple[str, str] | None:
-        # Slots 7-10 of the frozen AM-14 ladder.
+    def _fill_gate(self, day: DayPlan, order: Order, price: float | Decimal) -> tuple[str, str] | None:
+        # Slots 7-10 of the frozen AM-14 ladder.  ``price`` is the price the
+        # fill would execute at: the bar reference for a market order or a
+        # first-bar marketable limit, the 委托价 for a bar-low/high limit fill.
+        # In 5m the band and cash checks must be anchored on that execution
+        # price, never on the bar reference alone.
         if self._five_minute and self.rules.has_price_limits:
             sym_data = self.market_data.data[order.symbol]
             up, down = self._band(order.symbol, day.date, sym_data)
-            code = self.rules.band_rejection(order.side, ref, up, down)
+            code = self.rules.band_rejection(order.side, price, up, down)
             if code == "limit_up":
-                return (code, f"ref {ref:.2f} at or above up limit {up:.2f}; buy deferred")
+                return (code, f"price {price:.2f} at or above up limit {up:.2f}; buy deferred")
             if code == "limit_down":
-                return (code, f"ref {ref:.2f} at or below down limit {down:.2f}; sell deferred")
-        if self.rules.limit_order_violation(order.side, ref, order.limit):
-            anchor = "ref" if self._five_minute else "close"
+                return (code, f"price {price:.2f} at or below down limit {down:.2f}; sell deferred")
+        if self.rules.limit_order_violation(order.side, price, order.limit):
+            anchor = "price" if self._five_minute else "close"
             detail = (
-                f"{anchor} {ref:.2f} > limit {order.limit:.2f}"
+                f"{anchor} {price:.2f} > limit {order.limit:.2f}"
                 if order.side == "buy"
-                else f"{anchor} {ref:.2f} < limit {order.limit:.2f}"
+                else f"{anchor} {price:.2f} < limit {order.limit:.2f}"
             )
             return ("limit_not_marketable", detail)
         symbol = order.symbol
@@ -343,9 +347,9 @@ class _MatchSession:
         if code == "insufficient_position":
             return (code, f"sell qty {order.qty} exceeds position {total}")
         # Slot 10 insufficient_cash (§4: qty×price+fee ≤ cash).
-        code = self.rules.cash_rejection(order.side, order.qty, ref, self.cash)
+        code = self.rules.cash_rejection(order.side, order.qty, price, self.cash)
         if code == "insufficient_cash":
-            cost = self.rules.buy_cost(order.qty, ref)
+            cost = self.rules.buy_cost(order.qty, price)
             return (code, f"buy cost {cost} exceeds cash {self.cash}")
         return None
 

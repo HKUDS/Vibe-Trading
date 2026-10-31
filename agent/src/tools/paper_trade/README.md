@@ -107,10 +107,23 @@ no row at all while its daily bar exists is a provider omission and returns
 | `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from each bar |
 | `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
 
-A market order fills at the first continuous bar whose fill gates pass; a
-limit order rests until a bar satisfies its price and is canceled at session end
-(15:00 on a complete session) if none does. Every fill is all-or-none; partial
-fills and volume share are Phase 3.
+A market order fills at the first continuous bar whose fill gates pass. A
+resting limit follows JoinQuant's bar matching: a buy triggers only when
+`bar.low < limit` (its 委托价 above the bar's low) and a sell only when
+`bar.high > limit` (its 委托价 below the bar's high), and a triggered fill
+executes at the order's 委托价 rather than the bar reference. Equality does not
+fill, so a bar that only touches the limit leaves the order resting, and a limit
+that never triggers is canceled at session end (15:00 on a complete session). On
+the first bar with volume, an already-marketable reference (`ref < limit` for a
+buy, `ref > limit` for a sell) fills at that strictly better price instead,
+which wins over the 委托价 even when the bar also crosses. Every fill is
+all-or-none; volume share is Phase 3.
+
+Order statuses use JoinQuant's `OrderStatus` vocabulary for both intervals:
+`filled` means partially filled and still active, so the residual stays in
+`open_orders()` and can be canceled, settled or matched by a later bar; `held`
+means fully filled and terminal. `canceled` and `rejected` are also terminal;
+`new`, `open` and `pending_cancel` are not.
 
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
@@ -134,9 +147,10 @@ branch (`paper-trade-v12-persistence`) and is not wired to any CLI, API or MCP
 surface in this PR.
 
 Daily data supplies the prior close for price-limit bands and the final NAV.
-The current 5m reference is checked against those bands; an order waits while
-its side is blocked by a price limit. Zero-volume bars cannot fill. Corporate
-actions remain fail-closed.
+The band and cash gates check the price the fill would execute at, so a 5m
+market order is gated at its bar reference and a resting limit at its 委托价;
+an order waits while its side is blocked by a price limit. Zero-volume bars
+cannot fill. Corporate actions remain fail-closed.
 
 ## Known limits
 
@@ -166,6 +180,13 @@ actions remain fail-closed.
 - **5m strategy UNIVERSE is strict.** An order on a position outside the
   declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
   by a 5m strategy step; use the 1d step for that.
+- **The engine fingerprint does not cover the matching rule.** A pt-v1.2
+  `engine_fingerprint` hashes the interval, path model, fill model, rules
+  version and bar fingerprint, not the matching code. The resting-limit
+  fill-price rule changed here without a `RULES_VERSION` bump, so a 5m limit
+  fill recorded before and after the change can carry the same fingerprint.
+  Treat the fingerprint as provenance for its declared tuple, not as proof that
+  two engines produced identical fills.
 
 ## Data and model limits
 

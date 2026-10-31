@@ -1500,9 +1500,14 @@ auction-window anomalies, and 15:00 is a continuous bar. The 5m leg uses Tushare
 `stk_mins`, separate from the daily chain, which serves daily bars only. It
 accepts one order symbol per step: the measured provider budget is 1
 call/minute, 1 call/hour and 2 calls/day, and a refused call still consumes the
-daily budget. It fills all-or-none at each bar's `path_model` reference
-(`bar_median` or `bar_close`) and requires a non-empty `UNIVERSE` in strategy
-mode. `session`,
+daily budget. Market orders fill all-or-none at each bar's
+`path_model` reference (`bar_median` or `bar_close`); a resting limit fills at
+its 委托价 once a bar trades through it (`bar.low < limit` for a buy,
+`bar.high > limit` for a sell, equality rests), and the first bar with volume
+may fill at a strictly better reference. Order statuses follow JoinQuant's
+`OrderStatus`: `held` is fully filled and terminal, `filled` is a partial that
+stays active. A 5m step requires a non-empty `UNIVERSE` in strategy mode.
+`session`,
 `path_model` and `fill_model` default to the daily behaviour, so every existing
 call is unchanged; `session` is a coherence selector only (`cn_a` requires
 `market="cn_a"`) and does not change the day boundary.
@@ -1518,9 +1523,15 @@ fills with its `N/48` coverage warning. Payload faults fail closed: off-grid
 labels (for example a 1m payload served as 5m) and all-NaN continuous bars are
 `PAPER_DATA_NOT_READY`, while a zero-volume session is a halt. A 5m step with no
 orders issues no `stk_mins` request and follows the 1d valuation contract: it
-needs the target daily bar and values from that day's closes. The persistent v1.2
-runner/account/store layer is a follow-up branch (`paper-trade-v12-persistence`)
-and is not wired to any CLI, API or MCP surface in this PR.
+needs the target daily bar and values from that day's closes. The committed
+v1.1/v1.2 fixtures are unchanged; v1.2 5m resting-limit fill prices change,
+because those fills now execute at the 委托价 instead of the bar reference.
+`engine_fingerprint` hashes the interval, models, rules version and bar hash,
+not the matching code, so such a fill can carry the same fingerprint before and
+after the change: an accepted provenance gap, not a replay promise. The
+persistent v1.2 runner/account/store layer is a follow-up branch
+(`paper-trade-v12-persistence`) and is not wired to any CLI, API or MCP surface
+in this PR.
 
 Execution uses raw prices (Tencent raw for A-shares/HK, raw-capable US providers;
 Tushare `stk_mins` for the A-share 5m leg). A-shares require a complete ClickHouse
