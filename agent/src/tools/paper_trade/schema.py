@@ -1,4 +1,4 @@
-"""pt-v1.1 / pt-v1.2 wire contract for ``paper_trade_step`` (shapes + vocabularies).
+"""pt-v1.1 / pt-v1.2 / pt-v1.3 wire contract for ``paper_trade_step`` (shapes + vocabularies).
 
 Declares the in-param, out-param and error-envelope shapes frozen by
 ``PAPER_TRADING_ENGINE_AMENDMENT_PT_V1.1.md`` §2 (the FROZEN summary), plus
@@ -80,6 +80,7 @@ __all__ = [
     "Fill",
     "NavPoint",
     "Order",
+    "OrderStateRow",
     "PaperTradeSchemaError",
     "PaperTradeStepRequest",
     "PaperTradeStepResult",
@@ -89,6 +90,7 @@ __all__ = [
     "SkippedDay",
     "load_contract_schema",
     "parse_account_state",
+    "parse_order_volume_ratio",
     "parse_request",
     "validate_payload",
 ]
@@ -106,10 +108,10 @@ SCHEMA_VERSION_V1_2 = "pt-v1.2"
 
 #: Additive bump version (volume-share plan T7): emitted when the request
 #: selects ``fill_model="volume_share"`` or a non-default
-#: ``order_volume_ratio``.  The wire contract file, its loader entry and the
-#: result fields land with the pt-v1.3 contract todo, so :data:`SCHEMA_VERSIONS`
-#: stays the v1.1/v1.2 pair for now; the request slice already knows the
-#: version its result must carry.
+#: ``order_volume_ratio``.  The result fields (``order_states``) land with the
+#: pt-v1.3 contract todo; its JSON contract file and loader entry land with
+#: the registry todo, so :data:`SCHEMA_VERSIONS` stays the v1.1/v1.2 pair
+#: until those files exist.
 SCHEMA_VERSION_V1_3 = "pt-v1.3"
 
 #: Every version this loader can resolve, oldest first.
@@ -358,7 +360,15 @@ def _parse_choice(value: Any, path: str, allowed: tuple[str, ...], default: str)
     return text
 
 
-def _parse_order_volume_ratio(value: Any, path: str) -> float:
+def parse_order_volume_ratio(value: Any, path: str) -> float:
+    """Parse the pt-v1.3 ``order_volume_ratio`` (0, 1] as a finite float.
+
+    Public so the AM-4-4 error-path hash in ``wire.py`` gates on the same
+    vocabulary as :func:`parse_request` instead of duplicating it.  A bool is
+    not a JSON number here (``Decimal(str(True))`` would otherwise raise an
+    unhelpful ``InvalidOperation``), and non-finite or out-of-range values are
+    contract violations, never silently clamped.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PaperTradeSchemaError(f"{path} must be a JSON number, got {type(value).__name__}")
     ratio = Decimal(str(value))
@@ -463,7 +473,7 @@ def parse_request(payload: dict[str, Any]) -> PaperTradeStepRequest:
     order_volume_ratio = (
         DEFAULT_ORDER_VOLUME_RATIO
         if ratio_raw is None
-        else _parse_order_volume_ratio(ratio_raw, "order_volume_ratio")
+        else parse_order_volume_ratio(ratio_raw, "order_volume_ratio")
     )
     if ratio_raw is not None and fill_model != "volume_share":
         raise PaperTradeSchemaError(
@@ -554,6 +564,27 @@ class SessionEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class OrderStateRow:
+    """One pt-v1.3 ``order_states`` row (the per-order lifecycle on the wire).
+
+    Exactly seven fields, in submission order, mapped from the engine's
+    :class:`~.order_lifecycle.OrderState`: ``amount`` is the requested
+    quantity, ``filled`` the executed quantity (``filled < amount`` for a
+    partial fill), and ``price`` the average fill price, or ``0.0`` when the
+    order never filled.  ``add_time`` is the cn_a session open of the
+    request's ``to_date`` — never read from a clock (VD-7).
+    """
+
+    order_id: str
+    status: str
+    add_time: str
+    amount: float
+    filled: float
+    price: float
+    side: str
+
+
+@dataclass(frozen=True, slots=True)
 class NavPoint:
     """One ``nav_series`` row (skipped days produce NO row — R3)."""
 
@@ -591,8 +622,10 @@ class PaperTradeStepResult:
     """Full success out-param document (AMENDMENT §2.2; pt-v1.2 additive fields).
 
     The three pt-v1.2 fields stay at their empty defaults for a v1.1 document
-    and are serialized only when ``schema_version == SCHEMA_VERSION_V1_2``
-    (D8).  ``engine_fingerprint`` is required in a v1.2 document (D3).
+    and are serialized only when ``schema_version`` is pt-v1.2 or pt-v1.3
+    (D8).  ``engine_fingerprint`` is required in a v1.2/v1.3 document (D3).
+    ``order_states`` (pt-v1.3) is serialized only for ``pt-v1.3`` and is
+    present even when empty.
     """
 
     account_id: str
@@ -614,6 +647,9 @@ class PaperTradeStepResult:
     engine_fingerprint: str = ""
     canceled_orders: tuple[CanceledOrder, ...] = ()
     events: tuple[SessionEvent, ...] = ()
+    # pt-v1.3 additive out-param: per-order lifecycle rows in submission
+    # order (empty for a v1.1/v1.2 document; always present in a v1.3 one).
+    order_states: tuple[OrderStateRow, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
