@@ -1500,17 +1500,27 @@ auction-window anomalies, and 15:00 is a continuous bar. The 5m leg uses Tushare
 `stk_mins`, separate from the daily chain, which serves daily bars only. It
 accepts one order symbol per step: the measured provider budget is 1
 call/minute, 1 call/hour and 2 calls/day, and a refused call still consumes the
-daily budget. Market orders fill all-or-none at each bar's
+daily budget. By default market orders fill all-or-none at each bar's
 `path_model` reference (`bar_median` or `bar_close`); a resting limit fills at
 its 委托价 once a bar trades through it (`bar.low < limit` for a buy,
 `bar.high > limit` for a sell, equality rests), and the first bar with volume
 may fill at a strictly better reference. Order statuses follow JoinQuant's
 `OrderStatus`: `held` is fully filled and terminal, `filled` is a partial that
-stays active. A 5m step requires a non-empty `UNIVERSE` in strategy mode.
-`session`,
-`path_model` and `fill_model` default to the daily behaviour, so every existing
-call is unchanged; `session` is a coherence selector only (`cn_a` requires
-`market="cn_a"`) and does not change the day boundary.
+stays active.
+
+`fill_model="volume_share"` opts into pt-v1.3 per-order partial fills (5m cn_a
+only). `order_volume_ratio` is the per-order share of matched volume, a number
+in `(0, 1]` defaulting to `1.0` (no reduction) and accepted only with
+`fill_model="volume_share"`; each order is capped independently. A market order
+caps on the full continuous-session volume and cancels its residual immediately
+with `canceled_after_volume_cap`; a limit order caps per bar and rests the
+residual. Its result adds `order_states`, one row per submitted order in
+submission order with `order_id`, `status`, `add_time` (the cn_a session open),
+`amount`, `filled`, `price` (`0.0` when unfilled) and `side`. A 5m step requires
+a non-empty `UNIVERSE` in strategy mode. `session`, `path_model` and
+`fill_model` default to the daily behaviour and `order_volume_ratio` to `1.0`,
+so every existing call is unchanged; `session` is a coherence selector only
+(`cn_a` requires `market="cn_a"`) and does not change the day boundary.
 
 Known limits: a mid-range zero-calendar (HK/US) weekday with no bar for any
 symbol is inferred closed (`market_closed_inferred` with a warning) with no NAV

@@ -512,7 +512,7 @@ def test_loader_resolves_contracts_from_inside_the_package() -> None:
 def test_loader_defaults_to_v11_and_rejects_an_unknown_version() -> None:
     assert load_contract_schema("result")["properties"]["schema_version"]["const"] == "pt-v1.1"
     with pytest.raises(KeyError, match="unknown contract version"):
-        load_contract_schema("result", version="pt-v1.3")
+        load_contract_schema("result", version="pt-v1.4")
 
 
 # ── Tool registration surface ──
@@ -527,8 +527,12 @@ def test_tool_parameters_expose_the_four_optional_fields() -> None:
     assert properties["session"]["default"] == "auto"
     assert properties["path_model"]["enum"] == ["bar_median", "bar_close"]
     assert properties["path_model"]["default"] == "bar_median"
-    assert properties["fill_model"]["enum"] == ["all_or_none"]
+    assert properties["fill_model"]["enum"] == ["all_or_none", "volume_share"]
     assert properties["fill_model"]["default"] == "all_or_none"
+    assert properties["order_volume_ratio"]["type"] == "number"
+    assert properties["order_volume_ratio"]["default"] == 1.0
+    assert properties["order_volume_ratio"]["exclusiveMinimum"] == 0
+    assert properties["order_volume_ratio"]["maximum"] == 1
     assert parameters["required"] == [
         "account_id",
         "market",
