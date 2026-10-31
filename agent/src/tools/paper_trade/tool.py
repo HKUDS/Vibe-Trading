@@ -271,9 +271,19 @@ def _execute_step(
             request.from_date, request.to_date, message, raw_payload,
         ), None
 
-    # 2b. pt-v1.2 cross-field gates (D5).  Shape/vocabulary checks already ran
-    #     in parse_request; these are the market-combination rules the shape
-    #     parser cannot own.  Both stay in-band and non-retryable.
+    # 2b. pt-v1.2/pt-v1.3 cross-field gates (D5).  Shape/vocabulary checks
+    #     already ran in parse_request; these are the market-combination rules
+    #     the shape parser cannot own.  All stay in-band and non-retryable.
+    if request.fill_model == "volume_share" and (
+        request.interval != "5m" or request.market != CN_A_MARKET
+    ):
+        return _error_document(
+            "INVALID_REQUEST", request.account_id, request.market,
+            request.from_date, request.to_date,
+            "fill_model 'volume_share' is a 5m cn_a-only policy; "
+            f"got interval={request.interval!r} market={request.market!r}",
+            raw_payload,
+        ), None
     if request.interval == "5m" and request.market != CN_A_MARKET:
         return _error_document(
             "INVALID_REQUEST", request.account_id, request.market,
@@ -426,7 +436,8 @@ def _execute_step(
             orders_by_day={request.to_date: request.orders or ()}, fee_model=request.fee_model,
             calendar_client=cal, limits_client=lim, hk_lot_sizes=hk_lot_sizes,
             corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-            path_model=request.path_model, fill_model=request.fill_model)
+            path_model=request.path_model, fill_model=request.fill_model,
+            order_volume_ratio=request.order_volume_ratio)
     else:
         outcome = engine.match_orders(
             request,

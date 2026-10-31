@@ -31,7 +31,8 @@ from .limits_cn_a import (
     PROV_LIMITS_HEURISTIC, CnALimitsClient, get_limit_status, heuristic_limit_prices)
 from .rules import MarketRules, money, quantize_money
 from .schema import (
-    CANCELED_REASON_CODE, DEFAULT_FILL_MODEL, DEFAULT_PATH_MODEL, AccountState,
+    CANCELED_REASON_CODE, DEFAULT_FILL_MODEL, DEFAULT_ORDER_VOLUME_RATIO,
+    DEFAULT_PATH_MODEL, AccountState,
     CanceledOrder, DataProvenance, Fill, NavPoint, Order, PaperTradeStepRequest,
     Position, RejectedOrder, SessionEvent, SkippedDay,
 )
@@ -173,6 +174,7 @@ class _MatchSession:
         *,
         path_model: str = DEFAULT_PATH_MODEL,
         fill_model: str = DEFAULT_FILL_MODEL,
+        order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
     ) -> None:
         self.market = market
         self.rules = rules
@@ -180,6 +182,7 @@ class _MatchSession:
         self.interval = market_data.interval
         self.path_model = path_model
         self.fill_model = fill_model
+        self.order_volume_ratio = order_volume_ratio
         self.limits_client = limits_client
         self.ca_by_day = corporate_action_unresolved_by_day
         self.cash = quantize_money(money(account_state.cash))
@@ -585,7 +588,8 @@ def match_orders(
         orders_by_day={request.from_date: request.orders}, fee_model=request.fee_model,
         calendar_client=calendar_client, limits_client=limits_client, hk_lot_sizes=hk_lot_sizes,
         corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-        path_model=request.path_model, fill_model=request.fill_model)
+        path_model=request.path_model, fill_model=request.fill_model,
+        order_volume_ratio=request.order_volume_ratio)
 
 
 def run_day_loop(
@@ -604,6 +608,7 @@ def run_day_loop(
     hk_lot_sizes: Mapping[str, int] | None = None,
     path_model: str = DEFAULT_PATH_MODEL,
     fill_model: str = DEFAULT_FILL_MODEL,
+    order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
 ) -> MatchOutcome:
     # Day-loop core: enumerate [from, to], gate readiness (AM-9), match
     # serially (VD-10).  Multi-day ranges are only reachable through this
@@ -635,7 +640,8 @@ def run_day_loop(
         market, rules, market_data, account_state, limits_client,
         corporate_actions.merge_unresolved(
             corporate_action_unresolved_by_day, ca_plan.unresolved_by_day),
-        ca_plan, path_model=path_model, fill_model=fill_model)
+        ca_plan, path_model=path_model, fill_model=fill_model,
+        order_volume_ratio=order_volume_ratio)
     for entry in plan:
         session.begin_day(entry)  # T4 session facts (no-op for interval="1d")
         session.bought_today = {}  # T+1 availability resets each day
