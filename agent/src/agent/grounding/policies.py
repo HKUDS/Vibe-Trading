@@ -21,6 +21,7 @@ from src.agent.grounding.identity import (
     _scan_symbols,
 )
 from src.agent.grounding import identity_checks  # noqa: F401  (registers declared checks)
+from src.agent.grounding.figures import _MAGNITUDES
 from src.agent.grounding import figures_checks  # noqa: F401  (registers declared checks)
 from src.agent.grounding.registry import GROUNDING_CHECKS, grounding_check
 from src.agent.grounding.evidence import (
@@ -330,6 +331,15 @@ def _evaluate_formula(
     normalized = _PERCENT_OPERAND_RE.sub(
         lambda match: format(float(match.group(1)) / 100.0, ".12g"), normalized
     ).replace("%", "").replace("％", "")
+    # A magnitude suffix on an operand ("345,624,709.24元 ÷ 1亿") is a unit
+    # mark, not vocabulary. Expand it with the same table the prose scanner
+    # uses so "1亿" is 1e8 and not a stray token the parser drops; strip a
+    # trailing currency mark so the run reads as arithmetic.
+    normalized = _FORMULA_CURRENCY_RE.sub("", normalized)
+    normalized = _FORMULA_MAGNITUDE_RE.sub(
+        lambda match: format(float(match.group(1)) * _MAGNITUDES[match.group(2)], ".12g"),
+        normalized,
+    )
     if not normalized:
         return None
     try:
@@ -387,6 +397,14 @@ def _evaluate_formula(
 
 #: A number written with a percent sign inside a formula.
 _PERCENT_OPERAND_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[%％]")
+
+#: A currency or unit mark trailing a number inside a formula ("345,624,709.24元").
+_FORMULA_CURRENCY_RE = re.compile(
+    r"(?<=\d)\s*(?:人民币|美元|美金|港元|日元|欧元|英镑|元|¥|\$|€|£|円)"
+)
+
+#: A numeric operand carrying a magnitude suffix ("1亿", "2千", "3.5万").
+_FORMULA_MAGNITUDE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*([亿万千]|[KMBT])(?![A-Za-z0-9])")
 
 
 def _is_small_exponent(node: ast.AST) -> bool:
