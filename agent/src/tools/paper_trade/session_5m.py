@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Sequence
 
-from .order_lifecycle import STATUS_OPEN, OrderBook, OrderRequest, assign_ids
+from .order_lifecycle import _ACTIVE_STATUSES, OrderBook, OrderRequest, assign_ids
 from .rules import money
 from .schema import CANCELED_REASON_CODE, CanceledOrder, Order
 
@@ -100,7 +100,7 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
             ref = session._reference_price_from_bar(bar)
             for order_id in order_ids:
                 state = book.get(order_id)
-                if state is None or state.status != STATUS_OPEN:
+                if state is None or state.status not in _ACTIVE_STATUSES:
                     continue
                 order = by_id[order_id]
                 gate = session._fill_gate(day, order, ref)
@@ -117,7 +117,7 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
 
     for order_id, gate in deferred.items():
         state = book.get(order_id)
-        if state is not None and state.status == STATUS_OPEN and gate[0] != "limit_not_marketable":
+        if state is not None and state.status in _ACTIVE_STATUSES and gate[0] != "limit_not_marketable":
             book.reject(order_id, gate[0])
             session._reject(day, by_id[order_id], *gate)
     _cancel_unfilled(session, day, book, by_id)
