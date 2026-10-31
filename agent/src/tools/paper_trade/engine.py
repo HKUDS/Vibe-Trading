@@ -703,7 +703,8 @@ def run_day_loop(
         limit_provenance=tuple(dict.fromkeys(session.limit_provenance)),
         engine_fingerprint=state_hash.engine_fingerprint(
             interval=market_data.interval, path_model=path_model, fill_model=fill_model,
-            bar_fingerprint=market_data.bar_fingerprint),
+            bar_fingerprint=market_data.bar_fingerprint,
+            order_volume_ratio=order_volume_ratio),
         canceled_orders=tuple(session.canceled),
         events=tuple(session.events),
         order_states=order_states,
