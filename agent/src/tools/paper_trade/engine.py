@@ -368,7 +368,7 @@ class _MatchSession:
         if (gate := self._fill_gate(day, order, ref)) is not None:
             self._reject(day, order, *gate)
             return
-        self._fill(day.date, order, ref)
+        self._fill(day.date, order, ref, order.qty)
 
     def _bar_missing(self, day: str, sym_data: data.SymbolData) -> bool:
         if self._five_minute:
@@ -421,14 +421,18 @@ class _MatchSession:
             self.events.append(SessionEvent(
                 trade_date=day.date, symbol=order.symbol, event_type="price_limit", detail=detail))
 
-    def _fill(self, day: str, order: Order, close: float) -> None:
+    def _fill(self, day: str, order: Order, close: float, executed_qty: float | Decimal) -> None:
         # Decimal settlement (VD-9): 2dp notional ± 2dp fee; avg_cost is the
         # fee-exclusive weighted average fill price, quantized 4dp HALF_UP at
         # every mutation so internal chaining equals the RM round-trip.
+        # ``executed_qty`` is THIS fill's executed quantity, not the order's
+        # requested quantity: a partial fill books (and charges) only what
+        # actually executed, and each fill carries its own fee.
         price_value = float(close)  # 5m hands a 2dp Decimal; the wire wants a float
-        qty = money(order.qty)
+        qty_value = float(executed_qty)
+        qty = money(qty_value)
         price = money(price_value)
-        fee = self.rules.fee(order.side, order.qty, price_value)
+        fee = self.rules.fee(order.side, qty_value, price_value)
         notional = quantize_money(qty * price)
         if order.side == "buy":
             self.cash -= notional + fee
@@ -446,7 +450,7 @@ class _MatchSession:
             self.positions[order.symbol].qty -= qty
         # VD-15/B2 dual mode at the fill boundary: plain Orders → ""; StrategyOrders → ≤200 chars.
         self.fills.append(Fill(trade_date=day, symbol=order.symbol, side=order.side,
-                               qty=order.qty, price=price_value, fee=float(fee),
+                               qty=qty_value, price=price_value, fee=float(fee),
                                reason=wire.strategy_fill_reason(getattr(order, "reason", None))))
 
     def _band(self, symbol: str, day: str, sym_data: data.SymbolData) -> tuple[float | None, float | None]:
