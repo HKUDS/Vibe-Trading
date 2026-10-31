@@ -101,6 +101,20 @@ def test_explicit_percent_conversion_keeps_data_operands_grounded(tmp_path, form
     assert verdict.valid, verdict.issues
 
 
+def test_magnitude_suffix_expands_rather_than_mistranslating():
+    # "345,624,709.24元 ÷ 1亿" is a unit conversion to 1e8. The magnitude suffix
+    # must expand, not be dropped as vocabulary: dropping it made the run read
+    # as "÷ 1" and report a derived result eight orders of magnitude off. The
+    # currency mark trails the dividend and is not arithmetic.
+    from src.agent.grounding.policies import _evaluate_formula
+
+    evaluated = _evaluate_formula("345,624,709.24元 ÷ 1亿")
+    assert evaluated is not None
+    result, operands, _ = evaluated
+    assert result == pytest.approx(345624709.24 / 1e8)
+    assert 1e8 in operands
+
+
 @pytest.mark.parametrize("values", [(125,), (10000,), (125, 75), (75, 10000)])
 def test_percent_conversion_does_not_supply_missing_data(tmp_path, values):
     verdict = _ledger(tmp_path, values).validate_final_answer(
