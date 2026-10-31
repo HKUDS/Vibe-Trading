@@ -108,14 +108,17 @@ SCHEMA_VERSION_V1_2 = "pt-v1.2"
 
 #: Additive bump version (volume-share plan T7): emitted when the request
 #: selects ``fill_model="volume_share"`` or a non-default
-#: ``order_volume_ratio``.  The result fields (``order_states``) land with the
-#: pt-v1.3 contract todo; its JSON contract file and loader entry land with
-#: the registry todo, so :data:`SCHEMA_VERSIONS` stays the v1.1/v1.2 pair
-#: until those files exist.
+#: ``order_volume_ratio``.  Its JSON contract ships as
+#: ``paper_trade_step-v1.3.json`` (packaged + published mirror) and is
+#: registered below with the other resolvable versions.
 SCHEMA_VERSION_V1_3 = "pt-v1.3"
 
 #: Every version this loader can resolve, oldest first.
-SCHEMA_VERSIONS: tuple[str, ...] = (SCHEMA_VERSION, SCHEMA_VERSION_V1_2)
+SCHEMA_VERSIONS: tuple[str, ...] = (
+    SCHEMA_VERSION,
+    SCHEMA_VERSION_V1_2,
+    SCHEMA_VERSION_V1_3,
+)
 
 # ── pt-v1.2 additive request vocabularies (D1/D5/D8) ──
 #
@@ -208,6 +211,7 @@ _CONTRACT_SCHEMA_DIR = Path(__file__).resolve().parent
 _CONTRACT_SCHEMA_PATHS: dict[str, Path] = {
     SCHEMA_VERSION: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.1.json",
     SCHEMA_VERSION_V1_2: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.2.json",
+    SCHEMA_VERSION_V1_3: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.3.json",
 }
 
 
@@ -680,8 +684,9 @@ def load_contract_schema(
     ``version`` is one of :data:`SCHEMA_VERSIONS` and defaults to the frozen
     pt-v1.1 file, so every existing caller keeps reading the same document.
     A v1.1 result validates ONLY against ``version="pt-v1.1"``; a v1.2 result
-    (``engine_fingerprint`` present) validates against ``version="pt-v1.2"``.
-    Read-only.
+    (``engine_fingerprint`` present) validates against ``version="pt-v1.2"``;
+    a v1.3 result additionally carries ``order_states`` and validates against
+    ``version="pt-v1.3"``.  Read-only.
     """
     try:
         path = _CONTRACT_SCHEMA_PATHS[version]

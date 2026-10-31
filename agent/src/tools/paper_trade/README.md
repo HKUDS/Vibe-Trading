@@ -105,7 +105,8 @@ no row at all while its daily bar exists is a provider omission and returns
 | `interval` | `1d`, `5m` | `1d` | `5m` is cn_a-only and accepts one date per step |
 | `session` | `auto`, `cn_a` | `auto` | coherence selector only: `cn_a` requires `market="cn_a"` and does not change the day boundary |
 | `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from each bar |
-| `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
+| `fill_model` | `all_or_none`, `volume_share` | `all_or_none` | `volume_share` opts into pt-v1.3 per-order partial fills |
+| `order_volume_ratio` | number in `(0, 1]` | `1.0` | per-order share of matched volume; only with `fill_model="volume_share"` |
 
 A market order fills at the first continuous bar whose fill gates pass. If a
 buy is blocked at the upper price limit or a sell at the lower limit, it is
@@ -126,8 +127,26 @@ fill, so a bar that only touches the limit leaves the order resting, and a limit
 that never triggers is canceled at session end (15:00 on a complete session). On
 the first bar with volume, an already-marketable reference (`ref < limit` for a
 buy, `ref > limit` for a sell) fills at that strictly better price instead,
-which wins over the 委托价 even when the bar also crosses. Every fill is
-all-or-none; volume share is Phase 3.
+which wins over the 委托价 even when the bar also crosses. By default every fill
+is all-or-none.
+
+`fill_model="volume_share"` is the opt-in pt-v1.3 policy (5m cn_a only). Each
+order is capped independently at `floor(volume × order_volume_ratio / lot) × lot`
+shares — never against a shared bar budget — so two orders may together exceed
+a bar's volume. `order_volume_ratio` defaults to `1.0` (no reduction) and is
+accepted only with `fill_model="volume_share"`. A market order caps on the full
+continuous-session volume, fills what fits and cancels the residual immediately
+with `canceled_after_volume_cap`; a limit order caps per bar, keeps the residual
+resting while `filled` (active), and its day-end cancel still reports
+`canceled_after_failed_match`. A zero-volume bar never fills. Each fill is
+booked and charged separately, so a two-fill order pays two minimum
+commissions.
+
+A pt-v1.3 result adds `order_states`: one row per submitted order, in
+submission order, with exactly `order_id`, `status`, `add_time`, `amount`,
+`filled`, `price` and `side`. `add_time` is the cn_a session open
+(`YYYY-MM-DDT09:30:00+08:00`), `amount` is the requested quantity, `filled` is
+the executed quantity and `price` is `0.0` when nothing filled.
 
 Inside the five-minute session (the daily path builds no order book), order
 statuses use JoinQuant's `OrderStatus` vocabulary: `held` means fully filled
@@ -207,7 +226,6 @@ cannot fill. Corporate actions remain fail-closed.
   different engine fingerprint even with identical bars and model settings;
   archived results retain their original version.
 
-
 ## Data and model limits
 
 Execution requires raw prices. Tencent's unadjusted endpoint serves A-shares/HK;
@@ -223,9 +241,9 @@ discontinuities reject affected orders and disclose the issue. Automatic action
 reconciliation and cash dividends are not implemented. NAV is not total return.
 A-shares are included in the raw-price discontinuity checks.
 
-Matching is all-or-none, with simplified fees, price limits, board lots and T+1
-checks. HK lot fallback is disclosed. Invalid OHLC prevents fills; valuation
-uses a finite prior close or the disclosed average-cost fallback. This is not
-broker-execution simulation. Settlement, margin, options and cross-market phases
-in #1938 remain follow-up work, as do partial fills and the volume-share policy
-(Phase 3).
+Matching is all-or-none by default, with simplified fees, price limits, board
+lots and T+1 checks; `fill_model="volume_share"` opts into the per-order partial
+fills described above. HK lot fallback is disclosed. Invalid OHLC prevents
+fills; valuation uses a finite prior close or the disclosed average-cost
+fallback. This is not broker-execution simulation. Settlement, margin, options
+and cross-market phases in #1938 remain follow-up work.

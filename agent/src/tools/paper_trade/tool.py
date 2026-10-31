@@ -556,11 +556,25 @@ class PaperTradeStepTool(BaseTool):
             },
             "fill_model": {
                 "type": "string",
-                "enum": ["all_or_none"],
+                "enum": ["all_or_none", "volume_share"],
                 "default": "all_or_none",
                 "description": (
-                    "Optional pt-v1.2 fill model: 'all_or_none' is the only P0 value — "
-                    "no partial fills, every order terminal in its bar."
+                    "Optional fill model: 'all_or_none' (the default) fills every "
+                    "order whole or not at all. 'volume_share' opts into pt-v1.3 "
+                    "per-order partial fills capped by each order's own share of "
+                    "the matched volume; it requires interval='5m' and market='cn_a'."
+                ),
+            },
+            "order_volume_ratio": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1,
+                "default": 1.0,
+                "description": (
+                    "Optional pt-v1.3 per-order share of available volume, 0 < r <= 1. "
+                    "Accepted only together with fill_model='volume_share' (a ratio "
+                    "without it is INVALID_REQUEST); omitted or null means 1.0, which "
+                    "does not reduce fills. Each order is capped independently."
                 ),
             },
         },

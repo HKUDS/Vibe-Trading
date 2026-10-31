@@ -24,13 +24,16 @@ The two v1.3 JSON contract files are T14's, not this file's.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import replace
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from src.tools.paper_trade import engine, state_hash, wire
+import src.tools.paper_trade.schema as schema_module
 from src.tools.paper_trade.data import fetch_market_data
 from src.tools.paper_trade.schema import (
     CANCELED_REASON_CODE,
@@ -38,7 +41,10 @@ from src.tools.paper_trade.schema import (
     SCHEMA_VERSION_V1_3,
     CanceledOrder,
     PaperTradeStepResult,
+    SCHEMA_VERSIONS,
+    load_contract_schema,
     parse_request,
+    validate_payload,
 )
 
 _DAY = "2026-10-20"
@@ -477,3 +483,71 @@ def test_volume_cap_cancel_reason_is_accepted_only_by_a_v13_document() -> None:
     assert _CANCELED_VOLUME_CAP != CANCELED_REASON_CODE, (
         "the volume-cap token must stay distinct from the frozen day-end token"
     )
+
+
+# ── the two pt-v1.3 JSON contracts (T14) ────────────────────────────────────
+
+_PACKAGED_CONTRACT = (
+    Path(schema_module.__file__).resolve().parent / "paper_trade_step-v1.3.json"
+)
+_PUBLISHED_CONTRACT = (
+    Path(__file__).resolve().parents[2]
+    / "schema"
+    / "tool_contracts"
+    / "paper_trade_step-v1.3.json"
+)
+
+
+def test_v13_contract_files_exist_and_are_byte_identical() -> None:
+    assert _PACKAGED_CONTRACT.is_file()
+    assert _PUBLISHED_CONTRACT.is_file()
+    assert _PACKAGED_CONTRACT.read_bytes() == _PUBLISHED_CONTRACT.read_bytes(), (
+        "the packaged contract and its published mirror must stay byte-identical"
+    )
+
+
+def test_v13_contract_is_registered_for_the_loader() -> None:
+    assert SCHEMA_VERSION_V1_3 in SCHEMA_VERSIONS
+    assert schema_module._CONTRACT_SCHEMA_PATHS[SCHEMA_VERSION_V1_3] == _PACKAGED_CONTRACT
+    result = load_contract_schema("result", version=SCHEMA_VERSION_V1_3)
+    assert result["properties"]["schema_version"]["enum"] == [
+        "pt-v1.1",
+        "pt-v1.2",
+        "pt-v1.3",
+    ]
+
+
+def test_v13_contract_declares_the_volume_share_request_and_order_states() -> None:
+    document = json.loads(_PACKAGED_CONTRACT.read_text(encoding="utf-8"))
+    assert document["version"] == SCHEMA_VERSION_V1_3
+    assert document["schemas"]["result"]["$id"].endswith("paper_trade_step-v1.3/result.json")
+
+    request = document["schemas"]["request"]["properties"]
+    assert request["fill_model"]["enum"] == ["all_or_none", "volume_share"]
+    assert request["order_volume_ratio"]["default"] == 1.0
+    assert request["order_volume_ratio"]["exclusiveMinimum"] == 0
+    assert request["order_volume_ratio"]["maximum"] == 1
+    comment = request["order_volume_ratio"]["$comment"]
+    assert "per-order" in comment and "fill_model='volume_share'" in comment
+
+    result = document["schemas"]["result"]
+    order_states = result["properties"]["order_states"]
+    assert set(order_states["items"]["required"]) == _ORDER_STATE_KEYS
+    reasons = result["properties"]["canceled_orders"]["items"]["properties"]["reason_code"]
+    assert set(reasons["enum"]) == {CANCELED_REASON_CODE, _CANCELED_VOLUME_CAP}
+
+    conditional = next(
+        node
+        for node in result["allOf"]
+        if node.get("if", {}).get("properties", {}).get("schema_version", {}).get("const")
+        == SCHEMA_VERSION_V1_3
+    )
+    assert {"engine_fingerprint", "canceled_orders", "events", "order_states"} <= set(
+        conditional["then"]["required"]
+    )
+
+
+def test_the_emitted_v13_document_validates_against_the_v13_contract() -> None:
+    document, _ = _v13_document()
+    schema = load_contract_schema("result", version=SCHEMA_VERSION_V1_3)
+    assert validate_payload(document, schema) == []
