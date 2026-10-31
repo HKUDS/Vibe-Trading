@@ -28,6 +28,7 @@ imports ``volume_policy`` (T8 owns it).
 
 from __future__ import annotations
 
+import json
 from decimal import ROUND_HALF_UP, Decimal
 
 import pandas as pd
@@ -36,6 +37,7 @@ import pytest
 from src.tools.paper_trade import engine
 from src.tools.paper_trade.data import fetch_market_data
 from src.tools.paper_trade.schema import CANCELED_REASON_CODE, parse_request
+from src.tools.paper_trade.tool import run_paper_trade_step
 
 _DAY = "2026-10-20"
 _PREV = "2026-10-19"
@@ -521,3 +523,46 @@ def test_two_orders_get_independent_per_order_caps() -> None:
         f"end with the existing day-end reason; got {_cancels(outcome)!r}"
     )
     assert outcome.end_state.cash >= 0
+
+
+# ── manual QA: one market order larger than its cap, printed as v1.3 ────────
+
+
+def test_manual_qa_market_partial() -> None:
+    payload = {
+        "account_id": "pa_5m_manual_qa",
+        "market": "cn_a",
+        "account_state": {"cash": 100_000.0, "positions": []},
+        "orders": [_buy(qty=300)],
+        "from_date": _DAY,
+        "to_date": _DAY,
+        "fee_model": dict(_FEE_MODEL),
+        "interval": "5m",
+        "fill_model": "volume_share",
+        "order_volume_ratio": 0.1,
+    }
+    raw = run_paper_trade_step(
+        payload,
+        loader=_FakeLoader({_SYM: _partial_market_day()}),
+        ch_client=_FakeChClient(),
+        calendar_client=_FakeCalendarClient(frozenset({_DAY})),
+        limits_client=None,
+    )
+    document = json.loads(raw)
+    print("MANUAL_QA_V13_DOCUMENT=" + json.dumps(document, sort_keys=True, ensure_ascii=False))
+
+    assert document["schema_version"] == "pt-v1.3"
+    row = document["order_states"][0]
+    assert (row["status"], row["amount"], row["filled"], row["price"]) == (
+        "canceled",
+        300.0,
+        100.0,
+        10.00,
+    )
+    assert row["filled"] < row["amount"]
+    assert len(document["fills"]) == 1
+    assert document["fills"][0]["qty"] == 100.0 < row["amount"]
+    assert len(document["canceled_orders"]) == 1
+    residual = document["canceled_orders"][0]
+    assert (residual["qty"], residual["reason_code"]) == (200.0, _VOLUME_CAP_REASON)
+    assert document["end_state"]["cash"] >= 0
