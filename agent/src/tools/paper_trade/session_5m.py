@@ -190,7 +190,7 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                 book.reject(order_id, code)
                 session._reject(day, order, code, detail)
                 continue
-            book.fill(order_id, money(order.qty), price)
-            session._fill(day.date, order, float(price))
+            fill = book.fill(order_id, money(order.qty), price)
+            session._fill(day.date, order, float(price), fill.qty)
 
     _cancel_unfilled(session, day, book, by_id, price_limit_cancels)
