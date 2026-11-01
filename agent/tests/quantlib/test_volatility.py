@@ -86,6 +86,20 @@ class TestHestonModel:
         bs = bs_price(S=S0, K=K, T=T, r=r, sigma=vol, option_type="call", q=q)
         assert pytest.approx(h_price, abs=1e-3) == bs
 
+    @pytest.mark.parametrize("days", [0.25, 1.0, 3.0])
+    @pytest.mark.parametrize("K", [100.0, 101.0])
+    def test_short_expiry_converges_to_black_scholes(self, days, K):
+        # One day or less to expiry the integrand is still large at u = 200, so
+        # a truncated integral misprices the option. With sigma_v -> 0 the price
+        # must still be the Black-Scholes price at sqrt(v0).
+        S0, T, r, vol = 100.0, days / 365.0, 0.03, 0.1
+        h_price = heston_price(
+            S0=S0, K=K, T=T, r=r, v0=vol**2, kappa=2.0, theta=vol**2,
+            sigma_v=1e-4, rho=-0.7, option_type="call",
+        )
+        bs = bs_price(S=S0, K=K, T=T, r=r, sigma=vol, option_type="call")
+        assert h_price == pytest.approx(bs, rel=1e-3, abs=1e-6)
+
     def test_negative_rho_produces_a_downward_sloping_skew(self):
         """A leverage-effect correlation must make low strikes the expensive ones.
 
