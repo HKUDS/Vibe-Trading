@@ -233,3 +233,99 @@ def test_money_can_be_derived_from_explicitly_referenced_document_cells(tmp_path
         _declared("营业收入增加 1.00亿元。", "1.00亿元 | derived | 763154445.01 - 663154445.01 | doc-1")
     )
     assert result.valid, result.issues
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "North segment 154,700 165,200 6.79%",
+        "North segment 165,200",
+        "| Segment | Amount |\n| North | 165,200 |",
+    ],
+)
+def test_document_grouped_integer_grounds_a_quoted_table_cell(
+    tmp_path: Path,
+    text: str,
+) -> None:
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", text)
+
+    result = ledger.validate_final_answer(
+        _declared(
+            "| Segment | Amount |\n|---|---|\n| North | 165,200 |",
+            "165,200 | observed | North segment | doc-1",
+        )
+    )
+
+    assert result.valid, result.issues
+
+
+@pytest.mark.parametrize("value", ["265,200", "2025.00", "3400"])
+def test_document_integer_claims_still_need_matching_observed_evidence(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(
+        ledger,
+        document,
+        "doc-1",
+        "Report year 2025. Staff 3400. North segment 165,200.",
+    )
+
+    result = ledger.validate_final_answer(
+        _declared(
+            f"| Item | Amount |\n|---|---|\n| North | {value} |",
+            f"{value} | observed | North segment | doc-1",
+        )
+    )
+
+    assert not result.valid
+
+
+def test_document_grouped_integer_keeps_the_referenced_source(tmp_path: Path) -> None:
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", "North segment 165,200")
+    _read_document(
+        ledger,
+        document.with_name("other.pdf"),
+        "doc-2",
+        "North segment 265,200",
+    )
+
+    result = ledger.validate_final_answer(
+        _declared(
+            "| Segment | Amount |\n|---|---|\n| North | 265,200 |",
+            "265,200 | observed | North segment | doc-1",
+        )
+    )
+
+    assert not result.valid
+
+
+@pytest.mark.parametrize("inside_run", [False, True])
+def test_document_grouped_integer_cannot_launder_generated_artifacts(
+    tmp_path: Path,
+    inside_run: bool,
+) -> None:
+    ledger, document = _ledger_with_upload(tmp_path)
+    if inside_run:
+        document = ledger.run_dir / "report.md"
+    else:
+        ledger.ingest_tool_result(
+            tool_name="write_file",
+            arguments={"path": str(document)},
+            result=json.dumps({"status": "ok", "path": str(document)}),
+            call_id="model-write-doc",
+            success=True,
+        )
+    _read_document(ledger, document, "doc-1", "North segment 165,200")
+
+    result = ledger.validate_final_answer(
+        _declared(
+            "| Segment | Amount |\n|---|---|\n| North | 165,200 |",
+            "165,200 | observed | North segment | doc-1",
+        )
+    )
+
+    assert not result.valid
