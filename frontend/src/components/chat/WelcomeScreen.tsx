@@ -176,6 +176,23 @@ const CATEGORIES: Category[] = [
   },
 ];
 
+const FEATURED_EXAMPLE_KEYS = [
+  "welcome.examples.earningsReport",
+  "welcome.examples.crossMarketPortfolio",
+  "welcome.examples.thesisTracker",
+] as const;
+
+// Resolved from the library so a featured card always carries its own
+// category label and prompt; a key that drifts out of CATEGORIES fails loudly.
+const FEATURED_EXAMPLES = FEATURED_EXAMPLE_KEYS.map((titleKey) => {
+  const category = CATEGORIES.find((cat) => cat.examples.some((ex) => ex.titleKey === titleKey));
+  const example = category?.examples.find((ex) => ex.titleKey === titleKey);
+  if (!category || !example) {
+    throw new Error(`Featured example ${titleKey} is not in the example library`);
+  }
+  return { category, example };
+});
+
 const GREETING_KEYS = {
   morning: [
     "welcome.greetings.morning1",
@@ -406,29 +423,32 @@ export function WelcomeScreen({ onExample }: Props) {
         </main>
 
         <aside className="self-start lg:sticky lg:top-8">
-          <div className="rounded-2xl border border-border/70 bg-card/55 p-5 shadow-sm">
-            <div className="flex items-center justify-between border-b border-border/60 pb-4">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t("welcome.categories.valueInvesting" as any)}</span>
-              <span className="h-2 w-2 rounded-full bg-emerald-500/80" aria-hidden="true" />
-            </div>
-            <div className="space-y-5 pt-5">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t("welcome.categories.docWebResearch" as any)}</p>
-                <p className="mt-1.5 text-sm font-medium leading-6">{t("welcome.examples.earningsReport" as any)}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("welcome.examples.earningsReportDesc" as any)}</p>
-              </div>
-              <div className="border-t border-border/60 pt-5">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t("welcome.categories.multiMarketBacktest" as any)}</p>
-                <p className="mt-1.5 text-sm font-medium leading-6">{t("welcome.examples.crossMarketPortfolio" as any)}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("welcome.examples.crossMarketPortfolioDesc" as any)}</p>
-              </div>
-              <div className="border-t border-border/60 pt-5">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t("welcome.categories.valueInvesting" as any)}</p>
-                <p className="mt-1.5 text-sm font-medium leading-6">{t("welcome.examples.thesisTracker" as any)}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t("welcome.examples.thesisTrackerDesc" as any)}</p>
-              </div>
-            </div>
-          </div>
+          <section
+            aria-labelledby="welcome-featured-heading"
+            className="rounded-2xl border border-border/70 bg-card/55 px-5 pt-5 shadow-sm"
+          >
+            <h2
+              id="welcome-featured-heading"
+              className="border-b border-border/60 pb-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+            >
+              {t("welcome.featured" as any)}
+            </h2>
+            <ul className="divide-y divide-border/60">
+              {FEATURED_EXAMPLES.map(({ category, example }) => (
+                <li key={example.titleKey}>
+                  <button
+                    type="button"
+                    onClick={() => onExample(t(example.promptKey as any))}
+                    className="group block w-full py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  >
+                    <span className="block text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t(category.labelKey as any)}</span>
+                    <span className="mt-1.5 block text-sm font-medium leading-6 transition-colors group-hover:text-primary">{t(example.titleKey as any)}</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">{t(example.descKey as any)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
           <div className="mt-3 rounded-xl border border-dashed border-border/80 p-4">
             <p className="text-xs font-medium">{t("welcome.tasks.hint")}</p>
           </div>

@@ -447,6 +447,7 @@
     "taskSubtitle": "Ask about a stock, a strategy, or your portfolio — I'll pull the data, run the numbers, and show every step.",
     "quickActions": "Quick actions",
     "browseAllExamples": "Browse all examples",
+    "featured": "Featured examples",
     "greetings": {
       "morning1": "Good morning.",
       "morning2": "Morning — ready when you are.",

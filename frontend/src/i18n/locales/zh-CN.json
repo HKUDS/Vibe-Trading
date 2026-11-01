@@ -441,6 +441,7 @@
     "taskSubtitle": "问一只股票、一个策略，或者你的持仓——我会自己取数据、跑计算，并把每一步摆给你看。",
     "quickActions": "快捷操作",
     "browseAllExamples": "浏览全部示例",
+    "featured": "精选示例",
     "greetings": {
       "morning1": "早上好。",
       "morning2": "早上好，随时可以开始。",
