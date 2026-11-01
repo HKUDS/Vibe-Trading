@@ -15,7 +15,7 @@
 // site Chinese; its toggle goes to the counterpart page instead.
 
 const LANG_KEY = "vibetrading-lang";
-const LOCALE_VERSION = "20261021";
+const LOCALE_VERSION = "20261101";
 const THEME_KEY = "vibetrading-theme";
 const STARS_CACHE_KEY = "vibetrading-github-stars";
 const STARS_TTL_MS = 12 * 60 * 60 * 1000;
