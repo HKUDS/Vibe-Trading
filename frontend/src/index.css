@@ -55,7 +55,9 @@
     --popover-foreground: 32 20% 93%;
 
     --primary: 28 52% 65%;
-    --primary-foreground: 0 0% 100%;
+    /* Dark ink, not white: white on this light umber measures 2.3:1, below
+       the 3:1 floor for a control; this ink measures 7.7:1. */
+    --primary-foreground: 28 30% 10%;
 
     --muted: 28 14% 17%;           /* surface-2 */
     --muted-foreground: 32 12% 64%;
