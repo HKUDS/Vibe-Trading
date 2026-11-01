@@ -40,6 +40,23 @@ _MAX_GENERIC_EVIDENCE = 2_000
 #: numbers than a tool result, and one long document must not crowd the ledger.
 _MAX_DOCUMENT_FIGURES = 400
 
+#: A comma-grouped number like "220,308" is unambiguously a stated figure, never
+#: a page number, section number or year, so a document that states one in prose
+#: (a table flattened to text) still counts as evidence. Plain ungrouped integers
+#: stay out so an invented small figure cannot match one by chance (#2126).
+_GROUPED_FIGURE_RE = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+
+
+def _is_grouped_figure(figure: Figure) -> bool:
+    """A bare integer written with grouped thousands is a real figure.
+
+    The ingest only records numbers carrying a mark of measurement to keep an
+    invented small figure from matching a page number or year by chance. A cell
+    the document writes as ``220,308`` carries no unit, yet the grouping alone
+    proves it is a quantity, so it is admitted alongside measured figures.
+    """
+    return figure.shape == "bare" and _GROUPED_FIGURE_RE.search(figure.text) is not None
+
 #: Top-level fields of a code-running tool's envelope (backtest, bash, ...). They
 #: describe the process, not the market, so they never become observed evidence.
 _ENVELOPE_FIELDS = frozenset(
@@ -1561,7 +1578,7 @@ class _EvidenceMixin:
         for figure in scan_figures(text, parse_figures_block(text)):
             if room <= 0:
                 return
-            if figure.shape != "measured":
+            if figure.shape != "measured" and not _is_grouped_figure(figure):
                 continue
             value = float(figure.value) * float(figure.scale or 1.0)
             if not math.isfinite(value):

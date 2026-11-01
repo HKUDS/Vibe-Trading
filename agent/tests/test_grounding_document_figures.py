@@ -233,3 +233,23 @@ def test_money_can_be_derived_from_explicitly_referenced_document_cells(tmp_path
         _declared("营业收入增加 1.00亿元。", "1.00亿元 | derived | 763154445.01 - 663154445.01 | doc-1")
     )
     assert result.valid, result.issues
+
+
+def test_document_prose_grouped_figures_reach_the_ledger(tmp_path: Path) -> None:
+    # A table flattened to prose (no Markdown pipes) states its cells as bare
+    # integers. A comma-grouped cell like 220,308 is a real figure, never a page
+    # number or year, so it must reach the ledger and ground the report that
+    # quotes it. Plain ungrouped integers stay out so an invented small figure
+    # cannot match one by chance (#2126).
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(
+        ledger,
+        document,
+        "doc-1",
+        "应用领域（万元）信号处理 220,308 电源管理 214,477 员工 3400 人 第 12 页",
+    )
+    values = {record.value for record in ledger._evidence}
+    assert 220308.0 in values, "逗号分组的表格数没进账本"
+    assert 214477.0 in values, "逗号分组的表格数没进账本"
+    assert 3400 not in values, "无计量标记的整数不该进账本"
+    assert 12 not in values, "页码不该进账本"
