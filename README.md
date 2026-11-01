@@ -1350,6 +1350,12 @@ vibe-trading provider doctor  # print redacted provider/proxy/package diagnostic
 <details>
 <summary><b>Single run & flags</b></summary>
 
+If the final text-only response contains tool-call markup, the agent gets one
+additional text-only turn beyond its iteration cap to re-emit the answer. This
+turn cannot execute tools or continue research, still obeys cancellation and
+goal token budgets, and is included in usage and iteration counts. If it also
+returns tool-call markup, the existing degraded fallback is returned.
+
 ```bash
 vibe-trading run -p "Backtest BTC-USDT MACD strategy, last 30 days"
 vibe-trading run -p "Analyze AAPL momentum" --json
