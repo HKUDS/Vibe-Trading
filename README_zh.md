@@ -568,6 +568,30 @@ vibe-trading research-artifact search --query "NVDA"
 - **加拿大 / 越南 / 阿根廷** → `yahoo` · `yfinance` · `local`
 - **国内期货** → `akshare` · `local` &nbsp;·&nbsp; **基金** → `tushare` · `akshare` · `local` &nbsp;·&nbsp; **宏观** → `akshare` · `tushare` · `local`
 
+### A 股数据源的安装与可用性
+
+基础安装包含腾讯行情加载器（使用 Python 标准库 HTTP）和 AKShare。
+BaoStock 是可选的、免 token 的 TCP 日线数据源，安装 `ashare` extra 后才可使用：
+
+```bash
+pip install --upgrade "vibe-trading-ai[ashare]"
+# 原先只安装基础包的 uv tool 用户：
+uv tool install --force --python 3.12 "vibe-trading-ai[ashare]"
+```
+
+uv tool 的 `--force` 会重建现有工具环境。添加 `ashare` 时须同时保留原先使用的
+其他 extra（例如 `"vibe-trading-ai[ashare,deepseek]"`），并在命令中重复原有的
+`--with` 参数，以保留这些附加依赖。
+
+基础安装和 `ashare` extra 都不包含 `mootdx`。它的旧加载器仅供显式指定，
+已退出自动回退链；安装 SDK 并不能保证与 TDX 服务器协议兼容。无法导入 `mootdx`
+并不表示默认安装需要修复。
+
+自动回退会跳过不可用的加载器。东方财富相关请求遇到限流时，可使用
+`source: "auto"`，或显式选择可用的 `tencent`、`baostock` 等替代源。
+启动预检只覆盖部分服务，不会列出所有可选加载器；显示 SDK 已安装，也不代表
+其远端数据服务当前可访问。
+
 ### 显式使用长桥
 
 Longbridge 是可选的美股/港股历史 OHLCV 数据源。安装 SDK：

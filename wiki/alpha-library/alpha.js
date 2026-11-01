@@ -1,6 +1,6 @@
 // Fills the Alpha Library landing stats from content/index.json, which the
 // deploy workflow generates (wiki/scripts/build_alpha_library.py).
-import { storedLang } from "/site.js?v=20261021";
+import { storedLang } from "/site.js?v=20261101";
 
 const TEXT = {
   en: { across: (n) => `across ${n} zoos`, alphas: (n) => `${n} alphas`, missing: "manifest not generated yet" },

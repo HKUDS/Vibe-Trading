@@ -577,7 +577,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # 保留已完成的任务</c
               <table>
                 <thead><tr><th>市场</th><th>回退顺序</th></tr></thead>
                 <tbody>
-                  <tr><td>A 股</td><td>tencent、mootdx、eastmoney、baostock、akshare、tushare、gildata、local</td></tr>
+                  <tr><td>A 股</td><td>tencent、eastmoney、baostock、akshare、tushare、gildata、local</td></tr>
                   <tr><td>美股</td><td>yahoo、stooq、sina、eastmoney、yfinance、tiingo、fmp、finnhub、alphavantage、longbridge、akshare、local</td></tr>
                   <tr><td>港股</td><td>tencent、eastmoney、yahoo、futu、akshare、yfinance、tushare、longbridge、local</td></tr>
                   <tr><td>印度</td><td>yahoo、yfinance、india_broker、local</td></tr>
@@ -590,7 +590,10 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # 保留已完成的任务</c
                   <tr><td>宏观</td><td>akshare、tushare、local</td></tr>
                 </tbody>
               </table>
-              <p>有四个数据源只在你点名时使用：<code>qveris</code>（付费数据市场）、<code>tickerall</code>（托管的 MT5 行情）、<code>nobitex</code> / <code>wallex</code>（伊朗托曼计价交易对）。设置 <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>（例如 <code>MARKET_DATA_ORDER_US_EQUITY</code>）可以调整某条链的顺序。</p>
+              <p>以下数据源只在你点名时使用：<code>qveris</code>（付费数据市场）、<code>tickerall</code>（托管的 MT5 行情）、<code>nobitex</code> / <code>wallex</code>（伊朗托曼计价交易对）。设置 <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>（例如 <code>MARKET_DATA_ORDER_US_EQUITY</code>）可以调整某条链的顺序。</p>
+              <p>基础安装包含使用标准库 HTTP 的腾讯行情加载器和 AKShare。BaoStock 是可选的免 token TCP 日线数据源，可用 <code>pip install --upgrade "vibe-trading-ai[ashare]"</code> 安装；原先只安装基础包的 uv tool 用户可运行 <code>uv tool install --force --python 3.12 "vibe-trading-ai[ashare]"</code>。自动回退会跳过缺少可选 SDK 的加载器。</p>
+              <p>uv tool 的 <code>--force</code> 会重建现有工具环境。添加 <code>ashare</code> 时须保留原先使用的其他 extra（例如 <code>"vibe-trading-ai[ashare,deepseek]"</code>），并在命令中重复原有的 <code>--with</code> 参数，以保留这些附加依赖。</p>
+              <p>旧版 <code>mootdx</code> 加载器也仅供显式指定：它已退出自动回退链，基础安装和 <code>ashare</code> extra 都不包含它。安装 SDK 并不能保证与 TDX 服务器协议兼容。东方财富相关请求遇到限流时，可使用 <code>source: "auto"</code>，或选择可用的 <code>tencent</code>、<code>baostock</code> 等替代源。启动预检只覆盖部分服务，不会列出所有可选加载器；SDK 已安装也不代表远端服务当前可用。</p>
             `
           },
           {

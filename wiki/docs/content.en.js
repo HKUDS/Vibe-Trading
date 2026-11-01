@@ -578,7 +578,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # keep finished tasks</code><
               <table>
                 <thead><tr><th>Market</th><th>Chain, in order</th></tr></thead>
                 <tbody>
-                  <tr><td>China A-shares</td><td>tencent, mootdx, eastmoney, baostock, akshare, tushare, gildata, local</td></tr>
+                  <tr><td>China A-shares</td><td>tencent, eastmoney, baostock, akshare, tushare, gildata, local</td></tr>
                   <tr><td>US equities</td><td>yahoo, stooq, sina, eastmoney, yfinance, tiingo, fmp, finnhub, alphavantage, longbridge, akshare, local</td></tr>
                   <tr><td>Hong Kong</td><td>tencent, eastmoney, yahoo, futu, akshare, yfinance, tushare, longbridge, local</td></tr>
                   <tr><td>India</td><td>yahoo, yfinance, india_broker, local</td></tr>
@@ -591,7 +591,10 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # keep finished tasks</code><
                   <tr><td>Macro</td><td>akshare, tushare, local</td></tr>
                 </tbody>
               </table>
-              <p>Four sources are used only when you name them: <code>qveris</code> (paid marketplace), <code>tickerall</code> (hosted MT5 feed), and <code>nobitex</code> / <code>wallex</code> (Iranian Toman pairs). Set <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>, for example <code>MARKET_DATA_ORDER_US_EQUITY</code>, to reorder a chain.</p>
+              <p>These sources are used only when you name them: <code>qveris</code> (paid marketplace), <code>tickerall</code> (hosted MT5 feed), and <code>nobitex</code> / <code>wallex</code> (Iranian Toman pairs). Set <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>, for example <code>MARKET_DATA_ORDER_US_EQUITY</code>, to reorder a chain.</p>
+              <p>The base install includes Tencent's standard-library HTTP loader and AKShare. BaoStock is an optional token-free TCP source for daily A-share bars: install it with <code>pip install --upgrade "vibe-trading-ai[ashare]"</code>, or use <code>uv tool install --force --python 3.12 "vibe-trading-ai[ashare]"</code> for a uv tool installation that previously used only the base package. Missing optional SDKs are skipped during automatic fallback.</p>
+              <p>For uv tool users, <code>--force</code> rebuilds the existing tool environment. Keep previously used extras when adding <code>ashare</code>, for example <code>"vibe-trading-ai[ashare,deepseek]"</code>, and repeat any existing <code>--with</code> arguments to retain those additional dependencies.</p>
+              <p>The legacy <code>mootdx</code> loader is also explicit-only: it has been retired from automatic fallback and is not included in the base install or the <code>ashare</code> extra. Installing its SDK does not guarantee compatibility with the TDX server protocol. Prefer <code>source: "auto"</code> or an available alternative such as <code>tencent</code> or <code>baostock</code> when an Eastmoney-backed request is throttled. Startup preflight covers selected services, not every optional loader, and an installed SDK does not prove remote-service availability.</p>
             `
           },
           {

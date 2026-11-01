@@ -682,6 +682,34 @@ configured `date_format`; an explicitly mapped date column takes precedence.
 - **Canada / Vietnam / Argentina** → `yahoo` · `yfinance` · `local`
 - **China futures** → `akshare` · `local` &nbsp;·&nbsp; **funds** → `tushare` · `akshare` · `local` &nbsp;·&nbsp; **macro** → `akshare` · `tushare` · `local`
 
+### A-share installation and availability
+
+The base install includes Tencent's loader (standard-library HTTP) and AKShare.
+BaoStock is an optional, token-free TCP source for daily A-share bars; install
+the `ashare` extra to make it available:
+
+```bash
+pip install --upgrade "vibe-trading-ai[ashare]"
+# For a uv tool installation that previously used only the base package:
+uv tool install --force --python 3.12 "vibe-trading-ai[ashare]"
+```
+
+For uv tool users, `--force` rebuilds the existing tool environment. Keep any
+extras you already use when adding `ashare` (for example,
+`"vibe-trading-ai[ashare,deepseek]"`) and repeat any existing `--with` arguments
+in that command.
+
+`mootdx` is not included in the base install or the `ashare` extra. Its legacy
+loader is explicit-only and retired from automatic fallback; installing its
+SDK does not guarantee compatibility with the TDX server protocol. A missing
+`mootdx` import is expected with the base install.
+
+Automatic fallback skips unavailable loaders. If an Eastmoney-backed request is
+throttled, select `source: "auto"` or an available alternative such as
+`tencent` or `baostock`. The startup preflight covers selected services, not
+every optional loader; an SDK reported as installed does not establish that
+its remote data service is reachable.
+
 ### Using Longbridge explicitly
 
 Longbridge is an optional US/HK historical OHLCV loader. Install its SDK with:

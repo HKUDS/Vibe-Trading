@@ -16,7 +16,7 @@ description: Mootdx A-share market data via TCP-direct 通达信 servers. RETIRE
 Mootdx talks the native 通达信 (TDX) binary protocol over TCP, bypassing the HTTP scrapers that periodically fail under load (akshare → East Money is the canonical example). Public market data only — no token, no per-IP throttling, no captcha.
 
 - GitHub: https://github.com/mootdx/mootdx
-- Install: `pip install mootdx && pip install 'httpx>=0.28.1'`
+- Legacy SDK installation (not needed for automatic A-share data): `pip install mootdx && pip install 'httpx>=0.28.1'`
 
 > Mootdx pins `httpx<0.26` in `setup.py`, but only uses basic `httpx.Client/get` APIs that are forward-compatible. The second `pip install` restores the modern httpx that the rest of Vibe-Trading (MCP server, fastmcp) needs.
 
@@ -78,7 +78,7 @@ df_15m = client.bars(symbol="600519", frequency=1, offset=800)
 
 ## Built-in Loader
 
-`backtest/loaders/mootdx_loader.py` is registered as the `mootdx` source. Fallback chain for `a_share` is `[tushare, mootdx, akshare]` — tushare wins when a token is present; mootdx wins when no token but TCP egress works; akshare is the broadest fallback.
+`backtest/loaders/mootdx_loader.py` remains registered for explicit `source="mootdx"` calls. It is not in the automatic `a_share` fallback chain. The default chain is `tencent → eastmoney → baostock → akshare → tushare → gildata → local`, with unavailable loaders skipped. Tencent and AKShare ship in the base install; BaoStock requires the optional `vibe-trading-ai[ashare]` extra. Neither the base install nor that extra includes mootdx.
 
 ```python
 from backtest.runner import run
