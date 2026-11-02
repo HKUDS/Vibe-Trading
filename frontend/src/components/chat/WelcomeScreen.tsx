@@ -261,168 +261,157 @@ export function WelcomeScreen({ onExample }: Props) {
   const examplesTriggerRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="w-full px-4 pb-14 pt-6 text-left sm:px-6 lg:px-8">
-      <div className="mx-auto grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-12">
-        <main className="min-w-0">
-          <BrandMark className="mb-8 h-6 w-6" />
+    <div className="w-full px-4 pb-14 pt-6 text-left">
+      <BrandMark className="mb-8 h-6 w-6" />
 
-          <div className="max-w-3xl">
-            <h1 className="font-serif text-[38px] font-normal leading-[1.08] tracking-[-0.025em] sm:text-[52px]">
-              {t(greetingKey as any)}
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-              {t("welcome.taskSubtitle" as any)}
-            </p>
-          </div>
+      <h1 className="font-serif text-[38px] font-normal leading-[1.08] tracking-[-0.025em] sm:text-[52px]">
+        {t(greetingKey as any)}
+      </h1>
+      <p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg">
+        {t("welcome.taskSubtitle" as any)}
+      </p>
 
-          <div className="mt-10 border-y border-border/70 py-5">
-            <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              {t("welcome.quickActions" as any)}
-            </span>
-            <div
-              className="grid gap-2 sm:grid-cols-3"
-              role="group"
-              aria-label={t("welcome.quickActions" as any)}
-            >
-              {QUICK_ACTIONS.map((action) => {
-                const isActive = action.titleKey === activeAction;
-                return (
+      <div className="mt-10 border-y border-border/70 py-5">
+        <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          {t("welcome.quickActions" as any)}
+        </span>
+        <div
+          className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-2"
+          role="group"
+          aria-label={t("welcome.quickActions" as any)}
+        >
+          {QUICK_ACTIONS.map((action) => {
+            const isActive = action.titleKey === activeAction;
+            return (
+              <button
+                key={action.titleKey}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  setActiveAction(action.titleKey);
+                  onExample(t(action.promptKey as any));
+                }}
+                className={
+                  isActive
+                    ? "group flex min-h-24 items-center justify-between rounded-xl border border-primary/35 bg-primary/[0.08] px-4 py-3 text-left text-primary shadow-sm transition-all hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    : "group flex min-h-24 items-center justify-between rounded-xl border border-border/70 bg-card/70 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                }
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:text-primary">
+                    {action.icon}
+                  </span>
+                  {t(action.titleKey as any)}
+                </span>
+                <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          {t("welcome.tasks.hint")}
+        </p>
+      </div>
+
+      <section aria-labelledby="welcome-featured-heading" className="mt-8">
+        <h2
+          id="welcome-featured-heading"
+          className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+        >
+          {t("welcome.featured" as any)}
+        </h2>
+        <ul className="grid grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] gap-2">
+          {FEATURED_EXAMPLES.map(({ category, example }) => (
+            <li key={example.titleKey} className="flex">
+              <button
+                type="button"
+                onClick={() => onExample(t(example.promptKey as any))}
+                className="group flex w-full flex-col rounded-xl border border-border/70 bg-card/50 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t(category.labelKey as any)}</span>
+                <span className="mt-1.5 text-sm font-medium leading-6 transition-colors group-hover:text-primary">{t(example.titleKey as any)}</span>
+                <span className="mt-1 text-xs leading-5 text-muted-foreground">{t(example.descKey as any)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="mt-8">
+        <button
+          ref={examplesTriggerRef}
+          type="button"
+          aria-expanded={isExamplesOpen}
+          aria-controls="welcome-example-library"
+          onClick={() => setIsExamplesOpen((open) => !open)}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <span>{t("welcome.browseAllExamples" as any)}</span>
+          <ChevronDown
+            className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </button>
+
+        <div
+          id="welcome-example-library"
+          aria-hidden={!isExamplesOpen}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || !isExamplesOpen) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setIsExamplesOpen(false);
+            examplesTriggerRef.current?.focus();
+          }}
+          className={`grid text-left transition-[grid-template-rows,opacity] duration-300 ease-out ${
+            isExamplesOpen
+              ? "mt-5 grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="border-t border-border/70 pt-5">
+              <div
+                className="flex flex-wrap gap-1.5"
+                role="tablist"
+                aria-label={t("welcome.browseAllExamples" as any)}
+              >
+                {CATEGORIES.map((cat, index) => (
                   <button
-                    key={action.titleKey}
+                    key={cat.labelKey}
                     type="button"
-                    aria-pressed={isActive}
-                    onClick={() => {
-                      setActiveAction(action.titleKey);
-                      onExample(t(action.promptKey as any));
-                    }}
+                    role="tab"
+                    aria-selected={index === activeCategory}
+                    tabIndex={isExamplesOpen ? 0 : -1}
+                    onClick={() => setActiveCategory(index)}
                     className={
-                      isActive
-                        ? "group flex min-h-24 items-center justify-between rounded-xl border border-primary/35 bg-primary/[0.08] px-4 py-3 text-left text-primary shadow-sm transition-all hover:border-primary/50 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                        : "group flex min-h-24 items-center justify-between rounded-xl border border-border/70 bg-card/70 px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      index === activeCategory
+                        ? "inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+                        : "inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/60 hover:text-foreground"
                     }
                   >
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:text-primary">
-                        {action.icon}
-                      </span>
-                      {t(action.titleKey as any)}
-                    </span>
-                    <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+                    {cat.icon}
+                    <span>{t(cat.labelKey as any)}</span>
                   </button>
-                );
-              })}
-            </div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">
-              {t("welcome.tasks.hint")}
-            </p>
-          </div>
-
-          <div className="mt-8">
-            <button
-              ref={examplesTriggerRef}
-              type="button"
-              aria-expanded={isExamplesOpen}
-              aria-controls="welcome-example-library"
-              onClick={() => setIsExamplesOpen((open) => !open)}
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <span>{t("welcome.browseAllExamples" as any)}</span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
-                aria-hidden="true"
-              />
-            </button>
-
-            <div
-              id="welcome-example-library"
-              aria-hidden={!isExamplesOpen}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape" || !isExamplesOpen) return;
-                event.preventDefault();
-                event.stopPropagation();
-                setIsExamplesOpen(false);
-                examplesTriggerRef.current?.focus();
-              }}
-              className={`grid text-left transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                isExamplesOpen
-                  ? "mt-5 grid-rows-[1fr] opacity-100"
-                  : "grid-rows-[0fr] opacity-0"
-              }`}
-            >
-              <div className="min-h-0 overflow-hidden">
-                <div className="border-t border-border/70 pt-5">
-                  <div
-                    className="flex flex-wrap gap-1.5"
-                    role="tablist"
-                    aria-label={t("welcome.browseAllExamples" as any)}
+                ))}
+              </div>
+              <div role="tabpanel" className="mt-4 grid gap-2 text-left sm:grid-cols-2">
+                {CATEGORIES[activeCategory].examples.map((ex) => (
+                  <button
+                    key={ex.titleKey}
+                    type="button"
+                    tabIndex={isExamplesOpen ? 0 : -1}
+                    onClick={() => onExample(t(ex.promptKey as any))}
+                    className="block w-full rounded-xl border border-border/60 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                   >
-                    {CATEGORIES.map((cat, index) => (
-                      <button
-                        key={cat.labelKey}
-                        type="button"
-                        role="tab"
-                        aria-selected={index === activeCategory}
-                        tabIndex={isExamplesOpen ? 0 : -1}
-                        onClick={() => setActiveCategory(index)}
-                        className={
-                          index === activeCategory
-                            ? "inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
-                            : "inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border/60 hover:text-foreground"
-                        }
-                      >
-                        {cat.icon}
-                        <span>{t(cat.labelKey as any)}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div role="tabpanel" className="mt-4 grid gap-2 text-left sm:grid-cols-2">
-                    {CATEGORIES[activeCategory].examples.map((ex) => (
-                      <button
-                        key={ex.titleKey}
-                        type="button"
-                        tabIndex={isExamplesOpen ? 0 : -1}
-                        onClick={() => onExample(t(ex.promptKey as any))}
-                        className="block w-full rounded-xl border border-border/60 px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      >
-                        <span className="text-sm font-medium leading-snug text-foreground">{t(ex.titleKey as any)}</span>
-                        <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{t(ex.descKey as any)}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                    <span className="text-sm font-medium leading-snug text-foreground">{t(ex.titleKey as any)}</span>
+                    <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{t(ex.descKey as any)}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
-        </main>
-
-        <aside className="self-start lg:sticky lg:top-8">
-          <section
-            aria-labelledby="welcome-featured-heading"
-            className="rounded-2xl border border-border/70 bg-card/55 px-5 pt-5 shadow-sm"
-          >
-            <h2
-              id="welcome-featured-heading"
-              className="border-b border-border/60 pb-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"
-            >
-              {t("welcome.featured" as any)}
-            </h2>
-            <ul className="divide-y divide-border/60">
-              {FEATURED_EXAMPLES.map(({ category, example }) => (
-                <li key={example.titleKey}>
-                  <button
-                    type="button"
-                    onClick={() => onExample(t(example.promptKey as any))}
-                    className="group block w-full py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                  >
-                    <span className="block text-[11px] uppercase tracking-[0.14em] text-muted-foreground/70">{t(category.labelKey as any)}</span>
-                    <span className="mt-1.5 block text-sm font-medium leading-6 transition-colors group-hover:text-primary">{t(example.titleKey as any)}</span>
-                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">{t(example.descKey as any)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
+        </div>
       </div>
     </div>
   );
