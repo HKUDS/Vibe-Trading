@@ -264,10 +264,7 @@ export function WelcomeScreen({ onExample }: Props) {
     <div className="w-full px-4 pb-14 pt-6 text-left sm:px-6 lg:px-8">
       <div className="mx-auto grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-12">
         <main className="min-w-0">
-          <div className="mb-8 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            <BrandMark className="h-6 w-6 shrink-0" />
-            <span>{t("welcome.categories.researchAnalysis" as any)}</span>
-          </div>
+          <BrandMark className="mb-8 h-6 w-6" />
 
           <div className="max-w-3xl">
             <h1 className="font-serif text-[38px] font-normal leading-[1.08] tracking-[-0.025em] sm:text-[52px]">
@@ -276,18 +273,12 @@ export function WelcomeScreen({ onExample }: Props) {
             <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
               {t("welcome.taskSubtitle" as any)}
             </p>
-            <p className="mt-3 max-w-xl text-xs leading-5 text-muted-foreground/80">
-              {t("welcome.tasks.hint")}
-            </p>
           </div>
 
           <div className="mt-10 border-y border-border/70 py-5">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                {t("welcome.quickActions" as any)}
-              </span>
-              <span className="text-[11px] text-muted-foreground/70">01 / 03</span>
-            </div>
+            <span className="mb-3 block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              {t("welcome.quickActions" as any)}
+            </span>
             <div
               className="grid gap-2 sm:grid-cols-3"
               role="group"
@@ -321,44 +312,26 @@ export function WelcomeScreen({ onExample }: Props) {
                 );
               })}
             </div>
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              {t("welcome.tasks.hint")}
+            </p>
           </div>
 
-          <div className="mt-9">
-            <div className="mb-3 flex items-end justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-semibold tracking-tight">{t("welcome.categories.researchAnalysis" as any)}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">{t("welcome.tasks.hint")}</p>
-              </div>
-              <button
-                ref={examplesTriggerRef}
-                type="button"
-                aria-expanded={isExamplesOpen}
-                aria-controls="welcome-example-library"
-                onClick={() => setIsExamplesOpen((open) => !open)}
-                className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <span>{t("welcome.browseAllExamples" as any)}</span>
-                <ChevronDown
-                  className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </button>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-3">
-              {[CATEGORIES[1].examples[0], CATEGORIES[0].examples[1], CATEGORIES[2].examples[2]].map((ex) => (
-                <button
-                  key={ex.titleKey}
-                  type="button"
-                  onClick={() => onExample(t(ex.promptKey as any))}
-                  className="group min-h-32 rounded-xl border border-border/70 bg-card/50 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                >
-                  <span className="text-sm font-medium leading-snug text-foreground">{t(ex.titleKey as any)}</span>
-                  <span className="mt-2 block text-xs leading-5 text-muted-foreground">{t(ex.descKey as any)}</span>
-                  <ArrowUpRight className="mt-3 h-4 w-4 text-muted-foreground/60 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
-                </button>
-              ))}
-            </div>
+          <div className="mt-8">
+            <button
+              ref={examplesTriggerRef}
+              type="button"
+              aria-expanded={isExamplesOpen}
+              aria-controls="welcome-example-library"
+              onClick={() => setIsExamplesOpen((open) => !open)}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <span>{t("welcome.browseAllExamples" as any)}</span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-300 ${isExamplesOpen ? "rotate-180" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
 
             <div
               id="welcome-example-library"
@@ -449,9 +422,6 @@ export function WelcomeScreen({ onExample }: Props) {
               ))}
             </ul>
           </section>
-          <div className="mt-3 rounded-xl border border-dashed border-border/80 p-4">
-            <p className="text-xs font-medium">{t("welcome.tasks.hint")}</p>
-          </div>
         </aside>
       </div>
     </div>
