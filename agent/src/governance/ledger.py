@@ -433,7 +433,9 @@ def append_record(
                     start_prev = str(tail[-1]["record_hash"])
 
             verification, last_seq, last_hash = _walk_chain(
-                _iter_parsed_lines(existing_text.splitlines()),
+                # JSONL records are separated by LF; Unicode line separators
+                # may occur inside a JSON string and are not record breaks.
+                _iter_parsed_lines(existing_text.split("\n")),
                 start_seq=start_seq,
                 start_prev_hash=start_prev,
             )
@@ -480,7 +482,8 @@ def _read_raw_records(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     records: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    # Keep U+2028/U+2029 inside JSON string values; only LF terminates JSONL.
+    for line in path.read_text(encoding="utf-8").split("\n"):
         stripped = line.strip()
         if not stripped:
             continue
@@ -696,7 +699,7 @@ def _iter_all_segment_lines(
     for segment in [*archive_segments(path), path]:
         if not segment.exists():
             continue
-        lines = segment.read_text(encoding="utf-8").splitlines()
+        lines = segment.read_text(encoding="utf-8").split("\n")
         for local_index, record, parse_error in _iter_parsed_lines(lines):
             yield offset + local_index, record, parse_error
             if parse_error is not None:

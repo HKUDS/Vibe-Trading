@@ -27,6 +27,7 @@ COLLAPSE_TAIL = 500
 # which is not a constant — it embeds the original payload length, so it is
 # built by ``_cleared_text`` and matched by ``_is_cleared``.
 _STUB_RESULT_CONTENT = "[Result from earlier context — see summary above]"
+_HANDOFF_SUMMARY_PREFIX = "[Conversation compressed — handoff summary."
 
 TAIL_TOKEN_BUDGET = 20_000
 SUMMARY_CHUNK_CHARS = 80_000
@@ -304,6 +305,10 @@ def _context_collapse(messages: list, *, preserve_tool_call_ids: Optional[set[st
             continue
         content = msg.get("content")
         if not isinstance(content, str) or len(content) <= COLLAPSE_TEXT_MIN:
+            continue
+        # The handoff summary is the only surviving copy of older context
+        # after layer 3.  Layer 2 must leave it intact for the next turn.
+        if content.startswith(_HANDOFF_SUMMARY_PREFIX):
             continue
         if _result_data_gone(content):
             continue

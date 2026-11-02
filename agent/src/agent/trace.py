@@ -322,7 +322,10 @@ class TraceWriter:
             return []
         fields = set(resolve_fields) if resolve_fields is not None else None
         entries: List[Dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
+        # JSONL records are separated by LF.  ``str.splitlines()`` also treats
+        # U+2028/U+2029 as delimiters, but those characters are valid JSON
+        # string data and must remain inside the record.
+        for line in path.read_text(encoding="utf-8").split("\n"):
             line = line.strip()
             if not line:
                 continue

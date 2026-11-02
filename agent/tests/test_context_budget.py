@@ -54,6 +54,11 @@ def test_window_comes_from_the_catalog_for_the_reported_models() -> None:
     assert resolve_window("openrouter", "deepseek/deepseek-v4-pro")[0] == 1_000_000
 
 
+def test_window_resolution_normalizes_underscore_labels() -> None:
+    assert resolve_window("deep_seek", "deepseek_v4_pro")[0] == 1_000_000
+    assert resolve_window("openai_codex", "openai_codex/gpt_6_sol")[0] == 272_000
+
+
 def test_provider_scoped_entries_do_not_leak_to_other_providers() -> None:
     # The 272K is what the Codex backend publishes; another provider serving a
     # model of the same name is not covered by that source.

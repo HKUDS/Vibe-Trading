@@ -441,9 +441,10 @@ class SessionSearchIndex:
                 self.index_session(sid, title, ts=ts)
 
                 if messages_file.exists():
-                    for line in (
-                        messages_file.read_text(encoding="utf-8").strip().splitlines()
-                    ):
+                    # JSONL uses LF as its record separator.  ``splitlines``
+                    # incorrectly treats U+2028/U+2029 inside message text as
+                    # separators and drops the affected record during rebuild.
+                    for line in messages_file.read_text(encoding="utf-8").strip().split("\n"):
                         if not line.strip():
                             continue
                         try:
