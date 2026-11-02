@@ -183,6 +183,35 @@ describe("WelcomeScreen", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("lists featured examples under their own category and fills their prompts", async () => {
+    const user = userEvent.setup();
+    render(<WelcomeScreen onExample={onExample} />);
+
+    const featured = screen.getByRole("region", { name: "Featured examples" });
+    const cards = within(featured).getAllByRole("button");
+    expect(cards).toHaveLength(3);
+
+    const expected = [
+      ["earningsReport", "docWebResearch"],
+      ["crossMarketPortfolio", "multiMarketBacktest"],
+      ["thesisTracker", "valueInvesting"],
+    ];
+    for (const [index, [example, category]] of expected.entries()) {
+      expect(cards[index]).toHaveTextContent(i18n.t(`welcome.categories.${category}`));
+      expect(cards[index]).toHaveTextContent(i18n.t(`welcome.examples.${example}`));
+      await user.click(cards[index]);
+      expect(onExample).toHaveBeenLastCalledWith(i18n.t(`welcome.examples.${example}Prompt`));
+    }
+    expect(onExample).toHaveBeenCalledTimes(3);
+  });
+
+  it("states the fill hint once and leaves the page's main landmark to the page", () => {
+    const { container } = render(<WelcomeScreen onExample={onExample} />);
+
+    expect(screen.getAllByText(i18n.t("welcome.tasks.hint"))).toHaveLength(1);
+    expect(container.querySelector("main")).toBeNull();
+  });
+
   it("does not render capability chips", () => {
     render(<WelcomeScreen onExample={onExample} />);
 
