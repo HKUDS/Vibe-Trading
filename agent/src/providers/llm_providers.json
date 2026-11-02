@@ -81,6 +81,19 @@
     ]
   },
   {
+    "name": "llmtr",
+    "label": "LLMTR",
+    "api_key_env": "LLMTR_API_KEY",
+    "base_url_env": "LLMTR_BASE_URL",
+    "default_model": "qwen/qwen3.8-27b-free",
+    "default_base_url": "https://llmtr.com/v1",
+    "api_key_required": true,
+    "model_options": [
+      "qwen/qwen3.8-27b-free",
+      "llmtr/qwen3-8-27b"
+    ]
+  },
+  {
     "name": "siliconflow-cn",
     "label": "SiliconFlow (CN)",
     "api_key_env": "SILICONFLOW_API_KEY",

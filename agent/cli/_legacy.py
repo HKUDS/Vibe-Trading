@@ -5967,6 +5967,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_placeholder": "sk-...",
     },
     {
+        "label": "LLMTR",
+        "provider": "llmtr",
+        "key_env": "LLMTR_API_KEY",
+        "base_env": "LLMTR_BASE_URL",
+        "base_url": "https://llmtr.com/v1",
+        "model": "qwen/qwen3.8-27b-free",
+        "key_prefix": None,
+        "key_placeholder": "api-key...",
+    },
+    {
         "label": "SiliconFlow (CN)",
         "provider": "siliconflow-cn",
         "key_env": "SILICONFLOW_API_KEY",

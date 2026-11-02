@@ -29,6 +29,7 @@ _PUBLIC_PROVIDERS = frozenset(
         "iflytek",
         "kimi",
         "kimi-coding",
+        "llmtr",
         "mimo",
         "minimax",
         "modelscope",

@@ -281,6 +281,15 @@ _PROVIDERS: dict[str, ProviderCapabilities] = {
     "opencode": _OPENCODE_CAPABILITIES,
     "opencode-zen": ProviderCapabilities("opencode-zen", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
     "opencode-go": ProviderCapabilities("opencode-go", "OPENAI_API_KEY", "OPENAI_BASE_URL"),
+    # LLMTR documents Chat Completions with reasoning as a boolean or :think
+    # suffix. Keep OpenAI's effort fields off while retaining reasoning_content
+    # returned by models that have thinking enabled.
+    "llmtr": ProviderCapabilities(
+        "llmtr",
+        "LLMTR_API_KEY",
+        "LLMTR_BASE_URL",
+        capture_reasoning=True,
+    ),
 }
 
 

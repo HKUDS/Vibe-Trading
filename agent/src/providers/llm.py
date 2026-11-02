@@ -1513,7 +1513,7 @@ def uses_responses_api(
     if configured_responses_api is not True:
         return False
     normalized_provider = provider.strip().lower().replace("_", "-")
-    if normalized_provider in {"anthropic", "openai-codex"}:
+    if normalized_provider in {"anthropic", "openai-codex", "llmtr"}:
         return False
     if normalized_provider != "deepseek":
         return True
