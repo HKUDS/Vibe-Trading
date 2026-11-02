@@ -18,6 +18,7 @@ number and whichever language it is written in.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import tempfile
 
@@ -133,13 +134,11 @@ def test_every_conventional_declaration_grounded_the_same_delta(spelling: str) -
     assert _verdict(declared) is True, spelling
 
 
-def test_a_bare_declaration_does_not_ground_a_plain_percent_figure() -> None:
-    """The borrow is one-way: ``37%`` in the prose needs a percent declaration.
+def test_a_count_declaration_does_not_ground_a_plain_percent_figure() -> None:
+    """A count is not a percentage, even when the numbers happen to agree.
 
-    ``1.13`` may ground ``1.13个百分点`` because the unit word carries the
-    percent-ness. ``37%`` written with a real percent sign cannot borrow the
-    count declaration ``37`` — that is the assertion-vs-fraction distinction
-    the contract pins (§2).
+    A same-valued observed or cited declaration may ground a plain percent
+    figure, but the count role stays excluded: 37 customers is not 37 percent.
     """
     text = "市占率 37%。"
     declared = text + "\n\n```figures\n" + "37 | count | 客户数 | c1\n```"
@@ -175,10 +174,48 @@ def test_integer_and_decimal_points_bind_bare_declarations(value):
 
 
 @pytest.mark.parametrize("value", ["3", "1.13"])
-def test_plain_percentage_never_borrows_bare_cited_value(value):
+def test_plain_percentage_borrows_bare_cited_value(value):
+    """A bare declaration can ground the same value written with ``%`` (#2149)."""
     text = f"Margin {value}% (Q3 filing)."
     declared = text + f"\n```figures\n{value} | cited | Q3 filing\n```"
-    assert not _verdict(declared)
+    assert _verdict(declared)
+
+
+def test_percent_borrows_bare_observation_with_matching_document_evidence():
+    """The full #2149 repro: the declaration and document both use bare 17.10."""
+    document_text = "营业收入 7,747,346,892 17.10 20,817,866,218 10.56\n"
+    result = json.dumps(
+        {
+            "status": "ok",
+            "file": "t.pdf",
+            "format": "pdf",
+            "char_count": len(document_text),
+            "total_pages": 10,
+            "text": document_text,
+        },
+        ensure_ascii=False,
+    )
+    answer = (
+        "Q3营收同比增长 +17.10%。\n"
+        "```figures\n17.10 | observed | Q3营收同比 | read_document\n```"
+    )
+    with tempfile.TemporaryDirectory() as run_dir:
+        ledger = GroundingLedger(run_dir=pathlib.Path(run_dir), user_message="解读三季报")
+        ledger.ingest_tool_result(
+            tool_name="read_document",
+            arguments={"file_path": "/tmp/u/t.pdf"},
+            result=result,
+            call_id="c1",
+            success=True,
+        )
+        validation = ledger.validate_final_answer(answer)
+
+    assert validation.valid, validation.issues
+
+
+def test_plain_percent_borrow_is_exact_not_rounded():
+    block = parse_figures_block("```figures\n1.134 | cited | Q3 filing\n```")
+    assert block.match(1.13, True, "1.13") is None
 
 
 def test_points_do_not_round_bare_declarations_or_accept_wrong_values():

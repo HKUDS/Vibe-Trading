@@ -793,6 +793,7 @@ class _PolicyMixin:
         figure: Figure | None,
         *,
         pool_ambiguous: bool = False,
+        allow_bare_document_percent: bool = False,
     ) -> tuple[list[EvidenceRecord], list[float]] | None:
         """The evidence named by an exact field, call+field, one call, or one tool.
 
@@ -814,6 +815,9 @@ class _PolicyMixin:
             pool_ambiguous: Pool a field ref's sources even when they disagree.
                 Only a derivation's anchors ask for it: an operand from either
                 run is still an observation.
+            allow_bare_document_percent: Let a same-valued bare observed
+                declaration ground a percent against ``document.figure``. Other
+                percent paths keep requiring ``document.ratio``.
 
         Returns:
             ``(records, metric values)``, or None when ``ref`` names no field,
@@ -883,7 +887,11 @@ class _PolicyMixin:
                 record
                 for record in records
                 if not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
-                and (record.source != "document" or record.field == "document.ratio")
+                and (
+                    record.source != "document"
+                    or record.field == "document.ratio"
+                    or (allow_bare_document_percent and record.field == "document.figure")
+                )
             ]
         elif figure is not None and figure.currency:
             # Documents often put the unit in a table header. An explicitly
@@ -1652,7 +1660,16 @@ class _PolicyMixin:
         A currency-marked figure is answered only by money-denominated values
         and a percent only by the rest; a table cell only by its column's field.
         """
-        scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
+        scoped = (
+            self._referenced(
+                declaration.ref,
+                symbol,
+                figure,
+                allow_bare_document_percent=figure.percent and not declaration.percent,
+            )
+            if declaration
+            else None
+        )
         if scoped is not None:
             scoped_records, metric_values = scoped
             if (

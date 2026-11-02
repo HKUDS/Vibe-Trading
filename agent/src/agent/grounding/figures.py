@@ -168,11 +168,11 @@ class FiguresBlock:
         """Return the declaration covering ``value``, or None.
 
         Matching is numeric and percent-ness must agree: ``37%`` and ``0.37`` are
-        different assertions. One exception, and it is one-way: a percentage-
-        point figure ("1.13个百分点", "3.6pp") carries its unit in words, so the
-        convention declares it bare ("1.13"), and a same-valued bare declaration
-        may ground it (#2107). A bare figure never borrows a percent
-        declaration. An exact value (tolerance 1e-9) always wins. Failing
+        different assertions. One exception, and it is one-way: a percent or
+        percentage-point figure carries its unit explicitly, so a same-valued
+        bare declaration may ground it (#2107, #2149). An ordinary percent
+        figure excludes count declarations, and a bare figure never borrows a
+        percent declaration. An exact value (tolerance 1e-9) always wins. Failing
         that, a figure written with decimals ("38,68") covers a declaration holding
         the precise observation ("38.68005857871268") when it is that value correctly
         rounded to the digits written: within half a unit of its last decimal, and
@@ -210,13 +210,15 @@ class FiguresBlock:
             ]
             if rounded:
                 return min(rounded, key=lambda pair: pair[0])[1]
-        # #2107: the point-marked borrow. Reached only when the percent-exact
-        # arms above found nothing, which for "1.13个百分点" is the normal
-        # case — its conventionally bare declaration lives below.
-        if point_marked and percent:
+        # #2107/#2149: the exact-value borrow. Percentage points keep their
+        # existing behavior; a plain percent also excludes count declarations,
+        # so 37 customers cannot accidentally ground a 37% market-share claim.
+        if percent:
             for declaration in self.declarations:
-                if not declaration.percent and abs(declaration.value - value) <= max(
-                    abs(value) * 1e-9, 1e-9
+                if (
+                    not declaration.percent
+                    and (point_marked or declaration.role != "count")
+                    and abs(declaration.value - value) <= max(abs(value) * 1e-9, 1e-9)
                 ):
                     return declaration
         return None
