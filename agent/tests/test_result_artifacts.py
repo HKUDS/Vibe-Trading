@@ -89,6 +89,15 @@ def test_unavailable_artifact_is_not_claimed(tmp_path, monkeypatch, failure):
         assert Path(receipt['_result_file']['path']).read_text() == 'changed by another writer'
 
 
+def test_unencodable_result_falls_back_to_truncation(tmp_path):
+    # An upstream payload that cut an emoji in half keeps a lone surrogate
+    # through json.dumps(ensure_ascii=False); hashing it must not escape.
+    raw = large_result()[:-1] + ', "title": "\ud83d"}'
+    result = deliver_tool_result(raw, tmp_path, registry_with_reader())
+    assert 'TRUNCATED:' in result
+    assert '_result_file' not in result
+
+
 class _LargeResult(BaseTool):
     name = 'large_result_probe'
     description = 'Test large observation delivery.'
