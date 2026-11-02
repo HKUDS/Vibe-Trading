@@ -27,6 +27,13 @@ MARKET_BENCHMARKS: dict[str, Optional[str]] = {
     "ca_equity":  "XIC.TO",     # S&P/TSX Capped Composite ETF
     "br_equity":  "BOVA11.SA",  # iShares Ibovespa ETF
     "a_share":    "000300.SH",  # CSI 300 (China A-share core index)
+    "india_equity":   "^NSEI",  # Nifty 50
+    "kr_equity":      "^KS11",  # KOSPI Composite
+    "argentina_equity": "^MERV",  # S&P Merval
+    # Vietnam has no index symbol the universal fallback loader can serve, so
+    # this is an explicit "no universal benchmark" rather than a missing row.
+    # An inference miss and a deliberate None must stay distinguishable.
+    "vietnam_equity": None,
     "crypto":     "BTC-USDT",
     "futures":    "ES.CME",      # E-mini S&P 500 futures
     "forex":      None,         # no universal benchmark
@@ -149,15 +156,7 @@ def _resolve_ticker(
 
     # Infer market from source + first code pattern
     market = _infer_market(codes, source)
-    ticker = MARKET_BENCHMARKS.get(market)
-
-    # yfinance is the universal fallback for benchmark fetch
-    # but it only works for global-equity market types
-    if ticker and market not in {"us_equity", "hk_equity", "ca_equity"}:
-        # Only use benchmark if we can actually fetch it
-        pass
-
-    return ticker
+    return MARKET_BENCHMARKS.get(market)
 
 
 def _infer_market(codes: list[str], source: str) -> str:
@@ -178,6 +177,10 @@ def _infer_market(codes: list[str], source: str) -> str:
         return "ca_equity"
     if first.endswith((".NS", ".BO")):
         return "india_equity"
+    if first.endswith(".BA"):
+        return "argentina_equity"
+    if first.endswith(".VN"):
+        return "vietnam_equity"
     if first.endswith(".SA"):
         return "br_equity"
     if first.endswith((".KS", ".KQ")):

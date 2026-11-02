@@ -1033,7 +1033,12 @@ class BaseEngine(ABC):
 
         # ── External benchmark fetch ──────────────────────────────────────────
         bench_ticker = config.get("benchmark")
-        if bench_ticker and bench_ticker != "auto":
+        # `"auto"` is the sentinel for "pick the market benchmark for me", so it
+        # has to reach resolution. Skipping it here is what left
+        # `MARKET_BENCHMARKS` / `_infer_market` dead code and graded every
+        # benchmark-relative metric against the equal-weight basket below.
+        explicit_bench = bench_ticker if (bench_ticker and bench_ticker != "auto") else None
+        if bench_ticker:
             from backtest.benchmark import resolve_benchmark
             bench_source = config.get("source", "yfinance")
             bench_result = resolve_benchmark(
@@ -1042,7 +1047,7 @@ class BaseEngine(ABC):
                 start_date=config.get("start_date", ""),
                 end_date=config.get("end_date", ""),
                 interval=interval,
-                explicit=bench_ticker,
+                explicit=explicit_bench,
                 # Explicit source: fetch the benchmark through its own loader
                 # (keeps e.g. source=local offline). Auto keeps the yfinance
                 # default — its loader only wraps the preloaded strategy data.
