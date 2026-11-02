@@ -88,7 +88,7 @@ _CSP_CONTENT = (
 )
 
 # Cache-busting version of the site shell modules; matches the hand-written pages.
-_SHELL_VERSION = "20261021"
+_SHELL_VERSION = "20261101"
 
 # Display names for zoos. Source of truth — do not depend on prose elsewhere.
 _ZOO_DISPLAY: dict[str, dict[str, str]] = {

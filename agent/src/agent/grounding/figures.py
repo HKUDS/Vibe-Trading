@@ -521,7 +521,9 @@ def _numbers(text: str, *, decimal_commas: bool | None = None) -> list[_Token]:
                 )
             ):
                 body, end = f"{body}.{fraction}", stop
-        tokens.append(_Token(match.start(), end, sign, body.replace(",", "")))
+        tokens.append(
+            _Token(match.start(), end, sign, body.replace(",", ""), "," in body)
+        )
         cursor = end
     # A dash right after a percent mark opens a range ("20%-30%"), it is not
     # the sign of the number that follows (#2107). The endpoint keeps its own

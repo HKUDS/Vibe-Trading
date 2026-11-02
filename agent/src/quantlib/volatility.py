@@ -36,6 +36,11 @@ __all__ = [
 ]
 
 
+#: Point at which ``heston_price`` splits its integral into a finite part and
+#: an infinite tail when no ``integration_limit`` is given.
+_HESTON_SPLIT = 200.0
+
+
 def heston_feller_condition(kappa: float, theta: float, sigma_v: float) -> dict[str, float | bool]:
     """Check Feller condition (2 * kappa * theta > sigma_v**2).
 
@@ -115,7 +120,7 @@ def heston_price(
     rho: float,
     option_type: str = "call",
     q: float = 0.0,
-    integration_limit: float = 200.0,
+    integration_limit: float | None = None,
 ) -> float:
     """Price a European option under the Heston stochastic volatility model.
 
@@ -133,7 +138,11 @@ def heston_price(
         rho: Spot-variance correlation in [-1.0, 1.0].
         option_type: 'call' or 'put'.
         q: Continuous dividend yield.
-        integration_limit: Upper limit for numerical quadrature.
+        integration_limit: Upper limit for numerical quadrature. The default,
+            None, integrates to infinity. A finite limit truncates the integral,
+            which is only accurate when the integrand has decayed by then: for an
+            option a day or less from expiry it has not decayed by ``u = 200``,
+            and the truncated price can be off by more than 10%.
 
     Returns:
         Option price as a non-negative float.
@@ -149,11 +158,11 @@ def heston_price(
         ("theta", theta),
         ("sigma_v", sigma_v),
         ("rho", rho),
-        ("integration_limit", integration_limit),
+        ("integration_limit", 1.0 if integration_limit is None else integration_limit),
     ):
         if not math.isfinite(value):
             raise ValueError(f"{name} must be finite, got {value}")
-    if integration_limit <= 0.0:
+    if integration_limit is not None and integration_limit <= 0.0:
         raise ValueError("integration_limit must be strictly positive")
     if S0 <= 0.0 or K <= 0.0:
         raise ValueError(f"Spot S0 and strike K must be positive, got S0={S0}, K={K}")
@@ -195,7 +204,15 @@ def heston_price(
         val = cmath.exp(1j * u * k) * phi / (u**2 + 0.25)
         return float(val.real)
 
-    integ, _ = quad(integrand, 0.0, integration_limit, limit=2000)
+    if integration_limit is None:
+        # The integrand decays like the characteristic function, whose width in
+        # u grows as 1/sqrt(v*T), so no fixed upper limit is accurate for every
+        # expiry. Integrate the bulk on a finite interval and add the tail.
+        integ, _ = quad(integrand, 0.0, _HESTON_SPLIT, limit=2000)
+        tail, _ = quad(integrand, _HESTON_SPLIT, math.inf, limit=2000)
+        integ += tail
+    else:
+        integ, _ = quad(integrand, 0.0, integration_limit, limit=2000)
     prefactor = (1.0 / math.pi) * math.sqrt(S0 * K) * math.exp(-0.5 * (r + q) * T)
     call = float(S0 * math.exp(-q * T) - prefactor * integ)
     call = float(max(0.0, call))

@@ -174,7 +174,7 @@ class AgentLoop(ToolCallLifecycle):
         registry: Tool registry.
         llm: ChatLLM client.
         memory: Workspace memory.
-        max_iterations: Maximum number of iterations.
+        max_iterations: Maximum research iterations, plus one text-only answer retry.
     """
 
     def __init__(
@@ -195,7 +195,7 @@ class AgentLoop(ToolCallLifecycle):
             llm: ChatLLM client.
             memory: Workspace memory (created fresh if not provided).
             event_callback: Event callback (event_type, data).
-            max_iterations: Maximum number of loop iterations.
+            max_iterations: Maximum research iterations, plus one text-only answer retry.
             persistent_memory: PersistentMemory for cross-session recall.
             cancel_event: Optional cancellation flag to share with long-running
                 tools (e.g. ``run_swarm``). The host session owns the event so a
@@ -564,8 +564,11 @@ class AgentLoop(ToolCallLifecycle):
             watchdog.start()
 
         stream_failure_streak = 0
+        final_answer_retry_pending = False
         try:
-            while iteration < self.max_iterations:
+            while iteration < self.max_iterations or final_answer_retry_pending:
+                final_answer_retry = final_answer_retry_pending
+                final_answer_retry_pending = False
                 self._tool_schema_tokens = estimate_tokens(request_definitions(self.registry))
                 if self._budget_stop_reason is not None:
                     break
@@ -671,7 +674,7 @@ class AgentLoop(ToolCallLifecycle):
                 # whose validator requested no explicit recovery is text-only too:
                 # the model must revise from evidence already gathered instead of
                 # starting another research/refetch loop merely to reformat a draft.
-                is_last_iteration = (iteration == self.max_iterations)
+                is_last_iteration = iteration >= self.max_iterations
                 correction_text_only = grounding_correction_text_only
                 tool_defs = (
                     None
@@ -875,12 +878,21 @@ class AgentLoop(ToolCallLifecycle):
                         )
                         continue
 
-                if forced_grounding_release or not response.has_tool_calls:
+                unoffered_retry_call = final_answer_retry and response.has_tool_calls
+                if (
+                    forced_grounding_release
+                    or unoffered_retry_call
+                    or not response.has_tool_calls
+                ):
                     # At the cap, release the last actual draft through the
                     # existing gate. The forbidden call's text is not an answer.
-                    final_content = pending_grounding_draft if forced_grounding_release else response.content or ""
+                    final_content = (
+                        pending_grounding_draft
+                        if forced_grounding_release
+                        else response.content or ""
+                    )
                     syntax_fallback_emitted = False
-                    if not final_content:
+                    if not final_content and not unoffered_retry_call:
                         empty_model_response_iter = iteration
                         trace.write(
                             {
@@ -912,19 +924,27 @@ class AgentLoop(ToolCallLifecycle):
                     consecutive_empty_responses = 0
                     # A model can answer the forced-text final iteration with its
                     # native tool-call DSL as prose (see _looks_like_tool_call_syntax).
-                    # That is not an answer: retry once with a plain-text instruction,
-                    # and if no budget remains release a deterministic fallback instead
-                    # of leaking the raw markup to the user.
-                    if _looks_like_tool_call_syntax(final_content):
+                    # That is not an answer: allow one text-only retry after the
+                    # iteration cap, then use a deterministic fallback if it also
+                    # fails. Cancellation and goal budgets still stop that retry.
+                    if unoffered_retry_call or _looks_like_tool_call_syntax(
+                        final_content
+                    ):
+                        if stream.streamed_chars:
+                            self._emit(
+                                "stream_reset",
+                                {
+                                    "iter": current_iter,
+                                    "reason": "tool_call_syntax_in_answer",
+                                },
+                            )
                         trace.write(
                             {
                                 "type": "tool_call_syntax_in_answer",
                                 "iter": current_iter,
                             }
                         )
-                        messages.append(
-                            {"role": "assistant", "content": final_content}
-                        )
+                        messages.append({"role": "assistant", "content": final_content})
                         messages.append(
                             {
                                 "role": "system",
@@ -936,9 +956,14 @@ class AgentLoop(ToolCallLifecycle):
                             }
                         )
                         final_content = ""
-                        if iteration < self.max_iterations:
+                        if iteration <= self.max_iterations:
+                            # One extra text-only turn can re-emit a withheld final
+                            # answer; it does not extend the research/tool budget.
+                            final_answer_retry_pending = (
+                                iteration == self.max_iterations
+                            )
                             continue
-                        # No budget left: never leak the raw markup. The
+                        # The bounded retry also failed: never leak the raw markup. The
                         # grounding safe-fallback talks about instrument identity,
                         # which is wrong for non-market tasks, so use a neutral
                         # message here instead.
@@ -980,7 +1005,13 @@ class AgentLoop(ToolCallLifecycle):
                     should_continue_goal = False
                     continuation_snapshot = None
                     _max_cont = _goal_max_continuations()
-                    if not forced_grounding_release and active_goal_id and session_id and _max_cont > 0:
+                    if (
+                        not final_answer_retry
+                        and not forced_grounding_release
+                        and active_goal_id
+                        and session_id
+                        and _max_cont > 0
+                    ):
                         try:
                             if goal_store is None:
                                 from src.goal import GoalStore
