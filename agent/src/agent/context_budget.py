@@ -85,8 +85,10 @@ def resolve_window(
     if learned_window:
         return int(learned_window), "learned:context_length_error"
     catalog = _catalog()
-    provider = (provider or "").strip().lower()
-    model = (model or "").strip()
+    # Provider/model labels arrive from different adapters with either hyphens
+    # or underscores.  Catalog patterns use the canonical hyphenated spelling.
+    provider = (provider or "").strip().lower().replace("_", "-")
+    model = (model or "").strip().replace("_", "-")
     for entry in catalog["models"]:
         if entry.get("provider") and entry["provider"] != provider:
             continue

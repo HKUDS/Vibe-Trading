@@ -286,6 +286,22 @@ class TestContextCollapse:
         assert "TAIL_MARKER" in collapsed_msg
         assert "collapsed" in collapsed_msg
 
+    def test_preserves_handoff_summary(self) -> None:
+        handoff = (
+            "[Conversation compressed — handoff summary. Transcript: run/trace.jsonl]\n\n"
+            + "critical handoff context "
+            + ("x" * (COLLAPSE_TEXT_MIN + 500))
+        )
+        messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": handoff}]
+        messages.extend(
+            {"role": "user", "content": f"older {i} " + ("z" * (COLLAPSE_TEXT_MIN + 500))}
+            for i in range(COLLAPSE_PRESERVE_RECENT + 2)
+        )
+
+        _context_collapse(messages)
+
+        assert messages[1]["content"] == handoff
+
 
 # ---------------------------------------------------------------------------
 # _fix_tool_pairs

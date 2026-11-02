@@ -10,7 +10,7 @@ import concurrent.futures
 import logging
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -391,7 +391,7 @@ class SessionService:
             self.store.create_attempt(attempt)
             session.config["include_shell_tools"] = include_shell_tools
             session.last_attempt_id = attempt.attempt_id
-            session.updated_at = datetime.now().isoformat()
+            session.updated_at = datetime.now(timezone.utc).isoformat()
             self.store.update_session(session)
             self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
 

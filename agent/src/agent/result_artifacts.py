@@ -92,11 +92,11 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     except (ValueError, TypeError):
         payload = None
         is_json = False
-    root = Path(run_dir).resolve()
-    digest = hashlib.sha256(result.encode()).hexdigest()
-    folder = root / 'tool-results' / digest
-    path = folder / ('result.json' if is_json else 'result.txt')
     try:
+        root = Path(run_dir).resolve()
+        digest = hashlib.sha256(result.encode()).hexdigest()
+        folder = root / 'tool-results' / digest
+        path = folder / ('result.json' if is_json else 'result.txt')
         _write_original(path, result, root)
         parts = save_result_parts(result, folder / 'parts', root)
         part_count = len(parts)

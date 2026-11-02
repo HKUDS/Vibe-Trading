@@ -396,6 +396,17 @@ def test_only_asserting_untampered_pass_would_be_insufficient_so_also_assert_ok_
     assert verify_chain(path) == ChainVerificationResult(ok=True, record_count=5, first_break=None)
 
 
+def test_append_record_keeps_unicode_line_separator_in_payload(tmp_path: Path) -> None:
+    path = tmp_path / "chain.jsonl"
+    append_record(path, {"note": "before\u2028after\u2029end"})
+    append_record(path, {"note": "second"})
+
+    result = verify_chain(path)
+    assert result == ChainVerificationResult(ok=True, record_count=2, first_break=None)
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
+    assert records[0]["note"] == "before\u2028after\u2029end"
+
+
 def test_append_record_refuses_to_extend_an_already_broken_chain(tmp_path: Path) -> None:
     path = tmp_path / "chain.jsonl"
     _write_five_records(path)

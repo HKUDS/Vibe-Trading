@@ -43,6 +43,17 @@ class TestParseFrontmatter:
         meta, _ = _parse_frontmatter(text)
         assert meta["tags"] == []
 
+    def test_quoted_scalars_lose_their_quotes_and_stay_strings(self) -> None:
+        text = "---\nname: 'foo'\ndescription: \"Use when: a, b\"\nflag: \"true\"\nraw: \"[a]\"\n---\nBody"
+        meta, _ = _parse_frontmatter(text)
+        assert meta == {"name": "foo", "description": "Use when: a, b", "flag": "true", "raw": "[a]"}
+
+    def test_utf8_bom_before_frontmatter(self) -> None:
+        text = "\ufeff---\nname: momentum-x\ndescription: My rules\n---\nBody"
+        meta, body = _parse_frontmatter(text)
+        assert meta == {"name": "momentum-x", "description": "My rules"}
+        assert body == "Body"
+
     def test_no_frontmatter(self) -> None:
         text = "Just plain text, no frontmatter."
         meta, body = _parse_frontmatter(text)

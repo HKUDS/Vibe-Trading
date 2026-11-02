@@ -237,3 +237,29 @@ class TestReindex:
         results = index.search("reindex probe")
         assert len(results) >= 1
         assert results[0].session_id == "session-001"
+
+    def test_reindex_keeps_unicode_line_separator_inside_message(self, index: SessionSearchIndex, tmp_path: Path) -> None:
+        import json
+
+        store_dir = tmp_path / "sessions"
+        store_dir.mkdir()
+        s_dir = store_dir / "session-unicode"
+        s_dir.mkdir()
+        (s_dir / "session.json").write_text(
+            json.dumps({
+                "session_id": "session-unicode",
+                "title": "Unicode message",
+                "created_at": "2026-01-01T00:00:00",
+            }),
+            encoding="utf-8",
+        )
+        (s_dir / "messages.jsonl").write_text(
+            json.dumps({"role": "user", "content": "before\u2028searchable\u2029after"}, ensure_ascii=False)
+            + "\n",
+            encoding="utf-8",
+        )
+
+        assert index.reindex_from_store(store_dir) == 1
+        results = index.search("searchable")
+        assert len(results) == 1
+        assert results[0].snippet.replace(">>>", "").replace("<<<", "") == "before\u2028searchable\u2029after"
