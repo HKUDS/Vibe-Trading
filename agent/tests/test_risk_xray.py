@@ -42,10 +42,13 @@ def test_weights_are_renormalized_with_warning():
     _assert_strict_json(result)
 
 
-def test_negative_weight_rejected():
+def test_negative_weight_is_part_of_the_book():
+    # Retired contract: this used to raise "long-only". A short leg is now
+    # x-rayed as part of the book rather than refused. See
+    # test_risk_xray_long_short.py for the gross/net coverage.
     closes = _closes({"AAA": list(range(100, 160)), "BBB": list(range(50, 110))})
-    with pytest.raises(ValueError, match="long-only"):
-        compute_risk_xray(closes, {"AAA": 1.5, "BBB": -0.5})
+    result = compute_risk_xray(closes, {"AAA": 1.5, "BBB": -0.5}, min_history=5)
+    assert result["exposure"]["short_count"] == 1
 
 
 def test_unknown_symbol_rejected():
@@ -300,16 +303,18 @@ def test_average_invested_weights_rejects_flat_strategy():
         average_invested_weights(pd.DataFrame())
 
 
-def test_average_invested_weights_rejects_long_short_book():
-    # A net-short leg must refuse the x-ray outright, not silently shrink the
-    # basket to the long half and present it as the whole strategy.
+def test_average_invested_weights_carries_the_short_leg():
+    # Retired contract: this used to raise on a net-short leg so the x-ray
+    # would not silently shrink to the long half. The x-ray now describes the
+    # whole book, so the short leg is carried through as a negative weight.
     idx = pd.date_range("2026-01-01", periods=4, freq="D")
     target_pos = pd.DataFrame(
         {"AAA": [0.5, 0.5, 0.5, 0.5], "BBB": [-0.25, -0.25, -0.25, -0.25]},
         index=idx,
     )
-    with pytest.raises(ValueError, match="long-only .* BBB"):
-        average_invested_weights(target_pos)
+    weights, avg_invested = average_invested_weights(target_pos)
+    assert weights == {"AAA": pytest.approx(0.5), "BBB": pytest.approx(-0.25)}
+    assert avg_invested == pytest.approx(0.25)
 
 
 def test_write_risk_xray_strict_json_and_markdown(tmp_path):

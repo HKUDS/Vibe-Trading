@@ -48,7 +48,13 @@ def _finite(value: float | None) -> float | None:
 def _validate_weights(
     closes: pd.DataFrame, weights: Mapping[str, float]
 ) -> tuple[dict[str, float], list[str]]:
-    """Normalize weights to sum 1; reject unknown symbols and bad values.
+    """Normalize weights to unit gross exposure; reject unknown symbols and bad values.
+
+    Weights may be negative: a short leg is part of the book, not an error.
+    Normalizing by the sum of absolute weights keeps a hedged book's legs in
+    proportion instead of blowing the net sum up toward infinity as the two
+    sides cancel, and for a long-only book gross and net are the same number,
+    so nothing changes there.
 
     Returns the cleaned weight map (restricted to available columns) and any
     warnings worth surfacing to the caller.
@@ -69,18 +75,14 @@ def _validate_weights(
             raise ValueError(f"weight for {sym!r} is not a number: {raw!r}") from exc
         if not math.isfinite(value):
             raise ValueError(f"weight for {sym!r} is not finite: {raw!r}")
-        if value < 0:
-            raise ValueError(
-                f"weight for {sym!r} is negative ({value}); the risk x-ray is long-only for now"
-            )
         cleaned[sym] = value
 
-    total = sum(cleaned.values())
-    if total <= 0:
-        raise ValueError("weights must sum to a positive value")
-    if abs(total - 1.0) > 1e-6:
-        warnings.append(f"weights summed to {total:.6f}; renormalized to 1.0")
-        cleaned = {sym: value / total for sym, value in cleaned.items()}
+    gross = sum(abs(value) for value in cleaned.values())
+    if gross <= 0:
+        raise ValueError("weights must carry a non-zero exposure")
+    if abs(gross - 1.0) > 1e-6:
+        warnings.append(f"weights carried gross exposure {gross:.6f}; renormalized to 1.0")
+        cleaned = {sym: value / gross for sym, value in cleaned.items()}
     return cleaned, warnings
 
 
@@ -138,10 +140,10 @@ def compute_risk_xray(
         # Renormalize over the survivors so the x-ray still describes a
         # fully invested basket, and say so.
         kept_weights = {sym: weights[sym] for sym in kept}
-        total = sum(kept_weights.values())
-        if total <= 0:
+        gross = sum(abs(value) for value in kept_weights.values())
+        if gross <= 0:
             raise ValueError("surviving symbols have zero total weight")
-        weights = {sym: value / total for sym, value in kept_weights.items()}
+        weights = {sym: value / gross for sym, value in kept_weights.items()}
         warnings.append("weights renormalized over symbols that survived the history filter")
 
     aligned = frame[kept].dropna(axis=0, how="any")
@@ -171,6 +173,7 @@ def compute_risk_xray(
             "last_date": str(aligned.index[-1]),
         },
         "concentration": _concentration(w),
+        "exposure": _exposure(w, kept),
         "volatility": _volatility(port_returns, periods_per_year),
         "drawdown": _drawdown(port_returns),
         "tail_risk": _tail_risk(port_returns, var_levels),
@@ -183,13 +186,31 @@ def compute_risk_xray(
 
 
 def _concentration(w: np.ndarray) -> dict[str, Any]:
-    hhi = float(np.sum(w**2))
-    order = np.argsort(w)[::-1]
+    # Concentration is how much of the book each position carries, so it runs
+    # on the gross share. On signed weights a hedged book would look
+    # diversified: the legs cancel in the sum and the HHI collapses.
+    gross = np.abs(w)
+    hhi = float(np.sum(gross**2))
+    order = np.argsort(gross)[::-1]
     return {
         "hhi": _finite(hhi),
         "effective_n": _finite(1.0 / hhi) if hhi > 0 else None,
-        "top1_weight": _finite(float(w[order[0]])) if len(order) else None,
-        "top3_weight": _finite(float(w[order[:3]].sum())) if len(order) else None,
+        "top1_weight": _finite(float(gross[order[0]])) if len(order) else None,
+        "top3_weight": _finite(float(gross[order[:3]].sum())) if len(order) else None,
+    }
+
+
+def _exposure(w: np.ndarray, symbols: Sequence[str]) -> dict[str, Any]:
+    """Gross and net exposure, and how the book splits across the two sides."""
+    longs = [(sym, float(value)) for sym, value in zip(symbols, w) if value > 0]
+    shorts = [(sym, float(value)) for sym, value in zip(symbols, w) if value < 0]
+    return {
+        "gross": _finite(float(np.abs(w).sum())),
+        "net": _finite(float(w.sum())),
+        "long_weight": _finite(float(sum(v for _, v in longs))),
+        "short_weight": _finite(float(sum(v for _, v in shorts))),
+        "long_count": len(longs),
+        "short_count": len(shorts),
     }
 
 
@@ -272,7 +293,7 @@ def _diversification(
     port_vol = float(port.std(ddof=1)) if len(port) > 1 else 0.0
     if port_vol <= 0 or not math.isfinite(port_vol):
         return {"diversification_ratio": None, "note": "portfolio variance is zero"}
-    ratio = float(np.dot(w, asset_vols) / port_vol)
+    ratio = float(np.dot(np.abs(w), asset_vols) / port_vol)
     return {"diversification_ratio": _finite(ratio)}
 
 
@@ -322,23 +343,15 @@ def average_invested_weights(target_pos: pd.DataFrame) -> tuple[dict[str, float]
     row sum (how much of the book was invested at all). The final row alone
     would be the wrong object here, since many strategies end flat.
 
-    Raises:
-        ValueError: when the frame is empty, the strategy never held
-            anything on average, or any symbol's average exposure is net
-            short — ``compute_risk_xray`` is long-only, and silently
-            x-raying just the long half of a long-short book would present
-            a partial basket as the whole strategy.
+    Short legs are carried through as negative weights. Dropping them would
+    x-ray the long half of a long-short book and present a partial basket as
+    the whole strategy, which is the failure this used to guard against by
+    refusing outright.
     """
     if target_pos is None or target_pos.empty:
         raise ValueError("target position frame is empty")
     means = target_pos.mean(axis=0)
-    short_book = [str(sym) for sym, w in means.items() if float(w) < 0]
-    if short_book:
-        raise ValueError(
-            "long-only x-ray cannot describe net short average exposure "
-            f"in {', '.join(short_book)}"
-        )
-    weights = {str(sym): float(w) for sym, w in means.items() if float(w) > 0}
+    weights = {str(sym): float(w) for sym, w in means.items() if float(w) != 0.0}
     avg_invested = float(target_pos.sum(axis=1).mean())
     if not weights:
         raise ValueError("strategy held no average exposure")
@@ -359,6 +372,12 @@ def render_risk_xray_markdown(report: dict[str, Any]) -> str:
         f"- window: {inputs['first_date']} .. {inputs['last_date']} "
         f"({inputs['aligned_days']} aligned days)",
     ]
+    exposure = report.get("exposure")
+    if exposure:
+        lines.append(
+            f"- exposure: gross {exposure['gross']:.2%}, net {exposure['net']:.2%} "
+            f"(long {exposure['long_count']} / short {exposure['short_count']})"
+        )
     if conc.get("hhi") is not None:
         lines.append(
             f"- concentration: hhi {conc['hhi']:.4f}, "
