@@ -115,6 +115,16 @@ def test_magnitude_suffix_expands_rather_than_mistranslating():
     assert 1e8 in operands
 
 
+def test_date_label_does_not_replace_the_declared_unit_conversion():
+    from src.agent.grounding.policies import _formula_in_note
+
+    evaluated = _formula_in_note("1-9月扣非归母净利 = 779,216,390.40元 ÷ 1亿")
+    assert evaluated is not None
+    result, operands, _ = evaluated
+    assert result == pytest.approx(779216390.40 / 1e8)
+    assert operands == [779216390.40, 1e8]
+
+
 @pytest.mark.parametrize("values", [(125,), (10000,), (125, 75), (75, 10000)])
 def test_percent_conversion_does_not_supply_missing_data(tmp_path, values):
     verdict = _ledger(tmp_path, values).validate_final_answer(
