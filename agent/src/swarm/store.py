@@ -52,7 +52,8 @@ def _last_event_timestamp(events_file: Path) -> datetime | None:
         text = events_file.read_text(encoding="utf-8")
     except OSError:
         return None
-    for line in reversed(text.splitlines()):
+    # JSONL records end at LF; U+2028/U+2029 inside event data are not record breaks.
+    for line in reversed(text.split("\n")):
         stripped = line.strip()
         if not stripped:
             continue
