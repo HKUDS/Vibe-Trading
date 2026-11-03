@@ -2361,6 +2361,7 @@
       "testFailed": "Falha na verificação {{label}}: {{error}}",
       "unknownTestError": "O conector retornou um erro desconhecido.",
       "delete": "Excluir",
+      "deleteInUse": "Remova esta conexão de “Posições das contas” e salve as alterações antes de excluí-la.",
       "configured": "Credenciais necessárias configuradas",
       "accountTitle": "Conta",
       "accountCurrent": "Lê a conta com final ····{{last4}}",

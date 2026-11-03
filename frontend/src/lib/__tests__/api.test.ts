@@ -25,6 +25,16 @@ describe("generated report download", () => {
 });
 
 describe("api request helper", () => {
+  it("preserves the structured error code when a connection is still in use", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: { code: "connection_in_use", message: "remove this connection from the portfolio before deleting it" },
+    }), { status: 400, headers: { "content-type": "application/json" } })));
+    const { api } = await loadApiModule();
+    await expect(api.deleteConnection("main-alpaca")).rejects.toMatchObject({
+      status: 400, code: "connection_in_use", message: "remove this connection from the portfolio before deleting it",
+    });
+  });
+
   it("translates the server's message-size error into a recovery instruction", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       detail: { code: "message_too_long", max_length: 100_000, message: "Shorten input" },

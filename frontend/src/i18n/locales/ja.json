@@ -2361,6 +2361,7 @@
       "testFailed": "{{label}} のテストに失敗しました: {{error}}",
       "unknownTestError": "コネクターが不明なエラーを返しました。",
       "delete": "削除",
+      "deleteInUse": "この接続を「口座の保有資産」から外して変更を保存してから、接続を削除してください。",
       "configured": "必要な認証情報は設定済みです",
       "accountTitle": "口座",
       "accountCurrent": "末尾 ····{{last4}} の口座を読み取ります",

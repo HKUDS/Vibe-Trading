@@ -2361,6 +2361,7 @@
       "testFailed": "{{label}} check failed: {{error}}",
       "unknownTestError": "The connector returned an unknown error.",
       "delete": "Delete",
+      "deleteInUse": "Remove this connection from Account holdings and save your changes before deleting it.",
       "configured": "Required credentials configured",
       "accountTitle": "Account",
       "accountCurrent": "Reads the account ending ····{{last4}}",

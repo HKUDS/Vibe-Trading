@@ -152,24 +152,39 @@ class CredentialStore:
         return result
 
     def delete(self, connection_id: str, fields: Iterable[str]) -> None:
-        """Remove the stored secrets for a connection.
+        """Remove stored secrets, skipping environments without a vault backend.
 
         Args:
             connection_id: Identifier of the local connection instance.
             fields: Credential field names declared by the connector manifest.
 
         Raises:
-            RuntimeError: If the ``keyring`` extra is not installed.
-            Exception: Whatever the backend raises for a failure other than a
-                missing entry, which is treated as already deleted.
+            RuntimeError: If an available backend cannot delete the secrets.
+                A missing entry is treated as already deleted.
         """
+        field_names = tuple(fields)
+        if not field_names:
+            return
+        unavailable_errors: tuple[type[Exception], ...] = ()
+        try:
+            from keyring.errors import NoKeyringError
+        except ModuleNotFoundError as exc:
+            if exc.name != "keyring":
+                raise
+            if self._backend is None:
+                return
+        else:
+            unavailable_errors = (NoKeyringError,)
         backend = self.backend
-        for field in fields:
+        for field in field_names:
             try:
                 backend.delete_password(
                     SERVICE_NAME,
                     self._username(connection_id, field),
                 )
+            except unavailable_errors:
+                # No vault is configured in this environment (e.g. Docker).
+                return
             except Exception as exc:  # keyring backends differ on missing entries
                 if "not found" not in str(exc).lower():
-                    raise
+                    raise RuntimeError(str(exc)) from exc

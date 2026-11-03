@@ -240,8 +240,13 @@ def register_connection_routes(app: FastAPI) -> None:
         try:
             selected = {source.connection_id for source in PortfolioSettingsStore().load().sources}
             if connection_id.strip().lower() in selected:
-                raise ValueError("remove this connection from the portfolio before deleting it")
+                raise HTTPException(status_code=400, detail={
+                    "code": "connection_in_use",
+                    "message": "remove this connection from the portfolio before deleting it",
+                })
             store().delete(connection_id)
             return {"status": "ok", "deleted": connection_id}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc

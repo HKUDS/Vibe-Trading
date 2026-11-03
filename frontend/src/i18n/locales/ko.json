@@ -2361,6 +2361,7 @@
       "testFailed": "{{label}} 테스트 실패: {{error}}",
       "unknownTestError": "커넥터가 알 수 없는 오류를 반환했습니다.",
       "delete": "삭제",
+      "deleteInUse": "이 연결을 삭제하려면 먼저 ‘계좌 보유 자산’에서 제거하고 변경 사항을 저장하세요.",
       "configured": "필요한 자격 증명이 설정되었습니다",
       "accountTitle": "계좌",
       "accountCurrent": "끝자리 ····{{last4}} 계좌를 읽습니다",

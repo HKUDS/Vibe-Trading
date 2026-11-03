@@ -2361,6 +2361,7 @@
       "testFailed": "{{label}} 测试失败：{{error}}",
       "unknownTestError": "连接器返回了未知错误。",
       "delete": "删除",
+      "deleteInUse": "请先从账户持仓中移除此连接并保存，再删除连接。",
       "configured": "所需凭证已配置",
       "accountTitle": "账户",
       "accountCurrent": "读取尾号 ····{{last4}} 的账户",
