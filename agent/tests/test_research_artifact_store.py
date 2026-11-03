@@ -203,6 +203,19 @@ def test_concurrent_instances_append_a_single_serial_revision_chain(
             store.close()
 
 
+def test_fingerprint_lookup_uses_the_composite_index(tmp_path):
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    rows = store._conn.execute(
+        "EXPLAIN QUERY PLAN SELECT * FROM research_artifact_revisions "
+        "WHERE content_hash = ? AND provenance_hash = ?",
+        ("missing-content", "missing-provenance"),
+    ).fetchall()
+    store.close()
+
+    plan = "\n".join(row["detail"] for row in rows)
+    assert "USING INDEX idx_research_artifact_fingerprint" in plan, plan
+
+
 def test_nonfinite_evidence_is_rejected_before_persistence(tmp_path):
     store = ResearchArtifactStore(tmp_path / "research.db")
     with pytest.raises(ValueError):

@@ -108,6 +108,8 @@ class ResearchArtifactStore:
                         REFERENCES research_artifact_revisions(revision_id)
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_research_artifact_fingerprint
+                    ON research_artifact_revisions(content_hash, provenance_hash, artifact_id);
                 CREATE INDEX IF NOT EXISTS idx_research_artifact_series
                     ON research_artifact_revisions(artifact_id, revision_number);
                 CREATE INDEX IF NOT EXISTS idx_research_artifact_subject
