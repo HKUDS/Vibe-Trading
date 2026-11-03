@@ -85,11 +85,11 @@
     "label": "LLMTR",
     "api_key_env": "LLMTR_API_KEY",
     "base_url_env": "LLMTR_BASE_URL",
-    "default_model": "qwen/qwen3.8-27b-free",
+    "default_model": "llmtr-eca51a1e0cdbcd2dfc7aecb6e61d7318ffe1ede050ef2a17",
     "default_base_url": "https://llmtr.com/v1",
     "api_key_required": true,
     "model_options": [
-      "qwen/qwen3.8-27b-free",
+      "llmtr-eca51a1e0cdbcd2dfc7aecb6e61d7318ffe1ede050ef2a17",
       "llmtr/qwen3-8-27b"
     ]
   },

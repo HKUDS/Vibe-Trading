@@ -5972,7 +5972,7 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_env": "LLMTR_API_KEY",
         "base_env": "LLMTR_BASE_URL",
         "base_url": "https://llmtr.com/v1",
-        "model": "qwen/qwen3.8-27b-free",
+        "model": "llmtr-eca51a1e0cdbcd2dfc7aecb6e61d7318ffe1ede050ef2a17",
         "key_prefix": None,
         "key_placeholder": "api-key...",
     },

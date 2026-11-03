@@ -16,7 +16,7 @@ from src.providers.capabilities import get_llm_credentials, get_provider_capabil
 from src.providers.llm import build_llm, uses_responses_api
 
 _PROVIDERS_JSON = Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
-_DEFAULT_MODEL = "qwen/qwen3.8-27b-free"
+_DEFAULT_MODEL = "llmtr-eca51a1e0cdbcd2dfc7aecb6e61d7318ffe1ede050ef2a17"
 _PREFIXED_MODEL = "llmtr/qwen3-8-27b"
 _BASE_URL = "https://llmtr.com/v1"
 

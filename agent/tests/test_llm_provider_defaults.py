@@ -16,7 +16,7 @@ from src.providers.capabilities import (
 EXPECTED_PROVIDER_DEFAULTS = {
     "openrouter": "deepseek/deepseek-v4-pro",
     "opencode": "deepseek-v4.1-flash",
-    "llmtr": "qwen/qwen3.8-27b-free",
+    "llmtr": "llmtr-eca51a1e0cdbcd2dfc7aecb6e61d7318ffe1ede050ef2a17",
     "kimi-coding": "kimi-for-coding",
     "ollama": "qwen2.5:32b",
     "copilot": "claude-sonnet-5",
