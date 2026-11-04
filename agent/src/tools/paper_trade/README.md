@@ -105,12 +105,44 @@ no row at all while its daily bar exists is a provider omission and returns
 | `interval` | `1d`, `5m` | `1d` | `5m` is cn_a-only and accepts one date per step |
 | `session` | `auto`, `cn_a` | `auto` | coherence selector only: `cn_a` requires `market="cn_a"` and does not change the day boundary |
 | `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from each bar |
-| `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
+| `fill_model` | `all_or_none`, `volume_share` | `all_or_none` | `volume_share` opts into pt-v1.3 per-order partial fills |
+| `order_volume_ratio` | number in `(0, 1]` | `1.0` | per-order share of matched volume; only with `fill_model="volume_share"` |
 
-A market order fills at the first continuous bar whose fill gates pass; a
-limit order rests until a bar satisfies its price and is canceled at session end
-(15:00 on a complete session) if none does. Every fill is all-or-none; partial
-fills and volume share are Phase 3.
+A market order fills at the first continuous bar whose fill gates pass. A
+resting limit follows JoinQuant's bar matching: a buy triggers only when
+`bar.low < limit` (its 委托价 above the bar's low) and a sell only when
+`bar.high > limit` (its 委托价 below the bar's high), and a triggered fill
+executes at the order's 委托价 rather than the bar reference. Equality does not
+fill, so a bar that only touches the limit leaves the order resting, and a limit
+that never triggers is canceled at session end (15:00 on a complete session). On
+the first bar with volume, an already-marketable reference (`ref < limit` for a
+buy, `ref > limit` for a sell) fills at that strictly better price instead,
+which wins over the 委托价 even when the bar also crosses. By default every fill
+is all-or-none.
+
+`fill_model="volume_share"` is the opt-in pt-v1.3 policy (5m cn_a only). Each
+order is capped independently at `floor(volume × order_volume_ratio / lot) × lot`
+shares — never against a shared bar budget — so two orders may together exceed
+a bar's volume. `order_volume_ratio` defaults to `1.0` (no reduction) and is
+accepted only with `fill_model="volume_share"`. A market order caps on the full
+continuous-session volume, fills what fits and cancels the residual immediately
+with `canceled_after_volume_cap`; a limit order caps per bar, keeps the residual
+resting while `filled` (active), and its day-end cancel still reports
+`canceled_after_failed_match`. A zero-volume bar never fills. Each fill is
+booked and charged separately, so a two-fill order pays two minimum
+commissions.
+
+A pt-v1.3 result adds `order_states`: one row per submitted order, in
+submission order, with exactly `order_id`, `status`, `add_time`, `amount`,
+`filled`, `price` and `side`. `add_time` is the cn_a session open
+(`YYYY-MM-DDT09:30:00+08:00`), `amount` is the requested quantity, `filled` is
+the executed quantity and `price` is `0.0` when nothing filled.
+
+Order statuses use JoinQuant's `OrderStatus` vocabulary for both intervals:
+`filled` means partially filled and still active, so the residual stays in
+`open_orders()` and can be canceled, settled or matched by a later bar; `held`
+means fully filled and terminal. `canceled` and `rejected` are also terminal;
+`new`, `open` and `pending_cancel` are not.
 
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
@@ -134,9 +166,75 @@ branch (`paper-trade-v12-persistence`) and is not wired to any CLI, API or MCP
 surface in this PR.
 
 Daily data supplies the prior close for price-limit bands and the final NAV.
-The current 5m reference is checked against those bands; an order waits while
-its side is blocked by a price limit. Zero-volume bars cannot fill. Corporate
-actions remain fail-closed.
+The band and cash gates check the price the fill would execute at, so a 5m
+market order is gated at its bar reference and a resting limit at its 委托价;
+an order waits while its side is blocked by a price limit. Zero-volume bars
+cannot fill. Corporate actions remain fail-closed.
+
+## JoinQuant parity
+
+Reference: the official JoinQuant API guide,
+<https://cdn.joinquant.com/help/img/JoinQuantAPI.pdf>, sections `订单处理`
+(order handling) and `OrderStatus`, pp. 12-13. "Our reading" below marks
+behavior inferred from that material, not a verbatim quote.
+
+| Area | JoinQuant | This engine (pt-v1.3) | Status |
+| --- | --- | --- | --- |
+| Request surface | `set_option('order_volume_ratio')` sets a per-order share of matched volume; the cited PDF's example uses `0.25` and states no default | Opt-in `fill_model="volume_share"` plus `order_volume_ratio`; a ratio without that model is `INVALID_REQUEST`; `volume_share` is 5m cn_a only | Aligned; default differs by design |
+| Default ratio | The cited 2018 PDF states no default; its example uses 0.25, and live JoinQuant docs may state 0.25 | `1.0`, meaning no reduction; an absent field and an explicit `null` both mean 1.0 | Deliberate opt-in default, not an official default |
+| Domain | A ratio is a positive share of volume | `0 < r <= 1`; `0`, negatives, `NaN`, `Infinity`, booleans and strings are rejected | Stricter, fail-closed |
+| Cap basis | Each order is limited independently by its own ratio | `floor(volume × order_volume_ratio / lot) × lot` per order; never a shared bar budget, so two orders may together exceed one bar's volume | Aligned; per-order independence is intentional |
+| Market order | A market order completes against available session volume | Caps on the full continuous-session volume, fills what fits, cancels the residual immediately as `canceled_after_volume_cap`; this residual cancel is our reading of synchronous completion, not a verbatim PDF quote; a zero-volume bar never fills | Our reading, disclosed |
+| Limit order | A buy fills when `委托价 > bar 的最低价`, a sell when `委托价 < bar 的最高价`, and `成交价为委托价`; an unfinished order is canceled at day end | Strict `bar.low < limit` for a buy and `bar.high > limit` for a sell; equality rests; a triggered fill executes at its 委托价; the residual rests and is canceled at session end (`canceled_after_failed_match`); on the first bar with volume, an already-marketable reference may fill better | Aligned, strict equality |
+| Status names | `filled = 1` means "订单未完成, 部分成交"; `held = 4` means "订单完成, 全部成交" | `filled` is a partial that stays active; `held` is a full fill and terminal; `canceled` and `rejected` are terminal; `new`, `open` and `pending_cancel` are not emitted | Aligned |
+| Order state | `OrderStatus` exposes the order's status, amount, filled quantity, price and side | `order_states` has exactly `order_id`, `status`, `add_time`, `amount`, `filled`, `price`, `side`, in submission order; `add_time` is `YYYY-MM-DDT09:30:00+08:00`; `price` is `0.0` when unfilled | Aligned shape, pinned time |
+| Session volume | JoinQuant matches within its served trading session | The market cap uses the served continuous session: the 09:30 opening call-auction print is excluded (single-priced on 4 of 5 probed days), and a short session caps at its served volume with an `N/48` warning; a zero-volume session is a halt | Disclosed source boundary |
+
+The exact quoted basis is:
+
+- `OrderStatus`: `filled = 1`, "订单未完成, 部分成交"; `held = 4`,
+  "订单完成, 全部成交, Order.filled 等于 Order.amount".
+- 订单处理: buy `委托价 > bar 的最低价`, sell `委托价 < bar 的最高价`,
+  `成交价为委托价`; `一天结束后, 所有未完成的订单会被取消`.
+- `set_option('order_volume_ratio')`: the option limits each order
+  independently; the cited PDF gives `0.25` in its example and states no
+  default.
+
+The market-order residual cancel has no verbatim sentence in the cited PDF.
+It is our reading of a market order completing synchronously: whatever the
+served session volume cannot fill is returned immediately instead of resting.
+
+### Compatibility and the PR A caveat
+
+The committed v1.1/v1.2 JSON contracts and fixtures are byte-identical, and a
+1d call that omits the new fields is byte-identical. PR A intentionally changes
+a v1.2 5m resting-limit call: the fill now executes at the 委托价 instead of
+the bar reference, so its recorded fill price changes. `engine_fingerprint`
+hashes the interval, path model, fill model, rules version and bar fingerprint
+(plus `order_volume_ratio` for pt-v1.3), not the matching code, so a fill
+recorded before and after PR A can carry the same fingerprint. That is an
+accepted provenance gap, not a replay guarantee.
+
+### Parity backlog
+
+Five platform gaps remain, plus one disclosed fee divergence:
+
+1. **Price-limit market-order status.** JoinQuant cancels a market order blocked
+   by the daily price limit; this engine rejects it. Aligning the status is a
+   separate behavior change.
+2. **Slippage.** No spread, market impact, latency or queue-position model; a
+   fill uses the bar reference or the 委托价.
+3. **Cancel API.** A caller cannot submit a cancel request; cancels are
+   engine-driven (day end or volume cap).
+4. **Platform-generated order IDs.** IDs are `pt-0`, `pt-1`, ...; JoinQuant uses
+   platform order IDs.
+5. **`pending_cancel`.** JoinQuant exposes the state between a cancel request
+   and its confirmation; this engine never emits or exposes it.
+
+Disclosed fee divergence: the cited PDF charges one commission per completed
+order, while this engine books and charges every fill separately, so a two-fill
+order pays two minimum commissions. The per-fill charge keeps cash and position
+accounting exact and never lets cash go negative.
 
 ## Known limits
 
@@ -166,6 +264,14 @@ actions remain fail-closed.
 - **5m strategy UNIVERSE is strict.** An order on a position outside the
   declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
   by a 5m strategy step; use the 1d step for that.
+- **The engine fingerprint does not cover the matching rule.** A pt-v1.2
+  `engine_fingerprint` hashes the interval, path model, fill model, rules
+  version and bar fingerprint; a pt-v1.3 fingerprint also covers
+  `order_volume_ratio`, but neither covers the matching code. The resting-limit
+  fill-price rule changed here without a `RULES_VERSION` bump, so a 5m limit
+  fill recorded before and after the change can carry the same fingerprint.
+  Treat the fingerprint as provenance for its declared tuple, not as proof that
+  two engines produced identical fills.
 
 ## Data and model limits
 
@@ -182,9 +288,9 @@ discontinuities reject affected orders and disclose the issue. Automatic action
 reconciliation and cash dividends are not implemented. NAV is not total return.
 A-shares are included in the raw-price discontinuity checks.
 
-Matching is all-or-none, with simplified fees, price limits, board lots and T+1
-checks. HK lot fallback is disclosed. Invalid OHLC prevents fills; valuation
-uses a finite prior close or the disclosed average-cost fallback. This is not
-broker-execution simulation. Settlement, margin, options and cross-market phases
-in #1938 remain follow-up work, as do partial fills and the volume-share policy
-(Phase 3).
+Matching is all-or-none by default, with simplified fees, price limits, board
+lots and T+1 checks; `fill_model="volume_share"` opts into the per-order partial
+fills described above. HK lot fallback is disclosed. Invalid OHLC prevents
+fills; valuation uses a finite prior close or the disclosed average-cost
+fallback. This is not broker-execution simulation. Settlement, margin, options
+and cross-market phases in #1938 remain follow-up work.

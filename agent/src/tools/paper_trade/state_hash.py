@@ -34,6 +34,11 @@ request fields and adds each to the coverage object ONLY when it is
 non-default, so every pt-v1.1 call hashes byte-identically; and
 :func:`engine_fingerprint` hashes the engine-parameter tuple with the same
 JCS helper.  Neither function changes matching.
+
+pt-v1.3: the coverage object gains ``order_volume_ratio`` only for a v1.3
+call, and the fingerprint gains it only for ``fill_model="volume_share"`` —
+so two volume policies never share a fingerprint while every pt-v1.2 value
+stays exactly as frozen.
 """
 
 from __future__ import annotations
@@ -47,6 +52,7 @@ from typing import Any
 from .schema import (
     DEFAULT_FILL_MODEL,
     DEFAULT_INTERVAL,
+    DEFAULT_ORDER_VOLUME_RATIO,
     DEFAULT_PATH_MODEL,
     DEFAULT_SESSION,
 )
@@ -179,6 +185,7 @@ def compute_received_state_hash(
     session: str = DEFAULT_SESSION,
     path_model: str = DEFAULT_PATH_MODEL,
     fill_model: str = DEFAULT_FILL_MODEL,
+    order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
 ) -> str:
     """Hash the AM-4-1 coverage object plus any non-default pt-v1.2 field.
 
@@ -190,6 +197,12 @@ def compute_received_state_hash(
     non-default, so a call that omits them (or passes the default value) hashes
     exactly as pt-v1.1 did.  A v1.2 call can never hide a non-default field
     from the hash.
+
+    pt-v1.3: ``order_volume_ratio`` enters the coverage object only for a
+    pt-v1.3 call — the same selector as
+    :attr:`~.schema.PaperTradeStepRequest.uses_v1_3` (``volume_share``, or an
+    explicitly non-default ratio).  A pt-v1.2 call therefore hashes the frozen
+    coverage object byte for byte.
     """
     coverage: dict[str, Any] = {
         "account_id": account_id,
@@ -207,6 +220,8 @@ def compute_received_state_hash(
     ):
         if value != default:
             coverage[key] = value
+    if fill_model == "volume_share" or order_volume_ratio != DEFAULT_ORDER_VOLUME_RATIO:
+        coverage["order_volume_ratio"] = order_volume_ratio
     return state_hash(coverage)
 
 
@@ -217,6 +232,7 @@ def engine_fingerprint(
     fill_model: str = DEFAULT_FILL_MODEL,
     bar_fingerprint: str = "",
     rules_version: str | None = None,
+    order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
 ) -> str:
     """D3: ``sha256(JCS({interval, path_model, fill_model, rules_version,
     bar_fingerprint}))`` as lowercase hex.
@@ -228,20 +244,26 @@ def engine_fingerprint(
     this module — and is injectable so the fingerprint can be audited against
     a past rule set.  No clock, no paths, no environment: the same arguments
     always produce the same hex string.
+
+    pt-v1.3 (GAP-8): ``order_volume_ratio`` joins the hashed tuple only for
+    ``fill_model="volume_share"``, so two different volume policies never
+    share a fingerprint while every ``all_or_none`` (pt-v1.1/pt-v1.2) value
+    stays byte-identical.
     """
     if rules_version is None:
         from .rules import RULES_VERSION
 
         rules_version = RULES_VERSION
-    return state_hash(
-        {
-            "interval": interval,
-            "path_model": path_model,
-            "fill_model": fill_model,
-            "rules_version": rules_version,
-            "bar_fingerprint": bar_fingerprint,
-        }
-    )
+    parameters: dict[str, Any] = {
+        "interval": interval,
+        "path_model": path_model,
+        "fill_model": fill_model,
+        "rules_version": rules_version,
+        "bar_fingerprint": bar_fingerprint,
+    }
+    if fill_model == "volume_share":
+        parameters["order_volume_ratio"] = order_volume_ratio
+    return state_hash(parameters)
 
 
 def effective_fee_model(market: str, fee_model: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -29,9 +29,11 @@ import pandas as pd
 from . import calendar, corporate_actions, data, session_5m, state_hash, wire
 from .limits_cn_a import (
     PROV_LIMITS_HEURISTIC, CnALimitsClient, get_limit_status, heuristic_limit_prices)
+from .order_lifecycle import OrderState
 from .rules import MarketRules, money, quantize_money
 from .schema import (
-    CANCELED_REASON_CODE, DEFAULT_FILL_MODEL, DEFAULT_PATH_MODEL, AccountState,
+    CANCELED_REASON_CODE, DEFAULT_FILL_MODEL, DEFAULT_ORDER_VOLUME_RATIO,
+    DEFAULT_PATH_MODEL, AccountState,
     CanceledOrder, DataProvenance, Fill, NavPoint, Order, PaperTradeStepRequest,
     Position, RejectedOrder, SessionEvent, SkippedDay,
 )
@@ -73,6 +75,9 @@ class MatchOutcome:
     engine_fingerprint: str = ""
     canceled_orders: tuple[CanceledOrder, ...] = ()
     events: tuple[SessionEvent, ...] = ()
+    # pt-v1.3: final per-order lifecycle states in submission order (5m only;
+    # empty for interval="1d").  T13 maps these to the wire ``order_states``.
+    order_states: tuple[OrderState, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +178,7 @@ class _MatchSession:
         *,
         path_model: str = DEFAULT_PATH_MODEL,
         fill_model: str = DEFAULT_FILL_MODEL,
+        order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
     ) -> None:
         self.market = market
         self.rules = rules
@@ -180,6 +186,7 @@ class _MatchSession:
         self.interval = market_data.interval
         self.path_model = path_model
         self.fill_model = fill_model
+        self.order_volume_ratio = order_volume_ratio
         self.limits_client = limits_client
         self.ca_by_day = corporate_action_unresolved_by_day
         self.cash = quantize_money(money(account_state.cash))
@@ -313,22 +320,33 @@ class _MatchSession:
                     return (code, f"close {close:.2f} at or below down limit {down:.2f}; sell rejected")
         return None
 
-    def _fill_gate(self, day: DayPlan, order: Order, ref: float | Decimal) -> tuple[str, str] | None:
-        # Slots 7-10 of the frozen AM-14 ladder.
+    def _fill_gate(
+        self, day: DayPlan, order: Order, price: float | Decimal,
+        qty: float | Decimal | None = None,
+    ) -> tuple[str, str] | None:
+        # Slots 7-10 of the frozen AM-14 ladder.  ``price`` is the price the
+        # fill would execute at: the bar reference for a market order or a
+        # first-bar marketable limit, the 委托价 for a bar-low/high limit fill.
+        # In 5m the band and cash checks must be anchored on that execution
+        # price, never on the bar reference alone.  ``qty`` defaults to the
+        # order's requested quantity; the 5m volume-share matcher passes the
+        # executable remainder so a partial fill cannot self-reject or
+        # overdraw cash against the already-filled quantity.
+        gate_qty = order.qty if qty is None else qty
         if self._five_minute and self.rules.has_price_limits:
             sym_data = self.market_data.data[order.symbol]
             up, down = self._band(order.symbol, day.date, sym_data)
-            code = self.rules.band_rejection(order.side, ref, up, down)
+            code = self.rules.band_rejection(order.side, price, up, down)
             if code == "limit_up":
-                return (code, f"ref {ref:.2f} at or above up limit {up:.2f}; buy deferred")
+                return (code, f"price {price:.2f} at or above up limit {up:.2f}; buy deferred")
             if code == "limit_down":
-                return (code, f"ref {ref:.2f} at or below down limit {down:.2f}; sell deferred")
-        if self.rules.limit_order_violation(order.side, ref, order.limit):
-            anchor = "ref" if self._five_minute else "close"
+                return (code, f"price {price:.2f} at or below down limit {down:.2f}; sell deferred")
+        if self.rules.limit_order_violation(order.side, price, order.limit):
+            anchor = "price" if self._five_minute else "close"
             detail = (
-                f"{anchor} {ref:.2f} > limit {order.limit:.2f}"
+                f"{anchor} {price:.2f} > limit {order.limit:.2f}"
                 if order.side == "buy"
-                else f"{anchor} {ref:.2f} < limit {order.limit:.2f}"
+                else f"{anchor} {price:.2f} < limit {order.limit:.2f}"
             )
             return ("limit_not_marketable", detail)
         symbol = order.symbol
@@ -336,16 +354,16 @@ class _MatchSession:
         # available = total − bought_today, cn_a sells only).
         total = self.positions[symbol].qty if symbol in self.positions else _ZERO
         bought = self.bought_today.get(symbol, _ZERO)
-        code = self.rules.sell_position_rejection(order.side, order.qty, total, bought)
+        code = self.rules.sell_position_rejection(order.side, gate_qty, total, bought)
         if code == "t_plus_1":
-            return (code, f"sell qty {order.qty} exceeds available position "
+            return (code, f"sell qty {gate_qty} exceeds available position "
                     f"{total - bought} (T+1: {bought} share(s) bought today are not sellable)")
         if code == "insufficient_position":
-            return (code, f"sell qty {order.qty} exceeds position {total}")
+            return (code, f"sell qty {gate_qty} exceeds position {total}")
         # Slot 10 insufficient_cash (§4: qty×price+fee ≤ cash).
-        code = self.rules.cash_rejection(order.side, order.qty, ref, self.cash)
+        code = self.rules.cash_rejection(order.side, gate_qty, price, self.cash)
         if code == "insufficient_cash":
-            cost = self.rules.buy_cost(order.qty, ref)
+            cost = self.rules.buy_cost(gate_qty, price)
             return (code, f"buy cost {cost} exceeds cash {self.cash}")
         return None
 
@@ -361,7 +379,7 @@ class _MatchSession:
         if (gate := self._fill_gate(day, order, ref)) is not None:
             self._reject(day, order, *gate)
             return
-        self._fill(day.date, order, ref)
+        self._fill(day.date, order, ref, order.qty)
 
     def _bar_missing(self, day: str, sym_data: data.SymbolData) -> bool:
         if self._five_minute:
@@ -398,30 +416,42 @@ class _MatchSession:
         return self._reference_price_values(
             float(bar["open"]), float(bar["high"]), float(bar["low"]), float(bar["close"]))
 
-    def _reject(self, day: DayPlan, order: Order, code: str, detail: str) -> None:
+    def _reject(
+        self, day: DayPlan, order: Order, code: str, detail: str,
+        *, cancel_qty: float | Decimal | None = None,
+    ) -> None:
+        # ``cancel_qty`` is the still-unfilled residual for a partially filled
+        # 5m order; both rows report it so a rejection never double-counts
+        # shares that already executed.  Pre-fill rejections default to the
+        # requested quantity (the 1d path always does).
+        residual = order.qty if cancel_qty is None else float(cancel_qty)
         self.rejected.append(
             RejectedOrder(trade_date=day.date, symbol=order.symbol, side=order.side,
-                          qty=order.qty, reason_code=code, detail=detail)
+                          qty=residual, reason_code=code, detail=detail)
         )
         if not self._five_minute:
             return
         # T3/D2 emergency cancel: one row per failed order IN ADDITION to its
         # specific pt-v1.1 reason (the frozen REASON_CODES table is untouched).
         self.canceled.append(CanceledOrder(
-            trade_date=day.date, symbol=order.symbol, side=order.side, qty=order.qty,
+            trade_date=day.date, symbol=order.symbol, side=order.side, qty=residual,
             reason_code=CANCELED_REASON_CODE, detail=f"rejected: {code}"))
         if code in ("limit_up", "limit_down"):
             self.events.append(SessionEvent(
                 trade_date=day.date, symbol=order.symbol, event_type="price_limit", detail=detail))
 
-    def _fill(self, day: str, order: Order, close: float) -> None:
+    def _fill(self, day: str, order: Order, close: float, executed_qty: float | Decimal) -> None:
         # Decimal settlement (VD-9): 2dp notional ± 2dp fee; avg_cost is the
         # fee-exclusive weighted average fill price, quantized 4dp HALF_UP at
         # every mutation so internal chaining equals the RM round-trip.
+        # ``executed_qty`` is THIS fill's executed quantity, not the order's
+        # requested quantity: a partial fill books (and charges) only what
+        # actually executed, and each fill carries its own fee.
         price_value = float(close)  # 5m hands a 2dp Decimal; the wire wants a float
-        qty = money(order.qty)
+        qty_value = float(executed_qty)
+        qty = money(qty_value)
         price = money(price_value)
-        fee = self.rules.fee(order.side, order.qty, price_value)
+        fee = self.rules.fee(order.side, qty_value, price_value)
         notional = quantize_money(qty * price)
         if order.side == "buy":
             self.cash -= notional + fee
@@ -439,7 +469,7 @@ class _MatchSession:
             self.positions[order.symbol].qty -= qty
         # VD-15/B2 dual mode at the fill boundary: plain Orders → ""; StrategyOrders → ≤200 chars.
         self.fills.append(Fill(trade_date=day, symbol=order.symbol, side=order.side,
-                               qty=order.qty, price=price_value, fee=float(fee),
+                               qty=qty_value, price=price_value, fee=float(fee),
                                reason=wire.strategy_fill_reason(getattr(order, "reason", None))))
 
     def _band(self, symbol: str, day: str, sym_data: data.SymbolData) -> tuple[float | None, float | None]:
@@ -581,7 +611,8 @@ def match_orders(
         orders_by_day={request.from_date: request.orders}, fee_model=request.fee_model,
         calendar_client=calendar_client, limits_client=limits_client, hk_lot_sizes=hk_lot_sizes,
         corporate_action_unresolved_by_day=corporate_action_unresolved_by_day,
-        path_model=request.path_model, fill_model=request.fill_model)
+        path_model=request.path_model, fill_model=request.fill_model,
+        order_volume_ratio=request.order_volume_ratio)
 
 
 def run_day_loop(
@@ -600,6 +631,7 @@ def run_day_loop(
     hk_lot_sizes: Mapping[str, int] | None = None,
     path_model: str = DEFAULT_PATH_MODEL,
     fill_model: str = DEFAULT_FILL_MODEL,
+    order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO,
 ) -> MatchOutcome:
     # Day-loop core: enumerate [from, to], gate readiness (AM-9), match
     # serially (VD-10).  Multi-day ranges are only reachable through this
@@ -631,7 +663,9 @@ def run_day_loop(
         market, rules, market_data, account_state, limits_client,
         corporate_actions.merge_unresolved(
             corporate_action_unresolved_by_day, ca_plan.unresolved_by_day),
-        ca_plan, path_model=path_model, fill_model=fill_model)
+        ca_plan, path_model=path_model, fill_model=fill_model,
+        order_volume_ratio=order_volume_ratio)
+    order_states: tuple[OrderState, ...] = ()
     for entry in plan:
         session.begin_day(entry)  # T4 session facts (no-op for interval="1d")
         session.bought_today = {}  # T+1 availability resets each day
@@ -646,7 +680,7 @@ def run_day_loop(
                   if order_provider is not None and entry.skip_reason is None
                   else orders_by_day.get(entry.date, ()))
         if market_data.interval == "5m":
-            session_5m.match_orders_5m(session, entry, tuple(orders))
+            order_states = session_5m.match_orders_5m(session, entry, tuple(orders))
         else:
             for order in tuple(orders):
                 session.match_order(entry, order)
@@ -669,7 +703,9 @@ def run_day_loop(
         limit_provenance=tuple(dict.fromkeys(session.limit_provenance)),
         engine_fingerprint=state_hash.engine_fingerprint(
             interval=market_data.interval, path_model=path_model, fill_model=fill_model,
-            bar_fingerprint=market_data.bar_fingerprint),
+            bar_fingerprint=market_data.bar_fingerprint,
+            order_volume_ratio=order_volume_ratio),
         canceled_orders=tuple(session.canceled),
         events=tuple(session.events),
+        order_states=order_states,
     )

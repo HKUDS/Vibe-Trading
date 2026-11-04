@@ -9,8 +9,9 @@ Scope, frozen from the thread:
 
 - order id stable across replay (a replayed order list reproduces identical
   ids, so a retry is distinguishable from a new order);
-- status set ``new / open / filled / canceled / rejected / held
-  (partially filled) / pending_cancel``;
+- status set ``new / open / filled (partially filled) / canceled / rejected /
+  held (fully filled) / pending_cancel``, matching JoinQuant's ``OrderStatus``
+  names rather than the everyday sense of "filled";
 - cancel by order id; cancel of a terminal order is refused, cancel of an
   already-cancel-requested order is idempotent;
 - day-order semantics: every unfinished order is canceled at end of day
@@ -39,10 +40,10 @@ STATUS_HELD = "held"
 STATUS_PENDING_CANCEL = "pending_cancel"
 
 _TERMINAL_STATUSES = frozenset(
-    {STATUS_FILLED, STATUS_CANCELED, STATUS_REJECTED}
+    {STATUS_HELD, STATUS_CANCELED, STATUS_REJECTED}
 )
-_UNFINISHED_STATUSES = frozenset({STATUS_NEW, STATUS_OPEN, STATUS_HELD, STATUS_PENDING_CANCEL})
-_ACTIVE_STATUSES = frozenset({STATUS_NEW, STATUS_OPEN, STATUS_HELD})
+_UNFINISHED_STATUSES = frozenset({STATUS_NEW, STATUS_OPEN, STATUS_FILLED, STATUS_PENDING_CANCEL})
+_ACTIVE_STATUSES = frozenset({STATUS_NEW, STATUS_OPEN, STATUS_FILLED})
 
 _ORDER_ID_PREFIX = "pt"
 
@@ -100,6 +101,7 @@ class OrderState:
     avg_fill_price: Decimal | None = None
     fills: list[Fill] = field(default_factory=list)
     rejected_reason: str | None = None
+    cancel_reason: str | None = None
 
 
 def assign_ids(requests: Iterable[OrderRequest]) -> dict[str, OrderState]:
@@ -138,7 +140,11 @@ class OrderBook:
         return self._states.get(order_id)
 
     def open_orders(self) -> list[OrderState]:
-        """Today's unfinished orders (JoinQuant's ``get_open_orders``)."""
+        """Today's unfinished orders (JoinQuant's ``get_open_orders``).
+
+        A partially ``filled`` order is still open — it can take further
+        fills — while a fully ``held`` order is terminal and is not listed.
+        """
         return [s for s in self._states.values() if s.status in _ACTIVE_STATUSES]
 
     # ----------------------------------------------------------------- writes
@@ -171,12 +177,39 @@ class OrderBook:
         state.status = STATUS_OPEN
         return state
 
+    def cancel_order(self, order_id: str, reason: str) -> OrderState:
+        """Cancel an unfinished order outright (terminal ``canceled``).
+
+        This is the synchronous cancel the 5m matcher uses when a market
+        order's volume cap leaves a residual that will never be matched (the
+        session-level volume basis is fixed for the day).  Unlike
+        :meth:`request_cancel` — a request that waits for the venue — the
+        order leaves the book immediately, so :meth:`settle_day` (which only
+        touches unfinished orders) never cancels it a second time.
+
+        Args:
+            order_id: The order to cancel.
+            reason: Why the order was canceled; recorded on the state for
+                replay/diagnostics (e.g. ``canceled_after_volume_cap``).
+
+        Raises:
+            OrderLifecycleError: The order is terminal
+                (``held``/``canceled``/``rejected``).
+        """
+        state = self._require(order_id)
+        self._require_unfinished(state, "cancel")
+        state.status = STATUS_CANCELED
+        state.cancel_reason = reason
+        return state
+
     def request_cancel(self, order_id: str) -> OrderState:
         """Ask to cancel by order id.
 
-        A terminal order (filled/canceled/rejected) cannot be canceled — the
-        refusal is an error, not a silent no-op. Asking twice is idempotent:
-        the second call returns the ``pending_cancel`` state unchanged.
+        A terminal order (``held``/``canceled``/``rejected``) cannot be
+        canceled — the refusal is an error, not a silent no-op. A partially
+        ``filled`` order is not terminal, so its residual can still be
+        canceled. Asking twice is idempotent: the second call returns the
+        ``pending_cancel`` state unchanged.
         """
         state = self._require(order_id)
         if state.status in _TERMINAL_STATUSES:
@@ -190,6 +223,11 @@ class OrderBook:
     def fill(self, order_id: str, qty: Decimal, price: Decimal, *, volume_cap: Decimal | None = None) -> Fill:
         """Execute part or all of an unfinished order at ``price``.
 
+        Status follows JoinQuant's names, not the everyday sense of
+        "filled": a partial execution leaves the order ``filled`` (still
+        active and matchable), while a complete execution leaves it ``held``
+        (terminal).
+
         Args:
             order_id: The order to fill.
             qty: Requested execution quantity; clipped to the remaining
@@ -202,7 +240,8 @@ class OrderBook:
             The executed :class:`Fill`.
 
         Raises:
-            OrderLifecycleError: The order is terminal or already
+            OrderLifecycleError: The order is terminal
+                (``held``/``canceled``/``rejected``) or already
                 cancel-requested (a pending_cancel order stops matching), or
                 the qty/cap is not positive.
         """
@@ -232,15 +271,19 @@ class OrderBook:
         total_cost = sum((f.qty * f.price for f in state.fills), Decimal(0))
         state.avg_fill_price = total_cost / state.filled_qty
         state.status = (
-            STATUS_FILLED if state.filled_qty == state.request.qty else STATUS_HELD
+            STATUS_HELD if state.filled_qty == state.request.qty else STATUS_FILLED
         )
         return fill
 
     def settle_day(self) -> list[OrderState]:
         """Day-order semantics: cancel every unfinished order at session end.
 
-        Returns the canceled states. A ``pending_cancel`` order settles the
-        same way — the cancel it asked for has arrived.
+        ``new``, ``open``, partially ``filled`` and ``pending_cancel`` orders
+        all settle; a fully ``held`` order is terminal and is left alone. A
+        ``pending_cancel`` order settles the same way — the cancel it asked
+        for has arrived.
+
+        Returns the canceled states.
         """
         settled: list[OrderState] = []
         for state in self._states.values():

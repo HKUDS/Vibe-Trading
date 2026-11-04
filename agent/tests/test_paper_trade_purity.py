@@ -273,7 +273,11 @@ def test_source_surface_calls_no_live_trading_connector() -> None:
     scoped = re.compile(
         r"trading_(account|orders|positions|quote|history|check|connections|select|place|cancel)"
     )
-    broker_surface = re.compile(r"place_order|cancel_order|src\.trading")
+    # ``cancel_order`` is scoped to a NON-local receiver: the package's own
+    # OrderBook.cancel_order (pt-v1.3 market-residual cancel) is local state,
+    # not a broker call, while ``client.cancel_order`` / a bare verb still
+    # fails.  ``place_order`` and ``src.trading`` stay unconditional.
+    broker_surface = re.compile(r"place_order|(?<!def )(?<!book\.)cancel_order|src\.trading")
     sources = _package_sources()
     assert _scan(scoped, sources) == []
     assert _scan(broker_surface, sources) == []
