@@ -7,6 +7,7 @@ include README_ko.md
 include README_ar.md
 include README_es.md
 include README_id.md
+recursive-include guides *.md
 include pyproject.toml
 include Dockerfile
 include docker-compose.yml

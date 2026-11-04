@@ -84,7 +84,13 @@ def _read(name: str) -> str:
     Returns:
         The file contents.
     """
-    return (REPO_ROOT / name).read_text(encoding="utf-8")
+    text = (REPO_ROOT / name).read_text(encoding="utf-8")
+    # The language editions link to the same authoritative inventories.
+    for guide in ("capabilities", "cli-and-api", "mcp"):
+        path = f"guides/{guide}.md"
+        assert path in text, f"{name}: missing link to {path}"
+        text += "\n" + (REPO_ROOT / path).read_text(encoding="utf-8")
+    return text
 
 
 def _mcp_tool_names() -> list[str]:

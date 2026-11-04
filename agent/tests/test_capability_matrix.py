@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.trading.capability_matrix import README_PATH, render, render_block, sync_readme
+from src.trading.capability_matrix import GUIDE_PATH, README_PATH, render, render_block, sync_readme, sync_translated_overview
 from src.trading.profiles import BUILTIN_PROFILES
 
 
@@ -16,6 +16,18 @@ def test_capability_matrix_block_in_readme_is_current() -> None:
     assert render_block() in text, (
         "README's broker-capability-matrix block is stale; regenerate with python -m src.trading.capability_matrix"
     )
+
+
+def test_translated_overviews_match_the_registry() -> None:
+    for path in README_PATH.parent.glob("README_*.md"):
+        text = path.read_text(encoding="utf-8")
+        assert sync_translated_overview(text) == text, path.name
+
+
+def test_table_rows_are_contiguous() -> None:
+    table = render().split("| Profile |", 1)[1].splitlines()
+    assert len(table) == 2 + len(BUILTIN_PROFILES)
+    assert all(line.startswith("| `") for line in table[2:])
 
 
 def _rows() -> dict[str, list[str]]:
@@ -58,6 +70,18 @@ def test_paper_order_capability_never_becomes_a_live_permission() -> None:
     assert "positions.edit" in rows["etoro-live-trade"][7]
 
 
+def test_broker_overview_distinguishes_order_environments_from_readonly_access() -> None:
+    overview = render_block()
+    details = render_block(detailed=True)
+    assert "| robinhood | Yes | — | Yes |" in overview
+    assert "| upbit | Yes | Yes | — |" in overview
+    assert "| trading212 | Yes | — | — |" in overview
+    assert "| alpaca | Yes | Yes | Yes |" in overview
+    for connector in {profile.connector for profile in BUILTIN_PROFILES}:
+        assert overview.count(f"| {connector} |") == 1
+    assert render().strip() in details
+
+
 def test_only_builtin_declarations_are_rendered(monkeypatch) -> None:
     from dataclasses import replace
     from src.trading import capability_matrix
@@ -77,13 +101,14 @@ def test_only_builtin_declarations_are_rendered(monkeypatch) -> None:
 
 
 def test_sync_readme_replaces_only_the_marked_block() -> None:
-    text = README_PATH.read_text(encoding="utf-8")
-    synced = sync_readme(text)
+    text = GUIDE_PATH.read_text(encoding="utf-8")
+    synced = sync_readme(text, detailed=True)
     assert synced == text  # already current
     # drift the block's content while keeping the markers, as a profile edit
     # without regeneration would
     without = text.replace(render(), "stale\n")
-    assert sync_readme(without) == text  # regenerates back to current
+    assert without != text
+    assert sync_readme(without, detailed=True) == text  # regenerates back to current
 
 
 def test_sync_readme_rejects_missing_or_duplicate_markers() -> None:
