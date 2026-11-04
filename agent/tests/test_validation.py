@@ -95,6 +95,19 @@ class TestMonteCarlo:
         # p-value should be moderate (shuffling can't make it worse when all positive)
         assert result["actual_sharpe"] > 0
 
+    def test_rejects_nonpositive_actual_equity(self) -> None:
+        trades = _make_trades([-150, -25, -25])
+        result = monte_carlo_test(trades, 100, n_simulations=10, seed=42)
+        assert "positive equity" in result["error"]
+        assert result["p_value_sharpe"] == 1.0
+
+    def test_rejects_nonpositive_simulated_equity(self) -> None:
+        # The observed path stays positive, but other orderings cross zero.
+        trades = _make_trades([100, -150, 100])
+        result = monte_carlo_test(trades, 100, n_simulations=50, seed=42)
+        assert "positive equity" in result["error"]
+        assert result["p_value_sharpe"] == 1.0
+
     def test_too_few_trades(self) -> None:
         trades = _make_trades([100, -50])
         result = monte_carlo_test(trades, 1_000_000)
@@ -166,6 +179,15 @@ class TestBootstrapSharpe:
         eq = _make_equity(200, drift=0.003, seed=123)
         result = bootstrap_sharpe_ci(eq, n_bootstrap=500)
         assert result["prob_positive"] > 0.5
+
+    def test_rejects_nonpositive_equity(self) -> None:
+        eq = pd.Series(
+            [100, 90, 80, -50, -75, -100],
+            index=pd.bdate_range("2025-01-01", periods=6),
+        )
+        result = bootstrap_sharpe_ci(eq, n_bootstrap=50)
+        assert "positive equity" in result["error"]
+        assert "observed_sharpe" not in result
 
     def test_too_few_observations(self) -> None:
         eq = pd.Series([100, 101, 102], index=pd.bdate_range("2025-01-01", periods=3))
@@ -254,6 +276,16 @@ class TestWalkForward:
         last_end = result["windows"][-1]["end"]
         assert first_start == str(eq.index[0].date())
         assert last_end == str(eq.index[-1].date())
+
+    def test_rejects_nonpositive_window_equity(self) -> None:
+        eq = pd.Series(
+            [100, 90, 80, -50, -75, -100],
+            index=pd.bdate_range("2025-01-01", periods=6),
+        )
+        result = walk_forward_analysis(eq, [], n_windows=2)
+        assert "positive equity" in result["error"]
+        assert "window 2" in result["error"]
+        assert "windows" not in result
 
     def test_too_few_bars(self) -> None:
         eq = pd.Series([100, 101], index=pd.bdate_range("2025-01-01", periods=2))
