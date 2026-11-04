@@ -7,6 +7,9 @@ Three independent tools:
 
 Usage: called automatically by BaseEngine.run_backtest when config[\"validation\"]
 is present, or invoked directly on backtest outputs.
+
+Percentage-based metrics require strictly positive equity. A path that reaches
+zero or below returns an explicit error instead of inverted ratios.
 """
 
 from __future__ import annotations
