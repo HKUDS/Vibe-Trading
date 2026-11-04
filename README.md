@@ -59,10 +59,10 @@
 
 - **2026-11-02** 🛠️ **Frontmatter, result safety and welcome polish**: Unquote quoted scalar metadata, fall back to a readable truncation when an oversized result cannot be encoded, and refine the welcome layout and featured cards. Add regression coverage.
 
-- **2026-11-01** 🛠️ **Session timestamps, theme contrast and welcome interactions**: Stamp session updates in UTC, keep dark-mode primary buttons legible, and make side-panel examples clickable with clear category labels. Add regression coverage.
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-11-01** 🛠️ **Session timestamps, theme contrast and welcome interactions**: Stamp session updates in UTC, keep dark-mode primary buttons legible, and make side-panel examples clickable with clear category labels. Add regression coverage.
 
 - **2026-10-31** 🛠️ **Welcome and ticker parsing polish**: Move the welcome surface to a warm paper palette and two-column layout, make featured examples and side-panel actions clearer, and stop trailing ticker letters from being interpreted as A-share or A/H constraints.
 - **2026-10-30** 🛠️ **Channel reliability and A-share sizing**: Voice notes reach the agent as attachments in Telegram, Feishu, Matrix and Weixin; STAR and Beijing backtests follow their board-specific minimum sizes and one-share increments. Add path-containment regressions. ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)). Follow-up: stream cancellation and retry/cache accounting, scoped background recovery, evidence-preserving research-goal edits, and Discord overflow fixes. A-share 5m paper steps now match bar by bar; saved accounts remain daily-only. Optional Parallel search is off by default. ([#2099](https://github.com/HKUDS/Vibe-Trading/pull/2099), [#2109](https://github.com/HKUDS/Vibe-Trading/pull/2109), [#2111](https://github.com/HKUDS/Vibe-Trading/pull/2111), [#2113](https://github.com/HKUDS/Vibe-Trading/pull/2113)).

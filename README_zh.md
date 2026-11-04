@@ -59,10 +59,10 @@
 
 - **2026-11-02** 🛠️ **frontmatter、结果安全与欢迎页润色**：去除带引号的标量元数据外壳；超大结果无法编码时回退到可读截断；调整欢迎页布局和精选示例，并补充回归测试。
 
-- **2026-11-01** 🛠️ **会话时间、主题对比度与欢迎页交互**：会话更新统一记录 UTC 时间；深色模式主按钮保持可读；侧栏示例可点击并显示清晰的分类标签。补充回归测试。
-
 <details>
 <summary>更早的新闻</summary>
+
+- **2026-11-01** 🛠️ **会话时间、主题对比度与欢迎页交互**：会话更新统一记录 UTC 时间；深色模式主按钮保持可读；侧栏示例可点击并显示清晰的分类标签。补充回归测试。
 
 - **2026-10-31** 🛠️ **欢迎页与代码解析润色**：欢迎页改用暖色纸感和双栏布局，精选示例与侧栏操作更清晰；避免把 ticker 末尾字母误读成 A 股或 A/H 约束。
 - **2026-10-30** 🛠️ **渠道可靠性与 A 股数量规则**：Telegram、飞书、Matrix 和微信语音消息以附件形式送达 Agent；科创板与北交所回测遵循各自最低申报数量及一股递增规则，并补充路径边界回归测试。 ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)). 后续整合：修复流式取消、重试及缓存用量统计、后台任务恢复和 Discord 重复分段；研究目标可保留证据直接编辑。A 股五分钟纸面步骤逐 bar 撮合，持久账户仍仅支持日线；Parallel 搜索默认关闭。 ([#2099](https://github.com/HKUDS/Vibe-Trading/pull/2099), [#2109](https://github.com/HKUDS/Vibe-Trading/pull/2109), [#2111](https://github.com/HKUDS/Vibe-Trading/pull/2111), [#2113](https://github.com/HKUDS/Vibe-Trading/pull/2113)).
