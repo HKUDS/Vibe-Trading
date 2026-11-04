@@ -222,11 +222,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>Kirim permintaan strategi, ikuti pekerjaan agen, dan periksa hasilnya.</td><td>Buka terminal, jelajahi perintah garis miring, dan tinjau hasil tersimpan.</td></tr>
+<tr><td>Kirim permintaan strategi, ikuti pekerjaan agen, dan periksa hasilnya.</td><td>Jelajahi templat riset di terminal dan buka templat ringkasan prapasar.</td></tr>
 </table>
 
 ## 🚀 Mulai cepat

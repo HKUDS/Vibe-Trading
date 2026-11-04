@@ -223,11 +223,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>Send a strategy request, follow the agent’s work and inspect the resulting run.</td><td>Open the terminal app, browse slash commands and inspect a saved run.</td></tr>
+<tr><td>Send a strategy request, follow the agent’s work and inspect the resulting run.</td><td>Browse the research playbooks and open the pre-market brief in the terminal.</td></tr>
 </table>
 
 ## 🚀 Quick Start

@@ -221,11 +221,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>输入策略要求，跟踪执行过程并查看回测结果。</td><td>打开终端，浏览斜杠命令并查看已保存的运行。</td></tr>
+<tr><td>输入策略要求，跟踪执行过程并查看回测结果。</td><td>在终端浏览研究模板，打开盘前简报。</td></tr>
 </table>
 
 ## 🚀 快速开始

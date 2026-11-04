@@ -222,11 +222,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>Introduce la estrategia, sigue el trabajo del agente y revisa el resultado.</td><td>Abre la terminal, explora los comandos de barra y recupera una ejecución.</td></tr>
+<tr><td>Introduce la estrategia, sigue el trabajo del agente y revisa el resultado.</td><td>Explora las plantillas de investigación y abre el informe de preapertura en la terminal.</td></tr>
 </table>
 
 ## 🚀 Inicio rápido

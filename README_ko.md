@@ -222,11 +222,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>전략 요청을 입력하고 작업 진행과 결과를 확인합니다.</td><td>터미널에서 슬래시 명령을 찾아 저장된 실행을 엽니다.</td></tr>
+<tr><td>전략 요청을 입력하고 작업 진행과 결과를 확인합니다.</td><td>터미널에서 리서치 템플릿 목록을 살펴보고 개장 전 브리핑을 엽니다.</td></tr>
 </table>
 
 ## 🚀 빠른 시작

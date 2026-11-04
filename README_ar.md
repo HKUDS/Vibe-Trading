@@ -222,11 +222,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>أرسل طلب الاستراتيجية وتابع العمل وافحص نتيجة الاختبار.</td><td>افتح الطرفية وتصفح أوامر الشرطة المائلة وراجع تشغيلا محفوظا.</td></tr>
+<tr><td>أرسل طلب الاستراتيجية وتابع العمل وافحص نتيجة الاختبار.</td><td>تصفّح قوالب الأبحاث في الطرفية وافتح قالب موجز ما قبل الافتتاح.</td></tr>
 </table>
 
 ## 🚀 البدء السريع

@@ -222,11 +222,11 @@ https://github.com/user-attachments/assets/2c595ee1-c577-481a-9460-34ea12bcf41c
 </td>
 <td width="50%" valign="top">
 
-https://github.com/user-attachments/assets/1892b163-3724-4c81-ad76-cdc50d1b8637
+https://github.com/user-attachments/assets/ac79426e-f3f7-4349-b0d5-d997a2725784
 
 </td>
 </tr>
-<tr><td>戦略を入力し、エージェントの作業と検証結果を確認します。</td><td>端末でスラッシュコマンドを探し、保存した実行を開きます。</td></tr>
+<tr><td>戦略を入力し、エージェントの作業と検証結果を確認します。</td><td>端末でリサーチ用テンプレートを一覧表示し、寄り付き前のブリーフを開きます。</td></tr>
 </table>
 
 ## 🚀 クイックスタート
