@@ -50,6 +50,9 @@ updates:
       - dependency-name: "attrs"
       - dependency-name: "certifi"
       - dependency-name: "cffi"
+      # curl-cffi 0.17.0 requires cffi>=2.1.1; ccxt 4.5.91 pins 2.0.0.
+      - dependency-name: "curl-cffi"
+        versions: ["0.17.0"]
       - dependency-name: "charset-normalizer"
       - dependency-name: "coincurve"
       - dependency-name: "frozenlist"

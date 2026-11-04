@@ -525,9 +525,9 @@ caio==0.12.9 \
     --hash=sha256:f0698976f84dd40024204f0f77cf59ed7446e989575c8ad8cb64cd4b3e2871f3 \
     --hash=sha256:f6ffb3d448016d20d8c40c53864d81bdf7463157969de65841eeb370519dbf78
     # via aiofile
-ccxt==4.5.89 \
-    --hash=sha256:1dfd87ecf804d04a60b041effe8ec041a1bb85ef749f067c9c5bd73f7ab77856 \
-    --hash=sha256:afe4e59138e3873d48391115302af9e61e8fd52c8f7a56cf690be35751736f7c
+ccxt==4.5.91 \
+    --hash=sha256:643209f01d9dcb4a720b2ec321b73a89ca4b0530e3c3ee70aed6cacb26f13a20 \
+    --hash=sha256:883d36142f3921a7383b413851915a2ea6e55ff3dce7e1a8af3856c7a5fa6b72
     # via -r agent/requirements.txt
 certifi==2026.10.19 \
     --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
@@ -4240,7 +4240,7 @@ uvicorn==0.54.0 \
     #   -r agent/requirements.txt
     #   fastmcp-slim
     #   mcp
-uvloop==0.22.1 ; (implementation_name == 'cpython' and sys_platform == 'cygwin') or (implementation_name == 'cpython' and sys_platform != 'cygwin' and sys_platform != 'win32') or (platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32') \
+uvloop==0.22.1 ; (implementation_name == 'cpython' and platform_python_implementation == 'PyPy' and sys_platform != 'win32') or (implementation_name == 'cpython' and sys_platform == 'cygwin') or (platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32') \
     --hash=sha256:017bd46f9e7b78e81606329d07141d3da446f8798c6baeec124260e22c262772 \
     --hash=sha256:0530a5fbad9c9e4ee3f2b33b148c6a64d47bbad8000ea63704fa8260f4cf728e \
     --hash=sha256:05e4b5f86e621cf3927631789999e697e58f0d2d32675b67d9ca9eb0bca55743 \
