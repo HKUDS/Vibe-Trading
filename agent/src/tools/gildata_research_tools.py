@@ -13,10 +13,8 @@ picked for value the project does not already cover:
   search over the Juyuan report library (deeper metadata than the existing
   eastmoney-backed ``get_research_reports``; both coexist).
 
-Deliberately NOT wrapped (overlap with existing tools): news
-(``get_stock_news``/``web_search``), screening (``screen_market`` /
-``iwencai_search``), fund/manager selection, the generic ``FinQuery`` and the
-``FinDataFallbackQuery`` catch-all.
+Separate modules wrap FinQuery and SmartStockSelection. Existing news and
+screening sources remain available alongside them.
 
 The agent authors the natural-language ``query``; the server routes it. The
 routed ``api_names`` are echoed in every envelope so a mis-routed question is

@@ -319,6 +319,9 @@ register_alpha_routes(app)
 from src.api.options_routes import register_options_routes  # noqa: E402
 register_options_routes(app)
 
+from src.api.shannon_routes import register_shannon_routes  # noqa: E402
+register_shannon_routes(app, require_auth)
+
 # --- Auth helpers (SSE tickets) ---
 from src.api.auth_routes import register_auth_routes  # noqa: E402
 register_auth_routes(app)

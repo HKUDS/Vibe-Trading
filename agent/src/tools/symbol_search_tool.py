@@ -364,6 +364,16 @@ class SymbolSearchTool(BaseTool):
                 == query.strip().upper()
             ]
 
+        if (crypto_pair is None and _metal_or_fx_legs(query) is None
+                and not query.strip().upper().endswith("=F")
+                and not query.startswith("^") and not _is_canadian_symbol(query)):
+            from src.tools.gildata_identity import search_candidates
+
+            gildata_hits, gildata_status = search_candidates(query, limit)
+            if gildata_status is not None:
+                sources["gildata"] = gildata_status
+                candidates.extend(gildata_hits)
+
         # Canada fail-fast: a Canadian ticker must resolve to the Canadian venue
         # only. Yahoo also returns the US OTC alias of the same company (e.g.
         # ``BYN.V`` -> ``BYAGF.US``), which would make the grounding ledger see

@@ -529,6 +529,10 @@ vibe-trading connector install /tmp/my-broker
 | `b3_cotahist` | Brazil (B3) | none | 로컬 B3 공식 현물·단주 일봉(미조정, BRL). `python -m src.br_data sync`로 가져오는 `.SA` 오프라인 대체 소스 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+`GILDATA_TOKEN`을 설정하면 통합 질의용 `gildata_fin_query`, 여러 보고기간의 지표를 함께 조회하는 종목 선별용 `gildata_stock_selection`, `search_symbol`의 Gildata 종목 후보를 사용할 수 있습니다.
+
+상관관계 페이지의 선택 기능인 Shannon 포트폴리오 진단은 `GILDATA_TOKEN`을 사용해 A주 포트폴리오의 스타일 노출, 종목별 노출 히트맵, 변동성 기여 비중을 보여줍니다. 기준일과 보유 비중을 지정할 수 있으며, 기여 비중은 손실 확률이 아닙니다.
+
 **폴백 체인 (IP 차단 위험 순):**
 
 - **A주** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`

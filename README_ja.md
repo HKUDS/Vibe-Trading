@@ -529,6 +529,10 @@ vibe-trading connector install /tmp/my-broker
 | `b3_cotahist` | Brazil (B3) | none | ローカル B3 公式現物・単元未満株の日足（未調整、BRL）。`python -m src.br_data sync` で取得する `.SA` のオフライン代替ソース |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
+`GILDATA_TOKEN` を設定すると、複合照会の `gildata_fin_query`、複数報告期間の指標を取得できる銘柄スクリーニングの `gildata_stock_selection`、および `search_symbol` の聚源銘柄候補を利用できます。
+
+相関分析ページの任意機能「Shannon保有診断」は `GILDATA_TOKEN` を使用し、A株ポートフォリオのスタイル・エクスポージャー、個別銘柄のヒートマップ、ボラティリティ寄与率を表示します。基準日と保有比率を指定でき、寄与率は損失確率を意味しません。
+
 **フォールバックチェーン（IP 規制リスク順）：**
 
 - **A 株** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
