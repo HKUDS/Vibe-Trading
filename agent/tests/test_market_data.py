@@ -865,3 +865,27 @@ def test_fetch_auto_full_batch_never_touches_the_next_source() -> None:
     )
     assert stooq_calls == []
     assert "AAPL.US" in out and "NVDA.US" in out
+
+@pytest.mark.parametrize("symbol", ["600519.SH", "00700.HK", "000300.SH"])
+def test_missing_market_quotes_never_cross_the_gildata_boundary(symbol, monkeypatch):
+    from backtest.loaders.base import NoAvailableSourceError
+
+    monkeypatch.setenv("GILDATA_TOKEN", "existing-token")
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "market_quotes")
+    attempts = []
+
+    def unavailable(name):
+        attempts.append(name)
+        raise NoAvailableSourceError(name)
+
+    def query(source):
+        return fetch_market_data(
+            codes=[symbol], source=source, start_date="2024-01-01",
+            end_date="2024-01-05", loader_resolver=unavailable, max_fallback_attempts=100,
+        )
+
+    assert query("auto")["_unresolved"] == [symbol]
+    assert attempts and "gildata" not in attempts
+    attempts.clear()
+    assert query("gildata")["_unresolved"] == [symbol]
+    assert attempts == ["gildata"]

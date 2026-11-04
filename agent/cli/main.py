@@ -84,19 +84,23 @@ def _register_live_slash_commands() -> None:
 
 
 _register_live_slash_commands()
-# QVERIS-INTEGRATION
-def _register_data_slash_commands() -> None:  # QVERIS-INTEGRATION
-    """Surface data routing mode in the shared slash registry."""  # QVERIS-INTEGRATION
-    from cli.commands import slash_router  # QVERIS-INTEGRATION
-    if any(cmd.name == "data" for cmd in slash_router.SLASH_COMMANDS):  # QVERIS-INTEGRATION
-        return  # QVERIS-INTEGRATION
-    commands = list(slash_router.SLASH_COMMANDS)  # QVERIS-INTEGRATION
-    quit_idx = next((i for i, c in enumerate(commands) if c.name == "quit"), len(commands))  # QVERIS-INTEGRATION
-    commands.insert(quit_idx, slash_router.Command("data", "Data routing mode", "cli.main"))  # QVERIS-INTEGRATION
-    slash_router.SLASH_COMMANDS = tuple(commands)  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
-_register_data_slash_commands()  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
+
+
+def _register_data_slash_commands() -> None:
+    """Surface data partner settings in the shared slash registry."""
+    from cli.commands import slash_router
+
+    if any(cmd.name == "data" for cmd in slash_router.SLASH_COMMANDS):
+        return
+    commands = list(slash_router.SLASH_COMMANDS)
+    quit_idx = next((i for i, c in enumerate(commands) if c.name == "quit"), len(commands))
+    commands.insert(quit_idx, slash_router.Command("data", "Show data partner settings", "cli.main"))
+    slash_router.SLASH_COMMANDS = tuple(commands)
+
+
+_register_data_slash_commands()
+
+
 _AGENT_DIR = Path(__file__).resolve().parents[1]
 _ENV_PATH = Path.home() / ".vibe-trading" / ".env"
 _PROJECT_ENV_PATH = _AGENT_DIR / ".env"
@@ -962,20 +966,24 @@ def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
         _dispatch_connector(parsed)
     except Exception as exc:  # noqa: BLE001 — never let a connector command kill the loop
         console.print(f"[bold red]/connector failed:[/bold red] {exc}")
-# QVERIS-INTEGRATION
-def _run_data_command_from_repl(console: Any, args: list[str]) -> None:  # QVERIS-INTEGRATION
-    """Run a ``/data ...`` subcommand from the REPL via the CLI dispatcher."""  # QVERIS-INTEGRATION
-    from cli._legacy import _build_parser, _dispatch_data  # QVERIS-INTEGRATION
-    argv = ["data", *(args or ["status"])]  # QVERIS-INTEGRATION
-    try:  # QVERIS-INTEGRATION
-        parsed = _build_parser().parse_args(argv)  # QVERIS-INTEGRATION
-    except SystemExit:  # QVERIS-INTEGRATION
-        console.print("[dim]Usage: /data [status|mode free|mode paid|usage][/dim]")  # QVERIS-INTEGRATION
-        return  # QVERIS-INTEGRATION
-    try:  # QVERIS-INTEGRATION
-        _dispatch_data(parsed)  # QVERIS-INTEGRATION
-    except Exception as exc:  # noqa: BLE001  # QVERIS-INTEGRATION
-        console.print(f"[bold red]/data failed:[/bold red] {exc}")  # QVERIS-INTEGRATION
+
+
+def _run_data_command_from_repl(console: Any, args: list[str]) -> None:
+    """Run a ``/data ...`` subcommand from the REPL via the CLI dispatcher."""
+    from cli._legacy import _build_parser, _dispatch_data
+
+    argv = ["data", *(args or ["status"])]
+    try:
+        parsed = _build_parser().parse_args(argv)
+    except SystemExit:
+        console.print("[dim]Usage: /data [status][/dim]")
+        return
+    try:
+        _dispatch_data(parsed)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[bold red]/data failed:[/bold red] {exc}")
+
+
 def _is_numeric_pick(text: str) -> Optional[int]:
     """Return the chosen ordinal if ``text`` is a bare numeric pick, else None.
 
@@ -1427,9 +1435,9 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
             if slash_name == "connector":
                 _run_connector_command_from_repl(console, slash_tokens[1:])
                 continue
-            if slash_name == "data":  # QVERIS-INTEGRATION
-                _run_data_command_from_repl(console, slash_tokens[1:])  # QVERIS-INTEGRATION
-                continue  # QVERIS-INTEGRATION
+            if slash_name == "data":
+                _run_data_command_from_repl(console, slash_tokens[1:])
+                continue
             rc = _dispatch_slash(text, ctx)
             if rc == 2:
                 break

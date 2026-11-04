@@ -98,10 +98,6 @@ class TestBarsPerYear:
     # ── newly covered sources (#884) ──
 
     # resampling sources (local files / paid data, default to US equity session)
-    def test_resampling_qveris(self) -> None:
-        assert calc_bars_per_year("1D", "qveris") == 252
-        assert calc_bars_per_year("1m", "qveris") == 252 * 390
-        assert calc_bars_per_year("1H", "qveris") == 252 * 7
 
     def test_resampling_local(self) -> None:
         assert calc_bars_per_year("1D", "local") == 252

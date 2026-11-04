@@ -11,6 +11,7 @@ from src.tools import symbol_search_tool as ss
 
 @pytest.fixture
 def recall(monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "symbol_search")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     fn = Mock(return_value=[
         {"api_name": "StockDailyQuote", "candidates": [

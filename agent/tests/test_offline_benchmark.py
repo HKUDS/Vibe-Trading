@@ -186,7 +186,7 @@ def test_inner_loader_frames_are_sanitised_like_the_snapshot() -> None:
     assert list(served[_BENCH].index) == [d for i, d in enumerate(_DATES) if i != 2]
 
 
-@pytest.mark.parametrize("source", ["local", "qveris", "tickerall", "fmp", "nobitex", "wallex"])
+@pytest.mark.parametrize("source", ["local", "tickerall", "fmp", "nobitex", "wallex"])
 @pytest.mark.parametrize("loader_name", ["same", "yahoo"])
 def test_source_bound_benchmark_never_switches_provider(monkeypatch, source, loader_name):
     from backtest.benchmark import resolve_benchmark

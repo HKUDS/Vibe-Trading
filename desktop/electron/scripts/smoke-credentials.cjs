@@ -28,17 +28,10 @@ async function run() {
         "MODELSCOPE_API_KEY=desktop-smoke-modelscope-secret",
         "TUSHARE_TOKEN='desktop-smoke-tushare-secret'",
         "ANTHROPIC_API_KEY=sk-xxx",
+        "GILDATA_TOKEN=desktop-smoke-gildata-secret",
         "NON_SECRET_SETTING=preserved",
         "",
       ].join("\n"),
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(configDirectory, "qveris.json"),
-      `${JSON.stringify({
-        api_key: "desktop-smoke-qveris-secret",
-        enabled: true,
-      }, null, 2)}\n`,
       "utf8",
     );
 
@@ -52,21 +45,21 @@ async function run() {
       "desktop-smoke-modelscope-secret",
     );
     assert.equal(initialEnvironment.TUSHARE_TOKEN, "desktop-smoke-tushare-secret");
-    assert.equal(initialEnvironment.QVERIS_API_KEY, "desktop-smoke-qveris-secret");
+    assert.equal(initialEnvironment.GILDATA_TOKEN, "desktop-smoke-gildata-secret");
     assert.equal(initialEnvironment.ANTHROPIC_API_KEY, undefined);
 
     const status = store.status();
     assert.deepEqual(status.configured, [
+      "GILDATA_TOKEN",
       "MODELSCOPE_API_KEY",
       "OPENAI_API_KEY",
-      "QVERIS_API_KEY",
       "TUSHARE_TOKEN",
     ]);
     assert.deepEqual(status.migrated, [
       "OPENAI_API_KEY",
       "MODELSCOPE_API_KEY",
       "TUSHARE_TOKEN",
-      "QVERIS_API_KEY",
+      "GILDATA_TOKEN",
     ]);
 
     const encryptedFile = await fs.readFile(
@@ -87,10 +80,7 @@ async function run() {
     assert.ok(!migratedDotenv.includes("desktop-smoke-modelscope-secret"));
     assert.ok(!migratedDotenv.includes("desktop-smoke-tushare-secret"));
 
-    const migratedQveris = JSON.parse(
-      await fs.readFile(path.join(configDirectory, "qveris.json"), "utf8"),
-    );
-    assert.deepEqual(migratedQveris, { enabled: true });
+    assert.ok(!migratedDotenv.includes("desktop-smoke-gildata-secret"));
 
     const reloadedStore = new SecureCredentialStore({ homeDirectory, userDataDirectory });
     await reloadedStore.initialize();

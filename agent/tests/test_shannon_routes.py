@@ -23,6 +23,7 @@ def diagnosis():
 
 @pytest.fixture
 def client(monkeypatch, diagnosis):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "shannon")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     vendor = Mock(return_value=diagnosis)
     monkeypatch.setattr(sr, "call_srv_arguments", vendor)
@@ -121,6 +122,7 @@ def test_routes_keep_authentication():
 
 @pytest.mark.parametrize("status", ["completed", "queued", "running"])
 def test_transport_preserves_status_and_rejects_rpc_errors(monkeypatch, status):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "shannon")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     payload = {"status": status, "job_id": "job-123", "data": {}, "meta": {"as_of": "2026-10-28"}}
     outer = {"result": {"content": [{"type": "text", "text": json.dumps(payload)}]}}

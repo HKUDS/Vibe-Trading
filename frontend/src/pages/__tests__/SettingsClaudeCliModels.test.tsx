@@ -24,7 +24,6 @@ vi.mock("@/lib/apiAuth", () => ({
 }));
 
 vi.mock("@/components/settings/ChannelSettings", () => ({ ChannelSettings: () => null }));
-vi.mock("@/components/settings/QVerisSettings", () => ({ QVerisSettings: () => null }));
 vi.mock("@/components/settings/SourcePrioritySettings", () => ({
   SourcePrioritySettings: () => null,
 }));
@@ -232,4 +231,19 @@ describe("Settings with Codex OAuth discovery", () => {
     fireEvent.change(input, {target: {value: "openai-codex/manual-model"}});
     expect(input).toHaveValue("openai-codex/manual-model");
   });
+});
+
+it("saves only the explicitly selected Gildata feature for an existing token", async () => {
+  const saved = { gildata_token_configured: true, gildata_features: [] };
+  apiMock.getLLMSettings.mockResolvedValue(llmSettings());
+  apiMock.getDataSourceSettings.mockResolvedValue(saved);
+  apiMock.updateDataSourceSettings.mockResolvedValue({ ...saved, gildata_features: ["fin_query"] });
+  render(<Settings />);
+  const query = await screen.findByRole("checkbox", { name: "Combined financial queries" });
+  expect(query).not.toBeChecked();
+  fireEvent.click(query);
+  fireEvent.click(screen.getByRole("button", { name: /save data source settings/i }));
+  await waitFor(() => expect(apiMock.updateDataSourceSettings).toHaveBeenCalledWith(
+    expect.objectContaining({ gildata_features: ["fin_query"] }),
+  ));
 });

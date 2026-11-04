@@ -33,9 +33,9 @@ export const DOCS_STRUCTURE = [
             title: "What is in 0.1.16",
             body: `
               <ul>
-                <li><strong>29 market-data sources</strong> behind one call, with a fallback chain per market. Most markets need no API key.</li>
+                <li><strong>28 market-data sources</strong> behind one call, with a fallback chain per market. Most markets need no API key.</li>
                 <li><strong>11 backtest engines</strong>: China A-shares, global equities, India, Korea, Vietnam, crypto, China futures, global futures, forex, a composite engine for cross-market portfolios, and an options portfolio engine.</li>
-                <li><strong>90 finance skills</strong> in 9 categories, and <strong>30 swarm presets</strong> for committee-style research.</li>
+                <li><strong>89 finance skills</strong> in 9 categories, and <strong>30 swarm presets</strong> for committee-style research.</li>
                 <li><strong>Alpha Zoo</strong>: 478 alphas you can benchmark on your own universe with one command.</li>
                 <li><strong>82 MCP tools</strong> for other agents.</li>
                 <li><strong>19 broker connectors</strong>, read-only by default, plus a read-only multi-broker portfolio page.</li>
@@ -188,7 +188,7 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com/v1</code></pre>
                 <li><code>TUSHARE_TOKEN</code> — richer A-share, fund and macro data.</li>
                 <li><code>GILDATA_TOKEN</code> — Hundsun Juyuan commercial A-share feed.</li>
                 <li>Finnhub, Alpha Vantage, Tiingo and FMP keys — extra US sources.</li>
-                <li>QVeris — a paid marketplace, used only when you ask for it; switch with <code>vibe-trading data mode</code>.</li>
+                <li>Data partner: Gildata. Each Gildata feature requires a token and a separate opt-in in Settings.</li>
               </ul>
               <p>See <a data-doc-link="tools/data-sources">Data sources</a> for which source serves which market.</p>
             `
@@ -569,7 +569,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # keep finished tasks</code><
         id: "tools/data-sources",
         title: "Data sources",
         description: "Which source serves which market, symbol formats, and how to pick a source.",
-        lead: "One get_market_data call reaches 29 sources. With source auto, each symbol is routed by its market and walks that market's fallback chain, with the sources least likely to block you first.",
+        lead: "One get_market_data call reaches 28 sources. With source auto, each symbol is routed by its market and walks that market's fallback chain, with the sources least likely to block you first.",
         sections: [
           {
             id: "providers",
@@ -578,7 +578,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # keep finished tasks</code><
               <table>
                 <thead><tr><th>Market</th><th>Chain, in order</th></tr></thead>
                 <tbody>
-                  <tr><td>China A-shares</td><td>tencent, eastmoney, baostock, akshare, tushare, gildata, local</td></tr>
+                  <tr><td>China A-shares</td><td>tencent, eastmoney, baostock, akshare, tushare, local</td></tr>
                   <tr><td>US equities</td><td>yahoo, stooq, sina, eastmoney, yfinance, tiingo, fmp, finnhub, alphavantage, longbridge, akshare, local</td></tr>
                   <tr><td>Hong Kong</td><td>tencent, eastmoney, yahoo, futu, akshare, yfinance, tushare, longbridge, local</td></tr>
                   <tr><td>India</td><td>yahoo, yfinance, india_broker, local</td></tr>
@@ -591,7 +591,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # keep finished tasks</code><
                   <tr><td>Macro</td><td>akshare, tushare, local</td></tr>
                 </tbody>
               </table>
-              <p>These sources are used only when you name them: <code>qveris</code> (paid marketplace), <code>tickerall</code> (hosted MT5 feed), and <code>nobitex</code> / <code>wallex</code> (Iranian Toman pairs). Set <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>, for example <code>MARKET_DATA_ORDER_US_EQUITY</code>, to reorder a chain.</p>
+              <p>These sources are used only when you name them: <code>gildata</code> (requires market quotes enabled), <code>tickerall</code> (hosted MT5 feed), and <code>nobitex</code> / <code>wallex</code> (Iranian Toman pairs). Set <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>, for example <code>MARKET_DATA_ORDER_US_EQUITY</code>, to reorder a chain.</p>
               <p>The base install includes Tencent's standard-library HTTP loader and AKShare. BaoStock is an optional token-free TCP source for daily A-share bars: install it with <code>pip install --upgrade "vibe-trading-ai[ashare]"</code>, or use <code>uv tool install --force --python 3.12 "vibe-trading-ai[ashare]"</code> for a uv tool installation that previously used only the base package. Missing optional SDKs are skipped during automatic fallback.</p>
               <p>For uv tool users, <code>--force</code> rebuilds the existing tool environment. Keep previously used extras when adding <code>ashare</code>, for example <code>"vibe-trading-ai[ashare,deepseek]"</code>, and repeat any existing <code>--with</code> arguments to retain those additional dependencies.</p>
               <p>The legacy <code>mootdx</code> loader is also explicit-only: it has been retired from automatic fallback and is not included in the base install or the <code>ashare</code> extra. Installing its SDK does not guarantee compatibility with the TDX server protocol. Prefer <code>source: "auto"</code> or an available alternative such as <code>tencent</code> or <code>baostock</code> when an Eastmoney-backed request is throttled. Startup preflight covers selected services, not every optional loader, and an installed SDK does not prove remote-service availability.</p>
@@ -674,7 +674,7 @@ vibe-trading run -p "Analyze my trading behavior, extract my shadow strategy, an
             id: "library",
             title: "Library",
             body: `
-              <p>90 skills in 9 categories:</p>
+              <p>89 skills in 9 categories:</p>
               <table>
                 <thead><tr><th>Category</th><th>Skills</th></tr></thead>
                 <tbody>

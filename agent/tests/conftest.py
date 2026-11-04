@@ -28,7 +28,6 @@ if str(AGENT_DIR) not in sys.path:
 #     i.e. during collection): loop.RUNS_DIR/SESSIONS_DIR, goal/session
 #     _DB_PATH, helpers.ENV_PATH, memory MEMORY_BASE, skills USER_SKILLS_DIR,
 #     strategy_store _DEFAULT_DB_PATH, swarm presets USER_PRESETS_DIR,
-#     qveris QVERIS_CONFIG_PATH.
 #   * Runtime Path.home() call sites: redaction's internal-root anchors
 #     (_internal_roots_for_cwd), alpha_bench report output (_default_output_dir),
 #     autopilot run dirs, uploads shadow_reports.

@@ -29,7 +29,7 @@ const ENV_CREDENTIALS = new Set([
   "SPARK_API_KEY",
   "ZAI_API_KEY",
   "TUSHARE_TOKEN",
-  "QVERIS_API_KEY",
+  "GILDATA_TOKEN",
 ]);
 
 const PLACEHOLDER_VALUES = new Set([
@@ -40,6 +40,7 @@ const PLACEHOLDER_VALUES = new Set([
   "xxx",
   "gsk_xxx",
   "your-tushare-token",
+  "your-gildata-token",
 ]);
 
 export type CredentialStatus = {
@@ -87,11 +88,6 @@ export class SecureCredentialStore {
     }
     await this.load();
     await this.migrateDotenv(path.join(this.homeDirectory, ".vibe-trading", ".env"));
-    await this.migrateJsonField(
-      path.join(this.homeDirectory, ".vibe-trading", "qveris.json"),
-      "api_key",
-      "QVERIS_API_KEY",
-    );
   }
 
   status(): CredentialStatus {
@@ -195,28 +191,6 @@ export class SecureCredentialStore {
     }
   }
 
-  private async migrateJsonField(
-    filePath: string,
-    field: string,
-    credential: string,
-  ): Promise<void> {
-    try {
-      const parsed = JSON.parse(await fs.readFile(filePath, "utf8")) as Record<string, unknown>;
-      const value = typeof parsed[field] === "string" ? parsed[field].trim() : "";
-      if (!value) return;
-      if (!this.values[credential]) {
-        this.values[credential] = safeStorage.encryptString(value).toString("base64");
-        this.migrated.push(credential);
-        await this.persist();
-      }
-      delete parsed[field];
-      await atomicTextWrite(filePath, `${JSON.stringify(parsed, null, 2)}\n`);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof SyntaxError)) {
-        throw error;
-      }
-    }
-  }
 }
 
 function unquote(value: string): string {

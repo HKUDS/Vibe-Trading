@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from src.agent.tools import BaseTool
-from src.config.accessor import get_env_config
+from src.config.gildata_features import feature_available
 from src.tools.gildata_fin_query_tool import _normalize_table
 from src.tools.gildata_srv import call_srv_tool_results
 
@@ -17,7 +17,7 @@ class GildataStockSelectionTool(BaseTool):
     description = (
         "聚源智能选股：一次查询完成指定日期的股票筛选/TopN排名，并返回所选股票跨报告期的财务金额、估值或行情指标。 "
         "Example: 沪深300权重最高的10只成分股及2023、2024年全年营业收入. "
-        "Use gildata_fin_query for attribute/history queries without screening. "
+        ""
         "Requires GILDATA_TOKEN; read-only."
     )
     parameters = {
@@ -32,11 +32,11 @@ class GildataStockSelectionTool(BaseTool):
 
     @classmethod
     def check_available(cls) -> bool:
-        return get_env_config().data.gildata_token.strip() not in {"", "your-gildata-token"}
+        return feature_available("stock_selection")
 
     def execute(self, **kwargs: Any) -> str:
         if not self.check_available():
-            return json.dumps({"ok": False, "error_type": "not_configured", "error": "GILDATA_TOKEN is not configured"})
+            return json.dumps({"ok": False, "error_type": "not_configured", "error": "Gildata feature is disabled or unavailable"})
         query, topk = kwargs.get("query"), kwargs.get("topk")
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 4000:
             return json.dumps({"ok": False, "error_type": "invalid_query", "error": "query must contain 1 to 4000 characters"})

@@ -233,7 +233,7 @@ class TestNoNetworkFallbackIsPerSymbolToo:
 
     # Every member of the set is pinned, not only ``local``: with the guard
     # narrowed to ``primary_source != "local"`` the suite stayed green while
-    # qveris / fmp / tickerall / nobitex / wallex kept filling gaps from the
+    # fmp / tickerall / nobitex / wallex kept filling gaps from the
     # network. A source added to the set later is covered the moment it lands.
     @pytest.mark.parametrize("source", sorted(_NO_NETWORK_FALLBACK_SOURCES))
     def test_missing_symbol_raises_instead_of_reaching_the_network(

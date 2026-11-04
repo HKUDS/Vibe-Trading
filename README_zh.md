@@ -249,7 +249,7 @@
 
 - **2026-07-09** 🧯 **Docker 启动解阻 + provider/CLI 贡献者批次**：当 FastAPI route 遍历遇到没有 `path` 的 included-router-like 条目时，Docker/server 启动不再直接崩溃（[#450](https://github.com/HKUDS/Vibe-Trading/issues/450)，感谢 @Penn-Live）。同时合入一批排队中的 quick-win 贡献者修复：OKX / Tushare / yfinance 的 loader `fetch()` 签名已对齐协议（[#437](https://github.com/HKUDS/Vibe-Trading/pull/437)，感谢 @shadowinlife），CLI resume prompt 会保留用户输入的第一句话（[#448](https://github.com/HKUDS/Vibe-Trading/pull/448)，关闭 [#447](https://github.com/HKUDS/Vibe-Trading/issues/447)，感谢 @morluto），Codex OAuth 默认模型更新为 `openai-codex/gpt-5.4`（[#446](https://github.com/HKUDS/Vibe-Trading/pull/446)，感谢 @morluto），Kimi for Coding 成为独立 provider（[#435](https://github.com/HKUDS/Vibe-Trading/pull/435)，感谢 @yxhuang），opencode provider 映射已接入（[#444](https://github.com/HKUDS/Vibe-Trading/pull/444)，感谢 @imsankz），Tushare reference code fence 也从 `pyhton` 修成 `python`（[#449](https://github.com/HKUDS/Vibe-Trading/pull/449)，感谢 @flash1234pku）。验证包含 focused server/CLI/provider/loader tests、Docker build 和 `/health` smoke。
 
-- **2026-07-08** 💎 **基本面因子层（Phase 1）+ 可选 QVeris 付费数据 + 维护日**：PIT-safe 的 SEC 财报数据现在直接进日频因子 panel —— `fund:*` 面板列、以 filed 日锚定（重述与 YTD 帧防护），新增 4 个质量/价值因子（zoo 现 460 个）。数据路由新增可选付费轨：18 个免费源仍是默认，QVeris 一把 key 解锁 63+ provider，入口 Settings → QVeris 或 `vibe-trading data mode paid`（见下方 QVeris 小节）。另外：`api_server` 模块化收官（1,103 → 371 行，[#424](https://github.com/HKUDS/Vibe-Trading/pull/424) 关闭 [#331](https://github.com/HKUDS/Vibe-Trading/issues/331)，感谢 @shadowinlife）、回测 `validation.json` 不再要求 artifacts 目录预先存在（[#429](https://github.com/HKUDS/Vibe-Trading/pull/429)，感谢 @isaveall）、`--swarm-run` 报错更清晰（[#428](https://github.com/HKUDS/Vibe-Trading/issues/428)，感谢 @isaveall），以及我们 revert 了导致会话聊天崩溃的 governance stack（[#433](https://github.com/HKUDS/Vibe-Trading/issues/433)，感谢 @yxhuang 的精准诊断）。
+- **2026-07-08** 💎 **基本面因子层（Phase 1）+ 可选 QVeris 付费数据 + 维护日**：PIT-safe 的 SEC 财报数据现在直接进日频因子 panel —— `fund:*` 面板列、以 filed 日锚定（重述与 YTD 帧防护），新增 4 个质量/价值因子（zoo 现 460 个）。另外：`api_server` 模块化收官（1,103 → 371 行，[#424](https://github.com/HKUDS/Vibe-Trading/pull/424) 关闭 [#331](https://github.com/HKUDS/Vibe-Trading/issues/331)，感谢 @shadowinlife）、回测 `validation.json` 不再要求 artifacts 目录预先存在（[#429](https://github.com/HKUDS/Vibe-Trading/pull/429)，感谢 @isaveall）、`--swarm-run` 报错更清晰（[#428](https://github.com/HKUDS/Vibe-Trading/issues/428)，感谢 @isaveall），以及我们 revert 了导致会话聊天崩溃的 governance stack（[#433](https://github.com/HKUDS/Vibe-Trading/issues/433)，感谢 @yxhuang 的精准诊断）。
 
 - **2026-07-07** ✅ **贡献者 PR 批次**：合入了排队中的贡献者工作：IM channel timeout 配置（[#413](https://github.com/HKUDS/Vibe-Trading/pull/413)，感谢 @SyntaxSawdust）、Alpha Library 社交预览图与入门教程（[#396](https://github.com/HKUDS/Vibe-Trading/pull/396)、[#393](https://github.com/HKUDS/Vibe-Trading/pull/393)，感谢 @kadaliao）、value-investing skills / tools / committee presets（[#407](https://github.com/HKUDS/Vibe-Trading/pull/407)，感谢 @sambazhu）、`trading_place_order` 的零值 order sizing 字段处理（[#417](https://github.com/HKUDS/Vibe-Trading/pull/417)，感谢 @irfanallana-oss），以及 session/API 路径的 timezone-aware UTC timestamp（[#397](https://github.com/HKUDS/Vibe-Trading/pull/397)，感谢 @mustafakamal88）。
 
@@ -534,7 +534,7 @@ vibe-trading research-artifact search --query "NVDA"
 
 ## 📡 数据源与智能 Fallback
 
-一次 `get_market_data` 调用，**29 个行情数据源**（其中 **QVeris** 是可选的付费市场）。设 `source: "auto"`——loader 按符号自动选源，再沿按 **被封 IP 风险** 排序的同市场链向下走（永不封的公开源在前，限速 / 需 key 的在后）。零配置，无单点故障。
+一次 `get_market_data` 调用，**28 个行情数据源**。设 `source: "auto"`——loader 按符号自动选源，再沿按 **被封 IP 风险** 排序的同市场链向下走（永不封的公开源在前，限速 / 需 key 的在后）。零配置，无单点故障。
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -543,13 +543,12 @@ vibe-trading research-artifact search --query "NVDA"
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
-| `gildata` | A-share | token (Settings / `GILDATA_TOKEN`) | Hundsun Juyuan (恒生聚源) commercial feed — forward-adjusted dailies, joins the A-share chain tail |
+| `gildata` | A / HK / CN index | `GILDATA_TOKEN` + `market_quotes` | 聚源行情（仅在指定聚源时使用） · `source="gildata"` |
 | `yahoo` | 美股 / 港股 / 加拿大 / 英国 | none | direct chart/quotes/options；TSX `.TO` / TSXV `.V`；LSE `.L` 按明示币种归一化 |
 | `sina` · `stooq` | 美股 | none | K-line to 1984 · EOD CSV |
 | `yfinance` | 美股 / 港股 / 加拿大 / 英国 | none | wrapper；TSX `.TO` / TSXV `.V`；LSE `.L` 遵守同一 GBP/GBp 合同 |
 | `longbridge` | 美股 / 港股 | App Key + App Secret + Access Token | 可选历史 OHLCV 数据源；需安装可选 SDK |
 | `finnhub` · `alphavantage` · `tiingo` · `fmp` | US | key | optional providers |
-| `qveris` | 全球多资产 | key · credits | **付费市场** — 一把 key 通 63+ 家（仅显式选用，绝不进 auto 链） |
 | `nobitex` · `wallex` | 加密（伊朗托曼计价对） | 无 | 公开 UDF 端点；**仅显式选用** —— 它们是唯二以托曼计价的源，绝不进 crypto 链，以免用 USDT 计价的序列冒名顶替 |
 | `okx` · `ccxt` · `binance` | crypto | none | OKX + 100+ exchanges + Binance 历史 / USD-M 永续 |
 | `futu` | HK / A | OpenD | optional local FutuOpenD |
@@ -560,19 +559,15 @@ vibe-trading research-artifact search --query "NVDA"
 | `b3_cotahist` | Brazil (B3) | none | 本地 B3 官方现货／零股日线（原始价格、BRL），由 `python -m src.br_data sync` 导入；`.SA` 的离线后备源 |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
-配置 `GILDATA_TOKEN` 后，可使用聚源综合问数 `gildata_fin_query`、支持跨期指标的智能选股 `gildata_stock_selection`，并为证券检索 `search_symbol` 增加聚源候选来源。
-
-相关性页面提供可选的香农持仓诊断：配置 `GILDATA_TOKEN` 后，可查看 A 股组合风格暴露、个股暴露热力图和组合波动贡献占比；支持可选截至日期及持仓权重，波动贡献占比不是亏损概率。
-
 **Fallback 链（按被封 IP 风险排序）：**
 
-- **A股** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **A股** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
 - **美股** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
-- **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
+- **港股** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **印度（NSE/BSE）** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **Brazil (B3 `.SA`)** → `yahoo` · `yfinance` · `b3_cotahist` · `local`
 - **韩国（KOSPI/KOSDAQ）** → `pykrx` · `yahoo` · `yfinance` · `local`
-- **指数** → `yahoo` · `yfinance` · `gildata` · `local`
+- **指数** → `yahoo` · `yfinance` · `local`
 - **英国（LSE）** → `yahoo` · `yfinance` · `local` *（仅接受明示为 GBP/GBp 的报价）*
 - **加密** → `okx` · `binance` · `ccxt` · `yfinance` · `local`
 - **外汇 / 贵金属** → `mt5` · `akshare` · `yfinance` · `local`
@@ -635,15 +630,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 
 除 OHLCV 外，**29 个只读数据工具**深入基本面与资金面——资金流、龙虎榜、北向、南向、两融、大宗交易、股东户数、解禁、板块、研报、券商研报检索、新闻、SEC 文件、中国市场公告、财务报表、PIT 基本面、期权链、加密货币盘口深度、个股档案、全市场筛选、代码搜索、宏观、中国宏观（EDB）、问财、机构持仓（13F）、ETF 穿透、场外基金净值、预测市场、论文检索——全部经 MCP 暴露。显式 `local:` 源永不静默 fallback 到网络源。
 
-<!-- QVERIS-START -->
-### 💎 可选付费数据 — QVeris
+### 数据合作方 · [Gildata](https://www.gildata.com/products/datamap)
 
-<img src="https://www.qveris.com/logo-color.png" alt="QVeris" height="36">
-
-**数据可走免费，也可按需上付费。** 默认仍是 29 个内置免费源：自动 fallback、无需 key、无成本。通过 QVeris 可用一个 key 解锁 63+ provider、10,000+ capabilities（per QVeris），覆盖期权 Greeks、高级基本面、中国/港股/全球数据、宏观、加密、新闻与 filings；失败调用不扣费。入口在 Settings → QVeris 或 `vibe-trading data mode paid`。
-
-*QVeris 披露：通过 [Vibe-Trading 推荐链接](https://qveris.ai/?ref=Vyjjo5G_1cAHJA) 注册可额外获得 **1,000 积分**，同时支持本项目。*
-<!-- QVERIS-END -->
+在设置的「数据源」中分别启用场外基金净值、中国宏观指标、公司和基金公告、券商研报、综合问数、智能选股、证券检索候选、香农持仓诊断和显式指定的行情。每项都需要聚源 Token。九项功能默认全部关闭。即使升级前已保存 Token，也要逐项手动开启。开启行情后，只有明确指定聚源才会使用；免费源查不到时不会自动转用聚源。
 
 ---
 
@@ -652,15 +641,15 @@ LONGBRIDGE_ACCESS_TOKEN=...
 为保持主 README 易读，详细清单折叠在下方。需要检查可用构件时可展开查看。
 
 <details>
-<summary><b>Finance Skill Library</b> <sub>9 个类别中的 90 个 skills</sub></summary>
+<summary><b>Finance Skill Library</b> <sub>9 个类别中的 89 个 skills</sub></summary>
 
-- 📊 90 个专业金融 skills，分布在 9 个类别中
+- 📊 89 个专业金融 skills，分布在 9 个类别中
 - 🌐 覆盖传统市场、加密与 DeFi
 - 🔬 从数据源到量化研究的完整能力链路
 
 | 类别 | Skills | 示例 |
 |------|--------|------|
-| Data Source | 10 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt`, `eastmoney`, `sec-edgar`, `qveris` |
+| Data Source | 9 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt`, `eastmoney`, `sec-edgar` |
 | Strategy | 19 | `strategy-generate`, `cross-market-strategy`, `technical-basic`, `candlestick`, `ichimoku`, `elliott-wave`, `smc`, `multi-factor`, `ml-strategy` |
 | Analysis | 23 | `factor-research`, `correlation-regime`, `macro-analysis`, `global-macro`, `valuation-model`, `investor-lenses`, `credit-analysis`, `dividend-analysis` |
 | Asset Class | 9 | `options-strategy`, `options-advanced`, `convertible-bond`, `etf-analysis`, `asset-allocation`, `sector-rotation` |
@@ -1110,7 +1099,7 @@ vibe-trading provider doctor  # 打印脱敏后的 provider/proxy/依赖诊断
 | `/connector` | 交易连接器 profile（状态 / 启动 / 停止） |
 | `/halt` | kill switch —— 立即停止全部实盘活动 |
 | `/resume` | 解除 kill switch（重新允许实盘） |
-| `/data` | 数据路由模式 |
+| `/data` | 数据合作方设置 |
 | `/quit` | 退出（也可用 q、exit、:q） |
 
 </details>
@@ -1385,7 +1374,7 @@ POST `{}` 即按模板自身的建议节奏和默认变量排程。渲染后的�
 
 ## 🔌 MCP Plugin
 
-Vibe-Trading 为任何 MCP-compatible client 暴露 84 个 MCP tools。它作为 stdio subprocess 运行，无需 server setup。核心 research tools 对港股/美股/加密零 API key 可用；trading connector tools 使用当前选择的 connector profile；只有 `run_swarm` 需要 LLM key。
+Vibe-Trading 为任何 MCP-compatible client 暴露 81 个 MCP tools。它作为 stdio subprocess 运行，无需 server setup。核心 research tools 对港股/美股/加密零 API key 可用；trading connector tools 使用当前选择的 connector profile；只有 `run_swarm` 需要 LLM key。
 
 **环境变量：** server 由 client 自己 spawn，因此在 shell 里 `export` 永远传不进去 —— 请写在 client 的 `env` 块里。生成的回测代码被限制在 allowed run roots 内，所以要把结果写进你自己的工作目录，需要 `VIBE_TRADING_ALLOWED_RUN_ROOTS`：
 
@@ -1441,7 +1430,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**暴露的 MCP tools（84）：** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `update_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
+**暴露的 MCP tools（81）：** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `update_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
 
 ### SWARM 的外部 MCP tools
 
@@ -1465,7 +1454,7 @@ npx clawhub@latest install vibe-trading --force
 <details>
 <summary><b>OpenSpace — 自进化 skills</b></summary>
 
-全部 90 个 finance skills 都发布在 [open-space.cloud](https://open-space.cloud)，并通过 OpenSpace 的自进化引擎自主演进。
+全部 89 个 finance skills 都发布在 [open-space.cloud](https://open-space.cloud)，并通过 OpenSpace 的自进化引擎自主演进。
 
 要配合 OpenSpace 使用，请将两个 MCP servers 都加入你的 agent config：
 
@@ -1487,7 +1476,7 @@ npx clawhub@latest install vibe-trading --force
 }
 ```
 
-OpenSpace 会自动发现全部 90 个 skills，启用 auto-fix、auto-improve 和社区分享。在任意已连接 OpenSpace 的智能体中，可通过 `search_skills("finance backtest")` 搜索 Vibe-Trading skills。
+OpenSpace 会自动发现全部 89 个 skills，启用 auto-fix、auto-improve 和社区分享。在任意已连接 OpenSpace 的智能体中，可通过 `search_skills("finance backtest")` 搜索 Vibe-Trading skills。
 
 </details>
 
@@ -1797,13 +1786,13 @@ Vibe-Trading/
 ├── agent/                          # 后端（Python）
 │   ├── cli/                        # CLI 包 —— 交互式 TUI + 子命令
 │   ├── api_server.py               # FastAPI server —— runs、sessions、upload、swarm、SSE
-│   ├── mcp_server.py               # MCP server —— 84 个工具，面向 OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server —— 81 个工具，面向 OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent 内核
 │   │   │   ├── loop.py             #   5 层上下文压缩 + 读/写工具批处理
 │   │   │   ├── context.py          #   system prompt + 持久记忆自动召回
-│   │   │   ├── skills.py           #   skill loader（90 个内置 + 通过 CRUD 创建的用户 skill）
+│   │   │   ├── skills.py           #   skill loader（89 个内置 + 通过 CRUD 创建的用户 skill）
 │   │   │   ├── tools.py            #   tool 基类 + 注册表
 │   │   │   ├── memory.py           #   每个 run 的轻量 workspace 状态
 │   │   │   ├── frontmatter.py      #   共享的 YAML frontmatter 解析器
@@ -1830,7 +1819,7 @@ Vibe-Trading/
 │   │   ├── api/                    # FastAPI 路由模块
 │   │   │   └── alpha_routes.py     #   /alpha/list、/alpha/{id}、/alpha/bench、SSE 流
 │   │   │
-│   │   ├── skills/                 # 9 个类别共 90 个 finance skills（每个一份 SKILL.md）
+│   │   ├── skills/                 # 9 个类别共 89 个 finance skills（每个一份 SKILL.md）
 │   │   ├── swarm/                  # Swarm DAG 执行引擎
 │   │   │   └── presets/            #   30 个 swarm preset YAML 定义
 │   │   ├── session/                # 多轮对话 + FTS5 session 搜索
@@ -1838,7 +1827,7 @@ Vibe-Trading/
 │   │
 │   └── backtest/                   # 回测引擎
 │       ├── engines/                #   11 个引擎 + 跨市场 composite 引擎 + options_portfolio
-│       ├── loaders/                #   29 个数据源：tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、qveris、india_broker、tickerall、gildata, b3_cotahist
+│       ├── loaders/                #   28 个数据源：tushare、okx、nobitex、wallex、binance、yfinance、akshare、baostock、tencent、mootdx、ccxt、futu、pykrx、local、eastmoney、sina、stooq、yahoo、finnhub、alphavantage、tiingo、fmp、longbridge、mt5、india_broker、tickerall、gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + 自动 fallback 链路
 │       └── optimizers/             #   MVO、equal vol、max div、risk parity

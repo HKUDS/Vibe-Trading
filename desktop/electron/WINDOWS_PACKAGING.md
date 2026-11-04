@@ -7,7 +7,7 @@ This layer is stacked on the desktop lifecycle shell and adds only:
 - the existing production frontend and the upstream hash-locked base Python
   dependencies;
 - the verified native DLL subset required for WeasyPrint PDF output;
-- Electron `safeStorage` for LLM, Tushare, and QVeris credentials.
+- Electron `safeStorage` for LLM, Tushare, and Gildata credentials.
 
 ## Deliberate exclusions
 
@@ -96,8 +96,7 @@ Electron `safeStorage` uses the operating-system encryption facility for the
 current user. Decrypted values are injected only into the child backend
 environment and are not returned to the renderer.
 
-On first startup, supported secrets in `~/.vibe-trading/.env` and the QVeris
-API key in `~/.vibe-trading/qveris.json` are migrated into encrypted storage.
+On first startup, supported secrets in `~/.vibe-trading/.env` are migrated into encrypted storage.
 The plaintext fields are then removed. Backend settings writes in desktop
 secure mode explicitly blank known credential fields instead of writing the
 injected values back to dotenv.

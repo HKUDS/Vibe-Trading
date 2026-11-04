@@ -242,7 +242,7 @@
 
 - **2026-07-09** 🧯 **إزالة عائق بدء Docker + دفعة مساهمين لـ provider/CLI**: لم يعد بدء Docker/server ينهار عندما يمرّ FastAPI route iteration على عنصر included-router-like لا يملك `path` ([#450](https://github.com/HKUDS/Vibe-Trading/issues/450)، شكراً @Penn-Live). كما دُمجت دفعة quick-win من إصلاحات المساهمين: توحّدت تواقيع `fetch()` في loaders الخاصة بـ OKX / Tushare / yfinance مع البروتوكول ([#437](https://github.com/HKUDS/Vibe-Trading/pull/437)، شكراً @shadowinlife)، ويحفظ CLI resume prompt أول رسالة يكتبها المستخدم ([#448](https://github.com/HKUDS/Vibe-Trading/pull/448)، يغلق [#447](https://github.com/HKUDS/Vibe-Trading/issues/447)، شكراً @morluto)، وتحوّل default في Codex OAuth إلى `openai-codex/gpt-5.4` ([#446](https://github.com/HKUDS/Vibe-Trading/pull/446)، شكراً @morluto)، وأصبح Kimi for Coding مزوداً مستقلاً ([#435](https://github.com/HKUDS/Vibe-Trading/pull/435)، شكراً @yxhuang)، ووُصلت opencode provider mappings ([#444](https://github.com/HKUDS/Vibe-Trading/pull/444)، شكراً @imsankz)، كما صُححت code fences في مراجع Tushare من `pyhton` إلى `python` ([#449](https://github.com/HKUDS/Vibe-Trading/pull/449)، شكراً @flash1234pku). شمل التحقق focused server/CLI/provider/loader tests وDocker build و`/health` smoke.
 
-- **2026-07-08** 💎 **طبقة العوامل الأساسية (المرحلة 1) + بيانات QVeris المدفوعة الاختيارية + يوم صيانة**: بيانات SEC المالية الآمنة زمنياً (PIT-safe) تتدفق الآن مباشرة إلى panels العوامل اليومية —— أعمدة `fund:*`، وتثبيت على تاريخ `filed` (مع حماية من إعادة البيانات وإطارات YTD)، و4 عوامل جودة/قيمة جديدة (يضم zoo الآن 460 alphas). اكتسب توجيه البيانات مساراً مدفوعاً اختيارياً: تبقى المصادر المجانية الـ18 هي الافتراضية، بينما يفتح QVeris أكثر من 63 مزوداً عبر Settings → QVeris أو `vibe-trading data mode paid` (انظر قسم QVeris أدناه). أيضاً: اكتملت وحدات `api_server` (من 1,103 إلى 371 سطراً، [#424](https://github.com/HKUDS/Vibe-Trading/pull/424) يغلق [#331](https://github.com/HKUDS/Vibe-Trading/issues/331)، شكراً @shadowinlife)، ولم يعد `validation.json` في الاختبار الخلفي يتطلب وجود دليل artifacts مسبقاً ([#429](https://github.com/HKUDS/Vibe-Trading/pull/429)، شكراً @isaveall)، وأصبحت أخطاء `--swarm-run` أوضح ([#428](https://github.com/HKUDS/Vibe-Trading/issues/428)، شكراً @isaveall)، وقمنا بالتراجع عن governance stack الذي عطّل محادثات الجلسات ([#433](https://github.com/HKUDS/Vibe-Trading/issues/433)، شكراً @yxhuang على التشخيص الدقيق).
+- **2026-07-08** 💎 **طبقة العوامل الأساسية (المرحلة 1) + بيانات QVeris المدفوعة الاختيارية + يوم صيانة**: بيانات SEC المالية الآمنة زمنياً (PIT-safe) تتدفق الآن مباشرة إلى panels العوامل اليومية —— أعمدة `fund:*`، وتثبيت على تاريخ `filed` (مع حماية من إعادة البيانات وإطارات YTD)، و4 عوامل جودة/قيمة جديدة (يضم zoo الآن 460 alphas). أيضاً: اكتملت وحدات `api_server` (من 1,103 إلى 371 سطراً، [#424](https://github.com/HKUDS/Vibe-Trading/pull/424) يغلق [#331](https://github.com/HKUDS/Vibe-Trading/issues/331)، شكراً @shadowinlife)، ولم يعد `validation.json` في الاختبار الخلفي يتطلب وجود دليل artifacts مسبقاً ([#429](https://github.com/HKUDS/Vibe-Trading/pull/429)، شكراً @isaveall)، وأصبحت أخطاء `--swarm-run` أوضح ([#428](https://github.com/HKUDS/Vibe-Trading/issues/428)، شكراً @isaveall)، وقمنا بالتراجع عن governance stack الذي عطّل محادثات الجلسات ([#433](https://github.com/HKUDS/Vibe-Trading/issues/433)، شكراً @yxhuang على التشخيص الدقيق).
 
 - **2026-07-07** ✅ **دفعة PR للمساهمين**: دُمجت أعمال المساهمين المنتظرة: إعداد IM channel timeout ([#413](https://github.com/HKUDS/Vibe-Trading/pull/413)، شكراً @SyntaxSawdust)، وAlpha Library social previews ودليل المبتدئين ([#396](https://github.com/HKUDS/Vibe-Trading/pull/396)، [#393](https://github.com/HKUDS/Vibe-Trading/pull/393)، شكراً @kadaliao)، وvalue-investing skills / tools / committee presets ([#407](https://github.com/HKUDS/Vibe-Trading/pull/407)، شكراً @sambazhu)، ومعالجة حقول order sizing ذات القيمة الصفرية في `trading_place_order` ([#417](https://github.com/HKUDS/Vibe-Trading/pull/417)، شكراً @irfanallana-oss)، وtimezone-aware UTC timestamps عبر session/API paths ([#397](https://github.com/HKUDS/Vibe-Trading/pull/397)، شكراً @mustafakamal88).
 
@@ -503,7 +503,7 @@ vibe-trading connector install /tmp/my-broker
 
 ## 📡 مصادر البيانات والتراجع الذكي
 
-استدعاء واحد لـ `get_market_data`، **29 مصدر بيانات سوقية**، أحدها سوق **QVeris** المدفوع الاختياري (إضافة إلى سوق مدفوع اختياري **QVeris**). اضبط `source: "auto"` — يختار المُحمّل حسب الرمز، ثم يسير عبر سلسلة لكل سوق مرتبة بحسب **خطر حظر عنوان IP**: المصادر العامة التي لا تُحظر أبداً أولاً، والمصادر المُقيّدة أو المحمية بمفتاح أخيراً. بلا أي إعداد، ولا نقطة فشل واحدة.
+استدعاء واحد لـ `get_market_data`، **28 مصدر بيانات سوقية**. اضبط `source: "auto"` — يختار المُحمّل حسب الرمز، ثم يسير عبر سلسلة لكل سوق مرتبة بحسب **خطر حظر عنوان IP**: المصادر العامة التي لا تُحظر أبداً أولاً، والمصادر المُقيّدة أو المحمية بمفتاح أخيراً. بلا أي إعداد، ولا نقطة فشل واحدة.
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -512,13 +512,12 @@ vibe-trading connector install /tmp/my-broker
 | `eastmoney` | A / US / HK | none | OHLCV + deep fundamentals & flow tools (throttled) |
 | `baostock` · `akshare` | A (+ US/HK/futures/macro/fx) | none | free fallbacks |
 | `tushare` | A / HK / futures / fund / macro | token | richest A-share |
-| `gildata` | A-share | token (Settings / `GILDATA_TOKEN`) | Hundsun Juyuan (恒生聚源) commercial feed — forward-adjusted dailies, joins the A-share chain tail |
+| `gildata` | A / HK / CN index | `GILDATA_TOKEN` + `market_quotes` | أسعار السوق (عند طلب Gildata صراحةً فقط) · `source="gildata"` |
 | `yahoo` | US / HK / كندا / المملكة المتحدة | none | direct chart/quotes/options؛ TSX `.TO` / TSXV `.V`؛ تطبيع LSE `.L` حسب العملة المعلنة |
 | `sina` · `stooq` | US | none | K-line to 1984 · EOD CSV |
 | `yfinance` | US / HK / كندا / المملكة المتحدة | none | wrapper؛ TSX `.TO` / TSXV `.V`؛ يلتزم LSE `.L` بعقد GBP/GBp نفسه |
 | `longbridge` | US / HK | App Key + App Secret + Access Token | مصدر OHLCV تاريخي اختياري؛ ثبّت الـ SDK الاختياري |
 | `finnhub` · `alphavantage` · `tiingo` · `fmp` | US | key | optional providers |
-| `qveris` | أصول عالمية متعددة | key · credits | **سوق مدفوع** — 63+ مزوداً بمفتاح واحد (اختيار صريح فقط، خارج التراجع التلقائي) |
 | `nobitex` · `wallex` | العملات المشفّرة (أزواج بالتومان الإيراني) | لا شيء | نقاط نهاية UDF عامة، **بالاختيار الصريح فقط** — فهما المصدران الوحيدان المسعّران بالتومان، ولذلك لا ينضمان أبدًا إلى سلسلة العملات المشفّرة حيث قد تحل محلهما سلسلة مسعّرة بالدولار |
 | `okx` · `ccxt` · `binance` | crypto | none | OKX + 100+ exchanges + Binance historical / USD-M perps |
 | `futu` | HK / A | OpenD | optional local FutuOpenD |
@@ -529,19 +528,15 @@ vibe-trading connector install /tmp/my-broker
 | `b3_cotahist` | Brazil (B3) | none | شموع B3 اليومية المحلية للسوق النقدي والكسور (خام، BRL)، عبر `python -m src.br_data sync`؛ مصدر بديل دون اتصال لـ `.SA` |
 | `local` | any | none | your own CSV / Parquet / DuckDB via `local:` prefix |
 
-يؤدي ضبط `GILDATA_TOKEN` إلى تفعيل الاستعلامات المجمعة عبر `gildata_fin_query`، وفرز الأسهم مع مؤشرات لفترات تقارير متعددة عبر `gildata_stock_selection`، وإضافة مرشحي الأسهم من Gildata إلى `search_symbol`.
-
-تستخدم علامة تبويب تشخيص المحفظة الاختيارية Shannon في صفحة الارتباط `GILDATA_TOKEN` لعرض تعرض محفظة أسهم A لعوامل النمط، وخريطة حرارية لكل سهم، وحصص المساهمة في التقلب. يمكن تحديد تاريخ التحليل وأوزان الحيازات؛ وهذه الحصص ليست احتمالات خسارة.
-
 **سلاسل التراجع (بحسب خطر حظر عنوان IP):**
 
-- **أسهم A** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `gildata` · `local`
+- **أسهم A** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
 - **أسهم US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
-- **أسهم HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `gildata` · `local`
+- **أسهم HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **أسهم الهند (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
 - **Brazil (B3 `.SA`)** → `yahoo` · `yfinance` · `b3_cotahist` · `local`
 - **كوريا (KOSPI/KOSDAQ)** → `pykrx` · `yahoo` · `yfinance` · `local`
-- **المؤشرات** → `yahoo` · `yfinance` · `gildata` · `local`
+- **المؤشرات** → `yahoo` · `yfinance` · `local`
 - **المملكة المتحدة (LSE)** → `yahoo` · `yfinance` · `local` *(الأسعار المعلنة بـ GBP/GBp فقط)*
 - **الكريبتو** → `okx` · `binance` · `ccxt` · `yfinance` · `local`
 - **الفوركس / المعادن** → `mt5` · `akshare` · `yfinance` · `local`
@@ -580,15 +575,9 @@ LONGBRIDGE_ACCESS_TOKEN=...
 
 إلى جانب OHLCV، تصل **29 أداة بيانات للقراءة فقط** إلى الأساسيات والتدفقات — تدفق الأموال، والتنين والنمر، والتدفق الشمالي، والتدفق الجنوبي، والهامش، والصفقات الكتلية، وعدد المساهمين، وفترة الإغلاق، والقطاعات، وتقارير الأبحاث، والبحث في تقارير الوسطاء، والأخبار، وإيداعات SEC، وإعلانات السوق الصينية، والقوائم المالية، والأساسيات وفق PIT، وسلاسل الخيارات، وعمق دفتر أوامر العملات المشفرة، وملف الشركة، وفحص السوق، والبحث عن الرموز، والاقتصاد الكلي، والاقتصاد الكلي الصيني (EDB)، وiwencai، والحيازات المؤسسية (13F)، وتفكيك محافظ ETF، وصافي قيمة أصول الصناديق الصينية خارج البورصة، وأسواق التنبؤ، والأوراق البحثية — وكلها مكشوفة عبر MCP. ولا يتراجع رمز `local:` صريح أبداً وبصمت إلى مصدر شبكي.
 
-<!-- QVERIS-START -->
-### 💎 بيانات مدفوعة اختيارية — QVeris
+### شريك البيانات · [Gildata](https://www.gildata.com/products/datamap)
 
-<img src="https://www.qveris.com/logo-color.png" alt="QVeris" height="36">
-
-**البيانات المجانية هي الافتراضي، والمدفوعة عند الحاجة.** تبقى المصادر الـ29 المدمجة مجانية مع تراجع ذكي بحسب خطر الحظر، بلا مفتاح ولا تكلفة. عبر QVeris يفتح مفتاح واحد 63+ مزوداً و10,000+ capabilities (per QVeris) للـ options Greeks، والأساسيات المتقدمة، وبيانات الصين/هونغ كونغ/العالم، والماكرو، والكريبتو، والأخبار، والـ filings؛ ولا تُحتسب المكالمات الفاشلة. فعّله من Settings → QVeris أو `vibe-trading data mode paid`.
-
-*QVeris disclosure: التسجيل عبر [رابط إحالة Vibe-Trading](https://qveris.ai/?ref=Vyjjo5G_1cAHJA) يمنحك **+1,000 رصيداً** إضافياً ويدعم المشروع.*
-<!-- QVERIS-END -->
+تتطلب كل ميزة من ميزات Gildata رمز وصول وتفعيلًا منفصلًا من إعدادات مصادر البيانات. تظل جميع الميزات معطلة افتراضيًا حتى بعد الترقية.
 
 ---
 
@@ -597,15 +586,15 @@ LONGBRIDGE_ACCESS_TOKEN=...
 القوائم التفصيلية مطوية أدناه حتى يبقى README سهل القراءة. افتحها عندما تريد فحص اللبنات المتاحة.
 
 <details>
-<summary><b>مكتبة المهارات المالية</b> <sub>90 مهارة عبر 9 فئات</sub></summary>
+<summary><b>مكتبة المهارات المالية</b> <sub>89 مهارة عبر 9 فئات</sub></summary>
 
-- 📊 90 مهارة مالية متخصصة منظمة في 9 فئات
+- 📊 89 مهارة مالية متخصصة منظمة في 9 فئات
 - 🌐 تغطية كاملة من الأسواق التقليدية إلى الكريبتو وDeFi
 - 🔬 قدرات شاملة من مصادر البيانات إلى البحث الكمي
 
 | الفئة | المهارات | أمثلة |
 |----------|--------|----------|
-| Data Source | 10 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt`, `eastmoney`, `sec-edgar`, `qveris` |
+| Data Source | 9 | `data-routing`, `tushare`, `yfinance`, `okx-market`, `akshare`, `mootdx`, `ccxt`, `eastmoney`, `sec-edgar` |
 | Strategy | 19 | `strategy-generate`, `cross-market-strategy`, `technical-basic`, `candlestick`, `ichimoku`, `elliott-wave`, `smc`, `multi-factor`, `ml-strategy` |
 | Analysis | 23 | `factor-research`, `correlation-regime`, `macro-analysis`, `global-macro`, `valuation-model`, `investor-lenses`, `credit-analysis`, `dividend-analysis` |
 | Asset Class | 9 | `options-strategy`, `options-advanced`, `convertible-bond`, `etf-analysis`, `asset-allocation`, `sector-rotation` |
@@ -1060,7 +1049,7 @@ vibe-trading provider doctor  # طباعة تشخيصات المزود/الوك�
 | `/connector` | ملفات موصّلات التداول (الحالة / التشغيل / الإيقاف) |
 | `/halt` | مفتاح الإيقاف — أوقف كل التداول الحي فوراً |
 | `/resume` | إلغاء مفتاح الإيقاف (إعادة تفعيل التداول الحي) |
-| `/data` | وضع توجيه البيانات |
+| `/data` | إعدادات شريك البيانات |
 | `/quit` | خروج (أيضاً q و exit و :q) |
 
 </details>
@@ -1338,7 +1327,7 @@ curl -X POST http://localhost:8899/scheduled-runs/playbooks/premarket-brief \
 
 ## 🔌 MCP Plugin
 
-يعرض Vibe-Trading 84 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
+يعرض Vibe-Trading 81 أداة MCP لأي عميل متوافق مع MCP. يعمل كعملية stdio فرعية، دون إعداد خادم. أدوات البحث الأساسية تعمل دون أي مفاتيح API لأسواق HK/US/crypto؛ وأدوات connector للتداول تستخدم profile الموصل المختار، ويحتاج `run_swarm` وحده إلى مفتاح LLM.
 
 **متغيرات البيئة:** العميل هو من يشغّل الخادم بنفسه، لذا لا يصل إليه `export` من الـ shell أبداً —— اضبطها في كتلة `env` الخاصة بالعميل. كود الاختبار الخلفي المولَّد محصور ضمن جذور التشغيل المسموح بها، لذا تحتاج إلى `VIBE_TRADING_ALLOWED_RUN_ROOTS` لكتابة النتائج في دليل عمل خاص بك:
 
@@ -1394,7 +1383,7 @@ vibe-trading-mcp --transport sse   # legacy SSE (deprecated)
 
 </details>
 
-**أدوات MCP المعروضة (84):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `update_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `qveris_search`, `qveris_inspect`, `qveris_execute`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
+**أدوات MCP المعروضة (81):** `list_skills`, `load_skill`, `start_research_goal`, `get_research_goal`, `update_research_goal`, `add_goal_evidence`, `update_research_goal_status`, `backtest`, `factor_analysis`, `alpha_zoo`, `alpha_bench`, `analyze_options`, `analyze_options_payoff`, `pattern_recognition`, `read_url`, `read_document`, `web_search`, `write_file`, `read_file`, `read_run_artifact`, `list_backtest_runs`, `list_strategies`, `query_strategies`, `get_strategy_evidence`, `refresh_strategy_evidence`, `adapt_strategy`, `trading_connections`, `trading_select_connection`, `trading_check`, `trading_account`, `trading_positions`, `trading_orders`, `trading_quote`, `trading_history`, `list_swarm_presets`, `run_swarm`, `get_market_data`, `get_fund_flow`, `get_dragon_tiger`, `get_northbound_flow`, `get_southbound_flow`, `get_margin_trading`, `get_block_trades`, `get_shareholder_count`, `get_lockup_expiry`, `get_sector_info`, `get_research_reports`, `get_stock_news`, `get_sec_filings`, `get_financial_statements`, `get_options_chain`, `get_stock_profile`, `screen_market`, `search_symbol`, `get_macro_series`, `iwencai_search`, `get_institutional_holdings`, `etf_holdings`, `prediction_market`, `research_papers`, `get_swarm_status`, `get_run_result`, `list_runs`, `reap_stale_runs`, `retry_run`, `analyze_trade_journal`, `extract_shadow_strategy`, `run_shadow_backtest`, `render_shadow_report`, `scan_shadow_signals`, `quantlib_call`, `cashflow_performance`, `orderbook_depth`, `sentiment`, `technical_indicators`, `get_fundamentals`, `get_fund_nav`, `get_cn_macro_series`, `get_cn_announcements`, `search_broker_reports`, `paper_trade_step`.
 
 ### أدوات MCP الخارجية في SWARM
 
@@ -1418,7 +1407,7 @@ npx clawhub@latest install vibe-trading --force
 <details>
 <summary><b>OpenSpace — مهارات ذاتية التطور</b></summary>
 
-كل المهارات المالية الـ 90 منشورة على [open-space.cloud](https://open-space.cloud) وتتطور ذاتياً عبر محرك التطور الذاتي في OpenSpace.
+كل المهارات المالية الـ 89 منشورة على [open-space.cloud](https://open-space.cloud) وتتطور ذاتياً عبر محرك التطور الذاتي في OpenSpace.
 
 للاستخدام مع OpenSpace، أضف خادمي MCP إلى إعداد وكيلك:
 
@@ -1440,7 +1429,7 @@ npx clawhub@latest install vibe-trading --force
 }
 ```
 
-سيكتشف OpenSpace كل المهارات الـ 90 تلقائياً، مما يتيح auto-fix وauto-improve والمشاركة المجتمعية. ابحث عن مهارات Vibe-Trading عبر `search_skills("finance backtest")` في أي وكيل متصل بـ OpenSpace.
+سيكتشف OpenSpace كل المهارات الـ 89 تلقائياً، مما يتيح auto-fix وauto-improve والمشاركة المجتمعية. ابحث عن مهارات Vibe-Trading عبر `search_skills("finance backtest")` في أي وكيل متصل بـ OpenSpace.
 
 </details>
 
@@ -1754,13 +1743,13 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server — 84 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 81 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core
 │   │   │   ├── loop.py             #   5-layer compression + read/write tool batching
 │   │   │   ├── context.py          #   system prompt + auto-recall from persistent memory
-│   │   │   ├── skills.py           #   skill loader (90 bundled + user-created via CRUD)
+│   │   │   ├── skills.py           #   skill loader (89 bundled + user-created via CRUD)
 │   │   │   ├── tools.py            #   tool base class + registry
 │   │   │   ├── memory.py           #   lightweight workspace state per run
 │   │   │   ├── frontmatter.py      #   shared YAML frontmatter parser
@@ -1787,7 +1776,7 @@ Vibe-Trading/
 │   │   ├── api/                    # وحدات مسارات FastAPI
 │   │   │   └── alpha_routes.py     #   /alpha/list, /alpha/{id}, /alpha/bench, SSE stream
 │   │   │
-│   │   ├── skills/                 # 90 finance skills in 9 categories (SKILL.md each)
+│   │   ├── skills/                 # 89 finance skills in 9 categories (SKILL.md each)
 │   │   ├── swarm/                  # Swarm DAG execution engine
 │   │   │   └── presets/            #   30 swarm preset YAML definitions
 │   │   ├── session/                # Multi-turn chat + FTS5 session search
@@ -1795,7 +1784,7 @@ Vibe-Trading/
 │   │
 │   └── backtest/                   # Backtest engines
 │       ├── engines/                #   11 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   29 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, qveris, india_broker, tickerall, gildata, b3_cotahist
+│       ├── loaders/                #   28 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, india_broker, tickerall, gildata, b3_cotahist
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity

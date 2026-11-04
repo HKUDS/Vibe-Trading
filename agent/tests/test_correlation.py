@@ -70,7 +70,7 @@ class TestInferMarket:
         # underlying asset is XAU / XAG / XPT / XPD (ISO 4217 metals); the
         # quote is USD. Engines (ForexEngine._METAL_SPECS) already handle the
         # correct pip / lot conventions; the classifier just has to land on
-        # ``forex`` so the forex fallback chain (mt5, tickerall, qveris,
+        # ``forex`` so the forex fallback chain (mt5, tickerall,
         # yfinance) is engaged instead of the a_share chain.
         assert infer_market("XAUUSD") == "forex"
         assert infer_market("XAGUSD") == "forex"

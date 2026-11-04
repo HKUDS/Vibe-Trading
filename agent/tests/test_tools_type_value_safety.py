@@ -21,7 +21,6 @@ from typing import Any
 
 import pytest
 
-from src.tools import qveris_tool as qt
 from src.tools import shadow_account_tool as sat
 from src.tools.alpha_zoo_tool import run_alpha_zoo
 from src.tools.block_trades_tool import _clamp_days as block_trades_clamp_days
@@ -180,130 +179,6 @@ def test_place_order_still_forwards_valid_arguments(monkeypatch: pytest.MonkeyPa
     assert seen["quantity"] == 2.0
     assert seen["notional"] is None
     assert seen["port"] == 7497
-
-
-# ── QVeris: not read-only, spends real credits ────────────────────────────────
-
-
-@pytest.fixture()
-def paid_qveris(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    """Configure paid-mode QVeris against a tmp config file (never the real key)."""
-    monkeypatch.setattr(qt, "QVERIS_CONFIG_PATH", tmp_path / "qveris.json")
-    monkeypatch.delenv("QVERIS_API_KEY", raising=False)
-    monkeypatch.delenv("QVERIS_BASE_URL", raising=False)
-    qt._SESSION_SPEND.clear()
-    qt._SESSION_RESERVED.clear()
-    qt.save_qveris_config(
-        qt.QVerisConfig(enabled=True, api_key="sk-test", mode="paid", budget_credits_per_session=50.0)
-    )
-    yield
-    qt._SESSION_SPEND.clear()
-    qt._SESSION_RESERVED.clear()
-
-
-def _forbid_qveris_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make any QVeris client construction an outright test failure."""
-
-    def fail(self: Any) -> Any:
-        raise AssertionError("no QVeris client may be built for an invalid request")
-
-    monkeypatch.setattr(qt.QVerisSearchTool, "_client", fail)
-    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", fail)
-
-
-@pytest.mark.parametrize("kwargs", [{}, {"query": None}, {"query": "   "}, {"query": 5}])
-def test_qveris_search_rejects_missing_query(
-    paid_qveris: None, monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, Any]
-) -> None:
-    """A missing query must not be sent to the marketplace as an empty search."""
-    _forbid_qveris_client(monkeypatch)
-
-    payload = json.loads(qt.QVerisSearchTool().execute(**kwargs))
-
-    assert payload["ok"] is False
-    assert "query is required" in payload["error"]
-
-
-@pytest.mark.parametrize("bad_limit", [float("inf"), float("nan"), "many", 0, -3, 2.5, {}])
-def test_qveris_search_rejects_malformed_limit(
-    paid_qveris: None, monkeypatch: pytest.MonkeyPatch, bad_limit: Any
-) -> None:
-    """An explicitly malformed limit errors instead of quietly becoming 20."""
-    _forbid_qveris_client(monkeypatch)
-
-    payload = json.loads(qt.QVerisSearchTool().execute(query="btc", limit=bad_limit))
-
-    assert payload["ok"] is False
-    assert "limit must be a positive integer" in payload["error"]
-
-
-def test_qveris_search_forwards_valid_request(paid_qveris: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A well-formed search still reaches the client with a defaulted limit."""
-    seen: dict[str, Any] = {}
-
-    class FakeClient:
-        def search(self, query: str, **kwargs: Any) -> dict[str, Any]:
-            seen.update({"query": query, **kwargs})
-            return {"results": []}
-
-    monkeypatch.setattr(qt.QVerisSearchTool, "_client", lambda self: FakeClient())
-
-    payload = json.loads(qt.QVerisSearchTool().execute(query="  btc  "))
-
-    assert payload["ok"] is True
-    assert seen["query"] == "btc"
-    assert seen["limit"] == 20
-
-
-@pytest.mark.parametrize(
-    ("kwargs", "expected"),
-    [
-        ({"tool_id": "t1"}, "parameters is required"),
-        ({"tool_id": "t1", "parameters": None}, "parameters is required"),
-        ({"tool_id": "t1", "parameters": "{}"}, "parameters is required"),
-        ({"tool_id": "t1", "parameters": []}, "parameters is required"),
-        ({"parameters": {"x": 1}}, "tool_id is required"),
-        ({"tool_id": "", "parameters": {"x": 1}}, "tool_id is required"),
-        ({"tool_id": "t1", "parameters": {}, "max_response_size": float("inf")}, "max_response_size"),
-        ({"tool_id": "t1", "parameters": {}, "max_response_size": "big"}, "max_response_size"),
-    ],
-)
-def test_qveris_execute_never_bills_an_invalid_request(
-    paid_qveris: None, monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, Any], expected: str
-) -> None:
-    """A schema-invalid billable call is refused before quote/budget/execute."""
-    _forbid_qveris_client(monkeypatch)
-
-    payload = json.loads(qt.QVerisExecuteTool().execute(**kwargs))
-
-    assert payload["ok"] is False
-    assert expected in payload["error"]
-    assert qt._SESSION_RESERVED == {}
-    assert qt._SESSION_SPEND == {}
-
-
-def test_qveris_execute_accepts_a_genuinely_empty_parameters_object(
-    paid_qveris: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`parameters={}` is a valid supplied value — only a MISSING field is refused."""
-    seen: dict[str, Any] = {}
-
-    class FakeClient:
-        def execute(self, tool_id: str, **kwargs: Any) -> dict[str, Any]:
-            seen.update({"tool_id": tool_id, **kwargs})
-            return {"success": True, "cost": 1.0, "result": {}}
-
-    monkeypatch.setattr(qt.QVerisExecuteTool, "_client", lambda self: FakeClient())
-
-    payload = json.loads(
-        qt.QVerisExecuteTool().execute(
-            tool_id="tool_1", parameters={}, session_id="s1", expected_cost="1 credit"
-        )
-    )
-
-    assert payload["ok"] is True
-    assert seen["parameters"] == {}
-    assert seen["max_response_size"] == 20480
 
 
 # ── report_audit extract options ──────────────────────────────────────────────

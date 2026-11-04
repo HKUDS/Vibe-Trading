@@ -7,7 +7,7 @@ import math
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.config.accessor import get_env_config
+from src.config.gildata_features import feature_available
 from src.tools.gildata_srv import call_srv_arguments
 
 
@@ -42,12 +42,12 @@ class Snapshot(BaseModel):
 
 
 def configured() -> bool:
-    return get_env_config().data.gildata_token.strip() not in {"", "your-gildata-token"}
+    return feature_available("shannon")
 
 
 def invoke(arguments: dict) -> dict:
     if not configured():
-        raise HTTPException(503, "请先配置聚源Token / Configure GILDATA_TOKEN first")
+        raise HTTPException(503, "Shannon diagnosis is disabled or unavailable")
     try:
         return call_srv_arguments("ShannonAnalyze", arguments)
     except Exception:

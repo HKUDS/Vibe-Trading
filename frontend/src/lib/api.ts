@@ -1081,7 +1081,21 @@ export interface SourceOrderUpdate {
   order?: string[] | null;
 }
 
+export const gildataFeatures = [
+  "fin_query",
+  "stock_selection",
+  "symbol_search",
+  "shannon",
+  "market_quotes",
+  "fund_nav",
+  "macro_series",
+  "announcements",
+  "broker_reports",
+] as const;
+export type GildataFeature = typeof gildataFeatures[number];
+
 export interface DataSourceSettings {
+  gildata_features?: GildataFeature[];
   tushare_token_configured: boolean;
   tushare_token_hint?: string | null;
   gildata_token_configured: boolean;
@@ -1094,6 +1108,7 @@ export interface DataSourceSettings {
 }
 
 export interface UpdateDataSourceSettingsRequest {
+  gildata_features?: GildataFeature[];
   tushare_token?: string;
   clear_tushare_token?: boolean;
   gildata_token?: string;

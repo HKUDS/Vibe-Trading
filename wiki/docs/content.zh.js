@@ -32,9 +32,9 @@ export const DOCS_STRUCTURE = [
             title: "0.1.16 包含什么",
             body: `
               <ul>
-                <li><strong>29 个行情数据源</strong>，一次调用即可，每个市场各有一条回退链。多数市场不需要任何 API key。</li>
+                <li><strong>28 个行情数据源</strong>，一次调用即可，每个市场各有一条回退链。多数市场不需要任何 API key。</li>
                 <li><strong>11 个回测引擎</strong>：A 股、全球股票、印度、韩国、越南、加密货币、国内期货、海外期货、外汇，一个用于跨市场组合的复合引擎，以及一个期权组合引擎。</li>
-                <li><strong>90 个金融技能</strong>，分 9 类；<strong>30 个多智能体团队预设</strong>，用于投委会式研究。</li>
+                <li><strong>89 个金融技能</strong>，分 9 类；<strong>30 个多智能体团队预设</strong>，用于投委会式研究。</li>
                 <li><strong>Alpha Zoo</strong>：478 个现成因子，一条命令即可在你的股票池上评测。</li>
                 <li><strong>82 个 MCP 工具</strong>，供其他智能体调用。</li>
                 <li><strong>19 个券商连接器</strong>，默认只读；另有只读的多券商持仓页。</li>
@@ -187,7 +187,7 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com/v1</code></pre>
                 <li><code>TUSHARE_TOKEN</code>——更丰富的 A 股、基金和宏观数据。</li>
                 <li><code>GILDATA_TOKEN</code>——恒生聚源商业 A 股数据。</li>
                 <li>Finnhub、Alpha Vantage、Tiingo、FMP 的 key——额外的美股数据源。</li>
-                <li>QVeris——付费数据市场，只在你明确要求时使用；用 <code>vibe-trading data mode</code> 切换。</li>
+                <li>数据合作方：聚源。每项聚源功能均需 Token，并在设置中单独开启，默认全关。</li>
               </ul>
               <p>哪个数据源服务哪个市场，见 <a data-doc-link="tools/data-sources">数据源</a>。</p>
             `
@@ -568,7 +568,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # 保留已完成的任务</c
         id: "tools/data-sources",
         title: "数据源",
         description: "哪个数据源服务哪个市场、代码格式、如何指定数据源。",
-        lead: "一次 get_market_data 调用可以用到 29 个数据源。source 设为 auto 时，每个代码按所属市场路由，沿该市场的回退链依次尝试，最不容易封禁你的数据源排在最前。",
+        lead: "一次 get_market_data 调用可以用到 28 个数据源。source 设为 auto 时，每个代码按所属市场路由，沿该市场的回退链依次尝试，最不容易封禁你的数据源排在最前。",
         sections: [
           {
             id: "providers",
@@ -577,7 +577,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # 保留已完成的任务</c
               <table>
                 <thead><tr><th>市场</th><th>回退顺序</th></tr></thead>
                 <tbody>
-                  <tr><td>A 股</td><td>tencent、eastmoney、baostock、akshare、tushare、gildata、local</td></tr>
+                  <tr><td>A 股</td><td>tencent、eastmoney、baostock、akshare、tushare、local</td></tr>
                   <tr><td>美股</td><td>yahoo、stooq、sina、eastmoney、yfinance、tiingo、fmp、finnhub、alphavantage、longbridge、akshare、local</td></tr>
                   <tr><td>港股</td><td>tencent、eastmoney、yahoo、futu、akshare、yfinance、tushare、longbridge、local</td></tr>
                   <tr><td>印度</td><td>yahoo、yfinance、india_broker、local</td></tr>
@@ -590,7 +590,7 @@ vibe-trading --swarm-retry RUN_ID --swarm-resume   # 保留已完成的任务</c
                   <tr><td>宏观</td><td>akshare、tushare、local</td></tr>
                 </tbody>
               </table>
-              <p>以下数据源只在你点名时使用：<code>qveris</code>（付费数据市场）、<code>tickerall</code>（托管的 MT5 行情）、<code>nobitex</code> / <code>wallex</code>（伊朗托曼计价交易对）。设置 <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>（例如 <code>MARKET_DATA_ORDER_US_EQUITY</code>）可以调整某条链的顺序。</p>
+              <p>以下数据源只在你点名时使用：<code>gildata</code>（需先启用聚源行情）、<code>tickerall</code>（托管的 MT5 行情）、<code>nobitex</code> / <code>wallex</code>（伊朗托曼计价交易对）。设置 <code>MARKET_DATA_ORDER_&lt;MARKET&gt;</code>（例如 <code>MARKET_DATA_ORDER_US_EQUITY</code>）可以调整某条链的顺序。</p>
               <p>基础安装包含使用标准库 HTTP 的腾讯行情加载器和 AKShare。BaoStock 是可选的免 token TCP 日线数据源，可用 <code>pip install --upgrade "vibe-trading-ai[ashare]"</code> 安装；原先只安装基础包的 uv tool 用户可运行 <code>uv tool install --force --python 3.12 "vibe-trading-ai[ashare]"</code>。自动回退会跳过缺少可选 SDK 的加载器。</p>
               <p>uv tool 的 <code>--force</code> 会重建现有工具环境。添加 <code>ashare</code> 时须保留原先使用的其他 extra（例如 <code>"vibe-trading-ai[ashare,deepseek]"</code>），并在命令中重复原有的 <code>--with</code> 参数，以保留这些附加依赖。</p>
               <p>旧版 <code>mootdx</code> 加载器也仅供显式指定：它已退出自动回退链，基础安装和 <code>ashare</code> extra 都不包含它。安装 SDK 并不能保证与 TDX 服务器协议兼容。东方财富相关请求遇到限流时，可使用 <code>source: "auto"</code>，或选择可用的 <code>tencent</code>、<code>baostock</code> 等替代源。启动预检只覆盖部分服务，不会列出所有可选加载器；SDK 已安装也不代表远端服务当前可用。</p>
@@ -673,7 +673,7 @@ vibe-trading run -p "分析我的交易行为，提炼我的影子策略，并�
             id: "library",
             title: "技能库",
             body: `
-              <p>共 90 个技能，分 9 类：</p>
+              <p>共 89 个技能，分 9 类：</p>
               <table>
                 <thead><tr><th>类别</th><th>数量</th></tr></thead>
                 <tbody>

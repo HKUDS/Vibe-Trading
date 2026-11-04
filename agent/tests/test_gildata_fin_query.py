@@ -24,6 +24,7 @@ def tables():
 
 @pytest.fixture
 def vendor(monkeypatch, tables):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "fin_query")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     with patch.object(fq, "call_srv_tool_results", return_value=tables) as call:
         yield call
@@ -166,6 +167,7 @@ def test_optional_tool_is_discovered(monkeypatch):
 
 
 def test_shared_transport_preserves_results_and_old_flattening(monkeypatch, tables):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "fin_query")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     raw = {"result": {"content": [{"type": "text", "text": json.dumps({"code": 0, "results": tables})}]}}
     with patch.object(gildata_srv, "throttled_post_json", return_value=raw) as post:

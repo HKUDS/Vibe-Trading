@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { shannon } from "@/lib/shannon";
+vi.mock("@/lib/shannon", () => ({ shannon: { status: vi.fn() } }));
 import { Correlation } from "../Correlation";
 import { clearAnalysisState } from "@/hooks/useAnalysisState";
 import type { CorrelationAnalysisResponse } from "@/lib/api";
@@ -15,7 +17,7 @@ function response(label: string): CorrelationAnalysisResponse {
   return { correlation: { labels: [label], matrix: [[1]] }, regime: null, errors: {},
     coverage: { requested: [label], missing: [], observations: 30, first_date: "2026-01-01", last_date: "2026-02-12", diagnostics: {} } };
 }
-beforeEach(() => { clearAnalysisState("correlation"); apiMock.getCorrelationAnalysis.mockReset(); });
+beforeEach(() => { vi.mocked(shannon.status).mockResolvedValue({configured: false}); clearAnalysisState("correlation"); apiMock.getCorrelationAnalysis.mockReset(); });
 
 it("marks old results and rejects a late response after editing the query", async () => {
   apiMock.getCorrelationAnalysis.mockResolvedValueOnce(response("OLD"));
@@ -53,6 +55,7 @@ it("rejects duplicate assets and accepts Chinese delimiters", () => {
 });
 
 it("keeps correlation as default and retains its result across diagnosis tab switches", async () => {
+  vi.mocked(shannon.status).mockResolvedValue({configured: true});
   apiMock.getCorrelationAnalysis.mockResolvedValue(response("RETAINED"));
   render(<Correlation />);
   expect(screen.queryByText("Shannon diagnosis panel")).not.toBeInTheDocument();
@@ -64,4 +67,12 @@ it("keeps correlation as default and retains its result across diagnosis tab swi
   fireEvent.click(screen.getByRole("tab", { name: "Correlation Matrix" }));
   expect(screen.getByTestId("correlation-result")).toBeVisible();
   expect(apiMock.getCorrelationAnalysis).toHaveBeenCalledTimes(1);
+});
+
+it("hides the diagnosis tab while the capability is unavailable", async () => {
+  apiMock.getCorrelationAnalysis.mockResolvedValue(response("FREE"));
+  render(<Correlation />);
+  fireEvent.click(screen.getByRole("button", { name: "Compute" }));
+  expect(await screen.findByTestId("correlation-result")).toHaveTextContent("FREE");
+  expect(screen.queryByRole("tab", { name: /Shannon/ })).not.toBeInTheDocument();
 });

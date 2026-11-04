@@ -2,11 +2,11 @@
 import re
 
 from backtest.loaders.gildata_loader import _call_tool_results
-from src.config.accessor import get_env_config
+from src.config.gildata_features import feature_available
 
 
 def search_candidates(query: str, limit: int) -> tuple[list[dict], str | None]:
-    if get_env_config().data.gildata_token.strip() in {"", "your-gildata-token"}:
+    if not feature_available("symbol_search"):
         return [], None
     domains = {"StockDailyQuote": "a", "HKStockDailyQuotes": "hk", "USStockDailyQuotes": "us"}
     keyword = query[:-3] if query.upper().endswith(".US") else query

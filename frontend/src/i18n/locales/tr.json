@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "Veri ortağı · Gildata",
+    "website": "MCP erişimi ve kayıt",
+    "features": "İsteğe bağlı Gildata özellikleri",
+    "optInHelp": "Dokuz özelliğin tümü varsayılan olarak kapalıdır. Kayıtlı bir token, güncellemeden sonra da hiçbir özelliği kendiliğinden açmaz. Piyasa fiyatları açık olsa bile Gildata yalnızca açıkça seçildiğinde kullanılır. Ücretsiz kaynaklar veri sağlamazsa Gildata’ya otomatik geçiş yapılmaz.",
+    "fund_nav": "Fonların net varlık değerleri",
+    "macro_series": "Çin makroekonomik göstergeleri",
+    "announcements": "Şirket ve fon duyuruları",
+    "broker_reports": "Aracı kurum araştırma raporları",
+    "market_quotes": "Piyasa fiyatları (yalnızca Gildata açıkça seçildiğinde)",
+    "fin_query": "Birleşik finansal sorgular",
+    "stock_selection": "Hisse tarama",
+    "symbol_search": "Menkul kıymet aramalarına Gildata sonuçlarını ekle",
+    "shannon": "Portföy analizi (Shannon)"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1121,29 +1136,6 @@
     "reasoningEffortXhigh": "Çok yüksek",
     "reasoningEffortReset": "Seçilen model {{level}} düzeyini desteklemiyor; sağlayıcı varsayılanına sıfırlandı."
   },
-  "qveris": {
-    "title": "QVeris araç pazarı",
-    "subtitle": "Ücretsiz açık veriyi varsayılan tutun veya özel veri araçları için ücretli QVeris kullanımını etkinleştirin.",
-    "enabled": "Ücretli QVeris yolunu etkinleştir",
-    "baseUrl": "Temel URL",
-    "apiKey": "API anahtarı",
-    "apiKeyPlaceholder": "Mevcut anahtarı korumak için boş bırakın",
-    "mode": "Mod",
-    "modeFree": "Yalnızca ücretsiz açık veri",
-    "modePaid": "Ücretli QVeris etkin",
-    "budget": "Oturum başına kredi bütçesi",
-    "budgetHint": "Bu oturum bütçesine ulaşıldığında ücretli işlemler durur.",
-    "balance": "Kalan kredi",
-    "recentUsage": "Son kullanım",
-    "noUsage": "Yakın zamanda kullanım yok",
-    "signupCta": "Kayıt sayfasını aç",
-    "signupHint": "QVeris hesabınızı oluştururken bu davet kodunu kullanın.",
-    "inviteCode": "Davet kodu",
-    "save": "QVeris ayarlarını kaydet",
-    "saved": "QVeris ayarları kaydedildi",
-    "testFailed": "QVeris isteği başarısız",
-    "notConfigured": "Yapılandırılmadı"
-  },
   "agent": {
     "reasoningStrength": "Akıl yürütme düzeyi",
     "unknownProvider": "Bilinmeyen sağlayıcı",
@@ -2054,9 +2046,6 @@
     "pattern": "Grafik formasyonlarını tespit et",
     "portfolio_risk_xray": "Portföy riskini incele",
     "propose_mandate_profiles": "İşlem yetkisi öner",
-    "qveris_execute": "QVeris işlemini yürüt",
-    "qveris_inspect": "QVeris işlemini incele",
-    "qveris_search": "QVeris’te ara",
     "read_document": "Belgeyi oku",
     "read_file": "Dosyayı oku",
     "read_url": "Web sayfasını oku",

@@ -43,7 +43,7 @@ _SANDBOX_USER = "vibe-sandbox"
 # Path.home(); everything else in the real home (.env, sessions.db, memory/,
 # live/ mandate+audit ledger, shadow_*, dotfiles) stays unreadable to generated
 # strategy code — that broad read access was the VT-001 exposure.
-_SANDBOX_HOME_REEXPOSE = ("cache", "data-bridge", "qveris.json")
+_SANDBOX_HOME_REEXPOSE = ("cache", "data-bridge")
 # RLIMIT_AS caps *virtual* address space (mmap included). numpy/BLAS reserve
 # multi-GB virtual regions that are never resident, so a 2 GB cap spuriously
 # OOMs legitimate backtests; 4 GB keeps a DoS ceiling without false failures.
@@ -183,7 +183,7 @@ def _prepare_sandbox_home(real_home: Path | None) -> Path:
 
     The generated strategy runs in the same subprocess as the data loaders, so
     the ephemeral home re-exposes the narrow set of ``~/.vibe-trading`` paths the
-    loaders need (opt-in cache, local data-bridge config, qveris config) and
+    loaders need (opt-in cache, local data-bridge config) and
     nothing else. Symlinks are used so the opt-in loader cache still persists
     across runs; ``shutil.rmtree`` later removes the links, never their targets.
     """

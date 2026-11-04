@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "数据合作方 · 恒生聚源",
+    "website": "MCP 服务与个人注册",
+    "features": "聚源可选功能",
+    "optInHelp": "九项功能默认全部关闭。即使升级前已保存 Token，也要逐项手动开启。开启行情后，只有明确指定聚源才会使用；免费源查不到时不会自动转用聚源。",
+    "fund_nav": "场外基金净值",
+    "macro_series": "中国宏观指标",
+    "announcements": "公司和基金公告",
+    "broker_reports": "券商研报",
+    "market_quotes": "聚源行情（仅在指定聚源时使用）",
+    "fin_query": "综合问数",
+    "stock_selection": "智能选股",
+    "symbol_search": "证券搜索时查询聚源候选",
+    "shannon": "持仓诊断（香农）"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1153,29 +1168,6 @@
     "tushareTokenDesc": "用于中国 A 股、期货、基金和宏观数据。没填的话会自动改用 AKShare 的免费数据。",
     "gildataTokenDesc": "可选的海量数据：A 股复权日线、港股及指数原始行情、场外基金净值，以及中国宏观、公告和研报工具。"
   },
-  "qveris": {
-    "title": "QVeris 工具市场",
-    "subtitle": "默认继续使用免费公开数据；需要专业付费数据时再启用 QVeris。",
-    "enabled": "启用 QVeris 付费通道",
-    "baseUrl": "基础 URL",
-    "apiKey": "API 密钥",
-    "apiKeyPlaceholder": "留空以保留当前密钥",
-    "mode": "模式",
-    "modeFree": "仅使用免费公开数据",
-    "modePaid": "启用 QVeris 付费",
-    "budget": "每会话预算 Credits",
-    "budgetHint": "达到本会话预算后将停止付费执行。",
-    "balance": "剩余 Credits",
-    "recentUsage": "近期用量",
-    "noUsage": "暂无近期用量",
-    "signupCta": "打开注册",
-    "signupHint": "创建 QVeris 账户时使用此邀请码。",
-    "inviteCode": "邀请码",
-    "save": "保存 QVeris 设置",
-    "saved": "QVeris 设置已保存",
-    "testFailed": "QVeris 请求失败",
-    "notConfigured": "未配置"
-  },
   "agent": {
     "reasoningStrength": "推理强度",
     "unknownProvider": "未知提供商",
@@ -2092,9 +2084,6 @@
     "pattern": "识别图表形态",
     "portfolio_risk_xray": "透视组合风险",
     "propose_mandate_profiles": "推荐交易授权",
-    "qveris_execute": "执行QVeris操作",
-    "qveris_inspect": "检查QVeris操作",
-    "qveris_search": "搜索QVeris",
     "read_document": "读取文档",
     "read_file": "读取文件",
     "read_url": "读取网页",

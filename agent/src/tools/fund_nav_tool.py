@@ -31,6 +31,7 @@ from backtest.loaders.gildata_codes import resolve_vendor_code
 from backtest.loaders.gildata_loader import _call_tool, _recall_candidates
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
+from src.config.gildata_features import feature_available
 from src.config.limits import TOOL_RESULT_LIMIT
 
 logger = logging.getLogger(__name__)
@@ -131,8 +132,8 @@ class GildataFundNavTool(BaseTool):
 
     @classmethod
     def check_available(cls) -> bool:
-        """Available only when ``GILDATA_TOKEN`` is configured."""
-        return bool(get_env_config().data.gildata_token)
+        """Require a token and explicit selection of this feature."""
+        return feature_available("fund_nav")
 
     def execute(self, **kwargs: Any) -> str:
         """Fetch NAV history for one or more funds and return a JSON envelope.
@@ -147,8 +148,8 @@ class GildataFundNavTool(BaseTool):
             "count"}}}``; a failing fund carries ``{"ok": false, "error"}``
             and never aborts the rest of the batch.
         """
-        if not get_env_config().data.gildata_token:
-            return _error("GILDATA_TOKEN is not configured")
+        if not self.check_available():
+            return _error("Enable fund_nav in Gildata settings and configure GILDATA_TOKEN.")
 
         raw_codes = kwargs.get("funds")
         if isinstance(raw_codes, str):

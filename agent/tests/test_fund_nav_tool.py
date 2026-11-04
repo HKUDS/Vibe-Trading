@@ -11,8 +11,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from src.tools import fund_nav_tool as fnt
 from src.tools.fund_nav_tool import GildataFundNavTool
+
+
+@pytest.fixture(autouse=True)
+def enable_test_features(monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "fund_nav")
 
 
 def _mcp_text(payload: dict[str, Any]) -> str:
@@ -48,7 +55,7 @@ _NAV_ROWS = [
 
 
 class TestAvailability:
-    """check_available reflects only GILDATA_TOKEN."""
+    """A selected NAV feature also requires a token."""
 
     def test_unavailable_without_token(self, monkeypatch):
         monkeypatch.delenv("GILDATA_TOKEN", raising=False)

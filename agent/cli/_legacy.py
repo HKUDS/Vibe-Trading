@@ -1915,6 +1915,9 @@ def _show_settings() -> None:
     runtime_table = Table.grid(expand=True)
     runtime_table.add_column(width=13, style="dim")
     runtime_table.add_column(ratio=1)
+    from src.config.gildata_features import selected_features
+
+    runtime_table.add_row("Gildata opt-ins", ", ".join(selected_features()) or "(none)")
     runtime_table.add_row("Temperature", str(_cfg.llm.langchain_temperature))
     runtime_table.add_row("Timeout", str(_cfg.llm.timeout_seconds) + "s")
     runtime_table.add_row("Retries", str(_cfg.llm.max_retries))
@@ -3351,113 +3354,16 @@ def _dispatch_channels(args: argparse.Namespace) -> int:
         return cmd_channels_login(args.channel_name, force=args.force)
     console.print("[red]channels requires a subcommand.[/red] Try: vibe-trading channels status")
     return EXIT_USAGE_ERROR
-# QVERIS-INTEGRATION
-def _print_qveris_config(config) -> None:  # QVERIS-INTEGRATION
-    """Render local QVeris config."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import SIGNUP_URL, INVITE_CODE, has_qveris_credentials, is_qveris_configured, mask_api_key, normalize_qveris_mode  # QVERIS-INTEGRATION
-    table = Table(title="Data Routing", box=box.SIMPLE)  # QVERIS-INTEGRATION
-    table.add_column("Field")  # QVERIS-INTEGRATION
-    table.add_column("Value")  # QVERIS-INTEGRATION
-    table.add_row("mode", normalize_qveris_mode(config.mode))  # QVERIS-INTEGRATION
-    table.add_row("free_route", "built-in public data")  # QVERIS-INTEGRATION
-    table.add_row("premium_provider", "QVeris")  # QVERIS-INTEGRATION
-    table.add_row("paid_active", "yes" if is_qveris_configured(config) else "no")  # QVERIS-INTEGRATION
-    table.add_row("premium_key", "yes" if has_qveris_credentials(config) else "no")  # QVERIS-INTEGRATION
-    table.add_row("base_url", config.base_url)  # QVERIS-INTEGRATION
-    table.add_row("api_key", mask_api_key(config.api_key) or "(not set)")  # QVERIS-INTEGRATION
-    table.add_row("budget/session", str(config.budget_credits_per_session))  # QVERIS-INTEGRATION
-    table.add_row("signup", SIGNUP_URL)  # QVERIS-INTEGRATION
-    table.add_row("invite_code", INVITE_CODE)  # QVERIS-INTEGRATION
-    console.print(table)  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
-def cmd_qveris_status() -> int:  # QVERIS-INTEGRATION
-    """Show QVeris local config and live status when configured."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import QVerisClient, is_qveris_configured, load_qveris_config  # QVERIS-INTEGRATION
-    config = load_qveris_config()  # QVERIS-INTEGRATION
-    _print_qveris_config(config)  # QVERIS-INTEGRATION
-    if not is_qveris_configured(config):  # QVERIS-INTEGRATION
-        return EXIT_SUCCESS  # QVERIS-INTEGRATION
-    try:  # QVERIS-INTEGRATION
-        payload = QVerisClient(config).search("status", limit=1)  # QVERIS-INTEGRATION
-        console.print(f"[green]QVeris reachable.[/green] remaining_credits={payload.get('remaining_credits')}")  # QVERIS-INTEGRATION
-        return EXIT_SUCCESS  # QVERIS-INTEGRATION
-    except Exception as exc:  # noqa: BLE001  # QVERIS-INTEGRATION
-        console.print(f"[red]QVeris status failed:[/red] {exc}")  # QVERIS-INTEGRATION
-        return EXIT_RUN_FAILED  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
-def cmd_qveris_enable(*, key: str | None = None, url: str | None = None) -> int:  # QVERIS-INTEGRATION
-    """Enable QVeris if an API key is present or supplied."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import SIGNUP_URL, INVITE_CODE, QVerisConfig, _read_config_file, save_qveris_config  # QVERIS-INTEGRATION
-    existing = _read_config_file()  # QVERIS-INTEGRATION
-    api_key = (key or existing.api_key or "").strip()  # QVERIS-INTEGRATION
-    if not api_key:  # QVERIS-INTEGRATION
-        console.print("[yellow]QVeris API key is required to enable the integration.[/yellow]")  # QVERIS-INTEGRATION
-        console.print(f"[dim]Sign up: {SIGNUP_URL}  invite_code={INVITE_CODE}[/dim]")  # QVERIS-INTEGRATION
-        return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
-    base_url = (url or existing.base_url).strip().rstrip("/")  # QVERIS-INTEGRATION
-    if not base_url.startswith(("http://", "https://")):  # QVERIS-INTEGRATION
-        console.print("[red]--url must start with http:// or https://[/red]")  # QVERIS-INTEGRATION
-        return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
-    saved = save_qveris_config(QVerisConfig(True, base_url, api_key, "paid", existing.budget_credits_per_session))  # QVERIS-INTEGRATION
-    console.print("[green]QVeris paid route enabled.[/green]")  # QVERIS-INTEGRATION
-    _print_qveris_config(saved)  # QVERIS-INTEGRATION
-    return EXIT_SUCCESS  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
-def cmd_qveris_mode(
-    *,
-    mode: str,
-    budget: float | None = None,
-    key: str | None = None,
-    url: str | None = None,
-) -> int:  # QVERIS-INTEGRATION
-    """Switch QVeris between free and paid modes."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import QVerisConfig, _read_config_file, normalize_qveris_mode, save_qveris_config  # QVERIS-INTEGRATION
-    existing = _read_config_file()  # QVERIS-INTEGRATION
-    next_mode = normalize_qveris_mode(mode)  # QVERIS-INTEGRATION
-    next_budget = existing.budget_credits_per_session if budget is None else max(float(budget), 0.0)  # QVERIS-INTEGRATION
-    base_url = (url or existing.base_url).strip().rstrip("/")  # QVERIS-INTEGRATION
-    if not base_url.startswith(("http://", "https://")):  # QVERIS-INTEGRATION
-        console.print("[red]--url must start with http:// or https://[/red]")  # QVERIS-INTEGRATION
-        return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
-    api_key = (key or existing.api_key or "").strip()  # QVERIS-INTEGRATION
-    saved = save_qveris_config(QVerisConfig(next_mode == "paid", base_url, api_key, next_mode, next_budget))  # QVERIS-INTEGRATION
-    console.print(f"[green]QVeris mode set to {next_mode}.[/green]")  # QVERIS-INTEGRATION
-    _print_qveris_config(saved)  # QVERIS-INTEGRATION
-    return EXIT_SUCCESS  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
-def cmd_qveris_disable() -> int:  # QVERIS-INTEGRATION
-    """Disable QVeris without deleting the stored key."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import QVerisConfig, _read_config_file, save_qveris_config  # QVERIS-INTEGRATION
-    existing = _read_config_file()  # QVERIS-INTEGRATION
-    save_qveris_config(QVerisConfig(False, existing.base_url, existing.api_key, "free", existing.budget_credits_per_session))  # QVERIS-INTEGRATION
-    console.print("[green]QVeris disabled.[/green]")  # QVERIS-INTEGRATION
-    return EXIT_SUCCESS  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
-def cmd_qveris_usage() -> int:  # QVERIS-INTEGRATION
-    """Show recent QVeris usage events."""  # QVERIS-INTEGRATION
-    from src.tools.qveris_tool import QVerisClient, is_qveris_configured, load_qveris_config  # QVERIS-INTEGRATION
-    config = load_qveris_config()  # QVERIS-INTEGRATION
-    if not is_qveris_configured(config):  # QVERIS-INTEGRATION
-        console.print("[yellow]QVeris is not configured.[/yellow]")  # QVERIS-INTEGRATION
-        return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
-    try:  # QVERIS-INTEGRATION
-        payload = QVerisClient(config).usage_history(limit=10, page_size=10)  # QVERIS-INTEGRATION
-    except Exception as exc:  # noqa: BLE001  # QVERIS-INTEGRATION
-        console.print(f"[red]QVeris usage failed:[/red] {exc}")  # QVERIS-INTEGRATION
-        return EXIT_RUN_FAILED  # QVERIS-INTEGRATION
-    print(json.dumps(payload, indent=2, ensure_ascii=False))  # QVERIS-INTEGRATION
-    return EXIT_SUCCESS  # QVERIS-INTEGRATION
-def _dispatch_data(args: argparse.Namespace) -> int:  # QVERIS-INTEGRATION
-    """Dispatch user-facing data-routing commands."""  # QVERIS-INTEGRATION
-    if args.data_command == "status":  # QVERIS-INTEGRATION
-        return cmd_qveris_status()  # QVERIS-INTEGRATION
-    if args.data_command == "mode":  # QVERIS-INTEGRATION
-        return cmd_qveris_mode(mode=args.mode, budget=args.budget, key=args.key, url=args.url)  # QVERIS-INTEGRATION
-    if args.data_command == "usage":  # QVERIS-INTEGRATION
-        return cmd_qveris_usage()  # QVERIS-INTEGRATION
-    console.print("[red]data requires a subcommand.[/red] Try: vibe-trading data status")  # QVERIS-INTEGRATION
-    return EXIT_USAGE_ERROR  # QVERIS-INTEGRATION
-# QVERIS-INTEGRATION
+def _dispatch_data(args: argparse.Namespace) -> int:
+    """Show the optional data partner and the features selected for this process."""
+    from src.config.gildata_features import selected_features
+
+    _ensure_cli_env()
+    console.print("Gildata: " + (", ".join(selected_features()) or "no optional research features selected"))
+    console.print("Gildata: https://www.gildata.com/products/datamap")
+    return EXIT_SUCCESS
+
+
 def _live_server_config(broker: str):
     """Resolve the protected MCP server config for ``broker``.
 
@@ -5613,17 +5519,9 @@ def _build_parser() -> argparse.ArgumentParser:
     from cli.custom_providers import configure_parser as configure_custom_providers
     configure_custom_providers(provider_subparsers.add_parser("custom", help="Manage tested custom model endpoints"))
 
-    # QVERIS-INTEGRATION
-    data_parser = subparsers.add_parser("data", help="Manage data routing mode")  # QVERIS-INTEGRATION
-    data_subparsers = data_parser.add_subparsers(dest="data_command")  # QVERIS-INTEGRATION
-    data_subparsers.add_parser("status", help="Show active data routing mode")  # QVERIS-INTEGRATION
-    data_mode = data_subparsers.add_parser("mode", help="Switch between free public data and paid data routing")  # QVERIS-INTEGRATION
-    data_mode.add_argument("mode", choices=["free", "paid"], help="free uses built-in public data; paid enables premium data execution")  # QVERIS-INTEGRATION
-    data_mode.add_argument("--budget", type=float, help="Paid-mode credit budget per session")  # QVERIS-INTEGRATION
-    data_mode.add_argument("--key", help="Premium data API key")  # QVERIS-INTEGRATION
-    data_mode.add_argument("--url", help="Premium data API base URL")  # QVERIS-INTEGRATION
-    data_subparsers.add_parser("usage", help="Show recent paid data usage")  # QVERIS-INTEGRATION
-    # QVERIS-INTEGRATION
+    data_parser = subparsers.add_parser("data", help="Show research data partner settings")
+    data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
+    data_subparsers.add_parser("status", help="Show selected Gildata features")
     channels_parser = subparsers.add_parser("channels", help="Manage IM channel adapters")
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
     channels_status = channels_subparsers.add_parser("status", help="Show IM channel status")
@@ -6784,8 +6682,8 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE_ERROR
     if args.command == "channels":
         return _coerce_exit_code(_dispatch_channels(args))
-    if args.command == "data":  # QVERIS-INTEGRATION
-        return _coerce_exit_code(_dispatch_data(args))  # QVERIS-INTEGRATION
+    if args.command == "data":
+        return _coerce_exit_code(_dispatch_data(args))
     if args.command == "run":
         return _handle_prompt_command(
             args.run_prompt,

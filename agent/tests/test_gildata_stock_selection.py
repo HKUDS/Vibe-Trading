@@ -12,6 +12,7 @@ from src.tools import gildata_srv
 
 @pytest.fixture
 def vendor(monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "stock_selection")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     call = Mock(return_value=[{
         "api_name": "智能选股",

@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "Socio de datos · Gildata",
+    "website": "Acceso MCP y registro",
+    "features": "Funciones opcionales de Gildata",
+    "optInHelp": "Las nueve funciones están desactivadas por defecto. Guardar un token no activa ninguna, tampoco al actualizar. Incluso con las cotizaciones activadas, Gildata solo se usa si se selecciona expresamente. Si una fuente gratuita falla, no se recurre a Gildata.",
+    "fund_nav": "Valor liquidativo de fondos",
+    "macro_series": "Indicadores macroeconómicos de China",
+    "announcements": "Anuncios de empresas y fondos",
+    "broker_reports": "Informes de análisis de intermediarios",
+    "market_quotes": "Cotizaciones (solo al seleccionar Gildata expresamente)",
+    "fin_query": "Consultas financieras combinadas",
+    "stock_selection": "Selección de acciones",
+    "symbol_search": "Incluir Gildata en la búsqueda de valores",
+    "shannon": "Diagnóstico de cartera (Shannon)"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1159,29 +1174,6 @@
     "tushareTokenDesc": "Usado para datos de acciones A, futuros, fondos y macro de China. Si no se configura, el proyecto recurre a AKShare cuando está disponible.",
     "gildataTokenDesc": "Datos opcionales de Gildata: precios diarios ajustados de acciones A, precios sin ajustar de Hong Kong e índices, valores liquidativos de fondos no cotizados y herramientas de macroeconomía, anuncios y análisis de China."
   },
-  "qveris": {
-    "title": "Mercado de herramientas QVeris",
-    "subtitle": "Mantén los datos públicos gratuitos como predeterminados, o habilita la ejecución paga de QVeris para herramientas de datos especializadas.",
-    "enabled": "Habilitar ruta paga de QVeris",
-    "baseUrl": "URL base",
-    "apiKey": "Clave de API",
-    "apiKeyPlaceholder": "Déjalo en blanco para conservar la clave actual",
-    "mode": "Modo",
-    "modeFree": "Solo datos públicos gratuitos",
-    "modePaid": "QVeris paga habilitado",
-    "budget": "Créditos de presupuesto por sesión",
-    "budgetHint": "La ejecución paga se detiene al alcanzar este presupuesto de sesión.",
-    "balance": "Créditos restantes",
-    "recentUsage": "Uso reciente",
-    "noUsage": "Sin uso reciente",
-    "signupCta": "Abrir registro",
-    "signupHint": "Usa este código de invitación al crear tu cuenta de QVeris.",
-    "inviteCode": "Código de invitación",
-    "save": "Guardar configuración de QVeris",
-    "saved": "Configuración de QVeris guardada",
-    "testFailed": "La solicitud a QVeris falló",
-    "notConfigured": "No configurado"
-  },
   "agent": {
     "reasoningStrength": "Esfuerzo de razonamiento",
     "unknownProvider": "Proveedor desconocido",
@@ -2092,9 +2084,6 @@
     "pattern": "Detectar patrones de gráfico",
     "portfolio_risk_xray": "Radiografiar riesgo del portafolio",
     "propose_mandate_profiles": "Proponer mandatos de trading",
-    "qveris_execute": "Ejecutar acción de QVeris",
-    "qveris_inspect": "Inspeccionar acción de QVeris",
-    "qveris_search": "Buscar en QVeris",
     "read_document": "Leer documento",
     "read_file": "Leer archivo",
     "read_url": "Leer página web",

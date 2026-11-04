@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 
 from src.config.accessor import get_env_value, reset_env_config
 
+from src.config.gildata_features import FEATURES_ENV, GildataFeature, selected_features
+
 logger = logging.getLogger(__name__)
 
 # Agent root (agent/) — resolved from this file's location (agent/src/api/).
@@ -144,6 +146,7 @@ class DataSourceSettingsResponse(BaseModel):
 
     tushare_token_configured: bool
     tushare_token_hint: Optional[str] = None
+    gildata_features: list[GildataFeature] = Field(default_factory=list)
     gildata_token_configured: bool
     gildata_token_hint: Optional[str] = None
     baostock_supported: bool
@@ -159,6 +162,7 @@ class UpdateDataSourceSettingsRequest(BaseModel):
     tushare_token: Optional[str] = None
     clear_tushare_token: bool = False
     gildata_token: Optional[str] = None
+    gildata_features: list[GildataFeature] | None = None
     clear_gildata_token: bool = False
     source_orders: Optional[List[SourceOrderUpdate]] = None
 
@@ -197,7 +201,7 @@ GILDATA_TOKEN_PLACEHOLDERS = {"", "your-gildata-token"}
 
 def _desktop_secure_credential_names() -> set[str]:
     """Return secrets owned by the desktop host when secure storage is active."""
-    names = {"TUSHARE_TOKEN", "QVERIS_API_KEY", "GILDATA_TOKEN"}
+    names = {"TUSHARE_TOKEN", "GILDATA_TOKEN"}
     names.update(
         provider.api_key_env for provider in LLM_PROVIDERS if provider.api_key_env
     )
@@ -687,6 +691,7 @@ def _build_data_source_settings_response(
         tushare_token_hint=None,
         gildata_token_configured=gildata_configured,
         gildata_token_hint=None,
+        gildata_features=selected_features(),
         baostock_supported=supported,
         baostock_installed=installed,
         baostock_message=baostock_message,
@@ -1004,18 +1009,23 @@ def register_settings_routes(
                 if value != current_values.get(env_var, ""):
                     updates[env_var] = value
 
+        if payload.gildata_features is not None:
+            updates[FEATURES_ENV] = ",".join(dict.fromkeys(payload.gildata_features))
+
         if updates:
             saved_values = _persist_settings_updates(updates)
-            token = updates.get("TUSHARE_TOKEN", "").strip()
-            if host_ref._is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS):
-                os.environ["TUSHARE_TOKEN"] = token
-            else:
-                os.environ.pop("TUSHARE_TOKEN", None)
-            gildata_token = updates.get("GILDATA_TOKEN", "").strip()
-            if host_ref._is_configured_secret(gildata_token, GILDATA_TOKEN_PLACEHOLDERS):
-                os.environ["GILDATA_TOKEN"] = gildata_token
-            else:
-                os.environ.pop("GILDATA_TOKEN", None)
+            for key, placeholders in (
+                ("TUSHARE_TOKEN", TUSHARE_TOKEN_PLACEHOLDERS),
+                ("GILDATA_TOKEN", GILDATA_TOKEN_PLACEHOLDERS),
+            ):
+                if key in updates:
+                    token = updates[key].strip()
+                    if host_ref._is_configured_secret(token, placeholders):
+                        os.environ[key] = token
+                    else:
+                        os.environ.pop(key, None)
+            if FEATURES_ENV in updates:
+                os.environ[FEATURES_ENV] = updates[FEATURES_ENV]
             # Hot-apply source-order overrides in this process.
             for env_var, value in order_updates.items():
                 if value:

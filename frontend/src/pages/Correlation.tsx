@@ -5,16 +5,37 @@ import { CorrelationMatrix } from "@/components/charts/CorrelationMatrix";
 import { RegimeTimeline } from "@/components/charts/RegimeTimeline";
 import { api, type CorrelationAnalysisResponse } from "@/lib/api";
 import { useAnalysisState } from "@/hooks/useAnalysisState";
+import { shannon } from "@/lib/shannon";
 import { ShannonPortfolio } from "@/components/charts/ShannonPortfolio";
 
 const WINDOWS = [30, 60, 90, 180, 365] as const;
 
 export function Correlation() {
   const [tab, setTab] = useState("correlation");
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    let controller: AbortController;
+    function refresh() {
+      controller?.abort();
+      const signal = (controller = new AbortController()).signal;
+      shannon.status(signal).then(status => update(status.configured)).catch(() => update(false));
+      function update(enabled: boolean) {
+        if (signal.aborted) return;
+        setAvailable(enabled);
+        if (!enabled) setTab("correlation");
+      }
+    }
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      controller.abort();
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
   return <>
-    <div className="mx-auto flex max-w-5xl gap-2 px-6 pt-6" role="tablist" aria-label={i18n.language.startsWith("zh") ? "分析类型" : "Analysis type"}>
-      {[["correlation", i18n.t("correlation.title")], ["shannon", i18n.language.startsWith("zh") ? "持仓诊断（香农）" : "Portfolio diagnosis (Shannon)"]].map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`rounded-lg border px-4 py-2 text-sm ${tab === key ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{label}</button>)}
-    </div>
+    {available && <div className="mx-auto flex max-w-5xl gap-2 px-6 pt-6" role="tablist" aria-label={i18n.t("correlation.title")}>
+      {[["correlation", i18n.t("correlation.title")], ["shannon", i18n.t("gildata.shannon")]].map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`rounded-lg border px-4 py-2 text-sm ${tab === key ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{label}</button>)}
+    </div>}
     <div hidden={tab !== "correlation"}><CorrelationAnalysis /></div>
     {tab === "shannon" && <div className="mx-auto max-w-5xl p-6"><ShannonPortfolio /></div>}
   </>;

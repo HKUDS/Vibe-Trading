@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "Mitra data · Gildata",
+    "website": "Akses MCP dan pendaftaran",
+    "features": "Fitur opsional Gildata",
+    "optInHelp": "Kesembilan fitur nonaktif secara bawaan. Token yang tersimpan tidak mengaktifkan fitur apa pun, termasuk setelah pembaruan. Meski fitur harga pasar aktif, Gildata hanya digunakan jika dipilih secara eksplisit. Jika sumber gratis gagal, sistem tidak beralih ke Gildata.",
+    "fund_nav": "Nilai aktiva bersih reksa dana",
+    "macro_series": "Indikator makroekonomi Tiongkok",
+    "announcements": "Pengumuman perusahaan dan reksa dana",
+    "broker_reports": "Laporan riset broker",
+    "market_quotes": "Harga pasar (hanya jika Gildata dipilih secara eksplisit)",
+    "fin_query": "Kueri keuangan gabungan",
+    "stock_selection": "Penyaringan saham",
+    "symbol_search": "Sertakan Gildata dalam pencarian efek",
+    "shannon": "Diagnosis portofolio (Shannon)"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1159,29 +1174,6 @@
     "tushareTokenDesc": "Digunakan untuk data A-share China, futures, fund, dan makro. Jika tidak diatur, proyek akan menggunakan AKShare sebagai fallback jika tersedia.",
     "gildataTokenDesc": "Data Gildata opsional: harga harian saham A yang disesuaikan, harga mentah saham Hong Kong/indeks, NAB reksa dana di luar bursa, serta alat makroekonomi, pengumuman, dan riset Tiongkok."
   },
-  "qveris": {
-    "title": "Marketplace Tool QVeris",
-    "subtitle": "Gunakan data publik gratis sebagai pilihan bawaan, atau aktifkan eksekusi QVeris berbayar untuk tool data khusus.",
-    "enabled": "Aktifkan rute QVeris berbayar",
-    "baseUrl": "URL Dasar",
-    "apiKey": "API key",
-    "apiKeyPlaceholder": "Biarkan kosong untuk mempertahankan key saat ini",
-    "mode": "Mode",
-    "modeFree": "Hanya data publik gratis",
-    "modePaid": "QVeris berbayar diaktifkan",
-    "budget": "Anggaran kredit per sesi",
-    "budgetHint": "Eksekusi berbayar berhenti saat anggaran sesi ini tercapai.",
-    "balance": "Sisa kredit",
-    "recentUsage": "Penggunaan terbaru",
-    "noUsage": "Belum ada penggunaan terbaru",
-    "signupCta": "Buka pendaftaran",
-    "signupHint": "Gunakan kode undangan ini saat membuat akun QVeris.",
-    "inviteCode": "Kode undangan",
-    "save": "Simpan pengaturan QVeris",
-    "saved": "Pengaturan QVeris tersimpan",
-    "testFailed": "Permintaan QVeris gagal",
-    "notConfigured": "Belum dikonfigurasi"
-  },
   "agent": {
     "reasoningStrength": "Tingkat Reasoning",
     "unknownProvider": "Provider tidak diketahui",
@@ -2092,9 +2084,6 @@
     "pattern": "Deteksi pola chart",
     "portfolio_risk_xray": "X-ray risiko portofolio",
     "propose_mandate_profiles": "Usulkan mandat trading",
-    "qveris_execute": "Jalankan aksi QVeris",
-    "qveris_inspect": "Periksa aksi QVeris",
-    "qveris_search": "Cari QVeris",
     "read_document": "Baca dokumen",
     "read_file": "Baca file",
     "read_url": "Baca halaman web",

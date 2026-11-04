@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "Parceiro de dados · Gildata",
+    "website": "Acesso ao MCP e cadastro",
+    "features": "Recursos opcionais da Gildata",
+    "optInHelp": "Os nove recursos vêm desativados. Um token já salvo não ativa nenhum deles, mesmo após uma atualização. Mesmo com as cotações ativadas, o Gildata só é usado quando selecionado explicitamente. Se as fontes gratuitas falharem, o sistema não recorre ao Gildata.",
+    "fund_nav": "Valor patrimonial das cotas de fundos",
+    "macro_series": "Indicadores macroeconômicos da China",
+    "announcements": "Comunicados de empresas e fundos",
+    "broker_reports": "Relatórios de análise de corretoras",
+    "market_quotes": "Cotações (somente ao selecionar Gildata explicitamente)",
+    "fin_query": "Consultas financeiras combinadas",
+    "stock_selection": "Triagem de ações",
+    "symbol_search": "Incluir a Gildata na busca de ativos",
+    "shannon": "Diagnóstico de carteira (Shannon)"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1159,29 +1174,6 @@
     "tushareTokenDesc": "Usado para ações A da China, futuros, fundos e dados macro. Se não for definido, o projeto volta para o AKShare, quando disponível.",
     "gildataTokenDesc": "Dados opcionais da Gildata: preços diários ajustados de ações A, preços brutos de Hong Kong e índices, valores patrimoniais de fundos não negociados em bolsa e ferramentas de macroeconomia, comunicados e pesquisa da China."
   },
-  "qveris": {
-    "title": "Mercado de ferramentas QVeris",
-    "subtitle": "Mantenha os dados públicos gratuitos como padrão ou ative a execução paga do QVeris para ferramentas de dados especializadas.",
-    "enabled": "Habilitar rota QVeris paga",
-    "baseUrl": "URL base",
-    "apiKey": "Chave de API",
-    "apiKeyPlaceholder": "Deixe em branco para manter a chave atual",
-    "mode": "Modo",
-    "modeFree": "Somente dados públicos gratuitos",
-    "modePaid": "QVeris pago ativado",
-    "budget": "Créditos de orçamento por sessão",
-    "budgetHint": "A execução paga é interrompida quando o orçamento da sessão é atingido.",
-    "balance": "Créditos restantes",
-    "recentUsage": "Uso recente",
-    "noUsage": "Nenhum uso recente",
-    "signupCta": "Abrir inscrição",
-    "signupHint": "Use este código de convite ao criar sua conta QVeris.",
-    "inviteCode": "Código de convite",
-    "save": "Salvar configurações do QVeris",
-    "saved": "Configurações do QVeris salvas",
-    "testFailed": "Falha na solicitação QVeris",
-    "notConfigured": "Não configurado"
-  },
   "agent": {
     "reasoningStrength": "Esforço de raciocínio",
     "unknownProvider": "Provedor desconhecido",
@@ -2092,9 +2084,6 @@
     "pattern": "Detectar padrões gráficos",
     "portfolio_risk_xray": "Risco do portfólio de raios X",
     "propose_mandate_profiles": "Propor mandatos comerciais",
-    "qveris_execute": "Executar ação QVeris",
-    "qveris_inspect": "Inspecione a ação do QVeris",
-    "qveris_search": "Pesquisar QVeris",
     "read_document": "Ler documento",
     "read_file": "Ler arquivo",
     "read_url": "Ler página da web",

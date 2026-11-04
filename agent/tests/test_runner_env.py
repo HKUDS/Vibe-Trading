@@ -165,14 +165,12 @@ def test_prepare_sandbox_home_reexposes_only_loader_paths(tmp_path: Path) -> Non
     (vt / "cache").mkdir(parents=True)
     (vt / "memory").mkdir(parents=True)
     (vt / ".env").write_text("SECRET=1", encoding="utf-8")
-    (vt / "qveris.json").write_text("{}", encoding="utf-8")
 
     sandbox = _prepare_sandbox_home(real_home)
     try:
         dst_vt = sandbox / ".vibe-trading"
         # Loader-owned paths re-exposed (symlinked)...
         assert (dst_vt / "cache").exists()
-        assert (dst_vt / "qveris.json").exists()
         # ...persistent secrets/state are NOT.
         assert not (dst_vt / "memory").exists()
         assert not (dst_vt / ".env").exists()
@@ -238,7 +236,6 @@ def test_prepare_sandbox_home_copy_fallback_when_symlink_privileges_missing(
     vt = real_home / ".vibe-trading"
     (vt / "cache").mkdir(parents=True)
     (vt / "data-bridge").mkdir(parents=True)
-    (vt / "qveris.json").write_text("{}", encoding="utf-8")
 
     def _deny_symlink(*args, **kwargs):
         raise OSError(1314, "A required privilege is not held by the client")
@@ -251,7 +248,6 @@ def test_prepare_sandbox_home_copy_fallback_when_symlink_privileges_missing(
         # Symlinks were impossible, yet the loader paths are still present...
         assert (dst_vt / "cache").is_dir()
         assert (dst_vt / "data-bridge").is_dir()
-        assert (dst_vt / "qveris.json").is_file()
         # ...and the persistent secrets/state are still NOT re-exposed.
         assert not (dst_vt / ".env").exists()
         assert not (dst_vt / "memory").exists()

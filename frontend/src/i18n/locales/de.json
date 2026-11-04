@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "Datenpartner · Gildata",
+    "website": "MCP-Zugang und Registrierung",
+    "features": "Optionale Gildata-Funktionen",
+    "optInHelp": "Alle neun Funktionen sind standardmäßig ausgeschaltet. Ein gespeichertes Token aktiviert auch nach einem Update keine davon. Selbst bei aktivierten Kursdaten wird Gildata nur auf ausdrückliche Auswahl genutzt. Liefern kostenlose Quellen keine Daten, wird Gildata nicht automatisch abgefragt.",
+    "fund_nav": "Nettoinventarwerte von Fonds",
+    "macro_series": "Chinesische Konjunkturindikatoren",
+    "announcements": "Unternehmens- und Fondsmitteilungen",
+    "broker_reports": "Analystenberichte von Brokern",
+    "market_quotes": "Marktdaten (nur bei ausdrücklicher Auswahl von Gildata)",
+    "fin_query": "Kombinierte Finanzabfragen",
+    "stock_selection": "Aktienfilter",
+    "symbol_search": "Gildata in die Wertpapiersuche einbeziehen",
+    "shannon": "Portfoliodiagnose (Shannon)"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1159,29 +1174,6 @@
     "tushareTokenDesc": "Verwendet für China-A-Aktien, Futures, Fonds und Makrodaten. Falls nicht gesetzt, greift das Projekt auf AKShare zurück, sofern verfügbar.",
     "gildataTokenDesc": "Optionale Gildata-Daten: bereinigte Tageskurse chinesischer A-Aktien, unbereinigte Hongkong- und Indexkurse, Nettoinventarwerte nicht börsengehandelter Fonds sowie chinesische Makro-, Mitteilungs- und Research-Tools."
   },
-  "qveris": {
-    "title": "QVeris-Tool-Marktplatz",
-    "subtitle": "Behalten Sie kostenlose öffentliche Daten als Standard, oder aktivieren Sie kostenpflichtige QVeris-Ausführung für spezielle Datenwerkzeuge.",
-    "enabled": "Kostenpflichtige QVeris-Route aktivieren",
-    "baseUrl": "Basis-URL",
-    "apiKey": "API-Schlüssel",
-    "apiKeyPlaceholder": "Leer lassen, um den aktuellen Schlüssel beizubehalten",
-    "mode": "Modus",
-    "modeFree": "Nur kostenlose öffentliche Daten",
-    "modePaid": "Kostenpflichtiges QVeris aktiviert",
-    "budget": "Budget-Kreditpunkte pro Sitzung",
-    "budgetHint": "Die kostenpflichtige Ausführung stoppt, wenn das Sitzungsbudget erreicht ist.",
-    "balance": "Verbleibende Kreditpunkte",
-    "recentUsage": "Letzte Nutzung",
-    "noUsage": "Keine letzte Nutzung",
-    "signupCta": "Registrierung öffnen",
-    "signupHint": "Verwenden Sie diesen Einladungscode bei der Erstellung Ihres QVeris-Kontos.",
-    "inviteCode": "Einladungscode",
-    "save": "QVeris-Einstellungen speichern",
-    "saved": "QVeris-Einstellungen gespeichert",
-    "testFailed": "QVeris-Anfrage fehlgeschlagen",
-    "notConfigured": "Nicht konfiguriert"
-  },
   "agent": {
     "reasoningStrength": "Reasoning-Aufwand",
     "unknownProvider": "Unbekannter Anbieter",
@@ -2092,9 +2084,6 @@
     "pattern": "Chart-Muster erkennen",
     "portfolio_risk_xray": "Portfolio-Risiko durchleuchten",
     "propose_mandate_profiles": "Trading-Mandate vorschlagen",
-    "qveris_execute": "QVeris-Aktion ausführen",
-    "qveris_inspect": "QVeris-Aktion inspizieren",
-    "qveris_search": "QVeris durchsuchen",
     "read_document": "Dokument lesen",
     "read_file": "Datei lesen",
     "read_url": "Webseite lesen",

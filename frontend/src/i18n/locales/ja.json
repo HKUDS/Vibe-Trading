@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "データパートナー · Gildata",
+    "website": "MCPの利用と登録",
+    "features": "Gildataのオプション機能",
+    "optInHelp": "9つの機能はすべて初期設定で無効です。アップグレード前にトークンを保存していても、使う機能を個別に有効にしてください。相場データを有効にしても、Gildataを明示した場合のみ利用します。無料ソースで取得できない場合の自動切り替えはありません。",
+    "fund_nav": "投資信託の基準価額",
+    "macro_series": "中国のマクロ経済指標",
+    "announcements": "企業・ファンドの公告",
+    "broker_reports": "証券会社の調査レポート",
+    "market_quotes": "相場データ（Gildataを明示した場合のみ）",
+    "fin_query": "財務・市場データの一括照会",
+    "stock_selection": "銘柄スクリーニング",
+    "symbol_search": "銘柄検索にGildataの候補を含める",
+    "shannon": "保有銘柄の診断（Shannon）"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1153,29 +1168,6 @@
     "tushareTokenDesc": "中国A株・先物・ファンド・マクロデータに使用します。未設定の場合、利用可能なところではAKShareにフォールバックします。",
     "gildataTokenDesc": "任意の Gildata データ：A株の調整済み日足、香港株・指数の未調整価格、店頭投資信託の基準価額、中国のマクロ経済・公告・調査レポートツール。"
   },
-  "qveris": {
-    "title": "QVeris ツールマーケットプレイス",
-    "subtitle": "無料の公開データを既定のまま使い、必要なときだけ QVeris の有料実行を有効にします。",
-    "enabled": "QVeris 有料ルートを有効化",
-    "baseUrl": "ベース URL",
-    "apiKey": "API キー",
-    "apiKeyPlaceholder": "空欄で現在のキーを保持",
-    "mode": "モード",
-    "modeFree": "無料公開データのみ",
-    "modePaid": "QVeris 有料を有効化",
-    "budget": "セッションごとの予算 Credits",
-    "budgetHint": "このセッション予算に達すると有料実行を停止します。",
-    "balance": "残り Credits",
-    "recentUsage": "最近の使用量",
-    "noUsage": "最近の使用量はありません",
-    "signupCta": "登録を開く",
-    "signupHint": "QVeris アカウント作成時にこの招待コードを使用してください。",
-    "inviteCode": "招待コード",
-    "save": "QVeris 設定を保存",
-    "saved": "QVeris 設定を保存しました",
-    "testFailed": "QVeris リクエストに失敗しました",
-    "notConfigured": "未設定"
-  },
   "agent": {
     "reasoningStrength": "推論強度",
     "unknownProvider": "不明なプロバイダー",
@@ -2092,9 +2084,6 @@
     "pattern": "チャートパターンを検出",
     "portfolio_risk_xray": "ポートフォリオリスクを精査",
     "propose_mandate_profiles": "取引マンデートを提案",
-    "qveris_execute": "QVeris アクションを実行",
-    "qveris_inspect": "QVeris アクションを確認",
-    "qveris_search": "QVeris を検索",
     "read_document": "ドキュメントを読む",
     "read_file": "ファイルを読む",
     "read_url": "Web ページを読む",

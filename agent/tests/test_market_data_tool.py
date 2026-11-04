@@ -375,7 +375,7 @@ def test_market_data_tool_accepts_every_registered_source():
     """Every source in the loader registry must pass MarketDataTool validation.
 
     Regression (#1185): the source allow-list was a hardcoded subset that
-    rejected registered, documented sources (binance, local, futu, qveris,
+    rejected registered, documented sources (binance, local, futu,
     india_broker, tickerall). The tool's enum must match VALID_SOURCES so the
     tool can never silently drop a loader the registry serves.
     """

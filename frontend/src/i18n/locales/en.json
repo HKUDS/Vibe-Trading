@@ -1,4 +1,19 @@
 {
+  "gildata": {
+    "partner": "Data partner · Gildata",
+    "website": "MCP access and registration",
+    "features": "Optional Gildata features",
+    "optInHelp": "All nine features are off by default. A saved token alone enables none of them, including after an upgrade. Even with market quotes enabled, Gildata is used only when explicitly selected. Free sources never fall back to Gildata.",
+    "fund_nav": "Fund NAV history",
+    "macro_series": "China macro indicators",
+    "announcements": "Company and fund announcements",
+    "broker_reports": "Broker research reports",
+    "market_quotes": "Market quotes (explicit Gildata requests only)",
+    "fin_query": "Combined financial queries",
+    "stock_selection": "Stock screening",
+    "symbol_search": "Include Gildata in symbol searches",
+    "shannon": "Portfolio diagnosis (Shannon)"
+  },
   "app": {
     "version": "v0.1.18"
   },
@@ -1159,29 +1174,6 @@
     "tushareTokenDesc": "Used for China A-share, futures, fund, and macro data. If unset, the project falls back to AKShare where available.",
     "gildataTokenDesc": "Optional Gildata data: adjusted A-share daily bars, raw HK/index bars, OTC fund NAVs, and China macro, announcement and research tools."
   },
-  "qveris": {
-    "title": "QVeris Tool Marketplace",
-    "subtitle": "Keep free public data as the default, or enable paid QVeris execution for specialized data tools.",
-    "enabled": "Enable paid QVeris route",
-    "baseUrl": "Base URL",
-    "apiKey": "API key",
-    "apiKeyPlaceholder": "Leave blank to keep the current key",
-    "mode": "Mode",
-    "modeFree": "Free public data only",
-    "modePaid": "Paid QVeris enabled",
-    "budget": "Budget credits per session",
-    "budgetHint": "Paid execution stops when this session budget is reached.",
-    "balance": "Remaining credits",
-    "recentUsage": "Recent usage",
-    "noUsage": "No recent usage",
-    "signupCta": "Open signup",
-    "signupHint": "Use this invitation code when creating your QVeris account.",
-    "inviteCode": "Invitation code",
-    "save": "Save QVeris settings",
-    "saved": "QVeris settings saved",
-    "testFailed": "QVeris request failed",
-    "notConfigured": "Not configured"
-  },
   "agent": {
     "reasoningStrength": "Reasoning Effort",
     "unknownProvider": "Unknown provider",
@@ -2092,9 +2084,6 @@
     "pattern": "Detect chart patterns",
     "portfolio_risk_xray": "X-ray portfolio risk",
     "propose_mandate_profiles": "Propose trading mandates",
-    "qveris_execute": "Execute QVeris action",
-    "qveris_inspect": "Inspect QVeris action",
-    "qveris_search": "Search QVeris",
     "read_document": "Read document",
     "read_file": "Read file",
     "read_url": "Read webpage",

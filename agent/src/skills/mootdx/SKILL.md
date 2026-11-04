@@ -78,7 +78,7 @@ df_15m = client.bars(symbol="600519", frequency=1, offset=800)
 
 ## Built-in Loader
 
-`backtest/loaders/mootdx_loader.py` remains registered for explicit `source="mootdx"` calls. It is not in the automatic `a_share` fallback chain. The default chain is `tencent → eastmoney → baostock → akshare → tushare → gildata → local`, with unavailable loaders skipped. Tencent and AKShare ship in the base install; BaoStock requires the optional `vibe-trading-ai[ashare]` extra. Neither the base install nor that extra includes mootdx.
+`backtest/loaders/mootdx_loader.py` remains registered for explicit `source="mootdx"` calls. It is not in the automatic `a_share` fallback chain. The default chain is `tencent → eastmoney → baostock → akshare → tushare → local`, with unavailable loaders skipped. Tencent and AKShare ship in the base install; BaoStock requires the optional `vibe-trading-ai[ashare]` extra. Neither the base install nor that extra includes mootdx.
 
 ```python
 from backtest.runner import run

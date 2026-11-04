@@ -55,7 +55,6 @@ VALID_SOURCES: set[str] = {
     "tiingo",
     "fmp",
     "gildata",
-    "qveris",  # QVERIS-INTEGRATION
     "india_broker",
     "pykrx",
     "longbridge",
@@ -118,7 +117,6 @@ def _ensure_registered() -> None:
             "backtest.loaders.tiingo_loader",
             "backtest.loaders.fmp_loader",
             "backtest.loaders.gildata_loader",
-            "backtest.loaders.qveris_loader",  # QVERIS-INTEGRATION
             "backtest.loaders.india_broker_loader",
             "backtest.loaders.pykrx_loader",
             "backtest.loaders.longbridge",
@@ -155,8 +153,8 @@ def _ensure_registered() -> None:
 # as if it were Toman — a caliber error of about six orders of magnitude, not a
 # missing-data error. An unreachable Iranian endpoint must be visible.
 _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset(
-    {"local", "qveris", "tickerall", "fmp", "nobitex", "wallex", "b3_cotahist"}
-)  # QVERIS-INTEGRATION
+    {"local", "gildata", "tickerall", "fmp", "nobitex", "wallex", "b3_cotahist"}
+)
 
 
 def is_no_network_fallback_source(source: str) -> bool:
@@ -189,9 +187,6 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "baostock",
         "akshare",
         "tushare",
-        # Key-gated commercial vendor (恒生聚源): trails the free sources so
-        # paid quota is only spent when the public endpoints cannot serve.
-        "gildata",
         "local",
     ],
     "us_equity": [
@@ -220,9 +215,6 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "yfinance",
         "tushare",
         "longbridge",
-        # Key-gated commercial vendor, same tail-of-chain rationale as the
-        # a_share chain (paid quota only spent when free sources cannot serve).
-        "gildata",
         "local",
     ],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
@@ -256,7 +248,7 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
     "forex": ["mt5", "akshare", "yfinance", "local"],
     # Yahoo index symbols (^SPX, ^NDX, ^FTSE, ^VIX, ...): served verbatim by
     # the public chart endpoint, same as the =F/=X conventions.
-    "index": ["yahoo", "yfinance", "gildata", "local"],
+    "index": ["yahoo", "yfinance", "local"],
 }
 
 
@@ -567,6 +559,10 @@ def refresh_source_order_overrides() -> None:
     for market, default in _DEFAULT_CHAINS.items():
         raw = snapshot[source_order_env_var(market)]
         order = parse_source_order(raw) if raw else []
+        # Older settings had to include Gildata to save any custom order.
+        # Preserve the remaining order without treating that as consent.
+        if market in {"a_share", "hk_equity", "index"} and order.count("gildata") == 1:
+            order.remove("gildata")
         if order and is_valid_source_order(market, order):
             FALLBACK_CHAINS[market] = order[:]
             _ACTIVE_SOURCE_ORDER_OVERRIDES[market] = order[:]
@@ -663,6 +659,7 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
             "list at least one source.",
             "tickerall": "Set TICKERALL_API_KEY and TICKERALL_ACCOUNT_ID.",
             "fmp": "Set FMP_API_KEY.",
+            "gildata": "Enable Gildata market quotes in Settings and configure GILDATA_TOKEN.",
             "nobitex": "Nobitex's public endpoint was unreachable. It quotes in "
             "Toman (IRT) and has no substitute — check network access "
             "to apiv2.nobitex.ir.",

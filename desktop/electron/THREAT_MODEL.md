@@ -20,7 +20,7 @@ or default-enabled updater exists.
 - Local Vibe-Trading sessions, reports, configuration, and research data.
 - Any credentials already present in the environment inherited by the Python
   process.
-- LLM, Tushare, and QVeris credentials managed by the desktop host.
+- LLM, Tushare, and Gildata credentials managed by the desktop host.
 - The integrity of the executable selected as the backend.
 - The ability to invoke authenticated local API routes.
 - Future update publisher policy, release digest metadata, and the integrity of
@@ -168,7 +168,7 @@ therefore security-significant.
 - The on-disk JSON file contains only Base64-encoded ciphertext and the list of
   configured names.
 - Writes use a same-directory temporary file followed by rename.
-- Existing supported values in `~/.vibe-trading/.env` and QVeris configuration
+- Existing supported values in `~/.vibe-trading/.env`
   are migrated once; the corresponding plaintext field is removed after the
   encrypted store has been persisted.
 - Decrypted values are injected only into the owned backend child environment.

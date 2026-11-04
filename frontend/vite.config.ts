@@ -8,7 +8,6 @@ const PROXY_PATHS = [
   "/sessions",
   "/swarm/presets",
   "/swarm/runs",
-  "/qveris",
   "/settings/llm",
   "/settings/data-sources",
   "/settings/custom-providers",

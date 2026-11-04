@@ -8,10 +8,9 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from src.agent.tools import BaseTool
-from src.config.accessor import get_env_config
+from src.config.gildata_features import feature_available
 from src.tools.gildata_srv import call_srv_tool_results
 
-_PLACEHOLDER_TOKENS = {"", "your-gildata-token"}
 _QUOTE_LABELS = {"开盘价": "open", "今开盘": "open", "最高价": "high", "最低价": "low",
                  "收盘价": "close", "最新价": "price", "前收盘": "prev_close",
                  "前收盘价": "prev_close", "昨收": "prev_close"}
@@ -124,11 +123,11 @@ class GildataFinQueryTool(BaseTool):
 
     @classmethod
     def check_available(cls) -> bool:
-        return get_env_config().data.gildata_token.strip() not in _PLACEHOLDER_TOKENS
+        return feature_available("fin_query")
 
     def execute(self, **kwargs: Any) -> str:
         if not self.check_available():
-            return json.dumps({"ok": False, "error_type": "not_configured", "error": "GILDATA_TOKEN is not configured"})
+            return json.dumps({"ok": False, "error_type": "not_configured", "error": "Gildata feature is disabled or unavailable"})
         query = kwargs.get("query")
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 4000:
             return json.dumps({"ok": False, "error_type": "invalid_query",

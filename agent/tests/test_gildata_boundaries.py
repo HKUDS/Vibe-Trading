@@ -60,6 +60,7 @@ def test_research_caps_whole_records_and_reports_omission():
 
 
 def test_nav_budget_keeps_complete_recent_records(monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "fund_nav")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     monkeypatch.setattr(GildataFundNavTool, "_fetch_one", lambda *args: {"ok": True, "fund_name": "Fund", "rows": [{"date": f"row-{i}", "unit_nav": 1.12, "adjusted_nav": 2.34} for i in range(2000)], "count": 2000, "returned_by_vendor": 2000})
     text = GildataFundNavTool().execute(funds=["110022"])
@@ -71,6 +72,7 @@ def test_nav_budget_keeps_complete_recent_records(monkeypatch):
 
 @pytest.mark.parametrize("window", [{"start_date": "yesterday"}, {"start_date": "2026-10-13", "end_date": "2026-10-12"}])
 def test_invalid_nav_window_fails_before_vendor_call(monkeypatch, window):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "fund_nav")
     monkeypatch.setenv("GILDATA_TOKEN", "test-token")
     monkeypatch.setattr(GildataFundNavTool, "_fetch_one", lambda *args: pytest.fail("invalid window reached vendor"))
     assert json.loads(GildataFundNavTool().execute(funds=["110022"], **window))["ok"] is False
@@ -87,3 +89,41 @@ def test_macro_observations_ground_with_explicit_refs_without_widening_price_gat
         return ledger.validate_final_answer(f"Observed growth: {value}%.\n```figures\n{value}% | observed | Growth | macro_call::rows[0].value\n```")
     assert check("5.4").valid
     assert not check("6.4").valid
+
+
+def test_old_token_and_individual_opt_ins_across_agent_and_mcp(monkeypatch):
+    import asyncio
+
+    import mcp_server
+    from src.config.accessor import reset_env_config
+    from src.tools import build_registry, gildata_research_tools
+
+    features = {
+        "fund_nav": ("get_fund_nav", {"funds": ["110022"]}),
+        "macro_series": ("get_cn_macro_series", {"query": "GDP"}),
+        "announcements": ("get_cn_announcements", {"query": "dividend"}),
+        "broker_reports": ("search_broker_reports", {"query": "earnings"}),
+    }
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Disabled feature reached vendor lookup")
+
+    monkeypatch.setattr(GildataFundNavTool, "_fetch_one", unexpected)
+    monkeypatch.setattr(gildata_research_tools, "call_srv_tool", unexpected)
+    monkeypatch.setenv("GILDATA_TOKEN", "existing-token")
+    key = "VIBE_TRADING_GILDATA_FEATURES"
+    monkeypatch.setenv(key, ",".join(features))
+    reset_env_config()
+    retained = build_registry()
+    assert all(retained.get(name) for name, _ in features.values())
+    monkeypatch.setattr(mcp_server, "_registry", retained)
+    for selected in ["", *features]:
+        monkeypatch.setenv(key, selected)
+        reset_env_config()  # Settings PUT also refreshes the process config.
+        fresh = build_registry()
+        for feature, (name, params) in features.items():
+            assert (fresh.get(name) is not None) == (feature == selected)
+            if feature != selected:
+                assert json.loads(retained.execute(name, params))["ok"] is False
+                reply = asyncio.run(mcp_server.mcp.call_tool(name, params))
+                assert json.loads(reply.content[0].text)["ok"] is False

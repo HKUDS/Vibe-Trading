@@ -34,7 +34,6 @@ CONTRACT_SUITES = {
     "nobitex": "test_nobitex_loader.py",
     "okx": "test_okx_loader_bounded.py",
     "pykrx": "test_pykrx_loader.py",
-    "qveris": "test_qveris_loader.py",
     "sina": "test_sina_loader.py",
     "stooq": "test_stooq_loader.py",
     "tencent": "test_tencent_loader.py",

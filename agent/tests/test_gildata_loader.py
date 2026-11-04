@@ -43,6 +43,11 @@ def _envelope(rows, *, inner_code=0):
     return {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": json.dumps(inner)}]}}
 
 
+@pytest.fixture(autouse=True)
+def enable_quotes(monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "market_quotes")
+
+
 class TestRegistration:
     """Loader self-registers with the expected metadata."""
 
@@ -64,7 +69,14 @@ class TestRegistration:
 
 
 class TestIsAvailable:
-    """Availability is gated purely on GILDATA_TOKEN presence."""
+    """Market quotes require both a token and their own opt-in."""
+
+    def test_saved_token_and_other_features_do_not_enable_quotes(self, monkeypatch):
+        monkeypatch.setenv("GILDATA_TOKEN", "secret")
+        monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "fin_query,stock_selection,symbol_search,shannon")
+        monkeypatch.setattr(gl, "throttled_post_json", lambda *a, **kw: pytest.fail("unexpected vendor call"))
+        assert not DataLoader().is_available()
+        assert DataLoader().fetch(["600519.SH"], "2024-01-01", "2024-01-04") == {}
 
     def test_available_with_token(self, monkeypatch):
         monkeypatch.setenv("GILDATA_TOKEN", "secret")

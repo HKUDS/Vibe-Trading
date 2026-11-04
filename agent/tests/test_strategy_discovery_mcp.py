@@ -7,7 +7,7 @@ on the FastMCP server and each wrapper must delegate to
 found" path when the facade layer can answer, and never a crash when the
 registry is missing or broken (actionable JSON instead).
 
-Follows the ``test_qveris_mcp.py`` fixture pattern: a fresh/monkeypatched
+Uses a fresh/monkeypatched
 ``mcp_server._registry`` per test. No network: delegation is verified against
 recording fake registries; the real store/facade are never constructed.
 """

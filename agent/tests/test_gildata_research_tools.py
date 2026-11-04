@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-
+import pytest
 
 from src.tools import gildata_research_tools as grt
 from src.tools.gildata_research_tools import (
@@ -20,8 +20,13 @@ from src.tools.gildata_research_tools import (
 TOOLS = [GetCnMacroSeriesTool, GetCnAnnouncementsTool, SearchBrokerReportsTool]
 
 
+@pytest.fixture(autouse=True)
+def enable_test_features(monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_GILDATA_FEATURES", "macro_series,announcements,broker_reports")
+
+
 class TestAvailabilityAndMetadata:
-    """All three wrappers gate on GILDATA_TOKEN and share plumbing."""
+    """Selected features also require a token."""
 
     def test_unavailable_without_token(self, monkeypatch):
         monkeypatch.delenv("GILDATA_TOKEN", raising=False)
