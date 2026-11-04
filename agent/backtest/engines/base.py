@@ -1168,21 +1168,20 @@ class BaseEngine(ABC):
             )
 
         # Portfolio Studio: risk x-ray over the strategy's average basket.
-        # Short runs and never-invested strategies raise ValueError in the
-        # derivation and simply get no x-ray artifact.
         from backtest.risk_xray import (
             average_invested_weights,
             compute_risk_xray,
             render_risk_xray_markdown,
             write_risk_xray,
         )
+        xray_warning = None
         try:
             basket_weights, avg_invested = average_invested_weights(actual_pos)
             risk_xray = compute_risk_xray(
                 close_df, basket_weights, periods_per_year=bars_per_year,
             )
-        except ValueError:
-            pass
+        except ValueError as exc:
+            xray_warning = f"Risk x-ray unavailable: {exc}"
         else:
             write_risk_xray(run_dir / "artifacts" / "risk_xray.json", risk_xray)
             (run_dir / "artifacts" / "risk_xray.md").write_text(
@@ -1222,6 +1221,8 @@ class BaseEngine(ABC):
             card_warnings.append(config["_run_card_annualisation_warning"])
         if config.get("_run_card_unrecognized_config_warning"):
             card_warnings.append(config["_run_card_unrecognized_config_warning"])
+        if xray_warning:
+            card_warnings.append(xray_warning)
         if benchmark_warning:
             card_warnings.append(benchmark_warning)
         from backtest.run_card import write_run_card

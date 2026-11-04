@@ -329,7 +329,8 @@ def test_write_risk_xray_strict_json_and_markdown(tmp_path):
     assert "annualized vol" in md
 
 
-def test_run_backtest_emits_risk_xray_artifacts(tmp_path):
+@pytest.mark.parametrize("bbb_signal", [1.0, -1.0])
+def test_run_backtest_emits_risk_xray_artifacts(tmp_path, bbb_signal):
     from backtest.engines.base import BaseEngine
 
     class _FlatEngine(BaseEngine):
@@ -363,7 +364,7 @@ def test_run_backtest_emits_risk_xray_artifacts(tmp_path):
 
     class _Signals:
         def generate(self, data):
-            return {code: pd.Series(1.0, index=frame.index) for code, frame in data.items()}
+            return {code: pd.Series(bbb_signal if code == "BBB" else 1.0, index=frame.index) for code, frame in data.items()}
 
     engine = _FlatEngine({"initial_cash": 100_000.0})
     metrics = engine.run_backtest(
@@ -375,6 +376,12 @@ def test_run_backtest_emits_risk_xray_artifacts(tmp_path):
 
     out_json = tmp_path / "artifacts" / "risk_xray.json"
     out_md = tmp_path / "artifacts" / "risk_xray.md"
+    warnings = json.loads((tmp_path / "run_card.json").read_text())["warnings"]
+    if bbb_signal < 0:
+        assert any("Risk x-ray unavailable" in w and "BBB" in w for w in warnings)
+        assert not out_json.exists() and not out_md.exists()
+        return
+    assert not any("Risk x-ray unavailable" in w for w in warnings)
     assert out_json.exists() and out_md.exists()
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     _assert_strict_json(payload)
