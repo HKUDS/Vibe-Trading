@@ -410,6 +410,28 @@ def test_reaper_reaps_silent_run_and_writes_task_errors(tmp_path):
     assert sum(1 for e in store.read_events(run.id) if e.type == "run_reaped") == 1
 
 
+def test_reaper_uses_recent_event_with_unicode_line_separators(tmp_path):
+    store = SwarmStore(base_dir=tmp_path)
+    now = datetime.now(timezone.utc)
+    run = _base_run("r-unicode-heartbeat", timeout=60, retries=0)
+    run.created_at = _iso(now - timedelta(hours=2))
+    run.status = RunStatus.running
+    store.create_run(run)
+    TaskStore(store.run_dir(run.id)).save_task(run.tasks[0].model_copy(update={"status": TaskStatus.in_progress}))
+    store.append_event(
+        run.id,
+        SwarmEvent(
+            type="task_heartbeat",
+            data={"note": "before\u2028after\u2029end"},
+            timestamp=_iso(now),
+        ),
+    )
+
+    assert store.reap_stale_running_runs() == []
+    assert store.load_run(run.id).status == RunStatus.running
+    assert store.read_events(run.id)[0].data["note"] == "before\u2028after\u2029end"
+
+
 def test_reaper_leaves_terminal_tasks_alone(tmp_path):
     """If some tasks already completed before the host died, do not overwrite
     them — only the still-in-flight ones should turn failed."""
