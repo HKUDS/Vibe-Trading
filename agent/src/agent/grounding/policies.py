@@ -547,6 +547,19 @@ class _PolicyMixin:
             declaration = block.match(
                 figure.value, figure.percent, figure.digits, figure.point_marked
             )
+            if declaration is None and figure.percent:
+                # A bare observation can restate a percentage only if the
+                # declaration's own source explicitly provided the unit.
+                for item in block.declarations:
+                    if item.role != "observed" or item.percent or item.value != figure.value:
+                        continue
+                    scoped = self._referenced(item.ref, None, figure)
+                    if scoped and any(
+                        record.field == "document.ratio" and record.source == "document"
+                        and record.value == figure.value for record in scoped[0]
+                    ):
+                        declaration = item
+                        break
             symbol = self._figure_symbol(
                 content,
                 figure,

@@ -709,6 +709,51 @@ def _is_price_kind(record: EvidenceRecord) -> bool:
     )
 
 
+_PERCENT_HEADER = re.compile(r"(?:^[%％]$|[(（]\s*[%％]\s*[)）]$)")
+_NUMERIC_CELL = re.compile(r"[+−-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
+
+
+def _document_percent_cells(text: str) -> str:
+    """Attach an explicit column unit to numeric cells before evidence scanning.
+
+    A PDF reader may flatten a table to whitespace. Only carry its header
+    across contiguous, equal-width numeric rows with a leading row label.
+    Preserve empty cells in delimited tables and reset on any ambiguous row.
+    """
+    if "%" not in text and "％" not in text:
+        return text
+    lines = text.splitlines(keepends=True)
+    columns: tuple[int, ...] = ()
+    layout = ("", 0)
+    for i, line in enumerate(lines):
+        row = line.rstrip("\r\n").strip(" ")
+        sep = "|" if "|" in row else "\t" if "\t" in row else ""
+        if sep == "|":
+            row = row.removeprefix("|").removesuffix("|")
+        if not sep:
+            row = row.strip()
+        delimiter = re.escape(sep) if sep else r"\s+"
+        parts = re.split(f"({delimiter})", row)
+        cells = [part.strip() for part in parts[::2]]
+        shape = (sep, len(cells))
+        if columns and shape == layout:
+            if sep == "|" and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue
+            if cells[0] and all(_NUMERIC_CELL.fullmatch(c) or c in {"", "—", "-"} for c in cells[1:]):
+                # Odd parts are the original delimiters.
+                for col in columns:
+                    pos = 2 * col
+                    if _NUMERIC_CELL.fullmatch(parts[pos].strip()):
+                        parts[pos] = parts[pos].rstrip() + "%"
+                lines[i] = line.replace(row, "".join(parts), 1)
+                continue
+        columns = tuple(j for j, c in enumerate(cells) if j and _PERCENT_HEADER.search(c))
+        if any(_NUMERIC_CELL.fullmatch(c) for c in cells):
+            columns = ()
+        layout = shape
+    return "".join(lines)
+
+
 def _document_field(figure: Figure) -> str:
     """The evidence field a document's figure is recorded under.
 
@@ -1558,6 +1603,7 @@ class _EvidenceMixin:
         if room <= 0:
             return
         seen: set[tuple[float, bool, str | None]] = set()
+        text = _document_percent_cells(text)
         for figure in scan_figures(text, parse_figures_block(text)):
             if room <= 0:
                 return

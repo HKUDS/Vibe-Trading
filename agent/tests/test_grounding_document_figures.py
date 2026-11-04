@@ -77,6 +77,26 @@ def _declared(prose: str, *lines: str) -> str:
     return prose + "\n\n```figures\n" + "\n".join(lines) + "\n```"
 
 
+@pytest.mark.parametrize(("source", "valid"), [
+    ("营业收入同比 +17.10%。", True),
+    ("项目 金额 同比（％）\n营业收入 124.20 17.10", True),
+    ("| 项目 | 金额 | 同比 (%) |\n|---|---|---|\n| 营业收入 | 124.20 | 17.10 |", True),
+    ("| 项目 | 金额 | 同比 (%) |\n| 营业收入 | 17.10 | 9.36 |", False),
+    ("项目 金额 同比（％）\n营业收入 17.10", False),
+    ("成品平均重量为 17.10 千克。", False),
+    ("营业收入 7,747,346,892 17.10 20,817,866,218 10.56", False),
+])
+def test_percent_declaration_needs_a_unit_in_its_own_document(tmp_path, source, valid):
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", source)
+    _read_document(ledger, document.with_name("other.pdf"), "doc-2", "占比 17.10%。")
+    for declaration in ("17.10", "17.10%"):
+        result = ledger.validate_final_answer(_declared(
+            "营收同比增长 +17.10%。", f"{declaration} | observed | 营收同比 | doc-1",
+        ))
+        assert result.valid is valid, result.issues
+
+
 def test_a_document_figure_grounds_the_answer_that_quotes_it(tmp_path: Path) -> None:
     ledger, document = _ledger_with_upload(tmp_path)
     _read_document(ledger, document, "doc-1")
