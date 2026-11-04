@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from backtest.engines._market_hooks import matched_market, strip_local_prefix
 from backtest.loaders.base import resample_bars, source_interval
 from backtest.loaders.registry import is_no_network_fallback_source
 from backtest.loaders.yfinance_loader import DataLoader as YfinanceLoader
@@ -27,8 +28,12 @@ MARKET_BENCHMARKS: dict[str, Optional[str]] = {
     "ca_equity":  "XIC.TO",     # S&P/TSX Capped Composite ETF
     "br_equity":  "BOVA11.SA",  # iShares Ibovespa ETF
     "a_share":    "000300.SH",  # CSI 300 (China A-share core index)
+    "uk_equity": "^FTSE",
+    "india_equity": "^NSEI",
+    "kr_equity": "^KS11",
+    "ar_equity": "^MERV",
     "crypto":     "BTC-USDT",
-    "futures":    "ES.CME",      # E-mini S&P 500 futures
+    "futures":    None,         # no common reference across contracts and venues
     "forex":      None,         # no universal benchmark
 }
 
@@ -93,7 +98,7 @@ def resolve_benchmark(
         BenchmarkResult with return series and total return, or None if no
         benchmark applies (forex, or fetch failure).
     """
-    ticker = _resolve_ticker(strategy_codes, source, explicit)
+    ticker = explicit or default_benchmark(strategy_codes, source)
     if ticker is None:
         return None
 
@@ -137,62 +142,26 @@ def resolve_benchmark(
 # Internal helpers
 # -------------------------------------------------------------------
 
-def _resolve_ticker(
-    codes:     list[str],
-    source:    str,
-    explicit:  Optional[str],
-) -> Optional[str]:
-    """Pick the benchmark ticker to use."""
-
-    if explicit:
-        return explicit
-
-    # Infer market from source + first code pattern
+def default_benchmark(codes: list[str], source: str) -> str | None:
+    """Select a default only when all evaluated instruments identify one market."""
     market = _infer_market(codes, source)
-    ticker = MARKET_BENCHMARKS.get(market)
-
-    # yfinance is the universal fallback for benchmark fetch
-    # but it only works for global-equity market types
-    if ticker and market not in {"us_equity", "hk_equity", "ca_equity"}:
-        # Only use benchmark if we can actually fetch it
-        pass
-
-    return ticker
+    return MARKET_BENCHMARKS.get(market) if market else None
 
 
-def _infer_market(codes: list[str], source: str) -> str:
-    """Rough market inference from symbol patterns and source."""
-    if not codes:
-        return "us_equity"
-
-    first = codes[0].upper()
-
-    # Yahoo uses .SS for Shanghai; other loaders use the repository's .SH form.
-    if first.endswith((".SH", ".SS", ".SZ", ".BJ")):
-        return "a_share"
-    if first.endswith(".US"):
-        return "us_equity"
-    if first.endswith(".HK"):
-        return "hk_equity"
-    if first.endswith((".TO", ".V")):
-        return "ca_equity"
-    if first.endswith((".NS", ".BO")):
-        return "india_equity"
-    if first.endswith(".SA"):
-        return "br_equity"
-    if first.endswith((".KS", ".KQ")):
-        return "kr_equity"
-    crypto_quotes = ("-USDT", "-USDC", "-USD", "-BTC", "-ETH")
-    if source in ("okx", "ccxt", "binance") or "/" in first or first.endswith(crypto_quotes):
-        return "crypto"
-    if source in ("tushare", "akshare"):
-        if first.isdigit() and len(first) == 6:
-            return "a_share"
-        if first.startswith(("IF", "IC", "IH", "IM", "T", "TF")):
-            return "futures"
-        return "a_share"
-
-    return "us_equity"
+def _infer_market(codes: list[str], source: str) -> str | None:
+    """Use the engine's market rules without its default for unknown instruments."""
+    markets = set()
+    for code in codes:
+        symbol = strip_local_prefix(code).strip().upper()
+        # Yahoo uses .SS for Shanghai. Bare six-digit codes are unambiguous
+        # on the Chinese stock sources, but not on a generic loader.
+        if symbol.endswith(".SS") and symbol[:-3].isdigit():
+            symbol = symbol[:-3] + ".SH"
+        elif source in {"akshare", "tushare", "baostock"} and len(symbol) == 6 and symbol.isdigit():
+            markets.add("a_share")
+            continue
+        markets.add(matched_market(symbol))
+    return markets.pop() if len(markets) == 1 else None
 
 
 def _fetch_benchmark(

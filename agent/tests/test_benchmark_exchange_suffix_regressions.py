@@ -27,3 +27,15 @@ def test_explicit_ashare_suffix_selects_csi300_benchmark(symbol, source):
     assert result is not None
     assert result.ticker == "000300.SH"
     assert result.total_ret == pytest.approx(0.1)
+
+
+@pytest.mark.parametrize(("codes", "ticker"), [
+    (["VOD.L"], "^FTSE"), (["GGAL.BA"], "^MERV"), (["005930.KS"], "^KS11"),
+    (["7203.T"], None), (["EURUSD=X"], None), (["VIC.VN"], None),
+    (["IF2406.CFFEX"], None), (["AAPL.US", "0700.HK"], None),
+    (["local:VOD.L", "SHEL.L"], "^FTSE"),
+])
+def test_auto_requires_a_shared_identified_market(codes, ticker):
+    from backtest.benchmark import default_benchmark
+
+    assert default_benchmark(codes, "local") == ticker

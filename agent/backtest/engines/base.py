@@ -1028,54 +1028,37 @@ class BaseEngine(ABC):
             index=[s.timestamp for s in self.equity_snapshots],
         )
         bench_ret = ret_df.mean(axis=1) if ret_df.shape[1] > 0 else pd.Series(0.0, index=dates)
-        benchmark_metadata = {}
-        benchmark_warning: str | None = None
+        from backtest.benchmark import default_benchmark, resolve_benchmark
 
-        # ── External benchmark fetch ──────────────────────────────────────────
-        bench_ticker = config.get("benchmark")
-        if bench_ticker and bench_ticker != "auto":
-            from backtest.benchmark import resolve_benchmark
-            bench_source = config.get("source", "yfinance")
-            bench_result = resolve_benchmark(
-                strategy_codes=codes,
-                source=bench_source,
-                start_date=config.get("start_date", ""),
-                end_date=config.get("end_date", ""),
-                interval=interval,
-                explicit=bench_ticker,
-                # Explicit source: fetch the benchmark through its own loader
-                # (keeps e.g. source=local offline). Auto keeps the yfinance
-                # default — its loader only wraps the preloaded strategy data.
-                loader=loader if bench_source != "auto" else None,
+        basket_codes = list(ret_df.columns)
+        basket_label = (
+            f"equal-weight basket ({basket_codes[0]})" if len(basket_codes) == 1
+            else f"equal-weight basket of {len(basket_codes)} symbols"
+        )
+        benchmark_metadata = {"benchmark_kind": "equal_weight", "benchmark_label": basket_label}
+        requested = config.get("benchmark")
+        source = config.get("source", "yfinance")
+        ticker = default_benchmark(basket_codes, source) if requested == "auto" else requested
+        reason = "no default benchmark for the evaluated symbols" if requested == "auto" else "no benchmark requested"
+        if ticker:
+            result = resolve_benchmark(
+                strategy_codes=basket_codes, source=source, explicit=ticker,
+                start_date=config.get("start_date", ""), end_date=config.get("end_date", ""),
+                interval=interval, loader=loader if source != "auto" else None,
             )
-            if bench_result is not None:
-                bench_ret = bench_result.ret_series.reindex(dates).fillna(0.0)
-                # The benchmark is fetched over the requested start_date..
-                # end_date, but a declared warm-up boundary makes the EVALUATED
-                # window shorter than that (`dates` is already clipped above).
-                # Grading total_return over the short window against a
-                # benchmark measured over the long one is the mismatched-window
-                # error the warm-up boundary exists to prevent, so re-measure
-                # the benchmark over the same bars. Falls back to the fetched
-                # total only when the overlap is too short to measure.
-                window_ret = bench_result.total_return_over(dates)
+            window_return = result.total_return_over(dates) if result is not None else None
+            if result is not None and window_return is not None:
+                bench_ret = bar_returns(result.close.reindex(dates), label=f"benchmark {result.ticker}")
                 benchmark_metadata = {
-                    "benchmark_ticker": bench_result.ticker,
-                    "benchmark_return": (
-                        window_ret if window_ret is not None else bench_result.total_ret
-                    ),
+                    "benchmark_kind": "external", "benchmark_label": result.ticker,
+                    "benchmark_ticker": result.ticker, "benchmark_return": window_return,
                 }
             else:
-                # The equal-weight basket stands in for the declared benchmark,
-                # so every benchmark-relative metric (excess_return,
-                # information_ratio, tracking_error, benchmark_beta) is graded
-                # against something the caller did not ask for. Say so.
-                benchmark_warning = (
-                    f"declared benchmark {bench_ticker!r} could not be resolved; "
-                    "benchmark-relative metrics are graded against the "
-                    "equal-weight basket of the traded symbols instead"
-                )
-        # ── External benchmark fetch ──────────────────────────────────────────
+                reason = f"benchmark {ticker!r} could not be resolved over the evaluation window"
+        benchmark_warning = (
+            f"{reason}; benchmark-relative metrics use the {basket_label}"
+            if benchmark_metadata["benchmark_kind"] == "equal_weight" else None
+        )
 
         bench_equity = self.initial_capital * (1 + bench_ret).cumprod()
 

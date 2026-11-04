@@ -190,6 +190,25 @@ def test_attribution_auto_mode_factor_and_symbol_brinson(tmp_path: Path, monkeyp
     assert any("symbol-mode" in note for note in data["notes"])
 
 
+def test_attribution_uses_executed_reference_after_explicit_fetch_failed(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run_dir = _build_auto_run(tmp_path, "fallback")
+    _write_config(run_dir, [SYMBOL_A, SYMBOL_B], benchmark="SPY")
+    _write_metrics(run_dir, extra={"benchmark_kind": "equal_weight"})
+    data = client.get("/runs/fallback/attribution").json()
+    assert data["benchmark"] == {"ticker": None, "mode": "auto_equal_weight"}
+    assert data["brinson"]["mode"] == "symbol"
+
+
+def test_attribution_names_the_resolved_auto_ticker(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    run_dir = _build_explicit_run(tmp_path, "market")
+    _write_config(run_dir, ["600519.SH"], benchmark="auto")
+    _write_metrics(run_dir, extra={"benchmark_kind": "external", "benchmark_ticker": "000300.SH"})
+    data = client.get("/runs/market/attribution").json()
+    assert data["benchmark"] == {"ticker": "000300.SH", "mode": "auto_market"}
+
+
 def test_attribution_explicit_mode_asset_class_with_cash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = _client(tmp_path, monkeypatch)
     _build_explicit_run(tmp_path, "attr-explicit")

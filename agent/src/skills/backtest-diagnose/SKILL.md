@@ -35,6 +35,7 @@ Use this skill when a user reports that a backtest failed, raised an error, or p
 2. **Late trades** (first trade occurs more than 2 years after the backtest start): data-filtering bug. The lookback window may be too long, or the initial data segment may have been dropped. Shorten the window or check whether `dropna` is too aggressive.
 3. **Capital utilization < 50%** (mostly in cash): position-sizing bug. Signal triggers may be too sparse, or the position-sizing logic may be wrong.
 4. **Open position at the end** (a position still exists when the backtest ends): exit-timing bug. Forced liquidation may be missing, or exit logic does not cover the final segment.
+5. **Unexpected excess return**: check `benchmark_label` in the run metrics and the warnings in `run_card.json`. An omitted benchmark uses the evaluated symbols’ equal-weight returns. Set `"benchmark": "auto"` to request a market reference, or supply an explicit ticker. If no common default applies or the reference lacks usable data, the run records the equal-weight fallback.
 
 ### Data Errors
 

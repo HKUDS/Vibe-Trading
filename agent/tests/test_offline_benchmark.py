@@ -151,6 +151,18 @@ def test_networked_run_keeps_the_snapshot_wrapper_away_from_its_loader(
     assert "benchmark_ticker" not in card["metrics"]
 
 
+def test_nonoverlapping_external_prices_cannot_grade_the_run(tmp_path, monkeypatch):
+    unrelated = _bars(_BENCH_CLOSE)
+    unrelated.index += pd.Timedelta(days=30)
+    card, _ = _run_main(
+        tmp_path, monkeypatch, source="local",
+        frames={"AAPL.US": _bars(_STOCK_CLOSE), _BENCH: unrelated},
+    )
+    assert card["metrics"]["benchmark_kind"] == "equal_weight"
+    assert card["metrics"]["benchmark_return"] == pytest.approx(0.4)
+    assert any(_UNRESOLVED_MARKER in w for w in card["warnings"])
+
+
 def test_snapshot_wrapper_without_inner_loader_serves_only_the_snapshot() -> None:
     frame = _bars(_STOCK_CLOSE)
     loader = runner._AutoLoader({"AAPL.US": frame})
@@ -211,15 +223,16 @@ def test_source_bound_benchmark_never_switches_provider(monkeypatch, source, loa
     assert network_calls == []
 
 
+@pytest.mark.parametrize("requested,ticker", [(_BENCH, _BENCH), ("auto", "SPY")])
 @pytest.mark.parametrize("benchmark_available", [True, False])
-def test_real_local_csv_benchmark_reaches_run_metrics(tmp_path, monkeypatch, benchmark_available):
+def test_real_local_csv_benchmark_reaches_run_metrics(tmp_path, monkeypatch, benchmark_available, requested, ticker):
     """Exercise CSV -> actual loader -> runner -> run card with no network."""
     from backtest.loaders import local_loader
 
     bridge = tmp_path / "bridge.json"
     symbols = [("AAPL.US", _STOCK_CLOSE)]
     if benchmark_available:
-        symbols.append((_BENCH, _BENCH_CLOSE))
+        symbols.append((ticker, _BENCH_CLOSE))
     sources = []
     for symbol, closes in symbols:
         path = tmp_path / f"{symbol}.csv"
@@ -237,7 +250,7 @@ def test_real_local_csv_benchmark_reaches_run_metrics(tmp_path, monkeypatch, ben
         "        return {code: frame['close'] * 0 for code, frame in data_map.items()}\n"
     )
     (run / "config.json").write_text(json.dumps({
-        "codes": ["AAPL.US"], "source": "local", "benchmark": _BENCH,
+        "codes": ["AAPL.US"], "source": "local", "benchmark": requested,
         "start_date": "2026-01-05", "end_date": "2026-01-09", "initial_cash": 100_000,
     }))
     network_calls = []
@@ -252,10 +265,12 @@ def test_real_local_csv_benchmark_reaches_run_metrics(tmp_path, monkeypatch, ben
     card = json.loads((run / "run_card.json").read_text())
     assert network_calls == []
     if benchmark_available:
-        assert card["metrics"]["benchmark_ticker"] == _BENCH
+        assert card["metrics"]["benchmark_ticker"] == ticker
         assert card["metrics"]["benchmark_return"] == pytest.approx(0.02)
         assert card["metrics"]["excess_return"] == pytest.approx(-0.02)
         assert not any(_UNRESOLVED_MARKER in w for w in card.get("warnings") or [])
     else:
+        assert card["metrics"]["benchmark_kind"] == "equal_weight"
+        assert card["metrics"]["benchmark_label"] == "equal-weight basket (AAPL.US)"
         assert "benchmark_ticker" not in card["metrics"]
         assert any(_UNRESOLVED_MARKER in w for w in card["warnings"])

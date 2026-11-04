@@ -1421,7 +1421,7 @@ export interface FactorReportPayload {
 
 export interface AttributionBenchmarkInfo {
   ticker: string | null;
-  mode: "auto_equal_weight" | "explicit";
+  mode: "auto_equal_weight" | "auto_market" | "explicit";
 }
 
 export interface AttributionRollingPoint {

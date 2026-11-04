@@ -97,8 +97,7 @@ def test_excess_return_matches_corrected_benchmark_return(monkeypatch, tmp_path)
 
 
 def test_excess_return_unaffected_when_no_external_benchmark(tmp_path):
-    """No config["benchmark"] set: benchmark_metadata stays empty, so the fix
-    must not touch excess_return at all on the ordinary, unconfigured path."""
+    """Only the loaded symbol contributes to the unconfigured reference."""
     dates = pd.bdate_range("2026-01-05", periods=3)
     bars = pd.DataFrame(
         {
@@ -111,7 +110,7 @@ def test_excess_return_unaffected_when_no_external_benchmark(tmp_path):
         index=dates,
     )
     config = {
-        "codes": ["000001.SZ"],
+        "codes": ["000002.SZ", "000001.SZ"],
         "start_date": str(dates[0].date()),
         "end_date": str(dates[-1].date()),
         "source": "tushare",
@@ -121,5 +120,7 @@ def test_excess_return_unaffected_when_no_external_benchmark(tmp_path):
     engine = ChinaAEngine({"initial_cash": 1_000_000.0})
     metrics = engine.run_backtest(config, _FakeLoader(bars), _FlatSignal(), tmp_path)
 
-    assert "benchmark_return" not in metrics or metrics.get("benchmark_ticker") is None
+    assert metrics["benchmark_kind"] == "equal_weight"
+    assert "benchmark_ticker" not in metrics
+    assert metrics["benchmark_label"] == "equal-weight basket (000001.SZ)"
     assert metrics["excess_return"] == pytest.approx(0.0)
