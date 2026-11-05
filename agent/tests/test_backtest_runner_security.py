@@ -267,21 +267,20 @@ def test_signal_engine_rejects_module_level_alias_of_forbidden_module(
 @pytest.mark.parametrize(
     "import_line,body_line",
     [
-        # The reason module-level imports are not rejected outright: the shipped
-        # skill examples carry these beside helpers the runner never reaches.
-        ("import requests", "        return []"),
-        ("from requests import get", "        return []"),
-        # Ordinary strategy imports, used on the executed path.
+        # Ordinary strategy imports. (An unused ``import requests`` is now
+        # rejected: the whole file is scanned, see the test below.)
         ("import pandas as pd", "        return pd.DataFrame()"),
         ("from src.quantlib.options import bs_price", "        return bs_price(1, 1, 1, 1, 1)"),
         ("from os import path", "        return path.join('a', 'b')"),
+        ("import os", "        return os.path.join('a', 'b')"),
+        ("import numpy as np", "        return np.zeros(3)"),
     ],
-    ids=["unused_requests", "unused_from_requests", "pandas_alias", "quantlib", "os_path"],
+    ids=["pandas_alias", "quantlib", "os_path", "os_dot_path", "numpy_alias"],
 )
-def test_signal_engine_alias_check_leaves_legitimate_imports_alone(
+def test_signal_engine_scan_leaves_legitimate_imports_alone(
     tmp_path, import_line, body_line,
 ) -> None:
-    """The alias check must cost neither the unused import nor the math layer."""
+    """The whole-module scan must not cost ordinary imports or the math layer."""
     signal_file = tmp_path / "signal_engine.py"
     signal_file.write_text(
         "\n".join(
@@ -640,11 +639,12 @@ def test_signal_engine_allows_getattr_on_user_objects(tmp_path) -> None:
     assert hasattr(module, "SignalEngine")
 
 
-def test_signal_engine_allows_unreachable_network_helper(tmp_path) -> None:
+def test_signal_engine_rejects_unreachable_network_helper(tmp_path) -> None:
     # Mirrors the bundled skill examples: a top-level ``import requests`` plus a
     # standalone ``_fetch_okx`` data-fetch helper that generate() never calls.
-    # Because it is unreachable from any SignalEngine method it must NOT trip the
-    # scrubber — blocking it would reject strategies generated from ~12 skills.
+    # It used to be exempt as "unreachable", but reachability is undecidable
+    # (another class, a function reference), so the whole file is scanned and
+    # the agent gets a message naming the import to drop.
     signal_file = tmp_path / "signal_engine.py"
     signal_file.write_text(
         "\n".join(
@@ -666,8 +666,8 @@ def test_signal_engine_allows_unreachable_network_helper(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    module = _load_module_from_file(signal_file, _module_name())
-    assert hasattr(module, "SignalEngine")
+    with pytest.raises(ValueError, match="Import of 'requests'"):
+        _load_module_from_file(signal_file, _module_name())
 
 
 def test_signal_engine_allows_signed_numeric_literal_assignment(tmp_path) -> None:

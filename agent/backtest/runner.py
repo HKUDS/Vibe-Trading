@@ -326,38 +326,29 @@ def _validate_class_body(node: ast.ClassDef) -> None:
         )
 
 
-# --- Runtime-reachable operation scrubber (VT-001 defense-in-depth) ---
+# --- Whole-module operation scrubber (VT-001 defense-in-depth) ---
 #
-# The structural checks above only reject *import-time* execution. The real
-# exposure is that once ``SignalEngine`` is instantiated and ``.generate()`` is
-# called, arbitrary code inside its method bodies runs with no runtime sandbox.
-# This scrubber walks the code that actually executes during a backtest — every
-# ``SignalEngine`` method plus any module-level helper transitively called from
-# one — and rejects network / process-spawn / dynamic-exec / filesystem-write
-# operations there.
+# The structural checks above only reject *import-time* execution. Once
+# ``SignalEngine`` is instantiated and ``.generate()`` is called, arbitrary code
+# in the file runs with no runtime sandbox, so this scrubber walks EVERY node in
+# the file — all functions, all classes' methods, all imports — and rejects
+# network / process-spawn / dynamic-exec / filesystem / data-I/O operations.
 #
-# It is deliberately scoped to *reachable* code, not the whole file: the bundled
-# skill examples (agent/src/skills/*/example_signal_engine.py) legitimately carry
-# ``import requests`` + ``requests.get`` inside standalone ``_fetch_okx`` helpers
-# and ``if __name__ == "__main__"`` demo blocks that the runner never executes
-# (it does ``import module; SignalEngine().generate(data_map)``). Blocking those
-# imports file-wide would reject strategies generated from ~12 shipped skills, so
-# we block the dangerous *use* along the executed path instead of a harmless
-# unused top-level import. Direct ``getattr``/``setattr``/``delattr`` indirection
-# onto ``os`` / forbidden modules is now rejected (see _reject_forbidden_getattr),
-# and a renamed binding no longer hides the root (see
-# _module_level_forbidden_aliases). This is defense-in-depth, not a kernel-level
-# guarantee: an AST denylist cannot be complete.
+# It used to scan only code reachable from SignalEngine methods through
+# bare-name calls. That missed methods of any other class (``H().go()``),
+# functions passed by reference (``df.apply(helper)``, ``f = helper; f()``) and
+# top-level imports, each of which reached urllib or the broker connectors. A
+# reachability analysis of Python cannot be made sound, so nothing in the file
+# is exempt. The cost: a strategy copied from a skill example together with its
+# unused ``_fetch_okx``/``requests`` demo helper is rejected with a message that
+# names the import, and the agent drops the helper (the examples' own
+# ``if __name__ == "__main__"`` blocks never passed the top-level check anyway).
 #
-# MEASURED RESIDUAL, so it is not left implied. After the lists below, these
-# still reach the executed path: ``inspect``, ``operator``, ``threading``,
-# ``codeop``, ``tempfile``, and ``os.makedirs``. None of them reaches a broker
-# on its own — ``inspect``/``operator`` need an object you already hold,
-# ``threading`` runs code that is still in this file and gets scanned if it is
-# reachable, ``codeop`` yields a code object that needs the already-blocked
-# ``eval``/``exec`` to run, and the last two are filesystem, not the red line.
-# They are named here so the next person extends this list from evidence rather
-# than from a fresh survey.
+# This is defense-in-depth, not a kernel-level guarantee: an AST denylist cannot
+# be complete. The real boundary is a strategy process with no network and no
+# secrets. Residual that still passes: ``threading``/``concurrent`` (run code
+# from this same scanned file), ``codeop`` (needs the blocked eval/exec),
+# ``tempfile`` and ``os.makedirs`` (filesystem, not the red line).
 _FORBIDDEN_IMPORT_MODULES = frozenset(
     {
         "socket",
@@ -400,6 +391,35 @@ _FORBIDDEN_IMPORT_MODULES = frozenset(
         "shutil",
         "webbrowser",
         "gc",
+        # More network / process reach that was not on the list: asyncio
+        # (open_connection, create_subprocess_exec), other stdlib protocols,
+        # and the market-data/broker client libraries — data reaches a
+        # strategy through data_map, never a fetch of its own.
+        "asyncio",
+        "ssl",
+        "xmlrpc",
+        "imaplib",
+        "poplib",
+        "nntplib",
+        "pty",
+        "websocket",
+        "websockets",
+        "pycurl",
+        "paramiko",
+        "zmq",
+        "grpc",
+        "yfinance",
+        "akshare",
+        "tushare",
+        "baostock",
+        "ccxt",
+        "okx",
+        "futu",
+        # Object-graph and indirection helpers: inspect frames hand back
+        # f_globals (and __builtins__ by string key); operator.attrgetter("system")(os)
+        # indirects around both the attribute and the getattr checks.
+        "inspect",
+        "operator",
     }
 )
 # Project-internal subtrees that reach a broker. The red line is that no
@@ -471,8 +491,13 @@ _FORBIDDEN_OS_ATTRS = frozenset(
         "chown",
         "symlink",
         "link",
+        # Process control not covered by the spawn entries above.
+        "kill",
+        "killpg",
     }
 )
+# os.exec*, os.spawn*, os.posix_spawn* replace or create processes.
+_FORBIDDEN_OS_ATTR_PREFIXES = ("exec", "spawn", "posix_spawn")
 # The object graph is the last structural route to a module the import checks
 # refuse: ``().__class__.__mro__[1].__subclasses__()`` reaches every loaded
 # class without naming one, and ``(lambda: 0).__globals__['__builtins__']``
@@ -501,7 +526,54 @@ _FORBIDDEN_DUNDER_ATTRS = frozenset(
         "__getattribute__",
         "__init_subclass__",
         "__subclasshook__",
+        # ``os.__dict__["system"]`` and module loaders reach the same targets.
+        "__dict__",
+        "__loader__",
+        "__spec__",
+        # Frame and traceback objects: ``(x for x in ()).gi_frame.f_back.f_globals``
+        # is __globals__ under another name.
+        "f_globals",
+        "f_locals",
+        "f_builtins",
+        "f_back",
+        "f_code",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
+        "tb_frame",
+        "tb_next",
     }
+)
+# Data-library file/URL I/O. pandas resolves ``http(s)://`` arguments itself,
+# so ``pd.read_csv(url)`` was an exfiltration channel the import list never saw,
+# and ``read_pickle``/``np.load``/``joblib.load`` deserialize code. A read must
+# name a relative literal path (resolved under the run dir), like open().
+_DATA_READ_ATTRS = frozenset(
+    {
+        "read_csv", "read_table", "read_fwf", "read_json", "read_html", "read_xml",
+        "read_excel", "read_parquet", "read_feather", "read_orc", "read_pickle",
+        "read_hdf", "read_stata", "read_sas", "read_spss",
+        "load", "loadtxt", "genfromtxt", "fromfile", "memmap",
+    }
+)
+# Database / network / clipboard I/O has no relative-path form at all.
+_DATA_IO_ALWAYS_FORBIDDEN_ATTRS = frozenset(
+    {"read_sql", "read_sql_query", "read_sql_table", "read_gbq", "read_clipboard",
+     "to_sql", "to_gbq", "to_clipboard"}
+)
+# Writes are refused whenever a target is given; the no-target forms
+# (``df.to_json()``, ``df.to_csv(index=False)``) just return a string.
+_DATA_WRITE_ATTRS = frozenset(
+    {
+        "to_csv", "to_json", "to_html", "to_xml", "to_excel", "to_parquet",
+        "to_feather", "to_orc", "to_pickle", "to_hdf", "to_stata", "to_markdown",
+        "to_latex", "to_string", "save", "savez", "savez_compressed", "savetxt",
+        "tofile", "dump",
+    }
+)
+_DATA_IO_PATH_KEYWORDS = frozenset(
+    {"filepath_or_buffer", "path", "path_or_buf", "path_or_buffer", "io", "fname",
+     "file", "filename", "buf", "excel_writer"}
 )
 _FORBIDDEN_BUILTINS = frozenset(
     {"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint"}
@@ -519,7 +591,7 @@ _SCRUB_MSG = "is not allowed inside generated strategy code"
 
 def _is_forbidden_os_attr(attr: str) -> bool:
     """Return whether ``os.<attr>`` shells out, spawns, execs, or reads env."""
-    return attr in _FORBIDDEN_OS_ATTRS or attr.startswith(("spawn", "exec"))
+    return attr in _FORBIDDEN_OS_ATTRS or attr.startswith(_FORBIDDEN_OS_ATTR_PREFIXES)
 
 
 def _attribute_root_name(node: ast.Attribute) -> str | None:
@@ -587,8 +659,43 @@ def _reject_forbidden_open(node: ast.Call) -> None:
 def _is_relative_literal_path(path: str) -> bool:
     """Return True for a literal path that stays under the child's cwd (the run dir)."""
     return not (
-        path.startswith(("/", "~", "\\")) or ".." in path or (len(path) > 1 and path[1] == ":")
+        path.startswith(("/", "~", "\\"))
+        or ".." in path
+        or (len(path) > 1 and path[1] == ":")
+        or "://" in path
     )
+
+
+def _reject_forbidden_data_io(node: ast.Call) -> None:
+    """Confine pandas/numpy/joblib-style file I/O the way open() is confined.
+
+    Args:
+        node: Any call node in the module.
+
+    Raises:
+        ValueError: For a read of anything but a relative literal path, any
+            database/clipboard/network I/O, or a write that names a target.
+    """
+    func = node.func
+    if not isinstance(func, ast.Attribute):
+        return
+    attr = func.attr
+    if attr in _DATA_IO_ALWAYS_FORBIDDEN_ATTRS:
+        raise ValueError(f".{attr}() {_SCRUB_MSG}")
+    path_kw = next((kw.value for kw in node.keywords if kw.arg in _DATA_IO_PATH_KEYWORDS), None)
+    if attr in _DATA_READ_ATTRS:
+        target = node.args[0] if node.args else path_kw
+        if not (
+            isinstance(target, ast.Constant)
+            and isinstance(target.value, str)
+            and _is_relative_literal_path(target.value)
+        ):
+            raise ValueError(f".{attr}() of anything but a relative literal path {_SCRUB_MSG}")
+    elif attr in _DATA_WRITE_ATTRS:
+        first = node.args[0] if node.args else None
+        named = [arg for arg in (first, path_kw) if arg is not None]
+        if any(not (isinstance(arg, ast.Constant) and arg.value is None) for arg in named):
+            raise ValueError(f"Writing files via .{attr}() {_SCRUB_MSG}")
 
 
 def _is_relative_literal_path_ctor(node: ast.AST) -> bool:
@@ -691,6 +798,10 @@ def _reject_forbidden_node(node: ast.AST) -> None:
         for alias in node.names:
             if _is_forbidden_module_path(alias.name):
                 raise ValueError(f"Import of {alias.name!r} {_SCRUB_MSG}")
+            # ``os`` is allowed only under its own name, which is what the
+            # os.<attr> checks key on; ``import os as o; o.system()`` hid it.
+            if alias.name == "os" and alias.asname not in (None, "os"):
+                raise ValueError(f"Renaming os on import (as {alias.asname!r}) {_SCRUB_MSG}")
     elif isinstance(node, ast.ImportFrom):
         module = node.module or ""
         root = module.split(".")[0]
@@ -716,6 +827,9 @@ def _reject_forbidden_node(node: ast.AST) -> None:
             raise ValueError(f"Use of os.{node.attr} {_SCRUB_MSG}")
         if node.attr in _FORBIDDEN_DUNDER_ATTRS:
             raise ValueError(f"Object-graph traversal via .{node.attr} {_SCRUB_MSG}")
+        # A module re-exported by another: ``pd.io.common.os.environ``, ``os.sys.modules``.
+        if node.attr == "os" or node.attr in _FORBIDDEN_IMPORT_MODULES:
+            raise ValueError(f"Reaching the {node.attr!r} module through .{node.attr} {_SCRUB_MSG}")
     elif isinstance(node, ast.Name):
         if node.id in _FORBIDDEN_BUILTINS:
             raise ValueError(f"Use of {node.id!r} {_SCRUB_MSG}")
@@ -723,98 +837,29 @@ def _reject_forbidden_node(node: ast.AST) -> None:
         _reject_forbidden_open(node)
         _reject_forbidden_pathlib_write(node)
         _reject_forbidden_getattr(node)
+        _reject_forbidden_data_io(node)
 
 
-def _module_level_forbidden_aliases(tree: ast.Module) -> dict[str, str]:
-    """Map module-level names that are bound to a forbidden module.
+def _scan_module(tree: ast.Module) -> None:
+    """Reject forbidden operations anywhere in the module (VT-001).
 
-    Module-level imports are deliberately not rejected outright (see the
-    ``_FORBIDDEN_IMPORT_MODULES`` comment): the shipped skill examples carry an
-    unused ``import requests`` beside a helper the runner never reaches, and a
-    file-wide import block would reject strategies generated from them. The
-    compensating check is on the *use* along the executed path — but that check
-    matches dotted chains rooted in the module's own name, so a binding that
-    renames it slipped past both::
+    Every node is checked — imports at any level, every function, every class's
+    methods — because reachability from ``SignalEngine`` cannot be decided
+    soundly (other classes, functions passed by reference, aliases). Forbidden
+    imports are therefore refused outright, so a renamed binding
+    (``from socket import socket as S``) never exists to be called.
 
-        from socket import socket as S              ->  S()
-        import socket as sk                         ->  sk.socket()
-        from src.trading.service import place_order ->  place_order(1)
-
-    This recovers the binding so the use site can be judged by what the name
-    actually refers to, which closes the aliasing half of the VT-001 residual
-    without touching the harmless unused import.
-
-    Args:
-        tree: Parsed signal engine module.
-
-    Returns:
-        Bound name -> the dotted path it refers to, for forbidden targets only.
+    ``os`` is the one allowed module with forbidden attributes, and those checks
+    key on the name ``os``; using it as a value (``m = os``, ``f(os)``) would
+    move it out of their sight, so ``os`` may only appear as ``os.<attr>``.
     """
-    aliases: dict[str, str] = {}
-    for node in tree.body:
-        if isinstance(node, ast.Import):
-            # A plain ``import socket`` needs no entry: its use is a dotted
-            # chain rooted in ``socket``, which the attribute check already
-            # rejects. Only a rename hides that root.
-            for alias in node.names:
-                if alias.asname and _is_forbidden_module_path(alias.name):
-                    aliases[alias.asname] = alias.name
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            for alias in node.names:
-                target = f"{module}.{alias.name}" if module else alias.name
-                if (
-                    _is_forbidden_module_path(module)
-                    or _is_forbidden_module_path(target)
-                    or (module.split(".")[0] == "os" and _is_forbidden_os_attr(alias.name))
-                ):
-                    aliases[alias.asname or alias.name] = target
-    return aliases
-
-
-def _scan_runtime_reachable(tree: ast.Module) -> None:
-    """Reject forbidden ops in ``SignalEngine`` methods + their transitive callees.
-
-    Entry points are every method defined directly on the ``SignalEngine`` class.
-    From there, any bare-name call that resolves to a module-level function is
-    followed and scanned too, so a payload hidden in a helper that ``generate()``
-    calls is still caught. Module-level functions never reached from a
-    ``SignalEngine`` method (standalone data-fetch helpers, ``__main__`` demos)
-    are intentionally left unscanned.
-    """
-    engine_cls = next(
-        (n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "SignalEngine"),
-        None,
-    )
-    if engine_cls is None:
-        return
-
-    module_funcs = {
-        n.name: n
-        for n in tree.body
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    worklist: list[ast.AST] = [
-        m for m in engine_cls.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    aliases = _module_level_forbidden_aliases(tree)
-    visited: set[int] = set()
-    while worklist:
-        fn = worklist.pop()
-        if id(fn) in visited:
-            continue
-        visited.add(id(fn))
-        for node in ast.walk(fn):
-            _reject_forbidden_node(node)
-            if isinstance(node, ast.Name) and node.id in aliases:
-                raise ValueError(
-                    f"Use of {node.id!r}, bound at module level to "
-                    f"{aliases[node.id]!r}, {_SCRUB_MSG}"
-                )
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                target = module_funcs.get(node.func.id)
-                if target is not None:
-                    worklist.append(target)
+    parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    for node in ast.walk(tree):
+        _reject_forbidden_node(node)
+        if isinstance(node, ast.Name) and node.id == "os":
+            parent = parents.get(node)
+            if not (isinstance(parent, ast.Attribute) and parent.value is node):
+                raise ValueError(f"Using the os module as a value {_SCRUB_MSG}")
 
 
 def _validate_signal_engine_source(file_path: Path) -> None:
@@ -847,8 +892,8 @@ def _validate_signal_engine_source(file_path: Path) -> None:
         )
 
     # Deep pass: the structural loop above only guards import-time execution;
-    # this walks the code that runs on SignalEngine().generate() (VT-001).
-    _scan_runtime_reachable(tree)
+    # this walks every node of the file, since any of it can run (VT-001).
+    _scan_module(tree)
 
 
 def _validate_signal_engine_class(engine_cls) -> None:

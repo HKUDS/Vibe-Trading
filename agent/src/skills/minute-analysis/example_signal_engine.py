@@ -8,7 +8,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import requests
 
 
 BASE_URL = "https://www.okx.com/api/v5"
@@ -27,6 +26,8 @@ def fetch_minute_candles(
     Returns:
         OHLCV DataFrame，index 为 datetime。None 表示获取失败。
     """
+    import requests  # demo-only fetch; strategy code receives data_map instead
+
     resp = requests.get(
         f"{BASE_URL}/market/candles",
         params={"instId": inst_id, "bar": bar, "limit": str(min(limit, 300))},

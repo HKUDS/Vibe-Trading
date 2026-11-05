@@ -7,15 +7,11 @@
 信号逻辑：ChoCH 优先触发方向，BOS 确认，FVG 同向过滤。
 """
 
-import os
-import sys
 from typing import Dict, Optional
 
-# smartmoneyconcepts prints emoji on import — force UTF-8 on Windows
-if sys.platform == "win32":
-    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+# smartmoneyconcepts prints emoji on import. The backtest runner already sets
+# PYTHONIOENCODING=utf-8 for strategy code; to run this demo directly on
+# Windows, set PYTHONIOENCODING=utf-8 in the shell first.
 
 import numpy as np
 import pandas as pd
