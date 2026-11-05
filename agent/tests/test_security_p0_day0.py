@@ -245,16 +245,21 @@ def test_paper_profile_refuses_live_profile_override(monkeypatch, tmp_path) -> N
     from src.trading.profiles import profile_by_id
 
     monkeypatch.setenv("VIBE_TRADING_HOME", str(tmp_path))
-    placed: list[dict] = []
-    monkeypatch.setattr(alpaca_sdk, "place_order", lambda cfg, **kw: placed.append(kw) or {"status": "ok"})
+    placed: list[object] = []
+    monkeypatch.setattr(
+        alpaca_sdk, "place_order", lambda cfg, **kw: placed.append(cfg) or {"status": "ok"}
+    )
 
     profile = profile_by_id("alpaca-paper-trade")
     assert service._sdk_config(profile, alpaca_sdk, {}).environment == "paper"
-    with pytest.raises(ValueError, match="refusing"):
-        service._sdk_config(profile, alpaca_sdk, {"profile": "live"})
-    with pytest.raises(ValueError, match="refusing"):
-        service.place_order("AAPL", "alpaca-paper-trade", side="buy", quantity=1, profile="live")
-    assert placed == []
+    # ``profile`` is no longer an override key, so the attempt is dropped before
+    # it can reach the connector: the resolved config stays on the paper host
+    # rather than raising. The service-level environment check still refuses a
+    # config that changes environment by any other route
+    # (tests/test_profile_override_isolation.py pins both layers).
+    assert service._sdk_config(profile, alpaca_sdk, {"profile": "live"}).environment == "paper"
+    service.place_order("AAPL", "alpaca-paper-trade", side="buy", quantity=1, profile="live")
+    assert placed and all(getattr(cfg, "is_paper", False) for cfg in placed)
 
 
 # --------------------------------------------------------------------------- #

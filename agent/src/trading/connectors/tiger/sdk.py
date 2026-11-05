@@ -122,7 +122,7 @@ class TigerConfig:
         return PROFILE_ENVIRONMENTS.get(self.profile, "paper")
 
 
-_OVERRIDE_KEYS = ("tiger_id", "private_key_path", "account", "profile")
+_OVERRIDE_KEYS = ("tiger_id", "private_key_path", "account")
 
 
 def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "TigerConfig":

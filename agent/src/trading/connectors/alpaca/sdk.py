@@ -141,7 +141,7 @@ class AlpacaConfig:
         return PAPER_HOST if self.is_paper else LIVE_HOST
 
 
-_OVERRIDE_KEYS = ("api_key", "secret_key", "profile", "feed")
+_OVERRIDE_KEYS = ("api_key", "secret_key", "feed")
 
 
 def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "AlpacaConfig":

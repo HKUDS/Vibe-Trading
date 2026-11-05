@@ -162,7 +162,7 @@ class BinanceConfig:
 
 
 _OVERRIDE_KEYS = (
-    "api_key", "api_secret", "profile", "market_type",
+    "api_key", "api_secret", "market_type",
     "observation_absolute_tolerance", "testnet_host",
 )
 

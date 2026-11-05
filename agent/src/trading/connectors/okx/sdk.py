@@ -138,7 +138,7 @@ class OKXConfig:
         return self.flag == "1"
 
 
-_OVERRIDE_KEYS = ("api_key", "api_secret", "passphrase", "profile", "host", "expected_uid")
+_OVERRIDE_KEYS = ("api_key", "api_secret", "passphrase", "host", "expected_uid")
 
 
 def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "OKXConfig":

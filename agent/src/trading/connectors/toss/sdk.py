@@ -132,7 +132,7 @@ class TossConfig:
         return PROFILE_ENVIRONMENTS.get(self.profile, "live")
 
 
-_OVERRIDE_KEYS = ("client_id", "client_secret", "account_seq", "profile", "base_url")
+_OVERRIDE_KEYS = ("client_id", "client_secret", "account_seq", "base_url")
 
 
 def build_config(

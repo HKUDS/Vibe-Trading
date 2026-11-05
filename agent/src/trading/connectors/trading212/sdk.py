@@ -115,7 +115,7 @@ class Trading212Config:
         return PROFILE_ENVIRONMENTS.get(self.profile, "live")
 
 
-_OVERRIDE_KEYS = ("api_key", "api_secret", "profile", "base_url")
+_OVERRIDE_KEYS = ("api_key", "api_secret", "base_url")
 
 
 def build_config(

@@ -119,7 +119,7 @@ class ZerodhaConfig:
         return self.environment == "paper"
 
 
-_OVERRIDE_KEYS = ("api_key", "api_secret", "access_token", "profile")
+_OVERRIDE_KEYS = ("api_key", "api_secret", "access_token")
 
 #: Project interval token -> Kite interval. ``4h`` is deliberately absent:
 #: Kite has no 4h interval and aliasing it to daily would return mislabeled

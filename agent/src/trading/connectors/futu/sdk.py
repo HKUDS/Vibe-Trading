@@ -168,7 +168,7 @@ class FutuConfig:
         return _ENV_TO_TRD_ENV.get(self.environment, "SIMULATE")
 
 
-_OVERRIDE_KEYS = ("host", "port", "profile", "security_firm", "filter_trdmarket", "acc_id")
+_OVERRIDE_KEYS = ("host", "port", "security_firm", "filter_trdmarket", "acc_id")
 
 
 def build_config(profile_config: Mapping[str, Any] | None = None, overrides: Mapping[str, Any] | None = None) -> "FutuConfig":

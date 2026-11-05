@@ -126,7 +126,7 @@ class UpbitConfig:
         return self.environment == "paper"
 
 
-_OVERRIDE_KEYS = ("access_key", "secret_key", "profile")
+_OVERRIDE_KEYS = ("access_key", "secret_key")
 
 
 def build_config(

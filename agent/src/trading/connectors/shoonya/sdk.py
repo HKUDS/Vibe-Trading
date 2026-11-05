@@ -119,7 +119,7 @@ class ShoonyaConfig:
         return self.environment == "paper"
 
 
-_OVERRIDE_KEYS = ("user_id", "password", "vendor_code", "api_secret", "totp_secret", "profile")
+_OVERRIDE_KEYS = ("user_id", "password", "vendor_code", "api_secret", "totp_secret")
 
 #: Canonical period token → Noren interval (minutes as str, or ``D`` for daily).
 #: ``1H``/``4H``/``1D`` alias the lowercase forms; ``1w``/``1M`` are unsupported.

@@ -132,7 +132,7 @@ class DhanConfig:
         return self.environment == "paper"
 
 
-_OVERRIDE_KEYS = ("client_id", "access_token", "profile")
+_OVERRIDE_KEYS = ("client_id", "access_token")
 
 
 def build_config(
