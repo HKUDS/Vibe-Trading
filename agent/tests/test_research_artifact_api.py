@@ -72,3 +72,17 @@ def test_api_reports_missing_and_invalid_research_artifacts(tmp_path, monkeypatc
     assert missing.status_code == 404
     assert invalid.status_code == 404
     assert blank.status_code == 422
+
+
+def test_api_refuses_unbounded_evidence_and_ids(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+
+    too_many = client.post("/api/research-artifacts", json=_payload(evidence=[{"source_uri": "u"}] * 1001))
+    too_large = client.post("/api/research-artifacts", json=_payload(evidence=[{"note": "x" * 1_000_001}]))
+    long_id = client.post("/api/research-artifacts", json=_payload(goal_id="g" * 201))
+    at_limit = client.post("/api/research-artifacts", json=_payload(evidence=[{"source_uri": "u"}] * 1000))
+
+    assert too_many.status_code == 422
+    assert too_large.status_code == 422
+    assert long_id.status_code == 422
+    assert at_limit.status_code == 201
