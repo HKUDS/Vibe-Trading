@@ -44,6 +44,7 @@ from backtest.metrics import (
     by_symbol_stats,
     calc_fill_turnover_series,
     calc_metrics,
+    entry_returns,
     period_returns,
 )
 from backtest.models import EquitySnapshot, FillRecord, Position, TradeRecord
@@ -365,6 +366,35 @@ def _align(
     pos = pos.div(scale, axis=0)
 
     return dates, close, close_val, pos, ret
+
+
+def _basket_entry_returns(
+    close_df: pd.DataFrame, data_map: Dict[str, pd.DataFrame], codes: List[str],
+) -> pd.DataFrame:
+    """Per-symbol returns of the equal-weight basket over the evaluated bars.
+
+    Each symbol is bought at the open of its first traded bar in the window
+    (``metrics.entry_returns``) and marked on the same close matrix the
+    strategy is valued against.
+
+    Args:
+        close_df: Evaluated close matrix from ``_align``.
+        data_map: code -> raw OHLCV DataFrame.
+        codes: Basket symbols, columns of ``close_df``.
+
+    Returns:
+        DataFrame of per-bar returns shaped like ``close_df[codes]``.
+    """
+    columns = {}
+    for code in codes:
+        frame = data_map[code]
+        index = frame.index if frame.index.unit == "ns" else frame.index.as_unit("ns")
+        raw = frame.set_axis(index).reindex(close_df.index)
+        opens = raw["open"] if "open" in raw.columns else None
+        columns[code] = entry_returns(
+            close_df[code], opens, raw["close"].notna(), label=f"benchmark basket {code}",
+        )
+    return pd.DataFrame(columns, index=close_df.index)
 
 
 def _load_optimizer(config: Dict[str, Any]) -> Optional[Callable]:
@@ -1027,7 +1057,11 @@ class BaseEngine(ABC):
             [s.equity for s in self.equity_snapshots],
             index=[s.timestamp for s in self.equity_snapshots],
         )
-        bench_ret = ret_df.mean(axis=1) if ret_df.shape[1] > 0 else pd.Series(0.0, index=dates)
+        # ret_df runs from each bar's previous close, so its first evaluated row
+        # starts at the last warm-up close. The basket instead buys each symbol
+        # at its first traded open in the window, as the strategy can.
+        basket_ret = _basket_entry_returns(close_df, data_map, list(ret_df.columns))
+        bench_ret = basket_ret.mean(axis=1) if basket_ret.shape[1] > 0 else pd.Series(0.0, index=dates)
         from backtest.benchmark import default_benchmark, resolve_benchmark
 
         basket_codes = list(ret_df.columns)
@@ -1048,7 +1082,7 @@ class BaseEngine(ABC):
             )
             window_return = result.total_return_over(dates) if result is not None else None
             if result is not None and window_return is not None:
-                bench_ret = bar_returns(result.close.reindex(dates), label=f"benchmark {result.ticker}")
+                bench_ret = result.returns_over(dates)
                 benchmark_metadata = {
                     "benchmark_kind": "external", "benchmark_label": result.ticker,
                     "benchmark_ticker": result.ticker, "benchmark_return": window_return,

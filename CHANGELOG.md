@@ -5,6 +5,25 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+#### Backtest runner, engines and metrics
+
+- **A benchmark is bought at the first evaluated open, the way the strategy
+  is**. Both start from cash before the first evaluated bar, and the engine
+  fills the strategy at a bar's open. The equal-weight basket ran instead from
+  each bar's previous close, so with a warm-up boundary (`evaluation_start_date`
+  or `warmup_bars`) it was credited with the move from the last warm-up close;
+  a declared external benchmark started at the first evaluated close and missed
+  that bar's move. Both now buy at the first evaluated open (each basket symbol
+  at its first traded open in the window, or that bar's close when it has no
+  usable open) and hold to the last close, so a fully invested strategy differs
+  from buy-and-hold on the first bar only by its costs. On a 20/60 SMA run on
+  AAPL.US over 2024-01-02..2025-12-31 the basket moves from 42.54% to 46.64%,
+  excess return from 22.53% to 18.43% and the information ratio from 0.236 to
+  0.172; strategy metrics are unchanged. Runs without a warm-up boundary also
+  move, by the first bar's open-to-close.
+
 ## [0.1.19] — 2026-11-05
 
 Rolls up 299 commits / 116 merged pull requests since 0.1.18, plus 21

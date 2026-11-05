@@ -9,13 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
 
 from backtest.engines._market_hooks import matched_market, strip_local_prefix
 from backtest.loaders.base import resample_bars, source_interval
 from backtest.loaders.registry import is_no_network_fallback_source
 from backtest.loaders.yfinance_loader import DataLoader as YfinanceLoader
-from backtest.metrics import bar_returns, buy_and_hold_return
+from backtest.metrics import bar_returns, buy_and_hold_return, entry_returns
 
 
 # -------------------------------------------------------------------
@@ -44,6 +45,7 @@ class BenchmarkResult:
     ret_series: pd.Series       # per-bar returns, index = timestamps
     total_ret: float          # total return over the FETCHED period
     close:      pd.Series       # benchmark closes, index = timestamps
+    open:       Optional[pd.Series] = None  # benchmark opens, same index
 
     def total_return_over(self, dates: pd.DatetimeIndex) -> Optional[float]:
         """Return the buy-and-hold return restricted to ``dates``.
@@ -54,9 +56,12 @@ class BenchmarkResult:
         the short window against a benchmark measured over the long one is the
         mismatched-window error the warm-up boundary exists to prevent (#1240).
 
-        Computed as a price relative rather than the compounded product of
-        ``ret_series``, which is the only form that stays honest once a price
-        series contains a non-positive prior close (#872).
+        The position is bought at the open of the first benchmark bar inside
+        the window, the price the engine fills the strategy at (see
+        ``metrics.entry_returns``), or at that bar's close when it has no
+        usable open. Computed as a price relative rather than the compounded
+        product of ``ret_series``, which is the only form that stays honest
+        once a price series contains a non-positive prior close (#872).
 
         Args:
             dates: The evaluated bar index.
@@ -68,7 +73,31 @@ class BenchmarkResult:
         window = self.close.reindex(dates).dropna()
         if len(window) < 2:
             return None
-        return buy_and_hold_return(window)
+        entry = self._entry_open(window.index[0])
+        if entry is None:
+            return buy_and_hold_return(window)
+        last = float(window.iloc[-1])
+        return last / entry - 1.0 if np.isfinite(last) else None
+
+    def returns_over(self, dates: pd.DatetimeIndex) -> pd.Series:
+        """Per-bar returns of the same position on the evaluated bar index.
+
+        Args:
+            dates: The evaluated bar index.
+
+        Returns:
+            Returns on ``dates`` whose compounded total equals
+            :meth:`total_return_over` while prices are positive.
+        """
+        close = self.close.reindex(dates)
+        opens = self.open.reindex(dates) if self.open is not None else None
+        return entry_returns(close, opens, label=f"benchmark {self.ticker}")
+
+    def _entry_open(self, timestamp: Any) -> Optional[float]:
+        if self.open is None or timestamp not in self.open.index:
+            return None
+        value = float(self.open.loc[timestamp])
+        return value if np.isfinite(value) and value > 0 else None
 
 
 def resolve_benchmark(
@@ -133,8 +162,9 @@ def resolve_benchmark(
     if total is None:
         return None
 
+    opens = bench_df["open"].reindex(close.index) if "open" in bench_df.columns else None
     return BenchmarkResult(
-        ticker=ticker, ret_series=ret_series, total_ret=total, close=close
+        ticker=ticker, ret_series=ret_series, total_ret=total, close=close, open=opens
     )
 
 

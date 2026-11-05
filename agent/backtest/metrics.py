@@ -312,6 +312,49 @@ def bar_returns(close: Any, *, label: str = "") -> Any:
     return ret.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
+def entry_returns(
+    close: pd.Series,
+    open_: Optional[pd.Series] = None,
+    traded: Optional[pd.Series] = None,
+    *,
+    label: str = "",
+) -> pd.Series:
+    """Per-bar returns of a position bought at the first traded bar's open.
+
+    A benchmark starts from cash at the same moment the strategy does, before
+    the first evaluated bar opens, and the earliest price it can buy at is that
+    bar's open -- the price the engine itself fills the strategy at. Grading it
+    from the previous close credits it with a move it could not have held
+    (with a warm-up boundary that close is a warm-up bar), and grading it from
+    the first close drops a move the strategy did hold.
+
+    Args:
+        close: Closes over the evaluated window; may carry a price through a
+            short gap.
+        open_: Opens on the same index. ``None``, NaN or a non-positive open
+            means the position is bought at that bar's close instead.
+        traded: Bars on which the instrument actually traded; defaults to
+            ``close.notna()``. The first of them is the entry bar.
+        label: Name for the non-positive-price warning in ``bar_returns``.
+
+    Returns:
+        Returns on ``close``'s index: 0.0 before the entry bar,
+        ``close / open - 1`` on it, then ``bar_returns`` from its close on.
+    """
+    ret = bar_returns(close, label=label)
+    traded = close.notna() if traded is None else traded.reindex(close.index).fillna(False).astype(bool)
+    if not traded.any():
+        return ret * 0.0
+    entry = int(np.argmax(traded.to_numpy()))
+    ret.iloc[:entry + 1] = 0.0
+    if open_ is not None:
+        entry_open = float(open_.reindex(close.index).iloc[entry])
+        entry_close = float(close.iloc[entry])
+        if np.isfinite(entry_open) and entry_open > 0 and np.isfinite(entry_close):
+            ret.iloc[entry] = entry_close / entry_open - 1.0
+    return ret
+
+
 def buy_and_hold_return(close: Any) -> Optional[float]:
     """Total buy-and-hold return as a price relative, not a compounded product.
 
