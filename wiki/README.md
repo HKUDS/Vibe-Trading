@@ -16,7 +16,24 @@ Open `http://localhost:8088/home/` for the landing page and these wiki sections:
 - `http://localhost:8088/alpha-library/`
 - `http://localhost:8088/research-lab/`
 
-Direct docs URLs such as `/docs/latest/getting-started/vibe-trading-overview` or `/docs/zh/…` are handled by Cloudflare Pages via `_redirects`. The simple Python preview server does not apply those rewrite rules, so use `/docs/` as the local entry point. Build the Alpha Library first (see below) or its zoo links fall through.
+Docs deep links are generated HTML files, served without the `.html` suffix by
+Cloudflare Pages. The simple Python preview server does not implement those
+routes; use `/docs/` with it, or preview the actual Pages runtime:
+
+```bash
+# From the repository root; Node >= 22.22
+npm ci --prefix tools/wiki
+npm test --prefix tools/wiki
+cd wiki
+../tools/wiki/node_modules/.bin/wrangler pages dev . --ip 127.0.0.1 --port 8088
+```
+
+The test command first generates the docs and sitemap, then checks every static
+document and sitemap URL, client navigation/language/history metadata, 404
+translations, and real local Pages responses (200, 301, 302 and 404). Its Pages
+process and D1 data are isolated and cleaned up after the tests. No deployment
+or Cloudflare login is needed. Build the Alpha Library separately (below) to
+preview its generated zoo and factor pages.
 
 ## One header, two languages
 
@@ -49,9 +66,11 @@ button switches the whole site and the choice is stored (`vibetrading-lang`).
   `<link rel="alternate" hreflang>` both ways): the tutorial
   (`vibe-trading-beginner.html` / `-zh.html`) and the research post. Opening
   one records its language; the button goes to the other file.
-- The docs are one shell: English at `/docs/latest/<page>` from
-  `docs/content.en.js`, Chinese at `/docs/zh/<page>` from
-  `docs/content.zh.js`.
+- The docs have static English pages at `/docs/latest/<page>` from
+  `docs/content.en.js` and Chinese pages at `/docs/zh/<page>` from
+  `docs/content.zh.js`. The client router uses those same sources, and
+  `docs/metadata.js` keeps canonical URLs and JSON-LD consistent across static
+  generation, in-page navigation, language switching and browser history.
 
 ```bash
 node wiki/scripts/check_docs_parity.mjs   # docs: same pages and sections in both languages
@@ -81,8 +100,17 @@ python wiki/scripts/build_alpha_library.py --clean
 - Output directory: `.`
 - Custom domain: `vibetrading.wiki`
 
-The pages are static and need no build step; the deploy workflow only
-generates the Alpha Library (above). The only dynamic piece is a small
+The deploy workflow generates the Alpha Library, prerenders the docs and
+regenerates `sitemap.xml` before uploading. The PR Wiki workflow runs the
+generation and route checks too. Top-level `404.html` disables Pages' default
+SPA fallback; missing URLs must return HTTP 404, while `/docs/latest` and
+`/docs/latest/` redirect to the English overview, `/docs/zh` and `/docs/zh/`
+redirect to the Chinese overview, and `/docs/0.1.7/*` redirects permanently to
+the matching latest document. After an authorized deploy, verify the production
+robots/sitemap MIME types, missing-path status and a docs page's raw body and
+canonical; a local pass alone does not prove the deployed response.
+
+The only dynamic piece is a small
 analytics layer in `functions/` (Cloudflare Pages Functions): `_middleware.js`
 classifies each page request as AI-agent / bot / human by User-Agent and counts
 it into a D1 database (`vibetrading-analytics`, binding `DB`), and

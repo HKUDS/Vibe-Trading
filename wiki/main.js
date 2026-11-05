@@ -1,4 +1,4 @@
-import { initSite } from "/site.js?v=20261101";
+import { initSite } from "/site.js?v=20261105";
 
 // Home page install tabs; a no-op on pages without them.
 function initInstallTabs() {

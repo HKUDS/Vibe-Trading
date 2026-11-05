@@ -1,13 +1,12 @@
-import { initSite, setPageLang, storedLang } from "/site.js?v=20261101";
+import { initSite, setPageLang, storedLang } from "/site.js?v=20261105";
+import { DOCS_SITE as SITE, buildDocMetadata, serializeStructuredData } from "./metadata.js?v=20261105";
 import {
   DOCS_DEFAULT_LANG,
   DOCS_DEFAULT_PAGE,
   DOCS_LANGUAGES,
   DOCS_UI,
   DOCS_VERSIONS
-} from "/docs/content.js?v=20261101";
-
-const SITE = "https://vibetrading.wiki";
+} from "/docs/content.js?v=20261105";
 
 function stripTags(html) {
   return String(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
@@ -82,20 +81,28 @@ function setAlternate(hreflang, href) {
 
 function setMeta(page, lang) {
   const ui = DOCS_UI[lang];
-  const title = `${page.title} - ${ui.siteTitle}`;
-  const description = page.description || page.lead;
+  const { title, description, canonical, structuredData } = buildDocMetadata(
+    page, { ...DOCS_LANGUAGES[lang], siteTitle: ui.siteTitle },
+  );
   document.title = title;
   document.querySelector('meta[name="description"]')?.setAttribute("content", description);
   document.querySelector('meta[property="og:title"]')?.setAttribute("content", title);
   document.querySelector('meta[property="og:description"]')?.setAttribute("content", description);
   document.querySelector('meta[property="og:site_name"]')?.setAttribute("content", ui.siteTitle);
-  const canonical = `${SITE}${canonicalPath(page.id, lang)}`;
   document.querySelector('meta[property="og:url"]')?.setAttribute("content", canonical);
   document.querySelector("link[rel='canonical']")?.setAttribute("href", canonical);
   for (const [code, meta] of Object.entries(DOCS_LANGUAGES)) {
     setAlternate(meta.htmlLang, `${SITE}${canonicalPath(page.id, code)}`);
   }
   setAlternate("x-default", `${SITE}${canonicalPath(page.id, DOCS_DEFAULT_LANG)}`);
+  let structured = document.getElementById("docs-structured-data");
+  if (!structured) {
+    structured = document.createElement("script");
+    structured.id = "docs-structured-data";
+    structured.type = "application/ld+json";
+    document.head.appendChild(structured);
+  }
+  structured.textContent = serializeStructuredData(structuredData);
 }
 
 function applyChrome(lang) {

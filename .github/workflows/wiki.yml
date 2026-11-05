@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "wiki/**"
+      - "tools/wiki/**"
       - ".github/workflows/wiki.yml"
   pull_request:
     branches: [main]
     paths:
       - "wiki/**"
+      - "tools/wiki/**"
       - ".github/workflows/wiki.yml"
 
 jobs:
@@ -38,6 +40,15 @@ jobs:
           node --check wiki/docs/content.en.js
           node --check wiki/docs/content.zh.js
           node --check wiki/docs/main.js
+          node --check wiki/docs/metadata.js
+          node --check wiki/scripts/prerender_docs.mjs
+          node --check wiki/scripts/gen_sitemap.mjs
+
+      - name: Install wiki check dependencies
+        run: npm ci --prefix tools/wiki --no-audit --no-fund
+
+      - name: Generate docs and verify metadata, languages and actual Pages routes
+        run: npm test --prefix tools/wiki
 
       - name: Check English and Chinese docs match
         run: node wiki/scripts/check_docs_parity.mjs

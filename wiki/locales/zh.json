@@ -106,5 +106,12 @@
   "home.term.result": "<span class=\"ok\">收益</span> +18.6% <span class=\"warn\">最大回撤</span> -7.4%",
   "home.term.workers": "成员：宏观、量化、风控、催化剂",
   "home.term.report": "<span class=\"ok\">报告</span>已保存，附证据、指标和注意事项",
-  "lab.gtja.date": "2026-05-17 · 2026-09-29 修订"
+  "lab.gtja.date": "2026-05-17 · 2026-09-29 修订",
+  "notFound.title": "页面未找到 | Vibe-Trading Wiki",
+  "notFound.description": "此网址不属于 Vibe-Trading Wiki。请从文档、教程、因子库或研究室继续浏览。",
+  "notFound.socialTitle": "页面未找到",
+  "notFound.heading": "此页面不存在",
+  "notFound.intro": "此网址不属于本站，你可以从以下入口继续浏览：",
+  "notFound.docsHint": "安装、配置和运行",
+  "notFound.sourcePrompt": "在找源代码？"
 }

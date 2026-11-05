@@ -37,6 +37,9 @@ WIKI = Path(__file__).resolve().parents[1]
 PARTIALS = WIKI / "partials"
 BLOCKS = ("site-head", "site-header", "site-footer")
 SECTIONS = {
+    # ``404.html`` has no section of its own; highlighting Home is the least
+    # surprising choice on a page whose job is to send the reader somewhere real.
+    "404.html": "home",
     "home": "home",
     "docs": "docs",
     "tutorials": "tutorials",

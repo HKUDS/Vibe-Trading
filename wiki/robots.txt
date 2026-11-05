@@ -1,0 +1,43 @@
+# vibetrading.wiki — robots policy
+# 2026-10-29: first real robots.txt. Before this file every path (including
+# this one) returned the 419-byte SPA shell with HTTP 200.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# AI crawlers are explicitly welcome: the wiki is meant to be cited.
+# Keep this list in sync with the agent regex in functions/_middleware.js.
+User-agent: GPTBot
+Allow: /
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /api/
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /api/
+
+User-agent: CCBot
+Allow: /
+Disallow: /api/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /api/
+
+Sitemap: https://vibetrading.wiki/sitemap.xml
