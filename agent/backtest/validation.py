@@ -60,6 +60,11 @@ def monte_carlo_test(
 
     pnls = np.array([t.pnl for t in trades])
     actual = _path_metrics(pnls, initial_capital)
+    if "error" in actual:
+        return {
+            "error": actual["error"],
+            "p_value_sharpe": 1.0,
+        }
 
     rng = np.random.default_rng(seed)
     sharpe_count = 0
@@ -75,6 +80,11 @@ def monte_carlo_test(
         if sim_equities is not None:
             sim_equities[i] = initial_capital + np.cumsum(shuffled)
         sim = _path_metrics(shuffled, initial_capital)
+        if "error" in sim:
+            # A permutation that drives equity non-positive makes its
+            # percentage metrics undefined; per the same rule as the
+            # observed path, refuse rather than ranking inverted numbers.
+            return {"error": f"simulated path: {sim['error']}", "p_value_sharpe": 1.0}
         sim_sharpes.append(sim["sharpe"])
         if sim["sharpe"] >= actual["sharpe"]:
             sharpe_count += 1
@@ -114,19 +124,32 @@ def monte_carlo_test(
     return result
 
 
-def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, float]:
+def _path_metrics(pnls: np.ndarray, initial_capital: float) -> Dict[str, Any]:
     """Compute Sharpe and max drawdown from a PnL sequence."""
     equity = initial_capital + np.cumsum(pnls)
+    # Percentage-return metrics are only defined for strictly positive
+    # equity. A leveraged/short book can drive equity to zero or below,
+    # which flips the sign of pct-change returns and drawdowns (a loss
+    # from -50 to -75 reads as +50%); refuse instead of reporting
+    # inverted numbers.
+    if np.any(equity <= 0):
+        first_bad = int(np.argmax(equity <= 0))
+        return {
+            "error": (
+                "percentage-based metrics require a strictly positive equity "
+                f"path; equity reaches {equity[first_bad]:.2f} at step {first_bad + 1}"
+            )
+        }
     if len(equity) > 1:
         prev = equity[:-1]
         diff = np.diff(equity)
-        returns = np.where(prev != 0, diff / np.where(prev != 0, prev, 1.0), 0.0)
+        returns = diff / prev
     else:
         returns = np.array([0.0])
     std = returns.std()
     sharpe = float(returns.mean() / (std + 1e-10) * np.sqrt(252))
     peak = np.maximum.accumulate(equity)
-    dd = (equity - peak) / np.where(peak > 0, peak, 1.0)
+    dd = (equity - peak) / peak
     max_dd = float(dd.min())
     return {"sharpe": sharpe, "max_dd": max_dd}
 
@@ -166,6 +189,15 @@ def bootstrap_sharpe_ci(
     if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
         return {"error": f"seed must be >= 0, got {seed}"}
 
+    if (equity_curve <= 0).any():
+        first_bad = int(np.argmax((equity_curve <= 0).values))
+        return {
+            "error": (
+                "percentage-based Sharpe requires a strictly positive equity "
+                f"path; equity reaches {equity_curve.iloc[first_bad]:.2f} at "
+                f"{equity_curve.index[first_bad]}"
+            )
+        }
     returns = equity_curve.pct_change().replace([np.inf, -np.inf], 0.0).dropna().values
     if len(returns) < 5:
         return {"error": "need at least 5 return observations"}
@@ -229,6 +261,15 @@ def walk_forward_analysis(
         return {"error": f"n_windows must be >= 1, got {n_windows}"}
     if len(equity_curve) < n_windows * 2:
         return {"error": f"need at least {n_windows * 2} bars for {n_windows} windows"}
+    if (equity_curve <= 0).any():
+        first_bad = int(np.argmax((equity_curve <= 0).values))
+        return {
+            "error": (
+                "percentage-based metrics require a strictly positive equity "
+                f"path; equity reaches {equity_curve.iloc[first_bad]:.2f} at "
+                f"{equity_curve.index[first_bad]}"
+            )
+        }
 
     indices = equity_curve.index
     window_size = len(indices) // n_windows

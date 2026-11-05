@@ -452,3 +452,70 @@ class TestBarsPerYearNone:
             bars_per_year=None,
         )
         assert "bootstrap" in result
+
+
+# ---------------------------------------------------------------------------
+# Non-positive equity paths (issue #2160)
+# ---------------------------------------------------------------------------
+
+
+class TestNonPositiveEquity:
+    """Leveraged/short books can drive equity to zero or below; percentage
+    metrics invert there (a loss from -50 to -75 reads as +50%), so every
+    validation entry point must refuse with an explicit error instead."""
+
+    NEG_EQ = pd.Series(
+        [100, 90, 80, -50, -75, -100],
+        index=pd.bdate_range("2025-01-01", periods=6),
+    )
+
+    def test_walk_forward_rejects_negative_equity(self) -> None:
+        result = walk_forward_analysis(self.NEG_EQ, [], n_windows=2)
+        assert "error" in result
+        assert "strictly positive" in result["error"]
+        # The inverted numbers from the issue must not appear anywhere.
+        assert "windows" not in result
+
+    def test_bootstrap_rejects_negative_equity(self) -> None:
+        result = bootstrap_sharpe_ci(self.NEG_EQ)
+        assert "error" in result
+        assert "strictly positive" in result["error"]
+        assert "observed_sharpe" not in result
+
+    def test_monte_carlo_rejects_negative_actual_path(self) -> None:
+        trades = _make_trades([-150.0, 30.0, 30.0, 30.0])
+        result = monte_carlo_test(trades, 100.0)
+        assert "error" in result
+        assert "strictly positive" in result["error"]
+        assert result["p_value_sharpe"] == 1.0
+
+    def test_monte_carlo_rejects_negative_simulated_path(self) -> None:
+        # As-given order stays positive (180 → 220); any permutation that
+        # puts the -120 first drives equity to -20, which must abort the run
+        # with an explicit error (~25% of shuffles, so the 200-sim run hits
+        # one within the first few permutations).
+        trades = _make_trades([80.0, 80.0, 80.0, -120.0])
+        result = monte_carlo_test(trades, 100.0, n_simulations=200)
+        assert "error" in result
+        assert "simulated path" in result["error"]
+        assert result["p_value_sharpe"] == 1.0
+
+    def test_zero_equity_point_is_rejected_too(self) -> None:
+        equity = pd.Series(
+            [100, 90, 0, 95, 105, 110],
+            index=pd.bdate_range("2025-01-01", periods=6),
+        )
+        result = walk_forward_analysis(equity, [], n_windows=2)
+        assert "error" in result
+        assert "strictly positive" in result["error"]
+
+    def test_positive_paths_still_pass(self) -> None:
+        equity = pd.Series(
+            [100, 105, 110, 108, 112, 115, 118, 116, 120, 125],
+            index=pd.bdate_range("2025-01-01", periods=10),
+        )
+        wf = walk_forward_analysis(equity, [], n_windows=2)
+        assert "error" not in wf
+        assert wf["windows"][0]["return"] == 0.12
+        bs = bootstrap_sharpe_ci(equity)
+        assert "error" not in bs
