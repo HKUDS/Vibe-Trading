@@ -43,8 +43,10 @@ def compute(panel: dict) -> pd.DataFrame:
     # rank() is a percentile in (0, 1], so the report's power is real even when
     # the 5-day close change is negative. Dropping the sign of that change
     # turned 0.5 ** -2 into 0.25 instead of 4.
-    out_arr = np.power(
-        base.to_numpy(dtype=float, na_value=np.nan),
-        expo.to_numpy(dtype=float, na_value=np.nan),
-    )
+    base_arr = base.to_numpy(dtype=float, na_value=np.nan)
+    expo_arr = expo.to_numpy(dtype=float, na_value=np.nan)
+    out_arr = np.power(base_arr, expo_arr)
+    # IEEE pow returns 1 for NaN ** 0 and 1 ** NaN, which would turn an
+    # incomplete 15-bar VWAP window or 5-bar close change into a signal.
+    out_arr[np.isnan(base_arr) | np.isnan(expo_arr)] = np.nan
     return pd.DataFrame(out_arr, index=c.index, columns=c.columns)
