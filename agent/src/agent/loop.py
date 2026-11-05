@@ -662,7 +662,7 @@ class AgentLoop(ToolCallLifecycle):
                                 "iter": current_iter,
                             }
                         )
-                        messages.append({"role": "system", "content": pending_directive})
+                        messages.append({"role": "user", "content": f"<system>{pending_directive}</system>"})
 
                 stream = TurnStream(
                     grounding=self._grounding, emit=self._emit, iteration=current_iter,
@@ -911,11 +911,11 @@ class AgentLoop(ToolCallLifecycle):
                         consecutive_empty_responses += 1
                         messages.append(
                             {
-                                "role": "system",
+                                "role": "user",
                                 "content": (
-                                    "[SYSTEM] Your previous response was empty (no text, no tool "
+                                    "<system>Your previous response was empty (no text, no tool "
                                     "calls). Respond again with either your next tool call or "
-                                    "your final plain-text answer."
+                                    "your final plain-text answer.</system>"
                                 ),
                             }
                         )
@@ -947,11 +947,11 @@ class AgentLoop(ToolCallLifecycle):
                         messages.append({"role": "assistant", "content": final_content})
                         messages.append(
                             {
-                                "role": "system",
+                                "role": "user",
                                 "content": (
-                                    "[SYSTEM] Your previous response was not released: it contained "
+                                    "<system>Your previous response was not released: it contained "
                                     "tool-call syntax even though tool calling is unavailable now. "
-                                    "Provide the final answer as plain prose only, with no XML/DSML tags."
+                                    "Provide the final answer as plain prose only, with no XML/DSML tags.</system>"
                                 ),
                             }
                         )

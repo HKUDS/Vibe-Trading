@@ -234,12 +234,18 @@ def test_single_empty_response_recovers_with_nudge(
     assert result["status"] == "success"
     assert result["content"] == "Finally."
     assert llm.calls == 2
-    system_msgs = [
+    nudge_msgs = [
         m for m in llm.messages_history[1]
-        if "[SYSTEM]" in str(m.get("content", ""))
+        if "<system>" in str(m.get("content", ""))
         and "empty" in str(m.get("content", "")).casefold()
     ]
-    assert len(system_msgs) == 1
+    assert len(nudge_msgs) == 1
+    # Regression for #2115: the mid-run nudge must not use the system role.
+    # langchain-anthropic rejects a second, non-leading system message with
+    # "Received multiple non-consecutive system messages", so a transient
+    # empty reply must retry through a user message, matching the steering
+    # messages moved in #1109/#1112.
+    assert nudge_msgs[0].get("role") == "user"
 
 def test_auto_compact_summary_hard_deadline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
