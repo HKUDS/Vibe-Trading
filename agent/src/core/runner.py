@@ -340,7 +340,9 @@ _RUNTIME_ENV_KEYS = frozenset(
     | _PROXY_ENV_KEYS
 )
 
-_RUNTIME_ENV_PREFIXES = ("LC_",)
+# MARKET_DATA_ORDER_<market> is the non-secret source-priority setting read by
+# backtest/loaders/registry.py; it used to reach the child only via load_dotenv.
+_RUNTIME_ENV_PREFIXES = ("LC_", "MARKET_DATA_ORDER_")
 
 
 def _is_runtime_env_key_allowed(key: str) -> bool:
@@ -598,6 +600,7 @@ class Runner:
         *,
         cwd: Path | None = None,
         cli_args: list[str] | None = None,
+        pythonpath: Path | None = None,
     ) -> RunResult:
         """Run entry script and collect logs and artifacts.
 
@@ -606,6 +609,9 @@ class Runner:
             run_dir: Current run directory.
             cwd: Working directory for subprocess (default: entry_script.parent).
             cli_args: Additional CLI arguments appended to subprocess command.
+            pythonpath: Directory prepended to PYTHONPATH (default: ``cwd``).
+                Lets the child import project code while its working directory
+                is the run dir, so relative reads cannot reach ``agent/.env``.
 
         Returns:
             RunResult object with process output and discovered artifacts.
@@ -620,7 +626,7 @@ class Runner:
         console.print("[dim]Runner: starting backtest subprocess...[/dim]")
 
         effective_cwd = cwd or entry_script.parent
-        pythonpath_extra = cwd if cwd else None
+        pythonpath_extra = pythonpath or cwd
         env = self._build_runtime_env(run_dir, pythonpath_extra=pythonpath_extra)
         python_cmd = self._pick_python_interpreter()
         console.print(f"[dim]Runner: using Python: {python_cmd}[/dim]")

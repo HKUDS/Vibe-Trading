@@ -32,6 +32,7 @@ from typing import Any, Mapping
 import requests
 
 from src.config.paths import get_runtime_root
+from src.trading.endpoint_policy import is_broker_url
 
 CONFIG_FILENAME = "toss.json"
 DEFAULT_BASE_URL = "https://openapi.tossinvest.com"
@@ -90,8 +91,8 @@ class TossConfig:
         if profile not in PROFILE_ENVIRONMENTS:
             raise TossConfigError("profile must be 'paper', 'live-readonly' or 'live'")
         base_url = str(payload.get("base_url") or DEFAULT_BASE_URL).strip().rstrip("/")
-        if not base_url.startswith(("http://", "https://")):
-            raise TossConfigError("base_url must start with http:// or https://")
+        if not is_broker_url(base_url, ("tossinvest.com",)):
+            raise TossConfigError(f"base_url must be an https URL on tossinvest.com, got {base_url!r}")
         return cls(
             client_id=str(payload.get("client_id") or "").strip(),
             client_secret=str(payload.get("client_secret") or "").strip(),

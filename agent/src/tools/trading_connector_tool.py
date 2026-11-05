@@ -18,6 +18,7 @@ from src.trading.profiles import (
     profile_by_id,
     save_selected_profile_id,
 )
+from src.trading.endpoint_policy import is_local_gateway_host
 from src.trading.onboarding import onboarding_dict
 from src.trading.service import (
     cancel_close_order,
@@ -58,7 +59,23 @@ def _connection(value: Any) -> str | None:
 
 
 class InvalidTradingArgument(ValueError):
-    """A numeric trading argument was supplied but is malformed or non-finite."""
+    """A trading argument was supplied but is malformed, non-finite or not allowed."""
+
+
+def _local_gateway_host(value: Any) -> str | None:
+    """Accept a model-supplied ``host`` only when it names a local gateway.
+
+    The argument exists for local TWS/OpenD gateways. Any other value would
+    let a prompt-injected call redirect signed broker requests (API key and
+    passphrase headers) to an attacker's server. Saved connection endpoints
+    are the user's own and are not limited by this check.
+    """
+    host = _connection(value)
+    if host is not None and not is_local_gateway_host(host):
+        raise InvalidTradingArgument(
+            f"host must be a local gateway (localhost, a private IP, host.docker.internal or *.local), got {_brief(host)}"
+        )
+    return host
 
 
 def _brief(value: Any) -> str:
@@ -213,7 +230,7 @@ def _overrides(kwargs: dict[str, Any]) -> dict[str, Any]:
     """
     return {
         "connection_id": _connection(kwargs.get("connection_id")),
-        "host": _connection(kwargs.get("host")),
+        "host": _local_gateway_host(kwargs.get("host")),
         "port": _int_or_none(kwargs.get("port"), "port"),
         "client_id": _int_or_none(kwargs.get("client_id"), "client_id"),
         "account": _connection(kwargs.get("account")),

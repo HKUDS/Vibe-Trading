@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 from urllib.request import getproxies
 
 from src.config.paths import get_runtime_root
+from src.trading.endpoint_policy import is_broker_url
 from src.trading.connectors.binance.shaping import (
     as_iter as _as_iter,
     nonzero_balances as _nonzero_balances,
@@ -100,13 +101,18 @@ class BinanceConfig:
             raise BinanceConfigError(
                 "observation_absolute_tolerance must be non-negative and finite"
             )
+        testnet_host = str(payload.get("testnet_host") or DEFAULT_TESTNET_HOST).strip()
+        if not is_broker_url(testnet_host, ("binance.vision", "binancefuture.com", "binance.com")):
+            raise BinanceConfigError(
+                f"testnet_host must be an https URL on a Binance domain, got {testnet_host!r}"
+            )
         return cls(
             api_key=str(payload.get("api_key") or "").strip(),
             api_secret=str(payload.get("api_secret") or "").strip(),
             profile=profile,
             market_type=market_type,
             observation_absolute_tolerance=tolerance,
-            testnet_host=str(payload.get("testnet_host") or DEFAULT_TESTNET_HOST).strip(),
+            testnet_host=testnet_host,
             timeout=float(payload.get("timeout") or 15.0),
             readonly=bool(payload.get("readonly", True)),
         )

@@ -395,7 +395,7 @@ def _recv(conn: Any, budget: float) -> Any:
     try:
         return conn.recv()
     except Exception:
-        # EOFError/OSError/unpickling: a dead or corrupt child is a crash.
+        # EOFError/OSError/bad JSON line: a dead or corrupt child is a crash.
         return _EOF
 
 
@@ -406,6 +406,14 @@ class _StrategyDayFailure(RuntimeError):
         super().__init__(f"strategy execution failed on {day}")
         self.day = day
         self.class_name = class_name
+
+
+def _child_failure(msg: tuple[Any, ...], fallback_day: str) -> _StrategyDayFailure:
+    # ("error", day, class name) from an untrusted child: a malformed one is a
+    # protocol break, never an IndexError in the parent.
+    if len(msg) == 3 and isinstance(msg[1], str) and isinstance(msg[2], str):
+        return _StrategyDayFailure(msg[1], msg[2][:200])
+    return _StrategyDayFailure(fallback_day, StrategyProcessError.__name__)
 
 
 class _UniverseViolation(RuntimeError):
@@ -448,7 +456,7 @@ def _execute_days(
         if msg is _TIMEOUT:
             raise _StrategyDayFailure(days[0], None)
         if msg is not _EOF and msg[0] == "error":
-            raise _StrategyDayFailure(msg[1], msg[2])
+            raise _child_failure(msg, days[0])
         if msg is _EOF or msg[0] != "ready":
             raise _StrategyDayFailure(days[0], StrategyProcessError.__name__)
         def provide_orders(day: str, state: AccountState) -> tuple[StrategyOrder, ...]:
@@ -464,10 +472,18 @@ def _execute_days(
             if msg is _EOF:
                 raise _StrategyDayFailure(day, StrategyProcessError.__name__)
             if msg[0] == "error":
-                raise _StrategyDayFailure(msg[1], msg[2])
-            if msg[0] != "day" or msg[1] != day:
+                raise _child_failure(msg, day)
+            if msg[0] != "day" or len(msg) != 3 or msg[1] != day or not isinstance(msg[2], list):
                 raise _StrategyDayFailure(day, StrategyProcessError.__name__)
-            orders = tuple(StrategyOrder(**item) for item in msg[2])
+            # The child runs untrusted code: re-parse every order here rather
+            # than trusting the shape it claims to have validated.
+            try:
+                orders = tuple(
+                    StrategyOrder(**_convert_order(item, day, index))
+                    for index, item in enumerate(msg[2])
+                )
+            except StrategyOrderError as exc:
+                raise _StrategyDayFailure(day, StrategyOrderError.__name__) from exc
             if allowed_five is not None:
                 outside = sorted({order.symbol for order in orders} - allowed_five)
                 if outside:

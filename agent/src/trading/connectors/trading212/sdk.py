@@ -23,6 +23,7 @@ from urllib.parse import urljoin
 import requests
 
 from src.config.paths import get_runtime_root
+from src.trading.endpoint_policy import is_broker_url
 
 CONFIG_FILENAME = "trading212.json"
 DEFAULT_BASE_URL = "https://live.trading212.com"
@@ -77,8 +78,8 @@ class Trading212Config:
         if profile not in PROFILE_ENVIRONMENTS:
             raise Trading212ConfigError("profile must be 'paper', 'live-readonly' or 'live'")
         base_url = str(payload.get("base_url") or DEFAULT_BASE_URL).strip().rstrip("/")
-        if not base_url.startswith(("http://", "https://")):
-            raise Trading212ConfigError("base_url must start with http:// or https://")
+        if not is_broker_url(base_url, ("trading212.com",)):
+            raise Trading212ConfigError(f"base_url must be an https URL on trading212.com, got {base_url!r}")
         return cls(
             api_key=str(payload.get("api_key") or "").strip(),
             api_secret=str(payload.get("api_secret") or "").strip(),

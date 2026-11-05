@@ -24,6 +24,7 @@ from types import ModuleType
 from typing import Any, Mapping
 
 from src.config.paths import get_runtime_root
+from src.trading.endpoint_policy import is_broker_url
 
 CONFIG_FILENAME = "okx.json"
 
@@ -81,12 +82,15 @@ class OKXConfig:
         profile = str(payload.get("profile") or "paper").strip().lower()
         if profile not in PROFILE_ENVIRONMENTS:
             raise OKXConfigError("profile must be 'paper', 'live-readonly' or 'live'")
+        host = str(payload.get("host") or DEFAULT_HOST).strip()
+        if not is_broker_url(host, ("okx.com",)):
+            raise OKXConfigError(f"host must be an https URL on okx.com, got {host!r}")
         return cls(
             api_key=str(payload.get("api_key") or "").strip(),
             api_secret=str(payload.get("api_secret") or "").strip(),
             passphrase=str(payload.get("passphrase") or "").strip(),
             profile=profile,
-            host=str(payload.get("host") or DEFAULT_HOST).strip(),
+            host=host,
             expected_uid=str(payload.get("expected_uid") or "").strip(),
             timeout=float(payload.get("timeout") or 15.0),
             readonly=bool(payload.get("readonly", True)),

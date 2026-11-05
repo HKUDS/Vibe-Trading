@@ -83,6 +83,31 @@ def _sdk_config(
     module: Any,
     overrides: dict[str, Any],
 ) -> Any:
+    """Build an SDK config and refuse one whose environment differs from the profile's.
+
+    Connector override keys include ``profile`` (CLI convenience), and the
+    paper branches of :func:`place_order` / :func:`_route_sdk_write` skip the
+    mandate gate. Without this check a caller passing ``profile="live"`` to a
+    paper profile would reach the live host ungated.
+
+    Raises:
+        ValueError: If the resolved config targets a different environment.
+    """
+    config = _resolve_sdk_config(profile, module, overrides)
+    environment = getattr(config, "environment", profile.environment)
+    if environment != profile.environment:
+        raise ValueError(
+            f"profile '{profile.id}' is {profile.environment} but the resolved "
+            f"connector config targets {environment}; refusing"
+        )
+    return config
+
+
+def _resolve_sdk_config(
+    profile: TradingProfile,
+    module: Any,
+    overrides: dict[str, Any],
+) -> Any:
     """Build an SDK config, preferring one connection's OS-vault credentials.
 
     A connection-scoped call never receives raw credentials from MCP or Web

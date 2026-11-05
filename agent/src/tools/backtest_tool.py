@@ -251,7 +251,10 @@ def run_backtest(run_dir: str) -> str:
         result = runner.execute(
             entry_script,
             run_path,
-            cwd=agent_root,
+            # cwd is the run dir, never agent_root: generated code may open()
+            # relative literal paths, and agent_root holds .env.
+            cwd=run_path,
+            pythonpath=agent_root,
             cli_args=[str(run_path)],
         )
     except subprocess.TimeoutExpired as exc:

@@ -580,9 +580,30 @@ def _reject_forbidden_open(node: ast.Call) -> None:
     path_node = node.args[0] if node.args else None
     if not (isinstance(path_node, ast.Constant) and isinstance(path_node.value, str)):
         raise ValueError(f"open() with a non-literal path {_SCRUB_MSG}")
-    path = path_node.value
-    if path.startswith(("/", "~", "\\")) or ".." in path or (len(path) > 1 and path[1] == ":"):
-        raise ValueError(f"open() with a non-relative path {path!r} {_SCRUB_MSG}")
+    if not _is_relative_literal_path(path_node.value):
+        raise ValueError(f"open() with a non-relative path {path_node.value!r} {_SCRUB_MSG}")
+
+
+def _is_relative_literal_path(path: str) -> bool:
+    """Return True for a literal path that stays under the child's cwd (the run dir)."""
+    return not (
+        path.startswith(("/", "~", "\\")) or ".." in path or (len(path) > 1 and path[1] == ":")
+    )
+
+
+def _is_relative_literal_path_ctor(node: ast.AST) -> bool:
+    """Return True for ``Path("<relative literal>")`` / ``pathlib.Path(...)`` / ``PurePath(...)``."""
+    if not (isinstance(node, ast.Call) and len(node.args) == 1 and not node.keywords):
+        return False
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+    arg = node.args[0]
+    return (
+        name in {"Path", "PurePath"}
+        and isinstance(arg, ast.Constant)
+        and isinstance(arg.value, str)
+        and _is_relative_literal_path(arg.value)
+    )
 
 
 def _reject_forbidden_pathlib_write(node: ast.Call) -> None:
@@ -611,10 +632,18 @@ def _reject_forbidden_pathlib_write(node: ast.Call) -> None:
         return
     if func.attr in {"write_text", "write_bytes"}:
         raise ValueError(f"Writing files via .{func.attr}() {_SCRUB_MSG}")
-    if func.attr != "open":
+    if func.attr not in {"open", "read_text", "read_bytes"}:
         return
     if isinstance(func.value, ast.Name) and func.value.id in {"io", "os"}:
         return  # module-level open(path, mode) — _reject_forbidden_open owns it
+    # Reads get the same rule as open(): only Path("<relative literal>"), which
+    # resolves under the run dir. Path(__file__).parents[2] / ".env" is refused.
+    if not _is_relative_literal_path_ctor(func.value):
+        raise ValueError(
+            f"Reading files via .{func.attr}() on anything but Path('<relative literal>') {_SCRUB_MSG}"
+        )
+    if func.attr != "open":
+        return
     # A BOUND ``.open()`` takes the mode first: the receiver is not an argument,
     # so the index is 0 here where the module-level form uses 1.
     mode_node: ast.AST | None = node.args[0] if node.args else None
@@ -1442,18 +1471,12 @@ def main(run_dir: Path) -> None:
             file is read so an arbitrary filesystem location cannot be used
             to source ``code/signal_engine.py``.
     """
-    # Loading `.env` belongs to the process that RUNS a backtest, not to
-    # importing this module. At import time it ran during pytest collection --
-    # before the per-test os.environ snapshot exists -- so a developer's own
-    # LANGCHAIN_MODEL_NAME leaked into every later test and could not be undone
-    # by any fixture, which is how seven redaction tests failed locally while
-    # CI (with no .env checked out) stayed green.
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-    except ImportError:
-        pass
+    # Deliberately NO load_dotenv() here. This process executes LLM-generated
+    # strategy code, and src/core/runner.py hands it an allowlisted environment
+    # (_copy_runtime_env). Re-reading agent/.env would put every LLM, broker and
+    # API key back into os.environ for that code to read. The parent already
+    # forwards the data keys loaders need; a manual
+    # ``python -m backtest.runner`` run takes them from the shell environment.
 
     # Guard the CLI entry point with the same root whitelist the MCP
     # ``backtest`` tool already uses (src/tools/backtest_tool.py:23). Without
