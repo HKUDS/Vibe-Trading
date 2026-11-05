@@ -41,7 +41,7 @@ function pctFmt(v: number): string {
 }
 
 function MonteCarloSection({ mc }: { mc: NonNullable<ValidationData["monte_carlo"]> }) {
-  if (mc.error) return <p className="text-sm text-muted-foreground">{mc.error}</p>;
+  if ("error" in mc) return <p className="text-sm text-muted-foreground">{mc.error}</p>;
   const sig = mc.p_value_sharpe < 0.05;
   return (
     <div className="space-y-3">

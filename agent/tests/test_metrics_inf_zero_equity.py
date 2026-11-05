@@ -87,11 +87,10 @@ def test_path_metrics_no_inf_on_zero_equity() -> None:
 
 
 def test_path_metrics_no_inf_when_equity_hits_zero() -> None:
-    """Equity hitting exactly zero must not produce inf returns."""
+    """Equity hitting zero has no defined percentage path metrics."""
     pnls = np.array([100.0, -10100.0, 5000.0])  # equity: 10000, 10100, 0, 5000
     m = _path_metrics(pnls, initial_capital=10000.0)
-    assert np.isfinite(m["sharpe"]), f"sharpe is not finite: {m['sharpe']}"
-    assert np.isfinite(m["max_dd"]), f"max_dd is not finite: {m['max_dd']}"
+    assert m is None
 
 
 # --------------------------------------------------------------------------- #
@@ -135,6 +134,4 @@ def test_monte_carlo_no_inf_when_trades_blow_up_account() -> None:
     """Monte Carlo must not produce inf when trades push equity through zero."""
     trades = [_trade(100.0), _trade(-10100.0), _trade(5000.0), _trade(50.0)]
     result = monte_carlo_test(trades, initial_capital=10000.0, n_simulations=50, seed=42)
-    assert np.isfinite(result["actual_sharpe"]), f"actual_sharpe not finite: {result['actual_sharpe']}"
-    assert np.isfinite(result["actual_max_dd"]), f"actual_max_dd not finite: {result['actual_max_dd']}"
-    assert np.isfinite(result["p_value_sharpe"]), f"p_value_sharpe not finite: {result['p_value_sharpe']}"
+    assert set(result) == {"error"}

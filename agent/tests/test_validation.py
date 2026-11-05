@@ -106,7 +106,7 @@ class TestMonteCarlo:
         trades = _make_trades([100, -50, 200, -30, 150])
         result = monte_carlo_test(trades, 1_000_000, n_simulations=n_simulations)
         assert "error" in result
-        assert result["p_value_sharpe"] == 1.0
+        assert "p_value_sharpe" not in result
 
     @pytest.mark.parametrize("seed", [-1, 1.5, "42", True])
     def test_invalid_seed_errors(self, seed: object) -> None:
@@ -482,3 +482,36 @@ class TestBarsPerYearNone:
             bars_per_year=None,
         )
         assert "bootstrap" in result
+
+
+@pytest.mark.parametrize("pnls", [[-150, -25, -25], [100, -150, 100], [float('nan'), 10, 20]])
+def test_unmeasurable_monte_carlo_has_no_numeric_result(tmp_path, pnls):
+    from src.agent.grounding.evidence import _summary_scalars
+
+    result = monte_carlo_test(_make_trades(pnls), 100, n_simulations=50, seed=42)
+    assert set(result) == {"error"}
+    path = tmp_path / "validation.json"
+    write_validation_json(path, {"monte_carlo": result})
+    assert _summary_scalars(path) == []
+
+
+@pytest.mark.parametrize("kwargs", [{"n_simulations": 0}, {"seed": -1}, {}])
+def test_invalid_monte_carlo_request_has_no_p_value(kwargs):
+    result = monte_carlo_test(_make_trades([10, -5]), 100, **kwargs)
+    assert set(result) == {"error"}
+
+
+@pytest.mark.parametrize("bad", [0.0, -50.0, float("inf"), -float("inf")])
+def test_validation_rejects_nonpositive_or_infinite_observed_equity(bad):
+    equity = pd.Series([100, 110, 105, bad, 115, 120, 125, 130],
+                       index=pd.bdate_range("2026-01-01", periods=8))
+    for result in (bootstrap_sharpe_ci(equity, n_bootstrap=20),
+                   walk_forward_analysis(equity, [], n_windows=2)):
+        assert set(result) == {"error"}
+
+
+@pytest.mark.parametrize("initial", [0, -1, float("nan"), float("inf")])
+def test_validation_requires_positive_finite_starting_capital(initial):
+    equity = _make_equity(20)
+    assert set(bootstrap_sharpe_ci(equity, n_bootstrap=20, initial_capital=initial)) == {"error"}
+    assert set(monte_carlo_test(_make_trades([10, 20, 30]), initial, n_simulations=20)) == {"error"}

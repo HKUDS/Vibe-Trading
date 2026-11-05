@@ -1310,8 +1310,7 @@ export interface ValidationData {
     n_trades: number;
     sharpe_samples?: number[];
     equity_paths?: MonteCarloEquityPaths;
-    error?: string;
-  };
+  } | { error: string };
   bootstrap?: {
     observed_sharpe: number;
     ci_lower: number;

@@ -7,6 +7,9 @@ Three independent tools:
 
 Usage: called automatically by BaseEngine.run_backtest when config[\"validation\"]
 is present, or invoked directly on backtest outputs.
+
+Percentage-based validation requires positive, finite observed equity.
+An undefined calculation returns only an error, never a numeric placeholder.
 """
 
 from __future__ import annotations
@@ -54,15 +57,16 @@ def monte_carlo_test(
     if isinstance(n_simulations, bool) or not isinstance(n_simulations, Integral) or n_simulations < 1:
         return {
             "error": f"n_simulations must be >= 1, got {n_simulations}",
-            "p_value_sharpe": 1.0,
         }
     if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
-        return {"error": f"seed must be >= 0, got {seed}", "p_value_sharpe": 1.0}
+        return {"error": f"seed must be >= 0, got {seed}"}
     if len(trades) < 3:
-        return {"error": "need at least 3 trades", "p_value_sharpe": 1.0}
+        return {"error": "need at least 3 trades"}
 
     pnls = np.array([t.pnl for t in trades])
     actual = _path_metrics(pnls, initial_capital, bars_per_year)
+    if actual is None:
+        return {"error": "Monte Carlo requires positive finite equity at every observed trade step"}
 
     rng = np.random.default_rng(seed)
     sharpe_count = 0
@@ -78,6 +82,8 @@ def monte_carlo_test(
         if sim_equities is not None:
             sim_equities[i] = initial_capital + np.cumsum(shuffled)
         sim = _path_metrics(shuffled, initial_capital, bars_per_year)
+        if sim is None:
+            return {"error": f"Monte Carlo requires positive finite equity at every simulated trade step (simulation {i + 1})"}
         sim_sharpes.append(sim["sharpe"])
         if sim["sharpe"] >= actual["sharpe"]:
             sharpe_count += 1
@@ -119,11 +125,13 @@ def monte_carlo_test(
 
 def _path_metrics(
     pnls: np.ndarray, initial_capital: float, bars_per_year: int = 252
-) -> Dict[str, float]:
-    """Compute Sharpe and max drawdown from a PnL sequence."""
+) -> Dict[str, float] | None:
+    """Compute path metrics, or return None when percentage returns are undefined."""
     # Include starting cash so the first trade contributes to returns and
     # drawdown in both the observed path and every shuffled path.
     equity = np.concatenate(([initial_capital], initial_capital + np.cumsum(pnls)))
+    if not np.isfinite(equity).all() or (equity <= 0).any():
+        return None
     if len(equity) > 1:
         prev = equity[:-1]
         diff = np.diff(equity)
@@ -178,6 +186,12 @@ def bootstrap_sharpe_ci(
         return {"error": f"confidence must be in (0, 1), got {confidence}"}
     if isinstance(seed, bool) or not isinstance(seed, Integral) or seed < 0:
         return {"error": f"seed must be >= 0, got {seed}"}
+
+    observed = equity_curve.dropna()
+    if not np.isfinite(observed).all() or (observed <= 0).any():
+        return {"error": "Bootstrap Sharpe CI requires positive finite observed equity"}
+    if initial_capital is not None and (not math.isfinite(initial_capital) or initial_capital <= 0):
+        return {"error": "Bootstrap Sharpe CI requires positive finite initial capital"}
 
     if initial_capital is not None:
         series = period_returns(equity_curve, initial_capital)
@@ -265,6 +279,9 @@ def walk_forward_analysis(
         win_end = indices[end_idx - 1]
         if not np.isfinite(win_eq.iloc[[0, -1]]).all():
             return {"error": f"window {i + 1} requires observed start and end equity"}
+        observed = win_eq.dropna()
+        if not np.isfinite(observed).all() or (observed <= 0).any():
+            return {"error": f"window {i + 1} requires positive finite observed equity"}
 
         # Per-window trades
         win_trades = [t for t in trades if win_start <= t.entry_time <= win_end]
