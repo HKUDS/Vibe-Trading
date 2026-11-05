@@ -36,7 +36,13 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(api_server, "_runner_factory", None, raising=False)
     # Reset the connector verify cache between tests
     api_server._connector_verify_cache.clear()
-    return TestClient(api_server.app, client=("127.0.0.1", 50001))
+    # Live-authority routes refuse loopback trust; run in key-configured mode.
+    monkeypatch.setattr(api_server, "_API_KEY", "test-live-key", raising=False)
+    return TestClient(
+        api_server.app,
+        client=("127.0.0.1", 50001),
+        headers={"Authorization": "Bearer test-live-key"},
+    )
 
 
 # ---------------------------------------------------------------------------

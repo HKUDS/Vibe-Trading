@@ -35,7 +35,14 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     monkeypatch.setattr(api_server, "_runner_tasks", {}, raising=False)
     monkeypatch.setattr(api_server, "_runner_factory", None, raising=False)
-    return TestClient(api_server.app, client=("127.0.0.1", 50000))
+    # Live-authority routes (commit/resume/runner start) refuse loopback trust,
+    # so these tests run in key-configured mode.
+    monkeypatch.setattr(api_server, "_API_KEY", "test-live-key", raising=False)
+    return TestClient(
+        api_server.app,
+        client=("127.0.0.1", 50000),
+        headers={"Authorization": "Bearer test-live-key"},
+    )
 
 
 def _valid_mandate_state(broker: str = "robinhood") -> api_server.ActiveMandateState:
@@ -301,6 +308,7 @@ def _live_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     monkeypatch.setattr(api_server, "_runner_tasks", {}, raising=False)
     monkeypatch.setattr(api_server, "_runner_factory", None, raising=False)
+    monkeypatch.setattr(api_server, "_API_KEY", "test-live-key", raising=False)
 
 
 def _live_client() -> httpx.AsyncClient:
@@ -312,12 +320,14 @@ def _live_client() -> httpx.AsyncClient:
     outlives the request that created it, so these tests drive the app on a
     single long-lived loop — which is what uvicorn does in production.
 
-    The base URL is loopback so the DNS-rebinding Host check and the loopback
-    auth trust behave exactly as they do for ``_client`` above.
+    The base URL is loopback so the DNS-rebinding Host check behaves exactly as
+    it does for ``_client`` above; live-authority routes need the API key, which
+    ``_live_env`` configures.
     """
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=api_server.app, client=("127.0.0.1", 50000)),
         base_url="http://127.0.0.1:50000",
+        headers={"Authorization": "Bearer test-live-key"},
     )
 
 

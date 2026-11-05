@@ -588,6 +588,34 @@ async def require_auth(
     return _validate_api_auth(request=request, cred=cred)
 
 
+LIVE_AUTHORITY_KEY_REQUIRED = (
+    "Granting live-trading authority (committing a mandate, lifting a halt, "
+    "starting or re-budgeting the live runner) requires API_AUTH_KEY to be set; "
+    "loopback trust is not enough. Set it in agent/.env, restart, and enter it in Settings."
+)
+
+
+async def require_live_authority_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+) -> Principal:
+    """Require a configured API key for endpoints that grant live-trading authority.
+
+    Loopback dev-trust (no key configured) lets ANY local process act as the
+    operator: the agent's own shell, another OS user, or other local software
+    could commit a mandate or lift the kill switch with one POST. These
+    endpoints therefore never fall back to loopback trust. Risk-reducing
+    endpoints (halt, runner stop) keep :func:`require_auth` so stopping stays easy.
+
+    Raises:
+        HTTPException: 403 when no key is configured; otherwise as
+            :func:`_validate_api_auth` (401 on a bad or missing credential).
+    """
+    if not _configured_api_key():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=LIVE_AUTHORITY_KEY_REQUIRED)
+    return _validate_api_auth(request=request, cred=cred)
+
+
 async def require_event_stream_auth(
     request: Request,
     ticket: Optional[str] = Query(None),

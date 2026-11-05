@@ -294,7 +294,13 @@ class _CommitBroker:
 def _commit_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, broker: _CommitBroker) -> TestClient:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path), raising=False)
     monkeypatch.setattr(api_server, "_live_broker_adapter", lambda name: broker)
-    return TestClient(api_server.app, client=("127.0.0.1", 50000))
+    # /mandate/commit refuses loopback trust; commit in key-configured mode.
+    monkeypatch.setattr(api_server, "_API_KEY", "test-live-key", raising=False)
+    return TestClient(
+        api_server.app,
+        client=("127.0.0.1", 50000),
+        headers={"Authorization": "Bearer test-live-key"},
+    )
 
 
 def _proposal_id() -> str:

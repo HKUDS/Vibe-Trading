@@ -978,8 +978,14 @@ AuthDep = Callable[..., Awaitable[Any] | Any]
 def register_live_routes(
     app: FastAPI,
     require_auth: AuthDep | None = None,
+    require_live_authority: AuthDep | None = None,
 ) -> None:
-    """Mount the live-trading routes onto ``app``."""
+    """Mount the live-trading routes onto ``app``.
+
+    Routes that GRANT live authority (mandate commit, resume, runner start,
+    runner budgets) use ``require_live_authority``, which never accepts
+    loopback trust; risk-reducing ones (halt, stop) keep ``require_auth``.
+    """
     h = _host()
     if h is None:
         raise RuntimeError(
@@ -989,11 +995,15 @@ def register_live_routes(
 
     if require_auth is None:
         require_auth = h.require_auth
+    if require_live_authority is None:
+        from src.api.security import require_live_authority_auth
+
+        require_live_authority = require_live_authority_auth
 
     # All route handlers resolve monkeypatched symbols from host at call time
     # via ``_host()`` so that ``monkeypatch.setattr(api_server, ...)`` works.
 
-    @app.post("/mandate/commit", dependencies=[Depends(require_auth)])
+    @app.post("/mandate/commit", dependencies=[Depends(require_live_authority)])
     async def commit_mandate_endpoint(payload: CommitMandateRequest):
         """Commit a user-selected mandate profile — the only mandate write path."""
         if payload.consent_ack is not True:
@@ -1093,7 +1103,7 @@ def register_live_routes(
         )
         return result
 
-    @app.post("/live/resume", dependencies=[Depends(require_auth)])
+    @app.post("/live/resume", dependencies=[Depends(require_live_authority)])
     async def resume_live_endpoint(payload: LiveHaltRequest):
         """Clear the live kill switch (privileged surface action, Consent §4)."""
         from src.live.halt import clear_halt
@@ -1365,7 +1375,7 @@ def register_live_routes(
         """Preview cadence, budgets and measured cost before starting a runner."""
         return runner_settings_store(broker).snapshot(datetime.now(timezone.utc))
 
-    @app.put("/live/runner/settings", dependencies=[Depends(require_auth)])
+    @app.put("/live/runner/settings", dependencies=[Depends(require_live_authority)])
     async def put_runner_settings(
         payload: DecisionSettings, broker: str = Query(..., min_length=1, max_length=64),
     ):
@@ -1377,7 +1387,7 @@ def register_live_routes(
         store.save_settings(payload)
         return store.snapshot(datetime.now(timezone.utc))
 
-    @app.post("/live/runner/start", dependencies=[Depends(require_auth)])
+    @app.post("/live/runner/start", dependencies=[Depends(require_live_authority)])
     async def start_runner_endpoint(payload: LiveRunnerControlRequest):
         """Start the persistent live runner for a broker (SPEC §7.5)."""
         from src.live.halt import halt_flag_set

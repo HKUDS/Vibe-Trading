@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -492,10 +493,46 @@ def test_rebound_host_cannot_start_live_runner(
     assert "robinhood" not in api_server._runner_tasks
 
 
-def test_allowed_loopback_host_can_start_live_runner_dev_mode(
+@pytest.mark.parametrize(
+    "path,method,body",
+    [
+        ("/mandate/commit", "post", {"proposal_id": "mp_" + "0" * 32, "selected_ordinal": 1,
+                                     "consent_ack": True, "broker": "robinhood"}),
+        ("/live/resume", "post", {"broker": "robinhood"}),
+        ("/live/runner/start", "post", {"broker": "robinhood"}),
+        ("/live/runner/settings?broker=robinhood", "put", {}),
+    ],
+)
+def test_loopback_trust_cannot_grant_live_authority(path, method, body) -> None:
+    """Without API_AUTH_KEY, a local process must not commit, resume or start live trading."""
+    response = getattr(_local_client(), method)(
+        path, headers={"Host": "127.0.0.1:8899", "Content-Type": "application/json"}, json=body,
+    )
+
+    assert response.status_code == 403
+    assert "API_AUTH_KEY" in response.json()["detail"]
+
+
+def test_loopback_without_key_can_still_halt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stopping must stay one step: halt keeps loopback dev-mode access."""
+    tripped: list[str | None] = []
+    monkeypatch.setattr("src.live.halt.trip_halt", lambda by, reason, broker=None: tripped.append(broker) or Path("HALT"))
+
+    response = _local_client().post(
+        "/live/halt",
+        headers={"Host": "127.0.0.1:8899", "Content-Type": "application/json"},
+        json={"broker": "robinhood"},
+    )
+
+    assert response.status_code == 200
+    assert tripped == ["robinhood"]
+
+
+def test_configured_key_can_start_live_runner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Allowed local hosts preserve the loopback dev-mode runner control path."""
+    """With API_AUTH_KEY set and presented, the local runner control path works."""
+    monkeypatch.setattr(api_server, "_API_KEY", "secret")
     monkeypatch.setattr(api_server, "_active_mandate_state", lambda broker: SimpleNamespace(expired=False))
 
     reached = {"factory": False}
@@ -515,7 +552,11 @@ def test_allowed_loopback_host_can_start_live_runner_dev_mode(
 
     response = _local_client().post(
         "/live/runner/start",
-        headers={"Host": "127.0.0.1:8899", "Content-Type": "application/json"},
+        headers={
+            "Host": "127.0.0.1:8899",
+            "Content-Type": "application/json",
+            "Authorization": "Bearer secret",
+        },
         json={"broker": "robinhood", "session_id": "proof-session"},
     )
 
