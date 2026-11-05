@@ -280,3 +280,33 @@ def test_windows_python_paths_use_cmd_quoting(monkeypatch):
     command, reason = tool_policy.check_bash_command('python -c "print(1)"')
     assert reason is None
     assert command.startswith('"C:\\Program Files\\Python\\python.exe" ')
+
+
+def test_mcp_tools_that_bypass_the_registry_still_honour_the_deny_list(monkeypatch):
+    """`backtest` and `web_search` are MCP tools that call their code directly."""
+    import asyncio
+
+    from fastmcp import Client
+    from fastmcp.exceptions import ToolError
+
+    import mcp_server
+
+    async def listed() -> set[str]:
+        async with Client(mcp_server.mcp) as client:
+            return {tool.name for tool in await client.list_tools()}
+
+    unfiltered = asyncio.run(listed())
+    assert {"backtest", "web_search"} <= unfiltered
+
+    monkeypatch.setenv("VIBE_TRADING_DENY_TOOL_PREFIXES", "backtest,web_")
+    reset_env_config()
+    filtered = asyncio.run(listed())
+    assert not {name for name in filtered if name.startswith(("backtest", "web_"))}
+    assert filtered == {name for name in unfiltered if not name.startswith(("backtest", "web_"))}
+
+    async def call_denied() -> None:
+        async with Client(mcp_server.mcp) as client:
+            await client.call_tool("backtest", {"run_dir": "unused"})
+
+    with pytest.raises(ToolError, match="disabled by the active tool policy"):
+        asyncio.run(call_denied())
