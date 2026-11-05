@@ -56,8 +56,8 @@ export function parseHoldings(text: string): ShannonHolding[] | null {
 
 export const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 export const percent = (n: number | null | undefined, signed = false) => finite(n) ? `${signed && n > 0 ? "+" : ""}${(n * 100).toFixed(2)}%` : "—";
-export const styleLabels: Record<string, [string, string]> = {
-  BETA: ["市场贝塔", "Market beta"], VALUE: ["价值", "Value"], GROWTH: ["成长", "Growth"],
-  QUALITY: ["质量", "Quality"], MOMENTUM_12M: ["动量12月", "12M momentum"], MOMENTUM_6M: ["动量6月", "6M momentum"],
-  VOLATILITY: ["波动率", "Volatility"], LIQUIDITY: ["流动性", "Liquidity"], SIZE: ["市值", "Size"], LEVERAGE: ["杠杆", "Leverage"],
-};
+/** Style factors in display order; each label is `shannon.factors.<id>` in every locale. */
+export const styleFactors = [
+  "BETA", "VALUE", "GROWTH", "QUALITY", "MOMENTUM_12M", "MOMENTUM_6M", "VOLATILITY", "LIQUIDITY", "SIZE", "LEVERAGE",
+] as const;
+export type StyleFactor = (typeof styleFactors)[number];

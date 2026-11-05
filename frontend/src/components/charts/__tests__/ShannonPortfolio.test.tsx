@@ -1,8 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ShannonPortfolio } from "../ShannonPortfolio";
-import { shannon, styleLabels, type ShannonDiagnosis } from "@/lib/shannon";
+import { shannon, styleFactors, type ShannonDiagnosis } from "@/lib/shannon";
+import i18n, { SUPPORTED_LANGUAGES } from "@/i18n";
+import en from "@/i18n/locales/en.json";
+import zh from "@/i18n/locales/zh-CN.json";
 
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ i18n: { language: "zh" } }) }));
+async function useLanguage(code: string) {
+  await act(async () => { await i18n.changeLanguage(code); });
+  // Non-English locales are lazy chunks; wait until the bundle is registered and active.
+  await waitFor(() => expect(i18n.language === code && i18n.hasResourceBundle(code, "translation")).toBe(true));
+}
 const diagnosis: ShannonDiagnosis = { status: "completed", requested_date: "2026-10-28", weight_assumption: "custom",
   meta: { actual_factor_date: "2026-10-28", risk_as_of: "2026-10-27", included_holding_count: 2, requested_holding_count: 2 },
   data: { exposures: { portfolio: { SIZE: 1.5, VOLATILITY: -.6, BETA: -.2, VALUE: 0 } },
@@ -10,11 +17,13 @@ const diagnosis: ShannonDiagnosis = { status: "completed", requested_date: "2026
       { ts_code: "000001.SZ", name: "乙公司", normalized_weight: .4, exposures: { BETA: 2.1, VALUE: -2.4, SIZE: -.002, VOLATILITY: null } }],
     risk_attribution: { total_risk: .23, top_stock_contributions: { "600000.SH": .25, "000001.SZ": -.02 } } } };
 
-beforeEach(() => {
+beforeEach(async () => {
+  await useLanguage("zh-CN");
   vi.spyOn(shannon, "status").mockResolvedValue({ configured: true });
   vi.spyOn(shannon, "catalog").mockResolvedValue({ data: { universes: [{ id: "all", ready: true, current_as_of: "2026-10-28" }] } });
   vi.spyOn(shannon, "diagnosis").mockResolvedValue(diagnosis);
 });
+afterEach(async () => { await act(async () => { await i18n.changeLanguage("en"); }); });
 
 async function run() {
   render(<ShannonPortfolio />);
@@ -35,7 +44,8 @@ it("shows ten portfolio factors and keeps stock styles collapsed with no extra r
   fireEvent.click(screen.getByText("查看个股风格"));
   await waitFor(() => expect(style.querySelector("details")).toHaveAttribute("open"));
   const table = screen.getByRole("table", { name: "个股风格暴露热力图" });
-  expect(within(table).getAllByRole("columnheader").map(el => el.textContent)).toEqual(["股票", ...Object.values(styleLabels).map(names => names[0])]);
+  expect(within(table).getAllByRole("columnheader").map(el => el.textContent)).toEqual(["股票", ...styleFactors.map(key => zh.shannon.factors[key])]);
+  expect(within(table).getAllByRole("columnheader").map(el => el.textContent)).toEqual(["股票", "市场贝塔", "价值", "成长", "质量", "动量12月", "动量6月", "波动率", "流动性", "市值", "杠杆"]);
   expect(shannon.diagnosis).toHaveBeenCalledTimes(1);
   expect(shannon.diagnosis).toHaveBeenCalledWith({ date: "2026-10-28", holdings: [{ code: "600000.SH", weight: .6 }, { code: "000001.SZ", weight: .4 }] }, expect.any(AbortSignal));
 });
@@ -116,4 +126,50 @@ it("keeps the source optional and skips catalog without a token", async () => {
   await screen.findByText(/配置聚源 Token 后可使用/);
   expect(shannon.catalog).not.toHaveBeenCalled();
   expect(shannon.diagnosis).not.toHaveBeenCalled();
+});
+
+it("renders the Chinese two-line share header without changing its accessible name", async () => {
+  await run();
+  const header = screen.getByRole("columnheader", { name: "组合波动贡献占比" });
+  expect(header.textContent).toBe("组合波动\n贡献占比");
+  expect(header).toHaveClass("whitespace-pre-line");
+});
+
+it("renders English from en.json", async () => {
+  await useLanguage("en");
+  render(<ShannonPortfolio />);
+  await screen.findByText("Published through 2026-10-28");
+  fireEvent.change(screen.getByLabelText("Your A-share holdings"), { target: { value: "600000.SH 60%\n000001.SZ 40%" } });
+  fireEvent.click(screen.getByRole("button", { name: "Analyze holdings" }));
+  await screen.findByRole("heading", { name: "Risk attribution: volatility sources" });
+  expect(screen.getByText("Included 2/2 stocks")).toBeInTheDocument();
+  expect(within(screen.getByRole("region", { name: "Portfolio style exposure" })).getByLabelText("Size: +1.50")).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "Portfolio volatility contribution share" })).toHaveTextContent("Portfolio volatility share");
+  expect(screen.getByText("甲公司 has the largest estimated volatility contribution among returned stocks.")).toBeInTheDocument();
+});
+
+/** English strings a locale translated differently; any of them on screen is an English fallback. */
+function englishOnly(locale: typeof en): string[] {
+  const pairs: [string, string][] = [
+    ...Object.entries(en.shannon).filter((e): e is [string, string] => typeof e[1] === "string").map(([k, v]) => [v, locale.shannon[k as Exclude<keyof typeof en.shannon, "factors">]] as [string, string]),
+    ...styleFactors.map(k => [en.shannon.factors[k], locale.shannon.factors[k]] as [string, string]),
+  ];
+  return pairs.filter(([source, translated]) => source !== translated)
+    .flatMap(([source]) => source.split(/\{\{\w+\}\}|\n/)).map(part => part.trim()).filter(part => part.length > 3);
+}
+
+it.each(SUPPORTED_LANGUAGES.map(l => l.code).filter(code => code !== "en" && code !== "zh-CN"))("%s renders its own locale, never the English strings", async code => {
+  const locale = (await import(`../../../i18n/locales/${code}.json`)).default as typeof en;
+  await useLanguage(code);
+  const { container } = render(<ShannonPortfolio />);
+  await screen.findByText(locale.shannon.publishedThrough.replace("{{date}}", "2026-10-28"));
+  fireEvent.change(screen.getByLabelText(locale.shannon.holdingsLabel), { target: { value: "600000.SH 60%\n000001.SZ 40%" } });
+  fireEvent.click(screen.getByRole("button", { name: locale.shannon.analyze }));
+  await screen.findByRole("heading", { name: locale.shannon.riskTitle });
+  fireEvent.click(screen.getByText(locale.shannon.viewStockStyles));
+  expect(screen.getByRole("table", { name: locale.shannon.heatmapTitle })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: locale.shannon.colShareLabel })).toBeInTheDocument();
+  expect(screen.getByText(locale.shannon.factors.BETA, { selector: "th" })).toBeInTheDocument();
+  const text = container.textContent ?? "";
+  expect(englishOnly(locale).filter(source => text.includes(source))).toEqual([]);
 });
