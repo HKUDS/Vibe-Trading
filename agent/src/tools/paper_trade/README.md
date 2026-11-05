@@ -119,11 +119,13 @@ buy, `ref > limit` for a sell) fills at that strictly better price instead,
 which wins over the 委托价 even when the bar also crosses. Every fill is
 all-or-none; volume share is Phase 3.
 
-Order statuses use JoinQuant's `OrderStatus` vocabulary for both intervals:
-`filled` means partially filled and still active, so the residual stays in
-`open_orders()` and can be canceled, settled or matched by a later bar; `held`
-means fully filled and terminal. `canceled` and `rejected` are also terminal;
-`new`, `open` and `pending_cancel` are not.
+Inside the five-minute session (the daily path builds no order book), order
+statuses use JoinQuant's `OrderStatus` vocabulary: `held` means fully filled
+and terminal, `canceled` and `rejected` are also terminal, and `new`, `open`
+and `pending_cancel` are not. JoinQuant's `filled` (partially filled, residual
+still in `open_orders()`) exists in the lifecycle but is not reached while
+every fill is all-or-none. These statuses are internal; no result field or
+surface exposes them.
 
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
