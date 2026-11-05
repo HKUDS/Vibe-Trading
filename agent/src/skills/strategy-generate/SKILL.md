@@ -79,6 +79,14 @@ class SignalEngine:
 - Output plain Python code, not Markdown fences
 - Set each bar's signal from data up to that bar's close, and do not shift it yourself. The engine already delays signals by one bar: a signal set on bar `t` is filled at the open of bar `t+1`. A strategy that shifts its own signal (`.shift(1)`, or `signal[i]` taken from the condition at `i - 1`) fills every trade one bar later than intended, even when a "next open" rule is described
 
+**Module-level rules.** `backtest/runner.py` scans the whole file before importing it and refuses anything that could run code, reach the network or read a secret at import time. A file that trips these rules fails before a single bar is evaluated:
+
+- No network or process access: `requests`, `urllib`, `http.client`, `socket`, `smtplib`, `yfinance`, `ccxt`, `subprocess`, `ctypes`, `asyncio` and `ssl` are refused as imports. The data you need is already in `data_map`.
+- Module level may hold only imports, `def` / `class` definitions, and literal constants (`X = 10`, `X = ("a", "b")`, `X = {...}` of literals). Any other statement runs at import and is refused, including `re.compile(...)` and class-reference registries. Compile patterns and build registries inside a function instead.
+- Function defaults must be literals. Resolve `Freq.D`, `datetime.now()` or similar inside the body, behind a `None` default.
+- No decorators at all, including `@staticmethod`, `@classmethod` and `@property`. Declare a plain method and call it through `self`.
+- File reads need a relative literal path (`pd.read_csv("data/x.csv")`, `Path("data/x.csv").read_text()`). Absolute paths, `..`, URLs, writes, and database or clipboard I/O are refused.
+
 ## Quality Checklist
 
 Self-check after writing `signal_engine.py`:
@@ -89,6 +97,7 @@ Self-check after writing `signal_engine.py`:
 - [ ] Portfolio strategy: once N stocks are selected, each weight = 1/N (for example top 10 → each 0.1), unselected names = 0
 - [ ] Signal values stay within `[-1.0, 1.0]`
 - [ ] The signal is not shifted: the engine fills a signal set on bar `t` at the open of bar `t+1`
+- [ ] Module-level rules respected: no network/process imports, no `__main__` block, module level holds only imports, definitions and literal constants
 
 ## Instrument Code Normalization
 

@@ -80,7 +80,7 @@ def with_tbill(equity: pd.Series, cash: pd.Series) -> pd.Series:
 def run(strategy: str, params: dict, code: str, window: tuple) -> tuple[pd.Series, pd.DataFrame]:
     load_from, eval_from, end = window
     commission = UNDERLYINGS[code]
-    engine = engines.ENGINES[strategy](
+    engine = engines.available_engines()[strategy](
         **{k: OPTIONS[k] for k in ("risk_free_rate", "iv_skew", "iv_curvature", "default_iv")},
         commission=commission, capital=CASH, start_date=eval_from, **params)
     config = {

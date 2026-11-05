@@ -74,31 +74,3 @@ class SignalEngine:
                 signals[code].at[dt] = weight
 
         return {code: signals[code].reindex(df.index).fillna(0.0) for code, df in data_map.items()}
-
-
-if __name__ == "__main__":
-    # Demo: two names with injected event_score, one consistently positive.
-    dates = pd.bdate_range("2024-01-01", "2024-03-31")
-    rng = np.random.default_rng(7)
-
-    def _mock(score_center: float) -> pd.DataFrame:
-        n = len(dates)
-        return pd.DataFrame(
-            {
-                "open": rng.uniform(10, 50, n),
-                "high": rng.uniform(10, 50, n),
-                "low": rng.uniform(10, 50, n),
-                "close": rng.uniform(10, 50, n),
-                "volume": rng.uniform(1e6, 1e7, n),
-                "event_score": np.clip(rng.normal(score_center, 0.2, n), -1.0, 1.0),
-                "event_count": rng.integers(0, 4, n),
-            },
-            index=dates,
-        )
-
-    data_map = {"AAA": _mock(0.5), "BBB": _mock(-0.3)}
-    engine = SignalEngine(score_threshold=0.2, top_n=1)
-    signals = engine.generate(data_map)
-    for code in data_map:
-        active = (signals[code] > 0).sum()
-        print(f"{code}: {active}/{len(signals[code])} days held")

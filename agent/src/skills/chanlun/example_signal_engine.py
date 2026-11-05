@@ -18,7 +18,7 @@ from czsc.signals.cxt import (
 )
 
 
-def _df_to_bars(df: pd.DataFrame, symbol: str, freq: Freq = Freq.D) -> list:
+def _df_to_bars(df: pd.DataFrame, symbol: str, freq: Freq | None = None) -> list:
     """将 OHLCV DataFrame 转换为 czsc RawBar 列表。
 
     Args:
@@ -29,6 +29,8 @@ def _df_to_bars(df: pd.DataFrame, symbol: str, freq: Freq = Freq.D) -> list:
     Returns:
         按时间正序排列的 RawBar 列表。
     """
+    if freq is None:
+        freq = Freq.D
     bars = []
     for i, (dt, row) in enumerate(df.iterrows()):
         if not isinstance(dt, datetime):
@@ -93,13 +95,13 @@ class SignalEngine:
         freq: K线分析频率。
     """
 
-    def __init__(self, freq: Freq = Freq.D):
+    def __init__(self, freq: Freq | None = None):
         """初始化缠论信号引擎。
 
         Args:
             freq: K线分析频率，默认日线。
         """
-        self.freq = freq
+        self.freq = Freq.D if freq is None else freq
 
     def generate(self, data_map: Dict[str, pd.DataFrame]) -> Dict[str, pd.Series]:
         """根据缠论形态生成交易信号。
@@ -185,41 +187,3 @@ class SignalEngine:
                     return -1
 
         return 0
-
-
-if __name__ == "__main__":
-    import requests
-
-    BASE_URL = "https://www.okx.com/api/v5"
-
-    # 获取 BTC 日线数据
-    resp = requests.get(f"{BASE_URL}/market/candles", params={
-        "instId": "BTC-USDT", "bar": "1D", "limit": "300"
-    })
-    candles = resp.json()["data"]
-
-    # 转为 DataFrame
-    columns = ["ts", "open", "high", "low", "close", "vol", "volCcy", "volCcyQuote", "confirm"]
-    df = pd.DataFrame(reversed(candles), columns=columns)
-    df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
-    df = df.set_index("ts")
-    for col in ["open", "high", "low", "close"]:
-        df[col] = df[col].astype(float)
-    df["volume"] = df["vol"].astype(float)
-    df["amount"] = df["volCcy"].astype(float)
-
-    # 运行信号引擎
-    engine = SignalEngine(freq=Freq.D)
-    signals = engine.generate({"BTC-USDT": df})
-
-    # 输出结果
-    sig = signals["BTC-USDT"]
-    buys = sig[sig == 1]
-    sells = sig[sig == -1]
-    print(f"BTC-USDT 缠论信号 ({len(df)} 根K线)")
-    print(f"  做多信号: {len(buys)} 个")
-    print(f"  做空信号: {len(sells)} 个")
-    if len(buys) > 0:
-        print(f"  最近做多: {buys.index[-1]:%Y-%m-%d}")
-    if len(sells) > 0:
-        print(f"  最近做空: {sells.index[-1]:%Y-%m-%d}")

@@ -27,8 +27,6 @@ import pandas as pd
 from backtest.engines.options_portfolio import historical_volatility, leg_iv
 from src.quantlib.options import bs_greeks, bs_price
 
-Leg = Dict[str, Any]
-
 
 class _OptionsBook:
     """Shared pricing, strike selection and per-underlying trade loop."""
@@ -48,12 +46,12 @@ class _OptionsBook:
 
     # --- pricing (mirrors the engine) ---
 
-    def _price(self, S: float, hv: float, ts: pd.Timestamp, leg: Leg) -> float:
+    def _price(self, S: float, hv: float, ts: pd.Timestamp, leg: Dict[str, Any]) -> float:
         T = max((pd.Timestamp(leg["expiry"]) - ts).days / 365.0, 0.0)
         iv = leg_iv(S, leg["strike"], hv, self.skew, self.curvature)
         return bs_price(S, leg["strike"], T, self.r, iv, leg["type"])
 
-    def _value(self, S: float, hv: float, ts: pd.Timestamp, legs: List[Leg]) -> float:
+    def _value(self, S: float, hv: float, ts: pd.Timestamp, legs: List[Dict[str, Any]]) -> float:
         return sum(self._price(S, hv, ts, leg) * leg["qty"] for leg in legs)
 
     def _strike(self, S: float, hv: float, ts: pd.Timestamp, expiry: str,
@@ -69,8 +67,7 @@ class _OptionsBook:
                 best, best_err = float(K), err
         return best
 
-    @staticmethod
-    def _expiry(index: pd.DatetimeIndex, i: int, dte: int) -> Optional[str]:
+    def _expiry(self, index: pd.DatetimeIndex, i: int, dte: int) -> Optional[str]:
         """First trading date at least ``dte`` calendar days after bar ``i``."""
         target = index[i] + pd.Timedelta(days=dte)
         j = index.searchsorted(target)
@@ -90,12 +87,11 @@ class _OptionsBook:
              capital: float) -> List[Dict[str, Any]]:
         raise NotImplementedError
 
-    @staticmethod
-    def _signal(ts: pd.Timestamp, action: str, code: str, legs: List[Leg]) -> Dict[str, Any]:
+    def _signal(self, ts: pd.Timestamp, action: str, code: str, legs: List[Dict[str, Any]]) -> Dict[str, Any]:
         return {"date": str(ts.date()), "action": action, "underlying": code,
                 "legs": [dict(leg) for leg in legs]}
 
-    def _stock_legs(self, close: pd.Series, qty: float) -> List[Leg]:
+    def _stock_legs(self, close: pd.Series, qty: float) -> List[Dict[str, Any]]:
         """Share replica: call struck near zero, expiring after the data ends."""
         expiry = close.index[-1] + pd.Timedelta(days=400)
         return [{"type": "call", "strike": 0.01, "expiry": str(expiry.date()), "qty": qty}]
@@ -123,7 +119,7 @@ class _ShortPremium(_OptionsBook):
     def _run(self, code, close, hv, capital):
         idx = close.index
         out: List[Dict[str, Any]] = []
-        legs: Optional[List[Leg]] = None
+        legs: Optional[List[Dict[str, Any]]] = None
         credit = 0.0
         for i, ts in enumerate(idx):
             S, vol = float(close.iloc[i]), float(hv.iloc[i])
@@ -183,7 +179,7 @@ class CashSecuredPutEngine(_ShortPremium):
         return [{"type": "put", "strike": K, "expiry": expiry, "qty": -1}], K
 
 
-class IronCondorEngine(_ShortPremium):
+class SignalEngine(_ShortPremium):
     """Short ~16-delta strangle with ~5-delta wings, 45 DTE, managed at
     50% of credit or 21 DTE. Risks ``risk_fraction`` of capital per trade."""
 
@@ -271,7 +267,7 @@ class _StockPlusOption(_OptionsBook):
         stock = self._stock_legs(close, 0.0)[0]
         lots: List[float] = []   # replica lots, FIFO: the engine closes the oldest match first
         cash = capital
-        leg: Optional[Leg] = None
+        leg: Optional[Dict[str, Any]] = None
         c = self.commission
         for i, ts in enumerate(idx[:-1]):
             if self.start is not None and ts < self.start:
@@ -344,12 +340,17 @@ class ProtectivePutEngine(_StockPlusOption):
         super().__init__(delta=delta, dte=dte, roll_dte=roll_dte, **kw)
 
 
-ENGINES: Dict[str, Callable[..., _OptionsBook]] = {
-    "covered_call": CoveredCallEngine,
-    "cash_secured_put": CashSecuredPutEngine,
-    "iron_condor": IronCondorEngine,
-    "vol_gated_strangle": VolGatedStrangleEngine,
-    "protective_put": ProtectivePutEngine,
-}
+def available_engines() -> Dict[str, Callable[..., _OptionsBook]]:
+    """Name -> engine class, for callers that pick a candidate by name.
 
-SignalEngine = IronCondorEngine
+    A module-level dict holding class references is rejected by the strategy
+    scan, which only lets literals be assigned at import time, so the registry
+    is built by a call instead. ``SignalEngine`` is the iron condor.
+    """
+    return {
+        "covered_call": CoveredCallEngine,
+        "cash_secured_put": CashSecuredPutEngine,
+        "iron_condor": SignalEngine,
+        "vol_gated_strangle": VolGatedStrangleEngine,
+        "protective_put": ProtectivePutEngine,
+    }

@@ -21,16 +21,19 @@ MARKET_PARAMS = {
     "futures":    {"ma_fast": 5,  "ma_slow": 20, "vol_lookback": 20},
 }
 
-_MARKET_PATTERNS = [
-    (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
-    (re.compile(r"^[A-Z]+\.US$", re.I), "us_equity"),
-    (re.compile(r"^\d{3,5}\.HK$", re.I), "hk_equity"),
-    (re.compile(r"^[A-Z0-9&.\-]+\.(TO|V)$", re.I), "ca_equity"),
-    (re.compile(r"^[A-Z]+-USDT$", re.I), "crypto"),
-    (re.compile(r"^[A-Z]+/USDT$", re.I), "crypto"),
-    (re.compile(r"^[A-Z]{3}/[A-Z]{3}$"), "forex"),
-    (re.compile(r"^[A-Z]{6}\.FX$"), "forex"),
-]
+# ``(regex source, ignore case, market)`` triples. Keeping them as literals
+# means import runs no calls; ``_detect_market`` compiles on demand and the
+# ``re`` module caches the compiled pattern internally.
+_MARKET_PATTERNS = (
+    (r"^\d{6}\.(SZ|SH|BJ)$", True, "a_share"),
+    (r"^[A-Z]+\.US$", True, "us_equity"),
+    (r"^\d{3,5}\.HK$", True, "hk_equity"),
+    (r"^[A-Z0-9&.\-]+\.(TO|V)$", True, "ca_equity"),
+    (r"^[A-Z]+-USDT$", True, "crypto"),
+    (r"^[A-Z]+/USDT$", True, "crypto"),
+    (r"^[A-Z]{3}/[A-Z]{3}$", False, "forex"),
+    (r"^[A-Z]{6}\.FX$", False, "forex"),
+)
 
 
 class SignalEngine:
@@ -46,8 +49,8 @@ class SignalEngine:
         return self._vol_adjust(raw_signals, data_map)
 
     def _detect_market(self, code: str) -> str:
-        for pattern, market in _MARKET_PATTERNS:
-            if pattern.match(code):
+        for source, ignore_case, market in _MARKET_PATTERNS:
+            if re.match(source, code, re.IGNORECASE if ignore_case else 0):
                 return market
         return "a_share"
 

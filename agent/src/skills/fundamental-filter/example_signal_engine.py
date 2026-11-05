@@ -133,36 +133,3 @@ def _first_number(row: pd.Series, columns: List[str]) -> float:
         if pd.notna(value):
             return float(value)
     return np.nan
-
-
-if __name__ == "__main__":
-    # 演示：用随机数据模拟基本面过滤
-    np.random.seed(42)
-    dates = pd.bdate_range("2024-01-01", "2024-12-31")
-
-    def _mock_stock(pe_range, pb_range, roe_range):
-        n = len(dates)
-        return pd.DataFrame({
-            "open": np.random.uniform(10, 50, n),
-            "high": np.random.uniform(10, 50, n),
-            "low": np.random.uniform(10, 50, n),
-            "close": np.random.uniform(10, 50, n),
-            "volume": np.random.uniform(1e6, 1e7, n),
-            "pe": np.random.uniform(*pe_range, n),
-            "pb": np.random.uniform(*pb_range, n),
-            "roe": np.random.uniform(*roe_range, n),
-        }, index=dates)
-
-    data_map = {
-        "000001.SZ": _mock_stock((5, 15), (0.5, 2.0), (8, 20)),    # 大概率入选
-        "600036.SH": _mock_stock((3, 10), (0.3, 1.5), (12, 25)),   # 高概率入选
-        "000858.SZ": _mock_stock((30, 80), (5, 15), (5, 10)),       # 大概率不入选
-    }
-
-    engine = SignalEngine(pe_max=20, pb_max=3, roe_min=8)
-    signals = engine.generate(data_map)
-
-    for code in data_map:
-        sig = signals[code]
-        active_days = (sig > 0).sum()
-        print(f"{code}: {active_days}/{len(sig)} days in portfolio")

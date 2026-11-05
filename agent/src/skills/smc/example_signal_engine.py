@@ -18,35 +18,6 @@ import pandas as pd
 from smartmoneyconcepts import smc
 
 
-def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
-    """从 OKX 获取K线数据。
-
-    Args:
-        inst_id: 交易对，如 "BTC-USDT"。
-        bar: K线周期，默认日线。
-        limit: 获取K线数量。
-
-    Returns:
-        包含 open/high/low/close/volume 列的 DataFrame，index 为 datetime。
-    """
-    import requests
-
-    resp = requests.get(
-        "https://www.okx.com/api/v5/market/candles",
-        params={"instId": inst_id, "bar": bar, "limit": str(limit)},
-    )
-    candles = resp.json()["data"]
-    columns = [
-        "ts", "open", "high", "low", "close",
-        "vol", "volCcy", "volCcyQuote", "confirm",
-    ]
-    df = pd.DataFrame(reversed(candles), columns=columns)
-    df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms")
-    df = df.set_index("ts")
-    for col in ["open", "high", "low", "close"]:
-        df[col] = df[col].astype(float)
-    df["volume"] = df["vol"].astype(float)
-    return df
 
 
 class SignalEngine:
@@ -146,41 +117,3 @@ class SignalEngine:
         signal[:] = raw_signal.values
 
         return signal
-
-
-if __name__ == "__main__":
-    instruments = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
-    data_map = {}
-
-    print("=" * 50)
-    print("Smart Money Concepts 信号引擎 E2E 测试")
-    print("=" * 50)
-
-    for inst in instruments:
-        print(f"\n获取 {inst} 日线数据...")
-        try:
-            data_map[inst] = _fetch_okx(inst, bar="1D", limit=300)
-            print(f"  {inst}: {len(data_map[inst])} 根K线")
-        except Exception as e:
-            print(f"  {inst} 获取失败: {e}")
-
-    if not data_map:
-        print("无数据，退出")
-        exit(1)
-
-    engine = SignalEngine(swing_length=10, close_break=True)
-    signals = engine.generate(data_map)
-
-    print("\n" + "=" * 50)
-    print("信号统计")
-    print("=" * 50)
-    for code, sig in signals.items():
-        buys = sig[sig == 1]
-        sells = sig[sig == -1]
-        print(f"\n{code} ({len(data_map[code])} 根K线)")
-        print(f"  做多信号: {len(buys)} 个")
-        print(f"  做空信号: {len(sells)} 个")
-        if len(buys) > 0:
-            print(f"  最近做多: {buys.index[-1]:%Y-%m-%d}")
-        if len(sells) > 0:
-            print(f"  最近做空: {sells.index[-1]:%Y-%m-%d}")

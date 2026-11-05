@@ -38,10 +38,10 @@ class _Loader:
         return {"SPY": _BARS.copy()}
 
 
-@pytest.mark.parametrize("name", sorted(engines.ENGINES))
+@pytest.mark.parametrize("name", sorted(engines.available_engines()))
 def test_engine_runs_and_settles(tmp_path: Path, name: str) -> None:
-    engine = engines.ENGINES[name](**_OPTS, commission=0.01, capital=100_000,
-                                   start_date="2023-03-01")
+    engine = engines.available_engines()[name](**_OPTS, commission=0.01, capital=100_000,
+                                               start_date="2023-03-01")
     config = {
         "codes": ["SPY"], "start_date": "2023-01-02", "end_date": "2023-12-29",
         "initial_cash": 100_000, "commission": 0.01,
