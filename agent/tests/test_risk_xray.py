@@ -42,10 +42,11 @@ def test_weights_are_renormalized_with_warning():
     _assert_strict_json(result)
 
 
-def test_negative_weight_rejected():
+def test_negative_weight_is_part_of_the_book():
     closes = _closes({"AAA": list(range(100, 160)), "BBB": list(range(50, 110))})
-    with pytest.raises(ValueError, match="long-only"):
-        compute_risk_xray(closes, {"AAA": 1.5, "BBB": -0.5})
+    result = compute_risk_xray(closes, {"AAA": 1.5, "BBB": -0.5}, min_history=10)
+    assert result["exposure"]["short_count"] == 1
+    assert result["exposure"]["gross"] == pytest.approx(2.0)
 
 
 def test_unknown_symbol_rejected():
@@ -300,16 +301,17 @@ def test_average_invested_weights_rejects_flat_strategy():
         average_invested_weights(pd.DataFrame())
 
 
-def test_average_invested_weights_rejects_long_short_book():
-    # A net-short leg must refuse the x-ray outright, not silently shrink the
-    # basket to the long half and present it as the whole strategy.
+def test_average_invested_weights_carries_short_leg():
+    # Keep the short leg in the average book instead of refusing the x-ray or
+    # silently shrinking the report to the long half.
     idx = pd.date_range("2026-01-01", periods=4, freq="D")
     target_pos = pd.DataFrame(
         {"AAA": [0.5, 0.5, 0.5, 0.5], "BBB": [-0.25, -0.25, -0.25, -0.25]},
         index=idx,
     )
-    with pytest.raises(ValueError, match="long-only .* BBB"):
-        average_invested_weights(target_pos)
+    weights, avg_invested = average_invested_weights(target_pos)
+    assert weights == {"AAA": pytest.approx(0.5), "BBB": pytest.approx(-0.25)}
+    assert avg_invested == pytest.approx(0.25)
 
 
 def test_write_risk_xray_strict_json_and_markdown(tmp_path):
@@ -377,14 +379,22 @@ def test_run_backtest_emits_risk_xray_artifacts(tmp_path, bbb_signal):
     out_json = tmp_path / "artifacts" / "risk_xray.json"
     out_md = tmp_path / "artifacts" / "risk_xray.md"
     warnings = json.loads((tmp_path / "run_card.json").read_text())["warnings"]
-    if bbb_signal < 0:
-        assert any("Risk x-ray unavailable" in w and "BBB" in w for w in warnings)
-        assert not out_json.exists() and not out_md.exists()
-        return
     assert not any("Risk x-ray unavailable" in w for w in warnings)
     assert out_json.exists() and out_md.exists()
     payload = json.loads(out_json.read_text(encoding="utf-8"))
     _assert_strict_json(payload)
+    if bbb_signal < 0:
+        positions = pd.read_csv(tmp_path / "artifacts" / "positions.csv", index_col=0)
+        means = positions.mean()
+        assert payload["inputs"]["weights"] == pytest.approx(means.to_dict(), abs=1e-8)
+        assert payload["exposure"]["gross"] == pytest.approx(means.abs().sum())
+        assert payload["exposure"]["net"] == pytest.approx(means.sum())
+        assert payload["exposure"]["short_count"] == 1
+        returns = pd.DataFrame({code: frame["close"] for code, frame in data_map.items()}).pct_change().dropna()
+        expected_vol = (returns @ means).std(ddof=1) * math.sqrt(252)
+        assert metrics["risk_xray_annualized_vol"] == pytest.approx(expected_vol)
+        assert "short" in out_md.read_text()
+        return
     # The opening target is even, but actual weights drift with each symbol's
     # realized price path; the x-ray must reflect execution truth, not preserve
     # the optimizer's idealized 50/50 weights.
