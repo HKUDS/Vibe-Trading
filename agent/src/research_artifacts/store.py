@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -16,7 +17,7 @@ from typing import Any, TypeVar
 from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
 
-from .models import ResearchArtifactRevision, ResearchArtifactSaveResult
+from .models import ResearchArtifactExport, ResearchArtifactRevision, ResearchArtifactSaveResult
 
 
 def _utc_now() -> str:
@@ -170,11 +171,7 @@ class ResearchArtifactStore:
             "SELECT * FROM research_artifact_revisions WHERE content_hash = ? AND provenance_hash = ?"
             + (" AND artifact_id = ?" if artifact_id else "")
             + " ORDER BY created_at DESC LIMIT 1",
-            (
-                (content_hash, provenance_hash, artifact_id)
-                if artifact_id
-                else (content_hash, provenance_hash)
-            ),
+            ((content_hash, provenance_hash, artifact_id) if artifact_id else (content_hash, provenance_hash)),
         ).fetchone()
         return self._from_row(row) if row else None
 
@@ -211,14 +208,10 @@ class ResearchArtifactStore:
                 verification_status = verification_status or "unverified"
                 completeness = completeness or "complete"
             else:
-                subject = _required(
-                    subject if subject is not None else latest.subject, "subject"
-                )
+                subject = _required(subject if subject is not None else latest.subject, "subject")
                 universe = latest.universe if universe is None else universe.strip()
                 if subject != latest.subject or universe != latest.universe:
-                    raise ValueError(
-                        "a revision must preserve the artifact subject and universe"
-                    )
+                    raise ValueError("a revision must preserve the artifact subject and universe")
                 evidence = list(latest.evidence) if evidence is None else list(evidence)
                 unchanged = (
                     content == latest.content
@@ -234,9 +227,7 @@ class ResearchArtifactStore:
                         )
                     )
                 )
-                verification_status = verification_status or (
-                    latest.verification_status if unchanged else "unverified"
-                )
+                verification_status = verification_status or (latest.verification_status if unchanged else "unverified")
                 completeness = completeness or latest.completeness
                 hypothesis_id = hypothesis_id or latest.hypothesis_id
                 goal_id = goal_id or latest.goal_id
@@ -343,6 +334,76 @@ class ResearchArtifactStore:
             (artifact_id,),
         ).fetchall()
         return [self._from_row(row) for row in rows]
+
+    @_synchronized
+    def export_series(self, artifact_id: str, format: str = "json") -> ResearchArtifactExport:
+        """Render the complete immutable series without adding volatile metadata."""
+        revisions = list(reversed(self.list_revisions(artifact_id)))
+        if not revisions:
+            raise KeyError(f"research artifact not found: {artifact_id}")
+        if format == "json":
+            content = (
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "artifact_id": artifact_id,
+                        "revision_count": len(revisions),
+                        "revisions": [revision.to_dict() for revision in revisions],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    allow_nan=False,
+                )
+                + "\n"
+            )
+            media_type = "application/json"
+            extension = "json"
+        elif format == "markdown":
+            lines = [f"# {revisions[-1].subject}", ""]
+            if revisions[-1].universe:
+                lines.extend([f"Universe: {revisions[-1].universe}", ""])
+            lines.extend([f"Revisions: {len(revisions)}", ""])
+            for revision in revisions:
+                evidence_json = json.dumps(list(revision.evidence), ensure_ascii=False, indent=2, allow_nan=False)
+                longest_run = max((len(run) for run in re.findall(r"`+", evidence_json)), default=0)
+                fence = "`" * max(3, longest_run + 1)
+                lines.extend(
+                    [
+                        f"## Revision {revision.revision_number}",
+                        "",
+                        f"Revision ID: {revision.revision_id}",
+                        f"Previous revision ID: {revision.previous_revision_id or 'None'}",
+                        f"Data as of: {revision.data_as_of}",
+                        f"Created at: {revision.created_at}",
+                        f"Verification status: {revision.verification_status}",
+                        f"Completeness: {revision.completeness}",
+                        f"Evidence missing: {'yes' if revision.evidence_missing else 'no'}",
+                        f"Hypothesis ID: {revision.hypothesis_id or 'None'}",
+                        f"Goal ID: {revision.goal_id or 'None'}",
+                        f"Session ID: {revision.session_id or 'None'}",
+                        f"Run ID: {revision.run_id or 'None'}",
+                        "",
+                        revision.content,
+                        "",
+                        "### Evidence",
+                        "",
+                        fence + "json",
+                        evidence_json,
+                        fence,
+                        "",
+                    ]
+                )
+            content = "\n".join(lines)
+            media_type = "text/markdown; charset=utf-8"
+            extension = "md"
+        else:
+            raise ValueError("export format must be 'json' or 'markdown'")
+        return ResearchArtifactExport(
+            filename=f"{artifact_id}.{extension}",
+            media_type=media_type,
+            content=content,
+            sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        )
 
     @_synchronized
     def search(

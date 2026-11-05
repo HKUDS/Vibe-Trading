@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, FilePlus2, Loader2, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Download, FilePlus2, Loader2, RefreshCw, Search } from "lucide-react";
 import {
   api,
   type ResearchArtifactRevision,
@@ -71,6 +71,7 @@ export function ResearchArtifacts() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState<"json" | "markdown" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -106,6 +107,28 @@ export function ResearchArtifacts() {
       ...(current.artifact_id && ["content", "data_as_of", "newEvidence"].includes(key)
         ? { verification_status: "unverified" } : {}),
     }));
+  }
+
+  async function exportArtifact(format: "json" | "markdown") {
+    if (!detail) return;
+    setExporting(format);
+    setError(null);
+    try {
+      const exported = await api.exportResearchArtifact(detail.artifact.artifact_id, format);
+      const url = URL.createObjectURL(new Blob([exported.content], { type: exported.media_type }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = exported.filename;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("researchArtifacts.exportError"));
+    } finally {
+      setExporting(null);
+    }
   }
 
   async function save(event: FormEvent) {
@@ -210,7 +233,15 @@ export function ResearchArtifacts() {
                   <summary className="cursor-pointer">{t("researchArtifacts.evidence")}</summary>
                   <pre className="mt-2 overflow-auto whitespace-pre-wrap">{JSON.stringify(detail.artifact.evidence, null, 2)}</pre>
                 </details>
-                <button type="button" className="mt-3 rounded-md border px-3 py-1.5 text-sm" onClick={() => setForm(revisionForm(detail.artifact))}>{t("researchArtifacts.revise")}</button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className="rounded-md border px-3 py-1.5 text-sm" onClick={() => setForm(revisionForm(detail.artifact))}>{t("researchArtifacts.revise")}</button>
+                  <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={exporting !== null} onClick={() => void exportArtifact("json")}>
+                    <Download className="me-1 inline h-4 w-4" />{exporting === "json" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportJson")}
+                  </button>
+                  <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={exporting !== null} onClick={() => void exportArtifact("markdown")}>
+                    <Download className="me-1 inline h-4 w-4" />{exporting === "markdown" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportMarkdown")}
+                  </button>
+                </div>
                 <h3 className="mt-5 text-sm font-medium">{t("researchArtifacts.history")}</h3>
                 <div className="mt-2 space-y-2">
                   {detail.revisions.map((revision) => (

@@ -118,7 +118,11 @@
     "hypothesis_id": "معرّف الفرضية",
     "goal_id": "معرّف الهدف",
     "session_id": "معرّف الجلسة",
-    "run_id": "معرّف التشغيل"
+    "run_id": "معرّف التشغيل",
+    "exportJson": "تصدير JSON",
+    "exportMarkdown": "تصدير Markdown",
+    "exporting": "جارٍ التصدير…",
+    "exportError": "تعذر تصدير مخرجات البحث."
   },
   "runtime": {
     "monitorBadge": "مراقبة التداول",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pytest
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -16,9 +17,7 @@ def _save(store: ResearchArtifactStore, **overrides):
         "universe": "NVDA",
         "content": "Original conclusion with traceable evidence.",
         "data_as_of": "2026-10-20",
-        "evidence": [
-            {"source_uri": "https://example.com/filing", "content_hash": "abc"}
-        ],
+        "evidence": [{"source_uri": "https://example.com/filing", "content_hash": "abc"}],
         "verification_status": "verified",
         "hypothesis_id": "hyp_nvda",
         "goal_id": "goal_nvda",
@@ -42,10 +41,7 @@ def test_save_search_and_reload_across_instances(tmp_path):
     assert [item.revision_id for item in found] == [saved.revision.revision_id]
     assert found[0].evidence[0]["source_uri"] == "https://example.com/filing"
     assert found[0].evidence_missing is False
-    assert (
-        reloaded.get_revision(saved.revision.revision_id).content
-        == saved.revision.content
-    )
+    assert reloaded.get_revision(saved.revision.revision_id).content == saved.revision.content
 
 
 def test_identical_content_and_provenance_are_idempotent(tmp_path):
@@ -61,9 +57,7 @@ def test_identical_content_and_provenance_are_idempotent(tmp_path):
 def test_changed_data_as_of_and_evidence_create_linked_revisions(tmp_path):
     store = ResearchArtifactStore(tmp_path / "research.db")
     first = _save(store)
-    second = _save(
-        store, artifact_id=first.revision.artifact_id, data_as_of="2026-10-27"
-    )
+    second = _save(store, artifact_id=first.revision.artifact_id, data_as_of="2026-10-27")
     third = _save(
         store,
         artifact_id=first.revision.artifact_id,
@@ -117,12 +111,8 @@ def test_search_defaults_to_latest_revision_and_supports_link_filters(tmp_path):
     )
 
     assert store.search(query="Original conclusion") == []
-    assert [item.revision_id for item in store.search(query="Updated conclusion")] == [
-        latest.revision.revision_id
-    ]
-    assert [item.revision_id for item in store.search(goal_id="goal_nvda")] == [
-        latest.revision.revision_id
-    ]
+    assert [item.revision_id for item in store.search(query="Updated conclusion")] == [latest.revision.revision_id]
+    assert [item.revision_id for item in store.search(goal_id="goal_nvda")] == [latest.revision.revision_id]
     assert len(store.search()) == 2
     assert len(store.list_revisions(first.revision.artifact_id)) == 2
 
@@ -134,9 +124,7 @@ def test_revision_requires_existing_series_and_preserves_subject(tmp_path):
 
     first = _save(store)
     with pytest.raises(ValueError, match="preserve the artifact subject"):
-        _save(
-            store, artifact_id=first.revision.artifact_id, subject="Different subject"
-        )
+        _save(store, artifact_id=first.revision.artifact_id, subject="Different subject")
     with pytest.raises(ValueError, match="content is required"):
         _save(store, content="   ")
 
@@ -150,9 +138,7 @@ def test_changed_revision_does_not_inherit_verification(tmp_path):
         data_as_of="2026-10-27",
     )
     assert changed.revision.verification_status == "unverified"
-    assert (
-        store.get_revision(first.revision.revision_id).verification_status == "verified"
-    )
+    assert store.get_revision(first.revision.revision_id).verification_status == "verified"
 
 
 def test_revision_idempotency_cannot_return_another_series(tmp_path):
@@ -165,9 +151,7 @@ def test_revision_idempotency_cannot_return_another_series(tmp_path):
     assert changed.revision.revision_id != other.revision.revision_id
 
 
-def test_concurrent_instances_append_a_single_serial_revision_chain(
-    tmp_path, monkeypatch
-):
+def test_concurrent_instances_append_a_single_serial_revision_chain(tmp_path, monkeypatch):
     db = tmp_path / "research.db"
     first = _save(ResearchArtifactStore(db))
     stores = [ResearchArtifactStore(db) for _ in range(4)]
@@ -195,9 +179,7 @@ def test_concurrent_instances_append_a_single_serial_revision_chain(
             results = list(pool.map(revise, range(4)))
         assert sorted(r.revision.revision_number for r in results) == [2, 3, 4, 5]
         history = stores[0].list_revisions(first.revision.artifact_id)
-        assert [r.previous_revision_id for r in history[:-1]] == [
-            r.revision_id for r in history[1:]
-        ]
+        assert [r.previous_revision_id for r in history[:-1]] == [r.revision_id for r in history[1:]]
     finally:
         for store in stores:
             store.close()
@@ -206,14 +188,92 @@ def test_concurrent_instances_append_a_single_serial_revision_chain(
 def test_fingerprint_lookup_uses_the_composite_index(tmp_path):
     store = ResearchArtifactStore(tmp_path / "research.db")
     rows = store._conn.execute(
-        "EXPLAIN QUERY PLAN SELECT * FROM research_artifact_revisions "
-        "WHERE content_hash = ? AND provenance_hash = ?",
+        "EXPLAIN QUERY PLAN SELECT * FROM research_artifact_revisions WHERE content_hash = ? AND provenance_hash = ?",
         ("missing-content", "missing-provenance"),
     ).fetchall()
     store.close()
 
     plan = "\n".join(row["detail"] for row in rows)
     assert "USING INDEX idx_research_artifact_fingerprint" in plan, plan
+
+
+def test_json_export_is_deterministic_and_preserves_full_series(tmp_path):
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    first = _save(store)
+    second = _save(
+        store,
+        artifact_id=first.revision.artifact_id,
+        content="Updated conclusion.",
+        data_as_of="2026-10-27",
+        evidence=[{"source_uri": "https://example.com/new-filing"}],
+        verification_status="unverified",
+    )
+
+    exported = store.export_series(first.revision.artifact_id, "json")
+    repeated = store.export_series(first.revision.artifact_id, "json")
+
+    assert exported.to_dict() == repeated.to_dict()
+    assert exported.filename == f"{first.revision.artifact_id}.json"
+    assert exported.media_type == "application/json"
+    document = json.loads(exported.content)
+    assert document["schema_version"] == 1
+    assert document["artifact_id"] == first.revision.artifact_id
+    assert document["revision_count"] == 2
+    assert [row["revision_id"] for row in document["revisions"]] == [
+        first.revision.revision_id,
+        second.revision.revision_id,
+    ]
+    assert document["revisions"][0]["evidence"][0]["content_hash"] == "abc"
+    assert document["revisions"][1]["verification_status"] == "unverified"
+    assert "exported_at" not in document
+
+
+def test_markdown_export_keeps_verification_and_evidence_visible(tmp_path):
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    first = _save(store)
+    _save(
+        store,
+        artifact_id=first.revision.artifact_id,
+        content="Updated conclusion.",
+        data_as_of="2026-10-27",
+        verification_status="unverified",
+    )
+
+    exported = store.export_series(first.revision.artifact_id, "markdown")
+    repeated = store.export_series(first.revision.artifact_id, "markdown")
+
+    assert exported.content == repeated.content
+    assert exported.filename == f"{first.revision.artifact_id}.md"
+    assert exported.media_type == "text/markdown; charset=utf-8"
+    assert "# NVDA fundamental review" in exported.content
+    assert "## Revision 1" in exported.content
+    assert "## Revision 2" in exported.content
+    assert "Original conclusion with traceable evidence." in exported.content
+    assert "https://example.com/filing" in exported.content
+    assert "Verification status: verified" in exported.content
+    assert "Verification status: unverified" in exported.content
+    assert "exported_at" not in exported.content
+    assert exported.content.endswith("\n")
+
+    with_backticks = _save(
+        store,
+        subject="Evidence fence review",
+        evidence=[{"note": "literal ```json fence"}],
+    )
+    fenced = store.export_series(with_backticks.revision.artifact_id, "markdown")
+    assert "````json\n" in fenced.content
+    assert "literal ```json fence" in fenced.content
+    assert "\n````\n" in fenced.content
+
+
+def test_export_rejects_missing_series_and_unknown_format(tmp_path):
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    with pytest.raises(KeyError):
+        store.export_series("ra_missing", "json")
+
+    saved = _save(store)
+    with pytest.raises(ValueError, match="format"):
+        store.export_series(saved.revision.artifact_id, "xml")
 
 
 def test_nonfinite_evidence_is_rejected_before_persistence(tmp_path):

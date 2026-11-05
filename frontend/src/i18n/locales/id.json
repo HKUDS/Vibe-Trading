@@ -124,7 +124,11 @@
     "hypothesis_id": "ID hipotesis",
     "goal_id": "ID tujuan",
     "session_id": "ID sesi",
-    "run_id": "ID proses"
+    "run_id": "ID proses",
+    "exportJson": "Ekspor JSON",
+    "exportMarkdown": "Ekspor Markdown",
+    "exporting": "Mengekspor…",
+    "exportError": "Tidak dapat mengekspor artefak riset."
   },
   "runtime": {
     "monitorBadge": "Monitor Runtime",

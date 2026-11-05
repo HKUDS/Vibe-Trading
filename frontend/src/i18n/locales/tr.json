@@ -86,7 +86,11 @@
     "hypothesis_id": "Hipotez kimliği",
     "goal_id": "Hedef kimliği",
     "session_id": "Oturum kimliği",
-    "run_id": "Çalıştırma kimliği"
+    "run_id": "Çalıştırma kimliği",
+    "exportJson": "JSON'u dışa aktar",
+    "exportMarkdown": "Markdown'u dışa aktar",
+    "exporting": "Dışa aktarılıyor…",
+    "exportError": "Araştırma çıktıları dışa aktarılamadı."
   },
   "runtime": {
     "monitorBadge": "Çalışma durumu izleyicisi",

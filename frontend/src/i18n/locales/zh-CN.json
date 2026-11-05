@@ -118,7 +118,11 @@
     "hypothesis_id": "假设 ID",
     "goal_id": "目标 ID",
     "session_id": "会话 ID",
-    "run_id": "运行 ID"
+    "run_id": "运行 ID",
+    "exportJson": "导出 JSON",
+    "exportMarkdown": "导出 Markdown",
+    "exporting": "正在导出…",
+    "exportError": "无法导出研究资料。"
   },
   "runtime": {
     "monitorBadge": "交易监控",

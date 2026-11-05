@@ -494,6 +494,13 @@ export interface ResearchArtifactRevision {
   run_id: string | null;
 }
 
+export interface ResearchArtifactExport {
+  filename: string;
+  media_type: string;
+  content: string;
+  sha256: string;
+}
+
 export interface ResearchArtifactSaveResult {
   revision: ResearchArtifactRevision;
   created: boolean;
@@ -531,6 +538,8 @@ export const api = {
     request<{ artifact: ResearchArtifactRevision; revisions: ResearchArtifactRevision[] }>(`/api/research-artifacts/${encodeURIComponent(artifactId)}`),
   getResearchRevision: (revisionId: string) =>
     request<{ revision: ResearchArtifactRevision }>(`/api/research-artifacts/revision/${encodeURIComponent(revisionId)}`),
+  exportResearchArtifact: (artifactId: string, format: "json" | "markdown" = "json") =>
+    request<ResearchArtifactExport>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/export?format=${format}`),
   saveResearchArtifact: (body: SaveResearchArtifactRequest) =>
     request<ResearchArtifactSaveResult>("/api/research-artifacts", { method: "POST", body: JSON.stringify(body) }),
   getCorrelationAnalysis: (codes: string, days: number, method: "pearson" | "spearman", includeRegime: boolean, signal?: AbortSignal) =>
