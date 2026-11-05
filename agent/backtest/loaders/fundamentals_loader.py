@@ -310,6 +310,10 @@ def _is_flow_concept_series(concepts: Iterable[str]) -> bool:
 def _to_ttm_flow_series(df: pd.DataFrame) -> pd.DataFrame:
     ttm = df.sort_values("period_end").copy()
     ttm["value"] = ttm["value"].rolling(window=4, min_periods=4).sum()
+    # Four rows are a trailing year only when they are four adjacent quarters;
+    # a quarter missing from the facts would otherwise sum a 15-month window.
+    window_days = (ttm["period_end"] - ttm["period_start"].shift(3)).dt.days
+    ttm.loc[~window_days.between(*ANNUAL_SPAN_DAYS), "value"] = float("nan")
     filed_values = list(ttm["filed"])
     ttm["filed"] = [
         pd.NaT if pos < 3 else max(filed_values[pos - 3 : pos + 1])
