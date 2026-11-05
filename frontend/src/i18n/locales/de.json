@@ -2350,6 +2350,7 @@
       "testFailed": "Test für {{label}} fehlgeschlagen: {{error}}",
       "unknownTestError": "Der Connector hat einen unbekannten Fehler zurückgegeben.",
       "delete": "Löschen",
+      "deleteInUse": "Entferne diese Verbindung aus „Kontopositionen“ und speichere die Änderungen, bevor du sie löschst.",
       "configured": "Erforderliche Zugangsdaten konfiguriert",
       "accountTitle": "Konto",
       "accountCurrent": "Liest das Konto mit der Endung ····{{last4}}",

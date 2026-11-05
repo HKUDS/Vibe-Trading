@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectionCenter } from "@/components/portfolio/ConnectionCenter";
-import { api, type LocalConnection } from "@/lib/api";
+import { api, ApiError, type LocalConnection } from "@/lib/api";
 import i18n from "@/i18n";
 
 vi.mock("@/lib/api", async () => {
@@ -15,6 +15,7 @@ vi.mock("@/lib/api", async () => {
       selectConnectionAccount: vi.fn(),
       saveConnectionEndpoint: vi.fn(),
       checkConnection: vi.fn(),
+      deleteConnection: vi.fn(),
     },
   };
 });
@@ -25,6 +26,7 @@ const mocked = api as unknown as {
   selectConnectionAccount: ReturnType<typeof vi.fn>;
   saveConnectionEndpoint: ReturnType<typeof vi.fn>;
   checkConnection: ReturnType<typeof vi.fn>;
+  deleteConnection: ReturnType<typeof vi.fn>;
 };
 
 function robinhood(accountRef: string): LocalConnection {
@@ -57,6 +59,72 @@ function renderCenter(connection: LocalConnection, onChanged = vi.fn().mockResol
   render(<ConnectionCenter open onClose={() => undefined} onChanged={onChanged} />);
   return onChanged;
 }
+
+describe("ConnectionCenter deletion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.deleteConnection.mockReset().mockResolvedValue({ status: "ok" });
+  });
+
+  it.each([
+    ["en", "Remove this connection from Account holdings and save your changes before deleting it."],
+    ["zh-CN", "请先从账户持仓中移除此连接并保存，再删除连接。"],
+  ])("localizes an in-use connection error in %s", async (language, message) => {
+    try {
+      await i18n.changeLanguage(language);
+      renderCenter(robinhood(""));
+      mocked.deleteConnection.mockRejectedValueOnce(new ApiError("Server fallback message", 400, "connection_in_use"));
+      fireEvent.click(await screen.findByRole("button", { name: language === "zh-CN" ? "删除" : "Delete" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+      expect(screen.queryByText("Server fallback message")).not.toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage("en"); });
+    }
+  });
+
+  it("updates an existing deletion error when the language changes", async () => {
+    renderCenter(robinhood(""));
+    mocked.deleteConnection.mockRejectedValueOnce(new ApiError("Server fallback message", 400, "connection_in_use"));
+    fireEvent.click(await screen.findByRole("button", { name: i18n.t("portfolio.connections.delete") }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Remove this connection from Account holdings");
+    try {
+      await act(async () => { await i18n.changeLanguage("zh-CN"); });
+      await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("请先从账户持仓中移除此连接并保存，再删除连接。"));
+      expect(mocked.deleteConnection).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => { await i18n.changeLanguage("en"); });
+    }
+  });
+
+  it("deletes the connection and refreshes the list", async () => {
+    const onChanged = renderCenter(robinhood(""));
+    const button = await screen.findByRole("button", { name: i18n.t("portfolio.connections.delete") });
+    mocked.getConnections.mockResolvedValue({ status: "ok", connections: [], profiles: [] });
+    fireEvent.click(button);
+    await waitFor(() => expect(mocked.deleteConnection).toHaveBeenCalledWith("robinhood-live"));
+    expect(await screen.findByText(i18n.t("portfolio.connections.empty"))).toBeInTheDocument();
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows deletion errors on the affected card and clears them on retry", async () => {
+    mocked.getConnections.mockResolvedValue({ status: "ok", connections: [robinhood(""), ibkr()], profiles: [] });
+    render(<ConnectionCenter open onClose={() => undefined} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+    const label = await screen.findByText("Robinhood");
+    const button = within(label.closest("article")!).getByRole("button", { name: i18n.t("portfolio.connections.delete") });
+    mocked.deleteConnection.mockRejectedValueOnce(new Error("remove this connection from the portfolio before deleting it"));
+    fireEvent.click(button);
+    const alert = await screen.findByRole("alert");
+    const card = alert.closest("article")!;
+    expect(within(card).getByText("Robinhood")).toBeInTheDocument();
+    expect(alert).toHaveTextContent("remove this connection from the portfolio before deleting it");
+    expect(within(screen.getByText("IBKR Paper").closest("article")!).queryByRole("alert")).not.toBeInTheDocument();
+    expect(mocked.getConnections).toHaveBeenCalledTimes(1);
+    mocked.getConnections.mockResolvedValue({ status: "ok", connections: [ibkr()], profiles: [] });
+    fireEvent.click(within(card).getByRole("button", { name: i18n.t("portfolio.connections.delete") }));
+    await waitFor(() => expect(mocked.deleteConnection).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+});
 
 describe("ConnectionCenter account selection", () => {
   beforeEach(() => {

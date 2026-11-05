@@ -25,6 +25,56 @@ class _MemoryCredentials:
         self.values.pop((service_name, username), None)
 
 
+@pytest.fixture
+def deletion_client(tmp_path, monkeypatch):
+    from src.portfolio.config import PortfolioSettingsStore
+
+    credentials = _MemoryCredentials()
+    store = ConnectionStore(tmp_path / "connections.json", credential_store=CredentialStore(credentials))
+    store.create("main-alpaca", "alpaca-live-sdk-readonly", "Main Alpaca")
+    store.credentials.save("main-alpaca", {"api_key": "test-key", "secret_key": "test-secret"})
+    settings = PortfolioSettingsStore(tmp_path / "portfolio.json", connection_store=store)
+    monkeypatch.setattr(connection_routes, "ConnectionStore", lambda: store)
+    monkeypatch.setattr(connection_routes, "PortfolioSettingsStore", lambda: settings)
+    app = FastAPI()
+    connection_routes.register_connection_routes(app)
+    return TestClient(app, raise_server_exceptions=False), store, settings, credentials
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_delete_rejects_portfolio_references_until_settings_are_saved(deletion_client, enabled):
+    client, store, settings, credentials = deletion_client
+    settings.save({"sources": [{"connection_id": "main-alpaca", "enabled": enabled}]})
+    original_settings = settings.path.read_bytes()
+    response = client.delete("/api/connections/main-alpaca")
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "connection_in_use"
+    assert "remove this connection from the portfolio" in response.json()["detail"]["message"]
+    assert store.get("main-alpaca").id == "main-alpaca"
+    assert settings.path.read_bytes() == original_settings
+    assert credentials.values
+
+    settings.save({"sources": []})
+    assert client.delete("/api/connections/main-alpaca").status_code == 200
+    assert store.list() == []
+    assert credentials.values == {}
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, PermissionError])
+def test_delete_returns_vault_failure_without_deleting_connection(deletion_client, monkeypatch, error_type):
+    client, store, _, credentials = deletion_client
+
+    def locked(*args):
+        raise error_type("credential vault is locked")
+
+    monkeypatch.setattr(credentials, "delete_password", locked)
+    response = client.delete("/api/connections/main-alpaca")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "credential vault is locked"
+    assert store.get("main-alpaca").id == "main-alpaca"
+    assert credentials.values
+
+
 def test_connection_routes_create_list_and_check_without_returning_secrets(
     tmp_path,
     monkeypatch,

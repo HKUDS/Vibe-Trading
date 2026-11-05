@@ -152,19 +152,21 @@ class CredentialStore:
         return result
 
     def delete(self, connection_id: str, fields: Iterable[str]) -> None:
-        """Remove the stored secrets for a connection.
+        """Remove stored secrets; a missing vault cannot confirm their deletion.
 
         Args:
             connection_id: Identifier of the local connection instance.
             fields: Credential field names declared by the connector manifest.
 
         Raises:
-            RuntimeError: If the ``keyring`` extra is not installed.
-            Exception: Whatever the backend raises for a failure other than a
-                missing entry, which is treated as already deleted.
+            RuntimeError: If the vault is unavailable or cannot delete the secrets.
+                A missing entry is treated as already deleted.
         """
+        field_names = tuple(fields)
+        if not field_names:
+            return
         backend = self.backend
-        for field in fields:
+        for field in field_names:
             try:
                 backend.delete_password(
                     SERVICE_NAME,
@@ -172,4 +174,4 @@ class CredentialStore:
                 )
             except Exception as exc:  # keyring backends differ on missing entries
                 if "not found" not in str(exc).lower():
-                    raise
+                    raise RuntimeError(str(exc)) from exc

@@ -2312,6 +2312,7 @@
       "testFailed": "{{label}} kontrolü başarısız: {{error}}",
       "unknownTestError": "Bağlantı bilinmeyen bir hata döndürdü.",
       "delete": "Sil",
+      "deleteInUse": "Bu bağlantıyı silmeden önce Portföy'den kaldırın ve değişiklikleri kaydedin.",
       "configured": "Gerekli kimlik bilgileri yapılandırıldı",
       "accountTitle": "Hesap",
       "accountCurrent": "Sonu ····{{last4}} olan hesabı okur",

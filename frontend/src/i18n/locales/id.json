@@ -2350,6 +2350,7 @@
       "testFailed": "Pemeriksaan {{label}} gagal: {{error}}",
       "unknownTestError": "Connector mengembalikan error yang tidak diketahui.",
       "delete": "Hapus",
+      "deleteInUse": "Keluarkan koneksi ini dari Posisi akun dan simpan perubahan sebelum menghapus koneksi tersebut.",
       "configured": "Kredensial wajib sudah dikonfigurasi",
       "accountTitle": "Akun",
       "accountCurrent": "Membaca akun yang berakhiran ····{{last4}}",

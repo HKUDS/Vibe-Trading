@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, FolderCode, Loader2, PlugZap, Plus, ShieldCheck, Trash2, Wallet, X } from "lucide-react";
 import { PortfolioCompatibilityBadge } from "@/components/portfolio/PortfolioCompatibilityBadge";
-import { api, type BrokerAccountChoice, type ConnectionsResponse, type LocalConnection } from "@/lib/api";
+import { api, ApiError, type BrokerAccountChoice, type ConnectionsResponse, type LocalConnection } from "@/lib/api";
 
 interface Props {
   open: boolean;
@@ -26,6 +26,7 @@ export function ConnectionCenter({ open, onClose, onChanged }: Props) {
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, Error>>({});
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
 
   async function load() {
@@ -35,6 +36,7 @@ export function ConnectionCenter({ open, onClose, onChanged }: Props) {
   useEffect(() => {
     if (!open) return;
     setMessage(null);
+    setDeleteErrors({});
     void load().catch((error) => setMessage(error instanceof Error ? error.message : String(error)));
   }, [open]);
 
@@ -116,8 +118,20 @@ export function ConnectionCenter({ open, onClose, onChanged }: Props) {
   async function remove(connection: LocalConnection) {
     setBusy(`delete:${connection.id}`);
     setMessage(null);
+    setDeleteErrors((current) => {
+      const next = { ...current };
+      delete next[connection.id];
+      return next;
+    });
     try {
       await api.deleteConnection(connection.id);
+    } catch (error) {
+      const reason = error instanceof Error ? error : new Error(String(error));
+      setDeleteErrors((current) => ({ ...current, [connection.id]: reason }));
+      setBusy(null);
+      return;
+    }
+    try {
       await load();
       await onChanged();
     } catch (error) {
@@ -153,7 +167,7 @@ export function ConnectionCenter({ open, onClose, onChanged }: Props) {
 
         <section>
           <div className="flex items-end justify-between"><div><h3 className="font-medium">{t("portfolio.connections.listTitle")}</h3><p className="mt-1 text-xs text-muted-foreground">{t("portfolio.connections.listCount", { count: data?.connections.length ?? 0 })}</p></div><ShieldCheck className="h-5 w-5 text-positive" /></div>
-          <div className="mt-3 space-y-3">{data?.connections.map((connection) => <ConnectionCard key={connection.id} connection={connection} busy={busy} testResult={testResults[connection.id]} onTest={test} onDelete={remove} onSaved={async () => { await load(); await onChanged(); }} setBusy={setBusy} setMessage={setMessage} />)}{data && !data.connections.length ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{t("portfolio.connections.empty")}</div> : null}</div>
+          <div className="mt-3 space-y-3">{data?.connections.map((connection) => <ConnectionCard key={connection.id} connection={connection} busy={busy} deleteError={deleteErrors[connection.id]} testResult={testResults[connection.id]} onTest={test} onDelete={remove} onSaved={async () => { await load(); await onChanged(); }} setBusy={setBusy} setMessage={setMessage} />)}{data && !data.connections.length ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{t("portfolio.connections.empty")}</div> : null}</div>
         </section>
 
         <section className="rounded-xl border border-dashed p-4">
@@ -166,7 +180,7 @@ export function ConnectionCenter({ open, onClose, onChanged }: Props) {
   </div>;
 }
 
-function ConnectionCard({ connection, busy, testResult, onTest, onDelete, onSaved, setBusy, setMessage }: { connection: LocalConnection; busy: string | null; testResult?: TestResult; onTest: (connection: LocalConnection) => Promise<void>; onDelete: (connection: LocalConnection) => Promise<void>; onSaved: () => Promise<void>; setBusy: (value: string | null) => void; setMessage: (value: string | null) => void }) {
+function ConnectionCard({ connection, busy, deleteError, testResult, onTest, onDelete, onSaved, setBusy, setMessage }: { connection: LocalConnection; busy: string | null; deleteError?: Error; testResult?: TestResult; onTest: (connection: LocalConnection) => Promise<void>; onDelete: (connection: LocalConnection) => Promise<void>; onSaved: () => Promise<void>; setBusy: (value: string | null) => void; setMessage: (value: string | null) => void }) {
   const { t } = useTranslation();
   const [values, setValues] = useState<Record<string, string>>({});
   const socketConnection = (connection.connector === "ibkr" && connection.transport === "local_tws")
@@ -233,6 +247,7 @@ function ConnectionCard({ connection, busy, testResult, onTest, onDelete, onSave
     {connection.account_selection_required ? <AccountSelector connection={connection} busy={busy} setBusy={setBusy} setMessage={setMessage} onSaved={onSaved} /> : null}
     {connection.credential_fields.length ? <div className="mt-4 grid gap-2 sm:grid-cols-2">{connection.credential_fields.map((field) => <label key={field.name} className="text-xs text-muted-foreground">{field.label}{field.required ? <span className="ml-1 text-danger">*</span> : <span className="ml-1">{t("portfolio.connections.optional")}</span>}{connection.credential_status[field.name] ? <span className="ml-1 text-positive">{t("portfolio.connections.credentialSaved")}</span> : null}<input type={field.secret ? "password" : "text"} value={values[field.name] ?? ""} onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))} className={`mt-1 ${fieldClass}`} placeholder={connection.credential_status[field.name] ? "••••••••" : ""} autoComplete="off" /></label>)}</div> : <p className="mt-3 text-xs text-muted-foreground">{connection.transport === "remote_mcp" ? t("portfolio.connections.oauthNote") : t("portfolio.connections.localNote")}</p>}
     <div className="mt-4 flex flex-wrap gap-2">{connection.credential_fields.length ? <button type="button" onClick={() => void saveCredentials()} disabled={busy === `credentials:${connection.id}` || !Object.values(values).some(Boolean)} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs disabled:opacity-40"><ShieldCheck className="h-3.5 w-3.5" />{t("portfolio.connections.saveVault")}</button> : null}<button type="button" onClick={() => void testConnection()} disabled={socketConnection ? busy !== null || !endpointValid : busy === `test:${connection.id}`} className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs">{busy === `test:${connection.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}{t("portfolio.connections.test")}</button><button type="button" onClick={() => void onDelete(connection)} disabled={busy === `delete:${connection.id}`} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs text-danger hover:bg-danger/10"><Trash2 className="h-3.5 w-3.5" />{t("portfolio.connections.delete")}</button></div>
+    {deleteError ? <div role="alert" className="mt-3 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-xs text-danger break-words">{deleteError instanceof ApiError && deleteError.code === "connection_in_use" ? t("portfolio.connections.deleteInUse") : deleteError.message}</div> : null}
     {testResult && !endpointDirty ? <div role="status" className={`mt-3 rounded-md border px-3 py-2 text-xs ${testResult.ok ? "border-positive/30 bg-positive/5 text-positive" : "border-danger/30 bg-danger/5 text-danger"}`}>{testResult.message}</div> : null}
     {connection.credentials_configured ? <div className="mt-3 flex items-center gap-1.5 text-xs text-positive"><CheckCircle2 className="h-3.5 w-3.5" />{t("portfolio.connections.configured")}</div> : null}
   </article>;

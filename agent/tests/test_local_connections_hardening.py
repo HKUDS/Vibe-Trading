@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tomllib
+import types
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,76 @@ def test_credential_store_names_the_extra_when_keyring_is_missing(
 
     with pytest.raises(RuntimeError, match=r'vibe-trading-ai\[keyring\]'):
         CredentialStore().save("main-account", {"api_key": "value"})
+
+
+@pytest.mark.parametrize("profile_id", ["alpaca-live-sdk-readonly", "ibkr-paper-local"])
+def test_delete_connection_without_keyring_installed(tmp_path, monkeypatch, profile_id):
+    real_import = builtins.__import__
+
+    def blocking_import(name, *args, **kwargs):
+        if name == "keyring" or name.startswith("keyring."):
+            raise ModuleNotFoundError("No module named 'keyring'", name="keyring")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocking_import)
+    store = ConnectionStore(tmp_path / "connections.json")
+    store.create("unused", profile_id, "Unused")
+    if profile_id == "alpaca-live-sdk-readonly":
+        with pytest.raises(RuntimeError, match="credential vault"):
+            store.delete("unused")
+        assert store.get("unused").id == "unused"
+    else:
+        store.delete("unused")
+        assert store.list() == []
+
+
+def test_delete_connection_without_a_keyring_backend(tmp_path, monkeypatch):
+    class NoKeyringError(RuntimeError):
+        pass
+
+    def unavailable(*args):
+        raise NoKeyringError("No recommended backend was available")
+
+    keyring = types.ModuleType("keyring")
+    errors = types.ModuleType("keyring.errors")
+    errors.NoKeyringError = NoKeyringError
+    keyring.delete_password = unavailable
+    keyring.get_password = unavailable
+    monkeypatch.setitem(sys.modules, "keyring", keyring)
+    monkeypatch.setitem(sys.modules, "keyring.errors", errors)
+    store = ConnectionStore(tmp_path / "connections.json")
+    store.create("unused", "alpaca-live-sdk-readonly", "Unused")
+    # Listing may cache the imported keyring module before deletion.
+    store.public_list()
+    with pytest.raises(RuntimeError, match="backend"):
+        store.delete("unused")
+    assert store.get("unused").id == "unused"
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, PermissionError])
+def test_delete_connection_keeps_registry_when_vault_is_locked(tmp_path, error_type):
+    class LockedCredentials(_MemoryCredentials):
+        def delete_password(self, service_name, username):
+            raise error_type("credential vault is locked")
+
+    store = ConnectionStore(tmp_path / "connections.json", credential_store=CredentialStore(LockedCredentials()))
+    store.create("protected", "alpaca-live-sdk-readonly", "Protected")
+    with pytest.raises(RuntimeError, match="vault is locked"):
+        store.delete("protected")
+    assert store.get("protected").label == "Protected"
+
+
+def test_delete_connection_removes_only_its_own_credentials(tmp_path):
+    backend = _MemoryCredentials()
+    credentials = CredentialStore(backend)
+    store = ConnectionStore(tmp_path / "connections.json", credential_store=credentials)
+    for connection_id in ["deleted", "retained"]:
+        store.create(connection_id, "alpaca-live-sdk-readonly", connection_id)
+        credentials.save(connection_id, {"api_key": "key", "secret_key": "secret"})
+    store.delete("deleted")
+    assert credentials.load("deleted", ["api_key", "secret_key"]) == {}
+    assert credentials.load("retained", ["api_key", "secret_key"]) == {"api_key": "key", "secret_key": "secret"}
+    assert [row.id for row in store.list()] == ["retained"]
 
 
 def test_connection_modules_import_without_keyring_installed() -> None:
