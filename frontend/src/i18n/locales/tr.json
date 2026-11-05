@@ -56,6 +56,16 @@
     "researchArtifacts": "Araştırma çıktıları"
   },
   "researchArtifacts": {
+    "compareTitle": "Revizyon karşılaştırması",
+    "fromRevision": "Başlangıç revizyonu",
+    "toRevision": "Hedef revizyon",
+    "compareAction": "Karşılaştır",
+    "comparing": "Karşılaştırılıyor…",
+    "compareError": "Revizyonlar karşılaştırılamadı.",
+    "comparisonOnly": "Salt okunur karşılaştırma. Hiçbir revizyon yeniden doğrulanmaz.",
+    "noChanges": "Bu iki revizyon arasında fark yok.",
+    "metadataChanges": "Meta veri değişiklikleri",
+    "compareTruncated": "Fark ilk 400 satırla sınırlandırıldı.",
     "completeness": "Tamlık",
     "optionalLinks": "İsteğe bağlı bağlantılı kimlikler",
     "formTitleNew": "Araştırmayı kaydet",

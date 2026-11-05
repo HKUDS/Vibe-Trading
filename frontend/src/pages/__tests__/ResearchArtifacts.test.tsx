@@ -6,6 +6,7 @@ const apiMock = vi.hoisted(() => ({
   searchResearchArtifacts: vi.fn(),
   getResearchArtifact: vi.fn(),
   saveResearchArtifact: vi.fn(),
+  compareResearchArtifactRevisions: vi.fn(),
 }));
 
 vi.mock("@/lib/api", () => ({ api: apiMock }));
@@ -92,5 +93,53 @@ describe("ResearchArtifacts page", () => {
       ],
     }));
     expect(await screen.findByText("Created revision ra_1_r3.")).toBeInTheDocument();
+  });
+
+  it("compares arbitrary revisions without changing the revision editor", async () => {
+    const latest = { ...third, content: "Third conclusion." };
+    apiMock.searchResearchArtifacts.mockResolvedValue({ count: 1, artifacts: [latest] });
+    apiMock.getResearchArtifact.mockResolvedValue({ artifact: latest, revisions: [latest, second, first] });
+    apiMock.compareResearchArtifactRevisions.mockResolvedValue({
+      comparison: {
+        artifact_id: "ra_1",
+        from: { revision_id: first.revision_id, revision_number: 1 },
+        to: { revision_id: latest.revision_id, revision_number: 3 },
+        content: {
+          changed: true,
+          from_hash: "old",
+          to_hash: "new",
+          from_line_count: 1,
+          to_line_count: 1,
+          diff: ["--- ra_1_r1", "+++ ra_1_r3", "@@ -1 +1 @@", "-Original conclusion.", "+Third conclusion."],
+          truncated: false,
+        },
+        evidence: {
+          added: [{ source_uri: "https://example.com/new" }],
+          removed: [{ source_uri: "https://example.com/old" }],
+          unchanged_count: 0,
+          order_changed: false,
+          changed: true,
+        },
+        metadata: { data_as_of: { from: "2026-10-20", to: "2026-11-03" } },
+      },
+    });
+    render(<ResearchArtifacts />, { wrapper: MemoryRouter });
+
+    fireEvent.click(await screen.findByText("NVDA fundamental review"));
+    const from = await screen.findByLabelText("From revision");
+    const to = screen.getByLabelText("To revision");
+    expect(from).toHaveValue("ra_1_r2");
+    expect(to).toHaveValue("ra_1_r3");
+    fireEvent.change(from, { target: { value: "ra_1_r1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+
+    await waitFor(() => expect(apiMock.compareResearchArtifactRevisions).toHaveBeenCalledWith("ra_1", "ra_1_r1", "ra_1_r3"));
+    expect(screen.getByText(/-Original conclusion\./)).toBeInTheDocument();
+    expect(screen.getByText(/\+Third conclusion\./)).toBeInTheDocument();
+    expect(screen.getByText(/"data_as_of"/)).toBeInTheDocument();
+    expect(screen.getByText("Read-only comparison. No revision is revalidated.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revise from this revision" }));
+    expect(screen.getByLabelText("Research content")).toHaveValue("Third conclusion.");
   });
 });

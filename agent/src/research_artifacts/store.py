@@ -16,6 +16,7 @@ from typing import Any, TypeVar
 from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
 
+from .comparison import compare_revisions
 from .models import ResearchArtifactRevision, ResearchArtifactSaveResult
 
 
@@ -331,6 +332,26 @@ class ResearchArtifactStore:
             (revision_id,),
         ).fetchone()
         return self._from_row(row) if row else None
+
+    @_synchronized
+    def compare_revisions(
+        self,
+        *,
+        artifact_id: str,
+        from_revision_id: str,
+        to_revision_id: str,
+    ) -> dict[str, Any]:
+        """Compare two revisions that must belong to the same series."""
+        from_revision = self.get_revision(from_revision_id)
+        to_revision = self.get_revision(to_revision_id)
+        if (
+            from_revision is None
+            or to_revision is None
+            or from_revision.artifact_id != artifact_id
+            or to_revision.artifact_id != artifact_id
+        ):
+            raise KeyError(f"research revision not found in research artifact: {artifact_id}")
+        return compare_revisions(from_revision, to_revision)
 
     @_synchronized
     def list_revisions(self, artifact_id: str) -> list[ResearchArtifactRevision]:
