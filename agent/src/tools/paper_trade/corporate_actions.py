@@ -183,10 +183,6 @@ def classify_boundary(
     observed = dec_after / dec_before  # Decimal division (28-digit context)
     price_ratio = Fraction(dec_after) / Fraction(dec_before)  # exact, for gates
 
-    # Candidate band: outside (2/3, 3/2).  ratio == 1 is inside → no event.
-    if _BAND_LOW < price_ratio < _BAND_HIGH:
-        return BoundaryVerdict(KIND_NONE, observed_ratio=observed)
-
     # Price gate: does the ratio match 1/mult for a frozen clean multiplier?
     matched: Fraction | None = None
     for mult in CLEAN_QTY_MULTIPLIERS:
@@ -194,6 +190,12 @@ def classify_boundary(
         if abs(price_ratio - clean_price) <= PRICE_RATIO_REL_TOL * clean_price:
             matched = mult
             break
+
+    # Candidate band: outside (2/3, 3/2).  ratio == 1 is inside → no event.
+    # A 3:2 or 2:3 ratio quantized to just inside a bound is still a match.
+    if matched is None and _BAND_LOW < price_ratio < _BAND_HIGH:
+        return BoundaryVerdict(KIND_NONE, observed_ratio=observed)
+
     if matched is None:
         # Candidate but no clean ratio explains it → fail-closed unresolved.
         return BoundaryVerdict(KIND_UNRESOLVED, observed_ratio=observed)

@@ -192,6 +192,21 @@ def test_neutral_band_moves_are_not_candidates(before: float, after: float) -> N
     assert verdict.kind == corporate_actions.KIND_NONE
 
 
+@pytest.mark.parametrize(("before", "after", "vol_before", "vol_after", "mult"), [
+    (30.0, 20.01, 1000.0, 1500.0, Fraction(3, 2)),  # 3:2 split, ratio 0.667
+    (20.0, 29.98, 1500.0, 1000.0, Fraction(2, 3)),  # 2:3 reverse, ratio 1.499
+])
+def test_quantized_three_two_ratio_just_inside_the_band_is_still_a_candidate(
+        before: float, after: float, vol_before: float, vol_after: float, mult: Fraction) -> None:
+    kwargs = dict(close_before=before, close_after=after,
+                  volume_before=vol_before, volume_after=vol_after)
+    flat = corporate_actions.classify_boundary(qty=Decimal(0), **kwargs)
+    assert flat.kind == corporate_actions.KIND_CLEAN
+    assert flat.qty_multiplier == mult
+    held = corporate_actions.classify_boundary(qty=Decimal(100), **kwargs)
+    assert held.kind == corporate_actions.KIND_UNRESOLVED
+
+
 @pytest.mark.parametrize(("before", "after"), [
     (0.0, 100.0), (-5.0, 100.0), (float("nan"), 100.0), (100.0, float("nan")), (100.0, 0.0),
 ])
