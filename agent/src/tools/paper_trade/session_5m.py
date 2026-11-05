@@ -6,11 +6,22 @@ matching opportunity, and unfilled day orders are canceled at the session
 close.  Only ``interval="5m"`` reaches this module; the pt-v1.1 daily path is
 untouched.
 
-Phase-2 semantics:
+Phase-2/3 semantics:
 
 - a market order fills in full at the first continuous bar whose fill gates
-  pass; a limit order rests across bars and fills in full at the first bar
-  whose reference price satisfies the limit;
+  pass, at that bar's reference price;
+- a resting limit order (JoinQuant 订单处理) fills in full at its 委托价
+  (``order.limit``) once a bar trades through it: a buy needs
+  ``bar.low < limit``, a sell needs ``bar.high > limit`` — both strict, so a
+  bar that only touches the limit never fills.  On the first continuous bar a
+  strictly better reference (buy ``ref < limit``, sell ``ref > limit``) fills
+  at that reference, never worse than the limit; at equality the bar rule
+  alone decides.  Later bars let only the bar low/high rule decide the
+  verdict, so ``path_model`` cannot change a limit fill that the bar trades
+  through — it only picks the first-bar marketable *price*;
+- the price-limit band and cash gates are anchored on the actual fill price
+  (the reference for market/first-bar fills, the 委托价 for bar-low/high
+  fills);
 - an order that never fills is canceled by ``settle_day`` at session end (15:00
   on a complete session);
 - no partial fills and no volume-share model (Phase 3);
@@ -25,10 +36,11 @@ positional (``pt-<index>``), and no clock or randomness is read.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Sequence
 
-from .order_lifecycle import STATUS_OPEN, OrderBook, OrderRequest, assign_ids
-from .rules import money
+from .order_lifecycle import _ACTIVE_STATUSES, OrderBook, OrderRequest, assign_ids
+from .rules import money, quantize_money
 from .schema import CANCELED_REASON_CODE, CanceledOrder, Order
 
 if TYPE_CHECKING:
@@ -46,6 +58,28 @@ def _request(order: Order) -> OrderRequest:
         order_type="limit" if limit is not None else "market",
         limit_price=limit,
     )
+
+
+def _limit_fill_price(order: Order, ref: Decimal, bar: Any, *, first_bar: bool) -> Decimal | None:
+    """The 委托价 execution for a resting limit, or ``None`` while it rests.
+
+    JoinQuant's bar matching triggers on the bar's traded range: a buy needs
+    ``bar.low < limit`` and a sell ``bar.high > limit`` (both strict, so a bar
+    whose low/high only touches the limit never fills), and the execution is
+    the 委托价.  The first continuous bar adds the first-bar marketable rule:
+    a strictly better reference fills at that reference, never worse than the
+    limit; at equality the bar-low/high rule alone decides.
+    """
+    limit = money(order.limit)
+    low = quantize_money(money(float(bar["low"])))
+    high = quantize_money(money(float(bar["high"])))
+    if order.side == "buy":
+        if first_bar and ref < limit:
+            return ref
+        return limit if low < limit else None
+    if first_bar and ref > limit:
+        return ref
+    return limit if high > limit else None
 
 
 def _cancel_unfilled(
@@ -94,30 +128,48 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                     day, order, "suspended",
                     f"no 5m continuous bars for {symbol} on {day.date}")
             continue
+        live_bar = 0
         for _, bar in bars.sort_index().iterrows():
             if float(bar["volume"]) <= 0:
+                # A zero-volume bar is not a matching opportunity, so it can
+                # neither fill nor consume the first-bar marketable branch.
                 continue
             ref = session._reference_price_from_bar(bar)
+            first_bar = live_bar == 0
+            live_bar += 1
             for order_id in order_ids:
                 state = book.get(order_id)
-                if state is None or state.status != STATUS_OPEN:
+                if state is None or state.status not in _ACTIVE_STATUSES:
                     continue
                 order = by_id[order_id]
-                gate = session._fill_gate(day, order, ref)
+                if order.limit is None:
+                    price = ref
+                else:
+                    # Trigger/price split: the bar range decides whether a
+                    # resting limit fills, and it fills at the 委托价; only the
+                    # first continuous bar can fill at a strictly better
+                    # reference.  A limit that never triggers rests untouched.
+                    price = _limit_fill_price(order, ref, bar, first_bar=first_bar)
+                    if price is None:
+                        continue
+                gate = session._fill_gate(day, order, price)
                 if gate is not None:
                     code, detail = gate
-                    if code in {"limit_not_marketable", "limit_up", "limit_down"}:
+                    if code in {"limit_up", "limit_down"}:
+                        # The band blocks the side; the order waits for a
+                        # later bar (and is rejected at day end if still
+                        # blocked), exactly like a market order.
                         deferred[order_id] = gate
                         continue
                     book.reject(order_id, code)
                     session._reject(day, order, code, detail)
                     continue
-                book.fill(order_id, money(order.qty), ref)
-                session._fill(day.date, order, float(ref))
+                book.fill(order_id, money(order.qty), price)
+                session._fill(day.date, order, float(price))
 
     for order_id, gate in deferred.items():
         state = book.get(order_id)
-        if state is not None and state.status == STATUS_OPEN and gate[0] != "limit_not_marketable":
+        if state is not None and state.status in _ACTIVE_STATUSES:
             book.reject(order_id, gate[0])
             session._reject(day, by_id[order_id], *gate)
     _cancel_unfilled(session, day, book, by_id)

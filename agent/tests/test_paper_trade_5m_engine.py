@@ -2,9 +2,12 @@
 
 Every continuous 5m bar (09:30 opening-auction print excluded) is a matching
 opportunity.  A market order fills at the first bar whose fill gates pass; a
-limit order rests until a bar satisfies its price and is canceled at session
-end if none does.  ``bar_median`` / ``bar_close`` drive the reference, limit
-marketability, the cash gate, the fill price, the notional and the fee.
+limit order rests until a bar trades through it (buy ``bar.low < limit``,
+sell ``bar.high > limit``) and fills at its 委托价, or is canceled at session
+end if none does.  The first continuous bar may instead fill a strictly better
+``ref``.  ``bar_median`` / ``bar_close`` drive the reference, a market order's
+fill price and the first-bar marketable price; the cash gate, notional and fee
+follow the actual fill price.
 A failed order keeps its specific pt-v1.1 reason in ``rejected_orders`` AND
 gets one ``canceled_after_failed_match`` row in ``canceled_orders`` (D2).
 Offline: synthetic frames through a fake loader, never the network.
@@ -227,7 +230,7 @@ def test_market_sell_fills_at_the_first_continuous_bar() -> None:
     assert outcome.canceled_orders == ()
 
 
-@pytest.mark.parametrize(("limit", "expected"), [(10.50, 10.00), (10.10, 10.00), (10.00, 10.00), (9.90, None)])
+@pytest.mark.parametrize(("limit", "expected"), [(10.50, 10.00), (10.10, 10.00), (10.00, None), (9.90, None)])
 def test_buy_limit_fills_at_the_first_marketable_bar(limit: float, expected: float | None) -> None:
     outcome = _outcome(orders=[_buy(limit=limit)])
 
@@ -243,7 +246,7 @@ def test_buy_limit_fills_at_the_first_marketable_bar(limit: float, expected: flo
     ]
 
 
-@pytest.mark.parametrize(("limit", "expected"), [(10.00, 10.00), (10.10, 10.20), (10.20, 10.20), (10.30, None)])
+@pytest.mark.parametrize(("limit", "expected"), [(10.00, 10.00), (10.10, 10.10), (10.20, None), (10.30, None)])
 def test_sell_limit_fills_at_the_first_marketable_bar(limit: float, expected: float | None) -> None:
     outcome = _outcome(orders=[_sell(limit=limit)], positions=[{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}])
 
@@ -259,18 +262,16 @@ def test_sell_limit_fills_at_the_first_marketable_bar(limit: float, expected: fl
     ]
 
 
-def test_path_model_changes_the_reference_and_the_verdict() -> None:
+def test_path_model_changes_only_the_first_bar_marketable_price() -> None:
     market_data, _ = _cn_a_data(five={_SYM: _dispersed_5m()})
     median = _outcome(orders=[_buy(limit=10.15)], market_data=market_data)
     close = _outcome(orders=[_buy(limit=10.15)], market_data=market_data, path_model="bar_close")
 
     assert [f.price for f in median.fills] == [10.10]
     assert median.rejected_orders == ()
-    assert close.fills == ()
+    assert [f.price for f in close.fills] == [10.15]
     assert close.rejected_orders == ()
-    assert [(c.reason_code, c.detail) for c in close.canceled_orders] == [
-        (CANCELED_REASON_CODE, "unfilled day order canceled at session end")
-    ]
+    assert close.canceled_orders == ()
     assert median.engine_fingerprint != close.engine_fingerprint
 
 
