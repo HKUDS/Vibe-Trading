@@ -1462,10 +1462,11 @@ joblib==1.5.3 \
     # via
     #   -r agent/requirements.txt
     #   scikit-learn
-joserfc==1.7.4 \
-    --hash=sha256:32d46c2cd5e3203c13e87a6c61333cab310b1ba80cd54b4c4f386a848a122463 \
-    --hash=sha256:b3bc561672ae541b17a9237053b48a03dacddd92d68047b3ecdfb4b5714a88ed
+joserfc==1.7.6 \
+    --hash=sha256:e2d72e3fa937ed8ddd42ad8c1cc337a43e7ffd02efa572a2aa15e2764a05b506 \
+    --hash=sha256:fb1cf6d2977318bef976c2ed2ef2167cc5f8ade8fc96f034e38f7abd656907c4
     # via
+    #   -r agent/requirements.txt
     #   authlib
     #   fastmcp-slim
 jsonpatch==1.33 \
