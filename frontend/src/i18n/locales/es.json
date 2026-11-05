@@ -15,7 +15,7 @@
     "shannon": "Diagnóstico de cartera (Shannon)"
   },
   "app": {
-    "version": "v0.1.18"
+    "version": "v0.1.19"
   },
   "charts": {
     "noPriceData": "Aún no hay datos de precio para este símbolo",

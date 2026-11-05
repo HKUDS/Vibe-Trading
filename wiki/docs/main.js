@@ -1,12 +1,12 @@
-import { initSite, setPageLang, storedLang } from "/site.js?v=20261105";
-import { DOCS_SITE as SITE, buildDocMetadata, serializeStructuredData } from "./metadata.js?v=20261105";
+import { initSite, setPageLang, storedLang } from "/site.js?v=20261105b";
+import { DOCS_SITE as SITE, buildDocMetadata, serializeStructuredData } from "./metadata.js?v=20261105b";
 import {
   DOCS_DEFAULT_LANG,
   DOCS_DEFAULT_PAGE,
   DOCS_LANGUAGES,
   DOCS_UI,
   DOCS_VERSIONS
-} from "/docs/content.js?v=20261105";
+} from "/docs/content.js?v=20261105b";
 
 function stripTags(html) {
   return String(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");

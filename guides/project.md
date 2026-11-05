@@ -43,8 +43,8 @@ Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosyste
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | Local loader Shipped |
 | **Options Lab** | Multi-leg payoff chart, Greeks dashboard and spot × IV scenario explorer | Available at `/options`. Volatility surface planned. |
 | **Portfolio Studio** | Consolidated holdings, risk X-ray, constrained turnover-aware optimization and snapshot-based allocation proposals | Available. Portfolio proposals show value changes for user-supplied target weights. |
-| **Paper trading** | Persistent daily simulated accounts and a stateless paper step | Daily accounts available in 0.1.18. Five-minute A-share steps on main. |
-| **Research artifacts** | Search, save and revise dated conclusions with evidence | Available on main via Web, CLI, API and agent tools. |
+| **Paper trading** | Persistent daily simulated accounts and a stateless paper step | Daily accounts since 0.1.17. Five-minute A-share steps since 0.1.19. |
+| **Research artifacts** | Search, save and revise dated conclusions with evidence | Available since 0.1.19 via Web, CLI, API and agent tools. |
 | **Alpha Zoo** | 478 pre-built alphas (Qlib 158 + Kakushadze 101 + GTJA 191 + academic + fundamental) with one-line bench, agent integration, and Web UI | **Shipped 0.1.8**, extended through 0.1.12 |
 | **Strategy Development Manager** | Register papers / broker research as factors & strategies with a persistent store + automated IC/Sharpe decay lifecycle | **Shipped 0.1.11** |
 | **Correlation Regime** | Edge-density + hysteresis regime timeline layered on `/correlation` — spot when markets fuse into one bloc | **Shipped 0.1.12** |
@@ -65,7 +65,37 @@ Want to contribute something bigger? Check the [Roadmap](#-roadmap) above and op
 
 Thanks to everyone who has contributed to Vibe-Trading!
 
-Recent v0.1.17 cycle contributors and credits:
+Recent v0.1.19 cycle contributors and credits:
+
+- @rudycelekli — 58 PRs (12 landed as maintainer ports): GTJA alpha formulas restored to the report (#2036/#2037/#2038/#2039/#2040/#2051), loaders that ask each vendor for the ticker form it serves and page at its own cap (Alpha Vantage #1997, AKShare #1998, CCXT #1999, Tushare minute lots #2001, Tiingo/Stooq class shares #2010/#2012, Nobitex Tehran days #1989, push2 decimals #1988), futures and market fees (micro index price limits #1992, the 30-year treasury fee #1994, India stamp duty on short covers #1995), quant-library and governance fixes (#1950/#1959/#1960/#1962/#1963/#2000/#2017), sub-penny prices kept in trades and charts (#1987/#1990), TTM sums that stop at a missing quarter (#2042), 3:2 splits and ST board limits in paper trading (#1985/#1984), a live halt key that cannot alias the global halt (#2003), session, memory, CLI and API fixes (#1969/#1970/#1982/#2002/#2006), and a string-"false" sweep across ten tools (#1976/#1977/#2008/#2009/#2011/#2013/#2014/#2015/#2016/#2018)
+- @he-yufeng — 18 PRs (5 landed as ports): versioned research artifacts (#2079/#2159), background tasks scoped to their owner, reaped on cancel and reconciled after a restart (#2092/#2098/#2100/#2157), silent provider streams interrupted (#2099), cache and reasoning tokens kept in `llm_usage` (#2109), one tool policy across providers (#2087), Claude CLI tool-attempt recovery and structured finals (#2048/#2064/#2120), Qlib BETA/RESI/ROC/CORD semantics (#2062/#2069), magnitude suffixes in derived formulas (#2134), long/short risk x-ray and validation that refuses non-positive equity (#2162/#2161), and Unicode-safe swarm heartbeats (#2155)
+- @Jackzigen — the bar-agnostic paper order lifecycle (#2066), swarm runs that stop when cancelled from the chat (#2059/#2060), document figures and percentage points in grounding (#2058/#2108), Robinhood portfolio reads with account selection (#2054), Moonshot reasoning effort for kimi-k3.1-pro (#2043), and Eastmoney JSONP, AKShare 1.20 forex and bare US ETF symbol fixes (#2082/#2083/#2086)
+- @Shizoqua — research goals edited in place (#2093), Feishu, Teams, WeChat, WhatsApp and Discord channel fixes (#1957/#1958/#1967/#2078/#2114), heredoc commands in the bash tool (#2077), path-escape tests (#2094), and a run-directory fallback that no longer depends on the process cwd (#2116, landed as a port)
+- @cgycorey — global futures priced on real contract multipliers and micro rates, with generic defaults reported (#1965/#1966/#1968/#1972), and a shadow account that honours every entry condition and currency (#2073/#2075)
+- @dajiaohuang — transfer flow signs (#2023), aligned attribution benchmarks (#2044), overflow-free weight normalisation (#2046), and boolean payoff quantities refused (#2049)
+- @zeus229 — the BYMA engine for Argentine shares and CEDEARs (#2071), backtests reused across turns and sessions (#2074), Codex OAuth model discovery (#2080), and financial units kept in grounding evidence (#2072)
+- @alexwan02 — Longbridge per-currency cash (#1940), `.env` read by the MCP server (#1974), and Futu US symbol mapping (#2076)
+- @BHhhh-123 — cross-sectional factor combination with walk-forward weights (#1953), field-level data availability in alpha bench (#2057), and factor research provenance (#2067)
+- @remote-controlled-man — comma-grouped document integers (#2135), one bounded retry for a withheld final answer (#2136), and A-share source setup docs (#2138)
+- @shadowinlife — the opt-in five-minute A-share paper step and its bar-by-bar matching (#2110/#2111), and JoinQuant limit fills (#2127, landed as a port)
+- @TWJxi and @lishuanghong1989-netizen — Gildata stock discovery and financial queries (#2117), stock screening with report-period indicators (#2118), and Shannon portfolio style and risk analysis (#2119)
+- @TerryF7 — IBKR and Futu gateway endpoints per connection (#1983), and connection deletion without a credential vault (#2153, landed as a port)
+- @davidalmeida90 — the next-bar signal delay documented in the strategy skill (#2137)
+- @DrDLyuan — STAR Market and Beijing buys sized on their own order grid (#2105)
+- @goatyyc — Binance HTTP 451 read failures explained (#1937)
+- @hnq-ai — a crawlable documentation wiki (#2165, landed as a port)
+- @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
+- @MetaAviator — invalid journal quantities refused (#2052)
+- @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
+- @RowanAldean — optional Parallel search in `web_search` (#2113)
+- @VectorPeak — voice notes forwarded in four IM adapters (#2106)
+- @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
+- @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
+
+<details>
+<summary>v0.1.17 and v0.1.18 cycle contributors</summary>
+
+**v0.1.18** · @warren618 (Haozhe Wu) shipped on-demand tool schemas, preserved large research results in run artifacts and fixed usage accounting for interrupted model calls.
 
 - @rudycelekli — a 92-PR correctness sweep (13 of them landed as maintainer ports): quant-library guards and edge cases (implied-vol price tolerance #1657, gaps in VaR breach transitions #1658, Heston inputs #1719, scheduled CDS coupons #1716, Carino coincidence #1943, undefined probabilistic-Sharpe and bond-accrual inputs #1821/#1822), missing prices kept out of risk x-ray return pairs and OU lag pairs (#1717/#1713), an undefined three-scenario upside and unbounded journal ratios reported as such (#1921/#1884), document reading that keeps PDF text, Word order, PowerPoint groups and Excel missing-value markers (#1838/#1839/#1840/#1841), session search limits, locking and snippets (#1827/#1828/#1832/#1834), more secret formats redacted (#1874/#1880), A-share board limits and Beijing codes (#1913/#1914), standalone revalidation and attribution on the run's own annualisation (#1915/#1948), and settings the selected engine ignores now warned about (#1947)
 - @Shizoqua — 25 PRs (2 landed as ports): memory and cross-session search that read back clean and match non-English text (#1682/#1686/#1697/#1771/#1772), skill headings and saved skill names resolved consistently (#1797/#1858), Telegram and Matrix replies no longer dropped when the stream preview never sent and one WeCom stream id per reply (#1860/#1903/#1929), SSE events no longer double-delivered on reconnect (#1798), parallel CLI tool results paired with their own call (#1859), goal evidence confined to the claimed run (#1895), Carhart momentum no longer leaking today's price (#1578), Wilder RSI in the shadow account (#1457), direct-SDK positions priced from `current_price`/`ltp`/`market_val` (#1581), the email SPF/DKIM spoofing check (#1508), and swarm artifacts cleared before each fresh task (#1455)
@@ -99,6 +129,8 @@ Recent v0.1.17 cycle contributors and credits:
 - @ThreeTima — currency identity checked in financial figure grounding (#1905)
 - @tomaszkubiak-courses — strategy provenance model fields set on the loop, so writing a strategy file no longer raises `AttributeError` (#1673)
 - @xaritoku — dotenv loaded in the `alpha bench` / `alpha compare` CLI handlers (#1806)
+
+</details>
 
 <details>
 <summary>v0.1.16 cycle contributors</summary>

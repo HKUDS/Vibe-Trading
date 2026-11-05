@@ -15,7 +15,7 @@
     "shannon": "Portfolio diagnosis (Shannon)"
   },
   "app": {
-    "version": "v0.1.18"
+    "version": "v0.1.19"
   },
   "charts": {
     "noPriceData": "No price data for this symbol yet",

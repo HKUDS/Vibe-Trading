@@ -29,14 +29,14 @@ export const DOCS_STRUCTURE = [
           },
           {
             id: "capabilities",
-            title: "0.1.16 包含什么",
+            title: "0.1.19 包含什么",
             body: `
               <ul>
                 <li><strong>28 个行情数据源</strong>，一次调用即可，每个市场各有一条回退链。多数市场不需要任何 API key。</li>
-                <li><strong>11 个回测引擎</strong>：A 股、全球股票、印度、韩国、越南、加密货币、国内期货、海外期货、外汇，一个用于跨市场组合的复合引擎，以及一个期权组合引擎。</li>
+                <li><strong>12 个回测引擎</strong>：A 股、全球股票、印度、韩国、越南、巴西、阿根廷、加密货币、国内期货、海外期货、外汇和一个用于跨市场组合的复合引擎，另有一个期权组合引擎。</li>
                 <li><strong>89 个金融技能</strong>，分 9 类；<strong>30 个多智能体团队预设</strong>，用于投委会式研究。</li>
                 <li><strong>Alpha Zoo</strong>：478 个现成因子，一条命令即可在你的股票池上评测。</li>
-                <li><strong>82 个 MCP 工具</strong>，供其他智能体调用。</li>
+                <li><strong>81 个 MCP 工具</strong>，供其他智能体调用。</li>
                 <li><strong>19 个券商连接器</strong>，默认只读；另有只读的多券商持仓页。</li>
                 <li><strong>数字核验</strong>：答案里的数字在展示给你之前，会先和本次会话取到的工具数据逐一核对。</li>
                 <li>Web 界面支持十一种语言。</li>
@@ -525,7 +525,7 @@ vibe-trading --trace RUN_ID    # 回放智能体的每一步</code></pre>
             id: "presets",
             title: "预设",
             body: `
-              <p>0.1.16 自带 30 个预设：</p>
+              <p>0.1.19 自带 30 个预设：</p>
               <p><code>investment_committee</code>、<code>quant_strategy_desk</code>、<code>risk_committee</code>、<code>crypto_trading_desk</code>、<code>crypto_research_lab</code>、<code>macro_rates_fx_desk</code>、<code>macro_strategy_forum</code>、<code>global_allocation_committee</code>、<code>global_equities_desk</code>、<code>equity_research_team</code>、<code>fundamental_research_team</code>、<code>earnings_research_desk</code>、<code>value_investing_committee</code>、<code>factor_research_committee</code>、<code>ml_quant_lab</code>、<code>statistical_arbitrage_desk</code>、<code>pairs_research_lab</code>、<code>derivatives_strategy_desk</code>、<code>convertible_bond_team</code>、<code>credit_research_team</code>、<code>commodity_research_team</code>、<code>etf_allocation_desk</code>、<code>fund_selection_panel</code>、<code>portfolio_review_board</code>、<code>sector_rotation_team</code>、<code>event_driven_task_force</code>、<code>geopolitical_war_room</code>、<code>sentiment_intelligence_team</code>、<code>social_alpha_team</code>、<code>technical_analysis_panel</code>。</p>
             `
           },
@@ -910,7 +910,7 @@ vibe-trading --max-iter 40 -p "指令"</code></pre>
         id: "reference/mcp-server",
         title: "MCP 服务",
         description: "把 Vibe-Trading 的工具提供给 Claude Desktop、Cursor、OpenClaw 等 MCP 客户端。",
-        lead: "vibe-trading-mcp 作为 MCP 客户端的 stdio 子进程运行，提供 82 个工具。研究类工具不需要模型 key；run_swarm 需要。",
+        lead: "vibe-trading-mcp 作为 MCP 客户端的 stdio 子进程运行，提供 81 个工具。研究类工具不需要模型 key；run_swarm 需要。",
         sections: [
           {
             id: "config",

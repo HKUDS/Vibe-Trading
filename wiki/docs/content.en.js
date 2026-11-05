@@ -30,14 +30,14 @@ export const DOCS_STRUCTURE = [
           },
           {
             id: "capabilities",
-            title: "What is in 0.1.16",
+            title: "What is in 0.1.19",
             body: `
               <ul>
                 <li><strong>28 market-data sources</strong> behind one call, with a fallback chain per market. Most markets need no API key.</li>
-                <li><strong>11 backtest engines</strong>: China A-shares, global equities, India, Korea, Vietnam, crypto, China futures, global futures, forex, a composite engine for cross-market portfolios, and an options portfolio engine.</li>
+                <li><strong>12 backtest engines</strong>: China A-shares, global equities, India, Korea, Vietnam, Brazil, Argentina, crypto, China futures, global futures, forex and a composite engine for cross-market portfolios, plus an options portfolio engine.</li>
                 <li><strong>89 finance skills</strong> in 9 categories, and <strong>30 swarm presets</strong> for committee-style research.</li>
                 <li><strong>Alpha Zoo</strong>: 478 alphas you can benchmark on your own universe with one command.</li>
-                <li><strong>82 MCP tools</strong> for other agents.</li>
+                <li><strong>81 MCP tools</strong> for other agents.</li>
                 <li><strong>19 broker connectors</strong>, read-only by default, plus a read-only multi-broker portfolio page.</li>
                 <li><strong>Checked numbers</strong>: figures in an answer are checked against the tool data of the session before you see them.</li>
                 <li>A web UI in eleven languages.</li>
@@ -526,7 +526,7 @@ vibe-trading --trace RUN_ID    # replay the agent's steps</code></pre>
             id: "presets",
             title: "Presets",
             body: `
-              <p>30 presets ship with 0.1.16:</p>
+              <p>30 presets ship with 0.1.19:</p>
               <p><code>investment_committee</code>, <code>quant_strategy_desk</code>, <code>risk_committee</code>, <code>crypto_trading_desk</code>, <code>crypto_research_lab</code>, <code>macro_rates_fx_desk</code>, <code>macro_strategy_forum</code>, <code>global_allocation_committee</code>, <code>global_equities_desk</code>, <code>equity_research_team</code>, <code>fundamental_research_team</code>, <code>earnings_research_desk</code>, <code>value_investing_committee</code>, <code>factor_research_committee</code>, <code>ml_quant_lab</code>, <code>statistical_arbitrage_desk</code>, <code>pairs_research_lab</code>, <code>derivatives_strategy_desk</code>, <code>convertible_bond_team</code>, <code>credit_research_team</code>, <code>commodity_research_team</code>, <code>etf_allocation_desk</code>, <code>fund_selection_panel</code>, <code>portfolio_review_board</code>, <code>sector_rotation_team</code>, <code>event_driven_task_force</code>, <code>geopolitical_war_room</code>, <code>sentiment_intelligence_team</code>, <code>social_alpha_team</code>, <code>technical_analysis_panel</code>.</p>
             `
           },
@@ -911,7 +911,7 @@ vibe-trading --max-iter 40 -p "prompt"</code></pre>
         id: "reference/mcp-server",
         title: "MCP server",
         description: "Give Claude Desktop, Cursor, OpenClaw and other MCP clients Vibe-Trading's tools.",
-        lead: "vibe-trading-mcp runs as a stdio subprocess of your MCP client and exposes 82 tools. Research tools work without a model key; run_swarm needs one.",
+        lead: "vibe-trading-mcp runs as a stdio subprocess of your MCP client and exposes 81 tools. Research tools work without a model key; run_swarm needs one.",
         sections: [
           {
             id: "config",

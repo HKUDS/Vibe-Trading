@@ -46,7 +46,7 @@ the wall-clock activity watchdog.
 
 ### Versioned research artifacts
 
-**Main only.** Use the [source checkout](installation.md#path-b-local-install) for these commands and the Web library. The 0.1.18 package predates versioned research artifacts.
+**Since 0.1.19.** Earlier packages predate versioned research artifacts.
 
 Completed analyses can be saved as immutable revisions with their subject, universe, data-as-of date, evidence references, verification status, and optional hypothesis, goal, session, or run links. Repeating identical content and provenance returns the existing revision; changed evidence or a new data-as-of date appends a linked revision instead of overwriting the old conclusion. Search returns the latest revision of each series, while the full history remains available in the Web research-artifact library, API, agent tools, and CLI. Historical content is never presented as newly revalidated.
 
@@ -66,7 +66,7 @@ and inspect fills, rejections and NAV history. Strategy history stops before the
 execution date, and each day receives the ledger after preceding fills. The
 agent/MCP `paper_trade_step` remains a stateless research primitive.
 
-**Main only: five-minute A-share simulation.** Use the [source checkout](installation.md#path-b-local-install) for `paper_trade_step` with `interval="5m"`. Saved paper accounts in both 0.1.18 and main settle daily. Each step covers one
+**Five-minute A-share simulation (since 0.1.19).** `paper_trade_step` accepts `interval="5m"`. Saved paper accounts still settle daily. Each step covers one
 completed session and matches bar by bar against its 48 continuous five-minute
 bars. The 09:30 label is the opening
 call-auction print, single-priced on 4 of 5 probed days, and is excluded by

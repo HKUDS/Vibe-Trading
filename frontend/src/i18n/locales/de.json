@@ -15,7 +15,7 @@
     "shannon": "Portfoliodiagnose (Shannon)"
   },
   "app": {
-    "version": "v0.1.18"
+    "version": "v0.1.19"
   },
   "charts": {
     "noPriceData": "Noch keine Kursdaten für dieses Symbol",

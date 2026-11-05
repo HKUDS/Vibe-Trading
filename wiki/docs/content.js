@@ -1,8 +1,8 @@
-import { DOCS_STRUCTURE as EN_STRUCTURE } from "/docs/content.en.js?v=20261105";
-import { DOCS_STRUCTURE as ZH_STRUCTURE } from "/docs/content.zh.js?v=20261105";
+import { DOCS_STRUCTURE as EN_STRUCTURE } from "/docs/content.en.js?v=20261105b";
+import { DOCS_STRUCTURE as ZH_STRUCTURE } from "/docs/content.zh.js?v=20261105b";
 
 // One content set per language; every version alias renders the latest.
-export const DOCS_DEFAULT_VERSION = "0.1.16";
+export const DOCS_DEFAULT_VERSION = "0.1.19";
 export const DOCS_LATEST_ALIAS = "latest";
 export const DOCS_DEFAULT_PAGE = "getting-started/vibe-trading-overview";
 export const DOCS_DEFAULT_LANG = "en";

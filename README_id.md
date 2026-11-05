@@ -57,21 +57,22 @@
 
 ## 📰 Berita
 
+- **2026-11-05** 🚀 **v0.1.19 dirilis** ([Catatan rilis](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): riset yang bertahan melampaui obrolan — simpan artefak riset berversi beserta buktinya lalu revisi, gunakan kembali backtest dari giliran dan sesi sebelumnya, dan sunting tujuan riset di tempat. Fitur opsional baru: simulasi saham A per lima menit, serta kueri keuangan, seleksi saham, dan diagnosis portofolio Shannon dari Gildata (QVeris dihapus; `GILDATA_TOKEN` yang sudah ada kini tidak lagi mengaktifkan apa pun dengan sendirinya). Juga backtest Argentina (BYMA), pencarian web Parallel, penemuan model lewat Codex OAuth, dan perbaikan kedua regresi 0.1.18. 116 pull request digabung ditambah 21 yang masuk lewat commit maintainer, dari 26 kontributor ([CHANGELOG](CHANGELOG.md)).
+  **Diperbaiki hari ini:** backtest melaporkan tolok ukur yang benar-benar dievaluasinya, portofolio long/short mendapat risk x-ray, alfa GTJA 17 tetap kosong selama inputnya masih dalam masa pemanasan, panel Shannon tersedia dalam kesebelas bahasa antarmuka, dan dua perbaikan kontributor yang sudah ditinjau tetapi belum masuk kini disertakan ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) jumlah TTM yang melintasi kuartal yang hilang, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) deteksi pemecahan saham 3:2). Terima kasih [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) dan [@yufengsika](https://github.com/yufengsika)!
+
 - **2026-11-04** 📊 **Kueri keuangan, seleksi saham, dan diagnosis portofolio Shannon dengan Gildata** — Satu kueri dapat menampilkan tiga saham dengan kapitalisasi pasar terbesar beserta pendapatan semesterannya. Shannon menunjukkan eksposur portofolio terhadap sepuluh faktor dan kontribusi tiap posisi terhadap volatilitas. Kesembilan fitur harus diaktifkan satu per satu, termasuk jika token sudah tersimpan. Jika sumber gratis gagal, sistem tidak beralih ke Gildata. [#2117](https://github.com/HKUDS/Vibe-Trading/pull/2117) · [#2118](https://github.com/HKUDS/Vibe-Trading/pull/2118) · [#2119](https://github.com/HKUDS/Vibe-Trading/pull/2119)
   Panduan backtest kini menjelaskan bahwa sinyal dieksekusi pada harga pembukaan bar berikutnya. Deteksi batas waktu Swarm juga diperbaiki dan pemeriksaan duplikat riset dipercepat. [#2137](https://github.com/HKUDS/Vibe-Trading/pull/2137) · [#2155](https://github.com/HKUDS/Vibe-Trading/pull/2155) · [#2159](https://github.com/HKUDS/Vibe-Trading/pull/2159)
 
 - **2026-11-03** 🛠️ **Integritas catatan dan bahasa**. Jejak eksekusi, buku audit, dan pencarian sesi mempertahankan U+2028/U+2029 dalam JSONL sehingga entri berikutnya tetap valid. Nama model bergaris bawah dinormalkan dan ringkasan serah terima dipertahankan saat pemadatan lapis kedua. Metadata dengan BOM serta tata letak kanan ke kiri didukung dan uji regresi ditambahkan.
 
-- **2026-11-02** 🛠️ **Metadata dan hasil berukuran besar**. Nilai skalar bertanda kutip dibaca dengan benar. Hasil yang terlalu besar untuk dikodekan dipotong agar tetap terbaca. Tata letak sambutan dan kartu pilihan disesuaikan serta diuji.
-
 <details>
 <summary>Arsip berita</summary>
+
+- **2026-11-02** 🛠️ **Metadata dan hasil berukuran besar**. Nilai skalar bertanda kutip dibaca dengan benar. Hasil yang terlalu besar untuk dikodekan dipotong agar tetap terbaca. Tata letak sambutan dan kartu pilihan disesuaikan serta diuji.
 
 - **2026-11-01** 🛠️ **Waktu sesi dan halaman sambutan**. Pembaruan sesi dicatat dalam UTC. Tombol utama lebih terbaca pada mode gelap. Contoh di panel samping bisa diklik dan diberi kategori yang jelas. Uji regresi ditambahkan.
 
 - **2026-10-31** 🛠️ **Halaman awal dan kode saham**. Tata letak dua kolom bernuansa kertas hangat memperjelas contoh dan tindakan di panel. Huruf di akhir simbol tidak lagi dianggap sebagai batasan saham A atau A/H.
-
-- **2026-10-30** 🛠️ **Keandalan kanal dan jumlah saham Tiongkok**: Pesan suara Telegram, Feishu, Matrix, dan Weixin diteruskan ke agen sebagai lampiran. Backtest STAR dan Beijing mengikuti jumlah minimum tiap pasar dan kelipatan satu saham, disertai uji regresi batas akses berkas. ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)). Tambahan: pembatalan aliran, pencatatan penggunaan cache dan percobaan ulang, pemulihan tugas, penyuntingan tujuan riset tanpa kehilangan bukti, serta perbaikan duplikasi Discord. Simulasi saham Tiongkok 5 menit mencocokkan tiap bar; akun tersimpan tetap harian. Pencarian Parallel nonaktif secara bawaan. ([#2099](https://github.com/HKUDS/Vibe-Trading/pull/2099), [#2109](https://github.com/HKUDS/Vibe-Trading/pull/2109), [#2111](https://github.com/HKUDS/Vibe-Trading/pull/2111), [#2113](https://github.com/HKUDS/Vibe-Trading/pull/2113)).
 
 [Arsip berita](guides/news.md) · [Riwayat perubahan](CHANGELOG.md)
 
@@ -98,7 +99,7 @@ Ubah pertanyaan keuangan menjadi laporan riset, backtest yang dapat dijalankan, 
 | Menggabungkan akun atau membandingkan alokasi | Buka `/portfolio` untuk melihat posisi dan usulan alokasi. [Dukungan broker](#dukungan-broker) |
 | Meneliti opsi dan korelasi | Buka `/options` untuk profil laba rugi dan Greeks strategi multikaki, atau `/correlation` untuk kondisi pasar. |
 | Mengatur riset berulang | Jalankan [tim Swarm](guides/research.md#swarm-workflows), bagikan tugas di Pixel Office, atau jadwalkan laporan di `/scheduled`. |
-| Meninjau bukti riset | Cari [riwayat riset bertanggal](guides/research.md#versioned-research-artifacts) di `/research-artifacts` pada cabang main. |
+| Meninjau bukti riset | Cari [riwayat riset bertanggal](guides/research.md#versioned-research-artifacts) di `/research-artifacts`. |
 
 ## ⚡ Contoh singkat
 
@@ -119,7 +120,7 @@ Buka **Run Detail** untuk membandingkan hasil dengan beli dan tahan, meninjau tr
 | Siapkan data | Ambil data kandil historis BTC-USDT dan periksa sumber serta tanggalnya. |
 | Jalankan | Tulis strategi lalu jalankan backtest. Direktori hasil menyimpan strategi, transaksi, dan kurva ekuitas. |
 | Validasi | Bandingkan dengan beli dan tahan. Periksa perputaran, penurunan, dan peringatan validasi bersama imbal hasil. |
-| Tinjau kembali | Buka hasil tersimpan atau ubah parameter. Di main Anda juga dapat menyimpan kesimpulan bertanggal dan merevisinya ketika ada bukti baru. |
+| Tinjau kembali | Buka hasil tersimpan atau ubah parameter. Anda juga dapat menyimpan kesimpulan bertanggal dan merevisinya ketika ada bukti baru. |
 
 ## 📡 Sumber data dan peralihan otomatis
 
@@ -143,7 +144,7 @@ Anda juga dapat memilih sumber tertentu. Instal `vibe-trading-ai[ashare]` untuk 
 | Laporan dan kepemilikan | Bandingkan posisi manajer investasi antartriwulan melalui SEC 13F atau lihat aset dasar ETF. Setiap laporan memuat tanggal pelaporan. |
 | Valuasi perusahaan | Uji tingkat diskonto dan pertumbuhan terminal dengan `/dcf`, bandingkan kelipatan dengan `/comps`, atau ekspor model tiga laporan keuangan terpadu ke Excel. |
 | Makalah dan dokumen | Cari sinyal di arXiv dan OpenAlex, periksa definisi penulis, lalu uji pada himpunan aset sendiri. Unggah laporan, lembar kerja, atau slide untuk menanyakan tabel tertentu. |
-| Penyaringan saham | Aktifkan Gildata di main untuk menyaring menurut kapitalisasi dan mengambil pendapatan semesteran sekaligus. Penyaringan dan diagnosis faktor portofolio diaktifkan terpisah. |
+| Penyaringan saham | Aktifkan Gildata untuk menyaring menurut kapitalisasi dan mengambil pendapatan semesteran sekaligus. Penyaringan dan diagnosis faktor portofolio diaktifkan terpisah. |
 
 ### Riset kuantitatif
 
@@ -160,7 +161,7 @@ Anda juga dapat memilih sumber tertentu. Instal `vibe-trading-ai[ashare]` untuk 
 | Fitur | Kegunaan |
 |---|---|
 | Portofolio | Gabungkan posisi broker dalam satu snapshot hanya baca atau impor berkas extraETF. Masukkan bobot sasaran untuk memperkirakan perubahan nilai tiap posisi. |
-| Trading simulasi | Majukan akun tersimpan satu hari bursa untuk melihat transaksi, kas, dan nilai aset bersih. Di main, putar ulang sesi saham A per lima menit dalam simulasi terpisah. |
+| Trading simulasi | Majukan akun tersimpan satu hari bursa untuk melihat transaksi, kas, dan nilai aset bersih. Anda juga dapat memutar ulang sesi saham A per lima menit dalam simulasi terpisah. |
 | Akun bayangan | Impor jurnal broker, periksa biaya dan kebiasaan transaksi, lalu bandingkan hasil aktual dengan simulasi berbasis aturan. |
 | Koneksi broker | Atur koneksi lewat CLI atau web dan uji dengan membaca data. Tetapkan batas simbol, order, dan eksposur sebelum transaksi riil. Tombol penghentian menghentikan aktivitas riil. |
 
@@ -170,7 +171,7 @@ Anda juga dapat memilih sumber tertentu. Instal `vibe-trading-ai[ashare]` untuk 
 |---|---|
 | Swarm dan Pixel Office | Jalankan komite investasi dengan tesis berlawanan atau tim kuantitatif, lalu baca laporan anggota. Bagikan tugas dan catat hasil di papan bersama Pixel Office. |
 | Laporan terjadwal | Pilih laporan prapembukaan, pelacak laba, atau pemeriksaan portofolio. Jadwalkan pengiriman ke Slack, Telegram, atau surel yang telah diatur. |
-| Riwayat riset | Cari percakapan lama dan buka hasil tersimpan. Di main, simpan kesimpulan bertanggal beserta bukti dan bandingkan revisi tesis investasi. |
+| Riwayat riset | Cari percakapan lama dan buka hasil tersimpan. Simpan kesimpulan bertanggal beserta bukti dan bandingkan revisi tesis investasi. |
 | Catatan eksekusi | Periksa sumber data, model, log, dan rujukan metrik di balik backtest. Buka kembali transaksi dan kurva ekuitas untuk memeriksa angka. |
 
 ### Dukungan broker
@@ -249,7 +250,7 @@ cp agent/.env.example agent/.env
 docker compose up --build
 ```
 
-Versi PyPI 0.1.18 berisi CLI, API, dan server MCP. Untuk pengembangan web atau model lokal, lihat [panduan instalasi](guides/installation.md).
+Paket PyPI berisi CLI, API, dan server MCP. Untuk pengembangan web atau model lokal, lihat [panduan instalasi](guides/installation.md).
 
 ## 🖥 Referensi CLI
 
@@ -332,10 +333,10 @@ Vibe-Trading adalah bagian dari ekosistem agent **[HKUDS](https://github.com/HKU
 
 ## 🗺 Peta jalan
 
-| Bidang | Sudah tersedia | Di main atau direncanakan |
+| Bidang | Sudah tersedia | Berikutnya |
 |---|---|---|
-| Trading simulasi | Akun harian menyimpan kas, transaksi, dan nilai aset bersih lintas sesi. | Main menambahkan langkah lima menit untuk saham A. |
-| Riset | Kartu eksekusi merekam metrik dan bukti backtest. | Main menambahkan riset bertanggal yang dapat dicari dengan riwayat revisi. |
+| Trading simulasi | Akun harian menyimpan kas, transaksi, dan nilai aset bersih lintas sesi. Simulasi terpisah memutar ulang sesi saham A per lima menit. | Pencocokan opsional berdasarkan porsi volume ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draf). |
+| Riset | Kartu eksekusi merekam metrik dan bukti backtest. Riset bertanggal menyimpan riwayat revisi dan dapat dicari. | Fakta keuangan terstruktur dalam artefak riset ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), sedang ditinjau). |
 | Lab opsi | Profil laba rugi multikaki, Greeks, dan skenario spot × IV. | Permukaan volatilitas direncanakan. |
 
 ## Cara berkontribusi
@@ -346,9 +347,37 @@ Pilih [isu untuk kontributor baru](https://github.com/HKUDS/Vibe-Trading/issues?
 
 Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 
-**v0.1.18** · @warren618 (Haozhe Wu) menambahkan skema alat sesuai kebutuhan, menyimpan hasil riset besar sebagai artefak eksekusi, dan memperbaiki penghitungan penggunaan saat panggilan model terputus.
+### v0.1.19 · Kontributor
 
-### v0.1.17 · Kontributor
+- @rudycelekli — 58 PRs (12 landed as maintainer ports): GTJA alpha formulas restored to the report (#2036/#2037/#2038/#2039/#2040/#2051), loaders that ask each vendor for the ticker form it serves and page at its own cap (Alpha Vantage #1997, AKShare #1998, CCXT #1999, Tushare minute lots #2001, Tiingo/Stooq class shares #2010/#2012, Nobitex Tehran days #1989, push2 decimals #1988), futures and market fees (micro index price limits #1992, the 30-year treasury fee #1994, India stamp duty on short covers #1995), quant-library and governance fixes (#1950/#1959/#1960/#1962/#1963/#2000/#2017), sub-penny prices kept in trades and charts (#1987/#1990), TTM sums that stop at a missing quarter (#2042), 3:2 splits and ST board limits in paper trading (#1985/#1984), a live halt key that cannot alias the global halt (#2003), session, memory, CLI and API fixes (#1969/#1970/#1982/#2002/#2006), and a string-"false" sweep across ten tools (#1976/#1977/#2008/#2009/#2011/#2013/#2014/#2015/#2016/#2018)
+- @he-yufeng — 18 PRs (5 landed as ports): versioned research artifacts (#2079/#2159), background tasks scoped to their owner, reaped on cancel and reconciled after a restart (#2092/#2098/#2100/#2157), silent provider streams interrupted (#2099), cache and reasoning tokens kept in `llm_usage` (#2109), one tool policy across providers (#2087), Claude CLI tool-attempt recovery and structured finals (#2048/#2064/#2120), Qlib BETA/RESI/ROC/CORD semantics (#2062/#2069), magnitude suffixes in derived formulas (#2134), long/short risk x-ray and validation that refuses non-positive equity (#2162/#2161), and Unicode-safe swarm heartbeats (#2155)
+- @Jackzigen — the bar-agnostic paper order lifecycle (#2066), swarm runs that stop when cancelled from the chat (#2059/#2060), document figures and percentage points in grounding (#2058/#2108), Robinhood portfolio reads with account selection (#2054), Moonshot reasoning effort for kimi-k3.1-pro (#2043), and Eastmoney JSONP, AKShare 1.20 forex and bare US ETF symbol fixes (#2082/#2083/#2086)
+- @Shizoqua — research goals edited in place (#2093), Feishu, Teams, WeChat, WhatsApp and Discord channel fixes (#1957/#1958/#1967/#2078/#2114), heredoc commands in the bash tool (#2077), path-escape tests (#2094), and a run-directory fallback that no longer depends on the process cwd (#2116, landed as a port)
+- @cgycorey — global futures priced on real contract multipliers and micro rates, with generic defaults reported (#1965/#1966/#1968/#1972), and a shadow account that honours every entry condition and currency (#2073/#2075)
+- @dajiaohuang — transfer flow signs (#2023), aligned attribution benchmarks (#2044), overflow-free weight normalisation (#2046), and boolean payoff quantities refused (#2049)
+- @zeus229 — the BYMA engine for Argentine shares and CEDEARs (#2071), backtests reused across turns and sessions (#2074), Codex OAuth model discovery (#2080), and financial units kept in grounding evidence (#2072)
+- @alexwan02 — Longbridge per-currency cash (#1940), `.env` read by the MCP server (#1974), and Futu US symbol mapping (#2076)
+- @BHhhh-123 — cross-sectional factor combination with walk-forward weights (#1953), field-level data availability in alpha bench (#2057), and factor research provenance (#2067)
+- @remote-controlled-man — comma-grouped document integers (#2135), one bounded retry for a withheld final answer (#2136), and A-share source setup docs (#2138)
+- @shadowinlife — the opt-in five-minute A-share paper step and its bar-by-bar matching (#2110/#2111), and JoinQuant limit fills (#2127, landed as a port)
+- @TWJxi and @lishuanghong1989-netizen — Gildata stock discovery and financial queries (#2117), stock screening with report-period indicators (#2118), and Shannon portfolio style and risk analysis (#2119)
+- @TerryF7 — IBKR and Futu gateway endpoints per connection (#1983), and connection deletion without a credential vault (#2153, landed as a port)
+- @davidalmeida90 — the next-bar signal delay documented in the strategy skill (#2137)
+- @DrDLyuan — STAR Market and Beijing buys sized on their own order grid (#2105)
+- @goatyyc — Binance HTTP 451 read failures explained (#1937)
+- @hnq-ai — a crawlable documentation wiki (#2165, landed as a port)
+- @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
+- @MetaAviator — invalid journal quantities refused (#2052)
+- @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
+- @RowanAldean — optional Parallel search in `web_search` (#2113)
+- @VectorPeak — voice notes forwarded in four IM adapters (#2106)
+- @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
+- @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
+
+<details>
+<summary>Kontributor v0.1.17 dan v0.1.18</summary>
+
+**v0.1.18** · @warren618 (Haozhe Wu) menambahkan skema alat sesuai kebutuhan, menyimpan hasil riset besar sebagai artefak eksekusi, dan memperbaiki penghitungan penggunaan saat panggilan model terputus.
 
 - @rudycelekli — a 92-PR correctness sweep (13 of them landed as maintainer ports): quant-library guards and edge cases (implied-vol price tolerance #1657, gaps in VaR breach transitions #1658, Heston inputs #1719, scheduled CDS coupons #1716, Carino coincidence #1943, undefined probabilistic-Sharpe and bond-accrual inputs #1821/#1822), missing prices kept out of risk x-ray return pairs and OU lag pairs (#1717/#1713), an undefined three-scenario upside and unbounded journal ratios reported as such (#1921/#1884), document reading that keeps PDF text, Word order, PowerPoint groups and Excel missing-value markers (#1838/#1839/#1840/#1841), session search limits, locking and snippets (#1827/#1828/#1832/#1834), more secret formats redacted (#1874/#1880), A-share board limits and Beijing codes (#1913/#1914), standalone revalidation and attribution on the run's own annualisation (#1915/#1948), and settings the selected engine ignores now warned about (#1947)
 - @Shizoqua — 25 PRs (2 landed as ports): memory and cross-session search that read back clean and match non-English text (#1682/#1686/#1697/#1771/#1772), skill headings and saved skill names resolved consistently (#1797/#1858), Telegram and Matrix replies no longer dropped when the stream preview never sent and one WeCom stream id per reply (#1860/#1903/#1929), SSE events no longer double-delivered on reconnect (#1798), parallel CLI tool results paired with their own call (#1859), goal evidence confined to the claimed run (#1895), Carhart momentum no longer leaking today's price (#1578), Wilder RSI in the shadow account (#1457), direct-SDK positions priced from `current_price`/`ltp`/`market_val` (#1581), the email SPF/DKIM spoofing check (#1508), and swarm artifacts cleared before each fresh task (#1455)
@@ -382,6 +411,8 @@ Terima kasih kepada semua orang yang telah berkontribusi pada Vibe-Trading!
 - @ThreeTima — currency identity checked in financial figure grounding (#1905)
 - @tomaszkubiak-courses — strategy provenance model fields set on the loop, so writing a strategy file no longer raises `AttributeError` (#1673)
 - @xaritoku — dotenv loaded in the `alpha bench` / `alpha compare` CLI handlers (#1806)
+
+</details>
 
 <details>
 <summary>Kontributor v0.1.16</summary>

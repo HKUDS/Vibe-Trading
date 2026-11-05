@@ -15,7 +15,7 @@
     "shannon": "ارزیابی سبد سهام (Shannon)"
   },
   "app": {
-    "version": "v0.1.18"
+    "version": "v0.1.19"
   },
   "charts": {
     "noPriceData": "هنوز داده قیمتی برای این نماد وجود ندارد",

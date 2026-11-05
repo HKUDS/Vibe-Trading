@@ -57,21 +57,22 @@
 
 ## 📰 Noticias
 
+- **2026-11-05** 🚀 **Publicada la v0.1.19** ([Notas de la versión](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): investigación que sobrevive al chat: guarda investigaciones versionadas con su evidencia y revísalas, reutiliza backtests de turnos y sesiones anteriores y edita un objetivo de investigación sin empezar de cero. Nuevas funciones opcionales: una simulación de acciones A en pasos de cinco minutos y las consultas financieras, la selección de acciones y el diagnóstico de cartera Shannon de Gildata (se retira QVeris; un `GILDATA_TOKEN` existente ya no activa nada por sí solo). Además: backtests de Argentina (BYMA), búsqueda web con Parallel, descubrimiento de modelos con OAuth de Codex y corrección de las dos regresiones de la 0.1.18. 116 pull requests fusionados más 21 incorporados mediante commits de los mantenedores, de 26 contribuidores ([CHANGELOG](CHANGELOG.md)).
+  **Corregido hoy:** el backtest informa del índice de referencia que realmente evaluó, las carteras largo/corto tienen radiografía de riesgo, el alfa 17 de GTJA queda vacío mientras sus datos de entrada completan el periodo de calentamiento, el panel Shannon está disponible en los once idiomas de la interfaz y entran dos correcciones revisadas de colaboradores que no se habían incorporado ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) sumas TTM que abarcaban un trimestre ausente, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) detección de desdoblamientos 3:2). ¡Gracias a [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) y [@yufengsika](https://github.com/yufengsika)!
+
 - **2026-11-04** 📊 **Consultas financieras, selección de acciones y diagnóstico de cartera Shannon con Gildata** — Una consulta permite obtener las tres acciones de mayor capitalización y sus ingresos semestrales. Shannon muestra la exposición de la cartera a diez factores y la contribución de cada posición a la volatilidad. Las nueve funciones requieren activación individual, incluso con un token guardado. Si fallan las fuentes gratuitas, el sistema no recurre a Gildata. [#2117](https://github.com/HKUDS/Vibe-Trading/pull/2117) · [#2118](https://github.com/HKUDS/Vibe-Trading/pull/2118) · [#2119](https://github.com/HKUDS/Vibe-Trading/pull/2119)
   También se aclaró la ejecución de señales en la apertura de la siguiente vela, se corrigieron falsos vencimientos de tareas Swarm y se agilizó la detección de investigaciones duplicadas. [#2137](https://github.com/HKUDS/Vibe-Trading/pull/2137) · [#2155](https://github.com/HKUDS/Vibe-Trading/pull/2155) · [#2159](https://github.com/HKUDS/Vibe-Trading/pull/2159)
 
 - **2026-11-03** 🛠️ **Integridad de los registros e idiomas**. Las trazas, el registro de auditoría y la búsqueda conservan U+2028/U+2029 en JSONL sin romper las entradas posteriores. Se normalizan los nombres de modelo con guion bajo y la segunda fase de compactación conserva el resumen de traspaso. Se admiten metadatos con BOM y se corrige la alineación inicial en idiomas de derecha a izquierda. Se añaden pruebas de regresión.
 
-- **2026-11-02** 🛠️ **Metadatos y resultados extensos**. Se interpretan los escalares entre comillas y se muestra un recorte legible si no se puede codificar un resultado demasiado grande. Se ajustan la bienvenida y sus tarjetas y se añaden pruebas de regresión.
-
 <details>
 <summary>Archivo de noticias</summary>
+
+- **2026-11-02** 🛠️ **Metadatos y resultados extensos**. Se interpretan los escalares entre comillas y se muestra un recorte legible si no se puede codificar un resultado demasiado grande. Se ajustan la bienvenida y sus tarjetas y se añaden pruebas de regresión.
 
 - **2026-11-01** 🛠️ **Fechas, contraste y ejemplos**. Las actualizaciones de sesión usan UTC. Mejoran el contraste de los botones en modo oscuro y los ejemplos del panel lateral, que ahora se pueden pulsar y muestran su categoría. Se añaden pruebas de regresión.
 
 - **2026-10-31** 🛠️ **Bienvenida y símbolos bursátiles**. La pantalla inicial adopta tonos cálidos y dos columnas para distinguir ejemplos y acciones. Las letras finales de un símbolo dejan de interpretarse como restricciones de acciones A o A/H.
-
-- **2026-10-30** 🛠️ **Fiabilidad de canales y cantidades de acciones chinas**: Las notas de voz de Telegram, Feishu, Matrix y Weixin llegan al agente como adjuntos. Los backtests de STAR y Pekín respetan los mínimos de cada mercado y los incrementos de una acción; se añaden pruebas de límites de acceso a archivos. ([#2106](https://github.com/HKUDS/Vibe-Trading/pull/2106), [#2105](https://github.com/HKUDS/Vibe-Trading/pull/2105), [#2094](https://github.com/HKUDS/Vibe-Trading/pull/2094)). También: cancelación de flujos, uso de caché y reintentos, recuperación de tareas, edición de objetivos conservando sus evidencias y corrección de duplicados en Discord. La simulación china de 5 minutos ejecuta por vela; las cuentas guardadas siguen siendo diarias. Parallel está desactivado por defecto. ([#2099](https://github.com/HKUDS/Vibe-Trading/pull/2099), [#2109](https://github.com/HKUDS/Vibe-Trading/pull/2109), [#2111](https://github.com/HKUDS/Vibe-Trading/pull/2111), [#2113](https://github.com/HKUDS/Vibe-Trading/pull/2113)).
 
 [Archivo de noticias](guides/news.md) · [Historial de cambios](CHANGELOG.md)
 
@@ -98,7 +99,7 @@ Vibe-Trading convierte preguntas financieras en informes, pruebas históricas ej
 | Agregar cuentas y comparar pesos | Abre `/portfolio` para ver posiciones y cambios de asignación. [Brókeres compatibles](#compatibilidad-por-bróker) |
 | Explorar opciones y correlaciones | Usa `/options` para pagos y griegas de varias patas, o `/correlation` para identificar regímenes de mercado. |
 | Coordinar investigaciones | Inicia un [equipo Swarm](guides/research.md#swarm-workflows), reparte tareas en Pixel Office o programa un informe en `/scheduled`. |
-| Recuperar la evidencia | Busca [investigaciones con historial](guides/research.md#versioned-research-artifacts) por fecha en `/research-artifacts` en la rama main. |
+| Recuperar la evidencia | Busca [investigaciones con historial](guides/research.md#versioned-research-artifacts) por fecha en `/research-artifacts`. |
 
 ## ⚡ Ejemplo rápido
 
@@ -119,7 +120,7 @@ Abre **Run Detail** para comparar ambas estrategias, revisar las operaciones dur
 | Obtener datos | Descarga las velas históricas de BTC-USDT y verifica su procedencia y sus fechas. |
 | Ejecutar | Escribe y prueba la estrategia. El directorio de ejecución guarda la estrategia, las operaciones y la curva de capital. |
 | Validar | Compara con comprar y mantener. Revisa rotación, caída máxima y avisos de validación junto con la rentabilidad. |
-| Revisar | Reabre la ejecución o cambia los parámetros. En main puedes guardar una conclusión fechada y revisarla cuando aparezca nueva evidencia. |
+| Revisar | Reabre la ejecución o cambia los parámetros. También puedes guardar una conclusión fechada y revisarla cuando aparezca nueva evidencia. |
 
 ## 📡 Fuentes de datos y alternativas
 
@@ -143,7 +144,7 @@ También puedes elegir una fuente. Instala `vibe-trading-ai[ashare]` para consul
 | Informes y posiciones | Compara las posiciones trimestrales de un gestor en los 13F de la SEC o consulta los activos subyacentes de un ETF. Cada informe indica la fecha de las posiciones. |
 | Valoración | `/dcf` muestra cómo influyen la tasa de descuento y el crecimiento terminal. Usa `/comps` para comparar múltiplos o exporta a Excel un modelo que vincule los tres estados financieros. |
 | Artículos y documentos | Busca señales en arXiv y OpenAlex, comprueba la definición original y pruébala en tu universo. Sube informes, hojas de cálculo o diapositivas para preguntar por una figura. |
-| Selección de acciones | En main, Gildata filtra por capitalización y devuelve ingresos semestrales en una consulta. La selección y el diagnóstico factorial de la cartera se activan por separado. |
+| Selección de acciones | Con Gildata activado, puedes filtrar por capitalización y obtener ingresos semestrales en una consulta. La selección y el diagnóstico factorial de la cartera se activan por separado. |
 
 ### Investigación cuantitativa
 
@@ -160,7 +161,7 @@ También puedes elegir una fuente. Instala `vibe-trading-ai[ashare]` para consul
 | Función | Uso |
 |---|---|
 | Cartera | Agrupa posiciones de cuentas de solo lectura o importa un archivo de extraETF. Introduce pesos objetivo para ver el cambio de valor por posición. |
-| Simulación | Avanza un día bursátil en una cuenta guardada y revisa ejecuciones, efectivo y valor liquidativo. En main puedes reproducir aparte una sesión de acciones A en pasos de cinco minutos. |
+| Simulación | Avanza un día bursátil en una cuenta guardada y revisa ejecuciones, efectivo y valor liquidativo. También puedes reproducir aparte una sesión de acciones A en pasos de cinco minutos. |
 | Cuenta espejo | Importa tu diario del bróker, analiza comisiones y hábitos y compara las operaciones reales con una reproducción basada en reglas. |
 | Conexión al bróker | Configura la conexión en la CLI o la web y prueba una lectura. Define símbolos y límites de orden y exposición antes de activar la operativa real. El interruptor de emergencia la detiene. |
 
@@ -170,7 +171,7 @@ También puedes elegir una fuente. Instala `vibe-trading-ai[ashare]` para consul
 |---|---|
 | Swarm y Pixel Office | Convoca un comité alcista y bajista o un equipo cuantitativo y lee sus informes. Asigna tareas en Pixel Office y anota los resultados en el tablero compartido. |
 | Informes programados | Elige un informe de apertura, un seguimiento de resultados o una revisión de cartera. Programa el envío a Slack, Telegram o correo configurados. |
-| Historial de análisis | Busca sesiones y reabre ejecuciones. En main puedes guardar conclusiones fechadas con evidencia y comparar revisiones de una tesis. |
+| Historial de análisis | Busca sesiones y reabre ejecuciones. También puedes guardar conclusiones fechadas con evidencia y comparar revisiones de una tesis. |
 | Registro de ejecución | Consulta los datos, el modelo, el registro y las referencias de las métricas. Reabre operaciones y curva de capital para comprobar una cifra. |
 
 ### Compatibilidad por bróker
@@ -249,7 +250,7 @@ cp agent/.env.example agent/.env
 docker compose up --build
 ```
 
-La versión 0.1.18 de PyPI incluye la CLI, la API y el servidor MCP. Consulta la [guía de instalación](guides/installation.md) para desarrollo web o modelos locales.
+El paquete de PyPI incluye la CLI, la API y el servidor MCP. Consulta la [guía de instalación](guides/installation.md) para desarrollo web o modelos locales.
 
 ## 🖥 Referencia de la CLI
 
@@ -332,10 +333,10 @@ Vibe-Trading forma parte del ecosistema de agentes de **[HKUDS](https://github.c
 
 ## 🗺 Hoja de ruta
 
-| Área | Disponible | En main o previsto |
+| Área | Disponible | Próximo |
 |---|---|---|
-| Simulación | Las cuentas diarias conservan efectivo, ejecuciones y valor liquidativo entre sesiones. | Main añade pasos de cinco minutos para acciones A. |
-| Investigación | Las fichas guardan métricas y evidencia del backtest. | Main añade investigaciones fechadas con búsqueda e historial. |
+| Simulación | Las cuentas diarias conservan efectivo, ejecuciones y valor liquidativo entre sesiones. Una simulación aparte reproduce una sesión de acciones A en pasos de cinco minutos. | Ejecución opcional limitada por la cuota del volumen negociado ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), borrador). |
+| Investigación | Las fichas guardan métricas y evidencia del backtest. Las investigaciones fechadas conservan su historial de revisiones y se pueden buscar. | Datos financieros estructurados en las investigaciones guardadas ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), en revisión). |
 | Opciones | Pagos multipata, griegas y escenarios de precio al contado × IV. | Superficie de volatilidad prevista. |
 
 ## Cómo contribuir
@@ -346,9 +347,37 @@ Elige una [incidencia para empezar](https://github.com/HKUDS/Vibe-Trading/issues
 
 ¡Gracias a todos los que han contribuido a Vibe-Trading!
 
-**v0.1.18** · @warren618 (Haozhe Wu) incorporó los esquemas de herramientas bajo demanda, guardó resultados extensos en los archivos de ejecución y corrigió el cómputo de uso de llamadas interrumpidas al modelo.
+### v0.1.19 · Colaboradores
 
-### v0.1.17 · Colaboradores
+- @rudycelekli — 58 PRs (12 landed as maintainer ports): GTJA alpha formulas restored to the report (#2036/#2037/#2038/#2039/#2040/#2051), loaders that ask each vendor for the ticker form it serves and page at its own cap (Alpha Vantage #1997, AKShare #1998, CCXT #1999, Tushare minute lots #2001, Tiingo/Stooq class shares #2010/#2012, Nobitex Tehran days #1989, push2 decimals #1988), futures and market fees (micro index price limits #1992, the 30-year treasury fee #1994, India stamp duty on short covers #1995), quant-library and governance fixes (#1950/#1959/#1960/#1962/#1963/#2000/#2017), sub-penny prices kept in trades and charts (#1987/#1990), TTM sums that stop at a missing quarter (#2042), 3:2 splits and ST board limits in paper trading (#1985/#1984), a live halt key that cannot alias the global halt (#2003), session, memory, CLI and API fixes (#1969/#1970/#1982/#2002/#2006), and a string-"false" sweep across ten tools (#1976/#1977/#2008/#2009/#2011/#2013/#2014/#2015/#2016/#2018)
+- @he-yufeng — 18 PRs (5 landed as ports): versioned research artifacts (#2079/#2159), background tasks scoped to their owner, reaped on cancel and reconciled after a restart (#2092/#2098/#2100/#2157), silent provider streams interrupted (#2099), cache and reasoning tokens kept in `llm_usage` (#2109), one tool policy across providers (#2087), Claude CLI tool-attempt recovery and structured finals (#2048/#2064/#2120), Qlib BETA/RESI/ROC/CORD semantics (#2062/#2069), magnitude suffixes in derived formulas (#2134), long/short risk x-ray and validation that refuses non-positive equity (#2162/#2161), and Unicode-safe swarm heartbeats (#2155)
+- @Jackzigen — the bar-agnostic paper order lifecycle (#2066), swarm runs that stop when cancelled from the chat (#2059/#2060), document figures and percentage points in grounding (#2058/#2108), Robinhood portfolio reads with account selection (#2054), Moonshot reasoning effort for kimi-k3.1-pro (#2043), and Eastmoney JSONP, AKShare 1.20 forex and bare US ETF symbol fixes (#2082/#2083/#2086)
+- @Shizoqua — research goals edited in place (#2093), Feishu, Teams, WeChat, WhatsApp and Discord channel fixes (#1957/#1958/#1967/#2078/#2114), heredoc commands in the bash tool (#2077), path-escape tests (#2094), and a run-directory fallback that no longer depends on the process cwd (#2116, landed as a port)
+- @cgycorey — global futures priced on real contract multipliers and micro rates, with generic defaults reported (#1965/#1966/#1968/#1972), and a shadow account that honours every entry condition and currency (#2073/#2075)
+- @dajiaohuang — transfer flow signs (#2023), aligned attribution benchmarks (#2044), overflow-free weight normalisation (#2046), and boolean payoff quantities refused (#2049)
+- @zeus229 — the BYMA engine for Argentine shares and CEDEARs (#2071), backtests reused across turns and sessions (#2074), Codex OAuth model discovery (#2080), and financial units kept in grounding evidence (#2072)
+- @alexwan02 — Longbridge per-currency cash (#1940), `.env` read by the MCP server (#1974), and Futu US symbol mapping (#2076)
+- @BHhhh-123 — cross-sectional factor combination with walk-forward weights (#1953), field-level data availability in alpha bench (#2057), and factor research provenance (#2067)
+- @remote-controlled-man — comma-grouped document integers (#2135), one bounded retry for a withheld final answer (#2136), and A-share source setup docs (#2138)
+- @shadowinlife — the opt-in five-minute A-share paper step and its bar-by-bar matching (#2110/#2111), and JoinQuant limit fills (#2127, landed as a port)
+- @TWJxi and @lishuanghong1989-netizen — Gildata stock discovery and financial queries (#2117), stock screening with report-period indicators (#2118), and Shannon portfolio style and risk analysis (#2119)
+- @TerryF7 — IBKR and Futu gateway endpoints per connection (#1983), and connection deletion without a credential vault (#2153, landed as a port)
+- @davidalmeida90 — the next-bar signal delay documented in the strategy skill (#2137)
+- @DrDLyuan — STAR Market and Beijing buys sized on their own order grid (#2105)
+- @goatyyc — Binance HTTP 451 read failures explained (#1937)
+- @hnq-ai — a crawlable documentation wiki (#2165, landed as a port)
+- @kadyrbekovhamit-cyber — Heston prices for short expiries (#2140)
+- @MetaAviator — invalid journal quantities refused (#2052)
+- @octo-patch — MiniMax M3.1 Flash as the default MiniMax model (#1936)
+- @RowanAldean — optional Parallel search in `web_search` (#2113)
+- @VectorPeak — voice notes forwarded in four IM adapters (#2106)
+- @wavebyrd — Yahoo three-letter `=X` forex symbols read as USD pairs (#1980)
+- @yufengsika — non-finite and boolean inputs refused by financial rigor checks (#2053)
+
+<details>
+<summary>Contribuidores de los ciclos v0.1.17 y v0.1.18</summary>
+
+**v0.1.18** · @warren618 (Haozhe Wu) incorporó los esquemas de herramientas bajo demanda, guardó resultados extensos en los archivos de ejecución y corrigió el cómputo de uso de llamadas interrumpidas al modelo.
 
 - @rudycelekli — a 92-PR correctness sweep (13 of them landed as maintainer ports): quant-library guards and edge cases (implied-vol price tolerance #1657, gaps in VaR breach transitions #1658, Heston inputs #1719, scheduled CDS coupons #1716, Carino coincidence #1943, undefined probabilistic-Sharpe and bond-accrual inputs #1821/#1822), missing prices kept out of risk x-ray return pairs and OU lag pairs (#1717/#1713), an undefined three-scenario upside and unbounded journal ratios reported as such (#1921/#1884), document reading that keeps PDF text, Word order, PowerPoint groups and Excel missing-value markers (#1838/#1839/#1840/#1841), session search limits, locking and snippets (#1827/#1828/#1832/#1834), more secret formats redacted (#1874/#1880), A-share board limits and Beijing codes (#1913/#1914), standalone revalidation and attribution on the run's own annualisation (#1915/#1948), and settings the selected engine ignores now warned about (#1947)
 - @Shizoqua — 25 PRs (2 landed as ports): memory and cross-session search that read back clean and match non-English text (#1682/#1686/#1697/#1771/#1772), skill headings and saved skill names resolved consistently (#1797/#1858), Telegram and Matrix replies no longer dropped when the stream preview never sent and one WeCom stream id per reply (#1860/#1903/#1929), SSE events no longer double-delivered on reconnect (#1798), parallel CLI tool results paired with their own call (#1859), goal evidence confined to the claimed run (#1895), Carhart momentum no longer leaking today's price (#1578), Wilder RSI in the shadow account (#1457), direct-SDK positions priced from `current_price`/`ltp`/`market_val` (#1581), the email SPF/DKIM spoofing check (#1508), and swarm artifacts cleared before each fresh task (#1455)
@@ -382,6 +411,8 @@ Elige una [incidencia para empezar](https://github.com/HKUDS/Vibe-Trading/issues
 - @ThreeTima — currency identity checked in financial figure grounding (#1905)
 - @tomaszkubiak-courses — strategy provenance model fields set on the loop, so writing a strategy file no longer raises `AttributeError` (#1673)
 - @xaritoku — dotenv loaded in the `alpha bench` / `alpha compare` CLI handlers (#1806)
+
+</details>
 
 <details>
 <summary>Contribuidores del ciclo v0.1.16</summary>

@@ -21,10 +21,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=20261105">
-  <script src="/theme-init.js?v=20261105"></script>
+  <link rel="stylesheet" href="/styles.css?v=20261105b">
+  <script src="/theme-init.js?v=20261105b"></script>
   <!-- site-head:end -->
-  <script type="module" src="/main.js?v=20261105"></script>
+  <script type="module" src="/main.js?v=20261105b"></script>
   <style>
     .tutorial {
       width: min(940px, calc(100% - 32px));
@@ -385,7 +385,7 @@
         </article>
         <article class="module-card">
           <h3>Factor layer: factor / alpha</h3>
-          <p><code>agent/src/factors/</code> ships 462 alphas. A factor is a numeric signal that scores stocks. It is not an order rule, and it is not a promise of returns.</p>
+          <p><code>agent/src/factors/</code> ships 478 alphas. A factor is a numeric signal that scores stocks. It is not an order rule, and it is not a promise of returns.</p>
         </article>
         <article class="module-card">
           <h3>Backtest layer: backtest</h3>
@@ -526,7 +526,7 @@
         <p>Important: a factor is not a strategy. A factor only answers “which instrument scores higher”. A strategy also has to answer how much to buy, when to buy, when to sell, what the trading costs are, whether concentrated positions are allowed, and whether the orders could actually be filled.</p>
       </div>
 
-      <p>The Alpha Zoo in the current repository holds 462 alphas in five zoos:</p>
+      <p>The Alpha Zoo in the current repository holds 478 alphas in five zoos:</p>
       <table class="term-grid">
         <thead>
           <tr>
@@ -558,8 +558,8 @@
           </tr>
           <tr>
             <td><code>fundamental</code></td>
-            <td>4</td>
-            <td>Factors built from point-in-time financial statements: return on equity, gross profitability, earnings yield and asset growth.</td>
+            <td>20</td>
+            <td>Factors built from point-in-time financial statements and valuations: profitability (return on equity and assets, gross profitability, operating margin), growth, yields, accruals, leverage and valuation ratios, three of them industry-neutral.</td>
           </tr>
         </tbody>
       </table>
@@ -574,7 +574,7 @@
         <li><strong>value / quality</strong>: valuation or quality styles, usually more medium- to long-term.</li>
       </ul>
 
-      <p>Browse with the CLI first, rather than reading 462 source files straight away:</p>
+      <p>Browse with the CLI first, rather than reading 478 source files straight away:</p>
       <pre><code>vibe-trading alpha list --zoo academic
 vibe-trading alpha show academic_mkt_rf
 vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10</code></pre>

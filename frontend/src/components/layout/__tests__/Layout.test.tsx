@@ -16,7 +16,7 @@ const sessions = [
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) => ({
-      "app.version": "v0.1.18",
+      "app.version": "v0.1.19",
       "layout.agent": "Agent",
       "layout.alphaZoo": "Alpha Zoo",
       "layout.cancel": "Cancel",

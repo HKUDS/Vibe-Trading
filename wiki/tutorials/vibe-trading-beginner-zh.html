@@ -21,10 +21,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,750&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=20261105">
-  <script src="/theme-init.js?v=20261105"></script>
+  <link rel="stylesheet" href="/styles.css?v=20261105b">
+  <script src="/theme-init.js?v=20261105b"></script>
   <!-- site-head:end -->
-  <script type="module" src="/main.js?v=20261105"></script>
+  <script type="module" src="/main.js?v=20261105b"></script>
   <style>
     .tutorial {
       width: min(940px, calc(100% - 32px));
@@ -387,7 +387,7 @@
         </article>
         <article class="module-card">
           <h3>因子层：factor / alpha</h3>
-          <p><code>agent/src/factors/</code> 内置 462 个 alpha。因子是给股票打分的数值信号，不是下单规则，也不是收益保证。</p>
+          <p><code>agent/src/factors/</code> 内置 478 个 alpha。因子是给股票打分的数值信号，不是下单规则，也不是收益保证。</p>
         </article>
         <article class="module-card">
           <h3>回测层：backtest</h3>
@@ -528,7 +528,7 @@
         <p>重要：因子不是策略。因子只回答“哪个标的分数更高”。策略还要回答“买多少、什么时候买、什么时候卖、交易成本多少、是否允许集中持仓、是否能成交”。</p>
       </div>
 
-      <p>当前仓库的 Alpha Zoo 有 462 个 alpha，分成五个因子集：</p>
+      <p>当前仓库的 Alpha Zoo 有 478 个 alpha，分成五个因子集：</p>
       <table class="term-grid">
         <thead>
           <tr>
@@ -560,8 +560,8 @@
           </tr>
           <tr>
             <td><code>fundamental</code></td>
-            <td>4</td>
-            <td>用时点正确的财务报表数据构建的因子：净资产收益率、毛利盈利能力、盈利收益率和资产增长。</td>
+            <td>20</td>
+            <td>用时点正确的财务报表和估值数据构建的因子：盈利能力（净资产收益率、总资产收益率、毛利盈利能力、营业利润率）、增长、收益率、应计项、杠杆和估值比率，其中三个做了行业中性化。</td>
           </tr>
         </tbody>
       </table>
@@ -576,7 +576,7 @@
         <li><strong>value / quality</strong>：估值或质量风格，通常更偏中长期。</li>
       </ul>
 
-      <p>先用 CLI 浏览，而不是直接读 462 个源码文件：</p>
+      <p>先用 CLI 浏览，而不是直接读 478 个源码文件：</p>
       <pre><code>vibe-trading alpha list --zoo academic
 vibe-trading alpha show academic_mkt_rf
 vibe-trading alpha bench --zoo academic --universe sp500 --period 2020-2025 --top 10</code></pre>

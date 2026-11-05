@@ -69,7 +69,7 @@
   "lab.gtja.meta": "<span>Alpha Zoo</span> &middot; <span>国泰君安 191</span> &middot; <span>沪深300</span> &middot; <span>8 年（2018&ndash;2025）</span>",
   "alpha.title": "因子库 | Vibe-Trading Wiki",
   "alpha.heading": "因子库。",
-  "alpha.lede": "462 个现成量化因子，分属五个因子集。一条命令即可在你的股票池上评测任意因子集。",
+  "alpha.lede": "478 个现成量化因子，分属五个因子集。一条命令即可在你的股票池上评测任意因子集。",
   "alpha.stats.total": "因子总数",
   "alpha.stats.zoos": "因子集",
   "alpha.stats.generated": "最近生成",
