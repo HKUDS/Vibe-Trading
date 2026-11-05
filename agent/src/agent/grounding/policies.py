@@ -22,6 +22,7 @@ from src.agent.grounding.identity import (
 )
 from src.agent.grounding import identity_checks  # noqa: F401  (registers declared checks)
 from src.agent.grounding import figures_checks  # noqa: F401  (registers declared checks)
+from src.agent.grounding.figures import _MAGNITUDES
 from src.agent.grounding.registry import GROUNDING_CHECKS, grounding_check
 from src.agent.grounding.evidence import (
     EvidenceRecord,
@@ -312,7 +313,7 @@ def _evaluate_formula(
         well-formed expression over at least two numeric operands.
     """
     normalized = (
-        expression.replace("×", "*")
+        _expand_formula_units(expression).replace("×", "*")
         .replace("✕", "*")
         .replace("÷", "/")
         .replace("−", "-")
@@ -388,6 +389,24 @@ def _evaluate_formula(
 #: A number written with a percent sign inside a formula.
 _PERCENT_OPERAND_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[%％]")
 
+# Units are syntax, not evidence: expanded operands still pass the same
+# observed-or-declared checks. Use the prose scanner's supported suffixes.
+_FORMULA_CURRENCY = r"(?:人民币|美元|美金|港元|日元|欧元|英镑|元|¥|￥|\$|€|£|円)"
+_FORMULA_QUANTITY_RE = re.compile(
+    r"(?<![A-Za-z0-9_.])(\d[\d,]*(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*"
+    r"(?:([" + re.escape("".join(_MAGNITUDES)) + r"])\s*(?:"
+    + _FORMULA_CURRENCY + r")?|" + _FORMULA_CURRENCY + r")"
+    r"(?![A-Za-z0-9_\u3400-\u9fff])"
+)
+
+
+def _expand_formula_units(text: str) -> str:
+    """Expand supported numeric suffixes before parsing or label removal."""
+    return _FORMULA_QUANTITY_RE.sub(
+        lambda match: repr(float(match[1].replace(",", "")) * _MAGNITUDES.get(match[2], 1.0)),
+        text,
+    )
+
 
 def _is_small_exponent(node: ast.AST) -> bool:
     """Whether a power's exponent is a literal 2 or 3."""
@@ -411,7 +430,7 @@ def _without_labels(text: str) -> str:
     ("约−1.17pp") is a restatement of the result, not an operand. Nothing is
     read from the words themselves.
     """
-    return _LABEL_RE.sub(" ", _ANNOTATION_RE.sub(" ", text))
+    return _LABEL_RE.sub(" ", _expand_formula_units(_ANNOTATION_RE.sub(" ", text)))
 
 
 def _formula_in_note(note: str) -> tuple[float, list[float], ast.Expression] | None:

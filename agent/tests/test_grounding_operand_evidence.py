@@ -140,3 +140,46 @@ def test_non_percent_claim_does_not_gain_a_free_multiplier(tmp_path):
     )
     assert not verdict.valid
     assert verdict.issues[0]["reason"] == "operand_not_observed"
+
+
+@pytest.mark.parametrize(("formula", "expected"), [
+    ("345,624,709.24元 ÷ 1亿", 3.4562470924),
+    ("2亿元 / 2", 1e8),
+    ("2.5万人民币 / 5千人民币", 5),
+    ("6M / 2K", 3000),
+    ("-2亿元 / 2", -1e8),
+])
+def test_formula_quantity_units(formula, expected):
+    from src.agent.grounding.policies import _evaluate_formula
+
+    evaluated = _evaluate_formula(formula)
+    assert evaluated is not None
+    assert evaluated[0] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("formula", ["2T / 2", "2Q / 2", "2MISSING / 2"])
+def test_unknown_magnitude_is_not_evaluated(formula):
+    from src.agent.grounding.policies import _evaluate_formula
+
+    assert _evaluate_formula(formula) is None
+
+
+@pytest.mark.parametrize("note", [
+    "1-9月扣非归母净利 = 779,216,390.40元 ÷ 1亿",
+    "归母净利 779,216,390.40元 ÷ 1亿",
+])
+def test_formula_labels_preserve_magnitude(note):
+    from src.agent.grounding.policies import _formula_in_note
+
+    evaluated = _formula_in_note(note)
+    assert evaluated is not None
+    assert evaluated[0] == pytest.approx(7.792163904)
+    assert evaluated[1] == [779216390.4, 1e8]
+
+
+@pytest.mark.parametrize("values,valid", [((2e8, 2), True), ((2e8,), False)])
+def test_magnitude_conversion_still_requires_operand_evidence(tmp_path, values, valid):
+    verdict = _ledger(tmp_path, values).validate_final_answer(
+        "Result: 100000000.00.\n```figures\n100000000.00 | derived | 2亿元 / 2 | measure\n```"
+    )
+    assert verdict.valid is valid, verdict.issues
