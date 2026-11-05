@@ -1079,6 +1079,71 @@ def _ensure_session_id(title: str, *, session_id: Optional[str] = None) -> str:
     return session.session_id
 
 
+_SHELL_CONFIRM_LOCK = threading.Lock()
+
+
+def _console_warn(msg: str) -> None:
+    console.print(f"[yellow]WARNING:[/yellow] {rich_escape(msg)}")
+
+
+def _confirm_shell_command(tool_name: str, command: str) -> bool:
+    """Ask the user in the terminal before the agent runs a shell command.
+
+    Without a TTY nobody can answer, so the command is declined. Swarm workers
+    run in parallel threads, so prompts are serialized. Any active Rich Live
+    display (run dashboard, spinner) is paused while asking.
+    """
+    if not sys.stdin.isatty():
+        return False
+    with _SHELL_CONFIRM_LOCK:
+        lives = list(getattr(console, "_live_stack", None) or [])
+        if not lives and getattr(console, "_live", None) is not None:
+            lives = [console._live]  # Rich < 14 keeps a single active Live
+        for live in reversed(lives):
+            live.stop()
+        try:
+            console.print(Panel(Text(command), title=f"Agent wants to run ({tool_name})", border_style="yellow"))
+            answer = input("Run this command? [y/N] ")
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        finally:
+            for live in lives:
+                live.start()
+    return answer.strip().lower() in {"y", "yes"}
+
+
+def _cli_shell_tools_enabled(warn: Any) -> bool:
+    """Resolve whether this CLI run may register bash/background_run.
+
+    Off unless ``VIBE_TRADING_ENABLE_SHELL_TOOLS`` is set (the same switch the
+    API and MCP server use), and always off while the host holds live-trading
+    authority: a shell can call a connector's ``place_order`` directly and so
+    bypass the mandate gate. When on, every command needs a y/N in the terminal.
+
+    Args:
+        warn: Callable used to tell the user why an opt-in was refused.
+
+    Returns:
+        True when shell tools should be registered for this run.
+    """
+    from src.tools._shell_safety import live_trading_signals, set_shell_confirm
+
+    if not get_env_config().api.vibe_trading_enable_shell_tools:
+        set_shell_confirm(None)
+        return False
+    reasons = live_trading_signals()
+    if reasons:
+        set_shell_confirm(None)
+        warn(
+            "VIBE_TRADING_ENABLE_SHELL_TOOLS is set, but shell tools stay off because "
+            + "; ".join(reasons)
+            + ". A shell could place orders around the live-order gate."
+        )
+        return False
+    set_shell_confirm(_confirm_shell_command)
+    return True
+
+
 def _run_agent(
     prompt: str,
     history: Optional[List[Dict]] = None,
@@ -1258,7 +1323,7 @@ def _run_agent(
     agent = AgentLoop(
         registry=build_registry(
             persistent_memory=pm,
-            include_shell_tools=True,
+            include_shell_tools=_cli_shell_tools_enabled(_mcp_warn),
             agent_config=agent_config,
             session_id=session_id or None,
             warn_callback=_mcp_warn,
@@ -2413,7 +2478,7 @@ def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> Optional
             preset,
             user_vars,
             live_callback=dashboard.handle_event,
-            include_shell_tools=True,
+            include_shell_tools=_cli_shell_tools_enabled(_console_warn),
         )
     except FileNotFoundError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -2465,7 +2530,7 @@ def cmd_swarm_retry_live(run_id: str, resume: bool = False) -> Optional[int]:
             reconciled.preset_name,
             reconciled.user_vars or {},
             live_callback=dashboard.handle_event,
-            include_shell_tools=True,
+            include_shell_tools=_cli_shell_tools_enabled(_console_warn),
             resume_from=reconciled if resume else None,
         )
     except FileNotFoundError as exc:

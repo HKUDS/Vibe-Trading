@@ -202,7 +202,7 @@ Copy `agent/.env.example` to `agent/.env` and uncomment the provider block you w
 | `CLAUDE_CLI_DENY_TOOL_PREFIXES` | No | Legacy alias for `VIBE_TRADING_DENY_TOOL_PREFIXES`, used when the generic name is unset |
 | `CLAUDE_CLI_BASH_POLICY` | No | Legacy alias for `VIBE_TRADING_BASH_POLICY`, used when the generic name is unset |
 | `API_AUTH_KEY` | Recommended for network deployments | Bearer token required when the API is reachable from non-local clients |
-| `VIBE_TRADING_ENABLE_SHELL_TOOLS` | No | Explicit opt-in for shell-capable tools in remote API/MCP-SSE style deployments |
+| `VIBE_TRADING_ENABLE_SHELL_TOOLS` | No | Explicit opt-in for shell-capable tools on every surface (CLI, API, MCP). The CLI also asks before each command and refuses while live trading is configured |
 | `VIBE_TRADING_ALLOWED_FILE_ROOTS` | No | Extra comma-separated roots for document and broker-journal imports |
 | `VIBE_TRADING_ALLOWED_RUN_ROOTS` | No | Extra comma-separated roots for generated-code run directories |
 | `VIBE_TRADING_ALLOWED_WRITE_ROOTS` | No | Extra comma-separated roots the agent may write or edit (e.g. `~/Documents` for report exports) |

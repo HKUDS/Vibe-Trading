@@ -77,7 +77,7 @@ This Hard-Gate Checklist is also the evidence ingestion gate for Strategy Discov
 ## Post-Fix Validation Rules
 
 After modifying `signal_engine.py`, you must confirm:
-1. **AST syntax passes**: `bash("python -c \"import ast; ast.parse(open('code/signal_engine.py').read()); print('OK')\"")`
+1. **AST syntax passes**: `bash("python -c \"import ast; ast.parse(open('code/signal_engine.py').read()); print('OK')\"")` — only when `bash` is available (it is off by default); otherwise rely on the `backtest` tool, which reports syntax errors itself
 2. **Contains `class SignalEngine`**: the file must define `class SignalEngine`
 3. **Contains `def generate`**: the class must contain a `def generate` method
 4. **Rerun the backtest**: after the fix, rerun the backtest and verify the results

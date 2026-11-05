@@ -153,6 +153,13 @@ class ToolRegistry:
                 if notes:
                     return json.dumps({"status": "error", "skipped": True, "error": notes[0]})
                 params = accepted[0]["arguments"]
+            if name in {"bash", "background_run"}:
+                from src.tools._shell_safety import shell_command_confirmed
+
+                if not shell_command_confirmed(name, str(params.get("command", ""))):
+                    return json.dumps({"status": "error", "skipped": True,
+                                       "error": "The user declined to run this command. "
+                                                "Do not retry it; continue without it or ask the user."})
             return tool.execute(**params)
         except Exception as exc:
             logger.exception("Tool %s failed", name)
