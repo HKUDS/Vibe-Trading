@@ -219,6 +219,12 @@ class TestManagerWiring:
         assert records[0].status == "completed"
         assert records[0].attempt_id is None
         assert records[0].command_preview
+        assert records[0].notification_pending is True
+
+        assert [item["task_id"] for item in manager.drain_notifications()] == [task_id]
+        records, unreadable = manager._store.load_all()
+        assert unreadable == []
+        assert records[0].notification_pending is False
 
     def test_restart_recovery_leaves_this_processes_live_tasks_alone(self, tmp_path):
         from src.tools import background_tools as bg
@@ -288,3 +294,150 @@ def test_cancel_intent_is_persisted_before_reaping(tmp_path, monkeypatch):
     assert records[0].status == "cancelling"
     recovered, _ = reconcile_after_restart(records)
     assert recovered[0].status == "outcome_unknown"
+
+
+def test_pending_terminal_notification_is_restored_once_and_acknowledged(tmp_path):
+    from src.tools import background_tools as bg
+
+    store = BackgroundTaskStore(tmp_path)
+    store.save(make(task_id="eeeeeeee", owner_id="session:a", status="completed",
+                    result_preview="finished", notification_pending=True))
+    first = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    first.recover_on_start()
+
+    other = first.for_scope(bg.BackgroundScope("session:b"))
+    assert other.drain_notifications() == []
+    assert first.drain_notifications() == [{
+        "task_id": "eeeeeeee", "status": "completed", "command": "echo hi",
+        "result": "finished", "exit_code": 0,
+    }]
+    records, unreadable = store.load_all()
+    assert unreadable == [] and records[0].notification_pending is False
+
+    restarted = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    restarted.recover_on_start()
+    assert restarted.drain_notifications() == []
+
+
+def test_interrupted_task_produces_a_recovered_notification(tmp_path):
+    from src.tools import background_tools as bg
+
+    store = BackgroundTaskStore(tmp_path)
+    store.save(make(task_id="ffffffff", owner_id="session:a", status="running",
+                    notification_pending=True))
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    manager.recover_on_start()
+
+    notices = manager.drain_notifications()
+    assert len(notices) == 1
+    assert notices[0]["task_id"] == "ffffffff"
+    assert notices[0]["status"] == "interrupted"
+
+
+def test_failed_delivery_ack_is_retried_after_another_restart(tmp_path):
+    from src.tools import background_tools as bg
+
+    class FailingAckStore(BackgroundTaskStore):
+        def save(self, record):
+            if record.notification_pending is False:
+                raise OSError("disk full during delivery acknowledgement")
+            return super().save(record)
+
+    store = FailingAckStore(tmp_path)
+    store.save(make(task_id="aaaaaaa1", owner_id="session:a", status="completed",
+                    result_preview="deliver me", notification_pending=True))
+    first = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    first.recover_on_start()
+    assert len(first.drain_notifications()) == 1
+
+    restarted = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    restarted.recover_on_start()
+    assert [item["result"] for item in restarted.drain_notifications()] == ["deliver me"]
+
+
+def test_v1_terminal_record_does_not_invent_a_duplicate_notification(tmp_path):
+    from dataclasses import asdict
+    from src.tools import background_tools as bg
+
+    store = BackgroundTaskStore(tmp_path)
+    legacy = make(task_id="bbbbbbb1", owner_id="session:a", status="completed")
+    payload = asdict(legacy)
+    payload["schema_version"] = 1
+    payload.pop("notification_pending", None)
+    store._write_json_atomically(store._path_for(legacy), payload)
+
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    summary = manager.recover_on_start()
+    assert summary["unchanged"] == 1
+    assert json.loads(manager.check("bbbbbbb1"))["status"] == "completed"
+    assert manager.drain_notifications() == []
+
+
+def test_recovered_notifications_precede_new_work_and_recovery_is_idempotent(tmp_path):
+    from src.tools import background_tools as bg
+
+    store = BackgroundTaskStore(tmp_path)
+    store.save(make(task_id="ccccccc1", owner_id="session:a", status="completed",
+                    notification_pending=True, ended_at=1.0))
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    manager._notifications.append(("session:a", {
+        "task_id": "new-work", "status": "completed", "command": "new",
+        "result": "new result", "exit_code": 0,
+    }))
+
+    manager.recover_on_start()
+    manager.recover_on_start()
+
+    notices = manager.drain_notifications()
+    assert [item["task_id"] for item in notices] == ["ccccccc1", "new-work"]
+
+
+def test_v1_live_record_is_migrated_when_recovered(tmp_path):
+    from dataclasses import asdict
+    from src.tools import background_tools as bg
+
+    store = BackgroundTaskStore(tmp_path)
+    legacy = make(task_id="ddddddd1", owner_id="session:a", status="running")
+    payload = asdict(legacy)
+    payload["schema_version"] = 1
+    payload.pop("notification_pending", None)
+    store._write_json_atomically(store._path_for(legacy), payload)
+
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    manager.recover_on_start()
+
+    records, unreadable = store.load_all()
+    assert unreadable == []
+    assert records[0].schema_version == SCHEMA_VERSION
+    assert records[0].status == "interrupted"
+    assert records[0].notification_pending is True
+    assert len(manager.drain_notifications()) == 1
+
+
+def test_recovered_notification_preserves_live_payload_limits(tmp_path):
+    from src.tools import background_tools as bg
+
+    store = BackgroundTaskStore(tmp_path)
+    store.save(make(task_id="eeeeeee1", owner_id="session:a", status="completed",
+                    command_preview="c" * 200, result_preview="r" * 2000,
+                    notification_pending=True))
+    manager = bg.BackgroundManager(bg.BackgroundScope("session:a"), store=store)
+    manager.recover_on_start()
+
+    notice, = manager.drain_notifications()
+    assert notice["command"] == "c" * 80
+    assert notice["result"] == "r" * 500
+
+
+@pytest.mark.parametrize("version", [[], {}, True, None, "2"])
+def test_corrupt_version_does_not_abort_other_task_recovery(tmp_path, version):
+    store = BackgroundTaskStore(tmp_path)
+    store.save(make(task_id="aaaaaaaa", notification_pending=True))
+    broken = store._directory / "broken.json"
+    broken.write_text(json.dumps({"schema_version": version}))
+    from src.tools.background_tools import BackgroundManager, BackgroundScope
+
+    manager = BackgroundManager(BackgroundScope("session:s1"), store=store)
+    report = manager.recover_on_start()
+    assert report["unreadable"] == [str(broken)]
+    assert [notice["task_id"] for notice in manager.drain_notifications()] == ["aaaaaaaa"]

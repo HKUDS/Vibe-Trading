@@ -10,6 +10,11 @@ Recovery is deliberately one-way and never executes anything. A record left in
 ``interrupted`` or ``outcome_unknown`` with a recovery reason. It is never
 re-run, and a stored PID is descriptive only: it is not used to signal a
 process, because that pid may have been reused by an unrelated program.
+
+Terminal notifications are restored until their owner drains them. Delivery is
+at least once: a crash before the acknowledgement reaches disk can replay a
+notice, never silently discard it. Version-1 terminal records have no delivery
+marker, so they remain queryable without inventing a duplicate notification.
 """
 
 from __future__ import annotations
@@ -27,7 +32,8 @@ from typing import Any, Iterable, Optional
 
 from src.tools.redaction import redact_text
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+_READABLE_SCHEMA_VERSIONS = frozenset({1, SCHEMA_VERSION})
 #: Preview length kept per field. Enough to identify a command or outcome
 #: without becoming a second copy of the run's full output.
 MAX_PREVIEW_CHARS = 2_000
@@ -61,6 +67,8 @@ class TaskRecord:
     recovery_reason: Optional[str] = None
     #: Descriptive only. Never used to signal a process after a restart.
     pid: Optional[int] = None
+    #: None means a version-1 record whose delivery state is unknowable.
+    notification_pending: Optional[bool] = None
     updated_at: float = field(default_factory=time.time)
 
     @property
@@ -133,13 +141,15 @@ class BackgroundTaskStore:
             return None
         if not isinstance(payload, dict):
             return None
-        if payload.get("schema_version") != SCHEMA_VERSION:
+        version = payload.get("schema_version")
+        if type(version) is not int or version not in _READABLE_SCHEMA_VERSIONS:
             return None
         try:
             record = TaskRecord(**payload)
             if (not isinstance(record.task_id, str) or not _TASK_ID_RE.fullmatch(record.task_id)
                     or not isinstance(record.owner_id, str) or not record.owner_id.strip()
                     or record.status not in LIVE_STATUSES | TERMINAL_STATUSES | {"interrupted", "outcome_unknown"}
+                    or not isinstance(record.notification_pending, (bool, type(None)))
                     or path.name != self._path_for(record).name):
                 return None
             for value in (record.started_at, record.ended_at, record.duration_seconds, record.updated_at):
@@ -198,6 +208,11 @@ def record_from_task(task_id: str, task: dict, *, started_at: Optional[float] = 
         ended_at=task.get("ended_at"),
         duration_seconds=task.get("duration_seconds"),
         pid=task.get("pid") if isinstance(task.get("pid"), int) else None,
+        notification_pending=(
+            task.get("notification_pending")
+            if isinstance(task.get("notification_pending"), bool)
+            else None
+        ),
     )
 
 
@@ -219,8 +234,10 @@ def reconcile_after_restart(
             recovered.append(
                 replace(
                     record,
+                    schema_version=SCHEMA_VERSION,
                     status="interrupted",
                     recovery_reason="service_restart",
+                    notification_pending=True,
                     ended_at=time.time(),
                 )
             )
@@ -228,8 +245,10 @@ def reconcile_after_restart(
             recovered.append(
                 replace(
                     record,
+                    schema_version=SCHEMA_VERSION,
                     status="outcome_unknown",
                     recovery_reason="service_restart_before_reap_completed",
+                    notification_pending=True,
                     ended_at=time.time(),
                 )
             )
