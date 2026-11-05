@@ -205,6 +205,12 @@ def allowed_write_roots() -> list[Path]:
     return roots
 
 
+def _fallback_candidate(file_path: str, base: Path) -> Path:
+    """Resolve a fallback against the supplied run directory, not the CWD."""
+    candidate = Path(file_path).expanduser()
+    return (candidate if candidate.is_absolute() else base / candidate).resolve()
+
+
 def resolve_safe_path(
     file_path: str,
     run_dir: str | None,
@@ -233,11 +239,13 @@ def resolve_safe_path(
 
     # Try resolving against run_dir if provided
     if run_dir:
+        # A rejected network path must never enter the fallback resolver.
+        _rejects_unc(run_dir)
         try:
             run_root = safe_run_dir(run_dir)
         except ValueError as exc:
             # If safe_run_dir fails, check if the path is in allowed_roots first
-            candidate = Path(file_path).expanduser().resolve()
+            candidate = _fallback_candidate(file_path, Path(run_dir).expanduser())
             for root in allowed_roots:
                 contained = _contained_path(candidate, root)
                 if contained is not None:
@@ -248,7 +256,7 @@ def resolve_safe_path(
             return safe_path(file_path, run_root)
         except ValueError as exc:
             # Fallback to allowed roots if safe_path containment fails
-            candidate = Path(file_path).expanduser().resolve()
+            candidate = _fallback_candidate(file_path, run_root)
             for root in allowed_roots:
                 contained = _contained_path(candidate, root)
                 if contained is not None:

@@ -231,3 +231,41 @@ def test_read_purpose_rejection_names_the_file_roots_env(tmp_path: Path, monkeyp
 
     assert "VIBE_TRADING_ALLOWED_FILE_ROOTS" in str(excinfo.value)
     assert "VIBE_TRADING_ALLOWED_WRITE_ROOTS" not in str(excinfo.value)
+
+
+@pytest.mark.parametrize("allowed_run", [True, False])
+def test_relative_fallback_uses_run_dir_not_cwd(tmp_path, monkeypatch, allowed_run):
+    run_dir = tmp_path / "runs" / "one"
+    run_dir.mkdir(parents=True)
+    allowed = tmp_path / "allowed"
+    cwd = allowed / "nested" / "cwd"
+    cwd.mkdir(parents=True)
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(run_dir if allowed_run else tmp_path / "other"))
+    with pytest.raises(ValueError):
+        resolve_safe_path("../../outside.txt", str(run_dir), [allowed])
+    # An explicitly allowed sibling remains reachable through the same base.
+    assert resolve_safe_path("../../allowed/ok.txt", str(run_dir), [allowed]) == allowed / "ok.txt"
+
+
+@pytest.mark.parametrize("run_dir", ["//server/share", r"\\server\share"])
+def test_unc_run_dir_is_rejected_before_any_resolution(run_dir, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("UNC rejection must precede filesystem resolution")
+
+    monkeypatch.setattr(Path, "resolve", forbidden)
+    with pytest.raises(ValueError, match="UNC"):
+        resolve_safe_path("result.txt", run_dir, [])
+
+
+def test_relative_fallback_cannot_escape_through_symlink(tmp_path, monkeypatch):
+    run_dir = tmp_path / "runs" / "one"
+    run_dir.mkdir(parents=True)
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (allowed / "link").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(run_dir))
+    with pytest.raises(ValueError):
+        resolve_safe_path("../../allowed/link/out.txt", str(run_dir), [allowed])
