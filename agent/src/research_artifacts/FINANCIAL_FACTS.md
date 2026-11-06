@@ -18,8 +18,14 @@ Each fact includes:
 - `verification_status`: `verified`, `partial`, or `unavailable`.
 
 `unavailable` requires `value=null`. A `verified` fact requires a
-numeric value, source reference, section, currency and unit. Duplicate
-metric/period/scope/currency/unit identities are rejected. Unknown requested
+numeric value, source reference, section and unit. Currency is required
+for monetary or ambiguous units (for example `millions`), but may be
+`null` for clearly non-monetary units (for example `shares`, `%`, `ratio`,
+`bps`, `days`). This is a conservative unit-based convention, not a
+currency/issuer-specific rule: use explicit units such as `million shares`
+rather than an ambiguous scale-only `millions`. Unknown units without a
+currency are rejected for `verified` facts; use `partial` until clarified.
+Duplicate metric/period/scope/currency/unit identities are rejected. Unknown requested
 values should be represented explicitly as unavailable when reporting dates
 are known, rather than fabricated.
 

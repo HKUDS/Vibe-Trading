@@ -121,6 +121,46 @@ def test_narrative_research_tool_stays_unchanged(tmp_path, monkeypatch):
         store.close()
 
 
+def test_financial_tool_persists_verified_share_count_without_currency(
+    tmp_path, monkeypatch
+):
+    from src.tools import financial_research_artifact_tool as tool_module
+
+    path = tmp_path / "share-count.sqlite"
+    monkeypatch.setattr(
+        tool_module,
+        "ResearchArtifactStore",
+        lambda: ResearchArtifactStore(db_path=path),
+    )
+    doc = _document()
+    doc["facts"][0].update(
+        metric="shares_outstanding",
+        period_kind="instant",
+        value=393_000_000,
+        currency=None,
+        unit="shares",
+        source_section="Equity notes",
+        verification_status="verified",
+    )
+    doc["facts"][0].pop("period_start")
+    doc["facts"][0].pop("period_end")
+    doc["facts"][0]["as_of_date"] = "2025-12-31"
+    response = json.loads(
+        SaveFinancialResearchArtifactTool().execute(
+            document=doc, data_as_of="2026-11-04"
+        )
+    )
+    assert response["status"] == "ok"
+    store = ResearchArtifactStore(db_path=path)
+    try:
+        revision = store.get_revision(response["revision"]["revision_id"])
+        fact = decode_financial_facts(revision.content)["facts"][0]
+        assert fact["currency"] is None
+        assert fact["value"] == 393_000_000
+    finally:
+        store.close()
+
+
 def test_financial_tool_requires_document_object(tmp_path, monkeypatch):
     from src.tools import financial_research_artifact_tool as tool_module
 

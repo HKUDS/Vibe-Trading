@@ -80,6 +80,47 @@ def test_verified_requires_units_and_source():
         validate_financial_facts(example_document(example_fact(source_section=None)))
 
 
+@pytest.mark.parametrize(
+    "metric,unit,value",
+    [
+        ("shares_outstanding", "shares", 393_000_000),
+        ("weighted_average_shares", "million shares", 393),
+        ("operating_margin", "%", 24.5),
+        ("return_on_equity", "ratio", 0.18),
+        ("leverage", "times", 2.1),
+    ],
+)
+def test_verified_non_monetary_units_allow_null_currency(metric, unit, value):
+    fact = example_fact(metric=metric, unit=unit, value=value, currency=None)
+    result = decode_financial_facts(encode_financial_facts(example_document(fact)))
+    assert result["facts"][0] == fact
+
+
+@pytest.mark.parametrize(
+    "unit",
+    ["millions", "thousands", "USD millions", "unknown reporting units"],
+)
+def test_verified_monetary_or_ambiguous_units_require_currency(unit):
+    with pytest.raises(ValueError, match="require currency"):
+        validate_financial_facts(
+            example_document(example_fact(unit=unit, currency=None))
+        )
+
+
+def test_non_monetary_fact_still_requires_source_and_unit():
+    with pytest.raises(ValueError, match="provenance and units"):
+        validate_financial_facts(
+            example_document(
+                example_fact(
+                    metric="shares_outstanding",
+                    unit="shares",
+                    currency=None,
+                    source_id=None,
+                )
+            )
+        )
+
+
 def test_period_kind_is_explicit_for_stocks_and_flows():
     with pytest.raises(ValueError, match="period_kind"):
         validate_financial_facts(example_document(example_fact(period_kind="quarter")))

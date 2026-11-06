@@ -15,6 +15,22 @@ SCHEMA_VERSION = "financial-facts/v1"
 STATUSES = {"verified", "partial", "unavailable"}
 KINDS = {"duration", "instant"}
 MAX_FACTS = 1000
+# Currency may be null only when units unambiguously denote non-money.
+# Scale-only units such as "millions" can describe money or shares.
+NON_MONETARY_UNITS = frozenset({
+    "share", "shares", "thousand shares", "thousands of shares",
+    "million shares", "millions of shares", "%", "percent",
+    "percentage", "percentage point", "percentage points", "pp",
+    "basis point", "basis points", "bps", "ratio", "times", "x",
+    "day", "days", "year", "years", "employee", "employees",
+    "person", "people",
+})
+
+
+def _currency_optional(unit: str) -> bool:
+    """Accept missing currency only for clearly non-monetary units."""
+    return unit.strip().casefold() in NON_MONETARY_UNITS
+
 
 
 def _date(value: object, field: str) -> date:
@@ -143,10 +159,17 @@ def validate_financial_facts(document: object) -> dict[str, Any]:
         if status == "verified" and (
             not source_id
             or not fact["source_section"]
-            or not fact["currency"]
             or not fact["unit"]
         ):
             raise ValueError(f"{prefix}: verified facts require provenance and units")
+        if (
+            status == "verified"
+            and not fact["currency"]
+            and not _currency_optional(fact["unit"])
+        ):
+            raise ValueError(
+                f"{prefix}: verified monetary or ambiguous units require currency"
+            )
         page = fact.get("source_page")
         if page is not None and (
             isinstance(page, bool) or not isinstance(page, (str, int))
