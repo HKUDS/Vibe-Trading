@@ -41,7 +41,7 @@ Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosyste
 | **Hypothesis Registry** | Durable research hypotheses with lifecycle status, data sources, skills, run-card links, and invalidation notes | Backend MVP Shipped |
 | **Research Autopilot** | Manual-first research loop: hypothesis → deterministic backtest → evidence report | Phase 1–3 Shipped |
 | **Data Bridge** | Bring-your-own data: local CSV/Parquet/SQL connectors with schema mapping | Local loader Shipped |
-| **Options Lab** | Multi-leg payoff chart, Greeks dashboard and spot × IV scenario explorer | Available at `/options`. Volatility surface planned. |
+| **Options Lab** | Multi-leg payoff chart, Greeks dashboard and spot × IV scenario explorer | Available at `/options`. Deterministic IV surface grids are available through the quantlib tool; interactive visualization is still planned. |
 | **Portfolio Studio** | Consolidated holdings, risk X-ray, constrained turnover-aware optimization and snapshot-based allocation proposals | Available. Portfolio proposals show value changes for user-supplied target weights. |
 | **Paper trading** | Persistent daily simulated accounts and a stateless paper step | Daily accounts since 0.1.17. Five-minute A-share steps since 0.1.19. |
 | **Research artifacts** | Search, save and revise dated conclusions with evidence | Available since 0.1.19 via Web, CLI, API and agent tools. |

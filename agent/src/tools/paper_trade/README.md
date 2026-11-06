@@ -107,8 +107,18 @@ no row at all while its daily bar exists is a provider omission and returns
 | `path_model` | `bar_median`, `bar_close` | `bar_median` | reference price from each bar |
 | `fill_model` | `all_or_none` | `all_or_none` | no partial fills |
 
-A market order fills at the first continuous bar whose fill gates pass. A
-resting limit follows JoinQuant's bar matching: a buy triggers only when
+A market order fills at the first continuous bar whose fill gates pass. If a
+buy is blocked at the upper price limit or a sell at the lower limit, it is
+canceled immediately and cannot fill on a later bar even if the price reopens.
+The result contains one `canceled_orders` entry with the existing
+`canceled_after_failed_match` reason and a detail naming `limit_up` or
+`limit_down`, plus a `price_limit` event; it is not a rejected order. A limit
+order blocked by the price band instead stays open until it fills or expires at
+the end of the session ([JoinQuant API guide, order processing](https://cdn.joinquant.com/help/img/JoinQuantAPI.pdf)).
+The default daily pt-v1.1 contract is unchanged and
+continues to report its established rejection reasons.
+
+A resting limit follows JoinQuant's bar matching: a buy triggers only when
 `bar.low < limit` (its 委托价 above the bar's low) and a sell only when
 `bar.high > limit` (its 委托价 below the bar's high), and a triggered fill
 executes at the order's 委托价 rather than the bar reference. Equality does not
@@ -126,6 +136,13 @@ and `pending_cancel` are not. JoinQuant's `filled` (partially filled, residual
 still in `open_orders()`) exists in the lifecycle but is not reached while
 every fill is all-or-none. These statuses are internal; no result field or
 surface exposes them.
+
+The matcher walks a shared chronological timeline across the supplied symbol
+frames, so later proceeds cannot fund an earlier order. At a shared timestamp,
+orders are evaluated in caller submission order, including the cash check;
+there is no implicit sell-first priority. Each symbol tracks its own first
+positive-volume bar for the better-price rule. This engine behavior does not
+relax the public tool's single-symbol provider limit below.
 
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
@@ -182,9 +199,12 @@ cannot fill. Corporate actions remain fail-closed.
 - **5m strategy UNIVERSE is strict.** An order on a position outside the
   declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
   by a 5m strategy step; use the 1d step for that.
-- **Matching changes are versioned.** `pt-rules-v2` identifies the corrected
-  full/partial order statuses and 5m limit-fill rules. Its engine fingerprint
-  differs from `pt-rules-v1` even with identical bars and model settings;
+- **Matching changes are versioned.** `pt-rules-v4` identifies chronological
+  matching across symbols and submission order at shared timestamps.
+  `pt-rules-v3` identified the immediate price-limit market cancellation;
+  `pt-rules-v2` identified the corrected
+  full/partial order statuses and 5m limit-fill rules. Each rule version has a
+  different engine fingerprint even with identical bars and model settings;
   archived results retain their original version.
 
 

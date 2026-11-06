@@ -16,13 +16,17 @@ Offline: synthetic frames through a fake loader, never the network.
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 import pandas as pd
 import pytest
 
 from src.tools.paper_trade import engine, state_hash
 from src.tools.paper_trade.data import fetch_market_data
-from src.tools.paper_trade.schema import CANCELED_REASON_CODE, REASON_CODES, parse_request
+from src.tools.paper_trade.schema import (
+    CANCELED_REASON_CODE, REASON_CODES, load_contract_schema, parse_request, validate_payload,
+)
+from src.tools.paper_trade.tool import run_paper_trade_step
 
 _DAY = "2026-10-20"
 _PREV = "2026-10-19"
@@ -207,6 +211,69 @@ def _sell(limit=None, qty=100, symbol=_SYM):
     return order
 
 
+@pytest.mark.parametrize(("seller", "buyer"), [(_OTHER, _SYM), (_SYM, _OTHER)])
+@pytest.mark.parametrize("sale_before_purchase", [False, True])
+def test_multiple_symbols_share_a_chronological_cash_ledger(seller, buyer, sale_before_purchase):
+    labels = _session_labels()
+    sale_label = labels[0] if sale_before_purchase else labels[-1]
+    purchase_label = labels[-1] if sale_before_purchase else labels[0]
+    prices = {label: 10.0 for label in labels}
+    prices[sale_label] = 10.6
+    sell_bars = _intraday(_DAY, prices)
+    buy_bars = _flat_5m(_DAY, 10.0)
+    buy_bars.loc[buy_bars.index < pd.Timestamp(f"{_DAY} {purchase_label}"), "volume"] = 0
+    daily = {symbol: _daily([(_PREV, 10.0), (_DAY, 10.0)]) for symbol in (seller, buyer)}
+    kwargs = dict(
+        # A first-live-bar buy limit must still get the better price even
+        # when another symbol has already traded earlier in this session.
+        orders=[_sell(limit=10.5, symbol=seller), _buy(limit=10.5, symbol=buyer)],
+        cash=0.0, positions=[{"symbol": seller, "qty": 100, "avg_cost": 10.0}],
+        daily=daily, five={seller: sell_bars, buyer: buy_bars}, symbols=(seller, buyer),
+    )
+    result = _outcome(**kwargs)
+    assert result.error is None
+    if sale_before_purchase:
+        assert [(f.symbol, f.side, f.price) for f in result.fills] == [
+            (seller, "sell", 10.6), (buyer, "buy", 10.0),
+        ]
+        assert result.rejected_orders == ()
+        assert result.end_state.cash == 49.45
+    else:
+        assert [(f.symbol, f.side, f.price) for f in result.fills] == [(seller, "sell", 10.5)]
+        assert [(r.symbol, r.reason_code) for r in result.rejected_orders] == [(buyer, "insufficient_cash")]
+        assert result.end_state.cash == 1044.46
+
+    # Loader dictionary order and row order must not determine execution time.
+    kwargs["five"] = {buyer: buy_bars.iloc[::-1], seller: sell_bars.iloc[::-1]}
+    kwargs["symbols"] = (buyer, seller)
+    replay = _outcome(**kwargs)
+    assert replay.fills == result.fills
+    assert replay.rejected_orders == result.rejected_orders
+    assert replay.end_state == result.end_state
+    assert replay.engine_fingerprint == result.engine_fingerprint
+
+
+@pytest.mark.parametrize(("seller", "buyer"), [(_OTHER, _SYM), (_SYM, _OTHER)])
+@pytest.mark.parametrize("buy_first", [False, True])
+def test_same_timestamp_uses_submission_order_across_symbols(seller, buyer, buy_first):
+    daily = {symbol: _daily([(_PREV, 10.0), (_DAY, 10.0)]) for symbol in (seller, buyer)}
+    orders = [_sell(symbol=seller), _buy(symbol=buyer)]
+    if buy_first:
+        orders.reverse()
+    result = _outcome(
+        orders=orders, cash=20.0, positions=[{"symbol": seller, "qty": 100, "avg_cost": 10.0}],
+        daily=daily, five={seller: _flat_5m(_DAY, 10.0), buyer: _flat_5m(_DAY, 10.0)},
+        symbols=(seller, buyer),
+    )
+    assert result.error is None
+    expected = [(seller, "sell")] if buy_first else [(seller, "sell"), (buyer, "buy")]
+    assert [(f.symbol, f.side) for f in result.fills] == expected
+    assert [(r.symbol, r.reason_code) for r in result.rejected_orders] == (
+        [(buyer, "insufficient_cash")] if buy_first else []
+    )
+    assert result.end_state.cash == (1014.49 if buy_first else 9.48)
+
+
 def test_market_buy_fills_at_the_first_continuous_bar() -> None:
     outcome = _outcome(orders=[_buy()])
 
@@ -317,19 +384,20 @@ def test_lot_size_rejects_and_cancels() -> None:
     assert len(outcome.canceled_orders) == 1
 
 
-def test_limit_up_buy_rejects_with_a_price_limit_event() -> None:
+def test_limit_up_buy_cancels_with_a_price_limit_event() -> None:
     daily = {_SYM: _daily([(_PREV, 10.00), (_DAY, 11.00)])}
     five = {_SYM: _flat_5m(_DAY, 11.00)}
     outcome = _outcome(orders=[_buy()], daily=daily, five=five)
 
     assert outcome.fills == ()
-    assert [r.reason_code for r in outcome.rejected_orders] == ["limit_up"]
+    assert outcome.rejected_orders == ()
     assert [(e.symbol, e.event_type) for e in outcome.events] == [(_SYM, "price_limit")]
     assert "up limit 11.00" in outcome.events[0].detail
     assert len(outcome.canceled_orders) == 1
+    assert "limit_up" in outcome.canceled_orders[0].detail
 
 
-def test_limit_down_sell_rejects_with_a_price_limit_event() -> None:
+def test_limit_down_sell_cancels_with_a_price_limit_event() -> None:
     daily = {_SYM: _daily([(_PREV, 10.00), (_DAY, 9.00)])}
     five = {_SYM: _flat_5m(_DAY, 9.00)}
     outcome = _outcome(
@@ -337,9 +405,87 @@ def test_limit_down_sell_rejects_with_a_price_limit_event() -> None:
     )
 
     assert outcome.fills == ()
-    assert [r.reason_code for r in outcome.rejected_orders] == ["limit_down"]
+    assert outcome.rejected_orders == ()
     assert [(e.symbol, e.event_type) for e in outcome.events] == [(_SYM, "price_limit")]
     assert len(outcome.canceled_orders) == 1
+    assert "limit_down" in outcome.canceled_orders[0].detail
+
+
+@pytest.mark.parametrize("side,blocked,later", [("buy", 11.0, 10.2), ("sell", 9.0, 9.8)])
+def test_price_limit_canceled_market_order_never_revives(side, blocked, later) -> None:
+    labels = _session_labels()
+    prices = {label: later for label in labels}
+    prices[labels[0]] = blocked
+    daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, later)])}
+    five = {_SYM: _intraday(_DAY, prices)}
+    positions = [{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}] if side == "sell" else []
+    outcome = _outcome(orders=[{"symbol": _SYM, "side": side, "qty": 100}],
+                       positions=positions, daily=daily, five=five)
+    assert outcome.fills == ()
+    assert outcome.rejected_orders == ()
+    assert len(outcome.canceled_orders) == 1
+    expected_reason = "limit_up" if side == "buy" else "limit_down"
+    assert expected_reason in outcome.canceled_orders[0].detail
+    assert [event.event_type for event in outcome.events] == ["price_limit"]
+    assert outcome.end_state.cash == 100000.0
+    assert len(outcome.end_state.positions) == len(positions)
+    if positions:
+        assert outcome.end_state.positions[0].qty == 100
+
+
+@pytest.mark.parametrize("side,price", [("buy", 9.0), ("sell", 11.0)])
+def test_opposite_side_of_price_limit_can_fill(side, price):
+    daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, price)])}
+    positions = [{"symbol": _SYM, "qty": 100, "avg_cost": 10.0}] if side == "sell" else []
+    outcome = _outcome(orders=[{"symbol": _SYM, "side": side, "qty": 100}],
+                       positions=positions, daily=daily, five={_SYM: _flat_5m(_DAY, price)})
+    assert len(outcome.fills) == 1
+    assert outcome.fills[0].price == price
+    assert outcome.rejected_orders == ()
+    assert outcome.canceled_orders == ()
+
+
+def test_price_limit_blocked_limit_order_expires_without_rejection() -> None:
+    daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, 11.0)])}
+    five = {_SYM: _flat_5m(_DAY, 11.0)}
+    # The first bar reference is better than this limit but is itself at the
+    # exchange ceiling, so the limit cannot fill and must remain resting.
+    outcome = _outcome(orders=[_buy(limit=11.1)], daily=daily, five=five)
+    assert outcome.fills == ()
+    assert outcome.rejected_orders == ()
+    assert len(outcome.canceled_orders) == 1
+    assert outcome.canceled_orders[0].detail == "unfilled day order canceled at session end"
+
+
+def test_price_limit_cancellation_reaches_the_wire_and_replays_identically():
+    labels = _session_labels()
+    prices = {label: 10.2 for label in labels}
+    prices[labels[0]] = 11.0
+    daily = {_SYM: _daily([(_PREV, 10.0), (_DAY, 10.2)])}
+    five = {_SYM: _intraday(_DAY, prices)}
+    loader = FakeLoader(daily, five)
+    payload = {
+        "account_id": "pa_cancel", "market": "cn_a",
+        "account_state": {"cash": 100000.0, "positions": []},
+        "orders": [_buy()], "from_date": _DAY, "to_date": _DAY,
+        "fee_model": dict(_FEE_MODEL), "interval": "5m",
+    }
+    kwargs = {"loader": loader, "ch_client": FakeChClient(),
+              "calendar_client": FakeCalendarClient(frozenset({_DAY})), "limits_client": None}
+    first = run_paper_trade_step(payload, **kwargs)
+    assert first == run_paper_trade_step(payload, **kwargs)
+    result = json.loads(first)
+    assert validate_payload(result, load_contract_schema(version="pt-v1.2")) == []
+    assert result["schema_version"] == "pt-v1.2"
+    assert result["fills"] == result["rejected_orders"] == []
+    assert len(result["canceled_orders"]) == 1
+    assert result["canceled_orders"][0]["reason_code"] == CANCELED_REASON_CODE
+    assert "limit_up" in result["canceled_orders"][0]["detail"]
+    assert [event["event_type"] for event in result["events"]] == ["price_limit"]
+    assert result["end_state"] == payload["account_state"]
+    assert result["engine_fingerprint"] != state_hash.engine_fingerprint(
+        interval="5m", bar_fingerprint=_market_data(daily, five).bar_fingerprint,
+        rules_version="pt-rules-v2")
 
 
 def test_halted_symbol_rejects_suspended_and_its_position_is_untouched() -> None:
@@ -443,12 +589,14 @@ def test_late_limit_up_does_not_reject_an_earlier_fill():
     assert outcome.fills[0].price == 10.0
 
 
-def test_order_waits_for_limit_to_reopen():
+def test_market_order_does_not_wait_for_limit_to_reopen():
     bars = _flat_5m(_DAY, 10.0)
     bars.loc[pd.Timestamp(f"{_DAY} 09:35"), ["open", "high", "low", "close"]] = 11.0
     outcome = _outcome(orders=[_buy()], five={_SYM: bars})
-    assert len(outcome.fills) == 1
-    assert outcome.fills[0].price == 10.0
+    assert outcome.fills == ()
+    assert outcome.rejected_orders == ()
+    assert len(outcome.canceled_orders) == 1
+    assert "limit_up" in outcome.canceled_orders[0].detail
 
 
 def test_zero_volume_bar_cannot_fill():

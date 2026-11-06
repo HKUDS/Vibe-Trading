@@ -324,9 +324,9 @@ class _MatchSession:
             up, down = self._band(order.symbol, day.date, sym_data)
             code = self.rules.band_rejection(order.side, price, up, down)
             if code == "limit_up":
-                return (code, f"price {price:.2f} at or above up limit {up:.2f}; buy deferred")
+                return (code, f"price {price:.2f} at or above up limit {up:.2f}; buy blocked")
             if code == "limit_down":
-                return (code, f"price {price:.2f} at or below down limit {down:.2f}; sell deferred")
+                return (code, f"price {price:.2f} at or below down limit {down:.2f}; sell blocked")
         if self.rules.limit_order_violation(order.side, price, order.limit):
             anchor = "price" if self._five_minute else "close"
             detail = (
