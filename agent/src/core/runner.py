@@ -32,12 +32,19 @@ console = Console(stderr=True)
 logger = logging.getLogger(__name__)
 
 # --- Sandbox subprocess hardening (VT-001 defense-in-depth) ---------------
-# These layers only bite inside the hardened Docker deployment; everywhere else
-# (bare pip install, local dev, CI, non-Linux) they detect the missing
-# precondition and degrade to the previous behaviour with a WARNING. The
-# always-on control for VT-001 is the AST scrubber in backtest/runner.py, not
-# any of this.
+# These layers are best-effort by default. The ephemeral HOME and the rlimits
+# always apply; the UID drop needs both a ``vibe-sandbox`` account and
+# CAP_SETUID. The shipped docker-compose runs as the non-root ``vibe`` user
+# with no-new-privileges, which no setuid path can cross, so the drop cannot
+# engage there: that deployment sets VIBE_TRADING_SANDBOX_UID_DROP=off and
+# relies on the AST scrubber in backtest/runner.py plus the env allowlist.
+# Set the variable to "required" on a host that can really drop, and a failed
+# drop becomes a hard error instead of a silent downgrade.
+# The always-on control for VT-001 is the AST scrubber, not any of this.
 _SANDBOX_USER = "vibe-sandbox"
+# "required" | "off" | unset (= auto: attempt where the account exists, warn on
+# failure). See ``_run_sandboxed`` for what each mode means.
+_SANDBOX_UID_DROP_ENV = "VIBE_TRADING_SANDBOX_UID_DROP"
 # The only paths under ~/.vibe-trading re-exposed into the ephemeral sandbox
 # HOME. Data loaders that run in the same subprocess resolve these via
 # Path.home(); everything else in the real home (.env, sessions.db, memory/,
@@ -53,14 +60,33 @@ _SANDBOX_RLIMIT_AS_MB_ENV = "VIBE_TRADING_SANDBOX_RLIMIT_AS_MB"
 _SANDBOX_RLIMIT_NOFILE = 512
 
 
+class SandboxPrivilegeDropError(RuntimeError):
+    """Raised when the UID drop was required but cannot be performed.
+
+    Refusing loudly is the point: silently running generated code with the
+    server's own UID looks the same from outside, so a deployment that asked
+    for the boundary must not get a downgrade with only a log line.
+    """
+
+
+def _sandbox_uid_drop_mode() -> str:
+    """Return how to treat the UID drop: ``"required"``, ``"off"`` or ``"auto"``."""
+    raw = os.environ.get(_SANDBOX_UID_DROP_ENV, "").strip().lower()  # noqa: env-gate — sandbox hardening mode, not app config
+    if raw in {"off", "0", "false", "no"}:
+        return "off"
+    if raw in {"required", "require", "1", "true", "yes"}:
+        return "required"
+    return "auto"
+
+
 def _resolve_sandbox_credentials() -> tuple[str, str] | None:
     """Return ``(user, group)`` for the privilege-dropped subprocess, else None.
 
     None (run without a UID drop) is returned whenever the ``vibe-sandbox``
-    account is absent or the platform has no ``pwd`` module — i.e. every
-    environment except the hardened Docker image that pre-creates the account and
-    is granted CAP_SETUID/CAP_SETGID. A user that exists but cannot actually be
-    dropped to (no capability) is handled at the ``subprocess.run`` call site.
+    account is absent or the platform has no ``pwd`` module. The account
+    existing is only a precondition, not proof the drop will be permitted --
+    a container that runs non-root with no-new-privileges cannot use it, which
+    is why the call site decides what a failure means.
     """
     if pwd is None:
         return None
@@ -571,26 +597,51 @@ class Runner:
         return env
 
     def _run_sandboxed(self, cmd: list[str], run_kwargs: dict[str, Any]) -> "subprocess.CompletedProcess[str]":
-        """Run the subprocess, dropping to ``vibe-sandbox`` when the host allows it.
+        """Run the subprocess, dropping to ``vibe-sandbox`` when asked and able.
 
-        When the UID drop is unavailable — no such user (the common case outside
-        the hardened container) or the caller lacks CAP_SETUID — a clear WARNING
-        is logged and the process runs without the drop. The AST static defense in
-        backtest/runner.py stays active regardless, so this fallback is safe.
+        ``VIBE_TRADING_SANDBOX_UID_DROP`` decides what a missing account or a
+        denied drop means:
+
+        * ``required`` -- the drop is a security boundary. Raise
+          :class:`SandboxPrivilegeDropError` rather than run generated code
+          with the server's privileges.
+        * ``off`` -- do not attempt it. This is the docker-compose deployment,
+          where no-new-privileges makes a setuid drop impossible.
+        * unset (``auto``) -- attempt it where the account exists and log a
+          WARNING when it fails. The AST static defense in backtest/runner.py
+          stays active in every mode.
         """
-        creds = _resolve_sandbox_credentials()
-        if creds is not None:
-            user, group = creds
-            try:
-                return subprocess.run(cmd, user=user, group=group, **run_kwargs)
-            except (PermissionError, LookupError, OSError) as exc:
-                logger.warning(
-                    "Sandbox UID drop to %r failed (%s); running the generated-code "
-                    "subprocess WITHOUT the privilege-drop layer. The AST static "
-                    "defense (backtest/runner.py) remains active.",
-                    user,
-                    exc,
+        mode = _sandbox_uid_drop_mode()
+        creds = None if mode == "off" else _resolve_sandbox_credentials()
+        if creds is None:
+            if mode == "required":
+                raise SandboxPrivilegeDropError(
+                    f"{_SANDBOX_UID_DROP_ENV}=required, but there is no "
+                    f"{_SANDBOX_USER!r} account to drop to. Refusing to run "
+                    "generated code without the UID boundary; set the variable "
+                    "to 'off' to run without it deliberately."
                 )
+            return subprocess.run(cmd, **run_kwargs)
+        user, group = creds
+        try:
+            return subprocess.run(cmd, user=user, group=group, **run_kwargs)
+        except (PermissionError, LookupError, OSError) as exc:
+            if mode == "required":
+                raise SandboxPrivilegeDropError(
+                    f"{_SANDBOX_UID_DROP_ENV}=required, but the UID drop to "
+                    f"{user!r} failed ({exc}). Refusing to run generated code "
+                    "without the UID boundary; set the variable to 'off' to run "
+                    "without it deliberately."
+                ) from exc
+            logger.warning(
+                "Sandbox UID drop to %r failed (%s); running the generated-code "
+                "subprocess WITHOUT the privilege-drop layer. The AST static "
+                "defense (backtest/runner.py) remains active. Set %s=required to "
+                "make this an error instead.",
+                user,
+                exc,
+                _SANDBOX_UID_DROP_ENV,
+            )
         return subprocess.run(cmd, **run_kwargs)
 
     def execute(

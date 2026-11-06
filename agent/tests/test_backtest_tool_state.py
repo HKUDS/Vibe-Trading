@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
+from src.core.runner import SandboxPrivilegeDropError
 from src.tools.backtest_tool import run_backtest
 
 
@@ -102,6 +103,23 @@ def test_timeout_records_state_failed_and_returns_error_envelope(tool_run_dir):
     assert envelope["error"] == "backtest engine timed out after 300s"
     state = json.loads((tool_run_dir / "state.json").read_text(encoding="utf-8"))
     assert state == {"status": "failed", "reason": "backtest engine timed out after 300s"}
+
+
+def test_required_uid_drop_refusal_records_state_failed(tool_run_dir):
+    # H2 fail-closed: when the operator requires the UID boundary and the host
+    # cannot apply it, the tool must report the refusal and record why — not
+    # look like a run that never started.
+    with patch("src.tools.backtest_tool.emit_progress"), patch("src.tools.backtest_tool.Runner") as runner_cls:
+        runner_cls.return_value.execute.side_effect = SandboxPrivilegeDropError(
+            "VIBE_TRADING_SANDBOX_UID_DROP=required, but the UID drop failed (EPERM)"
+        )
+        envelope = json.loads(run_backtest(str(tool_run_dir)))
+
+    assert envelope["status"] == "error"
+    assert "required" in envelope["error"]
+    state = json.loads((tool_run_dir / "state.json").read_text(encoding="utf-8"))
+    assert state["status"] == "failed"
+    assert "UID drop failed" in state["reason"]
 
 
 def test_backtest_uses_configured_tool_timeout(tool_run_dir, monkeypatch):

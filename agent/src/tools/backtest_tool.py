@@ -13,7 +13,7 @@ from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
-from src.core.runner import Runner
+from src.core.runner import Runner, SandboxPrivilegeDropError
 from src.core.state import RunStateStore
 from src.strategy_store.models import BENCH_TYPES
 from src.tools.backtest_summary import collect_ohlcv_paths, try_build_backtest_summary
@@ -275,6 +275,17 @@ def run_backtest(run_dir: str) -> str:
         if timeout_output["stderr"]:
             response["stderr"] = timeout_output["stderr"][-2000:]
         return json.dumps(response, ensure_ascii=False)
+
+    except SandboxPrivilegeDropError as exc:
+        # The operator required the UID boundary (VIBE_TRADING_SANDBOX_UID_DROP=
+        # required) and the host could not apply it. Nothing ran, so say why:
+        # otherwise this is indistinguishable from a run that never started, and
+        # the evidence gate can only fail closed without naming the cause.
+        RunStateStore().mark_failure(run_path, str(exc))
+        return json.dumps(
+            {"status": "error", "error": str(exc), "run_dir": run_dir},
+            ensure_ascii=False,
+        )
 
     # Record lifecycle status so tool-driven runs are ingestible by the
     # evidence pipeline: refresh_strategy_evidence fail-closes without

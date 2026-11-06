@@ -462,6 +462,103 @@ def test_execute_retries_without_uid_drop_when_drop_fails(
     assert "after-fallback" in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("required", "required"),
+        ("TRUE", "required"),
+        ("1", "required"),
+        ("off", "off"),
+        ("false", "off"),
+        ("", "auto"),
+        ("nonsense", "auto"),
+    ],
+)
+def test_sandbox_uid_drop_mode_parsing(monkeypatch, raw: str, expected: str) -> None:
+    monkeypatch.setenv(runner_mod._SANDBOX_UID_DROP_ENV, raw)
+    assert runner_mod._sandbox_uid_drop_mode() == expected
+
+
+def test_required_uid_drop_fails_closed_when_drop_is_denied(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # H2: with the drop declared a boundary, a denied setuid must NOT fall back
+    # to running generated code under the server's own UID.
+    monkeypatch.setenv(runner_mod._SANDBOX_UID_DROP_ENV, "required")
+    monkeypatch.setattr(
+        runner_mod,
+        "_resolve_sandbox_credentials",
+        lambda: ("vibe-sandbox", "vibe-sandbox"),
+    )
+    real_run = runner_mod.subprocess.run
+    attempts: list[bool] = []
+
+    def _fake_run(cmd, **kwargs):
+        used_user = "user" in kwargs
+        attempts.append(used_user)
+        if used_user:
+            raise PermissionError("Operation not permitted")
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(runner_mod.subprocess, "run", _fake_run)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    entry = _probe_entry(tmp_path, "print('must-not-run')\n")
+
+    with pytest.raises(runner_mod.SandboxPrivilegeDropError, match="required"):
+        Runner(timeout=60).execute(entry, run_dir, cwd=tmp_path)
+
+    # The drop was attempted once and it was the last subprocess call: nothing
+    # was retried without it. (The interpreter probe also calls run(), never
+    # with a UID drop.)
+    assert attempts.count(True) == 1
+    assert attempts[-1] is True
+
+
+def test_required_uid_drop_fails_closed_without_sandbox_account(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(runner_mod._SANDBOX_UID_DROP_ENV, "required")
+    monkeypatch.setattr(runner_mod, "_resolve_sandbox_credentials", lambda: None)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    entry = _probe_entry(tmp_path, "print('must-not-run')\n")
+
+    with pytest.raises(runner_mod.SandboxPrivilegeDropError, match="vibe-sandbox"):
+        Runner(timeout=60).execute(entry, run_dir, cwd=tmp_path)
+
+
+def test_uid_drop_off_neither_resolves_nor_attempts(monkeypatch, tmp_path: Path) -> None:
+    # The docker-compose deployment: no-new-privileges makes the drop
+    # impossible, so it is turned off rather than attempted and logged.
+    monkeypatch.setenv(runner_mod._SANDBOX_UID_DROP_ENV, "off")
+
+    def _must_not_resolve():
+        raise AssertionError("off mode must not look up the sandbox account")
+
+    monkeypatch.setattr(runner_mod, "_resolve_sandbox_credentials", _must_not_resolve)
+    real_run = runner_mod.subprocess.run
+    attempts: list[bool] = []
+
+    def _fake_run(cmd, **kwargs):
+        attempts.append("user" in kwargs)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(runner_mod.subprocess, "run", _fake_run)
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    entry = _probe_entry(tmp_path, "print('ran-without-uid-drop')\n")
+
+    result = Runner(timeout=60).execute(entry, run_dir, cwd=tmp_path)
+
+    assert result.success, result.stderr
+    assert "ran-without-uid-drop" in result.stdout
+    assert attempts and not any(attempts)
+
+
 @pytest.mark.skipif(runner_mod.resource is None, reason="POSIX resource module required")
 def test_execute_applies_address_space_rlimit(monkeypatch, tmp_path: Path) -> None:
     # Prove the exec'd bootstrap actually applied the limits by reading back

@@ -100,9 +100,10 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist
 
 # Runtime should not run as root. `vibe` owns the writable app-data dirs so
 # named volumes inherit usable permissions. `vibe-sandbox` is an unprivileged
-# system account (no home, no shell) that runner.py drops into via
-# subprocess.run(user="vibe-sandbox") to execute LLM-generated code with the
-# least privilege — created here by fixed contract, not otherwise used.
+# system account (no home, no shell) kept for runner.py's optional privilege
+# drop, which only works where the process can setuid. The shipped compose file
+# cannot (non-root `vibe` + no-new-privileges) and sets
+# VIBE_TRADING_SANDBOX_UID_DROP=off; a root-run deployment can use the drop.
 RUN useradd --create-home --shell /usr/sbin/nologin vibe \
     && useradd --system --no-create-home --shell /usr/sbin/nologin --uid 10001 vibe-sandbox \
     && mkdir -p agent/runs agent/sessions agent/uploads agent/.swarm/runs /home/vibe/.vibe-trading \
