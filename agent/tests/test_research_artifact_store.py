@@ -288,6 +288,24 @@ def test_markdown_export_keeps_evidence_and_later_revisions_outside_unclosed_con
     assert "Later revision." in rendered
 
 
+def test_markdown_export_does_not_let_metadata_open_fences(tmp_path):
+    import mistune
+
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    subject = "Review\n```text\nsubject body"
+    universe = "NVDA\n~~~\nuniverse body"
+    saved = _save(store, subject=subject, universe=universe)
+
+    exported = store.export_series(saved.revision.artifact_id, "markdown")
+    rendered = mistune.html(exported.content)
+
+    assert "<h2>Revision 1</h2>" in rendered
+    assert rendered.count("<h3>Evidence</h3>") == 1
+    document = json.loads(store.export_series(saved.revision.artifact_id, "json").content)
+    assert document["revisions"][0]["subject"] == subject
+    assert document["revisions"][0]["universe"] == universe
+
+
 def test_export_rejects_missing_series_and_unknown_format(tmp_path):
     store = ResearchArtifactStore(tmp_path / "research.db")
     with pytest.raises(KeyError):

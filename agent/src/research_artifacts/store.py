@@ -380,9 +380,11 @@ class ResearchArtifactStore:
             media_type = "application/json"
             extension = "json"
         elif format == "markdown":
-            lines = [f"# {revisions[-1].subject}", ""]
-            if revisions[-1].universe:
-                lines.extend([f"Universe: {revisions[-1].universe}", ""])
+            subject = " ".join(revisions[-1].subject.splitlines())
+            universe = " ".join(revisions[-1].universe.splitlines())
+            lines = [f"# {subject}", ""]
+            if universe:
+                lines.extend([f"Universe: {universe}", ""])
             lines.extend([f"Revisions: {len(revisions)}", ""])
             for revision in revisions:
                 evidence_json = json.dumps(list(revision.evidence), ensure_ascii=False, indent=2, allow_nan=False)
