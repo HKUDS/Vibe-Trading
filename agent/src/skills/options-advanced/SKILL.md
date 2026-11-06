@@ -31,6 +31,8 @@ Three-dimensional structure: strike × expiry × implied volatility.
 
 **Deterministic grid computation**: `quantlib_call(action="call", module="volatility", function="implied_volatility_surface", kwargs={"observations": observations, "spot": spot})` accepts explicit `strike`, `time_to_expiry` (years), and `implied_volatility` (decimal) observations. It interpolates IV across log-moneyness within each expiry and total variance between adjacent expiries, rejects extrapolation and duplicate quotes, and labels every point as `observed` or `interpolated`. This is a display and exploratory-analysis grid, not an arbitrage-free pricing model. The tool fetches no market data; obtain and validate the option chain first.
 
+Interpolation uses stable log-strike differences, so changing the positive spot scale alone does not change the grid. Results must have finite IV and total variance; a total variance outside the floating-point range (including a positive value rounding to zero) is rejected explicitly rather than returned as NaN, infinity, or a fabricated zero.
+
 **SABR model parameters**:
 ```
 α (alpha): initial volatility level, around 0.2-0.5

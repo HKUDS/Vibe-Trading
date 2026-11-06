@@ -257,6 +257,25 @@ def _surface_grid(values: Sequence[Real] | None, defaults: Sequence[float], name
     return sorted({_surface_number(value, f"{name} grid value") for value in supplied})
 
 
+def _surface_log_ratio(upper: float, lower: float) -> float:
+    """Compute log(upper / lower) for ordered positive strikes without overflow."""
+    relative_gap = (upper - lower) / lower
+    if math.isfinite(relative_gap):
+        # Unlike subtracting two logs, log1p preserves adjacent float strikes.
+        return math.log1p(relative_gap)
+    return math.log(upper) - math.log(lower)
+
+
+def _surface_variance(iv: float, expiry: float) -> float:
+    """Compute total variance, refusing overflow or loss of a positive value."""
+    # Squaring IV first can overflow/underflow even when IV**2 * T fits.
+    scaled = iv * math.sqrt(expiry)
+    variance = scaled * scaled
+    if not math.isfinite(variance) or (iv > 0.0 and variance == 0.0):
+        raise ValueError("total variance is outside the representable floating-point range")
+    return variance
+
+
 def implied_volatility_surface(
     observations: Sequence[Mapping[str, Real]],
     *,
@@ -291,9 +310,11 @@ def implied_volatility_surface(
 
     Raises:
         ValueError: If observations are empty, malformed, duplicated, or a grid
-            point would require extrapolation beyond adjacent quote coverage.
+            point would require extrapolation beyond adjacent quote coverage,
+            or its total variance cannot be represented as a finite float
+            without rounding a positive value to zero.
     """
-    spot_value = _surface_number(spot, "spot")
+    _surface_number(spot, "spot")
     if not observations:
         raise ValueError("at least one volatility observation is required")
 
@@ -332,40 +353,44 @@ def implied_volatility_surface(
         lower = quotes[0][0]
         upper = quotes[-1][0]
         if strike < lower or strike > upper:
-            raise ValueError(f"no extrapolation: strike {strike} is outside [{lower}, {upper}] " f"for expiry {expiry}")
+            raise ValueError(f"no extrapolation: strike {strike} is outside [{lower}, {upper}] for expiry {expiry}")
         for (left_strike, left_iv), (right_strike, right_iv) in zip(quotes, quotes[1:]):
             if left_strike <= strike <= right_strike:
                 if strike == left_strike:
                     return left_iv
                 if strike == right_strike:
                     return right_iv
-                left_coordinate = math.log(left_strike / spot_value)
-                right_coordinate = math.log(right_strike / spot_value)
-                coordinate = math.log(strike / spot_value)
-                weight = (coordinate - left_coordinate) / (right_coordinate - left_coordinate)
-                return left_iv + (right_iv - left_iv) * weight
+                # The spot cancels from log-moneyness differences. Avoid
+                # forming strike / spot, which may overflow or round to zero.
+                weight = _surface_log_ratio(strike, left_strike) / _surface_log_ratio(right_strike, left_strike)
+                return (1.0 - weight) * left_iv + weight * right_iv
         return quotes[0][1]
 
     points: list[dict[str, object]] = []
     for expiry in expiry_grid:
         if expiry < observed_expiries[0] or expiry > observed_expiries[-1]:
             raise ValueError(
-                f"no extrapolation: expiry {expiry} is outside " f"[{observed_expiries[0]}, {observed_expiries[-1]}]"
+                f"no extrapolation: expiry {expiry} is outside [{observed_expiries[0]}, {observed_expiries[-1]}]"
             )
         for strike in strike_grid:
             if expiry in groups:
                 iv = smile(expiry, strike)
-                total_variance = iv * iv * expiry
+                total_variance = _surface_variance(iv, expiry)
             else:
                 next_expiry = next(value for value in observed_expiries if value > expiry)
                 previous_expiry = observed_expiries[observed_expiries.index(next_expiry) - 1]
                 lower_iv = smile(previous_expiry, strike)
                 upper_iv = smile(next_expiry, strike)
-                lower_variance = lower_iv * lower_iv * previous_expiry
-                upper_variance = upper_iv * upper_iv * next_expiry
+                lower_variance = _surface_variance(lower_iv, previous_expiry)
+                upper_variance = _surface_variance(upper_iv, next_expiry)
                 weight = (expiry - previous_expiry) / (next_expiry - previous_expiry)
-                total_variance = lower_variance + (upper_variance - lower_variance) * weight
-                iv = math.sqrt(total_variance / expiry)
+                total_variance = (1.0 - weight) * lower_variance + weight * upper_variance
+                if total_variance == 0.0 and (lower_variance > 0.0 or upper_variance > 0.0):
+                    raise ValueError("interpolated total variance is below the representable floating-point range")
+                # The ratio can overflow even when its square root fits.
+                iv = math.sqrt(total_variance) / math.sqrt(expiry)
+            if not math.isfinite(iv) or not math.isfinite(total_variance):
+                raise ValueError("interpolated IV or total variance is outside the representable floating-point range")
             points.append(
                 {
                     "strike": strike,

@@ -161,3 +161,98 @@ def test_quantlib_tool_lists_and_calls_surface_builder():
     assert called["ok"] is True
     assert called["result"]["points"][0]["source"] == "interpolated"
     assert called["result"]["interpolation"]["extrapolation"] == "rejected"
+
+
+@pytest.mark.parametrize("spot", [math.ulp(0.0), 1e-308, 1e308])
+def test_interpolated_surface_is_independent_of_spot_scale(spot):
+    kwargs = dict(observations=_rectangle(), strikes=[100.0], expiries=[0.15])
+    expected = implied_volatility_surface(**kwargs, spot=100.0)
+    actual = implied_volatility_surface(**kwargs, spot=spot)
+
+    assert actual == expected
+    json.dumps(actual, allow_nan=False)
+
+
+@pytest.mark.parametrize("scale", [1e-200, 1e200])
+def test_log_interpolation_handles_extreme_strike_scales(scale):
+    result = implied_volatility_surface(
+        [_point(scale, 0.1, 0.2), _point(4 * scale, 0.1, 0.4)],
+        spot=1e308,
+        strikes=[2 * scale],
+    )
+    assert result["points"][0]["implied_volatility"] == pytest.approx(0.3)
+
+
+def test_log_interpolation_preserves_distinct_nearby_strikes():
+    left = 100.0
+    middle = math.nextafter(left, math.inf)
+    right = math.nextafter(middle, math.inf)
+    result = implied_volatility_surface(
+        [_point(left, 0.1, 0.2), _point(right, 0.1, 0.4)],
+        spot=1.0,
+        strikes=[middle],
+    )
+    assert result["points"][0]["implied_volatility"] == pytest.approx(0.3)
+
+
+def test_log_interpolation_handles_a_ratio_larger_than_float_range():
+    result = implied_volatility_surface(
+        [_point(1e-300, 0.1, 0.2), _point(1e300, 0.1, 0.4)],
+        spot=1.0,
+        strikes=[1.0],
+    )
+    assert result["points"][0]["implied_volatility"] == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize(
+    ("iv", "expiry", "variance"),
+    [
+        (1e200, 1e-300, 1e100),
+        (1e-200, 1e300, 1e-100),
+        (0.0, 0.1, 0.0),
+    ],
+)
+def test_total_variance_avoids_intermediate_overflow_and_underflow(iv, expiry, variance):
+    result = implied_volatility_surface([_point(100.0, expiry, iv)], spot=100.0)
+    assert result["points"][0]["total_variance"] == pytest.approx(variance, rel=1e-12, abs=0.0)
+
+
+@pytest.mark.parametrize("iv", [1e200, 1e-200])
+def test_unrepresentable_total_variance_is_refused(iv):
+    with pytest.raises(ValueError, match="total variance"):
+        implied_volatility_surface([_point(100.0, 1.0, iv)], spot=100.0)
+
+
+def test_expiry_interpolation_avoids_overflow_before_square_root():
+    result = implied_volatility_surface(
+        [_point(100.0, 1e-300, 1e200), _point(100.0, 3e-300, 1e200)],
+        spot=100.0,
+        expiries=[2e-300],
+    )
+    assert result["points"][0]["implied_volatility"] == pytest.approx(1e200)
+
+
+def test_quantlib_surface_returns_finite_results_or_an_explicit_error():
+    tool = QuantlibCallTool()
+    kwargs = dict(observations=_rectangle(), spot=1e-308, strikes=[100.0], expiries=[0.15])
+    good = json.loads(
+        tool.execute(
+            action="call",
+            module="volatility",
+            function="implied_volatility_surface",
+            kwargs=kwargs,
+        )
+    )
+    assert good["ok"] is True
+    assert math.isfinite(good["result"]["points"][0]["implied_volatility"])
+    kwargs["observations"] = [_point(100.0, 1.0, 1e200)]
+    kwargs["expiries"] = [1.0]
+    bad = json.loads(
+        tool.execute(
+            action="call",
+            module="volatility",
+            function="implied_volatility_surface",
+            kwargs=kwargs,
+        )
+    )
+    assert bad["ok"] is False
