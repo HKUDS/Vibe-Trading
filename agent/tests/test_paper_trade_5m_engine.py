@@ -211,6 +211,69 @@ def _sell(limit=None, qty=100, symbol=_SYM):
     return order
 
 
+@pytest.mark.parametrize(("seller", "buyer"), [(_OTHER, _SYM), (_SYM, _OTHER)])
+@pytest.mark.parametrize("sale_before_purchase", [False, True])
+def test_multiple_symbols_share_a_chronological_cash_ledger(seller, buyer, sale_before_purchase):
+    labels = _session_labels()
+    sale_label = labels[0] if sale_before_purchase else labels[-1]
+    purchase_label = labels[-1] if sale_before_purchase else labels[0]
+    prices = {label: 10.0 for label in labels}
+    prices[sale_label] = 10.6
+    sell_bars = _intraday(_DAY, prices)
+    buy_bars = _flat_5m(_DAY, 10.0)
+    buy_bars.loc[buy_bars.index < pd.Timestamp(f"{_DAY} {purchase_label}"), "volume"] = 0
+    daily = {symbol: _daily([(_PREV, 10.0), (_DAY, 10.0)]) for symbol in (seller, buyer)}
+    kwargs = dict(
+        # A first-live-bar buy limit must still get the better price even
+        # when another symbol has already traded earlier in this session.
+        orders=[_sell(limit=10.5, symbol=seller), _buy(limit=10.5, symbol=buyer)],
+        cash=0.0, positions=[{"symbol": seller, "qty": 100, "avg_cost": 10.0}],
+        daily=daily, five={seller: sell_bars, buyer: buy_bars}, symbols=(seller, buyer),
+    )
+    result = _outcome(**kwargs)
+    assert result.error is None
+    if sale_before_purchase:
+        assert [(f.symbol, f.side, f.price) for f in result.fills] == [
+            (seller, "sell", 10.6), (buyer, "buy", 10.0),
+        ]
+        assert result.rejected_orders == ()
+        assert result.end_state.cash == 49.45
+    else:
+        assert [(f.symbol, f.side, f.price) for f in result.fills] == [(seller, "sell", 10.5)]
+        assert [(r.symbol, r.reason_code) for r in result.rejected_orders] == [(buyer, "insufficient_cash")]
+        assert result.end_state.cash == 1044.46
+
+    # Loader dictionary order and row order must not determine execution time.
+    kwargs["five"] = {buyer: buy_bars.iloc[::-1], seller: sell_bars.iloc[::-1]}
+    kwargs["symbols"] = (buyer, seller)
+    replay = _outcome(**kwargs)
+    assert replay.fills == result.fills
+    assert replay.rejected_orders == result.rejected_orders
+    assert replay.end_state == result.end_state
+    assert replay.engine_fingerprint == result.engine_fingerprint
+
+
+@pytest.mark.parametrize(("seller", "buyer"), [(_OTHER, _SYM), (_SYM, _OTHER)])
+@pytest.mark.parametrize("buy_first", [False, True])
+def test_same_timestamp_uses_submission_order_across_symbols(seller, buyer, buy_first):
+    daily = {symbol: _daily([(_PREV, 10.0), (_DAY, 10.0)]) for symbol in (seller, buyer)}
+    orders = [_sell(symbol=seller), _buy(symbol=buyer)]
+    if buy_first:
+        orders.reverse()
+    result = _outcome(
+        orders=orders, cash=20.0, positions=[{"symbol": seller, "qty": 100, "avg_cost": 10.0}],
+        daily=daily, five={seller: _flat_5m(_DAY, 10.0), buyer: _flat_5m(_DAY, 10.0)},
+        symbols=(seller, buyer),
+    )
+    assert result.error is None
+    expected = [(seller, "sell")] if buy_first else [(seller, "sell"), (buyer, "buy")]
+    assert [(f.symbol, f.side) for f in result.fills] == expected
+    assert [(r.symbol, r.reason_code) for r in result.rejected_orders] == (
+        [(buyer, "insufficient_cash")] if buy_first else []
+    )
+    assert result.end_state.cash == (1014.49 if buy_first else 9.48)
+
+
 def test_market_buy_fills_at_the_first_continuous_bar() -> None:
     outcome = _outcome(orders=[_buy()])
 

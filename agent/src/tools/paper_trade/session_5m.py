@@ -31,8 +31,10 @@ Phase-2/3 semantics:
   lots, fees and corporate-action gates use the same frozen rules as the
   daily path.
 
-Determinism: the bar timeline comes from the served 5m frame, order ids are
-positional (``pt-<index>``), and no clock or randomness is read.
+Determinism: all served 5m frames share a timestamp-ordered timeline. Orders
+at the same timestamp execute in submission order, with a first-live-bar flag
+per symbol. Order ids are positional (``pt-<index>``); no clock or randomness
+is read.
 """
 
 from __future__ import annotations
@@ -120,6 +122,9 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
         book.activate(order_id)
         active.append(order_id)
 
+    # One account has one cash ledger: walk timestamps across all symbols,
+    # never an entire symbol's day before another symbol's morning.
+    timeline: dict[Any, dict[str, Any]] = {}
     for symbol in sorted({by_id[order_id].symbol for order_id in active}):
         sym_data = session.market_data.data[symbol]
         bars = sym_data.bars_5m.get(day.date)
@@ -132,50 +137,60 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                     day, order, "suspended",
                     f"no 5m continuous bars for {symbol} on {day.date}")
             continue
-        live_bar = 0
-        for _, bar in bars.sort_index().iterrows():
+        for timestamp, bar in bars.iterrows():
+            timeline.setdefault(timestamp, {})[symbol] = bar
+
+    seen_live: set[str] = set()
+    for timestamp in sorted(timeline):
+        matching_bars: dict[str, tuple[Any, Decimal, bool]] = {}
+        for symbol, bar in timeline[timestamp].items():
             if float(bar["volume"]) <= 0:
                 # A zero-volume bar is not a matching opportunity, so it can
                 # neither fill nor consume the first-bar marketable branch.
                 continue
             ref = session._reference_price_from_bar(bar)
-            first_bar = live_bar == 0
-            live_bar += 1
-            for order_id in order_ids:
-                state = book.get(order_id)
-                if state is None or state.status not in _ACTIVE_STATUSES:
+            matching_bars[symbol] = (bar, ref, symbol not in seen_live)
+            seen_live.add(symbol)
+        # Same-timestamp orders consume cash in caller submission order,
+        # matching the existing ordering within a single symbol.
+        for order_id in active:
+            state = book.get(order_id)
+            if state is None or state.status not in _ACTIVE_STATUSES:
+                continue
+            order = by_id[order_id]
+            if order.symbol not in matching_bars:
+                continue
+            bar, ref, first_bar = matching_bars[order.symbol]
+            if order.limit is None:
+                price = ref
+            else:
+                # Trigger/price split: the bar range decides whether a
+                # resting limit fills, and it fills at the 委托价; only the
+                # first continuous bar can fill at a strictly better
+                # reference. A limit that never triggers rests untouched.
+                price = _limit_fill_price(order, ref, bar, first_bar=first_bar)
+                if price is None:
                     continue
-                order = by_id[order_id]
-                if order.limit is None:
-                    price = ref
-                else:
-                    # Trigger/price split: the bar range decides whether a
-                    # resting limit fills, and it fills at the 委托价; only the
-                    # first continuous bar can fill at a strictly better
-                    # reference.  A limit that never triggers rests untouched.
-                    price = _limit_fill_price(order, ref, bar, first_bar=first_bar)
-                    if price is None:
-                        continue
-                gate = session._fill_gate(day, order, price)
-                if gate is not None:
-                    code, detail = gate
-                    if code in {"limit_up", "limit_down"}:
-                        if order.limit is None:
-                            # No later bar may revive a canceled market order.
-                            # Pending-cancel is excluded from matching and is
-                            # settled to canceled exactly once at day end.
-                            book.request_cancel(order_id)
-                            price_limit_cancels[order_id] = gate
-                            session.events.append(SessionEvent(
-                                trade_date=day.date, symbol=order.symbol,
-                                event_type="price_limit", detail=detail))
-                        # A blocked limit order remains open until another
-                        # bar can match it, or it expires at session end.
-                        continue
-                    book.reject(order_id, code)
-                    session._reject(day, order, code, detail)
+            gate = session._fill_gate(day, order, price)
+            if gate is not None:
+                code, detail = gate
+                if code in {"limit_up", "limit_down"}:
+                    if order.limit is None:
+                        # No later bar may revive a canceled market order.
+                        # Pending-cancel is excluded from matching and is
+                        # settled to canceled exactly once at day end.
+                        book.request_cancel(order_id)
+                        price_limit_cancels[order_id] = gate
+                        session.events.append(SessionEvent(
+                            trade_date=day.date, symbol=order.symbol,
+                            event_type="price_limit", detail=detail))
+                    # A blocked limit order remains open until another
+                    # bar can match it, or it expires at session end.
                     continue
-                book.fill(order_id, money(order.qty), price)
-                session._fill(day.date, order, float(price))
+                book.reject(order_id, code)
+                session._reject(day, order, code, detail)
+                continue
+            book.fill(order_id, money(order.qty), price)
+            session._fill(day.date, order, float(price))
 
     _cancel_unfilled(session, day, book, by_id, price_limit_cancels)

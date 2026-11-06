@@ -137,6 +137,13 @@ still in `open_orders()`) exists in the lifecycle but is not reached while
 every fill is all-or-none. These statuses are internal; no result field or
 surface exposes them.
 
+The matcher walks a shared chronological timeline across the supplied symbol
+frames, so later proceeds cannot fund an earlier order. At a shared timestamp,
+orders are evaluated in caller submission order, including the cash check;
+there is no implicit sell-first priority. Each symbol tracks its own first
+positive-volume bar for the better-price rule. This engine behavior does not
+relax the public tool's single-symbol provider limit below.
+
 The 5m leg uses Tushare `stk_mins` and is resolved separately from the daily
 chain: Tencent's raw loader serves daily bars only. The measured provider limit
 is one symbol per step (1 call/minute, 1 call/hour and 2 calls/day; a refused
@@ -192,8 +199,10 @@ cannot fill. Corporate actions remain fail-closed.
 - **5m strategy UNIVERSE is strict.** An order on a position outside the
   declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
   by a 5m strategy step; use the 1d step for that.
-- **Matching changes are versioned.** `pt-rules-v3` identifies the immediate
-  price-limit market cancellation; `pt-rules-v2` identified the corrected
+- **Matching changes are versioned.** `pt-rules-v4` identifies chronological
+  matching across symbols and submission order at shared timestamps.
+  `pt-rules-v3` identified the immediate price-limit market cancellation;
+  `pt-rules-v2` identified the corrected
   full/partial order statuses and 5m limit-fill rules. Each rule version has a
   different engine fingerprint even with identical bars and model settings;
   archived results retain their original version.
