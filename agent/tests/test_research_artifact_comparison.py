@@ -180,6 +180,32 @@ def test_compare_preserves_internal_line_ending_difference(tmp_path):
     assert "+First line.\\n" in result["content"]["diff"]
 
 
+def test_compare_shows_line_endings_for_mixed_styles_on_changed_and_context_lines(tmp_path):
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    first = _save(store, content="a\r\nb\nc\nd\n")
+    revised = _save(
+        store,
+        artifact_id=first.revision.artifact_id,
+        content="a\nb\r\nc\nd\n",
+    )
+
+    result = store.compare_revisions(
+        artifact_id=first.revision.artifact_id,
+        from_revision_id=first.revision.revision_id,
+        to_revision_id=revised.revision.revision_id,
+    )
+
+    assert result["content"]["from_newline_style"] == "mixed"
+    assert result["content"]["to_newline_style"] == "mixed"
+    assert "-a\\r\\n" in result["content"]["diff"]
+    assert "-b\\n" in result["content"]["diff"]
+    assert "+a\\n" in result["content"]["diff"]
+    assert "+b\\r\\n" in result["content"]["diff"]
+    assert " c\\n" in result["content"]["diff"]
+    assert " d" in result["content"]["diff"]
+    assert "\\ No newline at end of file" in result["content"]["diff"]
+
+
 def test_compare_reports_pure_evidence_reordering(tmp_path):
     store = ResearchArtifactStore(tmp_path / "research.db")
     first = _save(

@@ -103,7 +103,8 @@ def _content_comparison(
                 _diff_lines(
                     from_revision,
                     to_revision,
-                    show_line_endings=from_newline_style != to_newline_style,
+                    show_line_endings=from_newline_style != to_newline_style
+                    or "mixed" in (from_newline_style, to_newline_style),
                 ),
                 _MAX_DIFF_LINES + 1,
             )
