@@ -9,7 +9,8 @@ untouched.
 Phase-2/3 semantics:
 
 - a market order fills in full at the first continuous bar whose fill gates
-  pass, at that bar's reference price;
+  pass, at that bar's reference price; a market order blocked by the daily
+  price limit is canceled immediately, rather than waiting for another bar;
 - a resting limit order (JoinQuant 订单处理) fills in full at its 委托价
   (``order.limit``) once a bar trades through it: a buy needs
   ``bar.low < limit``, a sell needs ``bar.high > limit`` — both strict, so a
@@ -41,7 +42,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 
 from .order_lifecycle import _ACTIVE_STATUSES, OrderBook, OrderRequest, assign_ids
 from .rules import money, quantize_money
-from .schema import CANCELED_REASON_CODE, CanceledOrder, Order
+from .schema import CANCELED_REASON_CODE, CanceledOrder, Order, SessionEvent
 
 if TYPE_CHECKING:
     from .engine import DayPlan, _MatchSession
@@ -83,17 +84,20 @@ def _limit_fill_price(order: Order, ref: Decimal, bar: Any, *, first_bar: bool) 
 
 
 def _cancel_unfilled(
-    session: "_MatchSession", day: "DayPlan", book: OrderBook, by_id: dict[str, Order]
+    session: "_MatchSession", day: "DayPlan", book: OrderBook, by_id: dict[str, Order],
+    price_limit_cancels: dict[str, tuple[str, str]],
 ) -> None:
     for state in book.settle_day():
         order = by_id[state.order_id]
+        gate = price_limit_cancels.get(state.order_id)
         session.canceled.append(CanceledOrder(
             trade_date=day.date,
             symbol=order.symbol,
             side=order.side,
             qty=order.qty,
             reason_code=CANCELED_REASON_CODE,
-            detail="unfilled day order canceled at session end",
+            detail=(f"market order canceled: {gate[0]}; {gate[1]}" if gate
+                    else "unfilled day order canceled at session end"),
         ))
 
 
@@ -105,7 +109,7 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
     by_id = dict(zip(states, orders, strict=True))
     book = OrderBook(states)
 
-    deferred: dict[str, tuple[str, str]] = {}
+    price_limit_cancels: dict[str, tuple[str, str]] = {}
     active: list[str] = []
     for order_id, order in by_id.items():
         gate = session._day_gate(day, order)
@@ -156,10 +160,17 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                 if gate is not None:
                     code, detail = gate
                     if code in {"limit_up", "limit_down"}:
-                        # The band blocks the side; the order waits for a
-                        # later bar (and is rejected at day end if still
-                        # blocked), exactly like a market order.
-                        deferred[order_id] = gate
+                        if order.limit is None:
+                            # No later bar may revive a canceled market order.
+                            # Pending-cancel is excluded from matching and is
+                            # settled to canceled exactly once at day end.
+                            book.request_cancel(order_id)
+                            price_limit_cancels[order_id] = gate
+                            session.events.append(SessionEvent(
+                                trade_date=day.date, symbol=order.symbol,
+                                event_type="price_limit", detail=detail))
+                        # A blocked limit order remains open until another
+                        # bar can match it, or it expires at session end.
                         continue
                     book.reject(order_id, code)
                     session._reject(day, order, code, detail)
@@ -167,9 +178,4 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                 book.fill(order_id, money(order.qty), price)
                 session._fill(day.date, order, float(price))
 
-    for order_id, gate in deferred.items():
-        state = book.get(order_id)
-        if state is not None and state.status in _ACTIVE_STATUSES:
-            book.reject(order_id, gate[0])
-            session._reject(day, by_id[order_id], *gate)
-    _cancel_unfilled(session, day, book, by_id)
+    _cancel_unfilled(session, day, book, by_id, price_limit_cancels)
