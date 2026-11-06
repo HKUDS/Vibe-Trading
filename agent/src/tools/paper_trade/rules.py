@@ -60,7 +60,7 @@ __all__ = [
 #: price-limit / settlement / order-status / matching semantics change, so a stored fingerprint can never
 #: claim a rule set the engine no longer implements.  It is a constant only: no
 #: fee, lot or matching behaviour in this module depends on it.
-RULES_VERSION = "pt-rules-v2"
+RULES_VERSION = "pt-rules-v3"
 
 #: AM-14 frozen rejection decision order — first match wins (REQUIREMENTS §2
 #: hard semantics 3a).  ``limit_up``/``limit_down`` share one frozen slot and

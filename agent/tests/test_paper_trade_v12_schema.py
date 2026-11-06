@@ -262,7 +262,7 @@ def test_engine_fingerprint_matches_the_frozen_formula() -> None:
             "bar_fingerprint": _HEX_A,
         }
     )
-    assert rules.RULES_VERSION == "pt-rules-v2"
+    assert rules.RULES_VERSION == "pt-rules-v3"
     assert actual != state_hash.engine_fingerprint(
         interval="5m", path_model="bar_close", fill_model="all_or_none",
         bar_fingerprint=_HEX_A, rules_version="pt-rules-v1",
