@@ -34,6 +34,27 @@ def _canonical_json(value: object) -> str:
     )
 
 
+def _with_closed_markdown_fence(content: str) -> str:
+    """Close an unterminated fenced block before generated export sections."""
+    open_fence: tuple[str, int] | None = None
+    for line in content.splitlines():
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if match is None:
+            continue
+        marker, suffix = match.groups()
+        if open_fence is None:
+            if marker[0] == "`" and "`" in suffix:
+                continue
+            open_fence = (marker[0], len(marker))
+        elif marker[0] == open_fence[0] and len(marker) >= open_fence[1] and not suffix.strip():
+            open_fence = None
+    if open_fence is None:
+        return content
+    character, length = open_fence
+    separator = "" if content.endswith(("\n", "\r")) else "\n"
+    return content + separator + character * length
+
+
 def _default_db_path() -> Path:
     paths = get_env_config().paths
     override = paths.vibe_trading_research_artifact_db_path.strip()
@@ -383,7 +404,7 @@ class ResearchArtifactStore:
                         f"Session ID: {revision.session_id or 'None'}",
                         f"Run ID: {revision.run_id or 'None'}",
                         "",
-                        revision.content,
+                        _with_closed_markdown_fence(revision.content),
                         "",
                         "### Evidence",
                         "",
