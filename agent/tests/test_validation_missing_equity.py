@@ -49,11 +49,13 @@ def test_walk_forward_excludes_gap_without_changing_window_boundaries(
     result = walk_forward_analysis(equity, [], n_windows=n_windows)
 
     for i, window in enumerate(result["windows"]):
-        assert window["sharpe"] == 0.0
+        if i == 0:
+            assert window["sharpe"] == 0.0
         assert window["start"] == str(equity.index[i * 5].date())
         assert window["end"] == str(equity.index[i * 5 + 4].date())
-        assert window["return"] == 0.98
-        assert window["max_dd"] == -0.1
+        # A later window also owns the observed 198 -> 100 boundary loss.
+        assert window["return"] == (0.98 if i == 0 else 0.0)
+        assert window["max_dd"] == pytest.approx(-0.1 if i == 0 else 100 / 198 - 1)
 
 
 def test_complete_equity_retains_sharpe_calculation() -> None:

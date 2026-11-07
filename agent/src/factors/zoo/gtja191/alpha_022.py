@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 12,
-    "min_warmup_bars": 10,
+    "min_warmup_bars": 9,
     "notes": 'SMA(12, m=1) of 3-day-difference in price-deviation-from-MA6.',
 }
 

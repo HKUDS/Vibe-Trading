@@ -45,7 +45,8 @@
       "settings": "Configura modelos, fuentes de datos y conexiones de brókeres.",
       "pixelOffice": "Planifica y asigna tareas de investigación. La asignación no inicia la ejecución; los rangos son etiquetas y no conceden permisos de negociación.",
       "paperTrading": "Prueba operaciones diarias con fondos ficticios. No se envían órdenes al bróker. Los resultados excluyen dividendos en efectivo y no representan la rentabilidad total.",
-      "researchArtifacts": "Guarda y reutiliza análisis respaldados por evidencia entre sesiones."
+      "researchArtifacts": "Guarda y reutiliza análisis respaldados por evidencia entre sesiones.",
+      "researchLab": "Compruebe costes, parámetros fijados fuera de muestra, fórmulas de factores y evidencias guardadas."
     },
     "instructions": {
       "reports": "Primero pide al asistente un backtest de una estrategia y abre aquí sus resultados. Descarga los PDF y documentos generados en el chat desde la conversación original.",
@@ -58,7 +59,8 @@
       "settings": "Configura un modelo para empezar. Añade datos o conexiones de brókeres según lo necesites; investigar datos públicos de mercado no requiere una cuenta de bróker.",
       "pixelOffice": "Planifica y asigna tareas de investigación. La asignación no inicia la ejecución; los rangos son etiquetas y no conceden permisos de negociación.",
       "paperTrading": "Solo se liquidan velas diarias completas. Las estrategias leen días anteriores y ejecutan al cierre del día indicado. Espera 30 minutos tras el cierre habitual; no se programa ejecución automática.",
-      "researchArtifacts": "Busca análisis anteriores, abre cualquier revisión o crea una revisión vinculada con nueva evidencia. Las conclusiones anteriores no cambian."
+      "researchArtifacts": "Busca análisis anteriores, abre cualquier revisión o crea una revisión vinculada con nueva evidencia. Las conclusiones anteriores no cambian.",
+      "researchLab": "Compruebe costes, parámetros fijados fuera de muestra, fórmulas de factores y evidencias guardadas."
     }
   },
   "layout": {
@@ -91,7 +93,8 @@
     "sessionsLoadFailed": "No se pueden cargar las conversaciones.",
     "pixelOffice": "Oficina de píxeles",
     "paperTrading": "Trading simulado",
-    "researchArtifacts": "Artefactos de investigación"
+    "researchArtifacts": "Artefactos de investigación",
+    "researchLab": "Laboratorio de investigación"
   },
   "researchArtifacts": {
     "subject": "Tema de investigación",
@@ -1810,7 +1813,7 @@
     "ci": "IC {{pct}}",
     "medianSharpe": "Sharpe mediano",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "Análisis walk-forward",
+    "walkForward": "Consistencia entre ventanas",
     "profitable": "{{profitable}}/{{total}} rentables",
     "walkForwardDesc": "Dividido en {{n}} ventanas secuenciales para verificar la consistencia del desempeño.",
     "consistency": "Consistencia",
@@ -2636,5 +2639,67 @@
       "SIZE": "Tamaño",
       "LEVERAGE": "Apalancamiento"
     }
+  },
+  "researchLab": {
+    "title": "Laboratorio de investigación",
+    "cost_sensitivity": "Costes de ejecución",
+    "walk_forward": "Validación fuera de muestra",
+    "factor_audit": "Contratos de factores",
+    "replay": "Revisión de tareas",
+    "sourceRun": "Ejecución guardada",
+    "chooseRun": "Elegir una ejecución",
+    "noRuns": "Complete un backtest para reutilizar sus datos guardados.",
+    "feeLevels": "Multiplicadores de gastos de negociación",
+    "slippageLevels": "Deslizamiento adicional (pb)",
+    "trainBars": "Barras de entrenamiento",
+    "testBars": "Barras de prueba",
+    "holdoutBars": "Barras de reserva final",
+    "folds": "Ventanas de prueba",
+    "parameterChoices": "Valores de parámetros",
+    "alphaIds": "ID de factores (vacío = todos)",
+    "task": "Tarea de evaluación",
+    "start": "Ejecutar estudio",
+    "running": "En curso…",
+    "invalidValues": "Introduzca valores numéricos finitos.",
+    "tooManyCandidates": "Use como máximo 12 combinaciones de parámetros.",
+    "failed": "Falló",
+    "report": "Informe de investigación",
+    "download": "Descargar JSON",
+    "scenario": "Escenario",
+    "return": "Rentabilidad",
+    "drawdown": "Caída máxima",
+    "sharpe": "Ratio de Sharpe",
+    "notBracketed": "Sin cambio de signo en el rango probado.",
+    "oosReturn": "Rentabilidad fuera de muestra",
+    "holdoutReturn": "Rentabilidad de la reserva final",
+    "selected": "Parámetros fijados",
+    "testPeriod": "Periodo de prueba",
+    "checked": "Comprobados",
+    "findings": "Hallazgos",
+    "factor": "Factor",
+    "minimumBars": "Barras mínimas",
+    "policy": "Política de historial",
+    "status": "Estado",
+    "passed": "Aprobado",
+    "not_evaluable": "No evaluable",
+    "invalid_artifact": "Artefacto no válido",
+    "coverage": "Cobertura de evaluación",
+    "policy_full_window": "Ventana completa",
+    "policy_recursive_seed": "Inicialización recursiva",
+    "policy_partial_window": "Ventana parcial",
+    "policy_conditional_sample": "Muestras condicionales",
+    "subtitle": "Compruebe costes, parámetros fijados fuera de muestra, fórmulas de factores y evidencias guardadas.",
+    "costHint": "Los multiplicadores incluyen comisiones e impuestos de negociación del motor. El deslizamiento adicional es adverso y anterior al redondeo de mercado; financiación y préstamo no cambian.",
+    "oosHint": "Los parámetros se eligen solo con entrenamiento y se fijan antes de cada prueba. Cada ventana comienza sin posiciones e incluye costes de liquidación. La reserva final no interviene en selecciones anteriores.",
+    "noParameters": "La estrategia no tiene valores literales de constructor seleccionables; se evalúa como un candidato fijo.",
+    "auditHint": "Verifica huellas del código, historia mínima e inicialización con datos sintéticos. Comprueba contratos de implementación, no rentabilidad ni todas las interpretaciones de las fórmulas publicadas.",
+    "replayHint": "Se verifican artefactos guardados con la instrucción original. No se llama a modelos, consultan precios ni envían órdenes. La falta de evidencia no equivale a aprobar.",
+    "breakEvenHint": "El punto de equilibrio se muestra solo como intervalo medido de cambio de signo, sin interpolar un coste exacto.",
+    "objective": "Objetivo de entrenamiento",
+    "training": "Ventana de entrenamiento",
+    "sharpeObjective": "Ratio de Sharpe",
+    "returnObjective": "Rentabilidad total",
+    "rolling": "Móvil",
+    "expanding": "Expansiva"
   }
 }

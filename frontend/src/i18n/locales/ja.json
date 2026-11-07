@@ -39,7 +39,8 @@
       "settings": "モデル、データソース、ブローカー接続を設定します。",
       "pixelOffice": "調査タスクを計画・割り当てます。割り当てでは実行は始まりません。役職はラベルであり、取引権限を付与しません。",
       "paperTrading": "仮想資金で日次取引を検証します。証券会社へ注文は送りません。現金配当を含まず、総収益ではありません。",
-      "researchArtifacts": "証拠に基づく分析をセッション間で保存して再利用します。"
+      "researchArtifacts": "証拠に基づく分析をセッション間で保存して再利用します。",
+      "researchLab": "取引コスト、固定パラメータによるサンプル外成績、ファクター定義と保存済み証拠を検証します。"
     },
     "instructions": {
       "reports": "まずアシスタントに戦略のバックテストを依頼し、ここで結果を開きます。会話で作成した PDF などは元の会話からダウンロードします。",
@@ -52,7 +53,8 @@
       "settings": "まずモデルを設定します。必要に応じてデータソースやブローカー接続を追加します。公開市場のリサーチにはブローカー口座は不要です。",
       "pixelOffice": "調査タスクを計画・割り当てます。割り当てでは実行は始まりません。役職はラベルであり、取引権限を付与しません。",
       "paperTrading": "確定した日足のみを使用します。戦略は前日までのデータを読み、執行日の終値で約定します。通常の取引終了から30分お待ちください。自動実行は設定されません。",
-      "researchArtifacts": "過去の分析を検索し、任意のリビジョンを開くか、新しい証拠で関連リビジョンを作成します。古い結論は変更されません。"
+      "researchArtifacts": "過去の分析を検索し、任意のリビジョンを開くか、新しい証拠で関連リビジョンを作成します。古い結論は変更されません。",
+      "researchLab": "取引コスト、固定パラメータによるサンプル外成績、ファクター定義と保存済み証拠を検証します。"
     }
   },
   "layout": {
@@ -85,7 +87,8 @@
     "sessionsLoadFailed": "会話を読み込めません。",
     "pixelOffice": "ピクセルオフィス",
     "paperTrading": "模擬取引",
-    "researchArtifacts": "リサーチ成果物"
+    "researchArtifacts": "リサーチ成果物",
+    "researchLab": "リサーチラボ"
   },
   "researchArtifacts": {
     "subject": "研究主題",
@@ -1804,7 +1807,7 @@
     "ci": "{{pct}} 信頼区間",
     "medianSharpe": "Sharpe 中央値",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "ウォークフォワード分析",
+    "walkForward": "窓間の一貫性",
     "profitable": "{{profitable}}/{{total}} 利益",
     "walkForwardDesc": "{{n}} 個の連続ウィンドウに分割し、パフォーマンスの一貫性を確認します。",
     "consistency": "一貫性",
@@ -2636,5 +2639,67 @@
       "SIZE": "サイズ",
       "LEVERAGE": "レバレッジ"
     }
+  },
+  "researchLab": {
+    "title": "リサーチラボ",
+    "cost_sensitivity": "取引コスト",
+    "walk_forward": "アウトオブサンプル検証",
+    "factor_audit": "ファクター契約",
+    "replay": "タスク再検証",
+    "sourceRun": "保存済み実行",
+    "chooseRun": "実行を選択",
+    "noRuns": "バックテストを完了すると保存済み入力を再利用できます。",
+    "feeLevels": "取引手数料倍率",
+    "slippageLevels": "追加スリッページ（bp）",
+    "trainBars": "訓練バー数",
+    "testBars": "検証バー数",
+    "holdoutBars": "最終留保バー数",
+    "folds": "検証窓数",
+    "parameterChoices": "パラメータ候補",
+    "alphaIds": "ファクターID（空欄ですべて）",
+    "task": "検証タスク",
+    "start": "検証を実行",
+    "running": "実行中…",
+    "invalidValues": "有限の数値を入力してください。",
+    "tooManyCandidates": "パラメータの組合せは12個までです。",
+    "failed": "失敗",
+    "report": "リサーチレポート",
+    "download": "JSONをダウンロード",
+    "scenario": "シナリオ",
+    "return": "リターン",
+    "drawdown": "ドローダウン",
+    "sharpe": "シャープレシオ",
+    "notBracketed": "検証範囲に損益の符号変化がありません。",
+    "oosReturn": "サンプル外リターン",
+    "holdoutReturn": "最終留保期間リターン",
+    "selected": "固定パラメータ",
+    "testPeriod": "検証期間",
+    "checked": "検証済み",
+    "findings": "検出事項",
+    "factor": "ファクター",
+    "minimumBars": "最小バー数",
+    "policy": "履歴方針",
+    "status": "状態",
+    "passed": "合格",
+    "not_evaluable": "評価不能",
+    "invalid_artifact": "無効な成果物",
+    "coverage": "評価カバレッジ",
+    "policy_full_window": "完全窓",
+    "policy_recursive_seed": "再帰初期化",
+    "policy_partial_window": "部分窓",
+    "policy_conditional_sample": "条件付き標本",
+    "subtitle": "取引コスト、固定パラメータによるサンプル外成績、ファクター定義と保存済み証拠を検証します。",
+    "costHint": "倍率はエンジンの手数料と取引税に適用されます。追加スリッページは不利な方向に加え、取引所の丸め前に適用します。資金調達料と借入料は変更しません。",
+    "oosHint": "訓練結果のみで選択し、各検証前に固定します。各窓は保有なしで始まり、清算コストを含みます。最終留保標本は事前の選択に使いません。",
+    "noParameters": "選択可能なコンストラクタ値がないため、固定された単一候補として検証します。",
+    "auditHint": "合成入力でソース指紋、最小履歴と初期化を検証します。実装契約の確認であり、収益性や公表式の全解釈の保証ではありません。",
+    "replayHint": "変更しないタスク指示で保存済み成果物を検証します。モデル呼出し、価格取得、発注は行いません。証拠不足は合格ではありません。",
+    "breakEvenHint": "損益分岐は観測された符号変化の区間のみを示し、正確なコストの補間推定はしません。",
+    "objective": "訓練の目的",
+    "training": "訓練窓",
+    "sharpeObjective": "シャープレシオ",
+    "returnObjective": "総収益",
+    "rolling": "ローリング",
+    "expanding": "拡張"
   }
 }

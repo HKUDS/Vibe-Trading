@@ -7,7 +7,7 @@
 """GTJA Alpha #25.
 
 Formula: ((-1*RANK((DELTA(CLOSE,7)*(1-RANK(DECAYLINEAR((VOLUME/MEAN(VOLUME,20)),9))))))*(1+RANK(SUM(RET,250))))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 25."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 25."""
 
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 9,
-    "min_warmup_bars": 61,
-    "notes": 'Long-window RET sum approximated with 60d cap (warmup feasibility); see notes.',
+    "min_warmup_bars": 251,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -53,6 +53,5 @@ def compute(panel: dict) -> pd.DataFrame:
     vmean20 = ts_mean(v, 20)
     decayed = decay_linear(safe_div(v, vmean20), 9)
     term1 = -1.0 * rank(delta(c, 7) * (1.0 - rank(decayed)))
-    # Approximate SUM(RET, 250) with min(60, available) window — see notes.
-    long_sum = ret.rolling(60, min_periods=20).sum()
+    long_sum = ret.rolling(250, min_periods=250).sum()
     return term1 * (1.0 + rank(long_sum))

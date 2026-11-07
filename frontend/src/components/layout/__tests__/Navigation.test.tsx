@@ -15,7 +15,7 @@ it("keeps every feature directly reachable and distinguishes tasks from tools an
   expect(within(screen.getByRole("region", { name: "Everyday research" })).getAllByRole("link").map((link) => link.getAttribute("href")))
     .toEqual(["/", "/reports", "/research-artifacts", "/paper-trading", "/portfolio"]);
   expect(within(screen.getByRole("region", { name: "Specialized analysis" })).getAllByRole("link").map((link) => link.getAttribute("href")))
-    .toEqual(["/alpha-zoo", "/options", "/correlation"]);
+    .toEqual(["/alpha-zoo", "/research-lab", "/options", "/correlation"]);
   expect(within(screen.getByRole("region", { name: "Automation & setup" })).getAllByRole("link").map((link) => link.getAttribute("href")))
     .toEqual(["/pixel-office", "/scheduled", "/runtime", "/settings"]);
   expect(screen.getByRole("link", { name: "Research assistant" })).toHaveAttribute("aria-current", "page");
@@ -54,7 +54,7 @@ it("opens a labeled feature menu in compact mode and returns focus on Escape", (
   expect(within(menu).getByText("Options analysis")).toBeVisible();
   expect(within(menu).getByText("Pixel Office")).toBeVisible();
   expect(within(menu).getByText("Trading status")).toBeVisible();
-  expect(within(menu).getAllByRole("link")).toHaveLength(12);
+  expect(within(menu).getAllByRole("link")).toHaveLength(13);
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("navigation", { name: "Browse features" })).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();

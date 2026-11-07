@@ -32,7 +32,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_cn', 'equity_hk'],
     'frequency': ['1d'],
     'decay_horizon': 21,
-    'min_warmup_bars': 21,
+    'min_warmup_bars': 22,
     'notes': (
         'Jegadeesh (1990) one-month reversal. Negative trailing 21-day return, '
         'cross-sectional z-score per date for long-short ranking. Top z-scores = '

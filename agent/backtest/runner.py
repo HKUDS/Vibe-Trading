@@ -113,6 +113,10 @@ class BacktestConfigSchema(BaseModel):
     # every direct-API caller passes through.
     warmup_bars: Optional[int] = Field(default=None, ge=0)
     evaluation_start_date: Optional[str] = None
+    signal_parameters: Dict[str, Any] = Field(default_factory=dict)
+    frozen_data_manifest: Optional[str] = None
+    execution_cost_multiplier: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+    extra_slippage_bps: float = Field(default=0.0, ge=0, lt=10000, allow_inf_nan=False)
 
     @field_validator("codes")
     @classmethod
@@ -1528,11 +1532,17 @@ def main(run_dir: Path) -> None:
     if not data_map:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
-    data_map = _maybe_inject_fundamentals_for_factor_panel(data_map, config)
+    if not config.get("frozen_data_manifest"):
+        data_map = _maybe_inject_fundamentals_for_factor_panel(data_map, config)
 
     # Engine
     engine_type = config.get("engine", "daily")
-    signal_engine = engine_cls()
+    parameters = config.get("signal_parameters", {})
+    try:
+        inspect.signature(engine_cls).bind(**parameters)
+    except TypeError as exc:
+        raise ValueError(f"SignalEngine parameters do not match its constructor: {exc}") from exc
+    signal_engine = engine_cls(**parameters)
 
     # Annualization bars
     effective_source = _detect_primary_source(codes, source)
@@ -1554,7 +1564,9 @@ def main(run_dir: Path) -> None:
     # aligned with the data consumed by the engine. A source that prohibits
     # fallback keeps its own loader behind the snapshot: a declared benchmark
     # is usually outside ``codes``, but must still come from that same source.
-    if is_no_network_fallback_source(source):
+    if config.get("frozen_data_manifest"):
+        loader = _AutoLoader(data_map, name="local")
+    elif is_no_network_fallback_source(source):
         loader = _AutoLoader(
             data_map,
             inner=loader,
@@ -2035,6 +2047,15 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         NoAvailableSourceError: If a requested symbol cannot be served.
     """
     config = copy.deepcopy(config)
+    if config.get("frozen_data_manifest"):
+        from backtest.frozen import load_frozen_frames
+
+        frames, manifest = load_frozen_frames(config["frozen_data_manifest"], config)
+        return DataFetchResult(
+            frames, list(frames), config.get("source", "auto"),
+            _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),
+            manifest.get("caliber_warning"),
+        )
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
     # Weekly and monthly bars are built from daily ones after the fetch, so

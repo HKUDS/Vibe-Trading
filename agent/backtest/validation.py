@@ -248,22 +248,32 @@ def walk_forward_analysis(
     trades: List[TradeRecord],
     n_windows: int = 5,
     bars_per_year: int = 252,
+    initial_capital: float | None = None,
 ) -> Dict[str, Any]:
     """Split backtest into sequential windows, check consistency.
 
-    Each window is evaluated independently (returns normalised to window start).
+    Assign each observed return to exactly one window. Later windows use the
+    preceding equity mark as their opening capital. This is a consistency
+    diagnostic of an existing backtest, not parameter training or OOS testing.
 
     Args:
         equity_curve: Equity time series.
         trades: Completed trades.
         n_windows: Number of non-overlapping windows.
         bars_per_year: Annualisation factor.
+        initial_capital: Optional capital preceding the first observed bar.
 
     Returns:
         Dict with per_window stats, consistency metrics.
     """
     if isinstance(n_windows, bool) or not isinstance(n_windows, Integral) or n_windows < 1:
         return {"error": f"n_windows must be >= 1, got {n_windows}"}
+    if initial_capital is not None and (
+        isinstance(initial_capital, bool)
+        or not np.isfinite(initial_capital)
+        or initial_capital <= 0
+    ):
+        return {"error": "initial_capital must be positive and finite"}
     if len(equity_curve) < n_windows * 2:
         return {"error": f"need at least {n_windows * 2} bars for {n_windows} windows"}
 
@@ -286,11 +296,18 @@ def walk_forward_analysis(
         # Per-window trades
         win_trades = [t for t in trades if win_start <= t.entry_time <= win_end]
 
-        # Per-window metrics
-        ret = float(win_eq.iloc[-1] / win_eq.iloc[0] - 1) if win_eq.iloc[0] > 0 else 0.0
+        # The first return of every later window belongs to that window; taking
+        # pct_change on the slice alone silently discarded all boundary moves.
+        anchor = equity_curve.iloc[start_idx - 1] if start_idx else initial_capital
+        measured = win_eq.reset_index(drop=True)
+        if anchor is not None:
+            if not np.isfinite(anchor) or anchor <= 0:
+                return {"error": f"window {i + 1} requires observed positive opening equity"}
+            measured = pd.concat([pd.Series([float(anchor)]), measured], ignore_index=True)
+        ret = float(measured.iloc[-1] / measured.iloc[0] - 1)
         # Use only observed adjacent pairs within this window.
         win_returns = (
-            win_eq.pct_change(fill_method=None)
+            measured.pct_change(fill_method=None)
             .replace([np.inf, -np.inf], 0.0)
             .dropna()
             .values
@@ -299,8 +316,8 @@ def walk_forward_analysis(
             return {"error": f"window {i + 1} has no observed adjacent equity returns"}
         sharpe = _sharpe(win_returns, bars_per_year) if len(win_returns) > 1 else 0.0
 
-        peak = win_eq.cummax()
-        dd = (win_eq - peak) / peak.replace(0, 1)
+        peak = measured.cummax()
+        dd = (measured - peak) / peak.replace(0, 1)
         max_dd = float(dd.min())
 
         win_pnls = [t.pnl for t in win_trades]
@@ -325,6 +342,8 @@ def walk_forward_analysis(
     profitable_windows = sum(1 for r in returns_list if r > 0)
 
     return {
+        "analysis_type": "window_consistency",
+        "includes_boundary_returns": True,
         "n_windows": n_windows,
         "windows": windows,
         "profitable_windows": profitable_windows,
@@ -401,6 +420,7 @@ def run_validation(
             trades,
             n_windows=wf_cfg.get("n_windows", 5),
             bars_per_year=bars_per_year,
+            initial_capital=initial_capital,
         )
 
     return results

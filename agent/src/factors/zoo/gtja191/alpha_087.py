@@ -42,7 +42,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 11,
-    "min_warmup_bars": 22,
+    "min_warmup_bars": 17,
     "notes": 'Sum of two decay-linear terms, negated.',
 }
 

@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 7,
-    "min_warmup_bars": 8,
+    "min_warmup_bars": 2,
     "notes": 'SMA(n=7, m=2) of midpoint change times range / volume.',
 }
 

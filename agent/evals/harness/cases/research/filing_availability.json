@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "case_id": "research.filing_availability.v1",
+  "scenario": "point_in_time",
+  "prompt": "一份利润数据报告期末为2026-03-31，首次披露日为2026-04-30。对2026-04-29的日线信号，判断这份数据是否已经可用。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "available",
+        "operator": "equals",
+        "expected": false
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

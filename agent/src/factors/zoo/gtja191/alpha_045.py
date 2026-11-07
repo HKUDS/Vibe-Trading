@@ -7,7 +7,7 @@
 """GTJA Alpha #45.
 
 Formula: (RANK(DELTA((((CLOSE*0.6)+(OPEN*0.4))),1)) * RANK(CORR(VWAP,MEAN(VOLUME,150),15)))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 45."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 45."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 15,
-    "min_warmup_bars": 44,
-    "notes": '150d MA volume approximated with 30d window.',
+    "min_warmup_bars": 164,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -52,4 +52,4 @@ def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]
     vw = vwap(panel, "equity_cn")
     blend = c * 0.6 + o * 0.4
-    return rank(delta(blend, 1)) * rank(ts_corr(vw, ts_mean(v, 30), 15))
+    return rank(delta(blend, 1)) * rank(ts_corr(vw, ts_mean(v, 150), 15))
