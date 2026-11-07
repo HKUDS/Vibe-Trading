@@ -39,21 +39,24 @@ def _markdown_inline(value: str) -> str:
     return " ".join(value.splitlines())
 
 
-def _escape_unclosed_html_block(line: str, remaining: str) -> str:
+def _html_block_start(line: str) -> tuple[str, bool, int] | None:
     raw_text = re.match(r"^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)", line, re.IGNORECASE)
-    if raw_text and not re.search(rf"</{raw_text.group(1)}\s*>", remaining, re.IGNORECASE):
-        return line.replace("<", "&lt;", 1)
+    if raw_text:
+        return rf"</{raw_text.group(1)}\s*>", True, raw_text.end()
     for opening, closing in (("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")):
-        if re.match(rf"^ {{0,3}}{re.escape(opening)}", line) and closing not in remaining:
-            return line.replace("<", "&lt;", 1)
-    if re.match(r"^ {0,3}<![A-Za-z]", line) and ">" not in remaining:
-        return line.replace("<", "&lt;", 1)
-    return line
+        match = re.match(rf"^ {{0,3}}{re.escape(opening)}", line)
+        if match:
+            return closing, False, match.end()
+    declaration = re.match(r"^ {0,3}<![A-Za-z]", line)
+    if declaration:
+        return ">", False, declaration.end()
+    return None
 
 
 def _isolated_revision_content(content: str) -> str:
     """Keep raw HTML blocks and Markdown fences out of generated sections."""
     open_fence: tuple[str, int] | None = None
+    open_html: tuple[str, bool, int] | None = None
     isolated: list[str] = []
     lines = content.splitlines(keepends=True)
     for index, line in enumerate(lines):
@@ -72,9 +75,22 @@ def _isolated_revision_content(content: str) -> str:
         if open_fence is not None:
             isolated.append(line)
             continue
-        if re.match(r"^ {0,3}<", line):
-            line = _escape_unclosed_html_block(line, "".join(lines[index:]))
+        if open_html is not None:
+            closing, is_regex, _ = open_html
+            if re.search(closing, line, re.IGNORECASE) if is_regex else closing in line:
+                open_html = None
+            isolated.append(line)
+            continue
+        start = _html_block_start(line)
+        if start is not None:
+            closing, is_regex, end = start
+            remainder = line[end:]
+            if not (re.search(closing, remainder, re.IGNORECASE) if is_regex else closing in remainder):
+                open_html = (closing, is_regex, index)
         isolated.append(line)
+    if open_html is not None:
+        _, _, index = open_html
+        isolated[index] = isolated[index].replace("<", "&lt;", 1)
     result = "".join(isolated)
     if open_fence is None:
         return result
