@@ -376,6 +376,12 @@ class Registry:
                 mask = mask & panel["sector"].notna()
             if isinstance(result, pd.DataFrame):
                 result = result.where(mask)
+                # Metadata is the minimum complete history, not an EMA burn-in
+                # suggestion. The bundled source contracts reconcile nested
+                # windows and recursive initialization before applying this
+                # prefix rule. Missing observations later keep the operator's
+                # own full-window/recursive policy; they never reset this clock.
+                result.iloc[: max(0, meta.get("min_warmup_bars", 1) - 1)] = np.nan
         return self._validate_output(alpha_id, result, panel)
 
     def _load_module(self, alpha: Alpha) -> ModuleType:

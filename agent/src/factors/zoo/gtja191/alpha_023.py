@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
-    "min_warmup_bars": 22,
+    "min_warmup_bars": 20,
     "notes": 'Up-volatility share. SMA(20, m=1) of STD(20) over up/down days.',
 }
 

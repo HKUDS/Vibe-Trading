@@ -45,7 +45,8 @@
       "settings": "Configure modelos, fontes de dados e conexões de corretoras.",
       "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação.",
       "paperTrading": "Teste operações diárias com recursos fictícios. Nenhuma ordem é enviada à corretora. Os resultados excluem dividendos em dinheiro e não representam retorno total.",
-      "researchArtifacts": "Salve e reutilize análises baseadas em evidências entre sessões."
+      "researchArtifacts": "Salve e reutilize análises baseadas em evidências entre sessões.",
+      "researchLab": "Verifique custos, parâmetros fixados fora da amostra, fórmulas de fatores e evidências salvas."
     },
     "instructions": {
       "reports": "Primeiro peça ao assistente um backtest de uma estratégia e abra os resultados aqui. Baixe PDFs e documentos gerados no chat na conversa original.",
@@ -58,7 +59,8 @@
       "settings": "Configure um modelo para começar. Adicione dados ou conexões de corretoras conforme necessário; pesquisas com dados públicos de mercado não exigem conta em corretora.",
       "pixelOffice": "Planeje e atribua tarefas de pesquisa. A atribuição não inicia a execução; os cargos são rótulos e não concedem permissões de negociação.",
       "paperTrading": "Somente candles diários completos são liquidados. As estratégias leem dias anteriores e executam no fechamento do dia indicado. Aguarde 30 minutos após o fechamento regular; nenhuma execução automática é agendada.",
-      "researchArtifacts": "Pesquise análises anteriores, abra qualquer revisão ou crie uma revisão vinculada com novas evidências. Conclusões antigas permanecem inalteradas."
+      "researchArtifacts": "Pesquise análises anteriores, abra qualquer revisão ou crie uma revisão vinculada com novas evidências. Conclusões antigas permanecem inalteradas.",
+      "researchLab": "Verifique custos, parâmetros fixados fora da amostra, fórmulas de fatores e evidências salvas."
     }
   },
   "layout": {
@@ -91,7 +93,8 @@
     "sessionsLoadFailed": "Não foi possível carregar as conversas.",
     "pixelOffice": "Escritório pixel",
     "paperTrading": "Negociação simulada",
-    "researchArtifacts": "Artefatos de pesquisa"
+    "researchArtifacts": "Artefatos de pesquisa",
+    "researchLab": "Laboratório de pesquisa"
   },
   "researchArtifacts": {
     "subject": "Assunto da pesquisa",
@@ -1814,7 +1817,7 @@
     "ci": "IC de {{pct}}",
     "medianSharpe": "Mediana de Sharpe",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "Análise walk-forward",
+    "walkForward": "Consistência entre janelas",
     "profitable": "{{profitable}}/{{total}} lucrativo",
     "walkForwardDesc": "Divida em janelas sequenciais {{n}} para verificar a consistência do desempenho.",
     "consistency": "Consistência",
@@ -2640,5 +2643,68 @@
       "SIZE": "Tamanho",
       "LEVERAGE": "Alavancagem"
     }
+  },
+  "researchLab": {
+    "title": "Laboratório de pesquisa",
+    "cost_sensitivity": "Custos de execução",
+    "walk_forward": "Validação fora da amostra",
+    "factor_audit": "Contratos de fatores",
+    "replay": "Revisão de tarefas",
+    "sourceRun": "Execução salva",
+    "chooseRun": "Escolher execução",
+    "noRuns": "Conclua um backtest para reutilizar os dados salvos.",
+    "feeLevels": "Multiplicadores de custos de negociação",
+    "slippageLevels": "Slippage adicional (pb)",
+    "trainBars": "Barras de treino",
+    "testBars": "Barras de teste",
+    "holdoutBars": "Barras da reserva final",
+    "folds": "Janelas de teste",
+    "parameterChoices": "Valores dos parâmetros",
+    "alphaIds": "IDs de fatores (vazio = todos)",
+    "task": "Tarefa de avaliação",
+    "start": "Executar estudo",
+    "running": "Executando…",
+    "invalidValues": "Insira valores numéricos finitos.",
+    "tooManyCandidates": "Use no máximo 12 combinações de parâmetros.",
+    "failed": "Falhou",
+    "report": "Relatório de pesquisa",
+    "download": "Baixar JSON",
+    "scenario": "Cenário",
+    "return": "Retorno",
+    "drawdown": "Rebaixamento",
+    "sharpe": "Índice de Sharpe",
+    "notBracketed": "Sem mudança de sinal no intervalo testado.",
+    "oosReturn": "Retorno fora da amostra",
+    "holdoutReturn": "Retorno da reserva final",
+    "selected": "Parâmetros fixados",
+    "testPeriod": "Período de teste",
+    "checked": "Verificados",
+    "findings": "Constatações",
+    "factor": "Fator",
+    "minimumBars": "Barras mínimas",
+    "policy": "Política do histórico",
+    "status": "Estado",
+    "passed": "Aprovado",
+    "not_evaluable": "Não avaliável",
+    "invalid_artifact": "Artefato inválido",
+    "coverage": "Cobertura da avaliação",
+    "policy_full_window": "Janela completa",
+    "policy_recursive_seed": "Inicialização recursiva",
+    "policy_partial_window": "Janela parcial",
+    "policy_conditional_sample": "Amostras condicionais",
+    "subtitle": "Verifique custos, parâmetros fixados fora da amostra, fórmulas de fatores e evidências salvas.",
+    "costHint": "Os multiplicadores abrangem comissões e tributos de negociação do motor. O slippage adicional é adverso e aplicado antes do arredondamento da bolsa; financiamento e empréstimo não mudam.",
+    "oosHint": "Os parâmetros são escolhidos apenas pelo treino e fixados antes de cada teste. Cada janela começa sem posições e inclui custos de liquidação. A reserva final não participa de escolhas anteriores.",
+    "noParameters": "A estratégia não tem valores literais de construtor selecionáveis; será avaliada como um candidato fixo.",
+    "auditHint": "Verifica impressões do código, histórico mínimo e inicialização com dados sintéticos. Valida contratos de implementação, não rentabilidade nem todas as interpretações das fórmulas publicadas.",
+    "replayHint": "Verifica artefatos salvos com a instrução original inalterada. Não chama modelos, consulta preços ou envia ordens. Falta de evidência não é aprovação.",
+    "breakEvenHint": "O equilíbrio é mostrado apenas como intervalo medido de mudança de sinal, sem interpolar um custo exato.",
+    "objective": "Objetivo de treinamento",
+    "training": "Janela de treinamento",
+    "sharpeObjective": "Índice de Sharpe",
+    "returnObjective": "Retorno total",
+    "rolling": "Móvel",
+    "expanding": "Expansiva",
+    "invalidChoices": "Insira um valor para cada opção."
   }
 }

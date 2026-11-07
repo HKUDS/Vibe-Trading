@@ -45,7 +45,8 @@
       "runtime": "Check broker connections and trading runtime status.",
       "settings": "Configure models, data sources, and broker connections.",
       "pixelOffice": "Plan and assign research tasks. Assignment does not start execution; ranks are labels and grant no trading permissions.",
-      "paperTrading": "Test daily trades with simulated funds. No broker orders are sent. Results exclude cash dividends and are not a total-return record."
+      "paperTrading": "Test daily trades with simulated funds. No broker orders are sent. Results exclude cash dividends and are not a total-return record.",
+      "researchLab": "Test trading costs, frozen out-of-sample parameters, factor definitions and saved research evidence."
     },
     "instructions": {
       "reports": "Ask the research assistant to backtest a strategy first, then open its results here. Download PDFs and other chat-generated documents from the original conversation.",
@@ -58,7 +59,8 @@
       "runtime": "Configure a broker connection in Settings or Portfolio first. Available trading actions depend on that broker's capabilities and your authorization.",
       "settings": "Configure a model to start. Add data sources or broker connections as your task needs them; public-market research does not require a broker account.",
       "pixelOffice": "Plan and assign research tasks. Assignment does not start execution; ranks are labels and grant no trading permissions.",
-      "paperTrading": "Only completed daily bars can settle. Strategies see prior days only and fill at the execution day’s close. Wait until 30 minutes after the regular market close; no background execution is scheduled."
+      "paperTrading": "Only completed daily bars can settle. Strategies see prior days only and fill at the execution day’s close. Wait until 30 minutes after the regular market close; no background execution is scheduled.",
+      "researchLab": "Test trading costs, frozen out-of-sample parameters, factor definitions and saved research evidence."
     }
   },
   "layout": {
@@ -91,7 +93,8 @@
     "about": "About",
     "sessionsLoadFailed": "Cannot load conversations.",
     "pixelOffice": "Pixel Office",
-    "paperTrading": "Paper trading"
+    "paperTrading": "Paper trading",
+    "researchLab": "Research Lab"
   },
   "researchArtifacts": {
     "title": "Research artifacts",
@@ -1814,7 +1817,7 @@
     "ci": "{{pct}} CI",
     "medianSharpe": "Median Sharpe",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "Walk-Forward Analysis",
+    "walkForward": "Window consistency",
     "profitable": "{{profitable}}/{{total}} profitable",
     "walkForwardDesc": "Split into {{n}} sequential windows to check performance consistency.",
     "consistency": "Consistency",
@@ -2640,5 +2643,68 @@
       "SIZE": "Size",
       "LEVERAGE": "Leverage"
     }
+  },
+  "researchLab": {
+    "title": "Research Lab",
+    "cost_sensitivity": "Execution costs",
+    "walk_forward": "Out-of-sample testing",
+    "factor_audit": "Factor contracts",
+    "replay": "Task replay",
+    "sourceRun": "Saved run",
+    "chooseRun": "Choose a run",
+    "noRuns": "Complete a backtest to reuse its saved inputs.",
+    "feeLevels": "Trading fee multipliers",
+    "slippageLevels": "Extra slippage (bp)",
+    "trainBars": "Training bars",
+    "testBars": "Test bars",
+    "holdoutBars": "Holdout bars",
+    "folds": "Test windows",
+    "parameterChoices": "Parameter choices",
+    "alphaIds": "Factor IDs (blank = all)",
+    "task": "Evaluation task",
+    "start": "Run study",
+    "running": "Running…",
+    "invalidValues": "Enter finite numeric choices.",
+    "tooManyCandidates": "Use at most 12 parameter combinations.",
+    "failed": "Failed",
+    "report": "Research report",
+    "download": "Download JSON",
+    "scenario": "Scenario",
+    "return": "Return",
+    "drawdown": "Drawdown",
+    "sharpe": "Sharpe",
+    "notBracketed": "No sign change in the tested range.",
+    "oosReturn": "Out-of-sample return",
+    "holdoutReturn": "Final holdout return",
+    "selected": "Frozen parameters",
+    "testPeriod": "Test period",
+    "checked": "Checked",
+    "findings": "Findings",
+    "factor": "Factor",
+    "minimumBars": "Minimum bars",
+    "policy": "History policy",
+    "status": "Status",
+    "passed": "Passed",
+    "not_evaluable": "Not evaluable",
+    "invalid_artifact": "Invalid artifact",
+    "coverage": "Evaluation coverage",
+    "policy_full_window": "Full window",
+    "policy_recursive_seed": "Recursive initialization",
+    "policy_partial_window": "Partial window",
+    "policy_conditional_sample": "Conditional samples",
+    "subtitle": "Test trading costs, frozen out-of-sample parameters, factor definitions and saved research evidence.",
+    "costHint": "Fee multipliers cover the engine’s commissions and transaction taxes. Extra slippage is adverse and added before venue rounding; funding and borrow charges are unchanged.",
+    "oosHint": "Parameters are selected using training results only, then frozen before each test. Windows start flat and include liquidation costs. A final holdout is excluded from all earlier selection.",
+    "noParameters": "This strategy has no literal constructor choices; it will be evaluated as one fixed candidate.",
+    "auditHint": "Checks source fingerprints, minimum history and initialization on synthetic inputs. This verifies implementation contracts, not factor profitability or every interpretation of a published formula.",
+    "replayHint": "This verifies saved artifacts against an unchanged task prompt. It invokes no model, fetches no prices and places no orders. Missing evidence is not a pass.",
+    "breakEvenHint": "Break-even is shown only as a measured sign-change interval, not an interpolated exact cost.",
+    "objective": "Training objective",
+    "training": "Training window",
+    "sharpeObjective": "Sharpe ratio",
+    "returnObjective": "Total return",
+    "rolling": "Rolling",
+    "expanding": "Expanding",
+    "invalidChoices": "Enter a value for every choice."
   }
 }

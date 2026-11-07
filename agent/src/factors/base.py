@@ -497,3 +497,85 @@ def vwap(panel: dict[str, pd.DataFrame], market: Market | str) -> pd.DataFrame:
     if missing:
         raise KeyError(f"vwap({market.value}) requires panel keys {required}; missing {missing}")
     return (panel["open"] + panel["high"] + panel["low"] + panel["close"]) / 4.0
+
+
+def geometric_wma(frame: pd.DataFrame, window: int) -> pd.DataFrame:
+    """Compute the report's normalized 0.9**age weighted mean.
+
+    Args:
+        frame: Observations ordered oldest to newest.
+        window: Number of complete observations required.
+
+    Returns:
+        A same-shaped frame, with NaN during warmup and across missing windows.
+    """
+    weights = 0.9 ** np.arange(window - 1, -1, -1, dtype=float)
+    weights /= weights.sum()
+    return frame.rolling(window, min_periods=window).apply(lambda values: values @ weights, raw=True)
+
+
+def downside_beta(close: pd.DataFrame, benchmark: pd.DataFrame, samples: int = 252) -> pd.DataFrame:
+    """Regress stock returns on the last selected benchmark-down returns.
+
+    FILTER removes unselected observations; it never replaces them with zero.
+    An unobserved benchmark invalidates selection history. A selected missing
+    stock return remains missing until it leaves the selected-sample window.
+
+    Args:
+        close: Stock closes, one column per instrument.
+        benchmark: Aligned benchmark closes with the same shape.
+        samples: Required number of selected observations.
+
+    Returns:
+        OLS slopes with an intercept, NaN until the selected window is complete.
+    """
+    stock_returns = close.pct_change(fill_method=None)
+    benchmark_returns = benchmark.pct_change(fill_method=None)
+    output = pd.DataFrame(np.nan, index=close.index, columns=close.columns)
+    for col in range(close.shape[1]):
+        selected = []
+        values = []
+        for x, y in zip(benchmark_returns.iloc[:, col], stock_returns.iloc[:, col]):
+            if not np.isfinite(x):
+                selected.clear()
+                values.append(np.nan)
+                continue
+            if x < 0:
+                selected.append((x, y))
+                if len(selected) > samples:
+                    selected.pop(0)
+            if len(selected) != samples:
+                values.append(np.nan)
+                continue
+            pairs = np.asarray(selected)
+            centered = pairs - pairs.mean(axis=0)
+            variance = centered[:, 0] @ centered[:, 0]
+            value = (centered[:, 0] @ centered[:, 1]) / variance if variance > 0 and np.isfinite(pairs).all() else np.nan
+            values.append(value)
+        output.iloc[:, col] = values
+    return output
+
+
+def factor_residuals(returns: pd.DataFrame, factors: list[pd.DataFrame], window: int = 60) -> pd.DataFrame:
+    """Return each trailing multifactor OLS fit's current residual.
+
+    Args:
+        returns: Dependent returns.
+        factors: Aligned factor-return frames.
+        window: Complete trailing observations, including the current bar.
+
+    Returns:
+        Current residuals; singular or missing fits remain NaN.
+    """
+    output = pd.DataFrame(np.nan, index=returns.index, columns=returns.columns)
+    for col in range(returns.shape[1]):
+        y = returns.iloc[:, col].to_numpy(dtype=float)
+        x = np.column_stack([np.ones(len(y)), *[factor.iloc[:, col].to_numpy(dtype=float) for factor in factors]])
+        for end in range(window, len(y) + 1):
+            observed_x, observed_y = x[end - window:end], y[end - window:end]
+            if not np.isfinite(observed_x).all() or not np.isfinite(observed_y).all():
+                continue
+            coefficients, _, rank, _ = np.linalg.lstsq(observed_x, observed_y, rcond=None)
+            if rank == x.shape[1]:
+                output.iloc[end - 1, col] = observed_y[-1] - observed_x[-1] @ coefficients
+    return output

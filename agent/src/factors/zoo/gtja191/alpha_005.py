@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 13,
+    "min_warmup_bars": 11,
     "notes": 'Max over 3 days of 5d corr of TSRANK(volume,5) and TSRANK(high,5).',
 }
 

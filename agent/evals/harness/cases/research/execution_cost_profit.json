@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.execution_cost_profit.v1",
+  "scenario": "execution_costs",
+  "prompt": "一笔交易毛利润100，买卖费用合计40，滑点损失合计70。计算净利润，并判断是否盈利。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "net_profit",
+        "operator": "approx",
+        "expected": -10
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "profitable",
+        "operator": "equals",
+        "expected": false
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

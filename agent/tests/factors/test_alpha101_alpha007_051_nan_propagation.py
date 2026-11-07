@@ -17,8 +17,8 @@ import pandas as pd
 
 from src.factors.registry import Registry
 
-N_ROWS = 40
-GAP_ROW = 25
+N_ROWS = 120
+GAP_ROW = 80
 
 
 def test_alpha007_no_signal_before_declared_warmup():
@@ -38,9 +38,9 @@ def test_alpha007_no_signal_before_declared_warmup():
 
     # adv20 needs 20 observations: rows 0-18 must stay NaN, not the
     # else branch's fabricated constant -1.0.
-    warmup = out.iloc[:19]
+    warmup = out.iloc[:66]
     assert warmup.isna().all().all(), (
-        f"alpha101_007: rows before adv20's 20-day lookback must stay NaN, "
+        f"alpha101_007: rows before the complete 67-bar expression history must stay NaN, "
         f"got {warmup.stack().tolist()}"
     )
 

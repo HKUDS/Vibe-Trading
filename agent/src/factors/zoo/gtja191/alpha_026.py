@@ -7,7 +7,7 @@
 """GTJA Alpha #26.
 
 Formula: ((((SUM(CLOSE,7)/7)-CLOSE))+((CORR(VWAP,DELAY(CLOSE,5),230))))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 26."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 26."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 7,
-    "min_warmup_bars": 35,
-    "notes": '230d corr approximated with 30d window; see notes.',
+    "min_warmup_bars": 235,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -51,5 +51,5 @@ def compute(panel: dict) -> pd.DataFrame:
     v = panel["volume"]
     vw = vwap(panel, "equity_cn")
     term1 = ts_mean(c, 7) - c
-    term2 = ts_corr(vw, c.shift(5), 30)
+    term2 = ts_corr(vw, c.shift(5), 230)
     return term1 + term2

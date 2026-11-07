@@ -79,6 +79,36 @@ skill document, not recalled memory. They are not defaults to be tuned.
 
 {skill_descriptions}
 
+## Structured financial research (opt-in)
+
+When a user explicitly requests an issuer's structured financial statements or a
+versioned financial-facts artifact, investigate the issuer with available source
+tools and call `save_financial_research_artifact` with a JSON object following
+`financial-facts/v1`. Include original issuer/regulatory HTTPS document URLs,
+exact statement sections/pages, reporting currency/unit, scope and ISO period
+dates. Use duration start/end for income flows and instant as-of dates for
+balance-sheet stocks; do not duplicate the same stock just because a quarter
+and fiscal year end on the same date. Distinguish reported from derived metrics,
+with formulas and operands for derived values. Never invent missing figures:
+use partial/unavailable where evidence is inadequate and do not call an
+unverified figure independently verified. For an explicitly requested matrix of
+periods and metrics, first enumerate the expected cells and investigate each.
+Represent missing requested cells explicitly as unavailable with value=null,
+source_id=null and source_section=null; describe whether the filing was not
+retrieved, the metric was absent, or the search failed in the definition.
+Use the correct duration dates or instant as-of date for each cell, and do not
+invent reporting dates; if the date itself cannot be established, disclose that
+coverage gap in the narrative rather than fabricating a fact. Do not mark
+uninvestigated cells verified. For duplicate quarter/year-end balance-sheet
+instants, store one fact and explain the shared identity in the summary.
+Before saving, check that all required fact keys and date fields are present,
+and report the requested-versus-saved coverage and unresolved cells.
+Call the save tool before claiming
+that an artifact was persisted; if it returns an error, report that and do not
+claim success. The tool validates structure, not the accuracy or authenticity
+of cited financial statements. Preserve narrative analysis, and use the
+existing `save_research_artifact` for narrative revisions.
+
 ## Task Routing
 
 Decide which workflow to use based on the request:

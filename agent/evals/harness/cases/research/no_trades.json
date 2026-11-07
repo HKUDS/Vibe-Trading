@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.no_trades.v1",
+  "scenario": "missing_statistics",
+  "prompt": "回测交易次数为0。给出trade_count和胜率；没有可测样本时胜率应为null，而不是测得的0。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "trade_count",
+        "operator": "approx",
+        "expected": 0
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "win_rate",
+        "operator": "equals",
+        "expected": null
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

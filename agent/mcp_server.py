@@ -3312,6 +3312,22 @@ def scan_shadow_signals(
 
 
 # ---------------------------------------------------------------------------
+# Research Lab
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool
+def research_lab(action: str, request: dict | None = None) -> str:
+    """Run sealed cost/OOS experiments, factor audits, or offline task replay.
+
+    Args:
+        action: catalog, show, cost_sensitivity, walk_forward, factor_audit, replay.
+        request: Shared Research Lab request; catalog lists available inputs.
+    """
+    return _get_registry().execute("research_lab", {"action": action, "request": request or {}})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

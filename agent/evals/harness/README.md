@@ -29,3 +29,27 @@ The first version reads these files only:
 Cases keep the natural-language prompt unchanged. Everything below `expect` is evaluator metadata and is never sent to the Agent.
 
 `data_snapshot` is a relative pointer for the separate run producer. This verifier never loads or fetches that data; the included example points to a synthetic, credential-free snapshot packaged beside the case.
+
+## Financial tasks and measurement checks
+
+The Research Lab adds 20 synthetic-input financial tasks and a shared saved-run
+replay interface. `vibe-trading research-lab cases --json` lists exact original
+prompts. `research-lab replay RUN --case ID --json` evaluates that saved run;
+`--bindings FILE.json` maps each task to its own run and optional trace directory.
+Web exposes the same case selector, report and coverage through `/research-lab`.
+
+`expect.measurements` holds at most 100 objects with a relative JSON/CSV
+`artifact`, dotted `field`, operator (`approx`, `equals`, `finite`, `gte`, `lte`),
+and `expected` (except `finite`). Optional `absolute_tolerance` defaults to
+1e-8; optional CSV `row` is zero-based and below 100000. Paths cannot escape
+the run, including through symlinks. Read size is bounded by the artifact
+loader limit. Missing values remain NOT_EVALUABLE; malformed values or files
+are INVALID_ARTIFACT. `expect.timing.max_seconds` compares finite start/end
+trace timestamps; missing timing remains NOT_EVALUABLE. Financial accuracy,
+latency and budgets have separate aggregate coverage metrics.
+
+Synthetic test fixtures validate both success and rejection; they do not
+measure live Agent quality. Run production prompts unchanged through the
+normal Agent, then bind the actual persisted artifacts for a real evaluation.
+The stricter Research Lab command exits 2 for incomplete coverage, while the
+original standalone harness CLI retains its existing exit behavior.

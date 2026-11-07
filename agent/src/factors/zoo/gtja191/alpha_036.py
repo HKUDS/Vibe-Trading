@@ -42,7 +42,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 6,
-    "min_warmup_bars": 8,
+    "min_warmup_bars": 7,
     "notes": 'Rolling 6d corr summed over 2 days then ranked.',
 }
 

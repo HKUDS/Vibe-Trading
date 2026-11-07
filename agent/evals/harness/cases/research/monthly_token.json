@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.monthly_token.v1",
+  "scenario": "interval_identity",
+  "prompt": "检查回测间隔标记：1M表示月，1m表示分钟。输出这两个标记各自的周期名称，使用month和minute。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "1M",
+        "operator": "equals",
+        "expected": "month"
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "1m",
+        "operator": "equals",
+        "expected": "minute"
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

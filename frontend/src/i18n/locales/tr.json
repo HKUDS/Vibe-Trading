@@ -53,7 +53,8 @@
     "sessionsLoadFailed": "Konuşmalar yüklenemiyor.",
     "pixelOffice": "Piksel Ofis",
     "paperTrading": "Sanal işlem",
-    "researchArtifacts": "Araştırma çıktıları"
+    "researchArtifacts": "Araştırma çıktıları",
+    "researchLab": "Araştırma laboratuvarı"
   },
   "researchArtifacts": {
     "completeness": "Tamlık",
@@ -1776,7 +1777,7 @@
     "ci": "{{pct}} güven aralığı",
     "medianSharpe": "Medyan Sharpe",
     "probSharpePositive": "Olasılık(Sharpe > 0)",
-    "walkForward": "İleri yürüyen analiz",
+    "walkForward": "Pencere tutarlılığı",
     "profitable": "{{profitable}}/{{total}} kârlı",
     "walkForwardDesc": "Performans tutarlılığını kontrol etmek için {{n}} ardışık pencereye bölündü.",
     "consistency": "Tutarlılık",
@@ -2381,7 +2382,8 @@
       "settings": "Modelleri, veri kaynaklarını ve aracı kurum bağlantılarını yapılandırın.",
       "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez.",
       "paperTrading": "Günlük işlemleri sanal fonlarla deneyin. Aracı kuruma emir gönderilmez. Sonuçlar nakit temettüleri içermez ve toplam getiriyi göstermez.",
-      "researchArtifacts": "Kanıta dayalı analizleri oturumlar arasında kaydedin ve yeniden kullanın."
+      "researchArtifacts": "Kanıta dayalı analizleri oturumlar arasında kaydedin ve yeniden kullanın.",
+      "researchLab": "Maliyetleri, sabitlenmiş örneklem dışı parametreleri, faktör tanımlarını ve kaydedilmiş kanıtları sınayın."
     },
     "instructions": {
       "reports": "Önce araştırma asistanından bir stratejiyi geriye dönük test etmesini isteyin, ardından sonuçları burada açın. PDF ve diğer sohbet belgelerini özgün konuşmadan indirin.",
@@ -2394,7 +2396,8 @@
       "settings": "Başlamak için bir model yapılandırın. Gerektikçe veri kaynakları veya aracı kurum bağlantıları ekleyin; kamuya açık piyasa araştırması için aracı kurum hesabı gerekmez.",
       "pixelOffice": "Araştırma görevlerini planlayın ve atayın. Atama yürütmeyi başlatmaz; rütbeler yalnızca etikettir ve işlem yetkisi vermez.",
       "paperTrading": "Yalnızca tamamlanmış günlük mumlar işlenir. Stratejiler önceki günleri okur ve işlem gününün kapanışında gerçekleşir. Normal kapanıştan 30 dakika sonrasını bekleyin; otomatik çalıştırma planlanmaz.",
-      "researchArtifacts": "Önceki analizleri arayın, herhangi bir revizyonu açın veya yeni kanıtla bağlantılı revizyon oluşturun. Eski sonuçlar değişmez."
+      "researchArtifacts": "Önceki analizleri arayın, herhangi bir revizyonu açın veya yeni kanıtla bağlantılı revizyon oluşturun. Eski sonuçlar değişmez.",
+      "researchLab": "Maliyetleri, sabitlenmiş örneklem dışı parametreleri, faktör tanımlarını ve kaydedilmiş kanıtları sınayın."
     }
   },
   "analysis": {
@@ -2640,5 +2643,68 @@
       "SIZE": "Büyüklük",
       "LEVERAGE": "Kaldıraç"
     }
+  },
+  "researchLab": {
+    "title": "Araştırma laboratuvarı",
+    "cost_sensitivity": "İşlem maliyetleri",
+    "walk_forward": "Örneklem dışı doğrulama",
+    "factor_audit": "Faktör sözleşmeleri",
+    "replay": "Görev doğrulama",
+    "sourceRun": "Kaydedilmiş çalışma",
+    "chooseRun": "Çalışma seçin",
+    "noRuns": "Kaydedilmiş girdileri kullanmak için bir geriye dönük test tamamlayın.",
+    "feeLevels": "İşlem gideri çarpanları",
+    "slippageLevels": "Ek kayma (baz puan)",
+    "trainBars": "Eğitim çubuğu sayısı",
+    "testBars": "Test çubuğu sayısı",
+    "holdoutBars": "Son ayrılmış çubuk sayısı",
+    "folds": "Test pencereleri",
+    "parameterChoices": "Parametre değerleri",
+    "alphaIds": "Faktör kimlikleri (boş = tümü)",
+    "task": "Değerlendirme görevi",
+    "start": "Çalışmayı başlat",
+    "running": "Çalışıyor…",
+    "invalidValues": "Sonlu sayısal değerler girin.",
+    "tooManyCandidates": "En fazla 12 parametre birleşimi kullanın.",
+    "failed": "Başarısız",
+    "report": "Araştırma raporu",
+    "download": "JSON indir",
+    "scenario": "Senaryo",
+    "return": "Getiri",
+    "drawdown": "Düşüş",
+    "sharpe": "Sharpe oranı",
+    "notBracketed": "Test aralığında işaret değişimi yok.",
+    "oosReturn": "Örneklem dışı getiri",
+    "holdoutReturn": "Son ayrılmış örneklem getirisi",
+    "selected": "Sabitlenmiş parametreler",
+    "testPeriod": "Test dönemi",
+    "checked": "Kontrol edilen",
+    "findings": "Bulgular",
+    "factor": "Faktör",
+    "minimumBars": "Asgari çubuk sayısı",
+    "policy": "Geçmiş veri politikası",
+    "status": "Durum",
+    "passed": "Başarılı",
+    "not_evaluable": "Değerlendirilemez",
+    "invalid_artifact": "Geçersiz çıktı",
+    "coverage": "Değerlendirme kapsamı",
+    "policy_full_window": "Tam pencere",
+    "policy_recursive_seed": "Özyinelemeli başlangıç",
+    "policy_partial_window": "Kısmi pencere",
+    "policy_conditional_sample": "Koşullu örnekler",
+    "subtitle": "Maliyetleri, sabitlenmiş örneklem dışı parametreleri, faktör tanımlarını ve kaydedilmiş kanıtları sınayın.",
+    "costHint": "Çarpanlar motorun komisyon ve işlem vergilerini kapsar. Ek kayma olumsuz yönde ve borsa yuvarlamasından önce uygulanır; fonlama ve borçlanma giderleri değişmez.",
+    "oosHint": "Parametreler yalnızca eğitim sonucuyla seçilip her testten önce sabitlenir. Her pencere pozisyonsuz başlar ve kapatma giderlerini içerir. Son ayrılmış örneklem önceki seçimlere katılmaz.",
+    "noParameters": "Stratejinin seçilebilir sabit yapıcı değerleri yoktur; tek sabit aday olarak değerlendirilir.",
+    "auditHint": "Sentetik girdilerle kaynak parmak izlerini, asgari geçmişi ve başlangıcı denetler. Uygulama sözleşmelerini doğrular; kârlılığı veya yayımlanan formüllerin tüm yorumlarını onaylamaz.",
+    "replayHint": "Kaydedilmiş çıktılar değişmeyen özgün görevle doğrulanır. Model çağrılmaz, fiyat alınmaz ve emir verilmez. Eksik kanıt başarı sayılmaz.",
+    "breakEvenHint": "Başabaş noktası yalnızca ölçülen işaret değişimi aralığı olarak gösterilir; kesin maliyet için enterpolasyon yapılmaz.",
+    "objective": "Eğitim hedefi",
+    "training": "Eğitim penceresi",
+    "sharpeObjective": "Sharpe oranı",
+    "returnObjective": "Toplam getiri",
+    "rolling": "Kayan",
+    "expanding": "Genişleyen",
+    "invalidChoices": "Her seçenek için bir değer girin."
   }
 }

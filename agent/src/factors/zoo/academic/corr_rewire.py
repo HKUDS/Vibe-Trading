@@ -53,7 +53,7 @@ __alpha_meta__ = {
     "universe": ["equity_us", "equity_cn", "equity_hk", "crypto"],
     "frequency": ["1d"],
     "decay_horizon": 60,
-    "min_warmup_bars": 142,
+    "min_warmup_bars": 140,
     "notes": (
         "Causal rolling rendition of the correlation-regime skill's Mode 4 "
         "(rewiring leaderboard): per-asset row mean of |corr(event) - "

@@ -138,7 +138,7 @@ include = ["src*", "backtest*", "cli*", "evals*"]
 ]
 "evals.harness" = ["README.md", "cases/**/*.json"]
 "backtest" = ["*.py", "loaders/*.json"]
-"src.factors" = ["zoo/**/*.yaml", "zoo/**/*.md", "zoo/**/NOTICE"]
+"src.factors" = ["*.json", "zoo/**/*.yaml", "zoo/**/*.md", "zoo/**/NOTICE"]
 
 [project.optional-dependencies]
 ibkr = [
