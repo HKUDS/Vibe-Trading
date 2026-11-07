@@ -253,6 +253,8 @@ export function ResearchArtifacts() {
                       <label className="text-xs text-muted-foreground">{t("researchArtifacts.fromRevision")}
                         <select className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm text-foreground" value={compareFrom} onChange={(event) => {
                           setCompareFrom(event.target.value);
+                          comparisonRequest.current += 1;
+                          setComparing(false);
                           setComparison(null);
                         }}>
                           {detail.revisions.map((revision) => <option key={revision.revision_id} value={revision.revision_id}>r{revision.revision_number} · {revision.data_as_of}</option>)}
@@ -261,6 +263,8 @@ export function ResearchArtifacts() {
                       <label className="text-xs text-muted-foreground">{t("researchArtifacts.toRevision")}
                         <select className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm text-foreground" value={compareTo} onChange={(event) => {
                           setCompareTo(event.target.value);
+                          comparisonRequest.current += 1;
+                          setComparing(false);
                           setComparison(null);
                         }}>
                           {detail.revisions.map((revision) => <option key={revision.revision_id} value={revision.revision_id}>r{revision.revision_number} · {revision.data_as_of}</option>)}

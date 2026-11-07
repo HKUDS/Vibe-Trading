@@ -52,6 +52,27 @@ const third = {
   previous_revision_id: "ra_1_r2",
 };
 
+function comparisonResult(from: string, to: string, marker: string) {
+  return {
+    comparison: {
+      artifact_id: "ra_1",
+      from: { revision_id: from, revision_number: Number(from.at(-1)) },
+      to: { revision_id: to, revision_number: Number(to.at(-1)) },
+      content: { changed: true, diff: [marker], truncated: false },
+      evidence: { changed: false },
+      metadata: {},
+    },
+  };
+}
+
+function pendingComparison() {
+  let resolve!: (value: ReturnType<typeof comparisonResult>) => void;
+  const promise = new Promise<ReturnType<typeof comparisonResult>>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe("ResearchArtifacts page", () => {
   beforeEach(() => {
     Object.values(apiMock).forEach((mock) => mock.mockReset());
@@ -141,5 +162,36 @@ describe("ResearchArtifacts page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Revise from this revision" }));
     expect(screen.getByLabelText("Research content")).toHaveValue("Third conclusion.");
+  });
+
+  it.each([
+    { selector: "from", from: "ra_1_r1", to: "ra_1_r3" },
+    { selector: "to", from: "ra_1_r2", to: "ra_1_r1" },
+  ])("ignores a stale response after changing the $selector revision", async ({ selector, from: nextFrom, to: nextTo }) => {
+    const latest = { ...third, content: "Third conclusion." };
+    const staleRequest = pendingComparison();
+    apiMock.searchResearchArtifacts.mockResolvedValue({ count: 1, artifacts: [latest] });
+    apiMock.getResearchArtifact.mockResolvedValue({ artifact: latest, revisions: [latest, second, first] });
+    apiMock.compareResearchArtifactRevisions.mockReturnValueOnce(staleRequest.promise);
+    render(<ResearchArtifacts />, { wrapper: MemoryRouter });
+
+    fireEvent.click(await screen.findByText("NVDA fundamental review"));
+    const from = await screen.findByLabelText("From revision");
+    const to = screen.getByLabelText("To revision");
+    const compare = screen.getByRole("button", { name: "Compare" });
+    fireEvent.click(compare);
+    await waitFor(() => expect(apiMock.compareResearchArtifactRevisions).toHaveBeenCalledWith("ra_1", "ra_1_r2", "ra_1_r3"));
+
+    fireEvent.change(selector === "from" ? from : to, {
+      target: { value: selector === "from" ? nextFrom : nextTo },
+    });
+    staleRequest.resolve(comparisonResult("ra_1_r2", "ra_1_r3", "stale comparison"));
+    await waitFor(() => expect(compare).toBeEnabled());
+    expect(screen.queryByText("stale comparison")).not.toBeInTheDocument();
+
+    apiMock.compareResearchArtifactRevisions.mockResolvedValueOnce(comparisonResult(nextFrom, nextTo, "current comparison"));
+    fireEvent.click(compare);
+    expect(await screen.findByText("current comparison")).toBeInTheDocument();
+    expect(apiMock.compareResearchArtifactRevisions).toHaveBeenLastCalledWith("ra_1", nextFrom, nextTo);
   });
 });
