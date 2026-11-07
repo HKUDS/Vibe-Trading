@@ -13,6 +13,7 @@ stays hermetic and CI-friendly.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import numpy as np
@@ -719,3 +720,31 @@ def test_an_oos_split_leaving_two_ic_observations_is_still_measured(
     )
     assert result["n_alphas_tested"] == 2
     assert {row["ic_count_test"] for row in result["rows"]} == {2}
+
+
+class _OneDateRegistry(_StubRegistry):
+    def list(self, *, zoo: str) -> list[str]:  # noqa: ARG002
+        return ["one_date"]
+
+    def compute(self, aid: str, panel: dict[str, pd.DataFrame]) -> pd.DataFrame:  # noqa: ARG002
+        close = panel["close"]
+        factor = close * np.nan
+        factor.iloc[10] = close.iloc[10]
+        return factor
+
+
+def test_run_bench_strict_skips_a_single_ic_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_panel(monkeypatch)
+    result = run_bench_strict(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        n_random_seeds=3,
+        registry=_OneDateRegistry(panel={}),
+    )
+    assert result["rows"] == []
+    assert result["skipped"][0]["reason"] == "insufficient IC observations (need at least 2)"
+    json.dumps(result, allow_nan=False)
