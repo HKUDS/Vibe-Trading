@@ -2700,6 +2700,7 @@
     "sharpeObjective": "نسبة شارب",
     "returnObjective": "العائد الإجمالي",
     "rolling": "متحركة",
-    "expanding": "متوسعة"
+    "expanding": "متوسعة",
+    "invalidChoices": "أدخل قيمة لكل خيار."
   }
 }

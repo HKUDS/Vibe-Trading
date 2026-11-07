@@ -8,10 +8,10 @@ const field = "w-full rounded-lg border bg-background px-3 py-2 text-sm";
 const percent = (value: unknown) => typeof value === "number" ? `${(value * 100).toFixed(2)}%` : "—";
 const number = (value: unknown) => typeof value === "number" ? value.toFixed(3) : "—";
 
-function choices(text: string): Array<string | number | boolean | null> {
+function choices(text: string, emptyMessage: string): Array<string | number | boolean | null> {
   return text.split(",").map((item) => {
     const token = item.trim();
-    if (!token) throw new Error("empty parameter choice");
+    if (!token) throw new Error(emptyMessage);
     try { return JSON.parse(token) as string | number | boolean | null; }
     catch { return token; }
   });
@@ -100,7 +100,7 @@ export function ResearchLab() {
     try {
       let request: Record<string, unknown>;
       if (action === "cost_sensitivity") {
-        const multipliers = choices(fees), bps = choices(slippage);
+        const multipliers = choices(fees, t("researchLab.invalidChoices")), bps = choices(slippage, t("researchLab.invalidChoices"));
         if (![...multipliers, ...bps].every((value) => typeof value === "number" && Number.isFinite(value))) throw new Error(t("researchLab.invalidValues"));
         request = { run_dir: source, scenarios: multipliers.flatMap((fee) => bps.map((bp) => ({
           name: `${fee}× / ${bp} bp`, fee_multiplier: fee, extra_slippage_bps: bp,
@@ -108,7 +108,7 @@ export function ResearchLab() {
       } else if (action === "walk_forward") {
         let grid: Array<Record<string, unknown>> = [{}];
         for (const [name, text] of Object.entries(params)) {
-          grid = grid.flatMap((base) => choices(text).map((value) => ({ ...base, [name]: value })));
+          grid = grid.flatMap((base) => choices(text, t("researchLab.invalidChoices")).map((value) => ({ ...base, [name]: value })));
           if (grid.length > 12) throw new Error(t("researchLab.tooManyCandidates"));
         }
         request = { run_dir: source, candidates: grid.map((parameters, i) => ({ name: `candidate-${i + 1}`, parameters })),

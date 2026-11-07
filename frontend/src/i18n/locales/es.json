@@ -2700,6 +2700,7 @@
     "sharpeObjective": "Ratio de Sharpe",
     "returnObjective": "Rentabilidad total",
     "rolling": "Móvil",
-    "expanding": "Expansiva"
+    "expanding": "Expansiva",
+    "invalidChoices": "Introduce un valor para cada opción."
   }
 }

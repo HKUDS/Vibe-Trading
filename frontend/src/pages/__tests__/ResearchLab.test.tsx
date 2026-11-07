@@ -71,3 +71,12 @@ it("restores the replay's original run and case alongside its report", async()=>
   expect(screen.getByLabelText("Saved run")).toHaveValue("research-run");
   expect(screen.getByLabelText("Evaluation task")).toHaveValue("research.window_boundary.v1");
 });
+
+
+it("localizes an empty parameter choice", async()=>{
+  render(<ResearchLab/>,{wrapper:MemoryRouter}); await screen.findByRole("option",{name:/AAPL.US/});
+  fireEvent.change(screen.getByLabelText("Trading fee multipliers"),{target:{value:"1,,2"}});
+  fireEvent.click(screen.getByRole("button",{name:"Run study"}));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a value for every choice.");
+  expect(mock.startResearchLabJob).not.toHaveBeenCalled();
+});

@@ -2700,6 +2700,7 @@
     "sharpeObjective": "Sharpe oranı",
     "returnObjective": "Toplam getiri",
     "rolling": "Kayan",
-    "expanding": "Genişleyen"
+    "expanding": "Genişleyen",
+    "invalidChoices": "Her seçenek için bir değer girin."
   }
 }

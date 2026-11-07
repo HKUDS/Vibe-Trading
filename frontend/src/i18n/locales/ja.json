@@ -2700,6 +2700,7 @@
     "sharpeObjective": "シャープレシオ",
     "returnObjective": "総収益",
     "rolling": "ローリング",
-    "expanding": "拡張"
+    "expanding": "拡張",
+    "invalidChoices": "各候補に値を入力してください。"
   }
 }

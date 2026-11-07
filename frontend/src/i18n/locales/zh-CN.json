@@ -2700,6 +2700,7 @@
     "sharpeObjective": "夏普比率",
     "returnObjective": "总收益",
     "rolling": "滚动窗口",
-    "expanding": "扩展窗口"
+    "expanding": "扩展窗口",
+    "invalidChoices": "请填写每个候选值，逗号之间不能留空。"
   }
 }

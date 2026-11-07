@@ -2700,6 +2700,7 @@
     "sharpeObjective": "Índice de Sharpe",
     "returnObjective": "Retorno total",
     "rolling": "Móvel",
-    "expanding": "Expansiva"
+    "expanding": "Expansiva",
+    "invalidChoices": "Insira um valor para cada opção."
   }
 }

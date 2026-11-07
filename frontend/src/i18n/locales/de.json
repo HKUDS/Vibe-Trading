@@ -2700,6 +2700,7 @@
     "sharpeObjective": "Sharpe-Quotient",
     "returnObjective": "Gesamtrendite",
     "rolling": "Rollierend",
-    "expanding": "Erweiternd"
+    "expanding": "Erweiternd",
+    "invalidChoices": "Geben Sie für jede Auswahl einen Wert ein."
   }
 }

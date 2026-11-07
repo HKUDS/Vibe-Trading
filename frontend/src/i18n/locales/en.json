@@ -2700,6 +2700,7 @@
     "sharpeObjective": "Sharpe ratio",
     "returnObjective": "Total return",
     "rolling": "Rolling",
-    "expanding": "Expanding"
+    "expanding": "Expanding",
+    "invalidChoices": "Enter a value for every choice."
   }
 }

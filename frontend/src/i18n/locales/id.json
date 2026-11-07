@@ -2700,6 +2700,7 @@
     "sharpeObjective": "Rasio Sharpe",
     "returnObjective": "Imbal hasil total",
     "rolling": "Bergulir",
-    "expanding": "Meluas"
+    "expanding": "Meluas",
+    "invalidChoices": "Masukkan nilai untuk setiap pilihan."
   }
 }

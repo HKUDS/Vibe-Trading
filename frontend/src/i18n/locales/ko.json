@@ -2700,6 +2700,7 @@
     "sharpeObjective": "샤프 비율",
     "returnObjective": "총수익률",
     "rolling": "이동 구간",
-    "expanding": "확장 구간"
+    "expanding": "확장 구간",
+    "invalidChoices": "모든 후보 값을 입력하세요."
   }
 }

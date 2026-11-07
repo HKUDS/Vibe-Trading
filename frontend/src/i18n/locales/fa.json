@@ -2700,6 +2700,7 @@
     "sharpeObjective": "نسبت شارپ",
     "returnObjective": "بازده کل",
     "rolling": "غلتان",
-    "expanding": "گسترش‌یابنده"
+    "expanding": "گسترش‌یابنده",
+    "invalidChoices": "برای هر گزینه یک مقدار وارد کنید."
   }
 }
