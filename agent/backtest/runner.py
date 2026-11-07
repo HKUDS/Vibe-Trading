@@ -859,6 +859,7 @@ _MARKET_TO_SOURCE = {
     "br_equity": "yahoo",
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
+    "taiwan_equity": "yahoo",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
