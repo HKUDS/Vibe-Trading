@@ -288,6 +288,44 @@ def test_markdown_export_keeps_evidence_and_later_revisions_outside_unclosed_con
     assert "Later revision." in rendered
 
 
+@pytest.mark.parametrize("opening", ["<!--", "<pre>", "<script>", "<?", "<![CDATA[", "<!A"])
+def test_markdown_export_isolates_unclosed_html_blocks(tmp_path, opening):
+    import mistune
+
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    original_content = f"Research note\n{opening}"
+    first = _save(store, content=original_content)
+    _save(
+        store,
+        artifact_id=first.revision.artifact_id,
+        content="Later revision.",
+        data_as_of="2026-10-28",
+    )
+
+    exported = store.export_series(first.revision.artifact_id, "markdown")
+    rendered = mistune.html(exported.content)
+
+    assert rendered.count("<h3>Evidence</h3>") == 2
+    assert "<h2>Revision 2</h2>" in rendered
+    assert "Research note" in rendered
+    document = json.loads(store.export_series(first.revision.artifact_id, "json").content)
+    assert document["revisions"][0]["content"] == original_content
+
+
+def test_markdown_export_preserves_closed_html_and_fenced_code(tmp_path):
+    import mistune
+
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    original_content = "<pre>visible</pre>\n```html\n<div>code</div>\n```"
+    saved = _save(store, content=original_content)
+
+    exported = store.export_series(saved.revision.artifact_id, "markdown")
+    rendered = mistune.html(exported.content)
+
+    assert original_content in exported.content
+    assert rendered.count("<h3>Evidence</h3>") == 1
+
+
 def test_markdown_export_does_not_let_metadata_open_fences(tmp_path):
     import mistune
 

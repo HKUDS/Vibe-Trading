@@ -39,25 +39,48 @@ def _markdown_inline(value: str) -> str:
     return " ".join(value.splitlines())
 
 
-def _with_closed_markdown_fence(content: str) -> str:
-    """Close an unterminated fenced block before generated export sections."""
+def _escape_unclosed_html_block(line: str, remaining: str) -> str:
+    raw_text = re.match(r"^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)", line, re.IGNORECASE)
+    if raw_text and not re.search(rf"</{raw_text.group(1)}\s*>", remaining, re.IGNORECASE):
+        return line.replace("<", "&lt;", 1)
+    for opening, closing in (("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")):
+        if re.match(rf"^ {{0,3}}{re.escape(opening)}", line) and closing not in remaining:
+            return line.replace("<", "&lt;", 1)
+    if re.match(r"^ {0,3}<![A-Za-z]", line) and ">" not in remaining:
+        return line.replace("<", "&lt;", 1)
+    return line
+
+
+def _isolated_revision_content(content: str) -> str:
+    """Keep raw HTML blocks and Markdown fences out of generated sections."""
     open_fence: tuple[str, int] | None = None
-    for line in content.splitlines():
+    isolated: list[str] = []
+    lines = content.splitlines(keepends=True)
+    for index, line in enumerate(lines):
         match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if match is None:
+        if match is not None:
+            marker, suffix = match.groups()
+            if open_fence is None:
+                if marker[0] == "`" and "`" in suffix:
+                    isolated.append(line)
+                    continue
+                open_fence = (marker[0], len(marker))
+            elif marker[0] == open_fence[0] and len(marker) >= open_fence[1] and not suffix.strip():
+                open_fence = None
+            isolated.append(line)
             continue
-        marker, suffix = match.groups()
-        if open_fence is None:
-            if marker[0] == "`" and "`" in suffix:
-                continue
-            open_fence = (marker[0], len(marker))
-        elif marker[0] == open_fence[0] and len(marker) >= open_fence[1] and not suffix.strip():
-            open_fence = None
+        if open_fence is not None:
+            isolated.append(line)
+            continue
+        if re.match(r"^ {0,3}<", line):
+            line = _escape_unclosed_html_block(line, "".join(lines[index:]))
+        isolated.append(line)
+    result = "".join(isolated)
     if open_fence is None:
-        return content
+        return result
     character, length = open_fence
-    separator = "" if content.endswith(("\n", "\r")) else "\n"
-    return content + separator + character * length
+    separator = "" if result.endswith(("\n", "\r")) else "\n"
+    return result + separator + character * length
 
 
 def _default_db_path() -> Path:
@@ -411,7 +434,7 @@ class ResearchArtifactStore:
                         f"Session ID: {_markdown_inline(revision.session_id or 'None')}",
                         f"Run ID: {_markdown_inline(revision.run_id or 'None')}",
                         "",
-                        _with_closed_markdown_fence(revision.content),
+                        _isolated_revision_content(revision.content),
                         "",
                         "### Evidence",
                         "",
