@@ -685,13 +685,18 @@ def _attribution_brinson_asset_class_mode(
 
     class_weights: Dict[str, float] = {}
     class_return_sums: Dict[str, float] = {}
+    # A class with any unpriced member has no measurable return: summing only
+    # the priced members over the full class weight reads the rest as 0%.
+    unresolved_classes: set[str] = set()
     for symbol, weight in weights.items():
         if weight == 0.0:
             continue
         asset_class = str(_detect_market(symbol))
         class_weights[asset_class] = class_weights.get(asset_class, 0.0) + weight
         symbol_return = _attribution_symbol_cumulative_return(run_dir, symbol)
-        if symbol_return is not None:
+        if symbol_return is None:
+            unresolved_classes.add(asset_class)
+        else:
             class_return_sums[asset_class] = class_return_sums.get(asset_class, 0.0) + weight * symbol_return
 
     portfolio_weights: Dict[str, float] = {}
@@ -700,7 +705,11 @@ def _attribution_brinson_asset_class_mode(
     for asset_class, class_weight in class_weights.items():
         # A class whose long/short weights net to zero (market-neutral pair
         # inside one class) would divide by zero below; degrade instead.
-        if asset_class not in class_return_sums or abs(class_weight) <= _ATTRIBUTION_CLASS_WEIGHT_FLOOR:
+        if (
+            asset_class in unresolved_classes
+            or asset_class not in class_return_sums
+            or abs(class_weight) <= _ATTRIBUTION_CLASS_WEIGHT_FLOOR
+        ):
             degraded = True
             break
         portfolio_weights[asset_class] = class_weight
