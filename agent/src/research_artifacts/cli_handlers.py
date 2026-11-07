@@ -94,11 +94,21 @@ def _cmd_revision(args: argparse.Namespace) -> int:
         store.close()
 
 
+def _cmd_export(args: argparse.Namespace) -> int:
+    store = _store(args)
+    try:
+        _emit(store.export_series(args.artifact_id, args.format).to_dict())
+        return 0
+    finally:
+        store.close()
+
+
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "save": _cmd_save,
     "search": _cmd_search,
     "show": _cmd_show,
     "revision": _cmd_revision,
+    "export": _cmd_export,
 }
 _PARSER: argparse.ArgumentParser | None = None
 
@@ -143,6 +153,10 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
 
     revision = commands.add_parser("revision", help="Show one immutable revision")
     revision.add_argument("revision_id")
+
+    export = commands.add_parser("export", help="Export a full series as JSON or Markdown")
+    export.add_argument("artifact_id")
+    export.add_argument("--format", choices=("json", "markdown"), default="json")
 
     _PARSER = parser
     return parser

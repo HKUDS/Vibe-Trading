@@ -127,7 +127,11 @@
     "hypothesis_id": "Hypothesis ID",
     "goal_id": "Goal ID",
     "session_id": "Session ID",
-    "run_id": "Run ID"
+    "run_id": "Run ID",
+    "exportJson": "Export JSON",
+    "exportMarkdown": "Export Markdown",
+    "exporting": "Exporting...",
+    "exportError": "Unable to export the research artifact."
   },
   "runtime": {
     "monitorBadge": "Runtime Monitor",

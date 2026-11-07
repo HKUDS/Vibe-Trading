@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
@@ -91,6 +91,19 @@ def register_research_artifact_routes(app: FastAPI) -> None:
                 limit=limit,
             )
             return {"count": len(rows), "artifacts": [row.to_dict() for row in rows]}
+        finally:
+            store.close()
+
+    @app.get("/api/research-artifacts/{artifact_id}/export", dependencies=[Depends(require_auth)])
+    def export_research_artifact(
+        artifact_id: str,
+        format: Literal["json", "markdown"] = Query(default="json"),
+    ):
+        store = ResearchArtifactStore()
+        try:
+            return store.export_series(artifact_id, format).to_dict()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         finally:
             store.close()
 
