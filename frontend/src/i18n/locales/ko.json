@@ -88,6 +88,16 @@
     "researchArtifacts": "연구 산출물"
   },
   "researchArtifacts": {
+    "compareTitle": "리비전 비교",
+    "fromRevision": "기준 리비전",
+    "toRevision": "대상 리비전",
+    "compareAction": "비교",
+    "comparing": "비교 중…",
+    "compareError": "리비전을 비교할 수 없습니다.",
+    "comparisonOnly": "읽기 전용 비교입니다. 어떤 리비전도 다시 검증하지 않습니다.",
+    "noChanges": "두 리비전 간에 차이가 없습니다.",
+    "metadataChanges": "메타데이터 변경 사항",
+    "compareTruncated": "차이는 처음 400줄까지만 표시됩니다.",
     "completeness": "완전성",
     "optionalLinks": "선택적 연결 ID",
     "formTitleNew": "연구 저장",

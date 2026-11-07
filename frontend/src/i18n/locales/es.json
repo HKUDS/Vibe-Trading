@@ -94,6 +94,16 @@
     "researchArtifacts": "Artefactos de investigación"
   },
   "researchArtifacts": {
+    "compareTitle": "Comparación de revisiones",
+    "fromRevision": "Desde la revisión",
+    "toRevision": "Hasta la revisión",
+    "compareAction": "Comparar",
+    "comparing": "Comparando…",
+    "compareError": "No se pudieron comparar las revisiones.",
+    "comparisonOnly": "Comparación de solo lectura. No se vuelve a verificar ninguna revisión.",
+    "noChanges": "No hay diferencias entre estas revisiones.",
+    "metadataChanges": "Cambios de metadatos",
+    "compareTruncated": "Diferencias truncadas a las primeras 400 líneas.",
     "subject": "Tema de investigación",
     "dataAsOf": "Datos a fecha de",
     "saving": "Guardando…",
