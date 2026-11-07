@@ -326,6 +326,21 @@ def test_markdown_export_preserves_closed_html_and_fenced_code(tmp_path):
     assert rendered.count("<h3>Evidence</h3>") == 1
 
 
+def test_markdown_export_preserves_html_inside_unclosed_fence(tmp_path):
+    import mistune
+
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    original_content = "```html\n<pre>"
+    saved = _save(store, content=original_content)
+
+    exported = store.export_series(saved.revision.artifact_id, "markdown")
+    rendered = mistune.html(exported.content)
+
+    assert original_content in exported.content
+    assert f"{original_content}\n```\n\n### Evidence" in exported.content
+    assert rendered.count("<h3>Evidence</h3>") == 1
+
+
 def test_markdown_export_does_not_let_metadata_open_fences(tmp_path):
     import mistune
 
