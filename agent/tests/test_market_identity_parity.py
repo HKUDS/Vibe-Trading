@@ -28,6 +28,7 @@ _SAMPLES: dict[str, tuple[str, str, str]] = {
     "br_equity": ("PETR4.SA", "PETR4.SA", "br"),
     "uk_equity": ("VOD.L", "VOD.L", "uk"),
     "vietnam_equity": ("VIC.VN", "VIC.VN", "vn"),
+    "taiwan_equity": ("2330.TW", "2330.TW", "tw"),
 }
 
 # Crypto has a currency row but no listing suffix: its pairs carry the quote.
@@ -47,3 +48,18 @@ def test_identity_and_search_know_the_market(market: str) -> None:
     assert _infer_venue(symbol) is not None
     assert _infer_currency(symbol) == _MARKET_CURRENCY[market]
     assert _from_yahoo_symbol(yahoo_symbol, {"quoteType": "EQUITY"}) == (symbol, label)
+
+
+# Taiwan codes are numeric, and ETFs can end in a letter (00400A.TW), so the
+# letter-first suffix branch cannot see them. TPEx (.TWO) is the second venue,
+# and .TWO must not scan as a .TW match with a stray "O".
+@pytest.mark.parametrize(
+    ("symbol", "venue"),
+    [("2330.TW", "twse"), ("6488.TWO", "tpex"), ("00400A.TW", "twse")],
+)
+def test_taiwan_spellings_each_scan_as_one_symbol(symbol: str, venue: str) -> None:
+    assert _detect_market(symbol) == "taiwan_equity"
+    assert _scan_symbols(f"How did {symbol} trade today?") == {symbol}
+    assert _infer_venue(symbol) == venue
+    assert _infer_currency(symbol) == "TWD"
+    assert _from_yahoo_symbol(symbol, {"quoteType": "EQUITY"}) == (symbol, "tw")

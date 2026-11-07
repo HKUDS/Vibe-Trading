@@ -124,6 +124,10 @@ _MARKET_PATTERNS = [
     # Vietnam equities: HOSE (VIC.VN). Tickers are three letters in practice;
     # the class stays broad to admit fund certificates and ETF codes.
     (re.compile(r"^[A-Z0-9]+\.VN$", re.I), "vietnam_equity"),
+    # Taiwan equities: TWSE (2330.TW) and TPEx (6488.TWO). Yahoo carries both
+    # suffixes verbatim. The class stays broad to admit lettered ETF codes
+    # (00400A.TW); the anchored ``TWO?`` keeps ``.TO`` (Canada) out of this rule.
+    (re.compile(r"^[A-Z0-9]+\.TWO?$", re.I), "taiwan_equity"),
     (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USDT$", re.I), "crypto"),
     (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+/USDT$", re.I), "crypto"),
     # USD-M perpetuals in their documented BASE-USDT-PERP spelling
@@ -251,6 +255,7 @@ _MARKET_CURRENCY = {
     "br_equity": "BRL",
     "uk_equity": "GBP",
     "vietnam_equity": "VND",
+    "taiwan_equity": "TWD",
     # Every crypto pattern in _MARKET_PATTERNS is USDT-quoted, and USDT is
     # carried at its USD peg. This is the one approximation in the table: a
     # depeg would make a crypto+US book wrong by the depeg amount, which is
