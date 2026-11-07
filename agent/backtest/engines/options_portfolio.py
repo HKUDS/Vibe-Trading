@@ -231,7 +231,9 @@ def run_options_backtest(
     start_date = config.get("start_date", "")
     end_date = config.get("end_date", "")
     initial_cash = config.get("initial_cash", 1_000_000)
-    commission = config.get("commission", 0.001)
+    commission = config.get("commission", 0.001) * config.get("execution_cost_multiplier", 1.0)
+    if config.get("extra_slippage_bps", 0):
+        raise ValueError("Options simulations do not model option execution slippage; use zero extra_slippage_bps")
     options_cfg = config.get("options_config", {})
     risk_free_rate = options_cfg.get("risk_free_rate", 0.05)
     contract_multiplier = options_cfg.get("contract_multiplier", 1.0)

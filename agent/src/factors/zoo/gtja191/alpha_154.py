@@ -47,7 +47,7 @@ __alpha_meta__ = {
     'universe': ['equity_cn'],
     'frequency': ['1d'],
     'decay_horizon': 60,
-    'min_warmup_bars': 198,
+    'min_warmup_bars': 197,
     'notes': 'Original returns boolean; we cast to float and multiply by -1.',
 }
 

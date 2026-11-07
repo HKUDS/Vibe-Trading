@@ -98,7 +98,8 @@ def test_missing_settings_keep_standalone_defaults(
             validation._load_equity(tmp_path), initial_capital=1_000_000
         ),
         "walk_forward": validation.walk_forward_analysis(
-            validation._load_equity(tmp_path), validation._load_trades(tmp_path)
+            validation._load_equity(tmp_path), validation._load_trades(tmp_path),
+            initial_capital=1_000_000,
         ),
     }
     assert actual == expected

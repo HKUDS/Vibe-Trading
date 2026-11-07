@@ -7,7 +7,7 @@
 """GTJA Alpha #91.
 
 Formula: ((-1*RANK((CLOSE-MAX(CLOSE,5))))*RANK(CORR(MEAN(VOLUME,40),LOW,5)))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 91."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 91."""
 
 from __future__ import annotations
 
@@ -41,12 +41,12 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 35,
-    "notes": '40d mean truncated to 30d.',
+    "min_warmup_bars": 44,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
     l = panel["low"]
     v = panel["volume"]
-    return -1.0 * rank(c - ts_max(c, 5)) * rank(ts_corr(ts_mean(v, 30), l, 5))
+    return -1.0 * rank(c - ts_max(c, 5)) * rank(ts_corr(ts_mean(v, 40), l, 5))

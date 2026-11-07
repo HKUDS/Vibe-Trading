@@ -45,7 +45,8 @@
       "settings": "Modelle, Datenquellen und Brokerverbindungen konfigurieren.",
       "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte.",
       "paperTrading": "Tägliche Trades mit virtuellem Kapital testen. Es werden keine Brokeraufträge gesendet. Bardividenden sind nicht enthalten; die Ergebnisse zeigen keine Gesamtrendite.",
-      "researchArtifacts": "Beleggestützte Analysen sitzungsübergreifend speichern und wiederverwenden."
+      "researchArtifacts": "Beleggestützte Analysen sitzungsübergreifend speichern und wiederverwenden.",
+      "researchLab": "Prüfen Sie Kosten, fixierte Parameter außerhalb der Stichprobe, Faktordefinitionen und gespeicherte Belege."
     },
     "instructions": {
       "reports": "Bitte den Assistenten zuerst um einen Strategie-Backtest und öffne hier die Ergebnisse. Im Chat erstellte PDFs und andere Dokumente lädst du in der ursprünglichen Unterhaltung herunter.",
@@ -58,7 +59,8 @@
       "settings": "Richte zunächst ein Modell ein. Ergänze Datenquellen oder Brokerverbindungen nach Bedarf; für öffentliche Marktrecherche ist kein Brokerkonto nötig.",
       "pixelOffice": "Plane und verteile Rechercheaufgaben. Eine Zuweisung startet keine Ausführung. Ränge sind Bezeichnungen und erteilen keine Handelsrechte.",
       "paperTrading": "Nur abgeschlossene Tageskerzen werden abgerechnet. Strategien sehen vorherige Tage und handeln zum Schlusskurs des Ausführungstags. Bitte 30 Minuten nach regulärem Börsenschluss warten; es wird keine automatische Ausführung geplant.",
-      "researchArtifacts": "Frühere Analysen suchen, Revisionen öffnen oder mit neuen Belegen eine verknüpfte Revision erstellen. Ältere Schlussfolgerungen bleiben unverändert."
+      "researchArtifacts": "Frühere Analysen suchen, Revisionen öffnen oder mit neuen Belegen eine verknüpfte Revision erstellen. Ältere Schlussfolgerungen bleiben unverändert.",
+      "researchLab": "Prüfen Sie Kosten, fixierte Parameter außerhalb der Stichprobe, Faktordefinitionen und gespeicherte Belege."
     }
   },
   "layout": {
@@ -91,7 +93,8 @@
     "sessionsLoadFailed": "Gespräche können nicht geladen werden.",
     "pixelOffice": "Pixelbüro",
     "paperTrading": "Simulierter Handel",
-    "researchArtifacts": "Recherche-Artefakte"
+    "researchArtifacts": "Recherche-Artefakte",
+    "researchLab": "Forschungslabor"
   },
   "researchArtifacts": {
     "compareTitle": "Revisionsvergleich",
@@ -1820,7 +1823,7 @@
     "ci": "{{pct}} KI",
     "medianSharpe": "Median-Sharpe",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "Walk-Forward-Analyse",
+    "walkForward": "Konsistenz der Zeitfenster",
     "profitable": "{{profitable}}/{{total}} profitabel",
     "walkForwardDesc": "In {{n}} aufeinanderfolgende Fenster unterteilt, um Leistungskonsistenz zu prüfen.",
     "consistency": "Konsistenz",
@@ -2646,5 +2649,68 @@
       "SIZE": "Size",
       "LEVERAGE": "Leverage"
     }
+  },
+  "researchLab": {
+    "title": "Forschungslabor",
+    "cost_sensitivity": "Ausführungskosten",
+    "walk_forward": "Validierung außerhalb der Stichprobe",
+    "factor_audit": "Faktorverträge",
+    "replay": "Aufgabenprüfung",
+    "sourceRun": "Gespeicherter Lauf",
+    "chooseRun": "Lauf auswählen",
+    "noRuns": "Schließen Sie einen Backtest ab, um gespeicherte Eingaben zu nutzen.",
+    "feeLevels": "Multiplikatoren der Handelskosten",
+    "slippageLevels": "Zusätzliche Slippage (Bp)",
+    "trainBars": "Trainingsperioden",
+    "testBars": "Testperioden",
+    "holdoutBars": "Finale Reserveperioden",
+    "folds": "Testfenster",
+    "parameterChoices": "Parameterwerte",
+    "alphaIds": "Faktor-IDs (leer = alle)",
+    "task": "Prüfaufgabe",
+    "start": "Studie starten",
+    "running": "Läuft…",
+    "invalidValues": "Geben Sie endliche Zahlen ein.",
+    "tooManyCandidates": "Höchstens 12 Parameterkombinationen verwenden.",
+    "failed": "Fehlgeschlagen",
+    "report": "Forschungsbericht",
+    "download": "JSON herunterladen",
+    "scenario": "Szenario",
+    "return": "Rendite",
+    "drawdown": "Drawdown",
+    "sharpe": "Sharpe-Verhältnis",
+    "notBracketed": "Kein Vorzeichenwechsel im getesteten Bereich.",
+    "oosReturn": "Rendite außerhalb der Stichprobe",
+    "holdoutReturn": "Rendite der finalen Reserve",
+    "selected": "Fixierte Parameter",
+    "testPeriod": "Testzeitraum",
+    "checked": "Geprüft",
+    "findings": "Befunde",
+    "factor": "Faktor",
+    "minimumBars": "Mindestperioden",
+    "policy": "Historienregel",
+    "status": "Status",
+    "passed": "Bestanden",
+    "not_evaluable": "Nicht bewertbar",
+    "invalid_artifact": "Ungültiges Artefakt",
+    "coverage": "Prüfabdeckung",
+    "policy_full_window": "Vollständiges Fenster",
+    "policy_recursive_seed": "Rekursive Initialisierung",
+    "policy_partial_window": "Teilfenster",
+    "policy_conditional_sample": "Bedingte Stichproben",
+    "subtitle": "Prüfen Sie Kosten, fixierte Parameter außerhalb der Stichprobe, Faktordefinitionen und gespeicherte Belege.",
+    "costHint": "Die Multiplikatoren betreffen Provisionen und Transaktionssteuern der Engine. Zusätzliche Slippage wirkt nachteilig vor der Börsenrundung; Finanzierungs- und Leihkosten bleiben unverändert.",
+    "oosHint": "Parameter werden nur anhand des Trainings gewählt und vor jedem Test fixiert. Jedes Fenster beginnt ohne Positionen und enthält Liquidationskosten. Die finale Reserve bleibt von jeder früheren Auswahl ausgeschlossen.",
+    "noParameters": "Die Strategie hat keine auswählbaren literalen Konstruktorwerte und wird als fester Kandidat geprüft.",
+    "auditHint": "Prüft Quellcode-Fingerabdrücke, Mindesthistorie und Initialisierung mit synthetischen Daten. Dies prüft Implementierungsverträge, nicht Profitabilität oder jede Interpretation veröffentlichter Formeln.",
+    "replayHint": "Gespeicherte Artefakte werden mit unveränderter Aufgabenstellung geprüft. Keine Modellaufrufe, Kursabfragen oder Orders. Fehlende Belege sind kein Bestehen.",
+    "breakEvenHint": "Die Gewinnschwelle wird nur als gemessenes Intervall mit Vorzeichenwechsel angegeben, nicht als interpolierter exakter Kostenwert.",
+    "objective": "Trainingsziel",
+    "training": "Trainingsfenster",
+    "sharpeObjective": "Sharpe-Quotient",
+    "returnObjective": "Gesamtrendite",
+    "rolling": "Rollierend",
+    "expanding": "Erweiternd",
+    "invalidChoices": "Geben Sie für jede Auswahl einen Wert ein."
   }
 }

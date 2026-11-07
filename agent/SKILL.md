@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (81)
+## Available MCP Tools (82)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -144,6 +144,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `add_goal_evidence` | Attach evidence to a research goal | None |
 | `update_research_goal` | Edit a research goal's objective or summary in place | None |
 | `update_research_goal_status` | Update goal lifecycle status | None |
+| `research_lab` | Frozen-input cost scenarios, training-only parameter selection and OOS/holdout, factor contracts and offline task replay | None |
 | `backtest` | Run vectorized backtest engine | None* |
 | `paper_trade_step` | Deterministic paper-trading matching engine; never places real orders | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |

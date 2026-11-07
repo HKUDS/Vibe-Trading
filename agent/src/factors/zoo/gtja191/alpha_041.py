@@ -42,7 +42,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 9,
+    "min_warmup_bars": 8,
     "notes": '5d max of 3d delta(vwap), ranked, negated.',
 }
 

@@ -45,7 +45,8 @@
       "settings": "Atur model, sumber data, dan koneksi broker.",
       "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi.",
       "paperTrading": "Uji transaksi harian dengan dana virtual. Tidak ada pesanan yang dikirim ke broker. Hasil tidak mencakup dividen tunai dan bukan imbal hasil total.",
-      "researchArtifacts": "Simpan dan gunakan kembali analisis berbasis bukti antarsesi."
+      "researchArtifacts": "Simpan dan gunakan kembali analisis berbasis bukti antarsesi.",
+      "researchLab": "Periksa biaya, parameter terkunci di luar sampel, rumus faktor, dan bukti tersimpan."
     },
     "instructions": {
       "reports": "Minta asisten melakukan backtest strategi terlebih dahulu, lalu buka hasilnya di sini. Unduh PDF dan dokumen yang dibuat di chat dari percakapan asal.",
@@ -58,7 +59,8 @@
       "settings": "Atur model untuk memulai. Tambahkan data atau koneksi broker sesuai kebutuhan; riset data pasar publik tidak memerlukan akun broker.",
       "pixelOffice": "Rencanakan dan tugaskan riset. Penugasan tidak memulai eksekusi; pangkat hanya label dan tidak memberikan izin transaksi.",
       "paperTrading": "Hanya candle harian yang selesai dapat diproses. Strategi membaca hari sebelumnya dan dieksekusi pada penutupan hari eksekusi. Tunggu 30 menit setelah penutupan reguler; tidak ada eksekusi otomatis yang dijadwalkan.",
-      "researchArtifacts": "Cari analisis sebelumnya, buka revisi apa pun, atau buat revisi tertaut dengan bukti baru. Kesimpulan lama tetap tidak berubah."
+      "researchArtifacts": "Cari analisis sebelumnya, buka revisi apa pun, atau buat revisi tertaut dengan bukti baru. Kesimpulan lama tetap tidak berubah.",
+      "researchLab": "Periksa biaya, parameter terkunci di luar sampel, rumus faktor, dan bukti tersimpan."
     }
   },
   "layout": {
@@ -91,7 +93,8 @@
     "sessionsLoadFailed": "Percakapan tidak dapat dimuat.",
     "pixelOffice": "Kantor piksel",
     "paperTrading": "Trading simulasi",
-    "researchArtifacts": "Artefak riset"
+    "researchArtifacts": "Artefak riset",
+    "researchLab": "Laboratorium riset"
   },
   "researchArtifacts": {
     "compareTitle": "Perbandingan revisi",
@@ -1820,7 +1823,7 @@
     "ci": "{{pct}} CI",
     "medianSharpe": "Median Sharpe",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "Analisis Walk-Forward",
+    "walkForward": "Konsistensi antarjendela",
     "profitable": "{{profitable}}/{{total}} menguntungkan",
     "walkForwardDesc": "Dibagi menjadi {{n}} window berurutan untuk memeriksa konsistensi performa.",
     "consistency": "Konsistensi",
@@ -2646,5 +2649,68 @@
       "SIZE": "Ukuran",
       "LEVERAGE": "Leverage"
     }
+  },
+  "researchLab": {
+    "title": "Laboratorium riset",
+    "cost_sensitivity": "Biaya eksekusi",
+    "walk_forward": "Validasi di luar sampel",
+    "factor_audit": "Kontrak faktor",
+    "replay": "Pemeriksaan ulang tugas",
+    "sourceRun": "Proses tersimpan",
+    "chooseRun": "Pilih proses",
+    "noRuns": "Selesaikan backtest untuk memakai kembali input tersimpan.",
+    "feeLevels": "Pengali biaya transaksi",
+    "slippageLevels": "Slippage tambahan (bp)",
+    "trainBars": "Bar pelatihan",
+    "testBars": "Bar pengujian",
+    "holdoutBars": "Bar cadangan akhir",
+    "folds": "Jendela pengujian",
+    "parameterChoices": "Pilihan parameter",
+    "alphaIds": "ID faktor (kosong = semua)",
+    "task": "Tugas evaluasi",
+    "start": "Jalankan studi",
+    "running": "Berjalan…",
+    "invalidValues": "Masukkan angka yang berhingga.",
+    "tooManyCandidates": "Gunakan paling banyak 12 kombinasi parameter.",
+    "failed": "Gagal",
+    "report": "Laporan riset",
+    "download": "Unduh JSON",
+    "scenario": "Skenario",
+    "return": "Imbal hasil",
+    "drawdown": "Penurunan",
+    "sharpe": "Rasio Sharpe",
+    "notBracketed": "Tidak ada perubahan tanda pada rentang yang diuji.",
+    "oosReturn": "Imbal hasil di luar sampel",
+    "holdoutReturn": "Imbal hasil cadangan akhir",
+    "selected": "Parameter terkunci",
+    "testPeriod": "Periode pengujian",
+    "checked": "Diperiksa",
+    "findings": "Temuan",
+    "factor": "Faktor",
+    "minimumBars": "Bar minimum",
+    "policy": "Kebijakan riwayat",
+    "status": "Status",
+    "passed": "Lulus",
+    "not_evaluable": "Tidak dapat dievaluasi",
+    "invalid_artifact": "Artefak tidak valid",
+    "coverage": "Cakupan evaluasi",
+    "policy_full_window": "Jendela penuh",
+    "policy_recursive_seed": "Inisialisasi rekursif",
+    "policy_partial_window": "Jendela parsial",
+    "policy_conditional_sample": "Sampel bersyarat",
+    "subtitle": "Periksa biaya, parameter terkunci di luar sampel, rumus faktor, dan bukti tersimpan.",
+    "costHint": "Pengali mencakup komisi dan pajak transaksi mesin. Slippage tambahan merugikan dan diterapkan sebelum pembulatan bursa; biaya pendanaan dan pinjaman tidak berubah.",
+    "oosHint": "Parameter dipilih hanya dari pelatihan lalu dikunci sebelum pengujian. Setiap jendela dimulai tanpa posisi dan mencakup biaya likuidasi. Cadangan akhir tidak digunakan dalam pemilihan sebelumnya.",
+    "noParameters": "Strategi ini tidak memiliki nilai konstruktor literal yang dapat dipilih; pengujian memakai satu kandidat tetap.",
+    "auditHint": "Memeriksa sidik sumber, riwayat minimum dan inisialisasi dengan masukan sintetis. Ini memverifikasi kontrak implementasi, bukan profitabilitas atau semua penafsiran rumus terbitan.",
+    "replayHint": "Memverifikasi artefak tersimpan dengan instruksi asli tanpa perubahan. Tidak memanggil model, mengambil harga, atau mengirim order. Bukti hilang bukan kelulusan.",
+    "breakEvenHint": "Titik impas hanya ditampilkan sebagai interval perubahan tanda yang diukur, bukan biaya tepat hasil interpolasi.",
+    "objective": "Tujuan pelatihan",
+    "training": "Jendela pelatihan",
+    "sharpeObjective": "Rasio Sharpe",
+    "returnObjective": "Imbal hasil total",
+    "rolling": "Bergulir",
+    "expanding": "Meluas",
+    "invalidChoices": "Masukkan nilai untuk setiap pilihan."
   }
 }

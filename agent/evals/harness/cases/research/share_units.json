@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "case_id": "research.share_units.v1",
+  "scenario": "non_monetary_facts",
+  "prompt": "已披露流通股数为1000000股，这是非货币计数。输出value、unit和currency；不虚构币种。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "value",
+        "operator": "approx",
+        "expected": 1000000
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "unit",
+        "operator": "equals",
+        "expected": "shares"
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "currency",
+        "operator": "equals",
+        "expected": null
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

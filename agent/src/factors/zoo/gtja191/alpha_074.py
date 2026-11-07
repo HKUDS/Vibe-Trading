@@ -7,7 +7,7 @@
 """GTJA Alpha #74.
 
 Formula: (RANK(CORR(SUM(((LOW*0.35)+(VWAP*0.65)),20),SUM(MEAN(VOLUME,40),20),7)) + RANK(CORR(RANK(VWAP),RANK(VOLUME),6)))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 74."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 74."""
 
 from __future__ import annotations
 
@@ -42,16 +42,16 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
-    "min_warmup_bars": 30,
-    "notes": '40d MA volume truncated to 10d; SUM windows kept at 20.',
+    "min_warmup_bars": 65,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
     l = panel["low"]
     v = panel["volume"]
     vw = vwap(panel, "equity_cn")
-    sumA = (l * 0.35 + vw * 0.65).rolling(10, min_periods=10).sum()
-    sumB = ts_mean(v, 10).rolling(10, min_periods=10).sum()
+    sumA = (l * 0.35 + vw * 0.65).rolling(20, min_periods=20).sum()
+    sumB = ts_mean(v, 40).rolling(20, min_periods=20).sum()
     t1 = rank(ts_corr(sumA, sumB, 7))
     t2 = rank(ts_corr(rank(vw), rank(v), 6))
     return t1 + t2

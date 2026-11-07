@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "case_id": "research.usage_accounting.v1",
+  "scenario": "provider_usage",
+  "prompt": "两次模型调用的input_tokens分别40和60，output_tokens分别10和15。求总输入、总输出、总token和调用次数。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "input_tokens",
+        "operator": "approx",
+        "expected": 100
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "output_tokens",
+        "operator": "approx",
+        "expected": 25
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "total_tokens",
+        "operator": "approx",
+        "expected": 125
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "calls",
+        "operator": "approx",
+        "expected": 2
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

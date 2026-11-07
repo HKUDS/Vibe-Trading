@@ -39,7 +39,8 @@
       "settings": "모델, 데이터 소스, 브로커 연결을 설정합니다.",
       "pixelOffice": "리서치 작업을 계획하고 배정합니다. 배정만으로 실행되지는 않으며, 직급은 거래 권한을 부여하지 않는 표시에 불과합니다.",
       "paperTrading": "가상 자금으로 일별 거래를 테스트합니다. 증권사에 주문을 보내지 않습니다. 현금 배당을 제외하므로 총수익이 아닙니다.",
-      "researchArtifacts": "근거 기반 분석을 세션 간에 저장하고 재사용합니다."
+      "researchArtifacts": "근거 기반 분석을 세션 간에 저장하고 재사용합니다.",
+      "researchLab": "거래 비용, 고정 매개변수의 표본 외 성과, 팩터 정의와 저장된 증거를 검증합니다."
     },
     "instructions": {
       "reports": "먼저 도우미에게 전략 백테스트를 요청한 후 여기에서 결과를 엽니다. 대화에서 생성한 PDF 등은 원래 대화에서 다운로드하세요.",
@@ -52,7 +53,8 @@
       "settings": "먼저 모델을 설정하세요. 필요에 따라 데이터 소스나 브로커 연결을 추가하면 됩니다. 공개 시장 리서치에는 브로커 계좌가 필요하지 않습니다.",
       "pixelOffice": "리서치 작업을 계획하고 배정합니다. 배정만으로 실행되지는 않으며, 직급은 거래 권한을 부여하지 않는 표시에 불과합니다.",
       "paperTrading": "완료된 일봉만 결산합니다. 전략은 이전 날짜의 데이터만 읽고 실행일 종가로 체결됩니다. 정규장 종료 후 30분을 기다리세요. 자동 실행은 예약되지 않습니다.",
-      "researchArtifacts": "이전 분석을 검색하고,원하는 리비전을 열거나, 새 증거로 연결된 리비전을 만드세요. 이전 결론은 변경되지 않습니다."
+      "researchArtifacts": "이전 분석을 검색하고,원하는 리비전을 열거나, 새 증거로 연결된 리비전을 만드세요. 이전 결론은 변경되지 않습니다.",
+      "researchLab": "거래 비용, 고정 매개변수의 표본 외 성과, 팩터 정의와 저장된 증거를 검증합니다."
     }
   },
   "layout": {
@@ -85,7 +87,8 @@
     "sessionsLoadFailed": "대화를 불러올 수 없습니다.",
     "pixelOffice": "픽셀 오피스",
     "paperTrading": "모의 거래",
-    "researchArtifacts": "연구 산출물"
+    "researchArtifacts": "연구 산출물",
+    "researchLab": "리서치 실험실"
   },
   "researchArtifacts": {
     "compareTitle": "리비전 비교",
@@ -1814,7 +1817,7 @@
     "ci": "{{pct}} 신뢰구간",
     "medianSharpe": "Sharpe 중앙값",
     "probSharpePositive": "P(Sharpe > 0)",
-    "walkForward": "워크포워드 분석",
+    "walkForward": "구간 일관성",
     "profitable": "{{profitable}}/{{total}} 수익",
     "walkForwardDesc": "{{n}}개의 연속 윈도우로 분할하여 성과 일관성을 확인합니다.",
     "consistency": "일관성",
@@ -2646,5 +2649,68 @@
       "SIZE": "규모",
       "LEVERAGE": "레버리지"
     }
+  },
+  "researchLab": {
+    "title": "리서치 실험실",
+    "cost_sensitivity": "거래 비용",
+    "walk_forward": "표본 외 검증",
+    "factor_audit": "팩터 계약",
+    "replay": "작업 재검증",
+    "sourceRun": "저장된 실행",
+    "chooseRun": "실행 선택",
+    "noRuns": "백테스트를 완료하면 저장된 입력을 재사용할 수 있습니다.",
+    "feeLevels": "거래 비용 배수",
+    "slippageLevels": "추가 슬리피지(bp)",
+    "trainBars": "학습 봉 수",
+    "testBars": "검증 봉 수",
+    "holdoutBars": "최종 보류 봉 수",
+    "folds": "검증 구간 수",
+    "parameterChoices": "매개변수 후보",
+    "alphaIds": "팩터 ID(공란은 전체)",
+    "task": "검증 작업",
+    "start": "연구 실행",
+    "running": "실행 중…",
+    "invalidValues": "유한한 숫자를 입력하세요.",
+    "tooManyCandidates": "매개변수 조합은 최대 12개입니다.",
+    "failed": "실패",
+    "report": "연구 보고서",
+    "download": "JSON 다운로드",
+    "scenario": "시나리오",
+    "return": "수익률",
+    "drawdown": "낙폭",
+    "sharpe": "샤프 비율",
+    "notBracketed": "검증 범위에 손익 부호 변화가 없습니다.",
+    "oosReturn": "표본 외 수익률",
+    "holdoutReturn": "최종 보류 구간 수익률",
+    "selected": "고정 매개변수",
+    "testPeriod": "검증 기간",
+    "checked": "검사 완료",
+    "findings": "발견 사항",
+    "factor": "팩터",
+    "minimumBars": "최소 봉 수",
+    "policy": "과거 표본 정책",
+    "status": "상태",
+    "passed": "통과",
+    "not_evaluable": "평가 불가",
+    "invalid_artifact": "유효하지 않은 산출물",
+    "coverage": "평가 범위",
+    "policy_full_window": "전체 구간",
+    "policy_recursive_seed": "재귀 초기화",
+    "policy_partial_window": "부분 구간",
+    "policy_conditional_sample": "조건부 표본",
+    "subtitle": "거래 비용, 고정 매개변수의 표본 외 성과, 팩터 정의와 저장된 증거를 검증합니다.",
+    "costHint": "배수는 엔진 수수료와 거래세에 적용됩니다. 추가 슬리피지는 불리한 방향으로 가격 단위 반올림 전에 적용하며 펀딩비와 차입비는 유지됩니다.",
+    "oosHint": "학습 결과로만 매개변수를 선택하고 각 검증 전에 고정합니다. 각 구간은 무포지션으로 시작하며 청산 비용을 포함합니다. 최종 보류 표본은 이전 선택에서 제외됩니다.",
+    "noParameters": "직접 선택할 생성자 값이 없어 하나의 고정 후보로 검증합니다.",
+    "auditHint": "합성 입력으로 소스 지문, 최소 이력과 초기화를 검증합니다. 구현 계약 검사이며 수익성이나 공개 수식의 모든 해석을 보증하지 않습니다.",
+    "replayHint": "변경하지 않은 작업 지시로 저장된 산출물을 검증합니다. 모델 호출, 가격 조회, 주문은 하지 않습니다. 증거 부족은 통과가 아닙니다.",
+    "breakEvenHint": "손익분기는 측정된 부호 변화 구간만 표시하며 정확한 비용을 보간하지 않습니다.",
+    "objective": "학습 목표",
+    "training": "학습 구간",
+    "sharpeObjective": "샤프 비율",
+    "returnObjective": "총수익률",
+    "rolling": "이동 구간",
+    "expanding": "확장 구간",
+    "invalidChoices": "모든 후보 값을 입력하세요."
   }
 }

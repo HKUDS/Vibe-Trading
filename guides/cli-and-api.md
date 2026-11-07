@@ -347,3 +347,10 @@ curl -X POST http://localhost:8899/scheduled-runs/playbooks/premarket-brief \
 ```
 
 Posting `{}` schedules a template on its own suggested cadence with its declared defaults. The rendered body becomes the job prompt verbatim, and an undeclared variable is rejected rather than silently ignored.
+
+## Research Lab
+
+[Research Lab](research-lab.md) provides shared Web, CLI, Agent/MCP and REST
+entry points for frozen-input cost scenarios, training-only parameter selection
+and OOS/holdout execution, source/history audits and offline task replays.
+Run `vibe-trading research-lab --help` or open `/research-lab`.

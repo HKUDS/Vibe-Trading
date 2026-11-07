@@ -551,7 +551,29 @@ export interface SaveResearchArtifactRequest {
   run_id?: string;
 }
 
+export type LabAction = "cost_sensitivity" | "walk_forward" | "factor_audit" | "replay";
+export interface LabCatalog {
+  runs: Array<{ id: string; codes: string[]; start_date: string; end_date: string; has_prices: boolean; has_trace: boolean; parameters: Record<string, string | number | boolean | null> }>;
+  cases: Array<{ id: string; scenario: string; prompt: string; checks: string[] }>;
+}
+interface LabMetrics { total_return: number; max_drawdown: number; sharpe: number }
+interface LabFold { fold: number; name: string; parameters: Record<string, unknown>; test_start: string; test_end: string; test: { metrics: LabMetrics; run_dir: string } }
+export type LabResult =
+  | { kind: "cost_sensitivity"; rows: Array<LabMetrics & { name: string; fee_multiplier: number; extra_slippage_bps: number }>; break_even_brackets: Array<{ fee_multiplier_interval: number[]; extra_slippage_bps: number }> }
+  | { kind: "walk_forward"; folds: LabFold[]; oos_total_return: number; holdout: (LabFold & { total_return: number }) | null }
+  | { kind: "factor_audit"; count: number; finding_count: number; rows: Array<{ id: string; minimum_bars: number; policy: "full_window" | "recursive_seed" | "partial_window" | "conditional_sample"; valid: boolean; findings?: string[] }> }
+  | { kind: "replay"; evaluation_status: "passed" | "failed" | "not_evaluable" | "invalid_artifact"; summary: { evaluation_coverage: number }; reports: Array<{ case_id: string; verdicts: Array<{ status: string; code: string; detail?: string }> }> };
+export interface LabJob {
+  id: string; action: LabAction; status: "pending" | "running" | "completed" | "failed";
+  progress?: { completed: number; total: number; phase: string; label?: string };
+  result?: LabResult; error?: string; request?: Record<string, unknown>;
+}
+
 export const api = {
+  getResearchLabCatalog: () => request<LabCatalog>("/api/research-lab/catalog"),
+  startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
+    request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),
+  getResearchLabJob: (id: string) => request<LabJob>(`/api/research-lab/jobs/${encodeURIComponent(id)}`),
   getPixelOffice: () => request<OfficeSnapshot>("/api/pixel-office"),
   updatePixelOffice: (action: "create" | "assign" | "complete" | "rank", arguments_: Record<string, unknown>) =>
     request<OfficeSnapshot>("/api/pixel-office/actions", { method: "POST", body: JSON.stringify({ action, arguments: arguments_ }) }),

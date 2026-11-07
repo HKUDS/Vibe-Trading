@@ -39,7 +39,8 @@
       "settings": "配置模型、数据源和券商连接。",
       "pixelOffice": "规划和分配研究任务。分配任务不会启动执行；职级只是标签，不授予交易权限。",
       "paperTrading": "使用模拟资金测试每日交易，不向券商发送订单。结果不含现金分红，不代表总回报。",
-      "researchArtifacts": "跨会话保存并复用有证据支持的分析。"
+      "researchArtifacts": "跨会话保存并复用有证据支持的分析。",
+      "researchLab": "检验交易成本、锁定参数的样本外表现、因子定义和已保存的研究证据。"
     },
     "instructions": {
       "reports": "先在研究助手中描述策略并完成回测，再到这里打开结果。聊天生成的 PDF 等文档在原对话中下载。",
@@ -52,7 +53,8 @@
       "settings": "初次使用先配置模型。按任务需要添加数据源或券商连接；研究公开行情无需连接券商账户。",
       "pixelOffice": "规划和分配研究任务。分配任务不会启动执行；职级只是标签，不授予交易权限。",
       "paperTrading": "仅结算已完成的日线。策略只读取此前数据，在执行日收盘价成交。请等正常收市后 30 分钟；不会自动安排后台执行。",
-      "researchArtifacts": "搜索历史分析，展开任意修订，或添加新证据创建关联修订。旧结论保持不变。"
+      "researchArtifacts": "搜索历史分析，展开任意修订，或添加新证据创建关联修订。旧结论保持不变。",
+      "researchLab": "检验交易成本、锁定参数的样本外表现、因子定义和已保存的研究证据。"
     }
   },
   "layout": {
@@ -85,7 +87,8 @@
     "sessionsLoadFailed": "无法加载会话。",
     "pixelOffice": "像素办公室",
     "paperTrading": "模拟交易",
-    "researchArtifacts": "研究资料"
+    "researchArtifacts": "研究资料",
+    "researchLab": "研究实验室"
   },
   "researchArtifacts": {
     "compareTitle": "修订比较",
@@ -1814,7 +1817,7 @@
     "ci": "{{pct}} 置信区间",
     "medianSharpe": "中位数夏普比率",
     "probSharpePositive": "P（夏普比率 > 0）",
-    "walkForward": "前推分析",
+    "walkForward": "分窗口一致性",
     "profitable": "{{profitable}}/{{total}} 盈利",
     "walkForwardDesc": "拆分为 {{n}} 个连续窗口以检验绩效一致性。",
     "consistency": "一致性",
@@ -2646,5 +2649,68 @@
       "SIZE": "市值",
       "LEVERAGE": "杠杆"
     }
+  },
+  "researchLab": {
+    "title": "研究实验室",
+    "cost_sensitivity": "交易成本",
+    "walk_forward": "样本外验证",
+    "factor_audit": "因子契约",
+    "replay": "任务回放",
+    "sourceRun": "已保存的运行",
+    "chooseRun": "选择一个运行",
+    "noRuns": "先完成一次回测，即可复用它保存的输入。",
+    "feeLevels": "交易费用倍数",
+    "slippageLevels": "额外滑点（基点）",
+    "trainBars": "训练期条数",
+    "testBars": "测试期条数",
+    "holdoutBars": "最终留出条数",
+    "folds": "测试窗口数",
+    "parameterChoices": "参数候选值",
+    "alphaIds": "因子 ID（留空检查全部）",
+    "task": "验收任务",
+    "start": "开始研究",
+    "running": "运行中…",
+    "invalidValues": "请输入有限的数值。",
+    "tooManyCandidates": "参数组合最多为 12 个。",
+    "failed": "失败",
+    "report": "研究报告",
+    "download": "下载 JSON",
+    "scenario": "情景",
+    "return": "收益率",
+    "drawdown": "回撤",
+    "sharpe": "夏普比率",
+    "notBracketed": "测试范围内未出现盈亏符号变化。",
+    "oosReturn": "样本外收益率",
+    "holdoutReturn": "最终留出集收益率",
+    "selected": "锁定参数",
+    "testPeriod": "测试期间",
+    "checked": "已检查",
+    "findings": "发现问题",
+    "factor": "因子",
+    "minimumBars": "最少条数",
+    "policy": "历史样本规则",
+    "status": "状态",
+    "passed": "通过",
+    "not_evaluable": "无法评价",
+    "invalid_artifact": "产物无效",
+    "coverage": "验收覆盖率",
+    "policy_full_window": "完整窗口",
+    "policy_recursive_seed": "递归初始化",
+    "policy_partial_window": "部分窗口",
+    "policy_conditional_sample": "条件样本",
+    "subtitle": "检验交易成本、锁定参数的样本外表现、因子定义和已保存的研究证据。",
+    "costHint": "费用倍数覆盖引擎佣金和交易税费。额外滑点按不利方向计入并在交易所价格取整前应用；资金费和借贷费保持不变。",
+    "oosHint": "参数只按训练期结果选择，并在每个测试期前锁定。每个窗口从空仓开始且计入平仓费用。最终留出集不参与之前的任何选择。",
+    "noParameters": "该策略没有可直接选择的构造参数，将作为一个固定候选进行验证。",
+    "auditHint": "在合成输入上核对源码指纹、最少历史及初始化规则。这检验实现契约，不代表因子盈利，也不保证每个公开公式的解释均已获证实。",
+    "replayHint": "使用不变的任务提示核验已保存产物，不调用模型、不获取价格、不下单。缺少证据不算通过。",
+    "breakEvenHint": "盈亏平衡只显示实测符号变化区间，不插值推断精确成本。",
+    "objective": "训练目标",
+    "training": "训练窗口",
+    "sharpeObjective": "夏普比率",
+    "returnObjective": "总收益",
+    "rolling": "滚动窗口",
+    "expanding": "扩展窗口",
+    "invalidChoices": "请填写每个候选值，逗号之间不能留空。"
   }
 }

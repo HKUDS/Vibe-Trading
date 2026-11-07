@@ -75,6 +75,6 @@ def compute(panel):
     up = ((c > o) & (bench > bench.shift(1)))
     dn = ((c < o) & (bench < bench.shift(1)))
     # A bar with a missing open/close is neither up nor down (#1463).
-    cond = (up | dn).astype("float64").where(c.notna() & o.notna())
+    cond = (up | dn).astype("float64").where(c.notna() & o.notna() & bench.notna() & bench.shift(1).notna())
     out = cond.rolling(20).sum() / 20.0
     return out

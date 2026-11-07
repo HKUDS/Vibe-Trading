@@ -681,6 +681,21 @@ class BaseEngine(ABC):
             Rounded size.
         """
 
+    def _execution_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
+        """Apply the declared experiment multiplier to execution fees and taxes."""
+        multiplier = float(self.config.get("execution_cost_multiplier", 1.0))
+        if not math.isfinite(multiplier) or multiplier < 0:
+            raise ValueError("execution_cost_multiplier must be finite and non-negative")
+        return self.calc_commission(size, price, direction, is_open) * multiplier
+
+    def _execution_price(self, price: float, direction: int) -> float:
+        """Apply extra adverse slippage before the venue's tick-grid rounding."""
+        bps = float(self.config.get("extra_slippage_bps", 0.0))
+        if not math.isfinite(bps) or not 0 <= bps < 10000:
+            raise ValueError("extra_slippage_bps must be finite and in [0, 10000)")
+        shocked = price + abs(price) * direction * bps / 10000 if bps else price
+        return self.apply_slippage(shocked, direction)
+
     @abstractmethod
     def calc_commission(self, size: float, price: float, direction: int, is_open: bool) -> float:
         """Calculate commission for a trade.
@@ -776,7 +791,7 @@ class BaseEngine(ABC):
         price = float(raw)
         if price <= 0 and not self.allow_nonpositive_prices:
             return None
-        return self.apply_slippage(price, direction)
+        return self._execution_price(price, direction)
 
     def limit_band(
         self, symbol: str, bar: pd.Series, limit: float
@@ -1076,9 +1091,11 @@ class BaseEngine(ABC):
         reason = "no default benchmark for the evaluated symbols" if requested == "auto" else "no benchmark requested"
         if ticker:
             result = resolve_benchmark(
-                strategy_codes=basket_codes, source=source, explicit=ticker,
+                strategy_codes=basket_codes,
+                source="local" if config.get("frozen_data_manifest") else source,
+                explicit=ticker,
                 start_date=config.get("start_date", ""), end_date=config.get("end_date", ""),
-                interval=interval, loader=loader if source != "auto" else None,
+                interval=interval, loader=loader if source != "auto" or config.get("frozen_data_manifest") else None,
             )
             window_return = result.total_return_over(dates) if result is not None else None
             if result is not None and window_return is not None:
@@ -1473,7 +1490,7 @@ class BaseEngine(ABC):
                     _val_arr=_val_arr,
                 )
                 self._active_symbol = c
-                exit_price = self.apply_slippage(mark_price, -pos.direction)
+                exit_price = self._execution_price(mark_price, -pos.direction)
                 if not self.can_liquidate_at_end(c, last_ts):
                     # The market's sell rule (e.g. unsettled securities) also
                     # binds the terminal close: keep the position open and
@@ -1640,7 +1657,7 @@ class BaseEngine(ABC):
             if need_close:
                 if self.can_execute(symbol, 0, bar):
                     open_price = self.execution_open(bar)
-                    price = self.apply_slippage(open_price, -current_pos.direction)
+                    price = self._execution_price(open_price, -current_pos.direction)
                     self._close_position(symbol, price, ts, "signal")
                 else:
                     return  # blocked (e.g. limit-down can't sell)
@@ -1698,7 +1715,7 @@ class BaseEngine(ABC):
         elif open_price == 0 or (open_price < 0 and not self.allow_nonpositive_prices):
             rejected("invalid_price")
             return None
-        price = self.apply_slippage(open_price, direction)
+        price = self._execution_price(open_price, direction)
         if require_positive_price:
             self._validate_rebalance_values(price, positive=True)
         leverage = self._leverage_for_symbol(symbol)
@@ -1710,7 +1727,7 @@ class BaseEngine(ABC):
             rejected("zero_size")
             return None
         margin = self._calc_margin(symbol, size, price, leverage)
-        commission = self.calc_commission(
+        commission = self._execution_commission(
             size, price, direction, is_open=True
         )
         return _OpenOrder(
@@ -1807,7 +1824,7 @@ class BaseEngine(ABC):
                         continue
                     raw_price = self.execution_open(bar)
                     self._validate_rebalance_values(raw_price, positive=True)
-                    price = self.apply_slippage(raw_price, -before.direction)
+                    price = self._execution_price(raw_price, -before.direction)
                     self._validate_rebalance_values(price, positive=True)
                     reductions.append(self._plan_reduction(before, 0.0, price))
                     if target_direction == 0:
@@ -1834,8 +1851,8 @@ class BaseEngine(ABC):
             self._validate_rebalance_values(raw_price, before.leverage, leverage)
             target_notional = abs(target_weight) * equity * before.leverage
             prices = (
-                self.apply_slippage(raw_price, before.direction),
-                self.apply_slippage(raw_price, -before.direction),
+                self._execution_price(raw_price, before.direction),
+                self._execution_price(raw_price, -before.direction),
             )
             self._validate_rebalance_values(*prices, positive=True)
             sizes = tuple(
@@ -1881,7 +1898,7 @@ class BaseEngine(ABC):
                     size=size,
                     leverage=leverage,
                     margin=self._calc_margin(symbol, size, price, leverage),
-                    commission=self.calc_commission(
+                    commission=self._execution_commission(
                         size, price, before.direction, is_open=True
                     ),
                 )
@@ -1984,7 +2001,7 @@ class BaseEngine(ABC):
                     margin=self._calc_margin(
                         order.symbol, size, order.price, order.leverage
                     ),
-                    commission=self.calc_commission(
+                    commission=self._execution_commission(
                         size, order.price, order.direction, is_open=True
                     ),
                 )
@@ -2043,7 +2060,7 @@ class BaseEngine(ABC):
         realized_pnl = self._calc_pnl(
             before.symbol, before.direction, closed_size, before.entry_price, price
         )
-        exit_commission = self.calc_commission(
+        exit_commission = self._execution_commission(
             closed_size, price, before.direction, is_open=False
         )
         self._validate_rebalance_values(
@@ -2238,7 +2255,7 @@ class BaseEngine(ABC):
         self._active_symbol = pos.symbol
         pnl = self._calc_pnl(pos.symbol, pos.direction, pos.size, pos.entry_price, exit_price)
         margin = self._calc_margin(pos.symbol, pos.size, pos.entry_price, pos.leverage)
-        exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
+        exit_comm = self._execution_commission(pos.size, exit_price, pos.direction, is_open=False)
         return margin + pnl - exit_comm
 
     def _close_position(
@@ -2258,7 +2275,7 @@ class BaseEngine(ABC):
         margin = self._calc_margin(symbol, pos.size, pos.entry_price, pos.leverage)
         exit_margin = self._calc_margin(symbol, pos.size, exit_price, pos.leverage)
         pnl_pct = pnl / margin * 100 if margin > 1e-9 else 0.0
-        exit_comm = self.calc_commission(pos.size, exit_price, pos.direction, is_open=False)
+        exit_comm = self._execution_commission(pos.size, exit_price, pos.direction, is_open=False)
 
         self.capital += margin + pnl - exit_comm
 

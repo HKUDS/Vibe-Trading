@@ -5792,6 +5792,9 @@ def _build_parser() -> argparse.ArgumentParser:
     from src.research_artifacts.cli_handlers import add_subparser as _add_research_artifact_subparser
     _add_research_artifact_subparser(subparsers)
 
+    from src.research_lab.cli import add_subparser as _add_research_lab_subparser
+    _add_research_lab_subparser(subparsers)
+
     # Scheduled-research playbook templates (list / show / create)
     from cli.commands.research_playbook import add_subparser as _add_playbook_subparser
     _add_playbook_subparser(subparsers)
@@ -6711,6 +6714,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "research-artifact":
         from src.research_artifacts.cli_handlers import dispatch as _research_artifact_dispatch
         return _coerce_exit_code(_research_artifact_dispatch(args))
+    if args.command == "research-lab":
+        from src.research_lab.cli import dispatch as _research_lab_dispatch
+        return _coerce_exit_code(_research_lab_dispatch(args))
     if args.command == "playbook":
         from cli.commands.research_playbook import dispatch as _playbook_dispatch
         return _coerce_exit_code(_playbook_dispatch(args))

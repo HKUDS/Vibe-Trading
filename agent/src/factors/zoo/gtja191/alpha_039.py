@@ -7,7 +7,7 @@
 """GTJA Alpha #39.
 
 Formula: ((RANK(DECAYLINEAR(DELTA(CLOSE,2),8)) - RANK(DECAYLINEAR(CORR(((VWAP*0.3)+(OPEN*0.7)),SUM(MEAN(VOLUME,180),37),14),12)))*-1)
-Source: 国泰君安 191 alpha 研报 (2014), alpha 39."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 39."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 14,
-    "min_warmup_bars": 63,
-    "notes": '180d / 37d windows approximated with 30d / 10d. See notes.',
+    "min_warmup_bars": 240,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -53,6 +53,6 @@ def compute(panel: dict) -> pd.DataFrame:
     vw = vwap(panel, "equity_cn")
     p1 = rank(decay_linear(delta(c, 2), 8))
     blend = vw * 0.3 + o * 0.7
-    vmean = ts_mean(v, 30).rolling(10, min_periods=10).sum()
+    vmean = ts_mean(v, 180).rolling(37, min_periods=37).sum()
     p2 = rank(decay_linear(ts_corr(blend, vmean, 14), 12))
     return -1.0 * (p1 - p2)

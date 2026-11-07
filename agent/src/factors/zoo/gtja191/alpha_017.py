@@ -31,7 +31,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 15,
-    "min_warmup_bars": 16,
+    "min_warmup_bars": 15,
     "notes": 'The base is a percentile rank in (0, 1], so a negative 5-day close change is a real power, not a complex one.',
 }
 

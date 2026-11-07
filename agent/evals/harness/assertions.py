@@ -33,6 +33,8 @@ def evaluate_assertions(
     verdicts.extend(_evidence_verdicts(case, bundle))
     verdicts.extend(_budget_verdicts(case, bundle))
     verdicts.extend(_risk_verdicts(case, bundle))
+    from .measurements import measurement_verdicts
+    verdicts.extend(measurement_verdicts(case, bundle))
     verdicts.append(manifest_verdict(bundle))
     return tuple(verdicts)
 
@@ -530,7 +532,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
     verdicts: list[Verdict] = []
     end_records = [record for record in bundle.trace if record.get("type") == "end"]
     observed_iterations = end_records[-1].get("iterations") if end_records else None
-    for gate in ("max_llm_calls", "max_iterations"):
+    for gate in ("max_iterations",):
         limit = expectation.get(gate)
         if limit is None:
             continue
@@ -572,6 +574,19 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                     f"trace.jsonl:{end_records[-1]['_line']}",
                 )
             )
+
+    call_limit = expectation.get("max_llm_calls")
+    if call_limit is not None:
+        usage = bundle.llm_usage or {}
+        problem = _artifact_problem(bundle, "llm_usage", missing_invalid=False)
+        error = _usage_error(usage) if not problem else None
+        calls = _mapping(usage.get("totals")).get("calls")
+        status = problem or (VerdictStatus.INVALID_ARTIFACT if error else
+                            VerdictStatus.NOT_EVALUABLE if type(calls) is not int or
+                            (type(observed_iterations) is int and calls < observed_iterations) else
+                            VerdictStatus.PASS if _within_limit(calls, call_limit) else VerdictStatus.FAIL)
+        verdicts.append(_verdict(status, "budget.max_llm_calls", call_limit, calls,
+                                 "llm_usage.json#/totals/calls", detail=error))
 
     input_limit = expectation.get("max_input_tokens")
     if input_limit is not None:

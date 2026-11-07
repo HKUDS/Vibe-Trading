@@ -41,8 +41,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 50,
-    "min_warmup_bars": 30,
-    "notes": 'Benchmark unavailable in zoo panel; degraded to row-mean(close) as benchmark proxy. Window 50→20. See notes.',
+    "min_warmup_bars": 51,
+    "notes": 'Benchmark unavailable in zoo panel; degraded to row-mean(close) as benchmark proxy. Original 50-observation count window.',
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -51,9 +51,10 @@ def compute(panel: dict) -> pd.DataFrame:
     bench_row = c.mean(axis=1).to_numpy(dtype=float)
     bench_df = pd.DataFrame(np.broadcast_to(bench_row[:, None], c.shape).copy(),
                             index=c.index, columns=c.columns)
-    bench_down = (bench_df < bench_df.shift(1)).astype(float)
+    observed = bench_df.notna() & bench_df.shift(1).notna()
+    bench_down = (bench_df < bench_df.shift(1)).astype(float).where(observed)
     # A bar with a missing open/close is not an up bar (#1463).
-    up_and_down = ((c > o) & (bench_df < bench_df.shift(1))).astype(float).where(c.notna() & o.notna())
-    num = up_and_down.rolling(20, min_periods=20).sum()
-    den = bench_down.rolling(20, min_periods=20).sum()
+    up_and_down = ((c > o) & (bench_df < bench_df.shift(1))).astype(float).where(c.notna() & o.notna() & observed)
+    num = up_and_down.rolling(50, min_periods=50).sum()
+    den = bench_down.rolling(50, min_periods=50).sum()
     return safe_div(num, den)
