@@ -694,8 +694,8 @@ class TargetCompany:
 
     Raises:
         ValuationError: If `diluted_shares_outstanding` is not a finite
-            positive number, or `eps_basis` is not recognised, or `name` is
-            blank.
+            positive number, `book_value_of_equity` is not finite, or
+            `eps_basis` is not recognised, or `name` is blank.
     """
 
     name: str
@@ -716,6 +716,12 @@ class TargetCompany:
         _require_name(self.name, "comps.TargetCompany")
         _require_eps_basis(self.eps_basis, "comps.TargetCompany")
         require_positive(self.diluted_shares_outstanding, "diluted_shares_outstanding", "comps.TargetCompany")
+        # A peer with a non-finite book is excluded from P/B; the target has no
+        # such fallback, so a NaN book would price every P/B quantile as NaN.
+        if not math.isfinite(self.book_value_of_equity):
+            raise ValuationError(
+                f"comps.TargetCompany: book_value_of_equity must be finite, got {self.book_value_of_equity!r}"
+            )
 
 
 @dataclass(frozen=True)
