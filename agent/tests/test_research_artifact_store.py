@@ -306,6 +306,34 @@ def test_markdown_export_does_not_let_metadata_open_fences(tmp_path):
     assert document["revisions"][0]["universe"] == universe
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "data_as_of",
+        "verification_status",
+        "completeness",
+        "hypothesis_id",
+        "goal_id",
+        "session_id",
+        "run_id",
+    ],
+)
+def test_markdown_export_does_not_let_revision_metadata_open_fences(tmp_path, field):
+    import mistune
+
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    value = f"{field}\n```text\nmetadata body"
+    saved = _save(store, **{field: value})
+
+    exported = store.export_series(saved.revision.artifact_id, "markdown")
+    rendered = mistune.html(exported.content)
+
+    assert "<h2>Revision 1</h2>" in rendered
+    assert rendered.count("<h3>Evidence</h3>") == 1
+    document = json.loads(store.export_series(saved.revision.artifact_id, "json").content)
+    assert document["revisions"][0][field] == value
+
+
 def test_export_rejects_missing_series_and_unknown_format(tmp_path):
     store = ResearchArtifactStore(tmp_path / "research.db")
     with pytest.raises(KeyError):

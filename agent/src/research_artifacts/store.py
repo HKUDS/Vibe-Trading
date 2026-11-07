@@ -34,6 +34,11 @@ def _canonical_json(value: object) -> str:
     )
 
 
+def _markdown_inline(value: str) -> str:
+    """Keep caller-controlled metadata on its generated Markdown line."""
+    return " ".join(value.splitlines())
+
+
 def _with_closed_markdown_fence(content: str) -> str:
     """Close an unterminated fenced block before generated export sections."""
     open_fence: tuple[str, int] | None = None
@@ -380,8 +385,8 @@ class ResearchArtifactStore:
             media_type = "application/json"
             extension = "json"
         elif format == "markdown":
-            subject = " ".join(revisions[-1].subject.splitlines())
-            universe = " ".join(revisions[-1].universe.splitlines())
+            subject = _markdown_inline(revisions[-1].subject)
+            universe = _markdown_inline(revisions[-1].universe)
             lines = [f"# {subject}", ""]
             if universe:
                 lines.extend([f"Universe: {universe}", ""])
@@ -394,17 +399,17 @@ class ResearchArtifactStore:
                     [
                         f"## Revision {revision.revision_number}",
                         "",
-                        f"Revision ID: {revision.revision_id}",
-                        f"Previous revision ID: {revision.previous_revision_id or 'None'}",
-                        f"Data as of: {revision.data_as_of}",
-                        f"Created at: {revision.created_at}",
-                        f"Verification status: {revision.verification_status}",
-                        f"Completeness: {revision.completeness}",
+                        f"Revision ID: {_markdown_inline(revision.revision_id)}",
+                        f"Previous revision ID: {_markdown_inline(revision.previous_revision_id or 'None')}",
+                        f"Data as of: {_markdown_inline(revision.data_as_of)}",
+                        f"Created at: {_markdown_inline(revision.created_at)}",
+                        f"Verification status: {_markdown_inline(revision.verification_status)}",
+                        f"Completeness: {_markdown_inline(revision.completeness)}",
                         f"Evidence missing: {'yes' if revision.evidence_missing else 'no'}",
-                        f"Hypothesis ID: {revision.hypothesis_id or 'None'}",
-                        f"Goal ID: {revision.goal_id or 'None'}",
-                        f"Session ID: {revision.session_id or 'None'}",
-                        f"Run ID: {revision.run_id or 'None'}",
+                        f"Hypothesis ID: {_markdown_inline(revision.hypothesis_id or 'None')}",
+                        f"Goal ID: {_markdown_inline(revision.goal_id or 'None')}",
+                        f"Session ID: {_markdown_inline(revision.session_id or 'None')}",
+                        f"Run ID: {_markdown_inline(revision.run_id or 'None')}",
                         "",
                         _with_closed_markdown_fence(revision.content),
                         "",
