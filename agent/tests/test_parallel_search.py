@@ -29,6 +29,7 @@ def _offline_sources(monkeypatch):
         "VIBE_TRADING_SEARCH_BACKENDS",
         "VIBE_TRADING_SEARCH_BING_FALLBACK",
         "ALIYUN_IQS_API_KEY",
+        "SPECSTREAM_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(web_search_tool, "_sogou_search", MagicMock(return_value=[]))

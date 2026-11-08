@@ -256,6 +256,7 @@ def _no_search_env(monkeypatch: pytest.MonkeyPatch):
     """Keep the Aliyun IQS fast path and backend overrides out of these tests."""
     monkeypatch.delenv("VIBE_TRADING_SEARCH_PARALLEL", raising=False)
     monkeypatch.delenv("ALIYUN_IQS_API_KEY", raising=False)
+    monkeypatch.delenv("SPECSTREAM_API_KEY", raising=False)
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BACKENDS", raising=False)
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BING_FALLBACK", raising=False)
 

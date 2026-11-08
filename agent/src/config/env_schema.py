@@ -279,6 +279,7 @@ class DataConfig(_EnvBase):
     vibe_trading_data_cache: EnvBool = Field(alias="VIBE_TRADING_DATA_CACHE", default=False)
     vibe_trading_data_cache_root: str = Field(alias="VIBE_TRADING_DATA_CACHE_ROOT", default="")
     aliyun_iqs_api_key: str = Field(alias="ALIYUN_IQS_API_KEY", default="")
+    specstream_api_key: str = Field(alias="SPECSTREAM_API_KEY", default="")
     tickerall_api_key: str = Field(alias="TICKERALL_API_KEY", default="")
     tickerall_account_id: str = Field(alias="TICKERALL_ACCOUNT_ID", default="")
     tickerall_base_url: str = Field(alias="TICKERALL_BASE_URL", default="")
