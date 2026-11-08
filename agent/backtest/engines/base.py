@@ -1614,7 +1614,8 @@ class BaseEngine(ABC):
                 for s, ep in zip(syms, entry_prices)
             ])
 
-            margins = sizes * entry_prices / leverages
+            # abs() as in _calc_margin: collateral stays positive at a negative price.
+            margins = sizes * np.abs(entry_prices) / leverages
             pnls = directions * sizes * (current_prices - entry_prices)
             return self.capital + float(np.sum(margins + pnls))
 
