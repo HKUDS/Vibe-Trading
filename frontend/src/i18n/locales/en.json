@@ -140,6 +140,8 @@
     "run_id": "Run ID",
     "exportJson": "Export JSON",
     "exportMarkdown": "Export Markdown",
+    "exportComparisonJson": "Export comparison JSON",
+    "exportComparisonMarkdown": "Export comparison Markdown",
     "exporting": "Exporting...",
     "exportError": "Unable to export the research artifact."
   },

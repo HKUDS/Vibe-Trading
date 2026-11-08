@@ -106,7 +106,7 @@
 | 口座と配分を比較する | `/portfolio` で保有銘柄と配分変更案を確認します。[対応ブローカー](#ブローカー対応表) |
 | オプションと相関を調べる | `/options` で複数レッグの損益とグリークスを、`/correlation` で市場局面を調べます。 |
 | 調査を分担・定期実行する | [Swarm チーム](guides/research.md#swarm-workflows)を起動し、Pixel Office で分担するか、`/scheduled` で配信を予約します。 |
-| 過去の根拠を確認する | `/research-artifacts` で日付付きの[調査履歴](guides/research.md#versioned-research-artifacts)を検索します。 |
+| 過去の根拠を確認する | `/research-artifacts` で日付付きの[調査履歴](guides/research.md#versioned-research-artifacts)を検索し、任意の2つのリビジョンを比較し、系列全体または選択した比較をJSONまたはMarkdownでエクスポートします。 |
 
 ## ⚡ 実行例
 

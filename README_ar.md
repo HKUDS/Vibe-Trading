@@ -106,7 +106,7 @@
 | جمع الحسابات ومقارنة التوزيع | افتح `/portfolio` للاطلاع على المراكز والتغييرات المقترحة. [دعم الوسطاء](#دعم-الوسطاء) |
 | الخيارات والارتباطات | استخدم `/options` لعوائد المراكز متعددة الأطراف وحساسيتها، أو `/correlation` لدراسة أحوال السوق. |
 | تنسيق البحث وتكراره | شغّل [فريق Swarm](guides/research.md#swarm-workflows) أو وزع المهام في Pixel Office أو جدول تقريرا في `/scheduled`. |
-| مراجعة الأدلة السابقة | ابحث في `/research-artifacts` عن [نسخ الأبحاث المؤرخة](guides/research.md#versioned-research-artifacts). |
+| مراجعة الأدلة السابقة | ابحث في `/research-artifacts` عن [نسخ الأبحاث المؤرخة](guides/research.md#versioned-research-artifacts)، وقارن بين أي نسختين، وصدّر السلسلة الكاملة أو المقارنة المحددة بصيغة JSON أو Markdown. |
 
 ## ⚡ مثال سريع
 

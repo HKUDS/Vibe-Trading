@@ -134,6 +134,8 @@
     "run_id": "실행 ID",
     "exportJson": "JSON을 내보내기",
     "exportMarkdown": "Markdown을 내보내기",
+    "exportComparisonJson": "비교 JSON 내보내기",
+    "exportComparisonMarkdown": "비교 Markdown 내보내기",
     "exporting": "내보내는 중…",
     "exportError": "연구 산출물을 내보낼 수 없습니다."
   },

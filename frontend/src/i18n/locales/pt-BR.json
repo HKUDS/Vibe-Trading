@@ -140,6 +140,8 @@
     "run_id": "ID da execução",
     "exportJson": "Exportar JSON",
     "exportMarkdown": "Exportar Markdown",
+    "exportComparisonJson": "Exportar comparação JSON",
+    "exportComparisonMarkdown": "Exportar comparação Markdown",
     "exporting": "Exportando…",
     "exportError": "Não foi possível exportar o artefato de pesquisa."
   },

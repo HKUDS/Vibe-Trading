@@ -140,6 +140,8 @@
     "run_id": "شناسه اجرا",
     "exportJson": "خروجی JSON",
     "exportMarkdown": "خروجی Markdown",
+    "exportComparisonJson": "خروجی مقایسه JSON",
+    "exportComparisonMarkdown": "خروجی مقایسه Markdown",
     "exporting": "در حال خروجی گرفتن…",
     "exportError": "امکان خروجی گرفتن خروجی پژوهش وجود ندارد."
   },

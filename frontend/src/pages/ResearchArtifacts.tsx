@@ -5,6 +5,7 @@ import {
   api,
   type ResearchArtifactRevision,
   type ResearchArtifactComparison,
+  type ResearchArtifactExport,
   type ResearchArtifactSaveResult,
   type SaveResearchArtifactRequest,
 } from "@/lib/api";
@@ -64,6 +65,18 @@ function evidenceFromText(text: string): Array<Record<string, unknown>> {
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((source_uri) => ({ source_uri }));
 }
 
+function downloadExport(exported: ResearchArtifactExport) {
+  const url = URL.createObjectURL(new Blob([exported.content], { type: exported.media_type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = exported.filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ResearchArtifacts() {
   const { t } = useTranslation();
   const [artifacts, setArtifacts] = useState<ResearchArtifactRevision[]>([]);
@@ -73,6 +86,7 @@ export function ResearchArtifacts() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState<"json" | "markdown" | null>(null);
+  const [comparisonExporting, setComparisonExporting] = useState<"json" | "markdown" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [compareFrom, setCompareFrom] = useState("");
@@ -151,19 +165,25 @@ export function ResearchArtifacts() {
     setError(null);
     try {
       const exported = await api.exportResearchArtifact(detail.artifact.artifact_id, format);
-      const url = URL.createObjectURL(new Blob([exported.content], { type: exported.media_type }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = exported.filename;
-      link.style.display = "none";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadExport(exported);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("researchArtifacts.exportError"));
     } finally {
       setExporting(null);
+    }
+  }
+
+  async function exportComparison(format: "json" | "markdown") {
+    if (!detail || !compareFrom || !compareTo) return;
+    setComparisonExporting(format);
+    setError(null);
+    try {
+      const exported = await api.exportResearchArtifactComparison(detail.artifact.artifact_id, compareFrom, compareTo, format);
+      downloadExport(exported);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("researchArtifacts.exportError"));
+    } finally {
+      setComparisonExporting(null);
     }
   }
 
@@ -337,6 +357,14 @@ export function ResearchArtifacts() {
                             <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-xs">{JSON.stringify(comparison.metadata, null, 2)}</pre>
                           </section>
                         )}
+                        <div className="flex flex-wrap gap-2 border-t pt-3">
+                          <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={comparisonExporting !== null} onClick={() => void exportComparison("json")}>
+                            <Download className="me-1 inline h-4 w-4" />{comparisonExporting === "json" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportComparisonJson")}
+                          </button>
+                          <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={comparisonExporting !== null} onClick={() => void exportComparison("markdown")}>
+                            <Download className="me-1 inline h-4 w-4" />{comparisonExporting === "markdown" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportComparisonMarkdown")}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

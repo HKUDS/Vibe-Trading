@@ -134,6 +134,8 @@
     "run_id": "実行 ID",
     "exportJson": "JSONをエクスポート",
     "exportMarkdown": "Markdownをエクスポート",
+    "exportComparisonJson": "比較をJSONでエクスポート",
+    "exportComparisonMarkdown": "比較をMarkdownでエクスポート",
     "exporting": "エクスポート中…",
     "exportError": "リサーチ成果物をエクスポートできませんでした。"
   },

@@ -109,9 +109,20 @@ def _cmd_compare(args: argparse.Namespace) -> int:
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
+    if bool(args.from_revision_id) != bool(args.to_revision_id):
+        raise ValueError("from_revision_id and to_revision_id must be provided together")
     store = _store(args)
     try:
-        _emit(store.export_series(args.artifact_id, args.format).to_dict())
+        if args.from_revision_id and args.to_revision_id:
+            exported = store.export_comparison(
+                artifact_id=args.artifact_id,
+                from_revision_id=args.from_revision_id,
+                to_revision_id=args.to_revision_id,
+                format=args.format,
+            )
+        else:
+            exported = store.export_series(args.artifact_id, args.format)
+        _emit(exported.to_dict())
         return 0
     finally:
         store.close()
@@ -175,9 +186,11 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
     compare.add_argument("from_revision_id")
     compare.add_argument("to_revision_id")
 
-    export = commands.add_parser("export", help="Export a full series as JSON or Markdown")
+    export = commands.add_parser("export", help="Export a full series or selected comparison as JSON or Markdown")
     export.add_argument("artifact_id")
     export.add_argument("--format", choices=("json", "markdown"), default="json")
+    export.add_argument("--from-revision-id", default=None)
+    export.add_argument("--to-revision-id", default=None)
 
     _PARSER = parser
     return parser

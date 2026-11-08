@@ -106,7 +106,7 @@ Vibe-Trading convierte preguntas financieras en informes, pruebas históricas ej
 | Agregar cuentas y comparar pesos | Abre `/portfolio` para ver posiciones y cambios de asignación. [Brókeres compatibles](#compatibilidad-por-bróker) |
 | Explorar opciones y correlaciones | Usa `/options` para pagos y griegas de varias patas, o `/correlation` para identificar regímenes de mercado. |
 | Coordinar investigaciones | Inicia un [equipo Swarm](guides/research.md#swarm-workflows), reparte tareas en Pixel Office o programa un informe en `/scheduled`. |
-| Recuperar la evidencia | Busca [investigaciones con historial](guides/research.md#versioned-research-artifacts) por fecha en `/research-artifacts`. |
+| Recuperar la evidencia | Busca [investigaciones con historial](guides/research.md#versioned-research-artifacts) por fecha en `/research-artifacts`, compara dos revisiones y exporta la serie completa o una comparación seleccionada como JSON o Markdown. |
 
 ## ⚡ Ejemplo rápido
 

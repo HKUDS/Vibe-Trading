@@ -6,6 +6,7 @@ const apiMock = vi.hoisted(() => ({
   searchResearchArtifacts: vi.fn(),
   getResearchArtifact: vi.fn(),
   exportResearchArtifact: vi.fn(),
+  exportResearchArtifactComparison: vi.fn(),
   saveResearchArtifact: vi.fn(),
   compareResearchArtifactRevisions: vi.fn(),
 }));
@@ -135,6 +136,36 @@ describe("ResearchArtifacts page", () => {
     expect(await blob.text()).toBe('{"schema_version":1}\n');
     expect(click).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:research-export");
+    click.mockRestore();
+  });
+
+  it("downloads the selected comparison with its exact server-rendered bytes", async () => {
+    apiMock.searchResearchArtifacts.mockResolvedValue({ count: 1, artifacts: [second] });
+    apiMock.getResearchArtifact.mockResolvedValue({ artifact: second, revisions: [second, first] });
+    apiMock.compareResearchArtifactRevisions.mockResolvedValue(comparisonResult("ra_1_r1", "ra_1_r2", "-Original conclusion."));
+    apiMock.exportResearchArtifactComparison.mockResolvedValue({
+      filename: "ra_1-r1-r2.md",
+      media_type: "text/markdown; charset=utf-8",
+      content: "# Research revision comparison\n\n-Original conclusion.\n",
+      sha256: "def",
+    });
+    const createObjectURL = vi.fn(() => "blob:comparison-export");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<ResearchArtifacts />, { wrapper: MemoryRouter });
+
+    fireEvent.click(await screen.findByText("NVDA fundamental review"));
+    fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+    expect(await screen.findByText("-Original conclusion.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Export comparison Markdown" }));
+
+    await waitFor(() => expect(apiMock.exportResearchArtifactComparison).toHaveBeenCalledWith("ra_1", "ra_1_r1", "ra_1_r2", "markdown"));
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(await blob.text()).toBe("# Research revision comparison\n\n-Original conclusion.\n");
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:comparison-export");
     click.mockRestore();
   });
 

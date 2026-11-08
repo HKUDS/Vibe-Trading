@@ -140,6 +140,8 @@
     "run_id": "ID proses",
     "exportJson": "Ekspor JSON",
     "exportMarkdown": "Ekspor Markdown",
+    "exportComparisonJson": "Ekspor perbandingan JSON",
+    "exportComparisonMarkdown": "Ekspor perbandingan Markdown",
     "exporting": "Mengekspor…",
     "exportError": "Tidak dapat mengekspor artefak riset."
   },

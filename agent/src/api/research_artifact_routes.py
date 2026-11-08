@@ -98,9 +98,23 @@ def register_research_artifact_routes(app: FastAPI) -> None:
     def export_research_artifact(
         artifact_id: str,
         format: Literal["json", "markdown"] = Query(default="json"),
+        from_revision_id: str | None = Query(default=None, min_length=1, max_length=200),
+        to_revision_id: str | None = Query(default=None, min_length=1, max_length=200),
     ):
         store = ResearchArtifactStore()
         try:
+            if (from_revision_id is None) != (to_revision_id is None):
+                raise HTTPException(
+                    status_code=400,
+                    detail="from_revision_id and to_revision_id must be provided together",
+                )
+            if from_revision_id is not None and to_revision_id is not None:
+                return store.export_comparison(
+                    artifact_id=artifact_id,
+                    from_revision_id=from_revision_id,
+                    to_revision_id=to_revision_id,
+                    format=format,
+                ).to_dict()
             return store.export_series(artifact_id, format).to_dict()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

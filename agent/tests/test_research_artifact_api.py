@@ -142,6 +142,66 @@ def test_api_exports_full_series_deterministically(tmp_path, monkeypatch):
     assert invalid.status_code == 422
 
 
+def test_api_exports_selected_revision_comparison(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    first = client.post("/api/research-artifacts", json=_payload()).json()["revision"]
+    revised = client.post(
+        "/api/research-artifacts",
+        json=_payload(
+            artifact_id=first["artifact_id"],
+            content="Updated conclusion.",
+            data_as_of="2026-11-03",
+            evidence=[{"source_uri": "https://example.com/new"}],
+        ),
+    ).json()["revision"]
+    selection = {
+        "from_revision_id": first["revision_id"],
+        "to_revision_id": revised["revision_id"],
+    }
+
+    exported = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/export",
+        params={**selection, "format": "json"},
+    )
+    repeated = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/export",
+        params={**selection, "format": "json"},
+    )
+    markdown = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/export",
+        params={**selection, "format": "markdown"},
+    )
+    partial = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/export",
+        params={"from_revision_id": first["revision_id"]},
+    )
+
+    assert exported.status_code == 200
+    assert exported.json() == repeated.json()
+    body = exported.json()
+    assert body["filename"] == f"{first['artifact_id']}-r1-r2.json"
+    document = json.loads(body["content"])
+    assert document["kind"] == "research_artifact_revision_comparison"
+    assert document["comparison"]["from"]["revision_id"] == first["revision_id"]
+    assert document["comparison"]["to"]["revision_id"] == revised["revision_id"]
+    assert markdown.status_code == 200
+    assert markdown.json()["filename"] == f"{first['artifact_id']}-r1-r2.md"
+    assert "-Original conclusion." in markdown.json()["content"]
+    assert "+Updated conclusion." in markdown.json()["content"]
+    assert partial.status_code == 400
+    assert "together" in partial.json()["detail"]
+
+    other = client.post(
+        "/api/research-artifacts",
+        json=_payload(subject="MSFT review", universe="MSFT", content="Different research."),
+    ).json()["revision"]
+    cross_series = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/export",
+        params={**selection, "to_revision_id": other["revision_id"]},
+    )
+    assert cross_series.status_code == 404
+
+
 def test_api_reports_missing_and_invalid_research_artifacts(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
 
