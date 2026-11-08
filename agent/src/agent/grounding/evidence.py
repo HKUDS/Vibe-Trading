@@ -719,12 +719,17 @@ def _document_percent_cells(text: str) -> str:
     A PDF reader may flatten a table to whitespace. Only carry its header
     across contiguous, equal-width numeric rows with a leading row label.
     Preserve empty cells in delimited tables and reset on any ambiguous row.
+    A wrapped header may also drop its ``(%)`` marker onto a line of its own,
+    losing the column position; that marker then marks the last column of the
+    numeric block that follows it, because a wrapped header ends in the
+    percent column it introduced.
     """
     if "%" not in text and "％" not in text:
         return text
     lines = text.splitlines(keepends=True)
     columns: tuple[int, ...] = ()
     layout = ("", 0)
+    percent_last = False
     for i, line in enumerate(lines):
         row = line.rstrip("\r\n").strip(" ")
         sep = "|" if "|" in row else "\t" if "\t" in row else ""
@@ -736,6 +741,7 @@ def _document_percent_cells(text: str) -> str:
         parts = re.split(f"({delimiter})", row)
         cells = [part.strip() for part in parts[::2]]
         shape = (sep, len(cells))
+        numeric_row = any(_NUMERIC_CELL.fullmatch(c) for c in cells)
         if columns and shape == layout:
             if sep == "|" and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
                 continue
@@ -746,10 +752,35 @@ def _document_percent_cells(text: str) -> str:
                     if _NUMERIC_CELL.fullmatch(parts[pos].strip()):
                         parts[pos] = parts[pos].rstrip() + "%"
                 lines[i] = line.replace(row, "".join(parts), 1)
+                percent_last = False
                 continue
         columns = tuple(j for j, c in enumerate(cells) if j and _PERCENT_HEADER.search(c))
-        if any(_NUMERIC_CELL.fullmatch(c) for c in cells):
+        if numeric_row:
             columns = ()
+        if (
+            percent_last
+            and not columns
+            and cells[0]
+            and len(cells) > 1
+            and all(_NUMERIC_CELL.fullmatch(c) or c in {"", "—", "-"} for c in cells[1:])
+        ):
+            # The marker line carried no column position of its own: the
+            # wrapped header ends in the percent column, so the block's last
+            # column is the percent column.
+            columns = (len(cells) - 1,)
+            for col in columns:
+                pos = 2 * col
+                if _NUMERIC_CELL.fullmatch(parts[pos].strip()):
+                    parts[pos] = parts[pos].rstrip() + "%"
+            lines[i] = line.replace(row, "".join(parts), 1)
+        if numeric_row:
+            percent_last = False
+        elif len(cells) == 1 and _PERCENT_HEADER.search(cells[0]):
+            percent_last = True
+        elif len(cells) > 1 or cells[0]:
+            # Prose between the marker line and the numeric block breaks the
+            # association: a wrapped header is immediately above its block.
+            percent_last = False
         layout = shape
     return "".join(lines)
 

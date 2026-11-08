@@ -85,6 +85,14 @@ def _declared(prose: str, *lines: str) -> str:
     ("项目 金额 同比（％）\n营业收入 17.10", False),
     ("成品平均重量为 17.10 千克。", False),
     ("营业收入 7,747,346,892 17.10 20,817,866,218 10.56", False),
+    # A wrapped header drops its (%) marker onto a line of its own, above the
+    # numeric block (real 时代电气 PDF shape, follow-up measured in #2149).
+    ("项目 本报告期\n本报告期比\n上年同期增\n减变动幅度\n(%)\n营业收入 7,747,346,892 17.10", True),
+    ("项目 本报告期\n上年同期\n增减变动\n幅度(%)\n营业收入 7,747,346,892 17.10 6.21", False),
+    ("本报告期\n比上年同期增减\n(%)\n营业收入 7,747,346,892", False),
+    # Prose between the marker line and the numeric block breaks the
+    # association — a wrapped header sits immediately above its block.
+    ("幅度\n(%)\n管理层讨论与分析如下。\n营业收入 7,747,346,892 17.10", False),
 ])
 def test_percent_declaration_needs_a_unit_in_its_own_document(tmp_path, source, valid):
     ledger, document = _ledger_with_upload(tmp_path)
