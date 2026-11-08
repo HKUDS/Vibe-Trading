@@ -510,10 +510,14 @@ def run_bench_strict(
         try:
             factor_df = reg.compute(aid, panel)
             signal_ic = compute_ic_series(factor_df, return_df)
-            if signal_ic.empty:
-                skipped.append(
-                    {"id": aid, "reason": "empty IC series", "kind": "typed"}
+            if len(signal_ic) < 2:
+                # ddof=1 std of one IC is NaN; match bench_runner's guard.
+                reason = (
+                    "empty IC series"
+                    if signal_ic.empty
+                    else "insufficient IC observations (need at least 2)"
                 )
+                skipped.append({"id": aid, "reason": reason, "kind": "typed"})
                 _fire_progress(idx, aid)
                 continue
 
