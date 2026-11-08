@@ -137,7 +137,11 @@
     "hypothesis_id": "ID de hipótesis",
     "goal_id": "ID de objetivo",
     "session_id": "ID de sesión",
-    "run_id": "ID de ejecución"
+    "run_id": "ID de ejecución",
+    "exportJson": "Exportar JSON",
+    "exportMarkdown": "Exportar Markdown",
+    "exporting": "Exportando…",
+    "exportError": "No se pudo exportar el artefacto de investigación."
   },
   "runtime": {
     "monitorBadge": "Monitor de Runtime",

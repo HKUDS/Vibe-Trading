@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -17,7 +18,7 @@ from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
 
 from .comparison import compare_revisions
-from .models import ResearchArtifactRevision, ResearchArtifactSaveResult
+from .models import ResearchArtifactExport, ResearchArtifactRevision, ResearchArtifactSaveResult
 
 
 def _utc_now() -> str:
@@ -32,6 +33,71 @@ def _canonical_json(value: object) -> str:
         separators=(",", ":"),
         allow_nan=False,
     )
+
+
+def _markdown_inline(value: str) -> str:
+    """Keep caller-controlled metadata on its generated Markdown line."""
+    return " ".join(value.splitlines())
+
+
+def _html_block_start(line: str) -> tuple[str, bool, int] | None:
+    raw_text = re.match(r"^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)", line, re.IGNORECASE)
+    if raw_text:
+        return rf"</{raw_text.group(1)}\s*>", True, raw_text.end()
+    for opening, closing in (("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")):
+        match = re.match(rf"^ {{0,3}}{re.escape(opening)}", line)
+        if match:
+            return closing, False, match.end()
+    declaration = re.match(r"^ {0,3}<![A-Za-z]", line)
+    if declaration:
+        return ">", False, declaration.end()
+    return None
+
+
+def _isolated_revision_content(content: str) -> str:
+    """Keep raw HTML blocks and Markdown fences out of generated sections."""
+    open_fence: tuple[str, int] | None = None
+    open_html: tuple[str, bool, int] | None = None
+    isolated: list[str] = []
+    lines = content.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if match is not None:
+            marker, suffix = match.groups()
+            if open_fence is None:
+                if marker[0] == "`" and "`" in suffix:
+                    isolated.append(line)
+                    continue
+                open_fence = (marker[0], len(marker))
+            elif marker[0] == open_fence[0] and len(marker) >= open_fence[1] and not suffix.strip():
+                open_fence = None
+            isolated.append(line)
+            continue
+        if open_fence is not None:
+            isolated.append(line)
+            continue
+        if open_html is not None:
+            closing, is_regex, _ = open_html
+            if re.search(closing, line, re.IGNORECASE) if is_regex else closing in line:
+                open_html = None
+            isolated.append(line)
+            continue
+        start = _html_block_start(line)
+        if start is not None:
+            closing, is_regex, end = start
+            remainder = line[end:]
+            if not (re.search(closing, remainder, re.IGNORECASE) if is_regex else closing in remainder):
+                open_html = (closing, is_regex, index)
+        isolated.append(line)
+    if open_html is not None:
+        _, _, index = open_html
+        isolated[index] = isolated[index].replace("<", "&lt;", 1)
+    result = "".join(isolated)
+    if open_fence is None:
+        return result
+    character, length = open_fence
+    separator = "" if result.endswith(("\n", "\r")) else "\n"
+    return result + separator + character * length
 
 
 def _default_db_path() -> Path:
@@ -171,11 +237,7 @@ class ResearchArtifactStore:
             "SELECT * FROM research_artifact_revisions WHERE content_hash = ? AND provenance_hash = ?"
             + (" AND artifact_id = ?" if artifact_id else "")
             + " ORDER BY created_at DESC LIMIT 1",
-            (
-                (content_hash, provenance_hash, artifact_id)
-                if artifact_id
-                else (content_hash, provenance_hash)
-            ),
+            ((content_hash, provenance_hash, artifact_id) if artifact_id else (content_hash, provenance_hash)),
         ).fetchone()
         return self._from_row(row) if row else None
 
@@ -212,14 +274,10 @@ class ResearchArtifactStore:
                 verification_status = verification_status or "unverified"
                 completeness = completeness or "complete"
             else:
-                subject = _required(
-                    subject if subject is not None else latest.subject, "subject"
-                )
+                subject = _required(subject if subject is not None else latest.subject, "subject")
                 universe = latest.universe if universe is None else universe.strip()
                 if subject != latest.subject or universe != latest.universe:
-                    raise ValueError(
-                        "a revision must preserve the artifact subject and universe"
-                    )
+                    raise ValueError("a revision must preserve the artifact subject and universe")
                 evidence = list(latest.evidence) if evidence is None else list(evidence)
                 unchanged = (
                     content == latest.content
@@ -235,9 +293,7 @@ class ResearchArtifactStore:
                         )
                     )
                 )
-                verification_status = verification_status or (
-                    latest.verification_status if unchanged else "unverified"
-                )
+                verification_status = verification_status or (latest.verification_status if unchanged else "unverified")
                 completeness = completeness or latest.completeness
                 hypothesis_id = hypothesis_id or latest.hypothesis_id
                 goal_id = goal_id or latest.goal_id
@@ -364,6 +420,78 @@ class ResearchArtifactStore:
             (artifact_id,),
         ).fetchall()
         return [self._from_row(row) for row in rows]
+
+    @_synchronized
+    def export_series(self, artifact_id: str, format: str = "json") -> ResearchArtifactExport:
+        """Render the complete immutable series without adding volatile metadata."""
+        revisions = list(reversed(self.list_revisions(artifact_id)))
+        if not revisions:
+            raise KeyError(f"research artifact not found: {artifact_id}")
+        if format == "json":
+            content = (
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "artifact_id": artifact_id,
+                        "revision_count": len(revisions),
+                        "revisions": [revision.to_dict() for revision in revisions],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                    allow_nan=False,
+                )
+                + "\n"
+            )
+            media_type = "application/json"
+            extension = "json"
+        elif format == "markdown":
+            subject = _markdown_inline(revisions[-1].subject)
+            universe = _markdown_inline(revisions[-1].universe)
+            lines = [f"# {subject}", ""]
+            if universe:
+                lines.extend([f"Universe: {universe}", ""])
+            lines.extend([f"Revisions: {len(revisions)}", ""])
+            for revision in revisions:
+                evidence_json = json.dumps(list(revision.evidence), ensure_ascii=False, indent=2, allow_nan=False)
+                longest_run = max((len(run) for run in re.findall(r"`+", evidence_json)), default=0)
+                fence = "`" * max(3, longest_run + 1)
+                lines.extend(
+                    [
+                        f"## Revision {revision.revision_number}",
+                        "",
+                        f"Revision ID: {_markdown_inline(revision.revision_id)}",
+                        f"Previous revision ID: {_markdown_inline(revision.previous_revision_id or 'None')}",
+                        f"Data as of: {_markdown_inline(revision.data_as_of)}",
+                        f"Created at: {_markdown_inline(revision.created_at)}",
+                        f"Verification status: {_markdown_inline(revision.verification_status)}",
+                        f"Completeness: {_markdown_inline(revision.completeness)}",
+                        f"Evidence missing: {'yes' if revision.evidence_missing else 'no'}",
+                        f"Hypothesis ID: {_markdown_inline(revision.hypothesis_id or 'None')}",
+                        f"Goal ID: {_markdown_inline(revision.goal_id or 'None')}",
+                        f"Session ID: {_markdown_inline(revision.session_id or 'None')}",
+                        f"Run ID: {_markdown_inline(revision.run_id or 'None')}",
+                        "",
+                        _isolated_revision_content(revision.content),
+                        "",
+                        "### Evidence",
+                        "",
+                        fence + "json",
+                        evidence_json,
+                        fence,
+                        "",
+                    ]
+                )
+            content = "\n".join(lines)
+            media_type = "text/markdown; charset=utf-8"
+            extension = "md"
+        else:
+            raise ValueError("export format must be 'json' or 'markdown'")
+        return ResearchArtifactExport(
+            filename=f"{artifact_id}.{extension}",
+            media_type=media_type,
+            content=content,
+            sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        )
 
     @_synchronized
     def search(

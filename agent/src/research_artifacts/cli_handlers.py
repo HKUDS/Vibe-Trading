@@ -108,12 +108,23 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         store.close()
 
 
+def _cmd_export(args: argparse.Namespace) -> int:
+    store = _store(args)
+    try:
+        _emit(store.export_series(args.artifact_id, args.format).to_dict())
+        return 0
+    finally:
+        store.close()
+
+
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "save": _cmd_save,
     "search": _cmd_search,
     "show": _cmd_show,
     "revision": _cmd_revision,
     "compare": _cmd_compare,
+
+    "export": _cmd_export,
 }
 _PARSER: argparse.ArgumentParser | None = None
 
@@ -163,6 +174,10 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
     compare.add_argument("artifact_id")
     compare.add_argument("from_revision_id")
     compare.add_argument("to_revision_id")
+
+    export = commands.add_parser("export", help="Export a full series as JSON or Markdown")
+    export.add_argument("artifact_id")
+    export.add_argument("--format", choices=("json", "markdown"), default="json")
 
     _PARSER = parser
     return parser

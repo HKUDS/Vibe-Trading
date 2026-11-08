@@ -137,7 +137,11 @@
     "hypothesis_id": "Hypothesen-ID",
     "goal_id": "Ziel-ID",
     "session_id": "Sitzungs-ID",
-    "run_id": "Lauf-ID"
+    "run_id": "Lauf-ID",
+    "exportJson": "JSON exportieren",
+    "exportMarkdown": "Markdown exportieren",
+    "exporting": "Export läuft…",
+    "exportError": "Recherche-Artefakt konnte nicht exportiert werden."
   },
   "runtime": {
     "monitorBadge": "Runtime-Monitor",

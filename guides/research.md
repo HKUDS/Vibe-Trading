@@ -56,7 +56,12 @@ Any two revisions in the same series can be compared in either direction. The co
 vibe-trading research-artifact save --subject "NVDA fundamental review" --content "Conclusion with evidence." --data-as-of 2026-10-27 --evidence '[{"source_uri":"https://example.com/filing"}]'
 vibe-trading research-artifact search --query "NVDA"
 vibe-trading research-artifact compare ra_example ra_example_r1 ra_example_r3
+
+vibe-trading research-artifact export ra_example --format json
+vibe-trading research-artifact export ra_example --format markdown
 ```
+
+A series export includes every immutable revision in chronological order, including evidence, verification state, and optional lineage links. JSON and Markdown are deterministic for the same stored series: no export timestamp is inserted. The API `GET /api/research-artifacts/{artifact_id}/export?format=json|markdown` and the CLI return a filename, media type, exact content, and its SHA-256 digest. The Web library downloads the same server-rendered bytes rather than rebuilding a second representation in the browser. Export does not revalidate historical claims or alter their verification status.
 
 ## 💡 Examples
 

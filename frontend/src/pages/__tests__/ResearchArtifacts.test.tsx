@@ -5,6 +5,7 @@ import { ResearchArtifacts } from "../ResearchArtifacts";
 const apiMock = vi.hoisted(() => ({
   searchResearchArtifacts: vi.fn(),
   getResearchArtifact: vi.fn(),
+  exportResearchArtifact: vi.fn(),
   saveResearchArtifact: vi.fn(),
   compareResearchArtifactRevisions: vi.fn(),
 }));
@@ -84,6 +85,35 @@ describe("ResearchArtifacts page", () => {
 
     expect(await screen.findByText("No research artifacts yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New research" })).toBeInTheDocument();
+  });
+
+  it("downloads the server-rendered series export with its exact bytes", async () => {
+    apiMock.searchResearchArtifacts.mockResolvedValue({ count: 1, artifacts: [second] });
+    apiMock.getResearchArtifact.mockResolvedValue({ artifact: second, revisions: [second, first] });
+    apiMock.exportResearchArtifact.mockResolvedValue({
+      filename: "ra_1.json",
+      media_type: "application/json",
+      content: '{"schema_version":1}\n',
+      sha256: "abc",
+    });
+    const createObjectURL = vi.fn(() => "blob:research-export");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<ResearchArtifacts />, { wrapper: MemoryRouter });
+
+    fireEvent.click(await screen.findByText("NVDA fundamental review"));
+    expect(await screen.findByText("Revision history")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+
+    await waitFor(() => expect(apiMock.exportResearchArtifact).toHaveBeenCalledWith("ra_1", "json"));
+    expect(createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: "application/json" }));
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    expect(await blob.text()).toBe('{"schema_version":1}\n');
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:research-export");
+    click.mockRestore();
   });
 
   it("opens revision history and preserves existing evidence when revising", async () => {

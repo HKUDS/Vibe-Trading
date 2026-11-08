@@ -7,7 +7,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
-from tests.module_os_helpers import patch_module_os
 from src.research_lab import service
 from src.api.research_lab_routes import register_research_lab_routes
 from src.tools.research_lab_tool import ResearchLabTool

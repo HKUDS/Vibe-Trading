@@ -137,7 +137,11 @@
     "hypothesis_id": "شناسه فرضیه",
     "goal_id": "شناسه هدف",
     "session_id": "شناسه نشست",
-    "run_id": "شناسه اجرا"
+    "run_id": "شناسه اجرا",
+    "exportJson": "خروجی JSON",
+    "exportMarkdown": "خروجی Markdown",
+    "exporting": "در حال خروجی گرفتن…",
+    "exportError": "امکان خروجی گرفتن خروجی پژوهش وجود ندارد."
   },
   "runtime": {
     "monitorBadge": "مانیتور ران‌تایم",
