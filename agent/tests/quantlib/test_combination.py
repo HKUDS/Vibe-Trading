@@ -162,6 +162,33 @@ def test_a_weight_table_may_cover_only_rebalance_dates():
     assert result.weights["b"].iloc[4] == pytest.approx(1.0)
 
 
+def test_a_missing_weight_in_a_later_row_is_not_refilled_from_an_earlier_row():
+    first, second = sample(rows=6)
+    weights = pd.DataFrame(
+        {"a": [0.5, 1.0], "b": [0.5, np.nan]}, index=[first.index[0], first.index[3]]
+    )
+    result = combine_factors({"a": first, "b": second}, method="explicit", weights=weights)
+    later = result.weights.iloc[3:]
+    assert later["a"].tolist() == pytest.approx([1.0, 1.0, 1.0])
+    assert later["b"].isna().all()
+    assert result.weights["b"].iloc[2] == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("empty", [np.nan, 0.0])
+def test_an_explicit_empty_rebalance_stops_carrying_previous_weights(empty):
+    first, second = sample(rows=8)
+    weights = pd.DataFrame(
+        {"a": [0.5, empty, 1.0], "b": [0.5, empty, np.nan]},
+        index=[first.index[0], first.index[3], first.index[6]],
+    )
+    result = combine_factors({"a": first, "b": second}, method="explicit", weights=weights)
+    assert result.weights.iloc[2].tolist() == pytest.approx([0.5, 0.5])
+    assert result.weights.iloc[3:6].isna().all().all()
+    assert result.composite.iloc[3:6].isna().all().all()
+    assert result.weights["a"].iloc[6:].tolist() == [1.0, 1.0]
+    assert result.weights["b"].iloc[6:].isna().all()
+
+
 def test_weights_are_rejected_outside_explicit_mode():
     first, second = sample(rows=5)
     with pytest.raises(ValueError, match="only accepted with method='explicit'"):

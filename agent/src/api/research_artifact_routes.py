@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
@@ -94,6 +94,19 @@ def register_research_artifact_routes(app: FastAPI) -> None:
         finally:
             store.close()
 
+    @app.get("/api/research-artifacts/{artifact_id}/export", dependencies=[Depends(require_auth)])
+    def export_research_artifact(
+        artifact_id: str,
+        format: Literal["json", "markdown"] = Query(default="json"),
+    ):
+        store = ResearchArtifactStore()
+        try:
+            return store.export_series(artifact_id, format).to_dict()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            store.close()
+
     @app.get("/api/research-artifacts/revision/{revision_id}", dependencies=[Depends(require_auth)])
     def get_research_revision(revision_id: str):
         store = ResearchArtifactStore()
@@ -102,6 +115,25 @@ def register_research_artifact_routes(app: FastAPI) -> None:
             if revision is None:
                 raise HTTPException(status_code=404, detail=f"research revision not found: {revision_id}")
             return {"revision": revision.to_dict()}
+        finally:
+            store.close()
+
+    @app.get("/api/research-artifacts/{artifact_id}/compare", dependencies=[Depends(require_auth)])
+    def compare_research_revisions(
+        artifact_id: str,
+        from_revision_id: str = Query(min_length=1, max_length=200),
+        to_revision_id: str = Query(min_length=1, max_length=200),
+    ):
+        store = ResearchArtifactStore()
+        try:
+            comparison = store.compare_revisions(
+                artifact_id=artifact_id,
+                from_revision_id=from_revision_id,
+                to_revision_id=to_revision_id,
+            )
+            return {"comparison": comparison}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         finally:
             store.close()
 

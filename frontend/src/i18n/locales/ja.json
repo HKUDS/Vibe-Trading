@@ -91,6 +91,16 @@
     "researchLab": "リサーチラボ"
   },
   "researchArtifacts": {
+    "compareTitle": "リビジョン比較",
+    "fromRevision": "比較元リビジョン",
+    "toRevision": "比較先リビジョン",
+    "compareAction": "比較",
+    "comparing": "比較中…",
+    "compareError": "リビジョンを比較できません。",
+    "comparisonOnly": "読み取り専用の比較です。いずれのリビジョンも再検証されません。",
+    "noChanges": "これらのリビジョンに差異はありません。",
+    "metadataChanges": "メタデータの変更",
+    "compareTruncated": "差分は最初の400行に制限されています。",
     "subject": "研究主題",
     "dataAsOf": "データ基準日",
     "saving": "保存中…",
@@ -121,7 +131,11 @@
     "hypothesis_id": "仮説 ID",
     "goal_id": "目標 ID",
     "session_id": "セッション ID",
-    "run_id": "実行 ID"
+    "run_id": "実行 ID",
+    "exportJson": "JSONをエクスポート",
+    "exportMarkdown": "Markdownをエクスポート",
+    "exporting": "エクスポート中…",
+    "exportError": "リサーチ成果物をエクスポートできませんでした。"
   },
   "runtime": {
     "monitorBadge": "取引モニター",

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from fastapi.testclient import TestClient
 
 import api_server
@@ -60,6 +63,83 @@ def test_api_save_search_and_revision_history(tmp_path, monkeypatch):
     old = client.get(f"/api/research-artifacts/revision/{first['revision']['revision_id']}")
     assert old.status_code == 200
     assert old.json()["revision"]["data_as_of"] == "2026-10-20"
+
+
+def test_api_compares_revisions_and_rejects_cross_series(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    first = client.post("/api/research-artifacts", json=_payload()).json()["revision"]
+    revised = client.post(
+        "/api/research-artifacts",
+        json=_payload(
+            artifact_id=first["artifact_id"],
+            content="Updated conclusion.",
+            data_as_of="2026-11-03",
+            evidence=[{"source_uri": "https://example.com/new"}],
+        ),
+    ).json()["revision"]
+
+    response = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/compare",
+        params={"from_revision_id": first["revision_id"], "to_revision_id": revised["revision_id"]},
+    )
+
+    assert response.status_code == 200
+    comparison = response.json()["comparison"]
+    assert comparison["from"]["revision_id"] == first["revision_id"]
+    assert comparison["to"]["revision_id"] == revised["revision_id"]
+    assert comparison["content"]["changed"] is True
+    assert comparison["evidence"]["added"] == [{"source_uri": "https://example.com/new"}]
+    assert comparison["evidence"]["removed"] == [{"source_uri": "https://example.com/filing"}]
+    assert comparison["metadata"]["data_as_of"] == {"from": "2026-10-20", "to": "2026-11-03"}
+
+    other = client.post(
+        "/api/research-artifacts",
+        json=_payload(subject="MSFT review", universe="MSFT", content="Different research."),
+    ).json()["revision"]
+    cross_series = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/compare",
+        params={"from_revision_id": first["revision_id"], "to_revision_id": other["revision_id"]},
+    )
+    missing = client.get(
+        f"/api/research-artifacts/{first['artifact_id']}/compare",
+        params={"from_revision_id": first["revision_id"], "to_revision_id": "ra_missing_r1"},
+    )
+    assert cross_series.status_code == 404
+    assert missing.status_code == 404
+
+def test_api_exports_full_series_deterministically(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    first_response = client.post("/api/research-artifacts", json=_payload())
+    assert first_response.status_code == 201
+    artifact_id = first_response.json()["revision"]["artifact_id"]
+    revised_response = client.post(
+        "/api/research-artifacts",
+        json=_payload(artifact_id=artifact_id, content="Updated conclusion.", data_as_of="2026-10-27"),
+    )
+    assert revised_response.status_code == 201
+
+    exported = client.get(f"/api/research-artifacts/{artifact_id}/export", params={"format": "json"})
+    repeated = client.get(f"/api/research-artifacts/{artifact_id}/export", params={"format": "json"})
+
+    assert exported.status_code == 200
+    assert exported.json() == repeated.json()
+    body = exported.json()
+    assert body["filename"] == f"{artifact_id}.json"
+    assert body["media_type"] == "application/json"
+    assert body["sha256"] == hashlib.sha256(body["content"].encode()).hexdigest()
+    document = json.loads(body["content"])
+    assert document["revision_count"] == 2
+    assert document["revisions"][0]["content"] == "Original conclusion."
+
+    markdown = client.get(f"/api/research-artifacts/{artifact_id}/export", params={"format": "markdown"})
+    assert markdown.status_code == 200
+    assert markdown.json()["filename"] == f"{artifact_id}.md"
+    assert "Updated conclusion." in markdown.json()["content"]
+
+    missing = client.get("/api/research-artifacts/ra_missing/export")
+    invalid = client.get(f"/api/research-artifacts/{artifact_id}/export", params={"format": "xml"})
+    assert missing.status_code == 404
+    assert invalid.status_code == 422
 
 
 def test_api_reports_missing_and_invalid_research_artifacts(tmp_path, monkeypatch):

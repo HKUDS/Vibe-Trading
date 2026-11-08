@@ -92,6 +92,106 @@ def test_cli_save_search_show_and_revision_round_trip(tmp_path, capsys):
     )
     assert code == 0 and json.loads(out)["revision"]["content"] == "Original conclusion."
 
+    code, out, _ = _run(
+        parser,
+        capsys,
+        "research-artifact",
+        "--path",
+        db,
+        "export",
+        artifact_id,
+        "--format",
+        "json",
+    )
+    exported = json.loads(out)
+    assert code == 0
+    assert exported["filename"] == f"{artifact_id}.json"
+    document = json.loads(exported["content"])
+    assert document["revision_count"] == 2
+    assert document["revisions"][0]["content"] == "Original conclusion."
+
+    code, repeated, _ = _run(
+        parser,
+        capsys,
+        "research-artifact",
+        "--path",
+        db,
+        "export",
+        artifact_id,
+        "--format",
+        "json",
+    )
+    assert code == 0 and repeated == out
+
+    code, markdown, _ = _run(
+        parser,
+        capsys,
+        "research-artifact",
+        "--path",
+        db,
+        "export",
+        artifact_id,
+        "--format",
+        "markdown",
+    )
+    assert code == 0
+    assert "Updated conclusion." in markdown
+
+
+def test_cli_compares_two_revisions(tmp_path, capsys):
+    parser = _parser()
+    db = str(tmp_path / "research.db")
+    base = [
+        "research-artifact",
+        "--path",
+        db,
+        "save",
+        "--subject",
+        "NVDA fundamental review",
+        "--content",
+        "Original conclusion.",
+        "--data-as-of",
+        "2026-10-20",
+    ]
+    code, out, _ = _run(parser, capsys, *base)
+    first = json.loads(out)["revision"]
+    assert code == 0
+    code, out, _ = _run(
+        parser,
+        capsys,
+        "research-artifact",
+        "--path",
+        db,
+        "save",
+        "--artifact-id",
+        first["artifact_id"],
+        "--content",
+        "Updated conclusion.",
+        "--data-as-of",
+        "2026-11-03",
+    )
+    revised = json.loads(out)["revision"]
+    assert code == 0
+
+    code, out, err = _run(
+        parser,
+        capsys,
+        "research-artifact",
+        "--path",
+        db,
+        "compare",
+        first["artifact_id"],
+        first["revision_id"],
+        revised["revision_id"],
+    )
+
+    assert code == 0, err
+    comparison = json.loads(out)["comparison"]
+    assert comparison["from"]["revision_id"] == first["revision_id"]
+    assert comparison["to"]["revision_id"] == revised["revision_id"]
+    assert comparison["content"]["changed"] is True
+    assert comparison["metadata"]["data_as_of"]["to"] == "2026-11-03"
+
 
 def test_cli_reports_missing_artifact(tmp_path, capsys):
     parser = _parser()

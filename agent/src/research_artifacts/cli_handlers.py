@@ -94,11 +94,37 @@ def _cmd_revision(args: argparse.Namespace) -> int:
         store.close()
 
 
+def _cmd_compare(args: argparse.Namespace) -> int:
+    store = _store(args)
+    try:
+        comparison = store.compare_revisions(
+            artifact_id=args.artifact_id,
+            from_revision_id=args.from_revision_id,
+            to_revision_id=args.to_revision_id,
+        )
+        _emit({"comparison": comparison})
+        return 0
+    finally:
+        store.close()
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    store = _store(args)
+    try:
+        _emit(store.export_series(args.artifact_id, args.format).to_dict())
+        return 0
+    finally:
+        store.close()
+
+
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "save": _cmd_save,
     "search": _cmd_search,
     "show": _cmd_show,
     "revision": _cmd_revision,
+    "compare": _cmd_compare,
+
+    "export": _cmd_export,
 }
 _PARSER: argparse.ArgumentParser | None = None
 
@@ -115,7 +141,7 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
     global _PARSER
     parser = subparsers.add_parser(
         "research-artifact",
-        help="Save, search, and revise evidence-backed research artifacts",
+        help="Save, search, revise, and compare evidence-backed research artifacts",
     )
     parser.add_argument("--path", default=None, help="Override research-artifact SQLite path")
     commands = parser.add_subparsers(dest="research_artifact_command")
@@ -143,6 +169,15 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
 
     revision = commands.add_parser("revision", help="Show one immutable revision")
     revision.add_argument("revision_id")
+
+    compare = commands.add_parser("compare", help="Compare two revisions in one series")
+    compare.add_argument("artifact_id")
+    compare.add_argument("from_revision_id")
+    compare.add_argument("to_revision_id")
+
+    export = commands.add_parser("export", help="Export a full series as JSON or Markdown")
+    export.add_argument("artifact_id")
+    export.add_argument("--format", choices=("json", "markdown"), default="json")
 
     _PARSER = parser
     return parser

@@ -57,16 +57,18 @@
 
 ## 📰 新闻
 
+- **2026-11-08** 📝 **研究版本比较与完整历史导出** — 可比较任意两个修订的正文、证据和元数据（[#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)），并将完整研究历史导出为 JSON 或 Markdown（[#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)）。切换研究记录时会忽略过期响应，Markdown 导出以隔离的代码块保留原始正文。另修复因子权重缺失、部分收益缺失时的归因、IC 样本不足、估值输入非有限值，以及负入场价格下的保证金计算。**已在 `main`，随下一次 pip 版本发布。**
+
 - **2026-11-07** 🧪 **研究实验室：交易成本与样本外验证** — 用已保存的行情输入，按不同费用和滑点重新回测；仅依据训练结果选参，再锁定参数执行样本外测试与独立的最终留出验证。[研究实验室](guides/research-lab.md) 的 Web、CLI、API 和 Agent/MCP 共用一套流程，界面支持全部 11 种语言。另修复跨窗口收益统计、因子预热与长窗口计算，新增 20 个离线任务回放用例，缺少证据会明确显示。版本化研究资料也可保存结构化财务事实（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)），并修正中国期货裸合约代码识别（[#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)）。**已在 `main`，随下一次 pip 版本发布。**
 
 - **2026-11-06** 📈 **隐含波动率曲面与模拟交易修复** — 可根据提供的期权观测值构建行权价 × 到期时间的 IV 网格，标注原始观测与插值点，不向数据覆盖范围之外外推（[#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)）。极端数值输入现在返回有限结果或明确错误。A 股五分钟模拟交易中，受涨跌停限制的市价单会立即撤销（[#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)）；撮合引擎也改为按跨标的时间顺序处理，防止用未来卖出款支付早先买单。**已在 `main`，随下一次 pip 版本发布；公开的五分钟入口仍限每步一个标的。**
 
+<details>
+<summary>更早的新闻</summary>
+
 - **2026-11-05** 🚀 **v0.1.19 发布**（[发布说明](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19)，`pip install -U vibe-trading-ai`）：研究不再随对话结束而消失——带证据的研究记录可按版本保存并修订，之前轮次和会话中的回测可直接复用，研究目标可原地编辑。新增可选功能：A 股五分钟模拟交易，以及聚源综合问数、智能选股与香农持仓诊断（QVeris 已移除；仅有 `GILDATA_TOKEN` 不再开启任何功能）。另有阿根廷（BYMA）回测、Parallel 网页搜索、Codex OAuth 模型发现，并修复了 0.1.18 的两个回归问题。共 116 个合并的 PR，另有 21 个经维护者提交合入，来自 26 位贡献者（[CHANGELOG](CHANGELOG.md)）。
   **今日修复：** 回测报告其实际评估的基准；多空组合也能生成风险透视（risk x-ray）；GTJA alpha 17 在输入预热期间保持缺失；香农面板支持全部 11 种界面语言；另合入两项已审阅但尚未落地的贡献者修复（[#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) TTM 求和不再跨越缺失季度，[#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) 3:2 拆股识别）。感谢 [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) 和 [@yufengsika](https://github.com/yufengsika)！
   **发版后已在 main 上修复（随下个 pip 版本发布）：** 回测基准改为在评估期第一根 K 线的开盘价买入，与策略的成交方式一致，不再从热身期最后一根收盘价起算；超额收益不再包含这段涨跌（AAPL 20/60 均线例子：22.5% → 18.4%）。
-
-<details>
-<summary>更早的新闻</summary>
 
 - **2026-11-04** 📊 **聚源综合问数、智能选股与香农持仓诊断** — 可以一次查出市值前三的股票及其半年营收，也可以查看组合的十因子风格暴露和各持仓对波动的贡献。聚源九项功能默认全关，已有 Token 也需逐项开启。免费数据源查不到时不会自动转用聚源。 [#2117](https://github.com/HKUDS/Vibe-Trading/pull/2117) · [#2118](https://github.com/HKUDS/Vibe-Trading/pull/2118) · [#2119](https://github.com/HKUDS/Vibe-Trading/pull/2119)
   同日明确了回测信号在下一根 K 线开盘成交的约定，修复了特殊换行符导致 Swarm 任务被误判为超时的问题，并加快了研究资料查重。 [#2137](https://github.com/HKUDS/Vibe-Trading/pull/2137) · [#2155](https://github.com/HKUDS/Vibe-Trading/pull/2155) · [#2159](https://github.com/HKUDS/Vibe-Trading/pull/2159)
@@ -104,7 +106,7 @@
 | 汇总账户或比较配置 | 在 `/portfolio` 查看持仓和调整建议。[券商支持](#券商支持一览) |
 | 分析期权或相关性 | 在 `/options` 查看多腿损益和希腊字母，在 `/correlation` 观察市场状态。 |
 | 组织或定时运行研究 | 运行 [Swarm 团队](guides/research.md#swarm-workflows)，在 Pixel Office 分工，或在 `/scheduled` 安排简报。 |
-| 回看研究证据 | 在 `/research-artifacts` 搜索带日期的[研究版本](guides/research.md#versioned-research-artifacts)。 |
+| 回看研究证据 | 在 `/research-artifacts` 搜索带日期的[研究版本](guides/research.md#versioned-research-artifacts)，并比较任意两个修订。 |
 
 ## ⚡ 快速示例
 

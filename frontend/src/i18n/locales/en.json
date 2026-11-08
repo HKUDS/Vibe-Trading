@@ -97,6 +97,16 @@
     "researchLab": "Research Lab"
   },
   "researchArtifacts": {
+    "compareTitle": "Revision comparison",
+    "fromRevision": "From revision",
+    "toRevision": "To revision",
+    "compareAction": "Compare",
+    "comparing": "Comparing…",
+    "compareError": "Unable to compare revisions.",
+    "comparisonOnly": "Read-only comparison. No revision is revalidated.",
+    "noChanges": "No differences between these revisions.",
+    "metadataChanges": "Metadata changes",
+    "compareTruncated": "Diff truncated to the first 400 lines.",
     "title": "Research artifacts",
     "subtitle": "Save and reuse evidence-backed analyses across sessions without overwriting earlier revisions.",
     "searchPlaceholder": "Search subject, universe, or content",
@@ -127,7 +137,11 @@
     "hypothesis_id": "Hypothesis ID",
     "goal_id": "Goal ID",
     "session_id": "Session ID",
-    "run_id": "Run ID"
+    "run_id": "Run ID",
+    "exportJson": "Export JSON",
+    "exportMarkdown": "Export Markdown",
+    "exporting": "Exporting...",
+    "exportError": "Unable to export the research artifact."
   },
   "runtime": {
     "monitorBadge": "Runtime Monitor",

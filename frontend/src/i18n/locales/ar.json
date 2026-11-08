@@ -91,6 +91,16 @@
     "researchLab": "مختبر الأبحاث"
   },
   "researchArtifacts": {
+    "compareTitle": "مقارنة المراجعات",
+    "fromRevision": "من مراجعة",
+    "toRevision": "إلى مراجعة",
+    "compareAction": "قارن",
+    "comparing": "جارٍ المقارنة…",
+    "compareError": "تعذرت مقارنة المراجعتين.",
+    "comparisonOnly": "مقارنة للقراءة فقط. لا تتم إعادة التحقق من أي مراجعة.",
+    "noChanges": "لا توجد اختلافات بين هاتين المراجعتين.",
+    "metadataChanges": "تغييرات البيانات الوصفية",
+    "compareTruncated": "تم اقتطاع الفرق إلى أول 400 سطر.",
     "completeness": "الاكتمال",
     "optionalLinks": "معرفات مرتبطة اختيارية",
     "formTitleNew": "حفظ البحث",
@@ -121,7 +131,11 @@
     "hypothesis_id": "معرّف الفرضية",
     "goal_id": "معرّف الهدف",
     "session_id": "معرّف الجلسة",
-    "run_id": "معرّف التشغيل"
+    "run_id": "معرّف التشغيل",
+    "exportJson": "تصدير JSON",
+    "exportMarkdown": "تصدير Markdown",
+    "exporting": "جارٍ التصدير…",
+    "exportError": "تعذر تصدير مخرجات البحث."
   },
   "runtime": {
     "monitorBadge": "مراقبة التداول",

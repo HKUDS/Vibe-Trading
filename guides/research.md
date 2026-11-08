@@ -50,10 +50,18 @@ the wall-clock activity watchdog.
 
 Completed analyses can be saved as immutable revisions with their subject, universe, data-as-of date, evidence references, verification status, and optional hypothesis, goal, session, or run links. Repeating identical content and provenance returns the existing revision; changed evidence or a new data-as-of date appends a linked revision instead of overwriting the old conclusion. Search returns the latest revision of each series, while the full history remains available in the Web research-artifact library, API, agent tools, and CLI. Historical content is never presented as newly revalidated.
 
+Any two revisions in the same series can be compared in either direction. The comparison returns a unified content diff of at most 400 lines, explicit LF/CRLF styles when line endings change, evidence additions, removals and pure reorderings without assuming evidence IDs, and changed provenance fields. The Web history section provides the same operation as `GET /api/research-artifacts/{artifact_id}/compare`, the `compare_research_artifact_revisions` agent tool, and the CLI below. Comparison is read-only: it neither modifies the revisions nor revalidates their research.
+
 ```bash
 vibe-trading research-artifact save --subject "NVDA fundamental review" --content "Conclusion with evidence." --data-as-of 2026-10-27 --evidence '[{"source_uri":"https://example.com/filing"}]'
 vibe-trading research-artifact search --query "NVDA"
+vibe-trading research-artifact compare ra_example ra_example_r1 ra_example_r3
+
+vibe-trading research-artifact export ra_example --format json
+vibe-trading research-artifact export ra_example --format markdown
 ```
+
+A series export includes every immutable revision in chronological order, including evidence, verification state, and optional lineage links. JSON and Markdown are deterministic for the same stored series: no export timestamp is inserted. The API `GET /api/research-artifacts/{artifact_id}/export?format=json|markdown` and the CLI return a filename, media type, exact content, and its SHA-256 digest. The Web library downloads the same server-rendered bytes rather than rebuilding a second representation in the browser. Export does not revalidate historical claims or alter their verification status. In Markdown exports, each original revision is shown verbatim in a fenced Markdown block; its markup is not rendered as part of the export. This keeps arbitrary HTML, unfinished fences, and headings inside the saved research from hiding the generated evidence and revision sections. JSON retains the original content unchanged.
 
 ## 💡 Examples
 

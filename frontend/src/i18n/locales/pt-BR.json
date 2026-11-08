@@ -97,6 +97,16 @@
     "researchLab": "Laboratório de pesquisa"
   },
   "researchArtifacts": {
+    "compareTitle": "Comparação de revisões",
+    "fromRevision": "Da revisão",
+    "toRevision": "Para a revisão",
+    "compareAction": "Comparar",
+    "comparing": "Comparando…",
+    "compareError": "Não foi possível comparar as revisões.",
+    "comparisonOnly": "Comparação somente leitura. Nenhuma revisão é reverificada.",
+    "noChanges": "Não há diferenças entre estas revisões.",
+    "metadataChanges": "Alterações de metadados",
+    "compareTruncated": "Diff truncado para as primeiras 400 linhas.",
     "subject": "Assunto da pesquisa",
     "dataAsOf": "Dados em",
     "saving": "Salvando…",
@@ -127,7 +137,11 @@
     "hypothesis_id": "ID da hipótese",
     "goal_id": "ID do objetivo",
     "session_id": "ID da sessão",
-    "run_id": "ID da execução"
+    "run_id": "ID da execução",
+    "exportJson": "Exportar JSON",
+    "exportMarkdown": "Exportar Markdown",
+    "exporting": "Exportando…",
+    "exportError": "Não foi possível exportar o artefato de pesquisa."
   },
   "runtime": {
     "monitorBadge": "Monitor de Runtime",

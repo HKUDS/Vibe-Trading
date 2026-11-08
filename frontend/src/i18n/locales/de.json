@@ -97,6 +97,16 @@
     "researchLab": "Forschungslabor"
   },
   "researchArtifacts": {
+    "compareTitle": "Revisionsvergleich",
+    "fromRevision": "Von Revision",
+    "toRevision": "Zu Revision",
+    "compareAction": "Vergleichen",
+    "comparing": "Wird verglichen…",
+    "compareError": "Revisionen konnten nicht verglichen werden.",
+    "comparisonOnly": "Schreibgeschützter Vergleich. Keine Revision wird erneut verifiziert.",
+    "noChanges": "Keine Unterschiede zwischen diesen Revisionen.",
+    "metadataChanges": "Metadatenänderungen",
+    "compareTruncated": "Diff auf die ersten 400 Zeilen gekürzt.",
     "subject": "Forschungsthema",
     "dataAsOf": "Datenstand",
     "saving": "Speichern…",
@@ -127,7 +137,11 @@
     "hypothesis_id": "Hypothesen-ID",
     "goal_id": "Ziel-ID",
     "session_id": "Sitzungs-ID",
-    "run_id": "Lauf-ID"
+    "run_id": "Lauf-ID",
+    "exportJson": "JSON exportieren",
+    "exportMarkdown": "Markdown exportieren",
+    "exporting": "Export läuft…",
+    "exportError": "Recherche-Artefakt konnte nicht exportiert werden."
   },
   "runtime": {
     "monitorBadge": "Runtime-Monitor",

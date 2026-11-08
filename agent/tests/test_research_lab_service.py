@@ -10,6 +10,7 @@ import pytest
 from src.research_lab import service
 from src.api.research_lab_routes import register_research_lab_routes
 from src.tools.research_lab_tool import ResearchLabTool
+from tests.module_os_helpers import patch_module_os
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def test_interrupted_worker_does_not_remain_running(isolated, monkeypatch):
     def missing(pid, signal):
         raise ProcessLookupError()
 
-    monkeypatch.setattr(service.os, "kill", missing)
+    patch_module_os(monkeypatch, service, kill=missing)
     assert service.get_job(state["id"])["status"] == "failed"
     assert "interrupted" in service.get_job(state["id"])["error"]
 

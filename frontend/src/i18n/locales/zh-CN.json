@@ -91,6 +91,16 @@
     "researchLab": "研究实验室"
   },
   "researchArtifacts": {
+    "compareTitle": "修订比较",
+    "fromRevision": "起始修订",
+    "toRevision": "目标修订",
+    "compareAction": "比较",
+    "comparing": "正在比较…",
+    "compareError": "无法比较修订。",
+    "comparisonOnly": "只读比较，不会重新验证任何修订。",
+    "noChanges": "这两个修订没有差异。",
+    "metadataChanges": "元数据变化",
+    "compareTruncated": "差异仅显示前 400 行，已截断。",
     "subject": "研究主题",
     "dataAsOf": "数据截至",
     "saving": "正在保存…",
@@ -121,7 +131,11 @@
     "hypothesis_id": "假设 ID",
     "goal_id": "目标 ID",
     "session_id": "会话 ID",
-    "run_id": "运行 ID"
+    "run_id": "运行 ID",
+    "exportJson": "导出 JSON",
+    "exportMarkdown": "导出 Markdown",
+    "exporting": "正在导出…",
+    "exportError": "无法导出研究资料。"
   },
   "runtime": {
     "monitorBadge": "交易监控",
