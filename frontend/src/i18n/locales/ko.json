@@ -1624,6 +1624,25 @@
       "pnl": "손익",
       "noData": "시나리오 그리드가 반환되지 않았습니다."
     },
+    "surface": {
+      "title": "내재 변동성 곡면",
+      "subtitle": "관측 호가를 편집해 행사가와 만기로 구성된 제한된 그리드를 계산합니다. 시장 데이터는 가져오지 않습니다.",
+      "spot": "기초자산 가격",
+      "gridStrikes": "그리드 행사가",
+      "gridExpiries": "그리드 만기(일)",
+      "strike": "행사가",
+      "expiryDays": "만기(일)",
+      "ivPct": "IV(%)",
+      "remove": "삭제",
+      "addQuote": "호가 추가",
+      "compute": "곡면 계산",
+      "computing": "곡면 계산 중…",
+      "invalid": "유효한 양수를 입력하고 호가를 하나 이상 남겨 주세요.",
+      "empty": "계산하면 관측값과 보간값이 표시됩니다.",
+      "caption": "색이 진할수록 IV가 높으며, 테두리가 있는 셀은 관측 호가입니다.",
+      "observed": "관측값",
+      "interpolated": "보간값"
+    },
     "chain": {
       "title": "미국 옵션 체인",
       "ticker": "티커",

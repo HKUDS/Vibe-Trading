@@ -4,6 +4,8 @@ import type {
   OptionsChainResponse,
   OptionsPayoffRequest,
   OptionsPayoffResponse,
+  VolatilitySurfaceRequest,
+  VolatilitySurfaceResponse,
 } from "@/lib/options";
 
 const BASE = "";
@@ -802,6 +804,12 @@ export const api = {
   // Options Lab
   analyzeOptionsPayoff: (body: OptionsPayoffRequest, signal?: AbortSignal) =>
     request<OptionsPayoffResponse>("/options/payoff", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  computeVolatilitySurface: (body: VolatilitySurfaceRequest, signal?: AbortSignal) =>
+    request<VolatilitySurfaceResponse>("/options/volatility-surface", {
       method: "POST",
       body: JSON.stringify(body),
       signal,

@@ -16,6 +16,7 @@ convention in ``test_alpha_compare_api.py``.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 import pytest
@@ -182,6 +183,82 @@ def test_payoff_unexpected_tool_exception_maps_to_502(monkeypatch: pytest.Monkey
 
     assert r.status_code == 502
     assert r.json() == {"ok": False, "error": "payoff computation failed"}
+
+
+def _surface_body(**over: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "observations": [
+            {"strike": 90.0, "time_to_expiry": 0.1, "implied_volatility": 0.25},
+            {"strike": 110.0, "time_to_expiry": 0.1, "implied_volatility": 0.35},
+            {"strike": 90.0, "time_to_expiry": 0.2, "implied_volatility": 0.30},
+            {"strike": 110.0, "time_to_expiry": 0.2, "implied_volatility": 0.40},
+        ],
+        "spot": 100.0,
+        "strikes": [90.0, 100.0, 110.0],
+        "expiries": [0.1, 0.15, 0.2],
+    }
+    body.update(over)
+    return body
+
+
+def test_volatility_surface_happy_path_uses_real_interpolation() -> None:
+    r = _client().post("/options/volatility-surface", json=_surface_body())
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["strikes"] == [90.0, 100.0, 110.0]
+    assert body["expiries"] == [0.1, 0.15, 0.2]
+    assert body["interpolation"]["extrapolation"] == "rejected"
+    assert len(body["points"]) == 9
+    assert sum(point["source"] == "observed" for point in body["points"]) == 4
+    middle = next(point for point in body["points"] if point["strike"] == 100.0 and point["time_to_expiry"] == 0.15)
+    assert middle["source"] == "interpolated"
+    weight = math.log(100.0 / 90.0) / math.log(110.0 / 90.0)
+    lower_iv = 0.25 + (0.35 - 0.25) * weight
+    upper_iv = 0.30 + (0.40 - 0.30) * weight
+    lower_variance = lower_iv**2 * 0.1
+    upper_variance = upper_iv**2 * 0.2
+    expected_variance = (lower_variance + upper_variance) / 2
+    assert middle["total_variance"] == pytest.approx(expected_variance)
+    assert middle["implied_volatility"] == pytest.approx((expected_variance / 0.15) ** 0.5)
+
+
+def test_volatility_surface_rejects_extrapolation() -> None:
+    r = _client().post("/options/volatility-surface", json=_surface_body(strikes=[120.0]))
+
+    assert r.status_code == 400
+    assert "no extrapolation" in r.json()["error"]
+
+
+def test_volatility_surface_rejects_duplicate_quotes() -> None:
+    observations = _surface_body()["observations"]
+    observations.append(observations[0])
+
+    r = _client().post("/options/volatility-surface", json=_surface_body(observations=observations))
+
+    assert r.status_code == 400
+    assert "duplicate" in r.json()["error"]
+
+
+def test_volatility_surface_rejects_invalid_schema() -> None:
+    body = _surface_body()
+    body["observations"][0]["strike"] = -1.0
+
+    assert _client().post("/options/volatility-surface", json=body).status_code == 422
+
+
+def test_volatility_surface_unexpected_exception_maps_to_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("surface engine exploded")
+
+    monkeypatch.setattr("src.api.options_routes.implied_volatility_surface", explode)
+
+    r = _client().post("/options/volatility-surface", json=_surface_body())
+
+    assert r.status_code == 502
+    assert r.json() == {"ok": False, "error": "volatility surface computation failed"}
 
 
 # ── GET /options/chain ───────────────────────────────────────────────────────

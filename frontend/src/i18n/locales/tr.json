@@ -1590,6 +1590,25 @@
       "pnl": "Kâr/zarar",
       "noData": "Senaryo tablosu döndürülmedi."
     },
+    "surface": {
+      "title": "Örtük oynaklık yüzeyi",
+      "subtitle": "Gözlemlenen fiyatları düzenleyip sınırlı bir kullanım fiyatı ve vade ızgarası hesaplayın. Piyasa verisi getirilmez.",
+      "spot": "Spot fiyat",
+      "gridStrikes": "Izgara kullanım fiyatları",
+      "gridExpiries": "Izgara vadeleri (gün)",
+      "strike": "Kullanım fiyatı",
+      "expiryDays": "Vade (gün)",
+      "ivPct": "Örtük oynaklık (%)",
+      "remove": "Kaldır",
+      "addQuote": "Fiyat ekle",
+      "compute": "Yüzeyi hesapla",
+      "computing": "Yüzey hesaplanıyor…",
+      "invalid": "Geçerli pozitif sayılar girin ve en az bir fiyat bırakın.",
+      "empty": "Gözlemlenen ve enterpole edilen noktaları görmek için yüzeyi hesaplayın.",
+      "caption": "Koyu hücreler daha yüksek örtük oynaklığı, çerçeveli hücreler gözlemlenen fiyatları gösterir.",
+      "observed": "gözlemlenen",
+      "interpolated": "enterpole"
+    },
     "chain": {
       "title": "ABD opsiyon zinciri",
       "ticker": "Sembol",

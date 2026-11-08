@@ -342,7 +342,7 @@ Vibe-Trading adalah bagian dari ekosistem agent **[HKUDS](https://github.com/HKU
 |---|---|---|
 | Trading simulasi | Akun harian menyimpan kas, transaksi, dan nilai aset bersih lintas sesi. Simulasi terpisah memutar ulang sesi saham A per lima menit. | Pencocokan opsional berdasarkan porsi volume ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draf). |
 | Riset | Kartu eksekusi merekam metrik dan bukti backtest. Riset bertanggal menyimpan riwayat revisi dan dapat dicari. | Fakta keuangan terstruktur dalam artefak riset ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), sedang ditinjau). |
-| Lab opsi | Profil laba rugi multikaki, Greeks, dan skenario spot × IV. | Permukaan volatilitas direncanakan. |
+| Lab opsi | Profil laba rugi multikaki, Greeks, dan skenario spot × IV. | Grid permukaan volatilitas interaktif di `/options`. |
 
 ## Cara berkontribusi
 

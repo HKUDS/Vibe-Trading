@@ -1630,6 +1630,25 @@
       "pnl": "P&G",
       "noData": "No se devolvió la cuadrícula de escenarios."
     },
+    "surface": {
+      "title": "Superficie de volatilidad implícita",
+      "subtitle": "Edita las cotizaciones observadas y calcula una cuadrícula limitada de strike y vencimiento. No se obtienen datos de mercado.",
+      "spot": "Precio al contado",
+      "gridStrikes": "Strikes de la cuadrícula",
+      "gridExpiries": "Vencimientos de la cuadrícula (días)",
+      "strike": "Strike",
+      "expiryDays": "Vencimiento (días)",
+      "ivPct": "VI (%)",
+      "remove": "Eliminar",
+      "addQuote": "Añadir cotización",
+      "compute": "Calcular superficie",
+      "computing": "Calculando superficie…",
+      "invalid": "Introduce números positivos válidos y conserva al menos una cotización.",
+      "empty": "Calcula la superficie para mostrar los puntos observados e interpolados.",
+      "caption": "Las celdas más oscuras indican mayor VI; las celdas con borde son cotizaciones observadas.",
+      "observed": "observado",
+      "interpolated": "interpolado"
+    },
     "chain": {
       "title": "Cadena de opciones de EE. UU.",
       "ticker": "Símbolo",

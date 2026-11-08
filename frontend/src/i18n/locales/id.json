@@ -1630,6 +1630,25 @@
       "pnl": "P&L",
       "noData": "Tidak ada grid skenario yang dikembalikan."
     },
+    "surface": {
+      "title": "Permukaan volatilitas implisit",
+      "subtitle": "Edit kuotasi teramati dan hitung grid terbatas dari strike dan jatuh tempo. Tidak ada data pasar yang diambil.",
+      "spot": "Harga spot",
+      "gridStrikes": "Strike pada grid",
+      "gridExpiries": "Jatuh tempo pada grid (hari)",
+      "strike": "Strike",
+      "expiryDays": "Jatuh tempo (hari)",
+      "ivPct": "VI (%)",
+      "remove": "Hapus",
+      "addQuote": "Tambah kuotasi",
+      "compute": "Hitung permukaan",
+      "computing": "Menghitung permukaan…",
+      "invalid": "Masukkan angka positif yang valid dan sisakan setidaknya satu kuotasi.",
+      "empty": "Hitung permukaan untuk menampilkan titik teramati dan terinterpolasi.",
+      "caption": "Sel yang lebih gelap menunjukkan VI lebih tinggi; sel berbingkai adalah kuotasi teramati.",
+      "observed": "teramati",
+      "interpolated": "terinterpolasi"
+    },
     "chain": {
       "title": "Options Chain AS",
       "ticker": "Ticker",

@@ -1,6 +1,10 @@
 import {
   bidAskSpreadPct,
   buildPayoffRequest,
+  buildVolatilitySurfaceRequest,
+  DEFAULT_SURFACE_EXPIRY_DAYS,
+  DEFAULT_SURFACE_OBSERVATIONS,
+  DEFAULT_SURFACE_STRIKES,
   buildPresetLegs,
   DEFAULT_PARAMS,
   downsampleIndices,
@@ -11,6 +15,7 @@ import {
   nearestStrikeIndex,
   niceStrikeStep,
   pctToFraction,
+  parsePositiveGrid,
   roundToNiceStrike,
   STRATEGY_PRESETS,
   type OptionLeg,
@@ -245,5 +250,36 @@ describe("display formatters", () => {
   it("ivLabel formats IV fractions as percents", () => {
     expect(ivLabel(0.3)).toBe("30%");
     expect(ivLabel(0.255)).toBe("25.5%");
+  });
+});
+
+describe("volatility surface request inputs", () => {
+  it("converts days and percent IV to backend years and fractions", () => {
+    const request = buildVolatilitySurfaceRequest(
+      "100",
+      DEFAULT_SURFACE_OBSERVATIONS,
+      DEFAULT_SURFACE_STRIKES,
+      DEFAULT_SURFACE_EXPIRY_DAYS,
+    );
+
+    expect(request).not.toBeNull();
+    expect(request?.spot).toBe(100);
+    expect(request?.strikes).toEqual([90, 100, 110]);
+    expect(request?.expiries).toHaveLength(5);
+    expect(request?.observations[0]).toEqual({
+      strike: 90,
+      time_to_expiry: 30 / 365,
+      implied_volatility: 0.24,
+    });
+  });
+
+  it("rejects malformed, non-positive, and blank values", () => {
+    expect(parsePositiveGrid("90, 100, 110")).toEqual([90, 100, 110]);
+    expect(parsePositiveGrid("90, 0")).toBeNull();
+    expect(parsePositiveGrid("90,")).toBeNull();
+    expect(buildVolatilitySurfaceRequest("0", DEFAULT_SURFACE_OBSERVATIONS, "90", "30")).toBeNull();
+    expect(buildVolatilitySurfaceRequest("100", [], "90", "30")).toBeNull();
+    expect(buildVolatilitySurfaceRequest("100", [{ id: 1, strike: "90", expiryDays: "30", ivPct: "" }], "90", "30")).toBeNull();
+    expect(buildVolatilitySurfaceRequest("100", DEFAULT_SURFACE_OBSERVATIONS, "90, 0", "30")).toBeNull();
   });
 });

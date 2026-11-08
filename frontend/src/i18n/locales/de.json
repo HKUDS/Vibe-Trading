@@ -1630,6 +1630,25 @@
       "pnl": "P&L",
       "noData": "Keine Szenariomatrix zurückgegeben."
     },
+    "surface": {
+      "title": "Implizite Volatilitätsoberfläche",
+      "subtitle": "Beobachtete Kurse bearbeiten und ein begrenztes Raster aus Strike und Laufzeit berechnen. Es werden keine Marktdaten abgerufen.",
+      "spot": "Spotkurs",
+      "gridStrikes": "Strikes im Raster",
+      "gridExpiries": "Laufzeiten im Raster (Tage)",
+      "strike": "Strike",
+      "expiryDays": "Laufzeit (Tage)",
+      "ivPct": "IV (%)",
+      "remove": "Entfernen",
+      "addQuote": "Kurs hinzufügen",
+      "compute": "Oberfläche berechnen",
+      "computing": "Oberfläche wird berechnet…",
+      "invalid": "Gültige positive Zahlen eingeben und mindestens einen Kurs behalten.",
+      "empty": "Berechne die Oberfläche, um beobachtete und interpolierte Punkte anzuzeigen.",
+      "caption": "Dunklere Zellen bedeuten höhere IV; umrandete Zellen sind beobachtete Kurse.",
+      "observed": "beobachtet",
+      "interpolated": "interpoliert"
+    },
     "chain": {
       "title": "US-Options-Kette",
       "ticker": "Ticker",

@@ -92,6 +92,37 @@ export interface OptionsPayoffResponse {
   limitations: string[];
 }
 
+export interface VolatilityObservation {
+  strike: number;
+  /** Years. */
+  time_to_expiry: number;
+  /** Annualized IV as a fraction: 0.30 = 30%. */
+  implied_volatility: number;
+}
+
+export interface VolatilitySurfaceRequest {
+  observations: VolatilityObservation[];
+  spot: number;
+  strikes?: number[];
+  expiries?: number[];
+}
+
+export interface VolatilitySurfacePoint extends VolatilityObservation {
+  total_variance: number;
+  source: "observed" | "interpolated";
+}
+
+export interface VolatilitySurfaceResponse {
+  strikes: number[];
+  expiries: number[];
+  interpolation: {
+    strike: "linear_iv_log_moneyness";
+    expiry: "linear_total_variance";
+    extrapolation: "rejected";
+  };
+  points: VolatilitySurfacePoint[];
+}
+
 // ---------------------------------------------------------------------------
 // API contract — GET /options/chain
 // ---------------------------------------------------------------------------
@@ -164,6 +195,66 @@ export const DEFAULT_PARAMS: OptionsLabParams = {
   multiplier: 100,
   commission_rate_pct: 0.1,
 };
+
+export interface SurfaceObservationInput {
+  id: number;
+  strike: string;
+  expiryDays: string;
+  ivPct: string;
+}
+
+export const DEFAULT_SURFACE_OBSERVATIONS: SurfaceObservationInput[] = [
+  { id: 1, strike: "90", expiryDays: "30", ivPct: "24" },
+  { id: 2, strike: "110", expiryDays: "30", ivPct: "30" },
+  { id: 3, strike: "90", expiryDays: "60", ivPct: "26" },
+  { id: 4, strike: "110", expiryDays: "60", ivPct: "34" },
+  { id: 5, strike: "90", expiryDays: "90", ivPct: "28" },
+  { id: 6, strike: "110", expiryDays: "90", ivPct: "36" },
+];
+
+export const DEFAULT_SURFACE_STRIKES = "90, 100, 110";
+export const DEFAULT_SURFACE_EXPIRY_DAYS = "30, 45, 60, 75, 90";
+
+export function parsePositiveGrid(value: string): number[] | null {
+  const items = value.split(",").map((item) => item.trim());
+  if (items.some((item) => !item)) return null;
+  const values = items.map(Number);
+  return values.every((value) => Number.isFinite(value) && value > 0) ? values : null;
+}
+
+export function buildVolatilitySurfaceRequest(
+  spot: string,
+  observations: SurfaceObservationInput[],
+  strikes: string,
+  expiryDays: string,
+): VolatilitySurfaceRequest | null {
+  const spotValue = Number(spot);
+  if (!Number.isFinite(spotValue) || spotValue <= 0 || observations.length === 0) return null;
+  const parsedObservations: VolatilityObservation[] = [];
+  for (const observation of observations) {
+    if (!observation.strike.trim() || !observation.expiryDays.trim() || !observation.ivPct.trim()) return null;
+    const strike = Number(observation.strike);
+    const days = Number(observation.expiryDays);
+    const ivPct = Number(observation.ivPct);
+    if (!Number.isFinite(strike) || strike <= 0) return null;
+    if (!Number.isFinite(days) || days <= 0) return null;
+    if (!Number.isFinite(ivPct) || ivPct < 0) return null;
+    parsedObservations.push({
+      strike,
+      time_to_expiry: days / 365,
+      implied_volatility: pctToFraction(ivPct),
+    });
+  }
+  const parsedStrikes = strikes.trim() ? parsePositiveGrid(strikes) : undefined;
+  const parsedExpiries = expiryDays.trim() ? parsePositiveGrid(expiryDays) : undefined;
+  if (parsedStrikes === null || parsedExpiries === null) return null;
+  return {
+    observations: parsedObservations,
+    spot: spotValue,
+    ...(parsedStrikes ? { strikes: parsedStrikes } : {}),
+    ...(parsedExpiries ? { expiries: parsedExpiries.map((days) => days / 365) } : {}),
+  };
+}
 
 export function pctToFraction(pct: number): number {
   return pct / 100;

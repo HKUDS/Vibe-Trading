@@ -1630,6 +1630,25 @@
       "pnl": "P&L",
       "noData": "No scenario grid returned."
     },
+    "surface": {
+      "title": "Implied volatility surface",
+      "subtitle": "Edit observed quotes and compute a bounded strike by expiry grid. No market data is fetched.",
+      "spot": "Spot",
+      "gridStrikes": "Grid strikes",
+      "gridExpiries": "Grid expiries (days)",
+      "strike": "Strike",
+      "expiryDays": "Expiry (days)",
+      "ivPct": "IV (%)",
+      "remove": "Remove",
+      "addQuote": "Add quote",
+      "compute": "Compute surface",
+      "computing": "Computing surface…",
+      "invalid": "Enter valid positive numbers and at least one quote.",
+      "empty": "Compute the surface to display observed and interpolated points.",
+      "caption": "Darker cells indicate higher IV; outlined cells are observed quotes.",
+      "observed": "observed",
+      "interpolated": "interpolated"
+    },
     "chain": {
       "title": "US Options Chain",
       "ticker": "Ticker",

@@ -1624,6 +1624,25 @@
       "pnl": "损益",
       "noData": "未返回情景矩阵数据。"
     },
+    "surface": {
+      "title": "隐含波动率曲面",
+      "subtitle": "编辑观测报价并计算有边界的行权价与到期时间网格，不获取行情数据。",
+      "spot": "标的价格",
+      "gridStrikes": "网格行权价",
+      "gridExpiries": "网格到期时间（天）",
+      "strike": "行权价",
+      "expiryDays": "到期时间（天）",
+      "ivPct": "隐含波动率（%）",
+      "remove": "删除",
+      "addQuote": "添加报价",
+      "compute": "计算曲面",
+      "computing": "正在计算曲面…",
+      "invalid": "请输入有效的正数，并至少保留一条报价。",
+      "empty": "计算后显示观测点和插值点。",
+      "caption": "颜色越深表示隐含波动率越高；带边框的单元格为观测报价。",
+      "observed": "观测值",
+      "interpolated": "插值"
+    },
     "chain": {
       "title": "美股期权链",
       "ticker": "代码",

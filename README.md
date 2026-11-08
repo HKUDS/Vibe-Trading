@@ -345,7 +345,7 @@ Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosyste
 |---|---|---|
 | Paper trading | Daily accounts persist cash, fills and NAV between sessions. A separate simulation replays an A-share session in five-minute steps. | Opt-in volume-share matching ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draft). |
 | Research | Run cards record metrics and evidence for a completed backtest. Dated research artifacts keep revision history and are searchable. | Structured financial facts in research artifacts ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), in review). |
-| Options Lab | Explore multi-leg payoffs, Greeks and spot × IV scenarios. | Volatility surface planned. |
+| Options Lab | Explore multi-leg payoffs, Greeks and spot × IV scenarios. | Interactive volatility surface grid at `/options`. |
 
 ## Contributing
 
