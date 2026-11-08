@@ -288,7 +288,9 @@ def test_markdown_export_keeps_evidence_and_later_revisions_outside_unclosed_con
     assert "Later revision." in rendered
 
 
-@pytest.mark.parametrize("opening", ["<!--", "<pre>", "<script>", "<?", "<![CDATA[", "<!A"])
+@pytest.mark.parametrize(
+    "opening", ["<!--", "<pre>", "<script>", "<?", "<![CDATA[", "<!A", "<!--\n<pre>", "<!--\n<script>\n<pre>"]
+)
 def test_markdown_export_isolates_unclosed_html_blocks(tmp_path, opening):
     import mistune
 
@@ -337,7 +339,7 @@ def test_markdown_export_preserves_html_inside_unclosed_fence(tmp_path):
     rendered = mistune.html(exported.content)
 
     assert original_content in exported.content
-    assert f"{original_content}\n```\n\n### Evidence" in exported.content
+    assert f"````markdown\n{original_content}\n````\n\n### Evidence" in exported.content
     assert rendered.count("<h3>Evidence</h3>") == 1
 
 
@@ -410,6 +412,21 @@ def test_export_rejects_missing_series_and_unknown_format(tmp_path):
     saved = _save(store)
     with pytest.raises(ValueError, match="format"):
         store.export_series(saved.revision.artifact_id, "xml")
+
+
+def test_export_metadata_renders_as_literal_text_and_json_preserves_it(tmp_path):
+    import mistune
+
+    store = ResearchArtifactStore(tmp_path / "research.db")
+    value = "<script>alert(1)</script> [link](javascript:alert(1)) `code`"
+    saved = _save(store, subject=value, verification_status=value)
+    rendered = mistune.html(store.export_series(saved.revision.artifact_id, "markdown").content)
+    assert "<script>" not in rendered
+    assert "<a " not in rendered
+    assert "&lt;script&gt;" in rendered
+    document = json.loads(store.export_series(saved.revision.artifact_id, "json").content)
+    assert document["revisions"][0]["subject"] == value
+    assert document["revisions"][0]["verification_status"] == value
 
 
 def test_nonfinite_evidence_is_rejected_before_persistence(tmp_path):

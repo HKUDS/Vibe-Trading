@@ -80,6 +80,7 @@ export function ResearchArtifacts() {
   const [comparison, setComparison] = useState<ResearchArtifactComparison | null>(null);
   const [comparing, setComparing] = useState(false);
   const comparisonRequest = useRef(0);
+  const detailRequest = useRef(0);
 
   async function loadArtifacts(search = "") {
     setLoading(true);
@@ -99,17 +100,22 @@ export function ResearchArtifacts() {
   }, []);
 
   async function openArtifact(artifactId: string) {
+    const requestId = ++detailRequest.current;
     comparisonRequest.current += 1;
+    setDetail(null);
     setComparison(null);
     setComparing(false);
     setError(null);
     try {
       const result = await api.getResearchArtifact(artifactId);
+      if (detailRequest.current !== requestId) return;
       setDetail(result);
       setCompareFrom(result.revisions[1]?.revision_id ?? result.revisions[0]?.revision_id ?? "");
       setCompareTo(result.revisions[0]?.revision_id ?? "");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("researchArtifacts.loadError"));
+      if (detailRequest.current === requestId) {
+        setError(err instanceof Error ? err.message : t("researchArtifacts.loadError"));
+      }
     }
   }
 
@@ -257,6 +263,7 @@ export function ResearchArtifacts() {
                     <p className="mt-1 text-xs text-muted-foreground">{detail.artifact.artifact_id}</p>
                   </div>
                   <button type="button" className="text-sm text-muted-foreground" onClick={() => {
+                    detailRequest.current += 1;
                     comparisonRequest.current += 1;
                     setComparing(false);
                     setComparison(null);

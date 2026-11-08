@@ -71,17 +71,9 @@ def _diff_lines(
     visible_endings = {"\r\n": "\\r\\n", "\n": "\\n", "\r": "\\r"}
     for index, line in enumerate(raw_lines):
         is_header = index < 2 or line.startswith("@@")
-        ending = (
-            "\r\n"
-            if line.endswith("\r\n")
-            else line[-1:] if line.endswith(("\n", "\r")) else ""
-        )
+        ending = "\r\n" if line.endswith("\r\n") else line[-1:] if line.endswith(("\n", "\r")) else ""
         text = line[: -len(ending)] if ending else line
-        yield text + (
-            visible_endings[ending]
-            if show_line_endings and not is_header and ending
-            else ""
-        )
+        yield text + (visible_endings[ending] if show_line_endings and not is_header and ending else "")
         if not is_header and not ending:
             yield "\\ No newline at end of file"
 

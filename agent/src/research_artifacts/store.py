@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 import sqlite3
@@ -36,68 +37,16 @@ def _canonical_json(value: object) -> str:
 
 
 def _markdown_inline(value: str) -> str:
-    """Keep caller-controlled metadata on its generated Markdown line."""
-    return " ".join(value.splitlines())
-
-
-def _html_block_start(line: str) -> tuple[str, bool, int] | None:
-    raw_text = re.match(r"^ {0,3}<(script|pre|style|textarea)(?:\s|>|$)", line, re.IGNORECASE)
-    if raw_text:
-        return rf"</{raw_text.group(1)}\s*>", True, raw_text.end()
-    for opening, closing in (("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")):
-        match = re.match(rf"^ {{0,3}}{re.escape(opening)}", line)
-        if match:
-            return closing, False, match.end()
-    declaration = re.match(r"^ {0,3}<![A-Za-z]", line)
-    if declaration:
-        return ">", False, declaration.end()
-    return None
+    """Render caller-controlled metadata as literal text on one line."""
+    single_line = html.escape(" ".join(value.splitlines()))
+    return re.sub(r"([\\`*_\[\]])", r"\\\1", single_line)
 
 
 def _isolated_revision_content(content: str) -> str:
-    """Keep raw HTML blocks and Markdown fences out of generated sections."""
-    open_fence: tuple[str, int] | None = None
-    open_html: tuple[str, bool, int] | None = None
-    isolated: list[str] = []
-    lines = content.splitlines(keepends=True)
-    for index, line in enumerate(lines):
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-        if match is not None:
-            marker, suffix = match.groups()
-            if open_fence is None:
-                if marker[0] == "`" and "`" in suffix:
-                    isolated.append(line)
-                    continue
-                open_fence = (marker[0], len(marker))
-            elif marker[0] == open_fence[0] and len(marker) >= open_fence[1] and not suffix.strip():
-                open_fence = None
-            isolated.append(line)
-            continue
-        if open_fence is not None:
-            isolated.append(line)
-            continue
-        if open_html is not None:
-            closing, is_regex, _ = open_html
-            if re.search(closing, line, re.IGNORECASE) if is_regex else closing in line:
-                open_html = None
-            isolated.append(line)
-            continue
-        start = _html_block_start(line)
-        if start is not None:
-            closing, is_regex, end = start
-            remainder = line[end:]
-            if not (re.search(closing, remainder, re.IGNORECASE) if is_regex else closing in remainder):
-                open_html = (closing, is_regex, index)
-        isolated.append(line)
-    if open_html is not None:
-        _, _, index = open_html
-        isolated[index] = isolated[index].replace("<", "&lt;", 1)
-    result = "".join(isolated)
-    if open_fence is None:
-        return result
-    character, length = open_fence
-    separator = "" if result.endswith(("\n", "\r")) else "\n"
-    return result + separator + character * length
+    """Preserve original Markdown verbatim without interpreting it as export structure."""
+    longest_run = max((len(run) for run in re.findall(r"`+", content)), default=0)
+    fence = "`" * max(3, longest_run + 1)
+    return f"{fence}markdown\n{content}\n{fence}"
 
 
 def _default_db_path() -> Path:

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { ResearchArtifacts } from "../ResearchArtifacts";
 
@@ -77,6 +77,28 @@ function pendingComparison() {
 describe("ResearchArtifacts page", () => {
   beforeEach(() => {
     Object.values(apiMock).forEach((mock) => mock.mockReset());
+  });
+
+  it("keeps comparison and export bound to the last selected series after out-of-order detail replies", async () => {
+    const other = { ...second, artifact_id: "ra_2", revision_id: "ra_2_r2", subject: "MSFT review" };
+    const olderOther = { ...first, artifact_id: "ra_2", revision_id: "ra_2_r1", subject: "MSFT review" };
+    let resolveFirst!: (value: unknown) => void;
+    const pending = new Promise((resolve) => { resolveFirst = resolve; });
+    apiMock.searchResearchArtifacts.mockResolvedValue({ count: 2, artifacts: [second, other] });
+    apiMock.getResearchArtifact.mockImplementation((id) => id === "ra_1" ? pending : Promise.resolve({ artifact: other, revisions: [other, olderOther] }));
+    apiMock.compareResearchArtifactRevisions.mockResolvedValue(comparisonResult("ra_2_r1", "ra_2_r2", "MSFT diff"));
+    apiMock.exportResearchArtifact.mockRejectedValue(new Error("download unavailable"));
+    render(<ResearchArtifacts />, { wrapper: MemoryRouter });
+    fireEvent.click(await screen.findByText("NVDA fundamental review"));
+    fireEvent.click(screen.getByText("MSFT review"));
+    await waitFor(() => expect(screen.getByLabelText("From revision")).toHaveValue("ra_2_r1"));
+    await act(async () => resolveFirst({ artifact: second, revisions: [second, first] }));
+    expect(screen.getByLabelText("From revision")).toHaveValue("ra_2_r1");
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    await screen.findByText("MSFT diff");
+    expect(apiMock.compareResearchArtifactRevisions).toHaveBeenCalledWith("ra_2", "ra_2_r1", "ra_2_r2");
+    fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+    await waitFor(() => expect(apiMock.exportResearchArtifact).toHaveBeenCalledWith("ra_2", "json"));
   });
 
   it("shows an actionable empty state", async () => {

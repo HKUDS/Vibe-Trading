@@ -301,7 +301,7 @@ def _table_weights(weights: pd.DataFrame, names: list[str], index: pd.Index) -> 
         )
     # Hold whole rows forward. A per-column ffill would refill a weight the
     # caller left missing in a later row with that factor's stale weight.
-    supplied = ~np.isnan(table).all(axis=1)
+    supplied = index.isin(weights.index)
     source = pd.Series(np.where(supplied, np.arange(len(table)), np.nan)).ffill().to_numpy()
     held = np.full_like(table, np.nan)
     has_source = ~np.isnan(source)
