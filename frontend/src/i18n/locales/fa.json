@@ -97,6 +97,16 @@
     "researchLab": "آزمایشگاه پژوهش"
   },
   "researchArtifacts": {
+    "compareTitle": "مقایسه بازبینی‌ها",
+    "fromRevision": "از بازبینی",
+    "toRevision": "به بازبینی",
+    "compareAction": "مقایسه",
+    "comparing": "در حال مقایسه…",
+    "compareError": "مقایسه بازبینی‌ها ممکن نشد.",
+    "comparisonOnly": "مقایسه فقط خواندنی است. هیچ بازبینی دوباره راستی‌آزمایی نمی‌شود.",
+    "noChanges": "تفاوتی میان این دو بازبینی نیست.",
+    "metadataChanges": "تغییرات فراداده",
+    "compareTruncated": "خروجی تفاوت به ۴۰۰ خط نخست محدود شد.",
     "completeness": "کمال",
     "optionalLinks": "شناسه‌های پیوندی اختیاری",
     "formTitleNew": "ذخیره پژوهش",

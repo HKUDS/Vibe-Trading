@@ -97,6 +97,16 @@
     "researchLab": "Forschungslabor"
   },
   "researchArtifacts": {
+    "compareTitle": "Revisionsvergleich",
+    "fromRevision": "Von Revision",
+    "toRevision": "Zu Revision",
+    "compareAction": "Vergleichen",
+    "comparing": "Wird verglichen…",
+    "compareError": "Revisionen konnten nicht verglichen werden.",
+    "comparisonOnly": "Schreibgeschützter Vergleich. Keine Revision wird erneut verifiziert.",
+    "noChanges": "Keine Unterschiede zwischen diesen Revisionen.",
+    "metadataChanges": "Metadatenänderungen",
+    "compareTruncated": "Diff auf die ersten 400 Zeilen gekürzt.",
     "subject": "Forschungsthema",
     "dataAsOf": "Datenstand",
     "saving": "Speichern…",

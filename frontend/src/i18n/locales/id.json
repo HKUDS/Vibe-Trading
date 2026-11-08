@@ -97,6 +97,16 @@
     "researchLab": "Laboratorium riset"
   },
   "researchArtifacts": {
+    "compareTitle": "Perbandingan revisi",
+    "fromRevision": "Dari revisi",
+    "toRevision": "Ke revisi",
+    "compareAction": "Bandingkan",
+    "comparing": "Membandingkan…",
+    "compareError": "Tidak dapat membandingkan revisi.",
+    "comparisonOnly": "Perbandingan hanya-baca. Tidak ada revisi yang diverifikasi ulang.",
+    "noChanges": "Tidak ada perbedaan antara kedua revisi ini.",
+    "metadataChanges": "Perubahan metadata",
+    "compareTruncated": "Diff dipotong hingga 400 baris pertama.",
     "completeness": "Kelengkapan",
     "optionalLinks": "ID tertaut opsional",
     "formTitleNew": "Simpan riset",

@@ -104,7 +104,7 @@ Vibe-Trading turns finance questions into research reports, runnable backtests a
 | Combine accounts or compare allocations | Open `/portfolio` for holdings and proposed allocation changes. [Broker support](#broker-support-at-a-glance) |
 | Explore options and correlations | Open `/options` for multi-leg payoffs and Greeks, or `/correlation` for market regimes. |
 | Coordinate or repeat research | Run a [Swarm team](guides/research.md#swarm-workflows), assign work in Pixel Office or schedule a brief in `/scheduled`. |
-| Revisit research with dated evidence | Search `/research-artifacts`. [Versioned research](guides/research.md#versioned-research-artifacts) |
+| Revisit research with dated evidence | Search `/research-artifacts` and compare any two revisions. [Versioned research](guides/research.md#versioned-research-artifacts) |
 
 ## ⚡ Quick Example
 

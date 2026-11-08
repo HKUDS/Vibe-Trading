@@ -50,9 +50,12 @@ the wall-clock activity watchdog.
 
 Completed analyses can be saved as immutable revisions with their subject, universe, data-as-of date, evidence references, verification status, and optional hypothesis, goal, session, or run links. Repeating identical content and provenance returns the existing revision; changed evidence or a new data-as-of date appends a linked revision instead of overwriting the old conclusion. Search returns the latest revision of each series, while the full history remains available in the Web research-artifact library, API, agent tools, and CLI. Historical content is never presented as newly revalidated.
 
+Any two revisions in the same series can be compared in either direction. The comparison returns a unified content diff of at most 400 lines, explicit LF/CRLF styles when line endings change, evidence additions, removals and pure reorderings without assuming evidence IDs, and changed provenance fields. The Web history section provides the same operation as `GET /api/research-artifacts/{artifact_id}/compare`, the `compare_research_artifact_revisions` agent tool, and the CLI below. Comparison is read-only: it neither modifies the revisions nor revalidates their research.
+
 ```bash
 vibe-trading research-artifact save --subject "NVDA fundamental review" --content "Conclusion with evidence." --data-as-of 2026-10-27 --evidence '[{"source_uri":"https://example.com/filing"}]'
 vibe-trading research-artifact search --query "NVDA"
+vibe-trading research-artifact compare ra_example ra_example_r1 ra_example_r3
 ```
 
 ## 💡 Examples

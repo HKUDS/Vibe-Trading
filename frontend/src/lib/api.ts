@@ -494,6 +494,43 @@ export interface ResearchArtifactRevision {
   run_id: string | null;
 }
 
+export interface ResearchArtifactComparison {
+  artifact_id: string;
+  from: {
+    revision_id: string;
+    revision_number: number;
+    created_at: string;
+    content_hash: string;
+    provenance_hash: string;
+  };
+  to: {
+    revision_id: string;
+    revision_number: number;
+    created_at: string;
+    content_hash: string;
+    provenance_hash: string;
+  };
+  content: {
+    changed: boolean;
+    from_hash: string;
+    to_hash: string;
+    from_line_count: number;
+    to_line_count: number;
+    from_newline_style: string;
+    to_newline_style: string;
+    diff: string[];
+    truncated: boolean;
+  };
+  evidence: {
+    added: Array<Record<string, unknown>>;
+    removed: Array<Record<string, unknown>>;
+    unchanged_count: number;
+    order_changed: boolean;
+    changed: boolean;
+  };
+  metadata: Record<string, { from: unknown; to: unknown }>;
+}
+
 export interface ResearchArtifactSaveResult {
   revision: ResearchArtifactRevision;
   created: boolean;
@@ -548,6 +585,10 @@ export const api = {
     });
     const suffix = search.toString();
     return request<{ count: number; artifacts: ResearchArtifactRevision[] }>(`/api/research-artifacts${suffix ? `?${suffix}` : ""}`);
+  },
+  compareResearchArtifactRevisions: (artifactId: string, fromRevisionId: string, toRevisionId: string) => {
+    const search = new URLSearchParams({ from_revision_id: fromRevisionId, to_revision_id: toRevisionId });
+    return request<{ comparison: ResearchArtifactComparison }>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/compare?${search}`);
   },
   getResearchArtifact: (artifactId: string) =>
     request<{ artifact: ResearchArtifactRevision; revisions: ResearchArtifactRevision[] }>(`/api/research-artifacts/${encodeURIComponent(artifactId)}`),
