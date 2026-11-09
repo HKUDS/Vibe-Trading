@@ -247,6 +247,24 @@ def test_cli_compares_two_revisions(tmp_path, capsys):
     assert code == 1
     assert "together" in err
 
+    # An empty id (an unset shell variable) is an error, as it is over the API,
+    # never a silent full-series export.
+    for pair in (("", ""), ("", revised["revision_id"]), (first["revision_id"], "")):
+        code, out, err = _run(
+            parser,
+            capsys,
+            "research-artifact",
+            "--path",
+            db,
+            "export",
+            first["artifact_id"],
+            f"--from-revision-id={pair[0]}",
+            f"--to-revision-id={pair[1]}",
+        )
+        assert code == 1, (pair, out)
+        assert "must not be empty" in err
+        assert out == ""
+
 
 def test_cli_reports_missing_artifact(tmp_path, capsys):
     parser = _parser()

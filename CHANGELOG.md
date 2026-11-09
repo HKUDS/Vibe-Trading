@@ -33,6 +33,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   data is fetched and names the suffixes it understands. A bare six-digit code
   (`600519`) is still read as a mainland listing.
 
+#### Research artifacts
+
+- **An empty revision id no longer exports the whole series**.
+  `vibe-trading research-artifact export --from-revision-id= --to-revision-id=`
+  (an unset shell variable, say) treated the empty ids as absent and wrote the
+  full-series export with exit 0. Empty ids are now an error, as they already
+  were over the API.
+
 ## [0.1.19] — 2026-11-05
 
 Rolls up 299 commits / 116 merged pull requests since 0.1.18, plus 21

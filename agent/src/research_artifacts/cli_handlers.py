@@ -109,11 +109,15 @@ def _cmd_compare(args: argparse.Namespace) -> int:
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
-    if bool(args.from_revision_id) != bool(args.to_revision_id):
+    # Presence is "was the flag given", not truthiness: an empty id (an unset
+    # shell variable) must not quietly turn a comparison into a series export.
+    if (args.from_revision_id is None) != (args.to_revision_id is None):
         raise ValueError("from_revision_id and to_revision_id must be provided together")
+    if "" in (args.from_revision_id, args.to_revision_id):
+        raise ValueError("from_revision_id and to_revision_id must not be empty")
     store = _store(args)
     try:
-        if args.from_revision_id and args.to_revision_id:
+        if args.from_revision_id is not None:
             exported = store.export_comparison(
                 artifact_id=args.artifact_id,
                 from_revision_id=args.from_revision_id,
