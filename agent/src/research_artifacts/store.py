@@ -19,6 +19,7 @@ from src.config.accessor import get_env_config
 from src.config.paths import get_runtime_root
 
 from .comparison import compare_revisions
+from .comparison_export import render_comparison_export
 from .models import ResearchArtifactExport, ResearchArtifactRevision, ResearchArtifactSaveResult
 
 
@@ -357,6 +358,23 @@ class ResearchArtifactStore:
         ):
             raise KeyError(f"research revision not found in research artifact: {artifact_id}")
         return compare_revisions(from_revision, to_revision)
+
+    @_synchronized
+    def export_comparison(
+        self,
+        *,
+        artifact_id: str,
+        from_revision_id: str,
+        to_revision_id: str,
+        format: str = "json",
+    ) -> ResearchArtifactExport:
+        """Render an exact pair of revisions without modifying the series."""
+        comparison = self.compare_revisions(
+            artifact_id=artifact_id,
+            from_revision_id=from_revision_id,
+            to_revision_id=to_revision_id,
+        )
+        return render_comparison_export(comparison, format)
 
     @_synchronized
     def list_revisions(self, artifact_id: str) -> list[ResearchArtifactRevision]:

@@ -134,6 +134,8 @@
     "run_id": "معرّف التشغيل",
     "exportJson": "تصدير JSON",
     "exportMarkdown": "تصدير Markdown",
+    "exportComparisonJson": "تصدير مقارنة JSON",
+    "exportComparisonMarkdown": "تصدير مقارنة Markdown",
     "exporting": "جارٍ التصدير…",
     "exportError": "تعذر تصدير مخرجات البحث."
   },

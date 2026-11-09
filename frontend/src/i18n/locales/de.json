@@ -140,6 +140,8 @@
     "run_id": "Lauf-ID",
     "exportJson": "JSON exportieren",
     "exportMarkdown": "Markdown exportieren",
+    "exportComparisonJson": "Vergleich als JSON exportieren",
+    "exportComparisonMarkdown": "Vergleich als Markdown exportieren",
     "exporting": "Export läuft…",
     "exportError": "Recherche-Artefakt konnte nicht exportiert werden."
   },

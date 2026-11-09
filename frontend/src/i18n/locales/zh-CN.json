@@ -134,6 +134,8 @@
     "run_id": "运行 ID",
     "exportJson": "导出 JSON",
     "exportMarkdown": "导出 Markdown",
+    "exportComparisonJson": "导出比较 JSON",
+    "exportComparisonMarkdown": "导出比较 Markdown",
     "exporting": "正在导出…",
     "exportError": "无法导出研究资料。"
   },

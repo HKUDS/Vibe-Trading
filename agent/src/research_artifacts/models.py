@@ -45,7 +45,7 @@ class ResearchArtifactRevision:
 
 @dataclass(frozen=True)
 class ResearchArtifactExport:
-    """A deterministic, downloadable representation of a full artifact series."""
+    """A deterministic, downloadable research artifact representation."""
 
     filename: str
     media_type: str

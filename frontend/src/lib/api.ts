@@ -603,6 +603,10 @@ export const api = {
     request<{ revision: ResearchArtifactRevision }>(`/api/research-artifacts/revision/${encodeURIComponent(revisionId)}`),
   exportResearchArtifact: (artifactId: string, format: "json" | "markdown" = "json") =>
     request<ResearchArtifactExport>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/export?format=${format}`),
+  exportResearchArtifactComparison: (artifactId: string, fromRevisionId: string, toRevisionId: string, format: "json" | "markdown" = "json") => {
+    const search = new URLSearchParams({ format, from_revision_id: fromRevisionId, to_revision_id: toRevisionId });
+    return request<ResearchArtifactExport>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/export?${search}`);
+  },
   saveResearchArtifact: (body: SaveResearchArtifactRequest) =>
     request<ResearchArtifactSaveResult>("/api/research-artifacts", { method: "POST", body: JSON.stringify(body) }),
   getCorrelationAnalysis: (codes: string, days: number, method: "pearson" | "spearman", includeRegime: boolean, signal?: AbortSignal) =>

@@ -100,6 +100,8 @@
     "run_id": "Çalıştırma kimliği",
     "exportJson": "JSON'u dışa aktar",
     "exportMarkdown": "Markdown'u dışa aktar",
+    "exportComparisonJson": "Karşılaştırmayı JSON olarak dışa aktar",
+    "exportComparisonMarkdown": "Karşılaştırmayı Markdown olarak dışa aktar",
     "exporting": "Dışa aktarılıyor…",
     "exportError": "Araştırma çıktıları dışa aktarılamadı."
   },

@@ -106,7 +106,7 @@ Ubah pertanyaan keuangan menjadi laporan riset, backtest yang dapat dijalankan, 
 | Menggabungkan akun atau membandingkan alokasi | Buka `/portfolio` untuk melihat posisi dan usulan alokasi. [Dukungan broker](#dukungan-broker) |
 | Meneliti opsi dan korelasi | Buka `/options` untuk profil laba rugi dan Greeks strategi multikaki, atau `/correlation` untuk kondisi pasar. |
 | Mengatur riset berulang | Jalankan [tim Swarm](guides/research.md#swarm-workflows), bagikan tugas di Pixel Office, atau jadwalkan laporan di `/scheduled`. |
-| Meninjau bukti riset | Cari [riwayat riset bertanggal](guides/research.md#versioned-research-artifacts) di `/research-artifacts`. |
+| Meninjau bukti riset | Cari [riwayat riset bertanggal](guides/research.md#versioned-research-artifacts) di `/research-artifacts`, bandingkan dua revisi, dan ekspor seri lengkap atau perbandingan terpilih sebagai JSON atau Markdown. |
 
 ## ⚡ Contoh singkat
 
