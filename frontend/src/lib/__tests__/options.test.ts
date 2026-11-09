@@ -17,6 +17,7 @@ import {
   pctToFraction,
   parsePositiveGrid,
   roundToNiceStrike,
+  volatilitySurfaceIssue,
   STRATEGY_PRESETS,
   type OptionLeg,
   type OptionsContractRow,
@@ -281,5 +282,74 @@ describe("volatility surface request inputs", () => {
     expect(buildVolatilitySurfaceRequest("100", [], "90", "30")).toBeNull();
     expect(buildVolatilitySurfaceRequest("100", [{ id: 1, strike: "90", expiryDays: "30", ivPct: "" }], "90", "30")).toBeNull();
     expect(buildVolatilitySurfaceRequest("100", DEFAULT_SURFACE_OBSERVATIONS, "90, 0", "30")).toBeNull();
+  });
+
+  it("reports duplicate quotes in days before any backend call", () => {
+    const request = buildVolatilitySurfaceRequest(
+      "100",
+      [...DEFAULT_SURFACE_OBSERVATIONS, { ...DEFAULT_SURFACE_OBSERVATIONS[0], id: 7 }],
+      DEFAULT_SURFACE_STRIKES,
+      DEFAULT_SURFACE_EXPIRY_DAYS,
+    )!;
+    expect(volatilitySurfaceIssue(request)).toEqual({
+      key: "duplicateQuote",
+      values: { strike: 90, days: 30 },
+    });
+  });
+
+  it("reports grid expiries outside quote coverage in days", () => {
+    const request = buildVolatilitySurfaceRequest(
+      "100",
+      DEFAULT_SURFACE_OBSERVATIONS,
+      DEFAULT_SURFACE_STRIKES,
+      "15, 30, 60, 90",
+    )!;
+    expect(volatilitySurfaceIssue(request)).toEqual({
+      key: "expiryOutOfRange",
+      values: { days: 15, minDays: 30, maxDays: 90 },
+    });
+  });
+
+  it("checks strike coverage at every observed expiry rather than only globally", () => {
+    const observations = DEFAULT_SURFACE_OBSERVATIONS.map((observation) => (
+      observation.id === 3 ? { ...observation, strike: "100" } : { ...observation }
+    ));
+    const request = buildVolatilitySurfaceRequest(
+      "100",
+      observations,
+      "90, 100, 110",
+      DEFAULT_SURFACE_EXPIRY_DAYS,
+    )!;
+    expect(volatilitySurfaceIssue(request)).toEqual({
+      key: "strikeOutOfRange",
+      values: { strike: 90, minStrike: 100, maxStrike: 110, days: 60 },
+    });
+  });
+
+  it("rejects quote, grid, and cross-product limits on the client", () => {
+    const quotes = Array.from({ length: 401 }, (_, index) => ({
+      id: index + 1,
+      strike: String(90 + index),
+      expiryDays: "30",
+      ivPct: "25",
+    }));
+    const quoteRequest = buildVolatilitySurfaceRequest("100", quotes, "90", "30")!;
+    expect(volatilitySurfaceIssue(quoteRequest)).toEqual({ key: "quoteLimit", values: { limit: 400 } });
+
+    const gridRequest = buildVolatilitySurfaceRequest(
+      "100",
+      DEFAULT_SURFACE_OBSERVATIONS,
+      Array.from({ length: 401 }, (_, index) => String(90 + index)).join(","),
+      "30",
+    )!;
+    expect(volatilitySurfaceIssue(gridRequest)).toEqual({ key: "gridLimit", values: { limit: 400 } });
+
+    const pointRequest = buildVolatilitySurfaceRequest(
+      "100",
+      DEFAULT_SURFACE_OBSERVATIONS,
+      Array.from({ length: 21 }, (_, index) => String(90 + index)).join(","),
+      Array.from({ length: 20 }, (_, index) => String(30 + index)).join(","),
+    )!;
+    expect(volatilitySurfaceIssue(pointRequest)).toEqual({ key: "pointLimit", values: { limit: 400 } });
   });
 });

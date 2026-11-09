@@ -1661,7 +1661,14 @@
       "empty": "Hitung permukaan untuk menampilkan titik teramati dan terinterpolasi.",
       "caption": "Sel yang lebih gelap menunjukkan VI lebih tinggi; sel berbingkai adalah kuotasi teramati.",
       "observed": "teramati",
-      "interpolated": "terinterpolasi"
+      "interpolated": "terinterpolasi",
+      "duplicateQuote": "Kuotasi ganda untuk strike {{strike}} pada {{days}} hari. Hapus baris yang berulang.",
+      "expiryOutOfRange": "Jatuh tempo {{days}} hari pada grid berada di luar rentang kuotasi {{minDays}} hingga {{maxDays}} hari.",
+      "strikeOutOfRange": "Strike {{strike}} pada grid berada di luar rentang kuotasi {{minStrike}} hingga {{maxStrike}} pada {{days}} hari.",
+      "quoteLimit": "Gunakan paling banyak {{limit}} baris kuotasi.",
+      "gridLimit": "Gunakan paling banyak {{limit}} nilai untuk setiap sumbu grid.",
+      "pointLimit": "Grid dibatasi hingga {{limit}} titik. Kurangi strike atau jatuh tempo.",
+      "spotHint": "Hanya untuk validasi; harga spot saling meniadakan dalam interpolasi IV."
     },
     "chain": {
       "title": "Options Chain AS",

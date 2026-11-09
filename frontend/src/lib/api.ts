@@ -410,6 +410,17 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
     const raw = body.detail ?? body.message ?? body.error;
     if (typeof raw === "string" && raw) {
       detail = raw;
+    } else if (Array.isArray(raw)) {
+      const details = raw.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const { loc, msg } = entry as { loc?: unknown; msg?: unknown };
+        if (typeof msg !== "string" || !msg) return [];
+        const location = Array.isArray(loc)
+          ? loc.filter((part) => typeof part === "string" || typeof part === "number").join(".")
+          : "";
+        return [location ? `${location}: ${msg}` : msg];
+      });
+      if (details.length) detail = details.join("; ");
     } else if (raw && typeof raw === "object") {
       const structured = raw as { code?: unknown; message?: unknown; max_length?: unknown };
       if (typeof structured.code === "string" && structured.code) code = structured.code;

@@ -1661,7 +1661,14 @@
       "empty": "Calcula la superficie para mostrar los puntos observados e interpolados.",
       "caption": "Las celdas más oscuras indican mayor VI; las celdas con borde son cotizaciones observadas.",
       "observed": "observado",
-      "interpolated": "interpolado"
+      "interpolated": "interpolado",
+      "duplicateQuote": "Cotización duplicada para el strike {{strike}} a {{days}} días. Elimina la fila repetida.",
+      "expiryOutOfRange": "El vencimiento {{days}} días de la cuadrícula está fuera del rango cotizado de {{minDays}} a {{maxDays}} días.",
+      "strikeOutOfRange": "El strike {{strike}} de la cuadrícula está fuera del rango cotizado de {{minStrike}} a {{maxStrike}} a {{days}} días.",
+      "quoteLimit": "Usa como máximo {{limit}} filas de cotizaciones.",
+      "gridLimit": "Usa como máximo {{limit}} valores para cada eje de la cuadrícula.",
+      "pointLimit": "La cuadrícula está limitada a {{limit}} puntos. Reduce los strikes o vencimientos.",
+      "spotHint": "Solo para validación; el precio al contado se cancela en la interpolación de IV."
     },
     "chain": {
       "title": "Cadena de opciones de EE. UU.",

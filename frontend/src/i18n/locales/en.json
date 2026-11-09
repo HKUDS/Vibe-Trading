@@ -1661,7 +1661,14 @@
       "empty": "Compute the surface to display observed and interpolated points.",
       "caption": "Darker cells indicate higher IV; outlined cells are observed quotes.",
       "observed": "observed",
-      "interpolated": "interpolated"
+      "interpolated": "interpolated",
+      "duplicateQuote": "Duplicate quote for strike {{strike}} at {{days}} days. Remove the repeated row.",
+      "expiryOutOfRange": "Grid expiry {{days}} days is outside the quoted range {{minDays}} to {{maxDays}} days.",
+      "strikeOutOfRange": "Grid strike {{strike}} is outside the quoted range {{minStrike}} to {{maxStrike}} at {{days}} days.",
+      "quoteLimit": "Use at most {{limit}} quote rows.",
+      "gridLimit": "Use at most {{limit}} values for each grid axis.",
+      "pointLimit": "The grid is limited to {{limit}} points. Reduce strikes or expiries.",
+      "spotHint": "Validation only; spot cancels out of IV interpolation."
     },
     "chain": {
       "title": "US Options Chain",

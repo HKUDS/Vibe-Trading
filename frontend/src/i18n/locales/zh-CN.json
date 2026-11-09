@@ -1655,7 +1655,14 @@
       "empty": "计算后显示观测点和插值点。",
       "caption": "颜色越深表示隐含波动率越高；带边框的单元格为观测报价。",
       "observed": "观测值",
-      "interpolated": "插值"
+      "interpolated": "插值",
+      "duplicateQuote": "行权价 {{strike}}、{{days}} 天的报价重复，请删除重复行。",
+      "expiryOutOfRange": "网格到期时间 {{days}} 天超出报价范围 {{minDays}} 至 {{maxDays}} 天。",
+      "strikeOutOfRange": "网格行权价 {{strike}} 超出 {{days}} 天报价的范围 {{minStrike}} 至 {{maxStrike}}。",
+      "quoteLimit": "报价最多支持 {{limit}} 行。",
+      "gridLimit": "网格行权价和到期时间分别最多支持 {{limit}} 个值。",
+      "pointLimit": "网格最多支持 {{limit}} 个点，请减少行权价或到期时间。",
+      "spotHint": "仅用于校验；标的价格在 IV 插值中会抵消，不影响结果。"
     },
     "chain": {
       "title": "美股期权链",

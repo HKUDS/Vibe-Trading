@@ -8,6 +8,7 @@ import {
   DEFAULT_SURFACE_OBSERVATIONS,
   DEFAULT_SURFACE_STRIKES,
   type SurfaceObservationInput,
+  volatilitySurfaceIssue,
   type VolatilitySurfacePoint,
   type VolatilitySurfaceResponse,
 } from "@/lib/options";
@@ -62,11 +63,12 @@ export function VolatilitySurfaceGrid() {
     const currentGeneration = ++generation.current;
     controllerRef.current?.abort();
     const request = buildVolatilitySurfaceRequest(spot, observations, strikes, expiryDays);
-    if (!request) {
+    const issue = request ? volatilitySurfaceIssue(request) : null;
+    if (!request || issue) {
       controllerRef.current = null;
       setLoading(false);
       setResult(null);
-      setError(t("options.surface.invalid"));
+      setError(issue ? t(`options.surface.${issue.key}`, issue.values) : t("options.surface.invalid"));
       return;
     }
     const controller = new AbortController();
@@ -109,7 +111,8 @@ export function VolatilitySurfaceGrid() {
         <div className="grid gap-3 md:grid-cols-3">
           <label className="text-xs">
             <span className="mb-1 block text-muted-foreground">{t("options.surface.spot")}</span>
-            <input className="w-full rounded-md border bg-background px-2 py-1.5" inputMode="decimal" value={spot} onChange={(event) => setSpot(event.target.value)} />
+            <input aria-label={t("options.surface.spot")} className="w-full rounded-md border bg-background px-2 py-1.5" inputMode="decimal" value={spot} onChange={(event) => setSpot(event.target.value)} />
+            <span className="mt-1 block text-[10px] leading-4 text-muted-foreground">{t("options.surface.spotHint")}</span>
           </label>
           <label className="text-xs">
             <span className="mb-1 block text-muted-foreground">{t("options.surface.gridStrikes")}</span>

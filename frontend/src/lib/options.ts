@@ -203,6 +203,11 @@ export interface SurfaceObservationInput {
   ivPct: string;
 }
 
+export interface VolatilitySurfaceIssue {
+  key: "duplicateQuote" | "expiryOutOfRange" | "strikeOutOfRange" | "quoteLimit" | "gridLimit" | "pointLimit";
+  values: Record<string, number>;
+}
+
 export const DEFAULT_SURFACE_OBSERVATIONS: SurfaceObservationInput[] = [
   { id: 1, strike: "90", expiryDays: "30", ivPct: "24" },
   { id: 2, strike: "110", expiryDays: "30", ivPct: "30" },
@@ -254,6 +259,60 @@ export function buildVolatilitySurfaceRequest(
     ...(parsedStrikes ? { strikes: parsedStrikes } : {}),
     ...(parsedExpiries ? { expiries: parsedExpiries.map((days) => days / 365) } : {}),
   };
+}
+
+export function volatilitySurfaceIssue(request: VolatilitySurfaceRequest): VolatilitySurfaceIssue | null {
+  if (request.observations.length > 400) return { key: "quoteLimit", values: { limit: 400 } };
+  if (!request.observations.length) return null;
+  const strikes = request.strikes ?? [...new Set(request.observations.map((observation) => observation.strike))];
+  const expiries = request.expiries ?? [...new Set(request.observations.map((observation) => observation.time_to_expiry))];
+  if (strikes.length > 400 || expiries.length > 400) return { key: "gridLimit", values: { limit: 400 } };
+  if (new Set(strikes).size * new Set(expiries).size > 400) return { key: "pointLimit", values: { limit: 400 } };
+
+  const seen = new Set<string>();
+  const ranges = new Map<number, { minStrike: number; maxStrike: number }>();
+  for (const observation of request.observations) {
+    const key = JSON.stringify([observation.time_to_expiry, observation.strike]);
+    const days = Number((observation.time_to_expiry * 365).toPrecision(12));
+    if (seen.has(key)) return { key: "duplicateQuote", values: { strike: observation.strike, days } };
+    seen.add(key);
+    const range = ranges.get(observation.time_to_expiry);
+    if (range) {
+      range.minStrike = Math.min(range.minStrike, observation.strike);
+      range.maxStrike = Math.max(range.maxStrike, observation.strike);
+    } else {
+      ranges.set(observation.time_to_expiry, { minStrike: observation.strike, maxStrike: observation.strike });
+    }
+  }
+
+  const observedExpiries = [...ranges.keys()].sort((a, b) => a - b);
+  const minDays = Number((observedExpiries[0] * 365).toPrecision(12));
+  const maxDays = Number((observedExpiries[observedExpiries.length - 1] * 365).toPrecision(12));
+  for (const expiry of expiries) {
+    if (expiry < observedExpiries[0] || expiry > observedExpiries[observedExpiries.length - 1]) {
+      return {
+        key: "expiryOutOfRange",
+        values: { days: Number((expiry * 365).toPrecision(12)), minDays, maxDays },
+      };
+    }
+  }
+  for (const expiry of observedExpiries) {
+    const range = ranges.get(expiry)!;
+    for (const strike of [...strikes].sort((a, b) => a - b)) {
+      if (strike < range.minStrike || strike > range.maxStrike) {
+        return {
+          key: "strikeOutOfRange",
+          values: {
+            strike,
+            minStrike: range.minStrike,
+            maxStrike: range.maxStrike,
+            days: Number((expiry * 365).toPrecision(12)),
+          },
+        };
+      }
+    }
+  }
+  return null;
 }
 
 export function pctToFraction(pct: number): number {

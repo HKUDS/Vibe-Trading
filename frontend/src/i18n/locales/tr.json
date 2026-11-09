@@ -1621,7 +1621,14 @@
       "empty": "Gözlemlenen ve enterpole edilen noktaları görmek için yüzeyi hesaplayın.",
       "caption": "Koyu hücreler daha yüksek örtük oynaklığı, çerçeveli hücreler gözlemlenen fiyatları gösterir.",
       "observed": "gözlemlenen",
-      "interpolated": "enterpole"
+      "interpolated": "enterpole",
+      "duplicateQuote": "{{strike}} kullanım fiyatı ve {{days}} gün için yinelenen fiyat var. Yinelenen satırı kaldırın.",
+      "expiryOutOfRange": "{{days}} günlük ızgara vadesi, {{minDays}} ila {{maxDays}} günlük fiyat aralığının dışında.",
+      "strikeOutOfRange": "{{strike}} ızgara kullanım fiyatı, {{days}} günde {{minStrike}} ila {{maxStrike}} fiyat aralığının dışında.",
+      "quoteLimit": "En fazla {{limit}} fiyat satırı kullanın.",
+      "gridLimit": "Izgara kullanım fiyatları ve vadeleri için en fazla {{limit}} değer kullanın.",
+      "pointLimit": "Izgara {{limit}} noktayla sınırlıdır. Kullanım fiyatlarını veya vadeleri azaltın.",
+      "spotHint": "Yalnızca doğrulama içindir; spot fiyat IV interpolasyonunda sadeleşir ve sonucu etkilemez."
     },
     "chain": {
       "title": "ABD opsiyon zinciri",

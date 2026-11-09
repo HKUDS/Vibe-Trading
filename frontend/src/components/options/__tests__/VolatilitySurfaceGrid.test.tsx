@@ -86,3 +86,35 @@ it("ignores an older response after a newer computation completes", async () => 
   expect(screen.queryByText("99.00%")).not.toBeInTheDocument();
   expect(screen.getByText("30.00%")).toBeInTheDocument();
 });
+
+it("rejects duplicate quotes with a day-based message before sending", async () => {
+  render(<VolatilitySurfaceGrid />);
+  fireEvent.change(screen.getByLabelText("Strike 2"), { target: { value: "90" } });
+  fireEvent.click(screen.getByRole("button", { name: "Compute surface" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Duplicate quote for strike 90 at 30 days");
+  expect(api.computeVolatilitySurface).not.toHaveBeenCalled();
+});
+
+it("rejects grid expiries outside quote coverage with a day-based range", async () => {
+  render(<VolatilitySurfaceGrid />);
+  fireEvent.change(screen.getByLabelText("Grid expiries (days)"), { target: { value: "15, 30, 60, 90" } });
+  fireEvent.click(screen.getByRole("button", { name: "Compute surface" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Grid expiry 15 days is outside the quoted range 30 to 90 days");
+  expect(api.computeVolatilitySurface).not.toHaveBeenCalled();
+});
+
+it("rejects grid strikes outside quote coverage with the relevant expiry in days", async () => {
+  render(<VolatilitySurfaceGrid />);
+  fireEvent.change(screen.getByLabelText("Grid strikes"), { target: { value: "80, 90, 100, 110" } });
+  fireEvent.click(screen.getByRole("button", { name: "Compute surface" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Grid strike 80 is outside the quoted range 90 to 110 at 30 days");
+  expect(api.computeVolatilitySurface).not.toHaveBeenCalled();
+});
+
+it("labels spot as validation-only because it does not change interpolated IV", () => {
+  render(<VolatilitySurfaceGrid />);
+  expect(screen.getByText("Validation only; spot cancels out of IV interpolation.")).toBeInTheDocument();
+});

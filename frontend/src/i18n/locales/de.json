@@ -1661,7 +1661,14 @@
       "empty": "Berechne die Oberfläche, um beobachtete und interpolierte Punkte anzuzeigen.",
       "caption": "Dunklere Zellen bedeuten höhere IV; umrandete Zellen sind beobachtete Kurse.",
       "observed": "beobachtet",
-      "interpolated": "interpoliert"
+      "interpolated": "interpoliert",
+      "duplicateQuote": "Doppelter Kurs für Strike {{strike}} mit {{days}} Tagen. Entfernen Sie die doppelte Zeile.",
+      "expiryOutOfRange": "Die Laufzeit {{days}} Tage im Raster liegt außerhalb des Kursbereichs von {{minDays}} bis {{maxDays}} Tagen.",
+      "strikeOutOfRange": "Der Strike {{strike}} im Raster liegt bei {{days}} Tagen außerhalb des Kursbereichs von {{minStrike}} bis {{maxStrike}}.",
+      "quoteLimit": "Höchstens {{limit}} Kurszeilen verwenden.",
+      "gridLimit": "Höchstens {{limit}} Werte pro Rasterachse verwenden.",
+      "pointLimit": "Das Raster ist auf {{limit}} Punkte begrenzt. Reduzieren Sie Strikes oder Laufzeiten.",
+      "spotHint": "Nur zur Validierung; der Spotkurs hebt sich bei der IV-Interpolation heraus."
     },
     "chain": {
       "title": "US-Options-Kette",
