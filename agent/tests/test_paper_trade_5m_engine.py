@@ -177,23 +177,27 @@ def _outcome(
     path_model="bar_median",
     market_data=None,
     open_days=frozenset({_DAY}),
+    fill_model="all_or_none",
+    order_volume_ratio=1.0,
     **frames,
 ):
     if market_data is None:
         market_data, _ = _cn_a_data(**frames)
-    request = parse_request(
-        {
-            "account_id": "pa_5m",
-            "market": "cn_a",
-            "account_state": {"cash": cash, "positions": list(positions)},
-            "orders": list(orders),
-            "from_date": _DAY,
-            "to_date": _DAY,
-            "fee_model": dict(_FEE_MODEL),
-            "interval": "5m",
-            "path_model": path_model,
-        }
-    )
+    payload = {
+        "account_id": "pa_5m",
+        "market": "cn_a",
+        "account_state": {"cash": cash, "positions": list(positions)},
+        "orders": list(orders),
+        "from_date": _DAY,
+        "to_date": _DAY,
+        "fee_model": dict(_FEE_MODEL),
+        "interval": "5m",
+        "path_model": path_model,
+    }
+    if fill_model != "all_or_none":
+        payload["fill_model"] = fill_model
+        payload["order_volume_ratio"] = order_volume_ratio
+    request = parse_request(payload)
     return engine.match_orders(request, market_data=market_data, calendar_client=FakeCalendarClient(open_days))
 
 
@@ -247,6 +251,51 @@ def test_multiple_symbols_share_a_chronological_cash_ledger(seller, buyer, sale_
     kwargs["five"] = {buyer: buy_bars.iloc[::-1], seller: sell_bars.iloc[::-1]}
     kwargs["symbols"] = (buyer, seller)
     replay = _outcome(**kwargs)
+    assert replay.fills == result.fills
+    assert replay.rejected_orders == result.rejected_orders
+    assert replay.end_state == result.end_state
+    assert replay.engine_fingerprint == result.engine_fingerprint
+
+
+@pytest.mark.parametrize(("seller", "buyer"), [(_OTHER, _SYM), (_SYM, _OTHER)])
+@pytest.mark.parametrize("sale_before_purchase", [False, True])
+def test_volume_share_keeps_the_shared_chronological_ledger(seller, buyer, sale_before_purchase):
+    """pt-v1.3 caps must not break the pt-rules-v4 cross-symbol cash order.
+
+    With ``order_volume_ratio=1.0`` each per-order cap is at least the order
+    size, so the volume-share path must produce exactly the all-or-none
+    outcome: an earlier buy still cannot spend a later sale's proceeds, and a
+    sale that happens first can fund a later buy. The fingerprint must still
+    differ because the fill model and ratio are part of the v1.3 tuple.
+    """
+    labels = _session_labels()
+    sale_label = labels[0] if sale_before_purchase else labels[-1]
+    purchase_label = labels[-1] if sale_before_purchase else labels[0]
+    prices = {label: 10.0 for label in labels}
+    prices[sale_label] = 10.6
+    sell_bars = _intraday(_DAY, prices)
+    buy_bars = _flat_5m(_DAY, 10.0)
+    buy_bars.loc[buy_bars.index < pd.Timestamp(f"{_DAY} {purchase_label}"), "volume"] = 0
+    daily = {symbol: _daily([(_PREV, 10.0), (_DAY, 10.0)]) for symbol in (seller, buyer)}
+    kwargs = dict(
+        orders=[_sell(limit=10.5, symbol=seller), _buy(limit=10.5, symbol=buyer)],
+        cash=0.0, positions=[{"symbol": seller, "qty": 100, "avg_cost": 10.0}],
+        daily=daily, five={seller: sell_bars, buyer: buy_bars}, symbols=(seller, buyer),
+    )
+    baseline = _outcome(**kwargs)
+    result = _outcome(
+        **kwargs, fill_model="volume_share", order_volume_ratio=1.0)
+    assert result.error is None
+    assert result.fills == baseline.fills
+    assert result.rejected_orders == baseline.rejected_orders
+    assert result.canceled_orders == baseline.canceled_orders
+    assert result.end_state == baseline.end_state
+    assert result.engine_fingerprint != baseline.engine_fingerprint
+
+    # Loader dictionary order and row order must not determine execution time.
+    kwargs["five"] = {buyer: buy_bars.iloc[::-1], seller: sell_bars.iloc[::-1]}
+    kwargs["symbols"] = (buyer, seller)
+    replay = _outcome(**kwargs, fill_model="volume_share", order_volume_ratio=1.0)
     assert replay.fills == result.fills
     assert replay.rejected_orders == result.rejected_orders
     assert replay.end_state == result.end_state

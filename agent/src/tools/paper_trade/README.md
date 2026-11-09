@@ -152,9 +152,9 @@ Inside the five-minute session (the daily path builds no order book), order
 statuses use JoinQuant's `OrderStatus` vocabulary: `held` means fully filled
 and terminal, `canceled` and `rejected` are also terminal, and `new`, `open`
 and `pending_cancel` are not. JoinQuant's `filled` (partially filled, residual
-still in `open_orders()`) exists in the lifecycle but is not reached while
-every fill is all-or-none. These statuses are internal; no result field or
-surface exposes them.
+still in `open_orders()`) is reachable under `fill_model="volume_share"`; with
+the default all-or-none path it is not reached. A pt-v1.3 result exposes these
+states in `order_states`; the daily path keeps them internal.
 
 The matcher walks a shared chronological timeline across the supplied symbol
 frames, so later proceeds cannot fund an earlier order. At a shared timestamp,
@@ -187,8 +187,9 @@ surface in this PR.
 Daily data supplies the prior close for price-limit bands and the final NAV.
 The band and cash gates check the price the fill would execute at, so a 5m
 market order is gated at its bar reference and a resting limit at its 委托价;
-an order waits while its side is blocked by a price limit. Zero-volume bars
-cannot fill. Corporate actions remain fail-closed.
+a limit order waits while its side is blocked by a price limit, while a blocked
+market order is canceled immediately. Zero-volume bars cannot fill. Corporate
+actions remain fail-closed.
 
 ## JoinQuant parity
 
@@ -223,31 +224,28 @@ The market-order residual cancel has no verbatim sentence in the cited PDF.
 It is our reading of a market order completing synchronously: whatever the
 served session volume cannot fill is returned immediately instead of resting.
 
-### Compatibility and the PR A caveat
+### Compatibility and rule versioning
 
 The committed v1.1/v1.2 JSON contracts and fixtures are byte-identical, and a
-1d call that omits the new fields is byte-identical. PR A intentionally changes
-a v1.2 5m resting-limit call: the fill now executes at the 委托价 instead of
-the bar reference, so its recorded fill price changes. `engine_fingerprint`
-hashes the interval, path model, fill model, rules version and bar fingerprint
-(plus `order_volume_ratio` for pt-v1.3), not the matching code, so a fill
-recorded before and after PR A can carry the same fingerprint. That is an
-accepted provenance gap, not a replay guarantee.
+1d call that omits the new fields is byte-identical. The corrected full/partial
+statuses and 5m limit-fill prices are `pt-rules-v2`; the immediate price-limit
+market cancel is `pt-rules-v3`; shared-timeline matching is `pt-rules-v4`; and
+the opt-in volume-share policy is `pt-rules-v5`. Each version has a distinct
+`engine_fingerprint`, which also covers `order_volume_ratio` for a
+`volume_share` call, so archived results retain the rule set that produced
+them.
 
 ### Parity backlog
 
-Five platform gaps remain, plus one disclosed fee divergence:
+Four platform gaps remain, plus one disclosed fee divergence:
 
-1. **Price-limit market-order status.** JoinQuant cancels a market order blocked
-   by the daily price limit; this engine rejects it. Aligning the status is a
-   separate behavior change.
-2. **Slippage.** No spread, market impact, latency or queue-position model; a
+1. **Slippage.** No spread, market impact, latency or queue-position model; a
    fill uses the bar reference or the 委托价.
-3. **Cancel API.** A caller cannot submit a cancel request; cancels are
+2. **Cancel API.** A caller cannot submit a cancel request; cancels are
    engine-driven (day end or volume cap).
-4. **Platform-generated order IDs.** IDs are `pt-0`, `pt-1`, ...; JoinQuant uses
+3. **Platform-generated order IDs.** IDs are `pt-0`, `pt-1`, ...; JoinQuant uses
    platform order IDs.
-5. **`pending_cancel`.** JoinQuant exposes the state between a cancel request
+4. **`pending_cancel`.** JoinQuant exposes the state between a cancel request
    and its confirmation; this engine never emits or exposes it.
 
 Disclosed fee divergence: the cited PDF charges one commission per completed
@@ -283,7 +281,8 @@ accounting exact and never lets cash go negative.
 - **5m strategy UNIVERSE is strict.** An order on a position outside the
   declared `UNIVERSE` fails the whole call, so such a position cannot be reduced
   by a 5m strategy step; use the 1d step for that.
-- **Matching changes are versioned.** `pt-rules-v4` identifies chronological
+- **Matching changes are versioned.** `pt-rules-v5` identifies the opt-in
+  per-order volume-share policy. `pt-rules-v4` identifies chronological
   matching across symbols and submission order at shared timestamps.
   `pt-rules-v3` identified the immediate price-limit market cancellation;
   `pt-rules-v2` identified the corrected
