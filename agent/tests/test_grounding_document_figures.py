@@ -349,3 +349,51 @@ def test_document_grouped_integer_cannot_launder_generated_artifacts(
     )
 
     assert not result.valid
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "股东总数 76175",
+        "| 指标 | 数值 |\n|---|---|\n| 股东总数 | 76175 |",
+    ],
+)
+def test_large_bare_integer_grounds_a_quoted_table_cell(
+    tmp_path: Path,
+    text: str,
+) -> None:
+    """Reopened #2126: a five-digit bare integer the document printed is a
+    stated figure, not layout, and grounds the answer that quotes it."""
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", text)
+
+    result = ledger.validate_final_answer(
+        _declared(
+            "| 指标 | 数值 |\n|---|---|\n| 股东总数 | 76,175 |",
+            "76,175 | observed | 股东总数 | doc-1",
+        )
+    )
+
+    assert result.valid, result.issues
+
+
+def test_four_digit_bare_integer_stays_layout(tmp_path: Path) -> None:
+    """A headcount of 3400 has no mark of measurement and is not large enough
+    to rule out a coincidence match, so it never becomes evidence."""
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", "员工总数 3400 人")
+
+    values = {record.value for record in ledger._evidence}
+
+    assert 3400 not in values, "四位数裸整数不该进账本"
+
+
+def test_year_still_never_enters_the_ledger(tmp_path: Path) -> None:
+    """2026 and 2025 stay years, not findings, even though a date row reads
+    five digits when the run parses it."""
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", "报告期 2026 年，上市年份 2015 年。")
+
+    values = {record.value for record in ledger._evidence}
+
+    assert 2026 not in values and 2015 not in values, "年份进了账本"
