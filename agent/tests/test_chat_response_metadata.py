@@ -73,3 +73,30 @@ def test_runtime_metadata_is_frozen_at_construction_with_model_override(
     assert result["model"] == "provider-reported-model"
     assert result["model_source"] == "provider_response"
     assert result["reasoning_effort"] == "high"
+
+
+def test_a_model_named_in_several_stream_chunks_is_not_doubled() -> None:
+    """OpenRouter names the model in several chunks; merging them concatenated
+    the strings and the chat bar showed "deepseek/deepseek-v4-prodeepseek/deepseek-v4-pro".
+    """
+    from langchain_core.messages import AIMessageChunk
+    from src.providers.chat import ChatLLM
+
+    class Provider:
+        def bind_tools(self, tools):
+            return self
+
+        def stream(self, *args, **kwargs):
+            meta = {"model_name": "deepseek/deepseek-v4-pro"}
+            yield AIMessageChunk(content="Hel", response_metadata=dict(meta))
+            yield AIMessageChunk(
+                content="lo", response_metadata={**meta, "finish_reason": "stop"}
+            )
+
+    llm = ChatLLM.__new__(ChatLLM)
+    llm._llm, llm.model_name = Provider(), "deepseek/deepseek-v4-pro"
+    response = llm.stream_chat(
+        [{"role": "user", "content": "hi"}], on_text_chunk=lambda _: None
+    )
+    assert response.content == "Hello"
+    assert response.response_model == "deepseek/deepseek-v4-pro"

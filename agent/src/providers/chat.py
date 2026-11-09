@@ -329,6 +329,13 @@ def _parse_dsml_tool_calls(content: Any) -> list[ToolCallRequest]:
     return tool_calls
 
 
+def _chunk_model(chunk: Any) -> Optional[str]:
+    """Model name one stream chunk reports, before chunks are merged."""
+    metadata = getattr(chunk, "response_metadata", {}) or {}
+    model = metadata.get("model_name") or metadata.get("model")
+    return (str(model).strip() or None) if model is not None else None
+
+
 class ChatLLM:
     """LLM chat client with function calling support.
 
@@ -533,6 +540,7 @@ class ChatLLM:
                 total_timeout_s=timeout,
                 should_cancel=should_cancel,
             )
+            streamed_model: Optional[str] = None
             with closing(stream_chunks):
                 for chunk in stream_chunks:
                     if should_cancel and should_cancel():
@@ -561,6 +569,8 @@ class ChatLLM:
                     if reasoning and not chunk.content and on_reasoning_chunk:
                         on_reasoning_chunk(reasoning)
                     accumulated = chunk if accumulated is None else accumulated + chunk
+                    if streamed_model is None:
+                        streamed_model = _chunk_model(chunk)
             if accumulated is None:
                 if cancelled or interrupted is not None:
                     # Stopping is not a compatibility case: falling back to a
@@ -586,6 +596,11 @@ class ChatLLM:
                              or metadata.get("status") in {"completed", "incomplete", "failed"})):
                 raise ConnectionError("Provider stream ended without a terminal finish reason")
             response = self._parse_response(accumulated)
+            if streamed_model:
+                # Merging chunks concatenates their string metadata, so a
+                # provider that names the model in several chunks (OpenRouter)
+                # reported "deepseek/deepseek-v4-prodeepseek/deepseek-v4-pro".
+                response.response_model = streamed_model
             if cancelled_usage is not None:
                 response.usage_metadata = cancelled_usage
             if pending_text and not (response.has_tool_calls and response.content == ""):
