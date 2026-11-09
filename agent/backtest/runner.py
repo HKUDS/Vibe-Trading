@@ -14,6 +14,7 @@ import importlib.util
 import inspect
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
@@ -50,6 +51,7 @@ from backtest.engines._market_hooks import (  # noqa: F401  (re-exported)
     _detect_submarket,
     _is_china_futures,
     hk_counter_currency,
+    matched_market,
     strip_local_prefix,
 )
 from backtest.rebalance_mask import RebalanceMask, validate_rebalance_mask
@@ -125,6 +127,24 @@ class BacktestConfigSchema(BaseModel):
             raise ValueError("codes must be a non-empty list")
         if any(not c.strip() for c in v):
             raise ValueError("codes must not contain empty strings")
+        # The engine applies one market's trading rules, chosen from the code.
+        # A code no routing rule recognises used to fall through to the A-share
+        # default (T+1, price limits, 100-share lots, CNY) -- or to US rules
+        # under yfinance -- and the run still succeeded. A bare six-digit code
+        # is the one unsuffixed form that genuinely means a mainland listing.
+        unrecognised = [
+            c for c in v
+            if matched_market(c.strip()) is None
+            and not re.fullmatch(r"\d{6}", strip_local_prefix(c.strip()))
+        ]
+        if unrecognised:
+            raise ValueError(
+                f"no market rule recognises {', '.join(unrecognised)}, so the backtest "
+                "cannot tell which market's trading rules to apply. Write the code "
+                "with its market suffix, e.g. 600519.SH / 000001.SZ, AAPL or BRK-B.US, "
+                "00700.HK, VOD.L, TD.TO, RELIANCE.NS, 005930.KS, PETR4.SA, GGAL.BA, "
+                "VNM.VN, BTC-USDT, EURUSD, ^GSPC or IF2406.CFFEX"
+            )
         return v
 
     @field_validator("start_date", "end_date")
