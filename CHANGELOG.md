@@ -26,12 +26,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - **A code no market rule recognises is refused instead of run on A-share
   rules**. The engine's trading rules are chosen from the code, and a code no
   routing rule matched (`BHP.AX`, `7203.T`, `SAP.DE`, `BRK.B`, a bare HK
-  `00700`, Yahoo's `600519.SS`) fell through to the A-share default: a local
+  `00700`) fell through to the A-share default: a local
   dataset under `local:BHP.AX` loaded and ran with T+1, the ±10% band,
   100-share lots and CNY, and under `yfinance` the same codes ran on US rules.
   Both runs succeeded. The config check now refuses such a code before any
   data is fetched and names the suffixes it understands. A bare six-digit code
-  (`600519`) is still read as a mainland listing.
+  (`600519`) and Yahoo's Shanghai spelling (`600519.SS`) are still read as
+  mainland listings.
 
 #### Research artifacts
 

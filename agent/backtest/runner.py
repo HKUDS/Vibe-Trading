@@ -131,11 +131,12 @@ class BacktestConfigSchema(BaseModel):
         # A code no routing rule recognises used to fall through to the A-share
         # default (T+1, price limits, 100-share lots, CNY) -- or to US rules
         # under yfinance -- and the run still succeeded. A bare six-digit code
-        # is the one unsuffixed form that genuinely means a mainland listing.
+        # and Yahoo's ``.SS`` Shanghai spelling are mainland listings that no
+        # routing rule names; the loaders and the benchmark resolve both.
         unrecognised = [
             c for c in v
             if matched_market(c.strip()) is None
-            and not re.fullmatch(r"\d{6}", strip_local_prefix(c.strip()))
+            and not re.fullmatch(r"\d{6}(?:\.SS)?", strip_local_prefix(c.strip()), re.I)
         ]
         if unrecognised:
             raise ValueError(

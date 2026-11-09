@@ -6,8 +6,9 @@ used to fall through to the A-share default: a local dataset ran under T+1,
 the +/-10% band, 100-share lots and CNY, and under ``yfinance`` the same codes
 ran on US rules. Both runs succeeded, so nothing told the user.
 
-A bare six-digit code stays accepted: it is the unsuffixed form of a mainland
-listing and the loaders resolve it.
+A bare six-digit code and Yahoo's ``.SS`` Shanghai spelling stay accepted:
+both are mainland listings, and the loaders and the benchmark resolve them
+(``.SS`` since fbf7e2f59). The first version of this check refused ``.SS``.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ _MESSAGE_EXAMPLES = (
         (["local:7203.T"], "local:7203.T"),
         (["AAPL.US", "BRK.B"], "BRK.B"),
         (["00700"], "00700"),
-        (["600519.SS"], "600519.SS"),
+        (["60051.SS"], "60051.SS"),
     ],
 )
 def test_an_unrecognised_code_is_refused(codes: list[str], refused: str) -> None:
@@ -45,8 +46,10 @@ def test_an_unrecognised_code_is_refused(codes: list[str], refused: str) -> None
     assert refused in str(caught.value)
 
 
-@pytest.mark.parametrize("code", ["600519", "local:000001", " 600519.SH "])
-def test_a_bare_mainland_code_and_padded_codes_are_accepted(code: str) -> None:
+@pytest.mark.parametrize(
+    "code", ["600519", "local:000001", " 600519.SH ", "600519.SS", "local:601857.ss"]
+)
+def test_mainland_spellings_and_padded_codes_are_accepted(code: str) -> None:
     assert BacktestConfigSchema(codes=[code], **_DATES).codes == [code]
 
 
