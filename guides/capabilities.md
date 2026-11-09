@@ -292,6 +292,8 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 
 Benchmark selection honors `.SH`, `.SZ`, and `.BJ` A-share suffixes, plus Yahoo's `.SS` spelling for Shanghai, independently of the chosen loader, including offline local sources.
 
+The engine's trading rules come from each code's market, so a backtest code must name one: a suffix listed above (`.SH`, `.US`, `.HK`, `.L`, `.TO`, `.NS`, `.KS`, `.SA`, `.BA`, `.VN`, …), a bare US ticker, a crypto or FX pair, an index (`^GSPC`), a futures contract, or a mainland code written as six bare digits or with `.SS`. A code no market rule recognises, `local:` datasets included, is refused before any data is fetched instead of running on another market's rules.
+
 Bars: 1m / 5m / 15m / 30m / 1H / 4H / 1D, plus weekly / monthly (1W / 1M, built from daily bars). 15 metrics + benchmark comparison, **5 portfolio optimizers** (equal-volatility / risk-parity / mean-variance / max-diversification / turnover-aware), and 3 validation tools (Monte Carlo / Bootstrap / Walk-Forward).
 
 The turnover-aware optimizer validates per-name and group caps for single-asset
