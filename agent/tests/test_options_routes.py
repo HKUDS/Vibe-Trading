@@ -323,3 +323,36 @@ def test_chain_missing_ticker_is_400(monkeypatch: pytest.MonkeyPatch) -> None:
         r = client.get("/options/chain", params=params)
         assert r.status_code == 400
         assert r.json() == {"ok": False, "error": "ticker is required"}
+
+
+@pytest.mark.parametrize(
+    ("days", "status"),
+    [
+        ([30], 200),
+        ([45], 200),
+        ([60], 200),
+        ([30, 45], 200),
+        ([75], 400),
+        ([90], 400),
+        ([30, 75], 400),
+        (None, 400),
+    ],
+)
+def test_surface_strike_coverage_uses_only_required_expiry_slices(
+    days: list[int] | None, status: int
+) -> None:
+    """Unrelated narrow slices do not forbid a covered requested grid."""
+    observations = [
+        {"strike": strike, "time_to_expiry": expiry / 365, "implied_volatility": 0.25}
+        for expiry, strikes in [(30, [90, 110]), (60, [90, 110]), (90, [100, 110])]
+        for strike in strikes
+    ]
+    body: dict[str, Any] = {"spot": 100, "observations": observations, "strikes": [90]}
+    if days is not None:
+        body["expiries"] = [day / 365 for day in days]
+    response = _client().post("/options/volatility-surface", json=body)
+    assert response.status_code == status
+    if status == 200:
+        assert len(response.json()["points"]) == len(days)
+    else:
+        assert "extrapolation" in response.json()["error"]

@@ -288,6 +288,7 @@ export function volatilitySurfaceIssue(request: VolatilitySurfaceRequest): Volat
   const observedExpiries = [...ranges.keys()].sort((a, b) => a - b);
   const minDays = Number((observedExpiries[0] * 365).toPrecision(12));
   const maxDays = Number((observedExpiries[observedExpiries.length - 1] * 365).toPrecision(12));
+  const requiredExpiries = new Set<number>();
   for (const expiry of expiries) {
     if (expiry < observedExpiries[0] || expiry > observedExpiries[observedExpiries.length - 1]) {
       return {
@@ -295,8 +296,18 @@ export function volatilitySurfaceIssue(request: VolatilitySurfaceRequest): Volat
         values: { days: Number((expiry * 365).toPrecision(12)), minDays, maxDays },
       };
     }
+    if (ranges.has(expiry)) {
+      requiredExpiries.add(expiry);
+    } else {
+      // Match the engine's interpolation coverage: only the two neighboring
+      // observed slices contribute to an intermediate expiry.
+      const upperIndex = observedExpiries.findIndex((observed) => observed > expiry);
+      requiredExpiries.add(observedExpiries[upperIndex - 1]);
+      requiredExpiries.add(observedExpiries[upperIndex]);
+    }
   }
   for (const expiry of observedExpiries) {
+    if (!requiredExpiries.has(expiry)) continue;
     const range = ranges.get(expiry)!;
     for (const strike of [...strikes].sort((a, b) => a - b)) {
       if (strike < range.minStrike || strike > range.maxStrike) {
