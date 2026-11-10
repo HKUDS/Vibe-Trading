@@ -1555,6 +1555,7 @@
       "premiumHint": "Prim boşsa motor Black-Scholes ile fiyatlar",
       "qtyHint": "Pozitif = uzun, negatif = kısa",
       "addLeg": "Bacak ekle",
+      "legLimit": "En fazla {{count}} opsiyon bacağı",
       "removeLeg": "Bacağı kaldır",
       "parameters": "Parametreler",
       "entrySpot": "Giriş spot fiyatı",

@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   buildPayoffRequest,
+  MAX_OPTION_LEGS,
   roundToNiceStrike,
   STRATEGY_PRESETS,
   type OptionLeg,
@@ -40,6 +41,7 @@ export function StrategyBuilder({
   };
 
   const addLeg = () => {
+    if (legs.length >= MAX_OPTION_LEGS) return;
     onLegsChange([
       ...legs,
       {
@@ -168,7 +170,9 @@ export function StrategyBuilder({
         <button
           type="button"
           onClick={addLeg}
-          className="flex items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          disabled={legs.length >= MAX_OPTION_LEGS}
+          title={t("options.builder.legLimit", { count: MAX_OPTION_LEGS })}
+          className="flex items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus className="h-3 w-3" />
           {t("options.builder.addLeg")}

@@ -173,9 +173,11 @@ export function OptionsChainTable() {
   useEffect(() => {
     if (!data) void load(tickerInput.trim().toUpperCase() || DEFAULT_TICKER);
     return () => { generation.current += 1; };
+    // Own the initial request for the mounted lifetime. Translation changes
+    // must not invalidate an in-flight refresh; unmount still rejects it.
     // A restored chain is explicitly refreshed by its load button.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
+  }, []);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();

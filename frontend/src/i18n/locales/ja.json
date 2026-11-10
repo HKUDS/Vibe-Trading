@@ -1589,6 +1589,7 @@
       "premiumHint": "プレミアム空欄 = エンジンがBlack-Scholesで価格設定",
       "qtyHint": "正 = ロング、負 = ショート",
       "addLeg": "レッグを追加",
+      "legLimit": "最大 {{count}} レッグ",
       "removeLeg": "レッグを削除",
       "parameters": "パラメータ",
       "entrySpot": "エントリー原資産価格",

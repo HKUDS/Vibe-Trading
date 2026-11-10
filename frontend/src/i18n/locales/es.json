@@ -1595,6 +1595,7 @@
       "premiumHint": "Prima vacía = precio Black-Scholes calculado por el motor",
       "qtyHint": "Positivo = largo, negativo = corto",
       "addLeg": "Añadir pierna",
+      "legLimit": "Máximo {{count}} patas",
       "removeLeg": "Eliminar pierna",
       "parameters": "Parámetros",
       "entrySpot": "Spot de entrada",

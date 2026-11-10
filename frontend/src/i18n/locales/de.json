@@ -1595,6 +1595,7 @@
       "premiumHint": "Leere Prämie = durch Engine nach Black-Scholes bewertet",
       "qtyHint": "Positiv = Long, negativ = Short",
       "addLeg": "Bein hinzufügen",
+      "legLimit": "Maximal {{count}} Optionspositionen",
       "removeLeg": "Bein entfernen",
       "parameters": "Parameter",
       "entrySpot": "Einstiegs-Spot",

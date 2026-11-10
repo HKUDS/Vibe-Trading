@@ -1595,6 +1595,7 @@
       "premiumHint": "Blank premium = Black-Scholes priced by the engine",
       "qtyHint": "Positive = long, negative = short",
       "addLeg": "Add leg",
+      "legLimit": "Up to {{count}} legs",
       "removeLeg": "Remove leg",
       "parameters": "Parameters",
       "entrySpot": "Entry spot",

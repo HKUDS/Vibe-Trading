@@ -1589,6 +1589,7 @@
       "premiumHint": "权利金留空 = 由引擎按 Black-Scholes 定价",
       "qtyHint": "正数 = 买入（多头），负数 = 卖出（空头）",
       "addLeg": "添加期权腿",
+      "legLimit": "最多 {{count}} 条期权腿",
       "removeLeg": "删除期权腿",
       "parameters": "参数",
       "entrySpot": "入场标的价",

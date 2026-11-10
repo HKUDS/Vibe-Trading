@@ -173,6 +173,9 @@ export function fractionToPct(fraction: number): number {
   return fraction * 100;
 }
 
+/** Matches the options payoff API leg limit. */
+export const MAX_OPTION_LEGS = 20;
+
 /**
  * Validate inputs against the backend contract and build the request body.
  * Returns null when any input is out of contract bounds (the page then skips
@@ -190,7 +193,7 @@ export function buildPayoffRequest(
   if (!Number.isFinite(p.commission_rate_pct) || p.commission_rate_pct < 0 || p.commission_rate_pct >= 100) {
     return null;
   }
-  if (legs.length === 0) return null;
+  if (legs.length === 0 || legs.length > MAX_OPTION_LEGS) return null;
   for (const leg of legs) {
     if (leg.option_type !== "call" && leg.option_type !== "put") return null;
     if (!Number.isFinite(leg.strike) || leg.strike <= 0) return null;
@@ -242,108 +245,119 @@ export function roundToNiceStrike(price: number): number {
   return Number(rounded.toFixed(4));
 }
 
-function k(spot: number, factor: number): number {
-  return roundToNiceStrike(spot * factor);
+function k(spot: number, offset: -2 | -1 | 0 | 1 | 2): number {
+  // One grid for the whole strategy keeps distinct strikes and equal wings,
+  // including across niceStrikeStep boundaries. Sub-dollar spots need a finer
+  // grid so both lower wings remain positive without shifting the body up.
+  const listedStep = niceStrikeStep(spot);
+  const step = spot < 3 * listedStep
+    ? 10 ** Math.floor(Math.log10(spot)) / 10
+    : listedStep;
+  const centerTicks = Math.round(spot / step);
+  const wingTicks = Math.max(1, Math.round(spot * 0.05 / step));
+  return Number(((centerTicks + offset * wingTicks) * step).toPrecision(12));
 }
 
 /**
  * Twelve canonical presets, parameterized by spot S. Strike ratios follow the
- * S x {0.9, 0.95, 1.0, 1.05, 1.1} grid (rounded to nice strikes).
+ * S x {0.9, 0.95, 1.0, 1.05, 1.1} approximately, using a shared grid with
+ * at least one tick between neighboring levels. These are modeled strikes,
+ * not a claim that the contracts are listed by an exchange.
  */
 export const STRATEGY_PRESETS: StrategyPreset[] = [
   {
     id: "long_call",
     nameKey: "options.presets.longCall",
-    buildLegs: (s) => [{ option_type: "call", strike: k(s, 1), qty: 1 }],
+    buildLegs: (s) => [{ option_type: "call", strike: k(s, 0), qty: 1 }],
   },
   {
     id: "long_put",
     nameKey: "options.presets.longPut",
-    buildLegs: (s) => [{ option_type: "put", strike: k(s, 1), qty: 1 }],
+    buildLegs: (s) => [{ option_type: "put", strike: k(s, 0), qty: 1 }],
   },
   {
     id: "bull_call_spread",
     nameKey: "options.presets.bullCallSpread",
     buildLegs: (s) => [
-      { option_type: "call", strike: k(s, 0.95), qty: 1 },
-      { option_type: "call", strike: k(s, 1.05), qty: -1 },
+      { option_type: "call", strike: k(s, -1), qty: 1 },
+      { option_type: "call", strike: k(s, 1), qty: -1 },
     ],
   },
   {
     id: "bear_put_spread",
     nameKey: "options.presets.bearPutSpread",
     buildLegs: (s) => [
-      { option_type: "put", strike: k(s, 1.05), qty: 1 },
-      { option_type: "put", strike: k(s, 0.95), qty: -1 },
+      { option_type: "put", strike: k(s, 1), qty: 1 },
+      { option_type: "put", strike: k(s, -1), qty: -1 },
     ],
   },
   {
     id: "bull_put_spread",
     nameKey: "options.presets.bullPutSpread",
     buildLegs: (s) => [
-      { option_type: "put", strike: k(s, 1.05), qty: -1 },
-      { option_type: "put", strike: k(s, 0.95), qty: 1 },
+      { option_type: "put", strike: k(s, 1), qty: -1 },
+      { option_type: "put", strike: k(s, -1), qty: 1 },
     ],
   },
   {
     id: "bear_call_spread",
     nameKey: "options.presets.bearCallSpread",
     buildLegs: (s) => [
-      { option_type: "call", strike: k(s, 0.95), qty: -1 },
-      { option_type: "call", strike: k(s, 1.05), qty: 1 },
+      { option_type: "call", strike: k(s, -1), qty: -1 },
+      { option_type: "call", strike: k(s, 1), qty: 1 },
     ],
   },
   {
     id: "long_straddle",
     nameKey: "options.presets.longStraddle",
     buildLegs: (s) => [
-      { option_type: "call", strike: k(s, 1), qty: 1 },
-      { option_type: "put", strike: k(s, 1), qty: 1 },
+      { option_type: "call", strike: k(s, 0), qty: 1 },
+      { option_type: "put", strike: k(s, 0), qty: 1 },
     ],
   },
   {
     id: "long_strangle",
     nameKey: "options.presets.longStrangle",
     buildLegs: (s) => [
-      { option_type: "call", strike: k(s, 1.05), qty: 1 },
-      { option_type: "put", strike: k(s, 0.95), qty: 1 },
+      { option_type: "call", strike: k(s, 1), qty: 1 },
+      { option_type: "put", strike: k(s, -1), qty: 1 },
     ],
   },
   {
     id: "iron_condor",
     nameKey: "options.presets.ironCondor",
     buildLegs: (s) => [
-      { option_type: "put", strike: k(s, 0.9), qty: 1 },
-      { option_type: "put", strike: k(s, 0.95), qty: -1 },
-      { option_type: "call", strike: k(s, 1.05), qty: -1 },
-      { option_type: "call", strike: k(s, 1.1), qty: 1 },
+      { option_type: "put", strike: k(s, -2), qty: 1 },
+      { option_type: "put", strike: k(s, -1), qty: -1 },
+      { option_type: "call", strike: k(s, 1), qty: -1 },
+      { option_type: "call", strike: k(s, 2), qty: 1 },
     ],
   },
   {
     id: "iron_butterfly",
     nameKey: "options.presets.ironButterfly",
     buildLegs: (s) => [
-      { option_type: "put", strike: k(s, 1), qty: -1 },
-      { option_type: "call", strike: k(s, 1), qty: -1 },
-      { option_type: "put", strike: k(s, 0.9), qty: 1 },
-      { option_type: "call", strike: k(s, 1.1), qty: 1 },
+      { option_type: "put", strike: k(s, 0), qty: -1 },
+      { option_type: "call", strike: k(s, 0), qty: -1 },
+      { option_type: "put", strike: k(s, -2), qty: 1 },
+      { option_type: "call", strike: k(s, 2), qty: 1 },
     ],
   },
   {
     id: "call_butterfly",
     nameKey: "options.presets.callButterfly",
     buildLegs: (s) => [
-      { option_type: "call", strike: k(s, 0.9), qty: 1 },
-      { option_type: "call", strike: k(s, 1), qty: -2 },
-      { option_type: "call", strike: k(s, 1.1), qty: 1 },
+      { option_type: "call", strike: k(s, -2), qty: 1 },
+      { option_type: "call", strike: k(s, 0), qty: -2 },
+      { option_type: "call", strike: k(s, 2), qty: 1 },
     ],
   },
   {
     id: "ratio_call_spread",
     nameKey: "options.presets.ratioCallSpread",
     buildLegs: (s) => [
-      { option_type: "call", strike: k(s, 1), qty: 1 },
-      { option_type: "call", strike: k(s, 1.1), qty: -2 },
+      { option_type: "call", strike: k(s, 0), qty: 1 },
+      { option_type: "call", strike: k(s, 2), qty: -2 },
     ],
   },
 ];

@@ -1589,6 +1589,7 @@
       "premiumHint": "프리미엄 비워두면 엔진이 Black-Scholes로 가격 산정",
       "qtyHint": "양수 = 롱, 음수 = 숏",
       "addLeg": "레그 추가",
+      "legLimit": "최대 {{count}}개 레그",
       "removeLeg": "레그 삭제",
       "parameters": "매개변수",
       "entrySpot": "진입 현물가",

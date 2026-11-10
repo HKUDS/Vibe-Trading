@@ -1595,6 +1595,7 @@
       "premiumHint": "Premium kosong = dihitung dengan Black-Scholes oleh engine",
       "qtyHint": "Positif = long, negatif = short",
       "addLeg": "Tambah leg",
+      "legLimit": "Maksimal {{count}} kaki opsi",
       "removeLeg": "Hapus leg",
       "parameters": "Parameter",
       "entrySpot": "Spot masuk",

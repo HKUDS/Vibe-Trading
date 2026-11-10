@@ -9,6 +9,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 #### Options Lab
 
+- Switching language during an option-chain refresh no longer leaves loading
+  stuck; late responses after unmount remain ignored.
+- Presets use one strike grid with distinct levels and symmetric wings, so
+  low-priced underlyings do not collapse spreads, condors or butterflies into
+  offsetting positions.
+- The strategy builder stops at the API's 20-leg limit and rejects oversized
+  restored drafts before submitting them; removing legs remains available.
+
 - Quantity inputs preserve their numeric value: fractional contracts remain
   invalid instead of being silently truncated, and `1e2` means 100 contracts.
 - Option-chain expiration labels retain the source's UTC calendar date in all

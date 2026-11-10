@@ -1595,6 +1595,7 @@
       "premiumHint": "Prêmio em branco = Black-Scholes precificado pelo motor",
       "qtyHint": "Positivo = longo, negativo = curto",
       "addLeg": "Adicionar perna",
+      "legLimit": "Até {{count}} pernas",
       "removeLeg": "Remover perna",
       "parameters": "Parâmetros",
       "entrySpot": "Preço à vista na entrada",

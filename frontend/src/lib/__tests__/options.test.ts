@@ -268,3 +268,32 @@ describe("display formatters", () => {
     expect(ivLabel(0.255)).toBe("25.5%");
   });
 });
+
+describe("preset strike geometry", () => {
+  it.each([0.01, 0.4, 0.74, 0.75, 1, 2, 4.9, 5, 19.9, 20, 49, 50, 53, 100, 199, 200])(
+    "preserves distinct strikes and symmetric wings at spot %s", (spot) => {
+      for (const id of ["bull_call_spread", "bear_put_spread", "bull_put_spread", "bear_call_spread", "long_strangle", "ratio_call_spread"]) {
+        const legs = buildPresetLegs(id, spot)!;
+        expect(new Set(legs.map((leg) => leg.strike)).size, id).toBe(2);
+      }
+      const condor = buildPresetLegs("iron_condor", spot)!;
+      expect(condor[0].strike).toBeGreaterThan(0);
+      for (let i = 1; i < condor.length; i++) {
+        expect(condor[i].strike).toBeGreaterThan(condor[i - 1].strike);
+      }
+      expect(condor[1].strike - condor[0].strike).toBeCloseTo(condor[3].strike - condor[2].strike, 10);
+      for (const id of ["call_butterfly", "iron_butterfly"]) {
+        const strikes = [...new Set(buildPresetLegs(id, spot)!.map((leg) => leg.strike))].sort((a, b) => a - b);
+        expect(strikes, id).toHaveLength(3);
+        expect(strikes[0]).toBeGreaterThan(0);
+        expect(strikes[1] - strikes[0], id).toBeCloseTo(strikes[2] - strikes[1], 10);
+      }
+    },
+  );
+});
+
+it("accepts 20 legs and rejects 21 before submitting a payoff request", () => {
+  const legs: OptionLeg[] = Array.from({ length: 20 }, () => ({ option_type: "call", strike: 100, qty: 1 }));
+  expect(buildPayoffRequest(legs, DEFAULT_PARAMS)?.legs).toHaveLength(20);
+  expect(buildPayoffRequest([...legs, legs[0]], DEFAULT_PARAMS)).toBeNull();
+});
