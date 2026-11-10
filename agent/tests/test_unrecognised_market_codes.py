@@ -53,6 +53,20 @@ def test_mainland_spellings_and_padded_codes_are_accepted(code: str) -> None:
     assert BacktestConfigSchema(codes=[code], **_DATES).codes == [code]
 
 
+@pytest.mark.parametrize("code", ["CF501", "MA501", "ta501", "local:SR501"])
+def test_bare_three_digit_china_futures_are_accepted(code: str) -> None:
+    """Zhengzhou's bare month code is the same contract as CF501.ZCE."""
+    assert BacktestConfigSchema(codes=[code], **_DATES).codes == [code]
+
+
+@pytest.mark.parametrize(
+    "code", ["CL501", "IF501", "RB501", "CS501", "C2412"]
+)
+def test_a_non_zce_three_digit_code_is_still_refused(code: str) -> None:
+    with pytest.raises(ValueError, match=f"no market rule recognises {code}"):
+        BacktestConfigSchema(codes=[code], **_DATES)
+
+
 def test_every_example_in_the_refusal_is_accepted() -> None:
     with pytest.raises(ValueError) as caught:
         BacktestConfigSchema(codes=["BHP.AX"], **_DATES)
