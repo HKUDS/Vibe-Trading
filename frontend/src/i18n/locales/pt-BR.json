@@ -1568,6 +1568,8 @@
     "subtitle": "Construtor de estratégia, retorno de vencimento, cenários spot x IV, portfólio grego e uma cadeia de opções ao vivo nos EUA.",
     "disclaimer": "Apenas pesquisa. Os preços teóricos e os resultados dos cenários são estimativas de modelos e não conselhos de investimento.",
     "errorGeneric": "Falha na análise",
+    "exportJson": "Exportar JSON",
+    "exportCsv": "Exportar CSV",
     "presets": {
       "label": "Predefinições",
       "longCall": "Call comprada",

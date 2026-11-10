@@ -1568,6 +1568,8 @@
     "subtitle": "Penyusun strategi, payoff saat kedaluwarsa, skenario spot x IV, Greeks portofolio, dan options chain AS live.",
     "disclaimer": "Hanya untuk riset. Pricing teoretis dan output skenario merupakan estimasi model, bukan saran investasi.",
     "errorGeneric": "Analisis gagal",
+    "exportJson": "Ekspor JSON",
+    "exportCsv": "Ekspor CSV",
     "presets": {
       "label": "Preset",
       "longCall": "Long Call",

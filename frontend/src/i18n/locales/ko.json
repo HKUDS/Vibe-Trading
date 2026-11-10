@@ -1562,6 +1562,8 @@
     "subtitle": "전략 빌더, 만기 손익, 현물가 × IV 시나리오, 포트폴리오 그리스, 미국 실시간 옵션 체인.",
     "disclaimer": "연구 목적 전용입니다. 이론 가격과 시나리오 결과는 모델 추정치이며 투자 조언이 아닙니다.",
     "errorGeneric": "분석에 실패했습니다",
+    "exportJson": "Export JSON",
+    "exportCsv": "Export CSV",
     "presets": {
       "label": "프리셋",
       "longCall": "롱 콜",

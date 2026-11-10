@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CandlestickChart, Loader2 } from "lucide-react";
+import { CandlestickChart, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import {
@@ -19,6 +19,7 @@ import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
 import { OptionsScenarioMatrix } from "@/components/charts/OptionsScenarioMatrix";
 import { VolatilitySurfaceGrid } from "@/components/options/VolatilitySurfaceGrid";
 import { useAnalysisState } from "@/hooks/useAnalysisState";
+import { buildOptionsAnalysisJson, buildOptionsScenarioCsv } from "@/lib/optionsExport";
 
 const ANALYZE_DEBOUNCE_MS = 250;
 
@@ -113,6 +114,25 @@ export function OptionsLab() {
     setDraft((d) => ({ ...d, activePresetId: null, legs: next }));
   };
 
+  const exportSnapshot = (format: "json" | "csv") => {
+    if (!result || !resultRequest) return;
+    try {
+      const json = format === "json";
+      const content = json ? buildOptionsAnalysisJson(resultRequest, result) : buildOptionsScenarioCsv(result);
+      const blob = new Blob([content], { type: json ? "application/json;charset=utf-8" : "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = json ? "options-analysis.json" : "options-scenarios.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("options.errorGeneric"));
+    }
+  };
+
   const summary = result?.summary ?? null;
   const dash = "–";
 
@@ -204,12 +224,24 @@ export function OptionsLab() {
           <section className="rounded-xl border border-border/60 bg-card p-4 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold">{t("options.payoff.title")}</div>
-              {loading && (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("options.builder.analyzing")}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {result && resultRequest && (
+                  <>
+                    <button type="button" onClick={() => exportSnapshot("json")} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+                      <Download className="h-3.5 w-3.5" />{t("options.exportJson")}
+                    </button>
+                    <button type="button" onClick={() => exportSnapshot("csv")} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
+                      <Download className="h-3.5 w-3.5" />{t("options.exportCsv")}
+                    </button>
+                  </>
+                )}
+                {loading && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t("options.builder.analyzing")}
+                  </span>
+                )}
+              </div>
             </div>
             <OptionsPayoffChart
               curve={result?.expiry_curve ?? { spot: [], pnl: [] }}

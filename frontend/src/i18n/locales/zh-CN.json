@@ -1562,6 +1562,8 @@
     "subtitle": "策略构建器、到期损益、标的价 × 隐含波动率情景、组合希腊值与美股实时期权链。",
     "disclaimer": "仅供研究参考。理论定价与情景结果为模型估算，不构成投资建议。",
     "errorGeneric": "分析失败",
+    "exportJson": "导出 JSON",
+    "exportCsv": "导出 CSV",
     "presets": {
       "label": "预设策略",
       "longCall": "买入看涨期权",

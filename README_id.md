@@ -165,7 +165,7 @@ Anda juga dapat memilih sumber tertentu. Instal `vibe-trading-ai[ashare]` untuk 
 |---|---|
 | Alpha Zoo | Uji sinyal Qlib, Alpha101, GTJA, serta pustaka akademis dan fundamental. Bandingkan koefisien informasi antarhorizon lalu uji dengan jendela waktu bergulir. |
 | Mesin backtest | Modelkan batas harga saham A, biaya pendanaan kripto, atau margin kontrak berjangka. Gunakan modal bersama lintas pasar dan periksa setiap eksekusi. |
-| Lab opsi | Susun spread per kaki, bandingkan hasil saat jatuh tempo dan Greeks, lalu uji perubahan harga spot dan volatilitas tersirat. |
+| Lab opsi | Susun spread per kaki, bandingkan hasil saat jatuh tempo dan Greeks, lalu uji perubahan harga spot dan volatilitas tersirat. Ekspor permintaan dan hasil analisis yang persis sebagai JSON atau seluruh grid jatuh tempo dan skenario sebagai CSV. |
 | Risiko portofolio | Periksa drawdown, VaR, dan expected shortfall. Pisahkan pengaruh alokasi dan pemilihan saham lewat atribusi Brinson dan lihat perubahan korelasi pasar. |
 | Pemantauan strategi | Daftarkan strategi beserta bukti dan pantau perubahan rasio Sharpe atau koefisien informasi faktor saat hasil baru masuk. |
 
