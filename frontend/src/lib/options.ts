@@ -403,12 +403,13 @@ export function nearestStrikeIndex(rows: OptionsContractRow[], spot: number): nu
   return best;
 }
 
-/** Locale date label for an epoch-seconds expiration (e.g. "Aug 15, 2026"). */
+/** Localized label for the UTC calendar date encoded by a chain expiration. */
 export function expirationLabel(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
 

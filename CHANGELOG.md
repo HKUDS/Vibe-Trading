@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+#### Options Lab
+
+- Quantity inputs preserve their numeric value: fractional contracts remain
+  invalid instead of being silently truncated, and `1e2` means 100 contracts.
+- Option-chain expiration labels retain the source's UTC calendar date in all
+  browser timezones, rather than showing the previous day west of UTC.
+- Retrying a failed chain request keeps its ticker and selected expiration,
+  even after the failed response clears the displayed chain or the ticker
+  input has been edited.
+
 #### Backtest runner, engines and metrics
 
 - **A benchmark is bought at the first evaluated open, the way the strategy

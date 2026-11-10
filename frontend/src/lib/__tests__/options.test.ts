@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   bidAskSpreadPct,
   buildPayoffRequest,
@@ -16,6 +19,24 @@ import {
   type OptionLeg,
   type OptionsContractRow,
 } from "../options";
+
+it.each(["America/Los_Angeles", "America/New_York", "UTC", "Asia/Singapore"])("keeps the source expiration date in %s", (timeZone) => {
+  // Use a fresh process so the assertion exercises real timezone conversion
+  // even when CI and the test worker run in UTC.
+  const script = `
+    import { expirationLabel } from ${JSON.stringify(pathToFileURL(resolve("src/lib/options.ts")).href)};
+    console.log(JSON.stringify([[2026, 0, 16], [2026, 6, 17]].map(([year, month, day]) => ({
+      actual: expirationLabel(Date.UTC(year, month, day) / 1000),
+      expected: new Date(year, month, day, 12).toLocaleDateString(undefined, {
+        year: "numeric", month: "short", day: "numeric",
+      }),
+    }))));
+  `;
+  const rows = JSON.parse(execFileSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
+    encoding: "utf8", env: { ...process.env, TZ: timeZone },
+  })) as { actual: string; expected: string }[];
+  for (const row of rows) expect(row.actual).toBe(row.expected);
+});
 
 describe("strategy preset catalog", () => {
   it("ships at least 10 presets with unique ids and options.presets.* name keys", () => {

@@ -126,7 +126,7 @@ export function StrategyBuilder({
                     type="number"
                     step={1}
                     value={Number.isFinite(leg.qty) ? leg.qty : ""}
-                    onChange={(e) => updateLeg(i, { qty: parseInt(e.target.value, 10) })}
+                    onChange={(e) => updateLeg(i, { qty: e.target.valueAsNumber })}
                     className={cn(INPUT_CLS, "min-w-16 tabular-nums")}
                     aria-label={`${t("options.builder.qty")} ${i + 1}`}
                   />
