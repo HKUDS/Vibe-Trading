@@ -174,7 +174,7 @@ También puedes elegir una fuente. Instala `vibe-trading-ai[ashare]` para consul
 | Función | Uso |
 |---|---|
 | Cartera | Agrupa posiciones de cuentas de solo lectura o importa un archivo de extraETF. Introduce pesos objetivo para ver el cambio de valor por posición. |
-| Simulación | Avanza un día bursátil en una cuenta guardada y revisa ejecuciones, efectivo y valor liquidativo. También puedes reproducir aparte una sesión de acciones A en pasos de cinco minutos. |
+| Simulación | Avanza un día bursátil en una cuenta guardada y revisa ejecuciones, efectivo y valor liquidativo. También puedes reproducir aparte una sesión de acciones A en pasos de cinco minutos. La herramienta `paper_trade_reconcile` del agente/MCP verifica de forma independiente comisiones, efectivo, posiciones y la aritmética del NAV sin acceder al mercado ni al bróker. |
 | Cuenta espejo | Importa tu diario del bróker, analiza comisiones y hábitos y compara las operaciones reales con una reproducción basada en reglas. |
 | Conexión al bróker | Configura la conexión en la CLI o la web y prueba una lectura. Define símbolos y límites de orden y exposición antes de activar la operativa real. El interruptor de emergencia la detiene. |
 

@@ -174,7 +174,7 @@ Anda juga dapat memilih sumber tertentu. Instal `vibe-trading-ai[ashare]` untuk 
 | Fitur | Kegunaan |
 |---|---|
 | Portofolio | Gabungkan posisi broker dalam satu snapshot hanya baca atau impor berkas extraETF. Masukkan bobot sasaran untuk memperkirakan perubahan nilai tiap posisi. |
-| Trading simulasi | Majukan akun tersimpan satu hari bursa untuk melihat transaksi, kas, dan nilai aset bersih. Anda juga dapat memutar ulang sesi saham A per lima menit dalam simulasi terpisah. |
+| Trading simulasi | Majukan akun tersimpan satu hari bursa untuk melihat transaksi, kas, dan nilai aset bersih. Anda juga dapat memutar ulang sesi saham A per lima menit dalam simulasi terpisah. Alat `paper_trade_reconcile` agent/MCP memeriksa biaya, kas, posisi, dan aritmetika NAV secara independen tanpa akses pasar atau broker. |
 | Akun bayangan | Impor jurnal broker, periksa biaya dan kebiasaan transaksi, lalu bandingkan hasil aktual dengan simulasi berbasis aturan. |
 | Koneksi broker | Atur koneksi lewat CLI atau web dan uji dengan membaca data. Tetapkan batas simbol, order, dan eksposur sebelum transaksi riil. Tombol penghentian menghentikan aktivitas riil. |
 
