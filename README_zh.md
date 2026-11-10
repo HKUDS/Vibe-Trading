@@ -57,14 +57,18 @@
 
 ## 📰 新闻
 
+- **2026-11-10** 📊 **可编辑波动率曲面与期权分析修复** — 在 Options Lab 编辑行权价与到期日的隐含波动率网格，区分观测值与插值，并拒绝外推（[#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)）。
+  修复低价策略预设、数量输入、到期日显示、失败重试、切换语言卡加载及 20 腿上限；`CF501` 等郑商所三位交割年月合约代码现在按中国期货规则回测（[#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)）。
+  感谢 [@he-yufeng](https://github.com/he-yufeng) 和 [@GPT-AGI](https://github.com/GPT-AGI)！**已在 `main`，随下一次 pip 版本发布。**
+
 - **2026-11-09** 🧭 **导出选中的版本对比；回测拒绝无法识别的代码** — 可在 Web、API 或 CLI 中把正在比较的两个研究修订导出为 JSON 或 Markdown（[#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)）。任何市场规则都无法识别的回测代码（如 `local:BHP.AX`、`7203.T`）现在会在拉取数据前被拒绝，不再按 A 股规则运行；裸六位代码和上交所 `.SS` 写法仍可使用。OpenRouter 回复不再重复显示模型名（[#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)），`research-artifact export` 传入空修订号现在会报错。感谢 [@he-yufeng](https://github.com/he-yufeng) 和 [@Gloubiboulgator](https://github.com/Gloubiboulgator)！**已在 `main`，随下一次 pip 版本发布。**
 
 - **2026-11-08** 📝 **研究版本比较与完整历史导出** — 可比较任意两个修订的正文、证据和元数据（[#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)），并将完整研究历史导出为 JSON 或 Markdown（[#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)）。切换研究记录时会忽略过期响应，Markdown 导出以隔离的代码块保留原始正文。另修复因子权重缺失、部分收益缺失时的归因、IC 样本不足、估值输入非有限值，以及负入场价格下的保证金计算。**已在 `main`，随下一次 pip 版本发布。**
 
-- **2026-11-07** 🧪 **研究实验室：交易成本与样本外验证** — 用已保存的行情输入，按不同费用和滑点重新回测；仅依据训练结果选参，再锁定参数执行样本外测试与独立的最终留出验证。[研究实验室](guides/research-lab.md) 的 Web、CLI、API 和 Agent/MCP 共用一套流程，界面支持全部 11 种语言。另修复跨窗口收益统计、因子预热与长窗口计算，新增 20 个离线任务回放用例，缺少证据会明确显示。版本化研究资料也可保存结构化财务事实（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)），并修正中国期货裸合约代码识别（[#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)）。**已在 `main`，随下一次 pip 版本发布。**
-
 <details>
 <summary>更早的新闻</summary>
+
+- **2026-11-07** 🧪 **研究实验室：交易成本与样本外验证** — 用已保存的行情输入，按不同费用和滑点重新回测；仅依据训练结果选参，再锁定参数执行样本外测试与独立的最终留出验证。[研究实验室](guides/research-lab.md) 的 Web、CLI、API 和 Agent/MCP 共用一套流程，界面支持全部 11 种语言。另修复跨窗口收益统计、因子预热与长窗口计算，新增 20 个离线任务回放用例，缺少证据会明确显示。版本化研究资料也可保存结构化财务事实（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)），并修正中国期货裸合约代码识别（[#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)）。**已在 `main`，随下一次 pip 版本发布。**
 
 - **2026-11-06** 📈 **隐含波动率曲面与模拟交易修复** — 可根据提供的期权观测值构建行权价 × 到期时间的 IV 网格，标注原始观测与插值点，不向数据覆盖范围之外外推（[#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)）。极端数值输入现在返回有限结果或明确错误。A 股五分钟模拟交易中，受涨跌停限制的市价单会立即撤销（[#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)）；撮合引擎也改为按跨标的时间顺序处理，防止用未来卖出款支付早先买单。**已在 `main`，随下一次 pip 版本发布；公开的五分钟入口仍限每步一个标的。**
 

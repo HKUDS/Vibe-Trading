@@ -57,14 +57,18 @@
 
 ## 📰 뉴스
 
+- **2026-11-10** 📊 **편집 가능한 IV 곡면과 옵션 분석 수정** — Options Lab에서 행사가·만기별 IV 그리드를 편집하고 관측값과 보간값을 구분할 수 있습니다. 외삽은 거부합니다([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
+  저가 종목 프리셋, 수량 입력, 만기일 표시, 재시도, 언어 변경 시 로딩 멈춤, 20개 레그 제한을 수정했습니다. `CF501`처럼 만기 부분이 세 자리인 정저우 상품거래소 코드는 이제 중국 선물 규칙으로 백테스트됩니다([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
+  [@he-yufeng](https://github.com/he-yufeng) 및 [@GPT-AGI](https://github.com/GPT-AGI)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
 - **2026-11-09** 🧭 **선택한 리비전 비교 내보내기와 인식할 수 없는 코드를 거부하는 백테스트** — 비교 중인 두 연구 리비전을 Web, API, CLI에서 JSON 또는 Markdown으로 내려받을 수 있습니다([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). 어떤 시장 규칙에도 해당하지 않는 백테스트 코드(`local:BHP.AX`, `7203.T` 등)는 이제 중국 A주 규칙으로 실행되지 않고 데이터를 가져오기 전에 거부됩니다. 6자리 숫자만 있는 코드와 상하이 `.SS` 표기는 계속 사용할 수 있습니다. OpenRouter 응답에 모델 이름이 두 번 표시되지 않으며([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), `research-artifact export`에 빈 리비전 ID를 넘기면 오류가 납니다. [@he-yufeng](https://github.com/he-yufeng) 및 [@Gloubiboulgator](https://github.com/Gloubiboulgator)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
 - **2026-11-08** 📝 **연구 버전 비교와 전체 이력 내보내기** — 두 리비전의 본문, 근거, 메타데이터를 비교하고([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), 전체 연구 이력을 JSON 또는 Markdown으로 내보낼 수 있습니다([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). 연구 기록을 전환할 때 오래된 응답을 무시하며, Markdown 내보내기는 원문을 독립된 코드 블록에 보존합니다. 팩터 가중치 누락, 일부 수익률 누락 시의 성과 귀속, IC 표본 부족, 유한하지 않은 가치평가 입력값, 음수 진입 가격의 증거금 계산도 수정했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
-- **2026-11-07** 🧪 **Research Lab: 거래 비용과 표본 외 검증** — 저장된 가격 데이터로 수수료와 슬리피지를 바꿔 백테스트를 다시 실행합니다. 학습 결과만으로 매개변수를 선택한 뒤 고정해 표본 외 테스트와 별도의 최종 홀드아웃 검증을 수행합니다. [Research Lab](guides/research-lab.md)은 Web, CLI, API, Agent/MCP에서 같은 절차를 사용하며 UI는 11개 언어를 모두 지원합니다. 구간 경계의 수익률 누락, 팩터 초기화와 장기 구간 계산도 수정하고, 근거 부족을 명시하는 오프라인 작업 재검증 사례 20개를 추가했습니다. 버전별 연구 기록에 구조화된 재무 데이터를 저장할 수 있으며([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)), 거래소 접미사가 없는 중국 선물 계약 코드의 인식도 수정했습니다([#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)). **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
-
 <details>
-<summary>이전 뉴스 전체</summary>
+<summary>이전 뉴스</summary>
+
+- **2026-11-07** 🧪 **Research Lab: 거래 비용과 표본 외 검증** — 저장된 가격 데이터로 수수료와 슬리피지를 바꿔 백테스트를 다시 실행합니다. 학습 결과만으로 매개변수를 선택한 뒤 고정해 표본 외 테스트와 별도의 최종 홀드아웃 검증을 수행합니다. [Research Lab](guides/research-lab.md)은 Web, CLI, API, Agent/MCP에서 같은 절차를 사용하며 UI는 11개 언어를 모두 지원합니다. 구간 경계의 수익률 누락, 팩터 초기화와 장기 구간 계산도 수정하고, 근거 부족을 명시하는 오프라인 작업 재검증 사례 20개를 추가했습니다. 버전별 연구 기록에 구조화된 재무 데이터를 저장할 수 있으며([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)), 거래소 접미사가 없는 중국 선물 계약 코드의 인식도 수정했습니다([#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)). **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
 - **2026-11-06** 📈 **내재변동성 격자와 모의 거래 수정** — 제공된 옵션 관측값으로 행사가 × 만기의 IV 격자를 만들고 관측점과 보간점을 구분하며, 데이터 범위 밖으로 외삽하지 않습니다([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). 극단적인 수치 입력에는 유한한 결과 또는 명시적인 오류를 반환합니다. A주 5분봉 모의 거래에서 가격 제한으로 체결할 수 없는 시장가 주문은 즉시 취소합니다([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)). 여러 종목의 체결 처리도 시간순으로 진행해 나중의 매도 대금으로 앞선 매수 주문을 충당하지 못하게 했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다. 공개 5분봉 요청은 여전히 단계당 한 종목만 지원합니다.**
 
