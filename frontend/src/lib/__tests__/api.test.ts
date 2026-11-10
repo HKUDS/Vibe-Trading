@@ -44,6 +44,24 @@ describe("api request helper", () => {
       status: 422, code: "message_too_long", message: expect.stringContaining("Shorten it"),
     });
   });
+
+  it("surfaces FastAPI validation arrays instead of reducing them to HTTP 422", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: [{
+        loc: ["body", "observations"],
+        msg: "List should have at most 400 items after validation, not 401",
+        type: "too_long",
+      }],
+    }), { status: 422, headers: { "content-type": "application/json" } })));
+    const { api } = await loadApiModule();
+    await expect(api.computeVolatilitySurface({
+      observations: [{ strike: 90, time_to_expiry: 30 / 365, implied_volatility: 0.24 }],
+      spot: 100,
+    })).rejects.toMatchObject({
+      status: 422,
+      message: "body.observations: List should have at most 400 items after validation, not 401",
+    });
+  });
   beforeEach(() => {
     vi.stubGlobal("localStorage", {
       getItem: vi.fn(() => ""),

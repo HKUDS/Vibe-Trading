@@ -17,6 +17,7 @@ import { GreeksCards } from "@/components/options/GreeksCards";
 import { OptionsChainTable } from "@/components/options/OptionsChainTable";
 import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
 import { OptionsScenarioMatrix } from "@/components/charts/OptionsScenarioMatrix";
+import { VolatilitySurfaceGrid } from "@/components/options/VolatilitySurfaceGrid";
 import { useAnalysisState } from "@/hooks/useAnalysisState";
 
 const ANALYZE_DEBOUNCE_MS = 250;
@@ -236,6 +237,9 @@ export function OptionsLab() {
           </ul>
         )}
       </section>
+
+      {/* Observed and interpolated volatility surface */}
+      <VolatilitySurfaceGrid />
 
       {/* Live US options chain */}
       <details className="rounded-xl border bg-card p-4" onToggle={(e) => setChainOpen(e.currentTarget.open)}>

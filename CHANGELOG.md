@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 #### Options Lab
 
+- Volatility surface grids check strike coverage only at requested expiries or
+  their adjacent interpolation slices; unrelated narrow quote slices no longer
+  reject valid grids. Required-slice extrapolation remains refused.
+
 - Switching language during an option-chain refresh no longer leaves loading
   stuck; late responses after unmount remain ignored.
 - Presets use one strike grid with distinct levels and symmetric wings, so

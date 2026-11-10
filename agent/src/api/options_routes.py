@@ -7,6 +7,7 @@ the ``alpha_routes.py`` slice pattern.
 Routes (auth via the caller-supplied ``require_auth`` dependency):
 
 - ``POST /options/payoff``  — multi-leg expiry payoff + spot/IV scenario analysis
+- ``POST /options/volatility-surface``: observed/interpolated IV grid
 - ``GET  /options/chain``   — US-listed options chain for one expiration (Yahoo)
 
 Both routes are thin HTTP wrappers around the existing agent tools
@@ -46,6 +47,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
 from src.quantlib.options import bs_greeks
+from src.quantlib.volatility import implied_volatility_surface
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.options_payoff_tool import OptionsPayoffTool, _coerce_legs
 
@@ -107,6 +109,23 @@ class PayoffRequest(BaseModel):
     scenario_iv_values: (
         list[Annotated[float, Field(gt=0)]] | None
     ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
+
+
+class SurfaceObservation(BaseModel):
+    """One observed implied-volatility quote."""
+
+    strike: float = Field(..., gt=0)
+    time_to_expiry: float = Field(..., gt=0)
+    implied_volatility: float = Field(..., ge=0)
+
+
+class VolatilitySurfaceRequest(BaseModel):
+    """POST /options/volatility-surface body."""
+
+    observations: list[SurfaceObservation] = Field(..., min_length=1, max_length=400)
+    spot: float = Field(..., gt=0)
+    strikes: list[float] | None = Field(None, min_length=1, max_length=400)
+    expiries: list[float] | None = Field(None, min_length=1, max_length=400)
 
 
 def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
@@ -217,6 +236,25 @@ def register_options_routes(
             return JSONResponse(status_code=400, content=envelope)
         envelope["greeks"] = _portfolio_greeks(payload)
         return envelope
+
+    # -----------------------------------------------------------------------
+    # POST /options/volatility-surface
+    # -----------------------------------------------------------------------
+
+    @app.post("/options/volatility-surface", dependencies=[Depends(require_auth)])
+    async def options_volatility_surface(payload: VolatilitySurfaceRequest) -> Response:
+        """Build an observed/interpolated IV grid without fetching market data."""
+        params = payload.model_dump(exclude_none=True)
+        try:
+            return await asyncio.to_thread(implied_volatility_surface, **params)
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            logger.exception("options volatility surface computation failed")
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "error": "volatility surface computation failed"},
+            )
 
     # -----------------------------------------------------------------------
     # GET /options/chain

@@ -346,7 +346,7 @@ Vibe-Trading forma parte del ecosistema de agentes de **[HKUDS](https://github.c
 |---|---|---|
 | Simulación | Las cuentas diarias conservan efectivo, ejecuciones y valor liquidativo entre sesiones. Una simulación aparte reproduce una sesión de acciones A en pasos de cinco minutos. | Ejecución opcional limitada por la cuota del volumen negociado ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), borrador). |
 | Investigación | Las fichas guardan métricas y evidencia del backtest. Las investigaciones fechadas conservan su historial de revisiones y se pueden buscar. | Datos financieros estructurados en las investigaciones guardadas ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), en revisión). |
-| Opciones | Pagos multipata, griegas y escenarios de precio al contado × IV. | Superficie de volatilidad prevista. |
+| Opciones | Pagos multipata, griegas y escenarios de precio al contado × IV. | Cuadrícula interactiva de volatilidad implícita en `/options`. |
 
 ## Cómo contribuir
 
