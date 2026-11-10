@@ -1263,6 +1263,49 @@ def analyze_options_payoff(
     return registry.execute("options_payoff", params)
 
 
+@mcp.tool
+def compare_options_strategies(
+    strategies: _lenient_dict_list,
+    entry_spot: float,
+    expiry_days: float,
+    baseline_index: int = 0,
+    risk_free_rate: float = 0.05,
+    volatility: float = 0.3,
+    multiplier: float = 1.0,
+    commission_rate: float = 0.001,
+    spot_min: float | None = None,
+    spot_max: float | None = None,
+    spot_points: int = 121,
+    scenario_iv_values: _lenient_float_list_opt = None,
+) -> str:
+    """Compare up to four option strategies on one deterministic spot/IV grid.
+
+    Each strategy has a unique ``name`` and ``legs`` in the same form as
+    ``analyze_options_payoff``. Returns analytic summaries plus expiry and
+    scenario P&L deltas against ``baseline_index``. Research only; no strategy
+    ranking, recommendation or order path is provided.
+    """
+    params: dict[str, Any] = {
+        "strategies": strategies,
+        "entry_spot": entry_spot,
+        "expiry_days": expiry_days,
+        "baseline_index": baseline_index,
+        "risk_free_rate": risk_free_rate,
+        "volatility": volatility,
+        "multiplier": multiplier,
+        "commission_rate": commission_rate,
+        "spot_points": spot_points,
+    }
+    if spot_min is not None:
+        params["spot_min"] = spot_min
+    if spot_max is not None:
+        params["spot_max"] = spot_max
+    if scenario_iv_values is not None:
+        params["scenario_iv_values"] = scenario_iv_values
+    registry = _get_registry()
+    return registry.execute("options_strategy_compare", params)
+
+
 # ---------------------------------------------------------------------------
 # Pattern recognition tool
 # ---------------------------------------------------------------------------
