@@ -133,8 +133,10 @@ is all-or-none.
 `fill_model="volume_share"` is the opt-in pt-v1.3 policy (5m cn_a only). Each
 order is capped independently at `floor(volume × order_volume_ratio / lot) × lot`
 shares — never against a shared bar budget — so two orders may together exceed
-a bar's volume. `order_volume_ratio` defaults to `1.0` (no reduction) and is
-accepted only with `fill_model="volume_share"`. A market order caps on the full
+a bar's volume. The accepted ratio keeps its `Decimal(str(value))` precision;
+neither the ratio nor the volume product is separately rounded before the lot
+floor. `order_volume_ratio` defaults to `1.0` (no reduction) and is accepted
+only with `fill_model="volume_share"`. A market order caps on the full
 continuous-session volume, fills what fits and cancels the residual immediately
 with `canceled_after_volume_cap`; a limit order caps per bar, keeps the residual
 resting while `filled` (active), and its day-end cancel still reports

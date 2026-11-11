@@ -13,7 +13,8 @@ Arithmetic discipline (VD-9):
   (``100 * 0.29`` is ``28.999999999999996`` in binary floating point);
 * every cap floors to a whole board lot (cn_a 100): a 250-share bar at 0.25
   is 62.5 shares, i.e. zero whole lots, and is never rounded up to 100;
-* the ratio normalizes to 6 decimal places.
+* the validated ratio keeps its accepted ``Decimal(str(value))`` precision;
+  only the resulting volume cap is floored to a whole board lot.
 
 Pure module: no engine/session import, no clock, no state; every call is a
 function of its arguments.
@@ -21,7 +22,7 @@ function of its arguments.
 
 from __future__ import annotations
 
-from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 
 from .schema import DEFAULT_ORDER_VOLUME_RATIO
 
@@ -36,7 +37,6 @@ __all__ = [
 
 _ZERO = Decimal("0")
 _ONE = Decimal("1")
-_RATIO_QUANTUM = Decimal("0.000001")
 
 
 def _as_decimal(value: object, name: str) -> Decimal:
@@ -53,7 +53,7 @@ def _as_decimal(value: object, name: str) -> Decimal:
 
 
 def normalize_ratio(ratio: object) -> Decimal:
-    """Validate ``order_volume_ratio`` and normalize it to a 6dp Decimal.
+    """Validate ``order_volume_ratio`` and return its accepted Decimal precision.
 
     The request parser (schema T7) already gates the wire field; this is the
     policy-layer defense-in-depth: finite, non-bool, ``0 < ratio <= 1``.
@@ -61,7 +61,7 @@ def normalize_ratio(ratio: object) -> Decimal:
     value = _as_decimal(ratio, "order_volume_ratio")
     if value <= _ZERO or value > _ONE:
         raise ValueError(f"order_volume_ratio must be > 0 and <= 1, got {ratio!r}")
-    return value.quantize(_RATIO_QUANTUM, rounding=ROUND_HALF_UP)
+    return value
 
 
 def lot_floor(qty: object, lot: int) -> int:

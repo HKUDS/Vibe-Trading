@@ -8,7 +8,7 @@ Pins the arithmetic the 5m matcher (T11) consumes from
 * every cap floors to a whole board lot — a 250-share bar at 0.25 is 62.5
   shares, i.e. zero lots, never a rounded-up 100-share fill;
 * the ratio defaults to the schema's ``1.0`` and is a finite non-bool number
-  in ``(0, 1]`` normalized to 6 decimal places;
+  in ``(0, 1]`` whose accepted ``Decimal(str(value))`` precision is preserved;
 * two orders on one bar each receive their OWN cap (JoinQuant per-order
   semantics: no shared per-bar budget), so their combined fill may exceed the
   bar — the documented divergence;
@@ -78,11 +78,27 @@ def test_invalid_ratio_is_rejected(ratio):
         volume_policy.market_cap(50_000, ratio, _ONE_LOT)
 
 
-def test_normalize_ratio_returns_a_six_decimal_decimal():
+def test_normalize_ratio_preserves_accepted_decimal_precision():
     ratio = volume_policy.normalize_ratio(0.1234567)
     assert isinstance(ratio, Decimal)
-    assert ratio == Decimal("0.123457")
-    assert isinstance(volume_policy.normalize_ratio(0.25), Decimal)
+    assert ratio == Decimal("0.1234567")
+    assert volume_policy.normalize_ratio(0.25) == Decimal("0.25")
+    assert volume_policy.normalize_ratio(0.0000004) == Decimal("0.0000004")
+
+
+@pytest.mark.parametrize("cap_name", ["market_cap", "limit_bar_cap"])
+@pytest.mark.parametrize(
+    ("ratio", "expected"),
+    [
+        (0.1234567, 123_456_700),
+        (0.0000004, 400),
+        (2e-7, 200),
+        (6e-7, 600),
+    ],
+)
+def test_caps_preserve_ratio_precision_before_the_lot_floor(cap_name, ratio, expected):
+    cap = getattr(volume_policy, cap_name)
+    assert cap(1_000_000_000, ratio, _ONE_LOT) == expected
 
 
 def test_caps_use_decimal_str_not_binary_float_arithmetic():
