@@ -16,6 +16,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from src.agent.grounding.document_quotes import document_integer_quotes
+
 from src.agent.grounding.figures import (
     Figure,
     _CURRENCY_CODES,
@@ -1553,12 +1555,12 @@ class _EvidenceMixin:
         flattening every other tool goes through found nothing: a PDF's figures
         never became evidence and the gate redacted each of them as unsourced.
 
-        Only numbers carrying a mark of measurement count, plus bare integers
-        large enough (five digits or more) that a coincidence match is
-        implausible (#2126). A page number, a section heading, a year in
-        running text or a four-digit headcount is not a finding, and admitting
-        small bare integers would let an invented figure match by chance. The
-        document must not be one this run wrote — reading back its
+        Only numbers carrying a mark of measurement count. A page number, a
+        section heading or a year in running text is not a finding, and
+        admitting bare integers would let an invented small figure match by
+        chance. Bare integers may be retained separately for exact labelled
+        quotation, never as operands or general-purpose evidence. The document
+        must not be one this run wrote — reading back its
         own draft is not observation — and nothing under the run directory is
         read as a document, so the ledger's own artifacts cannot launder
         themselves through the reader.
@@ -1606,20 +1608,17 @@ class _EvidenceMixin:
             return
         seen: set[tuple[float, bool, str | None]] = set()
         text = _document_percent_cells(text)
-        for figure in scan_figures(text, parse_figures_block(text)):
+        figures = scan_figures(text, parse_figures_block(text))
+        self._document_integer_quotes.extend(document_integer_quotes(
+            text, figures, call_id,
+            _MAX_DOCUMENT_FIGURES - len(self._document_integer_quotes),
+        ))
+        for figure in figures:
             if room <= 0:
                 return
-            value = float(figure.value) * float(figure.scale or 1.0)
-            if figure.shape == "bare":
-                # Reopened #2126: an integer the document states with neither
-                # grouping nor a mark of measurement ("股东总数 76175") is a
-                # stated figure once it is large — five digits or more cannot
-                # be matched by an invented claim through luck — while a year,
-                # a page number or "员工总数 3400" stays layout, not a finding.
-                if value < 10000 or value != int(value):
-                    continue
-            elif figure.shape != "measured":
+            if figure.shape != "measured":
                 continue
+            value = float(figure.value) * float(figure.scale or 1.0)
             if not math.isfinite(value):
                 continue
             key = (round(value, 6), bool(figure.percent), figure.currency_code)

@@ -19,6 +19,7 @@ from src.agent.grounding.identity import (
     _utc_now,
 )
 from src.agent.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
+from src.agent.grounding.document_quotes import DocumentIntegerQuote
 from src.agent.grounding.figures import Figure, FiguresBlock, parse_figures_block, scan_figures, strip_figures_block
 from src.agent.grounding.policies import ValidationResult, _PolicyMixin
 from src.agent.grounding.registry import GROUNDING_CHECKS
@@ -122,6 +123,7 @@ class GroundingLedger(
         )
         self._identities: dict[str, IdentityRecord] = {}
         self._evidence: list[EvidenceRecord] = []
+        self._document_integer_quotes: list[DocumentIntegerQuote] = []
         self._tool_failures: list[dict[str, Any]] = []
         self._analysis_completed: list[dict[str, Any]] = []
         self._analysis_metrics: list[dict[str, Any]] = []
@@ -201,7 +203,7 @@ class GroundingLedger(
     @property
     def should_buffer_output(self) -> bool:
         """Return whether unverified model prose must be hidden from live sinks."""
-        return self._buffer_output or bool(self._evidence)
+        return self._buffer_output or bool(self._evidence) or bool(self._document_integer_quotes)
 
     @property
     def validation_count(self) -> int:
@@ -451,6 +453,7 @@ class GroundingLedger(
                 "session_symbols": sorted(self._session_symbols),
                 "session_symbol_roots": sorted(self._session_symbol_roots),
                 "evidence": [asdict(record) for record in self._evidence],
+                "document_integer_quotes": [asdict(quote) for quote in self._document_integer_quotes],
                 "tool_failures": list(self._tool_failures),
                 "analysis_completed": list(self._analysis_completed),
                 "analysis_evidence": list(self._analysis_metrics),

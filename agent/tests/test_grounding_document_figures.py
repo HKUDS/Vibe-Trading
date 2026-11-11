@@ -362,15 +362,14 @@ def test_large_bare_integer_grounds_a_quoted_table_cell(
     tmp_path: Path,
     text: str,
 ) -> None:
-    """Reopened #2126: a five-digit bare integer the document printed is a
-    stated figure, not layout, and grounds the answer that quotes it."""
+    """An explicitly quoted integer keeps its source label and exact call."""
     ledger, document = _ledger_with_upload(tmp_path)
     _read_document(ledger, document, "doc-1", text)
 
     result = ledger.validate_final_answer(
         _declared(
             "| 指标 | 数值 |\n|---|---|\n| 股东总数 | 76,175 |",
-            "76,175 | observed | 股东总数 | doc-1",
+            "76,175 | observed | quote: 股东总数 76175 | doc-1",
         )
     )
 
