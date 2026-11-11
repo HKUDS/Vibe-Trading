@@ -25,7 +25,17 @@ Phase-2/3 semantics:
   fills);
 - an order that never fills is canceled by ``settle_day`` at session end (15:00
   on a complete session);
-- no partial fills and no volume-share model (Phase 3);
+- ``fill_model="volume_share"`` (pt-v1.3) caps every order by its OWN share of
+  volume — never a shared bar budget.  A market order is capped once by
+  ``floor(full continuous-session volume x order_volume_ratio / lot) x lot``
+  and takes that cap at the first live bar; any residual is canceled
+  immediately with ``canceled_after_volume_cap``.  A zero-cap market order
+  still evaluates price bands at that bar before its residual cancel, then
+  bypasses financial gates without a zero-quantity fill.  A limit order is
+  capped per bar by its share of that bar's volume, fills at its 委托价, waits
+  through zero-cap bars, and keeps its residual resting until a later bar or
+  the session-end day-order cancel.  ``all_or_none`` keeps the frozen full-fill
+  path;
 - daily data supplies the prior-close bands and final NAV; the current bar
   reference controls price-limit eligibility, and T+1, board
   lots, fees and corporate-action gates use the same frozen rules as the
@@ -42,14 +52,20 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Sequence
 
-from .order_lifecycle import _ACTIVE_STATUSES, OrderBook, OrderRequest, assign_ids
+from . import volume_policy
+from .order_lifecycle import (
+    _ACTIVE_STATUSES, OrderBook, OrderRequest, OrderState, assign_ids)
 from .rules import money, quantize_money
 from .schema import CANCELED_REASON_CODE, CanceledOrder, Order, SessionEvent
 
 if TYPE_CHECKING:
     from .engine import DayPlan, _MatchSession
 
-__all__ = ["match_orders_5m"]
+__all__ = ["VOLUME_CAP_REASON", "match_orders_5m"]
+
+#: pt-v1.3 residual-cancel token for a market order clipped by its volume cap.
+#: Deliberately NOT a member of the frozen ``REASON_CODES`` vocabulary.
+VOLUME_CAP_REASON = "canceled_after_volume_cap"
 
 
 def _request(order: Order) -> OrderRequest:
@@ -85,6 +101,25 @@ def _limit_fill_price(order: Order, ref: Decimal, bar: Any, *, first_bar: bool) 
     return limit if high > limit else None
 
 
+def _residual(state: OrderState) -> Decimal:
+    return state.request.qty - state.filled_qty
+
+
+def _cancel_volume_residual(
+    session: "_MatchSession", day: "DayPlan", book: OrderBook, order_id: str, order: Order
+) -> None:
+    state = book.cancel_order(order_id, VOLUME_CAP_REASON)
+    residual = _residual(state)
+    session.canceled.append(CanceledOrder(
+        trade_date=day.date,
+        symbol=order.symbol,
+        side=order.side,
+        qty=float(residual),
+        reason_code=VOLUME_CAP_REASON,
+        detail=f"volume cap reached; residual {residual} canceled",
+    ))
+
+
 def _cancel_unfilled(
     session: "_MatchSession", day: "DayPlan", book: OrderBook, by_id: dict[str, Order],
     price_limit_cancels: dict[str, tuple[str, str]],
@@ -96,22 +131,27 @@ def _cancel_unfilled(
             trade_date=day.date,
             symbol=order.symbol,
             side=order.side,
-            qty=order.qty,
+            qty=float(_residual(state)),
             reason_code=CANCELED_REASON_CODE,
             detail=(f"market order canceled: {gate[0]}; {gate[1]}" if gate
                     else "unfilled day order canceled at session end"),
         ))
 
 
-def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[Order]) -> None:
+def match_orders_5m(
+    session: "_MatchSession", day: "DayPlan", orders: Sequence[Order]
+) -> tuple[OrderState, ...]:
     if not orders:
-        return
+        return ()
     requests = [_request(order) for order in orders]
     states = assign_ids(requests)
     by_id = dict(zip(states, orders, strict=True))
     book = OrderBook(states)
 
     price_limit_cancels: dict[str, tuple[str, str]] = {}
+    volume_share = session.fill_model == "volume_share"
+    ratio = session.order_volume_ratio
+
     active: list[str] = []
     for order_id, order in by_id.items():
         gate = session._day_gate(day, order)
@@ -125,6 +165,8 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
     # One account has one cash ledger: walk timestamps across all symbols,
     # never an entire symbol's day before another symbol's morning.
     timeline: dict[Any, dict[str, Any]] = {}
+    market_caps: dict[str, int] = {}
+    lots: dict[str, int] = {}
     for symbol in sorted({by_id[order_id].symbol for order_id in active}):
         sym_data = session.market_data.data[symbol]
         bars = sym_data.bars_5m.get(day.date)
@@ -137,6 +179,23 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                     day, order, "suspended",
                     f"no 5m continuous bars for {symbol} on {day.date}")
             continue
+        if volume_share:
+            # A market order's cap is computed ONCE from the full continuous-
+            # session volume (``SessionBar.volume``), not cumulatively per bar.
+            # The 09:30 opening-auction print is not part of that volume — the
+            # session assembly drops it — and a short/partial session caps
+            # against the volume the provider actually served, so it underfills
+            # rather than inventing a full day. Caps are per order; two orders
+            # never share one.
+            lot = session.rules.lot_size(symbol)
+            lots[symbol] = lot
+            session_volume = sym_data.session_bars[day.date].volume
+            for order_id in order_ids:
+                order = by_id[order_id]
+                if order.limit is not None:
+                    continue
+                cap = volume_policy.market_cap(session_volume, ratio, lot)
+                market_caps[order_id] = cap
         for timestamp, bar in bars.iterrows():
             timeline.setdefault(timestamp, {})[symbol] = bar
 
@@ -171,7 +230,26 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                 price = _limit_fill_price(order, ref, bar, first_bar=first_bar)
                 if price is None:
                     continue
-            gate = session._fill_gate(day, order, price)
+            if volume_share:
+                cap = (
+                    market_caps[order_id]
+                    if order.limit is None
+                    else volume_policy.limit_bar_cap(
+                        float(bar["volume"]), ratio, lots[order.symbol]))
+                if cap <= 0:
+                    if order.limit is not None:
+                        # Too thin for one whole lot: wait for a thicker bar.
+                        # (book.fill fails closed on a non-positive cap.)
+                        continue
+                    executable = 0
+                else:
+                    executable = volume_policy.executable_qty(_residual(state), cap)
+                    if executable <= 0:
+                        continue
+                gate = session._fill_gate(day, order, price, executable)
+            else:
+                executable = 0
+                gate = session._fill_gate(day, order, price)
             if gate is not None:
                 code, detail = gate
                 if code in {"limit_up", "limit_down"}:
@@ -188,9 +266,25 @@ def match_orders_5m(session: "_MatchSession", day: "DayPlan", orders: Sequence[O
                     # bar can match it, or it expires at session end.
                     continue
                 book.reject(order_id, code)
-                session._reject(day, order, code, detail)
+                session._reject(
+                    day, order, code, detail,
+                    cancel_qty=float(_residual(state)) if state.filled_qty > 0 else None)
                 continue
-            book.fill(order_id, money(order.qty), price)
-            session._fill(day.date, order, float(price))
+            if volume_share and order.limit is None and cap <= 0:
+                # Band/limit checks have passed; cancel at this first live bar
+                # without booking a zero-quantity fill.
+                _cancel_volume_residual(session, day, book, order_id, order)
+                continue
+            if volume_share:
+                fill = book.fill(
+                    order_id, money(executable), price, volume_cap=money(cap))
+            else:
+                fill = book.fill(order_id, money(order.qty), price)
+            session._fill(day.date, order, float(price), fill.qty)
+            if volume_share and order.limit is None and _residual(state) > 0:
+                # The session-volume basis is fixed for the day, so a market
+                # order's residual can never be matched later.
+                _cancel_volume_residual(session, day, book, order_id, order)
 
     _cancel_unfilled(session, day, book, by_id, price_limit_cancels)
+    return tuple(book.orders.values())

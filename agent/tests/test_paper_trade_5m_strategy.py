@@ -176,6 +176,58 @@ def test_a_1d_strategy_order_outside_its_universe_is_not_gated() -> None:
     assert loader.five_minute_calls() == []
 
 
+# ── The strategy path honours the volume_share per-order cap ──
+
+
+def test_a_5m_strategy_honours_the_volume_share_per_order_cap() -> None:
+    path = _install_strategy("volume_share_5m.py", _strategy_source(_SYM))
+    account_state = {
+        "cash": 1_000_000.0,
+        "positions": [{"symbol": _SYM, "qty": 300, "avg_cost": 1421.0}],
+    }
+    # The committed session trades 5_760_000 shares, so ratio 0.00002 caps at
+    # floor(5_760_000 x 0.00002 / 100) x 100 = 100 shares of the 300 requested.
+    capped_ratio = 0.00002
+
+    full_document, _ = _run(
+        _strategy_payload(
+            path,
+            account_state=account_state,
+            fill_model="volume_share",
+            order_volume_ratio=1.0,
+        )
+    )
+    capped_document, _ = _run(
+        _strategy_payload(
+            path,
+            account_state=account_state,
+            fill_model="volume_share",
+            order_volume_ratio=capped_ratio,
+        )
+    )
+
+    assert full_document["schema_version"] == capped_document["schema_version"] == "pt-v1.3"
+    assert full_document["order_states"] and capped_document["order_states"]
+    full_filled = sum(fill["qty"] for fill in full_document["fills"])
+    capped_filled = sum(fill["qty"] for fill in capped_document["fills"])
+    assert full_filled == 300.0
+    assert full_document["canceled_orders"] == []
+    assert capped_filled == 100.0 < full_filled, (
+        "the per-order cap must reduce the strategy order to one lot; an "
+        f"all-or-none fill would execute all 300; got {capped_filled}"
+    )
+    assert [(row["qty"], row["reason_code"]) for row in capped_document["canceled_orders"]] == [
+        (200.0, "canceled_after_volume_cap")
+    ]
+    capped_states = capped_document["order_states"]
+    assert len(capped_states) == 1
+    assert (
+        capped_states[0]["status"],
+        capped_states[0]["amount"],
+        capped_states[0]["filled"],
+    ) == ("canceled", 300.0, 100.0)
+
+
 # ── The strategy path honours the declared reference-price model ──
 
 
