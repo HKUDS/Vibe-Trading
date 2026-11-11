@@ -159,7 +159,8 @@ def test_cache_key_changes_with_window_and_hash() -> None:
 
 
 def test_cached_result_keeps_an_unmeasured_real_pnl(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A None real PnL must round-trip as None, not decay to 0.0."""
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -169,11 +170,44 @@ def test_cached_result_keeps_an_unmeasured_real_pnl(
     _cache_result(
         runs_dir(profile.shadow_id),
         replace(_result(), real_total_pnl=None, delta_pnl=None),
-        profile=profile, window_start="2025-01-01", window_end="2026-01-01",
+        profile=profile,
+        window_start="2025-01-01",
+        window_end="2026-01-01",
     )
 
-    hit = load_cached_result(profile, window_start="2025-01-01", window_end="2026-01-01")
+    hit = load_cached_result(
+        profile,
+        window_start="2025-01-01",
+        window_end="2026-01-01",
+    )
     assert hit is not None
     assert hit.shadow_total_pnl == 10_000.0
     assert hit.real_total_pnl is None
     assert hit.delta_pnl is None
+
+
+def test_cached_result_preserves_a_measured_zero_real_pnl(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A measured break-even must not be confused with an unmeasured real side."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    profile = _profile()
+    from src.shadow_account.storage import runs_dir
+
+    _cache_result(
+        runs_dir(profile.shadow_id),
+        replace(_result(), real_total_pnl=0.0, delta_pnl=10_000.0),
+        profile=profile,
+        window_start="2025-01-01",
+        window_end="2026-01-01",
+    )
+
+    hit = load_cached_result(
+        profile,
+        window_start="2025-01-01",
+        window_end="2026-01-01",
+    )
+    assert hit is not None
+    assert hit.real_total_pnl == 0.0
+    assert hit.delta_pnl == 10_000.0

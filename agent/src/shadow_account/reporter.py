@@ -125,15 +125,21 @@ def _build_sections(
         market: _split_metrics(metrics or {})[0]
         for market, metrics in (result.per_market or {}).items()
     }
+    shadow_pnl = result.shadow_total_pnl
+    real_pnl = result.real_total_pnl
+    delta_pnl = result.delta_pnl
     return {
         "profile": profile,
         "combined_metrics": combined_numeric,
         "combined_error": combined_error,
         "per_market_metrics": per_market_numeric,
         "attribution": result.attribution,
-        "shadow_pnl": result.shadow_total_pnl,
-        "real_pnl": result.real_total_pnl,
-        "delta_pnl": result.delta_pnl,
+        "shadow_pnl": shadow_pnl,
+        "real_pnl": real_pnl,
+        "delta_pnl": delta_pnl,
+        "comparison_available": (
+            shadow_pnl is not None and real_pnl is not None and delta_pnl is not None
+        ),
         "today_signals": today_signals,
     }
 

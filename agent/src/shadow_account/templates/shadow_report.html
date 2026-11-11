@@ -10,7 +10,7 @@
     <p class="eyebrow">Shadow Account Report</p>
     <h1>You vs Your Shadow</h1>
     <p class="subtitle">{{ profile.shadow_id }} | {{ profile.created_at }}</p>
-    {% if delta_pnl is not none %}
+    {% if comparison_available %}
     <div class="cover-delta">
       <div class="delta-label">Delta PnL</div>
       <div class="delta-value {{ 'positive' if delta_pnl > 0 else 'negative' }}">
@@ -106,7 +106,7 @@
 
   <section class="panel gut-punch">
     <h2>5. You vs Shadow - Delta Attribution</h2>
-    {% if shadow_pnl is not none and real_pnl is not none and delta_pnl is not none %}
+    {% if comparison_available %}
     <p class="lede">Shadow PnL <strong class="{{ 'pos' if shadow_pnl > 0 else 'neg' if shadow_pnl < 0 else '' }}">{{ '%+.2f' | format(shadow_pnl) }}</strong>, your real PnL <strong class="{{ 'pos' if real_pnl > 0 else 'neg' if real_pnl < 0 else '' }}">{{ '%+.2f' | format(real_pnl) }}</strong>, delta <strong class="{{ 'pos' if delta_pnl > 0 else 'neg' if delta_pnl < 0 else '' }}">{{ '%+.2f' | format(delta_pnl) }}</strong>.</p>
     {% if charts.attribution_waterfall %}
       <img class="chart" src="{{ charts.attribution_waterfall }}" alt="attribution waterfall"/>
@@ -130,7 +130,7 @@
 
   <section class="panel">
     <h2>6. Counterfactual Top 5</h2>
-    {% if shadow_pnl is none or real_pnl is none or delta_pnl is none %}
+    {% if not comparison_available %}
       <p class="muted">Counterfactual trades were not computed for this run, so there is no rule-adherence conclusion to report.</p>
     {% elif attribution.counterfactual_trades %}
       <table class="rules">
