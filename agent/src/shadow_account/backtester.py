@@ -277,7 +277,7 @@ def run_shadow_backtest(
                 symbol = ohlcv_csv.stem.removeprefix("ohlcv_")
                 frame = pd.read_csv(ohlcv_csv, index_col=0, parse_dates=True)
                 adjust_frames.setdefault(symbol, frame)
-    attribution, shadow_pnl, real_pnl = _attribution_or_zero(
+    attribution, shadow_pnl, real_pnl = _attribution_or_unmeasured(
         profile=profile,
         journal_path=journal_path,
         combined=combined,
@@ -571,7 +571,7 @@ def _shadow_pnl_from_metrics(combined: dict[str, float], initial_capital: float)
     return None
 
 
-def _attribution_or_zero(
+def _attribution_or_unmeasured(
     *,
     profile: ShadowProfile,
     journal_path: str | Path | None,
@@ -581,7 +581,7 @@ def _attribution_or_zero(
     adjust=None,
     covered_symbols: frozenset[str] = frozenset(),
 ) -> tuple[AttributionBreakdown, float | None, float | None]:
-    """Compute attribution if the journal is available, else return zeros.
+    """Compute attribution if the journal is available, else leave it unmeasured.
 
     ``real_pnl`` is None, never 0.0, whenever this side of the comparison was
     not measured: no usable shadow metrics, no journal path, a missing or

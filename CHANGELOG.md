@@ -74,9 +74,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   PnL, which reads as a measured break-even on the real account.
   `real_total_pnl` is now `None` on those four paths and the delta is
   computed only when both sides were measured; the HTML and PDF reports say
-  the real side is unknown instead of printing a number. Cached results
-  produced before the change miss once and re-run, because a stored `0.0`
-  cannot be told apart from a measured one.
+  the real side is unknown instead of printing a number, and they omit the
+  zero-valued attribution rows and counterfactual all-clear when the analysis
+  never ran. Cached results produced before the change miss once and re-run,
+  because a stored `0.0` cannot be told apart from a measured one.
 
 ## [0.1.19] — 2026-11-05
 

@@ -106,13 +106,8 @@
 
   <section class="panel gut-punch">
     <h2>5. You vs Shadow - Delta Attribution</h2>
-    {% if shadow_pnl is not none and real_pnl is not none %}
+    {% if shadow_pnl is not none and real_pnl is not none and delta_pnl is not none %}
     <p class="lede">Shadow PnL <strong class="{{ 'pos' if shadow_pnl > 0 else 'neg' if shadow_pnl < 0 else '' }}">{{ '%+.2f' | format(shadow_pnl) }}</strong>, your real PnL <strong class="{{ 'pos' if real_pnl > 0 else 'neg' if real_pnl < 0 else '' }}">{{ '%+.2f' | format(real_pnl) }}</strong>, delta <strong class="{{ 'pos' if delta_pnl > 0 else 'neg' if delta_pnl < 0 else '' }}">{{ '%+.2f' | format(delta_pnl) }}</strong>.</p>
-    {% elif shadow_pnl is none %}
-    <p class="lede">The shadow backtest did not produce usable metrics, so Shadow PnL, delta, and the attribution below are not computed for this run.</p>
-    {% else %}
-    <p class="lede">The shadow PnL is <strong class="{{ 'pos' if shadow_pnl > 0 else 'neg' if shadow_pnl < 0 else '' }}">{{ '%+.2f' | format(shadow_pnl) }}</strong>, but no usable journal was available (none supplied, unreadable, or no closed roundtrips), so your real PnL, the delta, and the attribution below are not computed for this run.</p>
-    {% endif %}
     {% if charts.attribution_waterfall %}
       <img class="chart" src="{{ charts.attribution_waterfall }}" alt="attribution waterfall"/>
     {% endif %}
@@ -126,11 +121,18 @@
     {% if attribution.excluded_currencies %}
       <p class="muted">Real PnL above covers the shadow pool's settlement currency only. There is no FX translation layer, so roundtrips settling elsewhere are excluded rather than summed against it: {% for currency, count in attribution.excluded_currencies.items() %}{{ count }} in {{ currency }}{{ ", " if not loop.last }}{% endfor %}.</p>
     {% endif %}
+    {% elif shadow_pnl is none %}
+    <p class="lede">The shadow backtest did not produce usable metrics, so shadow PnL, real PnL, delta, and attribution were not computed for this run.</p>
+    {% else %}
+    <p class="lede">The shadow PnL is <strong class="{{ 'pos' if shadow_pnl > 0 else 'neg' if shadow_pnl < 0 else '' }}">{{ '%+.2f' | format(shadow_pnl) }}</strong>, but no usable journal was available (none supplied, unreadable, or no closed roundtrips), so your real PnL, delta, and attribution were not computed for this run.</p>
+    {% endif %}
   </section>
 
   <section class="panel">
     <h2>6. Counterfactual Top 5</h2>
-    {% if attribution.counterfactual_trades %}
+    {% if shadow_pnl is none or real_pnl is none or delta_pnl is none %}
+      <p class="muted">Counterfactual trades were not computed for this run, so there is no rule-adherence conclusion to report.</p>
+    {% elif attribution.counterfactual_trades %}
       <table class="rules">
         <thead>
           <tr><th>#</th><th>Symbol</th><th>Buy</th><th>Sell</th><th>Hold</th><th>Real PnL</th><th>Impact</th><th>Reason</th></tr>

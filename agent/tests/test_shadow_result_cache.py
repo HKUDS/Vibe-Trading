@@ -9,6 +9,9 @@ hash; a different window deliberately misses.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
+
+import pytest
 
 from src.shadow_account.backtester import _cache_key, _cache_result, load_cached_result
 from src.shadow_account.models import (
@@ -155,7 +158,9 @@ def test_cache_key_changes_with_window_and_hash() -> None:
     assert base == _cache_key(profile, "2025-01-01", "2026-01-01")
 
 
-def test_cached_result_keeps_an_unmeasured_real_pnl(tmp_path, monkeypatch) -> None:
+def test_cached_result_keeps_an_unmeasured_real_pnl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A None real PnL must round-trip as None, not decay to 0.0."""
     monkeypatch.setenv("HOME", str(tmp_path))
     profile = _profile()

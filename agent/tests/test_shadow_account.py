@@ -911,6 +911,7 @@ def test_render_shadow_report_emits_html(profitable_journal: Path, tmp_path: Pat
     assert "Shadow Account" in content
     assert profile.shadow_id in content
     assert "Delta Attribution" in content  # Section 5
+    assert "Noise trades" in content
     assert "Counterfactual" in content      # Section 6
     assert out["engine"] in ("weasyprint", "reportlab", "html-only")
 
@@ -950,8 +951,11 @@ def test_render_shadow_report_handles_empty_equity(
     # An unknown shadow PnL renders as unavailable, never as a fake 0.00.
     assert "unavailable" in content
     assert "did not produce usable metrics" in content
-    # Section 6 should degrade gracefully when no counterfactuals exist.
-    assert "No material counterfactual" in content
+    # With no comparison, zero-valued attribution rows and the all-clear would
+    # both imply that the analysis ran and found nothing.
+    assert "Noise trades" not in content
+    assert "No material counterfactual" not in content
+    assert "Counterfactual trades were not computed for this run" in content
 
 
 @pytest.mark.unit
@@ -1028,6 +1032,7 @@ def test_reportlab_fallback_renders_pdf_when_weasyprint_missing(
     profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Hosts without weasyprint's system libs still get a PDF via reportlab."""
+    from pypdf import PdfReader
     from src.shadow_account import reporter
 
     monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)  # probe already failed
@@ -1041,6 +1046,9 @@ def test_reportlab_fallback_renders_pdf_when_weasyprint_missing(
     assert pdf_path.exists()
     assert pdf_path.read_bytes()[:5] == b"%PDF-"
     assert pdf_path.stat().st_size > 2000
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(pdf_path).pages)
+    assert "Noise trades" in text
+    assert "600519.SH" in text
 
 
 @pytest.mark.unit
@@ -1280,6 +1288,40 @@ def test_missing_journal_never_renders_the_real_side_as_zero(
     # +12500, which reads as a measured break-even on the real account.
     assert "| Real " not in content
     assert 'class="delta-value' not in content
+    assert "Noise trades" not in content
+    assert "No material counterfactual" not in content
+    assert "Counterfactual trades were not computed for this run" in content
+
+
+@pytest.mark.unit
+def test_reportlab_missing_journal_omits_unmeasured_attribution(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The PDF fallback must not contradict its own "not computed" message."""
+    from pypdf import PdfReader
+    from src.shadow_account import reporter
+
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    profile = extract_shadow_profile(profitable_journal)
+    result = run_shadow_backtest(
+        profile,
+        window_start="2026-01-01",
+        window_end="2026-06-30",
+        journal_path=None,
+        run_backtest_fn=_stub_metrics_runner(12_500.0),
+    )
+
+    out = reporter.render_shadow_report(profile, result, output_dir=tmp_path)
+    assert out["engine"] == "reportlab"
+    reader = PdfReader(out["pdf_path"])
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert "no usable journal was available" in text
+    assert "Noise trades" not in text
+    assert "No material counterfactual" not in text
+    assert "Counterfactual trades were not computed for this run" in text
 
 
 @pytest.mark.unit
@@ -1287,7 +1329,7 @@ def test_every_unavailable_journal_path_leaves_real_pnl_unmeasured(
     profitable_journal: Path, no_roundtrips_journal: Path, tmp_path: Path,
 ) -> None:
     """All four unavailability paths report None instead of a fabricated 0.0."""
-    from src.shadow_account.backtester import _attribution_or_zero
+    from src.shadow_account.backtester import _attribution_or_unmeasured
 
     profile = extract_shadow_profile(profitable_journal)
     unparseable = tmp_path / "broken.csv"
@@ -1300,7 +1342,7 @@ def test_every_unavailable_journal_path_leaves_real_pnl_unmeasured(
         "no closed roundtrips": no_roundtrips_journal,
     }
     for label, journal_path in cases.items():
-        _, shadow_pnl, real_pnl = _attribution_or_zero(
+        _, shadow_pnl, real_pnl = _attribution_or_unmeasured(
             profile=profile,
             journal_path=journal_path,
             combined={"total_return_abs": 500.0},
