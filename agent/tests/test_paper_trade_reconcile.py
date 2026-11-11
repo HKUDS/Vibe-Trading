@@ -143,6 +143,75 @@ def test_zero_fill_document_checks_end_state_and_nav_identity() -> None:
     assert payload["summary"]["nav_rows_checked"] == 1
 
 
+@pytest.mark.parametrize("residual", [0, 1, 100])
+def test_liquidated_position_cannot_reappear_in_end_state(residual) -> None:
+    initial = {
+        "cash": 100.0,
+        "positions": [
+            {"symbol": "AAPL", "qty": 1, "avg_cost": 10.0},
+        ],
+    }
+    document = _document(
+        market="us",
+        effective_fee_model=US_FEES,
+        fills=[
+            {
+                "trade_date": DAY,
+                "symbol": "AAPL",
+                "side": "sell",
+                "qty": 1,
+                "price": 10.0,
+                "fee": 0.99,
+            }
+        ],
+        end_state={
+            "cash": 109.01,
+            "positions": (
+                [{"symbol": "AAPL", "qty": residual, "avg_cost": 10.0}]
+                if residual
+                else []
+            ),
+        },
+        nav_series=[
+            {"date": DAY, "cash": 109.01, "position_value": 0.0, "nav": 109.01}
+        ],
+    )
+    payload = _execute(document, initial)
+    assert payload["reconciled"] is (residual == 0)
+    assert payload["expected_end_state"]["positions"] == []
+    if residual:
+        assert {
+            "code": "position_qty_mismatch",
+            "path": "end_state.positions[AAPL].qty",
+            "expected": 0.0,
+            "actual": residual,
+        } in payload["issues"]
+
+
+def test_zero_initial_position_does_not_authorize_new_holdings() -> None:
+    initial = {
+        "cash": 100000.0,
+        "positions": [
+            {"symbol": "AAPL", "qty": 0, "avg_cost": 10.0},
+        ],
+    }
+    document = _document(
+        market="us",
+        effective_fee_model=US_FEES,
+        fills=[],
+        end_state={
+            "cash": 100000.0,
+            "positions": [
+                {"symbol": "AAPL", "qty": 1, "avg_cost": 10.0},
+            ],
+        },
+        nav_series=[],
+    )
+    payload = _execute(document, initial)
+    assert payload["reconciled"] is False
+    assert "position_qty_mismatch" in {i["code"] for i in payload["issues"]}
+
+
 @pytest.mark.parametrize(
     "sell_qty, expected_code",
     [(150, "t_plus_1_violation"), (250, "insufficient_position")],
@@ -342,17 +411,22 @@ def _price_frame(days):
     return frame.set_index("trade_date")
 
 
-def test_real_step_output_reconciles_end_to_end_offline() -> None:
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_real_step_output_reconciles_end_to_end_offline(side) -> None:
     from src.tools.paper_trade.tool import run_paper_trade_step
 
     account_state = {"cash": 100000.0, "positions": []}
+    if side == "sell":
+        account_state["positions"] = [
+            {"symbol": "600519.SH", "qty": 100, "avg_cost": 9.0}
+        ]
     result = json.loads(
         run_paper_trade_step(
             {
                 "account_id": "pa_reconcile",
                 "market": "cn_a",
                 "account_state": account_state,
-                "orders": [{"symbol": "600519.SH", "side": "buy", "qty": 100}],
+                "orders": [{"symbol": "600519.SH", "side": side, "qty": 100}],
                 "from_date": DAY,
                 "to_date": DAY,
                 "fee_model": dict(CN_A_FEES),
@@ -369,3 +443,8 @@ def test_real_step_output_reconciles_end_to_end_offline() -> None:
     assert payload["reconciled"] is True
     assert payload["issues"] == []
     assert payload["expected_end_state"] == result["end_state"]
+    if side == "sell":
+        result["end_state"]["positions"] = copy.deepcopy(account_state["positions"])
+        mutated = _execute(result, account_state)
+        assert mutated["reconciled"] is False
+        assert "position_qty_mismatch" in {issue["code"] for issue in mutated["issues"]}

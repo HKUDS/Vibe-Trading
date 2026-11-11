@@ -182,6 +182,10 @@ costs, cn_a T+1 availability, `end_state`, and each NAV row's cash and
 `reconciled: false` and field-level issues; malformed input returns a stable
 JSON error envelope.
 
+A position fully sold by the replay must be absent from `end_state.positions`.
+A nonzero residual is a quantity mismatch even if the symbol appeared in the
+initial ledger; an explicit zero-quantity ending row is reported separately.
+
 This is a ledger audit, not a second market replay. The step document does not
 contain the bars behind `position_value`, so that market value is not
 recomputed. `received_state_hash` and `engine_fingerprint` are not recomputed

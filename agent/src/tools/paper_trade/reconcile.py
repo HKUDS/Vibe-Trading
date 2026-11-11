@@ -314,10 +314,18 @@ def _issue_end_state(
                 0,
             )
     for symbol, expected in sorted(positions.items()):
-        if expected.qty == 0:
-            continue
         actual = actual_positions.get(symbol)
         path = f"end_state.positions[{symbol}]"
+        if expected.qty == 0:
+            if actual is not None and actual.qty != 0:
+                _issue(
+                    issues,
+                    "position_qty_mismatch",
+                    f"{path}.qty",
+                    0.0,
+                    actual.qty,
+                )
+            continue
         if actual is None:
             _issue(issues, "missing_end_position", path, float(expected.qty), None)
             continue
