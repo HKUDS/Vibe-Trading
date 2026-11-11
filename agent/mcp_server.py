@@ -969,6 +969,25 @@ def paper_trade_step(
     return run_paper_trade_step(payload)
 
 
+@mcp.tool
+def paper_trade_reconcile(account_state: _lenient_dict_any, result: _lenient_dict_any) -> str:
+    """Independently reconcile a paper-trading result without market or broker access.
+
+    Replays the supplied fills from the initial ledger and checks fees, cash,
+    positions, cn_a T+1 availability, end_state and NAV arithmetic. The report
+    distinguishes verified ledger facts from market-value and hash checks that
+    the result alone cannot establish. Research only; no orders are placed.
+
+    Args:
+        account_state: Initial ``{cash, positions}`` ledger supplied to the step.
+        result: Successful ``paper_trade_step`` document to audit.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "paper_trade_reconcile", {"account_state": account_state, "result": result}
+    )
+
+
 # ---------------------------------------------------------------------------
 # Factor analysis tool
 # ---------------------------------------------------------------------------

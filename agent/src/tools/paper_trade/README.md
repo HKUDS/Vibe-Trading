@@ -260,6 +260,28 @@ accounting exact. Under `fill_model="volume_share"`, a sell is rejected
 fee would make cash negative; projected cash exactly zero is allowed. Legacy
 `all_or_none` behavior is unchanged.
 
+## Independent ledger reconciliation
+
+The `paper_trade_reconcile` agent and MCP tool accepts the initial
+`{cash, positions}` ledger and a successful `paper_trade_step` document. It
+replays the returned fills with Decimal arithmetic, independently checks the
+per-fill fee schedule, cash, position quantities and fee-exclusive average
+costs, cn_a T+1 availability, `end_state`, and each NAV row's cash and
+`nav = cash + position_value` identity. A valid result with discrepancies returns
+`reconciled: false` and field-level issues; malformed input returns a stable
+JSON error envelope.
+
+A position fully sold by the replay must be absent from `end_state.positions`.
+A nonzero residual is a quantity mismatch even if the symbol appeared in the
+initial ledger; an explicit zero-quantity ending row is reported separately.
+
+This is a ledger audit, not a second market replay. The step document does not
+contain the bars behind `position_value`, so that market value is not
+recomputed. `received_state_hash` and `engine_fingerprint` are not recomputed
+either, and duplicate fills cannot be detected without stable order ids. These
+limits are listed in `not_verified`. The tool fetches no data, reads no broker
+state and writes nothing.
+
 ## Known limits
 
 - **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
