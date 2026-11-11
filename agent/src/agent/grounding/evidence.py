@@ -16,6 +16,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from src.agent.grounding.document_quotes import document_integer_quotes
+
 from src.agent.grounding.figures import (
     Figure,
     _CURRENCY_CODES,
@@ -1618,7 +1620,9 @@ class _EvidenceMixin:
         Only numbers carrying a mark of measurement count. A page number, a
         section heading or a year in running text is not a finding, and
         admitting bare integers would let an invented small figure match by
-        chance. The document must not be one this run wrote — reading back its
+        chance. Bare integers may be retained separately for exact labelled
+        quotation, never as operands or general-purpose evidence. The document
+        must not be one this run wrote — reading back its
         own draft is not observation — and nothing under the run directory is
         read as a document, so the ledger's own artifacts cannot launder
         themselves through the reader.
@@ -1666,7 +1670,12 @@ class _EvidenceMixin:
             return
         seen: set[tuple[float, bool, str | None]] = set()
         text = _document_percent_cells(text)
-        for figure in scan_figures(text, parse_figures_block(text)):
+        figures = scan_figures(text, parse_figures_block(text))
+        self._document_integer_quotes.extend(document_integer_quotes(
+            text, figures, call_id,
+            _MAX_DOCUMENT_FIGURES - len(self._document_integer_quotes),
+        ))
+        for figure in figures:
             if room <= 0:
                 return
             if figure.shape != "measured":

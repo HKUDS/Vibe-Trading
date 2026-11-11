@@ -235,6 +235,14 @@ Follow-up on a backtest already run (a `[prev_run: <id>]` marker in the history)
   `<call_id>::historical_var`), where `<call_id>` is the tool_call_id of that
   tool result copied verbatim; never invent a short alias. A tool name is not
   a call id.
+  For an ungrouped integer in document prose, preserve the exact source label
+  in the answer and use `value | observed | quote: <exact source line> | <call_id>`.
+  For example, source `股东总数 76175` may be quoted as the table row
+  `| 股东总数 | 76,175 |`, declared
+  `76175 | observed | quote: 股东总数 76175 | <reader_call_id>`.
+  This literal-quotation path cannot assign a new label or unit, and cannot
+  supply a derived operand. Prefer structured tables or explicitly unit-bearing
+  source figures for calculations; never infer that a long digit string is money.
   Each element of a list is its own field: address it by index,
   `call_id::data.positions[0].contribution_pct` (`positions.0.contribution_pct`
   is read the same way). A field name without the index does not select an
