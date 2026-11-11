@@ -40,7 +40,8 @@ class PortfolioRiskXrayTool(BaseTool):
     description = (
         "Portfolio risk x-ray: given symbols (and optional weights), fetch "
         "recent closes through the data fallback chain and compute "
-        "concentration (HHI/effective N), annualized volatility, max drawdown, "
+        "concentration (HHI/effective N), annualized volatility and signed "
+        "per-asset volatility contributions, max drawdown, "
         "historical VaR/expected shortfall, diversification ratio, and "
         "correlation/beta. Long-only baskets are normalized to sum to 1; "
         "baskets with short positions preserve their signed exposure scale."

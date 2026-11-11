@@ -166,8 +166,10 @@ You can also choose a source explicitly. For example, installing `vibe-trading-a
 | Alpha Zoo | Benchmark signals from Qlib, Alpha101, GTJA and the academic and fundamental libraries. Compare information coefficients across horizons, then check whether the result survives a walk-forward test. |
 | Backtest engines | Model A-share price limits, crypto funding or futures margin. Use a shared capital pool for a cross-market strategy and inspect the individual fills behind its returns. |
 | Options Lab | Build a spread leg by leg. Compare its expiry payoff with the Greeks and see how the position responds to a change in spot price and implied volatility. |
-| Portfolio risk | Inspect drawdowns, estimate value at risk and expected shortfall, or use Brinson attribution to separate allocation from stock selection. The correlation view shows when markets start moving together. |
+| Portfolio risk | Inspect drawdowns, estimate value at risk and expected shortfall, or use Brinson attribution to separate allocation from stock selection. Risk X-Ray reports each holding's signed contribution to portfolio volatility, including hedges that offset risk. The correlation view shows when markets start moving together. |
 | Strategy tracking | Register a strategy with its evidence and track how its Sharpe ratio or factor information coefficient changes as new results come in. |
+
+Risk X-Ray includes `risk_contributions` in the Agent tool response and saved JSON/Markdown reports. Components use `weight × Cov(asset return, portfolio return) / portfolio volatility`, with the same sample and annualization as total volatility. Each `assets` row names its `symbol`; `risk_contribution` is annualized decimal volatility and `contribution_pct` is in percentage points. They add up to total volatility, not portfolio return. A hedge can have a negative risk share, and another holding can exceed 100%; shares are unavailable for zero volatility or an insufficient sample. This is a historical weighted-basket diagnosis, not realized PnL attribution or a forecast.
 
 ### Accounts and trading
 
