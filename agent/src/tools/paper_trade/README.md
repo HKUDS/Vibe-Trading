@@ -138,11 +138,13 @@ neither the ratio nor the volume product is separately rounded before the lot
 floor. `order_volume_ratio` defaults to `1.0` (no reduction) and is accepted
 only with `fill_model="volume_share"`. A market order caps on the full
 continuous-session volume, fills what fits and cancels the residual immediately
-with `canceled_after_volume_cap`; a limit order caps per bar, keeps the residual
-resting while `filled` (active), and its day-end cancel still reports
-`canceled_after_failed_match`. A zero-volume bar never fills. Each fill is
-booked and charged separately, so a two-fill order pays two minimum
-commissions.
+with `canceled_after_volume_cap`. A zero-cap market order still checks price
+bands at the first live bar; if unblocked, its residual is canceled there
+without a zero-quantity fill or cash/position gate. A limit order caps per bar,
+waits through zero-cap bars, keeps the residual resting while `filled` (active),
+and its day-end cancel still reports `canceled_after_failed_match`. A
+zero-volume bar never fills. Each fill is booked and charged separately, so a
+two-fill order pays two minimum commissions.
 
 A pt-v1.3 result adds `order_states`: one row per submitted order, in
 submission order, with exactly `order_id`, `status`, `add_time`, `amount`,

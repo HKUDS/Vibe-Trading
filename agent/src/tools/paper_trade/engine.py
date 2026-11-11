@@ -349,6 +349,10 @@ class _MatchSession:
                 else f"{anchor} {price:.2f} < limit {order.limit:.2f}"
             )
             return ("limit_not_marketable", detail)
+        if gate_qty <= 0:
+            # Only an internal zero volume cap reaches this point. Public
+            # zero-qty orders have already failed the lot-size day gate.
+            return None
         symbol = order.symbol
         # Slots 8/9 t_plus_1 → insufficient_position (disjoint conditions;
         # available = total − bought_today, cn_a sells only).

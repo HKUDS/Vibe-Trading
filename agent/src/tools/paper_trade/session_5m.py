@@ -29,10 +29,13 @@ Phase-2/3 semantics:
   volume — never a shared bar budget.  A market order is capped once by
   ``floor(full continuous-session volume x order_volume_ratio / lot) x lot``
   and takes that cap at the first live bar; any residual is canceled
-  immediately with ``canceled_after_volume_cap``.  A limit order is capped per
-  bar by its share of that bar's volume, fills at its 委托价, and keeps its
-  residual resting until a later bar or the session-end day-order cancel.
-  ``all_or_none`` keeps the frozen full-fill path;
+  immediately with ``canceled_after_volume_cap``.  A zero-cap market order
+  still evaluates price bands at that bar before its residual cancel, then
+  bypasses financial gates without a zero-quantity fill.  A limit order is
+  capped per bar by its share of that bar's volume, fills at its 委托价, waits
+  through zero-cap bars, and keeps its residual resting until a later bar or
+  the session-end day-order cancel.  ``all_or_none`` keeps the frozen full-fill
+  path;
 - daily data supplies the prior-close bands and final NAV; the current bar
   reference controls price-limit eligibility, and T+1, board
   lots, fees and corporate-action gates use the same frozen rules as the
@@ -193,10 +196,6 @@ def match_orders_5m(
                     continue
                 cap = volume_policy.market_cap(session_volume, ratio, lot)
                 market_caps[order_id] = cap
-                if cap <= 0:
-                    # A zero-cap market order never fills: cancel the whole
-                    # residual now (settle_day would label it a failed match).
-                    _cancel_volume_residual(session, day, book, order_id, order)
         for timestamp, bar in bars.iterrows():
             timeline.setdefault(timestamp, {})[symbol] = bar
 
@@ -238,12 +237,15 @@ def match_orders_5m(
                     else volume_policy.limit_bar_cap(
                         float(bar["volume"]), ratio, lots[order.symbol]))
                 if cap <= 0:
-                    # Too thin for one whole lot: wait for a thicker bar.
-                    # (book.fill fails closed on a non-positive cap.)
-                    continue
-                executable = volume_policy.executable_qty(_residual(state), cap)
-                if executable <= 0:
-                    continue
+                    if order.limit is not None:
+                        # Too thin for one whole lot: wait for a thicker bar.
+                        # (book.fill fails closed on a non-positive cap.)
+                        continue
+                    executable = 0
+                else:
+                    executable = volume_policy.executable_qty(_residual(state), cap)
+                    if executable <= 0:
+                        continue
                 gate = session._fill_gate(day, order, price, executable)
             else:
                 executable = 0
@@ -267,6 +269,11 @@ def match_orders_5m(
                 session._reject(
                     day, order, code, detail,
                     cancel_qty=float(_residual(state)) if state.filled_qty > 0 else None)
+                continue
+            if volume_share and order.limit is None and cap <= 0:
+                # Band/limit checks have passed; cancel at this first live bar
+                # without booking a zero-quantity fill.
+                _cancel_volume_residual(session, day, book, order_id, order)
                 continue
             if volume_share:
                 fill = book.fill(
