@@ -16,7 +16,7 @@ The phase-3 contract (JoinQuant ``set_option('order_volume_ratio')`` /
 * every fill pays its own fee (two 100-share fills pay two ¥5 minimums);
 * the cash/position gates evaluate the quantity that will actually trade, so
   a partial sell does not reject ``insufficient_position`` on its next bar and
-  cash never goes negative;
+  a volume-share sell cannot overdraw cash after its per-fill fee;
 * a zero-volume bar is never a matching opportunity.
 
 Every case runs a synthetic cn_a 5m day through the fake loader used by the
@@ -53,6 +53,14 @@ _FEE_MODEL = {
     "commission_rate": 0.00025,
     "commission_min": 5.0,
     "stamp_tax_sell": 0.0005,
+    "transfer_fee": 0.0,
+}
+
+#: Isolates the cash gate: a 100-share sale raises 1_000 but costs 2_000.
+_HIGH_MINIMUM_FEE_MODEL = {
+    "commission_rate": 0.0,
+    "commission_min": 2000.0,
+    "stamp_tax_sell": 0.0,
     "transfer_fee": 0.0,
 }
 
@@ -160,6 +168,7 @@ def _outcome(
     positions: tuple[dict, ...] = (),
     ratio: float = 1.0,
     fill_model: str = "volume_share",
+    fee_model: dict[str, float] | None = None,
 ):
     market_data = fetch_market_data(
         "cn_a",
@@ -170,20 +179,20 @@ def _outcome(
         ch_client=_FakeChClient(),
         interval="5m",
     )
-    request = parse_request(
-        {
-            "account_id": "pa_5m_partial",
-            "market": "cn_a",
-            "account_state": {"cash": cash, "positions": list(positions)},
-            "orders": orders,
-            "from_date": _DAY,
-            "to_date": _DAY,
-            "fee_model": dict(_FEE_MODEL),
-            "interval": "5m",
-            "fill_model": fill_model,
-            "order_volume_ratio": ratio,
-        }
-    )
+    payload = {
+        "account_id": "pa_5m_partial",
+        "market": "cn_a",
+        "account_state": {"cash": cash, "positions": list(positions)},
+        "orders": orders,
+        "from_date": _DAY,
+        "to_date": _DAY,
+        "fee_model": dict(_FEE_MODEL if fee_model is None else fee_model),
+        "interval": "5m",
+        "fill_model": fill_model,
+    }
+    if fill_model == "volume_share":
+        payload["order_volume_ratio"] = ratio
+    request = parse_request(payload)
     return engine.match_orders(
         request,
         market_data=market_data,
@@ -523,6 +532,135 @@ def test_two_orders_get_independent_per_order_caps() -> None:
         f"end with the existing day-end reason; got {_cancels(outcome)!r}"
     )
     assert outcome.end_state.cash >= 0
+
+
+def test_volume_share_market_sell_rejects_fee_overdraft_before_mutation() -> None:
+    """The maintainer case rejects all 300 shares, not the 100-share cap fill."""
+    outcome = _outcome(
+        orders=[_sell(qty=300)],
+        five={_SYM: _partial_market_day()},
+        cash=0.0,
+        positions=({"symbol": _SYM, "qty": 300, "avg_cost": 10.0},),
+        ratio=0.1,
+        fee_model=_HIGH_MINIMUM_FEE_MODEL,
+    )
+
+    assert outcome.error is None, f"unexpected engine error: {outcome.error!r}"
+    assert outcome.fills == (), f"the unaffordable fill must not book: {_observed(outcome)}"
+    rejections = outcome.rejected_orders
+    assert [(r.symbol, r.side, r.qty, r.reason_code) for r in rejections] == [
+        (_SYM, "sell", 300.0, "insufficient_cash")
+    ], _observed(outcome)
+    assert rejections[0].detail.startswith("sell "), rejections[0].detail
+    assert "buy cost" not in rejections[0].detail
+    assert "-1000.00" in rejections[0].detail
+    assert _cancels(outcome) == [("sell", 300.0, CANCELED_REASON_CODE)], (
+        "a rejected market order gets only the existing rejection cancel, never "
+        f"a volume-cap cancel: {_observed(outcome)}"
+    )
+    assert [cancel.detail for cancel in outcome.canceled_orders] == [
+        "rejected: insufficient_cash"
+    ]
+    assert outcome.events == (), _observed(outcome)
+    assert outcome.end_state.cash == 0.0, _observed(outcome)
+    assert [(p.symbol, p.qty, p.avg_cost) for p in outcome.end_state.positions] == [
+        (_SYM, 300.0, 10.0)
+    ], _observed(outcome)
+    assert len(outcome.order_states) == 1
+    state = outcome.order_states[0]
+    assert (
+        state.status,
+        state.request.qty,
+        state.filled_qty,
+        state.avg_fill_price,
+        state.rejected_reason,
+        state.cancel_reason,
+    ) == ("rejected", Decimal("300"), Decimal("0"), None, "insufficient_cash", None)
+    assert state.fills == []
+
+
+def test_volume_share_sell_allows_zero_then_rejects_residual_atomically() -> None:
+    """Cash 1_000 funds exactly one net-zero fill; bar two rejects residual 200."""
+    outcome = _outcome(
+        orders=[_sell(limit=10.00, qty=300)],
+        five={_SYM: _intraday(_DAY, _sell_bars(3))},
+        cash=1000.0,
+        positions=({"symbol": _SYM, "qty": 300, "avg_cost": 10.0},),
+        ratio=1.0,
+        fee_model=_HIGH_MINIMUM_FEE_MODEL,
+    )
+
+    assert outcome.error is None, f"unexpected engine error: {outcome.error!r}"
+    assert _fills(outcome) == [("sell", 100.0, 10.00, 2000.0)], (
+        "projected cash exactly zero must allow the first actual 100-share fill; "
+        f"later bars must not fill: {_observed(outcome)}"
+    )
+    rejections = outcome.rejected_orders
+    assert [(r.symbol, r.side, r.qty, r.reason_code) for r in rejections] == [
+        (_SYM, "sell", 200.0, "insufficient_cash")
+    ], _observed(outcome)
+    assert rejections[0].detail.startswith("sell "), rejections[0].detail
+    assert "buy cost" not in rejections[0].detail
+    assert "-1000.00" in rejections[0].detail
+    assert _cancels(outcome) == [("sell", 200.0, CANCELED_REASON_CODE)], _observed(outcome)
+    assert [cancel.detail for cancel in outcome.canceled_orders] == [
+        "rejected: insufficient_cash"
+    ]
+    assert outcome.events == (), _observed(outcome)
+    assert outcome.end_state.cash == 0.0, _observed(outcome)
+    assert [(p.symbol, p.qty, p.avg_cost) for p in outcome.end_state.positions] == [
+        (_SYM, 200.0, 10.0)
+    ], _observed(outcome)
+    assert len(outcome.order_states) == 1
+    state = outcome.order_states[0]
+    assert (
+        state.status,
+        state.request.qty,
+        state.filled_qty,
+        state.avg_fill_price,
+        state.rejected_reason,
+        state.cancel_reason,
+    ) == (
+        "rejected",
+        Decimal("300"),
+        Decimal("100"),
+        Decimal("10"),
+        "insufficient_cash",
+        None,
+    )
+    assert [(fill.qty, fill.price) for fill in state.fills] == [
+        (Decimal("100"), Decimal("10"))
+    ]
+
+
+def test_all_or_none_high_minimum_sell_keeps_legacy_overdraft_behavior() -> None:
+    """The new insufficient_cash gate is explicitly volume-share-only."""
+    outcome = _outcome(
+        orders=[_sell(qty=100)],
+        five={_SYM: _partial_market_day()},
+        cash=0.0,
+        positions=({"symbol": _SYM, "qty": 300, "avg_cost": 10.0},),
+        fill_model="all_or_none",
+        fee_model=_HIGH_MINIMUM_FEE_MODEL,
+    )
+
+    assert outcome.error is None, f"unexpected engine error: {outcome.error!r}"
+    assert _fills(outcome) == [("sell", 100.0, 10.00, 2000.0)], _observed(outcome)
+    assert outcome.rejected_orders == (), _observed(outcome)
+    assert outcome.canceled_orders == (), _observed(outcome)
+    assert outcome.events == (), _observed(outcome)
+    assert outcome.end_state.cash == -1000.0, _observed(outcome)
+    assert [(p.symbol, p.qty, p.avg_cost) for p in outcome.end_state.positions] == [
+        (_SYM, 200.0, 10.0)
+    ], _observed(outcome)
+    assert len(outcome.order_states) == 1
+    state = outcome.order_states[0]
+    assert (state.status, state.filled_qty, state.avg_fill_price, state.rejected_reason) == (
+        "held",
+        Decimal("100"),
+        Decimal("10"),
+        None,
+    )
 
 
 # ── manual QA: one market order larger than its cap, printed as v1.3 ────────

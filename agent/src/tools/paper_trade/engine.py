@@ -330,8 +330,8 @@ class _MatchSession:
         # In 5m the band and cash checks must be anchored on that execution
         # price, never on the bar reference alone.  ``qty`` defaults to the
         # order's requested quantity; the 5m volume-share matcher passes the
-        # executable remainder so a partial fill cannot self-reject or
-        # overdraw cash against the already-filled quantity.
+        # executable remainder so each gate evaluates this fill against the
+        # current ledger, including a sell's own fee.
         gate_qty = order.qty if qty is None else qty
         if self._five_minute and self.rules.has_price_limits:
             sym_data = self.market_data.data[order.symbol]
@@ -360,11 +360,25 @@ class _MatchSession:
                     f"{total - bought} (T+1: {bought} share(s) bought today are not sellable)")
         if code == "insufficient_position":
             return (code, f"sell qty {gate_qty} exceeds position {total}")
-        # Slot 10 insufficient_cash (§4: qty×price+fee ≤ cash).
-        code = self.rules.cash_rejection(order.side, gate_qty, price, self.cash)
+        # Slot 10 insufficient_cash (buy cost, or volume-share sell net proceeds).
+        code = self.rules.cash_rejection(
+            order.side,
+            gate_qty,
+            price,
+            self.cash,
+            volume_share=self.fill_model == "volume_share",
+        )
         if code == "insufficient_cash":
-            cost = self.rules.buy_cost(gate_qty, price)
-            return (code, f"buy cost {cost} exceeds cash {self.cash}")
+            if order.side == "buy":
+                cost = self.rules.buy_cost(gate_qty, price)
+                return (code, f"buy cost {cost} exceeds cash {self.cash}")
+            proceeds = self.rules.sell_proceeds(gate_qty, price)
+            projected_cash = money(self.cash) + proceeds
+            return (
+                code,
+                f"sell projected cash {projected_cash} below zero "
+                f"(cash {self.cash} + net proceeds {proceeds})",
+            )
         return None
 
     def match_order(self, day: DayPlan, order: Order) -> None:

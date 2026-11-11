@@ -189,6 +189,10 @@ class MarketRules:
         """Settled buy cost = 2dp notional + fee (§4 cash gate: qty×price+fee ≤ cash)."""
         return quantize_money(money(qty) * money(price)) + self.fee("buy", qty, price)
 
+    def sell_proceeds(self, qty: float, price: float) -> Decimal:
+        """Settled sell proceeds = 2dp notional - fee, matching ledger mutation."""
+        return quantize_money(money(qty) * money(price)) - self.fee("sell", qty, price)
+
     # ── Price bands + limit orders (§4 成交价/涨跌停 rows) ──
 
     def band_rejection(
@@ -245,8 +249,19 @@ class MarketRules:
             return "insufficient_position"
         return None
 
-    def cash_rejection(self, side: str, qty: float, price: float, cash: Decimal) -> str | None:
-        """AM-14 slot ``insufficient_cash`` (buys only; §4: qty×price+fee ≤ cash)."""
-        if side != "buy":
-            return None
-        return "insufficient_cash" if self.buy_cost(qty, price) > cash else None
+    def cash_rejection(
+        self,
+        side: str,
+        qty: float,
+        price: float,
+        cash: Decimal,
+        *,
+        volume_share: bool = False,
+    ) -> str | None:
+        """AM-14 slot ``insufficient_cash``; exact-zero projected cash is allowed."""
+        if side == "buy":
+            return "insufficient_cash" if self.buy_cost(qty, price) > cash else None
+        if side == "sell" and volume_share:
+            projected_cash = money(cash) + self.sell_proceeds(qty, price)
+            return "insufficient_cash" if projected_cash < _ZERO else None
+        return None

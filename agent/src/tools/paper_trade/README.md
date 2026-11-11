@@ -253,7 +253,10 @@ Four platform gaps remain, plus one disclosed fee divergence:
 Disclosed fee divergence: the cited PDF charges one commission per completed
 order, while this engine books and charges every fill separately, so a two-fill
 order pays two minimum commissions. The per-fill charge keeps cash and position
-accounting exact and never lets cash go negative.
+accounting exact. Under `fill_model="volume_share"`, a sell is rejected
+`insufficient_cash` before booking when its quantized notional minus that fill's
+fee would make cash negative; projected cash exactly zero is allowed. Legacy
+`all_or_none` behavior is unchanged.
 
 ## Known limits
 
