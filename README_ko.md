@@ -57,16 +57,20 @@
 
 ## 📰 뉴스
 
+- **2026-11-11** 🧾 **모의거래 부분 체결과 독립적인 원장 대사** — 중국 A주 5분봉 모의거래에서 주문별 거래량 한도, 부분 체결, 주문 상태 출력을 선택적으로 활성화할 수 있습니다([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). 새로운 `paper_trade_reconcile` Agent/MCP 도구는 반환된 체결 기록을 바탕으로 수수료, 현금, 보유 포지션, 순자산가치(NAV) 계산을 독립적으로 대사합니다([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
+  지원되는 여러 줄 백분율 헤더와 원문의 레이블을 유지하는 문서 내 정수의 명시적 인용을 올바르게 처리합니다([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). 엄격한 팩터 벤치마크의 입력도 수정하고([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)), 채널 대화에서 응답 대기 시간이 초과되었을 때 이전 답변을 반환하지 않도록 했습니다([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
+  [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@divya0795](https://github.com/divya0795) 님께 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
 - **2026-11-10** 📊 **편집 가능한 IV 곡면과 옵션 분석 수정** — Options Lab에서 행사가·만기별 IV 그리드를 편집하고 관측값과 보간값을 구분할 수 있습니다. 외삽은 거부합니다([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   저가 종목 프리셋, 수량 입력, 만기일 표시, 재시도, 언어 변경 시 로딩 멈춤, 20개 레그 제한을 수정했습니다. `CF501`처럼 만기 부분이 세 자리인 정저우 상품거래소 코드는 이제 중국 선물 규칙으로 백테스트됩니다([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   [@he-yufeng](https://github.com/he-yufeng) 및 [@GPT-AGI](https://github.com/GPT-AGI)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
 - **2026-11-09** 🧭 **선택한 리비전 비교 내보내기와 인식할 수 없는 코드를 거부하는 백테스트** — 비교 중인 두 연구 리비전을 Web, API, CLI에서 JSON 또는 Markdown으로 내려받을 수 있습니다([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). 어떤 시장 규칙에도 해당하지 않는 백테스트 코드(`local:BHP.AX`, `7203.T` 등)는 이제 중국 A주 규칙으로 실행되지 않고 데이터를 가져오기 전에 거부됩니다. 6자리 숫자만 있는 코드와 상하이 `.SS` 표기는 계속 사용할 수 있습니다. OpenRouter 응답에 모델 이름이 두 번 표시되지 않으며([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), `research-artifact export`에 빈 리비전 ID를 넘기면 오류가 납니다. [@he-yufeng](https://github.com/he-yufeng) 및 [@Gloubiboulgator](https://github.com/Gloubiboulgator)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
-- **2026-11-08** 📝 **연구 버전 비교와 전체 이력 내보내기** — 두 리비전의 본문, 근거, 메타데이터를 비교하고([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), 전체 연구 이력을 JSON 또는 Markdown으로 내보낼 수 있습니다([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). 연구 기록을 전환할 때 오래된 응답을 무시하며, Markdown 내보내기는 원문을 독립된 코드 블록에 보존합니다. 팩터 가중치 누락, 일부 수익률 누락 시의 성과 귀속, IC 표본 부족, 유한하지 않은 가치평가 입력값, 음수 진입 가격의 증거금 계산도 수정했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
-
 <details>
 <summary>이전 뉴스</summary>
+
+- **2026-11-08** 📝 **연구 버전 비교와 전체 이력 내보내기** — 두 리비전의 본문, 근거, 메타데이터를 비교하고([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), 전체 연구 이력을 JSON 또는 Markdown으로 내보낼 수 있습니다([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). 연구 기록을 전환할 때 오래된 응답을 무시하며, Markdown 내보내기는 원문을 독립된 코드 블록에 보존합니다. 팩터 가중치 누락, 일부 수익률 누락 시의 성과 귀속, IC 표본 부족, 유한하지 않은 가치평가 입력값, 음수 진입 가격의 증거금 계산도 수정했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
 - **2026-11-07** 🧪 **Research Lab: 거래 비용과 표본 외 검증** — 저장된 가격 데이터로 수수료와 슬리피지를 바꿔 백테스트를 다시 실행합니다. 학습 결과만으로 매개변수를 선택한 뒤 고정해 표본 외 테스트와 별도의 최종 홀드아웃 검증을 수행합니다. [Research Lab](guides/research-lab.md)은 Web, CLI, API, Agent/MCP에서 같은 절차를 사용하며 UI는 11개 언어를 모두 지원합니다. 구간 경계의 수익률 누락, 팩터 초기화와 장기 구간 계산도 수정하고, 근거 부족을 명시하는 오프라인 작업 재검증 사례 20개를 추가했습니다. 버전별 연구 기록에 구조화된 재무 데이터를 저장할 수 있으며([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)), 거래소 접미사가 없는 중국 선물 계약 코드의 인식도 수정했습니다([#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)). **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
@@ -174,7 +178,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | 기능 | 사용 방법 |
 |---|---|
 | 포트폴리오 | 읽기 전용 계좌의 보유 종목을 합산하거나 extraETF 파일을 가져옵니다. 목표 비중으로 종목별 금액 변화를 미리 봅니다. |
-| 모의 거래 | 저장 계좌를 하루씩 진행해 체결, 현금, 순자산을 봅니다. 별도의 모의 환경에서 A주를 5분 단위로 재생할 수도 있습니다. |
+| 모의 거래 | 저장 계좌를 하루씩 진행해 체결, 현금, 순자산을 봅니다. 별도의 모의 환경에서 A주를 5분 단위로 재생할 수도 있습니다. `paper_trade_reconcile` agent/MCP 도구는 시장이나 브로커에 접근하지 않고 수수료, 현금, 포지션과 NAV 산식을 독립적으로 검증합니다. |
 | 섀도 계좌 | 브로커 거래 내역을 가져와 수수료와 매매 습관을 확인하고 규칙에 따른 재현 결과와 비교합니다. |
 | 브로커 연결 | CLI나 웹에서 연결한 뒤 읽기로 확인합니다. 실거래를 켜기 전 종목·주문·노출 한도를 정하며 긴급 중단도 가능합니다. |
 

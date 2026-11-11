@@ -57,16 +57,20 @@
 
 ## 📰 News
 
+- **2026-11-11** 🧾 **Paper-trade partial fills and ledger reconciliation** — Opt into per-order volume caps, partial fills and reported order states for A-share 5-minute paper simulations ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). Independently reconcile fees, cash, positions and NAV arithmetic from returned fills with the new `paper_trade_reconcile` Agent/MCP tool ([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
+  Correctly handle supported wrapped percentage headers and explicitly quoted document integers while preserving their source labels ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). Also fix strict factor benchmark inputs ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) and prevent timed-out channel turns from returning an earlier answer ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
+  Thanks [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen) and [@divya0795](https://github.com/divya0795)! **On `main`, for the next pip release.**
+
 - **2026-11-10** 📊 **Interactive IV surfaces and options analysis fixes** — Edit strike/expiry IV grids in Options Lab, with observed/interpolated labels and no extrapolation ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Fix low-price presets, quantities, expiry dates, retries, language-switch loading and the 20-leg limit. Bare three-digit Zhengzhou contracts such as `CF501` now use China futures rules ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   Thanks [@he-yufeng](https://github.com/he-yufeng) and [@GPT-AGI](https://github.com/GPT-AGI)! **On `main`, for the next pip release.**
 
 - **2026-11-09** 🧭 **Export a selected revision comparison; backtests refuse codes they cannot place** — Download the exact pair of research revisions you are comparing as JSON or Markdown from the Web, API or CLI ([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). A backtest code no market rule recognises (such as `local:BHP.AX` or `7203.T`) is now refused before any data is fetched instead of running on A-share rules; bare six-digit and `.SS` Shanghai codes still work. OpenRouter replies no longer show the model name twice ([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), and an empty revision id in `research-artifact export` is now an error. Thanks [@he-yufeng](https://github.com/he-yufeng) and [@Gloubiboulgator](https://github.com/Gloubiboulgator)! **On `main`, for the next pip release.**
 
-- **2026-11-08** 📝 **Research revision comparison and full-history export** — Compare content, evidence and metadata between any two revisions ([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), and export the complete research history as JSON or Markdown ([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). Switching research records now ignores stale responses, and Markdown exports preserve original content in isolated code blocks. Also fix missing factor weights, partial-return attribution, insufficient IC samples, non-finite valuation inputs and margin calculations for negative entry prices. **On `main`, for the next pip release.**
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-11-08** 📝 **Research revision comparison and full-history export** — Compare content, evidence and metadata between any two revisions ([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), and export the complete research history as JSON or Markdown ([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). Switching research records now ignores stale responses, and Markdown exports preserve original content in isolated code blocks. Also fix missing factor weights, partial-return attribution, insufficient IC samples, non-finite valuation inputs and margin calculations for negative entry prices. **On `main`, for the next pip release.**
 
 - **2026-11-07** 🧪 **Research Lab: trading costs and out-of-sample testing** — Rerun saved price inputs under different fees and slippage; select parameters using training results only, then freeze them for out-of-sample tests and a separate final holdout. The [Research Lab](guides/research-lab.md) shares Web, CLI, API and Agent/MCP workflows, with all eleven UI languages. Also correct window-boundary returns and factor warmup/long-window calculations, and add 20 offline task-replay cases that keep missing evidence visible. Versioned research artifacts can now store structured financial facts ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)), and bare Chinese futures contract codes resolve correctly ([#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)). **On `main`, for the next pip release.**
 
@@ -174,7 +178,7 @@ You can also choose a source explicitly. For example, installing `vibe-trading-a
 | Feature | What you can do |
 |---|---|
 | Portfolio | Bring read-only broker holdings into one snapshot or import an extraETF export. Enter target weights to preview the value change for each holding. |
-| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. |
+| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
 | Shadow Account | Import your broker’s trade journal, inspect fees and trading habits, then compare the actual trades with a rule-based replay. |
 | Broker connections | Set up a connection in the CLI or Web and test it with a read. For supported live profiles, set symbol, order and exposure limits before enabling trading. The kill switch halts live activity. |
 

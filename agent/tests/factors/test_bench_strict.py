@@ -748,3 +748,101 @@ def test_run_bench_strict_skips_a_single_ic_observation(
     assert result["rows"] == []
     assert result["skipped"][0]["reason"] == "insufficient IC observations (need at least 2)"
     json.dumps(result, allow_nan=False)
+
+
+class _EnrichmentRegistry:
+    """Declares one sector-neutral alpha, one SEC ``fund:`` alpha, one price alpha."""
+
+    _META = {
+        "needs_sector": {
+            "theme": ["value"],
+            "formula_latex": "",
+            "requires_sector": True,
+        },
+        "fund_us": {
+            "theme": ["quality"],
+            "formula_latex": "",
+            "columns_required": ["fund:roe"],
+        },
+        "price": {
+            "theme": ["momentum"],
+            "formula_latex": "",
+            "columns_required": ["close"],
+        },
+    }
+
+    def list(self, *, zoo: str) -> list[str]:  # noqa: ARG002
+        return list(self._META)
+
+    def get(self, aid: str) -> Any:
+        meta = self._META[aid]
+
+        class _Handle:
+            pass
+
+        handle = _Handle()
+        handle.meta = meta
+        return handle
+
+    def compute(self, aid: str, panel: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        from src.factors.registry import SkipAlpha
+
+        if self._META[aid].get("requires_sector") and "sector" not in panel:
+            raise SkipAlpha(f"{aid}: panel missing sector tag")
+        return panel["close"].pct_change(5)
+
+
+def test_run_bench_strict_prepares_the_panel_like_run_bench(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strict and normal benches must evaluate the same alphas on the same panel.
+
+    ``run_bench`` excludes ``fund:`` alphas off sp500 and attaches the csi300
+    sector tag (deliberately not stored in the cached panel) before computing
+    alphas; the strict runner skipped both steps, so every sector-neutral
+    alpha was silently skipped under ``--strict``.
+    """
+    from src.factors.bench_runner import run_bench
+
+    panel = _planted_signal_panel()
+    sector = pd.DataFrame(
+        "bank", index=panel["close"].index, columns=panel["close"].columns
+    )
+    for module in ("bench_runner", "bench_runner_strict"):
+        monkeypatch.setattr(
+            f"src.factors.{module}._load_universe_panel", lambda u, p: panel
+        )  # noqa: ARG005
+    monkeypatch.setattr(
+        "src.tools.alpha_bench_tool._attach_sector_column",
+        lambda enriched, base, start, end: {
+            **enriched,
+            "sector": sector,
+        },  # noqa: ARG005
+    )
+
+    normal = run_bench(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        registry=_EnrichmentRegistry(),
+    )
+    strict = run_bench_strict(
+        zoo="alpha101",
+        universe="csi300",
+        period="2024-2024",
+        random_control=True,
+        n_random_seeds=2,
+        registry=_EnrichmentRegistry(),
+    )
+
+    assert normal["status"] == strict["status"] == "ok"
+    assert (
+        strict.get("universe_excluded")
+        == normal.get("universe_excluded")
+        == ["fund_us"]
+    )
+    assert sorted(r["id"] for r in strict["rows"]) == sorted(
+        r["id"] for r in normal["rows"]
+    )
+    assert sorted(r["id"] for r in strict["rows"]) == ["needs_sector", "price"]
+    assert not any("sector" in s["reason"] for s in strict["skipped"])

@@ -655,7 +655,11 @@ class _PolicyMixin:
                     GROUNDING_CHECKS.run("figure-proposed", self, figure, declaration, symbol, records, scalar_parameters)
                 )
                 continue
-            issues.extend(GROUNDING_CHECKS.run("figure-observed", self, figure, declaration, symbol, records))
+            line, line_offset = positions[figure.line] if 0 <= figure.line < len(positions) else ("", 0)
+            issues.extend(GROUNDING_CHECKS.run(
+                "figure-observed", self, figure, declaration, symbol, records,
+                line=line, line_offset=line_offset,
+            ))
         market_records = self._price_records()
         if checked_price and market_records:
             issues.extend(self._validate_price_provenance(content, market_records))
@@ -1678,12 +1682,21 @@ class _PolicyMixin:
         declaration: Declaration | None,
         symbol: str | None,
         records: Sequence[EvidenceRecord],
+        *,
+        line: str = "",
+        line_offset: int = 0,
     ) -> list[dict[str, Any]]:
         """An observed figure must appear in evidence of its own kind.
 
         A currency-marked figure is answered only by money-denominated values
         and a percent only by the rest; a table cell only by its column's field.
         """
+        from src.agent.grounding.document_quotes import matches_document_integer_quote
+
+        if matches_document_integer_quote(
+            self._document_integer_quotes, figure, declaration, line, line_offset
+        ):
+            return []
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
         if scoped is not None:
             scoped_records, metric_values = scoped

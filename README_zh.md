@@ -57,16 +57,20 @@
 
 ## 📰 新闻
 
+- **2026-11-11** 🧾 **模拟交易部分成交与独立账本对账** — A 股 5 分钟模拟交易可选择启用逐笔订单的成交量上限、部分成交和订单状态输出（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)）。新增 `paper_trade_reconcile` Agent/MCP 工具，根据返回的成交记录，独立核对费用、现金、持仓和净值计算（[#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)）。
+  正确处理受支持的跨行百分比表头，并允许在保留原文标签的前提下明确引用文档中的整数（[#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185)、[#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)）。另修复严格因子基准评测的输入（[#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)），避免渠道会话超时后返回上一轮答案（[#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)）。
+  感谢 [@shadowinlife](https://github.com/shadowinlife)、[@he-yufeng](https://github.com/he-yufeng)、[@Jackzigen](https://github.com/Jackzigen) 和 [@divya0795](https://github.com/divya0795)！**已在 `main`，随下一次 pip 版本发布。**
+
 - **2026-11-10** 📊 **可编辑波动率曲面与期权分析修复** — 在 Options Lab 编辑行权价与到期日的隐含波动率网格，区分观测值与插值，并拒绝外推（[#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)）。
   修复低价策略预设、数量输入、到期日显示、失败重试、切换语言卡加载及 20 腿上限；`CF501` 等郑商所三位交割年月合约代码现在按中国期货规则回测（[#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)）。
   感谢 [@he-yufeng](https://github.com/he-yufeng) 和 [@GPT-AGI](https://github.com/GPT-AGI)！**已在 `main`，随下一次 pip 版本发布。**
 
 - **2026-11-09** 🧭 **导出选中的版本对比；回测拒绝无法识别的代码** — 可在 Web、API 或 CLI 中把正在比较的两个研究修订导出为 JSON 或 Markdown（[#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)）。任何市场规则都无法识别的回测代码（如 `local:BHP.AX`、`7203.T`）现在会在拉取数据前被拒绝，不再按 A 股规则运行；裸六位代码和上交所 `.SS` 写法仍可使用。OpenRouter 回复不再重复显示模型名（[#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)），`research-artifact export` 传入空修订号现在会报错。感谢 [@he-yufeng](https://github.com/he-yufeng) 和 [@Gloubiboulgator](https://github.com/Gloubiboulgator)！**已在 `main`，随下一次 pip 版本发布。**
 
-- **2026-11-08** 📝 **研究版本比较与完整历史导出** — 可比较任意两个修订的正文、证据和元数据（[#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)），并将完整研究历史导出为 JSON 或 Markdown（[#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)）。切换研究记录时会忽略过期响应，Markdown 导出以隔离的代码块保留原始正文。另修复因子权重缺失、部分收益缺失时的归因、IC 样本不足、估值输入非有限值，以及负入场价格下的保证金计算。**已在 `main`，随下一次 pip 版本发布。**
-
 <details>
 <summary>更早的新闻</summary>
+
+- **2026-11-08** 📝 **研究版本比较与完整历史导出** — 可比较任意两个修订的正文、证据和元数据（[#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)），并将完整研究历史导出为 JSON 或 Markdown（[#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)）。切换研究记录时会忽略过期响应，Markdown 导出以隔离的代码块保留原始正文。另修复因子权重缺失、部分收益缺失时的归因、IC 样本不足、估值输入非有限值，以及负入场价格下的保证金计算。**已在 `main`，随下一次 pip 版本发布。**
 
 - **2026-11-07** 🧪 **研究实验室：交易成本与样本外验证** — 用已保存的行情输入，按不同费用和滑点重新回测；仅依据训练结果选参，再锁定参数执行样本外测试与独立的最终留出验证。[研究实验室](guides/research-lab.md) 的 Web、CLI、API 和 Agent/MCP 共用一套流程，界面支持全部 11 种语言。另修复跨窗口收益统计、因子预热与长窗口计算，新增 20 个离线任务回放用例，缺少证据会明确显示。版本化研究资料也可保存结构化财务事实（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)），并修正中国期货裸合约代码识别（[#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)）。**已在 `main`，随下一次 pip 版本发布。**
 
@@ -174,7 +178,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | 功能 | 用法 |
 |---|---|
 | 投资组合 | 汇总券商只读持仓快照或导入 extraETF 文件，输入目标权重预览各持仓的金额变化。 |
-| 模拟交易 | 已保存账户可逐个交易日推进，查看成交、现金和净值。还可在独立模拟中按五分钟回放 A 股交易日。 |
+| 模拟交易 | 已保存账户可逐个交易日推进，查看成交、现金和净值。还可在独立模拟中按五分钟回放 A 股交易日。`paper_trade_reconcile` agent/MCP 工具可独立核对费用、现金、持仓和 NAV 恒等式，无需访问行情或券商。 |
 | 影子账户 | 导入券商成交记录，检查费用和交易习惯，对照按规则回放与实际成交。 |
 | 券商连接 | 通过 CLI 或 Web 配置连接并测试读取。支持实盘的配置须先设定标的、订单和敞口限额，可一键停止实盘。 |
 

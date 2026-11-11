@@ -85,6 +85,14 @@ def _declared(prose: str, *lines: str) -> str:
     ("项目 金额 同比（％）\n营业收入 17.10", False),
     ("成品平均重量为 17.10 千克。", False),
     ("营业收入 7,747,346,892 17.10 20,817,866,218 10.56", False),
+    # A wrapped header drops its (%) marker onto a line of its own, above the
+    # numeric block (real 时代电气 PDF shape, follow-up measured in #2149).
+    ("项目 本报告期\n本报告期比\n上年同期增\n减变动幅度\n(%)\n营业收入 7,747,346,892 17.10", True),
+    ("项目 本报告期\n上年同期\n增减变动\n幅度(%)\n营业收入 7,747,346,892 17.10 6.21", False),
+    ("本报告期\n比上年同期增减\n(%)\n营业收入 7,747,346,892", False),
+    # Prose between the marker line and the numeric block breaks the
+    # association — a wrapped header sits immediately above its block.
+    ("幅度\n(%)\n管理层讨论与分析如下。\n营业收入 7,747,346,892 17.10", False),
 ])
 def test_percent_declaration_needs_a_unit_in_its_own_document(tmp_path, source, valid):
     ledger, document = _ledger_with_upload(tmp_path)
@@ -349,3 +357,50 @@ def test_document_grouped_integer_cannot_launder_generated_artifacts(
     )
 
     assert not result.valid
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "股东总数 76175",
+        "| 指标 | 数值 |\n|---|---|\n| 股东总数 | 76175 |",
+    ],
+)
+def test_large_bare_integer_grounds_a_quoted_table_cell(
+    tmp_path: Path,
+    text: str,
+) -> None:
+    """An explicitly quoted integer keeps its source label and exact call."""
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", text)
+
+    result = ledger.validate_final_answer(
+        _declared(
+            "| 指标 | 数值 |\n|---|---|\n| 股东总数 | 76,175 |",
+            "76,175 | observed | quote: 股东总数 76175 | doc-1",
+        )
+    )
+
+    assert result.valid, result.issues
+
+
+def test_four_digit_bare_integer_stays_layout(tmp_path: Path) -> None:
+    """A headcount of 3400 has no mark of measurement and is not large enough
+    to rule out a coincidence match, so it never becomes evidence."""
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", "员工总数 3400 人")
+
+    values = {record.value for record in ledger._evidence}
+
+    assert 3400 not in values, "四位数裸整数不该进账本"
+
+
+def test_year_still_never_enters_the_ledger(tmp_path: Path) -> None:
+    """2026 and 2025 stay years, not findings, even though a date row reads
+    five digits when the run parses it."""
+    ledger, document = _ledger_with_upload(tmp_path)
+    _read_document(ledger, document, "doc-1", "报告期 2026 年，上市年份 2015 年。")
+
+    values = {record.value for record in ledger._evidence}
+
+    assert 2026 not in values and 2015 not in values, "年份进了账本"

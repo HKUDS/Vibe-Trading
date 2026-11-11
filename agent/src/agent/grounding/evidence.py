@@ -16,6 +16,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from src.agent.grounding.document_quotes import document_integer_quotes
+
 from src.agent.grounding.figures import (
     Figure,
     _CURRENCY_CODES,
@@ -713,6 +715,68 @@ _PERCENT_HEADER = re.compile(r"(?:^[%％]$|[(（]\s*[%％]\s*[)）]$)")
 _NUMERIC_CELL = re.compile(r"[+−-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
 
 
+def _wrapped_percent_headers(lines: list[str]) -> list[str]:
+    """Rejoin a trailing percentage header only when its row layout survives.
+
+    The preceding multi-cell header must be exactly one cell short of every
+    following numeric row. Only single-cell, nonnumeric continuation lines
+    may connect it to the percent marker. A complete header, a delimiter,
+    a blank, a width change or a grouped last-column amount makes the layout
+    ambiguous; leave the entire block unchanged in those cases.
+
+    Args:
+        lines: Extracted document lines, including their line endings.
+
+    Returns:
+        A copy with unambiguous wrapped headers joined for column matching.
+    """
+    result = list(lines)
+    for index, line in enumerate(lines):
+        marker = line.strip()
+        if (
+            len(marker.split()) != 1
+            or not _PERCENT_HEADER.search(marker)
+            or any(c.isdigit() or c in "|\t" for c in marker)
+        ):
+            continue
+        first = index - 1
+        while first >= 0:
+            cells = lines[first].split()
+            if not cells or any(c.isdigit() or c in "|\t%％" for c in lines[first]):
+                break
+            if len(cells) > 1:
+                break
+            first -= 1
+        if first < 0:
+            continue
+        header = lines[first].split()
+        if len(header) < 2 or any(c.isdigit() or c in "|\t%％" for c in lines[first]):
+            continue
+        width = len(header) + 1
+        found, ambiguous = False, False
+        for following in lines[index + 1 :]:
+            cells = following.split()
+            if (
+                not cells
+                or "|" in following
+                or "\t" in following
+                or _NUMERIC_CELL.fullmatch(cells[0])
+                or not all(
+                    _NUMERIC_CELL.fullmatch(c) or c in {"—", "-"} for c in cells[1:]
+                )
+                or len(cells) < 2
+            ):
+                break
+            found = True
+            if len(cells) != width or "," in cells[-1]:
+                ambiguous = True
+                break
+        if found and not ambiguous:
+            ending = line[len(line.rstrip("\r\n")) :]
+            result[index] = " ".join([*header, marker]) + ending
+    return result
+
+
 def _document_percent_cells(text: str) -> str:
     """Attach an explicit column unit to numeric cells before evidence scanning.
 
@@ -722,7 +786,7 @@ def _document_percent_cells(text: str) -> str:
     """
     if "%" not in text and "％" not in text:
         return text
-    lines = text.splitlines(keepends=True)
+    lines = _wrapped_percent_headers(text.splitlines(keepends=True))
     columns: tuple[int, ...] = ()
     layout = ("", 0)
     for i, line in enumerate(lines):
@@ -1556,7 +1620,9 @@ class _EvidenceMixin:
         Only numbers carrying a mark of measurement count. A page number, a
         section heading or a year in running text is not a finding, and
         admitting bare integers would let an invented small figure match by
-        chance. The document must not be one this run wrote — reading back its
+        chance. Bare integers may be retained separately for exact labelled
+        quotation, never as operands or general-purpose evidence. The document
+        must not be one this run wrote — reading back its
         own draft is not observation — and nothing under the run directory is
         read as a document, so the ledger's own artifacts cannot launder
         themselves through the reader.
@@ -1604,7 +1670,12 @@ class _EvidenceMixin:
             return
         seen: set[tuple[float, bool, str | None]] = set()
         text = _document_percent_cells(text)
-        for figure in scan_figures(text, parse_figures_block(text)):
+        figures = scan_figures(text, parse_figures_block(text))
+        self._document_integer_quotes.extend(document_integer_quotes(
+            text, figures, call_id,
+            _MAX_DOCUMENT_FIGURES - len(self._document_integer_quotes),
+        ))
+        for figure in figures:
             if room <= 0:
                 return
             if figure.shape != "measured":
