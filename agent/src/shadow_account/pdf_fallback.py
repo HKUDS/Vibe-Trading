@@ -181,9 +181,7 @@ def render_pdf_reportlab(
     shadow_pnl = sections["shadow_pnl"]
     real_pnl = sections["real_pnl"]
     delta_pnl = sections["delta_pnl"]
-    comparison_available = (
-        shadow_pnl is not None and real_pnl is not None and delta_pnl is not None
-    )
+    comparison_available = sections["comparison_available"]
 
     def market_label(code: str) -> str:
         return market_labels.get(code, code)
@@ -356,7 +354,7 @@ def render_pdf_reportlab(
             )
     elif shadow_pnl is not None:
         story.append(
-            para(
+            Paragraph(
                 f"The shadow PnL is {_colored(shadow_pnl, _signed(shadow_pnl))}, "
                 "but no usable journal was available (none supplied, unreadable, "
                 "or no closed roundtrips), so your real PnL, delta, and attribution "
