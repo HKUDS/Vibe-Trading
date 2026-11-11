@@ -942,7 +942,7 @@ def test_render_shadow_report_handles_empty_equity(
             missed_signals_pnl=0.0, noise_trades_pnl=0.0, early_exit_pnl=0.0,
             late_exit_pnl=0.0, overtrading_pnl=0.0, counterfactual_trades=(),
         ),
-        shadow_total_pnl=None, real_total_pnl=0.0, delta_pnl=None,
+        shadow_total_pnl=None, real_total_pnl=None, delta_pnl=None,
     )
     out = render_shadow_report(profile, result, output_dir=tmp_path)
     assert Path(out["html_path"]).exists()
@@ -1211,36 +1211,103 @@ def test_context_prompt_references_shadow_account() -> None:
     assert "Phase 4b" not in _SYSTEM_PROMPT  # stale note should be gone
 
 
-@pytest.mark.unit
-def test_attribution_is_zero_without_journal(
-    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    profile = extract_shadow_profile(profitable_journal)
+def _stub_metrics_runner(total_return_abs: float):
+    """Build a run_backtest_fn that writes one metrics.json with this PnL."""
 
     def stub_runner(run_dir_str: str) -> str:
         metrics_path = Path(run_dir_str) / "metrics.json"
-        metrics_path.write_text(json.dumps({"total_return_abs": 0.0}), encoding="utf-8")
+        metrics_path.write_text(
+            json.dumps({"total_return_abs": total_return_abs}), encoding="utf-8",
+        )
         return json.dumps({
             "status": "ok",
             "exit_code": 0,
             "artifacts": {"metrics.json": str(metrics_path)},
         })
 
+    return stub_runner
+
+
+@pytest.mark.unit
+def test_missing_journal_leaves_real_pnl_unknown(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    profile = extract_shadow_profile(profitable_journal)
+
     result = run_shadow_backtest(
         profile,
         window_start="2026-01-01",
         window_end="2026-06-30",
         journal_path=None,  # disable attribution
-        run_backtest_fn=stub_runner,
+        run_backtest_fn=_stub_metrics_runner(0.0),
     )
     assert result.attribution.noise_trades_pnl == 0.0
-    assert result.real_total_pnl == 0.0
     assert result.attribution.counterfactual_trades == ()
     # An explicit zero PnL is a real measurement, not a missing value.
     assert result.shadow_total_pnl == 0.0
-    assert result.delta_pnl == 0.0
+    # With no journal there is nothing to compare against, so the real side is
+    # unknown. A 0.0 here would claim the real account broke even.
+    assert result.real_total_pnl is None
+    assert result.delta_pnl is None
+
+
+@pytest.mark.unit
+def test_missing_journal_never_renders_the_real_side_as_zero(
+    profitable_journal: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The case the old behaviour got wrong: a profitable shadow, no journal."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    profile = extract_shadow_profile(profitable_journal)
+
+    result = run_shadow_backtest(
+        profile,
+        window_start="2026-01-01",
+        window_end="2026-06-30",
+        journal_path=None,
+        run_backtest_fn=_stub_metrics_runner(12_500.0),
+    )
+    assert result.shadow_total_pnl == 12_500.0
+    assert result.real_total_pnl is None
+    assert result.delta_pnl is None
+
+    out = render_shadow_report(profile, result, output_dir=tmp_path)
+    content = Path(out["html_path"]).read_text(encoding="utf-8")
+    assert "no usable journal was available" in content
+    # The old report printed "Shadow +12500.00 | Real 0.00" and a delta of
+    # +12500, which reads as a measured break-even on the real account.
+    assert "| Real " not in content
+    assert 'class="delta-value' not in content
+
+
+@pytest.mark.unit
+def test_every_unavailable_journal_path_leaves_real_pnl_unmeasured(
+    profitable_journal: Path, no_roundtrips_journal: Path, tmp_path: Path,
+) -> None:
+    """All four unavailability paths report None instead of a fabricated 0.0."""
+    from src.shadow_account.backtester import _attribution_or_zero
+
+    profile = extract_shadow_profile(profitable_journal)
+    unparseable = tmp_path / "broken.csv"
+    unparseable.write_text("not,a,journal\n1,2\n", encoding="utf-8")
+
+    cases = {
+        "no journal path": None,
+        "missing journal": tmp_path / "absent.csv",
+        "unparseable journal": unparseable,
+        "no closed roundtrips": no_roundtrips_journal,
+    }
+    for label, journal_path in cases.items():
+        _, shadow_pnl, real_pnl = _attribution_or_zero(
+            profile=profile,
+            journal_path=journal_path,
+            combined={"total_return_abs": 500.0},
+            initial_capital=100_000.0,
+        )
+        assert shadow_pnl == 500.0, label
+        assert real_pnl is None, label
 
 
 # ---------------- Price-context features (as-of buy_dt) ----------------

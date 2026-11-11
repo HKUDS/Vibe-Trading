@@ -233,7 +233,11 @@ def _render_per_market_bar(result: ShadowBacktestResult, path: Path) -> None:
 
 
 def _render_attribution_waterfall(result: ShadowBacktestResult, path: Path) -> None:
-    if result.shadow_total_pnl is None or result.delta_pnl is None:
+    if (
+        result.shadow_total_pnl is None
+        or result.real_total_pnl is None
+        or result.delta_pnl is None
+    ):
         return
     attr = result.attribution
     components = [

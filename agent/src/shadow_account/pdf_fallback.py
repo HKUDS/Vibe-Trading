@@ -196,11 +196,19 @@ def render_pdf_reportlab(
     if delta_pnl is not None:
         story.append(Paragraph(_colored(delta_pnl, _signed(delta_pnl)), big))
         story.append(para(f"Shadow {shadow_pnl:.2f} | Real {real_pnl:.2f}", muted))
-    else:
+    elif shadow_pnl is None:
         story.append(
             para(
                 "unavailable - the shadow backtest produced no usable metrics, "
                 "so no comparison is shown",
+                muted,
+            )
+        )
+    else:
+        story.append(
+            para(
+                "unavailable - no usable journal was available, so your real "
+                "PnL is unknown and no comparison is shown",
                 muted,
             )
         )
@@ -300,13 +308,23 @@ def render_pdf_reportlab(
 
     # 5. Delta attribution
     story.append(Paragraph("5. You vs Shadow - Delta Attribution", h2))
-    if shadow_pnl is not None:
+    if shadow_pnl is not None and real_pnl is not None:
         lede = (
             f"Shadow PnL {_colored(shadow_pnl, _signed(shadow_pnl))}, "
             f"your real PnL {_colored(real_pnl, _signed(real_pnl))}, "
             f"delta {_colored(delta_pnl, _signed(delta_pnl))}."
         )
         story.append(Paragraph(lede, body))
+    elif shadow_pnl is not None:
+        story.append(
+            para(
+                f"The shadow PnL is {_colored(shadow_pnl, _signed(shadow_pnl))}, "
+                "but no usable journal was available (none supplied, unreadable, "
+                "or no closed roundtrips), so your real PnL, the delta, and the "
+                "attribution below are not computed for this run.",
+                muted,
+            )
+        )
     else:
         story.append(
             para(

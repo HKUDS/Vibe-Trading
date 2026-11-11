@@ -64,6 +64,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   full-series export with exit 0. Empty ids are now an error, as they already
   were over the API.
 
+#### Shadow account
+
+- **A shadow report with no journal no longer claims the real account broke
+  even** (#2205). When no journal path was supplied, the file was missing or
+  unreadable, or the journal had no closed roundtrips, the real side was
+  recorded as `0.0` and the delta as the shadow PnL itself: the report
+  printed a caption like "Shadow 12500.00 | Real 0.00" with a positive Delta
+  PnL, which reads as a measured break-even on the real account.
+  `real_total_pnl` is now `None` on those four paths and the delta is
+  computed only when both sides were measured; the HTML and PDF reports say
+  the real side is unknown instead of printing a number. Cached results
+  produced before the change miss once and re-run, because a stored `0.0`
+  cannot be told apart from a measured one.
+
 ## [0.1.19] — 2026-11-05
 
 Rolls up 299 commits / 116 merged pull requests since 0.1.18, plus 21

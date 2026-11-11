@@ -295,7 +295,11 @@ def run_shadow_backtest(
         attribution=attribution,
         shadow_total_pnl=shadow_pnl,
         real_total_pnl=real_pnl,
-        delta_pnl=round(shadow_pnl - real_pnl, 2) if shadow_pnl is not None else None,
+        delta_pnl=(
+            round(shadow_pnl - real_pnl, 2)
+            if shadow_pnl is not None and real_pnl is not None
+            else None
+        ),
     )
     _cache_result(
         base_dir, result,
@@ -305,7 +309,7 @@ def run_shadow_backtest(
 
 
 
-_CACHE_EPOCH = 1
+_CACHE_EPOCH = 2
 """Bumped when the extractor or the generated engine changes meaning.
 
 A cached run is derived from (profile inputs, engine semantics, journal,
@@ -382,7 +386,11 @@ def load_cached_result(
             excluded_currencies=dict(attr.get("excluded_currencies") or {}),
         ),
         shadow_total_pnl=(None if data.get("shadow_total_pnl") is None else float(data["shadow_total_pnl"])),
-        real_total_pnl=float(data.get("real_total_pnl", 0.0)),
+        # A pre-epoch cache may carry a fabricated 0.0 for an unmeasured side;
+        # the epoch bump makes those files miss instead.
+        real_total_pnl=(
+            None if data.get("real_total_pnl") is None else float(data["real_total_pnl"])
+        ),
         delta_pnl=None if data.get("delta_pnl") is None else float(data["delta_pnl"]),
     )
 
@@ -572,16 +580,22 @@ def _attribution_or_zero(
     pool_currency: str | None = None,
     adjust=None,
     covered_symbols: frozenset[str] = frozenset(),
-) -> tuple[AttributionBreakdown, float | None, float]:
-    """Compute attribution if the journal is available, else return zeros."""
+) -> tuple[AttributionBreakdown, float | None, float | None]:
+    """Compute attribution if the journal is available, else return zeros.
+
+    ``real_pnl`` is None, never 0.0, whenever this side of the comparison was
+    not measured: no usable shadow metrics, no journal path, a missing or
+    unreadable journal, or a journal with no closed roundtrips. A fabricated
+    zero would read as "your account broke even" instead of "unknown".
+    """
     shadow_pnl = _shadow_pnl_from_metrics(combined, initial_capital)
     if shadow_pnl is None:
-        return _zero_attribution(), None, 0.0
+        return _zero_attribution(), None, None
     if not journal_path:
-        return _zero_attribution(), shadow_pnl, 0.0
+        return _zero_attribution(), shadow_pnl, None
     path = Path(journal_path)
     if not path.exists():
-        return _zero_attribution(), shadow_pnl, 0.0
+        return _zero_attribution(), shadow_pnl, None
 
     try:
         _, records = parse_file(path)
@@ -589,10 +603,10 @@ def _attribution_or_zero(
         roundtrips = pair_trades_fifo(trades_df, adjust=adjust)
     except Exception as exc:
         logger.warning("Attribution skipped — journal parse failed: %s", exc)
-        return _zero_attribution(), shadow_pnl, 0.0
+        return _zero_attribution(), shadow_pnl, None
 
     if not roundtrips:
-        return _zero_attribution(), shadow_pnl, 0.0
+        return _zero_attribution(), shadow_pnl, None
 
     dividend_cash = _dividend_cash(
         trades_df, covered_symbols=covered_symbols, pool_currency=pool_currency,

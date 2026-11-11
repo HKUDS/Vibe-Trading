@@ -153,3 +153,22 @@ def test_cache_key_changes_with_window_and_hash() -> None:
     other = ShadowProfile(**{**profile.__dict__, "journal_hash": "hash-v2"})
     assert base != _cache_key(other, "2025-01-01", "2026-01-01")
     assert base == _cache_key(profile, "2025-01-01", "2026-01-01")
+
+
+def test_cached_result_keeps_an_unmeasured_real_pnl(tmp_path, monkeypatch) -> None:
+    """A None real PnL must round-trip as None, not decay to 0.0."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    profile = _profile()
+    from src.shadow_account.storage import runs_dir
+
+    _cache_result(
+        runs_dir(profile.shadow_id),
+        replace(_result(), real_total_pnl=None, delta_pnl=None),
+        profile=profile, window_start="2025-01-01", window_end="2026-01-01",
+    )
+
+    hit = load_cached_result(profile, window_start="2025-01-01", window_end="2026-01-01")
+    assert hit is not None
+    assert hit.shadow_total_pnl == 10_000.0
+    assert hit.real_total_pnl is None
+    assert hit.delta_pnl is None

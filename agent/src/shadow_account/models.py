@@ -146,8 +146,11 @@ class AttributionBreakdown:
 class ShadowBacktestResult:
     """Output of multi-market shadow backtest + attribution.
 
-    ``shadow_total_pnl``/``delta_pnl`` are None when the runner produced no
-    usable metrics; a failed comparison must never render as 0.0.
+    Each PnL is None when that side of the comparison was not measured:
+    ``shadow_total_pnl`` when the runner produced no usable metrics, and
+    ``real_total_pnl`` when no usable journal was available. A failed
+    comparison must never render as 0.0, which would read as a measured
+    break-even.
     """
 
     shadow_id: str
@@ -156,5 +159,5 @@ class ShadowBacktestResult:
     equity_curves: dict[str, list[tuple[str, float]]]
     attribution: AttributionBreakdown
     shadow_total_pnl: float | None
-    real_total_pnl: float
+    real_total_pnl: float | None
     delta_pnl: float | None
