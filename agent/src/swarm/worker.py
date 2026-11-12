@@ -287,6 +287,7 @@ def build_worker_prompt(
     upstream_summaries: dict[str, str],
     skill_descriptions: str,
     grounding_block: str = "",
+    available_tools: set[str] | None = None,
 ) -> str:
     """Build the worker's system prompt with role, upstream context, and skills.
 
@@ -299,6 +300,8 @@ def build_worker_prompt(
             ahead of the Execution Rules section so the worker sees real
             recent prices before any tool decision. Empty string skips the
             section entirely.
+        available_tools: Actual registered tool names after runtime policy filtering.
+            Defaults to the spec whitelist for standalone prompt inspection.
 
     Returns:
         Complete system prompt string for the worker LLM.
@@ -398,7 +401,8 @@ def build_worker_prompt(
     # SKIPPED: short-circuit convention, buried the marker several
     # paragraphs in under markdown decoration instead of leading with it
     # as their own role instructions require.
-    has_code_tools = bool({"write_file", "bash", "edit_file"} & set(agent_spec.tools or []))
+    enabled_tools = set(agent_spec.tools or []) if available_tools is None else available_tools
+    has_code_tools = {"write_file", "bash"} <= enabled_tools
     iteration_budget = agent_spec.max_iterations or _default_max_iterations()
     budget_rule = (
         f"You have at most {iteration_budget} model iterations. Each iteration can "
@@ -423,6 +427,15 @@ def build_worker_prompt(
             "- After writing report.md, output a brief 2-3 sentence summary in your text response.\n"
             "- Respond in the same language as the task prompt."
         )
+    elif "write_file" in enabled_tools:
+        prompt_parts.append(
+            "## Execution Rules\n\n" + budget_rule
+            + "Call assigned data and calculation tools directly. Shell execution is unavailable; "
+            "use quantlib_call (describe first to inspect arguments), technical_indicators, "
+            "and other available analysis tools. Do not write scripts you cannot execute. "
+            "Save the final analysis to report.md with write_file, then summarize it. "
+            "State unavailable inputs explicitly. Respond in the task's language."
+        )
     else:
         prompt_parts.append(
             "## Execution Rules\n\n"
@@ -436,6 +449,10 @@ def build_worker_prompt(
             "(including any short-circuit marker convention they describe).\n\n"
             "Respond in the same language as the task prompt."
         )
+
+    if agent_spec.require_position_risk_table:
+        from src.swarm.position_risk import POSITION_RISK_RULE
+        prompt_parts.append(POSITION_RISK_RULE)
 
     now = datetime.now(timezone.utc)
     prompt_parts.append(
@@ -694,6 +711,7 @@ def _run_worker_impl(
     skill_desc = _filter_skill_descriptions(skills_loader, agent_spec.skills)
     system_prompt = build_worker_prompt(
         agent_spec, upstream_summaries, skill_desc, grounding_block=grounding_block,
+        available_tools={name for name in agent_spec.tools if registry.get(name) is not None},
     )
 
     # Token accounting accumulators — initialized before the first exit path
@@ -766,6 +784,7 @@ def _run_worker_impl(
     last_assistant_content = ""
 
     data_tool_calls = 0
+    position_risk_correction_sent = False
     content_filter_count = 0
     consecutive_content_filter_count = 0
     stream_failure_streak = 0
@@ -1109,8 +1128,17 @@ def _run_worker_impl(
         if not response.has_tool_calls:
             summary = response.content or last_assistant_content or "(no summary)"
             summary = _resolve_summary(artifact_dir, summary)
+            risk_reason = None
+            if agent_spec.require_position_risk_table:
+                from src.swarm.position_risk import validate_position_risk_report
+                risk_reason = validate_position_risk_report(summary)
+                if risk_reason and not position_risk_correction_sent and iteration + 1 < max_iterations:
+                    position_risk_correction_sent = True
+                    messages.append({"role": "assistant", "content": response.content or ""})
+                    messages.append({"role": "user", "content": "Final report needs correction: " + risk_reason})
+                    continue
             _finalize_run(artifact_dir, summary, messages)
-            reason = _classify_deliverable(
+            reason = risk_reason or _classify_deliverable(
                 summary,
                 is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
                 report_written=_report_written(artifact_dir),
@@ -1237,7 +1265,11 @@ def _run_worker_impl(
     summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
     summary = _resolve_summary(artifact_dir, summary)
     _finalize_run(artifact_dir, summary, messages)
-    reason = _classify_deliverable(
+    risk_reason = None
+    if agent_spec.require_position_risk_table:
+        from src.swarm.position_risk import validate_position_risk_report
+        risk_reason = validate_position_risk_report(summary)
+    reason = risk_reason or _classify_deliverable(
         summary,
         is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
         report_written=_report_written(artifact_dir),

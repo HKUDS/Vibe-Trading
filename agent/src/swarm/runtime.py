@@ -291,6 +291,8 @@ def _agent_spec_changed(prev: SwarmAgentSpec, new: SwarmAgentSpec) -> bool:
         or prev.max_retries != new.max_retries
         or prev.max_iterations != new.max_iterations
         or prev.timeout_seconds != new.timeout_seconds
+        or prev.evidence_mode != new.evidence_mode
+        or prev.require_position_risk_table != new.require_position_risk_table
     )
 
 

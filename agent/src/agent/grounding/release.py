@@ -326,6 +326,10 @@ class _ReleaseMixin:
             return None
         if self.identity_status == "locked" and any(
             issue.get("code") in {"numeric_claim_unavailable", "unsourced_symbol_figures"}
+            and not any(
+                not issue.get("symbol") or record.symbol == issue["symbol"]
+                for record in self._price_records()
+            )
             for issue in validation.issues
         ):
             if self._price_evidence_attempts < MAX_PRICE_EVIDENCE_ATTEMPTS:

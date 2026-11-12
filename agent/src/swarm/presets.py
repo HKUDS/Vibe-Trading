@@ -320,6 +320,7 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             model_name=agent_data.get("model_name"),
             max_retries=agent_data.get("max_retries", 2),
             evidence_mode=agent_data.get("evidence_mode", "auto"),
+            require_position_risk_table=agent_data.get("require_position_risk_table", False),
         ))
 
     # Parse tasks, initialize blocked_by from depends_on

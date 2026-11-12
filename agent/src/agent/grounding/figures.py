@@ -53,6 +53,16 @@ _DATE_RE = re.compile(
     r"(?P<full>(?:19|20)\d{2}(?:\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*[日号]?"
     # A dotted date has both dots and no spacing: "2001.5 - 2002.5" is a range.
     r"|\.\d{1,2}\.\d{1,2}(?!\d|\.\d)))"
+    # Written calendar dates are structure too (Oct 13 / 13 October 2026).
+    # This is date grammar, not a vocabulary assigning financial number roles.
+    r"|(?i:\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"\.?\s+(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?(?!\d|\.\d|[%％])"
+    r"(?:,?\s+(?:19|20)\d{2})?\b)"
+    r"|(?i:\b(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?\s+"
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+    r"Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"\.?(?:\s+(?:19|20)\d{2})?\b)"
     # A year-less MM-DD / MM/DD; see _short_date_is_structural.
     r"|(?P<short>(?<![\d.])(?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])(?!\d|\.\d))"
     r"|(?<![\d.:])(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?![\d:]|\.\d)"

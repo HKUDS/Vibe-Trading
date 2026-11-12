@@ -26,6 +26,7 @@ from src.agent.grounding.figures import _MAGNITUDES
 from src.agent.grounding.registry import GROUNDING_CHECKS, grounding_check
 from src.agent.grounding.evidence import (
     EvidenceRecord,
+    _has_money_unit,
     _is_metadata_count_leaf,
     _is_number,
     _is_price_kind,
@@ -706,6 +707,7 @@ class _PolicyMixin:
                     "is not declared in the figures block and is not an observed "
                     "value; declare it as observed / derived / proposed / cited / "
                     "count, or remove it",
+                    field_ref_candidates=self._artifact_ref_candidates(figure, symbol),
                     **(
                         {
                             "declared_as": other_unit.value_text,
@@ -914,11 +916,15 @@ class _PolicyMixin:
             # A table cell quotes its own column, not whatever else the call returned.
             records = [record for record in records if record.field == figure.column]
             metrics = []
+        if figure is not None and figure.date:
+            records = [r for r in records if r.timestamp and _timestamp_matches_claim_date(r.timestamp, figure.date)]
+            metrics = []
         if figure is not None and figure.percent:
             records = [
                 record
                 for record in records
                 if not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
+                and not _has_money_unit(record)
                 and record.value_scale == 1.0
                 and (record.source != "document" or record.field == "document.ratio")
             ]
@@ -933,6 +939,7 @@ class _PolicyMixin:
             records = [
                 record for record in records
                 if _is_price_kind(record)
+                or _has_money_unit(record)
                 or (record.value_scale != 1.0 and record.currency is not None)
                 or (record.source == "document" and record.field == "document.figure")
             ]
@@ -1342,10 +1349,25 @@ class _PolicyMixin:
         if figure.column and record.field != figure.column:
             return False
         if figure.percent:
-            return not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
+            return (not _is_price_kind(record) and not _has_money_unit(record)
+                    and not _is_metadata_count_leaf(record.field) and record.value_scale == 1.0)
         if figure.currency:
-            return _is_price_kind(record)
+            return (_is_price_kind(record) or _has_money_unit(record)
+                    or (record.source == "document" and record.field == "document.figure"))
         return True
+
+    def _artifact_ref_candidates(self, figure: Figure, symbol: str | None) -> list[str]:
+        """Offer actual artifact/field references, without repairing or accepting a claim."""
+        found = []
+        for record in self._evidence:
+            if (record.artifact is None or record.status != "observed" or record.value is None
+                    or (symbol and record.symbol and record.symbol != symbol)
+                    or not self._kind_fits(record, figure)
+                    or (figure.currency_code and record.currency != figure.currency_code)):
+                continue
+            if self._matches_evidence(figure, [float(record.value)], [float(record.value)]):
+                found.append(f"{record.artifact}::{record.field}")
+        return list(dict.fromkeys(found))[:_MAX_CALL_REF_CANDIDATES]
 
     def _unknown_call_field_ref_candidates(
         self, ref: str, symbol: str | None, figure: Figure
@@ -1702,6 +1724,14 @@ class _PolicyMixin:
         ):
             return []
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
+        if (declaration and re.search(r"\.(?:csv|json)(?:\b|::)", declaration.ref)
+                and self._artifact_scope(declaration.ref) is None):
+            return [self._figure_issue(
+                "numeric_claim_conflict", figure, "observed", symbol, "unknown_artifact_ref",
+                f"names {declaration.ref}, which is not an artifact reference from this run; "
+                "copy an actual artifact/field reference from the tool result",
+                field_ref_candidates=self._artifact_ref_candidates(figure, symbol),
+            )]
         if scoped is not None:
             scoped_records, metric_values = scoped
             if (
@@ -2039,7 +2069,7 @@ class _PolicyMixin:
                 float(record.value)
                 for record in scoped[0]
                 if (
-                    not money or _is_price_kind(record)
+                    not money or _is_price_kind(record) or _has_money_unit(record)
                     or (record.source == "document" and record.field == "document.figure")
                 )
                 and (currency_code is None or record.currency == currency_code)

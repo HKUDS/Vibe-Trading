@@ -56,6 +56,7 @@ __all__ = [
     "pain_index",
     "monte_carlo_gbm",
     "analyze_mc_results",
+    "monte_carlo_summary",
     "fit_gpd_tail",
 ]
 
@@ -627,6 +628,51 @@ def analyze_mc_results(paths: np.ndarray, confidence: float = 0.95) -> dict:
         "prob_loss": float(np.mean(returns < 0.0)),
         "worst_5pct_return": float(np.percentile(returns, 5.0)),
         "best_5pct_return": float(np.percentile(returns, 95.0)),
+    }
+
+
+def monte_carlo_summary(
+    s0: float,
+    mu: float,
+    sigma: float,
+    n_steps: int = TRADING_DAYS_PER_YEAR,
+    n_paths: int = 10_000,
+    *,
+    seed: int,
+    steps_per_year: int = TRADING_DAYS_PER_YEAR,
+    confidence: float = 0.95,
+) -> dict:
+    """Simulate GBM and return risk statistics without transferring the path matrix.
+
+    Args:
+        s0: Initial price, strictly positive.
+        mu: Assumed annual arithmetic-return drift, not an observed forecast.
+        sigma: Annualized volatility.
+        n_steps: Number of simulated time steps.
+        n_paths: Number of paths; use at least 10,000 for tail estimates.
+        seed: Required random seed for reproducibility.
+        steps_per_year: Annualization basis of the simulation steps.
+        confidence: Confidence level for terminal-return VaR and CVaR.
+
+    Returns:
+        Model assumptions, simulation dimensions and terminal-return statistics.
+        Returns and loss magnitudes follow analyze_mc_results' sign convention.
+
+    Raises:
+        ValueError: If simulation parameters or confidence are invalid.
+    """
+    _validate_confidence(confidence)
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an explicit integer for reproducibility")
+    paths = monte_carlo_gbm(
+        s0, mu, sigma, n_steps, n_paths, seed=seed, steps_per_year=steps_per_year,
+    )
+    return {
+        "method": "geometric_brownian_motion",
+        "s0": s0, "mu": mu, "sigma": sigma,
+        "n_steps": n_steps, "n_paths": n_paths, "seed": seed,
+        "steps_per_year": steps_per_year, "confidence": confidence,
+        "statistics": analyze_mc_results(paths, confidence),
     }
 
 

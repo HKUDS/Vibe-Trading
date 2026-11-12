@@ -189,6 +189,7 @@ class SwarmAgentSpec(BaseModel):
         model_name: Override default model; None uses global config.
         max_retries: Maximum retry attempts on failure.
         evidence_mode: Whether completed upstream reports can supply evidence.
+        require_position_risk_table: Validate final allocation and NAV scenario arithmetic.
     """
 
     id: str
@@ -201,6 +202,7 @@ class SwarmAgentSpec(BaseModel):
     model_name: str | None = None
     max_retries: int = 2
     evidence_mode: Literal["auto", "upstream"] = "auto"
+    require_position_risk_table: bool = False
 
 
 class SwarmTask(BaseModel):
