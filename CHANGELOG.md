@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Daily generated strategies now reject detected shifts forwarded to output
+  targets before running, with an actionable correction. Indicator lookbacks
+  remain valid; explicitly intentional extra delays require a configuration
+  declaration and are disclosed in the run card.
+- Grounding preserves full English magnitude units and links rounded, scaled
+  prose to precise observed declarations. The referenced field, currency and
+  written-precision checks remain enforced; undeclared evidence is not widened.
+
 - Shadow-account backtests now pass the requested capital as `initial_cash`,
   and invalidate cached results produced before that correction.
 - Swarm workers report token-truncated responses as `token_limit`, including

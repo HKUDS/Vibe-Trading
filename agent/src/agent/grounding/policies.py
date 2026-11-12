@@ -535,7 +535,7 @@ class _PolicyMixin:
         # its role; the same label-matching contract already protects citations.
         scalar_parameters: list[float] = []
         for parameter in figures:
-            declared = block.match(parameter.value, parameter.percent, parameter.digits)
+            declared = block.match(parameter.value, parameter.percent, parameter.digits, scale=parameter.scale)
             if (
                 declared is None
                 or declared.role != "count"
@@ -564,7 +564,7 @@ class _PolicyMixin:
             if figure.shape not in ("measured", "bare"):
                 continue
             declaration = block.match(
-                figure.value, figure.percent, figure.digits, figure.point_marked
+                figure.value, figure.percent, figure.digits, figure.point_marked, scale=figure.scale
             )
             if declaration is None and figure.percent:
                 # A bare observation can restate a percentage only if the

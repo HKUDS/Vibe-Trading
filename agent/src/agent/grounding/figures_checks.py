@@ -71,7 +71,7 @@ def _unsourced_symbol_figures(ledger: Any, content: str) -> list[dict[str, Any]]
             continue
         # A figure declared ``cited`` is exempt, since a citation is an origin.
         if all(
-            (match := block.match(figure.value, figure.percent, figure.digits)) is not None and match.role == "cited"
+            (match := block.match(figure.value, figure.percent, figure.digits, scale=figure.scale)) is not None and match.role == "cited"
             for figure in carried
         ):
             continue

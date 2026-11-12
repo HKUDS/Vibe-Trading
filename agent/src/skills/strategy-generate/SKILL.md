@@ -106,6 +106,12 @@ indicator lookbacks or an explicitly requested delay merely because they use
 input prices, execution prices, position sizing, fees and evaluation window as
 well as the fill dates; matching dates alone does not establish equal returns.
 
+The runner rejects detected shifts forwarded to returned targets with
+`signal_timing_double_delay`. Fix the strategy rather than changing configuration
+to bypass that error. Only when the user's rule explicitly intends extra delayed
+decisions, declare the extra bars in `intentional_signal_delay_bars`; the engine
+still adds its normal next-open delay, and the run card discloses the extra lag.
+
 ## Instrument Code Normalization
 
 - 6-digit China A-share codes → automatically append suffix: codes starting with `600/601/603` → `.SH`, all others → `.SZ`

@@ -38,8 +38,9 @@ For example, if the current tool call `c1` actually returned
 ```
 
 Replace that illustrative call id and field with the real ones from this run.
-Use the supported numeric magnitude (`B`, `M`, `K`, `万`, `亿`) consistently
-in prose and declaration; do not put `96.22 billion` in the value column.
+Use a numeric magnitude (`B`, `M`, `K`, `万`, `亿`) or its full English unit
+(`billion`, `million`, `thousand`) in prose and declaration. A declaration may
+also retain the precise raw observed value while prose rounds it in those units.
 Declare forecast targets as `proposed`, and computations as `derived` with
 their actual operands, rather than labelling them `observed`. The internal
 declaration belongs to the final chat validation contract, not the saved PDF.
