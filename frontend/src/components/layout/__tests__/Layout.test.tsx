@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { Layout } from "../Layout";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -76,6 +76,15 @@ vi.mock("@/stores/agent", () => ({
     streamingSessionId: null,
   }),
 }));
+
+function SwitchSessionButton() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/agent?session=session-2")}>
+      Switch session
+    </button>
+  );
+}
 
 function renderLayout() {
   return render(
@@ -212,6 +221,26 @@ describe("Layout accessibility", () => {
     expect(api.renameSession).toHaveBeenCalledOnce();
     await act(async () => complete({ status: "ok" }));
     expect(screen.getByText("Renamed once")).toBeInTheDocument();
+  });
+
+  it("keeps the loaded list in place while switching sessions refreshes it", async () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/agent?session=session-1"]}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/agent" element={<SwitchSessionButton />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByText(sessions[0].title);
+    vi.mocked(api.listSessions).mockReturnValueOnce(new Promise(() => {}));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
+
+    await waitFor(() => expect(api.listSessions).toHaveBeenCalledTimes(2));
+    expect(container.querySelector("aside .animate-pulse")).toBeNull();
+    expect(screen.getByText(sessions[0].title)).toBeInTheDocument();
   });
 
   it("keeps history, new chat and language reachable with a collapsed sidebar", async () => {

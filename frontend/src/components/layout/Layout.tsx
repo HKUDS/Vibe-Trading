@@ -222,7 +222,9 @@ export function Layout() {
             )}
 
             <div className="px-2 pb-2 space-y-0.5 overflow-auto flex-1">
-              {sessionsLoading ? (
+              {/* Switching sessions re-lists in the background; a skeleton above
+                  the already-rendered list would push it down and back. */}
+              {sessionsLoading && sessions.length === 0 ? (
                 <div className="space-y-1.5 px-2 py-1">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="h-7 rounded-md bg-muted/50 animate-pulse" />
