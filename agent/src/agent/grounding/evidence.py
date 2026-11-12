@@ -458,6 +458,28 @@ def _leaf_name(path: str) -> str:
     return re.sub(r"\[\d+\]$", "", leaf).strip().casefold()
 
 
+def _field_money_unit(path: str) -> tuple[str | None, float]:
+    """Read an explicit currency/magnitude suffix from a numeric field name.
+
+    Args:
+        path: Evidence field path, for example ``data.revenue_usd_bn``.
+
+    Returns:
+        The named currency and multiplier into its base units. Ambiguous or
+        absent suffixes leave the value unchanged; prose is never consulted.
+    """
+    parts = _leaf_name(path).rsplit("_", 2)
+    if len(parts) != 3 or parts[-2].upper() not in _CURRENCY_CODES:
+        return None, 1.0
+    scale = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mn": 1e6,
+             "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9,
+             "t": 1e12, "tn": 1e12, "trillion": 1e12}.get(parts[-1])
+    if scale is None:
+        return None, 1.0
+    currency = parts[-2].upper()
+    return {"RMB": "CNY", "CNH": "CNY"}.get(currency, currency), scale
+
+
 def _price_field_for_path(path: str) -> str | None:
     """Map a generic evidence JSON path to a canonical price field.
 
@@ -684,6 +706,8 @@ class EvidenceRecord:
     currency_conversion: str | None = None
     artifact: str | None = None
     scope: str | None = None
+    # Explicit field-unit multiplier already applied to the stored value.
+    value_scale: float = 1.0
 
 
 def _is_price_kind(record: EvidenceRecord) -> bool:
@@ -1438,6 +1462,7 @@ class _EvidenceMixin:
             if remaining <= 0:
                 return
             if _is_number(value):
+                field_currency, field_scale = _field_money_unit(path)
                 self._evidence.append(
                     EvidenceRecord(
                         call_id=call_id,
@@ -1446,9 +1471,10 @@ class _EvidenceMixin:
                         source=source,
                         timestamp=timestamp,
                         field=path or "value",
-                        value=value,
+                        value=value * field_scale if field_currency else value,
+                        value_scale=field_scale,
                         status="observed",
-                        currency=(
+                        currency=field_currency or (
                             metric_currency
                             if tool_name == "get_sec_filings"
                             and path.startswith("data.metric.points[")

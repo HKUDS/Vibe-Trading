@@ -7,6 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Grounding reads explicit currency and magnitude suffixes in numeric tool
+  fields such as `revenue_usd_bn`, preserving valid currency-marked claims
+  while checking the referenced field in base units.
 - Daily generated strategies now reject detected shifts forwarded to output
   targets before running, with an actionable correction. Indicator lookbacks
   remain valid; explicitly intentional extra delays require a configuration
