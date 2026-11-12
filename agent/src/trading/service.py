@@ -17,6 +17,7 @@ RUNNER_CAPABILITY = "runner.manage.requires_mandate"
 #: ``get_historical_bars``).
 _SDK_CONNECTOR_MODULES = {
     "mstock": "src.trading.connectors.mstock.sdk",
+    "openalgo": "src.trading.connectors.openalgo.sdk",
     "tiger": "src.trading.connectors.tiger.sdk",
     "longbridge": "src.trading.connectors.longbridge.sdk",
     "alpaca": "src.trading.connectors.alpaca.sdk",
