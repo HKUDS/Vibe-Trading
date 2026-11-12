@@ -1,45 +1,25 @@
-"""pt-v1.1 / pt-v1.2 / pt-v1.3 wire contract for ``paper_trade_step`` (shapes + vocabularies).
+"""Versioned ``paper_trade_step`` shapes and frozen vocabularies.
 
-Declares the in-param, out-param and error-envelope shapes frozen by
-``PAPER_TRADING_ENGINE_AMENDMENT_PT_V1.1.md`` §2 (the FROZEN summary), plus
-the AM-14 closed vocabularies.  pt-v1.1 is APPROVED — G1 opened by the RM
-written approval of 2026-10-19 (``PAPER_TRADING_ENGINE_APPROVAL_GRANTED_PT_V1.1.md``).
-Every contract-sensitive value here is FROZEN per the approval §5
-declaration: vocabulary or field-set changes are a major schema bump with
-RM written confirmation; additive fields are a minor bump (REQUIREMENTS §9).
+pt-v1.1 is frozen by ``PAPER_TRADING_ENGINE_AMENDMENT_PT_V1.1.md`` §2 and
+G1's written RM approval of 2026-10-19. Vocabulary or field-set changes need
+a major bump and RM confirmation; additive fields use a minor bump.
 
-pt-v1.2 is the ADDITIVE bump for the cn_a 5m post-close step (P0 plan T2,
-decision record D1-D8).  It adds four OPTIONAL request fields — ``interval``,
-``session``, ``path_model``, ``fill_model`` — whose defaults reproduce the
-pt-v1.1 semantics exactly, and three out-param additions —
-``engine_fingerprint``, ``canceled_orders``, ``events`` — emitted ONLY for a
-v1.2 call.  "v1.2 call" means at least one new request field is non-default
-(D8): every call that omits them stays byte-identical to pt-v1.1, including
-``received_state_hash`` (D4).  The pt-v1.1 vocabularies (``REASON_CODES``,
-``SKIPPED_DAY_REASONS``, ``ERROR_CODES``) are NOT extended; the emergency
-cancel token lives only inside ``canceled_orders`` (D2).
+pt-v1.2 adds optional interval/session/path/fill selectors and fingerprint,
+cancel and event outputs. Defaults keep v1.1 bytes and hashes unchanged
+(D4/D8). pt-v1.3 adds volume share and seven-field lifecycle rows. pt-v1.4
+adds caller ids and scheduled cancellation for orders-mode 5m research.
+Every earlier version keeps its own field set and closed vocabularies;
+new cancel tokens never extend the frozen pt-v1.1 rejection table.
 
-Companion artifacts:
+Packaged ``paper_trade_step-v1.*.json`` files and their published mirrors in
+``schema/tool_contracts/`` resolve through :func:`load_contract_schema`.
+``state_hash.py`` owns coverage and fingerprints; ``wire.py`` owns success
+and error serialization. The engine owns Decimal settlement, while this
+boundary parses inputs into typed values.
 
-* ``schema/tool_contracts/paper_trade_step-v1.1.json`` — frozen v1.1 out-param
-  + error-envelope jsonschema (VD-13), loaded by :func:`load_contract_schema`.
-* ``schema/tool_contracts/paper_trade_step-v1.2.json`` — the additive v1.2
-  copy (same loader, ``version="pt-v1.2"``).
-* ``state_hash.py`` — ``received_state_hash`` / ``effective_fee_model`` /
-  ``engine_fingerprint``.
-* ``wire.py`` — success/error payload builders + deterministic JSON
-  serialization (Step 5 split: this module stays shapes + boundary parsing).
-
-``jsonschema`` is deliberately NOT imported: it is not a declared runtime
-dependency (zero-new-dependency red line, REQUIREMENTS §9), so
-:func:`validate_payload` implements the small keyword subset the skeleton
-uses.  The JSON file stays a standard draft-2020-12 document, so RM (or a
-future declared dependency) can validate it with the real library.
-
-Out-param dataclasses are declarative wire shapes: the engine (Steps 3-5)
-assembles them and owns Decimal→JSON serialization (VD-9).  In-params are
-parsed at the boundary by :func:`parse_request` (parse, don't validate —
-downstream code receives typed values).
+``jsonschema`` is not a runtime dependency (REQUIREMENTS §9).
+:func:`validate_payload` implements the skeleton's small keyword subset;
+the artifacts remain standard draft-2020-12 documents for external validators.
 """
 
 from __future__ import annotations
@@ -51,6 +31,13 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+
+from .cancellation import (
+    CancelRequest,
+    CancelResult,
+    parse_cancel_schedule,
+    parse_order_id,
+)
 
 __all__ = [
     "CANCELED_REASON_CODE",
@@ -69,6 +56,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "SCHEMA_VERSION_V1_2",
     "SCHEMA_VERSION_V1_3",
+    "SCHEMA_VERSION_V1_4",
     "SESSION_EVENT_TYPES",
     "SESSIONS",
     "SIDES",
@@ -112,12 +100,14 @@ SCHEMA_VERSION_V1_2 = "pt-v1.2"
 #: ``paper_trade_step-v1.3.json`` (packaged + published mirror) and is
 #: registered below with the other resolvable versions.
 SCHEMA_VERSION_V1_3 = "pt-v1.3"
+SCHEMA_VERSION_V1_4 = "pt-v1.4"
 
 #: Every version this loader can resolve, oldest first.
 SCHEMA_VERSIONS: tuple[str, ...] = (
     SCHEMA_VERSION,
     SCHEMA_VERSION_V1_2,
     SCHEMA_VERSION_V1_3,
+    SCHEMA_VERSION_V1_4,
 )
 
 # ── pt-v1.2 additive request vocabularies (D1/D5/D8) ──
@@ -212,6 +202,7 @@ _CONTRACT_SCHEMA_PATHS: dict[str, Path] = {
     SCHEMA_VERSION: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.1.json",
     SCHEMA_VERSION_V1_2: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.2.json",
     SCHEMA_VERSION_V1_3: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.3.json",
+    SCHEMA_VERSION_V1_4: _CONTRACT_SCHEMA_DIR / "paper_trade_step-v1.4.json",
 }
 
 
@@ -251,6 +242,8 @@ class Order:
     side: str
     qty: float
     limit: float | None = None
+    # Preserve StrategyOrder's positional reason argument.
+    order_id: str | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +275,13 @@ class PaperTradeStepRequest:
     # pt-v1.3 additive field: only legal with fill_model="volume_share"
     # (parse_request enforces it); the default keeps the v1.2 behaviour.
     order_volume_ratio: float = DEFAULT_ORDER_VOLUME_RATIO
+    cancel_schedule: tuple[CancelRequest, ...] | None = None
+
+    @property
+    def uses_v1_4(self) -> bool:
+        return self.cancel_schedule is not None or any(
+            order.order_id is not None for order in self.orders or ()
+        )
 
     @property
     def uses_v1_2(self) -> bool:
@@ -314,6 +314,8 @@ class PaperTradeStepRequest:
         Precedence is explicit: any pt-v1.3 field outranks every pt-v1.2
         selector, so a request selecting both is never a pt-v1.2 document.
         """
+        if self.uses_v1_4:
+            return SCHEMA_VERSION_V1_4
         if self.uses_v1_3:
             return SCHEMA_VERSION_V1_3
         if self.uses_v1_2:
@@ -417,11 +419,16 @@ def _parse_order(raw: Any, path: str) -> Order:
         raise PaperTradeSchemaError(f"{path}.side must be one of {SIDES}, got {side!r}")
     limit_raw = raw.get("limit")
     limit = None if limit_raw is None else _require_number(limit_raw, f"{path}.limit")
+    try:
+        order_id = parse_order_id(raw.get("order_id"), f"{path}.order_id")
+    except ValueError as exc:
+        raise PaperTradeSchemaError(str(exc)) from exc
     return Order(
         symbol=_require_str(raw.get("symbol"), f"{path}.symbol"),
         side=side,
         qty=_require_number(raw.get("qty"), f"{path}.qty"),
         limit=limit,
+        order_id=order_id,
     )
 
 
@@ -485,12 +492,21 @@ def parse_request(payload: dict[str, Any]) -> PaperTradeStepRequest:
             f"got fill_model={fill_model!r}"
         )
 
+    to_date = _parse_date(payload.get("to_date"), "to_date")
+    try:
+        cancel_schedule = parse_cancel_schedule(
+            payload.get("cancel_schedule"), day=to_date
+        )
+    except ValueError as exc:
+        raise PaperTradeSchemaError(str(exc)) from exc
     return PaperTradeStepRequest(
         account_id=_require_str(payload.get("account_id"), "account_id"),
         market=market,
-        account_state=parse_account_state(payload.get("account_state"), "account_state"),
+        account_state=parse_account_state(
+            payload.get("account_state"), "account_state"
+        ),
         from_date=_parse_date(payload.get("from_date"), "from_date"),
-        to_date=_parse_date(payload.get("to_date"), "to_date"),
+        to_date=to_date,
         orders=orders,
         strategy_path=strategy_path,
         fee_model=fee_model,
@@ -499,6 +515,7 @@ def parse_request(payload: dict[str, Any]) -> PaperTradeStepRequest:
         path_model=path_model,
         fill_model=fill_model,
         order_volume_ratio=order_volume_ratio,
+        cancel_schedule=cancel_schedule,
     )
 
 
@@ -526,6 +543,7 @@ class Fill:
     price: float
     fee: float
     reason: str = ""
+    order_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -538,6 +556,7 @@ class RejectedOrder:
     qty: float
     reason_code: str
     detail: str = ""
+    order_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -554,6 +573,7 @@ class CanceledOrder:
     qty: float
     reason_code: str = CANCELED_REASON_CODE
     detail: str = ""
+    order_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -654,6 +674,7 @@ class PaperTradeStepResult:
     # pt-v1.3 additive out-param: per-order lifecycle rows in submission
     # order (empty for a v1.1/v1.2 document; always present in a v1.3 one).
     order_states: tuple[OrderStateRow, ...] = ()
+    cancel_results: tuple[CancelResult, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

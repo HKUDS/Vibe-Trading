@@ -516,7 +516,7 @@ def test_loader_resolves_contracts_from_inside_the_package() -> None:
 def test_loader_defaults_to_v11_and_rejects_an_unknown_version() -> None:
     assert load_contract_schema("result")["properties"]["schema_version"]["const"] == "pt-v1.1"
     with pytest.raises(KeyError, match="unknown contract version"):
-        load_contract_schema("result", version="pt-v1.4")
+        load_contract_schema("result", version="pt-v999.0")
 
 
 # ── Tool registration surface ──

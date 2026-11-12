@@ -146,7 +146,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `update_research_goal_status` | Update goal lifecycle status | None |
 | `research_lab` | Frozen-input cost scenarios, training-only parameter selection and OOS/holdout, factor contracts and offline task replay | None |
 | `backtest` | Run vectorized backtest engine | None* |
-| `paper_trade_step` | Deterministic paper-trading matching engine; never places real orders | None* |
+| `paper_trade_step` | Deterministic paper matching; optional caller IDs and scheduled cancellation for single-day cn_a 5m orders-mode research; never places real orders | None* |
 | `paper_trade_reconcile` | Independently replay paper fills, fees, positions and NAV continuity | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
 | `alpha_zoo` | Browse bundled alpha metadata and registry health | None |
