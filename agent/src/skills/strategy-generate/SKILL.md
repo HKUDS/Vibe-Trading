@@ -90,6 +90,22 @@ Self-check after writing `signal_engine.py`:
 - [ ] Signal values stay within `[-1.0, 1.0]`
 - [ ] The signal is not shifted: the engine fills a signal set on bar `t` at the open of bar `t+1`
 
+### Verify execution timing before reporting performance
+
+A successful backtest confirms execution, not fidelity to the requested rule.
+Independently calculate the first entry and exit conditions from the input bars,
+then compare their expected next-bar dates with `artifacts/fills.jsonl` (read the
+actual artifact path returned by the backtest). Check any additional cases where
+the strategy changes state. A condition true at Tuesday's close normally fills
+at Wednesday's open, not Thursday's. Explain legitimate differences from market
+closures, price limits, insufficient cash or other engine execution rules.
+If the strategy added a second delay to implement "next open", remove that
+extra delay, rerun, and report only the corrected run's metrics. Do not remove
+indicator lookbacks or an explicitly requested delay merely because they use
+`shift`. When comparing return figures with another implementation, align the
+input prices, execution prices, position sizing, fees and evaluation window as
+well as the fill dates; matching dates alone does not establish equal returns.
+
 ## Instrument Code Normalization
 
 - 6-digit China A-share codes → automatically append suffix: codes starting with `600/601/603` → `.SH`, all others → `.SZ`

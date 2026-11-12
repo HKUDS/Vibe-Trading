@@ -237,6 +237,7 @@ agents:
 
       Decisions must be executable; reject vague “it depends.” Every key number must be explicit.
     tools: [bash, read_file, write_file, load_skill, backtest]
+    evidence_mode: upstream
     skills: [strategy-generate, asset-allocation]
     max_iterations: 50
     timeout_seconds: 1800

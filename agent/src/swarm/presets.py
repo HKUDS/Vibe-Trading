@@ -319,6 +319,7 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             timeout_seconds=agent_data.get("timeout_seconds", 300),
             model_name=agent_data.get("model_name"),
             max_retries=agent_data.get("max_retries", 2),
+            evidence_mode=agent_data.get("evidence_mode", "auto"),
         ))
 
     # Parse tasks, initialize blocked_by from depends_on

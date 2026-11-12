@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Shadow-account backtests now pass the requested capital as `initial_cash`,
+  and invalidate cached results produced before that correction.
+- Swarm workers report token-truncated responses as `token_limit`, including
+  partial tool calls. Investment-committee PMs may synthesize their mapped
+  upstream reports without an unnecessary data call; missing or invalid
+  upstream reports retain the existing evidence requirement.
+- Native Anthropic calls default to a configurable 16,384-token output budget
+  rather than depending on model-alias recognition. Set `ANTHROPIC_MAX_TOKENS`
+  explicitly for models with a smaller limit or reports requiring more output.
+
 #### Options Lab
 
 - Volatility surface grids check strike coverage only at requested expiries or
