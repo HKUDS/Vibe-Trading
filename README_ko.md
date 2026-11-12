@@ -57,6 +57,9 @@
 
 ## 📰 뉴스
 
+- **2026-11-12** 🛠️ **백테스트 시점, 보고서 수치와 연구 완료 판정 수정** — 섀도 계좌가 지정한 초기 자본을 사용하고, 출력 토큰 한도로 잘린 워커 응답을 완료로 처리하지 않습니다. 위원회 PM은 유효한 상위 보고서를 바탕으로 데이터를 다시 가져오지 않고 종합할 수 있습니다. 네이티브 Anthropic 어댑터의 기본 출력 예산은 변경 가능한 16,384 토큰입니다.
+  생성 전략의 출력 목표에서 추가 시프트가 감지되면 의도한 지연이라고 명시해야 실행할 수 있으며, 지표의 lookback은 계속 허용됩니다. Grounding은 증거 검증을 유지하면서 금액 단위의 여러 표기와 정확한 관측값 선언을 지원합니다. 실제 SPY／GLD 백테스트의 206／140건 체결과 총수익률이 독립 장부 계산과 일치했습니다. **아직 출시되지 않았습니다.**
+
 - **2026-11-11** 🧾 **모의거래 부분 체결과 독립적인 원장 대사** — 중국 A주 5분봉 모의거래에서 주문별 거래량 한도, 부분 체결, 주문 상태 출력을 선택적으로 활성화할 수 있습니다([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). 새로운 `paper_trade_reconcile` Agent/MCP 도구는 반환된 체결 기록을 바탕으로 수수료, 현금, 보유 포지션, 순자산가치(NAV) 계산을 독립적으로 대사합니다([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   지원되는 여러 줄 백분율 헤더와 원문의 레이블을 유지하는 문서 내 정수의 명시적 인용을 올바르게 처리합니다([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). 엄격한 팩터 벤치마크의 입력도 수정하고([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)), 채널 대화에서 응답 대기 시간이 초과되었을 때 이전 답변을 반환하지 않도록 했습니다([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
   [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@divya0795](https://github.com/divya0795) 님께 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**

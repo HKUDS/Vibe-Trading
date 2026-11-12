@@ -57,6 +57,9 @@
 
 ## 📰 News
 
+- **2026-11-12** 🛠️ **Backtest timing, report figures and research completion fixes** — Shadow Account now uses the requested starting capital; token-truncated worker replies no longer count as completed. Committee PMs can synthesize valid upstream reports without fetching the same data again, and the native Anthropic adapter defaults to a configurable 16,384 output tokens.
+  Generated strategies reject detected extra shifts on output targets unless explicitly declared intentional, while indicator lookbacks remain valid. Grounding now accepts supported magnitude spellings and precise observed declarations without weakening evidence checks. SPY/GLD backtests match an independent ledger on all 206/140 fills and total returns. **Unreleased.**
+
 - **2026-11-11** 🧾 **Paper-trade partial fills and ledger reconciliation** — Opt into per-order volume caps, partial fills and reported order states for A-share 5-minute paper simulations ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). Independently reconcile fees, cash, positions and NAV arithmetic from returned fills with the new `paper_trade_reconcile` Agent/MCP tool ([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   Correctly handle supported wrapped percentage headers and explicitly quoted document integers while preserving their source labels ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). Also fix strict factor benchmark inputs ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) and prevent timed-out channel turns from returning an earlier answer ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
   Thanks [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen) and [@divya0795](https://github.com/divya0795)! **On `main`, for the next pip release.**

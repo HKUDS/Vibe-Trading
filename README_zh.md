@@ -57,6 +57,9 @@
 
 ## 📰 新闻
 
+- **2026-11-12** 🛠️ **回测时序、报告数字与研究完成判定修复** — 影子账户按指定本金运行；因输出 token 上限截断的 worker 回复不再判为完成。委员会 PM 可直接综合有效的上游报告，无须重复取数；原生 Anthropic 适配器默认输出预算设为可配置的 16,384 tokens。
+  生成策略若被检测到对输出目标额外移位，须明确声明为有意延迟，否则拒绝运行；正常指标 lookback 保持可用。Grounding 支持金额单位的不同写法及精确观测值声明，同时保留证据校验。SPY／GLD 实际回测的 206／140 笔成交及总收益均与独立账本一致。**尚未发布。**
+
 - **2026-11-11** 🧾 **模拟交易部分成交与独立账本对账** — A 股 5 分钟模拟交易可选择启用逐笔订单的成交量上限、部分成交和订单状态输出（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)）。新增 `paper_trade_reconcile` Agent/MCP 工具，根据返回的成交记录，独立核对费用、现金、持仓和净值计算（[#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)）。
   正确处理受支持的跨行百分比表头，并允许在保留原文标签的前提下明确引用文档中的整数（[#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185)、[#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)）。另修复严格因子基准评测的输入（[#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)），避免渠道会话超时后返回上一轮答案（[#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)）。
   感谢 [@shadowinlife](https://github.com/shadowinlife)、[@he-yufeng](https://github.com/he-yufeng)、[@Jackzigen](https://github.com/Jackzigen) 和 [@divya0795](https://github.com/divya0795)！**已在 `main`，随下一次 pip 版本发布。**

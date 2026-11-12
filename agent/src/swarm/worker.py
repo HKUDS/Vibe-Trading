@@ -1079,6 +1079,32 @@ def _run_worker_impl(
 
         consecutive_content_filter_count = 0
 
+        # A token-truncated response is not a terminal deliverable, even if
+        # earlier tools succeeded or a report file exists. Do not execute
+        # potentially partial tool calls from the same response either.
+        if response.finish_reason in {"length", "max_tokens", "max_output_tokens"}:
+            summary = response.content or ""
+            messages.append({"role": "assistant", "content": summary})
+            _finalize_run(artifact_dir, summary, messages)
+            error = "Model output was truncated; increase the provider output-token limit and retry."
+            _emit(event_callback, "worker_token_limit", agent_id, task_id,
+                  {"reason": response.finish_reason, "error": error})
+            return WorkerResult(
+                status="token_limit",
+                summary=summary,
+                error=error,
+                artifact_paths=_collect_artifacts(run_dir, artifact_dir),
+                iterations=iteration + 1,
+                input_tokens=total_input_tokens,
+                output_tokens=total_output_tokens,
+                cache_read_tokens=total_cache_read_tokens,
+                cache_creation_tokens=total_cache_creation_tokens,
+                token_source=token_source,
+                content_filter_warnings=compute_content_filter_warnings(
+                    content_filter_count, iteration + 1,
+                ),
+            )
+
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
             summary = response.content or last_assistant_content or "(no summary)"
@@ -1086,7 +1112,7 @@ def _run_worker_impl(
             _finalize_run(artifact_dir, summary, messages)
             reason = _classify_deliverable(
                 summary,
-                is_data_agent=_is_data_agent(agent_spec),
+                is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
                 report_written=_report_written(artifact_dir),
                 data_tool_calls=data_tool_calls,
             )
@@ -1213,7 +1239,7 @@ def _run_worker_impl(
     _finalize_run(artifact_dir, summary, messages)
     reason = _classify_deliverable(
         summary,
-        is_data_agent=_is_data_agent(agent_spec),
+        is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
         report_written=_report_written(artifact_dir),
         data_tool_calls=data_tool_calls,
     )
@@ -1397,6 +1423,35 @@ def _report_written(artifact_dir: Path) -> bool:
 def _is_data_agent(agent_spec: SwarmAgentSpec) -> bool:
     """An agent with at least one data/analysis tool beyond the generic kit."""
     return bool(set(agent_spec.tools or []) - _GENERIC_TOOLS)
+
+
+def _requires_own_evidence(
+    agent_spec: SwarmAgentSpec,
+    task: SwarmTask,
+    upstream_summaries: dict[str, str],
+) -> bool:
+    """Keep data requirements unless a synthesis role has its mapped reports.
+
+    Args:
+        agent_spec: Role and evidence policy from the preset.
+        task: Task with the declared upstream report mapping.
+        upstream_summaries: Completed upstream reports supplied by the runtime.
+
+    Returns:
+        Whether this worker must gather its own data or write a report.
+    """
+    if agent_spec.evidence_mode == "upstream" and task.input_from:
+        if all(
+            _classify_deliverable(
+                upstream_summaries.get(key, ""),
+                is_data_agent=False,
+                report_written=False,
+                data_tool_calls=0,
+            ) is None
+            for key in task.input_from
+        ):
+            return False
+    return _is_data_agent(agent_spec)
 
 
 def _is_error_result(result: str) -> bool:
