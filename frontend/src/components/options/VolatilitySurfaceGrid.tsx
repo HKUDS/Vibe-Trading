@@ -13,6 +13,7 @@ import {
   type VolatilitySurfaceResponse,
 } from "@/lib/options";
 import { cn } from "@/lib/utils";
+import { VolatilitySurfaceDiagnostics } from "./VolatilitySurfaceDiagnostics";
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
@@ -187,6 +188,7 @@ export function VolatilitySurfaceGrid() {
           </table>
         </div>
       )}
+      <VolatilitySurfaceDiagnostics spot={spot} observations={observations} />
     </section>
   );
 }

@@ -357,7 +357,11 @@ Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosyste
 |---|---|---|
 | Paper trading | Daily accounts persist cash, fills and NAV between sessions. A separate simulation replays an A-share session in five-minute steps. | Opt-in volume-share matching ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draft). |
 | Research | Run cards record metrics and evidence for a completed backtest. Dated research artifacts keep revision history and are searchable. | Structured financial facts in research artifacts ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), in review). |
-| Options Lab | Explore multi-leg payoffs, Greeks and spot × IV scenarios. | Interactive volatility surface grid at `/options`. |
+| Options Lab | Explore multi-leg payoffs, Greeks and spot × IV scenarios; edit IV grids and check observed slices for model-price inconsistencies at `/options`. | These checks do not calibrate or certify an arbitrage-free surface. |
+
+Observed-slice diagnostics use your spot price and continuously compounded risk-free rate and dividend yield to reconstruct European call model prices. They check vertical spread bounds and butterfly convexity within each observed expiry, report incomplete or unavailable coverage, and show up to 20 findings without reducing the check counts. The grid is unchanged. Use the read-only `quantlib_call` function `volatility.diagnose_iv_surface` or `POST /options/volatility-surface/diagnostics` with the same observations and decimal rates. These are model-price checks, not executable quotes or trading advice.
+
+See the [model scope and example](agent/src/skills/options-advanced/SKILL.md#volatility-surface).
 
 ## Contributing
 
