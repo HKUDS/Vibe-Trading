@@ -46,6 +46,10 @@
 
 已完成的独立成交核验显示：新 SPY 的 206 条成交、新 GLD 的 138 条成交，其日期、方向、数量均与独立规则计算一致；价格误差小于 `6e-14`。两项都显式配置了 `slippage_us=0.0005`。回测引擎正确，并没有阻止报告数字丢失。
 
+委员会也已完成，四名角色均交付报告；无 shell 环境下实际调用了风险 X-ray、技术指标、VaR/CVaR、GPD 和 Monte Carlo 摘要。PM 的最终情景表统一使用 2% 仓位，乘法在显示精度内一致。**这只能证明该结构化表格的算术通过，不能证明整份报告、对冲解释与所有假设正确。** 不应以一次表格通过为理由保留默认格式门槛。
+
+本批五个用例共 74 次模型调用，usage 计费估算 ¥6.105897，低于用户批准的 ¥12 上限；没有启动第六个用例。最终状态、原始报告和调用记录已保存。
+
 ### 完成判定也在把形式当作结果
 
 对当前 `_classify_deliverable` 的直接调用复现了四个反例：
@@ -105,6 +109,7 @@
 | 同批次解析与只读查询全部按旧身份快照拒绝 | 有依赖的调用确实不能消费尚未返回的结果，但当前会产生需要模型再次调度的错误 | 区分独立只读调用与真实依赖，调度层串接必要依赖；保留明确的证券／市场参数校验 | 源码判断；[tool_lifecycle.py](../agent/src/agent/tool_lifecycle.py) |
 | 数据角色必须有自己的工具调用 | 用户输入、上游报告等已有资料不能在所有路径同等使用 | 按任务输入与所需交付决定是否需要补充数据；工具调用次数不作为质量代理 | 复现；[worker.py](../agent/src/swarm/worker.py) `_requires_own_evidence`、`_classify_deliverable` |
 | 上游非 completed 则阻断所有下游 | 一个研究角色失败可导致已有其他报告无法汇总 | 研究综述支持带缺口继续；真正缺少必要输入的计算任务仍阻断。依赖语义不能一律是“安全关键” | 源码判断；[runtime.py](../agent/src/swarm/runtime.py) `_execute_layer` |
+| 把预取行情标为绝对真值 | Swarm 提示词写着 `Ground Truth`、`authoritative current prices`，并把日线最新值统一标作 `Latest close`；本轮 PM 将交易时段中的当日值写成 `Official close` | 保留预取数据，改为带来源、观测时间与是否完结的信息；不要以“真值”措辞给可能未完结或已变化的数据背书 | 实跑与源码；[swarm/grounding.py](../agent/src/swarm/grounding.py) `format_grounding_block` |
 | 角色模板与实际可用工具不一致 | 关闭 shell 后仍可能要求写脚本执行；计算缺失被包装成研究不完整 | 提示词从实际工具集合生成；提供 shell-free 计算。白名单限制本身按部署授权保留 | 原实跑与本轮工具验证；[worker.py](../agent/src/swarm/worker.py)、[preset](../agent/src/swarm/presets/investment_committee.yaml) |
 | 固定“先规划、写一个脚本、必须存 report.md”的工作流 | 不同任务被迫执行相同仪式 | 仅在任务需要文件或代码时使用；普通研究允许直接分析和交付 | 源码判断；`build_worker_prompt` |
 | 每次失败后永久拒绝同参调用 | 同一调用失败两次后被阻断，成功写操作才清空失败记录；纯只读研究可能没有写操作 | 保留去重与费用预算；把临时网络／限流失败改为有冷却与恢复条件的重试，参数错误直接给可执行修正 | 源码判断；[tool_progress.py](../agent/src/agent/tool_progress.py) |
@@ -191,6 +196,6 @@
 - `defense-audit-probes.json`：本文件所列四个完成判定反例。
 - `live/ux-cost-evidence.json`：四份新报告的删数、修订成本与耗时。
 - `live/backtest-audit-summary.json`：新 SPY／GLD 逐笔独立对账。
-- `live/approved-budget.json`：用户明确批准的本批 ¥12 硬上限与调用账本。委员会最终结果以 `live/nvda-committee/result.json` 为准；不得用运行中状态代替结论。
+- `live/approved-budget.json`：用户明确批准的本批 ¥12 硬上限与调用账本。委员会已完成，最终结果与四个角色产物见 `live/nvda-committee/result.json` 及其 runtime 目录。
 
 现有单元与集成测试证明了所覆盖规则的行为；上述真实报告仍出现的问题证明，这不能替代产品体验验收。
