@@ -4,9 +4,9 @@ Wraps the shared :mod:`backtest.loaders.yahoo_client` (the public v8 chart
 endpoint) rather than the ``yfinance`` package, so it pulls in no new
 dependency and shares the process-wide throttle/session that keeps Yahoo from
 IP-rate-limiting us. Covers US equities (``AAPL.US``), HK equities
-(``00700.HK``), Canadian equities (``TD.TO`` / ``PNG.V``), and Vietnamese
-equities (``VIC.VN``); the client maps each project symbol to Yahoo's ticker
-form.
+(``00700.HK``), Canadian equities (``TD.TO`` / ``PNG.V``), Vietnamese
+equities (``VIC.VN``), and Taiwanese equities (``2330.TW`` / ``6488.TWO``);
+the client maps each project symbol to Yahoo's ticker form.
 
 Yahoo officially lists HOSE under ``.VN``; HNX and UPCOM are not supported.
 
@@ -51,7 +51,7 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India/Korea/Canada/Vietnam/UK equities plus Yahoo's own
+    Covers US/HK/India/Korea/Canada/Vietnam/UK/Taiwan equities plus Yahoo's own
     futures (``GC=F``), forex (``EURUSD=X``) and index (``^SPX``) symbol
     conventions, which the public chart endpoint serves verbatim (the code is
     used as-is in the request URL, no conversion) (#718). Supported UK ``.L``
@@ -64,7 +64,7 @@ def _is_supported(code: str) -> bool:
     return upper.endswith(
         (
             ".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", ".BA",
-            ".SA", ".L", "=F", "=X",
+            ".SA", ".L", ".TW", ".TWO", "=F", "=X",
         )
     )
 
@@ -191,7 +191,7 @@ class DataLoader:
     name = "yahoo"
     markets = {
         "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
-        "vietnam_equity", "uk_equity", "ar_equity", "br_equity",
+        "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "taiwan_equity",
     }
     # Yahoo chart volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00

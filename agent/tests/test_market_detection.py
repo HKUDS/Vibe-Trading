@@ -9,6 +9,7 @@ bare product-code form must resolve identically.
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from backtest.engines._market_hooks import _is_china_futures, code_currency
@@ -19,6 +20,7 @@ from backtest.runner import (
     _group_codes_by_source,
     _normalize_codes,
 )
+from src.market_data import detect_source as detect_data_source, fetch_market_data
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +86,11 @@ class TestDetectMarket:
             ("VOD.L", "uk_equity"),
             ("SHEL.L", "uk_equity"),
             ("BARC.L", "uk_equity"),
+            # Taiwan equity (TWSE .TW / TPEx .TWO)
+            ("2330.TW", "taiwan_equity"),
+            ("0050.TW", "taiwan_equity"),  # ETF code with a leading zero
+            ("00400A.TW", "taiwan_equity"),  # lettered ETF code
+            ("6488.TWO", "taiwan_equity"),
             # Crypto
             ("BTC-USDT", "crypto"),
             ("ETH-USDT", "crypto"),
@@ -110,6 +117,8 @@ class TestDetectMarket:
         assert _detect_market("btc-usdt") == "crypto"
         assert _detect_market("td.to") == "ca_equity"
         assert _detect_market("brk.b.us") == "us_equity"
+        assert _detect_market("2330.tw") == "taiwan_equity"
+        assert _detect_market("6488.two") == "taiwan_equity"
 
     def test_unknown_defaults_to_a_share(self) -> None:
         # Symbols that don't match any pattern fall through to the
@@ -267,6 +276,8 @@ class TestDetectSource:
             ("247540.KQ", "pykrx"),
             ("TD.TO", "yahoo"),
             ("PNG.V", "yahoo"),
+            ("2330.TW", "yahoo"),
+            ("6488.TWO", "yahoo"),
             ("BTC-USDT", "okx"),
             ("IF2406.CFFEX", "tushare"),
             ("EUR/USD", "akshare"),
@@ -274,6 +285,96 @@ class TestDetectSource:
     )
     def test_source_mapping(self, code: str, expected_source: str) -> None:
         assert _detect_source(code) == expected_source
+
+
+# ---------------------------------------------------------------------------
+# Taiwan (.TW / .TWO)
+# ---------------------------------------------------------------------------
+
+
+class TestTaiwanEquityDetection:
+    """``.TW`` / ``.TWO`` classify as ``taiwan_equity`` and nothing else moves."""
+
+    @pytest.mark.parametrize(
+        "code, expected",
+        [
+            ("AAPL.US", "us_equity"),
+            ("600519.SH", "a_share"),
+            ("TD.TO", "ca_equity"),  # ``.TO`` is not ``.TW``
+            ("PNG.V", "ca_equity"),
+            ("VIC.VN", "vietnam_equity"),
+            ("VOD.L", "uk_equity"),
+            ("005930.KS", "kr_equity"),
+        ],
+    )
+    def test_neighbouring_markets_keep_their_market(self, code: str, expected: str) -> None:
+        assert _detect_market(code) == expected
+
+    @pytest.mark.parametrize("code", ["2330.TWX", "2330.TWOX", "2330.TWO.X"])
+    def test_the_suffix_is_end_anchored(self, code: str) -> None:
+        assert _detect_market(code) != "taiwan_equity"
+
+    @pytest.mark.parametrize("code", ["2330.TW", "6488.TWO", "2330.tw", "6488.two"])
+    def test_taiwan_runs_on_the_taiwan_engine_not_the_a_share_default(self, code: str) -> None:
+        from backtest.engines.taiwan_equity import TaiwanEquityEngine
+        from backtest.runner import _create_market_engine
+
+        assert _detect_source(code) == "yahoo"
+        assert isinstance(_create_market_engine("auto", {}, [code]), TaiwanEquityEngine)
+
+    def test_twse_and_tpex_share_one_market_and_one_engine(self) -> None:
+        from backtest.engines.taiwan_equity import TaiwanEquityEngine
+        from backtest.runner import _create_market_engine
+
+        codes = ["2330.TW", "6488.TWO"]
+        assert _group_codes_by_market(codes) == {"taiwan_equity": codes}
+        assert isinstance(_create_market_engine("auto", {}, codes), TaiwanEquityEngine)
+
+
+class TestTaiwanMarketDataPath:
+    """The agent-tool data path picks its source separately from the runner.
+
+    ``src.market_data.detect_source`` answers ``tushare`` for any symbol it does
+    not recognise, and ``fetch_market_data`` then walks a chain that has no
+    Yahoo entry in it: a ``.TW`` code never reached Yahoo on this path.
+    """
+
+    @pytest.mark.parametrize("code", ["2330.TW", "6488.TWO", "2330.tw", "6488.two"])
+    def test_taiwan_symbols_detect_yahoo(self, code: str) -> None:
+        assert detect_data_source(code) == "yahoo"
+
+    def test_the_suffix_is_end_anchored(self) -> None:
+        assert detect_data_source("2330.TWX") != "yahoo"
+
+    def test_fetch_market_data_reaches_yahoo_before_any_china_loader(self) -> None:
+        seen_sources: list[str] = []
+
+        class _StubLoader:
+            def fetch(self, codes, start, end, *, interval="1D"):  # noqa: ANN001
+                index = pd.DatetimeIndex(pd.to_datetime(["2024-01-02"]))
+                return {
+                    code: pd.DataFrame(
+                        {"open": [590.0], "high": [595.0], "low": [588.0], "close": [593.0], "volume": [1000.0]},
+                        index=index,
+                    )
+                    for code in codes
+                }
+
+        def _resolver(source: str):
+            seen_sources.append(source)
+            return _StubLoader
+
+        out = fetch_market_data(
+            codes=["2330.TW", "6488.TWO"],
+            start_date="2024-01-01",
+            end_date="2024-01-03",
+            source="auto",
+            loader_resolver=_resolver,
+        )
+
+        assert "_unresolved" not in out
+        assert all(code in out for code in ("2330.TW", "6488.TWO"))
+        assert seen_sources == ["yahoo"]
 
 
 # ---------------------------------------------------------------------------
