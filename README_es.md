@@ -57,6 +57,8 @@
 
 ## 📰 Noticias
 
+- **2026-11-13** 🛠️ **Correcciones de evidencia y riesgo del comité** — Grounding conserva importes financieros con unidades de origen, precios citados del backtest y fechas. Los backtests devuelven referencias exactas y costes efectivos de ejecución en EE. UU., y rechazan comisiones que no se aplican. El comité dispone de cálculo sin shell y valida la coherencia aritmética del riesgo sobre el NAV en sus tablas finales. **Sin publicar.**
+
 - **2026-11-12** 🛠️ **Correcciones en tiempos de ejecución, cifras e investigación** — La cuenta sombra usa el capital inicial solicitado; las respuestas de los workers truncadas por el límite de tokens ya no se consideran completas. El PM del comité puede sintetizar informes previos válidos sin volver a consultar los datos. El adaptador nativo de Anthropic usa por defecto 16.384 tokens de salida, configurables.
   Las estrategias generadas rechazan los desplazamientos adicionales detectados en las señales de salida salvo que se declaren intencionales; se conservan los períodos retrospectivos de los indicadores. Grounding admite distintas notaciones de magnitud y declaraciones de valores observados precisos sin relajar la verificación de evidencia. Los backtests de SPY/GLD coinciden con una contabilidad independiente en las 206/140 ejecuciones y en la rentabilidad total. **Aún no publicado.**
 

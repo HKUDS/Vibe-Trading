@@ -57,6 +57,8 @@
 
 ## 📰 News
 
+- **2026-11-13** 🛠️ **Research evidence and committee risk fixes** — Preserve source-unit financial amounts, cited backtest prices and calendar dates during grounding. Backtests return exact metric references and effective US execution costs, and reject unused US commission settings. Committee roles gain shell-free calculation tools; final position-risk tables are checked for consistent NAV arithmetic. **Unreleased.**
+
 - **2026-11-12** 🛠️ **Backtest timing, report figures and research completion fixes** — Shadow Account now uses the requested starting capital; token-truncated worker replies no longer count as completed. Committee PMs can synthesize valid upstream reports without fetching the same data again, and the native Anthropic adapter defaults to a configurable 16,384 output tokens.
   Generated strategies reject detected extra shifts on output targets unless explicitly declared intentional, while indicator lookbacks remain valid. Grounding now accepts supported magnitude spellings and precise observed declarations without weakening evidence checks. SPY/GLD backtests match an independent ledger on all 206/140 fills and total returns. **Unreleased.**
 
