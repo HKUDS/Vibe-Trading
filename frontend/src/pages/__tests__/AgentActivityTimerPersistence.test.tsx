@@ -2,6 +2,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { Agent } from "../Agent";
 import { useAgentStore } from "@/stores/agent";
+import { useSessionsStore } from "@/stores/sessions";
 
 // Regression test for: the "Working · 51s · 12 steps" elapsed clock restarting
 // at 0s when the user navigates to another tab (Runtime, Scheduled, …) and
@@ -83,8 +84,9 @@ describe("Agent activity elapsed clock survives navigation", () => {
         id: "first-question", type: "user", content: "Hello", timestamp: Date.now(),
       });
     });
-    const refresh = vi.fn();
-    window.addEventListener("vibe:sessions-refresh", refresh);
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const originalRefresh = useSessionsStore.getState().refresh;
+    useSessionsStore.setState({ refresh });
     try {
       act(() => {
         latestHandlers()["attempt.completed"]({
@@ -95,7 +97,7 @@ describe("Agent activity elapsed clock survives navigation", () => {
       expect(apiMock.autoTitleSession).toHaveBeenCalledWith("session-one");
       await waitFor(() => expect(refresh).toHaveBeenCalled());
     } finally {
-      window.removeEventListener("vibe:sessions-refresh", refresh);
+      useSessionsStore.setState({ refresh: originalRefresh });
     }
   });
 

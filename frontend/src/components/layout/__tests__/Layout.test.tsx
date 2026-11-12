@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { Layout } from "../Layout";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { useSessionsStore } from "@/stores/sessions";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -77,6 +78,27 @@ vi.mock("@/stores/agent", () => ({
   }),
 }));
 
+function SwitchSessionButton({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(`/agent?session=${to}`)}>
+      Switch session
+    </button>
+  );
+}
+
+function renderWithSwitch(to: string) {
+  return render(
+    <MemoryRouter initialEntries={["/agent?session=session-1"]}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/agent" element={<SwitchSessionButton to={to} />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 function renderLayout() {
   return render(
     <MemoryRouter initialEntries={["/agent"]}>
@@ -92,6 +114,7 @@ function renderLayout() {
 describe("Layout accessibility", () => {
   beforeEach(() => {
     window.localStorage.removeItem("qa-sidebar");
+    useSessionsStore.getState().reset();
     vi.mocked(toast.error).mockClear();
     vi.mocked(api.listSessions).mockReset().mockResolvedValue(sessions as never);
     vi.mocked(api.renameSession).mockReset().mockResolvedValue({ status: "ok" });
@@ -212,6 +235,33 @@ describe("Layout accessibility", () => {
     expect(api.renameSession).toHaveBeenCalledOnce();
     await act(async () => complete({ status: "ok" }));
     expect(screen.getByText("Renamed once")).toBeInTheDocument();
+  });
+
+  it("does not re-list when switching to a session that is already listed", async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([
+      ...sessions,
+      { session_id: "session-2", title: "Second session" },
+    ] as never);
+    renderWithSwitch("session-2");
+    await screen.findByText(sessions[0].title);
+    await waitFor(() => expect(api.listSessions).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
+
+    await act(async () => {});
+    expect(api.listSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-lists once without a skeleton when switching to an unlisted session", async () => {
+    const { container } = renderWithSwitch("session-from-feishu");
+    await screen.findByText(sessions[0].title);
+    vi.mocked(api.listSessions).mockReturnValueOnce(new Promise(() => {}));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
+
+    await waitFor(() => expect(api.listSessions).toHaveBeenCalledTimes(2));
+    expect(container.querySelector("aside .animate-pulse")).toBeNull();
+    expect(screen.getByText(sessions[0].title)).toBeInTheDocument();
   });
 
   it("keeps history, new chat and language reachable with a collapsed sidebar", async () => {

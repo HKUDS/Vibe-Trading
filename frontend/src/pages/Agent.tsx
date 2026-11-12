@@ -9,6 +9,7 @@ import {
   type AgentMessageMeta,
   type StoredAgentMessage,
 } from "@/stores/agent";
+import { useSessionsStore } from "@/stores/sessions";
 import { useSSE } from "@/hooks/useSSE";
 import { useLlmUsageCounter } from "@/hooks/useLlmUsageCounter";
 import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type RunPreview } from "@/lib/api";
@@ -1039,10 +1040,10 @@ export function Agent() {
         }
 
         // First completed exchange → ask the backend for a Codex-style
-        // summary title, then nudge the sidebar to re-list sessions.
+        // summary title, then re-list so the sidebar shows it.
         if (act().messages.filter((message) => message.type === "user").length === 1) {
           api.autoTitleSession(sid)
-            .then(() => window.dispatchEvent(new Event("vibe:sessions-refresh")))
+            .then(() => useSessionsStore.getState().refresh())
             .catch(() => {});
         }
 
@@ -1427,6 +1428,7 @@ export function Agent() {
     let sid = act().sessionId;
     if (sid) return sid;
     const session = await api.createSession(title.slice(0, 50));
+    useSessionsStore.getState().upsert(session);
     sid = session.session_id;
     pendingGoalSessionRef.current = sid;
     act().setSessionId(sid);
@@ -1514,6 +1516,7 @@ export function Agent() {
         const sessionTitle = prompt.trim()
           || attachments.map(({ filename }) => filename).join(", ");
         const session = await api.createSession(sessionTitle.slice(0, 50));
+        useSessionsStore.getState().upsert(session);
         sid = session.session_id;
         act().setSessionId(sid);
         setSearchParams({ session: sid }, { replace: true });
