@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import inspect
 import json
 
@@ -36,10 +37,9 @@ def test_agent_schema_advertises_the_optional_schedule_and_order_id():
     assert "order_id" in properties["orders"]["items"]["properties"]
 
 
-@pytest.mark.asyncio
-async def test_registered_mcp_schema_advertises_an_optional_cancel_schedule():
+def test_registered_mcp_schema_advertises_an_optional_cancel_schedule():
     server, _ = _mcp_wrapper()
-    registered = await server.mcp.get_tool("paper_trade_step")
+    registered = asyncio.run(server.mcp.get_tool("paper_trade_step"))
     parameters = registered.to_mcp_tool().inputSchema
     assert "cancel_schedule" in parameters["properties"]
     assert "cancel_schedule" not in parameters["required"]
