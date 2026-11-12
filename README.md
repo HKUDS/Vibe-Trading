@@ -296,6 +296,18 @@ Start `vibe-trading` for the interactive terminal. Type `/help` at the prompt to
 
 From the shell, `vibe-trading alpha list` browses the factor libraries and `vibe-trading playbook list` shows the scheduled research templates.
 
+### NIFTY 100 alpha benchmarking
+
+`nifty100` benchmarks factors on current NIFTY 100 constituents (NSE, `.NS` symbols):
+
+    vibe-trading alpha bench --zoo alpha101 --universe nifty100 --period 2016-01-01/2025-09-30
+
+Constituents and Industry labels come from NSE's official CSV, with the NSE Indices
+mirror as fallback; if both fail, loading stops rather than substituting a list.
+Membership is current, not point-in-time, so historical results are
+survivorship-biased. Missing VWAP uses a labeled OHLC4 approximation. Provenance,
+missing names and data gaps are recorded in the result's `_meta`.
+
 ## 💡 Examples
 
 - **Compare stocks.** Ask “Compare AAPL and MSFT over 2024. Which month accounts for the largest gap in returns?” Resume the conversation later with `/history`.

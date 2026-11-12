@@ -63,7 +63,7 @@ class AlphaCompareTool(BaseTool):
             },
             "universe": {
                 "type": "string",
-                "description": "csi300 | sp500 | btc-usdt.",
+                "description": "csi300 | sp500 | nifty100 | btc-usdt.",
             },
             "period": {
                 "type": "string",
