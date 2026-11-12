@@ -57,6 +57,9 @@
 
 ## 📰 News
 
+- **2026-11-12** 🛠️ **Backtest timing, report figures and research completion fixes** — Shadow Account now uses the requested starting capital; token-truncated worker replies no longer count as completed. Committee PMs can synthesize valid upstream reports without fetching the same data again, and the native Anthropic adapter defaults to a configurable 16,384 output tokens.
+  Generated strategies reject detected extra shifts on output targets unless explicitly declared intentional, while indicator lookbacks remain valid. Grounding now accepts supported magnitude spellings and precise observed declarations without weakening evidence checks. SPY/GLD backtests match an independent ledger on all 206/140 fills and total returns. **Unreleased.**
+
 - **2026-11-10** 📊 **Interactive IV surfaces and options analysis fixes** — Edit strike/expiry IV grids in Options Lab, with observed/interpolated labels and no extrapolation ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Fix low-price presets, quantities, expiry dates, retries, language-switch loading and the 20-leg limit. Bare three-digit Zhengzhou contracts such as `CF501` now use China futures rules ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   Thanks [@he-yufeng](https://github.com/he-yufeng) and [@GPT-AGI](https://github.com/GPT-AGI)! **On `main`, for the next pip release.**

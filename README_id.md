@@ -57,6 +57,9 @@
 
 ## 📰 Berita
 
+- **2026-11-12** 🛠️ **Perbaikan waktu eksekusi, angka laporan, dan status riset** — Akun bayangan memakai modal awal yang diminta; respons worker yang terpotong oleh batas token tidak lagi dianggap selesai. PM komite dapat menyintesis laporan hulu yang valid tanpa mengambil ulang data. Adaptor Anthropic native memakai batas keluaran default 16.384 token yang dapat diubah.
+  Strategi yang dihasilkan menolak pergeseran tambahan yang terdeteksi pada target keluaran kecuali dinyatakan sebagai penundaan yang disengaja; lookback indikator tetap diizinkan. Grounding mendukung variasi penulisan satuan besaran dan deklarasi nilai observasi yang presisi tanpa melonggarkan pemeriksaan bukti. Backtest SPY/GLD cocok dengan pembukuan independen untuk seluruh 206/140 eksekusi dan imbal hasil total. **Belum dirilis.**
+
 - **2026-11-10** 📊 **Permukaan IV interaktif dan perbaikan analisis opsi** — Edit grid IV berdasarkan harga kesepakatan dan jatuh tempo di Options Lab, dengan penanda nilai observasi/interpolasi dan tanpa ekstrapolasi ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Memperbaiki preset untuk aset berharga rendah, kuantitas, tanggal jatuh tempo, percobaan ulang, pemuatan yang macet saat bahasa diganti, serta batas 20 kaki opsi. Kode kontrak Zhengzhou dengan bagian jatuh tempo tiga digit seperti `CF501` kini menggunakan aturan futures Tiongkok dalam backtest ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   Terima kasih [@he-yufeng](https://github.com/he-yufeng) dan [@GPT-AGI](https://github.com/GPT-AGI)! **Tersedia di `main` untuk rilis pip berikutnya.**

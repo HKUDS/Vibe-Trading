@@ -57,6 +57,9 @@
 
 ## 📰 Noticias
 
+- **2026-11-12** 🛠️ **Correcciones en tiempos de ejecución, cifras e investigación** — La cuenta sombra usa el capital inicial solicitado; las respuestas de los workers truncadas por el límite de tokens ya no se consideran completas. El PM del comité puede sintetizar informes previos válidos sin volver a consultar los datos. El adaptador nativo de Anthropic usa por defecto 16.384 tokens de salida, configurables.
+  Las estrategias generadas rechazan los desplazamientos adicionales detectados en las señales de salida salvo que se declaren intencionales; se conservan los períodos retrospectivos de los indicadores. Grounding admite distintas notaciones de magnitud y declaraciones de valores observados precisos sin relajar la verificación de evidencia. Los backtests de SPY/GLD coinciden con una contabilidad independiente en las 206/140 ejecuciones y en la rentabilidad total. **Aún no publicado.**
+
 - **2026-11-10** 📊 **Superficies de volatilidad implícita interactivas y correcciones del análisis de opciones** — Edita la cuadrícula por precio de ejercicio y vencimiento en Options Lab, con valores observados e interpolados diferenciados y sin extrapolación ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Se corrigen las estrategias predefinidas para precios bajos, cantidades, fechas de vencimiento, reintentos, carga bloqueada al cambiar de idioma y límite de 20 patas. Los contratos de Zhengzhou con vencimiento de tres dígitos, como `CF501`, ya usan las reglas de futuros chinos en el backtest ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   ¡Gracias a [@he-yufeng](https://github.com/he-yufeng) y [@GPT-AGI](https://github.com/GPT-AGI)! **Disponible en `main`, para la próxima versión de pip.**
