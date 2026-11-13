@@ -67,14 +67,14 @@
   Se procesan correctamente los formatos admitidos de encabezados porcentuales repartidos en varias líneas y las citas explícitas de enteros de documentos, conservando sus etiquetas originales ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). También se corrigen las entradas del benchmark estricto de factores ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) y se evita devolver una respuesta anterior cuando un turno de conversación por un canal agota su tiempo de espera ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
   ¡Gracias a [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen) y [@divya0795](https://github.com/divya0795)! **Disponible en `main`, para la próxima versión de pip.**
 
+<details>
+<summary>Noticias anteriores</summary>
+
 - **2026-11-10** 📊 **Superficies de volatilidad implícita interactivas y correcciones del análisis de opciones** — Edita la cuadrícula por precio de ejercicio y vencimiento en Options Lab, con valores observados e interpolados diferenciados y sin extrapolación ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Se corrigen las estrategias predefinidas para precios bajos, cantidades, fechas de vencimiento, reintentos, carga bloqueada al cambiar de idioma y límite de 20 patas. Los contratos de Zhengzhou con vencimiento de tres dígitos, como `CF501`, ya usan las reglas de futuros chinos en el backtest ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   ¡Gracias a [@he-yufeng](https://github.com/he-yufeng) y [@GPT-AGI](https://github.com/GPT-AGI)! **Disponible en `main`, para la próxima versión de pip.**
 
 - **2026-11-09** 🧭 **Exportación de una comparación de revisiones seleccionada; los backtests rechazan códigos que no reconocen** — Descarga el par exacto de revisiones de investigación que estás comparando en JSON o Markdown desde la Web, la API o la CLI ([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). Un código de backtest que ninguna regla de mercado reconoce (como `local:BHP.AX` o `7203.T`) ahora se rechaza antes de obtener datos, en lugar de ejecutarse con las reglas de acciones A de China; los códigos de seis dígitos y la grafía `.SS` de Shanghái siguen funcionando. Las respuestas de OpenRouter ya no muestran el nombre del modelo dos veces ([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), y un id de revisión vacío en `research-artifact export` ahora es un error. ¡Gracias a [@he-yufeng](https://github.com/he-yufeng) y [@Gloubiboulgator](https://github.com/Gloubiboulgator)! **Disponible en `main`, para la próxima versión de pip.**
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-11-08** 📝 **Comparación de revisiones y exportación del historial completo de investigación** — Compara el contenido, las evidencias y los metadatos de dos revisiones cualesquiera ([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)) y exporta todo el historial en JSON o Markdown ([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). Al cambiar de registro se ignoran las respuestas obsoletas; la exportación Markdown conserva el contenido original en bloques de código aislados. También se corrigen los pesos de factores ausentes, la atribución con rentabilidades incompletas, las muestras insuficientes para IC, los datos de valoración no finitos y el cálculo del margen con precios de entrada negativos. **Disponible en `main`, para la próxima versión de pip.**
 
