@@ -427,7 +427,17 @@ Worker 不再依赖标题、篇幅、关键词、工具次数、文件存在性�
 - 免费原资料回放：逐字复制上一轮两份真实引擎文件并核对 sha256；B 上限 21.165786% 对 A 18.532042%，返回 `B / higher / A`、**+2.6337445093 个百分点**。floor 比较也由原文件计算为 +2.6337445093 个百分点（有符号收益从更负变得较少负）。反向、相等、负值与文件引用链路测试通过，相关回归 **64 passed**。
 - 证据根：`/Users/wuhaozhe/.codex/artifacts/vibe-trading/research-comparison-20261113/`，`replay.py` / `replay.json` 保存来源及比较参数。新增模型费用目前 ¥0；**尚未验证 PM 是否会在自然任务中主动调用新输出**，不能把免费工具通过视为模型幻觉已解决。
 
-下一步预算批准后只补跑 PM，继续复用 bull/bear/CRO，核验其实际调用与原始终稿。当前分支不变，main 不变，不推送。
+### 命名比较的真实 PM 验收：未达到目标
+
+用户批准本批新增 ¥6 后，在 `b66fb3668` 上只重跑 PM 一次，复用 bull/bear/CRO。Run `swarm-20261113-061346-9f86f398` completed、非 partial；5 次 DeepSeek V4 Pro 调用，按实际 usage 计 **¥0.906951**。预算已 finished、预留 0，未追加试跑。
+
+- 12 次工具调用成功，包含一次 `options_payoff`（Collar A 的 11 个精确场景）；55 条上游观测可用、来源缺失 0。
+- **`quantlib_call` / `compare_rates` 调用为 0。** 模型没有使用新命名比较输出。终稿讨论 B 的成本、floor 与部分场景，但未比较 A/B 的收益上限，因此原“B 上限更低”错误为 **NOT_COVERED**，不能记为已修复或通过。
+- 报告 10,192 字符，模型最终回复、流式、summary.md 与 run.final_report 逐字一致；原稿 sha256 `720dc30127edd454167c416c83dec760a216cf61f9499ac18547a4be5faf92e8`。没有删数、改写、追加纠正轮次。
+- 验收结论：**NOT_PASSED**（目标“真实 PM 通过工具完成 A/B 比较”未达成）。免费验证证明工具现在可以返回准确关系，但只增强可选工具及调用示例，没有确保本次模型采用。这是调用链路的剩余缺口，不应再靠同条件抽样直到碰巧通过。
+- 证据：`research-comparison-20261113/live/live-audit.json`、`audit_live.py`、`nvda-committee/answer.md`、`provider-usage.json` 及根目录 `approved-budget.json`。本次仅核验工具使用、交付和选定陈述，不宣称完整财报事实审计。
+
+后续可考虑让显式的多方案计算请求在同一次工具输出里携带比较，而非依赖另一次可选调用；尚未实现，不据此宣称完成。当前分支不变，main/origin/main 仍为 `0025531f005d4a7aac3fb884cda2fba9318e7158`，不推送。
 
 ## 成功标准
 
