@@ -272,7 +272,7 @@ class QuantlibCallTool(BaseTool):
 
     name = "quantlib_call"
     description = (
-        "For rate differences and basis points, units.compare_rates performs explicit-unit arithmetic. "
+        "For named rate comparisons, units.compare_rates returns higher/lower/equal and signed differences in explicit units. Use left_label/right_label and file references for saved values. "
         "Run a function from the tested finance-math library (src/quantlib): "
         "Black-Scholes and implied vol, bond math and curve fitting, Altman Z "
         "and Merton/KMV, stationarity/cointegration/GARCH/regime switching, "
