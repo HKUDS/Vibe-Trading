@@ -15,16 +15,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from src.agent.grounding.identity import (
+from src.agent.instrument_identity import (
     _CANONICAL_SYMBOL_RE,
     _normalize_symbol,
     _scan_symbols,
 )
-from src.agent.grounding import identity_checks  # noqa: F401  (registers declared checks)
-from src.agent.grounding import figures_checks  # noqa: F401  (registers declared checks)
-from src.agent.grounding.figures import _MAGNITUDES
-from src.agent.grounding.registry import GROUNDING_CHECKS, grounding_check
-from src.agent.grounding.evidence import (
+from evals.grounding import identity_checks  # noqa: F401  (registers declared checks)
+from evals.grounding import figures_checks  # noqa: F401  (registers declared checks)
+from evals.grounding.figures import _MAGNITUDES
+from evals.grounding.registry import GROUNDING_CHECKS, grounding_check
+from evals.grounding.evidence import (
     EvidenceRecord,
     _has_money_unit,
     _is_metadata_count_leaf,
@@ -36,7 +36,7 @@ from src.agent.grounding.evidence import (
     _timestamp_matches_claim_date,
     tail_risk_identity,
 )
-from src.agent.grounding.figures import (
+from evals.grounding.figures import (
     ROUNDED_BAND,
     Declaration,
     Figure,
@@ -115,20 +115,10 @@ _CITABLE_FIELDS = ("close", "price", "adj_close")
 
 @dataclass(frozen=True)
 class ValidationResult:
-    """Final-answer grounding decision.
-
-    ``released_text`` is the draft without its declaration block, which is a
-    contract with the gate and never reaches the user.
-
-    ``passed_figures`` names the measured figures the gate checked and let
-    through, as written, so the correction prompt can tell the model what to
-    keep, not only what to fix.
-    """
+    """Offline findings only; no replacement or releasable answer is produced."""
 
     valid: bool
     issues: list[dict[str, Any]] = field(default_factory=list)
-    released_text: str = ""
-    passed_figures: tuple[str, ...] = ()
 
 
 def _close(value: float, target: float) -> bool:
@@ -1717,7 +1707,7 @@ class _PolicyMixin:
         A currency-marked figure is answered only by money-denominated values
         and a percent only by the rest; a table cell only by its column's field.
         """
-        from src.agent.grounding.document_quotes import matches_document_integer_quote
+        from evals.grounding.document_quotes import matches_document_integer_quote
 
         if matches_document_integer_quote(
             self._document_integer_quotes, figure, declaration, line, line_offset

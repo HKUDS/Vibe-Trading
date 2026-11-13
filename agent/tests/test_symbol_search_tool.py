@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.grounding.ledger import GroundingLedger
+from evals.grounding.ledger import GroundingLedger
 from src.trading import profiles as trading_profiles
 from src.trading import service as trading_service
 from src.tools import symbol_search_tool as ss

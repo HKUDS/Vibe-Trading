@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 pytestmark = pytest.mark.unit
 

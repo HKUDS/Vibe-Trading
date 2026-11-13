@@ -1,15 +1,4 @@
-"""Release path for a rejected draft: repair, redact, derivation spellings.
-
-A rejected draft used to end one of two ways: corrected by the model inside
-the revision cap, or replaced wholesale by the canned safe fallback. The
-second threw away every sentence the gate had no issue with, after the user
-had waited through every revision — a ten-minute run that ends in three
-sentences of refusal (owner-forwarded screenshot, 2026-09-09). These tests pin
-the third outcome: the draft is released with the rejected figures cut out
-and re-checked by the same gate. They also pin the zero-round provenance
-repair, and the derivation spellings a correcting model actually writes,
-which the gate rejected with the multiplier read as a quoted price.
-"""
+"""Offline numeric diagnostics retained after removal of answer rewriting."""
 
 from __future__ import annotations
 
@@ -20,14 +9,13 @@ from typing import Any, Callable
 
 import pytest
 
-from src.agent.grounding import GroundingLedger, ValidationResult
+from evals.grounding import GroundingLedger, ValidationResult
 from tests.grounding_parameter_helpers import declared_parameter
-from src.agent.grounding.evidence import (
+from evals.grounding.evidence import (
     _REGISTERED_PRICE_INDICATORS,
     _is_registered_price_indicator,
 )
-from src.agent.grounding.figures import _lines_with_offsets
-from src.agent.grounding.release import _REDACTION_MARKER_EN, _REDACTION_MARKER_ZH
+from evals.grounding.figures import _lines_with_offsets
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
 
@@ -348,34 +336,10 @@ def test_a_return_figure_is_matched_at_its_written_precision(tmp_path: Path) -> 
 # ---------------------------------------------------------------------------
 
 
-def test_repair_provenance_appends_the_missing_words(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = "562500.SS 最新收盘价 1.171 元，处于下行趋势。"
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["data_source_not_surfaced"]
-
-    repaired = ledger.repair_provenance(draft, validation)
-
-    assert repaired is not None
-    assert repaired.startswith(draft)
-    assert "yahoo" in repaired and "CNY" in repaired
-    assert ledger.validate_final_answer(repaired).valid is True
 
 
-def test_repair_provenance_refuses_a_draft_with_a_numeric_issue(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = "562500.SS 最新收盘价 1.50 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert "numeric_claim_conflict" in _codes(validation)
-
-    assert ledger.repair_provenance(draft, validation) is None
 
 
-def test_repair_provenance_refuses_without_price_evidence(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, market=False, indicators=False)
-    validation = ValidationResult(valid=False, issues=[{"code": "data_source_not_surfaced"}])
-
-    assert ledger.repair_provenance("x", validation) is None
 
 
 # ---------------------------------------------------------------------------
@@ -383,183 +347,28 @@ def test_repair_provenance_refuses_without_price_evidence(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_redacted_release_keeps_the_analysis_and_cuts_the_figure(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 均线空头排列，处于下行趋势。建议买入价 1.10 元，分批建仓。"
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["numeric_claim_conflict"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "1.171" in released and "下行趋势" in released and "分批建仓" in released
-    assert "1.10" not in released
-    assert _REDACTION_MARKER_ZH in released
-    assert "※ 略去 1 处" in released
-    assert "（略※）元" not in released and "建议买入价（略※）" in released
-    assert "1.11–1.18 CNY" in released
-    assert ledger.validate_final_answer(released).valid is True
 
 
-def test_redacted_release_reports_every_cut(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 1.10 元。目标买入价 1.05 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert sorted(issue["value"] for issue in validation.issues) == ["1.05", "1.10"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "2 处" in released
-    assert "1.10" not in released and "1.05" not in released
 
 
-def test_redacted_release_cuts_every_flagged_figure_in_one_pass(tmp_path: Path) -> None:
-    """Every figure is located and checked, so none of them waits for a recheck.
-
-    The validators used to report the FIRST unmatched figure in a clause, so a
-    second one only surfaced after the first was cut and the whole document
-    re-validated — a cut/recheck cascade with a pass bound, and four figures
-    in one sentence exhausted it and shipped the canned refusal instead.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 策略最大回撤 12% 夏普 2.5 胜率 55% 年化收益 30% 处于下行趋势。"
-    validation = ledger.validate_final_answer(draft)
-    assert [issue.get("value") for issue in validation.issues] == [
-        "12%", "2.5", "55%", "30%",
-    ]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "下行趋势" in released and "※ 略去 4 处" in released
-    for figure in ("12%", "2.5", "55%", "30%"):
-        assert figure not in released
 
 
-def test_redacted_release_adds_provenance_the_cut_draft_still_lacks(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = "562500.SS 最新收盘价 1.171 元。建议买入价 1.10 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert set(_codes(validation)) == {"numeric_claim_conflict", "data_source_not_surfaced"}
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "yahoo" in released and "1.10" not in released
 
 
-def test_redacted_release_never_cuts_ticker_digits(tmp_path: Path) -> None:
-    """A clause attributing figures to an unhandled symbol loses its figures, not the ticker."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 同业 000001.SZ 收盘价 12.3 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert "unsourced_symbol_figures" in _codes(validation)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "000001.SZ" in released
-    assert "12.3" not in released
 
 
-def test_redacted_release_writes_english_for_an_english_user(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, message="Analyse 562500.SS and give me an entry price")
-    draft = "562500.SS (Yahoo, CNY) last close 1.171. Suggested entry price $1.10."
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["numeric_claim_conflict"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert _REDACTION_MARKER_EN in released and "※ 1 figure(s)" in released
-    assert "1.10" not in released and "$" not in released.split("※")[0]
 
 
-def test_redacted_release_refuses_without_price_evidence(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, market=False, indicators=False)
-    draft = HDR + " 建议买入价 1.10 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert "numeric_claim_unavailable" in _codes(validation)
-
-    assert ledger.redacted_release(draft, validation) is None
 
 
-def test_redacted_release_refuses_an_unlocked_identity(tmp_path: Path) -> None:
-    """A failed resolution leaves identity invalidated; no cut-down draft may ship."""
-    ledger = _ledger(tmp_path, message="分析机器人ETF并给出买入价", indicators=False)
-    ledger.ingest_tool_result(
-        tool_name="search_symbol",
-        arguments={"query": "机器人ETF"},
-        result=json.dumps({"ok": False, "error": "timeout"}),
-        call_id="resolve",
-        success=False,
-    )
-    draft = HDR + " 建议买入价 1.10 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert "identity_not_locked" in _codes(validation)
-
-    assert ledger.redacted_release(draft, validation) is None
 
 
-def test_redacted_release_refuses_a_code_it_cannot_cut(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    validation = ValidationResult(
-        valid=False,
-        issues=[
-            {"code": "numeric_claim_conflict", "claim": "建议买入价 1.10 元", "value": 1.1},
-            {"code": "listed_identity_relabelled_private", "symbols": [SYMBOL]},
-        ],
-    )
-
-    assert ledger.redacted_release(HDR + " 建议买入价 1.10 元。", validation) is None
 
 
-def test_redacted_release_refuses_when_the_clause_cannot_be_located(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    validation = ValidationResult(
-        valid=False,
-        issues=[{"code": "numeric_claim_conflict", "claim": "not in the draft 1.10", "value": 1.1}],
-    )
-
-    assert ledger.redacted_release(HDR + " 建议买入价 1.10 元。", validation) is None
 
 
-def test_redacted_release_cuts_a_figure_the_recheck_finds_in_a_table(tmp_path: Path) -> None:
-    """A figure withheld from the first pass is still a gate finding on recheck, so it is cut."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 1.10 元。\n\n| 日期 | 收盘价 |\n|---|---|\n| 2026-06-24 | 1.10 |\n"
-    validation = ledger.validate_final_answer(draft)
-    prose_only = ValidationResult(
-        valid=False,
-        issues=[issue for issue in validation.issues if issue.get("field") is None],
-    )
-    assert prose_only.issues
-
-    released = ledger.redacted_release(draft, prose_only)
-
-    assert released is not None
-    assert "1.10" not in released and "2 处" in released
 
 
-def test_redacted_release_refuses_when_the_recheck_finds_what_it_cannot_cut(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Only text that passes the gate is released; an identity finding on recheck ends it."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 1.10 元。"
-    validation = ledger.validate_final_answer(draft)
-    # The release path re-checks through ``_validate(..., record=False)`` so
-    # its rechecks are not counted as rejected model drafts.
-    monkeypatch.setattr(
-        ledger,
-        "_validate",
-        lambda content, *, record: ValidationResult(
-            valid=False, issues=[{"code": "identity_not_locked", "status": "conflicting"}]
-        ),
-    )
-
-    assert ledger.redacted_release(draft, validation) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1067,98 +876,12 @@ def test_every_registration_prefix_matches_something_it_names() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_redacted_release_locates_a_grouped_number(tmp_path: Path) -> None:
-    """A price above 999 written the ordinary way must still reach the release path."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="请分析 562500.SS 并给出买入价")
-    ledger.ingest_tool_result(
-        tool_name="get_market_data",
-        arguments={"codes": [SYMBOL]},
-        result=json.dumps(
-            {
-                SYMBOL: [
-                    {"trade_date": "2026-06-23", "open": 1300.0, "high": 1363.35, "low": 1280.0, "close": 1309.22},
-                    {"trade_date": "2026-06-24", "open": 1310.0, "high": 1360.0, "low": 1300.01, "close": 1350.0},
-                ],
-                "_provenance": {SYMBOL: {"source": "yahoo", "currency_conversion": "none"}},
-            }
-        ),
-        call_id="prices",
-        success=True,
-    )
-    draft = "562500.SS（Yahoo，CNY）最新收盘价 1309.22 元。建议买入价 1,450.50 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["numeric_claim_conflict"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "1,450.50" not in released and "建议买入价（略※）。" in released
-    assert "1309.22" in released
-    assert "※ 略去 1 处" in released
 
 
-def test_redacted_release_cuts_a_metric_cell_in_a_table(tmp_path: Path) -> None:
-    """A metrics table is the ordinary shape of the report this path exists to rescue."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + "\n\n| 指标 | 数值 |\n|---|---|\n| 最大回撤 | 12% |\n| 夏普比率 | 2.5 |\n"
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["numeric_claim_unavailable", "numeric_claim_conflict"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "12%" not in released and "2.5" not in released
-    assert "最大回撤" in released and "夏普比率" in released
-    assert "※ 略去 2 处" in released
 
 
-def test_redacted_release_never_cuts_inside_another_number(tmp_path: Path) -> None:
-    """A bare table cell "1.10" must not be located inside "21.10 亿元"."""
-    ledger = _ledger(tmp_path)
-    draft = (
-        "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。成交额约 21.10 亿元。"
-        "\n\n| 日期 | 收盘价 |\n|---|---|\n| 2026-06-24 | 1.10 |\n"
-        + _block(HDR_ROW, "21.10 | cited | 成交额（亿元）", "1.10 | observed | close | prices")
-    )
-    validation = ledger.validate_final_answer(draft)
-    assert [i["value"] for i in validation.issues] == ["1.10"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "成交额约 21.10 亿元" in released
-    assert "| 2026-06-24 |" in released and "| 2026-06-24 | 1.10 |" not in released
-    assert "※ 略去 1 处" in released
 
 
-def test_every_surviving_occurrence_was_checked_where_it_stands(tmp_path: Path) -> None:
-    """The footnote says the figure was removed, so it must be removed everywhere.
-
-    That used to need a document-wide second stage, because neither a table
-    under a non-OHLC header nor a bullet without a price word was scanned by
-    the validators: cutting the flagged clause left the rejected number
-    standing while the footnote asserted it was gone. Every occurrence is now
-    a figure the gate located and checked on its own, so each is flagged and
-    cut where it stands — and one that was NOT flagged is one the evidence
-    supports, which the sweep used to remove anyway.
-    """
-    ledger = _ledger(tmp_path)
-    in_a_table = HDR + " 建议买入价 1.30 元。\n\n| 档位 | 建议买入价 |\n|---|---|\n| 第一档 | 1.30 |\n"
-    in_a_bullet = HDR + " 建议买入价 1.30 元。\n- 关键位：1.30 / 1.15\n"
-
-    for draft in (in_a_table, in_a_bullet):
-        validation = ledger.validate_final_answer(draft)
-        assert len([i for i in validation.issues if i["value"] == "1.30"]) == 2, draft
-        released = ledger.redacted_release(draft, validation)
-
-        assert released is not None, draft
-        assert "1.30" not in released, draft
-        assert "※ 略去" in released, draft
-    # 1.15 sits inside the observed range and is checked like the rest, so it
-    # survives on its own merits rather than by being missed.
-    assert "1.15" in ledger.redacted_release(
-        in_a_bullet, ledger.validate_final_answer(in_a_bullet)
-    )
 
 
 def test_a_metric_cell_restating_observed_closes_is_not_an_invented_metric(
@@ -1189,135 +912,18 @@ def test_a_metric_cell_restating_observed_closes_is_not_an_invented_metric(
     assert _codes(invented_percent) == ["numeric_claim_unavailable"]
 
 
-def test_a_declared_derivation_survives_the_cut_beside_a_rejected_figure(
-    tmp_path: Path,
-) -> None:
-    """A rejected entry price is often the multiplier of the correct derivation.
-
-    "建议买入价 0.95 元" is cut, but the 0.95 inside a valid derivation is a
-    figure this gate accepted where it stands, so it is not flagged and not
-    cut — which is what the document-wide sweep used to get wrong, leaving
-    "× （略※） =" and destroying the one derivation the answer got right.
-    """
-    ledger = _ledger(tmp_path)
-    draft = (
-        HDR + declared_parameter("95%") + " 第一档 1.093 元。建议买入价 0.95 元。"
-        + _block(
-            HDR_ROW,
-            "1.093 | derived | 1.150 × 0.95 | indicators",
-            "0.95 | proposed | 系数",
-        )
-    )
-    validation = ledger.validate_final_answer(draft)
-    assert [issue.get("value") for issue in validation.issues] == ["0.95"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "第一档 1.093 元。" in released
-    assert "建议买入价（略※）。" in released
-    assert "※ 略去 1 处" in released
 
 
-def test_redacted_release_never_cuts_an_observed_price(tmp_path: Path) -> None:
-    """A correctly quoted close sharing a sentence with an ungrounded metric survives.
-
-    The analysis validator reported the FIRST unmatched figure in a clause, and
-    an observed close was that figure — so the release cut the one number the
-    ledger holds and footnoted it as unverifiable. Each figure is checked on
-    its own now, so only the metric is flagged.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 最新收盘 1.171 元且策略最大回撤 12%。"
-    validation = ledger.validate_final_answer(draft)
-    assert [issue.get("value") for issue in validation.issues] == ["12%"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "最新收盘 1.171 元" in released
-    assert "12%" not in released
-    assert "※ 略去 1 处" in released
 
 
-def test_redacted_release_swallows_the_unit_flush_against_the_marker(tmp_path: Path) -> None:
-    """The marker replaces the figure AND its unit, in either language."""
-    zh = _ledger(tmp_path)
-    zh_draft = HDR + " 建议买入价 1.10 元，分批建仓。"
-    zh_released = zh.redacted_release(zh_draft, zh.validate_final_answer(zh_draft))
-
-    no_space = _ledger(tmp_path)
-    no_space_draft = HDR + " 建议买入价 1.10元，分批建仓。"
-    no_space_released = no_space.redacted_release(
-        no_space_draft, no_space.validate_final_answer(no_space_draft)
-    )
-
-    en = _ledger(tmp_path, message="Analyse 562500.SS and give me an entry price")
-    en_draft = "562500.SS (Yahoo, CNY) last close 1.171. Suggested entry price 1.10 USD."
-    en_released = en.redacted_release(en_draft, en.validate_final_answer(en_draft))
-
-    assert zh_released is not None and "建议买入价（略※），分批建仓。" in zh_released
-    assert no_space_released is not None and "建议买入价（略※），分批建仓。" in no_space_released
-    assert en_released is not None and "Suggested entry price (omitted※)." in en_released
 
 
-def test_a_unit_character_that_starts_a_word_is_not_swallowed(tmp_path: Path) -> None:
-    """"0.95 元宵节" must not become "（略※）宵节"."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 0.95 元宵节后关注。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "元宵节后关注" in released
-    assert "（略※）宵节" not in released
-    assert "0.95" not in released
 
 
-def test_the_marker_follows_the_script_of_the_text_it_cuts(tmp_path: Path) -> None:
-    """A Chinese user gets English tables; the marker must match the clause, not the user."""
-    ledger = _ledger(tmp_path)  # Chinese user message
-    draft = "562500.SS (Yahoo, CNY) last close 1.171. Suggested entry price $0.95 per share."
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert _REDACTION_MARKER_EN in released and _REDACTION_MARKER_ZH not in released.split("※ 略去")[0]
-    # The footnote stays in the user's language.
-    assert "※ 略去 1 处" in released
 
 
-def test_redacted_release_releases_three_figures_in_one_clause(tmp_path: Path) -> None:
-    """The pass bound is pinned from below as well as above.
-
-    ``test_redacted_release_gives_up_after_the_pass_bound`` only proves the
-    bound is under four; without this, lowering it to two would silently push
-    more runs back onto the canned refusal — the failure this change exists
-    to fix.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 策略最大回撤 12% 夏普 2.5 胜率 55% 处于下行趋势。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "下行趋势" in released
-    assert "12%" not in released and "2.5" not in released and "55%" not in released
-    assert "※ 略去 3 处" in released
 
 
-def test_redacted_release_declines_a_provenance_only_validation(tmp_path: Path) -> None:
-    """Nothing to cut means no release; the loop's repair path owns that case."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 均线空头排列。"
-    validation = ValidationResult(
-        valid=False, issues=[{"code": "data_source_not_surfaced", "claim": draft}]
-    )
-
-    assert ledger.redacted_release(draft, validation) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1325,97 +931,14 @@ def test_redacted_release_declines_a_provenance_only_validation(tmp_path: Path) 
 # ---------------------------------------------------------------------------
 
 
-def test_repair_provenance_refuses_a_misattributed_symbol(tmp_path: Path) -> None:
-    """The symbol is the figure's subject, not metadata about it.
-
-    Appending "562500.SH: 行情来源 yahoo" under an answer that calls the
-    instrument 贵州茅台 releases Kweichow Moutai's close as 1.171 with a
-    footnote naming a different instrument, in zero model rounds.
-    """
-    ledger = _ledger(tmp_path)
-    draft = "贵州茅台（雅虎，CNY）最新收盘价 1.171 元，日内最高 1.180 元。"
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["canonical_symbol_not_surfaced"]
-
-    assert ledger.repair_provenance(draft, validation) is None
-    assert ledger.redacted_release(draft, validation) is None
 
 
-def test_repair_provenance_writes_english_for_an_english_user(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, message="Analyse 562500.SS and give me an entry price")
-    draft = "562500.SS last close 1.171 CNY, trending down."
-    validation = ledger.validate_final_answer(draft)
-    assert _codes(validation) == ["data_source_not_surfaced"]
-
-    repaired = ledger.repair_provenance(draft, validation)
-
-    assert repaired is not None
-    # The note spells the symbol the way the answer does, not the canonical form.
-    assert "Data note: 562500.SS: price source yahoo, quote currency CNY." in repaired
-    assert ledger.validate_final_answer(repaired).valid is True
 
 
-def test_the_release_note_prints_a_large_price_in_full(tmp_path: Path) -> None:
-    """``%g`` turns an index level into "1.23457e+06" six significant digits in."""
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="请分析 562500.SS 并给出买入价")
-    ledger.ingest_tool_result(
-        tool_name="get_market_data",
-        arguments={"codes": [SYMBOL]},
-        result=json.dumps(
-            {
-                SYMBOL: [
-                    {"trade_date": "2026-06-24", "open": 1240000.0, "high": 1250000.5,
-                     "low": 1234567.0, "close": 1245000.0}
-                ],
-                "_provenance": {SYMBOL: {"source": "yahoo", "currency_conversion": "none"}},
-            }
-        ),
-        call_id="prices",
-        success=True,
-    )
-    draft = "562500.SS（Yahoo，CNY）最新收盘价 1245000.0 元。建议买入价 999.0 元。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "1234567–1250000.5" in released
-    assert "e+06" not in released
 
 
-def test_the_released_document_is_validated_with_its_footnote(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The footnote is answer text, so the gate must see it before release.
-
-    The note carries the observed range and the symbols, and it used to be
-    concatenated AFTER the recheck — the one part of a released answer with
-    nothing behind it. A note that would not pass must refuse the release,
-    which is what the method's fail-closed docstring promises.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 1.10 元，分批建仓。"
-    validation = ledger.validate_final_answer(draft)
-    assert ledger.redacted_release(draft, validation) is not None
-
-    monkeypatch.setattr(
-        ledger,
-        "_release_note",
-        lambda removed, content=None: "※ 参考买入价 9.99 元。",
-    )
-
-    assert ledger.redacted_release(draft, validation) is None
 
 
-def test_a_gate_recheck_is_not_counted_as_a_rejected_draft(tmp_path: Path) -> None:
-    """``validation_count`` is the revision budget and a user-facing number."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 1.10 元，分批建仓。"
-    validation = ledger.validate_final_answer(draft)
-    assert ledger.validation_count == 1
-
-    assert ledger.redacted_release(draft, validation) is not None
-    assert ledger.validation_count == 1
 
 
 def test_a_derivation_anchored_to_another_symbol_grounds_nothing(tmp_path: Path) -> None:
@@ -1520,31 +1043,6 @@ def test_a_metric_backed_by_a_risk_tool_passes_in_prose_and_in_a_table(
 # ---------------------------------------------------------------------------
 
 
-def test_a_restatement_of_a_rejected_figure_is_cut_where_it_stands(
-    tmp_path: Path,
-) -> None:
-    """The rejected figure is usually also the multiplier of a valid derivation.
-
-    Protecting it by VALUE protected every restatement of it document-wide;
-    protecting it by SPAN needed a second document-wide stage to find those
-    restatements again. Neither exists now: the derivation's operand is inside
-    a declaration the gate accepted, and the restatement is its own figure,
-    checked and flagged where it stands.
-    """
-    ledger = _ledger(tmp_path)
-    draft = (
-        HDR + declared_parameter("95%") + " 第一档 1.093 元。\n\n| 档位 | 建议买入价 |\n|---|---|\n| 第一档 | 0.95 |\n"
-        + _block(HDR_ROW, "1.093 | derived | 1.150 × 0.95 | indicators", "0.95 | proposed | 系数")
-    )
-    validation = ledger.validate_final_answer(draft)
-    assert [issue["value"] for issue in validation.issues] == ["0.95"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "第一档 1.093 元。" in released
-    assert "| 第一档 | （略※） |" in released
-    assert "※ 略去 1 处" in released
 
 
 def test_an_accepted_figure_is_never_cut_for_sharing_a_value(tmp_path: Path) -> None:
@@ -1572,156 +1070,18 @@ def test_an_accepted_figure_is_never_cut_for_sharing_a_value(tmp_path: Path) -> 
     assert validation.valid is True, validation.issues
 
 
-def test_an_observed_value_is_never_cut(tmp_path: Path) -> None:
-    """A correctly quoted close beside an ungrounded metric survives the cut."""
-    ledger = _ledger(tmp_path, sma_20=1.150)
-    draft = HDR + " 收盘价为 1.150 元。策略最大回撤 12%。"
-    validation = ledger.validate_final_answer(draft)
-    assert [issue["value"] for issue in validation.issues] == ["12%"]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "收盘价为 1.150 元。" in released
-    assert "12%" not in released
-    assert "※ 略去 1 处" in released
 
 
-def test_a_model_authored_release_note_is_stripped_before_redacting(
-    tmp_path: Path,
-) -> None:
-    """The marker and the footnote mean only what the gate put there.
-
-    A draft carrying its own "※ 略去 0 处……" shipped two contradictory
-    footnotes, and a "（略※）" pasted into the body read as a redaction that
-    never happened.
-    """
-    ledger = _ledger(tmp_path)
-    draft = (
-        HDR
-        + " 建议买入价 0.95 元。第二档（略※）。"
-        + "\n\n※ 略去 0 处无法与本会话工具数据对上的数值。"
-    )
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert released.count("※ 略去") == 1
-    assert "※ 略去 0 处" not in released
-    assert "第二档。" in released
 
 
-def test_the_marker_follows_each_lines_script_not_the_documents(
-    tmp_path: Path,
-) -> None:
-    """The document-wide sweep picked ONE marker for every line it touched.
-
-    A Chinese report containing an English table released "| First |（略※） |",
-    the failure the per-clause rule was written to stop. The column padding
-    survives too: the Chinese flush-against-the-word rule must not eat the
-    space after a table pipe.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + "\n\n建议买入价 0.95 元。\n\n| Entry | Price |\n|---|---|\n| First | 0.95 |\n"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "建议买入价（略※）。" in released
-    assert "| First | (omitted※) |" in released
-    assert "※ 略去 2 处" in released
 
 
-def test_a_compound_unit_is_not_split_by_the_marker(tmp_path: Path) -> None:
-    """"0.95 元/股" is one unit; swallowing its first half leaves "/股" dangling."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 0.95 元/股，仓位 3 成。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "0.95" not in released
-    assert "（略※）/股" not in released
-    assert "元/股" in released
 
 
-def test_overlapping_issue_spans_are_cut_once(tmp_path: Path) -> None:
-    """Two checks can flag the same figure; the cut still happens once.
-
-    A metric row carrying a foreign ticker raises the figure check on the cell
-    and ``unsourced_symbol_figures`` on the same figure. Without the
-    already-consumed guard the row is emitted once per overlapping span and
-    the released table is a fragment-duplicated mess with an inflated count.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + "\n\n| 指标 | 数值 |\n|---|---|\n| 最大回撤 | 12%，同业 000001.SZ 5.0 |\n"
-    validation = ledger.validate_final_answer(draft)
-    # The row's own figures are flagged once each, and the unsourced-symbol
-    # finding covers the same line a second time.
-    assert len(validation.issues) == 3
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "| 最大回撤 | （略※），同业 000001.SZ（略※） |" in released
-    assert "※ 略去 2 处" in released
 
 
-def test_the_released_document_is_recorded_in_the_artifact(tmp_path: Path) -> None:
-    """Every recheck on the release path is unrecorded, so the release itself is.
-
-    Without this the artifact carried no evidence at all for the fail-closed
-    promise that the document that shipped passed the same gate.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 0.95 元。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-    assert released is not None
-
-    artifact = json.loads(
-        (tmp_path / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
-    )
-    assert ledger.validation_count == 1
-    assert len(artifact["validations"]) == 1
-    assert artifact["released"]["figures_removed"] == 1
-    assert artifact["released"]["revalidated"] is True
 
 
-def test_provenance_repair_no_longer_needs_an_unchecked_column_veto(
-    tmp_path: Path,
-) -> None:
-    """The surface the veto guarded does not exist any more.
-
-    "| 档位 | 挂单价 |" was a price column ``_validate_price_tables`` did not
-    key on and the prose scan skipped, so a zero-round provenance note would
-    have attested for a figure nothing checked. Every table cell is a
-    measurement-shaped figure now, so such a column raises its own issue and
-    the repair declines it for the ordinary reason: the issues are not
-    provenance-only.
-    """
-    ledger = _ledger(tmp_path)
-    with_column = (
-        "562500.SS 最新收盘价 1.171 元。\n\n| 档位 | 挂单价 |\n|---|---|\n| 第一档 | 0.95 |\n"
-    )
-    without_column = (
-        "562500.SS 最新收盘价 1.171 元。\n\n| 档位 | 比例 |\n|---|---|\n| 第一档 | 30 |\n"
-        + _block(HDR_ROW, "30 | count | 仓位比例")
-    )
-
-    flagged = ledger.validate_final_answer(with_column)
-    assert [issue["value"] for issue in flagged.issues if issue["value"]] == ["0.95"]
-    declined = ledger.repair_provenance(with_column, flagged)
-    repaired = ledger.repair_provenance(
-        without_column, ledger.validate_final_answer(without_column)
-    )
-
-    assert declined is None
-    assert repaired is not None and "行情来源 yahoo" in repaired
 
 
 def test_line_offsets_are_a_monotone_scan() -> None:
@@ -1756,59 +1116,10 @@ def test_line_offsets_are_a_monotone_scan() -> None:
 
 
 
-def test_the_sweep_cuts_a_bare_restatement_of_a_cut_figure(tmp_path: Path) -> None:
-    """The footnote's count is where the figure no longer appears.
-
-    "37%" is a measurement and is cut at its span; "37 个百分点" is a bare
-    integer the shape rules never check, so without the sweep the number the
-    footnote says was removed would still be on the page.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 较高点回撤 37%，即回撤 37 个百分点；20 日均线走平。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "37" not in released
-    assert "20 日均线" in released and "1.171" in released
-    assert "※ 略去 2 处" in released
-    assert ledger.figures_removed == 2
 
 
-def test_the_sweep_leaves_a_bare_integer_with_different_digits(tmp_path: Path) -> None:
-    """Cutting "0.95" must not take the "95" of an unrelated count with it."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 0.95 元，计划持有 95 天。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "0.95" not in released
-    assert "持有 95 天" in released
-    assert "※ 略去 1 处" in released
-    assert ledger.figures_removed == 1
 
 
-def test_the_sweep_never_cuts_a_figure_the_gate_checked(tmp_path: Path) -> None:
-    """Only bare integers are swept; a decimal sharing the cut figure's digits stays.
-
-    "1.171%" is cut, and the observed close "1.171 元" carries the same digits.
-    The close is a measurement the gate checked and grounded, so sweeping it
-    would delete a figure the evidence supports.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 日内振幅 1.171%。"
-    validation = ledger.validate_final_answer(draft)
-    assert [issue for issue in validation.issues if issue.get("value") is not None]
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "最新收盘价 1.171 元" in released
-    assert "1.171%" not in released
-    assert "※ 略去 1 处" in released
 
 
 class _ChunkedLLM:
@@ -1952,48 +1263,8 @@ _SCREEN = (
 )
 
 
-def test_a_redacted_screen_keeps_its_row_numbers_and_labels(tmp_path: Path) -> None:
-    """The reporter's table came back with its ranks, "12m" and "3 names" all omitted.
-
-    Every row number was a table cell, so a measurement, so cut; and each cut
-    digit was then swept out of the prose. Only the invented returns, multiples
-    and beta may go.
-    """
-    ledger = _ledger(tmp_path, message="Screen a few names and rank them")
-    validation = ledger.validate_final_answer(_SCREEN)
-    flagged = sorted(str(issue["value"]) for issue in validation.issues)
-    assert flagged == sorted(
-        ["+8.0%", "+3.0%", "22.5", "+5.0%", "+2.0%", "18.1", "+4.0%", "+1.0%", "30.2", "+5.7%", "1.35"]
-    )
-
-    released = ledger.redacted_release(_SCREEN, validation)
-
-    assert released is not None
-    for kept in (
-        "| 1 | 562500.SS", "| 2 | 562500.SS", "| 3 | 562500.SS", "| 9/16 Close | 12m | 6m |",
-        "| 12m mean return |", "| Mean beta (3 reported) |",
-        "Names 1 to 3 are up over 12m and 6m; the sleeve is 3 names in 1 sector.",
-        "Name 2 trades lower vs the 9/16 close.",
-    ):
-        assert kept in released, kept
-    for invented in ("8.0%", "22.5", "18.1", "30.2", "5.7%", "1.35"):
-        assert invented not in released, invented
-    assert "11 figure(s)" in released
-    assert ledger.validate_final_answer(released).valid is True
 
 
-def test_the_sweep_does_not_key_on_a_single_digit(tmp_path: Path) -> None:
-    """Cutting "5%" must not take every "5" on the page; two digits still sweep (37 above)."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 较高点回撤 5%，跌破 5 日均线，关注 5 只同类基金。"
-    validation = ledger.validate_final_answer(draft)
-
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "5%" not in released
-    assert "跌破 5 日均线，关注 5 只同类基金" in released
-    assert "※ 略去 1 处" in released
 
 
 # ---------------------------------------------------------------------------
@@ -2001,79 +1272,9 @@ def test_the_sweep_does_not_key_on_a_single_digit(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_correction_prompt_names_the_figures_to_keep(tmp_path: Path) -> None:
-    """A mixed rejection must not talk the model into deleting clean figures.
-
-    zeus229's production run on #1622: 65 issues over a draft whose evidence
-    was complete, and the correction rewrote whole numeric sections as
-    qualitative prose, deleting figures the gate had passed. The prompt only
-    named the failures. The keep list pins the other half of the contract.
-    """
-    ledger = _ledger(tmp_path)
-    draft = (
-        HDR
-        + "昨日收盘 1.137 元，20 日均线 1.150 元，50 日均线 1.090 元。"
-        + "参考买入价 1.136 元（1.171 × 0.97）。目标价 2.50 元，传闻报价 9.99 元。"
-        + declared_parameter("97%")
-        + _block(
-            HDR_ROW,
-            "1.137 | observed | close 2026-06-23 | prices",
-            "1.150 | observed | sma_20 | indicators",
-            "1.090 | observed | sma_50 | indicators",
-            "1.136 | derived | 1.171 × 0.97 | prices",
-            "2.50 | proposed | target",
-        )
-    )
-    validation = ledger.validate_final_answer(draft)
-
-    assert validation.valid is False
-    prompt = ledger.correction_prompt(validation)
-    keep = next(row for row in prompt.splitlines() if "checked clean" in row)
-
-    # Document order, exactly as written.
-    assert "1.171, 1.137, 1.150, 1.090, 1.136" in keep
-    for rejected in ("2.50", "9.99", "0.97"):
-        assert rejected not in keep
-    assert "repair the rejected claims while preserving the clean figures" in prompt
 
 
-def test_the_keep_list_is_absent_when_nothing_passed(tmp_path: Path) -> None:
-    """No clean figure, no keep list: the section must not render empty."""
-    ledger = _ledger(tmp_path)
-    validation = ledger.validate_final_answer("562500.SS（Yahoo，CNY）最新收盘价 9.99 元。")
-
-    assert validation.valid is False
-    assert "checked clean" not in ledger.correction_prompt(validation)
 
 
-def test_the_keep_list_caps_and_counts_the_rest(tmp_path: Path) -> None:
-    """A long keep list stays one line: 24 values spelled, the rest counted."""
-    extra = {f"m{i:02d}": 11.0 + i / 100 for i in range(1, 27)}
-    ledger = _ledger(tmp_path, **extra)
-    draft = HDR + "指标读数：" + "、".join(f"{v:.2f}" for v in extra.values()) + "。传闻报价 9.99 元。"
-    rows = [HDR_ROW] + [f"{v:.2f} | observed | {k} | indicators" for k, v in extra.items()]
-    validation = ledger.validate_final_answer(draft + _block(*rows))
-
-    assert validation.valid is False
-    prompt = ledger.correction_prompt(validation)
-    keep = next(row for row in prompt.splitlines() if "checked clean" in row)
-
-    # 27 clean figures (1.171 plus the 26 indicators), 24 shown, 3 counted.
-    assert "and 3 more" in keep
-    assert "11.23" in keep
-    assert "11.24" not in keep
 
 
-def test_keep_list_does_not_endorse_rejections_hidden_by_the_feedback_cap(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    bad_values = [f"{90 + i / 100:.2f}" for i in range(30)]
-    draft = HDR + " Unverified metrics: " + ", ".join(bad_values) + "." + _block(HDR_ROW)
-    result = ledger.validate_final_answer(draft)
-    assert len(result.issues) > 24
-    prompt = ledger.correction_prompt(result)
-    keep = next(line for line in prompt.splitlines() if "checked clean" in line)
-    assert "1.171" in keep
-    assert all(value not in keep for value in bad_values)
-    assert "Every other measured figure" not in prompt
-    assert "only the figures listed above need work" not in prompt
-    assert f"{len(result.issues) - 24} additional" in prompt

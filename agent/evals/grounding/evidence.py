@@ -6,6 +6,8 @@ keyed on tool field names, never on natural language.
 
 from __future__ import annotations
 
+from src.agent.tool_results import ARCHIVE_MANIFEST
+
 import contextlib
 import csv
 import hashlib
@@ -16,15 +18,15 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
-from src.agent.grounding.document_quotes import document_integer_quotes
+from evals.grounding.document_quotes import document_integer_quotes
 
-from src.agent.grounding.figures import (
+from evals.grounding.figures import (
     Figure,
     _CURRENCY_CODES,
     parse_figures_block,
     scan_figures,
 )
-from src.agent.grounding.identity import (
+from src.agent.instrument_identity import (
     _CANONICAL_SYMBOL_RE,
     _infer_currency,
     _infer_venue,
@@ -230,7 +232,6 @@ _TABLE_SYMBOL_COLUMNS = frozenset({"symbol", "code", "ticker"})
 
 #: Written by the loop into the active run when it archives a backtest there;
 #: ``source_run`` names the run directory the copy came from.
-ARCHIVE_MANIFEST = ".archived_backtest.json"
 
 
 def _relative_posix(path: Path, root: Path) -> str:

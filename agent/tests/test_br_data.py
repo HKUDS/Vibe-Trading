@@ -299,7 +299,7 @@ def test_br_tool_rejects_bad_dates_and_preserves_result_limit():
 
 
 def test_br_quotes_keep_per_symbol_brl_evidence(store, tmp_path):
-    from src.agent.grounding import GroundingLedger
+    from evals.grounding import GroundingLedger
     from src.tools.br_market_data_tool import BrMarketDataTool
     with connect(store, write=True) as conn:
         cotahist.ingest_zip(conn, _zip('quotes.txt', '\n'.join([
@@ -328,7 +328,7 @@ def test_br_quotes_keep_per_symbol_brl_evidence(store, tmp_path):
 
 
 def test_brl_alias_is_unambiguous():
-    from src.agent.grounding import GroundingLedger
+    from evals.grounding import GroundingLedger
     assert GroundingLedger._currency_is_surfaced("BRL", "R$ 10.00")
     assert GroundingLedger._currency_is_surfaced("BRL", "10 reais")
     assert not GroundingLedger._currency_is_surfaced("BRL", "These are real observed prices")
