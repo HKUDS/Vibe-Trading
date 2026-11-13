@@ -3,14 +3,14 @@
 ----
 
 Tool: `get_options_chain`
-Backed by: `backtest.loaders.yahoo_client.get_options`
+Backed by: `src.data_gateway.get_gateway().options_chain` (Cboe delayed snapshots, then the existing Yahoo client)
 Description: Read-only agent/CLI tool that returns the US-listed options ladder
 (calls and puts) for a single expiration, plus the list of available
 expirations. Use it for an options snapshot — strike, bid/ask, last price,
 volume, open interest, implied volatility, and the in/out-of-money flag. For
 raw chain payloads call `yahoo_client.get_options` directly.
 
-Each side is capped at 60 contracts so a deep chain cannot blow up the model
+Each side is capped at 60 nearby contracts so a deep chain cannot blow up the model
 payload.
 
 <br>
@@ -40,7 +40,7 @@ On success:
 
 Field | Type | Description
 ----- | ---- | -----------
-ticker | str | Echoed input ticker.
+ticker | str | Canonical underlying without `.US`.
 expiration | int | The returned expiration as Unix epoch seconds.
 expirations | list[int] | All available expirations as Unix epoch seconds.
 calls_count | int | Number of call rows returned (≤ 60).
@@ -50,7 +50,12 @@ puts | list[dict] | Put contracts (same shape).
 
 Per-contract fields (snake_case): `contract_symbol`, `strike`, `last_price`,
 `bid`, `ask`, `volume`, `open_interest`, `implied_volatility`, `in_the_money`,
-`expiration`.
+`expiration`, `delta` (nullable), `usable_quote`, `multiplier`, `last_trade_time`.
+
+The additive `gateway` object records cache state (`miss`, `fresh`, `stale`),
+acquisition time, source timestamp when supplied, quality and source attempts.
+A fresh cache is not a live quote. `executable` is always false; missing Delta
+is not estimated. Repeated reads share the same gateway as the API and CLI.
 
 On failure:
 
@@ -59,7 +64,7 @@ On failure:
 ```
 
 Failures are returned as an envelope (never raised) — e.g. a missing/blank
-`ticker`, a non-integer `expiration`, or an upstream Yahoo request error.
+`ticker`, a non-integer `expiration`, or unavailable/malformed source snapshots. Empty chains are failures, not successful data.
 
 <br>
 <br>

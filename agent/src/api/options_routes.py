@@ -232,6 +232,10 @@ def register_options_routes(
             )
         require_auth = host.require_auth
 
+    from src.data_gateway.api import register_gateway_routes
+
+    register_gateway_routes(app, require_auth)
+
     # -----------------------------------------------------------------------
     # POST /options/payoff
     # -----------------------------------------------------------------------

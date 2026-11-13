@@ -1,47 +1,25 @@
-"""Read-only options-chain tool backed by the shared Yahoo Finance client.
+"""Read-only option-chain tool sharing the API/CLI data gateway.
 
-Surfaces the calls/puts ladder for a US-listed underlying (strike, bid/ask,
-last price, volume, open interest, implied volatility, and the in/out-of-money
-flag) for a single expiration. All HTTP routes through
-:func:`backtest.loaders.yahoo_client.get_options`, which throttles per host and
-reuses one session, so the agent never hits Yahoo un-spaced.
+Responses preserve source identity, acquisition time and stale/delayed status.
+No live-execution capability is exposed by this tool.
 """
 
 from __future__ import annotations
-
 import json
-import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-from backtest.loaders import yahoo_client
 from src.agent.tools import BaseTool
 
-# Upper bound on contracts emitted per side so a deep chain cannot blow up the
-# tool payload handed back to the model.
 _MAX_CONTRACTS_PER_SIDE = 60
-
-# Yahoo contract fields we surface, mapped to our snake_case envelope keys.
-_CONTRACT_FIELDS = (
-    ("contractSymbol", "contract_symbol"),
-    ("strike", "strike"),
-    ("lastPrice", "last_price"),
-    ("bid", "bid"),
-    ("ask", "ask"),
-    ("volume", "volume"),
-    ("openInterest", "open_interest"),
-    ("impliedVolatility", "implied_volatility"),
-    ("inTheMoney", "in_the_money"),
-    ("expiration", "expiration"),
-)
 
 
 class OptionsChainTool(BaseTool):
-    """Fetch a US equity option chain (calls + puts) with greeks-grade fields."""
+    """Fetch observed US option snapshots through the shared data gateway."""
 
     name = "get_options_chain"
     description = (
         "Fetch the US-listed options chain (calls and puts) for one expiration "
-        "via Yahoo Finance: per-contract strike, bid/ask, last price, volume, "
+        "via the shared cached data gateway: per-contract strike, bid/ask, last price, volume, "
         "open interest, implied volatility, and in-the-money flag, plus the list "
         "of available expirations (epoch seconds). Read-only US options data. "
         'Example: get_options_chain(ticker="AAPL").'
@@ -52,9 +30,13 @@ class OptionsChainTool(BaseTool):
             "ticker": {
                 "type": "string",
                 "description": (
-                    "US underlying symbol, e.g. 'AAPL' or 'AAPL.US' (the .US "
-                    "suffix is stripped). Required."
+                    "US underlying symbol, e.g. 'AAPL' or 'AAPL.US' (the .US suffix is stripped). Required."
                 ),
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Optional offset into the full source chain, in strike order, 60 rows per side. Omit for near-spot rows.",
             },
             "expiration": {
                 "type": "integer",
@@ -77,7 +59,7 @@ class OptionsChainTool(BaseTool):
 
         Returns:
             A JSON string. On success:
-            ``{"ok": true, "market": "us", "source": "yahoo", "data": {...}}``
+            ``{"ok": true, "market": "us", "source": str, "data": {...}}``
             where ``data`` carries ``ticker``, ``expirations``, ``expiration``,
             ``calls``, ``puts``, and per-side counts. On failure:
             ``{"ok": false, "error": str}``.
@@ -91,139 +73,49 @@ class OptionsChainTool(BaseTool):
         if expiration is not None and normalized_expiration is None:
             return _error("expiration must be Unix epoch seconds (integer)")
 
-        try:
-            result = yahoo_client.get_options(
-                ticker, expiration=normalized_expiration
+        from src.data_gateway import get_gateway
+
+        offset = kwargs.get("offset")
+        if offset is not None and (isinstance(offset, bool) or not isinstance(offset, int) or offset < 0):
+            return _error("offset must be a non-negative integer")
+        result = get_gateway().options_chain(
+            ticker, normalized_expiration, **({"full": True} if offset is not None else {})
+        )
+        if result.get("ok"):
+            data = result["data"]
+            for side in ("calls", "puts"):
+                if offset is None:
+                    nearest = sorted(data[side], key=lambda row: abs(row["strike"] - data["underlying_price"]))
+                    data[side] = sorted(nearest[:_MAX_CONTRACTS_PER_SIDE], key=lambda row: row["strike"])
+                else:
+                    data[side] = data[side][offset : offset + _MAX_CONTRACTS_PER_SIDE]
+                data[side + "_count"] = len(data[side])
+            data["complete_expiration"] = all(
+                len(data[s]) == data.get(s + "_total", len(data[s])) for s in ("calls", "puts")
             )
-        except Exception as exc:  # noqa: BLE001 - surface as error envelope
-            return _error(f"yahoo options request failed: {exc}")
-
-        # When the caller explicitly requested an expiration, validate that
-        # Yahoo returned a chain for that exact expiration.  A non-matching
-        # expiration returns an empty or stale chain silently, which is
-        # misleading.  The tool owns the guarantee that its envelope
-        # corresponds to the caller's requested expiration; the Yahoo client
-        # only guarantees raw data.
-        if normalized_expiration is not None:
-            dates = result.get("expirationDates")
-            if not isinstance(dates, list):
-                return _error(
-                    "malformed Yahoo response: expirationDates is not a list"
+            if offset is not None:
+                total = max(data.get(s + "_total", len(data[s])) for s in ("calls", "puts"))
+                data["next_offset"] = (
+                    offset + _MAX_CONTRACTS_PER_SIDE if offset + _MAX_CONTRACTS_PER_SIDE < total else None
                 )
-            if normalized_expiration not in dates:
-                return _error(
-                    f"expiration {normalized_expiration} is not among the "
-                    f"available dates; available: {dates[:8]}"
-                    f"{'...' if len(dates) > 8 else ''}"
-                )
-            options = result.get("options") or []
-            if not isinstance(options, list) or not options:
-                # The date IS listed (checked above), so this is Yahoo
-                # returning no chain block for it — not an unlisted ticker.
-                return _error(
-                    f"no option chain returned for expiration "
-                    f"{normalized_expiration} although Yahoo lists that date; "
-                    f"retry, or pick another expiration from: {dates[:8]}"
-                )
-            block = options[0]
-            if not isinstance(block, dict):
-                return _error(
-                    "malformed Yahoo response: options block is not a dict"
-                )
-            block_date = block.get("expirationDate")
-            if block_date != normalized_expiration:
-                return _error(
-                    f"expiration {normalized_expiration} did not match the "
-                    f"returned chain (block expiration is {block_date})"
-                )
-
-        return _success(ticker, result)
+                data["offset"] = offset
+                data["coverage"] = "page_of_source_expiration"
+        return json.dumps(result, ensure_ascii=False, allow_nan=False)
 
 
 def _coerce_expiration(value: Any) -> Optional[int]:
-    """Coerce an epoch-second expiration to ``int``; ``None`` when absent/bad."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
+    """Coerce integer epoch seconds without silently truncating fractions."""
+    if value is None or isinstance(value, bool):
         return None
     try:
-        return int(value)
+        result = int(value)
+        if isinstance(value, float) and value != result:
+            return None
+        return result if result > 0 else None
     except (TypeError, ValueError, OverflowError):
         return None
 
 
-def _success(ticker: str, result: Dict[str, Any]) -> str:
-    """Build the success envelope from a quote-chain ``result[0]`` mapping."""
-    expirations = [
-        epoch for epoch in (result.get("expirationDates") or []) if epoch is not None
-    ]
-    options = result.get("options") or []
-    block = options[0] if options and isinstance(options[0], dict) else {}
-
-    calls = _contracts(block.get("calls"))
-    puts = _contracts(block.get("puts"))
-    quote = result.get("quote")
-    price = quote.get("regularMarketPrice") if isinstance(quote, dict) else None
-    underlying_price = _positive_number(price)
-    # Determine ATM from the complete ladder, before the output-row cap.
-    strikes = {
-        strike
-        for rows in (block.get("calls"), block.get("puts"))
-        if isinstance(rows, list)
-        for row in rows
-        if isinstance(row, dict)
-        if (strike := _positive_number(row.get("strike"))) is not None
-    }
-    atm_strike = (
-        min(strikes, key=lambda strike: (abs(strike - underlying_price), strike))
-        if underlying_price is not None and strikes else None
-    )
-
-    data = {
-        "ticker": ticker,
-        "underlying_price": underlying_price,
-        "atm_strike": atm_strike,
-        "expiration": block.get("expirationDate"),
-        "expirations": expirations,
-        "calls_count": len(calls),
-        "puts_count": len(puts),
-        "calls": calls,
-        "puts": puts,
-    }
-    return json.dumps(
-        {"ok": True, "market": "us", "source": "yahoo", "data": data},
-        ensure_ascii=False,
-    )
-
-
-def _positive_number(value: Any) -> float | None:
-    """Validate a source number without guessing missing values.
-
-    Args:
-        value: The price or strike supplied by the data source.
-
-    Returns:
-        A finite positive number, or None for missing or malformed input.
-    """
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return float(value) if math.isfinite(value) and value > 0 else None
-
-
-def _contracts(raw: Any) -> List[Dict[str, Any]]:
-    """Normalize a Yahoo calls/puts array into capped snake_case rows."""
-    if not isinstance(raw, list):
-        return []
-    rows: List[Dict[str, Any]] = []
-    for entry in raw[:_MAX_CONTRACTS_PER_SIDE]:
-        if not isinstance(entry, dict):
-            continue
-        rows.append(
-            {our_key: entry.get(yahoo_key) for yahoo_key, our_key in _CONTRACT_FIELDS}
-        )
-    return rows
-
-
 def _error(message: str) -> str:
-    """Render a failure envelope as a JSON string."""
+    """Render a validation failure without starting gateway workers."""
     return json.dumps({"ok": False, "error": message}, ensure_ascii=False)

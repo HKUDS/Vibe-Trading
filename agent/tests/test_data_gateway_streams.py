@@ -1,0 +1,126 @@
+"""Bounded subscriptions, event identity, cancellation and full-chain coverage."""
+
+import asyncio
+from dataclasses import replace
+from types import SimpleNamespace
+
+import pytest
+
+from src.data_gateway.config import Config
+from src.data_gateway.streams import StreamHub, Topic, okx_quote
+
+
+async def no_snapshot(topic):
+    await asyncio.Future()
+
+
+def test_shared_subscription_drops_intermediate_updates_and_releases_last_reader(tmp_path):
+    async def run():
+        started, stopped = [], []
+
+        async def feed(topic, publish):
+            started.append(topic.key)
+            try:
+                for i in range(10000):
+                    publish("snapshot", {"i": i})
+                await asyncio.Future()
+            finally:
+                stopped.append(topic.key)
+
+        hub = StreamHub(SimpleNamespace(config=Config(tmp_path)), crypto_feed=feed, snapshot_feed=no_snapshot)
+        topic = Topic.parse("crypto:BTC-USDT")
+        first = hub.subscribe([topic])
+        second = hub.subscribe([topic, topic])
+        latest = await asyncio.wait_for(first.take(), 1)
+        assert started == [topic.key]
+        assert hub.status()["pending_updates"] == 1
+        assert latest[0]["payload"]["i"] == 9999
+        await hub.unsubscribe(first)
+        assert not stopped
+        await hub.unsubscribe(second)
+        assert stopped == [topic.key]
+        assert hub.status()["clients"] == 0 and not hub.channels
+        await hub.close()
+
+    asyncio.run(run())
+
+
+def test_capacity_failure_is_atomic_and_sse_close_releases_topics(tmp_path):
+    async def run():
+        async def feed(*args):
+            await asyncio.Future()
+
+        hub = StreamHub(
+            SimpleNamespace(config=replace(Config(tmp_path), stream_topics=1)),
+            crypto_feed=feed,
+            snapshot_feed=no_snapshot,
+        )
+        listener = hub.subscribe([Topic.parse("crypto:BTC-USDT")])
+        with pytest.raises(ValueError):
+            hub.subscribe([Topic.parse("crypto:ETH-USDT")])
+        assert hub.status()["clients"] == 1
+
+        async def connected():
+            return False
+
+        stream = hub.events(listener, connected)
+        assert "retry:" in await anext(stream)
+        await stream.aclose()
+        assert not hub.channels and not hub.listeners
+        await hub.close()
+
+    asyncio.run(run())
+
+
+def test_source_failure_is_visible_then_reconnects(tmp_path):
+    async def run():
+        attempts = []
+
+        async def feed(topic, publish):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise ConnectionError("sensitive upstream body")
+            publish("snapshot", {"ok": True})
+            await asyncio.Future()
+
+        hub = StreamHub(SimpleNamespace(config=Config(tmp_path)), crypto_feed=feed, snapshot_feed=no_snapshot)
+        listener = hub.subscribe([Topic.parse("crypto:BTC-USDT")])
+        first = await asyncio.wait_for(listener.take(), 1)
+        assert first[0]["event"] == "source_error"
+        assert "sensitive" not in str(first)
+        second = await asyncio.wait_for(listener.take(), 2)
+        assert second[0]["event"] == "snapshot" and len(attempts) == 2
+        await hub.close()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "topic", ["options:../etc", "options:AAPL:0", "quotes:0700.HK", "crypto:BTCUSD", "crypto:*", "options:AAPL:abc"]
+)
+def test_unknown_market_and_wildcard_are_not_silently_subscribed(topic):
+    with pytest.raises(ValueError):
+        Topic.parse(topic)
+
+
+def test_quote_identity_and_nonfinite_values_are_rejected():
+    topic = Topic.parse("crypto:BTC-USDT")
+    message = {
+        "arg": {"channel": "tickers", "instId": "BTC-USDT"},
+        "data": [
+            {
+                "instId": "BTC-USDT",
+                "instType": "SPOT",
+                "bidPx": "10",
+                "askPx": "11",
+                "last": "10.5",
+                "ts": "1800000000000",
+            }
+        ],
+    }
+    assert okx_quote(topic, message)["data"]["quote_currency"] == "USDT"
+    message["data"][0]["bidPx"] = "NaN"
+    assert okx_quote(topic, message) is None
+    message["data"][0]["bidPx"] = "10"
+    message["data"][0]["instId"] = "ETH-USDT"
+    assert okx_quote(topic, message) is None
