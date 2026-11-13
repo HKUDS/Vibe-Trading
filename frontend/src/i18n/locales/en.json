@@ -1567,6 +1567,8 @@
     "subtitle": "Strategy builder, expiry payoff, spot x IV scenarios, portfolio Greeks and a live US options chain.",
     "disclaimer": "Research only. Theoretical pricing and scenario outputs are model estimates, not investment advice.",
     "errorGeneric": "Analysis failed",
+    "exportJson": "Export JSON",
+    "exportCsv": "Export CSV",
     "presets": {
       "label": "Presets",
       "longCall": "Long Call",

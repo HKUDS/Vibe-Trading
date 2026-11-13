@@ -1567,6 +1567,8 @@
     "subtitle": "Strategie-Builder, Verfalls-Payoff, Spot x IV-Szenarien, Portfolio-Griechen und eine Live-US-Options-Kette.",
     "disclaimer": "Nur Forschung. Theoretische Preis- und Szenarioausgaben sind Modellschätzungen, keine Anlageberatung.",
     "errorGeneric": "Analyse fehlgeschlagen",
+    "exportJson": "JSON exportieren",
+    "exportCsv": "CSV exportieren",
     "presets": {
       "label": "Vorlagen",
       "longCall": "Long Call",

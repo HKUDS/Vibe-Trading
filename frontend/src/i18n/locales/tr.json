@@ -1527,6 +1527,8 @@
     "subtitle": "Strateji oluşturucu, vade sonu kâr/zararı, spot × zımni oynaklık senaryoları, portföy Yunanları ve canlı ABD opsiyon zinciri.",
     "disclaimer": "Yalnızca araştırma içindir. Teorik fiyatlar ve senaryo sonuçları model tahminleridir, yatırım tavsiyesi değildir.",
     "errorGeneric": "Analiz başarısız",
+    "exportJson": "JSON dışa aktar",
+    "exportCsv": "CSV dışa aktar",
     "presets": {
       "label": "Ön ayarlar",
       "longCall": "Alım opsiyonu alış",

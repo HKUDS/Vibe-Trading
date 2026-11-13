@@ -1567,6 +1567,8 @@
     "subtitle": "Constructor de estrategias, perfil de vencimiento, escenarios spot × IV, griegas de cartera y cadena de opciones de EE. UU. en vivo.",
     "disclaimer": "Solo para investigación. Los precios teóricos y los escenarios son estimaciones de modelos, no asesoramiento de inversión.",
     "errorGeneric": "Error en el análisis",
+    "exportJson": "Exportar JSON",
+    "exportCsv": "Exportar CSV",
     "presets": {
       "label": "Estrategias predefinidas",
       "longCall": "Call comprada",
