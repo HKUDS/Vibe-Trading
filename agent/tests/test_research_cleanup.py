@@ -74,6 +74,7 @@ def test_harness_reads_current_identity_without_claiming_numeric_validation(tmp_
         "collar_sign.json",
         "gpd_scale_as_mean.json",
         "collar_scenario_arithmetic.json",
+        "collar_cap_comparison.json",
     ],
 )
 @pytest.mark.parametrize("rounding_control", [False, True])
