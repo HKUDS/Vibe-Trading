@@ -1885,6 +1885,9 @@
     "expiresAt": "Bitiş: {{time}}"
   },
   "swarmStatus": {
+    "partialResults": "Kısmi sonuçlar",
+    "report": "Rapor",
+    "continueWork": "Tamamlanmamış işe devam et",
     "agents": "{{done}}/{{total}} aracı",
     "layer": "Tur {{current}} / {{total}}",
     "agent": "Ajan",

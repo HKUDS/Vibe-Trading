@@ -1925,6 +1925,9 @@
     "expiresAt": "Läuft ab {{time}}"
   },
   "swarmStatus": {
+    "partialResults": "Teilergebnisse",
+    "report": "Bericht",
+    "continueWork": "Offene Arbeit fortsetzen",
     "agents": "{{done}}/{{total}} Agents",
     "layer": "Runde {{current}} von {{total}}",
     "agent": "Agent",

@@ -133,7 +133,7 @@ def test_cancel_set_before_first_iteration_makes_no_llm_call(tmp_path):
     assert llm.calls == 0, "a cancel signalled before the iteration must not start an LLM call"
     assert registry.executed == []
     assert "worker_cancelled" in events
-    assert "Cancelled" in result.summary
+    assert result.summary == ""  # cancellation is status, not invented research
 
 
 def test_cancel_during_stream_skips_that_turns_tool_calls(tmp_path):

@@ -1919,6 +1919,9 @@
     "expiresAt": "{{time}} 만료"
   },
   "swarmStatus": {
+    "partialResults": "부분 결과",
+    "report": "보고서",
+    "continueWork": "미완료 작업 계속",
     "agents": "{{done}}/{{total}} 에이전트",
     "layer": "{{total}}개 라운드 중 {{current}}번째",
     "agent": "에이전트",

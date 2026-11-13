@@ -20,14 +20,7 @@ from src.market_data import canonical_fx_pair
 _RESOLVER_TOOL = "search_symbol"
 
 
-_PRIVATE_COMPANY_SKILL_NAMES = {
-    "private-company",
-    "private-company-analysis",
-    "private-company-research",
-    "private_company",
-    "private_company_analysis",
-    "private_company_research",
-}
+
 
 
 _SYMBOL_ARGUMENT_KEYS = {
@@ -437,7 +430,7 @@ class ToolAuthorization:
                 "symbols": list(self.symbols),
                 "identity": dict(identity),
                 "required_action": (
-                    "Call search_symbol in a separate assistant tool turn, wait for "
+                    "Call search_symbol first and wait for "
                     "its result, then reuse the exact locked symbol and venue. If the "
                     "resolver answers with a shortlist rather than one instrument, "
                     "show the candidates and ask the user which one to use — narrowing "
@@ -460,13 +453,13 @@ class _IdentityMixin:
         call_id: str,
         batch_identity_status: str | None = None,
     ) -> ToolAuthorization:
-        """Authorize against identity state frozen before the whole LLM batch.
+        """Authorize against the identity state before this execution segment.
 
         Args:
             tool_name: Requested tool.
             arguments: Model-supplied arguments.
             batch_authorized_symbols: Snapshot taken before processing any call
-                from this assistant response.
+                from this execution segment.
             call_id: Provider tool-call identity.
             batch_identity_status: Aggregate identity status from the same
                 pre-batch snapshot. Defaults to the current state for direct
@@ -474,7 +467,7 @@ class _IdentityMixin:
 
         Returns:
             An allow/block decision. Resolver calls are allowed but their result
-            cannot affect another call in this same batch.
+            can affect dependent calls scheduled in the next execution segment.
         """
         if tool_name == _RESOLVER_TOOL:
             self._identity_required = True
@@ -482,21 +475,8 @@ class _IdentityMixin:
             self._begin_resolution(str(arguments.get("query") or ""), call_id)
             return ToolAuthorization(allowed=True)
 
-        if self._is_private_company_skill(tool_name, arguments):
-            return self._authorize_private_company_skill()
-
-        if tool_name == "load_skill" and self._identity_required:
-            frozen_status = batch_identity_status or self.identity_status
-            if frozen_status in _RESOLUTION_INCOMPLETE_STATUSES:
-                return ToolAuthorization(
-                    allowed=False,
-                    error_code="identity_required",
-                    message=(
-                        "Market-sensitive workflow selection is blocked while instrument "
-                        "resolution is in flight or contradicted; a resolver result from "
-                        "this same batch cannot be consumed."
-                    ),
-                )
+        # Reading methodology does not choose or change an instrument identity.
+        if tool_name == "load_skill":
             return ToolAuthorization(allowed=True)
 
         symbols = tuple(self._extract_symbol_arguments(arguments))
@@ -516,9 +496,8 @@ class _IdentityMixin:
                     else "identity_required"
                 ),
                 message=(
-                    "A canonical, non-conflicting identity was not locked before this "
-                    "assistant tool-call batch started. A resolver result from this same "
-                    "batch cannot be consumed."
+                    "A canonical, non-conflicting identity has not been resolved for this "
+                    "call. Resolve the instrument before requesting its data."
                 ),
                 symbols=symbols,
             )
@@ -573,7 +552,7 @@ class _IdentityMixin:
             if same_issuer:
                 return [
                     f"[{requested_symbol} is a second venue of {', '.join(same_issuer)}; "
-                    f"call search_symbol('{requested_symbol}') in a separate turn "
+                    f"call search_symbol('{requested_symbol}') before this data call "
                     f"before querying it.]"
                 ]
             return []
@@ -950,50 +929,6 @@ class _IdentityMixin:
         if len(strong) == 1:
             return strong[0]
         return None
-
-    def _authorize_private_company_skill(self) -> ToolAuthorization:
-        """Keep private-company routing symmetric with locked listing evidence."""
-        locked_listings = [
-            record
-            for record in self._identities.values()
-            if record.status == "locked"
-            and record.instrument_type in {"listed_security", "fund"}
-        ]
-        if locked_listings:
-            return ToolAuthorization(
-                allowed=False,
-                error_code="identity_conflict",
-                message=(
-                    "A resolver has locked this entity to a listed security. Model memory "
-                    "cannot replace that evidence with a private-company workflow."
-                ),
-                symbols=tuple(
-                    record.symbol for record in locked_listings if record.symbol
-                ),
-            )
-        if self.identity_status == "not_found" or not self._identity_required:
-            return ToolAuthorization(allowed=True)
-        return ToolAuthorization(
-            allowed=False,
-            error_code="identity_required",
-            message=(
-                "Private-company routing requires a completed resolver result with clean "
-                "not_found status; current identity is unresolved, ambiguous, or invalidated."
-            ),
-        )
-
-    @staticmethod
-    def _is_private_company_skill(
-        tool_name: str,
-        arguments: Mapping[str, Any],
-    ) -> bool:
-        """Return whether this call selects a private-company skill."""
-        if tool_name != "load_skill":
-            return False
-        name = str(arguments.get("name") or "").strip().casefold()
-        return name in _PRIVATE_COMPANY_SKILL_NAMES or (
-            "private" in name and "company" in name
-        )
 
     @staticmethod
     def _extract_symbol_arguments(arguments: Mapping[str, Any]) -> list[str]:

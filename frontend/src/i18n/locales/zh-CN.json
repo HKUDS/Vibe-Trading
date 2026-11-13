@@ -1919,6 +1919,9 @@
     "expiresAt": "{{time}} 到期"
   },
   "swarmStatus": {
+    "partialResults": "已有成果（未完成）",
+    "report": "报告",
+    "continueWork": "继续未完成的工作",
     "agents": "{{done}}/{{total}} 个智能体",
     "layer": "第 {{current}}/{{total}} 轮",
     "agent": "智能体",

@@ -1938,7 +1938,10 @@
     "detailsUnavailable": "detail tidak tersedia",
     "tokens": "↑{{input}} ↓{{output}} token",
     "estimated": "estimasi",
-    "tokenSourceUnlabeled": "sumber tanpa label"
+    "tokenSourceUnlabeled": "sumber tanpa label",
+    "partialResults": "Hasil sebagian",
+    "report": "Laporan",
+    "continueWork": "Lanjutkan pekerjaan yang belum selesai"
   },
   "mandate": {
     "runtimeMandate": "Mandat runtime connector",

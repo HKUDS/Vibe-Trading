@@ -314,6 +314,7 @@ class SwarmRun(BaseModel):
     created_at: str
     completed_at: str | None = None
     final_report: str | None = None
+    report_is_partial: bool = False
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     cache_read_tokens: int = 0

@@ -215,3 +215,10 @@ describe("SwarmStatusCard", () => {
     });
   });
 });
+
+it("shows the available report and an explicit continuation entry on failure", () => {
+  const html = renderToStaticMarkup(<SwarmStatusCard status={makeStatus({ status: "failed", finalReport: "Revenue $26B; VaR unavailable.", reportIsPartial: true })} />);
+  expect(html).toContain("Revenue $26B; VaR unavailable.");
+  expect(html).toContain("Partial results");
+  expect(html).toContain("Continue unfinished work");
+});

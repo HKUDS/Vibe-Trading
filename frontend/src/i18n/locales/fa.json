@@ -1938,7 +1938,10 @@
     "detailsUnavailable": "جزئیات در دسترس نیست",
     "tokens": "↑{{input}} ↓{{output}} توکن",
     "estimated": "تخمینی",
-    "tokenSourceUnlabeled": "منبع بدون برچسب"
+    "tokenSourceUnlabeled": "منبع بدون برچسب",
+    "partialResults": "نتایج جزئی",
+    "report": "گزارش",
+    "continueWork": "ادامه کار ناتمام"
   },
   "mandate": {
     "runtimeMandate": "ماندیت ران‌تایم کانکتور",

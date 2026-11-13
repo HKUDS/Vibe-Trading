@@ -2950,6 +2950,7 @@ def _run_to_dict(run, *, timed_out: bool = False, is_stale: bool = False) -> dic
         "error": run_level_error(run),
         "tasks": [serialize_task(t) for t in run.tasks],
         "final_report": run.final_report,
+        "report_is_partial": run.report_is_partial,
         "total_input_tokens": run.total_input_tokens,
         "total_output_tokens": run.total_output_tokens,
         "provider": public_provider_metadata(run.provider),
@@ -3107,7 +3108,8 @@ def retry_run(run_id: str, resume: bool = False) -> str:
 
     With ``resume=True`` (replay), completed upstream tasks and their artifacts
     are carried into the new run as-is and only the failed/cancelled subgraph
-    re-executes — completed independent branches are not re-run. ``resume``
+    continues from compatible saved context, or restarts from retained reports
+    when no checkpoint exists. Completed independent branches are not re-run. ``resume``
     only applies to a ``failed`` or ``cancelled`` run; ``resume=True`` for any
     other status is refused with an error (a plain retry without ``resume``
     remains available for any non-running run).

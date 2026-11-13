@@ -1938,7 +1938,10 @@
     "detailsUnavailable": "detalles no disponibles",
     "tokens": "↑{{input}} ↓{{output}} tokens",
     "estimated": "estimados",
-    "tokenSourceUnlabeled": "fuente sin etiqueta"
+    "tokenSourceUnlabeled": "fuente sin etiqueta",
+    "partialResults": "Resultados parciales",
+    "report": "Informe",
+    "continueWork": "Continuar el trabajo pendiente"
   },
   "mandate": {
     "runtimeMandate": "Mandato de runtime del conector",

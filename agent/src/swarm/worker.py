@@ -35,6 +35,7 @@ from src.swarm.models import (
     WorkerResult,
 )
 from src.swarm.context import WorkerContext
+from src.swarm import checkpoint
 from src.tools import build_swarm_registry
 from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import redact_payload, redact_tool_result
@@ -504,6 +505,7 @@ def run_worker(
     grounding_block: str = "",
     agent_config: AgentConfig | None = None,
     cancel_event: threading.Event | None = None,
+    resume: bool = False,
 ) -> WorkerResult:
     """Run one worker task, releasing the per-task LLM client on exit.
 
@@ -555,6 +557,7 @@ def run_worker(
             grounding_block=grounding_block,
             agent_config=agent_config,
             cancel_event=cancel_event,
+            resume=resume,
         )
         return result
     finally:
@@ -585,6 +588,7 @@ def _run_worker_impl(
     *,
     llm: ChatLLM,
     cancel_event: threading.Event | None = None,
+    resume: bool = False,
 ) -> WorkerResult:
     """Execute a single worker task using a lightweight ReAct loop.
 
@@ -728,12 +732,27 @@ def _run_worker_impl(
     # Threshold for injecting a "wrap up" nudge (80% of budget)
     wrap_up_at = max(1, int(max_iterations * 0.8))
     last_assistant_content = ""
+    resume_key = checkpoint.context_key(messages)
+    if resume:
+        restored = checkpoint.restore(artifact_dir, key=resume_key, system=messages[0], run_dir=run_dir)
+        if restored is not None:
+            messages, last_assistant_content = restored
+            _emit(event_callback, "worker_resumed", agent_id, task_id, {"messages": len(messages)})
+        else:
+            _emit(event_callback, "worker_resume_unavailable", agent_id, task_id,
+                  {"reason": "Saved conversation is unavailable or incompatible; restarting from supplied reports."})
+
+    def save_checkpoint() -> None:
+        checkpoint.save(artifact_dir, key=resume_key, messages=messages,
+                        last_content=last_assistant_content, run_dir=run_dir)
+
 
     content_filter_count = 0
     consecutive_content_filter_count = 0
     stream_failure_streak = 0
 
     for iteration in range(max_iterations):
+        save_checkpoint()
         # Check timeout
         elapsed = time.monotonic() - t0
         if elapsed > timeout:
@@ -759,7 +778,7 @@ def _run_worker_impl(
         # Check cancellation — before dispatching this iteration's LLM call,
         # so a cancel signalled between iterations never starts new work.
         if cancel_event is not None and cancel_event.is_set():
-            cancelled_summary = last_assistant_content or f"Cancelled after {iteration} iterations"
+            cancelled_summary = last_assistant_content
             summary = _resolve_summary(artifact_dir, cancelled_summary)
             _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
             _finalize_run(artifact_dir, summary, messages)
@@ -834,8 +853,10 @@ def _run_worker_impl(
 
         # Stream the LLM — moonshot/kimi non-streaming invoke is unreliable
         # (issue #42), and streaming also feeds dashboard live progress.
+        streamed_text: list[str] = []
         try:
             def _on_text_chunk(delta: str) -> None:
+                streamed_text.append(delta)
                 _emit(event_callback, "worker_text", agent_id, task_id,
                       {"content": delta, "iteration": iteration})
 
@@ -940,11 +961,12 @@ def _run_worker_impl(
             else:
                 stream_failure_streak = 0
 
-            # Cancelled mid-stream: discard this turn's partial response and
-            # stop now, without executing any of its tool calls — mirrors
-            # AgentLoop's contract for the identical should_cancel signal.
+            # Preserve streamed prose on cancellation, but never execute
+            # unfinished tool calls from an interrupted provider response.
             if cancel_event is not None and cancel_event.is_set():
-                cancelled_summary = last_assistant_content or f"Cancelled after {iteration} iterations"
+                last_assistant_content = "".join(streamed_text) or last_assistant_content
+                save_checkpoint()
+                cancelled_summary = last_assistant_content
                 summary = _resolve_summary(artifact_dir, cancelled_summary)
                 _emit(event_callback, "worker_cancelled", agent_id, task_id, {"iterations": iteration})
                 _finalize_run(artifact_dir, summary, messages)
@@ -963,12 +985,16 @@ def _run_worker_impl(
                     ),
                 )
         except Exception as exc:
+            last_assistant_content = "".join(streamed_text) or last_assistant_content
             error_msg = f"LLM call failed at iteration {iteration}: {exc}"
             logger.warning(error_msg)
             _emit(event_callback, "worker_failed", agent_id, task_id, {"error": error_msg})
+            summary = _resolve_summary(artifact_dir, last_assistant_content or "")
+            save_checkpoint()
+            _finalize_run(artifact_dir, summary, messages)
             return WorkerResult(
                 status="failed",
-                summary=_resolve_summary(artifact_dir, last_assistant_content or ""),
+                summary=summary,
                 artifact_paths=_collect_artifacts(run_dir, artifact_dir),
                 iterations=iteration,
                 error=error_msg,
@@ -990,8 +1016,9 @@ def _run_worker_impl(
         account_response(response)
 
         # Track last meaningful assistant content
-        if response.content and len(response.content.strip()) > 20:
+        if response.content:
             last_assistant_content = response.content
+            save_checkpoint()
 
         # Content-filter skip: provider blocked the response — continue to
         # the next iteration instead of finalising on empty/garbage content.
@@ -1071,9 +1098,12 @@ def _run_worker_impl(
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
             summary = response.content or ""
-            summary = _resolve_summary(artifact_dir, summary)
+            # A retained report is previous work, never a substitute for a
+            # new inline conclusion produced during continuation.
+            if not resume or not summary:
+                summary = _resolve_summary(artifact_dir, summary)
             _finalize_run(artifact_dir, summary, messages)
-            reason = _delivery_error(summary)
+            reason = _delivery_error(response.content or "") if resume and not response.content else _delivery_error(summary)
             if reason:
                 _emit(event_callback, "worker_incomplete", agent_id, task_id,
                       {"iterations": iteration + 1, "reason": reason})
@@ -1118,6 +1148,7 @@ def _run_worker_impl(
         )
 
         # Execute each tool call — inject run_dir so tools write inside artifact_dir
+        save_checkpoint()
         for tc in response.tool_calls:
             mcp_meta = _remote_tool_metadata(registry, tc.name)
             _emit(
@@ -1183,6 +1214,7 @@ def _run_worker_impl(
                 )
             )
             worker_context.pending.add(tc.id)
+            save_checkpoint()
 
     # Content filter ratio tracking
     content_filter_warnings = compute_content_filter_warnings(
@@ -1386,8 +1418,7 @@ def _finalize_run(artifact_dir: Path, summary: str, messages: list[dict]) -> Non
     Both files are written through one call, so a terminal path that reports a
     summary cannot omit the message log: ``messages.json`` is the only record
     of the arguments a model asked a tool for, which is what a post-mortem of a
-    bad tool call needs. The LLM-call-failure handler writes neither file and is
-    unchanged.
+    bad tool call needs. Provider failures retain the same evidence.
 
     Args:
         artifact_dir: Path to artifacts/{agent_id}/{task_id}/ directory.

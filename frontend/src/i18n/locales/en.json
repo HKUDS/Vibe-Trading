@@ -1925,6 +1925,9 @@
     "expiresAt": "Expires {{time}}"
   },
   "swarmStatus": {
+    "partialResults": "Partial results",
+    "report": "Report",
+    "continueWork": "Continue unfinished work",
     "agents": "{{done}}/{{total}} agents",
     "layer": "Round {{current}} of {{total}}",
     "agent": "Agent",

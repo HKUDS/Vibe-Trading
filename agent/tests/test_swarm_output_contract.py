@@ -79,7 +79,8 @@ def test_timeout_terminal_run_not_completed(tmp_path, monkeypatch):
     )
     run = _run(tmp_path, None)
     assert run.status != RunStatus.completed
-    assert run.final_report is None
+    assert run.final_report
+    assert run.report_is_partial
 
 
 def test_incomplete_terminal_run_not_completed(tmp_path, monkeypatch):
@@ -94,7 +95,8 @@ def test_incomplete_terminal_run_not_completed(tmp_path, monkeypatch):
     )
     run = _run(tmp_path, None)
     assert run.status != RunStatus.completed
-    assert run.final_report is None
+    assert run.final_report
+    assert run.report_is_partial
     assert run.tasks[0].error and "plan-only" in run.tasks[0].error
 
 
