@@ -68,11 +68,21 @@ def test_harness_reads_current_identity_without_claiming_numeric_validation(tmp_
     assert not any(v.status == VerdictStatus.PASS for v in verdicts if v.code.startswith("evidence."))
 
 
-@pytest.mark.parametrize("reported,expected", [(-18.5, VerdictStatus.FAIL), (18.5, VerdictStatus.PASS)])
-def test_real_collar_sign_error_is_an_offline_failure_only(tmp_path, reported, expected):
-    fixture = json.loads(FIXTURE.read_text())
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "collar_sign.json",
+        "gpd_scale_as_mean.json",
+        "collar_scenario_arithmetic.json",
+    ],
+)
+@pytest.mark.parametrize("rounding_control", [False, True])
+def test_real_report_errors_are_offline_findings_only(tmp_path, fixture_name, rounding_control):
+    fixture = json.loads(FIXTURE.with_name(fixture_name).read_text())
     claim = dict(fixture["claim"])
-    claim["reported_percent"] = reported
+    if rounding_control:
+        for entry in fixture["measurements"]:
+            claim[entry["field"]] = round(entry["expected"], 1)
     path = tmp_path / "claims.json"
     path.write_text(json.dumps(claim))
     before = path.read_bytes()
@@ -80,21 +90,22 @@ def test_real_collar_sign_error_is_an_offline_failure_only(tmp_path, reported, e
         {
             "schema_version": 1,
             "case_id": fixture["case_id"],
-            "scenario": "model_transcription",
+            "scenario": "model_report_quality",
             "prompt": "",
             "expect": {
                 "measurements": [
                     {
                         "artifact": "claims.json",
-                        "field": "reported_percent",
                         "operator": "approx",
-                        "expected": fixture["evidence"]["max_profit_return"] * 100,
                         "absolute_tolerance": 0.05,
+                        **entry,
                     }
+                    for entry in fixture["measurements"]
                 ],
             },
         }
     )
     verdicts = measurement_verdicts(case, ArtifactBundle.load(tmp_path))
-    assert verdicts[0].status == expected
+    expected = VerdictStatus.PASS if rounding_control else VerdictStatus.FAIL
+    assert all(verdict.status == expected for verdict in verdicts)
     assert path.read_bytes() == before
