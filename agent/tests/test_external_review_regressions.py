@@ -101,7 +101,7 @@ def test_data_role_can_use_supplied_evidence(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("value,expected", [("96.221B", True), ("96.22B", True), ("97.22B", False)])
 def test_formatted_revenue_keeps_its_evidence_reference(tmp_path, value, expected):
-    from src.agent.grounding import GroundingLedger
+    from evals.grounding import GroundingLedger
 
     ledger = GroundingLedger(run_dir=tmp_path, user_message="Report revenue")
     ledger.ingest_tool_result(tool_name="financial_data", arguments={}, call_id="c1", success=True,

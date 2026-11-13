@@ -797,21 +797,12 @@ def _run_worker_impl(
         # Inject wrap-up nudge when approaching iteration limit
         if iteration == wrap_up_at:
             remaining = max_iterations - iteration
-            if "write_file" in (agent_spec.tools or []):
-                wrap_up_content = (
-                    f"[SYSTEM] You have {remaining} iterations remaining. "
-                    "If report.md is not written yet, make one final write_file call for report.md. "
-                    "Otherwise stop calling tools and output your final analysis summary as plain text."
-                )
-            else:
-                # This role's whitelist has no write_file -- see
-                # build_worker_prompt's has_code_tools branch for why
-                # telling it to "write report.md" here would be the same
-                # contradiction that block exists to avoid.
-                wrap_up_content = (
-                    f"[SYSTEM] You have {remaining} iterations remaining. "
-                    "Stop calling tools and output your final analysis as your plain-text response now."
-                )
+            wrap_up_content = (
+                f"[SYSTEM] You have {remaining} iterations remaining. "
+                "Finish the most useful remaining work and deliver your conclusions, "
+                "available results and any unresolved limitations in your final response. "
+                "Create a file only if the user requested one or it improves the deliverable."
+            )
             messages.append({
                 "role": "user",
                 "content": wrap_up_content,

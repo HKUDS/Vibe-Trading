@@ -97,13 +97,13 @@ class ToolCallLifecycle:
         focus_topic = ""
         execution_plan: list[tuple[Any, str | None]] = []
         batch_authorized_symbols = (
-            set(self._grounding.authorized_symbols)
-            if self._grounding is not None
+            set(self._identity.authorized_symbols)
+            if self._identity is not None
             else set()
         )
         batch_identity_status = (
-            self._grounding.identity_status
-            if self._grounding is not None
+            self._identity.identity_status
+            if self._identity is not None
             else "not_required"
         )
 
@@ -172,8 +172,8 @@ class ToolCallLifecycle:
                     iteration,
                 )
                 continue
-            if self._grounding is not None:
-                authorization = self._grounding.authorize_tool_call(
+            if self._identity is not None:
+                authorization = self._identity.authorize_tool_call(
                     tc.name,
                     tc.arguments,
                     batch_authorized_symbols=batch_authorized_symbols,
@@ -186,7 +186,7 @@ class ToolCallLifecycle:
                             tc,
                             authorization.error_payload(
                                 tc.name,
-                                self._grounding.identity_summary(),
+                                self._identity.identity_summary(),
                             ),
                         )
                     )
@@ -875,8 +875,8 @@ class ToolCallLifecycle:
             if tc.name in {"write_file", "edit_file"}:
                 self._record_written_target(tc.arguments)
 
-        if self._grounding is not None:
-            self._grounding.ingest_tool_result(
+        if self._identity is not None:
+            self._identity.ingest_tool_result(
                 tool_name=tc.name,
                 arguments=_normalize_tool_run_dir(tc.arguments, self.memory.run_dir),
                 result=result,
@@ -889,7 +889,7 @@ class ToolCallLifecycle:
                         "type": "identity_state",
                         "iter": iteration,
                         "call_id": tc.id,
-                        "identity": self._grounding.identity_summary(),
+                        "identity": self._identity.identity_summary(),
                     }
                 )
 

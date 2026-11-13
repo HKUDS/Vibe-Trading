@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.agent.result_artifacts import deliver_tool_result
 from src.agent.tools import ToolRegistry
 from src.tools import gildata_fin_query_tool as fq

@@ -79,7 +79,7 @@ def test_invalid_nav_window_fails_before_vendor_call(monkeypatch, window):
 
 
 def test_macro_observations_ground_with_explicit_refs_without_widening_price_gate(tmp_path):
-    from src.agent.grounding.ledger import GroundingLedger
+    from evals.grounding.ledger import GroundingLedger
 
     rows = [{"value": "5.4", "indicatorcode": 10011, "unit": "%", "date": "2026-01-31"}]
     _coerce_numeric_strings(rows)

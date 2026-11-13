@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 pytestmark = pytest.mark.unit
 
@@ -33,20 +33,6 @@ def _check(ledger: GroundingLedger, ref: str, written: str = "12.5"):
     )
 
 
-def test_alias_stays_rejected_and_lists_the_real_ref(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, {"call_9f3a": 12.5})
-
-    result = _check(ledger, f"r1::{PATH}")
-
-    assert result.valid is False
-    issue = result.issues[0]
-    assert issue["reason"] == "unknown_call_id"
-    assert issue["field_ref_candidates"] == [f"call_9f3a::{PATH}"]
-    correction = ledger.correction_prompt(result)
-    assert f"call_9f3a::{PATH}" in correction
-    assert "not an alias" in correction
-    # The suggestion is advisory: only the exact ref is accepted.
-    assert _check(ledger, f"call_9f3a::{PATH}").valid is True
 
 
 def test_alias_with_a_shortened_path_lists_the_full_path(tmp_path: Path) -> None:

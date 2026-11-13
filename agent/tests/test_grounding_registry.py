@@ -10,8 +10,8 @@ import pytest
 from tests.test_grounding_figures_contract import HDR, HDR_ROW, _block, _ledger
 from tests.test_grounding_role_hardening import MARKET_A, MARKET_C, _ledger as _multi_ledger
 
-from src.agent.grounding.ledger import GroundingLedger
-from src.agent.grounding.registry import GROUNDING_CHECKS, GroundingCheck, GroundingRegistry
+from evals.grounding.ledger import GroundingLedger
+from evals.grounding.registry import GROUNDING_CHECKS, GroundingCheck, GroundingRegistry
 
 
 def test_registry_rejects_duplicate_names() -> None:

@@ -1,4 +1,4 @@
-"""The :class:`GroundingLedger` facade the agent loop drives."""
+"""Offline evidence replay and diagnostics, independent of answer delivery."""
 
 from __future__ import annotations
 
@@ -11,26 +11,21 @@ from typing import Any, Mapping, Sequence
 
 from src.agent.resolution_context import ResolutionContext
 
-from src.agent.grounding.identity import (
+from src.agent.instrument_identity import (
     IdentityRecord,
-    _IdentityMixin,
+    IdentityLedger,
     _RESOLVER_TOOL,
     _scan_symbols,
     _utc_now,
 )
-from src.agent.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
-from src.agent.grounding.document_quotes import DocumentIntegerQuote
-from src.agent.grounding.figures import Figure, FiguresBlock, parse_figures_block, scan_figures, strip_figures_block
-from src.agent.grounding.policies import ValidationResult, _PolicyMixin
-from src.agent.grounding.registry import GROUNDING_CHECKS
-from src.agent.grounding.release import (
-    MAX_GROUNDING_RECOVERY_ROUNDS,
-    MAX_PRICE_EVIDENCE_ATTEMPTS,
-    MAX_SYMBOL_RESOLUTION_ATTEMPTS,
-    _ReleaseMixin,
-)
+from evals.grounding.evidence import EvidenceRecord, _EvidenceMixin, _json_object
+from evals.grounding.document_quotes import DocumentIntegerQuote
+from evals.grounding.figures import Figure, FiguresBlock, parse_figures_block, scan_figures
+from evals.grounding.policies import ValidationResult, _PolicyMixin
+from evals.grounding.registry import GROUNDING_CHECKS
 
 GROUNDING_ARTIFACT = "grounding_evidence.json"
+_MAX_TRACKED_SYMBOLS = 5_000
 
 
 # Tools whose successful completion can ground backtest/analysis metric claims
@@ -41,38 +36,6 @@ GROUNDING_ARTIFACT = "grounding_evidence.json"
 _ANALYSIS_TOOLS = frozenset(
     {"backtest", "factor_analysis", "run_shadow_backtest", "quantlib_call"}
 )
-
-
-def _passed_figures(
-    figures: Sequence[Figure], issues: Sequence[Mapping[str, Any]]
-) -> tuple[str, ...]:
-    """The measured figures no issue flags, as written, in document order.
-
-    The correction prompt needs them for its keep list. A spelling that fails
-    anywhere in the draft is endorsed nowhere, so the list only carries values
-    the gate can vouch for outright. Bare integers stay off: only the
-    price-posing ones are checked, so a plain "bare" pass proves nothing.
-    """
-    flagged_spans = {
-        (int(span[0]), int(span[1]))
-        for issue in issues
-        if isinstance((span := issue.get("span")), (list, tuple)) and len(span) == 2
-    }
-    flagged_values = {
-        str(issue.get("value")) for issue in issues if issue.get("value") is not None
-    }
-    passed: list[str] = []
-    seen: set[str] = set()
-    for figure in figures:
-        if figure.shape != "measured":
-            continue
-        if (figure.start, figure.end) in flagged_spans:
-            continue
-        if figure.text in flagged_values or figure.text in seen:
-            continue
-        seen.add(figure.text)
-        passed.append(figure.text)
-    return tuple(passed)
 
 
 _ACTIONABLE_MARKET_RE = re.compile(
@@ -87,10 +50,9 @@ _ACTIONABLE_MARKET_RE = re.compile(
 
 
 class GroundingLedger(
-    _IdentityMixin,
+    IdentityLedger,
     _EvidenceMixin,
     _PolicyMixin,
-    _ReleaseMixin,
 ):
     """Run-scoped identity state machine and evidence ledger."""
 
@@ -128,18 +90,12 @@ class GroundingLedger(
         self._analysis_completed: list[dict[str, Any]] = []
         self._analysis_metrics: list[dict[str, Any]] = []
         self._validations: list[dict[str, Any]] = []
-        # The one document that actually shipped through the release path, if
-        # any. Not a draft, so it stays out of ``validation_count``.
-        self._released: dict[str, Any] | None = None
-        self._recovery_rounds = 0
         # Parsed figures state of the answer under validation. Declared checks
         # receive only (ledger, content), so the gate stashes it here for the
         # walk; that is what the registry contract means by figure state
         # living on the ledger.
         self._active_block: FiguresBlock | None = None
         self._active_figures: Sequence[Figure] = ()
-        self._symbol_resolution_attempts = 0
-        self._price_evidence_attempts = 0
         self._ingested_csvs: set[str] = set()
         # Per-bar tables completed backtests wrote: resolved path -> (sha256,
         # backtest scope), so a later read of one can be recognised as engine
@@ -150,7 +106,6 @@ class GroundingLedger(
         self._backtest_scopes: dict[str, str] = {}
         self._scope_latest: dict[str, str] = {}
         self._identity_required = bool(_ACTIONABLE_MARKET_RE.search(user_message))
-        self._buffer_output = self._identity_required
         # Every instrument this run is entitled to write about: the ones the
         # user named, plus the ones a succeeding tool call passed in or returned.
         self._session_symbols: set[str] = _scan_symbols(user_message)
@@ -162,122 +117,6 @@ class GroundingLedger(
         self._seed_symbols(user_message, source="user_message")
         self.persist()
 
-    @property
-    def authorized_symbols(self) -> set[str]:
-        """Return exact symbols locked before the next tool batch."""
-        return {
-            record.symbol
-            for record in self._identities.values()
-            if record.status == "locked" and record.symbol
-        }
-
-    @property
-    def identity_status(self) -> str:
-        """Return the aggregate first-class identity state.
-
-        ``conflicting`` is the only state that outranks a successful lock: two
-        sources contradicting each other about one query is a fact about the
-        data, not a gap in it. Every other blocking state means "not known
-        yet", and a side query that failed, went unanswered, or returned a
-        shortlist must not retract an identity the run did lock — one flaky
-        resolver call otherwise poisons every remaining answer in the session,
-        with no path back. Per-symbol safety does not depend on this aggregate:
-        a consumer still has to match a locked symbol in
-        :meth:`_match_authorized_symbol` before it may run.
-        """
-        records = list(self._identities.values())
-        if not records:
-            return "unresolved" if self._identity_required else "not_required"
-        statuses = {record.status for record in records}
-        if "conflicting" in statuses:
-            return "conflicting"
-        if "locked" in statuses:
-            return "locked"
-        for blocking in ("ambiguous", "invalidated", "unresolved"):
-            if blocking in statuses:
-                return blocking
-        if "not_found" in statuses:
-            return "not_found"
-        return "unresolved"
-
-    @property
-    def should_buffer_output(self) -> bool:
-        """Return whether unverified model prose must be hidden from live sinks."""
-        return self._buffer_output or bool(self._evidence) or bool(self._document_integer_quotes)
-
-    @property
-    def validation_count(self) -> int:
-        """Return the number of final drafts checked so far."""
-        return len(self._validations)
-
-    @property
-    def figures_removed(self) -> int:
-        """Return how many figures the discounted release cut, or 0."""
-        return int((self._released or {}).get("figures_removed", 0))
-
-    @staticmethod
-    def streamable_length(text: str) -> int:
-        """Return how much of a streaming answer may be shown live.
-
-        Held back: everything from the figures block's fence on (the model's
-        declaration to the gate), a last line that could still become that fence,
-        everything from the first measurement-shaped number (the gate has not
-        checked it, and a rejected draft must not have shown it), and a number
-        still being written ("0." before "666").
-
-        Args:
-            text: The answer streamed so far.
-
-        Returns:
-            The length of the prefix that is safe to emit.
-        """
-        span = parse_figures_block(text).span
-        limit = len(text)
-        if span is not None:
-            limit = span[0]
-        else:
-            line_start = text.rfind("\n") + 1
-            if text[line_start:].lstrip()[:1] in ("`", "~"):
-                limit = line_start
-        prefix = text[:limit]
-        measured = GroundingLedger.measurement_start(prefix)
-        if measured is not None:
-            return measured
-        trimmed = prefix.rstrip(" \t")
-        cursor = len(trimmed)
-        while cursor and (trimmed[cursor - 1].isdigit() or trimmed[cursor - 1] in ".,"):
-            cursor -= 1
-        if any(char.isdigit() for char in trimmed[cursor:]):
-            return cursor
-        return limit
-
-    @staticmethod
-    def measurement_start(text: str) -> int | None:
-        """Where the first measurement-shaped number in ``text`` starts, or None."""
-        for figure in scan_figures(text, parse_figures_block(text)):
-            if figure.shape == "measured":
-                return figure.start
-        return None
-
-    def identity_summary(self) -> dict[str, Any]:
-        """Return compact identity state for traces and tool errors."""
-        return {
-            "status": self.identity_status,
-            "authorized_symbols": sorted(self.authorized_symbols),
-            "records": [asdict(record) for record in self._identities.values()],
-            "recovery": self.recovery_summary(),
-        }
-
-    def recovery_summary(self) -> dict[str, Any]:
-        """Return bounded-recovery budget state for traces and the artifact."""
-        return {
-            "rounds": self._recovery_rounds,
-            "max_rounds": MAX_GROUNDING_RECOVERY_ROUNDS,
-            "symbol_resolution_attempts": self._symbol_resolution_attempts,
-            "max_symbol_resolution_attempts": MAX_SYMBOL_RESOLUTION_ATTEMPTS,
-            "price_evidence_attempts": self._price_evidence_attempts,
-            "max_price_evidence_attempts": MAX_PRICE_EVIDENCE_ATTEMPTS,
-        }
 
     def ingest_tool_result(
         self,
@@ -370,39 +209,11 @@ class GroundingLedger(
             hash, structured issues, and the names of the declared checks that
             fired is appended to the artifact.
         """
-        return self._validate(content, record=True)
+        return self._validate(content)
 
-    def revalidate(self, content: str) -> ValidationResult:
-        """Validate text WITHOUT counting it as a rejected draft.
 
-        For the recheck that follows a deterministic repair or redaction. No
-        model round produced that text, so recording it would count a
-        rejected draft nobody wrote and add an artifact attempt no draft
-        stands behind.
-
-        Args:
-            content: The repaired or redacted answer.
-
-        Returns:
-            A deterministic validation result.
-        """
-        return self._validate(content, record=False)
-
-    def _validate(self, content: str, *, record: bool) -> ValidationResult:
-        """Run the gate, optionally without recording the attempt.
-
-        ``validation_count`` is the run's checked-DRAFT count: the degraded-run
-        reason prints it and the ``grounding_status`` round follows it (the
-        revision cap itself is counted in ``loop.py``). The release path's own
-        rechecks are not drafts, so they pass ``record=False``.
-
-        Args:
-            content: Candidate assistant answer.
-            record: Whether to append the attempt to the persisted ledger.
-
-        Returns:
-            A deterministic validation result.
-        """
+    def _validate(self, content: str) -> ValidationResult:
+        """Record diagnostic findings without changing the supplied text."""
         self._ingest_run_dir_ohlc_csvs()
         block = parse_figures_block(content)
         figures = scan_figures(content, block)
@@ -417,11 +228,7 @@ class GroundingLedger(
         result = ValidationResult(
             valid=not issues,
             issues=issues,
-            released_text=strip_figures_block(content, block),
-            passed_figures=_passed_figures(figures, issues),
         )
-        if not record:
-            return result
         self._validations.append(
             {
                 "attempt": len(self._validations) + 1,
@@ -458,7 +265,6 @@ class GroundingLedger(
                 "analysis_completed": list(self._analysis_completed),
                 "analysis_evidence": list(self._analysis_metrics),
                 "validations": list(self._validations),
-                "released": dict(self._released) if self._released else None,
             }
             temp.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -469,3 +275,45 @@ class GroundingLedger(
             # Grounding decisions remain in memory; a read-only/broken artifact
             # directory must not crash the agent's error path.
             return
+
+    def _track_session_symbols(
+        self,
+        arguments: Mapping[str, Any],
+        result: str,
+    ) -> None:
+        """Widen the run's instrument surface from one succeeding tool call.
+
+        Both sides of a successful call count. The result is the strong signal —
+        a resolver shortlist, an OHLC panel, a filing index. The arguments are
+        the weaker one, but a symbol the model handed to a tool that then
+        succeeded has at least been exercised against a real system, whereas a
+        symbol that surfaces for the first time in the final prose has been
+        exercised against nothing. Failed calls are deliberately excluded, so a
+        blocked or erroring call never launders an invented ticker.
+
+        Bare symbol arguments are tracked separately as roots. Many tools take a
+        bare ticker by contract, so a run that legitimately fetched ``AAPL``
+        never writes ``AAPL.US`` into any argument or result. Without the root,
+        the canonical spelling the rest of this module demands — see
+        ``canonical_symbol_not_surfaced`` — would be the one spelling this gate
+        rejects.
+
+        Args:
+            arguments: Exact normalized tool arguments.
+            result: Full raw result, before model-context truncation.
+        """
+        if len(self._session_symbols) >= _MAX_TRACKED_SYMBOLS:
+            return
+        try:
+            rendered_arguments = json.dumps(arguments, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            rendered_arguments = ""
+        found = _scan_symbols(rendered_arguments) | _scan_symbols(result)
+        room = _MAX_TRACKED_SYMBOLS - len(self._session_symbols)
+        self._session_symbols.update(sorted(found)[:room])
+        self._session_symbol_roots.update(
+            symbol
+            for symbol in self._extract_symbol_arguments(arguments)
+            if "." not in symbol
+        )
+

@@ -1,7 +1,6 @@
 """Research delivery preserves the model's answer without a prose gate."""
 import pytest
 
-from src.agent.grounding import GroundingLedger
 from src.agent.loop import AgentLoop
 from src.agent.loop_streaming import TurnStream
 from src.agent.tools import ToolRegistry
@@ -36,10 +35,6 @@ class AnswerModel:
 ])
 @pytest.mark.parametrize("stream", [True, False])
 def test_final_answer_is_delivered_verbatim(tmp_path, monkeypatch, answer, stream):
-    def forbidden(*args, **kwargs):
-        pytest.fail("the research delivery path must not call a numeric gate")
-    for name in ("validate_final_answer", "redacted_release", "repair_provenance", "safe_fallback"):
-        monkeypatch.setattr(GroundingLedger, name, forbidden)
     events = []
     llm = AnswerModel(answer, stream=stream)
     agent = AgentLoop(registry=ToolRegistry(), llm=llm, max_iterations=3,

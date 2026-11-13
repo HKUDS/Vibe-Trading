@@ -10,8 +10,8 @@ from typing import Any, Callable
 import pytest
 
 from src.agent.context import ContextBuilder
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.identity import (
+from evals.grounding import GroundingLedger
+from src.agent.instrument_identity import (
     _JOINED_CRYPTO_RE,
     _infer_currency,
     _infer_instrument_type,
@@ -19,7 +19,7 @@ from src.agent.grounding.identity import (
     _normalize_symbol,
     _scan_symbols,
 )
-from src.agent.grounding.evidence import (
+from evals.grounding.evidence import (
     _symbol_from_csv_filename,
     _timestamp_matches_claim_date,
 )
@@ -173,7 +173,7 @@ def _build_direct_agent(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     agent.memory.run_dir = str(run_dir)
-    agent._grounding = GroundingLedger(
+    agent._identity = GroundingLedger(
         run_dir=run_dir,
         user_message="分析机器人ETF并给出买入价",
     )
@@ -392,7 +392,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
 
     assert resolver.calls == 1
     assert market.calls == 1
-    assert agent._grounding.authorized_symbols == {"562500.SH"}
+    assert agent._identity.authorized_symbols == {"562500.SH"}
     blocked = [json.loads(message["content"]) for message in messages]
     assert not any(item.get("error_code") == "identity_required" for item in blocked)
 
@@ -776,9 +776,9 @@ def test_single_clean_not_found_source_is_not_enough_for_private_routing(
     )
     trace.close()
 
-    assert agent._grounding.identity_status == "invalidated"
+    assert agent._identity.identity_status == "invalidated"
     assert private_skill.calls == 1
-    assert agent._grounding.authorized_symbols == set()
+    assert agent._identity.authorized_symbols == set()
 
 
 def test_explicit_symbol_and_resolver_suffix_alias_are_one_identity(
@@ -965,8 +965,8 @@ def test_reading_private_methodology_does_not_relabel_listed_identity(
     trace.close()
 
     assert private_skill.calls == 1
-    assert agent._grounding.authorized_symbols == {"SPCX.US"}
-    validation = agent._grounding.validate_final_answer(
+    assert agent._identity.authorized_symbols == {"SPCX.US"}
+    validation = agent._identity.validate_final_answer(
         "SpaceX is a private company and is not publicly traded."
     )
     assert validation.valid is False
@@ -1003,7 +1003,7 @@ def test_not_found_identity_allows_private_company_workflow(
     trace.close()
 
     assert private_skill.calls == 1
-    assert agent._grounding.identity_status == "not_found"
+    assert agent._identity.identity_status == "not_found"
 
 
 def test_ambiguous_resolution_keeps_consumers_blocked(tmp_path: Path) -> None:
@@ -1037,7 +1037,7 @@ def test_ambiguous_resolution_keeps_consumers_blocked(tmp_path: Path) -> None:
     )
     trace.close()
 
-    assert agent._grounding.identity_status == "ambiguous"
+    assert agent._identity.identity_status == "ambiguous"
     assert market.calls == 0
     assert json.loads(messages[-1]["content"])["error_code"] == "identity_conflict"
 
@@ -1691,7 +1691,7 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     """End-to-end: screen, load a workflow skill, narrow, quote, and answer (#955)."""
     agent, resolver, market, skill, trace = _build_direct_agent(tmp_path, _SHORTLIST_PAYLOAD)
     market.result = _SCREENED_MARKET_PAYLOAD
-    agent._grounding = GroundingLedger(
+    agent._identity = GroundingLedger(
         run_dir=Path(agent.memory.run_dir),
         user_message="推荐A股低价高增长股票并给出买入价",
     )
@@ -1713,7 +1713,7 @@ def test_screening_run_reaches_a_final_answer_through_the_agent_loop(
     trace.close()
 
     assert market.calls == 1
-    validation = agent._grounding.validate_final_answer(
+    validation = agent._identity.validate_final_answer(
         "000543.SZ 买入价 8.20 CNY（股数100，成本 820 CNY；source: tencent）\n\n"
         "```figures\n8.20 | observed | close | prices\n"
         "820 | derived | 100 × 8.20 | prices\n100 | count | 股数\n```"
@@ -2022,7 +2022,7 @@ def test_shanghai_lock_depends_on_symbol_canonicalization(
 ) -> None:
     """Mutation guard: drop canonicalization and Shanghai dead-ends again."""
     monkeypatch.setattr(
-        "src.agent.grounding.identity._normalize_symbol",
+        "src.agent.instrument_identity._normalize_symbol",
         lambda value: str(value or "").strip().upper(),
     )
     ledger = GroundingLedger(run_dir=tmp_path, user_message="600519 现价多少")
@@ -2638,7 +2638,7 @@ def test_a_report_style_date_cell_still_matches_its_evidence_row() -> None:
     price in that row was reported numeric_claim_unavailable even though the
     run had fetched the bar.
     """
-    from src.agent.grounding.evidence import _timestamp_matches_claim_date
+    from evals.grounding.evidence import _timestamp_matches_claim_date
 
     stamp = "2026-08-10T15:00:00Z"
     for claim in ("08-10", "8-10", "08-10(一)", "08-10(周一)", "08-10(周一)盘中", "08-10盘中", "08-10收盘"):
@@ -2650,7 +2650,7 @@ def test_a_report_style_date_cell_still_matches_its_evidence_row() -> None:
 
 def test_a_us_csv_stem_resolves_to_its_venue_suffix() -> None:
     """``INTC_US.csv`` is ``INTC.US``; without the row it was no evidence at all."""
-    from src.agent.grounding.evidence import _symbol_from_csv_filename
+    from evals.grounding.evidence import _symbol_from_csv_filename
 
     assert _symbol_from_csv_filename("INTC_US") == "INTC.US"
     assert _symbol_from_csv_filename("BYN_V") == "BYN.V"
@@ -2663,7 +2663,7 @@ class TestFiatPairAndIndexNormalization:
     """Search, fetch and grounding agree on one FX spelling; ^ is a symbol."""
 
     def test_fiat_pair_spellings_normalize_to_yahoo_form(self) -> None:
-        from src.agent.grounding.identity import _normalize_symbol
+        from src.agent.instrument_identity import _normalize_symbol
 
         assert _normalize_symbol("GBP/USD") == "GBPUSD=X"
         assert _normalize_symbol("GBPUSD") == "GBPUSD=X"
@@ -2674,12 +2674,12 @@ class TestFiatPairAndIndexNormalization:
 
     def test_scanned_slashed_pair_matches_resolver_answer(self) -> None:
         """The query-as-asserted scan must agree with the chosen candidate."""
-        from src.agent.grounding.identity import _scan_symbols
+        from src.agent.instrument_identity import _scan_symbols
 
         assert _scan_symbols("use GBP/USD spot") == {"GBPUSD=X"}
 
     def test_index_symbols_are_scanned_and_typed(self) -> None:
-        from src.agent.grounding.identity import (
+        from src.agent.instrument_identity import (
             _infer_currency,
             _infer_instrument_type,
             _scan_symbols,
@@ -2692,7 +2692,7 @@ class TestFiatPairAndIndexNormalization:
 
     def test_ingest_search_symbol_does_not_create_conflicting_identity(self) -> None:
         """The flagship regression: ingest('GBP/USD') must lock, never conflict."""
-        from src.agent.grounding.identity import _normalize_symbol
+        from src.agent.instrument_identity import _normalize_symbol
 
         # Chosen (from search_symbol) and asserted (the query text) must be
         # the same canonical identity — the comparison in _ingest_resolution.
@@ -3260,7 +3260,7 @@ def test_research_paper_reported_metrics_are_grounded(tmp_path: Path) -> None:
 
 def test_compound_metric_leaf_kind_resolution() -> None:
     """Token-split kind resolution covers the compound-leaf family."""
-    from src.agent.grounding.evidence import _metric_kind_for_path
+    from evals.grounding.evidence import _metric_kind_for_path
 
     assert _metric_kind_for_path("results[0].reported_annualized_return") == "return"
     assert _metric_kind_for_path("strategy_max_drawdown") == "drawdown"
@@ -3549,7 +3549,7 @@ def test_crypto_pair_tables_match_the_resolver() -> None:
     identity, which outranks every later lock and blocks all market tools —
     so the duplication needs a guard, not a comment.
     """
-    from src.agent.grounding import identity as g
+    from src.agent import instrument_identity as g
     from src.tools import symbol_search_tool as ss
 
     assert set(g._CRYPTO_USD_BASES) == set(ss._CRYPTO_USD_BASES)

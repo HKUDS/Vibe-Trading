@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.agent.grounding.registry import grounding_check
+from evals.grounding.registry import grounding_check
 
 #: An answer that relabels a locked listed identity as private contradicts the
 #: resolver, which is an identity finding rather than a figure finding.

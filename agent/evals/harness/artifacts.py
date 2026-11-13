@@ -25,6 +25,7 @@ class ArtifactBundle:
     trace: tuple[dict[str, Any], ...]
     present: frozenset[str]
     errors: dict[str, str] = field(default_factory=dict)
+    identity: dict[str, Any] | None = None
 
     @classmethod
     def load(cls, run_dir: Path, *, trace_dir: Path | None = None) -> "ArtifactBundle":
@@ -63,6 +64,7 @@ class ArtifactBundle:
         grounding = load_object(
             run_root, "artifacts/grounding_evidence.json", "grounding"
         )
+        identity = load_object(run_root, "artifacts/identity_evidence.json", "identity")
         llm_usage = load_object(run_root, "llm_usage.json", "llm_usage")
         manifest = load_object(trace_root, "run_manifest.json", "manifest")
         trace = _load_trace(trace_root, present, errors)
@@ -77,6 +79,7 @@ class ArtifactBundle:
             trace=trace,
             present=frozenset(present),
             errors=errors,
+            identity=identity,
         )
 
 

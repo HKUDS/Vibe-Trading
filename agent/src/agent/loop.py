@@ -39,7 +39,7 @@ from src.agent.tuning import (
 from src.agent.loop_streaming import TurnStream
 from src.agent.context import ContextBuilder
 from src.agent.tool_loading import prepare_registry, request_definitions
-from src.agent.grounding import GroundingLedger
+from src.agent.instrument_identity import IdentityLedger
 from src.agent.memory import WorkspaceMemory
 from src.agent.progress import HeartbeatTimer as HeartbeatTimer, ProgressEvent as ProgressEvent, _set_emitter as _set_emitter
 from src.agent.context_budget import (
@@ -253,7 +253,7 @@ class AgentLoop(ToolCallLifecycle):
         self._persistent_memory = persistent_memory
         self._run_iteration: int = 0
         self._has_run = False
-        self._grounding: GroundingLedger | None = None
+        self._identity: IdentityLedger | None = None
         self._released_fallback = False
         self._released_fallback_reason: str | None = None
         self._written_files: set[str] = set()
@@ -436,7 +436,7 @@ class AgentLoop(ToolCallLifecycle):
             self.memory.run_dir = str(run_dir)
 
         state_store.save_request(run_dir, user_message, {"session_id": session_id})
-        self._grounding = GroundingLedger(
+        self._identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,
             history=history,

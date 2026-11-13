@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 pytestmark = pytest.mark.unit
 
@@ -159,13 +159,6 @@ def test_out_of_range_explicit_index_never_selects_or_hints_another_item(tmp_pat
     assert not result.issues[0].get("field_ref_candidates")
 
 
-def test_candidates_are_shown_to_the_model_in_the_correction(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    result = ledger.validate_final_answer(
-        "The second item contributed -0.87%.\n\n```figures\n"
-        f"-0.87% | observed | second item | {TOOL}::positions.contribution_pct\n```"
-    )
-    assert f"valid field refs: {_ref(1)}" in ledger.correction_prompt(result)
 
 
 def test_unrelated_field_gets_no_candidates(tmp_path: Path) -> None:

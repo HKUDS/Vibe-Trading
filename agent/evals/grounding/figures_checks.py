@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.agent.grounding.figures import FiguresBlock, _lines_with_offsets
-from src.agent.grounding.identity import _scan_symbols
-from src.agent.grounding.registry import grounding_check
+from evals.grounding.figures import FiguresBlock, _lines_with_offsets
+from src.agent.instrument_identity import _scan_symbols
+from evals.grounding.registry import grounding_check
 
 
 def _active_block(ledger: Any) -> FiguresBlock:

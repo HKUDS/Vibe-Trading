@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.figures import _numbers, _writes_decimal_commas, parse_figures_block
+from evals.grounding import GroundingLedger
+from evals.grounding.figures import _numbers, _writes_decimal_commas, parse_figures_block
 
 
 @pytest.mark.parametrize("prefix", ["0,", "0,1", "Values 0, 1"])

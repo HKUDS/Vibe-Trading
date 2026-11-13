@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from tests.test_grounding_backtest_outputs import _backtest, _declared, _read, _write_backtest
 
 
@@ -74,15 +74,3 @@ def test_wrong_artifact_ref_is_rejected_with_real_reference_to_copy(tmp_path):
     missing = ledger.validate_final_answer(_declared(prose, '.48 | observed | sharpe | artifacts/metrics.csv'))
     assert any('artifacts/metrics.csv::trade_count' in i.get('field_ref_candidates', []) for i in missing.issues)
     assert not ledger.validate_final_answer(_declared(prose.replace('103', '104'), '104 | observed | trade count | artifacts/metrics.csv::trade_count')).valid
-
-
-@pytest.mark.parametrize('date', ['Oct 13', 'October 13, 2026', '13 Oct 2026', '13th October', 'Oct. 13'])
-def test_redacting_percent_does_not_sweep_named_calendar_dates(tmp_path, date):
-    ledger, _ = _table_ledger(tmp_path)
-    content = _declared(f'Results reported {date}. Return was 13%.', '13% | observed | return | artifacts/metrics.csv')
-    result = ledger.validate_final_answer(content)
-    assert not result.valid
-    released = ledger.redacted_release(content, result)
-    assert released and date in released
-    assert 'Return was 13%' not in released
-    assert not ledger.validate_final_answer('Return in Oct 13.5%.').valid

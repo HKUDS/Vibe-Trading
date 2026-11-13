@@ -21,7 +21,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, Sequence
 
-from src.agent.grounding.identity import _CANONICAL_SYMBOL_RE
+from src.agent.instrument_identity import _CANONICAL_SYMBOL_RE
 
 #: Maximum relative rounding gap; written precision can only narrow this.
 #: Coarse rounding such as 0.82467 -> 0.82 exceeds the existing 0.5% policy;
@@ -902,16 +902,6 @@ def parse_figures_block(content: str) -> FiguresBlock:
         tuple(malformed),
         tuple((start, end) for start, end, _, _ in blocks),
     )
-
-
-def strip_figures_block(content: str, block: FiguresBlock) -> str:
-    """Return the text to release: the draft without any declaration block."""
-    spans = block.spans or ((block.span,) if block.span else ())
-    text = content
-    for start, end in sorted(spans, reverse=True):
-        head, tail = text[:start].rstrip(), text[end:].lstrip()
-        text = head + ("\n\n" if head and tail else "") + tail
-    return text.strip() if spans else content
 
 
 def _table_cells(line: str, offset: int) -> list[tuple[str, int, int]]:

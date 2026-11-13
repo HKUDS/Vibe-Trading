@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 REPORT = """第一节 经营回顾
 
