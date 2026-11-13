@@ -99,3 +99,139 @@ existing Starlette TestClient deprecation warning. Together the final scoped
 groups passed 50 tests. Ruff and `git diff --check` also passed. A combined run
 including the main API options suite was interrupted during prolonged dependency
 import/GC; it is not reported as a completed final run.
+
+## Longer soak and extreme history requests (2026-11-14)
+
+A first long run stopped at 20.81 minutes when the chat/tool session was
+interrupted; no idle tail was observed, so it is not a completed 30-minute pass.
+It logged two client ReadErrors without matching server tracebacks. The fault
+injector also allowed a WebSocket handshake already in flight to finish during
+an outage. A second complete run uses post-handshake validation, rejection of
+in-flight REST replies during total outage, and drops buffered WebSocket events
+while faulted. It still distinguishes retained/replayed snapshots from newly
+received upstream events. The completed second-run results are recorded below.
+
+Multi-year live requests against the first measured process:
+
+| Request | Source rows | Preview rows | Observed source |
+| --- | ---: | ---: | --- |
+| AAPL, 5 years daily | 1,255 | 628 | Yahoo |
+| AAPL, 10 years daily | 2,513 | 839 | Yahoo |
+| AAPL, 10 years weekly | 522 | 522 | Yahoo |
+| AAPL, 10 years monthly | 121 | 121 | Yahoo |
+| 00700.HK, 5 years daily | 1,232 | 617 | Tencent |
+| 601398.SH, 10 years daily | 2,428 | 810 | Tencent |
+
+These six requests took 0.45–2.00 seconds each; the sampled macOS physical
+footprint changed from 140,690,176 to 142,820,096 bytes during them. Concurrent
+subscriptions were active, so this is not an isolated attribution of all memory
+to those requests. All observed first/last bars were recorded. Sampling is
+explicit; previews are NOT full backtest datasets.
+
+A ten-symbol/five-year/5m HTTP request returned 422 because the synchronous
+endpoint accepts at most eight symbols. It was not silently shortened. There is
+no multi-symbol persistent history-job implementation yet.
+
+The separate synthetic capacity experiment generated/scanned 982,800 OHLCV rows
+(10 US stocks × assumed 5 years × 252 sessions × 78 five-minute bars/session)
+using existing DuckDB, one thread, a 64 MB engine memory setting, 8,192-row Parquet
+groups and ZSTD. The file was 19,705,923 bytes; macOS physical footprint peaked at
+65,290,792 bytes and OS max RSS was 99,549,184 bytes; elapsed 1.395 seconds. All
+temporary files were removed. This is a synthetic columnar feasibility test,
+NOT a gateway-integrated dataset store or proof of real-provider coverage.
+The engine memory setting is not a total-process ceiling.
+
+### Discovered and fixed coverage defect
+
+OKX's recent endpoint returned 1,439 one-minute bars starting 2026-11-12 18:30 UTC
+for a request starting 2026-11-11. The loader accepted any nonempty result and
+never tried history. A direct history-endpoint control returned 3,993 bars
+starting exactly 2026-11-11 00:00 UTC in 1.762 seconds.
+
+The loader now checks the leading boundary and tries the historical endpoint
+before accepting a tail. If neither endpoint covers the start, the earliest
+observed frame is retained with a warning. The gateway's `_coverage` reports
+requested and observed bounds, sampled status and an explicit unverified/partial
+status; known leading continuous-market gaps set `complete=false`. Calendar and
+internal-gap completeness are still unverified, stated in `complete_scope`.
+Cache identity was bumped so old results cannot hide the new metadata.
+
+A first cold-process verification timed out and is not counted as successful.
+After loader initialization, the actual gateway returned 4,011 rows starting
+2026-11-11 00:00 UTC in 5.109 seconds using unchanged production wait limits.
+The later final bar reflects the later acquisition time. Source normalization,
+source worker slots and subscription lifecycle code were not relaxed.
+
+The final combined related regression run passed 70 tests in 24.98 seconds,
+including an end-to-end partial-boundary assertion (one existing Starlette
+TestClient deprecation warning).
+The loader file retains its pre-existing module-import-order lint findings;
+new gateway/test harness files pass Ruff and the patch passes diff whitespace
+checks. No frontend or protected Agent/provider/session file was changed.
+
+### Near-entry-limit synthetic pressure
+
+`tools/gateway_memory_pressure.py` uses the real gateway and StreamHub with an
+explicit synthetic source, normal cache limits, 16 simultaneous topics and two
+unread subscribers. It made 320 successful acquisitions across 20 subscribe/cancel
+cycles, each payload approximately 1.8 MB. Assertions verify successful snapshots,
+no retained channels/listeners, and cache limits on every cycle. No forced GC.
+Measured peak physical footprint was 93.345 MiB and max RSS 91.344 MiB. Memory
+cache peaked at 7,200,710 bytes and disk at 66,606,556 bytes, below 8/64 MiB caps.
+Post-cycle physical footprint varied rather than staying flat (first 69.048 MiB,
+last 83.204 MiB); this is not a proof of zero retained allocator memory. Temporary
+cache files were removed when the experiment exited. It complements, rather than
+replaces, the live network soak.
+
+
+### Completed live run: 30.77 minutes
+
+The second run finished normally in 1,846.32 seconds with 195 whole-process
+samples. It performed 587 SSE subscriptions and 587 unsubscriptions, 12 fault
+cycles (WebSocket-only then total source unavailability), and delivered 2,914
+client snapshots across all 18 requested topics. No client ReadError occurred in
+this run. Real upstream activity: 30 successful WebSocket connections, all 30
+closed; 8,064 live WS messages accepted; 81 successful REST snapshots. Retained
+snapshots may still be replayed to new subscribers while offline; these are not
+counted as live upstream events.
+
+- Whole-process **OS lifetime peak physical footprint: 169.063 MiB**. This comes
+  from an independent `proc_pid_rusage` v4 observer, not cache accounting.
+- Highest sampled RSS: 98.375 MiB; final RSS: 18.984 MiB. RSS alone significantly
+  understates this process's retained physical footprint on this Mac.
+- Final physical footprint: **149.891 MiB**. Equivalent-workload cycle medians
+  increased **4.219–8.704 MiB** from first to last repetition. The lifetime peak
+  did not keep increasing, but this does NOT establish absence of a slow leak or
+  allocator retention. Allocation profiling / a longer steady-state run remains
+  necessary before claiming zero long-term growth.
+- After last unsubscribe: clients, topics, pending updates, upstream sockets and
+  active requests all reached zero. Async task count settled at three server
+  tasks; Python thread count remained 18 (worker/runtime threads are retained).
+  File descriptors settled at 17. No source tick history queue accumulated.
+- RAM cache reached zero **143.96 seconds** after the idle phase started, without
+  forced GC or manual prune. Disk retained 293,787 bytes / 22 still-valid entries;
+  the 900-second disk lifetime intentionally exceeds the three-minute idle tail.
+- All 12 forced-offline uncached bar probes returned 503. Of 11 scheduled
+  recovery probes, 10 returned complete data immediately and one returned 503.
+  A later fresh fetch of that exact failed request returned complete data in
+  1.561 seconds. Its original per-source diagnostic was not saved by that runner
+  version, so its cause is **unresolved**, not assumed to be a network timeout.
+  The reusable runner now retains those diagnostics for future investigations.
+- The measured child and its monitor exited; no listener remained on port 8911.
+  The ordinary isolated preview remains at http://127.0.0.1:8910/docs.
+
+The long run began before the coverage-only fixes were loaded. Memory/stream
+lifecycle code was unchanged; coverage fixes were separately verified by the
+70-test regression and real warm gateway history request described above. The
+soak is a gateway-process measurement, not total frontend/full-application RAM.
+
+Artifacts (metadata only, outside the checkout):
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-soak-20261114/`.
+It contains the interrupted and completed raw reports, completed summary,
+independent OS memory samples, multi-year/capacity/pressure results and `final.png`.
+
+**Outcome:** bounded cache and subscription cleanup verified; repeated live
+reconnection verified with one unresolved first-attempt recovery failure; no
+GB-scale runaway observed in this finite run. A claim of completely flat or
+leak-free total process memory is NOT supported. Multi-year minute datasets,
+quota settings, storage dialogs and resumable history jobs remain unimplemented.

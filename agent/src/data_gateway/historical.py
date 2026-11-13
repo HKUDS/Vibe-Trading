@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from .service import GatewayError
 
 
@@ -22,6 +23,7 @@ def fetch_bars(gateway, **params):
     registry._ensure_registered()
     requested = params.get("source", "auto")
     combined, provenance, unresolved, diagnostics = {}, {}, [], {}
+    coverage = {}
     deadline = time.monotonic() + gateway.config.request_timeout
     for code in params["codes"]:
         market = _detect_market(code)
@@ -74,6 +76,7 @@ def fetch_bars(gateway, **params):
                         gateway.router.record(scope, source, False, time.monotonic() - started)
                     diagnostics[code].append({"source": source, "reason": "no_data_or_source_unavailable"})
                     continue
+                coverage[code] = describe_coverage(result[alias], params, market)
                 gateway.router.record(scope, source, True, time.monotonic() - started)
                 combined.update({k: v for k, v in result.items() if not k.startswith("_")})
                 for symbol, stamp in result.get("_provenance", {}).items():
@@ -99,10 +102,42 @@ def fetch_bars(gateway, **params):
     combined["_provenance"] = provenance
     combined["_unresolved"] = unresolved
     combined["_diagnostics"] = diagnostics
+    combined["_coverage"] = coverage
     return {
         "ok": bool(provenance),
         "source": "existing_routes",
         "data": combined,
-        "complete": not unresolved,
+        "complete": not unresolved and not any(row["status"] == "partial" for row in coverage.values()),
+        "complete_scope": "symbols_and_detected_boundary_gaps; internal gaps and exchange calendars are not verified",
         **({"error": "No compatible source returned data"} if not provenance else {}),
     }
+
+
+def describe_coverage(value, params, market):
+    """Expose observed bounds without claiming that a nonempty frame is complete.
+
+    Continuous crypto bars can prove a leading boundary gap. Other markets need
+    an exchange calendar; their full interval coverage remains unverified.
+    """
+    rows = value if isinstance(value, list) else value.get("data", [])
+    stamps = [row.get("trade_date") for row in rows if isinstance(row, dict) and row.get("trade_date")]
+    interval = params.get("interval", "1D")
+    result = {
+        "requested_start": params["start_date"],
+        "requested_end": params["end_date"],
+        "observed_start": min(stamps) if stamps else None,
+        "observed_end": max(stamps) if stamps else None,
+        "status": "unverified",
+        "sampled": isinstance(value, dict) and bool(value.get("truncated")),
+        "reason": "Exchange calendar and internal gaps have not been verified",
+    }
+    minutes = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1H": 60, "4H": 240, "1D": 1440}.get(interval)
+    if stamps and market == "crypto" and minutes:
+        try:
+            first = datetime.fromisoformat(min(stamps)).replace(tzinfo=timezone.utc)
+            requested = datetime.fromisoformat(params["start_date"]).replace(tzinfo=timezone.utc)
+            if first >= requested + timedelta(minutes=minutes):
+                result.update(status="partial", reason="Source starts after the requested continuous-market interval")
+        except (ValueError, TypeError):
+            pass
+    return result

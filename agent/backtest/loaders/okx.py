@@ -236,6 +236,12 @@ class DataLoader:
             endpoints = [CANDLES_PATH, HISTORY_CANDLES_PATH]
 
         last_error: Exception | None = None
+        earliest: Optional[pd.DataFrame] = None
+        bar_width = pd.Timedelta({
+            "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
+            "1H": "1h", "4H": "4h", "1D": "1d",
+        }.get(bar, "1d"))
+        requested_start = pd.Timestamp(start_ts, unit="ms")
         for endpoint in endpoints:
             try:
                 df = self._paginate(
@@ -248,7 +254,13 @@ class DataLoader:
                     max_pages,
                 )
                 if df is not None and not df.empty:
-                    return df
+                    if earliest is None or df.index.min() < earliest.index.min():
+                        earliest = df
+                    # Recent candles can be nonempty yet cover only their last
+                    # ~1,440 minute bars. Try history before accepting that tail.
+                    # One bar permits exchange alignment (daily bars are UTC+8).
+                    if df.index.min() < requested_start + bar_width:
+                        return df
             except Exception as exc:
                 last_error = exc
                 logger.warning(
@@ -258,6 +270,12 @@ class DataLoader:
                     exc,
                 )
 
+        if earliest is not None:
+            logger.warning(
+                "OKX partial start coverage for %s: requested %s, observed %s",
+                inst_id, requested_start, earliest.index.min(),
+            )
+            return earliest
         if last_error is not None:
             logger.warning("OKX empty/failed for %s: %s", inst_id, last_error)
         else:

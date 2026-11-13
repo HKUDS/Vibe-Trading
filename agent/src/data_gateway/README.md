@@ -153,3 +153,57 @@ Other existing research tools/backtest entrypoints retain their current loader c
 this branch provides the shared gateway and connects the existing options-chain
 Agent/MCP surface. A wholesale Agent/tool migration is not part of this isolated
 backend change. No frontend file differs from the branch base on `main`.
+
+### Whole-process soak (opt-in, live public network)
+
+```sh
+PYTHONPATH=agent python tools/gateway_soak.py --output /tmp/gateway-soak.json
+python tools/gateway_soak_report.py /tmp/gateway-soak.json
+# Optional plot, using the project's existing matplotlib dependency:
+python tools/gateway_soak_report.py /tmp/gateway-soak.json --plot /tmp/gateway-soak.png
+```
+
+The default run lasts about 30 minutes: three minutes warming data shapes,
+twelve two-minute fault/churn cycles, then three minutes idle. It starts and
+stops its own loopback-only child on port 8911 with a temporary cache. Keep that
+port free. No production fault endpoint is added. Test-only hooks abort real
+upstream WebSocket transports and refuse reconnect/source attempts inside the
+child; they never modify host networking. Recovery calls real public endpoints.
+
+The runner covers nine bar intervals (1m/5m/15m/30m/1H/4H/1D/1W/1M), US/HK/A-share
+bars, crypto quotes, full option snapshots across expirations, 2-day/1-year/5-year
+history windows, repeated SSE connect/disconnect and an intentionally unread
+subscriber. Reports retain counts, provenance summaries and process metrics;
+no market-price payload is saved. macOS reports RSS plus `proc_pid_rusage`
+physical footprint; Linux reports RSS. No forced garbage collection is used.
+Compare equivalent repeated workloads after warmup and observe the idle tail;
+a finite soak cannot establish a universal multi-day memory bound.
+
+
+### Historical coverage and large requests
+
+`data._coverage` reports requested/observed bounds and whether returned rows were
+sampled. `complete` detects missing symbols and known leading crypto boundary
+gaps; `complete_scope` explicitly excludes internal-gap/calendar verification.
+A nonempty response is not proof of full coverage. The OKX loader now tries its
+history endpoint when the recent endpoint returns only a nonempty tail.
+
+The current HTTP request limit is eight symbols, ten years and 1,000 preview
+rows per symbol (the existing endpoint-preserving sampler can add a final row).
+Preview sampling is declared in the data envelope and must never be used as a
+complete backtest input. There is no implemented persistent multi-symbol history
+job, quota reservation, resume manifest or storage-settings dialog in this branch.
+A ten-symbol multi-year five-minute request needs that separate bounded job path;
+increasing the synchronous request limit is not a substitute.
+
+The suggested separate history-store policy is opt-in capacity, chunked acquisition,
+resumable manifests, observed coverage and data-version checks, default idle expiry
+(e.g. 30 days) for reusable unpinned datasets, and explicit manual retention. These
+are design proposals, not active settings; the shipped gateway still uses the
+120-second idle RAM / 900-second disk-cache defaults above.
+
+For separate synthetic capacity checks (no market data/network), run
+`PYTHONPATH=agent python tools/gateway_memory_pressure.py` for near-entry-limit
+subscription churn, or `python tools/gateway_capacity_probe.py --output /tmp/capacity.json`
+for a bounded DuckDB/Parquet feasibility experiment. The latter is not connected
+to the gateway; it does not establish provider history coverage.

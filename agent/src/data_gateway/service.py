@@ -73,7 +73,7 @@ class MarketDataGateway:
 
     def _key(self, capability: str, params: dict) -> str:
         return hashlib.sha256(
-            json.dumps(["v1", capability, params, self.config.sources], sort_keys=True, allow_nan=False).encode()
+            json.dumps(["v2", capability, params, self.config.sources], sort_keys=True, allow_nan=False).encode()
         ).hexdigest()
 
     def _decorate(self, entry: dict, state: str) -> dict:
