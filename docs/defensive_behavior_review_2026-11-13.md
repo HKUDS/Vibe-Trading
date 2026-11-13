@@ -343,7 +343,7 @@ Worker 不再依赖标题、篇幅、关键词、工具次数、文件存在性�
 - 数字、来源及历史 figures 声明解析迁到 `evals/grounding/`，仅供离线回放。不存在生产兼容转发模块；新解释器验证主循环和 worker 不导入任何离线数字检查模块。
 - 删除整份 `release.py`：删数/同值扫除、强制纠正提示、额外纠正轮次、数字审核 fallback、自动 provenance 拼接、删数说明全部移除。离线 `ValidationResult` 也只返回结论/问题，不再返回替换文本或“保留数字”清单；删除声明块剥离与旧流式数字截断函数。
 - 删除只约束旧改稿/删数行为的测试，保留数值和身份诊断的有效断言；相关测试改为离线导入。移除旧字段与无调用常量。回测归档清单常量由实际归档模块持有，运行时不再为了一个常量导入整个审核器。
-- Harness 同时支持当前 `identity_evidence.json` 与历史 `grounding_evidence.json`，引用路径指向实际文件。缺少数字诊断不算数值正确通过。
+- Harness 同时支持当前 `identity_evidence.json` 与历史 `grounding_evidence.json`，引用路径指向实际文件。当前仅身份产物的运行缺少数字诊断时标为 NOT_EVALUABLE，不误报产物损坏，也不算数值正确通过。
 - `worker.py` 收尾 prompt 不再根据有无 `write_file` 强制生成 `report.md`，统一要求交付已完成结论、成果和缺口，文件仅在用户要求或确有帮助时创建。`backtest_tool.py` / `backtest_summary.py` 将旧的 `grounding_refs` 改为描述性 `metric_sources`；`goal_tool.py` 清除旧 grounding 引用术语。没有追加正文格式要求。
 - 正负号案例保存在 `agent/tests/fixtures/research_output/collar_sign.json`：附原报告哈希、run、版本、人工核对的 −18.5% 与工具 +18.532041639%。直接复用既有 Harness measurement evaluator，负号案例 FAIL、正号舍入对照 PASS；评测不修改任何输入，也不根据任意正文猜测数字语义。
 
@@ -353,6 +353,7 @@ Worker 不再依赖标题、篇幅、关键词、工具次数、文件存在性�
 - 当前生产交付路径回放 **18 份真实历史拒绝草稿 + 3 份真实委员会报告**，逐字交付，原草稿的数字、日期与已知正负号错误全部保留；每份只消费一次保存的模型响应。此项是免费真实材料回放，不是新的模型生成。
 - 32 条实际委员会观测交接；144 / 500 根真实行情直接进入 GPD，尾部样本 8 / 25，和同数据直接计算一致；两个入场价格下领口收益独立复算一致。本阶段没有改计算引擎，仍核验真实数据贯通。
 - 证据：`/Users/wuhaozhe/.codex/artifacts/vibe-trading/research-cleanup-20261113/`。真实行情与原报告仍在仓库外。本阶段当前新增模型费用 **¥0**。
+- 本地代码提交 `df96d9df6`；收尾兼容修正 `6f21ccd84`，相关 Harness/隔离测试另验 **52 passed**（与前述集合有重叠）。
 
 **待单独预算授权的真实模型验收**：DeepSeek V4 Pro，完整行情→GPD 一次，以及复用第三阶段已完成多头/空头/风险官报告、只重跑 PM 一次。预计新增 ¥2–3，硬上限 ¥6；采用逐请求最坏费用预留，不能覆盖下一次调用就停止并保留成果。该批未获授权前不启动。全部使用本分支，未合并、未推送。
 
