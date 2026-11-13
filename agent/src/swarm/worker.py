@@ -333,34 +333,18 @@ def build_worker_prompt(
             "as fundamentals, holders, options, or corporate metadata."
         )
 
-    # Universal anti-fabrication rule. The grounding_block carries a similar
-    # instruction but only renders when user_vars supplies explicit symbols.
-    # Free-form prompts ("look at A-share short-term sentiment") otherwise
-    # leave the worker with no guardrail and it cheerfully cites training-data
-    # prices and sector weights. This block applies the rule unconditionally
-    # — including to aggregator / synthesis agents that have no data tools
-    # and previously had no instruction against inventing numbers.
     prompt_parts.append(
-        "## Data Citation Discipline (HARD RULE)\n\n"
-        "Every specific number you cite in your output — prices, percentages, "
-        "volumes, fund flows, market-cap rankings, sector weights, ETF codes, "
-        "ticker recommendations — MUST be traceable to one of:\n"
-        "  (a) a tool call result obtained in THIS run,\n"
-        "  (b) the Ground Truth block above (if present),\n"
-        "  (c) the Upstream Context above (if present and the upstream agent "
-        "itself sourced it from (a) or (b)).\n\n"
-        "You may NOT cite numbers from memory or training data. Markets have "
-        "moved since your cutoff; any specific price/percentage you recall is "
-        "wrong by default.\n\n"
-        "If you cannot back a number with (a), (b), or (c), you have two "
-        "choices:\n"
-        "  - call a data tool to fetch it (preferred), or\n"
-        "  - omit the number and qualify the statement (e.g. \"directional "
-        "only — not verified against live data\").\n\n"
-        "This rule applies equally to synthesis / aggregator / editor roles "
-        "that lack data tools. If upstream did not provide a specific number, "
-        "do NOT introduce one from training data — say the upstream omitted "
-        "it and proceed without."
+        "## Research Evidence and Assumptions\n\n"
+        "Base claims about observed market/company facts on tool results, dated "
+        "snapshots, or the supplied upstream evidence. Identify the source and "
+        "observation date when they affect the conclusion. Reusing upstream data "
+        "is valid; distinguish it from a new retrieval by this role. Independent "
+        "judgment does not imply newly verified facts. Compute derived metrics "
+        "with the available tools and keep their sample windows and assumptions "
+        "attached. Clearly label proposed prices, scenarios and sizing as your "
+        "assumptions or recommendations. When data is missing, explain the gap "
+        "and give the useful analysis that is still supported. No fixed citation "
+        "or declaration format is required."
     )
 
     # From here on, content varies per call (upstream context substitution,
@@ -1111,9 +1095,10 @@ def _run_worker_impl(
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
             summary = response.content or ""
-            # A retained report is previous work, never a substitute for a
-            # new inline conclusion produced during continuation.
-            if not resume or not summary:
+            # The final response supersedes any earlier draft file, on fresh
+            # runs as well as continuation. Keep files as separate artifacts.
+            messages.append({"role": "assistant", "content": summary})
+            if not summary:
                 summary = _resolve_summary(artifact_dir, summary)
             _finalize_run(artifact_dir, summary, messages)
             reason = _delivery_error(response.content or "") if resume and not response.content else _delivery_error(summary)

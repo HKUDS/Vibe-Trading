@@ -239,3 +239,22 @@ def test_agent_tool_resumes_original_run_without_rerouting(tmp_path, monkeypatch
     assert result["run_id"] == "resumed"
     assert result["final_report"] == "Hold."
     assert result["report_is_partial"] is False
+
+
+def test_fresh_final_response_supersedes_earlier_report_file(tmp_path, monkeypatch):
+    class ReportRegistry(Registry):
+        def execute(self, name, arguments):
+            artifact = agent_artifact_dir(tmp_path, "analyst", "task")
+            (artifact / "report.md").write_text("Preliminary: risk sample is short.")
+            return '{"status":"ok"}'
+    final = "Final: 508 returns, 26 tail observations. Financials are inherited, not newly fetched."
+    provider = Provider([
+        LLMResponse(content="", tool_calls=[ToolCallRequest(id="draft", name="write_file", arguments={})], finish_reason="tool_calls"),
+        LLMResponse(content=final, finish_reason="stop"),
+    ])
+    result = run(tmp_path, ReportRegistry(), monkeypatch, provider)
+    assert result.status == "completed"
+    assert result.summary == final
+    artifact = agent_artifact_dir(tmp_path, "analyst", "task")
+    assert (artifact / "report.md").read_text() == "Preliminary: risk sample is short."
+    assert json.loads((artifact / "messages.json").read_text())[-1]["content"] == final

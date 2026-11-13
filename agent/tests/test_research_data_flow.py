@@ -140,6 +140,10 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     risk_dir = agent_artifact_dir(tmp_path, "risk", "risk")
     note = prepare_handoff(tmp_path, risk, risk_dir)
     assert "not fresh" in note
+    from src.tools.read_file_tool import ReadFileTool
+    page = json.loads(ReadFileTool().execute(path="upstream/index-parts/1.txt", run_dir=str(risk_dir)))
+    assert page["status"] == "ok"
+    assert "get_market_data" in page["content"]
     pm_dir = agent_artifact_dir(tmp_path, "pm", "pm")
     prepare_handoff(tmp_path, pm, pm_dir)
     entries = json.loads((pm_dir / "upstream/index.json").read_text())["observations"]
@@ -150,3 +154,22 @@ def test_handoff_copies_actual_observations_and_preserves_transitive_origin(tmp_
     assert resolve_data_refs(reference(copied, pointer="/NVDA.US", column="close", select="last"), str(pm_dir), []) == 166.19
     # Retry is stable; no duplicated evidence or new freshness claim.
     assert prepare_handoff(tmp_path, risk, risk_dir) == note
+
+
+def test_large_payoff_keeps_basis_visible_and_paths_workspace_relative(tmp_path):
+    from src.agent.result_artifacts import deliver_tool_result
+    from src.agent.tools import ToolRegistry
+    from src.tools.read_file_tool import ReadFileTool
+    registry = ToolRegistry()
+    registry.register(ReadFileTool())
+    raw = OptionsPayoffTool().execute(
+        legs=[{"option_type": "call", "strike": 180, "qty": -1, "premium": 3.55}],
+        underlying_qty=1, entry_spot=166.19, expiry_days=7, spot_points=501,
+        price_as_of="2026-11-12")
+    receipt = json.loads(deliver_tool_result(raw, tmp_path, registry))
+    assert receipt["calculation_basis"] == json.loads(raw)["calculation_basis"]
+    assert receipt["summary"] == json.loads(raw)["summary"]
+    ref = receipt["_result_file"]
+    assert (tmp_path / ref["relative_path"]).read_text() == raw
+    page = json.loads(ReadFileTool().execute(path=ref["parts_relative_dir"] + "/1.txt", run_dir=str(tmp_path)))
+    assert page["status"] == "ok"
