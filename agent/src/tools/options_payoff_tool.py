@@ -10,12 +10,39 @@ import numpy as np
 
 from backtest.options_payoff import OptionLeg, expiry_payoff, scenario_grid
 from src.agent.tools import BaseTool
+from src.quantlib.units import compare_rates
 
 _MAX_LEGS = 20
 _MIN_SPOT_POINTS = 21
 _MAX_SPOT_POINTS = 501
 _DEFAULT_SPOT_POINTS = 121
 _MAX_IV_SCENARIOS = 9
+_MAX_ALTERNATIVES = 5
+
+
+_LEGS_SCHEMA = {
+    "type": "array",
+    "minItems": 1,
+    "maxItems": _MAX_LEGS,
+    "description": (
+        "Signed option legs. Positive qty is long; negative qty is "
+        "short. Omit premium to price that leg with Black-Scholes."
+    ),
+    "items": {
+        "type": "object",
+        "properties": {
+            "option_type": {"type": "string", "enum": ["call", "put"]},
+            "strike": {"type": "number", "exclusiveMinimum": 0},
+            "qty": {"type": "integer"},
+            "premium": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Optional per-share entry premium.",
+            },
+        },
+        "required": ["option_type", "strike", "qty"],
+    },
+}
 
 
 class OptionsPayoffTool(BaseTool):
@@ -27,7 +54,10 @@ class OptionsPayoffTool(BaseTool):
         "piecewise-linear expiry math and Black-Scholes spot/IV scenarios. "
         "Returns entry debit/credit and commission, analytic breakevens, "
         "bounded or unbounded max profit/loss, an expiry payoff curve, and a "
-        "scenario P&L matrix. Use expiry_spot_values for exact scenario prices and their "
+        "scenario P&L matrix. Pass label and alternatives=[{label, legs}, ...] to calculate "
+        "multiple strategies AND their cap/floor/cost comparisons in one call, with shared "
+        "entry price, stock position, expiry and fees. No separate comparison call is needed. "
+        "Use expiry_spot_values for exact scenario prices and their "
         "expiry P&L/returns rather than estimating from the chart. Set underlying_qty=1 for a covered collar/covered call "
         "(shares = underlying_qty * multiplier); default 0 analyzes only options. Research only; does not place orders."
     )
@@ -35,27 +65,21 @@ class OptionsPayoffTool(BaseTool):
     parameters = {
         "type": "object",
         "properties": {
-            "legs": {
+            "legs": _LEGS_SCHEMA,
+            "label": {"type": "string", "description": "Name of the base strategy, e.g. A.", "default": "base"},
+            "alternatives": {
                 "type": "array",
-                "minItems": 1,
-                "maxItems": _MAX_LEGS,
-                "description": (
-                    "Signed option legs. Positive qty is long; negative qty is "
-                    "short. Omit premium to price that leg with Black-Scholes."
-                ),
+                "maxItems": _MAX_ALTERNATIVES,
+                "description": "Other named option-leg sets on the same stock position and pricing assumptions. "
+                "Each is calculated and compared with the base in this call.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "option_type": {"type": "string", "enum": ["call", "put"]},
-                        "strike": {"type": "number", "exclusiveMinimum": 0},
-                        "qty": {"type": "integer"},
-                        "premium": {
-                            "type": "number",
-                            "minimum": 0,
-                            "description": "Optional per-share entry premium.",
-                        },
+                        "label": {"type": "string"},
+                        "legs": _LEGS_SCHEMA,
                     },
-                    "required": ["option_type", "strike", "qty"],
+                    "required": ["label", "legs"],
+                    "additionalProperties": False,
                 },
             },
             "entry_spot": {
@@ -63,8 +87,15 @@ class OptionsPayoffTool(BaseTool):
                 "exclusiveMinimum": 0,
                 "description": "Underlying spot at entry.",
             },
-            "underlying_qty": {"type": "number", "default": 0, "description": "Signed stock units per multiplier. 1 means 100 shares with multiplier=100. Included in P&L and bounds."},
-            "price_as_of": {"type": "string", "description": "Observation date of entry_spot; label assumptions if not a live quote."},
+            "underlying_qty": {
+                "type": "number",
+                "default": 0,
+                "description": "Signed stock units per multiplier. 1 means 100 shares with multiplier=100. Included in P&L and bounds.",
+            },
+            "price_as_of": {
+                "type": "string",
+                "description": "Observation date of entry_spot; label assumptions if not a live quote.",
+            },
             "expiry_days": {
                 "type": "number",
                 "minimum": 0,
@@ -111,11 +142,13 @@ class OptionsPayoffTool(BaseTool):
                 "default": _DEFAULT_SPOT_POINTS,
             },
             "expiry_spot_values": {
-                "type": "array", "minItems": 1, "maxItems": _MAX_SPOT_POINTS,
+                "type": "array",
+                "minItems": 1,
+                "maxItems": _MAX_SPOT_POINTS,
                 "items": {"type": "number", "minimum": 0},
                 "description": "Exact underlying prices at expiry for compact P&L and return rows. "
-                    "Prices may lie outside the display grid. Return uses absolute entry stock notional; "
-                    "options-only strategies have no stock denominator and return null.",
+                "Prices may lie outside the display grid. Return uses absolute entry stock notional; "
+                "options-only strategies have no stock denominator and return null.",
             },
             "scenario_iv_values": {
                 "type": "array",
@@ -131,6 +164,43 @@ class OptionsPayoffTool(BaseTool):
     }
 
     def execute(self, **kwargs: Any) -> str:
+        """Calculate the base and optional alternatives with one shared basis.
+
+        Args:
+            **kwargs: Single-strategy inputs plus named alternative leg sets.
+
+        Returns:
+            Original payoff envelope, with per-alternative results and automatic
+            comparisons when requested. A failed alternative does not discard
+            successful calculations.
+        """
+        label = kwargs.get("label", "base")
+        alternatives = kwargs.get("alternatives", [])
+        if alternatives is None:
+            alternatives = []
+        if not isinstance(label, str) or not label.strip():
+            return _error("label must be a nonempty string")
+        if not isinstance(alternatives, list) or len(alternatives) > _MAX_ALTERNATIVES:
+            return _error(f"alternatives must be an array of at most {_MAX_ALTERNATIVES} named leg sets")
+        labels = {label}
+        for alternative in alternatives:
+            if not isinstance(alternative, dict) or set(alternative) != {"label", "legs"}:
+                return _error("Each alternative needs label and legs only; pricing assumptions are shared")
+            name = alternative["label"]
+            if not isinstance(name, str) or not name.strip() or name in labels:
+                return _error("Strategy labels must be nonempty and distinct")
+            labels.add(name)
+        result = json.loads(self._execute_single(**kwargs))
+        if not alternatives or result.get("status") != "ok":
+            return json.dumps(result, ensure_ascii=False, allow_nan=False)
+        result.update(label=label, alternatives=[], comparisons=[])
+        for alternative in alternatives:
+            calculated = json.loads(self._execute_single(**{**kwargs, "legs": alternative["legs"]}))
+            result["alternatives"].append({"label": alternative["label"], **calculated})
+            result["comparisons"].append(_compare_payoffs(result, calculated, label, alternative["label"]))
+        return json.dumps(result, ensure_ascii=False, allow_nan=False)
+
+    def _execute_single(self, **kwargs: Any) -> str:
         """Run payoff and scenario analysis.
 
         Args:
@@ -157,7 +227,10 @@ class OptionsPayoffTool(BaseTool):
             if exact_spots is not None:
                 if not isinstance(exact_spots, (list, tuple)) or not 1 <= len(exact_spots) <= _MAX_SPOT_POINTS:
                     raise ValueError(f"expiry_spot_values must contain 1 to {_MAX_SPOT_POINTS} prices")
-                if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in exact_spots):
+                if any(
+                    isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
+                    for v in exact_spots
+                ):
                     raise ValueError("expiry_spot_values must contain non-negative finite prices")
             display_spots = np.linspace(spot_min, spot_max, spot_points)
             # One engine call prices both the display grid and the requested
@@ -192,9 +265,12 @@ class OptionsPayoffTool(BaseTool):
 
         denominator = abs(underlying_qty * multiplier * entry_spot)
         expiry_scenarios = [
-            {"spot": float(spot), "pnl": float(pnl),
-             "return_fraction": float(pnl / denominator) if denominator else None,
-             "return_percent": float(pnl / denominator * 100) if denominator else None}
+            {
+                "spot": float(spot),
+                "pnl": float(pnl),
+                "return_fraction": float(pnl / denominator) if denominator else None,
+                "return_percent": float(pnl / denominator * 100) if denominator else None,
+            }
             for spot, pnl in zip(report.spot_grid[spot_points:], report.payoff[spot_points:])
         ]
         payload = {
@@ -226,11 +302,18 @@ class OptionsPayoffTool(BaseTool):
                 "underlying_shares": underlying_qty * multiplier,
                 "option_entry_cost_including_commission": report.entry_cost,
                 "return_denominator": abs(underlying_qty * multiplier * entry_spot),
+                "entry_cost_return": report.entry_cost / denominator if denominator else None,
                 "return_convention": "P&L / absolute entry stock notional; not return on total cash invested",
-                "max_profit_return": (report.max_profit / abs(underlying_qty * multiplier * entry_spot)
-                                      if underlying_qty and not report.profit_unbounded else None),
-                "max_loss_return": (report.max_loss / abs(underlying_qty * multiplier * entry_spot)
-                                    if underlying_qty and not report.loss_unbounded else None),
+                "max_profit_return": (
+                    report.max_profit / abs(underlying_qty * multiplier * entry_spot)
+                    if underlying_qty and not report.profit_unbounded
+                    else None
+                ),
+                "max_loss_return": (
+                    report.max_loss / abs(underlying_qty * multiplier * entry_spot)
+                    if underlying_qty and not report.loss_unbounded
+                    else None
+                ),
             },
             "summary": {
                 "net_premium": _rounded(report.net_premium),
@@ -274,6 +357,27 @@ class OptionsPayoffTool(BaseTool):
             # Extreme finite inputs (e.g. a ~1e308 multiplier) overflow to inf
             # in the results; report that instead of raising out of execute().
             return _error(f"non-serializable numeric result: {exc}")
+
+
+def _compare_payoffs(base: dict, alternative: dict, base_label: str, label: str) -> dict:
+    """Compare computed stock-notional returns; higher does not mean better."""
+    comparison = {"left_label": label, "right_label": base_label, "operation": "alternative - base"}
+    if alternative.get("status") != "ok":
+        return {**comparison, "status": "unavailable", "reason": alternative.get("error", "Calculation failed")}
+    lhs, rhs = alternative["calculation_basis"], base["calculation_basis"]
+    if not rhs["return_denominator"]:
+        return {**comparison, "status": "unavailable", "reason": "No entry stock notional for rate comparison"}
+    metrics = {}
+    for field in ("max_profit_return", "max_loss_return", "entry_cost_return"):
+        left, right = lhs[field], rhs[field]
+        if left is None or right is None:
+            metrics[field] = {"status": "unavailable", "reason": "Unbounded payoff has no finite return"}
+            continue
+        compared = compare_rates(left, right)
+        metrics[field] = {
+            key: compared[key] for key in ("left_decimal", "right_decimal", "relation", "difference_percentage_points")
+        }
+    return {**comparison, "status": "ok", "metrics": metrics}
 
 
 def _coerce_legs(raw: Any) -> list[OptionLeg]:

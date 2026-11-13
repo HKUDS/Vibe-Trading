@@ -93,10 +93,20 @@ class PayoffLeg(BaseModel):
         return v
 
 
+class PayoffAlternative(BaseModel):
+    """Named leg set; all pricing assumptions come from the parent request."""
+
+    model_config = {"extra": "forbid"}
+    label: str = Field(..., min_length=1)
+    legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+
+
 class PayoffRequest(BaseModel):
     """POST /options/payoff body — mirrors ``OptionsPayoffTool.parameters``."""
 
     legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+    label: str = "base"
+    alternatives: list[PayoffAlternative] = Field(default_factory=list, max_length=5)
     entry_spot: float = Field(..., gt=0)
     expiry_days: float = Field(..., ge=0)
     risk_free_rate: float = Field(0.05)
@@ -140,6 +150,8 @@ def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
     """
     params: dict[str, Any] = {
         "legs": [leg.model_dump(exclude_none=True) for leg in payload.legs],
+        "label": payload.label,
+        "alternatives": [item.model_dump(exclude_none=True) for item in payload.alternatives],
         "entry_spot": payload.entry_spot,
         "expiry_days": payload.expiry_days,
         "risk_free_rate": payload.risk_free_rate,

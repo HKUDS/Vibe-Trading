@@ -1696,6 +1696,24 @@
       "spot": "満期時の価格",
       "pnl": "満期損益",
       "return": "株式想定元本に対する収益率"
+    },
+    "comparison": {
+      "title": "戦略比較",
+      "basis": "レッグを保存してから編集して比較します。現在の参入価格、株式保有、満期、手数料を共用します。収益率の分母は参入時の株式想定元本です。オプションのみでは分母はありません。",
+      "current": "現在の戦略",
+      "saved": "戦略 {{index}}",
+      "save": "比較用にレッグを保存",
+      "remove": "削除",
+      "metric": "指標",
+      "alternative": "代替戦略",
+      "baseline": "基準戦略",
+      "difference": "差（パーセントポイント）",
+      "max_profit_return": "最大収益率",
+      "max_loss_return": "最小収益率",
+      "entry_cost_return": "参入費用／株式想定元本",
+      "higher": "上回る",
+      "lower": "下回る",
+      "equal": "同じ"
     }
   },
   "alphaZoo": {

@@ -24,7 +24,26 @@ export interface OptionLeg {
   premium?: number;
 }
 
+export interface PayoffAlternative { label: string; legs: OptionLeg[] }
+
+export interface PayoffComparison {
+  left_label: string;
+  right_label: string;
+  status: "ok" | "unavailable";
+  reason?: string;
+  metrics?: Record<string, {
+    status?: "unavailable";
+    reason?: string;
+    left_decimal?: number;
+    right_decimal?: number;
+    relation?: "higher" | "lower" | "equal";
+    difference_percentage_points?: number;
+  }>;
+}
+
 export interface OptionsPayoffRequest {
+  label?: string;
+  alternatives?: PayoffAlternative[];
   legs: OptionLeg[];
   entry_spot: number;
   expiry_days: number;
@@ -87,6 +106,7 @@ export interface ScenarioGrid {
 }
 
 export interface OptionsPayoffResponse {
+  comparisons?: PayoffComparison[];
   status: "ok";
   inputs: Record<string, unknown>;
   summary: OptionsPayoffSummary;

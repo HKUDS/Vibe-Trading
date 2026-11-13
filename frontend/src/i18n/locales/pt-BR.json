@@ -1702,6 +1702,24 @@
       "spot": "Preço no vencimento",
       "pnl": "Lucro/prejuízo no vencimento",
       "return": "Retorno sobre o valor nominal das ações"
+    },
+    "comparison": {
+      "title": "Comparar estratégias",
+      "basis": "Salve as pernas e edite para comparar. Todas usam o preço de entrada, posição em ações, vencimento e taxas atuais. O retorno usa o valor nocional inicial das ações; opções isoladas não têm esse denominador.",
+      "current": "Estratégia atual",
+      "saved": "Estratégia {{index}}",
+      "save": "Salvar pernas para comparação",
+      "remove": "Remover",
+      "metric": "Métrica",
+      "alternative": "Alternativa",
+      "baseline": "Base",
+      "difference": "Diferença (pontos percentuais)",
+      "max_profit_return": "Retorno máximo",
+      "max_loss_return": "Retorno mínimo",
+      "entry_cost_return": "Custo de entrada / nocional das ações",
+      "higher": "Maior",
+      "lower": "Menor",
+      "equal": "Igual"
     }
   },
   "alphaZoo": {
