@@ -1695,6 +1695,13 @@
       "noData": "Tidak ada kontrak yang dikembalikan untuk pilihan ini.",
       "errorTitle": "Options chain tidak tersedia",
       "retry": "Coba lagi"
+    },
+    "expiryScenarios": {
+      "input": "Harga saat jatuh tempo (opsional, dipisahkan koma)",
+      "title": "Skenario jatuh tempo",
+      "spot": "Harga saat jatuh tempo",
+      "pnl": "Laba/rugi saat jatuh tempo",
+      "return": "Imbal hasil atas nilai nosional saham"
     }
   },
   "alphaZoo": {

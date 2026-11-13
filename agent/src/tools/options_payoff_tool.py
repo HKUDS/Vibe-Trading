@@ -27,7 +27,8 @@ class OptionsPayoffTool(BaseTool):
         "piecewise-linear expiry math and Black-Scholes spot/IV scenarios. "
         "Returns entry debit/credit and commission, analytic breakevens, "
         "bounded or unbounded max profit/loss, an expiry payoff curve, and a "
-        "scenario P&L matrix. Set underlying_qty=1 for a covered collar/covered call "
+        "scenario P&L matrix. Use expiry_spot_values for exact scenario prices and their "
+        "expiry P&L/returns rather than estimating from the chart. Set underlying_qty=1 for a covered collar/covered call "
         "(shares = underlying_qty * multiplier); default 0 analyzes only options. Research only; does not place orders."
     )
     repeatable = True
@@ -109,6 +110,13 @@ class OptionsPayoffTool(BaseTool):
                 "maximum": _MAX_SPOT_POINTS,
                 "default": _DEFAULT_SPOT_POINTS,
             },
+            "expiry_spot_values": {
+                "type": "array", "minItems": 1, "maxItems": _MAX_SPOT_POINTS,
+                "items": {"type": "number", "minimum": 0},
+                "description": "Exact underlying prices at expiry for compact P&L and return rows. "
+                    "Prices may lie outside the display grid. Return uses absolute entry stock notional; "
+                    "options-only strategies have no stock denominator and return null.",
+            },
             "scenario_iv_values": {
                 "type": "array",
                 "minItems": 1,
@@ -145,7 +153,16 @@ class OptionsPayoffTool(BaseTool):
             spot_min, spot_max = _spot_bounds(kwargs, legs, entry_spot)
             iv_values = _scenario_ivs(kwargs.get("scenario_iv_values"), volatility)
 
-            spots = np.linspace(spot_min, spot_max, spot_points)
+            exact_spots = kwargs.get("expiry_spot_values")
+            if exact_spots is not None:
+                if not isinstance(exact_spots, (list, tuple)) or not 1 <= len(exact_spots) <= _MAX_SPOT_POINTS:
+                    raise ValueError(f"expiry_spot_values must contain 1 to {_MAX_SPOT_POINTS} prices")
+                if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in exact_spots):
+                    raise ValueError("expiry_spot_values must contain non-negative finite prices")
+            display_spots = np.linspace(spot_min, spot_max, spot_points)
+            # One engine call prices both the display grid and the requested
+            # scenarios; no second payoff formula or interpolation path.
+            spots = np.concatenate((display_spots, exact_spots or []))
             time_to_expiry = expiry_days / 365.0
             report = expiry_payoff(
                 legs,
@@ -160,7 +177,7 @@ class OptionsPayoffTool(BaseTool):
             )
             scenarios = scenario_grid(
                 legs,
-                spots,
+                display_spots,
                 iv_values,
                 entry_spot=entry_spot,
                 time_to_expiry=time_to_expiry,
@@ -173,6 +190,13 @@ class OptionsPayoffTool(BaseTool):
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             return _error(str(exc))
 
+        denominator = abs(underlying_qty * multiplier * entry_spot)
+        expiry_scenarios = [
+            {"spot": float(spot), "pnl": float(pnl),
+             "return_fraction": float(pnl / denominator) if denominator else None,
+             "return_percent": float(pnl / denominator * 100) if denominator else None}
+            for spot, pnl in zip(report.spot_grid[spot_points:], report.payoff[spot_points:])
+        ]
         payload = {
             "status": "ok",
             "tool": self.name,
@@ -189,6 +213,7 @@ class OptionsPayoffTool(BaseTool):
                 "entry_spot": entry_spot,
                 "underlying_qty": underlying_qty,
                 "price_as_of": kwargs.get("price_as_of"),
+                "expiry_spot_values": exact_spots,
                 "expiry_days": expiry_days,
                 "risk_free_rate": rate,
                 "volatility": volatility,
@@ -227,13 +252,14 @@ class OptionsPayoffTool(BaseTool):
                 "profit_unbounded": report.profit_unbounded,
                 "loss_unbounded": report.loss_unbounded,
             },
+            "expiry_scenarios": expiry_scenarios,
             "expiry_curve": {
-                "spot": _rounded_array(report.spot_grid),
-                "pnl": _rounded_array(report.payoff),
+                "spot": _rounded_array(display_spots),
+                "pnl": _rounded_array(report.payoff[:spot_points]),
             },
             "scenario_grid": {
                 "iv_values": _rounded_array(iv_values),
-                "spot": _rounded_array(report.spot_grid),
+                "spot": _rounded_array(display_spots),
                 "pnl": [_rounded_array(row) for row in np.asarray(scenarios, dtype=float)],
             },
             "limitations": [

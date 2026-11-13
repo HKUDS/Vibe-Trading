@@ -63,6 +63,7 @@ __all__ = ["ALLOWED_MODULES", "QuantlibCallTool"]
 #: Short name -> dotted module path. A caller names the short form; nothing a
 #: caller sends is ever handed to ``importlib``.
 ALLOWED_MODULES: dict[str, str] = {
+    "units": "src.quantlib.units",
     "options": "src.quantlib.options",
     "fixedincome": "src.quantlib.fixedincome",
     "credit": "src.quantlib.credit",
@@ -271,6 +272,7 @@ class QuantlibCallTool(BaseTool):
 
     name = "quantlib_call"
     description = (
+        "For rate differences and basis points, units.compare_rates performs explicit-unit arithmetic. "
         "Run a function from the tested finance-math library (src/quantlib): "
         "Black-Scholes and implied vol, bond math and curve fitting, Altman Z "
         "and Merton/KMV, stationarity/cointegration/GARCH/regime switching, "

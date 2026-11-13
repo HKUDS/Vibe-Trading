@@ -45,6 +45,7 @@ export interface OptionsPayoffRequest {
   spot_points?: number;
   /** IV scenarios as annualized fractions (max 9). */
   scenario_iv_values?: number[];
+  expiry_spot_values?: number[];
 }
 
 export interface BreakevenInterval {
@@ -90,6 +91,7 @@ export interface OptionsPayoffResponse {
   inputs: Record<string, unknown>;
   summary: OptionsPayoffSummary;
   greeks: OptionsGreeks;
+  expiry_scenarios?: Array<{ spot: number; pnl: number; return_fraction: number | null; return_percent: number | null }>;
   expiry_curve: ExpiryCurve;
   scenario_grid: ScenarioGrid;
   limitations: string[];
@@ -189,6 +191,7 @@ export interface OptionsLabParams {
   underlying_qty?: number;
   /** Percent: 0.1 = 0.1%. Sent as 0.001. */
   commission_rate_pct: number;
+  expiry_spots_text?: string;
 }
 
 export const DEFAULT_PARAMS: OptionsLabParams = {
@@ -367,7 +370,11 @@ export function buildPayoffRequest(
     if (!Number.isInteger(leg.qty) || leg.qty === 0) return null;
     if (leg.premium !== undefined && (!Number.isFinite(leg.premium) || leg.premium < 0)) return null;
   }
+  const text = (p.expiry_spots_text ?? "").trim();
+  const expirySpots = text ? text.split(/[,，]/).map((value) => value.trim()) : [];
+  if (expirySpots.length > 501 || expirySpots.some((value) => value === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) return null;
   return {
+    ...(expirySpots.length ? { expiry_spot_values: expirySpots.map(Number) } : {}),
     legs: legs.map((l) => ({
       option_type: l.option_type,
       strike: l.strike,

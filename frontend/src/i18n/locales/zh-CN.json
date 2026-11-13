@@ -1689,6 +1689,13 @@
       "noData": "该选择下未返回合约。",
       "errorTitle": "期权链不可用",
       "retry": "重试"
+    },
+    "expiryScenarios": {
+      "input": "到期价格（可选，逗号分隔）",
+      "title": "到期场景",
+      "spot": "到期价格",
+      "pnl": "到期盈亏",
+      "return": "股票名义本金收益率"
     }
   },
   "alphaZoo": {

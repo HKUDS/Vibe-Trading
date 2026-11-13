@@ -1695,6 +1695,13 @@
       "noData": "Keine Kontrakte für diese Auswahl zurückgegeben.",
       "errorTitle": "Options-Kette nicht verfügbar",
       "retry": "Erneut versuchen"
+    },
+    "expiryScenarios": {
+      "input": "Verfallskurse (optional, durch Kommas getrennt)",
+      "title": "Verfallsszenarien",
+      "spot": "Kurs bei Verfall",
+      "pnl": "Gewinn/Verlust bei Verfall",
+      "return": "Rendite auf den Aktiennominalwert"
     }
   },
   "alphaZoo": {

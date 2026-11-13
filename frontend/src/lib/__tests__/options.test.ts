@@ -412,3 +412,12 @@ it("includes stock units and keeps pre-upgrade drafts options-only", () => {
   expect(buildPayoffRequest(legs, oldDraft)?.underlying_qty).toBe(0);
   expect(buildPayoffRequest(legs, { ...DEFAULT_PARAMS, underlying_qty: Number.NaN })).toBeNull();
 });
+
+it("passes exact expiry prices through without financial calculations", () => {
+  const legs: OptionLeg[] = [{ option_type: "call", strike: 100, qty: 1 }];
+  expect(buildPayoffRequest(legs, { ...DEFAULT_PARAMS, expiry_spots_text: "160, 180，0" })?.expiry_spot_values).toEqual([160, 180, 0]);
+  expect(buildPayoffRequest(legs, DEFAULT_PARAMS)?.expiry_spot_values).toBeUndefined();
+  for (const text of ["160,", "-1", "NaN", "Infinity", "bad"]) {
+    expect(buildPayoffRequest(legs, { ...DEFAULT_PARAMS, expiry_spots_text: text })).toBeNull();
+  }
+});

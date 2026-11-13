@@ -1655,6 +1655,13 @@
       "noData": "Bu seçim için sözleşme döndürülmedi.",
       "errorTitle": "Opsiyon zinciri alınamıyor",
       "retry": "Tekrar Dene"
+    },
+    "expiryScenarios": {
+      "input": "Vade sonu fiyatları (isteğe bağlı, virgülle ayrılmış)",
+      "title": "Vade sonu senaryoları",
+      "spot": "Vade sonu fiyatı",
+      "pnl": "Vade sonu kâr/zarar",
+      "return": "Hisse nominal tutarı üzerinden getiri"
     }
   },
   "alphaZoo": {

@@ -369,3 +369,13 @@ def test_covered_stock_is_in_payoff_and_delta() -> None:
     assert data["calculation_basis"]["underlying_shares"] == 100
     naked = _client().post("/options/payoff", json={**body, "underlying_qty": 0}).json()
     assert data["greeks"]["delta"] - naked["greeks"]["delta"] == pytest.approx(100)
+
+
+def test_exact_expiry_prices_use_the_real_engine():
+    from tests.test_numeric_calculation_contract import collar
+    response = _client().post("/options/payoff", json=collar(expiry_spot_values=[160, 180]))
+    assert response.status_code == 200
+    rows = response.json()["expiry_scenarios"]
+    assert [row["spot"] for row in rows] == [160, 180]
+    assert rows[0]["return_percent"] == pytest.approx(-5.536795234370298)
+    assert rows[1]["return_percent"] == pytest.approx(6.4976232023587475)
