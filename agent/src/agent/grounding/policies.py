@@ -535,7 +535,7 @@ class _PolicyMixin:
         # its role; the same label-matching contract already protects citations.
         scalar_parameters: list[float] = []
         for parameter in figures:
-            declared = block.match(parameter.value, parameter.percent, parameter.digits)
+            declared = block.match(parameter.value, parameter.percent, parameter.digits, scale=parameter.scale)
             if (
                 declared is None
                 or declared.role != "count"
@@ -564,7 +564,7 @@ class _PolicyMixin:
             if figure.shape not in ("measured", "bare"):
                 continue
             declaration = block.match(
-                figure.value, figure.percent, figure.digits, figure.point_marked
+                figure.value, figure.percent, figure.digits, figure.point_marked, scale=figure.scale
             )
             if declaration is None and figure.percent:
                 # A bare observation can restate a percentage only if the
@@ -919,6 +919,7 @@ class _PolicyMixin:
                 record
                 for record in records
                 if not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
+                and record.value_scale == 1.0
                 and (record.source != "document" or record.field == "document.ratio")
             ]
         elif figure is not None and figure.currency:
@@ -926,10 +927,13 @@ class _PolicyMixin:
             # referenced numeric cell can be restated with that unit; it is
             # still matched to this exact source and written precision. Do not
             # promote it to a price globally or admit ratios as amounts. Known
-            # currency identity is checked by _check_observed below.
+            # currency identity is checked by _check_observed below. Explicit
+            # field-unit amounts are admitted only here, under this ref; they
+            # do not join the undeclared price pool.
             records = [
                 record for record in records
                 if _is_price_kind(record)
+                or (record.value_scale != 1.0 and record.currency is not None)
                 or (record.source == "document" and record.field == "document.figure")
             ]
             metrics = []

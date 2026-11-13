@@ -109,9 +109,12 @@ _POINT_MARKS = (
     ("bp", 0.01),
 )
 
-# Magnitude marks glued to a figure ("24.6M", "2.4万"): a symbol set like the
-# currency marks. They scale the comparison with evidence and never decide shape.
-_MAGNITUDES = {"K": 1e3, "M": 1e6, "B": 1e9, "千": 1e3, "万": 1e4, "亿": 1e8}
+# Numeric magnitude units ("24.6M", "2.4万", "96.22 billion"). They scale
+# comparison with evidence; they never infer a figure's role from prose.
+_MAGNITUDES = {
+    "K": 1e3, "M": 1e6, "B": 1e9, "千": 1e3, "万": 1e4, "亿": 1e8,
+    "thousand": 1e3, "million": 1e6, "billion": 1e9, "trillion": 1e12,
+}
 
 # A CJK currency word is at most three characters (人民币); bounding the run
 # keeps 元宵/元件, inside longer CJK runs, from reading as money.
@@ -136,6 +139,7 @@ class Declaration:
 
     ``value_text`` is the value's canonical spelling at its written precision,
     in percent units when it is a percent ("5200bp" → "52.00%").
+    ``scale`` preserves an explicit magnitude separately from that mantissa.
     """
 
     index: int
@@ -145,6 +149,7 @@ class Declaration:
     role: str
     note: str
     ref: str
+    scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -163,7 +168,8 @@ class FiguresBlock:
     spans: tuple[tuple[int, int], ...] = ()
 
     def match(
-        self, value: float, percent: bool, digits: str | None = None, point_marked: bool = False
+        self, value: float, percent: bool, digits: str | None = None, point_marked: bool = False,
+        *, scale: float = 1.0,
     ) -> Declaration | None:
         """Return the declaration covering ``value``, or None.
 
@@ -187,6 +193,7 @@ class FiguresBlock:
                 require an exact match.
             point_marked: Whether the prose figure's mark is a percentage-point
                 spelling rather than "%".
+            scale: The explicit numeric magnitude attached to the prose figure.
 
         Returns:
             The matching declaration (the nearest one when several round to the
@@ -197,16 +204,31 @@ class FiguresBlock:
         # rounding arm stays percent-exact and a count declaration cannot
         # drift onto a nearby delta.
         candidates = [item for item in self.declarations if item.percent == percent]
-        for declaration in candidates:
-            if abs(declaration.value - value) <= max(abs(value) * 1e-9, 1e-9):
+        # Compare an explicitly scaled declaration in the prose's units. A
+        # declaration without a unit may retain the visible mantissa (the
+        # existing contract), or state the raw observed amount. The latter
+        # alternative is restricted to observed figures: it still has to pass
+        # the same scoped evidence check, never the undeclared evidence pool.
+        readings = [
+            (item, reading)
+            for item in candidates
+            for reading in (
+                (item.value * item.scale / scale,)
+                if item.scale != 1.0 else
+                ((item.value, item.value / scale)
+                 if scale != 1.0 and item.role == "observed" else (item.value,))
+            )
+        ]
+        for declaration, reading in readings:
+            if abs(reading - value) <= max(abs(value) * 1e-9, 1e-9):
                 return declaration
         if digits and "." in digits:
             half_unit = 0.5 * 10.0 ** -len(digits.split(".", 1)[1])
             rounded = [
-                (abs(item.value - value), item)
-                for item in candidates
-                if abs(item.value - value) <= half_unit * (1 + 1e-9)
-                and abs(item.value - value) <= abs(item.value) * ROUNDED_BAND
+                (abs(reading - value), item)
+                for item, reading in readings
+                if abs(reading - value) <= half_unit * (1 + 1e-9)
+                and abs(reading - value) <= abs(reading) * ROUNDED_BAND
             ]
             if rounded:
                 return min(rounded, key=lambda pair: pair[0])[1]
@@ -729,9 +751,7 @@ def _parse_value(
     if len(tokens) != 1:
         return None
     token = tokens[0]
-    rest = field[token.end :].strip()
-    if rest[:1] in _MAGNITUDES and not _is_currency_mark(rest):
-        rest = rest[1:].lstrip()
+    rest = field[magnitude_suffix(field, token.end)[1] :].strip()
     unit, consumed, _ = _percent_mark(rest, 0)
     tail = rest[consumed:].strip()
     if not unit and tail in _MULTIPLE_MARKS:
@@ -849,6 +869,9 @@ def parse_figures_block(content: str) -> FiguresBlock:
             malformed.append((number, line.strip()[:120]))
             continue
         value, percent, canonical = parsed
+        value_field = _normalize(parts[0]).text.strip()
+        value_tokens = _numbers(value_field, decimal_commas=document_reading)
+        scale = magnitude_suffix(value_field, value_tokens[0].end)[0] if len(value_tokens) == 1 else 1.0
         declarations.append(
             Declaration(
                 index=number,
@@ -858,6 +881,7 @@ def parse_figures_block(content: str) -> FiguresBlock:
                 role=role,
                 note=parts[2] if len(parts) > 2 else "",
                 ref=parts[3] if len(parts) > 3 else "",
+                scale=scale if not percent else 1.0,
             )
         )
     return FiguresBlock(
@@ -1079,13 +1103,16 @@ def magnitude_suffix(text: str, end: int) -> tuple[float, int]:
     start = end
     while start < len(text) and text[start] in " \t\u00a0\u202f\u3000":
         start += 1
-    mark = text[start : start + 1]
-    if not mark or mark not in _MAGNITUDES:
-        return 1.0, end
-    after = text[start + 1 : start + 2]
-    if mark.isascii() and after.isascii() and after.isalpha():
-        return 1.0, end
-    return _MAGNITUDES[mark], start + 1
+    for mark, multiplier in _MAGNITUDES.items():
+        candidate = text[start : start + len(mark)]
+        matches = candidate.casefold() == mark if len(mark) > 1 else candidate == mark
+        if not matches:
+            continue
+        after = text[start + len(mark) : start + len(mark) + 1]
+        if mark.isascii() and after.isascii() and after.isalpha():
+            continue
+        return multiplier, start + len(mark)
+    return 1.0, end
 
 
 def _currency_prefix_start(text: str, start: int) -> int:

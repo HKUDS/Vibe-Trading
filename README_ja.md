@@ -57,6 +57,9 @@
 
 ## 📰 ニュース
 
+- **2026-11-12** 🛠️ **バックテストの時系列、レポート数値、調査の完了判定を修正** — シャドー口座が指定された初期資金を使用し、出力トークン上限で途切れたワーカー応答を完了扱いしなくなりました。委員会の PM は有効な上流レポートを再取得なしで統合でき、ネイティブ Anthropic アダプターの既定出力枠は変更可能な 16,384 トークンです。
+  生成戦略の出力目標に追加のシフトを検出した場合、意図的な遅延と明示しない限り実行を拒否します。指標の lookback は引き続き使えます。Grounding は証拠の検証を維持しつつ、金額単位の表記や正確な観測値の宣言に対応しました。SPY／GLD の実際のバックテストは、全 206／140 件の約定と総リターンで独立した帳簿計算と一致しました。**未リリース。**
+
 - **2026-11-11** 🧾 **ペーパートレードの部分約定と独立した帳簿照合** — 中国A株の5分足ペーパートレードで、注文ごとの出来高上限、部分約定、注文状態の出力を任意に有効化できます（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)）。新しい `paper_trade_reconcile` Agent/MCP ツールは、返された約定記録から手数料・現金・保有ポジション・純資産価値（NAV）の計算を独立して照合します（[#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)）。
   対応する複数行の百分率ヘッダーと、原文のラベルを保持した文書内の整数の明示的な引用を正しく処理します（[#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185)、[#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)）。厳密な因子ベンチマークの入力も修正し（[#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)）、チャネルの応答待ちがタイムアウトした際に前のターンの回答を返さないようにしました（[#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)）。
   [@shadowinlife](https://github.com/shadowinlife)、[@he-yufeng](https://github.com/he-yufeng)、[@Jackzigen](https://github.com/Jackzigen)、[@divya0795](https://github.com/divya0795) に感謝します！**`main` に反映済みで、次の pip リリースに含まれます。**
