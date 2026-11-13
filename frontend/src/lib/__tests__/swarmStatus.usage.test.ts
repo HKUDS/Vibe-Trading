@@ -353,3 +353,21 @@ describe("swarmStatus roster repair from the run detail", () => {
     expect(merged.agents.find((a) => a.agentId === "a_share_analyst")?.input_tokens).toBe(10);
   });
 });
+
+describe("partial research delivery", () => {
+  it("accepts saved results after a local cancel without changing its status", () => {
+    const cancelled = { ...baseStatus(), status: "cancelled" as const, completedAt: 12 };
+    const next = applySwarmEvent(cancelled, {
+      type: "run_completed", data: { status: "failed", final_report: "Revenue $26B", report_is_partial: true },
+    });
+    expect(next.status).toBe("cancelled");
+    expect(next.completedAt).toBe(12);
+    expect(next.finalReport).toBe("Revenue $26B");
+    expect(next.reportIsPartial).toBe(true);
+  });
+  it("rehydrates partial delivery from persisted run data", () => {
+    const next = buildSwarmStatusFromRunDetail({ id: "r", status: "failed", final_report: "Hold", report_is_partial: true }, "r");
+    expect(next?.finalReport).toBe("Hold");
+    expect(next?.reportIsPartial).toBe(true);
+  });
+});

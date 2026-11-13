@@ -15,17 +15,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from src.agent.grounding.identity import (
+from src.agent.instrument_identity import (
     _CANONICAL_SYMBOL_RE,
     _normalize_symbol,
     _scan_symbols,
 )
-from src.agent.grounding import identity_checks  # noqa: F401  (registers declared checks)
-from src.agent.grounding import figures_checks  # noqa: F401  (registers declared checks)
-from src.agent.grounding.figures import _MAGNITUDES
-from src.agent.grounding.registry import GROUNDING_CHECKS, grounding_check
-from src.agent.grounding.evidence import (
+from evals.grounding import identity_checks  # noqa: F401  (registers declared checks)
+from evals.grounding import figures_checks  # noqa: F401  (registers declared checks)
+from evals.grounding.figures import _MAGNITUDES
+from evals.grounding.registry import GROUNDING_CHECKS, grounding_check
+from evals.grounding.evidence import (
     EvidenceRecord,
+    _has_money_unit,
     _is_metadata_count_leaf,
     _is_number,
     _is_price_kind,
@@ -35,7 +36,7 @@ from src.agent.grounding.evidence import (
     _timestamp_matches_claim_date,
     tail_risk_identity,
 )
-from src.agent.grounding.figures import (
+from evals.grounding.figures import (
     ROUNDED_BAND,
     Declaration,
     Figure,
@@ -114,20 +115,10 @@ _CITABLE_FIELDS = ("close", "price", "adj_close")
 
 @dataclass(frozen=True)
 class ValidationResult:
-    """Final-answer grounding decision.
-
-    ``released_text`` is the draft without its declaration block, which is a
-    contract with the gate and never reaches the user.
-
-    ``passed_figures`` names the measured figures the gate checked and let
-    through, as written, so the correction prompt can tell the model what to
-    keep, not only what to fix.
-    """
+    """Offline findings only; no replacement or releasable answer is produced."""
 
     valid: bool
     issues: list[dict[str, Any]] = field(default_factory=list)
-    released_text: str = ""
-    passed_figures: tuple[str, ...] = ()
 
 
 def _close(value: float, target: float) -> bool:
@@ -535,7 +526,7 @@ class _PolicyMixin:
         # its role; the same label-matching contract already protects citations.
         scalar_parameters: list[float] = []
         for parameter in figures:
-            declared = block.match(parameter.value, parameter.percent, parameter.digits)
+            declared = block.match(parameter.value, parameter.percent, parameter.digits, scale=parameter.scale)
             if (
                 declared is None
                 or declared.role != "count"
@@ -564,7 +555,7 @@ class _PolicyMixin:
             if figure.shape not in ("measured", "bare"):
                 continue
             declaration = block.match(
-                figure.value, figure.percent, figure.digits, figure.point_marked
+                figure.value, figure.percent, figure.digits, figure.point_marked, scale=figure.scale
             )
             if declaration is None and figure.percent:
                 # A bare observation can restate a percentage only if the
@@ -655,7 +646,11 @@ class _PolicyMixin:
                     GROUNDING_CHECKS.run("figure-proposed", self, figure, declaration, symbol, records, scalar_parameters)
                 )
                 continue
-            issues.extend(GROUNDING_CHECKS.run("figure-observed", self, figure, declaration, symbol, records))
+            line, line_offset = positions[figure.line] if 0 <= figure.line < len(positions) else ("", 0)
+            issues.extend(GROUNDING_CHECKS.run(
+                "figure-observed", self, figure, declaration, symbol, records,
+                line=line, line_offset=line_offset,
+            ))
         market_records = self._price_records()
         if checked_price and market_records:
             issues.extend(self._validate_price_provenance(content, market_records))
@@ -702,6 +697,7 @@ class _PolicyMixin:
                     "is not declared in the figures block and is not an observed "
                     "value; declare it as observed / derived / proposed / cited / "
                     "count, or remove it",
+                    field_ref_candidates=self._artifact_ref_candidates(figure, symbol),
                     **(
                         {
                             "declared_as": other_unit.value_text,
@@ -910,11 +906,16 @@ class _PolicyMixin:
             # A table cell quotes its own column, not whatever else the call returned.
             records = [record for record in records if record.field == figure.column]
             metrics = []
+        if figure is not None and figure.date:
+            records = [r for r in records if r.timestamp and _timestamp_matches_claim_date(r.timestamp, figure.date)]
+            metrics = []
         if figure is not None and figure.percent:
             records = [
                 record
                 for record in records
                 if not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
+                and not _has_money_unit(record)
+                and record.value_scale == 1.0
                 and (record.source != "document" or record.field == "document.ratio")
             ]
         elif figure is not None and figure.currency:
@@ -922,10 +923,14 @@ class _PolicyMixin:
             # referenced numeric cell can be restated with that unit; it is
             # still matched to this exact source and written precision. Do not
             # promote it to a price globally or admit ratios as amounts. Known
-            # currency identity is checked by _check_observed below.
+            # currency identity is checked by _check_observed below. Explicit
+            # field-unit amounts are admitted only here, under this ref; they
+            # do not join the undeclared price pool.
             records = [
                 record for record in records
                 if _is_price_kind(record)
+                or _has_money_unit(record)
+                or (record.value_scale != 1.0 and record.currency is not None)
                 or (record.source == "document" and record.field == "document.figure")
             ]
             metrics = []
@@ -1334,10 +1339,25 @@ class _PolicyMixin:
         if figure.column and record.field != figure.column:
             return False
         if figure.percent:
-            return not _is_price_kind(record) and not _is_metadata_count_leaf(record.field)
+            return (not _is_price_kind(record) and not _has_money_unit(record)
+                    and not _is_metadata_count_leaf(record.field) and record.value_scale == 1.0)
         if figure.currency:
-            return _is_price_kind(record)
+            return (_is_price_kind(record) or _has_money_unit(record)
+                    or (record.source == "document" and record.field == "document.figure"))
         return True
+
+    def _artifact_ref_candidates(self, figure: Figure, symbol: str | None) -> list[str]:
+        """Offer actual artifact/field references, without repairing or accepting a claim."""
+        found = []
+        for record in self._evidence:
+            if (record.artifact is None or record.status != "observed" or record.value is None
+                    or (symbol and record.symbol and record.symbol != symbol)
+                    or not self._kind_fits(record, figure)
+                    or (figure.currency_code and record.currency != figure.currency_code)):
+                continue
+            if self._matches_evidence(figure, [float(record.value)], [float(record.value)]):
+                found.append(f"{record.artifact}::{record.field}")
+        return list(dict.fromkeys(found))[:_MAX_CALL_REF_CANDIDATES]
 
     def _unknown_call_field_ref_candidates(
         self, ref: str, symbol: str | None, figure: Figure
@@ -1678,13 +1698,30 @@ class _PolicyMixin:
         declaration: Declaration | None,
         symbol: str | None,
         records: Sequence[EvidenceRecord],
+        *,
+        line: str = "",
+        line_offset: int = 0,
     ) -> list[dict[str, Any]]:
         """An observed figure must appear in evidence of its own kind.
 
         A currency-marked figure is answered only by money-denominated values
         and a percent only by the rest; a table cell only by its column's field.
         """
+        from evals.grounding.document_quotes import matches_document_integer_quote
+
+        if matches_document_integer_quote(
+            self._document_integer_quotes, figure, declaration, line, line_offset
+        ):
+            return []
         scoped = self._referenced(declaration.ref, symbol, figure) if declaration else None
+        if (declaration and re.search(r"\.(?:csv|json)(?:\b|::)", declaration.ref)
+                and self._artifact_scope(declaration.ref) is None):
+            return [self._figure_issue(
+                "numeric_claim_conflict", figure, "observed", symbol, "unknown_artifact_ref",
+                f"names {declaration.ref}, which is not an artifact reference from this run; "
+                "copy an actual artifact/field reference from the tool result",
+                field_ref_candidates=self._artifact_ref_candidates(figure, symbol),
+            )]
         if scoped is not None:
             scoped_records, metric_values = scoped
             if (
@@ -2022,7 +2059,7 @@ class _PolicyMixin:
                 float(record.value)
                 for record in scoped[0]
                 if (
-                    not money or _is_price_kind(record)
+                    not money or _is_price_kind(record) or _has_money_unit(record)
                     or (record.source == "document" and record.field == "document.figure")
                 )
                 and (currency_code is None or record.currency == currency_code)

@@ -220,3 +220,18 @@ class TestMarketParam:
     def test_canada_market(self) -> None:
         engine = GlobalEquityEngine({"initial_cash": 100_000}, market="ca")
         assert engine.market == "ca"
+
+
+def test_us_ignored_commission_is_refused_and_explicit_slippage_changes_fills():
+    import pytest
+    with pytest.raises(ValueError, match='slippage_us'):
+        _us_engine(codes=['SPY.US'], commission=0.0005)
+    engine = _us_engine(codes=['SPY.US'], slippage_us=0.0013)
+    assert engine._execution_price(100, 1) == pytest.approx(100.13)
+    assert engine._execution_price(100, -1) == pytest.approx(99.87)
+    costs = engine._engine_diagnostics()['execution_costs']
+    assert costs['slippage_buy_rate'] == pytest.approx(.0013)
+    assert costs['slippage_sell_rate'] == pytest.approx(.0013)
+    assert costs['commission_rate'] == 0
+    # A composite portfolio may apply the generic commission to crypto.
+    _us_engine(codes=['SPY.US', 'BTC-USDT'], commission=.001)

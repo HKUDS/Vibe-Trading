@@ -93,19 +93,32 @@ class PayoffLeg(BaseModel):
         return v
 
 
+class PayoffAlternative(BaseModel):
+    """Named leg set; all pricing assumptions come from the parent request."""
+
+    model_config = {"extra": "forbid"}
+    label: str = Field(..., min_length=1)
+    legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+
+
 class PayoffRequest(BaseModel):
     """POST /options/payoff body — mirrors ``OptionsPayoffTool.parameters``."""
 
     legs: list[PayoffLeg] = Field(..., min_length=1, max_length=_MAX_LEGS)
+    label: str = "base"
+    alternatives: list[PayoffAlternative] = Field(default_factory=list, max_length=5)
     entry_spot: float = Field(..., gt=0)
     expiry_days: float = Field(..., ge=0)
     risk_free_rate: float = Field(0.05)
     volatility: float = Field(0.3, gt=0)
     multiplier: float = Field(1.0, gt=0)
+    underlying_qty: float = Field(0.0, allow_inf_nan=False)
+    price_as_of: str | None = None
     commission_rate: float = Field(0.001, ge=0, lt=1)
     spot_min: float | None = Field(None, ge=0)
     spot_max: float | None = Field(None, gt=0)
     spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=_MAX_SPOT_POINTS)
+    expiry_spot_values: list[Annotated[float, Field(ge=0, allow_inf_nan=False)]] | None = Field(None, min_length=1, max_length=_MAX_SPOT_POINTS)
     scenario_iv_values: (
         list[Annotated[float, Field(gt=0)]] | None
     ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
@@ -137,14 +150,20 @@ def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
     """
     params: dict[str, Any] = {
         "legs": [leg.model_dump(exclude_none=True) for leg in payload.legs],
+        "label": payload.label,
+        "alternatives": [item.model_dump(exclude_none=True) for item in payload.alternatives],
         "entry_spot": payload.entry_spot,
         "expiry_days": payload.expiry_days,
         "risk_free_rate": payload.risk_free_rate,
         "volatility": payload.volatility,
         "multiplier": payload.multiplier,
+        "underlying_qty": payload.underlying_qty,
+        "price_as_of": payload.price_as_of,
         "commission_rate": payload.commission_rate,
         "spot_points": payload.spot_points,
     }
+    if payload.expiry_spot_values is not None:
+        params["expiry_spot_values"] = payload.expiry_spot_values
     if payload.spot_min is not None:
         params["spot_min"] = payload.spot_min
     if payload.spot_max is not None:
@@ -166,6 +185,7 @@ def _portfolio_greeks(payload: PayoffRequest) -> dict[str, float]:
     legs = _coerce_legs([leg.model_dump(exclude_none=True) for leg in payload.legs])
     time_to_expiry = payload.expiry_days / 365.0
     totals = {key: 0.0 for key in _GREEK_KEYS}
+    totals["delta"] = payload.underlying_qty
     for leg in legs:
         greeks = bs_greeks(
             S=payload.entry_spot,

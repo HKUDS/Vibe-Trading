@@ -1276,8 +1276,7 @@
       "failed": "실패",
       "steps": "{{count}}단계",
       "continue": "계속",
-      "reattach": "다시 연결",
-      "checkingFigures": "답변 속 수치 확인 중({{round}}차)…"
+      "reattach": "다시 연결"
     },
     "resumeConnector": "커넥터 재개",
     "resumeConnectorTitle": "킬 스위치를 해제하고 커넥터 활동을 재개",
@@ -1598,6 +1597,8 @@
       "expiryDays": "만기까지 일수",
       "volatility": "변동성 (%)",
       "riskFreeRate": "무위험 금리 (%)",
+      "underlyingQty": "기초자산 보유 단위",
+      "underlyingQtyHint": "0: 옵션만. 1: 승수만큼 주식 보유 (승수 100이면 100주).",
       "multiplier": "승수",
       "multiplierHint": "100 = 미국 주식 표준 계약",
       "commissionRate": "수수료율 (%)",
@@ -1690,6 +1691,31 @@
       "noData": "이 선택에 대한 계약이 반환되지 않았습니다.",
       "errorTitle": "옵션 체인을 사용할 수 없습니다",
       "retry": "재시도"
+    },
+    "expiryScenarios": {
+      "input": "만기 가격 (선택, 쉼표 구분)",
+      "title": "만기 시나리오",
+      "spot": "만기 시 가격",
+      "pnl": "만기 손익",
+      "return": "주식 명목금액 대비 수익률"
+    },
+    "comparison": {
+      "title": "전략 비교",
+      "basis": "옵션 구성을 저장한 뒤 편집하여 비교합니다. 현재 진입가, 주식 포지션, 만기와 수수료를 공유합니다. 수익률은 진입 주식 명목금액 기준이며 옵션만 있으면 이 분모가 없습니다.",
+      "current": "현재 전략",
+      "saved": "전략 {{index}}",
+      "save": "비교용 구성 저장",
+      "remove": "제거",
+      "metric": "지표",
+      "alternative": "대안",
+      "baseline": "기준",
+      "difference": "차이 (%p)",
+      "max_profit_return": "최대 수익률",
+      "max_loss_return": "최소 수익률",
+      "entry_cost_return": "진입 비용 / 주식 명목금액",
+      "higher": "높음",
+      "lower": "낮음",
+      "equal": "같음"
     }
   },
   "alphaZoo": {
@@ -1922,6 +1948,9 @@
     "expiresAt": "{{time}} 만료"
   },
   "swarmStatus": {
+    "partialResults": "부분 결과",
+    "report": "보고서",
+    "continueWork": "미완료 작업 계속",
     "agents": "{{done}}/{{total}} 에이전트",
     "layer": "{{total}}개 라운드 중 {{current}}번째",
     "agent": "에이전트",

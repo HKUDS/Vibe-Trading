@@ -140,7 +140,7 @@ class TestNumericCoercion:
         assert rows[2]["value"] == "."  # non-numeric stays untouched
 
     def test_coerced_values_land_in_generic_evidence(self, tmp_path):
-        from src.agent.grounding.ledger import GroundingLedger
+        from evals.grounding.ledger import GroundingLedger
 
         ledger = GroundingLedger(run_dir=tmp_path, user_message="2024年GDP增速")
         payload = {

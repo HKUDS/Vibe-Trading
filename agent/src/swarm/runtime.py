@@ -25,7 +25,7 @@ from typing import Callable
 from src.config.accessor import get_env_config
 from src.config.schema import AgentConfig
 from src.providers.llm import _ensure_dotenv, uses_responses_api
-from src.swarm import grounding
+from src.swarm import checkpoint, grounding
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
@@ -321,7 +321,8 @@ def _task_definition_changed(
     otherwise the kept result is stale with respect to the current run.
     """
     if (
-        prev.agent_id != new.agent_id
+        prev_run.user_vars != new_run.user_vars
+        or prev.agent_id != new.agent_id
         or prev.prompt_template != new.prompt_template
         or prev.depends_on != new.depends_on
         or prev.input_from != new.input_from
@@ -394,8 +395,9 @@ class SwarmRuntime:
             include_shell_tools: Whether workers may register shell tools.
             resume_from: Optional prior ``failed`` / ``cancelled`` run to resume.
                 Its completed tasks (and their artifacts) are carried into the
-                new run as-is; every other task re-executes. ``None`` (default)
-                starts a fully fresh run.
+                new run as-is. Compatible unfinished tasks continue from saved
+                context; tasks without checkpoints restart from retained reports.
+                ``None`` (default) starts a fully fresh run.
 
         Returns:
             The created SwarmRun instance (status=pending initially).
@@ -552,7 +554,12 @@ class SwarmRuntime:
         self._store.update_run(run)
         self._emit_event(run_id, self._make_event("run_started"))
 
-        self._prefetch_grounding_data(run)
+        if resume_from is not None and run.user_vars == resume_from.user_vars:
+            # Continue the same research snapshot, rather than mix fresh prices
+            # with retained upstream reports and invalidate saved context.
+            run.grounding_data = resume_from.grounding_data
+        else:
+            self._prefetch_grounding_data(run)
 
         # Initialize task store
         task_store = TaskStore(run_dir)
@@ -695,6 +702,8 @@ class SwarmRuntime:
                             or f"worker did not complete (status={result.status})",
                             completed_at=datetime.now(timezone.utc).isoformat(),
                             worker_iterations=result.iterations,
+                            summary=result.summary,
+                            artifacts=result.artifact_paths,
                         )
                         self._emit_event(
                             run_id,
@@ -712,13 +721,9 @@ class SwarmRuntime:
                             ),
                         )
 
-                # Tasks blocked by a failed upstream are never dispatched and
-                # therefore not present in layer_results — they were already
-                # marked TaskStatus.blocked in _execute_layer and emitted
-                # task_blocked. Account for them in run-level status so the
-                # run is marked failed, not silently completed. Tasks kept
-                # completed by a resume overlay are equally absent from
-                # layer_results but are not failures.
+                # Missing/nonterminal dependencies still prevent dispatch.
+                # Retained completed tasks are also absent from layer_results,
+                # but are not failures.
                 for tid in layer_task_ids:
                     if tid in layer_results:
                         continue
@@ -749,16 +754,11 @@ class SwarmRuntime:
         # Sync tasks back to run model
         run.tasks = task_store.load_all()
 
-        # Set final report from aggregation task (last task) if available
-        if task_summaries:
-            last_layer = layers[-1] if layers else []
-            for tid in last_layer:
-                if tid in task_summaries:
-                    run.final_report = task_summaries[tid]
-                    break
+        from src.swarm.delivery import refresh_report
+        refresh_report(run, layers[-1] if layers else [])
 
         self._store.update_run(run)
-        self._emit_event(run_id, self._make_event("run_completed", data={"status": final_status.value}))
+        self._emit_event(run_id, self._make_event("run_completed", data={"status": final_status.value, "report_is_partial": run.report_is_partial, "final_report": run.final_report}))
 
         # Cleanup cancel event and live callback
         with self._lock:
@@ -789,10 +789,10 @@ class SwarmRuntime:
     ) -> None:
         """Carry completed tasks from *resume_from* into *run* before execution.
 
-        DAG semantics guarantee a completed task never depends on a failed one,
-        so "keep everything completed, reset everything else" is the core of
-        the failed/cancelled-subgraph re-execution #1157 asks for. Two
-        exceptions, both enforced here:
+        Completed results are retained only with unchanged completed inputs.
+        Compatible unfinished tasks also retain their saved conversation and
+        files; tasks without a checkpoint restart from upstream reports. Two
+        invalidation rules apply:
         - A completed task is NOT kept when its definition changed since the
           original run — the task's own defining fields (agent, prompt
           template, DAG wiring) or the agent spec that executes it (role,
@@ -908,6 +908,25 @@ class SwarmRuntime:
                     },
                 ),
             )
+        # An unfinished task can reuse its checkpoint only when its inputs
+        # and definition are unchanged. Never continue against stale upstreams.
+        for task in run.tasks:
+            prev = prev_by_id.get(task.id)
+            if prev is None or task.id in to_keep or prev.status == TaskStatus.completed:
+                continue
+            if any(dep not in to_keep for dep in task.depends_on):
+                continue
+            if _task_definition_changed(prev, task, prev_agents, new_agents, resume_from, run):
+                continue
+            prior_dir = agent_artifact_dir(prev_run_dir, task.agent_id, task.id)
+            if not (prior_dir / checkpoint.FILENAME).is_file():
+                continue
+            paths = list(prev.artifacts)
+            for file in prior_dir.rglob("*"):
+                if file.is_file():
+                    paths.append(str(file.relative_to(prev_run_dir)))
+            artifacts = _rehome_artifact_paths(list(dict.fromkeys(paths)), prev_run_dir, run_dir)
+            task_store.update_status(task.id, TaskStatus.pending, summary=prev.summary, artifacts=artifacts)
         if kept:
             logger.info(
                 "Run %s resumed from %s: kept %d completed task(s)",
@@ -1023,15 +1042,8 @@ class SwarmRuntime:
                 if task.status == TaskStatus.completed:
                     continue
 
-                # Dependency-aware gating: without this check, a failed upstream
-                # silently produces an empty task_summaries entry (the worker
-                # upstream loop below only copies summaries that exist) and the
-                # downstream worker runs with no upstream context. For an
-                # investment-committee preset where portfolio_manager
-                # depends_on=["task-risk"], a failed risk_officer would let PM
-                # produce a "decision" with no risk input — which is
-                # safety-critical. Mark blocked and skip dispatch; same-layer
-                # peers with no shared upstream are unaffected.
+                # Research can use incomplete evidence, with its status explicit.
+                # Only dependencies that have not reached a terminal state wait.
                 blocked_upstreams: list[tuple[str, str]] = []
                 for dep_id in task.depends_on:
                     try:
@@ -1039,7 +1051,7 @@ class SwarmRuntime:
                     except FileNotFoundError:
                         blocked_upstreams.append((dep_id, "missing"))
                         continue
-                    if dep_task.status != TaskStatus.completed:
+                    if dep_task.status not in {TaskStatus.completed, TaskStatus.failed, TaskStatus.cancelled}:
                         blocked_upstreams.append((dep_id, dep_task.status.value))
 
                 if blocked_upstreams:
@@ -1048,7 +1060,7 @@ class SwarmRuntime:
                     task_store.update_status(
                         tid,
                         TaskStatus.blocked,
-                        error=f"Blocked: upstream not completed ({reason})",
+                        error=f"Waiting for upstream result ({reason})",
                         blocked_by=blocked_by_ids,
                         completed_at=datetime.now(timezone.utc).isoformat(),
                     )
@@ -1077,17 +1089,28 @@ class SwarmRuntime:
                     tid,
                     TaskStatus.in_progress,
                     started_at=datetime.now(timezone.utc).isoformat(),
+                    blocked_by=[],
                 )
                 self._emit_event(
                     run.id,
                     self._make_event("task_started", agent_id=agent_spec.id, task_id=tid),
                 )
 
-                # Build upstream summaries from input_from mapping
+                # Carry available work and name missing/unfinished inputs. A
+                # downstream model may synthesize it, but must not invent results.
                 upstream: dict[str, str] = {}
                 for context_key, source_task_id in task.input_from.items():
-                    if source_task_id in task_summaries:
-                        upstream[context_key] = task_summaries[source_task_id]
+                    source = task_store.load_task(source_task_id)
+                    if source.status == TaskStatus.completed:
+                        upstream[context_key] = source.summary or ""
+                    else:
+                        upstream[context_key] = (
+                            f"Upstream {source_task_id} is {source.status.value}. "
+                            f"{source.error or 'The requested work is incomplete.'}\n"
+                            "Use the available material below; identify missing inputs "
+                            "and do not treat this as a completed analysis.\n\n"
+                            + (source.summary or "No result was produced.")
+                        )
 
                 future = executor.submit(
                     self._run_worker_with_retries,
@@ -1230,8 +1253,8 @@ class SwarmRuntime:
                     return result.model_copy(
                         update={
                             "status": WorkerStatus.cancelled,
-                            "summary": f"Cancelled before retrying task {task.id}",
-                            "error": None,
+                            "summary": result.summary,
+                            "error": result.error,
                             "input_tokens": cumulative_input_tokens,
                             "output_tokens": cumulative_output_tokens,
                             "cache_read_tokens": cumulative_cache_read_tokens,
@@ -1239,16 +1262,14 @@ class SwarmRuntime:
                             "token_source": cumulative_token_source,
                         }
                     )
-                # A retry re-invokes run_worker against the same artifact
-                # directory. Without clearing it first, a failed attempt's
-                # report.md (or any other tool-written file) would still be
-                # there when the retried attempt reads the directory back,
-                # silently substituting stale content for the new attempt's
-                # real result.
-                clear_agent_artifacts(
-                    agent_artifact_dir(run_dir, agent_spec.id, task.id)
-                )
+                # Checkpointed retries continue the saved conversation and
+                # files. Legacy attempts without context still restart cleanly.
+                if not (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
+                    clear_agent_artifacts(agent_artifact_dir(run_dir, agent_spec.id, task.id))
 
+            resume_kwargs = {}
+            if (agent_artifact_dir(run_dir, agent_spec.id, task.id) / checkpoint.FILENAME).is_file():
+                resume_kwargs["resume"] = True
             result = run_worker(
                 agent_spec=agent_spec,
                 task=task,
@@ -1260,6 +1281,7 @@ class SwarmRuntime:
                 grounding_block=grounding_block,
                 agent_config=self._agent_config,
                 cancel_event=cancel_event,
+                **resume_kwargs,
             )
 
             cumulative_input_tokens += result.input_tokens

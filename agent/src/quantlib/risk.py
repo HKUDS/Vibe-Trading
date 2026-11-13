@@ -56,6 +56,7 @@ __all__ = [
     "pain_index",
     "monte_carlo_gbm",
     "analyze_mc_results",
+    "monte_carlo_summary",
     "fit_gpd_tail",
 ]
 
@@ -630,6 +631,51 @@ def analyze_mc_results(paths: np.ndarray, confidence: float = 0.95) -> dict:
     }
 
 
+def monte_carlo_summary(
+    s0: float,
+    mu: float,
+    sigma: float,
+    n_steps: int = TRADING_DAYS_PER_YEAR,
+    n_paths: int = 10_000,
+    *,
+    seed: int,
+    steps_per_year: int = TRADING_DAYS_PER_YEAR,
+    confidence: float = 0.95,
+) -> dict:
+    """Simulate GBM and return risk statistics without transferring the path matrix.
+
+    Args:
+        s0: Initial price, strictly positive.
+        mu: Assumed annual arithmetic-return drift, not an observed forecast.
+        sigma: Annualized volatility.
+        n_steps: Number of simulated time steps.
+        n_paths: Number of paths; use at least 10,000 for tail estimates.
+        seed: Required random seed for reproducibility.
+        steps_per_year: Annualization basis of the simulation steps.
+        confidence: Confidence level for terminal-return VaR and CVaR.
+
+    Returns:
+        Model assumptions, simulation dimensions and terminal-return statistics.
+        Returns and loss magnitudes follow analyze_mc_results' sign convention.
+
+    Raises:
+        ValueError: If simulation parameters or confidence are invalid.
+    """
+    _validate_confidence(confidence)
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an explicit integer for reproducibility")
+    paths = monte_carlo_gbm(
+        s0, mu, sigma, n_steps, n_paths, seed=seed, steps_per_year=steps_per_year,
+    )
+    return {
+        "method": "geometric_brownian_motion",
+        "s0": s0, "mu": mu, "sigma": sigma,
+        "n_steps": n_steps, "n_paths": n_paths, "seed": seed,
+        "steps_per_year": steps_per_year, "confidence": confidence,
+        "statistics": analyze_mc_results(paths, confidence),
+    }
+
+
 def fit_gpd_tail(
     returns: pd.Series | np.ndarray | Sequence[float],
     threshold_pct: float = 5.0,
@@ -664,7 +710,12 @@ def fit_gpd_tail(
                 ``|1 + xi| / sqrt(n_exceedances)``. Only valid for ``xi > -0.5``;
                 below that the GPD likelihood is non-regular and the figure is
                 indicative at best.
-            scale_sigma (float): GPD scale, in units of loss magnitude.
+            scale_sigma (float): GPD scale in return fractions; not mean excess.
+            sample_mean_excess (float): Mean of the observed threshold exceedances.
+            fitted_mean_excess (float): Fitted GPD mean, sigma / (1 - xi) for
+                xi < 1; infinity otherwise. Distinct from both scale and sample mean.
+            n_observations (int): Number of finite input returns.
+            units (dict): Explicit units for threshold, scale and excess means.
             tail_type (str): ``"fat"`` when ``shape_xi`` clears
                 ``GPD_SHAPE_SIGNIFICANCE_SIGMAS * shape_stderr``, ``"bounded"``
                 when it clears it on the negative side, otherwise
@@ -710,5 +761,14 @@ def fit_gpd_tail(
         "shape_xi": float(shape),
         "shape_stderr": shape_stderr,
         "scale_sigma": float(scale),
+        "sample_mean_excess": float(exceedances.mean()),
+        "fitted_mean_excess": float(scale / (1.0 - shape)) if shape < 1.0 else math.inf,
+        "n_observations": int(values.size),
+        "units": {
+            "threshold": "signed_return_fraction",
+            "scale_sigma": "excess_loss_fraction (GPD scale, not mean)",
+            "sample_mean_excess": "excess_loss_fraction (sample mean)",
+            "fitted_mean_excess": "excess_loss_fraction (fitted distribution mean)",
+        },
         "tail_type": tail_type,
     }

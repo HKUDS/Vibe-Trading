@@ -356,3 +356,26 @@ def test_surface_strike_coverage_uses_only_required_expiry_slices(
         assert len(response.json()["points"]) == len(days)
     else:
         assert "extrapolation" in response.json()["error"]
+
+
+def test_covered_stock_is_in_payoff_and_delta() -> None:
+    body = _long_call_body(legs=[{"option_type": "call", "strike": 110, "qty": -1, "premium": 2}],
+                           underlying_qty=1, price_as_of="2026-11-12", multiplier=100)
+    result = _client().post("/options/payoff", json=body)
+    assert result.status_code == 200
+    data = result.json()
+    assert data["summary"]["profit_unbounded"] is False
+    assert data["summary"]["loss_unbounded"] is False
+    assert data["calculation_basis"]["underlying_shares"] == 100
+    naked = _client().post("/options/payoff", json={**body, "underlying_qty": 0}).json()
+    assert data["greeks"]["delta"] - naked["greeks"]["delta"] == pytest.approx(100)
+
+
+def test_exact_expiry_prices_use_the_real_engine():
+    from tests.test_numeric_calculation_contract import collar
+    response = _client().post("/options/payoff", json=collar(expiry_spot_values=[160, 180]))
+    assert response.status_code == 200
+    rows = response.json()["expiry_scenarios"]
+    assert [row["spot"] for row in rows] == [160, 180]
+    assert rows[0]["return_percent"] == pytest.approx(-5.536795234370298)
+    assert rows[1]["return_percent"] == pytest.approx(6.4976232023587475)

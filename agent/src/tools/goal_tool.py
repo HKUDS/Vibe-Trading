@@ -429,7 +429,7 @@ class AddGoalEvidenceTool(_GoalToolBase):
         "research goal. Prefer linking evidence to a criterion by criterion_id or criterion_index. "
         "When the evidence comes from one specific tool result, preserve that result's exact "
         "tool_call_id; the returned evidence_id (ev_...) identifies the goal-ledger row and is "
-        "not a grounding source reference."
+        "not a source of research evidence."
     )
     is_readonly = False
     parameters = {

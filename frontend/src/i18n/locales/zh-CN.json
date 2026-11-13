@@ -1276,8 +1276,7 @@
       "failed": "失败",
       "steps": "{{count}} 个步骤",
       "continue": "继续",
-      "reattach": "重新连接",
-      "checkingFigures": "正在核对答案中的数字（第 {{round}} 轮）…"
+      "reattach": "重新连接"
     },
     "resumeConnector": "恢复连接器",
     "resumeConnectorTitle": "清除熔断开关并恢复连接器活动",
@@ -1598,6 +1597,8 @@
       "expiryDays": "到期天数",
       "volatility": "波动率（%）",
       "riskFreeRate": "无风险利率（%）",
+      "underlyingQty": "标的持仓单位",
+      "underlyingQtyHint": "0：仅期权。1：持有一个合约乘数的股票（乘数为 100 时持有 100 股）。",
       "multiplier": "合约乘数",
       "multiplierHint": "100 = 美股标准合约",
       "commissionRate": "佣金率（%）",
@@ -1690,6 +1691,31 @@
       "noData": "该选择下未返回合约。",
       "errorTitle": "期权链不可用",
       "retry": "重试"
+    },
+    "expiryScenarios": {
+      "input": "到期价格（可选，逗号分隔）",
+      "title": "到期场景",
+      "spot": "到期价格",
+      "pnl": "到期盈亏",
+      "return": "股票名义本金收益率"
+    },
+    "comparison": {
+      "title": "方案比较",
+      "basis": "保存期权腿后，修改构建器即可比较。各方案共用当前入场价、股票仓位、到期和费用。收益率按初始股票名义本金计算；纯期权没有该分母。",
+      "current": "当前方案",
+      "saved": "方案 {{index}}",
+      "save": "保存期权腿用于比较",
+      "remove": "移除",
+      "metric": "指标",
+      "alternative": "备选方案",
+      "baseline": "基准方案",
+      "difference": "差值（百分点）",
+      "max_profit_return": "最高收益率",
+      "max_loss_return": "最低收益率",
+      "entry_cost_return": "入场成本／股票名义本金",
+      "higher": "高于",
+      "lower": "低于",
+      "equal": "相等"
     }
   },
   "alphaZoo": {
@@ -1922,6 +1948,9 @@
     "expiresAt": "{{time}} 到期"
   },
   "swarmStatus": {
+    "partialResults": "已有成果（未完成）",
+    "report": "报告",
+    "continueWork": "继续未完成的工作",
     "agents": "{{done}}/{{total}} 个智能体",
     "layer": "第 {{current}}/{{total}} 轮",
     "agent": "智能体",

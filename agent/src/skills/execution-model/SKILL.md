@@ -211,7 +211,9 @@ Implicit cost:
 **Recommendations**:
 - China A-shares: `commission = 0.001` (conservative, includes all costs)
 - Crypto: `commission = 0.001` (including slippage)
-- Hong Kong / US equities: `commission = 0.001-0.002`
+- US equities: `slippage_us = 0.0005` means 5 bps per side applied to execution
+  prices. Broker commission is zero; a nonzero generic `commission` is refused.
+- Hong Kong: configure `hk_commission` and `slippage_hk` separately.
 
 ## Backtest Execution Assumptions
 

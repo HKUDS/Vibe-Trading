@@ -14,7 +14,7 @@ import pytest
 
 from backtest.engines._market_hooks import code_currency, hk_counter_currency
 from backtest.runner import _create_market_engine
-from src.agent.grounding.identity import _infer_currency
+from src.agent.instrument_identity import _infer_currency
 
 # The currency Yahoo declared for each code on 2026-09-24.
 _LIVE = {

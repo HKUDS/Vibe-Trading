@@ -25,13 +25,12 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from tests.grounding_parameter_helpers import declared_parameter
-from src.agent.grounding.figures import (
+from evals.grounding.figures import (
     ROLES,
     parse_figures_block,
     scan_figures,
-    strip_figures_block,
 )
 
 pytestmark = pytest.mark.unit
@@ -217,22 +216,8 @@ def test_every_role_in_the_contract_is_accepted() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_block_is_stripped_from_the_released_text(tmp_path: Path) -> None:
-    """The contract is between the model and the gate; the user never sees it."""
-    answer = HDR + _block(HDR_ROW)
-
-    result = _ledger(tmp_path).validate_final_answer(answer)
-
-    assert result.valid is True, result.issues
-    assert result.released_text == HDR
-    assert "figures" not in result.released_text
-    assert "observed" not in result.released_text
 
 
-def test_stripping_a_draft_without_a_block_changes_nothing(tmp_path: Path) -> None:
-    result = _ledger(tmp_path).validate_final_answer(HDR)
-
-    assert result.released_text == HDR
 
 
 def test_the_raw_block_is_kept_in_the_artifact(tmp_path: Path) -> None:
@@ -247,9 +232,6 @@ def test_the_raw_block_is_kept_in_the_artifact(tmp_path: Path) -> None:
     assert HDR_ROW in artifact["validations"][0]["figures_block"]
 
 
-def test_strip_is_addressable_on_its_own() -> None:
-    text = "line one\n\n```figures\n1.0 | count | n\n```"
-    assert strip_figures_block(text, parse_figures_block(text)) == "line one"
 
 
 # ---------------------------------------------------------------------------
@@ -612,64 +594,10 @@ def test_undeclared_mode_does_not_guess_proposed_or_derived(tmp_path: Path) -> N
     assert [issue["value"] for issue in result.issues] == ["0.646", "0.97"]
 
 
-def test_the_correction_prompt_names_each_figure_and_its_reason(
-    tmp_path: Path,
-) -> None:
-    """§6: the feedback is per number, not a restatement of the policy.
-
-    Three things per figure — what was written, what was declared, what the
-    evidence says — plus the three fixes stated once.
-    """
-    ledger = _ledger(tmp_path)
-    validation = ledger.validate_final_answer(
-        HDR + " 建议买入价 2.50 元。" + _block(HDR_ROW, "2.50 | proposed | entry")
-    )
-
-    prompt = ledger.correction_prompt(validation)
-    line = next(row for row in prompt.splitlines() if row.startswith("- 2.50"))
-
-    assert "declared proposed" in line
-    assert "0.567" in line and "1.053" in line
-    # The nearest values are the symbol's closes, not every field of every bar.
-    assert "nearest observed 1.04, 0.666" in line
-    assert "figures" in prompt
-    assert "DECLARE" in prompt and "REWRITE" in prompt and "REMOVE" in prompt
 
 
-def test_a_value_is_called_repeated_only_from_its_second_rejection(
-    tmp_path: Path,
-) -> None:
-    """The current draft is not its own predecessor.
-
-    Comparing against every recorded validation, the current one included,
-    told the model on its FIRST rejection that the figure had been refused
-    "repeatedly", which is false and trains it to ignore the line.
-    """
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 2.50 元。" + _block(HDR_ROW, "2.50 | proposed | entry")
-
-    first = ledger.correction_prompt(ledger.validate_final_answer(draft))
-    second = ledger.correction_prompt(ledger.validate_final_answer(draft))
-
-    assert "more than one draft" not in first
-    assert "more than one draft: 2.50." in second
 
 
-def test_a_derived_percent_is_corrected_in_its_own_units(tmp_path: Path) -> None:
-    """A model that wrote "12%" is told what its formula gives in percent."""
-    ledger = _ledger(tmp_path)
-    validation = ledger.validate_final_answer(
-        HDR
-        + " 较 5 月高点回撤 12%。"
-        + _block(HDR_ROW, "12% | derived | (0.666 − 1.053) / 1.053 | c1")
-    )
-
-    prompt = ledger.correction_prompt(validation)
-    line = next(row for row in prompt.splitlines() if row.startswith("- 12"))
-
-    assert "declared derived" in line
-    assert "evaluates to -36.7521%" in line
-    assert "-0.36" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -740,44 +668,10 @@ def _prompt_blocks() -> list[str]:
     ]
 
 
-def test_every_figures_example_in_the_system_prompt_parses() -> None:
-    """A malformed example teaches every run to write a malformed block."""
-    blocks = [parse_figures_block("answer\n\n" + raw) for raw in _prompt_blocks()]
-
-    assert len(blocks) == 2
-    assert all(block.malformed == () for block in blocks)
-    assert {d.role for block in blocks for d in block.declarations} == set(ROLES)
 
 
-def test_the_chinese_prompt_example_passes_the_gate_it_describes(tmp_path: Path) -> None:
-    """The example sits on the same two bars this module probes with."""
-    ledger = _ledger(tmp_path)
-    prose = (
-        "159516.SZ（akshare，CNY）最新收盘 0.666 元，第一档 0.646 元，"
-        "折扣系数97%。较 5 月高点回撤 37%，买入参考 0.62 元。"
-    )
-
-    result = ledger.validate_final_answer(prose + "\n\n" + _prompt_blocks()[0])
-
-    assert result.valid, result.issues
-    assert result.released_text == prose
 
 
-@pytest.mark.parametrize(
-    ("text", "safe"),
-    [
-        ("答案。", len("答案。")),
-        ("答案。\n\n```figures\n0.666 | observed", len("答案。\n\n")),
-        ("答案。\n\n``", len("答案。\n\n")),
-        ("答案。\n\n```fig", len("答案。\n\n")),
-        ("答案。\n```python\nx = 1\n", len("答案。\n```python\nx = 1\n")),
-        ("收盘 0.666 元。", len("收盘 ")),            # an unchecked measurement waits
-        ("复盘 3", len("复盘 ")),                     # a number still being written waits
-        ("复盘 3 次。", len("复盘 3 次。")),          # a finished bare integer streams
-    ],
-)
-def test_streaming_holds_back_the_figures_fence_and_nothing_else(text: str, safe: int) -> None:
-    assert GroundingLedger.streamable_length(text) == safe
 
 
 def test_a_magnitude_mark_scales_the_comparison_not_the_shape(tmp_path: Path) -> None:
@@ -803,16 +697,6 @@ def test_a_magnitude_mark_scales_the_comparison_not_the_shape(tmp_path: Path) ->
     assert [issue["value"] for issue in invented.issues] == ["0.300"]
 
 
-def test_a_cut_figure_takes_its_magnitude_mark_with_it(tmp_path: Path) -> None:
-    """A real release read "(omitted※)M → (omitted※)M" before this."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 成交量 0.300M 手。"
-
-    released = ledger.redacted_release(draft, ledger.validate_final_answer(draft))
-
-    assert released is not None
-    assert "0.300" not in released
-    assert "M" not in released
 
 
 @pytest.mark.parametrize(
@@ -827,7 +711,7 @@ def test_a_cut_figure_takes_its_magnitude_mark_with_it(tmp_path: Path) -> None:
 def test_a_magnitude_mark_is_a_glued_symbol_not_a_word(
     text: str, end: int, expected: tuple[float, int]
 ) -> None:
-    from src.agent.grounding.figures import magnitude_suffix
+    from evals.grounding.figures import magnitude_suffix
 
     assert magnitude_suffix(text, end) == expected
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 
 from backtest.engines._market_hooks import _MARKET_CURRENCY, _detect_market
-from src.agent.grounding.identity import _infer_currency, _infer_venue, _scan_symbols
+from src.agent.instrument_identity import _infer_currency, _infer_venue, _scan_symbols
 from src.tools.symbol_search_tool import _from_yahoo_symbol
 
 # market -> (project symbol, Yahoo's spelling of it, symbol-search label)

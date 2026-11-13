@@ -1282,8 +1282,7 @@
       "failed": "Falha",
       "steps": "Etapas {{count}}",
       "continue": "Continuar",
-      "reattach": "Anexe novamente",
-      "checkingFigures": "Verificando os números desta resposta (rodada {{round}})…"
+      "reattach": "Anexe novamente"
     },
     "resumeConnector": "Retomar conector",
     "resumeConnectorTitle": "Limpe o kill switch e reative a atividade do conector",
@@ -1604,6 +1603,8 @@
       "expiryDays": "Dias para expirar",
       "volatility": "Volatilidade (%)",
       "riskFreeRate": "Taxa livre de risco (%)",
+      "underlyingQty": "Unidades do ativo subjacente",
+      "underlyingQtyHint": "0: apenas opções. 1: manter ações na quantidade do multiplicador (100 ações se o multiplicador for 100).",
       "multiplier": "Multiplicador",
       "multiplierHint": "100 = contrato de ações padrão dos EUA",
       "commissionRate": "Taxa de comissão (%)",
@@ -1696,6 +1697,31 @@
       "noData": "Nenhum contrato retornado para esta seleção.",
       "errorTitle": "Cadeia de opções indisponível",
       "retry": "Tentar novamente"
+    },
+    "expiryScenarios": {
+      "input": "Preços no vencimento (opcional, separados por vírgulas)",
+      "title": "Cenários no vencimento",
+      "spot": "Preço no vencimento",
+      "pnl": "Lucro/prejuízo no vencimento",
+      "return": "Retorno sobre o valor nominal das ações"
+    },
+    "comparison": {
+      "title": "Comparar estratégias",
+      "basis": "Salve as pernas e edite para comparar. Todas usam o preço de entrada, posição em ações, vencimento e taxas atuais. O retorno usa o valor nocional inicial das ações; opções isoladas não têm esse denominador.",
+      "current": "Estratégia atual",
+      "saved": "Estratégia {{index}}",
+      "save": "Salvar pernas para comparação",
+      "remove": "Remover",
+      "metric": "Métrica",
+      "alternative": "Alternativa",
+      "baseline": "Base",
+      "difference": "Diferença (pontos percentuais)",
+      "max_profit_return": "Retorno máximo",
+      "max_loss_return": "Retorno mínimo",
+      "entry_cost_return": "Custo de entrada / nocional das ações",
+      "higher": "Maior",
+      "lower": "Menor",
+      "equal": "Igual"
     }
   },
   "alphaZoo": {
@@ -1928,6 +1954,9 @@
     "expiresAt": "Expira {{time}}"
   },
   "swarmStatus": {
+    "partialResults": "Resultados parciais",
+    "report": "Relatório",
+    "continueWork": "Continuar o trabalho pendente",
     "agents": "Agentes {{done}}/{{total}}",
     "layer": "Rodada {{current}} de {{total}}",
     "agent": "Agente",

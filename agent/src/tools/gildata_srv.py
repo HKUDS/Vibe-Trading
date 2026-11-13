@@ -138,11 +138,8 @@ def _coerce_numeric_strings(rows: list[dict[str, Any]]) -> None:
     """Convert numeric-looking ``value`` strings to floats, in place.
 
     The EDB rows carry their measurement as a string (``"value": "5.4"``).
-    The grounding evidence extractor indexes only numeric leaves, so a string
-    value never enters the verification pool while the same row's numeric
-    ``indicatorcode`` does — every macro figure was then unverifiable
-    (measured live: numeric_claim_conflict against the code, degraded release
-    with all figures redacted). Coercing the measurement field fixes the pool.
+    Return actual numeric values for downstream calculations and offline
+    comparisons; keep identifiers and nonnumeric labels unchanged.
     """
     for row in rows:
         value = row.get("value")

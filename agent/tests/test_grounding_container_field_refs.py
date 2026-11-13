@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 pytestmark = pytest.mark.unit
 
@@ -134,11 +134,6 @@ def test_scalar_refs_keep_working(tmp_path: Path) -> None:
     assert result.valid is True, result.issues
 
 
-def test_feedback_lists_each_candidate_once_and_within_the_cap(tmp_path: Path) -> None:
-    ledger, result = _issue(tmp_path, "2.50%", f"{CALL}::data.groups.positive")
-    prompt = ledger.correction_prompt(result)
-    assert prompt.count(_leaf("positive", 0, "move_pct")) == 1
-    assert "valid field refs: " + _leaf("positive", 0, "move_pct") in prompt
 
 
 # --- several calls returning the same field ---------------------------------
@@ -173,16 +168,6 @@ def test_call_candidates_are_capped_and_deterministic(tmp_path: Path) -> None:
     assert candidates == second.issues[0]["field_ref_candidates"]
 
 
-def test_call_feedback_does_not_repeat_the_candidate_list(tmp_path: Path) -> None:
-    ledger, result = _issue(
-        tmp_path,
-        "-1.75%",
-        f"{TOOL}::portfolio_return_pct",
-        (CALL_A, _returns(-2.29)),
-        (CALL_B, _returns(-1.75)),
-    )
-    prompt = ledger.correction_prompt(result)
-    assert prompt.count(f"{CALL_B}::data.portfolio_return_pct") == 1
 
 
 def test_a_call_ref_never_authorizes_a_value_seen_only_in_another_call(

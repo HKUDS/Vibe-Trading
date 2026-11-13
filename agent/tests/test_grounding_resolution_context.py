@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.agent.resolution_context import ResolutionContext
 
 

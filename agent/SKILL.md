@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (82)
+## Available MCP Tools (83)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -147,6 +147,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `research_lab` | Frozen-input cost scenarios, training-only parameter selection and OOS/holdout, factor contracts and offline task replay | None |
 | `backtest` | Run vectorized backtest engine | None* |
 | `paper_trade_step` | Deterministic paper-trading matching engine; never places real orders | None* |
+| `paper_trade_reconcile` | Independently replay paper fills, fees, positions and NAV continuity | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
 | `alpha_zoo` | Browse bundled alpha metadata and registry health | None |
 | `alpha_bench` | Benchmark one alpha or a complete zoo | None* |

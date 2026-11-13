@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.tools import gildata_identity as gi
 from src.tools import symbol_search_tool as ss
 

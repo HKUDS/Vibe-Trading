@@ -881,7 +881,7 @@ def backtest(run_dir: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Paper-trading step tool (pt-v1.1/pt-v1.2, VD-12 hand-written wrapper)
+# Paper-trading step tool (pt-v1.1/pt-v1.2/pt-v1.3, VD-12 hand-written wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -899,13 +899,14 @@ def paper_trade_step(
     session: str | None = None,
     path_model: str | None = None,
     fill_model: str | None = None,
+    order_volume_ratio: float | None = None,
 ) -> str:
     """Run one step of the deterministic paper-trading matching engine; never places real orders.
 
     Matches the injected ``orders`` (or, in Step 7, a ``strategy_path``'s
     per-day orders) against bars under the market's frozen rules (T+1, price
     limits, board lots, fees) and returns ONE in-band JSON document on
-    ``result.content[0].text``: the pt-v1.1/pt-v1.2 success result, or an AM-5
+    ``result.content[0].text``: the pt-v1.1/pt-v1.2/pt-v1.3 success result, or an AM-5
     error envelope (``PAPER_DATA_NOT_READY`` retryable / ``INVALID_REQUEST``
     non-retryable) on the SAME channel — never a transport error. Research-only:
     it reads market data and the injected ledger, matches on paper, and writes
@@ -934,8 +935,11 @@ def paper_trade_step(
             ``cn_a``; ``cn_a`` requires market ``cn_a``.
         path_model: Optional pt-v1.2 reference-price model — ``bar_median``
             (default) or ``bar_close``; ignored for ``1d``.
-        fill_model: Optional pt-v1.2 fill model — ``all_or_none`` (default and
-            only P0 value).
+        fill_model: Optional fill model — ``all_or_none`` (default) or
+            ``volume_share`` (pt-v1.3; requires ``interval='5m'`` and cn_a).
+        order_volume_ratio: Optional pt-v1.3 per-order share of available
+            volume, ``0 < r <= 1``; only with ``fill_model='volume_share'``.
+            Omitted means 1.0.
     """
     from src.tools.paper_trade.tool import run_paper_trade_step
 
@@ -960,7 +964,28 @@ def paper_trade_step(
         payload["path_model"] = path_model
     if fill_model is not None:
         payload["fill_model"] = fill_model
+    if order_volume_ratio is not None:
+        payload["order_volume_ratio"] = order_volume_ratio
     return run_paper_trade_step(payload)
+
+
+@mcp.tool
+def paper_trade_reconcile(account_state: _lenient_dict_any, result: _lenient_dict_any) -> str:
+    """Independently reconcile a paper-trading result without market or broker access.
+
+    Replays the supplied fills from the initial ledger and checks fees, cash,
+    positions, cn_a T+1 availability, end_state and NAV arithmetic. The report
+    distinguishes verified ledger facts from market-value and hash checks that
+    the result alone cannot establish. Research only; no orders are placed.
+
+    Args:
+        account_state: Initial ``{cash, positions}`` ledger supplied to the step.
+        result: Successful ``paper_trade_step`` document to audit.
+    """
+    registry = _get_registry()
+    return registry.execute(
+        "paper_trade_reconcile", {"account_state": account_state, "result": result}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1218,6 +1243,11 @@ def analyze_options_payoff(
     spot_max: float | None = None,
     spot_points: int = 121,
     scenario_iv_values: _lenient_float_list_opt = None,
+    underlying_qty: float = 0.0,
+    price_as_of: str | None = None,
+    expiry_spot_values: _lenient_float_list_opt = None,
+    label: str = "base",
+    alternatives: _lenient_dict_list_opt = None,
 ) -> str:
     """Analyze a multi-leg option strategy's payoff and spot/IV scenarios.
 
@@ -1227,6 +1257,9 @@ def analyze_options_payoff(
     Research only; this tool cannot place orders.
 
     Args:
+        label: Name of the base strategy.
+        alternatives: Named {label, legs} strategies on shared pricing assumptions;
+            returns their calculations and cap/floor/cost comparisons in this call.
         legs: Option leg objects with ``option_type`` (call/put), positive
             ``strike``, signed integer ``qty``, and optional per-share
             ``premium``. Positive quantity is long; negative is short.
@@ -1234,6 +1267,9 @@ def analyze_options_payoff(
         expiry_days: Non-negative calendar days to expiry.
         risk_free_rate: Annual continuously compounded risk-free rate.
         volatility: Annualized entry volatility, e.g. 0.3 for 30%.
+        underlying_qty: Signed stock units per multiplier, 1 for a covered collar.
+        price_as_of: Observation date for the entry price.
+        expiry_spot_values: Exact non-negative expiry scenario prices for P&L and returns.
         multiplier: Currency multiplier per option price unit.
         commission_rate: Entry commission fraction, aligned with the options
             backtest engine.
@@ -1245,14 +1281,20 @@ def analyze_options_payoff(
     """
     params: dict[str, Any] = {
         "legs": legs,
+        "label": label,
+        "alternatives": alternatives or [],
         "entry_spot": entry_spot,
         "expiry_days": expiry_days,
         "risk_free_rate": risk_free_rate,
         "volatility": volatility,
         "multiplier": multiplier,
+        "underlying_qty": underlying_qty,
+        "price_as_of": price_as_of,
         "commission_rate": commission_rate,
         "spot_points": spot_points,
     }
+    if expiry_spot_values is not None:
+        params["expiry_spot_values"] = expiry_spot_values
     if spot_min is not None:
         params["spot_min"] = spot_min
     if spot_max is not None:
@@ -2057,6 +2099,12 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     return cap_rows(records, max_rows)
 
 
+def _calculation_workspace() -> str:
+    """Use the normal runtime run root for MCP observations and calculations."""
+    from src.config.paths import get_runs_dir
+    return str(get_runs_dir() / "mcp-calculations")
+
+
 @mcp.tool
 def get_market_data(
     codes: _lenient_str_list,
@@ -2065,6 +2113,7 @@ def get_market_data(
     source: str = "auto",
     interval: str = "1D",
     max_rows: int = DEFAULT_MAX_ROWS,
+    run_dir: str | None = None,
 ) -> str:
     """Fetch OHLCV market data for stocks, crypto, or mixed symbols.
 
@@ -2082,6 +2131,7 @@ def get_market_data(
     - "auto": auto-detect based on symbol format (with fallback)
 
     Args:
+        run_dir: Calculation workspace; defaults to runtime runs/mcp-calculations and returns a full result reference.
         codes: List of symbols (e.g. ["AAPL.US", "TD.TO", "BTC-USDT", "000001.SZ"]).
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
@@ -2119,6 +2169,7 @@ def get_market_data(
             "source": source,
             "interval": interval,
             "max_rows": max_rows,
+            "run_dir": run_dir or _calculation_workspace(),
             # Internal hook, not an agent-facing parameter: keeps the MCP
             # surface resolving loaders through mcp_server._get_loader (the
             # contract the regression tests and the server's own loader
@@ -2862,7 +2913,10 @@ def _register_mirrored_tool(tool_cls: Any) -> bool:
 
         def _call(**kwargs: Any) -> str:
             """Forward an MCP call to the auto-discovered local tool registry."""
-            return _get_registry().execute(name, _mirrored_call_params(schema, kwargs))
+            params = _mirrored_call_params(schema, kwargs)
+            if name == "quantlib_call" and params.get("action") == "call":
+                params.setdefault("run_dir", _calculation_workspace())
+            return _get_registry().execute(name, params)
 
         mcp.add_tool(
             FunctionTool(
@@ -2925,6 +2979,7 @@ def _run_to_dict(run, *, timed_out: bool = False, is_stale: bool = False) -> dic
         "error": run_level_error(run),
         "tasks": [serialize_task(t) for t in run.tasks],
         "final_report": run.final_report,
+        "report_is_partial": run.report_is_partial,
         "total_input_tokens": run.total_input_tokens,
         "total_output_tokens": run.total_output_tokens,
         "provider": public_provider_metadata(run.provider),
@@ -3082,7 +3137,8 @@ def retry_run(run_id: str, resume: bool = False) -> str:
 
     With ``resume=True`` (replay), completed upstream tasks and their artifacts
     are carried into the new run as-is and only the failed/cancelled subgraph
-    re-executes — completed independent branches are not re-run. ``resume``
+    continues from compatible saved context, or restarts from retained reports
+    when no checkpoint exists. Completed independent branches are not re-run. ``resume``
     only applies to a ``failed`` or ``cancelled`` run; ``resume=True`` for any
     other status is refused with an error (a plain retry without ``resume``
     remains available for any non-running run).

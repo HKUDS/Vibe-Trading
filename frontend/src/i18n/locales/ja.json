@@ -1276,8 +1276,7 @@
       "failed": "失敗",
       "steps": "{{count}} ステップ",
       "continue": "続行",
-      "reattach": "再接続",
-      "checkingFigures": "回答内の数値を確認中（{{round}} 回目）…"
+      "reattach": "再接続"
     },
     "resumeConnector": "コネクタを再開",
     "resumeConnectorTitle": "キルスイッチを解除してコネクタ活動を再開",
@@ -1598,6 +1597,8 @@
       "expiryDays": "満期までの日数",
       "volatility": "ボラティリティ（%）",
       "riskFreeRate": "リスクフリー金利（%）",
+      "underlyingQty": "原資産の保有単位",
+      "underlyingQtyHint": "0：オプションのみ。1：倍率分の株式を保有（倍率100なら100株）。",
       "multiplier": "乗数",
       "multiplierHint": "100 = 米国株式標準契約",
       "commissionRate": "手数料率（%）",
@@ -1690,6 +1691,31 @@
       "noData": "この選択に対するコントラクトは返されませんでした。",
       "errorTitle": "オプションチェーンを利用できません",
       "retry": "再試行"
+    },
+    "expiryScenarios": {
+      "input": "満期価格（任意、カンマ区切り）",
+      "title": "満期シナリオ",
+      "spot": "満期時の価格",
+      "pnl": "満期損益",
+      "return": "株式想定元本に対する収益率"
+    },
+    "comparison": {
+      "title": "戦略比較",
+      "basis": "レッグを保存してから編集して比較します。現在の参入価格、株式保有、満期、手数料を共用します。収益率の分母は参入時の株式想定元本です。オプションのみでは分母はありません。",
+      "current": "現在の戦略",
+      "saved": "戦略 {{index}}",
+      "save": "比較用にレッグを保存",
+      "remove": "削除",
+      "metric": "指標",
+      "alternative": "代替戦略",
+      "baseline": "基準戦略",
+      "difference": "差（パーセントポイント）",
+      "max_profit_return": "最大収益率",
+      "max_loss_return": "最小収益率",
+      "entry_cost_return": "参入費用／株式想定元本",
+      "higher": "上回る",
+      "lower": "下回る",
+      "equal": "同じ"
     }
   },
   "alphaZoo": {
@@ -1922,6 +1948,9 @@
     "expiresAt": "{{time}} に失効"
   },
   "swarmStatus": {
+    "partialResults": "途中までの結果",
+    "report": "レポート",
+    "continueWork": "未完了の作業を続ける",
     "agents": "{{done}}/{{total}} エージェント",
     "layer": "第 {{current}} ラウンド（全 {{total}} ラウンド）",
     "agent": "エージェント",

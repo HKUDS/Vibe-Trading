@@ -375,7 +375,7 @@ def test_cancel_after_rejected_answer_prevents_retry(tmp_path: Path) -> None:
     assert len(llm.offered_tools) == 1
 
 
-def test_retried_answer_still_passes_grounding(tmp_path: Path) -> None:
+def test_protocol_retry_delivers_answer_without_numeric_gate(tmp_path: Path) -> None:
     garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
     llm = _AnswerRetryLLM(
         [
@@ -393,40 +393,6 @@ def test_retried_answer_still_passes_grounding(tmp_path: Path) -> None:
 
     result = agent.run("What is the AAPL stock price?")
 
-    assert result.get("degraded") is True
-    assert "$999.00" not in result["content"]
+    assert not result.get("degraded")
+    assert result["content"] == "AAPL is trading at $999.00."
     assert llm.offered_tools == [None, None]
-
-
-def test_answer_retry_blocks_calls_after_grounding_correction(tmp_path: Path) -> None:
-    garbage = '<││DSML││tool_calls><││invoke name="echo_probe">'
-    llm = _AnswerRetryLLM(
-        [
-            LLMResponse(content="The return was 9.99%."),
-            LLMResponse(content=garbage),
-            LLMResponse(
-                content="",
-                tool_calls=[
-                    ToolCallRequest(id="retry", name="echo_probe", arguments={})
-                ],
-            ),
-        ]
-    )
-    registry = ToolRegistry()
-    registry.register(_EchoProbeTool())
-    events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
-        registry=registry,
-        llm=llm,
-        max_iterations=2,
-        event_callback=lambda kind, payload: events.append((kind, payload)),
-        persistent_memory=PersistentMemory(memory_dir=tmp_path / "memory"),
-    )
-    agent.memory.run_dir = str(tmp_path / "run")
-
-    result = agent.run("Summarize the returns.")
-
-    assert result["iterations"] == 3
-    assert result.get("degraded") is True
-    assert "tool-call syntax" in result["content"]
-    assert not any(kind in {"tool_call", "tool_result"} for kind, _ in events)

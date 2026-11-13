@@ -171,26 +171,6 @@ describe("useSSE — event handling", () => {
     expect(resetEvents).toEqual([{ reason: "provider_stream_retry" }]);
   });
 
-  it("dispatches grounding status events", () => {
-    const groundingEvents: unknown[] = [];
-    const { result } = renderHook(() => useSSE());
-
-    act(() =>
-      result.current.connect("http://test/events", {
-        grounding_status: (data) => groundingEvents.push(data),
-      }),
-    );
-
-    act(() =>
-      MockEventSource.latest.emit(
-        "grounding_status",
-        { stage: "revising", round: 1, issues: 2 },
-        "evt-grounding",
-      ),
-    );
-    expect(groundingEvents).toEqual([{ stage: "revising", round: 1, issues: 2 }]);
-  });
-
   it("falls back to message handler for known event types without specific handler", () => {
     const messages: unknown[] = [];
     const { result } = renderHook(() => useSSE());
