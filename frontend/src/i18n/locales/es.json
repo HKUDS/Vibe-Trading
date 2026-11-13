@@ -1601,6 +1601,8 @@
       "expiryDays": "Días a vencimiento",
       "volatility": "Volatilidad (%)",
       "riskFreeRate": "Tasa libre de riesgo (%)",
+      "underlyingQty": "Unidades del subyacente",
+      "underlyingQtyHint": "0: solo opciones. 1: mantener tantas acciones como el multiplicador (100 acciones si es 100).",
       "multiplier": "Multiplicador",
       "multiplierHint": "100 = contrato estándar de acciones de EE. UU.",
       "commissionRate": "Tasa de comisión (%)",

@@ -1601,6 +1601,8 @@
       "expiryDays": "Days to expiry",
       "volatility": "Volatility (%)",
       "riskFreeRate": "Risk-free rate (%)",
+      "underlyingQty": "Underlying units",
+      "underlyingQtyHint": "0: options only. 1: hold one multiplier of shares (100 shares when multiplier is 100).",
       "multiplier": "Multiplier",
       "multiplierHint": "100 = standard US equity contract",
       "commissionRate": "Commission rate (%)",

@@ -1601,6 +1601,8 @@
       "expiryDays": "Hari menuju kedaluwarsa",
       "volatility": "Volatilitas (%)",
       "riskFreeRate": "Suku bunga bebas risiko (%)",
+      "underlyingQty": "Unit aset dasar",
+      "underlyingQtyHint": "0: hanya opsi. 1: memiliki saham sebanyak pengali (100 saham jika pengali 100).",
       "multiplier": "Multiplier",
       "multiplierHint": "100 = kontrak saham AS standar",
       "commissionRate": "Tarif komisi (%)",

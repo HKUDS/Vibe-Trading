@@ -159,7 +159,8 @@ agents:
       - Stop discipline: recommended stop levels and triggers
       - Hedges: options or related shorts to trim tail risk
 
-      Every number above is computed, not judged. Pull bars with `get_market_data`
+      Compute quantitative metrics from data; recommendations remain judgments with assumptions.
+      Pull bars with `get_market_data`
       and compute with `quantlib_call` (describe the function before calling):
       - realised vol, ADV and correlation from the bars themselves
       - `src.quantlib.risk.historical_var` / `historical_cvar` for the loss levels,
@@ -171,6 +172,12 @@ agents:
       and correlation. Its long-only weights are normalized to 100%; convert
       asset-level losses to portfolio NAV using the stated position separately.
       Use technical_indicators for computed indicators rather than estimating them.
+      With shell disabled, get_market_data(max_rows=0) saves the full JSON in
+      _result_file.path. For fit_gpd_tail pass kwargs.returns as
+      {"__data_ref__": {"path": "<that path>", "pointer": "/NVDA.US", "column": "close",
+      "index": "trade_date", "transform": "pct_change"}} (use the requested symbol).
+      This reads all observed bars directly; no script or manually copied array is needed.
+      Upstream evidence files can be used the same way. Check input_sources for coverage.
       Use actual complete returns for GPD, never a sampled preview; when the
       sample is too small, explicitly report that limitation. Do not substitute
       simulated returns for observed returns. A current-session daily bar may
@@ -181,7 +188,11 @@ agents:
       recommend — do not leave it as a shape. `options_payoff` takes the signed
       legs and returns entry debit/credit, analytic breakevens and bounded or
       unbounded max loss, which is what sizing a protective put or a collar
-      actually requires; `options_pricing` values a single leg. Source the
+      actually requires. Include underlying_qty=1 for a covered collar (shares equal
+      multiplier); default 0 is options-only. Supply entry_spot and price_as_of, and
+      use calculation_basis returns, which include option entry commission and name
+      the denominator. Carry that price/date and premium assumption into the handoff.
+      `options_pricing` values a single leg. Source the
       implied vol from `get_options_chain` when the name is US-listed, and when
       it is not, state the vol assumption you used and that it is an assumption.
       A hedge whose cost you did not compute is not a recommendation.
@@ -249,8 +260,15 @@ agents:
       6. **Confidence & review triggers** — Confidence 0–100% and what forces a re-evaluation
       7. **Backtest summary** — If run: historical win rate, mean return, max drawdown
 
+      Inherited risk calculations retain their own entry price, date, premiums and
+      position size. If you choose a different price or hedge structure, rerun
+      options_payoff with underlying_qty=1 for a covered collar and price_as_of;
+      use its calculation_basis rather than copying old floor/cap percentages.
+      Keep illustrative premium assumptions distinct from current executable quotes.
+      Use inherited observations for independent judgment, but call a fact newly
+      verified only if you actually retrieved its source in this role.
       Decisions must be executable; reject vague “it depends.” Every key number must be explicit.
-    tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, backtest]
+    tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, get_market_data, options_payoff, get_options_chain, backtest]
     skills: [strategy-generate, asset-allocation]
     max_iterations: 50
     timeout_seconds: 1800

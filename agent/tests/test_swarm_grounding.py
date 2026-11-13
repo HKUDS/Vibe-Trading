@@ -220,13 +220,16 @@ def test_format_renders_table_and_range() -> None:
     ]
     block = grounding.format_grounding_block({"NVDA.US": rows})
 
-    assert "Ground Truth" in block
+    assert "Initial Market Snapshot" in block
+    assert "older than" in block
+    assert "recompute dependent" in block
+    assert "authoritative current prices" not in block
     assert "NVDA.US" in block
     assert "215.20" in block            # last close
     assert "207.80 – 215.20" in block   # window range (min/max close)
     assert "2026-05-06 → 2026-05-08" in block
     # The instruction text must survive — it's the whole point.
-    assert "Do NOT cite prices" in block
+    assert "instead of recalling prices from training" in block
 
 
 # --------------------------------------------------------------------------- #

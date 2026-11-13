@@ -393,6 +393,9 @@ def build_worker_prompt(
         "Deliver the requested analysis directly in your final response. "
         "Create files when requested or useful; a report.md file is optional. "
         "Explain unavailable inputs and distinguish assumptions from observed results. "
+        "Using an upstream report is not a new independent retrieval of its facts. "
+        "Attribute inherited facts and separate your calculations from new data fetches; "
+        "refetch only when needed, without imposing a citation format. "
         "Respond in the task's language."
     )
     if "bash" not in enabled_tools:
@@ -656,6 +659,13 @@ def _run_worker_impl(
         background_scope=background_scope,
     )
 
+    from src.swarm.evidence_handoff import prepare_handoff
+    try:
+        evidence_note = prepare_handoff(run_dir, task, agent_artifact_dir(run_dir, agent_id, task_id))
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.warning("Upstream evidence copy unavailable; retaining supplied reports", exc_info=True)
+        evidence_note = "Upstream evidence files could not be copied. The supplied reports remain available; do not claim independent source verification from them."
+
     # 2. Build system prompt with filtered skills
     skills_loader = SkillsLoader()
     skill_desc = _filter_skill_descriptions(skills_loader, agent_spec.skills)
@@ -663,6 +673,9 @@ def _run_worker_impl(
         agent_spec, upstream_summaries, skill_desc, grounding_block=grounding_block,
         available_tools={name for name in agent_spec.tools if registry.get(name) is not None},
     )
+
+    if evidence_note:
+        system_prompt += "\n\n" + evidence_note
 
     # Token accounting accumulators — initialized before the first exit path
     # (template render failure) so every WorkerResult return below carries the

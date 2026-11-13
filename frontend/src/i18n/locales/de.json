@@ -1601,6 +1601,8 @@
       "expiryDays": "Tage bis Verfall",
       "volatility": "Volatilität (%)",
       "riskFreeRate": "Risikofreier Zins (%)",
+      "underlyingQty": "Einheiten des Basiswerts",
+      "underlyingQtyHint": "0: nur Optionen. 1: Aktien in Höhe des Multiplikators halten (100 Aktien bei Multiplikator 100).",
       "multiplier": "Multiplikator",
       "multiplierHint": "100 = Standard-US-Aktienkontrakt",
       "commissionRate": "Provisionssatz (%)",
