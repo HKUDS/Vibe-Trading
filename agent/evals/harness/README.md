@@ -70,3 +70,10 @@ real PM transcription error: the reported cap was −18.5%, while the tool compu
 `test_research_cleanup.py` uses the existing measurement evaluator to fail the
 negative claim and pass the positive rounding control, without altering either.
 No heuristic is added to infer a claim's meaning from arbitrary report prose.
+
+The same offline regression set also retains two errors observed in the cleanup
+validation: confusing GPD scale with mean excess loss, and misstating collar
+returns at scenario endpoints. Human-reviewed claims and source/report hashes
+are stored alongside the sign case; the existing measurement evaluator checks
+them against independent calculations. Correctly rounded controls pass. No
+production parser, report gate, or rewriting rule is added for these cases.

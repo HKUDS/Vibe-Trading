@@ -8,8 +8,21 @@
     "section": "3, Collar A",
     "extraction": "Human-reviewed transcription from the unchanged final report; no automatic prose inference."
   },
-  "claim": {"reported_text": "−11.6%/−18.5%", "reported_percent": -18.5},
-  "evidence": {"tool": "options_payoff", "field": "calculation_basis.max_profit_return", "max_profit_return": 0.18532041639087793},
+  "claim": {
+    "reported_text": "−11.6%/−18.5%",
+    "reported_percent": -18.5
+  },
+  "evidence": {
+    "tool": "options_payoff",
+    "field": "calculation_basis.max_profit_return",
+    "max_profit_return": 0.18532041639087793
+  },
   "expected_status": "FAIL",
-  "policy": "Evaluate offline. Preserve the report verbatim; never rewrite or withhold delivery."
+  "policy": "Evaluate offline. Preserve the report verbatim; never rewrite or withhold delivery.",
+  "measurements": [
+    {
+      "field": "reported_percent",
+      "expected": 18.532041639087794
+    }
+  ]
 }
