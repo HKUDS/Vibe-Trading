@@ -364,7 +364,7 @@ def test_a_non_conclusive_re_resolution_cannot_retract_a_locked_symbol(
 def test_resolver_and_consumer_in_same_batch_cannot_race(
     tmp_path: Path,
 ) -> None:
-    """A consumer sees the identity snapshot from before its whole LLM batch."""
+    """A resolver completes before the dependent data call in the same batch."""
     agent, resolver, market, _, trace = _build_direct_agent(
         tmp_path,
         _resolver_payload(),
@@ -391,10 +391,10 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
     )
 
     assert resolver.calls == 1
-    assert market.calls == 0
+    assert market.calls == 1
     assert agent._grounding.authorized_symbols == {"562500.SH"}
     blocked = [json.loads(message["content"]) for message in messages]
-    assert any(item.get("error_code") == "identity_required" for item in blocked)
+    assert not any(item.get("error_code") == "identity_required" for item in blocked)
 
     agent._process_tool_calls(
         [
@@ -415,7 +415,7 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
     )
     trace.close()
 
-    assert market.calls == 1
+    assert market.calls == 2
     artifact = json.loads(
         (tmp_path / "run" / "artifacts" / "grounding_evidence.json").read_text(
             encoding="utf-8"
@@ -432,10 +432,10 @@ def test_resolver_and_consumer_in_same_batch_cannot_race(
     )
 
 
-def test_market_sensitive_skill_waits_for_prior_identity_batch(
+def test_skill_read_does_not_require_identity(
     tmp_path: Path,
 ) -> None:
-    """Workflow selection cannot race the resolver in the same assistant turn."""
+    """Methodology reads are independent of instrument identity."""
     agent, resolver, _, skill, trace = _build_direct_agent(tmp_path, _resolver_payload())
     messages: list[dict[str, Any]] = []
     react_trace: list[dict[str, Any]] = []
@@ -453,8 +453,7 @@ def test_market_sensitive_skill_waits_for_prior_identity_batch(
     )
 
     assert resolver.calls == 1
-    assert skill.calls == 0
-    assert json.loads(messages[-1]["content"])["error_code"] == "identity_required"
+    assert skill.calls == 1
 
     agent._process_tool_calls(
         [_tool_call("workflow-after-lock", "load_skill", name="valuation-model")],
@@ -466,7 +465,7 @@ def test_market_sensitive_skill_waits_for_prior_identity_batch(
     )
     trace.close()
 
-    assert skill.calls == 1
+    assert skill.calls == 2
 
 
 def test_argentina_symbols_have_grounding_identity() -> None:
@@ -778,8 +777,8 @@ def test_single_clean_not_found_source_is_not_enough_for_private_routing(
     trace.close()
 
     assert agent._grounding.identity_status == "invalidated"
-    assert private_skill.calls == 0
-    assert json.loads(messages[-1]["content"])["error_code"] == "identity_required"
+    assert private_skill.calls == 1
+    assert agent._grounding.authorized_symbols == set()
 
 
 def test_explicit_symbol_and_resolver_suffix_alias_are_one_identity(
@@ -924,7 +923,7 @@ def test_locked_symbol_rejects_silent_exchange_rewrite(
     assert json.loads(messages[-1]["content"])["error_code"] == "identity_mismatch"
 
 
-def test_listed_identity_blocks_private_company_workflow(
+def test_reading_private_methodology_does_not_relabel_listed_identity(
     tmp_path: Path,
 ) -> None:
     """Model memory cannot relabel a strongly resolved listing as private."""
@@ -965,8 +964,8 @@ def test_listed_identity_blocks_private_company_workflow(
     )
     trace.close()
 
-    assert private_skill.calls == 0
-    assert json.loads(messages[-1]["content"])["error_code"] == "identity_conflict"
+    assert private_skill.calls == 1
+    assert agent._grounding.authorized_symbols == {"SPCX.US"}
     validation = agent._grounding.validate_final_answer(
         "SpaceX is a private company and is not publicly traded."
     )
@@ -1349,10 +1348,10 @@ class _CorrectingLLM:
         return _Response()
 
 
-def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
+def test_agent_loop_delivers_original_answer_without_numeric_rewrite(
     tmp_path: Path,
 ) -> None:
-    """Rejected numeric drafts never become the returned or streamed answer."""
+    """Numeric audit does not rewrite the user-facing model output."""
     resolver = _ResolverTool(_resolver_payload())
     market = _MarketTool(_market_payload())
     registry = ToolRegistry()
@@ -1373,27 +1372,12 @@ def test_agent_loop_rejects_then_corrects_ungrounded_final_answer(
     result = agent.run("请分析机器人ETF并给出买入价")
 
     assert result["status"] == "success"
-    assert "1.137" in result["content"]
-    assert "0.881" not in result["content"]
-    assert market.calls == 1
-    # The correction nudge must not be a mid-conversation system message.
+    assert result["content"] == "建议买入价为 0.881。"
+    assert market.calls == 2
     assert_system_messages_only_lead(llm.messages_history)
-    streamed = "".join(
-        data.get("delta", "") for event, data in events if event == "text_delta"
-    )
-    assert "0.881" not in streamed
-    assert "1.137" in streamed
-    completed_thinking = "".join(
-        data.get("content", "")
-        for event, data in events
-        if event == "thinking_done"
-    )
-    assert "0.881" not in completed_thinking
-    artifact = json.loads(
-        (run_dir / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
-    )
-    assert artifact["validations"][0]["valid"] is False
-    assert artifact["validations"][-1]["valid"] is True
+    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
+    assert streamed == result["content"]
+    assert len(llm.responses) == 1  # no corrective model call
 
 
 _SHORTLIST_QUERY = "A股低价高增长股票"

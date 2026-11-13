@@ -1919,6 +1919,9 @@
     "expiresAt": "{{time}} に失効"
   },
   "swarmStatus": {
+    "partialResults": "途中までの結果",
+    "report": "レポート",
+    "continueWork": "未完了の作業を続ける",
     "agents": "{{done}}/{{total}} エージェント",
     "layer": "第 {{current}} ラウンド（全 {{total}} ラウンド）",
     "agent": "エージェント",

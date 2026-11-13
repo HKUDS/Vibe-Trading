@@ -68,6 +68,31 @@ class ToolCallLifecycle:
         Returns:
             Tuple of (compact_requested, focus_topic).
         """
+        # A resolver is a real data dependency. Execute it at a boundary so
+        # subsequent reads see its result rather than a stale pre-turn snapshot.
+        if len(tool_calls) > 1 and any(tc.name == "search_symbol" for tc in tool_calls):
+            compact_requested, focus_topic = False, ""
+            segment = []
+            for tc in tool_calls:
+                if tc.name == "search_symbol":
+                    for part in (segment, [tc]):
+                        if part:
+                            compact, focus = self._process_tool_calls(
+                                part, context, messages, trace, react_trace, iteration,
+                            )
+                            compact_requested |= compact
+                            focus_topic = focus or focus_topic
+                    segment = []
+                else:
+                    segment.append(tc)
+            if segment:
+                compact, focus = self._process_tool_calls(
+                    segment, context, messages, trace, react_trace, iteration,
+                )
+                compact_requested |= compact
+                focus_topic = focus or focus_topic
+            return compact_requested, focus_topic
+
         compact_requested = False
         focus_topic = ""
         execution_plan: list[tuple[Any, str | None]] = []

@@ -1932,7 +1932,10 @@
     "detailsUnavailable": "التفاصيل غير متاحة",
     "tokens": "↑{{input}} ↓{{output}} رموز",
     "estimated": "تقديرية",
-    "tokenSourceUnlabeled": "مصدر غير موسوم"
+    "tokenSourceUnlabeled": "مصدر غير موسوم",
+    "partialResults": "نتائج جزئية",
+    "report": "التقرير",
+    "continueWork": "متابعة العمل غير المكتمل"
   },
   "mandate": {
     "runtimeMandate": "تفويض وقت تشغيل الموصل",
