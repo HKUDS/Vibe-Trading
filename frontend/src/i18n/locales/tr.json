@@ -1241,8 +1241,7 @@
       "failed": "Başarısız",
       "steps": "{{count}} adım",
       "continue": "Devam et",
-      "reattach": "Yeniden bağlan",
-      "checkingFigures": "Bu yanıttaki sayılar kontrol ediliyor (tur {{round}})…"
+      "reattach": "Yeniden bağlan"
     },
     "resumeConnector": "Bağlantıyı sürdür",
     "resumeConnectorTitle": "Acil durdurmayı kaldır ve bağlantı faaliyetlerini yeniden etkinleştir",

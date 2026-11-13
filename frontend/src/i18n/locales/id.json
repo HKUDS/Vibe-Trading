@@ -1282,8 +1282,7 @@
       "failed": "Gagal",
       "steps": "{{count}} langkah",
       "continue": "Lanjutkan",
-      "reattach": "Lampirkan kembali",
-      "checkingFigures": "Memeriksa angka dalam jawaban ini (putaran {{round}})…"
+      "reattach": "Lampirkan kembali"
     },
     "resumeConnector": "Lanjutkan connector",
     "resumeConnectorTitle": "Nonaktifkan penghentian darurat dan aktifkan kembali aktivitas connector",

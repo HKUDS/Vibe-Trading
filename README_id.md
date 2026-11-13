@@ -57,7 +57,7 @@
 
 ## 📰 Berita
 
-- **2026-11-13** 🛠️ **Perbaikan bukti riset dan risiko komite** — Grounding mempertahankan nilai laporan keuangan dengan satuan sumber, harga backtest yang dirujuk, dan tanggal. Backtest mengembalikan referensi metrik yang tepat serta biaya eksekusi saham AS yang berlaku, dan menolak pengaturan komisi yang tidak diterapkan. Komite mendapat alat hitung tanpa shell dan memeriksa konsistensi aritmetika NAV pada tabel risiko posisi akhir. **Belum dirilis.**
+- **2026-11-13** 🛠️ **Refaktor penyampaian riset** — Jawaban langsung tanpa penghapusan angka otomatis, penulisan ulang paksa, atau penilaian selesai berdasarkan format. Tabel risiko dan berkas komite kini opsional. Biaya aktual, kalkulasi tanpa shell, serta status keluaran terpotong dan kesalahan tetap tersedia. **Belum dirilis, hanya di branch kerja.**
 
 - **2026-11-12** 🛠️ **Perbaikan waktu eksekusi, angka laporan, dan status riset** — Akun bayangan memakai modal awal yang diminta; respons worker yang terpotong oleh batas token tidak lagi dianggap selesai. PM komite dapat menyintesis laporan hulu yang valid tanpa mengambil ulang data. Adaptor Anthropic native memakai batas keluaran default 16.384 token yang dapat diubah.
   Strategi yang dihasilkan menolak pergeseran tambahan yang terdeteksi pada target keluaran kecuali dinyatakan sebagai penundaan yang disengaja; lookback indikator tetap diizinkan. Grounding mendukung variasi penulisan satuan besaran dan deklarasi nilai observasi yang presisi tanpa melonggarkan pemeriksaan bukti. Backtest SPY/GLD cocok dengan pembukuan independen untuk seluruh 206/140 eksekusi dan imbal hasil total. **Belum dirilis.**

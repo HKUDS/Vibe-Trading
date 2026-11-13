@@ -1276,8 +1276,7 @@
       "failed": "فشل",
       "steps": "{{count}} خطوات",
       "continue": "متابعة",
-      "reattach": "إعادة الاتصال",
-      "checkingFigures": "جارٍ التحقق من الأرقام في هذه الإجابة (الجولة {{round}})…"
+      "reattach": "إعادة الاتصال"
     },
     "resumeConnector": "استئناف الموصل",
     "resumeConnectorTitle": "مسح مفتاح الإيقاف واستئناف نشاط الموصل",

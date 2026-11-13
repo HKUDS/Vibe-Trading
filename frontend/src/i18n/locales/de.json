@@ -1282,8 +1282,7 @@
       "failed": "Fehlgeschlagen",
       "steps": "{{count}} Schritte",
       "continue": "Fortsetzen",
-      "reattach": "Erneut verbinden",
-      "checkingFigures": "Zahlen in dieser Antwort werden geprüft (Runde {{round}}) …"
+      "reattach": "Erneut verbinden"
     },
     "resumeConnector": "Connector fortsetzen",
     "resumeConnectorTitle": "Kill-Switch löschen und Connector-Aktivität wieder aktivieren",

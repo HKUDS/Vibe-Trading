@@ -515,7 +515,8 @@ def _evidence_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     )
     verdicts.append(
         _verdict(
-            VerdictStatus.PASS if not violations else VerdictStatus.FAIL,
+            (VerdictStatus.NOT_EVALUABLE if forbidden and not validations
+             else VerdictStatus.PASS if not violations else VerdictStatus.FAIL),
             "evidence.forbidden_issue_codes",
             forbidden,
             {"observed_issue_codes": sorted(issue_codes), "violations": violations},

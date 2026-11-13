@@ -251,8 +251,6 @@ agents:
 
       Decisions must be executable; reject vague “it depends.” Every key number must be explicit.
     tools: [bash, read_file, write_file, load_skill, quantlib_call, technical_indicators, portfolio_risk_xray, backtest]
-    evidence_mode: upstream
-    require_position_risk_table: true
     skills: [strategy-generate, asset-allocation]
     max_iterations: 50
     timeout_seconds: 1800

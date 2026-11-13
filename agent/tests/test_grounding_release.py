@@ -14,7 +14,6 @@ which the gate rejected with the multiplier read as a quoted price.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
@@ -31,8 +30,6 @@ from src.agent.grounding.figures import _lines_with_offsets
 from src.agent.grounding.release import _REDACTION_MARKER_EN, _REDACTION_MARKER_ZH
 from src.agent.loop import AgentLoop
 from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
-from tests.message_roles_helpers import assert_system_messages_only_lead
 
 pytestmark = pytest.mark.unit
 
@@ -670,274 +667,22 @@ def _run(
     return agent.run("请分析机器人ETF并给出买入价", session_id=session_id), events, agent
 
 
-_SCRIPT_HEAD = [
-    _Response(tool_calls=[_tool_call("resolve", "search_symbol", query="机器人ETF")]),
-    _Response(
-        tool_calls=[
-            _tool_call(
-                "prices",
-                "get_market_data",
-                codes=[SYMBOL],
-                start_date="2026-06-23",
-                end_date="2026-06-24",
-                source="auto",
-            )
-        ]
-    ),
-]
 
 
-def test_loop_releases_the_redacted_draft_instead_of_the_canned_refusal(tmp_path: Path) -> None:
-    """A model that never drops its invented entry still delivers its analysis."""
-    stubborn = (
-        "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137，均线空头排列。"
-        "建议买入价为 0.881。"
-    )
-    llm = _ScriptedLLM(_SCRIPT_HEAD + [_Response(content=stubborn)])
-
-    result, events, agent = _run(tmp_path, llm, max_iterations=8)
-
-    assert result["status"] == "success"
-    assert result.get("degraded") is True
-    content = result["content"]
-    assert "1.137" in content and "均线空头排列" in content
-    assert "0.881" not in content
-    assert _REDACTION_MARKER_ZH in content and "※ 略去" in content
-    assert "已拒绝上一版答案" not in content
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
-    assert "0.881" not in streamed and _REDACTION_MARKER_ZH in streamed
-    trace = TraceWriter.read(tmp_path / "run")
-    assert [e for e in trace if e.get("type") == "answer_released_redacted"]
-    end = next(e for e in trace if e.get("type") == "end")
-    assert "redacted" in end.get("reason", "")
-    # The count in that reason is the one number the user and the offline
-    # verifier have for how much of the run was spent being refused, and the
-    # release path's own rechecks must not inflate it.
-    reported = re.search(r"after (\d+) rejected drafts", end["reason"])
-    assert reported is not None, end["reason"]
-    assert int(reported.group(1)) == agent._grounding.validation_count
-    # Revision cap 2: the first draft is corrected, the second is released cut.
-    assert int(reported.group(1)) == 2
-    assert llm.calls == len(_SCRIPT_HEAD) + 2
-    statuses = [data for event, data in events if event == "grounding_status"]
-    assert [status["stage"] for status in statuses] == ["revising", "released_redacted"]
-    assert statuses[0]["round"] == 1 and statuses[0]["issues"] >= 1
-    assert statuses[1]["removed"] == 1
-    assert_system_messages_only_lead(llm.messages_history)
 
 
-def test_grounding_revision_turn_is_text_only(tmp_path: Path) -> None:
-    """A rejected numeric draft is revised without opening another research loop."""
-    rejected = (
-        "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
-        "建议买入价为 0.881。"
-    )
-    corrected = "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
-    llm = _ScriptedLLM(
-        _SCRIPT_HEAD + [_Response(content=rejected), _Response(content=corrected)]
-    )
-
-    result, _events, _agent = _run(tmp_path, llm, max_iterations=8)
-
-    assert result["status"] == "success"
-    assert llm.calls == len(_SCRIPT_HEAD) + 2
-    # The original drafting turn still has the registry. Once grounding rejects
-    # it without requesting explicit recovery, the next turn receives no tools.
-    assert llm.tools_history[len(_SCRIPT_HEAD)] is not None
-    assert llm.tools_history[len(_SCRIPT_HEAD) + 1] is None
-    trace = TraceWriter.read(tmp_path / "run")
-    assert [
-        event
-        for event in trace
-        if event.get("type") == "grounding_correction_text_only"
-    ]
 
 
-def test_grounding_revision_blocks_unoffered_tool_calls(tmp_path: Path, monkeypatch) -> None:
-    """A provider cannot escape correction-only mode by emitting a tool call anyway."""
-    monkeypatch.setattr("src.agent.loop.MAX_GROUNDING_REVISIONS", 3)
-    rejected = (
-        "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
-        "建议买入价为 0.881。"
-    )
-    corrected = "562500.SS（Yahoo，CNY）最新收盘价 1.171 元。"
-    llm = _ScriptedLLM(
-        _SCRIPT_HEAD
-        + [
-            _Response(content=rejected),
-            _Response(
-                tool_calls=[
-                    _tool_call(
-                        "refetch",
-                        "get_market_data",
-                        codes=[SYMBOL],
-                        start_date="2026-06-23",
-                        end_date="2026-06-24",
-                        source="auto",
-                    )
-                ]
-            ),
-            _Response(content=corrected),
-        ]
-    )
-
-    result, _events, _agent = _run(tmp_path, llm, max_iterations=8)
-
-    assert result["status"] == "success"
-    trace = TraceWriter.read(tmp_path / "run")
-    assert [
-        event
-        for event in trace
-        if event.get("type") == "grounding_correction_tool_call_blocked"
-    ]
-    # The attempted recovery call was never executed/recorded as a tool result.
-    assert not [
-        event
-        for event in trace
-        if event.get("type") == "tool_result" and event.get("call_id") == "refetch"
-    ]
-    # Correction-only survives the blocked attempt and remains text-only.
-    assert llm.tools_history[len(_SCRIPT_HEAD) + 1] is None
-    assert llm.tools_history[len(_SCRIPT_HEAD) + 2] is None
-    assert_system_messages_only_lead(llm.messages_history)
 
 
-@pytest.mark.parametrize("cap,max_iterations,expected_calls", [(2, 20, 4), (4, 20, 6), (8, 4, 4)])
-def test_forbidden_correction_calls_release_at_budget_or_final_iteration(
-    tmp_path: Path, monkeypatch, cap, max_iterations, expected_calls
-) -> None:
-    """Repeated tool requests cannot exhaust the run or replace the held draft."""
-    monkeypatch.setattr("src.agent.loop.MAX_GROUNDING_REVISIONS", cap)
-    rejected = HDR + "建议买入价为 0.881。"
-    forbidden = _Response(
-        content="THIS IS NOT THE ANSWER. Invented price 999.99.",
-        tool_calls=[_tool_call("forbidden", "get_market_data", codes=[SYMBOL])],
-    )
-    llm = _ScriptedLLM(_SCRIPT_HEAD + [_Response(content=rejected), forbidden])
-    result, events, agent = _run(tmp_path, llm, max_iterations=max_iterations)
-
-    assert llm.calls == expected_calls
-    assert result["status"] == "success" and result["degraded"] is True
-    assert "1.171" in result["content"] and _REDACTION_MARKER_ZH in result["content"]
-    assert "0.881" not in result["content"] and "999.99" not in result["content"]
-    assert "THIS IS NOT THE ANSWER" not in result["content"]
-    assert agent._grounding.revalidate(result["content"]).valid
-    # Rechecking a held draft is not another model-authored numerical draft.
-    assert agent._grounding.validation_count == 1
-    assert all(tools is None for tools in llm.tools_history[3:])
-    assert_system_messages_only_lead(llm.messages_history)
-    assert all(
-        not message.get("tool_calls") or all(call.get("id") != "forbidden" for call in message["tool_calls"])
-        for messages in llm.messages_history for message in messages
-    )
-    trace = TraceWriter.read(tmp_path / "run")
-    assert not any(e.get("type") == "tool_result" and e.get("call_id") == "forbidden" for e in trace)
-    assert len([e for e in trace if e.get("type") == "answer_rejected"]) == 1
-    assert len([e for e in trace if e.get("type") == "answer"]) == 1
-    assert len([e for e in trace if e.get("type") == "grounding_correction_tool_call_blocked"]) == expected_calls - 3
-    visible = ""
-    for kind, data in events:
-        if kind == "stream_reset":
-            visible = ""
-        elif kind == "text_delta":
-            visible += data["delta"]
-    assert visible == result["content"]
 
 
-def test_forbidden_correction_call_uses_safe_fallback_without_price_evidence(tmp_path: Path) -> None:
-    """Exhausted identity recovery still ends safely when the correction calls a tool."""
-    rejected = "机器人ETF 现价 1.171，建议买入。"
-    forbidden = _Response(tool_calls=[_tool_call("forbidden", "get_market_data", codes=[SYMBOL])])
-    # Two unresolved-identity recovery rounds, then one ordinary rejected draft.
-    llm = _ScriptedLLM([_Response(content=rejected)] * 3 + [forbidden])
-    result, _events, agent = _run(tmp_path, llm, max_iterations=20)
-    assert llm.calls == 4
-    assert result["status"] == "success" and result["degraded"] is True
-    assert result["content"] == agent._grounding.safe_fallback()
-    assert "1.171" not in result["content"]
-    assert agent._grounding.validation_count == 3
-    assert llm.tools_history[1] is not None and llm.tools_history[2] is not None
-    assert llm.tools_history[3] is None
-    assert_system_messages_only_lead(llm.messages_history)
 
 
-def test_explicit_grounding_recovery_keeps_tools_then_correction_removes_them(tmp_path: Path) -> None:
-    """Missing identity/evidence may research; a later numeric rewrite may not."""
-    rejected = HDR + "建议买入价为 0.881。"
-    llm = _ScriptedLLM(
-        [_Response(content="机器人ETF 现价 1.171。")]
-        + _SCRIPT_HEAD
-        + [_Response(content=rejected), _Response(content=HDR)]
-    )
-    result, _events, _agent = _run(tmp_path, llm, max_iterations=10)
-    assert result["status"] == "success" and not result.get("degraded")
-    assert llm.calls == 5
-    assert all(tools is not None for tools in llm.tools_history[:4])
-    assert llm.tools_history[4] is None
-    trace = TraceWriter.read(tmp_path / "run")
-    assert [e["action"] for e in trace if e.get("type") == "grounding_recovery"] == ["search_symbol"]
-    assert_system_messages_only_lead(llm.messages_history)
 
 
-@pytest.mark.parametrize("forbidden", [False, True])
-def test_goal_continuation_resets_correction_mode_but_not_a_forced_release(
-    tmp_path: Path, monkeypatch, forbidden
-) -> None:
-    snapshot = {"goal": {"status": "active"}}
-
-    class GoalStore:
-        def account_usage(self, **_kwargs):
-            pass
-
-        def get_goal_snapshot(self, _goal_id):
-            return snapshot
-
-    monkeypatch.setattr("src.goal.GoalStore", GoalStore)
-    monkeypatch.setattr("src.agent.loop.SESSIONS_DIR", tmp_path / "sessions")
-    monkeypatch.setattr("src.agent.loop.get_current_goal_context", lambda _: ("", "goal-test"))
-    monkeypatch.setattr("src.agent.loop._goal_max_continuations", lambda: 1)
-    monkeypatch.setattr("src.agent.loop.format_goal_continuation_prompt", lambda *a, **kw: "Continue the goal.")
-    revision = (
-        _Response(tool_calls=[_tool_call("forbidden", "get_market_data", codes=[SYMBOL])])
-        if forbidden else _Response(content=HDR)
-    )
-    llm = _ScriptedLLM(_SCRIPT_HEAD + [_Response(content=HDR + "建议买入价为 0.881。"), revision, _Response(content=HDR)])
-    result, _events, _agent = _run(tmp_path, llm, max_iterations=10, session_id="goal-session")
-    assert result["status"] == "success"
-    assert llm.tools_history[3] is None
-    if forbidden:
-        assert result["degraded"] is True
-        assert llm.calls == 4
-    else:
-        assert llm.calls == 5
-        assert llm.tools_history[4] is not None
-    assert_system_messages_only_lead(llm.messages_history)
 
 
-def test_loop_repairs_a_missing_source_word_without_another_model_round(tmp_path: Path) -> None:
-    missing_source = "562500.SS 在 2026-06-23 的已观测收盘价为 1.137 CNY，均线空头排列。"
-    llm = _ScriptedLLM(
-        _SCRIPT_HEAD + [_Response(content=missing_source), _Response(content="MUST NOT BE ASKED")]
-    )
-
-    result, events, agent = _run(tmp_path, llm, max_iterations=8)
-
-    assert result["status"] == "success"
-    assert result.get("degraded") is None
-    assert llm.calls == 3
-    content = result["content"]
-    assert content.startswith(missing_source)
-    assert "yahoo" in content and "数据说明" in content
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
-    assert "yahoo" in streamed
-    trace = TraceWriter.read(tmp_path / "run")
-    assert [e for e in trace if e.get("type") == "answer_repaired"]
-    assert not [e for e in trace if e.get("type") == "answer_rejected"]
-    # The repair costs no model round, so it must cost no revision either.
-    # ``validation_count`` is both the revision budget and the rejected-draft
-    # number in the run reason; recording the recheck spent one of each on a
-    # draft the model never wrote.
-    assert agent._grounding.validation_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -2009,25 +1754,6 @@ def test_line_offsets_are_a_monotone_scan() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_loop_releases_a_valid_draft_without_its_figures_block(tmp_path: Path) -> None:
-    """The block is the model's declaration to the gate, never answer text."""
-    prose = "562500.SS（Yahoo，CNY）在 2026-06-23 的已观测收盘价为 1.137。"
-    draft = prose + "\n\n```figures\n1.137 | observed | 562500.SS close 2026-06-23 | prices\n```"
-    llm = _ScriptedLLM(_SCRIPT_HEAD + [_Response(content=draft)])
-
-    result, events, agent = _run(tmp_path, llm, max_iterations=8)
-
-    assert result["status"] == "success"
-    assert result.get("degraded") is None
-    assert result["content"] == prose
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
-    assert streamed == prose
-    assert llm.calls == len(_SCRIPT_HEAD) + 1
-    assert not [event for event, _ in events if event == "grounding_status"]
-    artifact = json.loads(
-        (tmp_path / "run" / "artifacts" / "grounding_evidence.json").read_text(encoding="utf-8")
-    )
-    assert "1.137 | observed" in artifact["validations"][-1]["figures_block"]
 
 
 def test_the_sweep_cuts_a_bare_restatement_of_a_cut_figure(tmp_path: Path) -> None:
@@ -2131,16 +1857,6 @@ def _stream(tmp_path: Path, content: str) -> tuple[dict[str, Any], str, AgentLoo
     return result, streamed, agent
 
 
-def test_a_streamed_answer_never_shows_its_figures_block(tmp_path: Path) -> None:
-    """A run with no evidence streams live, and the block still stays out."""
-    prose = "建议每周复盘 3 次。"
-
-    result, streamed, agent = _stream(tmp_path, prose + "\n\n```figures\n3 | count | 次/周\n```")
-
-    assert agent._grounding.should_buffer_output is False
-    assert result["content"] == prose
-    assert "figures" not in streamed and "`" not in streamed
-    assert streamed.strip() == prose
 
 
 def test_a_held_back_line_that_never_became_a_fence_is_still_shown(tmp_path: Path) -> None:
@@ -2152,15 +1868,6 @@ def test_a_held_back_line_that_never_became_a_fence_is_still_shown(tmp_path: Pat
     assert streamed == content
 
 
-def test_prose_after_the_figures_block_still_reaches_the_stream(tmp_path: Path) -> None:
-    """The block is held back from its fence on; what follows it is flushed at the end."""
-    content = "建议每周复盘 3 次。\n\n```figures\n3 | count | 次/周\n```\n\n补充：先写结论。"
-
-    result, streamed, _ = _stream(tmp_path, content)
-
-    assert "figures" not in streamed
-    assert "补充：先写结论。" in result["content"]
-    assert streamed.rstrip().endswith("补充：先写结论。")
 
 
 def test_the_tool_call_syntax_fallback_reaches_the_stream_once(tmp_path: Path) -> None:
@@ -2170,29 +1877,16 @@ def test_the_tool_call_syntax_fallback_reaches_the_stream_once(tmp_path: Path) -
     result, events, _ = _run(tmp_path, llm, max_iterations=1)
 
     deltas = [data.get("delta", "") for event, data in events if event == "text_delta"]
-    assert len(deltas) == 1, deltas
-    assert "tool-call syntax" in deltas[0]
-    assert result["content"] == deltas[0]
+    assert sum("tool-call syntax" in delta for delta in deltas) == 1
+    visible = ""
+    for event, data in events:
+        if event == "stream_reset":
+            visible = ""
+        elif event == "text_delta":
+            visible += data["delta"]
+    assert result["content"] == visible
 
 
-def test_thinking_done_never_carries_the_figures_block(tmp_path: Path) -> None:
-    content = "建议每周复盘 3 次。\n\n```figures\n3 | count | 次/周\n```"
-    events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
-        registry=ToolRegistry(),
-        llm=_ChunkedLLM(content),
-        max_iterations=3,
-        event_callback=lambda event, data: events.append((event, data)),
-    )
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    agent.memory.run_dir = str(run_dir)
-
-    agent.run("总结一下这周的复盘心得")
-
-    thoughts = [data.get("content", "") for event, data in events if event == "thinking_done"]
-    assert thoughts
-    assert all("figures" not in thought for thought in thoughts)
 
 
 class _NoteTool(BaseTool):
@@ -2235,68 +1929,10 @@ def test_a_held_back_line_in_a_tool_call_turn_is_shown(tmp_path: Path) -> None:
     assert "`先写结论`" in streamed
 
 
-def test_a_figures_block_ending_a_tool_call_turn_is_not_shown(tmp_path: Path) -> None:
-    """Completing the last line reveals a fence; the block after it stays held."""
-    registry = ToolRegistry()
-    registry.register(_NoteTool("ok"))
-    llm = _ScriptedLLM(
-        [
-            _Response(
-                content="先记一笔。\n\n```figures\n3 | count | 次\n```",
-                tool_calls=[_tool_call("n1", "note_progress")],
-            ),
-            _Response(content="记好了。"),
-        ]
-    )
-    events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
-        registry=registry,
-        llm=llm,
-        max_iterations=4,
-        event_callback=lambda event, data: events.append((event, data)),
-    )
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    agent.memory.run_dir = str(run_dir)
-
-    agent.run("总结一下这周的复盘心得")
-
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
-    assert "先记一笔。" in streamed
-    assert "figures" not in streamed
 
 
-def test_an_unchecked_measurement_never_streams_before_the_gate(tmp_path: Path) -> None:
-    """An unbuffered draft stops streaming at its first measurement; a rejection resets it."""
-    llm = _ScriptedLLM(
-        [_Response(content="本周收益约 12.5%，好于上周。"), _Response(content="本周整体不错。")]
-    )
-    events: list[tuple[str, dict[str, Any]]] = []
-    agent = AgentLoop(
-        registry=ToolRegistry(),
-        llm=llm,
-        max_iterations=4,
-        event_callback=lambda event, data: events.append((event, data)),
-    )
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    agent.memory.run_dir = str(run_dir)
-
-    result = agent.run("总结一下这周的复盘心得")
-
-    streamed = "".join(data.get("delta", "") for event, data in events if event == "text_delta")
-    assert "12.5" not in streamed
-    assert [data for event, data in events if event == "stream_reset"]
-    assert result["content"] == "本周整体不错。"
 
 
-def test_a_checked_measurement_streams_once_the_gate_passes(tmp_path: Path) -> None:
-    prose = "仓位上限 5%。"
-
-    result, streamed, _ = _stream(tmp_path, prose + "\n\n```figures\n5% | count | 仓位参数\n```")
-
-    assert result["content"] == prose
-    assert streamed == prose
 
 
 # ---------------------------------------------------------------------------

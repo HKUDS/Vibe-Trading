@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable
 from unittest.mock import patch
 
 import pytest
@@ -24,8 +23,6 @@ from src.agent.grounding.release import (
     MAX_PRICE_EVIDENCE_ATTEMPTS,
     MAX_SYMBOL_RESOLUTION_ATTEMPTS,
 )
-from src.providers.chat import LLMResponse
-from tests.message_roles_helpers import assert_system_messages_only_lead
 
 pytestmark = pytest.mark.unit
 
@@ -320,94 +317,3 @@ class TestRecoveryPrompts:
         assert summary["max_rounds"] == MAX_GROUNDING_RECOVERY_ROUNDS
         assert summary["symbol_resolution_attempts"] == 1
         assert summary["price_evidence_attempts"] == 0
-
-
-class _FailingDraftLLM:
-    """Always produces an ungrounded premium conclusion with no tool calls."""
-
-    def __init__(self) -> None:
-        self.calls = 0
-        self.messages_history: list[list[dict[str, Any]]] = []
-
-    def stream_chat(
-        self,
-        messages: list[dict[str, Any]],
-        tools: list[Any] | None = None,
-        on_text_chunk: Callable[[str], None] | None = None,
-        on_reasoning_chunk: Callable[[str], None] | None = None,
-        timeout: int | None = None,
-        idle_timeout_s: float | None = None,
-        should_cancel: Callable[[], bool] | None = None,
-        on_waiting_chunk=None,
-    ) -> LLMResponse:
-        self.calls += 1
-        self.messages_history.append(list(messages))
-        draft = "机器人ETF 现价 1.171，建议买入。"
-        if on_text_chunk:
-            on_text_chunk(draft)
-        return LLMResponse(content=draft)
-
-    def chat(self, messages: list[dict[str, Any]], **_: Any) -> LLMResponse:
-        return LLMResponse(content="")
-
-
-def _run_direct_loop(
-    tmp_path: Path,
-    llm: Any,
-    max_iterations: int = 8,
-    events: list[tuple[str, dict[str, Any]]] | None = None,
-) -> dict[str, Any]:
-    from src.agent.loop import AgentLoop
-    from src.memory.persistent import PersistentMemory
-    from src.tools import build_registry
-
-    pm = PersistentMemory()
-    agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm, include_shell_tools=False),
-        llm=llm,
-        max_iterations=max_iterations,
-        persistent_memory=pm,
-        event_callback=(lambda event, data: events.append((event, data)))
-        if events is not None
-        else None,
-    )
-    run_dir = tmp_path / "run"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    agent.memory.run_dir = str(run_dir)
-    return agent.run(user_message="分析机器人ETF并给出买入价")
-
-
-def test_loop_runs_recovery_before_fallback(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A rejected draft must drive search_symbol recovery before falling back."""
-    from src.agent.trace import TraceWriter
-
-    llm = _FailingDraftLLM()
-    events: list[tuple[str, dict[str, Any]]] = []
-
-    result = _run_direct_loop(tmp_path, llm, max_iterations=6, events=events)
-
-    trace = TraceWriter.read(tmp_path / "run")
-    recovery_entries = [e for e in trace if e.get("type") == "grounding_recovery"]
-    # Symbol resolution budget is two: two recovery turns, then fallback.
-    assert [e.get("action") for e in recovery_entries] == ["search_symbol", "search_symbol"]
-    # Two recovery drafts, then the correction path: one draft handed back
-    # and the one that ends revising. Recovery does not spend the revision
-    # cap, and every rejection that leads to another draft is announced.
-    assert llm.calls == 4
-    statuses = [data for event, data in events if event == "grounding_status"]
-    assert [(status["stage"], status["round"]) for status in statuses] == [
-        ("revising", 1),
-        ("revising", 2),
-        ("revising", 3),
-    ]
-    # Recovery and correction steering must never be mid-conversation system
-    # messages: Anthropic only accepts a single leading system block.
-    assert_system_messages_only_lead(llm.messages_history)
-    # The run still terminates fail-closed once recovery is exhausted: with no
-    # observed price at all there is nothing a redacted release could stand
-    # on, so the canned refusal is the answer, not a cut-down draft.
-    assert result["content"]
-    assert "安全门槛拒绝" in result["content"]
-    assert result.get("degraded") is True

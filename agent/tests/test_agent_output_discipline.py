@@ -732,12 +732,13 @@ class TestTheSemanticPrinciplesStayInThePrompt:
         ):
             assert principle in prompt
 
-    def test_the_prompt_tells_the_model_which_ones_are_enforced(self) -> None:
-        """The model can only satisfy a gate it has been told about."""
+    def test_the_prompt_explains_evidence_without_a_hidden_protocol(self) -> None:
+        """Evidence guidance does not promise automatic report censorship."""
         prompt = _rendered_prompt()
 
-        assert "checked mechanically before your answer is released" in prompt
-        assert "figures to a symbol this session never handled" in prompt
+        assert "Explain evidence and assumptions" in prompt
+        assert "checked mechanically before your answer is released" not in prompt
+        assert "```figures" not in prompt
 
 
 # ---------------------------------------------------------------------------
