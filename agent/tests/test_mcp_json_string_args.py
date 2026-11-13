@@ -35,7 +35,7 @@ LIST_DICT_PARAMS = {
         "contradicts_claim_ids",
     ),
     "update_research_goal_status": ("audit",),
-    "analyze_options_payoff": ("legs", "scenario_iv_values", "expiry_spot_values"),
+    "analyze_options_payoff": ("legs", "scenario_iv_values", "expiry_spot_values", "alternatives"),
     "run_swarm": ("variables",),
     "get_market_data": ("codes",),
     "get_fund_flow": ("codes",),

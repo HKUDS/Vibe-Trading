@@ -1702,6 +1702,24 @@
       "spot": "Kurs bei Verfall",
       "pnl": "Gewinn/Verlust bei Verfall",
       "return": "Rendite auf den Aktiennominalwert"
+    },
+    "comparison": {
+      "title": "Strategien vergleichen",
+      "basis": "Optionspositionen speichern und dann zum Vergleich bearbeiten. Einstiegskurs, Aktienposition, Laufzeit und Gebühren sind gemeinsam. Die Rendite bezieht sich auf den Aktiennominalwert beim Einstieg; bei reinen Optionen fehlt dieser Nenner.",
+      "current": "Aktuelle Strategie",
+      "saved": "Strategie {{index}}",
+      "save": "Positionen zum Vergleich speichern",
+      "remove": "Entfernen",
+      "metric": "Kennzahl",
+      "alternative": "Alternative",
+      "baseline": "Basis",
+      "difference": "Differenz (Prozentpunkte)",
+      "max_profit_return": "Maximale Rendite",
+      "max_loss_return": "Minimale Rendite",
+      "entry_cost_return": "Einstiegskosten / Aktiennominalwert",
+      "higher": "Höher",
+      "lower": "Niedriger",
+      "equal": "Gleich"
     }
   },
   "alphaZoo": {

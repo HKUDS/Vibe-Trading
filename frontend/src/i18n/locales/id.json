@@ -1702,6 +1702,24 @@
       "spot": "Harga saat jatuh tempo",
       "pnl": "Laba/rugi saat jatuh tempo",
       "return": "Imbal hasil atas nilai nosional saham"
+    },
+    "comparison": {
+      "title": "Bandingkan strategi",
+      "basis": "Simpan kaki opsi lalu edit untuk membandingkan. Semua memakai harga masuk, posisi saham, jatuh tempo, dan biaya saat ini. Imbal hasil memakai nilai nosional saham saat masuk; opsi saja tidak memiliki penyebut ini.",
+      "current": "Strategi saat ini",
+      "saved": "Strategi {{index}}",
+      "save": "Simpan kaki untuk perbandingan",
+      "remove": "Hapus",
+      "metric": "Metrik",
+      "alternative": "Alternatif",
+      "baseline": "Dasar",
+      "difference": "Selisih (poin persentase)",
+      "max_profit_return": "Imbal hasil maksimum",
+      "max_loss_return": "Imbal hasil minimum",
+      "entry_cost_return": "Biaya masuk / nosional saham",
+      "higher": "Lebih tinggi",
+      "lower": "Lebih rendah",
+      "equal": "Sama"
     }
   },
   "alphaZoo": {

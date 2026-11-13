@@ -1662,6 +1662,24 @@
       "spot": "Vade sonu fiyatı",
       "pnl": "Vade sonu kâr/zarar",
       "return": "Hisse nominal tutarı üzerinden getiri"
+    },
+    "comparison": {
+      "title": "Stratejileri karşılaştır",
+      "basis": "Bacakları kaydedip karşılaştırmak için düzenleyin. Güncel giriş fiyatı, hisse pozisyonu, vade ve ücretler ortaktır. Getiri girişteki hisse nominal değerine oranlanır; yalnız opsiyonlarda bu payda yoktur.",
+      "current": "Mevcut strateji",
+      "saved": "Strateji {{index}}",
+      "save": "Karşılaştırma için bacakları kaydet",
+      "remove": "Kaldır",
+      "metric": "Ölçüt",
+      "alternative": "Alternatif",
+      "baseline": "Temel",
+      "difference": "Fark (yüzde puan)",
+      "max_profit_return": "Azami getiri",
+      "max_loss_return": "Asgari getiri",
+      "entry_cost_return": "Giriş maliyeti / hisse nominali",
+      "higher": "Daha yüksek",
+      "lower": "Daha düşük",
+      "equal": "Eşit"
     }
   },
   "alphaZoo": {

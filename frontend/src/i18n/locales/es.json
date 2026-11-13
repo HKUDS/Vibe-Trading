@@ -1702,6 +1702,24 @@
       "spot": "Precio al vencimiento",
       "pnl": "Ganancia/pérdida al vencimiento",
       "return": "Rentabilidad sobre el nominal de acciones"
+    },
+    "comparison": {
+      "title": "Comparar estrategias",
+      "basis": "Guarda las patas y edita la estrategia para comparar. Comparten precio de entrada, posición en acciones, vencimiento y comisiones actuales. La rentabilidad usa el nominal inicial de las acciones; las opciones solas no tienen ese denominador.",
+      "current": "Estrategia actual",
+      "saved": "Estrategia {{index}}",
+      "save": "Guardar patas para comparar",
+      "remove": "Eliminar",
+      "metric": "Métrica",
+      "alternative": "Alternativa",
+      "baseline": "Base",
+      "difference": "Diferencia (puntos porcentuales)",
+      "max_profit_return": "Rentabilidad máxima",
+      "max_loss_return": "Rentabilidad mínima",
+      "entry_cost_return": "Coste de entrada / nominal de acciones",
+      "higher": "Mayor",
+      "lower": "Menor",
+      "equal": "Igual"
     }
   },
   "alphaZoo": {

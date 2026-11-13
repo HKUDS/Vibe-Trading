@@ -1702,6 +1702,24 @@
       "spot": "Price at expiry",
       "pnl": "Expiry P&L",
       "return": "Return on stock notional"
+    },
+    "comparison": {
+      "title": "Compare strategies",
+      "basis": "Save a leg set, then edit the builder to compare. All sets use the current entry price, stock position, expiry and fees. Returns use entry stock notional; pure options have no stock-return denominator.",
+      "current": "Current strategy",
+      "saved": "Strategy {{index}}",
+      "save": "Save legs for comparison",
+      "remove": "Remove",
+      "metric": "Metric",
+      "alternative": "Alternative",
+      "baseline": "Base",
+      "difference": "Difference (percentage points)",
+      "max_profit_return": "Maximum return",
+      "max_loss_return": "Minimum return",
+      "entry_cost_return": "Entry cost / stock notional",
+      "higher": "Higher",
+      "lower": "Lower",
+      "equal": "Equal"
     }
   },
   "alphaZoo": {

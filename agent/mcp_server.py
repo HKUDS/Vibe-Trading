@@ -1246,6 +1246,8 @@ def analyze_options_payoff(
     underlying_qty: float = 0.0,
     price_as_of: str | None = None,
     expiry_spot_values: _lenient_float_list_opt = None,
+    label: str = "base",
+    alternatives: _lenient_dict_list_opt = None,
 ) -> str:
     """Analyze a multi-leg option strategy's payoff and spot/IV scenarios.
 
@@ -1255,6 +1257,9 @@ def analyze_options_payoff(
     Research only; this tool cannot place orders.
 
     Args:
+        label: Name of the base strategy.
+        alternatives: Named {label, legs} strategies on shared pricing assumptions;
+            returns their calculations and cap/floor/cost comparisons in this call.
         legs: Option leg objects with ``option_type`` (call/put), positive
             ``strike``, signed integer ``qty``, and optional per-share
             ``premium``. Positive quantity is long; negative is short.
@@ -1276,6 +1281,8 @@ def analyze_options_payoff(
     """
     params: dict[str, Any] = {
         "legs": legs,
+        "label": label,
+        "alternatives": alternatives or [],
         "entry_spot": entry_spot,
         "expiry_days": expiry_days,
         "risk_free_rate": risk_free_rate,

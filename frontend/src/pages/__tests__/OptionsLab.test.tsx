@@ -35,3 +35,19 @@ it("keeps old chart parameters consistent and restores completed results without
   expect(api.analyzeOptionsPayoff).toHaveBeenCalledTimes(2);
   expect(screen.queryByText("chain loaded")).not.toBeInTheDocument();
 });
+
+it("sends saved legs with the current strategy and displays server comparisons", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue({ ...output, comparisons: [{
+    left_label: "Strategy 1", right_label: "Current strategy", status: "ok",
+    metrics: { max_profit_return: { left_decimal: .21, right_decimal: .18, relation: "higher", difference_percentage_points: 3 } },
+  }] });
+  render(<OptionsLab />); await tick();
+  fireEvent.click(screen.getByText("Save legs for comparison")); await tick();
+  const sent = vi.mocked(api.analyzeOptionsPayoff).mock.lastCall![0];
+  expect(sent.alternatives).toEqual([{ label: "Strategy 1", legs: sent.legs }]);
+  expect(screen.getByText("Higher · 3.00")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Edit spot")); await tick();
+  const updated = vi.mocked(api.analyzeOptionsPayoff).mock.lastCall![0];
+  expect(updated.entry_spot).toBe(110);
+  expect(updated.alternatives).toEqual(sent.alternatives);
+});
