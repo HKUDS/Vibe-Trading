@@ -102,6 +102,8 @@ class PayoffRequest(BaseModel):
     risk_free_rate: float = Field(0.05)
     volatility: float = Field(0.3, gt=0)
     multiplier: float = Field(1.0, gt=0)
+    underlying_qty: float = Field(0.0, allow_inf_nan=False)
+    price_as_of: str | None = None
     commission_rate: float = Field(0.001, ge=0, lt=1)
     spot_min: float | None = Field(None, ge=0)
     spot_max: float | None = Field(None, gt=0)
@@ -142,6 +144,8 @@ def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
         "risk_free_rate": payload.risk_free_rate,
         "volatility": payload.volatility,
         "multiplier": payload.multiplier,
+        "underlying_qty": payload.underlying_qty,
+        "price_as_of": payload.price_as_of,
         "commission_rate": payload.commission_rate,
         "spot_points": payload.spot_points,
     }
@@ -166,6 +170,7 @@ def _portfolio_greeks(payload: PayoffRequest) -> dict[str, float]:
     legs = _coerce_legs([leg.model_dump(exclude_none=True) for leg in payload.legs])
     time_to_expiry = payload.expiry_days / 365.0
     totals = {key: 0.0 for key in _GREEK_KEYS}
+    totals["delta"] = payload.underlying_qty
     for leg in legs:
         greeks = bs_greeks(
             S=payload.entry_spot,

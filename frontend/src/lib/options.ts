@@ -34,6 +34,9 @@ export interface OptionsPayoffRequest {
   volatility?: number;
   /** Contract multiplier, default 1. */
   multiplier?: number;
+  /** Signed stock units per multiplier; 1 covers one option contract. */
+  underlying_qty?: number;
+  price_as_of?: string;
   /** Fraction in [0, 1), default 0.001. */
   commission_rate?: number;
   spot_min?: number;
@@ -183,6 +186,7 @@ export interface OptionsLabParams {
   risk_free_rate_pct: number;
   /** Contract multiplier; 100 = standard US equity contract. */
   multiplier: number;
+  underlying_qty?: number;
   /** Percent: 0.1 = 0.1%. Sent as 0.001. */
   commission_rate_pct: number;
 }
@@ -193,6 +197,7 @@ export const DEFAULT_PARAMS: OptionsLabParams = {
   volatility_pct: 30,
   risk_free_rate_pct: 5,
   multiplier: 100,
+  underlying_qty: 0,
   commission_rate_pct: 0.1,
 };
 
@@ -351,6 +356,7 @@ export function buildPayoffRequest(
   if (!Number.isFinite(p.volatility_pct) || p.volatility_pct <= 0) return null;
   if (!Number.isFinite(p.risk_free_rate_pct)) return null;
   if (!Number.isFinite(p.multiplier) || p.multiplier <= 0) return null;
+  if (!Number.isFinite(p.underlying_qty ?? 0)) return null;
   if (!Number.isFinite(p.commission_rate_pct) || p.commission_rate_pct < 0 || p.commission_rate_pct >= 100) {
     return null;
   }
@@ -373,6 +379,7 @@ export function buildPayoffRequest(
     risk_free_rate: pctToFraction(p.risk_free_rate_pct),
     volatility: pctToFraction(p.volatility_pct),
     multiplier: p.multiplier,
+    underlying_qty: p.underlying_qty ?? 0,
     commission_rate: pctToFraction(p.commission_rate_pct),
   };
 }

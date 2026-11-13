@@ -97,6 +97,7 @@ class MarketDataTool(BaseTool):
     parameters = {
         "type": "object",
         "properties": {
+            "run_dir": {"type": "string", "description": "Workspace for a saved full JSON result usable by quantlib_call; injected by agent sessions."},
             "codes": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -244,4 +245,5 @@ class MarketDataTool(BaseTool):
         loader_resolver = kwargs.get("loader_resolver")
         if loader_resolver is not None:
             fetch_kwargs["loader_resolver"] = loader_resolver
-        return fetch_market_data_json(**fetch_kwargs)
+        from src.agent.result_artifacts import persist_calculation_result
+        return persist_calculation_result(fetch_market_data_json(**fetch_kwargs), kwargs.get("run_dir"))

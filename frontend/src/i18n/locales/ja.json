@@ -1595,6 +1595,8 @@
       "expiryDays": "満期までの日数",
       "volatility": "ボラティリティ（%）",
       "riskFreeRate": "リスクフリー金利（%）",
+      "underlyingQty": "原資産の保有単位",
+      "underlyingQtyHint": "0：オプションのみ。1：倍率分の株式を保有（倍率100なら100株）。",
       "multiplier": "乗数",
       "multiplierHint": "100 = 米国株式標準契約",
       "commissionRate": "手数料率（%）",

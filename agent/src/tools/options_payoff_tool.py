@@ -27,7 +27,8 @@ class OptionsPayoffTool(BaseTool):
         "piecewise-linear expiry math and Black-Scholes spot/IV scenarios. "
         "Returns entry debit/credit and commission, analytic breakevens, "
         "bounded or unbounded max profit/loss, an expiry payoff curve, and a "
-        "scenario P&L matrix. Research only; does not place orders."
+        "scenario P&L matrix. Set underlying_qty=1 for a covered collar/covered call "
+        "(shares = underlying_qty * multiplier); default 0 analyzes only options. Research only; does not place orders."
     )
     repeatable = True
     parameters = {
@@ -61,6 +62,8 @@ class OptionsPayoffTool(BaseTool):
                 "exclusiveMinimum": 0,
                 "description": "Underlying spot at entry.",
             },
+            "underlying_qty": {"type": "number", "default": 0, "description": "Signed stock units per multiplier. 1 means 100 shares with multiplier=100. Included in P&L and bounds."},
+            "price_as_of": {"type": "string", "description": "Observation date of entry_spot; label assumptions if not a live quote."},
             "expiry_days": {
                 "type": "number",
                 "minimum": 0,
@@ -132,6 +135,7 @@ class OptionsPayoffTool(BaseTool):
         try:
             legs = _coerce_legs(kwargs.get("legs"))
             entry_spot = _required_float(kwargs, "entry_spot")
+            underlying_qty = _optional_float(kwargs, "underlying_qty", 0.0)
             expiry_days = _required_float(kwargs, "expiry_days")
             rate = _optional_float(kwargs, "risk_free_rate", 0.05)
             volatility = _optional_float(kwargs, "volatility", 0.3)
@@ -152,6 +156,7 @@ class OptionsPayoffTool(BaseTool):
                 iv=volatility,
                 multiplier=multiplier,
                 commission_rate=commission_rate,
+                underlying_qty=underlying_qty,
             )
             scenarios = scenario_grid(
                 legs,
@@ -163,6 +168,7 @@ class OptionsPayoffTool(BaseTool):
                 entry_iv=volatility,
                 multiplier=multiplier,
                 commission_rate=commission_rate,
+                underlying_qty=underlying_qty,
             )
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             return _error(str(exc))
@@ -181,11 +187,25 @@ class OptionsPayoffTool(BaseTool):
                     for leg in legs
                 ],
                 "entry_spot": entry_spot,
+                "underlying_qty": underlying_qty,
+                "price_as_of": kwargs.get("price_as_of"),
                 "expiry_days": expiry_days,
                 "risk_free_rate": rate,
                 "volatility": volatility,
                 "multiplier": multiplier,
                 "commission_rate": commission_rate,
+            },
+            "calculation_basis": {
+                "entry_spot": entry_spot,
+                "price_as_of": kwargs.get("price_as_of"),
+                "underlying_shares": underlying_qty * multiplier,
+                "option_entry_cost_including_commission": report.entry_cost,
+                "return_denominator": abs(underlying_qty * multiplier * entry_spot),
+                "return_convention": "P&L / absolute entry stock notional; not return on total cash invested",
+                "max_profit_return": (report.max_profit / abs(underlying_qty * multiplier * entry_spot)
+                                      if underlying_qty and not report.profit_unbounded else None),
+                "max_loss_return": (report.max_loss / abs(underlying_qty * multiplier * entry_spot)
+                                    if underlying_qty and not report.loss_unbounded else None),
             },
             "summary": {
                 "net_premium": _rounded(report.net_premium),
@@ -218,7 +238,7 @@ class OptionsPayoffTool(BaseTool):
             },
             "limitations": [
                 "European Black-Scholes marks with constant rate and volatility per scenario.",
-                "No dividends, early exercise, assignment, slippage, or margin model.",
+                "No dividends, early exercise, assignment, slippage, stock fees, funding, or margin model.",
                 "Scenario P&L is mark-to-market and does not deduct a hypothetical exit commission.",
             ],
         }

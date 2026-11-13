@@ -1561,6 +1561,8 @@
       "expiryDays": "Vadeye kalan gün",
       "volatility": "Oynaklık (%)",
       "riskFreeRate": "Risksiz faiz (%)",
+      "underlyingQty": "Dayanak varlık birimleri",
+      "underlyingQtyHint": "0: yalnızca opsiyonlar. 1: çarpan kadar hisse tut (çarpan 100 ise 100 hisse).",
       "multiplier": "Çarpan",
       "multiplierHint": "100 = standart ABD hisse opsiyonu sözleşmesi",
       "commissionRate": "Komisyon oranı (%)",

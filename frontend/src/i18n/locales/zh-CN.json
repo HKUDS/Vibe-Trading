@@ -1595,6 +1595,8 @@
       "expiryDays": "到期天数",
       "volatility": "波动率（%）",
       "riskFreeRate": "无风险利率（%）",
+      "underlyingQty": "标的持仓单位",
+      "underlyingQtyHint": "0：仅期权。1：持有一个合约乘数的股票（乘数为 100 时持有 100 股）。",
       "multiplier": "合约乘数",
       "multiplierHint": "100 = 美股标准合约",
       "commissionRate": "佣金率（%）",

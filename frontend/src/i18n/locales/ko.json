@@ -1595,6 +1595,8 @@
       "expiryDays": "만기까지 일수",
       "volatility": "변동성 (%)",
       "riskFreeRate": "무위험 금리 (%)",
+      "underlyingQty": "기초자산 보유 단위",
+      "underlyingQtyHint": "0: 옵션만. 1: 승수만큼 주식 보유 (승수 100이면 100주).",
       "multiplier": "승수",
       "multiplierHint": "100 = 미국 주식 표준 계약",
       "commissionRate": "수수료율 (%)",

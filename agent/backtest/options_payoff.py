@@ -187,12 +187,14 @@ def _payoff_at_spots(
     *,
     multiplier: float,
     entry_cost: float,
+    underlying_qty: float = 0.0,
+    entry_spot: float = 0.0,
 ) -> np.ndarray:
     """Calculate expiry P&L at arbitrary non-negative spots."""
     intrinsic = np.zeros(len(spots), dtype=float)
     for leg in legs:
         intrinsic += leg.qty * _intrinsic(leg.option_type, spots, leg.strike)
-    return intrinsic * multiplier - entry_cost
+    return (intrinsic + underlying_qty * (spots - entry_spot)) * multiplier - entry_cost
 
 
 def _critical_points(legs: list[OptionLeg]) -> np.ndarray:
@@ -281,6 +283,7 @@ def expiry_payoff(
     iv: float = 0.3,
     multiplier: float = 1.0,
     commission_rate: float = 0.001,
+    underlying_qty: float = 0.0,
 ) -> PayoffReport:
     """Calculate an expiry payoff curve and analytic risk summary.
 
@@ -299,6 +302,8 @@ def expiry_payoff(
         iv: Annualized volatility used for legs without explicit premiums.
         multiplier: Currency multiplier per option price unit.
         commission_rate: Entry commission as a fraction of gross premium.
+        underlying_qty: Signed underlying units per multiplier; 1 with multiplier
+            100 means 100 shares. No stock fees, funding or dividends modeled.
 
     Returns:
         Payoff report with the display curve and analytic extrema/breakevens.
@@ -306,6 +311,8 @@ def expiry_payoff(
     Raises:
         ValueError: If a leg, grid, market input, or cost input is invalid.
     """
+    if not np.isfinite(underlying_qty):
+        raise ValueError("underlying_qty must be finite")
     _validate_legs(legs)
     _validate_market_inputs(
         entry_spot=entry_spot,
@@ -324,6 +331,8 @@ def expiry_payoff(
         display_spots,
         multiplier=multiplier,
         entry_cost=entry_cost,
+        underlying_qty=underlying_qty,
+        entry_spot=entry_spot,
     )
 
     critical_spots = _critical_points(legs)
@@ -332,8 +341,10 @@ def expiry_payoff(
         critical_spots,
         multiplier=multiplier,
         entry_cost=entry_cost,
+        underlying_qty=underlying_qty,
+        entry_spot=entry_spot,
     )
-    right_slope = float(sum(leg.qty for leg in legs if leg.option_type == "call") * multiplier)
+    right_slope = float((underlying_qty + sum(leg.qty for leg in legs if leg.option_type == "call")) * multiplier)
     profit_unbounded = right_slope > _BREAKEVEN_TOLERANCE
     loss_unbounded = right_slope < -_BREAKEVEN_TOLERANCE
     max_profit = float("inf") if profit_unbounded else float(np.max(critical_payoff))
@@ -398,6 +409,7 @@ def scenario_grid(
     entry_iv: float = 0.3,
     multiplier: float = 1.0,
     commission_rate: float = 0.001,
+    underlying_qty: float = 0.0,
 ) -> np.ndarray:
     """Calculate pre-expiry mark-to-market P&L over spot and volatility.
 
@@ -415,6 +427,8 @@ def scenario_grid(
         entry_iv: Annualized volatility used to price the entry.
         multiplier: Currency multiplier per option price unit.
         commission_rate: Entry commission as a fraction of gross premium.
+        underlying_qty: Signed underlying units per multiplier; 1 with multiplier
+            100 means 100 shares. No stock fees, funding or dividends modeled.
 
     Returns:
         Matrix shaped ``(len(iv_values), len(spot_grid))``.
@@ -422,6 +436,8 @@ def scenario_grid(
     Raises:
         ValueError: If a leg, grid, market input, or cost input is invalid.
     """
+    if not np.isfinite(underlying_qty):
+        raise ValueError("underlying_qty must be finite")
     _validate_legs(legs)
     _validate_market_inputs(
         entry_spot=entry_spot,
@@ -453,7 +469,7 @@ def scenario_grid(
                     )
                     * multiplier
                 )
-            grid[iv_row, spot_col] = marked_value - entry_cost
+            grid[iv_row, spot_col] = marked_value - entry_cost + underlying_qty * multiplier * (spot_now - entry_spot)
     return grid
 
 
