@@ -100,7 +100,7 @@ class GildataFundNavTool(BaseTool):
         "type": "object",
         "properties": {
             # Deliberately NOT named codes/symbols: those keys enroll a tool
-            # in the grounding identity gate (src/agent/grounding/identity.py
+            # in the instrument identity check (src/agent/instrument_identity.py
             # _SYMBOL_ARGUMENT_KEYS), which demands a search_symbol lock the
             # resolver cannot obtain for off-exchange fund codes. This tool
             # self-resolves identities deterministically (exact ref_code match

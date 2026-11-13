@@ -457,7 +457,9 @@ def _evidence_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     expectation = _mapping(case.expect.get("evidence"))
     if not expectation:
         return []
-    problem = _artifact_problem(bundle, "grounding", missing_invalid=True)
+    # Current research runs intentionally carry identity state only. Absence
+    # of the retired numeric artifact is missing evaluation, not corrupt output.
+    problem = _artifact_problem(bundle, "grounding", missing_invalid=bundle.identity is None)
     if problem:
         return [
             _verdict(
