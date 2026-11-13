@@ -142,6 +142,7 @@ class TestEnvConfigDefaults:
         assert c.data.vibe_trading_data_cache is False
         assert c.data.vibe_trading_data_cache_root == ""
         assert c.data.aliyun_iqs_api_key == ""
+        assert c.data.specstream_api_key == ""
         assert c.data.longbridge_app_key == ""
         assert c.data.longbridge_app_secret == ""
         assert c.data.longbridge_access_token == ""

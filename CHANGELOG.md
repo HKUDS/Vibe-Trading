@@ -121,6 +121,10 @@ Sources or `VIBE_TRADING_GILDATA_FEATURES`.
 
 ### Added
 
+- Optional SpecStream search in `web_search`, enabled by setting
+  `SPECSTREAM_API_KEY`. It runs after a configured IQS and before Parallel and
+  the ddgs engines. Without a key nothing changes; a SpecStream failure falls
+  through to the existing sources. No new dependency.
 - **Versioned research artifacts** (#2079, #2159, thanks @he-yufeng; closes
   #1909, #2158). A finished analysis can be saved as an immutable revision
   with its subject, universe, data-as-of date, evidence references,

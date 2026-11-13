@@ -44,6 +44,7 @@ def _clear_backend_env(monkeypatch):
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BACKENDS", raising=False)
     monkeypatch.delenv("VIBE_TRADING_SEARCH_BING_FALLBACK", raising=False)
     monkeypatch.delenv("ALIYUN_IQS_API_KEY", raising=False)
+    monkeypatch.delenv("SPECSTREAM_API_KEY", raising=False)
     monkeypatch.setattr("src.tools.web_search_tool._sogou_search", MagicMock(return_value=[]))
     monkeypatch.setattr("src.tools.web_search_tool._bing_cn_search", MagicMock(return_value=[]))
 

@@ -230,6 +230,19 @@ class WebSearchTool(BaseTool):
             except Exception as exc:  # noqa: BLE001
                 logger.warning("aliyun_iqs failed: %s, trying other search providers", exc)
 
+        specstream_error: str | None = None
+        specstream_key = get_env_config().data.specstream_api_key.strip()
+        if specstream_key:
+            try:
+                from src.tools._specstream_search import search_specstream
+
+                payload = search_specstream(query, max_results, specstream_key)
+                if payload["results"]:
+                    return json.dumps(payload, ensure_ascii=False)
+            except Exception as exc:  # noqa: BLE001
+                specstream_error = (str(exc) or type(exc).__name__)[:_MAX_PARALLEL_ERROR_CHARS]
+                logger.warning("SpecStream search failed: %s, trying other search providers", specstream_error)
+
         parallel_error: str | None = None
         if get_env_config().agent_tuning.vibe_trading_search_parallel:
             try:
@@ -242,7 +255,9 @@ class WebSearchTool(BaseTool):
                 parallel_error = (str(exc) or type(exc).__name__)[:_MAX_PARALLEL_ERROR_CHARS]
                 logger.warning("Parallel search failed: %s, falling through to ddgs", parallel_error)
 
-        parallel_error_prefix = f"Parallel search failed: {parallel_error}. " if parallel_error else ""
+        parallel_error_prefix = (
+            f"SpecStream search failed: {specstream_error}. " if specstream_error else ""
+        ) + (f"Parallel search failed: {parallel_error}. " if parallel_error else "")
         try:
             from ddgs import DDGS
 
@@ -255,7 +270,7 @@ class WebSearchTool(BaseTool):
                     "status": "error",
                     "error": parallel_error_prefix + "Web search package not installed. Run: pip install ddgs",
                 }
-                if parallel_error:
+                if parallel_error or specstream_error:
                     payload = with_security_warnings(payload, fields=("error",))
                 return json.dumps(payload, ensure_ascii=False)
             supports_backend = False
@@ -344,7 +359,7 @@ class WebSearchTool(BaseTool):
                     fb_err = f"{fb_name}: {exc}"
                     fb_errors.append(fb_err)
                     continue
-        if last_error is None and not fb_errors and parallel_error is None:
+        if last_error is None and not fb_errors and parallel_error is None and specstream_error is None:
             return json.dumps(
                 {
                     "status": "ok",
@@ -367,6 +382,6 @@ class WebSearchTool(BaseTool):
                 "known URL directly with read_url."
             ),
         }
-        if parallel_error:
+        if parallel_error or specstream_error:
             payload = with_security_warnings(payload, fields=("error",))
         return json.dumps(payload, ensure_ascii=False)
