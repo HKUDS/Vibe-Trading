@@ -184,7 +184,7 @@ You can also choose a source explicitly. For example, installing `vibe-trading-a
 | Feature | What you can do |
 |---|---|
 | Portfolio | Bring read-only broker holdings into one snapshot or import an extraETF export. Enter target weights to preview the value change for each holding. |
-| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
+| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. A separate five-minute A-share research step supports caller order IDs and a deterministic cancel schedule, with partial fills preserved. [Cancellation timing and limits](agent/src/tools/paper_trade/README.md#caller-cancellation-pt-v14) are explicit; this is not a live order session. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
 | Shadow Account | Import your broker’s trade journal, inspect fees and trading habits, then compare the actual trades with a rule-based replay. |
 | Broker connections | Set up a connection in the CLI or Web and test it with a read. For supported live profiles, set symbol, order and exposure limits before enabling trading. The kill switch halts live activity. |
 
