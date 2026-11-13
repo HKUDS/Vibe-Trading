@@ -417,6 +417,18 @@ Worker 不再依赖标题、篇幅、关键词、工具次数、文件存在性�
 
 证据根 `research-calculations-20261113/` 的 `live/live-audit.json`、`live/audit_live.py`、`live/audit_scenarios.py`、两个 `answer.md` 与 `approved-budget.json` 保存原报告、20 场景点独立计算、usage 和人工核验。核验范围是计算及选定报告陈述，不宣称重新查证所有继承财报与宏观说法。所有改动留在 `codex/fix-live-review-20261113`；main/origin/main 均保持 `0025531f005d4a7aac3fb884cda2fba9318e7158`，未合并、未推送。
 
+## A/B 比较方向补全（2026-11-13）
+
+针对上一轮 PM 把 B 上限高于 A 写成低于 A 的新错误，继续走计算工具路线，不改原报告，也不新增生成门槛。
+
+- `src/quantlib/units.py::compare_rates` 保持原有参数兼容，新增 `left_label` / `right_label`，直接返回 named operands、`relation=higher/lower/equal` 和有符号差值。关系只描述数值顺序，不把 higher 解释为投资更好，也不擅自判断两个口径是否可比。
+- 不另建 A/B 工具或计算引擎。既有 `quantlib_call` 的 `__data_ref__` 可直接把两个 `options_payoff` 文件中的 `/calculation_basis/max_profit_return`（或 floor）送入比较函数，保留来源路径与哈希；模型不必重新抄小数。
+- 仅调整工具描述与委员会 PM 的调用示例：B 对 A 使用 left_label=B/right_label=A，从真实结果文件取值。不存在要求报告必须满足的格式、强制重试或事后改写；已经有匹配比较结果时可以复用。CLI/API/Web 研究对话及 MCP 使用同一 `quantlib_call`，不另加端点、UI 数学或重复 schema。
+- 免费原资料回放：逐字复制上一轮两份真实引擎文件并核对 sha256；B 上限 21.165786% 对 A 18.532042%，返回 `B / higher / A`、**+2.6337445093 个百分点**。floor 比较也由原文件计算为 +2.6337445093 个百分点（有符号收益从更负变得较少负）。反向、相等、负值与文件引用链路测试通过，相关回归 **64 passed**。
+- 证据根：`/Users/wuhaozhe/.codex/artifacts/vibe-trading/research-comparison-20261113/`，`replay.py` / `replay.json` 保存来源及比较参数。新增模型费用目前 ¥0；**尚未验证 PM 是否会在自然任务中主动调用新输出**，不能把免费工具通过视为模型幻觉已解决。
+
+下一步预算批准后只补跑 PM，继续复用 bull/bear/CRO，核验其实际调用与原始终稿。当前分支不变，main 不变，不推送。
+
 ## 成功标准
 
 - 用户能更快收到完整的研究成果，不需要理解内部审核协议。

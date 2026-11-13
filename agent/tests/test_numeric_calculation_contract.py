@@ -131,10 +131,79 @@ def test_mcp_real_tool_supports_exact_prices_and_rate_comparison(monkeypatch, tm
                     "action": "call",
                     "module": "units",
                     "function": "compare_rates",
-                    "kwargs": {"left": 0.0434, "right": 0.042737},
+                    "kwargs": {"left": 0.0434, "right": 0.042737, "left_label": "B", "right_label": "A"},
                     "run_dir": str(tmp_path),
                 },
             )
-            assert json.loads(result.content[0].text)["result"]["difference_bps"] == pytest.approx(6.63)
+            comparison = json.loads(result.content[0].text)["result"]
+            assert comparison["difference_bps"] == pytest.approx(6.63)
+            assert (comparison["left_label"], comparison["relation"], comparison["right_label"]) == ("B", "higher", "A")
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "left,right,relation,delta",
+    [(0.21, 0.18, "higher", 3), (0.18, 0.21, "lower", -3), (-0.09, -0.12, "higher", 3), (0.18, 0.18, "equal", 0)],
+)
+def test_named_comparison_reports_numeric_direction(left, right, relation, delta):
+    result = compare_rates(left, right, left_label="B", right_label="A")
+    assert (result["left_label"], result["right_label"]) == ("B", "A")
+    assert result["relation"] == relation
+    assert result["difference_percentage_points"] == pytest.approx(delta)
+
+
+def test_saved_payoffs_flow_into_named_comparison_without_transcribing(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
+    from src.tools.read_file_tool import ReadFileTool
+
+    registry = ToolRegistry()
+    registry.register(ReadFileTool())
+    args_a = collar()
+    args_b = collar()
+    args_b["legs"] = [
+        {"option_type": "put", "strike": 160, "qty": 1, "premium": 11.6},
+        {"option_type": "call", "strike": 210, "qty": -1, "premium": 2.98},
+    ]
+    receipts = [
+        json.loads(deliver_tool_result(OptionsPayoffTool().execute(**a), tmp_path, registry)) for a in (args_a, args_b)
+    ]
+
+    def operand(receipt):
+        source = receipt["_result_file"]
+        return {
+            "__data_ref__": {
+                "path": source["path"],
+                "sha256": source["sha256"],
+                "pointer": "/calculation_basis/max_profit_return",
+            }
+        }
+
+    kwargs = {
+        "left": operand(receipts[1]),
+        "right": operand(receipts[0]),
+        "left_label": "B",
+        "right_label": "A",
+        "input_unit": "decimal",
+    }
+    result = json.loads(
+        QuantlibCallTool().execute(
+            action="call", module="units", function="compare_rates", kwargs=kwargs, run_dir=str(tmp_path)
+        )
+    )
+    assert result["ok"]
+    assert result["result"]["relation"] == "higher"
+    assert result["result"]["difference_percentage_points"] == pytest.approx(2.633744509296587)
+    assert [s["sha256"] for s in result["input_sources"]] == [
+        receipts[1]["_result_file"]["sha256"],
+        receipts[0]["_result_file"]["sha256"],
+    ]
+    kwargs["left"], kwargs["right"] = kwargs["right"], kwargs["left"]
+    kwargs["left_label"], kwargs["right_label"] = "A", "B"
+    reverse = json.loads(
+        QuantlibCallTool().execute(
+            action="call", module="units", function="compare_rates", kwargs=kwargs, run_dir=str(tmp_path)
+        )
+    )
+    assert reverse["result"]["relation"] == "lower"
+    assert reverse["result"]["difference_percentage_points"] == pytest.approx(-2.633744509296587)
