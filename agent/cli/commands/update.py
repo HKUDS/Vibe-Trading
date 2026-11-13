@@ -64,11 +64,16 @@ def fetch_latest_version() -> str:
     Raises:
         requests.RequestException: network / HTTP failures — the caller turns
             this into a user-facing error and never touches the local install.
-        (KeyError, ValueError): malformed PyPI payload.
+        ValueError: malformed PyPI payload.
     """
     resp = requests.get(PYPI_JSON_URL, timeout=PYPI_TIMEOUT_SECONDS)
     resp.raise_for_status()
-    return str(resp.json()["info"]["version"])
+    payload = resp.json()
+    info = payload.get("info") if isinstance(payload, dict) else None
+    version = info.get("version") if isinstance(info, dict) else None
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("PyPI response is missing a version string")
+    return version
 
 
 def detect_install_kind() -> str:
