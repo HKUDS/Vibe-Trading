@@ -59,7 +59,7 @@ def _is_tool_success(result: str) -> bool:
 # it verbatim hands the user mojibake instead of an answer. Both DSML bar
 # spellings are covered: ASCII double bars and fullwidth double bars, opening
 # and closing tags (a draft ending in "</｜｜DSML｜｜invoke>" once reached the
-# grounding gate as three unreadable figures-block lines).
+# response parser as unparsed protocol).
 _FORCED_TEXT_TOOL_CALL_RE = re.compile(
     r"<\s*/?\s*(?:invoke|parameter|tool_calls|dsml)\b",
     re.IGNORECASE,
@@ -153,7 +153,7 @@ def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) ->
 
 # ``ARCHIVE_MANIFEST`` names the backtest an archived run currently describes,
 # and the files that archive placed there, so the next one can replace exactly
-# its own output. The grounding ledger reads it to tell whose copy it is.
+# its own output. Offline diagnostics can distinguish the original producer.
 
 
 def _previously_archived(target: Path) -> set[str]:
