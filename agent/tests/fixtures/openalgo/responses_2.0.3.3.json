@@ -1,0 +1,161 @@
+{
+  "_provenance": {
+    "openalgo_version": "2.0.3.3",
+    "openalgo_commit": "7ba5267f7d5d15c352606b3aea6b12ab20223428",
+    "note": "Redacted fixtures. Live-mode bodies follow the samples in docs/api/ at the pinned commit; analyze-mode bodies follow the dicts built by sandbox/*.py and services/sandbox_service.py at the same commit. Order and trade ids are synthetic, and no account, client or broker identifier is present. None of these bodies was captured from a real broker account.",
+    "sources": {
+      "funds_live": "docs/api/account-services/funds.md; services/funds_service.py",
+      "funds_analyze": "sandbox/fund_manager.py FundManager.get_funds; services/sandbox_service.py sandbox_get_funds",
+      "positionbook_live": "docs/api/account-services/positionbook.md (average_price_basis row: the Kotak Neo case documented there)",
+      "positionbook_analyze": "sandbox/position_manager.py PositionManager.get_open_positions",
+      "holdings_live": "docs/api/account-services/holdings.md; broker/zerodha/mapping/order_data.py transform_holdings_data",
+      "holdings_analyze": "sandbox/holdings_manager.py HoldingsManager.get_holdings",
+      "orderbook_live": "docs/api/account-services/orderbook.md",
+      "orderbook_analyze": "sandbox/order_manager.py OrderManager.get_orderbook",
+      "tradebook_live": "docs/api/account-services/tradebook.md",
+      "tradebook_analyze": "sandbox/position_manager.py PositionManager.get_tradebook",
+      "quotes_live": "docs/api/market-data/quotes.md",
+      "history_live": "services/history_service.py (df.to_dict records, epoch-second timestamps, oi column always present)",
+      "analyzer_live": "docs/api/analyzer-services/analyzerstatus.md",
+      "analyzer_analyze": "docs/api/analyzer-services/analyzerstatus.md",
+      "ping": "services/ping_service.py ping_with_auth",
+      "error_invalid_apikey": "services/*_service.py, HTTP 403",
+      "error_validation": "restx_api/*.py marshmallow ValidationError, HTTP 400",
+      "error_broker_busy": "services/broker_busy.py broker_busy_result with utils/broker_backpressure.py BROKER_BUSY_MESSAGE, HTTP 429"
+    }
+  },
+  "funds_live": {
+    "status": "success",
+    "data": {
+      "availablecash": "320.66",
+      "collateral": "0.00",
+      "m2mrealized": "3.27",
+      "m2munrealized": "-7.88",
+      "utiliseddebits": "679.34"
+    }
+  },
+  "funds_analyze": {
+    "status": "success",
+    "data": {
+      "availablecash": 9985000.0,
+      "collateral": 0.0,
+      "m2munrealized": -120.5,
+      "m2mrealized": 45.25,
+      "total_realized_pnl": 45.25,
+      "today_realized_pnl": 45.25,
+      "utiliseddebits": 15000.0,
+      "grossexposure": 15000.0,
+      "totalpnl": -75.25,
+      "last_reset": "2026-11-09 00:00:00",
+      "reset_count": 1
+    },
+    "mode": "analyze"
+  },
+  "positionbook_live": {
+    "status": "success",
+    "data": [
+      {"symbol": "NHPC", "exchange": "NSE", "product": "MIS", "quantity": "-1", "average_price": "83.74", "ltp": "83.72", "pnl": "0.02"},
+      {"symbol": "RELIANCE", "exchange": "NSE", "product": "MIS", "quantity": "0", "average_price": "0.0", "ltp": "1189.9", "pnl": "5.90"},
+      {"symbol": "NIFTY25NOV2624000CE", "exchange": "NFO", "product": "NRML", "quantity": "75", "average_price": "112.4", "ltp": "120.1", "pnl": "577.50", "average_price_basis": "carry_forward_valuation"}
+    ]
+  },
+  "positionbook_analyze": {
+    "status": "success",
+    "data": [
+      {"symbol": "SBIN", "exchange": "NSE", "product": "MIS", "quantity": 10, "average_price": 812.5, "ltp": 815.0, "pnl": 25.0, "pnlpercent": 0.31, "unrealized_pnl": 25.0, "today_realized_pnl": 0.0, "total_pnl_today": 25.0, "lot_size": 1.0}
+    ],
+    "total_pnl": 25.0,
+    "total_unrealized_pnl": 25.0,
+    "total_today_realized_pnl": 0.0,
+    "total_pnl_today": 25.0,
+    "mode": "analyze"
+  },
+  "holdings_live": {
+    "status": "success",
+    "data": {
+      "holdings": [
+        {"symbol": "RELIANCE", "exchange": "NSE", "product": "CNC", "quantity": 1, "average_price": 1341.0, "ltp": 1192.0, "pnl": -149.0, "pnlpercent": -11.1},
+        {"symbol": "TATASTEEL", "exchange": "NSE", "product": "CNC", "quantity": 1, "pnl": -15.0, "pnlpercent": -10.41}
+      ],
+      "statistics": {
+        "totalholdingvalue": 1768.0,
+        "totalinvvalue": 2001.0,
+        "totalprofitandloss": -233.15,
+        "totalpnlpercentage": -11.65
+      }
+    }
+  },
+  "holdings_analyze": {
+    "status": "success",
+    "data": {
+      "holdings": [
+        {"symbol": "INFY", "exchange": "NSE", "product": "CNC", "quantity": 5, "average_price": 1500.0, "ltp": 1520.0, "pnl": 100.0, "pnlpercent": 1.33, "current_value": 7600.0, "settlement_date": "2026-11-10"}
+      ],
+      "statistics": {
+        "totalholdingvalue": 7600.0,
+        "totalinvvalue": 7500.0,
+        "totalprofitandloss": 100.0,
+        "totalpnlpercentage": 1.33
+      }
+    },
+    "mode": "analyze"
+  },
+  "orderbook_live": {
+    "status": "success",
+    "data": {
+      "orders": [
+        {"action": "BUY", "symbol": "RELIANCE", "exchange": "NSE", "orderid": "100000000000001", "product": "MIS", "quantity": "1", "price": 1186.0, "pricetype": "MARKET", "order_status": "complete", "trigger_price": 0.0, "timestamp": "08-Apr-2025 13:58:03"},
+        {"action": "BUY", "symbol": "YESBANK", "exchange": "NSE", "orderid": "100000000000002", "product": "MIS", "quantity": "1", "price": 16.5, "pricetype": "LIMIT", "order_status": "open", "trigger_price": 0.0, "timestamp": "08-Apr-2025 14:13:45"},
+        {"action": "SELL", "symbol": "SBIN", "exchange": "NSE", "orderid": "100000000000003", "product": "CNC", "quantity": "2", "price": 0.0, "pricetype": "SL-M", "order_status": "trigger pending", "trigger_price": 790.0, "timestamp": "08-Apr-2025 14:20:00"}
+      ],
+      "statistics": {
+        "total_buy_orders": 2.0,
+        "total_sell_orders": 1.0,
+        "total_completed_orders": 1.0,
+        "total_open_orders": 2.0,
+        "total_rejected_orders": 0.0
+      }
+    }
+  },
+  "orderbook_analyze": {
+    "status": "success",
+    "data": {
+      "orders": [
+        {"orderid": "SB-0000000001", "symbol": "SBIN", "exchange": "NSE", "action": "BUY", "quantity": 10, "price": 0.0, "trigger_price": 0.0, "pricetype": "MARKET", "product": "MIS", "order_status": "complete", "average_price": 812.5, "filled_quantity": 10, "pending_quantity": 0, "rejection_reason": "", "timestamp": "2026-11-12 10:01:02", "strategy": ""}
+      ],
+      "statistics": {"total_buy_orders": 1, "total_sell_orders": 0, "total_completed_orders": 1, "total_open_orders": 0, "total_rejected_orders": 0}
+    },
+    "mode": "analyze"
+  },
+  "tradebook_live": {
+    "status": "success",
+    "data": [
+      {"action": "BUY", "symbol": "RELIANCE", "exchange": "NSE", "orderid": "100000000000001", "product": "MIS", "quantity": 1.0, "average_price": 1180.1, "timestamp": "13:58:03", "trade_value": 1180.1}
+    ]
+  },
+  "tradebook_analyze": {
+    "status": "success",
+    "data": [
+      {"tradeid": "SBT-0000000001", "orderid": "SB-0000000001", "symbol": "SBIN", "exchange": "NSE", "action": "BUY", "quantity": 10, "average_price": 812.5, "price": 812.5, "trade_value": 8125.0, "product": "MIS", "strategy": "", "timestamp": "2026-11-12 10:01:02"}
+    ],
+    "mode": "analyze"
+  },
+  "quotes_live": {
+    "status": "success",
+    "data": {"open": 1172.0, "high": 1196.6, "low": 1163.3, "ltp": 1187.75, "ask": 1188.0, "bid": 1187.85, "prev_close": 1165.7, "volume": 14414545}
+  },
+  "history_live": {
+    "status": "success",
+    "data": [
+      {"timestamp": 1743565500, "open": 772.45, "high": 774.95, "low": 772.1, "close": 773.2, "volume": 197189, "oi": 0},
+      {"timestamp": 1743565200, "open": 766.5, "high": 774.0, "low": 763.2, "close": 772.5, "volume": 318625, "oi": 0},
+      {"timestamp": 1743565800, "open": 773.2, "high": 775.6, "low": 772.6, "close": 775.15, "volume": 227544, "oi": 0}
+    ]
+  },
+  "analyzer_live": {"status": "success", "data": {"analyze_mode": false, "mode": "live", "total_logs": 0}},
+  "analyzer_analyze": {"status": "success", "data": {"analyze_mode": true, "mode": "analyze", "total_logs": 2}},
+  "ping": {"status": "success", "data": {"message": "pong", "broker": "zerodha"}},
+  "error_invalid_apikey": {"status": "error", "message": "Invalid openalgo apikey"},
+  "error_validation": {"status": "error", "message": {"apikey": ["Missing data for required field."]}},
+  "error_broker_busy": {"status": "error", "message": "OpenAlgo is pacing requests to stay within your broker's rate limit, and this one would have had to wait too long for its turn. Try again in a few seconds."}
+}

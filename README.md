@@ -221,6 +221,7 @@ Yes indicates a declared capability. A dash means no matching profile is declare
 | mstock | Yes | — | — |
 | mt5 | Yes | Yes | Yes |
 | okx | Yes | Yes | Yes |
+| openalgo | Yes | — | — |
 | robinhood | Yes | — | Yes |
 | scalable | Yes | — | — |
 | shoonya | Yes | Yes | — |

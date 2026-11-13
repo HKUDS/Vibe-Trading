@@ -219,6 +219,7 @@ Baca berarti profil khusus hanya baca. Simulasi memakai sandbox broker atau simu
 | mstock | ✓ | — | — |
 | mt5 | ✓ | ✓ | ✓ |
 | okx | ✓ | ✓ | ✓ |
+| openalgo | ✓ | — | — |
 | robinhood | ✓ | — | ✓ |
 | scalable | ✓ | — | — |
 | shoonya | ✓ | ✓ | — |
