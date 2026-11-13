@@ -18,6 +18,7 @@ class NetworkRouter:
         self.clock = clock
         self.health = OrderedDict()
         self.lock = threading.RLock()
+        self.probes = OrderedDict()
 
     def record(self, scope, source, success, elapsed):
         with self.lock:
@@ -60,10 +61,38 @@ class NetworkRouter:
                 return baseline
             return sorted(baseline, key=score)
 
+    def recovery_probe(self, scope, sources):
+        """Claim at most one half-open attempt per scope per cooldown period.
+
+        Called only after normal routes failed. Exponential source backoff stays
+        in place; this bounded probe lets recovered networks become usable
+        without waiting for the longest accumulated source cooldown.
+        """
+        with self.lock:
+            now = self.clock()
+            if now < self.probes.get(scope, 0):
+                return None
+            candidates = [
+                source
+                for source in sources
+                if self.cooling(scope, source) and now - self.health[(scope, source)]["checked"] >= self.cooldown
+            ]
+            if not candidates:
+                return None
+            source = min(candidates, key=lambda name: self.health[(scope, name)]["retry_at"])
+            self.probes[scope] = now + self.cooldown
+            self.probes.move_to_end(scope)
+            while len(self.probes) > 512:
+                self.probes.popitem(last=False)
+            return source
+
     def prune(self):
         """Delete idle network observations instead of retaining historical probes."""
         with self.lock:
             now = self.clock()
+            for scope, until in list(self.probes.items()):
+                if until <= now:
+                    self.probes.pop(scope, None)
             for key, row in list(self.health.items()):
                 if now - row["checked"] > self.lifetime:
                     self.health.pop(key, None)

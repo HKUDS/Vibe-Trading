@@ -37,12 +37,21 @@ def fetch_bars(gateway, **params):
         candidates = gateway.router.order(scope, baseline) if requested == "auto" and not strict else baseline
         found = False
         diagnostics[code] = []
-        for source in candidates:
+
+        # A single bounded half-open probe runs only after all ordinary routes.
+        def route_attempts():
+            yield from ((source, False) for source in candidates)
+            if requested == "auto":
+                probe = gateway.router.recovery_probe(scope, candidates)
+                if probe:
+                    yield probe, True
+
+        for source, recovery in route_attempts():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 diagnostics[code].append({"source": source, "reason": "request_deadline"})
                 break
-            if requested == "auto" and gateway.router.cooling(scope, source):
+            if not recovery and requested == "auto" and gateway.router.cooling(scope, source):
                 diagnostics[code].append({"source": source, "reason": "network_cooldown"})
                 continue
             started = time.monotonic()
@@ -94,9 +103,16 @@ def fetch_bars(gateway, **params):
                 break
             except GatewayError:
                 diagnostics[code].append({"source": source, "reason": "source_busy_or_unavailable"})
-            except Exception:
+            except Exception as exc:
                 gateway.router.record(scope, source, False, time.monotonic() - started)
-                diagnostics[code].append({"source": source, "reason": "timeout_or_network_failure"})
+                diagnostics[code].append(
+                    {
+                        "source": source,
+                        "reason": "timeout" if isinstance(exc, TimeoutError) else "network_failure",
+                        "error_type": type(exc).__name__,
+                        "recovery_probe": recovery,
+                    }
+                )
         if not found:
             unresolved.append(code)
     combined["_provenance"] = provenance

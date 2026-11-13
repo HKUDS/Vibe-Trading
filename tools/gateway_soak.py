@@ -44,6 +44,11 @@ def process_memory():
 def serve(port):
     """Run production routes with test-only instrumentation on loopback."""
     import uvicorn
+    import gc
+    import tracemalloc
+
+    trace_dir = os.environ.get("VIBE_GATEWAY_TRACE_DIR")
+    trace_baseline = None
     import websockets.asyncio.client as ws_client
     from fastapi import FastAPI, Query
     from src.data_gateway import get_gateway
@@ -126,6 +131,38 @@ def serve(port):
 
     app = FastAPI(lifespan=lifespan)
     api.register_gateway_routes(app, lambda: None)
+
+    @app.post("/_soak/trace")
+    async def trace(label: str, collect: bool = False):
+        nonlocal trace_baseline
+        if not trace_dir:
+            return {"enabled": False}
+        if not tracemalloc.is_tracing():
+            tracemalloc.start(1)
+        if collect:
+            gc.collect()  # Diagnostic control only; never used by production.
+        current = tracemalloc.take_snapshot()
+        objects = gc.get_objects()
+        kinds = Counter(str(type(obj).__module__) + "." + str(type(obj).__name__) for obj in objects)
+        del objects
+        result = {
+            **process_memory(),
+            "label": label,
+            "collected": collect,
+            "python_bytes": tracemalloc.get_traced_memory()[0],
+            "threads": [thread.name for thread in threading.enumerate()],
+            "types": kinds.most_common(60),
+            "growth": [
+                {"trace": str(row.traceback), "bytes": row.size_diff, "count": row.count_diff}
+                for row in (current.compare_to(trace_baseline, "lineno")[:30] if trace_baseline else [])
+            ],
+        }
+        if trace_baseline is None:
+            trace_baseline = current
+        destination = Path(trace_dir)
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / (label + ".json")).write_text(json.dumps(result, indent=2))
+        return {"enabled": True, "label": label, "python_bytes": result["python_bytes"]}
 
     @app.post("/_soak/fault")
     async def set_fault(mode: str = Query(pattern="^(online|ws_offline|all_offline)$")):
@@ -365,6 +402,7 @@ async def exercise(args, output):
                 await pause(args.warmup / len(groups))
                 await stop(active)
             await client.post(url + "/_soak/slow", params={"enabled": "true"})
+            (await client.post(url + "/_soak/trace", params={"label": "warm"})).raise_for_status()
             active_started = time.monotonic()
             churn_task = asyncio.create_task(churn(active_started + args.cycles * args.cycle_seconds))
             for current_cycle in range(args.cycles):
@@ -395,6 +433,7 @@ async def exercise(args, output):
                 await set_fault("online")
                 await pause(args.cycle_seconds * 0.10)
                 await stop(active)
+                (await client.post(url + "/_soak/trace", params={"label": f"cycle-{current_cycle}"})).raise_for_status()
                 print(
                     json.dumps(
                         {
@@ -415,6 +454,8 @@ async def exercise(args, output):
         phase = "idle"
         await pause(args.idle)
         await sample()
+        (await client.post(url + "/_soak/trace", params={"label": "idle"})).raise_for_status()
+        (await client.post(url + "/_soak/trace", params={"label": "idle-collected", "collect": "true"})).raise_for_status()
         phase = "complete"
         save()
         print(

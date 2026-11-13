@@ -589,7 +589,22 @@ export interface LabJob {
   result?: LabResult; error?: string; request?: Record<string, unknown>;
 }
 
+export interface HistoryStorage { quota_bytes: number; retention_days: number; used_bytes: number; reserved_bytes: number; path: string }
+export interface HistorySpec { codes: string[]; start_date: string; end_date: string; interval: string }
+export interface HistoryJob { id: string; state: string; pinned: number; error: string | null; spec?: HistorySpec; rows?: number; completed_chunks?: number; total_chunks?: number }
+export interface HistoryPlan { chunks: number; estimated_max_rows: number; estimated_uncompressed_bytes: number; storage: HistoryStorage }
+
 export const api = {
+  historyStorage: () => request<HistoryStorage>("/data/history/storage"),
+  saveHistoryStorage: (quota_bytes: number, retention_days: number) => request<HistoryStorage>("/data/history/storage", { method: "PUT", body: JSON.stringify({ quota_bytes, retention_days }) }),
+  historyJobs: () => request<HistoryJob[]>("/data/history/jobs"),
+  historyJob: (id: string) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}`),
+  planHistory: (spec: HistorySpec) => request<HistoryPlan>("/data/history/plan", { method: "POST", body: JSON.stringify(spec) }),
+  createHistory: (spec: HistorySpec) => request<HistoryJob>("/data/history/jobs", { method: "POST", body: JSON.stringify(spec) }),
+  historyAction: (id: string, action: "resume" | "cancel") => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
+  pinHistory: (id: string, pinned: boolean) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/pin?pinned=${pinned}`, { method: "PUT" }),
+  deleteHistory: (id: string) => request(`/data/history/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pruneHistory: () => request<HistoryStorage>("/data/history/prune", { method: "POST" }),
   getResearchLabCatalog: () => request<LabCatalog>("/api/research-lab/catalog"),
   startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
     request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),

@@ -184,3 +184,74 @@ def test_repeated_subscribe_cancel_releases_snapshot_objects(tmp_path):
         await hub.close()
 
     asyncio.run(run())
+
+
+def test_connection_logging_does_not_retain_the_connection_after_close():
+    import gc
+    import weakref
+    from websockets.client import ClientProtocol
+    from websockets.uri import parse_uri
+    from src.data_gateway.streams import _public_connection
+    from src.data_gateway.transport import tls_context
+    import ssl
+
+    async def run():
+        enabled = gc.isenabled()
+        gc.disable()
+        try:
+            protocol = ClientProtocol(parse_uri("wss://example.org"))
+            connection = _public_connection(protocol, ping_interval=None)
+            reference = weakref.ref(connection)
+            assert connection.keepalive_task is None
+            assert connection.logger.extra == {"websocket_id": str(connection.id)}
+            del connection
+            assert reference() is None  # Would fail with the SDK's self-referencing adapter.
+        finally:
+            if enabled:
+                gc.enable()
+
+    asyncio.run(run())
+    context = tls_context()
+    assert tls_context() is context
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+
+
+def test_aborted_real_socket_releases_connection_without_cyclic_gc():
+    import gc
+    import weakref
+    from websockets.asyncio.server import serve
+    from websockets.asyncio.client import connect
+    from websockets.exceptions import ConnectionClosed
+    from src.data_gateway.websocket import PublicConnection
+
+    async def abort(connection):
+        await connection.recv()
+        connection.transport.abort()
+
+    async def run():
+        enabled = gc.isenabled()
+        gc.disable()
+        try:
+            async with serve(abort, "127.0.0.1", 0) as server:
+                port = server.sockets[0].getsockname()[1]
+                for _ in range(5):
+                    async with connect(
+                        f"ws://127.0.0.1:{port}",
+                        create_connection=PublicConnection,
+                        ping_interval=None,
+                        compression=None,
+                    ) as connection:
+                        reference = weakref.ref(connection)
+                        await connection.send("abort")
+                        try:
+                            await connection.recv()
+                        except ConnectionClosed:
+                            pass
+                    del connection
+                    await asyncio.sleep(0)
+                    assert reference() is None
+        finally:
+            if enabled:
+                gc.enable()
+
+    asyncio.run(run())

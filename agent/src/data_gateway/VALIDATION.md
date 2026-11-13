@@ -1,8 +1,10 @@
 # Gateway validation — 2026-11-14 (Asia/Singapore)
 
 Branch `codex/data-gateway`, based on local main
-`283e300e407a94eeaa82821f791f83a969b11dc1`. No push, deployment, frontend change,
-provider-core change, or trading operation was performed.
+`283e300e407a94eeaa82821f791f83a969b11dc1`. The initial sections describe the
+pre-history-store implementation; the follow-up below supersedes its open items.
+No push, deployment, protected Agent/provider/session-core change, options UI
+change or trading operation was performed.
 
 ## Main's existing free sources
 
@@ -230,8 +232,153 @@ Artifacts (metadata only, outside the checkout):
 It contains the interrupted and completed raw reports, completed summary,
 independent OS memory samples, multi-year/capacity/pressure results and `final.png`.
 
-**Outcome:** bounded cache and subscription cleanup verified; repeated live
+**Outcome at `ba7cf5f24` (superseded by the follow-up below):** bounded cache and subscription cleanup verified; repeated live
 reconnection verified with one unresolved first-attempt recovery failure; no
 GB-scale runaway observed in this finite run. A claim of completely flat or
 leak-free total process memory is NOT supported. Multi-year minute datasets,
 quota settings, storage dialogs and resumable history jobs remain unimplemented.
+
+
+## Follow-up: closed-connection retention and complete minute datasets
+
+### Confirmed memory mechanism
+
+Allocation snapshots after warmup, with the same live four-cycle workload,
+showed closed TLS buffers attributed to `websockets/asyncio/client.py:453`
+growing from 527,920 to 2,639,792 bytes. Compression objects added another
+1,536,960 bytes. After natural idle, 5.03 MiB of traced Python allocations
+remained; a diagnostic-only GC control reduced this to 0.30 MiB. OS footprint
+did not immediately drop, consistent with allocator retention as well as cycles.
+This is why zero cache bytes did not establish zero retained process memory.
+
+`gc.get_referrers` on real connections with automatic GC disabled found:
+
+- connection → SDK logger adapter → `extra['websocket']` → connection;
+- connection → canceled SDK keepalive task → exception frame → connection;
+- after an actual transport abort, protocol → stored parser EOFError traceback
+  → `connection_lost` frame → connection → closed TLS transport/buffers.
+
+TLS reuse and disabling compression alone were insufficient. Logging immutable
+connection IDs and using the existing OKX application heartbeat removed the
+normal-close cycles; releasing stored closed-connection error tracebacks removed
+the abnormal-close cycle. Exception type, text and cause identity are preserved;
+certificate and hostname verification remain enabled. Three real TLS normal
+closes and three real TLS aborts then left zero ClientConnection/SSLProtocol
+objects with automatic GC disabled. A local real-socket regression repeats five
+aborts and asserts weak references are cleared without `gc.collect()`.
+
+The production service does not run forced GC. The profiling endpoint exists
+only in the loopback soak harness; its final GC control is recorded separately
+from the natural idle/process measurements.
+
+### Recovery 503: proven defect versus missing historical evidence
+
+The old single 503's server log is empty and its report omitted source attempts.
+Its exact historical cause therefore cannot be uniquely reconstructed. A
+controlled HTTP regression reproduces a real policy defect: after two source
+failures, exponential backoff refuses a now-healthy source at 31 seconds and
+returns 503 despite healthy data being available. The new half-open route actually
+fetches that source and returns 200. It permits at most one extra attempt per
+market/interval per 30-second base cooldown, never before 30 seconds since the
+source's last failure; worker caps, deadlines, same-key throttling and prolonged
+outage protection remain. A 100-request probe test verifies the throttle.
+
+This fixes a demonstrated recovery failure mode, not proof that it caused the
+old event. New soak reports retain full source/stage/type diagnostics so the
+next failure is attributable. There is no claim that a permanently unreachable
+free provider can always supply data.
+
+### Ten stocks × five years × five-minute bars: real full verification
+
+Source: the existing free BaoStock transport, extended through a dedicated
+monthly-minute adapter; the daily loader's interval guard remains unchanged.
+Symbols: 601398.SH, 600519.SH, 601318.SH, 600036.SH, 600000.SH, 601288.SH,
+601988.SH, 000001.SZ, 000002.SZ, 000333.SZ. Requested range: 2021-11-14 through
+2026-11-13, raw prices, CNY, shares, Asia/Shanghai bar-end timestamps. This
+verifies mainland equities, not US/HK multi-year minute availability.
+
+- **610/610 monthly chunks, 581,760/581,760 rows**. Every stock has 1,212
+  observed trading sessions and 58,176 bars. First bar 2021-11-15 09:35; last
+  bar 2026-11-13 15:00. The requested first date was a Sunday.
+- Independently re-fetched the entire five-year calendar and daily trading
+  statuses, checked every intraday timestamp and chunk digest, then read all
+  **582 pages** through the production reader. No samples, omitted pages,
+  duplicate timestamps or missing expected bars; the canonical full-row digest
+  matches between compressed files and paged reads.
+- Canonical SHA256: `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`.
+- Disk including catalog: **11,088,905 bytes (10.575 MiB)**.
+  One-month-at-a-time acquisition; the complete dataset was never materialized
+  in RAM. Observed download-process peak physical footprint **62.157 MiB**,
+  peak RSS **80.141 MiB**. These are whole history-worker process measurements,
+  not cache counters and not total memory of the full application/browser.
+- Paused at 328 chunks / 312,912 rows, exited the first process, then resumed in
+  a new process. Completed files were checksum-verified and skipped. The two
+  monitored runs totaled 23.55 minutes; independent full verification
+  took 35.40 seconds. One actual source connection closure retried successfully.
+- Real 15m/30m/1H probes for 2026-11-09..13 returned 80/40/20 bars with exact
+  grids. HTTP first/last pages and the real Agent tool's 25-row page also passed.
+- A disposable copy of all 610 real chunks was held across a cleaner cycle
+  while pinned, then unpinned and made idle-expired. The actual 30-second
+  background cleaner removed every chunk and reduced usage from 11,088,905 to
+  331,776 bytes. The original verified dataset was not deleted.
+- A real HTTP quota reduction below current usage returned 409 without changing
+  the saved limit. Tests also cover shared reservations, low disk, compressed
+  write limits, corruption/refetch, cancel/restart, locked metadata, auth and
+  bounded tool/list pagination. New SQLite catalogs release metadata pages via
+  auto-vacuum; metadata lock waits are bounded instead of hanging callers.
+
+Defaults: history store 256 MiB / 30 idle days, plus the separate hot gateway
+cache's 64 MiB / 900 seconds. Pinned and active datasets are protected; capacity
+exhaustion pauses a download with its completed prefix intact. Web settings
+(11 locales), CLI `vibe-trading data history`, API and Agent/MCP `history_data`
+use the same store. Unsupported markets/minute intervals fail explicitly.
+
+Frontend verification: the storage page displayed real usage and active
+610-chunk job progress in the browser. The scoped Settings/storage TypeScript
+check and Vite production bundle pass; the full TypeScript build encounters two
+pre-existing dynamic translation-key errors in untouched
+`options/PayoffComparisons.tsx` (byte-identical to HEAD). No options file was
+changed to bypass those errors. The isolated preview lacks unrelated session
+APIs, so its normal app shell reports that separate service as unavailable.
+
+### Final regressions and uninstrumented process run
+
+With the complete close/abort fix, TLS-buffer allocations were **527,968 bytes
+in all four active-cycle snapshots** (two live sockets) and absent after natural
+idle. Total traced Python allocations after natural idle were **463,203 bytes
+(0.442 MiB)** versus 5,274,925 bytes (5.031 MiB) before the fix. The diagnostic GC
+control further reduced the fixed run to 276,961 bytes; that control is not used
+in production. Instrumented OS readings include profiler overhead.
+
+A separate run without tracemalloc, forced GC or non-default gateway limits
+completed in **8.98 minutes**: 139 subscriptions and 139
+unsubscriptions, four outage/recovery cycles, 676 delivered snapshots, and all
+18 topics observed. All four injected-offline probes returned 503; all three
+scheduled recovery probes returned complete data with HTTP 200. Sixteen actual
+WebSockets connected and closed, 1,919 live messages arrived, and all 16 REST
+snapshot attempts succeeded. No client errors were recorded.
+
+An independent external OS observer recorded lifetime peak physical footprint
+**173.469 MiB**; final physical footprint was **142.782 MiB**.
+Highest sampled RSS was **185.062 MiB**, final RSS
+**50.250 MiB**. Cycle-end physical footprint was approximately
+156.8, 163.2, 171.0 and 156.0 MiB, followed by idle decline. Thread/FD counts
+settled at 13/14; three server asyncio tasks remained. Sockets, subscriptions,
+pending updates, active requests and RAM cache reached zero; RAM cleanup occurred
+within 130.26 seconds of the sampled idle phase beginning. Source workers and
+allocators retain baseline resources, so a process is not expected to reach
+zero memory. This finite regression fixes the demonstrated retained-connection
+mechanism; it does not prove a universal multi-day bound or every provider's
+availability. The old 30-minute baseline remains above for comparison.
+
+Validation: 201 related backend regression tests; 13 adjacent CLI tests; 45
+frontend storage/i18n tests. Both supported CLI invocation forms work, including
+global flags and nonzero exits for failed/unsupported requests. A real 48-bar
+BaoStock fetch after the stdout adapter change emitted no SDK text to stdout;
+SDK notices are module-local logging under the shared session lock, preserving
+MCP JSON-RPC and unrelated threads' output.
+
+Metadata reports and plots (no price payloads) are preserved outside the repo:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-history-20261114/`.
+Real compressed data remains at
+`~/.vibe-trading/history-validation-20261114/45ce1c3e46024465821ab61b0dc4714e/`.

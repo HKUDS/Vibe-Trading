@@ -2551,6 +2551,22 @@ def get_options_chain(ticker: str, expiration: int | None = None, offset: int | 
 
 
 @mcp.tool
+def history_data(action: str, job: str | None = None, codes: list[str] | None = None,
+                 start_date: str | None = None, end_date: str | None = None,
+                 interval: str = "5m", offset: int = 0) -> str:
+    """Plan/resume quota-bounded SH/SZ minute datasets; read complete data in pages.
+
+    Actions: plan, create, start, status, rows, cancel, pin, unpin, delete,
+    storage, prune. Plan/create require codes and settled ISO dates. Other
+    job operations require the returned job id. Rows are never sampled.
+    """
+    return _get_registry().execute("history_data", {
+        "action": action, "job": job, "codes": codes, "start_date": start_date,
+        "end_date": end_date, "interval": interval, "offset": offset,
+    })
+
+
+@mcp.tool
 def get_stock_profile(ticker: str, sections: _lenient_str_list_opt = None) -> str:
     """Fetch a read-only company profile for a US, HK, or UK (LSE .L) listing (Yahoo Finance).
 

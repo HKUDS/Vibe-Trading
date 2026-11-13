@@ -1,0 +1,292 @@
+"""History lifecycle: actual compressed storage, quota, integrity and resumption."""
+
+import json
+import threading
+import time
+import pytest
+from src.data_gateway.history_store import HistoryStore
+
+
+def fake(symbol, start, end, interval):
+    return [{"symbol": symbol, "time": start + "T09:35:00", "close": 100}], {"source": "fixture", "coverage": "fixture"}
+
+
+@pytest.fixture
+def store(tmp_path):
+    result = HistoryStore(tmp_path, fetcher=fake)
+    yield result
+    result.close()
+
+
+def spec():
+    return dict(codes=["601398.SH", "600519.SH"], start_date="2021-01-01", end_date="2021-03-31", interval="5m")
+
+
+def test_complete_rows_paginate_without_sampling_and_resume_skips_valid_chunks(store):
+    calls = []
+    store.fetcher = lambda *args: calls.append(args) or fake(*args)
+    job = store.create(**spec())["id"]
+    assert store.run(job)["completed_chunks"] == 6
+    assert len(calls) == 6
+    assert store.run(job)["rows"] == 6 and len(calls) == 6
+    result = store.read(job, 1, 3)
+    assert len(result["rows"]) == 3 and result["next_offset"] == 4 and not result["sampled"]
+    store._path(job, 1).write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match="integrity"):
+        store.read(job, 1, 1)
+    assert store.run(job)["state"] == "complete" and len(calls) == 7
+
+
+def test_failure_preserves_completed_chunks_and_retry_resumes(store):
+    calls = []
+
+    def fetch(*args):
+        calls.append(args)
+        if len(calls) == 3:
+            raise ValueError("known gap")
+        return fake(*args)
+
+    store.fetcher = fetch
+    job = store.create(**spec())["id"]
+    assert store.run(job)["state"] == "failed"
+    assert store.status(job)["completed_chunks"] == 2
+    assert store.run(job)["state"] == "complete"
+    assert len(calls) == 7
+
+
+def test_pin_idle_eviction_and_quota_reservations(store):
+    a = store.create(**spec())["id"]
+    store.run(a)
+    store.pin(a, True)
+    b = store.create(**spec())["id"]
+    store.run(b)
+    with store.transaction() as db:
+        db.execute("UPDATE jobs SET accessed=0")
+    store.prune()
+    assert store.status(a)["pinned"] == 1
+    with pytest.raises(ValueError):
+        store.status(b)
+    store.settings(quota_bytes=4 * 1024**2)
+    (store.directory / "quota-test.bin").write_bytes(b"x" * (3 * 1024**2))
+    with pytest.raises(ValueError, match="quota"):
+        store.create(**spec())
+    assert store.status(a)["pinned"] == 1
+
+
+def test_running_lease_blocks_delete_and_cancel_keeps_committed_prefix(store):
+    entered, release = threading.Event(), threading.Event()
+
+    def fetch(*args):
+        entered.set()
+        release.wait(3)
+        return fake(*args)
+
+    store.fetcher = fetch
+    job = store.create(**spec())["id"]
+    store.start(job)
+    assert entered.wait(2)
+    with pytest.raises(ValueError, match="running"):
+        store.delete(job)
+    store.cancel(job)
+    release.set()
+    deadline = time.monotonic() + 4
+    while job in store.futures and time.monotonic() < deadline:
+        time.sleep(0.02)
+    status = store.status(job)
+    assert status["state"] == "paused" and status["completed_chunks"] == 1
+    assert status["reserved"] == 0
+
+
+def test_interrupted_reservation_is_reclaimed_on_reopen(store):
+    job = store.create(**spec())["id"]
+    with store.transaction() as db:
+        db.execute("UPDATE jobs SET state='running',reserved=2000000 WHERE id=?", (job,))
+    other = HistoryStore(store.directory, fetcher=fake)
+    try:
+        assert other.status(job)["state"] == "paused" and other.settings()["reserved_bytes"] == 0
+        assert other.run(job)["state"] == "complete"
+    finally:
+        other.close()
+
+
+def test_invalid_market_and_range_rejected_before_any_job(store):
+    for replacement in (
+        {"codes": ["AAPL.US"]},
+        {"interval": "1m"},
+        {"codes": ["601398.SH"] * 10},
+        {"end_date": "2040-01-01"},
+    ):
+        with pytest.raises(ValueError):
+            store.create(**(spec() | replacement))
+    assert store.status() == []
+
+
+def test_history_api_uses_auth_and_validates_quota(store, monkeypatch):
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+    from src.data_gateway.history_api import register_history_routes
+
+    monkeypatch.setattr("src.data_gateway.history_api.get_history_store", lambda: store)
+    app = FastAPI()
+    register_history_routes(app, lambda: None)
+    with TestClient(app) as client:
+        assert client.post("/data/history/plan", json=spec()).json()["chunks"] == 6
+        assert client.put("/data/history/storage", json={"quota_bytes": 1, "retention_days": 30}).status_code == 422
+        assert client.post("/data/history/jobs", json=spec()).status_code == 200
+
+    def deny():
+        raise HTTPException(401)
+
+    app = FastAPI()
+    register_history_routes(app, deny)
+    with TestClient(app) as client:
+        assert client.post("/data/history/jobs", json=spec()).status_code == 401
+        assert client.get("/data/history/storage").status_code == 401
+
+
+def test_cross_instance_start_does_not_overwrite_running_job(store):
+    entered, release = threading.Event(), threading.Event()
+
+    def fetch(*args):
+        entered.set()
+        release.wait(3)
+        return fake(*args)
+
+    store.fetcher = fetch
+    job = store.create(**spec())["id"]
+    store.start(job)
+    assert entered.wait(2)
+    other = HistoryStore(store.directory, fetcher=fake)
+    try:
+        with pytest.raises(ValueError, match="running"):
+            other.start(job)
+        assert other.status(job)["state"] == "running"
+    finally:
+        release.set()
+        other.close()
+
+
+def test_gzip_writer_refuses_before_crossing_reservation(store):
+    import secrets
+
+    store.fetcher = lambda *args: ([{"value": secrets.token_hex(900)} for _ in range(3000)], {})
+    job = store.create(**spec())["id"]
+    result = store.run(job)
+    assert result["state"] == "failed" and "reserved limit" in result["error"]
+    assert result["completed_chunks"] == 0 and result["reserved"] == 0
+    assert not list(store.directory.rglob("*.tmp"))
+
+
+def test_tool_pages_complete_rows_and_omits_large_manifest(store, monkeypatch):
+    from src.tools.history_data_tool import HistoryDataTool
+
+    monkeypatch.setattr("src.data_gateway.history_store.get_history_store", lambda: store)
+    tool = HistoryDataTool()
+    job = json.loads(tool.execute(action="create", **spec()))["data"]
+    assert "chunks" not in job and job["total_chunks"] == 6
+    assert not json.loads(tool.execute(action="rows", job=job["id"]))["ok"]
+    store.run(job["id"])
+    assert len(json.loads(tool.execute(action="rows", job=job["id"]))["data"]["rows"]) == 6
+
+
+def test_two_process_style_stores_share_disk_reservations(store):
+    store.settings(quota_bytes=4 * 1024**2)
+    first = store.create(**spec())["id"]
+    second = store.create(**spec())["id"]
+    entered, release = threading.Event(), threading.Event()
+
+    def fetch(*args):
+        entered.set()
+        release.wait(3)
+        return fake(*args)
+
+    store.fetcher = fetch
+    store.start(first)
+    assert entered.wait(2)
+    other = HistoryStore(store.directory, fetcher=lambda *a: pytest.fail("Quota must be reserved before fetch"))
+    try:
+        result = other.run(second)
+        assert result["state"] == "paused" and "quota exhausted" in result["error"]
+        assert store.status(first)["state"] == "running"
+        assert other.settings()["reserved_bytes"] == store.chunk_limit + 65536
+        assert other.settings()["used_bytes"] < 4 * 1024**2
+    finally:
+        release.set()
+        other.close()
+
+
+def test_low_disk_pauses_without_fetch_and_preserves_catalog(store, monkeypatch):
+    from types import SimpleNamespace
+
+    job = store.create(**spec())["id"]
+    monkeypatch.setattr("src.data_gateway.history_store.shutil.disk_usage", lambda path: SimpleNamespace(free=100))
+    store.fetcher = lambda *a: pytest.fail("Disk check must precede fetch")
+    result = store.run(job)
+    assert result["state"] == "paused" and "Insufficient free disk" in result["error"]
+    assert result["reserved"] == 0 and result["total_chunks"] == 6
+
+
+def test_foreign_metadata_lock_has_bounded_wait(store):
+    from src.data_gateway.cache import Cache
+
+    store.lock_timeout = 0.05
+    with Cache.disk_lock(store):
+        started = time.monotonic()
+        with pytest.raises(ValueError, match="busy"):
+            store.settings()
+        assert time.monotonic() - started < 0.5
+    assert store.settings()["quota_bytes"] == 256 * 1024**2
+
+
+def test_agent_job_listing_is_bounded_and_paged(store, monkeypatch):
+    from src.tools.history_data_tool import HistoryDataTool
+
+    monkeypatch.setattr("src.data_gateway.history_store.get_history_store", lambda: store)
+    for _ in range(11):
+        store.create(**spec())
+    tool = HistoryDataTool()
+    first = json.loads(tool.execute(action="status"))["data"]
+    last = json.loads(tool.execute(action="status", offset=first["next_offset"]))["data"]
+    assert len(first["jobs"]) == 10 and len(last["jobs"]) == 1 and last["next_offset"] is None
+    assert len({job["id"] for job in first["jobs"] + last["jobs"]}) == 11
+
+
+def test_application_cli_supports_global_flags_and_sequential_invocations(tmp_path, monkeypatch, capsys):
+    from cli._legacy import main
+    import src.data_gateway.history_store as module
+
+    monkeypatch.setattr(module, "history_directory", lambda: tmp_path)
+    monkeypatch.setattr(module, "HistoryStore", lambda directory: HistoryStore(directory, fetcher=fake))
+    assert (
+        main(
+            [
+                "--no-rich",
+                "data",
+                "history",
+                "create",
+                "--codes",
+                "601398.SH",
+                "--start",
+                "2021-01-01",
+                "--end",
+                "2021-02-28",
+            ]
+        )
+        == 0
+    )
+    job = json.loads(capsys.readouterr().out)["id"]
+    assert main(["data", "history", "run", "--job", job]) == 0
+    assert json.loads(capsys.readouterr().out)["completed_chunks"] == 2
+    assert main(["data", "history", "plan", "--codes", "AAPL.US", "--start", "2021-01-01", "--end", "2021-02-28"]) == 1
+
+
+def test_repair_paused_by_quota_does_not_claim_deleted_chunk_is_complete(store):
+    job = store.create(**spec())["id"]
+    assert store.run(job)["completed_chunks"] == 6
+    store.settings(quota_bytes=4 * 1024**2)
+    store._path(job, 0).write_bytes(b"corrupt")
+    (store.directory / "quota-test.bin").write_bytes(b"x" * (3 * 1024**2))
+    state = store.run(job)
+    assert state["state"] == "paused"
+    assert state["completed_chunks"] == 5 and state["chunks"][0]["state"] == "pending"
+    assert state["reserved"] == 0

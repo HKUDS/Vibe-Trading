@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ChannelSettings } from "@/components/settings/ChannelSettings";
 import { CustomProviderManager } from "@/components/settings/CustomProviderManager";
 import { ModelPicker } from "@/components/settings/ModelPicker";
+import { HistoryStorageSettings } from "@/components/settings/HistoryStorageSettings";
 import { SourcePrioritySettings } from "@/components/settings/SourcePrioritySettings";
 import { api, gildataFeatures, type GildataFeature, isAuthRequiredError, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
@@ -764,6 +765,7 @@ export function Settings() {
       </form>
 
       <SourcePrioritySettings />
+      <HistoryStorageSettings />
     </div>
   );
 }

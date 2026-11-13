@@ -143,3 +143,61 @@ def test_gateway_partial_crypto_boundary_cannot_return_complete(tmp_path, monkey
         assert result["data"]["_coverage"]["BTC-USDT"]["status"] == "partial"
     finally:
         gateway.close()
+
+
+def test_half_open_probe_keeps_outage_throttle_but_recovers_before_exponential_expiry():
+    now = [0]
+    router = NetworkRouter(cooldown=30, lifetime=300, clock=lambda: now[0])
+    router.record("bars:crypto:1D", "okx", False, 1)
+    router.record("bars:crypto:1D", "okx", False, 1)
+    assert router.recovery_probe("bars:crypto:1D", ["okx"]) is None
+    now[0] = 31
+    assert router.cooling("bars:crypto:1D", "okx")  # Original 60-second backoff.
+    assert router.recovery_probe("bars:crypto:1D", ["okx"]) == "okx"
+    assert all(router.recovery_probe("bars:crypto:1D", ["okx"]) is None for _ in range(100))
+    router.record("bars:crypto:1D", "okx", True, 0.1)
+    assert not router.cooling("bars:crypto:1D", "okx")
+    assert router.recovery_probe("bars:us:1D", ["okx"]) is None
+
+
+def test_recovered_source_is_actually_called_while_old_cooldown_would_return_503(tmp_path, monkeypatch):
+    import json
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backtest.loaders import registry
+    from src import market_data
+    from src.data_gateway import api
+
+    monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
+    monkeypatch.setattr(registry, "refresh_source_order_overrides", lambda: None)
+    monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"crypto": ["okx"]})
+    monkeypatch.setattr(market_data, "detect_source", lambda code: "okx")
+    calls = []
+
+    def fetch(**kwargs):
+        calls.append(1)
+        return json.dumps(
+            {"BTC-USDT": [{"trade_date": "2026-11-01", "close": 100}], "_provenance": {"BTC-USDT": {"source": "okx"}}}
+        )
+
+    monkeypatch.setattr(market_data, "fetch_market_data_json", fetch)
+    gateway = MarketDataGateway(Config(tmp_path))
+    now = [0]
+    gateway.router.clock = lambda: now[0]
+    for _ in range(2):
+        gateway.router.record("bars:crypto:1D", "okx", False, 1)
+    monkeypatch.setattr(api, "get_gateway", lambda: gateway)
+    app = FastAPI()
+    api.register_gateway_routes(app, lambda: None)
+    try:
+        with TestClient(app) as client:
+            params = {"codes": ["BTC-USDT"], "start_date": "2026-11-01", "end_date": "2026-11-02", "interval": "1D"}
+            response = client.post("/data/bars", json=params)
+            assert response.status_code == 503 and calls == []
+            # A distinct page avoids the deliberate per-request 30s throttle.
+            now[0] = 31
+            response = client.post("/data/bars", json={**params, "max_rows": 99})
+            assert response.status_code == 200, response.text
+            assert response.json()["ok"] and len(calls) == 1
+    finally:
+        gateway.close()

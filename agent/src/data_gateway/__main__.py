@@ -1,11 +1,66 @@
-"""Read-only CLI: python -m src.data_gateway options AAPL / status / bars ..."""
+"""Data gateway CLI: python -m src.data_gateway options AAPL / status / bars ..."""
 
 import argparse
 import json
 from . import get_gateway
 
 
-def main():
+def add_history_parser(commands):
+    """Register shared history arguments for both standalone and application CLI."""
+    history = commands.add_parser("history", help="Manage quota-bounded historical minute datasets")
+    history.add_argument(
+        "action",
+        choices=["plan", "create", "run", "status", "rows", "cancel", "delete", "pin", "unpin", "storage", "prune"],
+    )
+    history.add_argument("--job")
+    history.add_argument("--codes", nargs="+")
+    history.add_argument("--start")
+    history.add_argument("--end")
+    history.add_argument("--interval", default="5m")
+    history.add_argument("--offset", type=int, default=0)
+    history.add_argument("--limit", type=int, default=100)
+    history.add_argument("--quota-mb", type=int)
+    history.add_argument("--retention-days", type=int)
+    return history
+
+
+def run_history(args):
+    """Execute a parsed history command and release its local worker resources."""
+    from .history_store import HistoryStore, history_directory
+
+    store = HistoryStore(history_directory())
+    try:
+        if args.action in {"plan", "create"}:
+            result = getattr(store, args.action)(
+                codes=args.codes, start_date=args.start, end_date=args.end, interval=args.interval
+            )
+            result.pop("parts", None)
+        elif args.action == "storage":
+            result = store.settings(
+                quota_bytes=args.quota_mb * 1024**2 if args.quota_mb is not None else None,
+                retention_days=args.retention_days,
+            )
+        elif args.action == "prune":
+            result = store.prune()
+        elif args.action == "status":
+            result = store.status(args.job)
+        elif args.action == "rows":
+            result = store.read(args.job, args.offset, args.limit)
+        elif args.action in {"pin", "unpin"}:
+            result = store.pin(args.job, args.action == "pin")
+        else:
+            result = getattr(store, args.action)(args.job)
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+        if args.action == "run" and result.get("state") != "complete":
+            raise SystemExit(1)
+    except ValueError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}))
+        raise SystemExit(1) from None
+    finally:
+        store.close()
+
+
+def main(argv=None):
     """Expose the same gateway used by HTTP and agent tools."""
     parser = argparse.ArgumentParser(description="Unified local data gateway")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -23,7 +78,10 @@ def main():
     bars.add_argument("codes", nargs="+")
     bars.add_argument("--start", required=True)
     bars.add_argument("--end", required=True)
-    args = parser.parse_args()
+    add_history_parser(commands)
+    args = parser.parse_args(argv)
+    if args.command == "history":
+        return run_history(args)
     gateway = get_gateway()
     if args.command == "watch":
         import asyncio

@@ -152,7 +152,8 @@ results and remaining limits. One-machine validation is not a global network SLA
 Other existing research tools/backtest entrypoints retain their current loader calls;
 this branch provides the shared gateway and connects the existing options-chain
 Agent/MCP surface. A wholesale Agent/tool migration is not part of this isolated
-backend change. No frontend file differs from the branch base on `main`.
+backend change. Historical dataset storage is now available in Settings and at
+`/history-storage`; the options UI and Options Lab remain unchanged.
 
 ### Whole-process soak (opt-in, live public network)
 
@@ -175,7 +176,9 @@ bars, crypto quotes, full option snapshots across expirations, 2-day/1-year/5-ye
 history windows, repeated SSE connect/disconnect and an intentionally unread
 subscriber. Reports retain counts, provenance summaries and process metrics;
 no market-price payload is saved. macOS reports RSS plus `proc_pid_rusage`
-physical footprint; Linux reports RSS. No forced garbage collection is used.
+physical footprint; Linux reports RSS. Production and ordinary soaks never force garbage collection. Optional
+`VIBE_GATEWAY_TRACE_DIR=/tmp/traces` records Python allocations and performs one
+explicit diagnostic-only GC control after the natural idle sample.
 Compare equivalent repeated workloads after warmup and observe the idle tail;
 a finite soak cannot establish a universal multi-day memory bound.
 
@@ -191,19 +194,84 @@ history endpoint when the recent endpoint returns only a nonempty tail.
 The current HTTP request limit is eight symbols, ten years and 1,000 preview
 rows per symbol (the existing endpoint-preserving sampler can add a final row).
 Preview sampling is declared in the data envelope and must never be used as a
-complete backtest input. There is no implemented persistent multi-symbol history
-job, quota reservation, resume manifest or storage-settings dialog in this branch.
-A ten-symbol multi-year five-minute request needs that separate bounded job path;
-increasing the synchronous request limit is not a substitute.
+complete backtest input. Large requests use the separate, unsampled history-job
+path below instead of increasing the synchronous request limit.
 
-The suggested separate history-store policy is opt-in capacity, chunked acquisition,
-resumable manifests, observed coverage and data-version checks, default idle expiry
-(e.g. 30 days) for reusable unpinned datasets, and explicit manual retention. These
-are design proposals, not active settings; the shipped gateway still uses the
-120-second idle RAM / 900-second disk-cache defaults above.
+### Persistent minute datasets
+
+Settings → Historical data storage (also `/history-storage`) offers an estimate
+before downloading, a shared disk limit, idle retention, pause/resume, pin and
+delete. Defaults are **256 MiB and 30 unused days**; limits are 4 MiB–10 GiB and
+1–365 days. This budget is separate from the 64 MiB short-lived gateway cache.
+Storage is created lazily at `~/.vibe-trading/history`; override with
+`VIBE_GATEWAY_HISTORY_DIR` outside every Git checkout. No data is committed.
+
+The verified adapter reuses BaoStock's existing serialized, timeout-bounded
+transport for SH/SZ stocks: 5m/15m/30m/1H, settled dates, at most ten years.
+Other markets, one-minute bars and paid sources are **not** silently substituted.
+Each symbol/month is checked against the full calendar, daily trading status and
+exact intraday bar-end grid. Prices are raw, CNY; volume is shares. Corporate
+adjustment is not invented, and a pre-listing or missing-data range fails visibly.
+
+One download worker handles at most four queued jobs; each store permits at most
+32 jobs, 100 symbols/job and 4,096 chunks/job. Global cross-process reservations
+cover each compressed chunk plus catalog overhead. A chunk cannot write past its
+2 MiB reservation. Completed gzip JSONL files are atomically renamed and SHA256
+verified on resume/read. Interrupted jobs retain their completed prefix. Network
+failures retry three times per chunk; invalid/incomplete data fails closed.
+
+Every 30 seconds, unused unpinned datasets expire; when capacity is needed, the
+least recently accessed unpinned inactive dataset is evicted first. Pinned or
+active datasets are never evicted. Quota/free-space exhaustion pauses the job
+with a visible error and releases its reservation. Increasing quota or deleting
+an unused dataset allows resume. Lowering a quota below current usage/reservations
+is refused. Pin means manual retention, not unlimited storage. OS job leases
+prevent conflicting resume/delete operations across processes. Metadata lock waits
+are bounded by `VIBE_GATEWAY_HISTORY_LOCK_TIMEOUT` (default two seconds). New
+catalogs use SQLite auto-vacuum to release unused metadata pages as well.
+
+```sh
+vibe-trading data history --help
+# The module entry below exposes the same commands.
+PYTHONPATH=agent python -m src.data_gateway history plan --codes 601398.SH 600519.SH --start 2021-11-14 --end 2026-11-13 --interval 5m
+PYTHONPATH=agent python -m src.data_gateway history create --codes 601398.SH 600519.SH --start 2021-11-14 --end 2026-11-13 --interval 5m
+PYTHONPATH=agent python -m src.data_gateway history run --job JOB_ID
+PYTHONPATH=agent python -m src.data_gateway history rows --job JOB_ID --offset 0 --limit 1000
+PYTHONPATH=agent python -m src.data_gateway history storage --quota-mb 256 --retention-days 30
+```
+
+BaoStock notices are routed to logging under its existing session lock, so CLI
+and MCP stdout remain valid JSON without redirecting other threads. `history_data` provides plan/create/start,
+status (10 jobs per list page), rows (25 per agent page), cancel, pin/unpin, delete, storage and prune.
+HTTP uses authenticated `/data/history/{plan,storage,prune,jobs}`; individual jobs
+support `resume`, `cancel`, `pin` and `rows` (up to 1,000 rows/page). No endpoint
+loads a whole five-year dataset into RAM. The completion manifest is not evidence
+of a backtest result; downstream analysis must consume and validate the rows.
+
+Live verification (queries the source again and reads every row without sampling):
+
+```sh
+PYTHONPATH=agent python tools/gateway_history_validate.py --root ~/.vibe-trading/history --job JOB_ID --output /tmp/history-verification.json
+```
 
 For separate synthetic capacity checks (no market data/network), run
 `PYTHONPATH=agent python tools/gateway_memory_pressure.py` for near-entry-limit
 subscription churn, or `python tools/gateway_capacity_probe.py --output /tmp/capacity.json`
 for a bounded DuckDB/Parquet feasibility experiment. The latter is not connected
 to the gateway; it does not establish provider history coverage.
+
+### Reconnection memory and recovery
+
+Public WebSocket connections use one verified TLS context, disable compression
+for small ticker messages, and use OKX application pings rather than a second SDK
+keepalive task. A connection factory records immutable IDs in logs instead of
+storing the socket inside its own logger. Closed SDK error traces are released
+while preserving error type, text and causes. This removes the closed-connection
+reference cycles observed in allocation profiling, without process-wide GC.
+
+Historical routes retain exponential source backoff. When normal routes have
+failed, one half-open probe per market/interval per base cooldown may retry a
+source whose last failure is at least that old. This prevents repeated outages
+from blocking a recovered network for the longest backoff window. Worker limits,
+request deadlines, same-key throttling and source identity remain enforced.
+Failures report source/stage/type without logging raw upstream bodies or secrets.

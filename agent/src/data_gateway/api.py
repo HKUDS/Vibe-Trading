@@ -35,8 +35,11 @@ class BarsRequest(BaseModel):
 
 
 def register_gateway_routes(app: FastAPI, require_auth: Callable):
-    """Mount read-only capability APIs using the host application's auth."""
+    """Mount capability and local-storage APIs using the host application's auth."""
 
+    from .history_api import register_history_routes
+
+    register_history_routes(app, require_auth)
     hub = None
 
     def get_hub():

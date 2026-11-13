@@ -118,12 +118,33 @@ def okx_quote(topic: Topic, message: dict) -> dict | None:
     }
 
 
+def _public_connection(protocol, **kwargs):
+    """Create an SDK connection without its self-referencing logging adapter.
+
+    The SDK's default adapter stores the connection in ``extra['websocket']``;
+    connection -> adapter -> connection retains closed TLS buffers until cyclic
+    GC. Logging an immutable id preserves correlation without retaining sockets.
+    """
+    from .websocket import PublicConnection
+
+    return PublicConnection(protocol, **kwargs)
+
+
 async def okx_feed(topic: Topic, publish: Callable):
     """Consume OKX's unauthenticated public ticker channel; no order transport."""
     from websockets.asyncio.client import connect
+    from .transport import tls_context
 
     async with connect(
-        "wss://ws.okx.com/ws/v5/public", open_timeout=8, close_timeout=2, max_size=262144, max_queue=4
+        "wss://ws.okx.com/ws/v5/public",
+        open_timeout=8,
+        close_timeout=2,
+        max_size=262144,
+        max_queue=4,
+        ssl=tls_context(),
+        compression=None,
+        ping_interval=None,  # The receive timeout below sends OKX application pings.
+        create_connection=_public_connection,
     ) as ws:
         await ws.send(json.dumps({"op": "subscribe", "args": [{"channel": "tickers", "instId": topic.symbol}]}))
         previous = 0
@@ -147,8 +168,9 @@ async def okx_feed(topic: Topic, publish: Callable):
 async def okx_snapshot(topic):
     """Poll the same venue as WS; regional host failover never changes currency."""
     import httpx
+    from .transport import tls_context
 
-    async with httpx.AsyncClient(timeout=5) as client:
+    async with httpx.AsyncClient(timeout=5, verify=tls_context()) as client:
         for host in ("https://www.okx.com", "https://openapi.okx.com"):
             try:
                 async with client.stream(
