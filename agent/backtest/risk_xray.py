@@ -186,6 +186,7 @@ def compute_risk_xray(
         "concentration": _concentration(w),
         "exposure": _exposure(w),
         "volatility": _volatility(port_returns, periods_per_year),
+        "risk_contributions": _risk_contributions(returns, w, port_returns, periods_per_year),
         "drawdown": _drawdown(port_returns),
         "tail_risk": _tail_risk(port_returns, var_levels),
         "diversification": _diversification(returns, w, port_returns, periods_per_year),
@@ -242,6 +243,51 @@ def _volatility(port: pd.Series, ppy: int | None) -> dict[str, Any]:
             _finite(downside_dev * annualize) if downside_dev is not None else None
         ),
     }
+
+
+def _risk_contributions(
+    returns: pd.DataFrame, weights: np.ndarray, port: pd.Series, ppy: int | None
+) -> dict[str, Any]:
+    """Euler volatility components, on the x-ray's shared return sample."""
+    assets = [
+        {"symbol": str(symbol), "risk_contribution": None, "contribution_pct": None}
+        for symbol in returns.columns
+    ]
+    result = {
+        "method": "historical covariance (Euler volatility decomposition)",
+        "status": "insufficient_observations",
+        "annualized_volatility": None,
+        "assets": assets,
+    }
+    if len(port) < 2:
+        return result
+    values = returns.to_numpy(dtype=float)
+    portfolio = port.to_numpy(dtype=float)
+    if not np.isfinite(values).all() or not np.isfinite(portfolio).all():
+        result["status"] = "non_finite_returns"
+        return result
+
+    vol = float(port.std(ddof=1))
+    annualize = _annualize_factor(ppy, port.index)
+    result["annualized_volatility"] = _finite(vol * annualize)
+    if vol == 0:
+        result["status"] = "zero_variance"
+        for row in assets:
+            row["risk_contribution"] = 0.0
+        return result
+
+    # Cov(r_i, r_p) avoids building and factoring an N-by-N covariance matrix.
+    covariance = (
+        (values - values.mean(axis=0)).T
+        @ (portfolio - portfolio.mean())
+        / (len(port) - 1)
+    )
+    components = weights * covariance / vol
+    result["status"] = "ok"
+    for row, component in zip(assets, components):
+        row["risk_contribution"] = _finite(component * annualize)
+        row["contribution_pct"] = _finite(100 * component / vol)
+    return result
 
 
 def _annualize_factor(ppy: int | None, index: Any) -> float:
@@ -407,6 +453,30 @@ def render_risk_xray_markdown(report: dict[str, Any]) -> str:
     if report["skipped"]:
         joined = ", ".join(item["symbol"] for item in report["skipped"])
         lines.append(f"- skipped: {joined}")
+    contributions = report.get("risk_contributions")
+    if contributions:
+        lines.extend(
+            [
+                "",
+                "## Risk contributions",
+                "",
+                "Negative components offset risk; shares may be negative or exceed 100%.",
+                "Shares are undefined when portfolio volatility is zero.",
+                "",
+                "| Symbol | Weight | Annualized vol contribution | Risk share |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for row in contributions["assets"]:
+            symbol = row["symbol"]
+            values = [inputs["weights"].get(symbol), row["risk_contribution"]]
+            cells = [f"{value:.2%}" if value is not None else "n/a" for value in values]
+            share = row["contribution_pct"]
+            cells.append(f"{share:.2f}%" if share is not None else "n/a")
+            label = symbol.replace("|", "\\|").replace("\n", " ")
+            lines.append(f"| {label} | " + " | ".join(cells) + " |")
+        if contributions["status"] != "ok":
+            lines.append(f"\n- contribution status: {contributions['status']}")
     lines.append("")
     return "\n".join(lines)
 
