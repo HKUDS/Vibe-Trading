@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (83)
+## Available MCP Tools (84)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -153,6 +153,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `alpha_bench` | Benchmark one alpha or a complete zoo | None* |
 | `analyze_options` | Black-Scholes price + Greeks | None |
 | `analyze_options_payoff` | Multi-leg expiry payoff + spot/IV scenarios | None |
+| `compare_options_strategies` | Compare named option strategies on shared expiry and spot/IV grids | None |
 | `pattern_recognition` | Detect chart patterns (H&S, double top, etc.) | None |
 | `get_market_data` | Fetch OHLCV data (auto-detect + ordered fallback across 28 sources) | None* |
 | `get_fund_flow` | Capital fund-flow (main/retail net inflow) | None* |

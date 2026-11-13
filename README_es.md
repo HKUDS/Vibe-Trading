@@ -175,7 +175,7 @@ También puedes elegir una fuente. Instala `vibe-trading-ai[ashare]` para consul
 |---|---|
 | Alpha Zoo | Evalúa señales de Qlib, Alpha101, GTJA y las bibliotecas académica y fundamental. Compara coeficientes de información por horizonte y valida en ventanas sucesivas. |
 | Motores de backtesting | Modela límites de precio de acciones A, financiación cripto y márgenes de futuros. Comparte capital entre mercados y revisa cada ejecución. |
-| Laboratorio de opciones | Construye spreads pata a pata. Compara el pago al vencimiento con las griegas y varía el precio al contado y la volatilidad implícita. |
+| Laboratorio de opciones | Construye spreads pata a pata. Compara el pago al vencimiento con las griegas y varía el precio al contado y la volatilidad implícita. La herramienta `options_strategy_compare` del agente/MCP compara hasta cuatro estrategias en una misma cuadrícula de precio al contado/IV y muestra el P&L relativo a la estrategia base. |
 | Riesgo de cartera | Analiza caídas, VaR y pérdida esperada en la cola. Separa asignación y selección con la atribución de Brinson y observa cambios en la correlación. |
 | Seguimiento de estrategias | Registra una estrategia con su evidencia y sigue la evolución del ratio de Sharpe o del coeficiente de información del factor. |
 
