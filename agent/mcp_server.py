@@ -1245,6 +1245,7 @@ def analyze_options_payoff(
     scenario_iv_values: _lenient_float_list_opt = None,
     underlying_qty: float = 0.0,
     price_as_of: str | None = None,
+    expiry_spot_values: _lenient_float_list_opt = None,
 ) -> str:
     """Analyze a multi-leg option strategy's payoff and spot/IV scenarios.
 
@@ -1263,6 +1264,7 @@ def analyze_options_payoff(
         volatility: Annualized entry volatility, e.g. 0.3 for 30%.
         underlying_qty: Signed stock units per multiplier, 1 for a covered collar.
         price_as_of: Observation date for the entry price.
+        expiry_spot_values: Exact non-negative expiry scenario prices for P&L and returns.
         multiplier: Currency multiplier per option price unit.
         commission_rate: Entry commission fraction, aligned with the options
             backtest engine.
@@ -1284,6 +1286,8 @@ def analyze_options_payoff(
         "commission_rate": commission_rate,
         "spot_points": spot_points,
     }
+    if expiry_spot_values is not None:
+        params["expiry_spot_values"] = expiry_spot_values
     if spot_min is not None:
         params["spot_min"] = spot_min
     if spot_max is not None:

@@ -1695,6 +1695,13 @@
       "noData": "No se devolvieron contratos para esta selección.",
       "errorTitle": "Cadena de opciones no disponible",
       "retry": "Reintentar"
+    },
+    "expiryScenarios": {
+      "input": "Precios al vencimiento (opcional, separados por comas)",
+      "title": "Escenarios al vencimiento",
+      "spot": "Precio al vencimiento",
+      "pnl": "Ganancia/pérdida al vencimiento",
+      "return": "Rentabilidad sobre el nominal de acciones"
     }
   },
   "alphaZoo": {

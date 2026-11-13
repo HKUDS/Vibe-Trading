@@ -176,7 +176,7 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     # Keep compact calculation bases visible beside the file reference. Curves
     # and large tables stay intact in the artifact rather than hiding the basis.
     if isinstance(payload, dict):
-        for key in ('inputs', 'calculation_basis', 'summary'):
+        for key in ('calculation_basis', 'expiry_scenarios', 'summary', 'inputs'):
             if key in payload:
                 candidate = {**receipt, key: payload[key]}
                 if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT // 2:

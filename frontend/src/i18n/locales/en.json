@@ -1695,6 +1695,13 @@
       "noData": "No contracts returned for this selection.",
       "errorTitle": "Options chain unavailable",
       "retry": "Retry"
+    },
+    "expiryScenarios": {
+      "input": "Expiry prices (optional, comma-separated)",
+      "title": "Expiry scenarios",
+      "spot": "Price at expiry",
+      "pnl": "Expiry P&L",
+      "return": "Return on stock notional"
     }
   },
   "alphaZoo": {

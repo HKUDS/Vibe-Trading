@@ -271,6 +271,13 @@ export function StrategyBuilder({
 
       </details>
 
+      <div className="mt-3 flex flex-col gap-1">
+        <label htmlFor="option-expiry-spots" className="text-xs text-muted-foreground">{t("options.expiryScenarios.input")}</label>
+        <input id="option-expiry-spots" type="text" value={params.expiry_spots_text ?? ""}
+          onChange={(e) => setParam({ expiry_spots_text: e.target.value })}
+          placeholder="90, 100, 110" className={INPUT_CLS} />
+      </div>
+
       {!inputsValid && (
         <p className="mt-3 rounded border border-warning/30 bg-warning/5 p-2 text-xs text-warning">
           {t("options.builder.invalidHint")}

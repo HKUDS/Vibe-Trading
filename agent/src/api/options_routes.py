@@ -108,6 +108,7 @@ class PayoffRequest(BaseModel):
     spot_min: float | None = Field(None, ge=0)
     spot_max: float | None = Field(None, gt=0)
     spot_points: int = Field(_DEFAULT_SPOT_POINTS, ge=_MIN_SPOT_POINTS, le=_MAX_SPOT_POINTS)
+    expiry_spot_values: list[Annotated[float, Field(ge=0, allow_inf_nan=False)]] | None = Field(None, min_length=1, max_length=_MAX_SPOT_POINTS)
     scenario_iv_values: (
         list[Annotated[float, Field(gt=0)]] | None
     ) = Field(None, min_length=1, max_length=_MAX_IV_SCENARIOS)
@@ -149,6 +150,8 @@ def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
         "commission_rate": payload.commission_rate,
         "spot_points": payload.spot_points,
     }
+    if payload.expiry_spot_values is not None:
+        params["expiry_spot_values"] = payload.expiry_spot_values
     if payload.spot_min is not None:
         params["spot_min"] = payload.spot_min
     if payload.spot_max is not None:

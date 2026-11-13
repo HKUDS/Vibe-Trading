@@ -710,7 +710,12 @@ def fit_gpd_tail(
                 ``|1 + xi| / sqrt(n_exceedances)``. Only valid for ``xi > -0.5``;
                 below that the GPD likelihood is non-regular and the figure is
                 indicative at best.
-            scale_sigma (float): GPD scale, in units of loss magnitude.
+            scale_sigma (float): GPD scale in return fractions; not mean excess.
+            sample_mean_excess (float): Mean of the observed threshold exceedances.
+            fitted_mean_excess (float): Fitted GPD mean, sigma / (1 - xi) for
+                xi < 1; infinity otherwise. Distinct from both scale and sample mean.
+            n_observations (int): Number of finite input returns.
+            units (dict): Explicit units for threshold, scale and excess means.
             tail_type (str): ``"fat"`` when ``shape_xi`` clears
                 ``GPD_SHAPE_SIGNIFICANCE_SIGMAS * shape_stderr``, ``"bounded"``
                 when it clears it on the negative side, otherwise
@@ -756,5 +761,14 @@ def fit_gpd_tail(
         "shape_xi": float(shape),
         "shape_stderr": shape_stderr,
         "scale_sigma": float(scale),
+        "sample_mean_excess": float(exceedances.mean()),
+        "fitted_mean_excess": float(scale / (1.0 - shape)) if shape < 1.0 else math.inf,
+        "n_observations": int(values.size),
+        "units": {
+            "threshold": "signed_return_fraction",
+            "scale_sigma": "excess_loss_fraction (GPD scale, not mean)",
+            "sample_mean_excess": "excess_loss_fraction (sample mean)",
+            "fitted_mean_excess": "excess_loss_fraction (fitted distribution mean)",
+        },
         "tail_type": tail_type,
     }

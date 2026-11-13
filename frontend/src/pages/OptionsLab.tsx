@@ -220,6 +220,26 @@ export function OptionsLab() {
         </div>
       </div>
 
+      {!!result?.expiry_scenarios?.length && (
+        <section className="overflow-x-auto rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold">{t("options.expiryScenarios.title")}</h2>
+          <table className="w-full text-sm tabular-nums">
+            <thead><tr className="text-start text-muted-foreground">
+              <th className="p-2 text-start">{t("options.expiryScenarios.spot")}</th>
+              <th className="p-2 text-end">{t("options.expiryScenarios.pnl")}</th>
+              <th className="p-2 text-end">{t("options.expiryScenarios.return")}</th>
+            </tr></thead>
+            <tbody>{result.expiry_scenarios.map((row, index) => (
+              <tr key={index} className="border-t border-border/40">
+                <td className="p-2">{row.spot.toLocaleString()}</td>
+                <td className="p-2 text-end">{row.pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="p-2 text-end">{row.return_percent == null ? "—" : `${row.return_percent.toFixed(2)}%`}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </section>
+      )}
+
       {/* Portfolio Greeks */}
       {result && <GreeksCards greeks={result.greeks} />}
 
