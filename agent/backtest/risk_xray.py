@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.metrics import effective_bars_per_year
+from backtest.risk_xray_drawdowns import describe_drawdown_episodes
 from backtest.validation import _json_safe
 
 MIN_HISTORY_DAYS = 30
@@ -64,7 +65,9 @@ def _validate_weights(
 
     unknown = [sym for sym in weights if sym not in closes.columns]
     if unknown:
-        raise ValueError(f"weights reference symbols with no price data: {sorted(unknown)}")
+        raise ValueError(
+            f"weights reference symbols with no price data: {sorted(unknown)}"
+        )
 
     cleaned: dict[str, float] = {}
     for sym, raw in weights.items():
@@ -79,7 +82,9 @@ def _validate_weights(
     if any(value < 0 for value in cleaned.values()):
         gross = sum(abs(value) for value in cleaned.values())
         if abs(gross - 1.0) > 1e-6:
-            warnings.append(f"weights preserved at gross exposure {gross:.6f}; concentration uses gross shares")
+            warnings.append(
+                f"weights preserved at gross exposure {gross:.6f}; concentration uses gross shares"
+            )
         return cleaned, warnings
 
     total = sum(cleaned.values())
@@ -137,7 +142,12 @@ def compute_risk_xray(
     for sym in weights:
         valid = int(frame[sym].count())
         if valid < min_history:
-            skipped.append({"symbol": sym, "reason": f"only {valid} valid bars (min {min_history})"})
+            skipped.append(
+                {
+                    "symbol": sym,
+                    "reason": f"only {valid} valid bars (min {min_history})",
+                }
+            )
         else:
             kept.append(sym)
     if not kept:
@@ -155,7 +165,9 @@ def compute_risk_xray(
             if total <= 0:
                 raise ValueError("surviving symbols have zero total weight")
             weights = {sym: value / total for sym, value in kept_weights.items()}
-            warnings.append("weights renormalized over symbols that survived the history filter")
+            warnings.append(
+                "weights renormalized over symbols that survived the history filter"
+            )
 
     aligned = frame[kept].dropna(axis=0, how="any")
     if len(aligned) < 2:
@@ -186,7 +198,11 @@ def compute_risk_xray(
         "concentration": _concentration(w),
         "exposure": _exposure(w),
         "volatility": _volatility(port_returns, periods_per_year),
-        "drawdown": _drawdown(port_returns),
+        "drawdown": _drawdown(
+            port_returns,
+            initial_label=str(aligned.index[0]),
+            complete=len(returns) == len(aligned) - 1,
+        ),
         "tail_risk": _tail_risk(port_returns, var_levels),
         "diversification": _diversification(returns, w, port_returns, periods_per_year),
         "correlation": _correlation(returns, port_returns),
@@ -259,9 +275,18 @@ def _annualize_factor(ppy: int | None, index: Any) -> float:
     return math.sqrt(float(effective_bars_per_year(index)))
 
 
-def _drawdown(port: pd.Series) -> dict[str, Any]:
+def _drawdown(
+    port: pd.Series,
+    *,
+    initial_label: str | None = None,
+    complete: bool = True,
+) -> dict[str, Any]:
     if port.empty:
-        return {"max_drawdown": None, "max_drawdown_start": None, "max_drawdown_trough": None}
+        return {
+            "max_drawdown": None,
+            "max_drawdown_start": None,
+            "max_drawdown_trough": None,
+        }
     equity = (1.0 + port).cumprod()
     # The portfolio starts at wealth 1 before the first return observation.
     # Keeping that initial high-water mark also preserves the drawdown sign
@@ -275,6 +300,9 @@ def _drawdown(port: pd.Series) -> dict[str, Any]:
         "max_drawdown": _finite(float(dd.loc[trough_idx])),
         "max_drawdown_start": str(start_idx),
         "max_drawdown_trough": str(trough_idx),
+        "episodes": describe_drawdown_episodes(
+            equity, initial_label=initial_label, complete=complete
+        ),
     }
 
 
@@ -346,7 +374,9 @@ def _correlation(returns: pd.DataFrame, port: pd.Series) -> dict[str, Any]:
     }
 
 
-def average_invested_weights(target_pos: pd.DataFrame) -> tuple[dict[str, float], float]:
+def average_invested_weights(
+    target_pos: pd.DataFrame,
+) -> tuple[dict[str, float], float]:
     """Derive the run's average basket from the target position frame.
 
     Returns ``(weights, avg_invested)``: the mean target weight per symbol
@@ -368,6 +398,18 @@ def average_invested_weights(target_pos: pd.DataFrame) -> tuple[dict[str, float]
     if not weights:
         raise ValueError("strategy held no average exposure")
     return weights, avg_invested
+
+
+def _drawdown_cell(value: object) -> str:
+    if value is None:
+        return "-"
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
 
 
 def render_risk_xray_markdown(report: dict[str, Any]) -> str:
@@ -407,6 +449,53 @@ def render_risk_xray_markdown(report: dict[str, Any]) -> str:
     if report["skipped"]:
         joined = ", ".join(item["symbol"] for item in report["skipped"])
         lines.append(f"- skipped: {joined}")
+    episodes = dd.get("episodes")
+    if episodes is not None:
+        lines.extend(
+            [
+                "",
+                "## Drawdown periods",
+                "",
+                "Constant-weight return model; durations count observed bars, not calendar days. "
+                f"Recovery comparisons use relative tolerance {episodes['recovery_rtol']:g}.",
+                "",
+            ]
+        )
+        if not episodes["available"]:
+            reason = episodes["reason"].replace("_", " ")
+            lines.append(f"Drawdown periods unavailable: {reason}.")
+        elif not episodes["items"]:
+            lines.append("No drawdown periods observed in this window.")
+        else:
+            lines.extend(
+                [
+                    f"Showing {len(episodes['items'])} of {episodes['total']} observed drawdowns.",
+                    "",
+                    "| Depth | Peak | Trough | Recovery | Observed bars |",
+                    "| --- | --- | --- | --- | --- |",
+                ]
+            )
+            for item in episodes["items"]:
+                peak, trough = _drawdown_cell(item["peak"]), _drawdown_cell(
+                    item["trough"]
+                )
+                recovery = (
+                    _drawdown_cell(item["recovery"])
+                    if item["recovery"] is not None
+                    else "Not recovered"
+                )
+                lines.append(
+                    f"| {item['depth']:.2%} | {peak} | {trough} | {recovery} | {item['duration_bars']} |"
+                )
+            if current := episodes["current"]:
+                lines.extend(
+                    [
+                        "",
+                        f"Window-end drawdown: {current['depth']:.2%}; observed bars: {current['duration_bars']}",
+                        f"Window-end peak: {_drawdown_cell(current['peak'])}; "
+                        f"trough: {_drawdown_cell(current['trough'])}",
+                    ]
+                )
     lines.append("")
     return "\n".join(lines)
 

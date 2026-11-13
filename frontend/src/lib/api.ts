@@ -1439,6 +1439,24 @@ export interface ValidationData {
   };
 }
 
+export interface RiskDrawdownPeriod {
+  peak: string | null;
+  trough: string | null;
+  recovery: string | null;
+  depth: number;
+  duration_bars: number;
+}
+
+export type RiskDrawdownEpisodes = {
+  basis: "constant_weight_model";
+  duration_unit: "bars";
+  recovery_rtol: number;
+  limit: number;
+} & (
+  | { available: true; reason: null; total: number; items: RiskDrawdownPeriod[]; current: RiskDrawdownPeriod | null }
+  | { available: false; reason: "missing_return_observations" | "empty_path" | "non_finite_wealth" | "non_positive_wealth"; total: null; items: []; current: null }
+);
+
 export interface RiskXRayPayload {
   inputs?: {
     symbols?: string[];
@@ -1450,7 +1468,7 @@ export interface RiskXRayPayload {
   };
   concentration?: { hhi?: number; effective_n?: number; top_weight?: number };
   volatility?: { annualized_vol?: number };
-  drawdown?: { max_drawdown?: number };
+  drawdown?: { max_drawdown?: number; episodes?: RiskDrawdownEpisodes };
   tail_risk?: Record<string, unknown>;
   diversification?: Record<string, unknown>;
   correlation?: Record<string, unknown>;

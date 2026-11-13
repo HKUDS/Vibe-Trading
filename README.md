@@ -135,6 +135,14 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trades behind a drawdown and check the data source on the run card.
 
+### Portfolio drawdown periods
+
+In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.
+
+This is a constant-weight return model, not account NAV, strategy P&L or a forecast. Backtests use the average executed basket weights; the model itself does not include fees or cash flows. Duration counts observed bar intervals from peak to recovery, or to the window's end if unrecovered, not calendar days. Daily, weekly and monthly observations retain their original labels.
+
+A missing interior return or non-positive/non-finite model wealth makes the periods unavailable, rather than an empty set or zero risk. Values within a relative `1e-12` of a running peak are treated as at that peak to avoid an extra recovery bar caused only by floating-point noise; smaller differences are not distinguished. The JSON report declares this as `recovery_rtol`. Existing scalar statistics and older reports without episode metadata remain supported.
+
 ## 🧪 Research Workflow
 
 | Step | In the crossover example |
