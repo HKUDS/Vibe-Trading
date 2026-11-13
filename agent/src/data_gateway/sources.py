@@ -200,14 +200,3 @@ def cboe_options(ticker: str, expiration: int | None = None, full: bool = False)
         expiration,
         full=full,
     )
-
-
-def historical_bars(routing_policy: dict | None = None, **params) -> dict:
-    """Use the existing market-specific automatic fallback and provenance layer."""
-    from src.market_data import fetch_market_data_json
-
-    result = json.loads(fetch_market_data_json(**params))
-    # A partially resolved panel is useful but must remain explicitly incomplete.
-    if result.get("error") or not any(not k.startswith("_") for k in result):
-        raise GatewayError("Historical routes returned no data")
-    return {"ok": True, "source": "existing_routes", "data": result, "complete": not bool(result.get("_unresolved"))}

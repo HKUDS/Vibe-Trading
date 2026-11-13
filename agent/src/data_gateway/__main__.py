@@ -14,7 +14,7 @@ def main():
     options.add_argument("--expiration", type=int)
     options.add_argument("--full", action="store_true", help="All standard contracts at the selected expiration")
     watch = commands.add_parser("watch")
-    watch.add_argument("topics", nargs="+", help="options:AAPL[:expiration] or crypto:BTC-USDT")
+    watch.add_argument("topics", nargs="+", help="options:AAPL[:expiration], crypto:BTC-USDT or bars:AAPL.US:1D")
     watch.add_argument("--events", type=int, default=10, help="Stop after this many updates (1..10000)")
     commands.add_parser("capabilities")
     commands.add_parser("status")

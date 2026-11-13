@@ -22,6 +22,7 @@ def capabilities(config):
         },
         "subscriptions": {
             "options": "shared periodic snapshots",
+            "bars": "all existing public market routes; periodic bars, not real-time quotes",
             "crypto": "OKX spot WebSocket + REST fallback",
             "all_market_firehose": False,
             "lossless_tick_archive": False,

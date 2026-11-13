@@ -56,9 +56,17 @@ class NetworkRouter:
             # failed observation expires. This adapts to a changed network.
             baseline = list(dict.fromkeys(sources))
             first = self.health.get((scope, baseline[0])) if baseline else None
-            if first and not first["success"] and now - first["checked"] > self.lifetime:
+            if first is None or (not first["success"] and now - first["checked"] > self.lifetime):
                 return baseline
             return sorted(baseline, key=score)
+
+    def prune(self):
+        """Delete idle network observations instead of retaining historical probes."""
+        with self.lock:
+            now = self.clock()
+            for key, row in list(self.health.items()):
+                if now - row["checked"] > self.lifetime:
+                    self.health.pop(key, None)
 
     def status(self):
         with self.lock:

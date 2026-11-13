@@ -2528,21 +2528,24 @@ def get_financial_statements(code: str, statement: str = "indicators", period: s
 
 
 @mcp.tool
-def get_options_chain(ticker: str, expiration: int | None = None) -> str:
+def get_options_chain(ticker: str, expiration: int | None = None, offset: int | None = None) -> str:
     """Fetch the US-listed options chain (calls and puts) for one expiration.
 
     Returns per-contract strike, bid/ask, last price, volume, open interest,
     implied volatility, and in-the-money flag, plus the list of available
-    expirations (epoch seconds) via Yahoo Finance. Read-only US options data.
+    expirations (epoch seconds) via the shared data gateway. Read-only US options data.
 
     Args:
         ticker: US underlying symbol (e.g. "AAPL" or "AAPL.US").
         expiration: Optional expiration as Unix epoch seconds (one of the
             returned expirations). Omit for the nearest expiration.
+        offset: Optional strike-order page offset, 60 rows per side; omit for near-spot contracts.
     """
     params: dict[str, Any] = {"ticker": ticker}
     if expiration is not None:
         params["expiration"] = expiration
+    if offset is not None:
+        params["offset"] = offset
     registry = _get_registry()
     return registry.execute("get_options_chain", params)
 

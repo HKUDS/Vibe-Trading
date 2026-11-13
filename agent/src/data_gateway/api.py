@@ -19,9 +19,14 @@ class BarsRequest(BaseModel):
     end_date: date
     interval: str = Field(default="1D", max_length=5)
     max_rows: int = Field(default=100, ge=1, le=1000)
+    source: str = Field(default="auto", max_length=32)
 
     @model_validator(mode="after")
     def dates_in_order(self):
+        from backtest.loaders.registry import VALID_SOURCES
+
+        if self.source not in VALID_SOURCES or self.source == "local":
+            raise ValueError("Expected a registered public or configured market source")
         if self.end_date < self.start_date or (self.end_date - self.start_date).days > 3660:
             raise ValueError("Expected an ordered date range of at most ten years")
         if any(not c.strip() or len(c) > 64 or c.startswith("local:") for c in self.codes):

@@ -3,7 +3,6 @@
 import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
-import time
 
 import pandas as pd
 
@@ -26,31 +25,28 @@ def test_prefer_local_success_then_reprobe_baseline_after_network_history_expire
     assert not router.cooling("options", "blocked_here")
 
 
-def test_existing_bar_loaders_switch_on_timeout_without_changing_provenance(tmp_path, monkeypatch):
+def test_existing_bar_loaders_switch_on_failure_without_changing_provenance(tmp_path, monkeypatch):
     from backtest.loaders import registry
     from src import market_data
 
     calls = []
 
-    class Slow:
+    class Unavailable:
         name = "slow"
         volume_units = {}
 
-        @classmethod
-        def is_available(cls):
+        def is_available(self):
             return True
 
         def fetch(self, codes, *args, **kwargs):
             calls.append("slow")
-            time.sleep(0.25)
-            return {}
+            raise ConnectionError("upstream unavailable")
 
     class Fast:
         name = "fast"
         volume_units = {"us_equity": "shares"}
 
-        @classmethod
-        def is_available(cls):
+        def is_available(self):
             return True
 
         def fetch(self, codes, *args, **kwargs):
@@ -59,10 +55,10 @@ def test_existing_bar_loaders_switch_on_timeout_without_changing_provenance(tmp_
 
     monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
     monkeypatch.setattr(registry, "refresh_source_order_overrides", lambda: None)
-    monkeypatch.setattr(registry, "LOADER_REGISTRY", {"slow": Slow, "fast": Fast})
+    monkeypatch.setattr(registry, "LOADER_REGISTRY", {"slow": Unavailable, "fast": Fast})
     monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"us_equity": ["slow", "fast"]})
     monkeypatch.setattr(market_data, "detect_source", lambda code: "slow")
-    g = MarketDataGateway(replace(Config(tmp_path), source_timeout=0.04, request_timeout=1))
+    g = MarketDataGateway(Config(tmp_path))
     try:
         first = g.bars(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-01-02")
         assert first["ok"], first

@@ -53,7 +53,7 @@ class MarketDataGateway:
         self.cleaner.start()
 
     def _clean(self):
-        while not self.stop.wait(min(60, self.config.stale_ttl)):
+        while not self.stop.wait(min(self.config.cleanup_interval, self.config.memory_idle, self.config.stale_ttl)):
             try:
                 self.cache.prune()
             except OSError:
@@ -61,6 +61,8 @@ class MarketDataGateway:
             with self.lock:
                 now = time.monotonic()
                 self.refresh_after = {k: v for k, v in self.refresh_after.items() if v > now}
+                self.failures = {k: v for k, v in self.failures.items() if v > now}
+            self.router.prune()
 
     def close(self):
         """Stop housekeeping and cancel queued work without spawning replacements."""
@@ -165,6 +167,12 @@ class MarketDataGateway:
             try:
                 if routes[source] == self._historical_bars:
                     payload = self._historical_bars(**params)
+                    if not payload.get("ok"):
+                        return {
+                            **payload,
+                            "gateway": {"attempts": [{"source": source, "status": "unavailable"}]},
+                            "retry_after_seconds": self.config.cooldown,
+                        }
                 else:
                     payload = self.invoke(routes[source], params, min(remaining, self.config.source_timeout))
                 if not isinstance(payload, dict) or not payload.get("ok"):

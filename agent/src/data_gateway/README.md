@@ -12,6 +12,8 @@ not change Options Lab, the frontend, agent core, or order execution.
   validated standard 100-share contract at one expiration, within the response
   budget. Discover all expiration dates, then request each on demand. Adjusted
   deliverables and broker execution prices are not covered.
+- Bar subscriptions (`bars:AAPL.US:1D`, `bars:00700.HK:1m`) continuously refresh
+  the existing market routes; their quality stays `historical_bars`, not tick quotes.
 - Continuous options subscriptions refresh these delayed/unknown-latency snapshots.
   There is one acquisition per topic, shared by all clients.
 - OKX spot subscriptions combine a public WebSocket and same-venue REST snapshots.
@@ -29,7 +31,7 @@ PYTHONPATH=agent python -m src.data_gateway.dev_server
 # Read-only loopback server: http://127.0.0.1:8910/docs
 PYTHONPATH=agent python -m src.data_gateway capabilities
 PYTHONPATH=agent python -m src.data_gateway options AAPL --full
-PYTHONPATH=agent python -m src.data_gateway watch crypto:BTC-USDT options:AAPL --events 10
+PYTHONPATH=agent python -m src.data_gateway watch crypto:BTC-USDT options:AAPL bars:00700.HK:1D --events 10
 PYTHONPATH=agent python -m src.data_gateway bars AAPL.US --start 2026-11-01 --end 2026-11-12
 PYTHONPATH=agent python -m src.data_gateway status
 PYTHONPATH=agent python -m src.data_gateway prune
@@ -82,6 +84,8 @@ Delta remains missing. No synthetic substitute is generated when sources fail.
 | Setting (`VIBE_GATEWAY_` prefix) | Default | Meaning |
 | --- | --- | --- |
 | `MEMORY_MB` | 8 | Serialized cache budget, not total process RAM |
+| `MEMORY_IDLE` | 120 s | Evict memory entries with no reads since this idle limit |
+| `CLEANUP_INTERVAL` | 30 s | Silent cleanup cadence (bounded above by idle/expiry limits) |
 | `DISK_MB` | 64 | JSON cache budget; 0 disables writes |
 | `ENTRY_MB` | 2 | Maximum normalized response/cache entry |
 | `CACHE_ENTRIES` | 256 | Maximum cache entries |
@@ -101,9 +105,13 @@ Delta remains missing. No synthetic substitute is generated when sources fail.
 | `CACHE_DIR` | `~/.vibe-trading/cache/gateway` | Must be outside this checkout |
 
 Cache paths ignore `VIBE_TRADING_HOME`. Disk writes are atomic and locked across
-processes. Expired files/memory are cleaned at startup, writes and at most every
-60 seconds; reads never extend expiry. The lock file adds a few bytes outside the
-JSON budget. No cron is installed. Tick events are never persisted.
+processes. Expired files/memory and idle route-health records are cleaned at startup, writes and at most every
+30 seconds; reads never extend expiry. The lock file adds a few bytes outside the
+JSON budget. No cron is installed. Tick events are never persisted. Idle RAM is reclaimed even
+if the disk cache is unavailable. Last-unsubscribe clears the shared snapshot and
+queued values immediately; cache entries are evicted after at most idle limit +
+cleanup interval (150 seconds with defaults). Disk entries expire after 900 seconds
+even if read repeatedly; the byte cap can evict them earlier.
 
 Each stream client retains at most one pending value per topic (up to eight topics
 per client), and shared payloads are references rather than per-client deep copies.
@@ -140,3 +148,8 @@ recovery, REST fallback and cessation after socket recovery, source-time orderin
 full-expiration coverage, network-route learning/expiry, historical fallback,
 cache cleanup, timeouts and authentication. See `VALIDATION.md` for measured live
 results and remaining limits. One-machine validation is not a global network SLA.
+
+Other existing research tools/backtest entrypoints retain their current loader calls;
+this branch provides the shared gateway and connects the existing options-chain
+Agent/MCP surface. A wholesale Agent/tool migration is not part of this isolated
+backend change. No frontend file differs from the branch base on `main`.

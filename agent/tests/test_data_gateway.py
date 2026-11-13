@@ -242,3 +242,27 @@ def test_full_expiry_does_not_silently_keep_only_nearby_strikes():
     assert full["data"]["calls_count"] == full["data"]["puts_count"] == 300
     assert full["data"]["complete_expiration"]
     assert full["gateway"]["quality"] == "delayed"
+
+
+def test_idle_memory_is_silently_reclaimed_even_if_disk_is_still_fresh(tmp_path, monkeypatch):
+    import src.data_gateway.cache as module
+
+    c = Cache(Config(cache_dir=tmp_path, memory_idle=10, stale_ttl=900))
+    c.put("idle", {"ok": True})
+    now = time.monotonic()
+    monkeypatch.setattr(module.time, "monotonic", lambda: now + 11)
+    c.prune()
+    assert c.stats()["memory_entries"] == 0
+    assert not c.last_access and c.memory_size == 0
+    assert c.stats()["disk_entries"] == 1
+    assert c.get("idle")["payload"]["ok"]  # repopulate only on actual demand
+
+
+def test_idle_cleanup_runs_without_any_followup_request(gateways):
+    g = gateways({"test": data}, memory_idle=0.02, cleanup_interval=0.01)
+    assert g.options_chain("AAPL")["ok"]
+    deadline = time.monotonic() + 1
+    while g.cache.stats()["memory_entries"] and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert g.cache.stats()["memory_entries"] == 0
+    assert g.cache.stats()["disk_entries"] == 1

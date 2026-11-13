@@ -100,3 +100,12 @@ get_options_chain(ticker="AAPL.US", expiration=1718236800)
   }
 }
 ```
+
+
+For full-expiration research, request `offset=0`, then follow `data.next_offset`.
+Each page contains up to 60 rows per side in strike order. Verify the acquisition
+time remains the same across pages; restart collection if it changes. The
+HTTP gateway also offers `GET /data/options?full=true` for a bounded full snapshot.
+Continuous subscription events are available at `/data/stream` and through
+`python -m src.data_gateway watch options:AAPL`. A continuous subscription to a
+delayed source still carries delayed prices.

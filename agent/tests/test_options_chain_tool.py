@@ -91,3 +91,23 @@ def test_tool_caps_near_spot_without_losing_atm(source):
     response = json.loads(OptionsChainTool().execute(ticker="AAPL"))
     assert response["data"]["calls_count"] == 60
     assert any(row["strike"] == 200 for row in response["data"]["calls"])
+
+
+def test_tool_pages_all_strikes_beyond_the_near_spot_window(source):
+    for side, letter in (("calls", "C"), ("puts", "P")):
+        source.return_value["options"][0][side] = [
+            {
+                "contractSymbol": f"AAPL300101{letter}{strike * 1000:08d}",
+                "strike": strike,
+                "expiration": 1893456000,
+                "bid": 3,
+                "ask": 4,
+            }
+            for strike in range(1, 301)
+        ]
+    response = json.loads(OptionsChainTool().execute(ticker="AAPL", offset=240))
+    assert response["ok"]
+    assert response["data"]["calls"][0]["strike"] == 241
+    assert response["data"]["calls"][-1]["strike"] == 300
+    assert response["data"]["next_offset"] is None
+    assert not response["data"]["complete_expiration"]

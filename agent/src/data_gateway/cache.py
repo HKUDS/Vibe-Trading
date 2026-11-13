@@ -18,6 +18,7 @@ class Cache:
         self.config = config
         self.memory: OrderedDict[str, bytes] = OrderedDict()
         self.memory_size = 0
+        self.last_access: dict[str, float] = {}
         self.lock = threading.RLock()
         self.directory = config.cache_dir
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -50,12 +51,15 @@ class Cache:
 
     def _remember(self, key: str, raw: bytes):
         old = self.memory.pop(key, None)
+        self.last_access.pop(key, None)
         self.memory_size -= len(old) if old else 0
         if len(raw) <= self.config.memory_bytes:
             self.memory[key] = raw
+            self.last_access[key] = time.monotonic()
             self.memory_size += len(raw)
         while self.memory and (self.memory_size > self.config.memory_bytes or len(self.memory) > self.config.entries):
-            _, value = self.memory.popitem(last=False)
+            removed, value = self.memory.popitem(last=False)
+            self.last_access.pop(removed, None)
             self.memory_size -= len(value)
 
     def _prune(self, reserve: int = 0):
@@ -79,13 +83,24 @@ class Cache:
         # Temporary files are only written while this same process lock is held.
         for path in self.directory.glob("*.tmp"):
             path.unlink(missing_ok=True)
-        for key, raw in list(self.memory.items()):
-            if now - json.loads(raw)["stored_at"] > self.config.stale_ttl:
-                del self.memory[key]
-                self.memory_size -= len(raw)
+        self.prune_memory()
+
+    def prune_memory(self):
+        """Reclaim idle/expired RAM even when the disk cache is unavailable."""
+        with self.lock:
+            wall, monotonic = time.time(), time.monotonic()
+            for key, raw in list(self.memory.items()):
+                if (
+                    monotonic - self.last_access[key] >= self.config.memory_idle
+                    or wall - json.loads(raw)["stored_at"] > self.config.stale_ttl
+                ):
+                    del self.memory[key]
+                    self.last_access.pop(key, None)
+                    self.memory_size -= len(raw)
 
     def prune(self):
         """Reclaim expired entries and enforce disk and memory budgets."""
+        self.prune_memory()
         with self.lock, self.disk_lock():
             self._prune()
 

@@ -7,7 +7,7 @@ subscribed at import or when no clients remain; stream ticks never go to disk.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import math
 import re
@@ -22,14 +22,27 @@ class Topic:
     kind: str
     symbol: str
     expiration: int | None = None
+    interval: str | None = None
 
     @property
     def key(self):
+        if self.kind == "bars":
+            return f"bars:{self.symbol}:{self.interval}"
         return f"{self.kind}:{self.symbol}" + (f":{self.expiration}" if self.expiration else "")
 
     @classmethod
     def parse(cls, value: str):
-        parts = value.strip().upper().split(":")
+        raw = value.strip().split(":")
+        parts = [p.upper() for p in raw]
+        if len(parts) in (2, 3) and parts[0] == "BARS":
+            from src.market_data import _SOURCE_PATTERNS
+
+            interval = raw[2] if len(raw) == 3 else "1D"
+            if interval not in {"1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"}:
+                raise ValueError("Unsupported bar interval; 1m is a minute and 1M is a month")
+            if parts[1].startswith("LOCAL") or not any(pattern.match(parts[1]) for pattern, _ in _SOURCE_PATTERNS):
+                raise ValueError("Expected a public symbol with its market suffix")
+            return cls("bars", parts[1], interval=interval)
         if len(parts) in (2, 3) and parts[0] == "OPTIONS" and re.fullmatch(r"[A-Z][A-Z0-9.-]{0,15}", parts[1]):
             expiration = int(parts[2]) if len(parts) == 3 and parts[2].isdigit() else None
             if len(parts) == 3 and (expiration is None or not 0 < expiration < 32503680000):
@@ -203,11 +216,18 @@ class StreamHub:
             channel.listeners.discard(listener)
             if not channel.listeners:
                 del self.channels[topic.key]
+                channel.latest = None
                 channel.task.cancel()
                 tasks.append(channel.task)
+                channel.task = None
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+            tasks.clear()
+            # Let cancellation callbacks release their exception frames before
+            # returning ownership to an idle caller.
+            await asyncio.sleep(0)
         listener.pending.clear()
+        listener.wake.clear()
 
     def publish(self, topic, event, payload):
         channel = self.channels.get(topic.key)
@@ -226,9 +246,22 @@ class StreamHub:
                 if topic.kind == "crypto":
                     await self._hybrid(topic)
                     return
-                value = await asyncio.to_thread(
-                    self.gateway.options_chain, topic.symbol, topic.expiration, full=True, allow_stale=True
-                )
+                if topic.kind == "bars":
+                    today = datetime.now(timezone.utc).date()
+                    days = 2 if topic.interval in {"1m", "5m", "15m", "30m", "1H", "4H"} else 40
+                    value = await asyncio.to_thread(
+                        self.gateway.bars,
+                        codes=[topic.symbol],
+                        start_date=(today - timedelta(days=days)).isoformat(),
+                        end_date=today.isoformat(),
+                        interval=topic.interval,
+                        max_rows=100,
+                    )
+                    value.setdefault("gateway", {}).update({"quality": "historical_bars", "transport": "rest_poll"})
+                else:
+                    value = await asyncio.to_thread(
+                        self.gateway.options_chain, topic.symbol, topic.expiration, full=True, allow_stale=True
+                    )
                 self.publish(topic, "snapshot" if value.get("ok") else "source_error", value)
                 retry = 1
                 refreshing = value.get("gateway", {}).get("refreshing")
@@ -316,6 +349,7 @@ class StreamHub:
             "delivery": "latest_snapshot",
             "replay": False,
             "capabilities": {
+                "bars": "existing market routes; periodically refreshed bars, not quote ticks",
                 "options": "US standard contracts; delayed/unknown snapshots",
                 "crypto": "OKX spot; public WebSocket with same-venue REST fallback",
             },

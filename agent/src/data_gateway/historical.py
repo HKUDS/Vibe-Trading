@@ -29,6 +29,9 @@ def fetch_bars(gateway, **params):
         first = detect_source(code) if requested == "auto" else requested
         strict = registry.is_no_network_fallback_source(first)
         baseline = [first] if strict else list(dict.fromkeys([first, *registry.FALLBACK_CHAINS.get(market, [])]))
+        override = registry.get_source_order_override(market)
+        if requested == "auto" and not strict and override is not None and first in override:
+            baseline = list(override)
         candidates = gateway.router.order(scope, baseline) if requested == "auto" and not strict else baseline
         found = False
         diagnostics[code] = []
@@ -45,7 +48,7 @@ def fetch_bars(gateway, **params):
             def acquire(source=source, code=code, params=dict(params)):
                 def exact_loader(name):
                     cls = registry.LOADER_REGISTRY.get(name)
-                    if cls is None or not cls.is_available():
+                    if cls is None or not cls().is_available():
                         raise GatewayError("Source is not configured or installed")
                     return cls
 
@@ -73,7 +76,13 @@ def fetch_bars(gateway, **params):
                     continue
                 gateway.router.record(scope, source, True, time.monotonic() - started)
                 combined.update({k: v for k, v in result.items() if not k.startswith("_")})
-                provenance.update(result.get("_provenance", {}))
+                for symbol, stamp in result.get("_provenance", {}).items():
+                    provenance[symbol] = {
+                        **stamp,
+                        "requested_source": requested,
+                        "detected_source": first,
+                        "fallback_used": stamp.get("fallback_used", False) or source != first,
+                    }
                 # Preserve normalization/caliber warnings from the existing layer.
                 for key, value in result.items():
                     if key.startswith("_") and key not in {"_provenance", "_unresolved", "_diagnostics"}:

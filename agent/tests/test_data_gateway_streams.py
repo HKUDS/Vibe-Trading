@@ -124,3 +124,63 @@ def test_quote_identity_and_nonfinite_values_are_rejected():
     message["data"][0]["bidPx"] = "10"
     message["data"][0]["instId"] = "ETH-USDT"
     assert okx_quote(topic, message) is None
+
+
+def test_bar_topics_preserve_case_sensitive_intervals_and_never_subscribe_local_files():
+    assert Topic.parse("bars:AAPL.US:1m").interval == "1m"
+    assert Topic.parse("bars:AAPL.US:1M").interval == "1M"
+    assert Topic.parse("bars:00700.HK").key == "bars:00700.HK:1D"
+    with pytest.raises(ValueError):
+        Topic.parse("bars:local:file.csv")
+
+
+def test_bar_subscription_polls_again_and_keeps_historical_quality(tmp_path):
+    async def run():
+        calls = []
+
+        class Gateway:
+            config = replace(Config(tmp_path), stream_poll=0.02, ttl=0.02)
+
+            def bars(self, **params):
+                calls.append(params)
+                return {"ok": True, "data": {"AAPL.US": [{"close": 100}]}, "gateway": {}}
+
+        hub = StreamHub(Gateway())
+        listener = hub.subscribe([Topic.parse("bars:AAPL.US:1m")])
+        first = (await asyncio.wait_for(listener.take(), 1))[0]
+        second = (await asyncio.wait_for(listener.take(), 1))[0]
+        assert len(calls) >= 2 and calls[0]["interval"] == "1m"
+        assert first["payload"]["gateway"]["quality"] == "historical_bars"
+        assert second["id"] > first["id"]
+        await hub.close()
+
+    asyncio.run(run())
+
+
+def test_repeated_subscribe_cancel_releases_snapshot_objects(tmp_path):
+    import weakref
+
+    async def run():
+        class Payload(dict):
+            pass
+
+        references = []
+
+        async def feed(topic, publish):
+            payload = Payload(ok=True, data={"blob": "x" * 100000})
+            references.append(weakref.ref(payload))
+            publish("snapshot", payload)
+            await asyncio.Future()
+
+        hub = StreamHub(SimpleNamespace(config=Config(tmp_path)), crypto_feed=feed, snapshot_feed=no_snapshot)
+        for _ in range(100):
+            listener = hub.subscribe([Topic.parse("crypto:BTC-USDT")])
+            await asyncio.wait_for(listener.take(), 1)
+            await hub.unsubscribe(listener)
+        assert len(references) == 100
+        assert all(ref() is None for ref in references)
+        assert hub.status()["clients"] == hub.status()["pending_updates"] == 0
+        assert not hub.channels
+        await hub.close()
+
+    asyncio.run(run())

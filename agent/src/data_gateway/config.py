@@ -38,6 +38,8 @@ class Config:
     stream_snapshot_interval: float = 15
     health_ttl: float = 300
     stream_quote_age: float = 30
+    memory_idle: float = 120
+    cleanup_interval: float = 30
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -77,4 +79,6 @@ class Config:
             stream_snapshot_interval=number("STREAM_SNAPSHOT_INTERVAL", 15, 5, 300),
             health_ttl=number("HEALTH_TTL", 300, 30, 3600),
             stream_quote_age=number("STREAM_QUOTE_AGE", 30, 5, 300),
+            memory_idle=number("MEMORY_IDLE", 120, 1, 3600),
+            cleanup_interval=number("CLEANUP_INTERVAL", 30, 1, 60),
         )
