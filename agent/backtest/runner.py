@@ -91,6 +91,7 @@ class BacktestConfigSchema(BaseModel):
     interval: str = "1D"
     engine: str = "daily"
     position_adjustment: Literal["hold", "rebalance"] = "hold"
+    intentional_signal_delay_bars: int = Field(default=0, ge=0, strict=True)
     rebalance_mask: RebalanceMask = None
     # Under "rebalance", a resize executes only once the held weight has
     # drifted further than this fraction of its target -- the tolerance band
@@ -1521,6 +1522,10 @@ def main(run_dir: Path) -> None:
         sys.exit(1)
 
     try:
+        if config.get("engine", "daily") == "daily":
+            from backtest.signal_timing import validate_signal_timing
+
+            validate_signal_timing(signal_path, config.get("intentional_signal_delay_bars", 0))
         signal_module = _load_module_from_file(signal_path, "signal_engine")
     except ValueError as exc:
         # Source-level AST validation (circular self-import, unsafe imports,

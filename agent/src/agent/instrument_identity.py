@@ -1,33 +1,24 @@
 """Instrument identity: symbol shapes, resolution, and tool authorization.
 
-The identity half of the gate. Symbol normalisation and venue/currency/type
-inference live here as free functions because they are pure text-to-text; the
-mixin holds the run-scoped state machine that locks an identity and decides
-which tool call may use it.
+Symbol normalisation and venue/currency/type inference are pure helpers.
+IdentityLedger owns resolver state and tool authorization. It has no numeric
+evidence scanner, answer validator, or text-rewriting interface.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
-from src.agent.resolution_context import candidate_market
+from src.agent.resolution_context import ResolutionContext, candidate_market
 from src.market_data import canonical_fx_pair
 
 _RESOLVER_TOOL = "search_symbol"
-
-
-_PRIVATE_COMPANY_SKILL_NAMES = {
-    "private-company",
-    "private-company-analysis",
-    "private-company-research",
-    "private_company",
-    "private_company_analysis",
-    "private_company_research",
-}
+IDENTITY_ARTIFACT = "identity_evidence.json"
 
 
 _SYMBOL_ARGUMENT_KEYS = {
@@ -40,17 +31,6 @@ _SYMBOL_ARGUMENT_KEYS = {
     "underlying",
     "underlyings",
 }
-
-
-# Workflow selection must not race an in-flight resolution or proceed on
-# contradicted identity. It may proceed once the resolver has answered — and
-# ``ambiguous`` is an answer: a screening request ("推荐低价高增长股票") resolves to
-# many candidates by design. Requiring a locked identity there stalls every
-# discovery task before it can load a screening skill, which is #955.
-_RESOLUTION_INCOMPLETE_STATUSES = {"unresolved", "conflicting", "invalidated"}
-
-
-_MAX_TRACKED_SYMBOLS = 5_000
 
 
 # Project-style canonical symbols. A bare model-generated ticker is still
@@ -78,16 +58,36 @@ _JOINED_CRYPTO_QUOTE_SUFFIXES = ("USDT", "USDC", "BUSD", "TUSD")
 # ``test_crypto_pair_tables_match_the_resolver`` fails if they drift. ``USD``
 # is the one quote the resolver accepts that is NOT unambiguous, so it is
 # excluded here and decided by the base whitelist below instead.
-_CRYPTO_QUOTE_ASSETS = frozenset(
-    {"USDT", "USDC", "BUSD", "TUSD", "FDUSD", "BTC", "ETH", "BNB"}
-)
+_CRYPTO_QUOTE_ASSETS = frozenset({"USDT", "USDC", "BUSD", "TUSD", "FDUSD", "BTC", "ETH", "BNB"})
 
 
 _CRYPTO_USD_BASES = frozenset(
     {
-        "BTC", "ETH", "BNB", "SOL", "ADA", "XRP", "DOGE", "TRX", "DOT",
-        "MATIC", "AVAX", "LINK", "LTC", "BCH", "ETC", "XLM", "ATOM",
-        "FIL", "APT", "NEAR", "ALGO", "SAND", "MANA", "AXS", "XAUT",
+        "BTC",
+        "ETH",
+        "BNB",
+        "SOL",
+        "ADA",
+        "XRP",
+        "DOGE",
+        "TRX",
+        "DOT",
+        "MATIC",
+        "AVAX",
+        "LINK",
+        "LTC",
+        "BCH",
+        "ETC",
+        "XLM",
+        "ATOM",
+        "FIL",
+        "APT",
+        "NEAR",
+        "ALGO",
+        "SAND",
+        "MANA",
+        "AXS",
+        "XAUT",
         "PAXG",
     }
 )
@@ -232,10 +232,7 @@ def _query_key(value: Any) -> str:
 
 def _scan_symbols(text: str) -> set[str]:
     """Return the canonical symbols written anywhere in a blob of text."""
-    return {
-        _normalize_symbol(match.group(0))
-        for match in _CANONICAL_SYMBOL_RE.finditer(text or "")
-    }
+    return {_normalize_symbol(match.group(0)) for match in _CANONICAL_SYMBOL_RE.finditer(text or "")}
 
 
 def _infer_venue(symbol: str) -> str | None:
@@ -285,9 +282,7 @@ def _infer_venue(symbol: str) -> str | None:
     # registry, contradicting the engine classifier that already routes it to
     # ``forex`` (#1280).
     if "-" in upper or "/" in upper:
-        base, _, quote = (
-            upper.partition("-") if "-" in upper else upper.partition("/")
-        )
+        base, _, quote = upper.partition("-") if "-" in upper else upper.partition("/")
         if quote in _CRYPTO_QUOTE_ASSETS:
             return "crypto_or_fx"
         if quote == "USD" and base in _CRYPTO_USD_BASES:
@@ -386,9 +381,7 @@ def _infer_instrument_type(symbol: str, candidate_type: Any = None) -> str:
     # ``GBP-USD`` are NOT crypto and resolve as ``forex`` (the per-pair
     # engine classifier decides the final market downstream).
     if "-" in upper or "/" in upper:
-        base, _, quote = (
-            upper.partition("-") if "-" in upper else upper.partition("/")
-        )
+        base, _, quote = upper.partition("-") if "-" in upper else upper.partition("/")
         if quote in _CRYPTO_QUOTE_ASSETS:
             return "crypto"
         if quote == "USD" and base in _CRYPTO_USD_BASES:
@@ -437,7 +430,7 @@ class ToolAuthorization:
                 "symbols": list(self.symbols),
                 "identity": dict(identity),
                 "required_action": (
-                    "Call search_symbol in a separate assistant tool turn, wait for "
+                    "Call search_symbol first and wait for "
                     "its result, then reuse the exact locked symbol and venue. If the "
                     "resolver answers with a shortlist rather than one instrument, "
                     "show the candidates and ask the user which one to use — narrowing "
@@ -448,8 +441,35 @@ class ToolAuthorization:
         )
 
 
-class _IdentityMixin:
-    """Identity behaviour of :class:`GroundingLedger`."""
+class IdentityLedger:
+    """Instrument resolution and tool authorization; no answer inspection."""
+
+    def __init__(
+        self,
+        *,
+        run_dir: Path,
+        user_message: str,
+        history: Sequence[Mapping[str, Any]] | None = None,
+        contextual_identity_constraints: bool = True,
+    ) -> None:
+        """Initialize identity state from explicit symbols and relevant constraints.
+
+        Args:
+            run_dir: Directory for the identity diagnostic artifact.
+            user_message: Current request; explicit canonical symbols seed state.
+            history: Prior messages used for subject-specific resolver constraints.
+            contextual_identity_constraints: Enable those contextual constraints.
+        """
+        self.run_dir = Path(run_dir)
+        self.resolution_context = ResolutionContext.from_messages(
+            user_message,
+            history,
+            enabled=contextual_identity_constraints,
+        )
+        self._identities: dict[str, IdentityRecord] = {}
+        self._identity_required = False
+        self._seed_symbols(user_message, source="user_message")
+        self.persist()
 
     def authorize_tool_call(
         self,
@@ -460,13 +480,13 @@ class _IdentityMixin:
         call_id: str,
         batch_identity_status: str | None = None,
     ) -> ToolAuthorization:
-        """Authorize against identity state frozen before the whole LLM batch.
+        """Authorize against the identity state before this execution segment.
 
         Args:
             tool_name: Requested tool.
             arguments: Model-supplied arguments.
             batch_authorized_symbols: Snapshot taken before processing any call
-                from this assistant response.
+                from this execution segment.
             call_id: Provider tool-call identity.
             batch_identity_status: Aggregate identity status from the same
                 pre-batch snapshot. Defaults to the current state for direct
@@ -474,29 +494,15 @@ class _IdentityMixin:
 
         Returns:
             An allow/block decision. Resolver calls are allowed but their result
-            cannot affect another call in this same batch.
+            can affect dependent calls scheduled in the next execution segment.
         """
         if tool_name == _RESOLVER_TOOL:
             self._identity_required = True
-            self._buffer_output = True
             self._begin_resolution(str(arguments.get("query") or ""), call_id)
             return ToolAuthorization(allowed=True)
 
-        if self._is_private_company_skill(tool_name, arguments):
-            return self._authorize_private_company_skill()
-
-        if tool_name == "load_skill" and self._identity_required:
-            frozen_status = batch_identity_status or self.identity_status
-            if frozen_status in _RESOLUTION_INCOMPLETE_STATUSES:
-                return ToolAuthorization(
-                    allowed=False,
-                    error_code="identity_required",
-                    message=(
-                        "Market-sensitive workflow selection is blocked while instrument "
-                        "resolution is in flight or contradicted; a resolver result from "
-                        "this same batch cannot be consumed."
-                    ),
-                )
+        # Reading methodology does not choose or change an instrument identity.
+        if tool_name == "load_skill":
             return ToolAuthorization(allowed=True)
 
         symbols = tuple(self._extract_symbol_arguments(arguments))
@@ -504,7 +510,6 @@ class _IdentityMixin:
             return ToolAuthorization(allowed=True)
 
         self._identity_required = True
-        self._buffer_output = True
         authorized = {_normalize_symbol(item) for item in batch_authorized_symbols}
         frozen_status = batch_identity_status or self.identity_status
         if frozen_status != "locked" or not authorized:
@@ -516,28 +521,19 @@ class _IdentityMixin:
                     else "identity_required"
                 ),
                 message=(
-                    "A canonical, non-conflicting identity was not locked before this "
-                    "assistant tool-call batch started. A resolver result from this same "
-                    "batch cannot be consumed."
+                    "A canonical, non-conflicting identity has not been resolved for this "
+                    "call. Resolve the instrument before requesting its data."
                 ),
                 symbols=symbols,
             )
 
-        mismatched = tuple(
-            symbol
-            for symbol in symbols
-            if self._match_authorized_symbol(symbol, authorized) is None
-        )
+        mismatched = tuple(symbol for symbol in symbols if self._match_authorized_symbol(symbol, authorized) is None)
         if mismatched:
             message = (
                 "Consumer symbol/venue differs from the locked resolver identity; "
                 "silent suffix or exchange rewrites are forbidden."
             )
-            hints = [
-                hint
-                for symbol in mismatched
-                for hint in self._venue_mismatch_hints(symbol, authorized)
-            ]
+            hints = [hint for symbol in mismatched for hint in self._venue_mismatch_hints(symbol, authorized)]
             if hints:
                 message += " " + " ".join(hints)
             return ToolAuthorization(
@@ -565,23 +561,15 @@ class _IdentityMixin:
         authorized = {_normalize_symbol(item) for item in authorized_symbols}
         if "." in requested:
             base = requested.rsplit(".", 1)[0]
-            same_issuer = sorted(
-                item
-                for item in authorized
-                if "." in item and item.rsplit(".", 1)[0] == base
-            )
+            same_issuer = sorted(item for item in authorized if "." in item and item.rsplit(".", 1)[0] == base)
             if same_issuer:
                 return [
                     f"[{requested_symbol} is a second venue of {', '.join(same_issuer)}; "
-                    f"call search_symbol('{requested_symbol}') in a separate turn "
+                    f"call search_symbol('{requested_symbol}') before this data call "
                     f"before querying it.]"
                 ]
             return []
-        matches = sorted(
-            item
-            for item in authorized
-            if "." in item and item.rsplit(".", 1)[0] == requested
-        )
+        matches = sorted(item for item in authorized if "." in item and item.rsplit(".", 1)[0] == requested)
         if len(matches) > 1:
             return [
                 f"[{requested_symbol} matches multiple locked identities "
@@ -621,11 +609,7 @@ class _IdentityMixin:
             return requested
         if "." in requested:
             return None
-        matches = [
-            symbol
-            for symbol in authorized
-            if "." in symbol and symbol.rsplit(".", 1)[0] == requested
-        ]
+        matches = [symbol for symbol in authorized if "." in symbol and symbol.rsplit(".", 1)[0] == requested]
         return matches[0] if len(matches) == 1 else None
 
     def _seed_symbols(self, text: str, *, source: str) -> None:
@@ -647,7 +631,6 @@ class _IdentityMixin:
                 version=version,
             )
             self._identity_required = True
-            self._buffer_output = True
 
     def _hold_locked(self, existing: IdentityRecord | None) -> bool:
         """Whether a settled record must survive a non-conclusive resolver step.
@@ -727,7 +710,11 @@ class _IdentityMixin:
             return
 
         raw_candidates = data.get("candidates")
-        candidates = [dict(item) for item in raw_candidates if isinstance(item, dict)] if isinstance(raw_candidates, list) else []
+        candidates = (
+            [dict(item) for item in raw_candidates if isinstance(item, dict)]
+            if isinstance(raw_candidates, list)
+            else []
+        )
         resolver_candidates = candidates
         relevant_constraints = self.resolution_context.constraints_for(query)
         constraint_audit = [item.audit_record() for item in relevant_constraints]
@@ -741,16 +728,11 @@ class _IdentityMixin:
             # one at all — so an entity that simply is not listed came back as
             # ``invalidated``, which blocks the run rather than answering it.
             # A source that skipped an unsupported query shape is not an outage.
-            clean_sources = [
-                str(name)
-                for name, value in sources.items()
-                if str(value).casefold() == "ok"
-            ]
+            clean_sources = [str(name) for name, value in sources.items() if str(value).casefold() == "ok"]
             failed_sources = [
                 str(name)
                 for name, value in sources.items()
-                if str(value).casefold() != "ok"
-                and not str(value).casefold().startswith("skipped")
+                if str(value).casefold() != "ok" and not str(value).casefold().startswith("skipped")
             ]
             self._identities[key] = IdentityRecord(
                 query=query,
@@ -763,17 +745,9 @@ class _IdentityMixin:
             )
             return
 
-        market_values = {
-            item.value
-            for item in relevant_constraints
-            if item.dimension == "market" and item.explicit
-        }
+        market_values = {item.value for item in relevant_constraints if item.dimension == "market" and item.explicit}
         if market_values:
-            constrained = [
-                candidate
-                for candidate in candidates
-                if candidate_market(candidate) in market_values
-            ]
+            constrained = [candidate for candidate in candidates if candidate_market(candidate) in market_values]
             if constrained:
                 candidates = constrained
             else:
@@ -903,13 +877,9 @@ class _IdentityMixin:
         for key, record in self._identities.items():
             if record.status != "ambiguous":
                 continue
-            offered = {
-                _normalize_symbol(candidate.get("symbol")) for candidate in record.candidates
-            }
+            offered = {_normalize_symbol(candidate.get("symbol")) for candidate in record.candidates}
             if symbol in offered:
-                self._identities[key] = replace(
-                    record, status="superseded", updated_at=_utc_now()
-                )
+                self._identities[key] = replace(record, status="superseded", updated_at=_utc_now())
 
     @staticmethod
     def _choose_candidate(
@@ -951,50 +921,6 @@ class _IdentityMixin:
             return strong[0]
         return None
 
-    def _authorize_private_company_skill(self) -> ToolAuthorization:
-        """Keep private-company routing symmetric with locked listing evidence."""
-        locked_listings = [
-            record
-            for record in self._identities.values()
-            if record.status == "locked"
-            and record.instrument_type in {"listed_security", "fund"}
-        ]
-        if locked_listings:
-            return ToolAuthorization(
-                allowed=False,
-                error_code="identity_conflict",
-                message=(
-                    "A resolver has locked this entity to a listed security. Model memory "
-                    "cannot replace that evidence with a private-company workflow."
-                ),
-                symbols=tuple(
-                    record.symbol for record in locked_listings if record.symbol
-                ),
-            )
-        if self.identity_status == "not_found" or not self._identity_required:
-            return ToolAuthorization(allowed=True)
-        return ToolAuthorization(
-            allowed=False,
-            error_code="identity_required",
-            message=(
-                "Private-company routing requires a completed resolver result with clean "
-                "not_found status; current identity is unresolved, ambiguous, or invalidated."
-            ),
-        )
-
-    @staticmethod
-    def _is_private_company_skill(
-        tool_name: str,
-        arguments: Mapping[str, Any],
-    ) -> bool:
-        """Return whether this call selects a private-company skill."""
-        if tool_name != "load_skill":
-            return False
-        name = str(arguments.get("name") or "").strip().casefold()
-        return name in _PRIVATE_COMPANY_SKILL_NAMES or (
-            "private" in name and "company" in name
-        )
-
     @staticmethod
     def _extract_symbol_arguments(arguments: Mapping[str, Any]) -> list[str]:
         """Extract model-selected identities from well-known argument keys."""
@@ -1011,43 +937,83 @@ class _IdentityMixin:
                     symbols.append(symbol)
         return symbols
 
-    def _track_session_symbols(
-        self,
-        arguments: Mapping[str, Any],
-        result: str,
-    ) -> None:
-        """Widen the run's instrument surface from one succeeding tool call.
+    @property
+    def authorized_symbols(self) -> set[str]:
+        """Return exact symbols locked before the next tool batch."""
+        return {record.symbol for record in self._identities.values() if record.status == "locked" and record.symbol}
 
-        Both sides of a successful call count. The result is the strong signal —
-        a resolver shortlist, an OHLC panel, a filing index. The arguments are
-        the weaker one, but a symbol the model handed to a tool that then
-        succeeded has at least been exercised against a real system, whereas a
-        symbol that surfaces for the first time in the final prose has been
-        exercised against nothing. Failed calls are deliberately excluded, so a
-        blocked or erroring call never launders an invented ticker.
+    @property
+    def identity_status(self) -> str:
+        """Return the aggregate first-class identity state.
 
-        Bare symbol arguments are tracked separately as roots. Many tools take a
-        bare ticker by contract, so a run that legitimately fetched ``AAPL``
-        never writes ``AAPL.US`` into any argument or result. Without the root,
-        the canonical spelling the rest of this module demands — see
-        ``canonical_symbol_not_surfaced`` — would be the one spelling this gate
-        rejects.
-
-        Args:
-            arguments: Exact normalized tool arguments.
-            result: Full raw result, before model-context truncation.
+        ``conflicting`` is the only state that outranks a successful lock: two
+        sources contradicting each other about one query is a fact about the
+        data, not a gap in it. Every other blocking state means "not known
+        yet", and a side query that failed, went unanswered, or returned a
+        shortlist must not retract an identity the run did lock — one flaky
+        resolver call otherwise poisons every remaining answer in the session,
+        with no path back. Per-symbol safety does not depend on this aggregate:
+        a consumer still has to match a locked symbol in
+        :meth:`_match_authorized_symbol` before it may run.
         """
-        if len(self._session_symbols) >= _MAX_TRACKED_SYMBOLS:
+        records = list(self._identities.values())
+        if not records:
+            return "unresolved" if self._identity_required else "not_required"
+        statuses = {record.status for record in records}
+        if "conflicting" in statuses:
+            return "conflicting"
+        if "locked" in statuses:
+            return "locked"
+        for blocking in ("ambiguous", "invalidated", "unresolved"):
+            if blocking in statuses:
+                return blocking
+        if "not_found" in statuses:
+            return "not_found"
+        return "unresolved"
+
+    def identity_summary(self) -> dict[str, Any]:
+        """Return instrument state for tool errors and persisted traces."""
+        return {
+            "status": self.identity_status,
+            "authorized_symbols": sorted(self.authorized_symbols),
+            "records": [asdict(record) for record in self._identities.values()],
+        }
+
+    def ingest_tool_result(
+        self, *, tool_name: str, arguments: Mapping[str, Any], result: str, call_id: str, success: bool
+    ) -> None:
+        """Update resolution from a resolver result; other tools cannot lock identities."""
+        if tool_name != _RESOLVER_TOOL:
             return
+        if success:
+            try:
+                payload = json.loads(result)
+            except (ValueError, TypeError):
+                payload = None
+            self._ingest_resolution(arguments, payload if isinstance(payload, dict) else None, call_id)
+        else:
+            self._finish_failed_resolution(arguments, call_id)
+        self.persist()
+
+    def persist(self) -> None:
+        """Atomically save identity state without an answer-validation ledger."""
         try:
-            rendered_arguments = json.dumps(arguments, ensure_ascii=False, default=str)
-        except (TypeError, ValueError):
-            rendered_arguments = ""
-        found = _scan_symbols(rendered_arguments) | _scan_symbols(result)
-        room = _MAX_TRACKED_SYMBOLS - len(self._session_symbols)
-        self._session_symbols.update(sorted(found)[:room])
-        self._session_symbol_roots.update(
-            symbol
-            for symbol in self._extract_symbol_arguments(arguments)
-            if "." not in symbol
-        )
+            path = self.run_dir / "artifacts" / IDENTITY_ARTIFACT
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "identity": self.identity_summary(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(path)
+        except OSError:
+            # A failed diagnostic write must not interrupt research.
+            return

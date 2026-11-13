@@ -57,18 +57,24 @@
 
 ## 📰 ニュース
 
+- **2026-11-13** 🛠️ **調査結果の配信と計算ツールを刷新** — 数値の自動削除、強制書き直し、形式による完了判定を撤廃し、調査回答を直接ストリーミングします。委員会の実行が中断しても途中成果を保持し、完了済みの作業を再利用して未完了の役割を再開できます。
+  全件の市場データへの参照をシェル不要の QuantLib 計算に接続し、役割間で元の証拠を共有します。Options Lab と `options_payoff` は株式とオプションの組み合わせに対応し、複数案を一度に計算・比較してコスト、損益の上下限、比較方向を返します。実効バックテスト費用、出力打ち切り・エラー状態を明示し、実取引の承認範囲と上限を維持します。**未リリース。**
+
+- **2026-11-12** 🛠️ **バックテストの時系列、レポート数値、調査の完了判定を修正** — シャドー口座が指定された初期資金を使用し、出力トークン上限で途切れたワーカー応答を完了扱いしなくなりました。委員会の PM は有効な上流レポートを再取得なしで統合でき、ネイティブ Anthropic アダプターの既定出力枠は変更可能な 16,384 トークンです。
+  生成戦略の出力目標に追加のシフトを検出した場合、意図的な遅延と明示しない限り実行を拒否します。指標の lookback は引き続き使えます。Grounding は証拠の検証を維持しつつ、金額単位の表記や正確な観測値の宣言に対応しました。SPY／GLD の実際のバックテストは、全 206／140 件の約定と総リターンで独立した帳簿計算と一致しました。**未リリース。**
+
 - **2026-11-11** 🧾 **ペーパートレードの部分約定と独立した帳簿照合** — 中国A株の5分足ペーパートレードで、注文ごとの出来高上限、部分約定、注文状態の出力を任意に有効化できます（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)）。新しい `paper_trade_reconcile` Agent/MCP ツールは、返された約定記録から手数料・現金・保有ポジション・純資産価値（NAV）の計算を独立して照合します（[#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)）。
   対応する複数行の百分率ヘッダーと、原文のラベルを保持した文書内の整数の明示的な引用を正しく処理します（[#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185)、[#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)）。厳密な因子ベンチマークの入力も修正し（[#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)）、チャネルの応答待ちがタイムアウトした際に前のターンの回答を返さないようにしました（[#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)）。
   [@shadowinlife](https://github.com/shadowinlife)、[@he-yufeng](https://github.com/he-yufeng)、[@Jackzigen](https://github.com/Jackzigen)、[@divya0795](https://github.com/divya0795) に感謝します！**`main` に反映済みで、次の pip リリースに含まれます。**
+
+<details>
+<summary>過去のニュース</summary>
 
 - **2026-11-10** 📊 **編集可能な IV サーフェスとオプション分析の修正** — Options Lab で権利行使価格・満期別の IV グリッドを編集できます。観測値と補間値を区別し、外挿は拒否します（[#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)）。
   低価格銘柄のプリセット、数量入力、満期日の表示、再試行、言語切り替え時の読み込み停止、20 レッグ上限を修正。`CF501` など鄭州商品取引所の限月部分が3桁のコードは、中国先物のルールでバックテストされます（[#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)）。
   [@he-yufeng](https://github.com/he-yufeng) と [@GPT-AGI](https://github.com/GPT-AGI) に感謝します！**`main` に反映済みで、次の pip リリースに含まれます。**
 
 - **2026-11-09** 🧭 **選択したリビジョン比較のエクスポートと、識別できないコードを拒否するバックテスト** — 比較中の2つの研究リビジョンを、Web・API・CLI から JSON または Markdown でダウンロードできます（[#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)）。どの市場ルールにも該当しないバックテストのコード（`local:BHP.AX` や `7203.T` など）は、中国A株のルールで実行されることなく、データ取得前に拒否されるようになりました。6桁のみのコードと上海の `.SS` 表記は引き続き使えます。OpenRouter の応答でモデル名が二重に表示されなくなり（[#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)）、`research-artifact export` に空のリビジョン ID を渡すとエラーになります。[@he-yufeng](https://github.com/he-yufeng) と [@Gloubiboulgator](https://github.com/Gloubiboulgator) に感謝します！**`main` に反映済みで、次回の pip リリースに含まれます。**
-
-<details>
-<summary>過去のニュース</summary>
 
 - **2026-11-08** 📝 **研究リビジョンの比較と全履歴のエクスポート** — 任意の2つのリビジョンの本文・根拠・メタデータを比較し（[#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)）、研究の全履歴を JSON または Markdown でエクスポートできます（[#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)）。研究記録の切り替え時には古い応答を無視し、Markdown では元の本文を独立したコードブロックに保存します。因子ウェイトの欠損、一部リターン欠損時の要因分解、IC のサンプル不足、非有限の評価入力、負のエントリー価格での証拠金計算も修正しました。**`main` に反映済みで、次回の pip リリースに含まれます。**
 

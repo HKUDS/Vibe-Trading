@@ -1241,8 +1241,7 @@
       "failed": "Başarısız",
       "steps": "{{count}} adım",
       "continue": "Devam et",
-      "reattach": "Yeniden bağlan",
-      "checkingFigures": "Bu yanıttaki sayılar kontrol ediliyor (tur {{round}})…"
+      "reattach": "Yeniden bağlan"
     },
     "resumeConnector": "Bağlantıyı sürdür",
     "resumeConnectorTitle": "Acil durdurmayı kaldır ve bağlantı faaliyetlerini yeniden etkinleştir",
@@ -1562,6 +1561,8 @@
       "expiryDays": "Vadeye kalan gün",
       "volatility": "Oynaklık (%)",
       "riskFreeRate": "Risksiz faiz (%)",
+      "underlyingQty": "Dayanak varlık birimleri",
+      "underlyingQtyHint": "0: yalnızca opsiyonlar. 1: çarpan kadar hisse tut (çarpan 100 ise 100 hisse).",
       "multiplier": "Çarpan",
       "multiplierHint": "100 = standart ABD hisse opsiyonu sözleşmesi",
       "commissionRate": "Komisyon oranı (%)",
@@ -1683,6 +1684,31 @@
       "noData": "Bu seçim için sözleşme döndürülmedi.",
       "errorTitle": "Opsiyon zinciri alınamıyor",
       "retry": "Tekrar Dene"
+    },
+    "expiryScenarios": {
+      "input": "Vade sonu fiyatları (isteğe bağlı, virgülle ayrılmış)",
+      "title": "Vade sonu senaryoları",
+      "spot": "Vade sonu fiyatı",
+      "pnl": "Vade sonu kâr/zarar",
+      "return": "Hisse nominal tutarı üzerinden getiri"
+    },
+    "comparison": {
+      "title": "Stratejileri karşılaştır",
+      "basis": "Bacakları kaydedip karşılaştırmak için düzenleyin. Güncel giriş fiyatı, hisse pozisyonu, vade ve ücretler ortaktır. Getiri girişteki hisse nominal değerine oranlanır; yalnız opsiyonlarda bu payda yoktur.",
+      "current": "Mevcut strateji",
+      "saved": "Strateji {{index}}",
+      "save": "Karşılaştırma için bacakları kaydet",
+      "remove": "Kaldır",
+      "metric": "Ölçüt",
+      "alternative": "Alternatif",
+      "baseline": "Temel",
+      "difference": "Fark (yüzde puan)",
+      "max_profit_return": "Azami getiri",
+      "max_loss_return": "Asgari getiri",
+      "entry_cost_return": "Giriş maliyeti / hisse nominali",
+      "higher": "Daha yüksek",
+      "lower": "Daha düşük",
+      "equal": "Eşit"
     }
   },
   "alphaZoo": {
@@ -1915,6 +1941,9 @@
     "expiresAt": "Bitiş: {{time}}"
   },
   "swarmStatus": {
+    "partialResults": "Kısmi sonuçlar",
+    "report": "Rapor",
+    "continueWork": "Tamamlanmamış işe devam et",
     "agents": "{{done}}/{{total}} aracı",
     "layer": "Tur {{current}} / {{total}}",
     "agent": "Ajan",

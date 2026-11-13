@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 
 def _ledger_with_rows(tmp_path: Path, rows: list[dict]) -> GroundingLedger:

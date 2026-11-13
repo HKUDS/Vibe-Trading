@@ -6,6 +6,8 @@ keyed on tool field names, never on natural language.
 
 from __future__ import annotations
 
+from src.agent.tool_results import ARCHIVE_MANIFEST
+
 import contextlib
 import csv
 import hashlib
@@ -16,15 +18,15 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
-from src.agent.grounding.document_quotes import document_integer_quotes
+from evals.grounding.document_quotes import document_integer_quotes
 
-from src.agent.grounding.figures import (
+from evals.grounding.figures import (
     Figure,
     _CURRENCY_CODES,
     parse_figures_block,
     scan_figures,
 )
-from src.agent.grounding.identity import (
+from src.agent.instrument_identity import (
     _CANONICAL_SYMBOL_RE,
     _infer_currency,
     _infer_venue,
@@ -230,7 +232,6 @@ _TABLE_SYMBOL_COLUMNS = frozenset({"symbol", "code", "ticker"})
 
 #: Written by the loop into the active run when it archives a backtest there;
 #: ``source_run`` names the run directory the copy came from.
-ARCHIVE_MANIFEST = ".archived_backtest.json"
 
 
 def _relative_posix(path: Path, root: Path) -> str:
@@ -456,6 +457,28 @@ def _leaf_name(path: str) -> str:
     """The last field name of an evidence path, without its list index."""
     leaf = str(path or "").rsplit(".", 1)[-1]
     return re.sub(r"\[\d+\]$", "", leaf).strip().casefold()
+
+
+def _field_money_unit(path: str) -> tuple[str | None, float]:
+    """Read an explicit currency/magnitude suffix from a numeric field name.
+
+    Args:
+        path: Evidence field path, for example ``data.revenue_usd_bn``.
+
+    Returns:
+        The named currency and multiplier into its base units. Ambiguous or
+        absent suffixes leave the value unchanged; prose is never consulted.
+    """
+    parts = _leaf_name(path).rsplit("_", 2)
+    if len(parts) != 3 or parts[-2].upper() not in _CURRENCY_CODES:
+        return None, 1.0
+    scale = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mn": 1e6,
+             "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9,
+             "t": 1e12, "tn": 1e12, "trillion": 1e12}.get(parts[-1])
+    if scale is None:
+        return None, 1.0
+    currency = parts[-2].upper()
+    return {"RMB": "CNY", "CNH": "CNY"}.get(currency, currency), scale
 
 
 def _price_field_for_path(path: str) -> str | None:
@@ -684,6 +707,10 @@ class EvidenceRecord:
     currency_conversion: str | None = None
     artifact: str | None = None
     scope: str | None = None
+    # Explicit field-unit multiplier already applied to the stored value.
+    value_scale: float = 1.0
+    # Source-declared unit, distinct from a currency inferred from the listing.
+    value_unit: str | None = None
 
 
 def _is_price_kind(record: EvidenceRecord) -> bool:
@@ -709,6 +736,13 @@ def _is_price_kind(record: EvidenceRecord) -> bool:
         or _is_registered_price_indicator(record.tool, record.field)
         or _leaf_name(record.field) in _AMOUNT_FIELDS
     )
+
+
+def _has_money_unit(record: EvidenceRecord) -> bool:
+    """Whether the source explicitly denominates this leaf in money."""
+    unit = record.value_unit or ""
+    currency, _, denominator = unit.partition("/")
+    return currency in _CURRENCY_CODES and denominator in {"", "shares", "share"}
 
 
 _PERCENT_HEADER = re.compile(r"(?:^[%％]$|[(（]\s*[%％]\s*[)）]$)")
@@ -1171,7 +1205,8 @@ class _EvidenceMixin:
         still byte for byte what the engine wrote. Only the rows the model was
         shown are recorded: a per-bar table is a dense series, and recording
         all of it would let an invented weight or return match some bar by
-        chance. Price columns are left out, as in a summary file.
+        chance. Price columns remain artifact-scoped; they never enlarge the
+        undeclared market-price pool.
 
         Args:
             payload: The file or structured artifact reader's result.
@@ -1243,15 +1278,19 @@ class _EvidenceMixin:
                 # and a symbol here would start attributing the answer's
                 # portfolio figures to one instrument.
                 column_symbol = _cell_symbol(header[index])
-                if column_symbol is None and _price_field_for_path(folded[index]) is not None:
-                    continue
+                price_field = _price_field_for_path(folded[index])
+                row_symbol = (
+                    _cell_symbol(row[symbol_index])
+                    if symbol_index is not None and symbol_index < len(row)
+                    else _symbol_from_csv_filename(path.stem.removeprefix("ohlcv_"))
+                ) if price_field else None
                 if room <= 0:
                     return
                 self._evidence.append(
                     EvidenceRecord(
                         call_id=call_id,
                         tool=tool_name,
-                        symbol=None,
+                        symbol=row_symbol,
                         source="backtest",
                         timestamp=timestamp,
                         field=column_symbol or folded[index],
@@ -1259,6 +1298,7 @@ class _EvidenceMixin:
                         status="observed",
                         artifact=artifact,
                         scope=scope,
+                        currency=_infer_currency(row_symbol or "") if price_field else None,
                     )
                 )
                 room -= 1
@@ -1433,11 +1473,15 @@ class _EvidenceMixin:
             path: str,
             timestamp: str | None = None,
             declared_currency: str | None = None,
+            declared_unit: str | None = None,
         ) -> None:
             nonlocal remaining
             if remaining <= 0:
                 return
             if _is_number(value):
+                field_currency, field_scale = _field_money_unit(path)
+                unit_currency = (declared_unit or "").split("/", 1)[0]
+                unit_currency = unit_currency if unit_currency in _CURRENCY_CODES else None
                 self._evidence.append(
                     EvidenceRecord(
                         call_id=call_id,
@@ -1446,9 +1490,11 @@ class _EvidenceMixin:
                         source=source,
                         timestamp=timestamp,
                         field=path or "value",
-                        value=value,
+                        value=value * field_scale if field_currency else value,
+                        value_scale=field_scale,
+                        value_unit=declared_unit or field_currency,
                         status="observed",
-                        currency=(
+                        currency=unit_currency or field_currency or (
                             metric_currency
                             if tool_name == "get_sec_filings"
                             and path.startswith("data.metric.points[")
@@ -1481,7 +1527,11 @@ class _EvidenceMixin:
                     ),
                     timestamp,
                 )
+                units = value.get("_units") if tool_name == "get_financial_statements" else None
+                units = units if isinstance(units, dict) else {}
                 for key, item in value.items():
+                    if key == "_units":
+                        continue
                     if str(key).casefold() in timestamp_fields:
                         continue
                     if not path and str(key).casefold() in _ENVELOPE_FIELDS:
@@ -1491,6 +1541,7 @@ class _EvidenceMixin:
                         f"{path}.{key}" if path else str(key),
                         local_timestamp,
                         local_currency,
+                        units.get(key) if isinstance(units.get(key), str) else None,
                     )
             elif isinstance(value, list):
                 for index, item in enumerate(value):
@@ -1577,6 +1628,7 @@ class _EvidenceMixin:
             if record.status == "observed"
             and record.field in _PRICE_FIELDS
             and record.value is not None
+            and record.artifact is None
         ]
 
     def _comparable_price_records(self) -> list[EvidenceRecord]:
@@ -1591,6 +1643,8 @@ class _EvidenceMixin:
         records = self._price_records()
         already_counted = {id(record) for record in records}
         for record in self._evidence:
+            if record.artifact is not None:
+                continue
             if id(record) in already_counted:
                 continue
             if record.status != "observed" or record.value is None:

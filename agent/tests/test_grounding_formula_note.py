@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.policies import _evaluate_formula, _formula_in_note
+from evals.grounding import GroundingLedger
+from evals.grounding.policies import _evaluate_formula, _formula_in_note
 
 pytestmark = pytest.mark.unit
 

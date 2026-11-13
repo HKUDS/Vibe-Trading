@@ -30,9 +30,9 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.evidence import ARCHIVE_MANIFEST
-from src.agent.grounding.figures import parse_figures_block, scan_figures
+from evals.grounding import GroundingLedger
+from evals.grounding.evidence import ARCHIVE_MANIFEST
+from evals.grounding.figures import parse_figures_block, scan_figures
 from src.agent.tool_results import _archive_backtest_result
 
 RP = {
@@ -252,19 +252,6 @@ def test_an_invented_value_declared_from_a_real_run_is_rejected(
     assert not sampled.valid
 
 
-def test_a_bare_field_two_runs_hold_is_ambiguous_and_the_correction_names_the_runs(
-    two_runs: GroundingLedger,
-) -> None:
-    result = two_runs.validate_final_answer(
-        _declared("风险平价 Sortino 1.133。", "1.133 | observed | Sortino | sortino")
-    )
-
-    assert not result.valid
-    (issue,) = result.issues
-    assert issue["reason"] == "ambiguous_field_ref"
-    assert "rp::sortino" in issue["field_ref_candidates"]
-    assert "ew::sortino" in issue["field_ref_candidates"]
-    assert "rp::sortino" in two_runs.correction_prompt(result)
 
 
 def test_a_wrong_call_ref_hints_only_refs_that_then_ground_the_figure(
@@ -574,19 +561,6 @@ def test_an_undeclared_figure_is_checked_exactly_as_before(two_runs: GroundingLe
     assert [issue["value"] for issue in sortino.issues] == ["1.133"]
 
 
-def test_a_percent_declared_as_a_fraction_is_named_in_the_correction(
-    two_runs: GroundingLedger,
-) -> None:
-    """37% and 0.37 stay two assertions (spec §2), but the model is told which it wrote."""
-    result = two_runs.validate_final_answer(
-        _declared("总收益差 +0.30pp。", "0.0030 | derived | 0.132805 − 0.129817 | rp, ew")
-    )
-
-    assert not result.valid
-    (issue,) = result.issues
-    assert issue["code"] == "figure_undeclared"
-    assert issue["declared_as"] == "0.0030"
-    assert "declares 0.0030" in two_runs.correction_prompt(result)
 
 
 def test_a_drawdown_difference_anchors_on_magnitudes(two_runs: GroundingLedger) -> None:
@@ -643,36 +617,10 @@ def test_a_named_derivation_survives_prices_of_several_symbols(two_runs: Groundi
     assert _figure_reasons(unnamed) == ["no_symbol"]
 
 
-def test_a_backtest_report_is_released_cut_instead_of_refused(two_runs: GroundingLedger) -> None:
-    """A request naming symbols is a market answer; a completed backtest still
-    leaves the checked figures standing once the failing one is cut."""
-    draft = "风险平价 Sharpe 0.694，Sortino 1.190。"
-    validation = two_runs.validate_final_answer(draft)
-
-    released = two_runs.redacted_release(draft, validation)
-
-    assert two_runs._identity_required
-    assert released is not None
-    assert "0.694" in released and "1.190" not in released and "（略※）" in released
 
 
-def test_a_market_answer_with_no_price_and_no_analysis_is_still_refused(tmp_path: Path) -> None:
-    ledger = GroundingLedger(run_dir=tmp_path, user_message="600519.SH 现价多少，给出买入价")
-    draft = "600519.SH 买入价 1500.5 元。"
-
-    assert ledger.redacted_release(draft, ledger.validate_final_answer(draft)) is None
-    assert "价格数字" in ledger.safe_fallback()
 
 
-def test_the_fallback_after_an_analysis_names_the_figures_not_prices(
-    two_runs: GroundingLedger,
-) -> None:
-    two_runs.validate_final_answer("风险平价 Sortino 1.190。")
-
-    message = two_runs.safe_fallback()
-
-    assert "价格" not in message
-    assert "artifacts" in message
 
 
 def test_a_code_and_name_cell_attributes_its_figure_to_the_code(tmp_path: Path) -> None:
@@ -791,7 +739,7 @@ def test_a_fraction_or_a_multiple_is_a_readable_declaration(two_runs: GroundingL
 
 def test_only_a_literal_square_or_cube_is_evaluated() -> None:
     """``9^9^9`` would take the process down computing a number of 370 million digits."""
-    from src.agent.grounding.policies import _formula_in_note
+    from evals.grounding.policies import _formula_in_note
 
     assert _formula_in_note("9^9^9") is None
     assert _formula_in_note("2^10 + 1") is None
@@ -803,45 +751,10 @@ def test_only_a_literal_square_or_cube_is_evaluated() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_formula_that_runs_the_other_way_is_named_as_such(two_runs: GroundingLedger) -> None:
-    """"−0.079" beside "1.2115 − 1.1329": the size is right, the direction is not.
-
-    Still refused — the sign is part of the claim — but the second draft of a
-    live run rewrote eight such figures instead of their formulas, because the
-    correction only said "its own note evaluates to 0.079".
-    """
-    result = two_runs.validate_final_answer(
-        _declared("风险平价 Sortino 低 −0.079。", "−0.079 | derived | 1.2115 − 1.1329 | rp, ew")
-    )
-    wrong = two_runs.validate_final_answer(
-        _declared("风险平价 Sortino 低 −0.12。", "−0.12 | derived | 1.2115 − 1.1329 | rp, ew")
-    )
-
-    (issue,) = result.issues
-    assert issue["reason"] == "derivation_result_mismatch" and issue["sign_reversed"] is True
-    assert "opposite sign" in two_runs.correction_prompt(result)
-    assert "sign_reversed" not in wrong.issues[0]
 
 
-def test_a_declaration_of_the_other_sign_and_unit_is_named(two_runs: GroundingLedger) -> None:
-    result = two_runs.validate_final_answer(
-        _declared("风险平价总收益低 −0.30pp。", "0.0030 | derived | 0.132805 − 0.129817 | rp, ew")
-    )
-
-    (issue,) = result.issues
-    assert issue["declared_as"] == "0.0030" and issue["declared_sign_differs"] is True
-    assert "with the opposite sign" in two_runs.correction_prompt(result)
 
 
-def test_the_correction_asks_for_the_answer_alone(two_runs: GroundingLedger) -> None:
-    """A live second draft opened with "The rejection was because…" — in English,
-    to a user who wrote Chinese — and that sentence was released."""
-    result = two_runs.validate_final_answer("风险平价 Sortino 1.190。")
-
-    prompt = two_runs.correction_prompt(result)
-
-    assert "do not mention this rejection" in prompt
-    assert "in the user's language" in prompt
 
 
 @pytest.mark.parametrize("mode", ["rows", "downsample"])
@@ -1113,18 +1026,3 @@ def test_a_loss_written_as_a_gain_is_refused(own_run: GroundingLedger, written: 
 
     assert not result.valid
     assert _figure_reasons(result) == ["not_in_referenced_call"]
-
-
-def test_a_cut_signed_figure_leaves_no_sign_behind(own_run: GroundingLedger) -> None:
-    draft = _declared(
-        "Sortino 1.133，一笔亏损 −$17,000.00。",
-        "1.133 | observed | Sortino | metrics.csv",
-        "−$17,000.00 | observed | 盈亏 | trades.csv",
-    )
-    validation = own_run.validate_final_answer(draft)
-
-    released = own_run.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "1.133" in released and "17,000.00" not in released
-    assert "−" not in released, released

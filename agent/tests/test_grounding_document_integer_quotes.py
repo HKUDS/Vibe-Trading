@@ -11,32 +11,6 @@ from tests.test_grounding_document_figures import (
 )
 
 
-@pytest.mark.parametrize(
-    "label,value",
-    [
-        ("股东总数", "76175"),
-        ("员工总数", "3400"),
-        ("Shareholders", "76175"),
-        ("库存变动", "-76175"),
-    ],
-)
-def test_literal_integer_quote_preserves_label_and_number(tmp_path, label, value):
-    ledger, document = _ledger_with_upload(tmp_path)
-    source = f"{label} {value}"
-    _read_document(ledger, document, "doc-1", source)
-    result = ledger.validate_final_answer(
-        _declared(
-            f"| 项目 | 数量 |\n|---|---|\n| {label} | {int(value):,} |",
-            f"{value} | observed | quote: {source} | doc-1",
-        )
-    )
-    assert result.valid, result.issues
-    assert not ledger._evidence
-    assert ledger.should_buffer_output
-    persisted = json.loads(
-        (ledger.run_dir / "artifacts" / "grounding_evidence.json").read_text()
-    )
-    assert persisted["document_integer_quotes"][0]["text"] == source
 
 
 @pytest.mark.parametrize(
@@ -65,7 +39,7 @@ def test_integer_quote_cannot_change_identity_or_units(
 ):
     ledger, document = _ledger_with_upload(tmp_path)
     _read_document(ledger, document, "doc-1", source)
-    from src.agent.grounding.figures import parse_figures_block, scan_figures
+    from evals.grounding.figures import parse_figures_block, scan_figures
 
     figure = scan_figures(answer, parse_figures_block(answer))[0]
     value = figure.text

@@ -40,6 +40,8 @@ export interface SwarmRunStatus {
   totalLayers: number;
   startedAt: number;
   completedAt?: number;
+  finalReport?: string;
+  reportIsPartial?: boolean;
   agents: SwarmAgentStatus[];
   // Run-level cost telemetry. Names mirror the GET /swarm/runs/{id} response,
   // but the values arrive from swarm events or, on replay, are hydrated from

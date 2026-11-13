@@ -119,7 +119,12 @@ def build_backtest_summary(
         "interval": backtest.get("interval"),
         "initial_cash": backtest.get("initial_cash"),
         "metrics": _json_safe(_as_dict(card.get("metrics"))),
+        "metric_sources": {
+            key: f"{run_dir / 'artifacts' / 'metrics.csv'}::{key}"
+            for key in _as_dict(card.get("metrics"))
+        },
         "structured_metrics": _json_safe(_as_dict(card.get("structured_metrics"))),
+        "execution_costs": _json_safe(_as_dict(card.get("structured_metrics")).get("execution_costs", {})),
         "validation": _json_safe(_as_dict(card.get("validation"))),
         "equity_preview": _equity_preview(artifacts_dir / "equity.csv"),
         "artifact_paths": {

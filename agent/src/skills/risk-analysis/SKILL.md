@@ -12,6 +12,8 @@ Systematic risk-measurement methodology covering VaR/CVaR calculation, Monte Car
 
 The measures below are implemented once, with tests, in `src/quantlib/risk.py`. Call them; do not retype the formulas, because a hand-retyped VaR is where the sign convention silently flips.
 
+Without shell access, use `quantlib_call` with module `risk` (describe the function before calling). For Monte Carlo, call `monte_carlo_summary` with an explicit seed: it runs the simulation and returns statistics without sending an oversized path matrix through the tool boundary. For full-history observed VaR/ES, volatility and drawdown, `portfolio_risk_xray` fetches and computes the complete sample. Its long-only weights sum to 100%, so convert those asset-level results to NAV using the final position separately.
+
 ```python
 from src.quantlib.risk import (
     historical_var, parametric_var, historical_cvar,
@@ -205,10 +207,20 @@ STRESS_SCENARIOS = {
 fit = fit_gpd_tail(returns, threshold_pct=5.0)   # keep the worst 5%
 fit["shape_xi"]      # ξ>0 fat tail, ξ=0 exponential tail, ξ<0 bounded tail
 fit["shape_stderr"]  # standard error of ξ -- quote ξ with it, never alone
-fit["scale_sigma"]   # in units of loss magnitude
+fit["scale_sigma"]   # GPD scale parameter, not the mean excess loss
+fit["sample_mean_excess"]  # observed mean loss beyond the threshold
+fit["fitted_mean_excess"]  # fitted distribution mean; infinite when xi >= 1
+fit["units"]         # explicit fraction units for each quantity
 fit["tail_type"]     # "fat" | "exponential" | "bounded"
 fit["threshold"], fit["n_exceedances"], fit["exceedance_rate"]
 ```
+
+For comparisons of rates, use `quantlib_call` with module `units`, function
+`compare_rates`, and an explicit `input_unit` (`decimal`, `percent`, or `bp`).
+It returns the signed difference in decimals, percentage points and basis points.
+Compare quantities on the same sign convention: VaR is a loss magnitude, while
+the GPD threshold is a signed return. Use the unrounded tool values as operands.
+The tool calculates a difference; it does not decide whether two metrics are comparable.
 
 Exceedances are non-negative by construction (`threshold - return`, kept only where the return fell below the threshold), so the GPD location is pinned at zero. Letting `loc` float instead lets the optimiser absorb tail mass into a shifted origin and biases `shape_xi`.
 

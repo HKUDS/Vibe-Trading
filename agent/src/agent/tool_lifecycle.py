@@ -68,17 +68,42 @@ class ToolCallLifecycle:
         Returns:
             Tuple of (compact_requested, focus_topic).
         """
+        # A resolver is a real data dependency. Execute it at a boundary so
+        # subsequent reads see its result rather than a stale pre-turn snapshot.
+        if len(tool_calls) > 1 and any(tc.name == "search_symbol" for tc in tool_calls):
+            compact_requested, focus_topic = False, ""
+            segment = []
+            for tc in tool_calls:
+                if tc.name == "search_symbol":
+                    for part in (segment, [tc]):
+                        if part:
+                            compact, focus = self._process_tool_calls(
+                                part, context, messages, trace, react_trace, iteration,
+                            )
+                            compact_requested |= compact
+                            focus_topic = focus or focus_topic
+                    segment = []
+                else:
+                    segment.append(tc)
+            if segment:
+                compact, focus = self._process_tool_calls(
+                    segment, context, messages, trace, react_trace, iteration,
+                )
+                compact_requested |= compact
+                focus_topic = focus or focus_topic
+            return compact_requested, focus_topic
+
         compact_requested = False
         focus_topic = ""
         execution_plan: list[tuple[Any, str | None]] = []
         batch_authorized_symbols = (
-            set(self._grounding.authorized_symbols)
-            if self._grounding is not None
+            set(self._identity.authorized_symbols)
+            if self._identity is not None
             else set()
         )
         batch_identity_status = (
-            self._grounding.identity_status
-            if self._grounding is not None
+            self._identity.identity_status
+            if self._identity is not None
             else "not_required"
         )
 
@@ -147,8 +172,8 @@ class ToolCallLifecycle:
                     iteration,
                 )
                 continue
-            if self._grounding is not None:
-                authorization = self._grounding.authorize_tool_call(
+            if self._identity is not None:
+                authorization = self._identity.authorize_tool_call(
                     tc.name,
                     tc.arguments,
                     batch_authorized_symbols=batch_authorized_symbols,
@@ -161,7 +186,7 @@ class ToolCallLifecycle:
                             tc,
                             authorization.error_payload(
                                 tc.name,
-                                self._grounding.identity_summary(),
+                                self._identity.identity_summary(),
                             ),
                         )
                     )
@@ -850,8 +875,8 @@ class ToolCallLifecycle:
             if tc.name in {"write_file", "edit_file"}:
                 self._record_written_target(tc.arguments)
 
-        if self._grounding is not None:
-            self._grounding.ingest_tool_result(
+        if self._identity is not None:
+            self._identity.ingest_tool_result(
                 tool_name=tc.name,
                 arguments=_normalize_tool_run_dir(tc.arguments, self.memory.run_dir),
                 result=result,
@@ -864,7 +889,7 @@ class ToolCallLifecycle:
                         "type": "identity_state",
                         "iter": iteration,
                         "call_id": tc.id,
-                        "identity": self._grounding.identity_summary(),
+                        "identity": self._identity.identity_summary(),
                     }
                 )
 

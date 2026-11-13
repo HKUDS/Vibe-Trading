@@ -2377,8 +2377,9 @@ def _watch_swarm_run(store, runtime, run, dashboard: _SwarmDashboard) -> Optiona
         token_str = f"\nTokens: ~{tokens_in + tokens_out:,} (in: {tokens_in:,} out: {tokens_out:,})"
 
     if current.final_report:
-        console.print("\n[bold]\u2500\u2500 Final Report \u2500\u2500[/bold]")
-        console.print(current.final_report[:2000])
+        label = "Partial results" if current.report_is_partial else "Final Report"
+        console.print(f"\n[bold]── {label} ──[/bold]")
+        console.print(current.final_report, markup=False)
 
     console.print(f"\n[{status_color}]{current.status.value.upper()}[/{status_color}]  Time: {mins}m {secs}s{token_str}")
 

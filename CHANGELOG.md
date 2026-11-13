@@ -7,6 +7,27 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Grounding reads explicit currency and magnitude suffixes in numeric tool
+  fields such as `revenue_usd_bn`, preserving valid currency-marked claims
+  while checking the referenced field in base units.
+- Daily generated strategies now reject detected shifts forwarded to output
+  targets before running, with an actionable correction. Indicator lookbacks
+  remain valid; explicitly intentional extra delays require a configuration
+  declaration and are disclosed in the run card.
+- Grounding preserves full English magnitude units and links rounded, scaled
+  prose to precise observed declarations. The referenced field, currency and
+  written-precision checks remain enforced; undeclared evidence is not widened.
+
+- Shadow-account backtests now pass the requested capital as `initial_cash`,
+  and invalidate cached results produced before that correction.
+- Swarm workers report token-truncated responses as `token_limit`, including
+  partial tool calls. Investment-committee PMs may synthesize their mapped
+  upstream reports without an unnecessary data call; missing or invalid
+  upstream reports retain the existing evidence requirement.
+- Native Anthropic calls default to a configurable 16,384-token output budget
+  rather than depending on model-alias recognition. Set `ANTHROPIC_MAX_TOKENS`
+  explicitly for models with a smaller limit or reports requiring more output.
+
 #### Options Lab
 
 - Volatility surface grids check strike coverage only at requested expiries or

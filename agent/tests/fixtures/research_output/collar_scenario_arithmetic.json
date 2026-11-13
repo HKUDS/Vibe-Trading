@@ -1,0 +1,56 @@
+{
+  "case_id": "committee.collar_scenario_arithmetic.2026-11-13",
+  "origin": {
+    "commit": "cb81c01c2",
+    "run_id": "swarm-20261113-052401-86ba2332",
+    "report_sha256": "019b43fc3ddc320ff536352d4c113426558099969ed3857d556d7f4a4c0bac98",
+    "section": "5, scenario table",
+    "extraction": "Human-reviewed 63-day expiry range; direct piecewise payoff using the actual tool inputs."
+  },
+  "claim": {
+    "reported_text": "In-line, chop $160–180: ≈ −2.5% to +3.5%",
+    "lower_percent": -2.5,
+    "upper_percent": 3.5
+  },
+  "evidence": {
+    "arguments": {
+      "legs": [
+        {
+          "option_type": "put",
+          "strike": 150,
+          "qty": 1,
+          "premium": 7.3
+        },
+        {
+          "option_type": "call",
+          "strike": 200,
+          "qty": -1,
+          "premium": 4.3
+        }
+      ],
+      "entry_spot": 166.19,
+      "underlying_qty": 1,
+      "multiplier": 100,
+      "expiry_days": 63,
+      "price_as_of": "2026-11-12",
+      "volatility": 0.52,
+      "commission_rate": 0.001
+    },
+    "direct_max_loss": -1920.16,
+    "direct_max_profit": 3079.84,
+    "return_at_160": -0.05536795234370298,
+    "return_at_180": 0.06497623202358747
+  },
+  "measurements": [
+    {
+      "field": "lower_percent",
+      "expected": -5.536795234370298
+    },
+    {
+      "field": "upper_percent",
+      "expected": 6.4976232023587475
+    }
+  ],
+  "expected_status": "FAIL",
+  "policy": "Offline evaluation only; never change the original report."
+}

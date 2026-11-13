@@ -1,4 +1,4 @@
-"""Per-response stream buffering and progress callbacks for AgentLoop.
+"""Per-response text delivery and progress callbacks for AgentLoop.
 
 A fresh instance is created for each model iteration. Its state deliberately
 survives the one provider retry exactly as the former closure state did.
@@ -8,17 +8,14 @@ from __future__ import annotations
 import time as _time
 from typing import Any, Callable
 
-from src.agent.grounding import GroundingLedger
-
 
 class TurnStream:
-    """Hold unchecked measurements and figures fences; throttle progress events."""
+    """Stream model text unchanged and throttle progress events."""
 
     def __init__(
-        self, *, grounding: GroundingLedger | None, emit: Callable[[str, dict[str, Any]], None],
+        self, *, emit: Callable[[str, dict[str, Any]], None],
         iteration: int, heartbeat_interval: Callable[[], float], reasoning_interval: Callable[[], float],
     ) -> None:
-        self.grounding = grounding
         self.emit = emit
         self.iteration = iteration
         self.heartbeat_interval = heartbeat_interval
@@ -27,42 +24,26 @@ class TurnStream:
         self.reasoning_chars = 0
         self.reasoning_tail = ""
         self.last_reasoning_emit: float | None = None
-        self.buffer_text_output = bool(grounding and grounding.should_buffer_output)
         self.streamed_chars = 0
         self.stream_total = 0
-        self.stream_frozen = False
         self.last_waiting_emit: float | None = None
 
     def on_text(self, delta: str) -> None:
         self.thinking_chunks.append(delta)
         self.stream_total += len(delta)
-        if self.buffer_text_output or self.stream_frozen:
-            return
-        # Neither the figures block nor an unchecked measurement streams
-        # (see streamable_length). Only a fence character or a digit
-        # can hold text back, so any other chunk is emitted as it
-        # arrives instead of re-parsing the whole answer.
-        if self.streamed_chars + len(delta) == self.stream_total and not any(
-            char in "`~" or char.isdigit() for char in delta
-        ):
-            self.emit("text_delta", {"delta": delta, "iter": self.iteration})
-            self.streamed_chars = self.stream_total
-            return
-        text = "".join(self.thinking_chunks)
-        safe = (
-            self.grounding.streamable_length(text)
-            if self.grounding is not None
-            else len(text)
-        )
-        if self.grounding is not None and safe < len(text):
-            # Held at a measurement: nothing after it streams this turn.
-            self.stream_frozen = self.grounding.measurement_start(text) == safe
-        if safe > self.streamed_chars:
-            self.emit(
-                "text_delta",
-                {"delta": text[self.streamed_chars:safe], "iter": self.iteration},
-            )
-            self.streamed_chars = safe
+        self.emit("text_delta", {"delta": delta, "iter": self.iteration})
+        self.streamed_chars = self.stream_total
+
+    def finish(self, content: str) -> None:
+        """Deliver a provider's final text, including adapters that do not stream."""
+        shown = "".join(self.thinking_chunks)[:self.streamed_chars]
+        if not content.startswith(shown):
+            # Some adapters return a normalized final message. Replace its own
+            # partial stream; never rewrite the provider's final answer.
+            self.emit("stream_reset", {"iter": self.iteration, "reason": "provider_final_text"})
+            shown = ""
+        if len(content) > len(shown):
+            self.emit("text_delta", {"delta": content[len(shown):], "iter": self.iteration})
 
     def on_waiting(self) -> None:
         now = _time.monotonic()
@@ -92,8 +73,7 @@ class TurnStream:
             "iter": self.iteration,
             "chars": self.reasoning_chars,
         }
-        if not self.buffer_text_output:
-            reasoning_event["tail"] = self.reasoning_tail
+        reasoning_event["tail"] = self.reasoning_tail
         self.emit("reasoning_delta", reasoning_event)
 
     def reset_for_retry(self) -> None:
@@ -101,6 +81,5 @@ class TurnStream:
         self.thinking_chunks.clear()
         self.streamed_chars = 0
         self.stream_total = 0
-        self.stream_frozen = False
         self.reasoning_chars = 0
         self.last_reasoning_emit = None

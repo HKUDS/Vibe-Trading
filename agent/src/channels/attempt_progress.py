@@ -47,7 +47,7 @@ class AttemptProgress:
                 seen = self.reasoning_chars.get(iteration, 0)
                 self.reasoning_chars[iteration] = max(seen, chars)
                 # AgentLoop emits a bounded cumulative tail, not a delta.
-                # A missing tail is deliberate grounding redaction: show only
+                # A missing tail means no text was supplied: show only
                 # a status, never reconstruct text from any other payload.
                 tail = data.get("tail")
                 if isinstance(tail, str) and chars > seen and tail:
@@ -56,7 +56,7 @@ class AttemptProgress:
                     continue
                 if tail is not None or chars <= seen:
                     continue
-            if kind in {"tool_call", "grounding_status", "attempt.completed", "attempt.failed"}:
+            if kind in {"tool_call", "attempt.completed", "attempt.failed"}:
                 await self._end_reasoning()
             tool = str(data.get("tool") or "tool")
             status = {
@@ -65,10 +65,9 @@ class AttemptProgress:
                 "llm_waiting": "Waiting for the model…",
                 "tool_call": f"Using {tool}…",
                 "tool_heartbeat": f"Still running {tool}…",
-                "grounding_status": "Checking the figures…",
             }.get(kind)
             # Arbitrary progress payloads, tool results and text_delta may
-            # contain unvalidated figures. Only these status labels go out.
+            # be partial. Only these status labels go out.
             hint = kind in {"tool_call", "tool_heartbeat"}
             if not status or status == self.last_status:
                 continue

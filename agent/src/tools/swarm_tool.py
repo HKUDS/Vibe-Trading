@@ -480,6 +480,10 @@ class SwarmTool(BaseTool):
                 "type": "string",
                 "description": "Natural language description of the analysis task.",
             },
+            "resume_run_id": {
+                "type": "string",
+                "description": "Continue a failed/cancelled run, retaining completed roles and saved work. Do not use for a different research question.",
+            },
             "preset_name": {
                 "type": "string",
                 "description": "Optional explicit swarm preset name when the user named one or this is a continuation.",
@@ -539,6 +543,7 @@ class SwarmTool(BaseTool):
         Args:
             **kwargs: Must include prompt (str). Optional preset_name (str) and
                 variables (dict) overrides for the preset's template variables.
+                resume_run_id continues the original run's question and inputs.
 
         Returns:
             JSON string with status, preset, variables, final_report, tasks, token_usage.
@@ -550,27 +555,6 @@ class SwarmTool(BaseTool):
                 {"status": "error", "error": "Missing 'prompt' parameter"},
                 ensure_ascii=False,
             )
-
-        preset, preset_error = _resolve_preset(prompt, kwargs.get("preset_name"))
-        if preset_error:
-            return json.dumps(
-                {"status": "error", "error": preset_error},
-                ensure_ascii=False,
-            )
-        assert preset is not None
-        variables, variables_error = _merge_variables(_build_variables(preset, prompt), kwargs.get("variables"))
-        if variables_error:
-            return json.dumps(
-                {"status": "error", "error": variables_error},
-                ensure_ascii=False,
-            )
-
-        logger.info(
-            "SwarmTool: resolved preset=%s, variables=%s from prompt: %s",
-            preset,
-            variables,
-            prompt[:100],
-        )
 
         from src.config import load_swarm_agent_config
         from src.swarm.runtime import SwarmRuntime, register_active_run, unregister_active_run
@@ -590,6 +574,42 @@ class SwarmTool(BaseTool):
             max_workers=get_env_config().swarm.swarm_max_workers,
             agent_config=agent_config,
         )
+
+        resume_from = None
+        resume_run_id = kwargs.get("resume_run_id")
+        if resume_run_id:
+            from src.swarm.models import RunStatus
+            try:
+                resume_from = store.load_run(resume_run_id)
+                if resume_from is not None:
+                    resume_from = store.reconcile_run(resume_from, write=True)
+            except (ValueError, OSError):
+                resume_from = None
+            if resume_from is None or resume_from.status not in (RunStatus.failed, RunStatus.cancelled):
+                return json.dumps({"status": "error", "error": "Continuation requires an existing failed or cancelled run."})
+            preset, variables = resume_from.preset_name, resume_from.user_vars
+        else:
+            preset, preset_error = _resolve_preset(prompt, kwargs.get("preset_name"))
+            if preset_error:
+                return json.dumps(
+                    {"status": "error", "error": preset_error},
+                    ensure_ascii=False,
+                )
+            assert preset is not None
+            variables, variables_error = _merge_variables(_build_variables(preset, prompt), kwargs.get("variables"))
+            if variables_error:
+                return json.dumps(
+                    {"status": "error", "error": variables_error},
+                    ensure_ascii=False,
+                )
+
+            logger.info(
+                "SwarmTool: resolved preset=%s, variables=%s from prompt: %s",
+                preset,
+                variables,
+                prompt[:100],
+            )
+
 
         pending_live_events: list[dict[str, Any]] = []
         run_id_holder: dict[str, str | None] = {"run_id": None}
@@ -611,6 +631,7 @@ class SwarmTool(BaseTool):
                 variables,
                 live_callback=_live_callback if self._event_callback is not None else None,
                 include_shell_tools=self.include_shell_tools,
+                **({"resume_from": resume_from} if resume_from is not None else {}),
             )
         except FileNotFoundError as exc:
             return json.dumps(
@@ -797,6 +818,7 @@ def _format_result(
         "preset": preset,
         "auto_variables": variables,
         "final_report": run.final_report or "",
+        "report_is_partial": run.report_is_partial,
         "error": run_level_error(run),
         "tasks": task_summaries,
         "token_usage": {

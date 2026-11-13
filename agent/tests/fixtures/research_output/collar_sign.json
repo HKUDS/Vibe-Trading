@@ -1,0 +1,28 @@
+{
+  "case_id": "committee.collar_cap_sign.2026-11-13",
+  "origin": {
+    "run_id": "swarm-20261113-043008-07900f28",
+    "commit": "d5678a8d2",
+    "role": "portfolio_manager",
+    "report_sha256": "5e27594af028a9ed909d669bd1b57139031f7619525f4e2461067a3884936846",
+    "section": "3, Collar A",
+    "extraction": "Human-reviewed transcription from the unchanged final report; no automatic prose inference."
+  },
+  "claim": {
+    "reported_text": "−11.6%/−18.5%",
+    "reported_percent": -18.5
+  },
+  "evidence": {
+    "tool": "options_payoff",
+    "field": "calculation_basis.max_profit_return",
+    "max_profit_return": 0.18532041639087793
+  },
+  "expected_status": "FAIL",
+  "policy": "Evaluate offline. Preserve the report verbatim; never rewrite or withhold delivery.",
+  "measurements": [
+    {
+      "field": "reported_percent",
+      "expected": 18.532041639087794
+    }
+  ]
+}

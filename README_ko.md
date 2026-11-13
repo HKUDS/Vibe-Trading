@@ -57,18 +57,24 @@
 
 ## 📰 뉴스
 
+- **2026-11-13** 🛠️ **리서치 결과 전달과 계산 도구 개편** — 숫자 자동 삭제, 강제 재작성, 형식 기반 완료 판정 없이 답변을 직접 스트리밍합니다. 위원회 실행이 중단되어도 부분 성과를 보존하고, 완료된 작업을 재사용해 미완료 역할을 이어서 실행할 수 있습니다.
+  전체 시장 데이터 참조를 셸 없는 QuantLib 계산에 연결하고 역할 간 원본 근거를 전달합니다. Options Lab과 `options_payoff`는 주식·옵션 조합과 여러 대안의 일괄 계산·비교를 지원하며 비용, 손익 상하한, 비교 방향을 반환합니다. 실제 백테스트 비용과 출력 중단·오류 상태를 명시하고 실거래 승인 한도를 유지합니다. **미출시.**
+
+- **2026-11-12** 🛠️ **백테스트 시점, 보고서 수치와 연구 완료 판정 수정** — 섀도 계좌가 지정한 초기 자본을 사용하고, 출력 토큰 한도로 잘린 워커 응답을 완료로 처리하지 않습니다. 위원회 PM은 유효한 상위 보고서를 바탕으로 데이터를 다시 가져오지 않고 종합할 수 있습니다. 네이티브 Anthropic 어댑터의 기본 출력 예산은 변경 가능한 16,384 토큰입니다.
+  생성 전략의 출력 목표에서 추가 시프트가 감지되면 의도한 지연이라고 명시해야 실행할 수 있으며, 지표의 lookback은 계속 허용됩니다. Grounding은 증거 검증을 유지하면서 금액 단위의 여러 표기와 정확한 관측값 선언을 지원합니다. 실제 SPY／GLD 백테스트의 206／140건 체결과 총수익률이 독립 장부 계산과 일치했습니다. **아직 출시되지 않았습니다.**
+
 - **2026-11-11** 🧾 **모의거래 부분 체결과 독립적인 원장 대사** — 중국 A주 5분봉 모의거래에서 주문별 거래량 한도, 부분 체결, 주문 상태 출력을 선택적으로 활성화할 수 있습니다([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). 새로운 `paper_trade_reconcile` Agent/MCP 도구는 반환된 체결 기록을 바탕으로 수수료, 현금, 보유 포지션, 순자산가치(NAV) 계산을 독립적으로 대사합니다([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   지원되는 여러 줄 백분율 헤더와 원문의 레이블을 유지하는 문서 내 정수의 명시적 인용을 올바르게 처리합니다([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). 엄격한 팩터 벤치마크의 입력도 수정하고([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)), 채널 대화에서 응답 대기 시간이 초과되었을 때 이전 답변을 반환하지 않도록 했습니다([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
   [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@divya0795](https://github.com/divya0795) 님께 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+<details>
+<summary>이전 뉴스</summary>
 
 - **2026-11-10** 📊 **편집 가능한 IV 곡면과 옵션 분석 수정** — Options Lab에서 행사가·만기별 IV 그리드를 편집하고 관측값과 보간값을 구분할 수 있습니다. 외삽은 거부합니다([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   저가 종목 프리셋, 수량 입력, 만기일 표시, 재시도, 언어 변경 시 로딩 멈춤, 20개 레그 제한을 수정했습니다. `CF501`처럼 만기 부분이 세 자리인 정저우 상품거래소 코드는 이제 중국 선물 규칙으로 백테스트됩니다([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
   [@he-yufeng](https://github.com/he-yufeng) 및 [@GPT-AGI](https://github.com/GPT-AGI)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
 - **2026-11-09** 🧭 **선택한 리비전 비교 내보내기와 인식할 수 없는 코드를 거부하는 백테스트** — 비교 중인 두 연구 리비전을 Web, API, CLI에서 JSON 또는 Markdown으로 내려받을 수 있습니다([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). 어떤 시장 규칙에도 해당하지 않는 백테스트 코드(`local:BHP.AX`, `7203.T` 등)는 이제 중국 A주 규칙으로 실행되지 않고 데이터를 가져오기 전에 거부됩니다. 6자리 숫자만 있는 코드와 상하이 `.SS` 표기는 계속 사용할 수 있습니다. OpenRouter 응답에 모델 이름이 두 번 표시되지 않으며([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), `research-artifact export`에 빈 리비전 ID를 넘기면 오류가 납니다. [@he-yufeng](https://github.com/he-yufeng) 및 [@Gloubiboulgator](https://github.com/Gloubiboulgator)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
-
-<details>
-<summary>이전 뉴스</summary>
 
 - **2026-11-08** 📝 **연구 버전 비교와 전체 이력 내보내기** — 두 리비전의 본문, 근거, 메타데이터를 비교하고([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), 전체 연구 이력을 JSON 또는 Markdown으로 내보낼 수 있습니다([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). 연구 기록을 전환할 때 오래된 응답을 무시하며, Markdown 내보내기는 원문을 독립된 코드 블록에 보존합니다. 팩터 가중치 누락, 일부 수익률 누락 시의 성과 귀속, IC 표본 부족, 유한하지 않은 가치평가 입력값, 음수 진입 가격의 증거금 계산도 수정했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 

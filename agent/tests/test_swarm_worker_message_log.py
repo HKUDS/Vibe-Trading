@@ -172,7 +172,7 @@ def test_content_filter_circuit_breaker_persists_the_message_log(
     assert (artifact_dir / "messages.json").is_file()
 
 
-def test_incomplete_run_persists_the_message_log(
+def test_no_tool_answer_persists_the_message_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A data agent that answers without calling a tool must leave a log too."""
@@ -181,8 +181,8 @@ def test_incomplete_run_persists_the_message_log(
     )
     artifact_dir = agent_artifact_dir(tmp_path, "analyst", "task")
 
-    assert result.status == "incomplete", result.error
-    assert "no tool calls" in (result.error or "")
+    assert result.status == "completed", result.error
+    assert result.error is None
     assert (artifact_dir / "summary.md").is_file()
     assert (artifact_dir / "messages.json").is_file()
 

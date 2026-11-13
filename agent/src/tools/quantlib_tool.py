@@ -23,9 +23,9 @@ Three structural limits, in order of what they rule out:
    are callable. A private helper, a re-exported third-party symbol, or a
    dunder is not reachable.
 3. **No file-writing entry points.** Names matching :data:`_WRITER_PREFIXES` are
-   refused even when exported, because they take a destination path. Everything
-   left is pure computation: no filesystem, no network, no process. Use
-   ``write_file`` if a file is what you want.
+   refused even when exported, because they take a destination path. The functions remain computation-only. The adapter can read JSON/CSV
+   observations inside existing file boundaries and persist full results; it
+   cannot run code, import arbitrary modules, or fetch network data.
 
 WHAT THIS DOES NOT DO
 ---------------------
@@ -63,6 +63,7 @@ __all__ = ["ALLOWED_MODULES", "QuantlibCallTool"]
 #: Short name -> dotted module path. A caller names the short form; nothing a
 #: caller sends is ever handed to ``importlib``.
 ALLOWED_MODULES: dict[str, str] = {
+    "units": "src.quantlib.units",
     "options": "src.quantlib.options",
     "fixedincome": "src.quantlib.fixedincome",
     "credit": "src.quantlib.credit",
@@ -174,7 +175,8 @@ def _decode(value: Any) -> Any:
 class _Budget:
     """Mutable leaf counter shared across one serialization pass."""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: float = _MAX_RESULT_LEAVES) -> None:
+        self.limit = limit
         self.leaves = 0
         self.truncated = False
 
@@ -197,7 +199,7 @@ def _encode(value: Any, budget: _Budget) -> Any:
     import numpy as np
     import pandas as pd
 
-    if budget.leaves >= _MAX_RESULT_LEAVES:
+    if budget.leaves >= budget.limit:
         budget.truncated = True
         return "<truncated>"
 
@@ -220,7 +222,7 @@ def _encode(value: Any, budget: _Budget) -> Any:
     def sequence(values):
         encoded = []
         for item in values:
-            if budget.leaves >= _MAX_RESULT_LEAVES:
+            if budget.leaves >= budget.limit:
                 budget.truncated = True
                 break
             encoded.append(_encode(item, budget))
@@ -229,7 +231,7 @@ def _encode(value: Any, budget: _Budget) -> Any:
     def mapping(items):
         encoded = {}
         for key, item in items:
-            if budget.leaves >= _MAX_RESULT_LEAVES:
+            if budget.leaves >= budget.limit:
                 budget.truncated = True
                 break
             encoded[str(key)] = _encode(item, budget)
@@ -270,6 +272,7 @@ class QuantlibCallTool(BaseTool):
 
     name = "quantlib_call"
     description = (
+        "For named rate comparisons, units.compare_rates returns higher/lower/equal and signed differences in explicit units. Use left_label/right_label and file references for saved values. "
         "Run a function from the tested finance-math library (src/quantlib): "
         "Black-Scholes and implied vol, bond math and curve fitting, Altman Z "
         "and Merton/KMV, stationarity/cointegration/GARCH/regime switching, "
@@ -281,8 +284,8 @@ class QuantlibCallTool(BaseTool):
         "multi-factor combination with walk-forward IC weights, "
         "deflated Sharpe and PBO, "
         "purged cross-validation, and the valuation engine (DCF / comps / "
-        "three-statement). Read-only and pure-compute: it fetches no data and "
-        "writes no files. Start with action='list' to see modules, then "
+        "three-statement). Computes from supplied values or saved JSON/CSV observations; "
+        "no network or shell. Start with action='list' to see modules, then "
         "action='list' with a module to see its functions, then "
         "action='describe' for a signature. "
         'Example: quantlib_call(action="call", module="risk", '
@@ -314,13 +317,20 @@ class QuantlibCallTool(BaseTool):
                 "type": "string",
                 "description": "Public function name. Required for 'describe' and 'call'.",
             },
+            "run_dir": {"type": "string", "description": "Calculation workspace for saved inputs/results; supplied automatically in agent sessions."},
             "kwargs": {
                 "type": "object",
                 "description": (
                     "Keyword arguments. Pass an indexed pandas Series as "
                     '{"__series__": {"index": [...], "values": [...]}} and a '
                     'DataFrame as {"__dataframe__": {"index": [...], '
-                    '"columns": [...], "data": [[...]]}}; a plain list stays a list.'
+                    '"columns": [...], "data": [[...]]}}; a plain list stays a list. '
+                    'Or use {"__data_ref__": {"path": "<result_file.path>", '
+                    '"pointer": "/NVDA.US", "column": "close", '
+                    '"index": "trade_date", "transform": "pct_change"}}. '
+                    'JSON pointer selects records/values; CSV needs no pointer. '
+                    'Fetch max_rows=0 for consecutive returns. Omit transform for levels; '
+                    'select=last returns the final scalar. Optional sha256 verifies file identity.'
                 ),
                 "default": {},
             },
@@ -358,7 +368,7 @@ class QuantlibCallTool(BaseTool):
 
             if action == "describe":
                 return self._describe(str(module_name), str(function_name), func)
-            return self._call(str(module_name), str(function_name), func, kwargs.get("kwargs") or {})
+            return self._call(str(module_name), str(function_name), func, kwargs.get("kwargs") or {}, kwargs.get("run_dir"))
         except Exception as exc:  # noqa: BLE001 - envelope, never raise to the loop
             return self._error(f"{type(exc).__name__}: {exc}")
 
@@ -431,12 +441,15 @@ class QuantlibCallTool(BaseTool):
             ensure_ascii=False,
         )
 
-    def _call(self, module_name: str, function_name: str, func: Any, raw_kwargs: Any) -> str:
+    def _call(self, module_name: str, function_name: str, func: Any, raw_kwargs: Any, run_dir: str | None = None) -> str:
         """Run the function and serialize its result."""
         if not isinstance(raw_kwargs, dict):
             return self._error("'kwargs' must be an object")
         try:
-            decoded = {str(k): _decode(v) for k, v in raw_kwargs.items()}
+            from src.tools.data_refs import resolve_data_refs
+            sources: list[dict] = []
+            resolved = resolve_data_refs(raw_kwargs, run_dir, sources)
+            decoded = {str(k): _decode(v) for k, v in resolved.items()}
         except ValueError as exc:
             return self._error(f"bad argument envelope: {exc}")
 
@@ -455,12 +468,13 @@ class QuantlibCallTool(BaseTool):
             # change) is information, not a crash: surface it verbatim.
             return self._error(f"{type(exc).__name__}: {exc}")
 
-        budget = _Budget()
+        budget = _Budget(limit=math.inf if run_dir else _MAX_RESULT_LEAVES)
         payload = {
             "ok": True,
             "module": module_name,
             "function": function_name,
             "result": _encode(result, budget),
+            "input_sources": sources,
         }
         if budget.truncated:
             payload["truncated"] = True
@@ -468,7 +482,8 @@ class QuantlibCallTool(BaseTool):
                 f"result exceeded {_MAX_RESULT_LEAVES} values and was truncated; "
                 "narrow the inputs or request a summary statistic instead"
             )
-        return json.dumps(payload, ensure_ascii=False)
+        from src.agent.result_artifacts import persist_calculation_result
+        return persist_calculation_result(json.dumps(payload, ensure_ascii=False), run_dir)
 
     @staticmethod
     def _error(message: str, **extra: Any) -> str:

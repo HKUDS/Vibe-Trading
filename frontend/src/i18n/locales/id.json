@@ -1282,8 +1282,7 @@
       "failed": "Gagal",
       "steps": "{{count}} langkah",
       "continue": "Lanjutkan",
-      "reattach": "Lampirkan kembali",
-      "checkingFigures": "Memeriksa angka dalam jawaban ini (putaran {{round}})…"
+      "reattach": "Lampirkan kembali"
     },
     "resumeConnector": "Lanjutkan connector",
     "resumeConnectorTitle": "Nonaktifkan penghentian darurat dan aktifkan kembali aktivitas connector",
@@ -1602,6 +1601,8 @@
       "expiryDays": "Hari menuju kedaluwarsa",
       "volatility": "Volatilitas (%)",
       "riskFreeRate": "Suku bunga bebas risiko (%)",
+      "underlyingQty": "Unit aset dasar",
+      "underlyingQtyHint": "0: hanya opsi. 1: memiliki saham sebanyak pengali (100 saham jika pengali 100).",
       "multiplier": "Multiplier",
       "multiplierHint": "100 = kontrak saham AS standar",
       "commissionRate": "Tarif komisi (%)",
@@ -1723,6 +1724,31 @@
       "noData": "Tidak ada kontrak yang dikembalikan untuk pilihan ini.",
       "errorTitle": "Options chain tidak tersedia",
       "retry": "Coba lagi"
+    },
+    "expiryScenarios": {
+      "input": "Harga saat jatuh tempo (opsional, dipisahkan koma)",
+      "title": "Skenario jatuh tempo",
+      "spot": "Harga saat jatuh tempo",
+      "pnl": "Laba/rugi saat jatuh tempo",
+      "return": "Imbal hasil atas nilai nosional saham"
+    },
+    "comparison": {
+      "title": "Bandingkan strategi",
+      "basis": "Simpan kaki opsi lalu edit untuk membandingkan. Semua memakai harga masuk, posisi saham, jatuh tempo, dan biaya saat ini. Imbal hasil memakai nilai nosional saham saat masuk; opsi saja tidak memiliki penyebut ini.",
+      "current": "Strategi saat ini",
+      "saved": "Strategi {{index}}",
+      "save": "Simpan kaki untuk perbandingan",
+      "remove": "Hapus",
+      "metric": "Metrik",
+      "alternative": "Alternatif",
+      "baseline": "Dasar",
+      "difference": "Selisih (poin persentase)",
+      "max_profit_return": "Imbal hasil maksimum",
+      "max_loss_return": "Imbal hasil minimum",
+      "entry_cost_return": "Biaya masuk / nosional saham",
+      "higher": "Lebih tinggi",
+      "lower": "Lebih rendah",
+      "equal": "Sama"
     }
   },
   "alphaZoo": {
@@ -1968,7 +1994,10 @@
     "detailsUnavailable": "detail tidak tersedia",
     "tokens": "↑{{input}} ↓{{output}} token",
     "estimated": "estimasi",
-    "tokenSourceUnlabeled": "sumber tanpa label"
+    "tokenSourceUnlabeled": "sumber tanpa label",
+    "partialResults": "Hasil sebagian",
+    "report": "Laporan",
+    "continueWork": "Lanjutkan pekerjaan yang belum selesai"
   },
   "mandate": {
     "runtimeMandate": "Mandat runtime connector",

@@ -1,0 +1,26 @@
+{
+  "case_id": "committee.collar_cap_comparison.2026-11-13",
+  "origin": {
+    "commit": "4e4aec341",
+    "run_id": "swarm-20261113-054939-d8b5b92c",
+    "report_sha256": "9b5d3d60e89b05dbdb83693aaff72bebe883914acaa7db23c416657d84ad9888",
+    "section": "3, Collar A vs B",
+    "extraction": "Human-reviewed claim that B caps upside 2.6 percentage points lower than A; both actual tool outputs instead show B higher."
+  },
+  "claim": {
+    "reported_text": "caps upside 2.6 pts lower",
+    "b_minus_a_percentage_points": -2.6
+  },
+  "evidence": {
+    "a_max_profit_return": 0.18532041639087793,
+    "b_max_profit_return": 0.2116578614838438
+  },
+  "measurements": [
+    {
+      "field": "b_minus_a_percentage_points",
+      "expected": 2.633744509296587
+    }
+  ],
+  "expected_status": "FAIL",
+  "policy": "Offline evaluation only; never change the original report."
+}

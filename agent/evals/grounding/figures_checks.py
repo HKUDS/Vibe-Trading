@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.agent.grounding.figures import FiguresBlock, _lines_with_offsets
-from src.agent.grounding.identity import _scan_symbols
-from src.agent.grounding.registry import grounding_check
+from evals.grounding.figures import FiguresBlock, _lines_with_offsets
+from src.agent.instrument_identity import _scan_symbols
+from evals.grounding.registry import grounding_check
 
 
 def _active_block(ledger: Any) -> FiguresBlock:
@@ -71,7 +71,7 @@ def _unsourced_symbol_figures(ledger: Any, content: str) -> list[dict[str, Any]]
             continue
         # A figure declared ``cited`` is exempt, since a citation is an origin.
         if all(
-            (match := block.match(figure.value, figure.percent, figure.digits)) is not None and match.role == "cited"
+            (match := block.match(figure.value, figure.percent, figure.digits, scale=figure.scale)) is not None and match.role == "cited"
             for figure in carried
         ):
             continue

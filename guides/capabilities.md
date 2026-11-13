@@ -320,7 +320,7 @@ The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
 </details>
 
 <details>
-<summary><b>Quant Library</b> <sub>311 public exports across 25 modules, with read-only functions callable from every transport</sub></summary>
+<summary><b>Quant Library</b> <sub>313 public exports across 26 modules, with read-only functions callable from every transport</sub></summary>
 
 `src/quantlib` holds one tested implementation of each piece of finance math the
 agent needs. Skills **import** these rather than carrying formulas inside
@@ -346,7 +346,7 @@ that is a bug, not a pattern.
 | `copula` | Gaussian and Archimedean copulas |
 | `microstructure` | VPIN, Roll spread, Amihud illiquidity, Kyle's lambda |
 
-The read-only `quantlib_call` tool exposes 235 callable exports through one contract on the CLI, the Web UI, the REST API and MCP, including deployments where `bash` is gated off. The library inventory above also includes file exporters that this read-only tool deliberately refuses. It is
+The read-only `quantlib_call` tool exposes 237 callable exports through one contract on the CLI, the Web UI, the REST API and MCP, including deployments where `bash` is gated off. The library inventory above also includes file exporters that this read-only tool deliberately refuses. It is
 structurally not a shell — module allowlist, `__all__`-only dispatch, `export_*`
 refused. Econometrics needs the `stats` extra
 (`pip install "vibe-trading-ai[stats]"`); those functions lazy-import and tell

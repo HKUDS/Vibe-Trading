@@ -1,0 +1,33 @@
+{
+  "case_id": "committee.scenario_price_label.2026-11-13",
+  "origin": {
+    "commit": "a459cb525",
+    "run_id": "swarm-20261113-064608-a302af83",
+    "report_sha256": "cbf2089cd08a6328d37b2090fd0826ac2b92c96a47d91159f7ce97d8ed75b64b",
+    "section": "5, Base objective row",
+    "extraction": "Human-reviewed scenario explicitly labels $166 but reuses P&L for $166.19."
+  },
+  "claim": {
+    "reported_text": "-$863 (at $166)",
+    "pnl_at_166": -863
+  },
+  "evidence": {
+    "entry_spot": 166.19,
+    "expiry_spot": 166,
+    "put_strike": 160,
+    "put_premium": 11.6,
+    "call_strike": 210,
+    "call_premium": 2.98,
+    "multiplier": 100,
+    "commission_rate": 0.001,
+    "independent_pnl": -882.4579999999997
+  },
+  "measurements": [
+    {
+      "field": "pnl_at_166",
+      "expected": -882.4579999999997
+    }
+  ],
+  "expected_status": "FAIL",
+  "policy": "Offline evaluation only; never change the original report."
+}

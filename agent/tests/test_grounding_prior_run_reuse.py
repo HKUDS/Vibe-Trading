@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.tools.run_artifact_tool import read_run_artifact
 from tests.test_grounding_backtest_outputs import EW, RP, _declared, _write_backtest
 

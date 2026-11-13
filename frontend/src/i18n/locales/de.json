@@ -1282,8 +1282,7 @@
       "failed": "Fehlgeschlagen",
       "steps": "{{count}} Schritte",
       "continue": "Fortsetzen",
-      "reattach": "Erneut verbinden",
-      "checkingFigures": "Zahlen in dieser Antwort werden geprüft (Runde {{round}}) …"
+      "reattach": "Erneut verbinden"
     },
     "resumeConnector": "Connector fortsetzen",
     "resumeConnectorTitle": "Kill-Switch löschen und Connector-Aktivität wieder aktivieren",
@@ -1602,6 +1601,8 @@
       "expiryDays": "Tage bis Verfall",
       "volatility": "Volatilität (%)",
       "riskFreeRate": "Risikofreier Zins (%)",
+      "underlyingQty": "Einheiten des Basiswerts",
+      "underlyingQtyHint": "0: nur Optionen. 1: Aktien in Höhe des Multiplikators halten (100 Aktien bei Multiplikator 100).",
       "multiplier": "Multiplikator",
       "multiplierHint": "100 = Standard-US-Aktienkontrakt",
       "commissionRate": "Provisionssatz (%)",
@@ -1723,6 +1724,31 @@
       "noData": "Keine Kontrakte für diese Auswahl zurückgegeben.",
       "errorTitle": "Options-Kette nicht verfügbar",
       "retry": "Erneut versuchen"
+    },
+    "expiryScenarios": {
+      "input": "Verfallskurse (optional, durch Kommas getrennt)",
+      "title": "Verfallsszenarien",
+      "spot": "Kurs bei Verfall",
+      "pnl": "Gewinn/Verlust bei Verfall",
+      "return": "Rendite auf den Aktiennominalwert"
+    },
+    "comparison": {
+      "title": "Strategien vergleichen",
+      "basis": "Optionspositionen speichern und dann zum Vergleich bearbeiten. Einstiegskurs, Aktienposition, Laufzeit und Gebühren sind gemeinsam. Die Rendite bezieht sich auf den Aktiennominalwert beim Einstieg; bei reinen Optionen fehlt dieser Nenner.",
+      "current": "Aktuelle Strategie",
+      "saved": "Strategie {{index}}",
+      "save": "Positionen zum Vergleich speichern",
+      "remove": "Entfernen",
+      "metric": "Kennzahl",
+      "alternative": "Alternative",
+      "baseline": "Basis",
+      "difference": "Differenz (Prozentpunkte)",
+      "max_profit_return": "Maximale Rendite",
+      "max_loss_return": "Minimale Rendite",
+      "entry_cost_return": "Einstiegskosten / Aktiennominalwert",
+      "higher": "Höher",
+      "lower": "Niedriger",
+      "equal": "Gleich"
     }
   },
   "alphaZoo": {
@@ -1955,6 +1981,9 @@
     "expiresAt": "Läuft ab {{time}}"
   },
   "swarmStatus": {
+    "partialResults": "Teilergebnisse",
+    "report": "Bericht",
+    "continueWork": "Offene Arbeit fortsetzen",
     "agents": "{{done}}/{{total}} Agents",
     "layer": "Runde {{current}} von {{total}}",
     "agent": "Agent",

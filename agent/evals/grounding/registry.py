@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 if TYPE_CHECKING:
-    from src.agent.grounding.ledger import GroundingLedger
+    from evals.grounding.ledger import GroundingLedger
 
 # A predicate gets the ledger (identity/figure state lives there) and the
 # candidate answer, and returns issue dicts in the existing shape.
