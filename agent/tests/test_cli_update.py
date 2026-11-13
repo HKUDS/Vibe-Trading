@@ -7,7 +7,6 @@ import json
 import pytest
 import requests
 
-from cli import _legacy
 from cli.commands import update as update_mod
 
 
@@ -66,6 +65,8 @@ def _monkeypatch_upgrade_env(monkeypatch, *, latest: str = "99.0.0", kind: str =
 
 
 def test_parser_accepts_update_subcommand() -> None:
+    from cli import _legacy
+
     parser = _legacy._build_parser()
 
     args = parser.parse_args(["update"])
@@ -73,12 +74,25 @@ def test_parser_accepts_update_subcommand() -> None:
 
 
 def test_help_lists_update(capsys: pytest.CaptureFixture[str]) -> None:
+    from cli import _legacy
+
     parser = _legacy._build_parser()
 
     with pytest.raises(SystemExit) as excinfo:
         parser.parse_args(["--help"])
     assert excinfo.value.code == 0
     assert "update" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("payload", [[], None, {"info": None}, {"info": []}, {"info": {"version": None}}])
+def test_update_rejects_malformed_pypi_payload_without_installing(monkeypatch, capsys, payload):
+    response = _FakePyPIResponse("99.0.0")
+    monkeypatch.setattr(response, "json", lambda: payload)
+    monkeypatch.setattr(update_mod.requests, "get", lambda *a, **k: response)
+    monkeypatch.setattr(update_mod.subprocess, "run", lambda *a, **k: pytest.fail("must not run pip"))
+
+    assert update_mod.cmd_update() == update_mod.EXIT_FAILED
+    assert "Could not check for updates on PyPI" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------
