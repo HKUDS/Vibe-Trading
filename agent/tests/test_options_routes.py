@@ -116,7 +116,11 @@ def test_payoff_greeks_match_bs_greeks_with_multiplier() -> None:
     expected = {key: 0.0 for key in ("delta", "gamma", "theta", "vega", "rho")}
     for leg in legs:
         g = bs_greeks(
-            S=100.0, K=leg["strike"], T=30.0 / 365.0, r=0.05, sigma=0.3,
+            S=100.0,
+            K=leg["strike"],
+            T=30.0 / 365.0,
+            r=0.05,
+            sigma=0.3,
             option_type=leg["option_type"],
         )
         for key in expected:
@@ -139,7 +143,10 @@ def test_payoff_rejects_negative_strike() -> None:
 
 
 def test_payoff_rejects_empty_legs() -> None:
-    assert _client().post("/options/payoff", json=_long_call_body(legs=[])).status_code == 422
+    assert (
+        _client().post("/options/payoff", json=_long_call_body(legs=[])).status_code
+        == 422
+    )
 
 
 def test_payoff_rejects_boolean_qty() -> None:
@@ -151,7 +158,9 @@ def test_payoff_rejects_boolean_qty() -> None:
 
 def test_payoff_rejects_zero_qty_and_spot_points_below_min() -> None:
     client = _client()
-    zero_qty = _long_call_body(legs=[{"option_type": "call", "strike": 100.0, "qty": 0}])
+    zero_qty = _long_call_body(
+        legs=[{"option_type": "call", "strike": 100.0, "qty": 0}]
+    )
     assert client.post("/options/payoff", json=zero_qty).status_code == 422
 
     # spot_points=5 is below the tool's minimum; the pydantic mirror rejects it
@@ -173,7 +182,9 @@ def test_payoff_tool_error_maps_to_400() -> None:
     assert "spot_max" in payload["error"]
 
 
-def test_payoff_unexpected_tool_exception_maps_to_502(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_payoff_unexpected_tool_exception_maps_to_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def explode(self: Any, **kwargs: Any) -> str:
         raise RuntimeError("payoff engine exploded")
 
@@ -211,7 +222,11 @@ def test_volatility_surface_happy_path_uses_real_interpolation() -> None:
     assert body["interpolation"]["extrapolation"] == "rejected"
     assert len(body["points"]) == 9
     assert sum(point["source"] == "observed" for point in body["points"]) == 4
-    middle = next(point for point in body["points"] if point["strike"] == 100.0 and point["time_to_expiry"] == 0.15)
+    middle = next(
+        point
+        for point in body["points"]
+        if point["strike"] == 100.0 and point["time_to_expiry"] == 0.15
+    )
     assert middle["source"] == "interpolated"
     weight = math.log(100.0 / 90.0) / math.log(110.0 / 90.0)
     lower_iv = 0.25 + (0.35 - 0.25) * weight
@@ -220,11 +235,15 @@ def test_volatility_surface_happy_path_uses_real_interpolation() -> None:
     upper_variance = upper_iv**2 * 0.2
     expected_variance = (lower_variance + upper_variance) / 2
     assert middle["total_variance"] == pytest.approx(expected_variance)
-    assert middle["implied_volatility"] == pytest.approx((expected_variance / 0.15) ** 0.5)
+    assert middle["implied_volatility"] == pytest.approx(
+        (expected_variance / 0.15) ** 0.5
+    )
 
 
 def test_volatility_surface_rejects_extrapolation() -> None:
-    r = _client().post("/options/volatility-surface", json=_surface_body(strikes=[120.0]))
+    r = _client().post(
+        "/options/volatility-surface", json=_surface_body(strikes=[120.0])
+    )
 
     assert r.status_code == 400
     assert "no extrapolation" in r.json()["error"]
@@ -234,7 +253,9 @@ def test_volatility_surface_rejects_duplicate_quotes() -> None:
     observations = _surface_body()["observations"]
     observations.append(observations[0])
 
-    r = _client().post("/options/volatility-surface", json=_surface_body(observations=observations))
+    r = _client().post(
+        "/options/volatility-surface", json=_surface_body(observations=observations)
+    )
 
     assert r.status_code == 400
     assert "duplicate" in r.json()["error"]
@@ -259,6 +280,191 @@ def test_volatility_surface_unexpected_exception_maps_to_502(
 
     assert r.status_code == 502
     assert r.json() == {"ok": False, "error": "volatility surface computation failed"}
+
+
+def _surface_diagnostics_body(**over: Any) -> dict[str, Any]:
+    body = _surface_body()
+    del body["strikes"]
+    del body["expiries"]
+    body.update(risk_free_rate=0.03, dividend_yield=0.01)
+    body.update(over)
+    return body
+
+
+def test_surface_diagnostics_matches_the_readonly_tool_result() -> None:
+    from src.tools.quantlib_tool import QuantlibCallTool
+
+    request = _surface_diagnostics_body(spot=100)
+    response = _client().post("/options/volatility-surface/diagnostics", json=request)
+    tool = json.loads(
+        QuantlibCallTool().execute(
+            action="call",
+            module="volatility",
+            function="diagnose_iv_surface",
+            kwargs=request,
+        )
+    )
+
+    assert response.status_code == 200
+    assert response.json() == tool["result"]
+    assert response.json()["checked"] == {"vertical_spreads": 2, "butterflies": 0}
+    json.dumps(response.json(), allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("spot", True), ("risk_free_rate", "0.05"), ("dividend_yield", False)],
+)
+def test_surface_diagnostics_requires_real_json_model_numbers(
+    field: str, value: Any
+) -> None:
+    response = _client().post(
+        "/options/volatility-surface/diagnostics",
+        json=_surface_diagnostics_body(**{field: value}),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "field,value", [("strike", True), ("implied_volatility", "0.25")]
+)
+def test_surface_diagnostics_requires_real_json_observation_numbers(
+    field: str, value: Any
+) -> None:
+    body = _surface_diagnostics_body()
+    body["observations"][0][field] = value
+
+    assert (
+        _client().post("/options/volatility-surface/diagnostics", json=body).status_code
+        == 422
+    )
+
+
+@pytest.mark.parametrize(
+    "original,overflow",
+    [
+        ('"risk_free_rate": 0.03', '"risk_free_rate": 1e309'),
+        ('"implied_volatility": 0.25', '"implied_volatility": 1e309'),
+    ],
+)
+def test_surface_diagnostics_rejects_json_number_overflow_without_a_server_error(
+    original: str,
+    overflow: str,
+) -> None:
+    # A decimal exponent is valid JSON, unlike literal NaN/Infinity tokens.
+    body = json.dumps(_surface_diagnostics_body()).replace(original, overflow)
+    client = TestClient(
+        api_server.app, client=("127.0.0.1", 50000), raise_server_exceptions=False
+    )
+
+    response = client.post(
+        "/options/volatility-surface/diagnostics",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    assert errors
+    assert all("input" not in error and "ctx" not in error for error in errors)
+    json.dumps(response.json(), allow_nan=False)
+
+
+def test_surface_diagnostics_does_not_silently_ignore_an_output_grid() -> None:
+    response = _client().post(
+        "/options/volatility-surface/diagnostics",
+        json=_surface_diagnostics_body(strikes=[90, 100]),
+    )
+
+    assert response.status_code == 422
+
+
+def test_surface_diagnostics_duplicate_observations_are_a_client_error() -> None:
+    body = _surface_diagnostics_body()
+    body["observations"].append(body["observations"][0])
+
+    response = _client().post("/options/volatility-surface/diagnostics", json=body)
+
+    assert response.status_code == 400
+    assert "duplicate expiry/strike" in response.json()["error"]
+
+
+def test_surface_diagnostics_observation_budget_is_validated_before_computation() -> (
+    None
+):
+    body = _surface_diagnostics_body(
+        observations=[
+            {"strike": 50 + i, "time_to_expiry": 1, "implied_volatility": 0.2}
+            for i in range(401)
+        ]
+    )
+
+    assert (
+        _client().post("/options/volatility-surface/diagnostics", json=body).status_code
+        == 422
+    )
+
+
+def test_surface_diagnostics_retains_the_registered_auth_dependency() -> None:
+    from fastapi import FastAPI, HTTPException
+    from src.api.options_routes import register_options_routes
+
+    async def deny() -> None:
+        raise HTTPException(status_code=401, detail="authentication required")
+
+    app = FastAPI()
+    register_options_routes(app, require_auth=deny)
+    response = TestClient(app).post(
+        "/options/volatility-surface/diagnostics", json=_surface_diagnostics_body()
+    )
+
+    assert response.status_code == 401
+
+
+def test_surface_diagnostics_runs_real_computation_outside_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    from src.quantlib.volatility import diagnose_iv_surface
+
+    has_loop = []
+
+    def record_loop(**kwargs):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            has_loop.append(False)
+        else:
+            has_loop.append(True)
+        return diagnose_iv_surface(**kwargs)
+
+    monkeypatch.setattr(
+        "src.api.options_routes.diagnose_iv_surface", record_loop, raising=False
+    )
+    response = _client().post(
+        "/options/volatility-surface/diagnostics", json=_surface_diagnostics_body()
+    )
+
+    assert response.status_code == 200
+    assert has_loop == [False]
+
+
+def test_surface_diagnostics_unexpected_errors_do_not_leak_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def explode(**kwargs):
+        raise RuntimeError("internal diagnostic implementation detail")
+
+    monkeypatch.setattr(
+        "src.api.options_routes.diagnose_iv_surface", explode, raising=False
+    )
+    response = _client().post(
+        "/options/volatility-surface/diagnostics", json=_surface_diagnostics_body()
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {"ok": False, "error": "surface diagnostics failed"}
 
 
 # ── GET /options/chain ───────────────────────────────────────────────────────
@@ -291,7 +497,9 @@ def test_chain_success_returns_tool_envelope(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr("src.api.options_routes.OptionsChainTool.execute", fake_execute)
 
-    r = _client().get("/options/chain", params={"ticker": "AAPL", "expiration": 1765584000})
+    r = _client().get(
+        "/options/chain", params={"ticker": "AAPL", "expiration": 1765584000}
+    )
 
     assert r.status_code == 200
     body = r.json()

@@ -8,11 +8,12 @@ Routes (auth via the caller-supplied ``require_auth`` dependency):
 
 - ``POST /options/payoff``  — multi-leg expiry payoff + spot/IV scenario analysis
 - ``POST /options/volatility-surface``: observed/interpolated IV grid
+- ``POST /options/volatility-surface/diagnostics``: observed-strike model-price checks
 - ``GET  /options/chain``   — US-listed options chain for one expiration (Yahoo)
 
-Both routes are thin HTTP wrappers around the existing agent tools
-(``OptionsPayoffTool`` / ``OptionsChainTool``) so validation and math stay
-identical to the MCP surface — no formula is reimplemented here.
+The routes delegate to existing agent tools and quantlib functions so pricing,
+interpolation and diagnostics share the MCP implementation. No formula is
+reimplemented here.
 
 ``POST /options/payoff`` returns the tool's envelope verbatim plus one additive
 top-level ``greeks`` object: portfolio Greeks at entry (sum of ``qty * greek``
@@ -42,12 +43,14 @@ import json
 import logging
 from typing import Annotated, Any, Awaitable, Callable, Literal
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import APIRouter, Depends, FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, field_validator
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.quantlib.options import bs_greeks
-from src.quantlib.volatility import implied_volatility_surface
+from src.quantlib.volatility import diagnose_iv_surface, implied_volatility_surface
 from src.tools.options_chain_tool import OptionsChainTool
 from src.tools.options_payoff_tool import OptionsPayoffTool, _coerce_legs
 
@@ -141,6 +144,46 @@ class VolatilitySurfaceRequest(BaseModel):
     expiries: list[float] | None = Field(None, min_length=1, max_length=400)
 
 
+class DiagnosticSurfaceObservation(SurfaceObservation):
+    """Finite JSON numbers without coercing strings or booleans."""
+
+    model_config = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")
+
+
+class SurfaceDiagnosticsRequest(BaseModel):
+    """Observed IV slices and explicit European call model assumptions."""
+
+    model_config = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")
+
+    observations: list[DiagnosticSurfaceObservation] = Field(
+        ..., min_length=1, max_length=400
+    )
+    spot: float = Field(..., gt=0)
+    risk_free_rate: float = 0.0
+    dividend_yield: float = 0.0
+
+
+class _SurfaceDiagnosticsRoute(APIRoute):
+    """Keep rejected non-finite inputs out of the diagnostic error response."""
+
+    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
+        """Return the typed handler with JSON-safe validation errors."""
+        handler = super().get_route_handler()
+
+        async def validate(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                # Raw inputs/context can contain infinity from a JSON exponent.
+                detail = [
+                    {key: error[key] for key in ("loc", "msg", "type")}
+                    for error in exc.errors()
+                ]
+                return JSONResponse(status_code=422, content={"detail": detail})
+
+        return validate
+
+
 def _tool_params(payload: PayoffRequest) -> dict[str, Any]:
     """Project the validated request onto the tool's execute() kwargs.
 
@@ -215,7 +258,7 @@ def register_options_routes(
 
     Args:
         app: The host FastAPI app.
-        require_auth: Header-auth dependency for both endpoints.
+        require_auth: Header-auth dependency for all options endpoints.
 
     For backwards compatibility, when the dependency callable is not passed
     explicitly we resolve it from the host ``api_server`` module via
@@ -268,13 +311,42 @@ def register_options_routes(
         try:
             return await asyncio.to_thread(implied_volatility_surface, **params)
         except ValueError as exc:
-            return JSONResponse(status_code=400, content={"ok": False, "error": str(exc)})
+            return JSONResponse(
+                status_code=400, content={"ok": False, "error": str(exc)}
+            )
         except Exception:  # noqa: BLE001
             logger.exception("options volatility surface computation failed")
             return JSONResponse(
                 status_code=502,
                 content={"ok": False, "error": "volatility surface computation failed"},
             )
+
+    diagnostics = APIRouter(route_class=_SurfaceDiagnosticsRoute)
+
+    @diagnostics.post(
+        "/options/volatility-surface/diagnostics", dependencies=[Depends(require_auth)]
+    )
+    async def options_surface_diagnostics(
+        payload: SurfaceDiagnosticsRequest,
+    ) -> Response:
+        """Check original observed slices without changing the interpolation grid."""
+        try:
+            result = await asyncio.to_thread(
+                diagnose_iv_surface, **payload.model_dump()
+            )
+            return JSONResponse(content=result)
+        except ValueError as exc:
+            return JSONResponse(
+                status_code=400, content={"ok": False, "error": str(exc)}
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("options surface diagnostics failed")
+            return JSONResponse(
+                status_code=502,
+                content={"ok": False, "error": "surface diagnostics failed"},
+            )
+
+    app.include_router(diagnostics)
 
     # -----------------------------------------------------------------------
     # GET /options/chain

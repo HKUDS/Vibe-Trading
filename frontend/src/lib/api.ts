@@ -7,6 +7,7 @@ import type {
   VolatilitySurfaceRequest,
   VolatilitySurfaceResponse,
 } from "@/lib/options";
+import type { SurfaceDiagnosticsRequest, SurfaceDiagnosticsResponse } from "@/lib/surfaceDiagnostics";
 
 const BASE = "";
 const configuredTimeout = Number(import.meta.env.VITE_API_TIMEOUT_MS);
@@ -875,6 +876,12 @@ export const api = {
     }),
   computeVolatilitySurface: (body: VolatilitySurfaceRequest, signal?: AbortSignal) =>
     request<VolatilitySurfaceResponse>("/options/volatility-surface", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  diagnoseVolatilitySurface: (body: SurfaceDiagnosticsRequest, signal?: AbortSignal) =>
+    request<SurfaceDiagnosticsResponse>("/options/volatility-surface/diagnostics", {
       method: "POST",
       body: JSON.stringify(body),
       signal,

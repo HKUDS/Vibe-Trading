@@ -360,7 +360,11 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 |---|---|---|
 | 模拟交易 | 跨会话保存每日现金、成交和净值。独立模拟可按五分钟回放 A 股交易日。 | 可选的按成交量占比撮合（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)，草稿）。 |
 | 研究 | 运行卡片记录回测指标与证据。带日期的研究记录保留修订历史，并可搜索。 | 研究记录中加入结构化财务数据（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)，审阅中）。 |
-| 期权实验室 | 支持多腿损益、希腊字母及现价 × 隐含波动率情景。 | 在 `/options` 提供交互式波动率曲面网格。 |
+| 期权实验室 | 支持多腿损益、希腊字母、现价 × IV 情景，并可在 `/options` 编辑 IV 网格、检查观测切片的模型价格一致性。 | 这些检查不做曲面校准，也不提供无套利认证。 |
+
+观测切片诊断使用你输入的标的价格、连续复利无风险利率和股息率，重构欧式看涨期权模型价格，检查同一观测到期日内的垂直价差界限和蝶式凸性。结果明确列出覆盖不足和无法定价的切片，最多展示前 20 项问题，但不缩减实际检查数量，也不改变插值网格。只读 `quantlib_call` 的 `volatility.diagnose_iv_surface` 和 `POST /options/volatility-surface/diagnostics` 使用相同观测值及小数形式的利率。这是模型价格检查，不是可成交报价或交易建议。
+
+详见[模型边界与示例](agent/src/skills/options-advanced/SKILL.md#volatility-surface)。
 
 ## 参与贡献
 
