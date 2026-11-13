@@ -38,6 +38,8 @@ def persist_calculation_result(result: str, run_dir: str | Path | None) -> str:
         _write_original(path, result, root)
         parts = save_result_parts(result, folder / 'parts', root)
         ref = {'path': str(path), 'sha256': digest, 'format': 'json',
+               'relative_path': str(path.relative_to(root)),
+               'parts_relative_dir': str((folder / 'parts').relative_to(root)),
                'parts_dir': str(folder / 'parts'), 'part_count': len(parts)}
     except (OSError, ValueError) as exc:
         payload['_artifact_error'] = str(exc)
@@ -154,11 +156,14 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
     receipt = {
         '_result_file': {'path': str(path), 'sha256': digest,
                          'format': 'json' if is_json else 'text',
+                         'relative_path': str(path.relative_to(root)),
+                         'parts_relative_dir': str((folder / 'parts').relative_to(root)),
                          'characters': len(result), 'parts_dir': str(folder / 'parts'),
                          'part_count': part_count},
         '_delivery': (
             'The complete tool result is saved in this task workspace. Load the JSON '
-            'file with a quantlib_call __data_ref__ argument, or use read_file on parts/1.txt '
+            'file with a quantlib_call __data_ref__ argument. For read_file, use the exact '
+            'parts_relative_dir + /1.txt path relative to your current task workspace, '
             'through part_count in order. Do not refetch data because this preview '
             'is shortened. Source row limits/sampling still apply: inspect the '
             'original result coverage before calculating; saving does not fill missing rows.'
@@ -168,6 +173,14 @@ def deliver_tool_result(result: str, run_dir: str | Path | None, registry) -> st
         for key in ('status', 'ok', '_provenance', '_unresolved', '_diagnostics'):
             if key in payload:
                 receipt[key] = payload[key]
+    # Keep compact calculation bases visible beside the file reference. Curves
+    # and large tables stay intact in the artifact rather than hiding the basis.
+    if isinstance(payload, dict):
+        for key in ('inputs', 'calculation_basis', 'summary'):
+            if key in payload:
+                candidate = {**receipt, key: payload[key]}
+                if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT // 2:
+                    receipt[key] = payload[key]
     # Bound the receipt too. Source metadata stays in the complete artifact if
     # it alone is larger than the delivery budget; no false absence is implied.
     if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT // 2:

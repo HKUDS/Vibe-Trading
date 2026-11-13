@@ -130,13 +130,12 @@ def prepare_handoff(run_dir: Path, task, destination: Path) -> str:
     # text is rewritten and no source status is promoted by copying its files.
     index = folder / "index.json"
     _write_original(index, content, root)
-    digest = hashlib.sha256(content.encode()).hexdigest()
-    parts = save_result_parts(content, folder / digest / "index-parts", root)
+    parts = save_result_parts(content, folder / "index-parts", root)
     tools = ", ".join(sorted({entry["tool"] for entry in entries})) or "none recorded"
     return (
         "## Inherited evidence\n"
         f"{len(entries)} recorded observations ({tools}). Read upstream/index.json; "
-        f"if large, read upstream/{digest}/index-parts/1.txt through {len(parts)}. "
+        f"For paged reading, use upstream/index-parts/1.txt through upstream/index-parts/{len(parts)}.txt. "
         "Each entry identifies its producing task/tool and a local JSON path usable "
         "by quantlib_call __data_ref__. These are inherited observations, not fresh "
         "fetches by you. Independent analysis can reuse them; describe what you "
