@@ -1276,8 +1276,7 @@
       "failed": "실패",
       "steps": "{{count}}단계",
       "continue": "계속",
-      "reattach": "다시 연결",
-      "checkingFigures": "답변 속 수치 확인 중({{round}}차)…"
+      "reattach": "다시 연결"
     },
     "resumeConnector": "커넥터 재개",
     "resumeConnectorTitle": "킬 스위치를 해제하고 커넥터 활동을 재개",

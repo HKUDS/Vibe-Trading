@@ -27,27 +27,10 @@ as the content of a `.pdf` file.
 
 ### Preserve evidence when formatting numbers
 
-For the final chat answer, follow the system's `figures` declaration contract.
-A rounded or scaled financial metric still needs its original tool-call and
-field reference; a human-readable citation alone is not that declaration.
-For example, if the current tool call `c1` actually returned
-`revenue: 96221000000`, the prose may say `Revenue was 96.22B` with:
-
-```figures
-96.22B | observed | Revenue, rounded to two decimals in billions | c1::revenue
-```
-
-Replace that illustrative call id and field with the real ones from this run.
-Use a numeric magnitude (`B`, `M`, `K`, `万`, `亿`) or its full English unit
-(`billion`, `million`, `thousand`) in prose and declaration. A declaration may
-also retain the precise raw observed value while prose rounds it in those units.
-Declare forecast targets as `proposed`, and computations as `derived` with
-their actual operands, rather than labelling them `observed`. The internal
-declaration belongs to the final chat validation contract, not the saved PDF.
-If correction feedback names a missing declaration or mismatched field,
-repair that reference from the evidence before finalizing. Do not replace a
-rejected decimal with an undeclared bare integer to bypass validation, and do
-not fill a genuinely unavailable value from memory.
+Cite the source and reporting period in ordinary prose. Preserve currency and
+units when rounding: USD 96,221,000,000 can be written as USD 96.22 billion.
+Distinguish observations, calculated results, and proposed scenarios. Explain
+missing inputs; do not invent them. No hidden numeric declaration is required.
 
 ### Type Classification
 

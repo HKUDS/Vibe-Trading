@@ -1276,8 +1276,7 @@
       "failed": "失败",
       "steps": "{{count}} 个步骤",
       "continue": "继续",
-      "reattach": "重新连接",
-      "checkingFigures": "正在核对答案中的数字（第 {{round}} 轮）…"
+      "reattach": "重新连接"
     },
     "resumeConnector": "恢复连接器",
     "resumeConnectorTitle": "清除熔断开关并恢复连接器活动",

@@ -1276,8 +1276,7 @@
       "failed": "失敗",
       "steps": "{{count}} ステップ",
       "continue": "続行",
-      "reattach": "再接続",
-      "checkingFigures": "回答内の数値を確認中（{{round}} 回目）…"
+      "reattach": "再接続"
     },
     "resumeConnector": "コネクタを再開",
     "resumeConnectorTitle": "キルスイッチを解除してコネクタ活動を再開",

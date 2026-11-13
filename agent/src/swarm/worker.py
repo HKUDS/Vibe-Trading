@@ -382,77 +382,23 @@ def build_worker_prompt(
         # instruction to prefer these prices over training data.
         prompt_parts.append(grounding_block)
 
-    # The code-writing/report-file workflow below only makes sense for an
-    # agent whose whitelist (agent_spec.tools, projected by
-    # build_swarm_registry -- see run_worker step 1) actually grants
-    # write_file/bash/edit_file. A preset can and does hand a role a
-    # narrower, MCP-data-only whitelist (e.g. this deployment's
-    # deriv_fx_execution.yaml gives market_analyst/devils_advocate/
-    # optimist/contract_risk_reviewer no write_file at all, reserving it
-    # for desk_lead's final report) -- _classify_deliverable already
-    # relaxes the tool-evidence/report_written requirement for exactly
-    # this case via is_data_agent, but this block used to tell EVERY
-    # agent it "MUST" call write_file regardless, unconditionally
-    # contradicting the framework's own acceptance criteria for that same
-    # agent. In practice this produced a confused response that noticed
-    # the contradiction at runtime (e.g. "write_file is not available in
-    # this environment, so the report is delivered inline below") and
-    # improvised a preamble around it -- which, for agents relying on the
-    # SKIPPED: short-circuit convention, buried the marker several
-    # paragraphs in under markdown decoration instead of leading with it
-    # as their own role instructions require.
     enabled_tools = set(agent_spec.tools or []) if available_tools is None else available_tools
-    has_code_tools = {"write_file", "bash"} <= enabled_tools
     iteration_budget = agent_spec.max_iterations or _default_max_iterations()
-    budget_rule = (
-        f"You have at most {iteration_budget} model iterations. Each iteration can "
-        "request multiple independent tools. Reuse available results and finish "
-        "once the requested deliverable is complete.\n\n"
+    prompt_parts.append(
+        "## Execution Rules\n\n"
+        f"You have at most {iteration_budget} model iterations. Reuse supplied data "
+        "and upstream reports; call available tools when more evidence or calculations "
+        "are needed. Load a skill when its methodology or API contract is useful. "
+        "Deliver the requested analysis directly in your final response. "
+        "Create files when requested or useful; a report.md file is optional. "
+        "Explain unavailable inputs and distinguish assumptions from observed results. "
+        "Respond in the task's language."
     )
-    if has_code_tools:
+    if "bash" not in enabled_tools:
         prompt_parts.append(
-            "## Execution Rules\n\n"
-            + budget_rule +
-            "**Phase 1 — Plan (0 tool calls):** Before calling any tool, state your plan in 3-5 bullet points.\n\n"
-            "**Phase 2 — Execute:**\n"
-            "- Load a relevant skill when its method or API contract is needed; direct tool lookups do not require a preliminary skill read.\n"
-            "- Write ONE focused Python script via `write_file`, then run it with `bash python script.py`.\n"
-            "- Do NOT write long Python code inside bash. Use write_file + bash.\n"
-            "- Do NOT fetch data with curl/requests. Use the patterns from load_skill (yfinance, OKX API via Python).\n"
-            "- If a script fails, read the error, fix with `edit_file`, re-run. Max 2 retries per script.\n\n"
-            "**Phase 3 — Summarize (MUST use write_file):**\n"
-            "- You MUST call `write_file` with path `report.md` to save your final report as a markdown file.\n"
-            "- This is REQUIRED, not optional. Your final response MUST include a write_file call for report.md.\n"
-            "- The report must include specific numbers, dates, and actionable conclusions.\n"
-            "- After writing report.md, output a brief 2-3 sentence summary in your text response.\n"
-            "- Respond in the same language as the task prompt."
+            "Shell execution is unavailable. Use assigned data and calculation tools "
+            "directly; do not write scripts you cannot execute."
         )
-    elif "write_file" in enabled_tools:
-        prompt_parts.append(
-            "## Execution Rules\n\n" + budget_rule
-            + "Call assigned data and calculation tools directly. Shell execution is unavailable; "
-            "use quantlib_call (describe first to inspect arguments), technical_indicators, "
-            "and other available analysis tools. Do not write scripts you cannot execute. "
-            "Save the final analysis to report.md with write_file, then summarize it. "
-            "State unavailable inputs explicitly. Respond in the task's language."
-        )
-    else:
-        prompt_parts.append(
-            "## Execution Rules\n\n"
-            + budget_rule +
-            "**Plan (0 tool calls):** Before calling any tool, state your plan in 3-5 bullet points.\n\n"
-            "**Execute:** You do not have `write_file`/`bash`/`edit_file` in this role -- call your "
-            "assigned data/analysis tools directly to gather what your role needs. Do not attempt to "
-            "write or run a script; it is not possible with your tool whitelist.\n\n"
-            "**Summarize:** There is no report.md for this role. Output your final analysis directly "
-            "as your plain-text response, in the exact format your role's instructions above require "
-            "(including any short-circuit marker convention they describe).\n\n"
-            "Respond in the same language as the task prompt."
-        )
-
-    if agent_spec.require_position_risk_table:
-        from src.swarm.position_risk import POSITION_RISK_RULE
-        prompt_parts.append(POSITION_RISK_RULE)
 
     now = datetime.now(timezone.utc)
     prompt_parts.append(
@@ -783,8 +729,6 @@ def _run_worker_impl(
     wrap_up_at = max(1, int(max_iterations * 0.8))
     last_assistant_content = ""
 
-    data_tool_calls = 0
-    position_risk_correction_sent = False
     content_filter_count = 0
     consecutive_content_filter_count = 0
     stream_failure_streak = 0
@@ -1126,24 +1070,10 @@ def _run_worker_impl(
 
         # If no tool calls, this is the final response
         if not response.has_tool_calls:
-            summary = response.content or last_assistant_content or "(no summary)"
+            summary = response.content or ""
             summary = _resolve_summary(artifact_dir, summary)
-            risk_reason = None
-            if agent_spec.require_position_risk_table:
-                from src.swarm.position_risk import validate_position_risk_report
-                risk_reason = validate_position_risk_report(summary)
-                if risk_reason and not position_risk_correction_sent and iteration + 1 < max_iterations:
-                    position_risk_correction_sent = True
-                    messages.append({"role": "assistant", "content": response.content or ""})
-                    messages.append({"role": "user", "content": "Final report needs correction: " + risk_reason})
-                    continue
             _finalize_run(artifact_dir, summary, messages)
-            reason = risk_reason or _classify_deliverable(
-                summary,
-                is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
-                report_written=_report_written(artifact_dir),
-                data_tool_calls=data_tool_calls,
-            )
+            reason = _delivery_error(summary)
             if reason:
                 _emit(event_callback, "worker_incomplete", agent_id, task_id,
                       {"iterations": iteration + 1, "reason": reason})
@@ -1152,7 +1082,7 @@ def _run_worker_impl(
                     summary=summary,
                     artifact_paths=_collect_artifacts(run_dir, artifact_dir),
                     iterations=iteration + 1,
-                    error=f"output contract not met: {reason}",
+                    error=reason,
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     cache_read_tokens=total_cache_read_tokens,
@@ -1231,8 +1161,6 @@ def _run_worker_impl(
             # event previews, before truncation can cut a credential envelope.
             result = redact_tool_result(result)
             result_is_error = _is_error_result(result)
-            if tc.name != "load_skill" and not result_is_error:
-                data_tool_calls += 1
             tc_elapsed = time.monotonic() - tc_start
             _emit(
                 event_callback,
@@ -1265,35 +1193,10 @@ def _run_worker_impl(
     summary = _best_summary(messages, last_assistant_content) or f"Worker hit iteration limit ({max_iterations} iterations)"
     summary = _resolve_summary(artifact_dir, summary)
     _finalize_run(artifact_dir, summary, messages)
-    risk_reason = None
-    if agent_spec.require_position_risk_table:
-        from src.swarm.position_risk import validate_position_risk_report
-        risk_reason = validate_position_risk_report(summary)
-    reason = risk_reason or _classify_deliverable(
-        summary,
-        is_data_agent=_requires_own_evidence(agent_spec, task, upstream_summaries),
-        report_written=_report_written(artifact_dir),
-        data_tool_calls=data_tool_calls,
-    )
-    if reason:
-        _emit(event_callback, "worker_incomplete", agent_id, task_id,
-              {"iterations": max_iterations, "reason": f"iteration limit; {reason}"})
-        return WorkerResult(
-            status="incomplete",
-            summary=summary,
-            artifact_paths=_collect_artifacts(run_dir, artifact_dir),
-            iterations=max_iterations,
-            error=f"hit iteration limit without a valid deliverable: {reason}",
-            input_tokens=total_input_tokens,
-            output_tokens=total_output_tokens,
-            cache_read_tokens=total_cache_read_tokens,
-            cache_creation_tokens=total_cache_creation_tokens,
-            token_source=token_source,
-            content_filter_warnings=content_filter_warnings,
-        )
     _emit(event_callback, "worker_iteration_limit", agent_id, task_id)
     return WorkerResult(
-        status="completed",
+        status="incomplete",
+        error="iteration limit reached before a final response",
         summary=summary,
         artifact_paths=_collect_artifacts(run_dir, artifact_dir),
         iterations=max_iterations,
@@ -1416,13 +1319,6 @@ def _truncate_preview(value: Any, *, limit: int = 200) -> str:
     return text if len(text) <= limit else text[:limit] + "..."
 
 
-# Tools that do not themselves fetch/compute market data. An agent whose
-# entire toolset is a subset of these is a synthesis/editor role (e.g. the
-# research editor in equity_research_team) and may legitimately produce a
-# text deliverable with no tool calls — it must NOT be failed for "no tool
-# evidence" (that would regress correct runs; see #115 framing).
-_GENERIC_TOOLS = {"bash", "read_file", "write_file", "load_skill", "edit_file"}
-
 _UNPARSED_TOOL_MARKERS = (
     "<\uff5ctool\u2581calls\u2581begin\uff5c>",
     "<tool_calls_begin>",
@@ -1430,62 +1326,6 @@ _UNPARSED_TOOL_MARKERS = (
     "<tool_sep>",
     "tool\u2581sep",
 )
-_FABRICATION_MARKERS = ("mock data", "without actual data", "fabricated data", "placeholder data")
-_PLAN_PREFIXES = (
-    "# phase 1", "## phase 1", "### phase 1",
-    "phase 1 \u2014 plan", "phase 1 - plan", "phase 1: plan",
-    "# plan", "## plan", "### plan", "**plan**",
-)
-_HANDOFF_TAILS = (
-    "execute", "execute.", "execute:", "skills.", "skills", "proceed?",
-    "proceed.", "without writing files.", "let me adjust the approach",
-    "let me adjust the approach.", "stand by for final synthesis.",
-)
-
-
-def _report_written(artifact_dir: Path) -> bool:
-    """True iff a non-empty report.md was actually produced by the worker."""
-    try:
-        p = artifact_dir / "report.md"
-        return p.is_file() and bool(p.read_text(encoding="utf-8").strip())
-    except Exception:
-        return False
-
-
-def _is_data_agent(agent_spec: SwarmAgentSpec) -> bool:
-    """An agent with at least one data/analysis tool beyond the generic kit."""
-    return bool(set(agent_spec.tools or []) - _GENERIC_TOOLS)
-
-
-def _requires_own_evidence(
-    agent_spec: SwarmAgentSpec,
-    task: SwarmTask,
-    upstream_summaries: dict[str, str],
-) -> bool:
-    """Keep data requirements unless a synthesis role has its mapped reports.
-
-    Args:
-        agent_spec: Role and evidence policy from the preset.
-        task: Task with the declared upstream report mapping.
-        upstream_summaries: Completed upstream reports supplied by the runtime.
-
-    Returns:
-        Whether this worker must gather its own data or write a report.
-    """
-    if agent_spec.evidence_mode == "upstream" and task.input_from:
-        if all(
-            _classify_deliverable(
-                upstream_summaries.get(key, ""),
-                is_data_agent=False,
-                report_written=False,
-                data_tool_calls=0,
-            ) is None
-            for key in task.input_from
-        ):
-            return False
-    return _is_data_agent(agent_spec)
-
-
 def _is_error_result(result: str) -> bool:
     """Did a tool call return a top-level error envelope?
 
@@ -1517,42 +1357,13 @@ def _is_error_result(result: str) -> bool:
     return parsed.get("ok") is False or parsed.get("success") is False
 
 
-def _classify_deliverable(
-    summary: str,
-    *,
-    is_data_agent: bool,
-    report_written: bool,
-    data_tool_calls: int,
-) -> str | None:
-    """Hybrid output contract. Return a short reason string when the worker
-    did NOT produce a substantive deliverable, else ``None``.
-
-    Content-sanity applies to every agent; the tool-evidence requirement
-    applies ONLY to data agents so tool-less synthesis/editor roles are
-    not false-rejected.
-    """
+def _delivery_error(summary: str) -> str | None:
+    """Detect missing output or unparsed provider protocol, not report quality."""
     text = (summary or "").strip()
     if not text:
-        return "empty deliverable"
-    low = text.lower()
-    if any(m in low for m in _UNPARSED_TOOL_MARKERS):
+        return "empty response"
+    if any(marker in text.lower() for marker in _UNPARSED_TOOL_MARKERS):
         return "unparsed tool-call markup (provider did not parse tool calls)"
-    if any(m in low for m in _FABRICATION_MARKERS):
-        return "explicitly fabricated / mock data"
-    if text.startswith("{") and (
-        ('"status"' in text[:40] and ('"content"' in text[:300] or '"ok"' in text[:40]))
-        or '"ok"' in text[:40]
-        or '"success"' in text[:40]
-    ):
-        return "raw tool-result envelope, not analysis"
-    if low.startswith(_PLAN_PREFIXES):
-        tail = low.rsplit("phase 2", 1)[-1].strip() if "phase 2" in low else ""
-        if len(text) < 600 or low.rstrip().endswith(_HANDOFF_TAILS) or (
-            "phase 2" in low and len(tail) < 80
-        ):
-            return "plan-only stub (no executed analysis / conclusion)"
-    if is_data_agent and not report_written and data_tool_calls == 0:
-        return "data agent produced no tool calls and no report.md"
     return None
 
 

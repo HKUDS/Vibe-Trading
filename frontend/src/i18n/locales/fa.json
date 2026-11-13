@@ -1282,8 +1282,7 @@
       "failed": "ناموفق",
       "steps": "{{count}} گام",
       "continue": "ادامه",
-      "reattach": "اتصال دوباره",
-      "checkingFigures": "در حال بررسی ارقام این پاسخ (دور {{round}})…"
+      "reattach": "اتصال دوباره"
     },
     "resumeConnector": "ازسرگیری کانکتور",
     "resumeConnectorTitle": "کلید قطع را پاک کنید و فعالیت کانکتور را دوباره فعال کنید",

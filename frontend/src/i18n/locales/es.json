@@ -1282,8 +1282,7 @@
       "failed": "Falló",
       "steps": "{{count}} pasos",
       "continue": "Continuar",
-      "reattach": "Reconectar",
-      "checkingFigures": "Verificando las cifras de esta respuesta (ronda {{round}})…"
+      "reattach": "Reconectar"
     },
     "resumeConnector": "Reanudar conector",
     "resumeConnectorTitle": "Desactivar el interruptor de emergencia y reanudar la actividad del conector",

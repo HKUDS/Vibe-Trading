@@ -1282,8 +1282,7 @@
       "failed": "Falha",
       "steps": "Etapas {{count}}",
       "continue": "Continuar",
-      "reattach": "Anexe novamente",
-      "checkingFigures": "Verificando os números desta resposta (rodada {{round}})…"
+      "reattach": "Anexe novamente"
     },
     "resumeConnector": "Retomar conector",
     "resumeConnectorTitle": "Limpe o kill switch e reative a atividade do conector",

@@ -1282,8 +1282,7 @@
       "failed": "Failed",
       "steps": "{{count}} steps",
       "continue": "Continue",
-      "reattach": "Re-attach",
-      "checkingFigures": "Checking the figures in this answer (round {{round}})…"
+      "reattach": "Re-attach"
     },
     "resumeConnector": "Resume connector",
     "resumeConnectorTitle": "Clear the kill switch and re-enable connector activity",
