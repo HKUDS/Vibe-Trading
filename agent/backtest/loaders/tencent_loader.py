@@ -1,6 +1,6 @@
 """Tencent Finance loader: free, no-auth A-share / HK data via HTTP API.
 
-Uses Tencent's ifzq.gtimg.cn API which is not blocked by eastmoney's CDN.
+Uses Tencent's ifzq.gtimg.cn API; availability depends on the local network.
 Covers: A-shares (SH/SZ) and HK equities.  No API token required.
 
 API format:
@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Dict, List, Optional
 import ssl
+import urllib.error
 import urllib.request
 
 import certifi
@@ -279,6 +280,14 @@ class DataLoader:
                     break
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     last_error = exc
+                    # Retrying an unchanged rejected request cannot repair its
+                    # permissions or a WAF/unsupported-endpoint response. Leave
+                    # the caller's deadline available for a compatible source.
+                    if isinstance(exc, urllib.error.HTTPError) and (
+                        400 <= exc.code < 500 and exc.code not in {408, 429}
+                        or exc.code in {501, 505}
+                    ):
+                        break
                     if attempt < _PAGE_RETRIES - 1:
                         time.sleep(remaining_timeout(_PAGE_BACKOFF * (2 ** attempt)))
             if last_error is not None:
@@ -286,7 +295,7 @@ class DataLoader:
                 # history downstream; a failed page is an error, not a series.
                 raise ValueError(
                     f"incomplete tencent history: {code} page ending at "
-                    f"{cursor_end} failed after {_PAGE_RETRIES} attempts: "
+                    f"{cursor_end} failed after {attempt + 1} attempts: "
                     f"{last_error}"
                 ) from last_error
 

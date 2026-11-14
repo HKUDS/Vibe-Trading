@@ -489,3 +489,10 @@ def test_cooldown_partial_exposes_actual_remaining_delay_and_is_not_cached(tmp_p
         assert gateway.cache.stats()["memory_entries"] == 0
     finally:
         gateway.close()
+
+
+def test_known_healthy_fallback_precedes_unobserved_baseline():
+    router = NetworkRouter()
+    router.record("bars:a_share:1D", "yahoo", True, 0.1)
+    assert router.order("bars:a_share:1D", ["tencent", "yahoo"]) == ["yahoo", "tencent"]
+    assert router.order("bars:hk_equity:1D", ["tencent", "yahoo"]) == ["tencent", "yahoo"]

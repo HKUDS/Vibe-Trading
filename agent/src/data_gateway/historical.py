@@ -124,7 +124,7 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
     combined, provenance, unresolved, diagnostics = {}, {}, [], {}
     coverage = {}
     calendar_schedules = {}
-    attempted_batches = {}
+    attempted_symbols = {}
     deadline = request_deadline.get() or (time.monotonic() + gateway.config.request_timeout)
     for code in params["codes"]:
         market = _detect_market(code)
@@ -174,13 +174,13 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                         for symbol in params["codes"]
                         if symbol != code
                         and symbol not in provenance
+                        and (source, symbol) not in attempted_symbols
                         and _detect_market(symbol) == market
                         and (requested != "auto" or detect_source(symbol) == first)
                     ],
                 ][:batch_size]
             )
-            batch_key = (source, tuple(batch_codes))
-            cached_batch = attempted_batches.get(batch_key)
+            cached_batch = attempted_symbols.get((source, code))
 
             def acquire(source=source, code=code, params=dict(params), batch_codes=batch_codes):
                 def exact_loader(name):
@@ -203,18 +203,24 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                         min(deadline - time.monotonic(), gateway.config.source_timeout),
                         gateway.config.entry_bytes,
                     )
-                return json.loads(
-                    fetch_market_data_json(
-                        **{
-                            **params,
-                            "codes": batch_codes,
-                            "source": source,
-                            "max_fallback_attempts": 1,
-                            "loader_resolver": exact_loader,
-                            "include_provenance": True,
-                        }
+                from backtest.loaders.acquisition import source_can_fallback
+
+                token = source_can_fallback.set(requested == "auto" and not strict and len(candidates) > 1)
+                try:
+                    return json.loads(
+                        fetch_market_data_json(
+                            **{
+                                **params,
+                                "codes": batch_codes,
+                                "source": source,
+                                "max_fallback_attempts": 1,
+                                "loader_resolver": exact_loader,
+                                "include_provenance": True,
+                            }
+                        )
                     )
-                )
+                finally:
+                    source_can_fallback.reset(token)
 
             try:
                 if cached_batch is not None:
@@ -223,7 +229,17 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                     from .fanout import SourceCall
 
                     result = yield SourceCall(source, acquire, len(batch_codes))
-                    attempted_batches[batch_key] = result
+                    for symbol in batch_codes:
+                        attempted_symbols[source, symbol] = result
+                    # A successful head symbol does not erase transport failures
+                    # elsewhere in the same serial batch. Record the attempt once.
+                    network_failed = any(
+                        a.get("reason") in {"fetch_failed", "network_failure"}
+                        for detail in result.get("_diagnostics", {}).values()
+                        for a in detail.get("attempts", [])
+                    )
+                    if network_failed or result.get("_provenance"):
+                        gateway.router.record(scope, source, not network_failed, time.monotonic() - started)
                 combined.update({k: v for k, v in result.items() if not k.startswith("_")})
                 for symbol, stamp in result.get("_provenance", {}).items():
                     provenance[symbol] = {
@@ -235,8 +251,6 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                 alias = code.split(":", 1)[1] if code.startswith("local:") else code
                 if alias not in result:
                     attempts = result.get("_diagnostics", {}).get(code, {}).get("attempts", [])
-                    if any(attempt.get("reason") in {"fetch_failed", "network_failure"} for attempt in attempts):
-                        gateway.router.record(scope, source, False, time.monotonic() - started)
                     reason = (
                         "source_busy"
                         if any(a.get("reason") == "source_busy" for a in attempts)
@@ -249,7 +263,6 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                 coverage[code] = describe_coverage(
                     result[alias], params, market, provenance.get(code, {}), calendar_schedules
                 )
-                gateway.router.record(scope, source, True, time.monotonic() - started)
                 # Preserve normalization/caliber warnings from the existing layer.
                 for key, value in result.items():
                     if key.startswith("_") and key not in {"_provenance", "_unresolved", "_diagnostics"}:

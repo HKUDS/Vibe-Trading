@@ -364,3 +364,20 @@ def test_gateway_deadline_caps_socket_and_prevents_late_retry(monkeypatch):
         assert calls == [1.0]
     finally:
         source_deadline.reset(token)
+
+
+@pytest.mark.parametrize("status,expected", [(401, 1), (403, 1), (404, 1), (501, 1), (408, 3), (429, 3), (503, 3)])
+def test_rejected_http_requests_do_not_spend_retry_budget(monkeypatch, status, expected):
+    calls = []
+    sleeps = []
+    loader = tencent_loader.DataLoader()
+
+    def rejected(*args):
+        calls.append(args)
+        raise urllib.error.HTTPError("https://example.test", status, "rejected", {}, None)
+
+    monkeypatch.setattr(loader, "_request_page", rejected)
+    monkeypatch.setattr(tencent_loader.time, "sleep", sleeps.append)
+    with pytest.raises(ValueError, match=f"failed after {expected} attempts"):
+        loader._fetch_one("601398.SH", "2026-11-02", "2026-11-13")
+    assert len(calls) == expected and len(sleeps) == expected - 1

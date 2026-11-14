@@ -38,6 +38,55 @@ def server(args):
     import uvicorn
     from src.data_gateway import history_router, history_store
 
+    from src.data_gateway.service import MarketDataGateway
+    from src.data_gateway.scheduling import background
+    import threading
+
+    trace_lock = threading.Lock()
+
+    def trace(value):
+        with trace_lock, (args.root / "scan-trace.jsonl").open("a") as stream:
+            stream.write(json.dumps({"phase": args.phase, "time": time.time(), **value}) + "\n")
+
+    original_bars = MarketDataGateway.bars
+    original_submit = MarketDataGateway.submit_source
+
+    def bars(self, **params):
+        started = time.monotonic()
+        value = original_bars(self, **params)
+        if background.get():
+            trace({"event": "bars", "codes": params["codes"], "elapsed": time.monotonic() - started,
+                   "ok": value.get("ok"), "error": value.get("error"),
+                   "returned": list(value.get("data", {}).get("_provenance", {})),
+                   "diagnostics": value.get("data", {}).get("_diagnostics", {})})
+        return value
+
+    def submit(self, function, params, timeout, **kwargs):
+        defaults = getattr(function, "__defaults__", None)
+        if defaults and len(defaults) == 4 and isinstance(defaults[3], list):
+            source, _, _, codes = defaults
+            is_background = background.get()
+
+            def traced(**arguments):
+                started = time.monotonic()
+                try:
+                    result = function(**arguments)
+                    trace({"event": "source", "source": source, "codes": codes,
+                           "background": is_background, "elapsed": time.monotonic() - started,
+                           "returned": list(result.get("_provenance", {})),
+                           "diagnostics": result.get("_diagnostics", {})})
+                    return result
+                except Exception as exc:
+                    trace({"event": "source", "source": source, "codes": codes,
+                           "background": is_background, "elapsed": time.monotonic() - started,
+                           "error": type(exc).__name__})
+                    raise
+
+            return original_submit(self, traced, params, timeout, **kwargs)
+        return original_submit(self, function, params, timeout, **kwargs)
+
+    MarketDataGateway.bars = bars
+    MarketDataGateway.submit_source = submit
     original = history_router.fetch_chunk
     counters = {"active": 0, "peak": 0, "futures_peak": 0}
     held = False
@@ -328,6 +377,7 @@ async def exercise(args):
                     assert all(j["chunks"] > previous[jid]["chunks"] for jid, j in jobs.items() if jid not in paused)
                 observed = {
                     "phase": phase,
+                    "observed_at": time.time(),
                     "seconds": time.monotonic() - phase_start,
                     "jobs": jobs,
                     "workers": await request("GET", "/_probe/workers"),
@@ -389,6 +439,18 @@ async def exercise(args):
             (root / "report.json").write_text(json.dumps(report, indent=2))
     verified = await asyncio.to_thread(verify_prefixes, root)
     (root / "verification.json").write_text(json.dumps(verified, indent=2))
+    traces = [json.loads(line) for line in (root / "scan-trace.jsonl").read_text().splitlines()]
+    checkpoints = {phase["phase"]: phase["observed_at"] for phase in report["phases"]}
+    batches = [r for r in traces if r["event"] == "bars" and r["time"] <= checkpoints[r["phase"]]]
+    missing = [r for r in batches if set(r["codes"]) != set(r["returned"]) or not r["ok"]]
+    report["scan_validation"] = {
+        "completed_requests": len(batches),
+        "max_request_seconds": max((r["elapsed"] for r in batches), default=0),
+        "missing_batches": missing,
+        "zero_retries": all(p["scan"]["retries"] == 0 and p["scan"]["failed"] == 0 for p in report["phases"]),
+        "scope": "completed requests before phase checkpoints; in-flight work may be interrupted by restart",
+    }
+    report["passed"] = report["passed"] and not missing and report["scan_validation"]["zero_retries"]
     report.update(prefixes_verified=True, total_seconds=time.monotonic() - start)
     (root / "report.json").write_text(json.dumps(report, indent=2))
     print(
@@ -401,6 +463,7 @@ async def exercise(args):
         flush=True,
     )
 
+    assert report["passed"], "Mixed scan had missing rows, retries or failures; see report and scan-trace"
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)

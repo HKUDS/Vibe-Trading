@@ -115,7 +115,7 @@ Delta remains missing. No synthetic substitute is generated when sources fail.
 | `WORKERS` | 4 | Concurrent source calls, including timed-out calls still running |
 | `PENDING` | 16 | Distinct queued/in-flight requests |
 | `SOURCE_TIMEOUT` | 6 s | Wait budget per source attempt |
-| `HTTP_BATCH_SYMBOLS` | 4 | Symbols per serial HTTP-loader invocation; scan batches stay at eight and BaoStock shares one eight-symbol session |
+| `HTTP_BATCH_SYMBOLS` | 4 | Symbols per serial HTTP-loader invocation and scan request (capped at eight); direct BaoStock batches may share one eight-symbol session |
 | `REQUEST_TIMEOUT` | 15 s | Overall acquisition wait budget |
 | `HTTP_TIMEOUT` | 5 s | Cboe socket/read deadline |
 | `TTL` / `STALE_TTL` | 60 / 900 s | Cache freshness / maximum stale reuse |
@@ -437,7 +437,11 @@ of throughput or coverage. Cache defaults additionally cap entries at 256, and
 
 ## Scan scheduling and subscription capacity
 
-Scan jobs run in batches of at most eight, one background source call at a time.
+Scan jobs use `HTTP_BATCH_SYMBOLS` (default four, capped at eight) per request,
+with one background source call at a time. A request no longer holds two serial
+HTTP batches under one 15-second budget. Within a request, each source/symbol
+result is reused even when a later batch has different members; successful rows
+are preserved and missing members move to the next compatible source.
 The existing two request coordinators prefer foreground work; background work
 cannot occupy both. Between source calls, a background coordinator can run one
 waiting background request on its own thread before resuming the scan. This
@@ -476,8 +480,17 @@ keeps these slots reserved until the actual thread finishes. Daily, weekly and
 monthly subscriptions for the same symbol share one 40-day daily acquisition;
 weekly/monthly aggregation uses the existing market-data implementation. The
 BaoStock SDK remains serialized; foreground reads receive priority, with a
-background turn after at most four foreground admissions. Local admission waits
-are not classified as provider network failures.
+background turn after at most four foreground admissions. Auto-routed reads
+with alternative candidates do not wait for an occupied SDK session: they return
+local `source_busy` and continue to the next compatible route immediately.
+Explicit-source reads and historical downloads retain the existing fair queue.
+Local admission waits are not classified as provider network failures.
+
+Recently successful compatible sources precede unobserved baseline candidates.
+Tencent fails fast on non-transient HTTP rejection (including observed WAF 501),
+while 408/429 and transient server failures retain bounded retries. This does not
+bypass provider blocks or remove pacing. Network errors anywhere in a partial
+batch are recorded once; a successful first member cannot erase them.
 
 CCXT is acquired in one bounded, short-lived child interpreter because repeated
 SDK catalog allocations retained native allocator memory in the long-lived
@@ -587,3 +600,21 @@ prefix hashes and source calls for duplicate completed acquisition, and measures
 one active history fetch / at most four submitted futures. The short test is
 explicitly not a full download of all 610 planned chunks. No resource limits
 are raised and no client resume loop is used after restart.
+
+The ten-job probe also writes `scan-trace.jsonl` with per-source timing and
+per-batch returned identities/diagnostics (no price rows). A passing mixed report
+requires zero missing completed scan batches, zero scan retries and zero terminal
+scan failures at all phase checkpoints. In-flight requests interrupted by restart
+are distinguished from completed requests. The scan still does not certify a
+full 5,224-symbol pass during this short restart test.
+
+For a separate fault-injected scan with real fallback prices:
+
+```sh
+PYTHONPATH=agent:tools VIBE_TRADING_DATA_CACHE=0 python tools/gateway_scan_contention_probe.py \
+  --root ~/.vibe-trading/scan-contention-NEW
+```
+
+This simulates the observed blocked primary sources and an occupied BaoStock
+session, then fetches real Yahoo bars once within the unchanged default budgets.
+It labels this evidence separately from the all-real mixed restart run.

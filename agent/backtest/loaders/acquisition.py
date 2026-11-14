@@ -4,6 +4,8 @@ from contextvars import ContextVar
 import time
 
 source_background = ContextVar("source_background", default=False)
+# A routed read can use another adapter instead of queueing for a busy SDK.
+source_can_fallback = ContextVar("source_can_fallback", default=False)
 source_deadline = ContextVar("source_deadline", default=None)
 
 

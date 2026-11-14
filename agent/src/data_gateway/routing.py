@@ -61,7 +61,7 @@ class NetworkRouter:
             # failed observation expires. This adapts to a changed network.
             baseline = list(dict.fromkeys(sources))
             first = self.health.get((scope, baseline[0])) if baseline else None
-            if first is None or (not first["success"] and now - first["checked"] > self.lifetime):
+            if first is not None and not first["success"] and now - first["checked"] > self.lifetime:
                 return baseline
             return sorted(baseline, key=score)
 

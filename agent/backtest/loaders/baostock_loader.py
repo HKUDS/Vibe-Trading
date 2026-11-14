@@ -43,6 +43,7 @@ _FOREGROUND_BURST = 0
 def _session_admission(timeout):
     """Prioritize live reads, while allowing one background turn after four reads."""
     from .base import source_background, source_deadline
+    from .acquisition import source_can_fallback
 
     global _SESSION_ACTIVE, _FOREGROUND_BURST
     until = time.monotonic() + timeout
@@ -64,6 +65,11 @@ def _session_admission(timeout):
                     _SESSION_ACTIVE = True
                     _FOREGROUND_BURST = 0 if ticket[0] else min(4, _FOREGROUND_BURST + 1)
                     acquired = True
+                    break
+                if source_can_fallback.get():
+                    # Do not spend an auto-route's network budget waiting for
+                    # another request's global SDK session. Exact-source reads
+                    # and durable downloads retain the existing fair queue.
                     break
                 _SESSION_CONDITION.wait(timeout=max(0, until - time.monotonic()))
         finally:

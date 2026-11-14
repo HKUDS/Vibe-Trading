@@ -2052,3 +2052,108 @@ errors reproduced in v17; Options files were untouched.
 Evidence (pre-fix admission control, real run, per-prefix verification, calls,
 logs and test XML; no price rows committed):
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v20/`.
+
+## v21 — scan deadline diagnosis and mixed short recheck (2026-11-15)
+
+User constraint: repair missing scan symbols and the 15-second timeout without
+raising any deadline, cache budget, concurrency or memory limit. Work stays on
+`codex/data-gateway`; Options UI and protected Agent core are unchanged.
+
+### Causes and changes
+
+- Live Tencent replies were HTTP 501 with a `waf.tencent.com/501page.html`
+  rejection body. Both urllib/requests and raw/encoded commas reproduced it;
+  this was not a missing-symbol response. The loader retried the same rejected
+  page three times, including 0.6 + 1.2 seconds of backoff. Permanent HTTP
+  rejection now fails fast; 408/429/transient failures keep bounded retries.
+- ScanQueue submitted eight symbols under one 15-second request although HTTP
+  adapters already split them into serial four-symbol invocations. Scan requests
+  now use the existing `HTTP_BATCH_SYMBOLS=4`, capped at the API maximum of eight.
+  A scaled-time control with identical serial upstream work and deadlines
+  completed only four of eight symbols on the old scanner; the new scanner
+  completes both batches without retries. This changes work granularity, not
+  provider pacing, parallelism or deadlines.
+- Request-local memoization previously keyed the entire batch. After a partial
+  result, changing batch membership could reacquire the same failed symbol from
+  the same source. It now keys source/symbol and preserves successful members.
+  Transport failures anywhere in the batch are recorded once; success of its
+  first member does not overwrite the failure. Empty data stays distinct from
+  a transport failure. Known healthy alternatives now precede an unseen baseline
+  route in the same scope; market isolation and expiry behavior remain intact.
+- The first instrumented mixed run (`v21a`, 210.528 seconds) still had two missing
+  symbols in phase 2. It is **not a clean scan pass**, regardless of its older
+  history-only `passed` field. The trace showed Eastmoney failure taking 5.132
+  seconds, then BaoStock waiting **5.752 seconds for its occupied SDK session**,
+  then Yahoo refusing later symbols because its host-pacing slots no longer fit.
+  This established local admission delay in addition to upstream failure.
+  Auto-routed reads with alternatives now decline an occupied BaoStock session
+  immediately and continue failover. Exact-source requests and history downloads
+  retain the original fair session queue. Busy admission does not poison network
+  health; no new worker, retry or timeout was added.
+
+Baseline controls failed all four initial targeted tests, the additional serial
+request-deadline test and both SDK-admission tests. Their fixed counterparts pass.
+The controls execute baseline module contents in separate interpreters and never
+replace working-tree files. The final related backend run passed **247 tests**,
+covering routing, scheduling, API, streaming, calendars, historical storage,
+fairness/recovery/restart, and Tencent/BaoStock contracts. Ruff and whitespace
+checks passed. No frontend implementation changed, so unrelated build checks were
+not rerun.
+
+### Final all-real mixed run (`v21b`)
+
+`tools/gateway_ten_job_restart_probe.py` completed in **198.318 seconds**. Ten
+five-year 5m jobs were submitted once with 16 default-budget live topics and a
+5,224-symbol scan queue. Three restarts (normal, forced termination, normal)
+exercised production startup recovery; the driver made no post-restart resume
+calls. Paused jobs covered running, executor-queued and durable-waiting states.
+
+- **160 completed scan requests** within the trace checkpoint windows: zero
+  missing batches, zero scan retries, zero terminal scan failures, zero request
+  timeouts; maximum **7.626 seconds**. Queue snapshots show 108 / 256 / 112 / 164
+  symbols completed in the four phases. Snapshot calls happen after each trace
+  checkpoint time; their batch counts can therefore be slightly later. Phases
+  overlap and are not summed as unique full-market coverage.
+- Tencent initially recovered, then failed again in later phases. Real busy
+  BaoStock fallback attempts in phases 2/3 returned local `source_busy` in
+  **0.177 / 1.803 milliseconds**, and real Yahoo supplied the missing symbols.
+  The speed improvement is not attributed entirely to code: upstream availability
+  changed during these experiments. Deterministic controls isolate code effects.
+- **406 SSE deliveries / 348 WebSocket-tagged updates**, with updates in every
+  process and zero stream-task errors.
+- All seven unpaused history jobs advanced after every restart. The three paused
+  jobs made zero new fetch starts after acknowledgement. **58/610 planned chunks,
+  51,600 real rows** passed independent calendar/daily-status, exact intraday-grid,
+  ordering, symbol and persisted-hash verification. Completed chunks were never
+  refetched. There were 62 acquired attempts over 60 distinct ranges; interrupted
+  uncommitted data may be reacquired. This is not network exactly-once delivery.
+- All ten jobs were paused at cleanup with zero reserved bytes. Server PIDs
+  98672, 98874, 99258 and 99463 were independently confirmed absent.
+
+The short test verifies downloaded prefixes (through November/December 2021 or
+May/June 2022), **not ten complete five-year datasets or a complete 5,224-symbol
+scan**. In-flight scan work can be interrupted by a restart. The harness now
+requires zero missing completed batches and zero retries for its overall mixed
+`passed` result; trace and source diagnostics are retained rather than hidden.
+
+### Controlled faults with real fallback prices
+
+`tools/gateway_scan_contention_probe.py` separately injects Tencent 501 and a
+5.13-second Eastmoney transport failure, holds the real BaoStock session admission
+lock, and uses the unchanged gateway against **real Yahoo**. A single request
+returns all four requested stock identities in **8.315 seconds**; the occupied
+SDK attempt takes **0.480 milliseconds**, with no driver retry. This is explicitly
+fault injection with real fallback data, not an all-live upstream benchmark.
+Its Yahoo bar calendar coverage remains labelled unverified; it proves routing
+and symbol coverage, not independent calendar completeness of those daily bars.
+
+Limits stay **8 MiB RAM cache / 64 MiB disk cache / 2 MiB entries / four source
+workers / sixteen pending requests / 6-second source and 15-second request
+budgets / one history worker / at most four history futures / 256 MiB historical
+quota / 32 catalog jobs**. No forced GC or larger limit was used. This is a short
+functional contention/restart test, not another long-duration process-memory
+soak or cross-region network qualification.
+
+Evidence, controls, final test XML, traces and source-file fingerprints (no market
+price rows committed):
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v21/`.

@@ -9,7 +9,7 @@ from .scheduling import background
 
 
 class ScanQueue:
-    """Acquire a universe in batches of at most eight symbols, yielding capacity to subscribers.
+    """Acquire a universe in HTTP-sized batches, yielding capacity to subscribers.
 
     Jobs retain coverage metadata, not OHLC frames. Acquired frames use the
     existing quota-bounded cache. This is acquisition, not an indicator screener
@@ -134,7 +134,7 @@ class ScanQueue:
                 job, first = ready
                 items = [first]
                 for _ in range(len(job["waiting"])):
-                    if len(items) >= 8:
+                    if len(items) >= min(8, self.gateway.config.http_batch_symbols):
                         break
                     item = job["waiting"].popleft()
                     if item[2] <= now:

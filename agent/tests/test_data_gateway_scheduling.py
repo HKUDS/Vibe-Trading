@@ -7,6 +7,8 @@ import threading
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from src.data_gateway.config import Config
 from src.data_gateway.scans import ScanQueue
 from src.data_gateway.scheduling import RequestQueue, background, SourcePacer
@@ -700,4 +702,167 @@ def test_shared_fanout_leaves_both_background_and_interactive_source_capacity(tm
         release.set()
         for future in futures:
             future.result(1)
+        gateway.close()
+
+
+def test_scan_admits_one_http_batch_per_request():
+    config = Config(Path("/tmp/unused"))
+    seen = []
+    finished = threading.Event()
+    codes = [f"{600000 + i}.SH" for i in range(12)]
+
+    def bars(**params):
+        seen.append(params["codes"])
+        if codes[-1] in params["codes"]:
+            finished.set()
+        return {"ok": True, "data": {"_provenance": {c: {} for c in params["codes"]}}}
+
+    queue = ScanQueue(SimpleNamespace(config=config, bars=bars))
+    try:
+        queue.create(codes, start_date="2026-11-02", end_date="2026-11-13")
+        assert finished.wait(2)
+        assert [c for batch in seen for c in batch] == codes
+        assert all(len(batch) <= config.http_batch_symbols for batch in seen)
+        assert config.request_timeout == 15 and config.source_timeout == 6
+    finally:
+        queue.close()
+
+
+@pytest.mark.parametrize("reason", ["no_data", "network_failure"])
+def test_missing_batch_members_are_attempted_only_once_per_source(tmp_path, monkeypatch, reason):
+    import json
+    from backtest.loaders import registry
+    from src import market_data
+
+    calls = []
+    codes = ["600000.SH", "600001.SH", "600002.SH", "600003.SH"]
+    monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
+    monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"a_share": ["first", "second"]})
+    monkeypatch.setattr(registry, "get_source_order_override", lambda market: None)
+    monkeypatch.setattr(market_data, "detect_source", lambda code: "first")
+
+    def fetch(**params):
+        source, batch = params["source"], params["codes"]
+        calls.append((source, list(batch)))
+        accepted = [c for c in batch if source == "second" or c == codes[0]]
+        return json.dumps({
+            **{c: [{"date": "2026-11-02", "close": 1}] for c in accepted},
+            "_provenance": {c: {"source": source} for c in accepted},
+            "_diagnostics": {c: {"attempts": [{"reason": reason}]} for c in batch if c not in accepted},
+        })
+
+    monkeypatch.setattr(market_data, "fetch_market_data_json", fetch)
+    gateway = MarketDataGateway(replace(Config(tmp_path), source_spacing=0))
+    try:
+        result = gateway.bars(codes=codes, start_date="2026-11-02", end_date="2026-11-02")
+        assert result["ok"] and not result["data"]["_unresolved"]
+        assert calls == [("first", codes), ("second", codes[1:])]
+        assert gateway.router.cooling("bars:a_share:1D", "first") == (reason == "network_failure")
+    finally:
+        gateway.close()
+
+
+def test_scan_serial_fallback_finishes_without_retries_within_original_deadline(tmp_path, monkeypatch):
+    """Two four-symbol HTTP calls cannot share one request's time budget."""
+    import json
+    from backtest.loaders import registry
+    from src import market_data
+
+    codes = [f"{600000 + i}.SH" for i in range(8)]
+    calls = []
+    monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
+    monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"a_share": ["blocked", "healthy"]})
+    monkeypatch.setattr(registry, "get_source_order_override", lambda market: None)
+    monkeypatch.setattr(market_data, "detect_source", lambda code: "blocked")
+
+    def fetch(**params):
+        source, batch = params["source"], params["codes"]
+        calls.append((source, list(batch)))
+        if source == "blocked":
+            raise ConnectionError("WAF rejection")
+        time.sleep(0.025 * len(batch))
+        return json.dumps({
+            **{c: [{"date": "2026-11-02", "close": 1}] for c in batch},
+            "_provenance": {c: {"source": source} for c in batch},
+        })
+
+    monkeypatch.setattr(market_data, "fetch_market_data_json", fetch)
+    config = replace(Config(tmp_path), source_timeout=0.16, request_timeout=0.18, source_spacing=0, scan_spacing=0.001)
+    gateway = MarketDataGateway(config)
+    queue = ScanQueue(gateway)
+    try:
+        job = queue.create(codes, start_date="2026-11-02", end_date="2026-11-02")
+        until = time.monotonic() + 2
+        while time.monotonic() < until:
+            value = queue.status(job["id"])
+            if value["completed"] == len(codes) or value["retries"]:
+                break
+            time.sleep(0.01)
+        assert value["completed"] == len(codes) and value["retries"] == 0, value
+        assert [c for source, batch in calls if source == "healthy" for c in batch] == codes
+    finally:
+        queue.close()
+        gateway.close()
+
+
+def test_routable_baostock_read_does_not_queue_behind_active_history():
+    import backtest.loaders.baostock_loader as loader
+    from backtest.loaders.acquisition import source_can_fallback
+
+    with loader._session_admission(1) as owner:
+        assert owner is not None
+        token = source_can_fallback.set(True)
+        try:
+            started = time.monotonic()
+            with loader._session_admission(0.2) as blocked:
+                assert blocked is None
+            assert time.monotonic() - started < 0.1
+            assert not loader._SESSION_WAITERS and loader._SESSION_ACTIVE
+        finally:
+            source_can_fallback.reset(token)
+    token = source_can_fallback.set(True)
+    try:
+        with loader._session_admission(1) as free:
+            assert free is not None
+    finally:
+        source_can_fallback.reset(token)
+
+
+def test_auto_route_bypasses_busy_sdk_but_explicit_source_keeps_waiting(tmp_path, monkeypatch):
+    import json
+    import backtest.loaders.baostock_loader as loader
+    from backtest.loaders import registry
+    from src import market_data
+
+    calls = []
+    monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
+    monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"a_share": ["baostock", "healthy"]})
+    monkeypatch.setattr(registry, "get_source_order_override", lambda market: None)
+    monkeypatch.setattr(market_data, "detect_source", lambda code: "baostock")
+
+    def fetch(**params):
+        source, codes = params["source"], params["codes"]
+        calls.append(source)
+        if source == "baostock":
+            with loader._session_admission(1) as admitted:
+                if admitted is None:
+                    return json.dumps({"_diagnostics": {c: {"attempts": [{"reason": "source_busy"}]} for c in codes}})
+        return json.dumps({**{c: [{"date": "2026-11-02", "close": 1}] for c in codes},
+                           "_provenance": {c: {"source": source} for c in codes}})
+
+    monkeypatch.setattr(market_data, "fetch_market_data_json", fetch)
+    gateway = MarketDataGateway(replace(Config(tmp_path), source_timeout=0.5, request_timeout=0.8, source_spacing=0))
+    params = dict(codes=["601398.SH"], start_date="2026-11-02", end_date="2026-11-02")
+    try:
+        with loader._session_admission(1):
+            started = time.monotonic()
+            result = gateway.bars(**params)
+            assert time.monotonic() - started < 0.2
+            assert result["data"]["_provenance"]["601398.SH"]["source"] == "healthy"
+            assert not gateway.router.cooling("bars:a_share:1D", "baostock")
+            started = time.monotonic()
+            exact = gateway.bars(**params, source="baostock", exact_source=True)
+            assert time.monotonic() - started >= 0.2 and not exact["ok"]
+        assert calls == ["baostock", "healthy", "baostock"]
+    finally:
         gateway.close()
