@@ -127,8 +127,8 @@ def plan(codes, start_date, end_date, interval, source):
     if not isinstance(start_date, str) or not isinstance(end_date, str):
         raise ValueError("start_date and end_date are required ISO dates")
     start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
-    if start > end or (end - start).days > 3660 or end >= datetime.now(timezone.utc).date():
-        raise ValueError("Request settled dates in an ordered range of at most ten years")
+    if start > end or end >= datetime.now(timezone.utc).date():
+        raise ValueError("Request settled dates in an ordered range")
     if interval not in INTERVALS:
         raise ValueError("Unsupported historical interval")
     parts, routes = [], {}

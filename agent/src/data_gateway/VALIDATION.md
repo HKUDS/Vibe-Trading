@@ -696,7 +696,7 @@ Cancellation stops before the next fallback attempt and releases the reservation
 A settled request 2021-11-13..2026-11-12 subsequently returned **1,826 rows, six
 chunks, all verified**, in 3.978 seconds (some prior-year chunks reused hot cache).
 
-Focused backend regression: 110 passed (gateway/history suites). TypeScript
+Focused backend regression: 111 passed (gateway/history suites). TypeScript
 checking reported only the two existing dynamic i18n-key errors in
 `frontend/src/components/options/PayoffComparisons.tsx`; no gateway UI type error.
 The existing `main` loader registry is byte-identical to this branch's registry;
@@ -707,3 +707,11 @@ preview verified both auto-route plans and actual per-job sources. It runs the
 isolated gateway server, so the unrelated session sidebar shows Not Found; this
 is not a full-application session validation. Router evidence and the UI screenshot
 are archived alongside the combined-hour artifacts under `gateway-combined-20261114`.
+
+The background downloader's arbitrary ten-year range restriction was subsequently
+removed. Its existing 4,096-chunk/100-symbol/job and disk-quota bounds remain; the
+synchronous bar-preview API retains its own ten-year/eight-symbol limits. A real
+AAPL monthly download **1996-11-14..2026-11-13** acquired **361 rows in 31 chunks**
+through Yahoo, in **24.254 seconds**. It is labelled downloaded/calendar-unverified,
+not verified complete. This is observed source coverage, not a promise that every
+source supplies 30 years or that minute history has the same depth.

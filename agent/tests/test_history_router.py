@@ -251,3 +251,9 @@ def test_boolean_prices_are_not_numeric_observations():
     rows[0]["close"] = True
     with pytest.raises(ValueError, match="OHLC"):
         router._normalize(rows, "AAPL.US", "2026-11-12", "2026-11-12", "5m", {"source": "yahoo"}, "us_equity")
+
+
+def test_decades_are_bounded_by_chunks_and_quota_not_a_ten_year_assumption():
+    value = router.plan(["AAPL.US"], "1996-11-14", "2026-11-13", "1M", "auto")
+    assert value["chunks"] == 31 and value["estimated_max_rows"] == 361
+    assert value["routes"]["AAPL.US"]["candidates"][0] == "yahoo"

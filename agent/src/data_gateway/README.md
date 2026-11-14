@@ -214,7 +214,9 @@ Storage is created lazily at `~/.vibe-trading/datasets/history`; override with
 Downloads default to `source=auto` and route through the existing registry and
 configured market order. `/data/capabilities` exposes the actual registered
 source/market inventory, including which adapters require existing credentials;
-registration is not a network or historical-depth guarantee. The planner accepts
+registration is not a network or historical-depth guarantee. Background datasets
+have no arbitrary ten-year cap: the 4,096-chunk limit, storage quota and actual
+source availability bound each job. The planner accepts
 1m/5m/15m/30m/1H/4H/1D/1W/1M and rejects known incompatible routes. Unknown adapter
 capabilities are checked against the returned data. Explicit `source` pins that
 provider; `local` is not a remote download source. No new credentials are created.
