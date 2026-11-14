@@ -56,10 +56,14 @@ def register_gateway_routes(app: FastAPI, require_auth: Callable):
 
     @asynccontextmanager
     async def lifespan(application):
+        from .history_store import close_history_store, start_history_recovery
+
         async with original_lifespan(application):
             try:
+                await asyncio.to_thread(start_history_recovery)
                 yield
             finally:
+                await asyncio.to_thread(close_history_store)
                 if hub is not None:
                     await hub.close()
 

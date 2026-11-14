@@ -245,13 +245,18 @@ API/Agent/MCP status exposes `auto_resume`, Unix-seconds `retry_at`, and
 the Web UI shows the next retry and offers Pause. Pause/delete disable recovery;
 invalid data, missing historical coverage and disk exhaustion do not retry
 forever. Waiting chunks remain protected from quota eviction until their normal
-idle retention expires. Retry schedules survive reopening the store, but a
-process interrupted *during* an active download retains the existing paused
-recovery behavior. Old jobs migrate with automatic recovery disabled until the
-user starts them again. The service must remain running with history storage
-initialized; CLI `history run` stays alive while waiting and Ctrl-C pauses it.
+idle retention expires. Retry schedules and active/queued download intent survive application restart.
+The gateway host reopens an existing catalog during its lifespan startup, without
+waiting for a history-page visit or status request. Normal shutdown preserves
+unfinished jobs; after a crash, released job leases and dead queued owners allow
+recovery to reclaim reservations and remove incomplete temporary files. Verified
+chunks are checked and reused. A live owner's job is not taken over. Manual
+Pause wins over both recovery paths. Old jobs migrate with automatic recovery disabled until the
+user starts them again. No downloading occurs while the application is closed. Reopening the gateway host
+continues eligible work; standalone CLI `history run` stays alive while waiting
+and Ctrl-C explicitly pauses it.
 
-Storage is created lazily at `~/.vibe-trading/datasets/history`; override with
+New storage is created lazily at `~/.vibe-trading/datasets/history`; override with
 `VIBE_GATEWAY_HISTORY_DIR` outside every Git checkout. No data is committed.
 
 Downloads default to `source=auto` and route through the existing registry and
@@ -523,3 +528,18 @@ production scheduler must finish, preserve the first chunk's hash, and expose
 queue provide background load; this short test intentionally cancels the scan
 rather than claiming full scan completion. No request budgets or resource limits
 are increased. See VALIDATION.md v17 for measured results and limitations.
+
+### Application restart short probe
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_history_restart_probe.py \
+  --root ~/.vibe-trading/history-restart-NEW
+```
+
+Uses two fresh catalogs to test normal application shutdown and forced process
+termination. Each case interrupts real five-year monthly acquisition after a
+verified prefix, with another job queued and a third manually paused. The new
+process mounts the production gateway lifespan. The driver waits for completion
+by reading the catalog directly, so no history HTTP call initializes the service
+and no resume call can mask missing startup recovery. Started jobs must finish;
+paused and never-started jobs must make no source calls. No resource limits change.

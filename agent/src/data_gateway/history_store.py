@@ -1,6 +1,6 @@
 """Quota-controlled, resumable historical datasets outside the checkout."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 import gzip
 import hashlib
@@ -90,16 +90,23 @@ class HistoryStore:
                         except PermissionError:
                             continue
                     with self.lease(row["id"]):
-                        db.execute(
-                            "UPDATE jobs SET state='paused',reserved=0,error='Interrupted; resume verified chunks' WHERE id=?",
-                            (row["id"],),
-                        )
+                        self._interrupted(db, row["id"])
                         directory = self.directory / row["id"]
                         if directory.exists() and not directory.is_symlink():
                             for path in directory.glob("*.tmp"):
                                 path.unlink(missing_ok=True)
                 except ValueError:
                     pass
+
+    @staticmethod
+    def _interrupted(db, job):
+        """Preserve download intent across shutdown; explicit cancellation wins."""
+        db.execute(
+            "UPDATE jobs SET state=CASE WHEN auto_resume=1 AND cancel=0 THEN 'failed' ELSE 'paused' END,"
+            "retry_at=CASE WHEN auto_resume=1 AND cancel=0 THEN ? ELSE 0 END,"
+            "reserved=0,owner=NULL,error='Interrupted; resume verified chunks' WHERE id=?",
+            (time.time(), job),
+        )
 
     @contextmanager
     def transaction(self):
@@ -459,10 +466,18 @@ class HistoryStore:
             self.futures.pop(job, None)
             if future.cancelled() or future.exception():
                 with self.transaction() as db:
-                    db.execute(
-                        "UPDATE jobs SET state='paused',reserved=0,owner=NULL WHERE id=? AND state IN ('queued','running') AND owner=?",
+                    owned = db.execute(
+                        "SELECT id FROM jobs WHERE id=? AND state IN ('queued','running') AND owner=?",
                         (job, os.getpid()),
-                    )
+                    ).fetchone()
+                    if owned:
+                        if self.stop.is_set():
+                            self._interrupted(db, job)
+                        else:
+                            db.execute(
+                                "UPDATE jobs SET state='paused',reserved=0,owner=NULL,auto_resume=0,retry_at=0 WHERE id=?",
+                                (job,),
+                            )
 
     def cancel(self, job):
         self.status(job)
@@ -616,7 +631,12 @@ class HistoryStore:
                         for row in db.execute("SELECT meta FROM chunks WHERE job=? AND state='complete'", (job,))
                     )
                     final = "paused" if pending else "complete" if verified else "downloaded"
-                    db.execute("UPDATE jobs SET state=?,reserved=0,retry_at=0,auto_resume=0 WHERE id=?", (final, job))
+                    if pending and self.stop.is_set():
+                        self._interrupted(db, job)
+                    else:
+                        db.execute(
+                            "UPDATE jobs SET state=?,reserved=0,retry_at=0,auto_resume=0 WHERE id=?", (final, job)
+                        )
             except Exception as exc:
                 from .history_router import HistoryPaused
 
@@ -650,15 +670,19 @@ class HistoryStore:
                                 ),
                             )
                     db.execute(
-                        "UPDATE jobs SET state=?,reserved=0,error=?,retry_at=?,retry_count=? WHERE id=?",
+                        "UPDATE jobs SET state=?,reserved=0,error=?,retry_at=?,retry_count=?,auto_resume=? WHERE id=?",
                         (
                             "paused" if paused or isinstance(exc, HistoryCapacityError) else "failed",
                             None if paused else type(exc).__name__ + ": " + str(exc)[:240],
                             retry_at,
                             count,
+                            int(bool(retry)),
                             job,
                         ),
                     )
+                    if self.stop.is_set() and (paused or retry) and not current["cancel"] and current["auto_resume"]:
+                        db.execute("UPDATE jobs SET auto_resume=1 WHERE id=?", (job,))
+                        self._interrupted(db, job)
             return self.status(job)
 
     @staticmethod
@@ -737,9 +761,14 @@ class HistoryStore:
             }
 
     def close(self):
+        until = time.monotonic() + 1
         self.stop.set()
-        self.cleaner.join(timeout=1)
+        self.cleaner.join(timeout=max(0, until - time.monotonic()))
         self.executor.shutdown(wait=False, cancel_futures=True)
+        # Give cooperative fetches time to persist interruption before the host
+        # re-raises its termination signal. Reuse, rather than extend, the old
+        # one-second shutdown wait. Slow calls retain their lease for recovery.
+        wait(tuple(self.futures.values()), timeout=max(0, until - time.monotonic()))
 
 
 class _LimitedWriter:
@@ -783,5 +812,21 @@ def get_history_store():
             import atexit
 
             _instance = HistoryStore(history_directory())
-            atexit.register(_instance.close)
+            atexit.unregister(close_history_store)
+            atexit.register(close_history_store)
         return _instance
+
+
+def start_history_recovery():
+    """Reopen an existing catalog at host startup, without creating idle stores."""
+    if (history_directory() / "catalog.sqlite").is_file():
+        get_history_store()
+
+
+def close_history_store():
+    """Stop the initialized service while retaining unfinished download intent."""
+    global _instance
+    with _instance_lock:
+        instance, _instance = _instance, None
+    if instance is not None:
+        instance.close()

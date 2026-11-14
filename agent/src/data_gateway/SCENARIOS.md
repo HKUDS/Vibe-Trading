@@ -59,3 +59,13 @@ first chunk was unchanged, and 64 topics plus the full scan queue remained activ
 as background load. The short scan ended at 112/5,224 intentionally. This adds
 recovery coverage; it is not another full scan/hour acceptance. See VALIDATION.md
 v17 for limits, classified failures, UI/build checks and raw evidence.
+
+### v18 follow-up: application close and reopen
+
+Production startup now resumes eligible unfinished work without a history-page
+visit. Real-source normal-close and forced-kill tests completed in 6.54 and 5.69
+seconds total; both restarted services completed acquisition about 3.6 seconds
+after launch. Each returned 183 verified monthly rows, reused the committed
+prefix, and made no source calls for manually paused or never-started jobs.
+No post-restart resume API call or resource-limit increase was used. See v18 in
+VALIDATION.md for the shutdown race found and fixed, scope and raw evidence.

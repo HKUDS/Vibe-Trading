@@ -1826,3 +1826,65 @@ sample. This short sample is **not** a new long-duration memory stability claim.
 
 Evidence (metadata, logs, XML; no market-price payload committed):
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v17/`.
+
+## v18: resume unfinished jobs on application restart (2026-11-15)
+
+The v17 limitation is closed for jobs whose user start enabled automatic recovery.
+The gateway's shared FastAPI lifespan reopens an **existing** history catalog at
+startup, before any history-page request. No catalog means no new store/worker.
+Normal shutdown preserves active/queued download intent; a restart after forced
+termination reclaims stale reservations under the existing OS lease and queued
+owner checks. Manual Pause's persisted cancellation takes precedence. Never-
+started, permanently failed and quota-paused jobs do not become downloads simply
+because the application reopened. Waiting network retries retain their deadlines.
+Successful chunks still require their saved hash before reuse.
+
+An initial real-source test showed both restart types could finish, but a stronger
+shutdown observation caught the host re-raising SIGTERM before the active worker
+persisted its stop checkpoint. Queued work was checkpointed, while the active
+reservation depended on next-start recovery. `close()` now shares its **existing
+one-second wait budget** between stopping the cleaner and waiting for cooperative
+worker completion. It adds no thread, request time or shutdown wait allowance.
+A source that cannot finish within that budget keeps its lease/reservation until
+actual exit, and the next startup reclaims it; reservations are not prematurely
+released underneath an active writer.
+
+### Final real-source short test
+
+`tools/gateway_history_restart_probe.py` used fresh catalogs and the production
+`dev_server` app / `register_gateway_routes` lifespan. In each case the driver
+started an AAPL+MSFT five-year monthly job, held the second fetch after the first
+real chunk committed, queued a GOOGL job, started then manually paused TSLA, and
+left AMZN never started. Successful rows came from real public sources. The
+controlled fetch hold is a test hook, not synthetic price data.
+
+| Case | State observed after stopping | Restart to verified completion | Total case |
+|---|---|---:|---:|
+| Normal SIGTERM shutdown | Both intended jobs checkpointed with retry deadlines and zero reservations; manual/never-started jobs paused | 3.601 s | 6.537 s |
+| Forced SIGKILL | Active job still running with 2,162,688 bytes reserved; queued job still queued | 3.622 s | 5.693 s |
+
+After each restart, the driver used **only read-only SQLite observation** to wait
+for completion; it sent no history HTTP request and no resume call until the
+catalog already showed both intended jobs complete. Each case made exactly three
+initial user-start calls and zero resume calls after restarting. Both intended
+jobs then exposed **183 calendar-verified monthly rows** through the normal API.
+AAPL's prefix hash was unchanged and its fetch boundary was called once. TSLA and
+AMZN made **zero source calls**, remained paused, and had auto-resume disabled.
+Final reservations and active gateway requests were zero. All four final-test
+server PIDs (80213, 80217, 80227, 80239) were independently observed absent.
+
+Limits remained 8 MiB memory cache, 64 MiB disk cache, 2 MiB chunks, four gateway
+workers, 16 pending requests, 256 MiB history quota and one history download
+worker. Source/request timeout defaults remain six/15 seconds. This is a targeted
+restart test, not a repeat of the earlier full-market/hour memory qualification.
+The UI and Options Lab were not changed; existing waiting/Pause states are reused.
+
+Evidence, including the stronger pre-fix shutdown failure and final successful
+reports, lives outside the checkout:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v18/`.
+
+Regression: **65 tests passed** across restart (seven cases), automatic retry,
+history storage, gateway HTTP and subscription lifecycle suites. The cooperative
+checkpoint case was rechecked after tightening its asynchronous-future assertion.
+Ruff and whitespace checks passed. No frontend source changed in this revision,
+so its previous validation/build limitation was not re-run or reclassified.
