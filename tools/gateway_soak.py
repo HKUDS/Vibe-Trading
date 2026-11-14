@@ -336,9 +336,15 @@ async def exercise(args, output):
                             if event == "snapshot" and fetched and fetched != row.get("last_fetched_at"):
                                 previous = row.get("last_fetched_at")
                                 if previous:
-                                    gap = (datetime.fromisoformat(fetched) - datetime.fromisoformat(previous)).total_seconds()
-                                    row["max_acquisition_gap_seconds"] = max(row.get("max_acquisition_gap_seconds", 0), round(gap, 3))
-                                    row["acquisition_gaps_over_180s"] = row.get("acquisition_gaps_over_180s", 0) + int(gap > 180)
+                                    gap = (
+                                        datetime.fromisoformat(fetched) - datetime.fromisoformat(previous)
+                                    ).total_seconds()
+                                    row["max_acquisition_gap_seconds"] = max(
+                                        row.get("max_acquisition_gap_seconds", 0), round(gap, 3)
+                                    )
+                                    row["acquisition_gaps_over_180s"] = row.get("acquisition_gaps_over_180s", 0) + int(
+                                        gap > 180
+                                    )
                                 row["distinct_acquisitions"] = row.get("distinct_acquisitions", 0) + 1
                                 row["last_fetched_at"] = fetched
                             row["last_s"] = round(time.monotonic() - started, 2)
@@ -409,6 +415,14 @@ async def exercise(args, output):
                     **response.json(),
                 }
             )
+            if phase != "idle":
+                current_time = datetime.now(timezone.utc)
+                for row in observed.values():
+                    if row.get("last_fetched_at"):
+                        age = max(0, (current_time - datetime.fromisoformat(row["last_fetched_at"])).total_seconds())
+                        row["max_observed_acquisition_age_seconds"] = max(
+                            row.get("max_observed_acquisition_age_seconds", 0), round(age, 3)
+                        )
             for job in response.json()["gateway"].get("scans", []):
                 if scan_job and job["id"] == scan_job["id"]:
                     scan_job = job

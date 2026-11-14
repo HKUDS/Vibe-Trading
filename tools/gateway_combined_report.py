@@ -39,7 +39,8 @@ def summarize(document, observer=None):
     start = active[0]["elapsed_s"]
     late = [s for s in active if s["elapsed_s"] - start >= 30 * 60]
     buckets = []
-    for minute in range(0, 70, 10):
+    duration_minutes = math.ceil((active[-1]["elapsed_s"] - start) / 60)
+    for minute in range(0, duration_minutes + 1, 10):
         group = [s for s in active if minute * 60 <= s["elapsed_s"] - start < (minute + 10) * 60]
         if group:
             buckets.append(
@@ -106,6 +107,9 @@ def summarize(document, observer=None):
         "final_physical_mib": tail["footprint_bytes"] / 2**20,
         "final_rss_mib": tail["rss_bytes"] / 2**20,
         "late_linear_slope_mib_per_minute": slope(late, "footprint_bytes"),
+        "last_30m_linear_slope_mib_per_minute": slope(
+            [row for row in active if row["elapsed_s"] >= active[-1]["elapsed_s"] - 1800], "footprint_bytes"
+        ),
         "ten_minute_windows": buckets,
         "latencies_ms": {k: distribution(v) for k, v in latencies.items()},
         "http_statuses": {k: dict(v) for k, v in statuses.items()},
@@ -126,6 +130,33 @@ def summarize(document, observer=None):
             "One hour cannot establish multi-day leak absence; source availability is not guaranteed",
         ],
     }
+    bar_topics = {name: row for name, row in document["topics"].items() if name.startswith("bars:")}
+    result["bar_acquisition_freshness"] = {
+        "topics": len(bar_topics),
+        "distinct_acquisitions_per_topic": distribution(
+            [row.get("distinct_acquisitions", 0) for row in bar_topics.values()]
+        ),
+        "maximum_gaps_seconds": distribution(
+            [row["max_acquisition_gap_seconds"] for row in bar_topics.values() if "max_acquisition_gap_seconds" in row]
+        ),
+        "topics_with_gap_over_180s": sum(row.get("acquisition_gaps_over_180s", 0) > 0 for row in bar_topics.values()),
+        "topics_never_acquired": [name for name, row in bar_topics.items() if not row.get("distinct_acquisitions")],
+        "per_topic": bar_topics,
+        "note": "Acquisition times, not exchange quote-update times. Includes injected outages; no replay claims.",
+    }
+    for prefix in ("bars:", "options:", "crypto:"):
+        topics = {name: row for name, row in document["topics"].items() if name.startswith(prefix)}
+        result.setdefault("acquisition_age_by_kind", {})[prefix[:-1]] = {
+            "max_observed_age_seconds": distribution(
+                [
+                    row["max_observed_acquisition_age_seconds"]
+                    for row in topics.values()
+                    if "max_observed_acquisition_age_seconds" in row
+                ]
+            ),
+            "minimum_acquisitions": min((row.get("distinct_acquisitions", 0) for row in topics.values()), default=0),
+            "topics": topics,
+        }
     routed = [row for row in checks if row["kind"] == "routed_history"]
     result["routed_history"] = {
         "jobs": len(routed),

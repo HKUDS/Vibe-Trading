@@ -138,10 +138,11 @@ class MarketDataGateway:
             result["gateway"]["refreshing"] = flight is not None and not flight.done()
             return result
         if flight is None:
+            retry_in = max(1, self.refresh_after.get(key, 0) - time.monotonic())
             return {
                 "ok": False,
                 "error": "Data gateway is cooling down or busy; retry shortly",
-                "retry_after_seconds": self.config.cooldown,
+                "retry_after_seconds": min(self.config.cooldown, retry_in),
             }
         try:
             return json.loads(json.dumps(flight.result(timeout=self.config.request_timeout), allow_nan=False))
@@ -178,12 +179,19 @@ class MarketDataGateway:
         baseline = self.config.sources if capability == "options_chain" else tuple(routes)
         order = self.router.order(capability, baseline)
         attempts = []
-        for source in order:
+
+        def route_attempts():
+            yield from ((source, False) for source in order)
+            probe = self.router.recovery_probe(capability, order)
+            if probe:
+                yield probe, True
+
+        for source, recovery in route_attempts():
             if source not in routes:
                 continue
             with self.lock:
                 cooling = self.failures.get((capability, source), 0) > time.monotonic()
-            if cooling or self.router.cooling(capability, source):
+            if not recovery and (cooling or self.router.cooling(capability, source)):
                 attempts.append({"source": source, "status": "cooldown"})
                 continue
             remaining = until - time.monotonic()
@@ -208,6 +216,8 @@ class MarketDataGateway:
                 if len(encoded.encode()) > self.config.entry_bytes:
                     raise GatewayError("Response exceeds gateway entry limit")
                 self.router.record(capability, source, True, time.monotonic() - attempt_started)
+                with self.lock:
+                    self.failures.pop((capability, source), None)
                 attempts.append({"source": source, "status": "ok"})
                 payload["gateway"] = {
                     **payload.get("gateway", {}),
@@ -239,7 +249,7 @@ class MarketDataGateway:
             "ok": False,
             "error": "No usable data from available sources; retry or select another expiration",
             "gateway": {"attempts": attempts},
-            "retry_after_seconds": self.config.cooldown,
+            "retry_after_seconds": 1 if any(row["status"] == "busy" for row in attempts) else self.config.cooldown,
         }
 
     def invoke(self, function, params, timeout):

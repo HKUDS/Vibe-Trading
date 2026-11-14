@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--interval", type=float, default=0.5)
+    parser.add_argument("--max-seconds", type=float, default=14400)
     args = parser.parse_args()
     lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
     samples = []
@@ -24,7 +25,7 @@ def main():
     started = time.monotonic()
     error = None
     phase = None
-    while time.monotonic() - started < 7200:
+    while time.monotonic() - started < args.max_seconds:
         try:
             report = json.loads(args.report.read_text())
         except (FileNotFoundError, json.JSONDecodeError):

@@ -926,3 +926,60 @@ cache limits are unchanged. Focused HTTP/loader/scheduling regression: 90 passed
 A real recovery-choice control with identical seeded health chose blocked Tencent
 on the old algorithm (failed in 4.802 seconds), and previously working Yahoo on
 the fixed algorithm (both stocks returned in 0.878 seconds).
+
+### v3 active run (not yet accepted)
+
+- Frozen service commit: `aeefc0c9f`; all 300 focused regressions passed.
+- Started 2026-11-14 08:01:47 UTC; server PID 61356, controller exec 8265, observer exec 96391.
+- Raw: `/tmp/gateway-router-hour-v3-20261114.json`; OS: `/tmp/gateway-router-hour-v3-os-20261114.json`.
+- History root: `/Users/wuhaozhe/.vibe-trading/history-router-hour-v3-20261114`.
+- Ten-stock 5m job: `ad1f34d41ee34f789bdfc915905a627d`.
+- Same 30x120s faults, 180s warmup, 190s idle, full 5,224 universe and fixed 8/64 MiB caches.
+- `--finish-scan` continues after the nominal hour; first mixed monthly job only
+  reached 75 rows before the driver's 90-second window, so that attempt failed
+  completion. Do not replace it with the earlier light-load 19-second result.
+- Current report-only changes add per-topic acquisition gaps, last-30-minute
+  footprint slope, and all ten-minute windows even when the full scan exceeds
+  seventy minutes. They do not alter the running service.
+
+### v3 rejected by the mixed-client scenario
+
+The explicit mixed-client probe ran 180 seconds, issuing 24 HTTP requests while
+consuming six already-subscribed SSE topics. All 12 bar requests (six-market daily,
+five-year US monthly, one-day US minute) succeeded; all eight option requests
+returned 503, and four attempts to read an unfinished history prefix returned
+409. Crypto received actual upstream WebSocket and REST updates; stocks received
+polled historical bars. The downstream client transport is SSE, not WebSocket.
+
+The options path skipped cooled sources without using the router's half-open
+recovery. Its snapshots stopped renewing around 08:18 UTC and eventually expired,
+while bars/crypto continued. v3 was stopped after 1,981.53 active seconds with
+1,012/5,224 scan symbols; it is not a completed hour and is not accepted.
+The options path now uses the same bounded half-open mechanism and clears its
+legacy failure entry on success. Local capacity failures request a short retry
+without poisoning network health. A real seeded-health SPY control failed before
+the fix and returned 330 Cboe contracts in 1.521 seconds after it. 302 focused
+regressions passed. Source, worker, queue, cache and history-space limits are
+unchanged. Final rerun must observe the ongoing age of every topic, including a
+source that never recovers; measuring only gaps between two successful updates
+misses this right-censored failure. The observer deadline now covers the full
+possible scan continuation rather than stopping at two hours.
+
+Unfinished historical datasets deliberately refuse row reads. Streaming committed
+prefixes is not implemented; the 409 is retained as a capability limitation, not
+changed into an empty successful dataset. Existing research/backtest entrypoints
+are also not all migrated; `history_data` and options use this gateway, whereas
+legacy market-data tools still have loader paths.
+
+Additional actual cache probe: 10 SPY-chain readers received marked stale data in
+42 ms with one background refresh; a new child interpreter reused the disk cache
+with zero upstream calls. Idle memory fell from 98,525 bytes to zero while the
+disk entry remained. Only TTL/idle timers were shortened for this probe; default
+8/64 MiB caches and 4/16 worker/pending limits were kept. Full disk-quota pressure
+remains a controlled test, not part of this real-source cache probe.
+
+v2's completed 5m dataset was checked again without new network calls: every
+chunk checksum and all 582 production-reader pages, 581,760 rows, are identical
+to the earlier independently calendar-verified dataset (canonical SHA-256
+`0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`).
+Evidence: `/tmp/gateway-router-v2-5m-content-verified.json`.

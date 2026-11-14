@@ -228,3 +228,58 @@ def test_recovery_prefers_previously_working_source_and_rotates_if_it_still_fail
     now[0] = 500
     router.prune()
     assert not router.health and not router.probe_tried
+
+
+def test_options_recover_while_exponential_cooldown_is_still_active(tmp_path):
+    from src.data_gateway.config import Config
+    from src.data_gateway.service import MarketDataGateway
+    from dataclasses import replace
+    import time
+
+    calls = []
+    gateway = MarketDataGateway(
+        replace(Config(tmp_path), sources=("test",)),
+        {
+            "options_chain": {
+                "test": lambda **kwargs: calls.append(1) or {"ok": True, "data": {"ticker": kwargs["ticker"]}}
+            }
+        },
+    )
+    now = [0.0]
+    gateway.router.clock = lambda: now[0]
+    gateway.router.record("options_chain", "test", True, 1)
+    for _ in range(4):
+        gateway.router.record("options_chain", "test", False, 1)
+    gateway.failures[("options_chain", "test")] = time.monotonic() + 100
+    try:
+        assert not gateway.options_chain("AAPL")["ok"] and not calls
+        now[0] = 31
+        recovered = gateway.options_chain("SPY")
+        assert recovered["ok"] and calls == [1]
+        assert not gateway.router.cooling("options_chain", "test")
+        assert ("options_chain", "test") not in gateway.failures
+    finally:
+        gateway.close()
+
+
+def test_options_capacity_pressure_has_short_retry_without_poisoning_health(tmp_path):
+    from src.data_gateway.config import Config
+    from src.data_gateway.service import MarketDataGateway
+    from dataclasses import replace
+
+    calls = []
+    gateway = MarketDataGateway(
+        replace(Config(tmp_path), sources=("test",)),
+        {"options_chain": {"test": lambda **kwargs: calls.append(1) or {"ok": True}}},
+    )
+    try:
+        for _ in range(gateway.config.workers):
+            assert gateway.source_slots.acquire(blocking=False)
+        value = gateway.options_chain("AAPL")
+        assert not value["ok"] and value["retry_after_seconds"] == 1 and not calls
+        assert not gateway.router.health and not gateway.failures
+        for _ in range(gateway.config.workers):
+            gateway.source_slots.release()
+        assert gateway.options_chain("SPY")["ok"] and calls == [1]
+    finally:
+        gateway.close()
