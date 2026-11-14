@@ -7,7 +7,7 @@ from .service import GatewayError, GatewayBusy
 from .scheduling import deadline as request_deadline
 
 
-def fetch_bars(gateway, **params):
+def fetch_bars(gateway, *, exact_source=False, **params):
     """Fetch only compatible existing routes; preserve per-symbol provenance.
 
     Args:
@@ -36,7 +36,7 @@ def fetch_bars(gateway, **params):
             continue
         scope = f"bars:{market}:{source_interval(params.get('interval', '1D'))}"
         first = detect_source(code) if requested == "auto" else requested
-        strict = registry.is_no_network_fallback_source(first)
+        strict = exact_source or registry.is_no_network_fallback_source(first)
         baseline = [first] if strict else list(dict.fromkeys([first, *registry.FALLBACK_CHAINS.get(market, [])]))
         override = registry.get_source_order_override(market)
         if requested == "auto" and not strict and override is not None and first in override:

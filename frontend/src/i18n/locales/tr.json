@@ -2777,15 +2777,15 @@
   },
   "history": {
     "title": "Geçmiş veri depolama",
-    "description": "Aylık parçalar halinde indirin. Tamamlanan parçaları yeniden indirmeden devam edin.",
+    "description": "Sınırlı boyutlu parçalar halinde indirin; sağlam tamamlanmış parçaları tekrar indirmeden devam edin.",
     "usage": "{{used}} / {{quota}} MiB kullanıldı · {{reserved}} MiB ayrıldı",
     "quota": "Disk sınırı (MiB)",
     "retention": "Kullanılmadığında saklama günü",
     "save": "Kaydet",
     "clean": "Kullanılmayan verileri temizle",
     "cleanup": "Sabitlenmeyen veriler süre sonunda veya yer gerektiğinde en eski kullanımdan başlayarak silinir. Etkin ve sabitlenmiş veriler korunur. Kota dolunca indirme durur.",
-    "support": "BaoStock · Şanghay/Şenzen hisseleri · tamamlanmış günler · düzeltilmemiş fiyatlar, CNY · en fazla 10 yıl. Diğer piyasalar ve 1 dakikalık veriler henüz desteklenmiyor.",
-    "symbols": "Semboller",
+    "support": "Sembol, tarih ve aralık seçin. Otomatik yönlendirme uyumlu mevcut kaynakları kullanır ve kaynak kullanılamadığında geçiş yapar.",
+    "symbols": "Varlık sembolleri",
     "start": "Başlangıç",
     "end": "Bitiş",
     "interval": "Aralık",
@@ -2807,6 +2807,13 @@
     "scanHint": "Yukarıdaki sembol ve tarihleri kullanır. Aboneliklere öncelik verir ve hataları yeniden dener. İlerleme hareketsizlikte silinir; veriler mevcut önbellek kotasını kullanır. Tam piyasa veri kümesi kaydedilmez.",
     "scanProgress": "Alınan {{completed}} / {{total}} · Hata {{failed}} · Yeniden deneme {{retries}}",
     "scanPartial": "Kısmen alındı",
-    "scanCancelled": "İptal edildi"
+    "scanCancelled": "İptal edildi",
+    "routesAvailable": "{{sources}} kayıtlı kaynak · {{markets}} piyasa",
+    "routeAvailability": "Kayıtlı olması güncel erişilebilirliği garanti etmez. Geçmiş derinliği ve aralıklar kaynağa bağlıdır; bazıları kimlik bilgileri gerektirir.",
+    "source": "Veri kaynağı",
+    "autoSource": "Otomatik yönlendirme ve geçiş",
+    "credentialsRequired": "Kimlik bilgileri gerekli",
+    "downloaded": "İndirildi · kapsam doğrulanmadı",
+    "coverageHint": "Mevcut satırlar örnekleme yapılmadan kaydedilir. Yalnızca takvim veya zaman ızgarasıyla doğrulanan veriler tam olarak işaretlenir; eksik geçmiş yakın tarihli verilerle değiştirilmez."
   }
 }

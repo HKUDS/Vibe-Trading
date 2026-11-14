@@ -10,19 +10,31 @@ def summarize(value):
         value = {
             key: item for key, item in value.items() if key not in {"chunks", "parts"} or not isinstance(item, list)
         }
+        if isinstance(value.get("routes"), dict) and len(value["routes"]) > 10:
+            value["routes_total"] = len(value["routes"])
+            value["routes_omitted"] = len(value["routes"]) - 10
+            value["routes"] = dict(list(value["routes"].items())[:10])
+        if isinstance(value.get("spec"), dict) and len(value["spec"].get("codes", [])) > 10:
+            spec = value["spec"]
+            value["spec"] = {
+                **spec,
+                "codes": spec["codes"][:10],
+                "codes_total": len(spec["codes"]),
+                "codes_omitted": len(spec["codes"]) - 10,
+            }
     return value
 
 
 class HistoryDataTool(BaseTool):
-    """Plan, download, inspect and read complete long-minute datasets."""
+    """Plan, download, inspect and read routed historical datasets."""
 
     name = "history_data"
     description = (
         "Plan and resume large historical datasets with bounded local storage. "
-        "Verified source currently BaoStock SH/SZ stocks, 5m/15m/30m/1H, settled dates, up to ten years. "
+        "Auto routes through compatible existing sources by market and interval; source pins an exact provider. "
         "Plan before create; create returns a job id; start downloads in background; status checks completion. "
-        "Rows requires a complete dataset and returns at most 25 unsampled rows per page. "
-        "Never claim another market or a recent tail is complete multi-year history. "
+        "Rows requires a finished download and returns at most 25 unsampled rows per page with coverage_verified. "
+        "Downloaded is not verified complete: inspect coverage_verified and never treat a recent tail as full history. "
         "scan_create queues background bar acquisition (explicit 1D/1W/1M interval), "
         "scan_status and scan_cancel inspect/stop it; scan jobs are process-local coverage metadata, not durable datasets. "
         "Storage returns global disk quota/retention; pin protects a dataset from automatic cleanup."
@@ -53,7 +65,8 @@ class HistoryDataTool(BaseTool):
             "codes": {"type": "array", "items": {"type": "string"}, "maxItems": 10000},
             "start_date": {"type": "string"},
             "end_date": {"type": "string"},
-            "interval": {"type": "string", "enum": ["5m", "15m", "30m", "1H", "1D", "1W", "1M"]},
+            "interval": {"type": "string", "enum": ["1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W", "1M"]},
+            "source": {"type": "string", "description": "auto (default) or exact registered source"},
             "offset": {"type": "integer", "minimum": 0},
         },
         "required": ["action"],
@@ -92,6 +105,7 @@ class HistoryDataTool(BaseTool):
                     start_date=kwargs.get("start_date"),
                     end_date=kwargs.get("end_date"),
                     interval=kwargs.get("interval", "5m"),
+                    source=kwargs.get("source", "auto"),
                 )
             elif action == "rows":
                 result = store.read(job, kwargs.get("offset", 0), 25)

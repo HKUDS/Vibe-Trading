@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { HistoryStorageSettings } from "../HistoryStorageSettings";
 
 vi.mock("@/lib/api", () => ({ api: {
-  dataScans: vi.fn(), createDataScan: vi.fn(), cancelDataScan: vi.fn(),
+  dataCapabilities: vi.fn(), dataScans: vi.fn(), createDataScan: vi.fn(), cancelDataScan: vi.fn(),
   historyStorage: vi.fn(), historyJobs: vi.fn(), saveHistoryStorage: vi.fn(),
   planHistory: vi.fn(), createHistory: vi.fn(), historyAction: vi.fn(),
   pinHistory: vi.fn(), deleteHistory: vi.fn(), pruneHistory: vi.fn(),
@@ -17,6 +17,7 @@ beforeEach(async () => {
   vi.mocked(api.historyStorage).mockResolvedValue(storage);
   vi.mocked(api.historyJobs).mockResolvedValue([]);
   vi.mocked(api.dataScans).mockResolvedValue([]);
+  vi.mocked(api.dataCapabilities).mockResolvedValue({history_datasets: {markets: ["us_equity", "crypto"], intervals: ["1m", "5m", "1D"], sources: [{source: "yahoo", markets: ["us_equity"], intervals: ["1m", "1D"], requires_auth: false}]}});
 });
 afterEach(cleanup);
 it("estimates first and starts only after the download action", async () => {
@@ -39,4 +40,15 @@ it("shows failed quota changes and keeps the saved usage visible", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
   expect(await screen.findByRole("alert")).toHaveTextContent("below current usage");
   expect(screen.getByText(/1.0 \/ 256.0 MiB used/)).toBeVisible();
+});
+
+it("exposes auto routing and keeps one-minute data and unverified coverage explicit", async () => {
+  vi.mocked(api.historyJobs).mockResolvedValue([{id: "one", state: "downloaded", pinned: 0, error: null, spec: {codes: ["AAPL.US"], start_date: "2026-11-12", end_date: "2026-11-12", interval: "1m"}}]);
+  render(<HistoryStorageSettings />);
+  await screen.findByText(/1 registered sources/);
+  expect(screen.getByLabelText("Data source")).toHaveValue("auto");
+  fireEvent.change(screen.getByLabelText("Interval"), {target: {value: "1m"}});
+  expect(screen.getByLabelText("Interval")).toHaveValue("1m");
+  expect(screen.getByText(/Downloaded · coverage unverified/)).toBeVisible();
+  expect(screen.getByText(/Only calendar\/grid-verified datasets/)).toBeVisible();
 });

@@ -5,6 +5,8 @@ def capabilities(config):
     """Describe routing coverage, not a claim that every endpoint is reachable."""
     from backtest.loaders.registry import FALLBACK_CHAINS, refresh_source_order_overrides
 
+    from .history_router import inventory, INTERVALS
+
     refresh_source_order_overrides()
     return {
         "ok": True,
@@ -14,12 +16,12 @@ def capabilities(config):
             "credentials": "existing loader availability rules; no new paid subscription",
         },
         "history_datasets": {
-            "source": "baostock",
-            "markets": ["a_share"],
-            "symbols": "canonical SH/SZ equities",
-            "intervals": ["5m", "15m", "30m", "1H"],
-            "adjustment": "raw",
-            "coverage": "calendar, daily trading status and exact intraday grid",
+            "source": "auto",
+            "markets": list(FALLBACK_CHAINS),
+            "sources": inventory(),
+            "intervals": list(INTERVALS),
+            "adjustment": "source-declared; incompatible chunks are never mixed",
+            "coverage": "complete only with coverage verification; otherwise downloaded with explicit warning",
             "storage_settings": "/data/history/storage",
             "job_api": "/data/history/jobs",
             "resumable": True,

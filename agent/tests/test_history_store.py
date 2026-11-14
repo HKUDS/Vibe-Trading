@@ -8,7 +8,7 @@ from src.data_gateway.history_store import HistoryStore
 
 
 def fake(symbol, start, end, interval):
-    return [{"symbol": symbol, "time": start + "T09:35:00", "close": 100}], {"source": "fixture", "coverage": "fixture"}
+    return [{"symbol": symbol, "time": start + "T09:35:00", "close": 100}], {"source": "fixture", "coverage": "fixture", "coverage_verified": True}
 
 
 @pytest.fixture
@@ -111,8 +111,8 @@ def test_interrupted_reservation_is_reclaimed_on_reopen(store):
 
 def test_invalid_market_and_range_rejected_before_any_job(store):
     for replacement in (
-        {"codes": ["AAPL.US"]},
-        {"interval": "1m"},
+        {"codes": ["NOT-A-MARKET"]},
+        {"interval": "2seconds"},
         {"codes": ["601398.SH"] * 10},
         {"end_date": "2040-01-01"},
     ):
@@ -277,7 +277,7 @@ def test_application_cli_supports_global_flags_and_sequential_invocations(tmp_pa
     job = json.loads(capsys.readouterr().out)["id"]
     assert main(["data", "history", "run", "--job", job]) == 0
     assert json.loads(capsys.readouterr().out)["completed_chunks"] == 2
-    assert main(["data", "history", "plan", "--codes", "AAPL.US", "--start", "2021-01-01", "--end", "2021-02-28"]) == 1
+    assert main(["data", "history", "plan", "--codes", "NOT-A-MARKET", "--start", "2021-01-01", "--end", "2021-02-28"]) == 1
 
 
 def test_repair_paused_by_quota_does_not_claim_deleted_chunk_is_complete(store):
@@ -290,3 +290,31 @@ def test_repair_paused_by_quota_does_not_claim_deleted_chunk_is_complete(store):
     assert state["state"] == "paused"
     assert state["completed_chunks"] == 5 and state["chunks"][0]["state"] == "pending"
     assert state["reserved"] == 0
+
+
+def test_default_dataset_path_never_collides_with_cli_history(tmp_path, monkeypatch):
+    from pathlib import Path
+    from src.data_gateway.history_store import history_directory
+
+    monkeypatch.delenv('VIBE_GATEWAY_HISTORY_DIR', raising=False)
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    root = tmp_path / '.vibe-trading'
+    root.mkdir()
+    history = root / 'history'
+    history.write_text('user command history')
+    assert history_directory() == root / 'datasets' / 'history'
+    assert history.read_text() == 'user command history'
+
+
+def test_legacy_dataset_directory_remains_readable(tmp_path, monkeypatch):
+    from pathlib import Path
+    from src.data_gateway.history_store import history_directory
+
+    monkeypatch.delenv('VIBE_GATEWAY_HISTORY_DIR', raising=False)
+    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    legacy = tmp_path / '.vibe-trading' / 'history'
+    legacy.mkdir(parents=True)
+    (legacy / 'catalog.sqlite').touch()
+    assert history_directory() == legacy
+    monkeypatch.setenv('VIBE_GATEWAY_HISTORY_DIR', str(tmp_path / 'custom'))
+    assert history_directory() == tmp_path / 'custom'

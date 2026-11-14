@@ -202,21 +202,43 @@ Preview sampling is declared in the data envelope and must never be used as a
 complete backtest input. Large requests use the separate, unsampled history-job
 path below instead of increasing the synchronous request limit.
 
-### Persistent minute datasets
+### Persistent historical datasets
 
 Settings → Historical data storage (also `/history-storage`) offers an estimate
 before downloading, a shared disk limit, idle retention, pause/resume, pin and
 delete. Defaults are **256 MiB and 30 unused days**; limits are 4 MiB–10 GiB and
 1–365 days. This budget is separate from the 64 MiB short-lived gateway cache.
-Storage is created lazily at `~/.vibe-trading/history`; override with
+Storage is created lazily at `~/.vibe-trading/datasets/history`; override with
 `VIBE_GATEWAY_HISTORY_DIR` outside every Git checkout. No data is committed.
 
-The verified adapter reuses BaoStock's existing serialized, timeout-bounded
-transport for SH/SZ stocks: 5m/15m/30m/1H, settled dates, at most ten years.
-Other markets, one-minute bars and paid sources are **not** silently substituted.
-Each symbol/month is checked against the full calendar, daily trading status and
-exact intraday bar-end grid. Prices are raw, CNY; volume is shares. Corporate
-adjustment is not invented, and a pre-listing or missing-data range fails visibly.
+Downloads default to `source=auto` and route through the existing registry and
+configured market order. `/data/capabilities` exposes the actual registered
+source/market inventory, including which adapters require existing credentials;
+registration is not a network or historical-depth guarantee. The planner accepts
+1m/5m/15m/30m/1H/4H/1D/1W/1M and rejects known incompatible routes. Unknown adapter
+capabilities are checked against the returned data. Explicit `source` pins that
+provider; `local` is not a remote download source. No new credentials are created.
+
+Automatic downloads learn local network health, prefer the previous chunk's
+source on resume, and try compatible alternatives on failure. Currency,
+adjustment and volume units must remain consistent across each symbol's chunks;
+a source switch with unknown units/currency is refused. Crypto venue changes
+within one persisted series are refused even when the quote currency matches.
+Daily/monthly chunks cover at most one calendar year (not one request per month);
+weekly chunks cover at most 52 weeks without cutting an aggregate. Intraday chunks
+avoid splitting ordinary equity weekends into independent requests. The 4,096
+chunk cap is enforced while planning, before an oversized list can accumulate.
+
+Coverage has two distinct terminal states: `complete` means all chunks have a
+coverage proof; `downloaded` means source rows were acquired without a complete
+calendar proof. Both are readable without sampling; row pages explicitly return
+`coverage_verified` and an unverified-coverage warning where applicable. BaoStock
+SH/SZ 5m/15m/30m/1H still checks calendar, daily trading status and exact intraday
+grid (raw CNY, shares). Continuous crypto intervals require every expected grid
+point. Other sources preserve observed bounds and are never promoted to verified
+complete merely because they returned rows. A recent tail, missing OHLC, a
+substituted interval, or a detected truncated boundary fails the chunk visibly.
+Neither auto routing nor chunking manufactures unavailable multi-year minute data.
 
 One download worker handles at most four queued jobs; each store permits at most
 32 jobs, 100 symbols/job and 4,096 chunks/job. Global cross-process reservations
@@ -256,7 +278,7 @@ of a backtest result; downstream analysis must consume and validate the rows.
 Live verification (queries the source again and reads every row without sampling):
 
 ```sh
-PYTHONPATH=agent python tools/gateway_history_validate.py --root ~/.vibe-trading/history --job JOB_ID --output /tmp/history-verification.json
+PYTHONPATH=agent python tools/gateway_history_validate.py --root ~/.vibe-trading/datasets/history --job JOB_ID --output /tmp/history-verification.json
 ```
 
 For separate synthetic capacity checks (no market data/network), run

@@ -2777,15 +2777,15 @@
   },
   "history": {
     "title": "历史数据存储",
-    "description": "按月分块下载，暂停后可续传，不重复下载已完成的数据。",
+    "description": "按有限大小分块下载，暂停后可续传，不重复下载完整且校验通过的分块。",
     "usage": "已用 {{used}} / {{quota}} MiB · 已预留 {{reserved}} MiB",
     "quota": "空间上限（MiB）",
     "retention": "闲置多少天后清理",
     "save": "保存",
     "clean": "清理闲置数据",
     "cleanup": "未固定的数据超过闲置天数会自动清理；空间不足时优先清理最久未使用的数据。正在使用和已固定的数据会保留，配额不足时暂停下载。",
-    "support": "BaoStock · 沪深股票 · 已结束的交易日 · 原始价格、人民币 · 最长十年。此处暂不支持其他市场和一分钟数据。",
-    "symbols": "股票代码",
+    "support": "选择代码、日期和周期。自动路由复用现有兼容数据源，来源不可用时尝试切换。",
+    "symbols": "资产代码",
     "start": "开始日期",
     "end": "结束日期",
     "interval": "周期",
@@ -2807,6 +2807,13 @@
     "scanHint": "使用上方股票和日期。后台取数为订阅让出资源，失败后自动重试。进度闲置后清理，数据沿用现有缓存配额；不会保存完整市场数据集。",
     "scanProgress": "已获取 {{completed}} / {{total}} · 失败 {{failed}} · 重试 {{retries}}",
     "scanPartial": "部分获取",
-    "scanCancelled": "已取消"
+    "scanCancelled": "已取消",
+    "routesAvailable": "{{sources}} 个已接入来源 · {{markets}} 个市场",
+    "routeAvailability": "已接入不等于当前可用。历史深度和周期取决于来源，部分来源需要已有凭据。",
+    "source": "数据来源",
+    "autoSource": "自动路由与切换",
+    "credentialsRequired": "需要凭据",
+    "downloaded": "已下载 · 覆盖未验证",
+    "coverageHint": "可用数据按原始行保存，不抽样。只有通过交易日历或时间网格验证的数据才标为完整；历史缺口会明确报告，不用近期数据替代。"
   }
 }

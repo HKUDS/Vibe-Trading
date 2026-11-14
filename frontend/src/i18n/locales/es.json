@@ -2777,14 +2777,14 @@
   },
   "history": {
     "title": "Almacenamiento histórico",
-    "description": "Descarga por meses. Pausa y reanuda sin repetir bloques completados.",
+    "description": "Descarga por bloques limitados; reanuda sin volver a descargar bloques completos e íntegros.",
     "usage": "{{used}} / {{quota}} MiB usados · {{reserved}} MiB reservados",
     "quota": "Límite de disco (MiB)",
     "retention": "Días sin uso antes de borrar",
     "save": "Guardar",
     "clean": "Limpiar datos sin uso",
     "cleanup": "Los datos no fijados caducan tras el plazo o se eliminan por antigüedad si falta espacio. Los activos y fijados se conservan. La descarga se pausa al agotar la cuota.",
-    "support": "BaoStock · acciones SH/SZ · días cerrados · precios sin ajustar, CNY · hasta 10 años. Otros mercados y barras de 1 minuto aún no son compatibles.",
+    "support": "Elige símbolos, fechas e intervalo. La selección automática usa las fuentes existentes compatibles y cambia si una no está disponible.",
     "symbols": "Símbolos",
     "start": "Desde",
     "end": "Hasta",
@@ -2807,6 +2807,13 @@
     "scanHint": "Usa los símbolos y fechas anteriores. Prioriza las suscripciones y reintenta los fallos. El progreso caduca por inactividad y los datos usan la cuota de caché existente. No guarda un conjunto completo del mercado.",
     "scanProgress": "Obtenidos {{completed}} / {{total}} · Fallidos {{failed}} · Reintentos {{retries}}",
     "scanPartial": "Obtención parcial",
-    "scanCancelled": "Cancelado"
+    "scanCancelled": "Cancelado",
+    "routesAvailable": "{{sources}} fuentes registradas · {{markets}} mercados",
+    "routeAvailability": "El registro no garantiza disponibilidad actual. La profundidad histórica y los intervalos dependen de cada fuente; algunas requieren credenciales.",
+    "source": "Fuente de datos",
+    "autoSource": "Automática · selección y respaldo",
+    "credentialsRequired": "Requiere credenciales",
+    "downloaded": "Descargado · cobertura sin verificar",
+    "coverageHint": "Las filas disponibles se guardan sin muestreo. Solo se marcan completos los datos verificados por calendario o rejilla temporal; los huecos no se sustituyen por datos recientes."
   }
 }

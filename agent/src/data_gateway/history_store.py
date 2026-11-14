@@ -1,8 +1,7 @@
-"""Quota-controlled, resumable historical minute datasets outside the checkout."""
+"""Quota-controlled, resumable historical datasets outside the checkout."""
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import date, timedelta
 import gzip
 import hashlib
 import json
@@ -25,12 +24,12 @@ class HistoryCapacityError(ValueError):
 class HistoryStore:
     """One bounded worker per service; OS job leases protect cross-process resume.
 
-    Only one month of one symbol is materialized. Each compressed chunk is
+    Only one bounded chunk of one symbol is materialized. Each compressed chunk is
     atomically committed with a digest. Readers stream rows, never a full dataset.
     """
 
     def __init__(self, directory: Path, *, quota_bytes=256 * 1024**2, retention_days=30, fetcher=None):
-        from .history_source import fetch_chunk
+        from .history_router import fetch_chunk
 
         self.directory = Path(directory).expanduser().resolve()
         if any((parent / ".git").exists() for parent in (self.directory, *self.directory.parents)):
@@ -248,55 +247,11 @@ class HistoryStore:
                 "path": str(self.directory),
             }
 
-    def plan(self, codes, start_date, end_date, interval="5m", source="baostock"):
-        """Validate exact supported identity before allocating any download work."""
-        if not isinstance(codes, list) or not 1 <= len(codes) <= 100:
-            raise ValueError("Supply 1..100 distinct symbols")
-        if any(not isinstance(code, str) or not re.fullmatch(r"\d{6}\.(SH|SZ)", code) for code in codes):
-            raise ValueError("Verified long-minute history currently supports SH/SZ equities via BaoStock")
-        if len(set(codes)) != len(codes):
-            raise ValueError("Supply distinct symbols")
-        if interval not in {"5m", "15m", "30m", "1H"} or source != "baostock":
-            raise ValueError("Supported history: BaoStock 5m/15m/30m/1H")
-        if not isinstance(start_date, str) or not isinstance(end_date, str):
-            raise ValueError("start_date and end_date are required ISO dates")
-        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
-        from zoneinfo import ZoneInfo
-        from datetime import datetime
+    def plan(self, codes, start_date, end_date, interval="5m", source="auto"):
+        """Plan bounded acquisition through all compatible registered routes."""
+        from .history_router import plan
 
-        if start > end or (end - start).days > 3660 or end >= datetime.now(ZoneInfo("Asia/Shanghai")).date():
-            raise ValueError("Request settled dates in an ordered range of at most ten years")
-        chunks = []
-        for code in codes:
-            cursor = start
-            while cursor <= end:
-                next_month = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
-                last = min(end, next_month - timedelta(days=1))
-                chunks.append((code, str(cursor), str(last)))
-                cursor = last + timedelta(days=1)
-        if len(chunks) > 4096:
-            raise ValueError("Request exceeds 4096 chunks; split into multiple jobs")
-        frequency = {"5m": 5, "15m": 15, "30m": 30, "1H": 60}[interval]
-        upper_rows = (
-            len(codes)
-            * sum((start + timedelta(days=i)).weekday() < 5 for i in range((end - start).days + 1))
-            * (240 // frequency)
-        )
-        return {
-            "spec": {
-                "codes": codes,
-                "start_date": start_date,
-                "end_date": end_date,
-                "interval": interval,
-                "source": source,
-            },
-            "chunks": len(chunks),
-            "estimated_max_rows": upper_rows,
-            "estimated_uncompressed_bytes": upper_rows * 256,
-            "estimate_basis": "weekday upper estimate, 240 minutes/session, 256 JSON bytes/row; exact calendar/source grid validated per chunk",
-            "storage": self.settings(),
-            "parts": chunks,
-        }
+        return {**plan(codes, start_date, end_date, interval, source), "storage": self.settings()}
 
     def create(self, **spec):
         plan = self.plan(**spec)
@@ -330,7 +285,20 @@ class HistoryStore:
                     counts = db.execute(
                         "SELECT COUNT(*),SUM(state='complete'),SUM(rows) FROM chunks WHERE job=?", (item["id"],)
                     ).fetchone()
-                    item.update(total_chunks=counts[0], completed_chunks=counts[1] or 0, rows=counts[2] or 0)
+                    item["sources"] = [
+                        row[0]
+                        for row in db.execute(
+                            "SELECT DISTINCT json_extract(meta, '$.source') FROM chunks WHERE job=? AND state='complete' AND meta IS NOT NULL",
+                            (item["id"],),
+                        )
+                        if row[0]
+                    ]
+                    item.update(
+                        total_chunks=counts[0],
+                        completed_chunks=counts[1] or 0,
+                        rows=counts[2] or 0,
+                        coverage_verified=item["state"] == "complete",
+                    )
                 return jobs
             self._id(job)
             row = db.execute("SELECT * FROM jobs WHERE id=?", (job,)).fetchone()
@@ -350,6 +318,24 @@ class HistoryStore:
             summary["rows"] = sum(c["rows"] for c in summary["chunks"])
             summary["completed_chunks"] = sum(c["state"] == "complete" for c in summary["chunks"])
             summary["total_chunks"] = len(summary["chunks"])
+            summary["failure"] = next(
+                (
+                    {
+                        "symbol": c["symbol"],
+                        "start": c["start"],
+                        "end": c["end"],
+                        "error": c["error"],
+                        "routes": (c["meta"] or {}).get("route_attempts", []),
+                    }
+                    for c in summary["chunks"]
+                    if c["error"] and c["state"] != "complete"
+                ),
+                None,
+            )
+            summary["sources"] = sorted(
+                {c["meta"]["source"] for c in summary["chunks"] if c["meta"] and c["meta"].get("source")}
+            )
+            summary["coverage_verified"] = summary["state"] == "complete"
             return summary
 
     def start(self, job):
@@ -399,6 +385,12 @@ class HistoryStore:
             self._remove(db, job)
         return {"deleted": job}
 
+    def _stop_requested(self, job):
+        if self.stop.is_set():
+            return True
+        with self.transaction() as db:
+            return bool(db.execute("SELECT cancel FROM jobs WHERE id=?", (job,)).fetchone()[0])
+
     def run(self, job):
         """Resume verified chunks; bounded retries preserve all completed work."""
         self.status(job)
@@ -410,8 +402,10 @@ class HistoryStore:
                 return self.status(job)
             with self.transaction() as db:
                 db.execute("UPDATE jobs SET state='running',cancel=0,reserved=0,error=NULL WHERE id=?", (job,))
+            failed_index = None
             try:
                 for chunk in state["chunks"]:
+                    failed_index = chunk["idx"]
                     if self.stop.is_set():
                         break
                     with self.transaction() as db:
@@ -443,13 +437,31 @@ class HistoryStore:
                     error = None
                     for attempt in range(3):
                         try:
-                            rows, meta = self.fetcher(
-                                chunk["symbol"], chunk["start"], chunk["end"], state["spec"]["interval"]
+                            from .history_router import history_context
+
+                            with self.transaction() as db:
+                                prior = db.execute(
+                                    "SELECT meta FROM chunks WHERE job=? AND symbol=? AND state='complete' AND idx!=? ORDER BY idx LIMIT 1",
+                                    (job, chunk["symbol"], chunk["idx"]),
+                                ).fetchone()
+                            token = history_context.set(
+                                {
+                                    "source": state["spec"].get("source", "baostock"),
+                                    "stop_requested": lambda: self._stop_requested(job),
+                                    "expected": json.loads(prior["meta"]) if prior and prior["meta"] else None,
+                                }
                             )
+                            try:
+                                rows, meta = self.fetcher(
+                                    chunk["symbol"], chunk["start"], chunk["end"], state["spec"]["interval"]
+                                )
+                            finally:
+                                history_context.reset(token)
                             error = None
                             break
                         except (ConnectionError, TimeoutError, OSError) as exc:
-                            error = exc
+                            if error is None:
+                                error = exc
                             if self.stop.wait(min(8, 2**attempt)):
                                 break
                     if error is not None:
@@ -485,20 +497,43 @@ class HistoryStore:
                     pending = db.execute(
                         "SELECT COUNT(*) FROM chunks WHERE job=? AND state!='complete'", (job,)
                     ).fetchone()[0]
-                    db.execute(
-                        "UPDATE jobs SET state=?,reserved=0 WHERE id=?", ("paused" if pending else "complete", job)
+                    verified = all(
+                        self._coverage_verified(json.loads(row["meta"]))
+                        for row in db.execute("SELECT meta FROM chunks WHERE job=? AND state='complete'", (job,))
                     )
+                    final = "paused" if pending else "complete" if verified else "downloaded"
+                    db.execute("UPDATE jobs SET state=?,reserved=0 WHERE id=?", (final, job))
             except Exception as exc:
+                from .history_router import HistoryPaused
+
+                paused = isinstance(exc, HistoryPaused)
                 with self.transaction() as db:
+                    if failed_index is not None and not paused:
+                        db.execute(
+                            "UPDATE chunks SET error=? WHERE job=? AND idx=?", (str(exc)[:800], job, failed_index)
+                        )
+                        if hasattr(exc, "attempts"):
+                            db.execute(
+                                "UPDATE chunks SET meta=? WHERE job=? AND idx=?",
+                                (
+                                    json.dumps({"route_attempts": exc.attempts, "coverage_verified": False}),
+                                    job,
+                                    failed_index,
+                                ),
+                            )
                     db.execute(
                         "UPDATE jobs SET state=?,reserved=0,error=? WHERE id=?",
                         (
-                            "paused" if isinstance(exc, HistoryCapacityError) else "failed",
-                            type(exc).__name__ + ": " + str(exc)[:240],
+                            "paused" if paused or isinstance(exc, HistoryCapacityError) else "failed",
+                            None if paused else type(exc).__name__ + ": " + str(exc)[:240],
                             job,
                         ),
                     )
             return self.status(job)
+
+    @staticmethod
+    def _coverage_verified(meta):
+        return meta.get("coverage_verified", meta.get("coverage") == "calendar_daily_status_and_exact_intraday_grid")
 
     def read(self, job, offset=0, limit=1000):
         """Read a bounded page of complete, hash-verified chunks without sampling."""
@@ -506,7 +541,7 @@ class HistoryStore:
             raise ValueError("Rows require offset>=0 and limit=1..1000")
         with self.lease(job):
             state = self.status(job)
-            if state["state"] != "complete":
+            if state["state"] not in {"complete", "downloaded"}:
                 raise ValueError("Dataset is not complete; inspect chunk errors or resume")
             with self.transaction() as db:
                 db.execute("UPDATE jobs SET accessed=? WHERE id=?", (time.time(), job))
@@ -532,6 +567,10 @@ class HistoryStore:
                     break
             return {
                 "job": job,
+                "coverage_verified": state["state"] == "complete",
+                "coverage_warning": None
+                if state["state"] == "complete"
+                else "Acquired source rows; exchange-calendar completeness is unverified",
                 "offset": offset,
                 "rows": output,
                 "total_rows": state["rows"],
@@ -566,7 +605,16 @@ _instance_lock = threading.Lock()
 
 def history_directory():
     """Resolve the shared on-disk store independently of the application's cwd."""
-    return Path(os.getenv("VIBE_GATEWAY_HISTORY_DIR", str(Path.home() / ".vibe-trading/history")))
+    override = os.getenv("VIBE_GATEWAY_HISTORY_DIR")
+    if override:
+        return Path(override)
+    root = Path.home() / ".vibe-trading"
+    legacy = root / "history"
+    # The CLI already uses `history` as a text file. Preserve earlier dataset
+    # installations only when this really is a dataset directory.
+    if legacy.is_dir() and (legacy / "catalog.sqlite").is_file():
+        return legacy
+    return root / "datasets" / "history"
 
 
 def get_history_store():

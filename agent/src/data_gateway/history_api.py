@@ -12,7 +12,7 @@ class HistoryRequest(BaseModel):
     start_date: date
     end_date: date
     interval: str = "5m"
-    source: str = "baostock"
+    source: str = "auto"
 
 
 class StorageRequest(BaseModel):

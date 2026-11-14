@@ -276,10 +276,10 @@ class MarketDataGateway:
         future.add_done_callback(release)
         return future.result(timeout=timeout)
 
-    def _historical_bars(self, routing_policy=None, **params):
+    def _historical_bars(self, routing_policy=None, exact_source=False, **params):
         from .historical import fetch_bars
 
-        return fetch_bars(self, **params)
+        return fetch_bars(self, exact_source=exact_source, **params)
 
     def options_chain(
         self, ticker: str, expiration: int | None = None, *, allow_stale: bool = True, full: bool = False

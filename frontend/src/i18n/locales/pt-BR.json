@@ -2777,14 +2777,14 @@
   },
   "history": {
     "title": "Armazenamento histórico",
-    "description": "Baixe em blocos mensais. Pause e retome sem repetir blocos concluídos.",
+    "description": "Baixe em blocos limitados; retome sem baixar novamente os blocos completos e íntegros.",
     "usage": "{{used}} / {{quota}} MiB usados · {{reserved}} MiB reservados",
     "quota": "Limite de disco (MiB)",
     "retention": "Dias sem uso antes de excluir",
     "save": "Salvar",
     "clean": "Limpar dados sem uso",
     "cleanup": "Dados não fixados expiram após o prazo ou são removidos por tempo sem uso quando falta espaço. Dados ativos e fixados são mantidos. A descarga pausa ao atingir a cota.",
-    "support": "BaoStock · ações SH/SZ · dias encerrados · preços sem ajuste, CNY · até 10 anos. Outros mercados e barras de 1 minuto ainda não são suportados.",
+    "support": "Escolha ativos, datas e intervalo. A seleção automática usa fontes existentes compatíveis e troca quando uma fica indisponível.",
     "symbols": "Símbolos",
     "start": "De",
     "end": "Até",
@@ -2807,6 +2807,13 @@
     "scanHint": "Usa os símbolos e datas acima. Prioriza assinaturas e repete tentativas com falha. O progresso expira por inatividade e os dados usam a cota de cache existente. Não salva um conjunto completo do mercado.",
     "scanProgress": "Obtidos {{completed}} / {{total}} · Falhas {{failed}} · Novas tentativas {{retries}}",
     "scanPartial": "Coleta parcial",
-    "scanCancelled": "Cancelado"
+    "scanCancelled": "Cancelado",
+    "routesAvailable": "{{sources}} fontes registradas · {{markets}} mercados",
+    "routeAvailability": "O registro não garante disponibilidade atual. A profundidade histórica e os intervalos dependem da fonte; algumas exigem credenciais.",
+    "source": "Fonte de dados",
+    "autoSource": "Automática · seleção e alternativa",
+    "credentialsRequired": "Exige credenciais",
+    "downloaded": "Baixado · cobertura não verificada",
+    "coverageHint": "As linhas disponíveis são salvas sem amostragem. Só dados verificados pelo calendário ou grade temporal são marcados como completos; lacunas históricas não são substituídas por dados recentes."
   }
 }

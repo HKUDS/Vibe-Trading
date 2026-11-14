@@ -2777,15 +2777,15 @@
   },
   "history": {
     "title": "Penyimpanan data historis",
-    "description": "Unduh per bulan. Jeda dan lanjutkan tanpa mengunduh ulang bagian yang selesai.",
+    "description": "Unduh dalam potongan terbatas; lanjutkan tanpa mengunduh ulang potongan lengkap yang utuh.",
     "usage": "{{used}} / {{quota}} MiB terpakai · {{reserved}} MiB dicadangkan",
     "quota": "Batas disk (MiB)",
     "retention": "Hapus setelah tidak dipakai (hari)",
     "save": "Simpan",
     "clean": "Bersihkan data tak terpakai",
     "cleanup": "Data yang tidak disematkan kedaluwarsa setelah batas waktu, atau dihapus dari yang paling lama tidak dipakai saat ruang diperlukan. Data aktif dan disematkan tetap disimpan. Unduhan berhenti saat kuota habis.",
-    "support": "BaoStock · saham SH/SZ · hari perdagangan selesai · harga mentah, CNY · hingga 10 tahun. Pasar lain dan data 1 menit belum didukung.",
-    "symbols": "Simbol",
+    "support": "Pilih simbol, tanggal, dan interval. Perutean otomatis memakai sumber yang kompatibel dan beralih saat sumber tidak tersedia.",
+    "symbols": "Simbol aset",
     "start": "Dari",
     "end": "Sampai",
     "interval": "Interval",
@@ -2807,6 +2807,13 @@
     "scanHint": "Menggunakan simbol dan tanggal di atas. Memprioritaskan langganan dan mencoba ulang kegagalan. Progres dihapus setelah tidak aktif; data memakai kuota cache yang ada. Tidak menyimpan dataset pasar lengkap.",
     "scanProgress": "Diambil {{completed}} / {{total}} · Gagal {{failed}} · Percobaan ulang {{retries}}",
     "scanPartial": "Diambil sebagian",
-    "scanCancelled": "Dibatalkan"
+    "scanCancelled": "Dibatalkan",
+    "routesAvailable": "{{sources}} sumber terdaftar · {{markets}} pasar",
+    "routeAvailability": "Terdaftar bukan jaminan ketersediaan saat ini. Kedalaman historis dan interval bergantung pada sumber; sebagian memerlukan kredensial.",
+    "source": "Sumber data",
+    "autoSource": "Otomatis · rute dan cadangan",
+    "credentialsRequired": "Memerlukan kredensial",
+    "downloaded": "Diunduh · cakupan belum diverifikasi",
+    "coverageHint": "Baris yang tersedia disimpan tanpa sampling. Hanya data yang diverifikasi dengan kalender atau kisi waktu ditandai lengkap; riwayat yang hilang tidak diganti data terbaru."
   }
 }

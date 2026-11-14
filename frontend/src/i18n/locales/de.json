@@ -2777,14 +2777,14 @@
   },
   "history": {
     "title": "Historische Daten speichern",
-    "description": "Monatsweise herunterladen. Fortsetzen ohne bereits fertige Blöcke erneut zu laden.",
+    "description": "In begrenzten Blöcken herunterladen; beim Fortsetzen intakte fertige Blöcke wiederverwenden.",
     "usage": "{{used}} / {{quota}} MiB belegt · {{reserved}} MiB reserviert",
     "quota": "Speicherlimit (MiB)",
     "retention": "Löschen nach ungenutzten Tagen",
     "save": "Speichern",
     "clean": "Ungenutzte Daten bereinigen",
     "cleanup": "Nicht fixierte Daten verfallen nach der Frist oder werden bei Platzbedarf nach letzter Nutzung gelöscht. Aktive und fixierte Daten bleiben erhalten. Bei voller Quote pausiert der Download.",
-    "support": "BaoStock · SH/SZ-Aktien · abgeschlossene Handelstage · unbereinigte Kurse, CNY · bis 10 Jahre. Andere Märkte und 1-Minuten-Daten werden noch nicht unterstützt.",
+    "support": "Symbole, Zeitraum und Intervall wählen. Die automatische Auswahl nutzt kompatible vorhandene Quellen und wechselt bei Ausfällen.",
     "symbols": "Symbole",
     "start": "Von",
     "end": "Bis",
@@ -2807,6 +2807,13 @@
     "scanHint": "Verwendet die Symbole und Daten oben. Abonnements haben Vorrang; Fehler werden erneut versucht. Fortschritt verfällt bei Inaktivität, Daten nutzen das bestehende Cache-Limit. Es wird kein vollständiger Marktdatensatz gespeichert.",
     "scanProgress": "Abgerufen {{completed}} / {{total}} · Fehler {{failed}} · Wiederholungen {{retries}}",
     "scanPartial": "Teilweise abgerufen",
-    "scanCancelled": "Abgebrochen"
+    "scanCancelled": "Abgebrochen",
+    "routesAvailable": "{{sources}} registrierte Quellen · {{markets}} Märkte",
+    "routeAvailability": "Die Registrierung garantiert keine aktuelle Verfügbarkeit. Historientiefe und Intervalle hängen von der Quelle ab; manche benötigen Zugangsdaten.",
+    "source": "Datenquelle",
+    "autoSource": "Automatische Auswahl und Ersatzquelle",
+    "credentialsRequired": "Zugangsdaten erforderlich",
+    "downloaded": "Heruntergeladen · Abdeckung ungeprüft",
+    "coverageHint": "Verfügbare Zeilen werden ohne Stichproben gespeichert. Nur anhand von Handelskalender oder Zeitraster geprüfte Daten gelten als vollständig; fehlende Historie wird nicht durch aktuelle Daten ersetzt."
   }
 }

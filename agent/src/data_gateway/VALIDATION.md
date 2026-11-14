@@ -630,3 +630,80 @@ contract drift, not a reason to relax gateway verification.
 
 Formal combined-hour result: pending. See the next appended result before making
 any memory-stability or full-market coverage claim.
+
+
+## Historical router correction (2026-11-14, after combined-hour launch)
+
+The earlier persistent downloader was BaoStock-only even though ordinary gateway
+bars already used the wider loader registry. This was a real missing integration,
+not merely a misleading label. Persistent jobs now default to auto routing, expose
+candidate sources in their plans, retain actual chunk provenance and reject
+incompatible series identity. The API, CLI, Agent/MCP and eleven-locale storage
+page share this behavior. Discovery measured 27 registered non-local adapters and
+16 market chains, including credential-gated adapters; these are not 27 verified
+free/live feeds. Unknown source interval coverage is checked on acquisition.
+
+Separate real acquisitions through the new history-job HTTP path:
+
+| Request | Rows | Observed source | Result | Wall time including polling |
+| --- | ---: | --- | --- | ---: |
+| AAPL + MSFT, 2026-11-02..13, daily | 20 | Yahoo | downloaded, calendar unverified | 1.024 s |
+| 00700.HK, same dates, daily | 10 | Yahoo after other candidates | downloaded, calendar unverified | 2.548 s |
+| BTC-USDT, 2026-11-12, 5m | 288 | OKX | full continuous grid verified | 0.524 s |
+| AAPL, 2026-11-12, 1m | 390 | Yahoo | downloaded, calendar unverified | 0.518 s |
+| TD.TO, 2026-11-02..13, daily | 10 | Yahoo | downloaded, calendar unverified | 0.520 s |
+| VOD.L, same dates, daily | 9 | Yahoo | downloaded, calendar unverified | 1.017 s |
+| AAPL, 2021-11-15, 1m | 0 | no usable route | explicitly failed, no recent-tail replacement | 9.706 s |
+
+Native browser interaction also completed AAPL 1m, 2026-11-09..13, five chunks,
+through estimate → candidate-route display → download → downloaded/unverified.
+These observations are separate from the ongoing hour: its parent imported
+commit `45a8e0f25` before the new history router existed. Its data acquisition
+continues to exercise the original verified BaoStock adapter. Do not use that
+hour as evidence that the new multi-source downloader passed an hour-long soak.
+The same process observer continues measuring actual children.
+
+Default history storage also collided with the CLI's existing
+`~/.vibe-trading/history` text file. It now uses `~/.vibe-trading/datasets/history`,
+preserving an existing legacy directory only when it contains a dataset catalog.
+An explicit history directory remains unchanged; the CLI history file is untouched.
+
+Further real router checks also downloaded daily data for India, Korea, Vietnam,
+Argentina, Brazil, forex, an index and a global futures symbol. An explicit
+Binance 5m request returned all 288 bars and passed the continuous grid; explicit
+yfinance daily returned ten rows. Explicit Stooq failed visibly on this machine.
+These checks establish local reachability, not worldwide availability or verified
+exchange-calendar completeness for those daily series.
+
+Low-frequency partitioning was then improved without changing source/cache quotas:
+AAPL+MSFT five-year monthly requests decreased from 122 chunks/97.112 seconds to
+12 chunks/9.515 seconds, returning the same 122 symbol/timestamp rows and volumes.
+They were NOT byte-identical: 299 OHLC values in 103 rows differed, maximum absolute
+difference 0.0001270927 and relative difference 4.57e-7. Those are retained as
+observed price differences, not silently rounded away or claimed identical.
+Weekly AAPL returned 11 rows byte-identically when reduced from three chunks to
+one (2.559 → 0.532 seconds). Timings include polling and are observations, not SLAs.
+
+A BTC five-year daily request ending 2026-11-13 correctly failed its final chunk:
+OKX returned 316/317 bars for 2026, with no interior gaps and timestamps
+2026-01-01T16:00..2026-11-12T16:00 UTC. The source's 1D bars start at UTC+8 midnight;
+the bar starting 2026-11-13T16:00 UTC was still open. The gateway refused both a
+false full-coverage assertion and a Binance/CCXT splice into that OKX series.
+Errors now preserve observed bounds, expected/actual counts and the first
+per-source failure across retries; a later cooldown cannot erase its cause.
+Grid phase is recorded and checked on resume, including legacy metadata migration.
+Cancellation stops before the next fallback attempt and releases the reservation.
+A settled request 2021-11-13..2026-11-12 subsequently returned **1,826 rows, six
+chunks, all verified**, in 3.978 seconds (some prior-year chunks reused hot cache).
+
+Focused backend regression: 110 passed (gateway/history suites). TypeScript
+checking reported only the two existing dynamic i18n-key errors in
+`frontend/src/components/options/PayoffComparisons.tsx`; no gateway UI type error.
+The existing `main` loader registry is byte-identical to this branch's registry;
+the downloader is reusing those routes rather than maintaining a separate list.
+
+Final history-page and eleven-locale frontend tests: **46 passed**. The native
+preview verified both auto-route plans and actual per-job sources. It runs the
+isolated gateway server, so the unrelated session sidebar shows Not Found; this
+is not a full-application session validation. Router evidence and the UI screenshot
+are archived alongside the combined-hour artifacts under `gateway-combined-20261114`.

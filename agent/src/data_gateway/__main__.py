@@ -7,7 +7,7 @@ from . import get_gateway
 
 def add_history_parser(commands):
     """Register shared history arguments for both standalone and application CLI."""
-    history = commands.add_parser("history", help="Manage quota-bounded historical minute datasets")
+    history = commands.add_parser("history", help="Manage quota-bounded historical datasets")
     history.add_argument(
         "action",
         choices=["plan", "create", "run", "status", "rows", "cancel", "delete", "pin", "unpin", "storage", "prune"],
@@ -17,6 +17,7 @@ def add_history_parser(commands):
     history.add_argument("--start")
     history.add_argument("--end")
     history.add_argument("--interval", default="5m")
+    history.add_argument("--source", default="auto")
     history.add_argument("--offset", type=int, default=0)
     history.add_argument("--limit", type=int, default=100)
     history.add_argument("--quota-mb", type=int)
@@ -32,7 +33,7 @@ def run_history(args):
     try:
         if args.action in {"plan", "create"}:
             result = getattr(store, args.action)(
-                codes=args.codes, start_date=args.start, end_date=args.end, interval=args.interval
+                codes=args.codes, start_date=args.start, end_date=args.end, interval=args.interval, source=args.source
             )
             result.pop("parts", None)
         elif args.action == "storage":
@@ -51,7 +52,7 @@ def run_history(args):
         else:
             result = getattr(store, args.action)(args.job)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
-        if args.action == "run" and result.get("state") != "complete":
+        if args.action == "run" and result.get("state") not in {"complete", "downloaded"}:
             raise SystemExit(1)
     except ValueError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))

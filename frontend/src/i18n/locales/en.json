@@ -2777,14 +2777,14 @@
   },
   "history": {
     "title": "Historical data storage",
-    "description": "Download in monthly chunks. Pause and resume without downloading completed chunks again.",
+    "description": "Download in bounded chunks; resume without downloading intact completed chunks again.",
     "usage": "{{used}} / {{quota}} MiB used · {{reserved}} MiB reserved",
     "quota": "Disk limit (MiB)",
     "retention": "Remove after unused days",
     "save": "Save",
     "clean": "Clean unused data",
     "cleanup": "Unpinned data expires after the selected idle period, or is removed oldest-first when space is needed. Active and pinned datasets are retained. Downloads pause on quota exhaustion.",
-    "support": "BaoStock · SH/SZ stocks · settled dates · raw prices, CNY · up to 10 years. Other markets and 1-minute history are not supported here yet.",
+    "support": "Choose symbols, dates and a bar interval. Auto routes through compatible existing sources and switches when a source is unavailable.",
     "symbols": "Symbols",
     "start": "From",
     "end": "To",
@@ -2807,6 +2807,13 @@
     "scanHint": "Uses the symbols and dates above. Background acquisition yields to subscriptions and retries failures. Progress expires after inactivity; acquired bars share the existing cache quota. This does not save a complete market dataset.",
     "scanProgress": "{{completed}} / {{total}} acquired · {{failed}} failed · {{retries}} retries",
     "scanPartial": "Partially acquired",
-    "scanCancelled": "Cancelled"
+    "scanCancelled": "Cancelled",
+    "routesAvailable": "{{sources}} registered sources · {{markets}} markets",
+    "routeAvailability": "Registration is not a live availability guarantee. Historical depth and intervals depend on the source; some require existing credentials.",
+    "source": "Data source",
+    "autoSource": "Auto · route and fail over",
+    "credentialsRequired": "Credentials required",
+    "downloaded": "Downloaded · coverage unverified",
+    "coverageHint": "Available rows are saved without sampling. Only calendar/grid-verified datasets are marked complete; missing history is reported, never replaced with recent data."
   }
 }

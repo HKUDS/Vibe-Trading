@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter, defaultdict
+from datetime import datetime
 import json
 import math
 from pathlib import Path
@@ -32,7 +33,7 @@ def slope(rows, key):
     return sum((x - avgx) * (y - avgy) for x, y in zip(xs, ys)) / denominator if denominator else None
 
 
-def summarize(document):
+def summarize(document, observer=None):
     samples, checks = document["samples"], document["checks"]
     active = [s for s in samples if s["cycle"] >= 0 and s["phase"] != "idle"]
     start = active[0]["elapsed_s"]
@@ -79,12 +80,17 @@ def summarize(document):
             len(s["subscriptions"]["topics"]) == 64
             and any(job["state"] == "running" for job in s["history"])
             and any(job["state"] == "running" for job in s["gateway"].get("scans", []))
-            for s in active),
-        "completed_child_peak_mib": max(s["gateway"].get("heavy_worker", {}).get("max_completed_child_footprint_bytes", 0) for s in samples) / 2**20,
+            for s in active
+        ),
+        "completed_child_peak_mib": max(
+            s["gateway"].get("heavy_worker", {}).get("max_completed_child_footprint_bytes", 0) for s in samples
+        )
+        / 2**20,
         "parent_plus_child_peak_upper_bound_mib": (
             max(s["peak_footprint_bytes"] for s in samples)
             + max(s["gateway"].get("heavy_worker", {}).get("max_completed_child_footprint_bytes", 0) for s in samples)
-        ) / 2**20,
+        )
+        / 2**20,
         "pid": tail["pid"],
         "counts": document["counts"],
         "upstream_counts": tail["counts"],
@@ -142,11 +148,33 @@ def summarize(document):
         "history_worker_drained": all(h["state"] not in {"running", "queued"} for h in tail["history"]),
         "idle_observed_three_minutes": result["idle_seconds_observed"] >= 180,
     }
+    timing = tail["timings"]
+    started = timing.get("source_queue", {}).get("count", 0)
+    finished = sum(timing.get(key, {}).get("count", 0) for key in ("source_success", "source_failed"))
+    result["actual_source_calls_outstanding"] = started - finished
+    result["checks"]["actual_source_calls_finished"] = started == finished
+    if observer:
+        rows = observer.get("samples", [])
+        result["os_observer"] = {
+            "pid": observer["pid"],
+            "phase": observer["phase"],
+            "error": observer.get("error"),
+            "samples": len(rows),
+            "observed_tree_peak_mib": max(r["tree_footprint_bytes"] for r in rows) / 2**20 if rows else None,
+            "max_children": max(len(r["children"]) for r in rows) if rows else None,
+            "distinct_child_pids": len({c["pid"] for r in rows for c in r["children"]}),
+            "final_children": rows[-1]["children"] if rows else None,
+            "final_tree_footprint_mib": rows[-1]["tree_footprint_bytes"] / 2**20 if rows else None,
+        }
+        result["checks"]["observer_same_pid_completed"] = (
+            observer["pid"] == tail["pid"] and observer["phase"] == "complete" and not observer.get("error")
+        )
+        result["checks"]["children_released"] = bool(rows) and not rows[-1]["children"]
     # A footprint slope is evidence, not an automatic "no leak" assertion.
     return result
 
 
-def plot(document, output):
+def plot(document, output, observer=None):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -161,7 +189,7 @@ def plot(document, output):
         ax.grid(alpha=0.18)
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].plot(
-        x, [s["footprint_bytes"] / 2**20 for s in samples], label="Whole-process physical footprint", color="#9c5f3d"
+        x, [s["footprint_bytes"] / 2**20 for s in samples], label="Gateway parent physical footprint", color="#9c5f3d"
     )
     axes[0].plot(
         x, [s["rss_bytes"] / 2**20 for s in samples], label="Resident memory (RSS)", color="#607e79", alpha=0.8
@@ -169,13 +197,25 @@ def plot(document, output):
     axes[0].plot(
         x,
         [s["peak_footprint_bytes"] / 2**20 for s in samples],
-        label="OS lifetime physical peak",
+        label="Parent OS lifetime physical peak",
         color="#b0a192",
         linestyle="--",
     )
+    if observer and observer.get("samples"):
+        origin = datetime.fromisoformat(document["started_utc"].replace("Z", "+00:00"))
+        rows = observer["samples"]
+        ox = [(datetime.fromisoformat(r["time"]) - origin).total_seconds() / 60 for r in rows]
+        axes[0].plot(
+            ox,
+            [r["tree_footprint_bytes"] / 2**20 for r in rows],
+            label="Parent + actual CCXT child (0.5s OS samples)",
+            color="#363b45",
+            linewidth=0.8,
+            alpha=0.8,
+        )
     axes[0].set_ylabel("MiB")
     axes[0].legend(loc="upper right", fontsize=9)
-    axes[0].set_title("One process: live subscriptions + multi-year history downloads")
+    axes[0].set_title("64 topics + whole-universe scan + multi-year history (fixed 8/64 MiB caches)")
     axes[1].plot(x, [s["threads"] for s in samples], label="Threads", color="#765c82")
     axes[1].plot(x, [s["fds"] for s in samples], label="Open file descriptors", color="#507c99")
     axes[1].plot(x, [s["sockets"] for s in samples], label="Upstream WebSockets", color="#71905d")
@@ -187,6 +227,18 @@ def plot(document, output):
         color="#9c5f3d",
         label="Successfully fetched real history chunks",
     )
+    if document.get("scan_job"):
+        scan_axis = axes[2].twinx()
+        scan_progress, previous = [], 0
+        for row in samples:
+            jobs = row["gateway"].get("scans", [])
+            if jobs:
+                previous = sum(job["completed"] for job in jobs)
+            scan_progress.append(previous)
+        scan_axis.plot(x, scan_progress, color="#507c99", label="Scan symbols acquired", linewidth=1.4)
+        universe_size = len((document.get("scale_universe") or {}).get("codes", []))
+        scan_axis.set_ylabel(f"Scan symbols acquired (universe = {universe_size:,})")
+        scan_axis.legend(loc="lower right", fontsize=8)
     axes[2].set_ylabel("Chunks")
     axes[2].set_xlabel("Wall-clock minutes (warmup + active load + idle tail)")
     axes[2].legend(loc="upper left", fontsize=9)
@@ -209,6 +261,7 @@ def main():
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--plot", type=Path)
+    parser.add_argument("--observer", type=Path)
     parser.add_argument("--partial", action="store_true")
     args = parser.parse_args()
     document = json.loads(args.input.read_text())
@@ -216,10 +269,11 @@ def main():
         parser.error("Final report requires a completed >= 3600-second active workload")
     if any(row.get("footprint_bytes") is None for row in document["samples"]):
         parser.error("Physical-footprint analysis requires macOS samples; use gateway_soak_report.py for RSS-only runs")
-    result = summarize(document)
+    observer = json.loads(args.observer.read_text()) if args.observer else None
+    result = summarize(document, observer)
     args.output.write_text(json.dumps(result, indent=2))
     if args.plot:
-        plot(document, args.plot)
+        plot(document, args.plot, observer)
     print(
         json.dumps(
             {
