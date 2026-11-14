@@ -221,6 +221,14 @@ def summarize(document, observer=None):
         and tail["counts"].get("ws_connected", 0) == tail["counts"].get("ws_closed", 0),
         "source_requests_drained": tail["gateway"]["active_requests"] == 0,
         "history_worker_drained": all(h["state"] not in {"running", "queued"} for h in tail["history"]),
+        "history_reservations_released": (tail.get("history_storage") or {}).get("reserved_bytes", 0) == 0,
+        "idle_memory_cache_released": tail["gateway"]["cache"]["memory_bytes"] == 0,
+        "sampled_cache_budgets_respected": all(
+            s["gateway"]["cache"][kind] <= s["gateway"]["limits"][kind]
+            for s in samples
+            for kind in ("memory_bytes", "disk_bytes")
+        ),
+        "finished_scan_metadata_reclaimed": not tail["gateway"].get("scans"),
         "idle_observed_three_minutes": result["idle_seconds_observed"] >= 180,
     }
     if routed:
@@ -249,6 +257,7 @@ def summarize(document, observer=None):
             observer["pid"] == tail["pid"] and observer["phase"] == "complete" and not observer.get("error")
         )
         result["checks"]["children_released"] = bool(rows) and not rows[-1]["children"]
+        result["checks"]["at_most_one_sdk_child"] = bool(rows) and max(len(r["children"]) for r in rows) <= 1
     # A footprint slope is evidence, not an automatic "no leak" assertion.
     return result
 
