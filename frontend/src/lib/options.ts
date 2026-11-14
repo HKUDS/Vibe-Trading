@@ -26,19 +26,22 @@ export interface OptionLeg {
 
 export interface PayoffAlternative { label: string; legs: OptionLeg[] }
 
+/** Stock-notional return metrics returned by the payoff comparison, each with a translated label. */
+export type PayoffComparisonMetric = "max_profit_return" | "max_loss_return" | "entry_cost_return";
+
 export interface PayoffComparison {
   left_label: string;
   right_label: string;
   status: "ok" | "unavailable";
   reason?: string;
-  metrics?: Record<string, {
+  metrics?: Partial<Record<PayoffComparisonMetric, {
     status?: "unavailable";
     reason?: string;
     left_decimal?: number;
     right_decimal?: number;
     relation?: "higher" | "lower" | "equal";
     difference_percentage_points?: number;
-  }>;
+  }>>;
 }
 
 export interface OptionsPayoffRequest {
