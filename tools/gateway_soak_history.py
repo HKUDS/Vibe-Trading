@@ -83,13 +83,16 @@ def abort_history(counts):
 class HistoryDriver:
     """Keep real multi-year downloads overlapping every active test cycle."""
 
-    def __init__(self, client, url, checks, started):
+    def __init__(self, client, url, checks, started, routed=False):
         self.client, self.url, self.checks, self.started = client, url, checks, started
         self.stop = asyncio.Event()
         self.current = None
         self.completed = []
         self.error = None
         self.round = 0
+        self.routed = routed
+        self.route_round = 0
+        self.next_route = 0
 
     def record(self, kind, **values):
         self.checks.append({"kind": kind, "elapsed_s": round(time.monotonic() - self.started, 2), **values})
@@ -128,6 +131,9 @@ class HistoryDriver:
                     self.current = value["id"]
                     self.round += 1
                     self.record("history_created", job=self.current, interval=interval, chunks=value["total_chunks"])
+                if self.routed and time.monotonic() >= self.next_route:
+                    await self.route_workload()
+                    self.next_route = time.monotonic() + 120
                 jobs = await self.request("GET", "/data/history/jobs")
                 state = next(row for row in jobs if row["id"] == self.current)
                 if state["state"] == "complete":
@@ -165,6 +171,69 @@ class HistoryDriver:
             self.error = type(exc).__name__ + ": " + str(exc)[:240]
             self.record("history_driver_error", error=self.error)
             raise
+
+    async def route_workload(self):
+        """Time-share the single history worker through real pause/resume APIs."""
+        parent = self.current
+        await self.request("POST", f"/data/history/jobs/{parent}/cancel")
+        for _ in range(45):
+            state = await self.request("GET", f"/data/history/jobs/{parent}")
+            if state["state"] not in {"running", "queued"}:
+                break
+            await asyncio.sleep(1)
+        else:
+            raise RuntimeError("History did not yield to routed job")
+        specs = [
+            {"codes": ["AAPL.US", "MSFT.US"], "start_date": "2021-11-14", "end_date": "2026-11-13", "interval": "1M"},
+            {"codes": ["BTC-USDT", "ETH-USDT"], "start_date": "2026-11-12", "end_date": "2026-11-12", "interval": "1m"},
+            {
+                "codes": ["00700.HK", "TD.TO", "VOD.L"],
+                "start_date": "2026-11-02",
+                "end_date": "2026-11-13",
+                "interval": "1D",
+            },
+            {"codes": ["AAPL.US", "MSFT.US"], "start_date": "2026-11-09", "end_date": "2026-11-13", "interval": "1m"},
+        ]
+        spec = {**specs[self.route_round % len(specs)], "source": "auto"}
+        self.route_round += 1
+        started = time.monotonic()
+        value = await self.request("POST", "/data/history/jobs", json=spec)
+        job = value["id"]
+        await self.request("POST", f"/data/history/jobs/{job}/resume")
+        while time.monotonic() - started < 90 and not self.stop.is_set():
+            value = await self.request("GET", f"/data/history/jobs/{job}")
+            if value["state"] not in {"running", "queued"}:
+                break
+            await asyncio.sleep(1)
+        if value["state"] in {"running", "queued"}:
+            await self.request("POST", f"/data/history/jobs/{job}/cancel")
+            for _ in range(45):
+                value = await self.request("GET", f"/data/history/jobs/{job}")
+                if value["state"] not in {"running", "queued"}:
+                    break
+                await asyncio.sleep(1)
+        self.record(
+            "routed_history",
+            spec=spec,
+            state=value["state"],
+            rows=value["rows"],
+            chunks=value["completed_chunks"],
+            total_chunks=value["total_chunks"],
+            sources=sorted(
+                {c.get("meta", {}).get("source", "unknown") for c in value.get("chunks", []) if c.get("meta")}
+            ),
+            error=value.get("error"),
+            latency_ms=round((time.monotonic() - started) * 1000, 3),
+        )
+        # Read production pages on success; release these small test datasets so
+        # an extended scan cannot exhaust the unchanged 32-dataset job bound.
+        if value["state"] in {"complete", "downloaded"}:
+            page = await self.request("GET", f"/data/history/jobs/{job}/rows", params={"limit": 1000})
+            if not page["rows"] or page.get("sampled"):
+                raise RuntimeError("Routed dataset page is empty or sampled")
+        await self.request("DELETE", f"/data/history/jobs/{job}")
+        if not self.stop.is_set():
+            await self.request("POST", f"/data/history/jobs/{parent}/resume")
 
     async def finish(self, task):
         self.stop.set()

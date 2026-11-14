@@ -8,7 +8,11 @@ from src.data_gateway.history_store import HistoryStore
 
 
 def fake(symbol, start, end, interval):
-    return [{"symbol": symbol, "time": start + "T09:35:00", "close": 100}], {"source": "fixture", "coverage": "fixture", "coverage_verified": True}
+    return [{"symbol": symbol, "time": start + "T09:35:00", "close": 100}], {
+        "source": "fixture",
+        "coverage": "fixture",
+        "coverage_verified": True,
+    }
 
 
 @pytest.fixture
@@ -277,7 +281,10 @@ def test_application_cli_supports_global_flags_and_sequential_invocations(tmp_pa
     job = json.loads(capsys.readouterr().out)["id"]
     assert main(["data", "history", "run", "--job", job]) == 0
     assert json.loads(capsys.readouterr().out)["completed_chunks"] == 2
-    assert main(["data", "history", "plan", "--codes", "NOT-A-MARKET", "--start", "2021-01-01", "--end", "2021-02-28"]) == 1
+    assert (
+        main(["data", "history", "plan", "--codes", "NOT-A-MARKET", "--start", "2021-01-01", "--end", "2021-02-28"])
+        == 1
+    )
 
 
 def test_repair_paused_by_quota_does_not_claim_deleted_chunk_is_complete(store):
@@ -296,25 +303,41 @@ def test_default_dataset_path_never_collides_with_cli_history(tmp_path, monkeypa
     from pathlib import Path
     from src.data_gateway.history_store import history_directory
 
-    monkeypatch.delenv('VIBE_GATEWAY_HISTORY_DIR', raising=False)
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
-    root = tmp_path / '.vibe-trading'
+    monkeypatch.delenv("VIBE_GATEWAY_HISTORY_DIR", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    root = tmp_path / ".vibe-trading"
     root.mkdir()
-    history = root / 'history'
-    history.write_text('user command history')
-    assert history_directory() == root / 'datasets' / 'history'
-    assert history.read_text() == 'user command history'
+    history = root / "history"
+    history.write_text("user command history")
+    assert history_directory() == root / "datasets" / "history"
+    assert history.read_text() == "user command history"
 
 
 def test_legacy_dataset_directory_remains_readable(tmp_path, monkeypatch):
     from pathlib import Path
     from src.data_gateway.history_store import history_directory
 
-    monkeypatch.delenv('VIBE_GATEWAY_HISTORY_DIR', raising=False)
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
-    legacy = tmp_path / '.vibe-trading' / 'history'
+    monkeypatch.delenv("VIBE_GATEWAY_HISTORY_DIR", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    legacy = tmp_path / ".vibe-trading" / "history"
     legacy.mkdir(parents=True)
-    (legacy / 'catalog.sqlite').touch()
+    (legacy / "catalog.sqlite").touch()
     assert history_directory() == legacy
-    monkeypatch.setenv('VIBE_GATEWAY_HISTORY_DIR', str(tmp_path / 'custom'))
-    assert history_directory() == tmp_path / 'custom'
+    monkeypatch.setenv("VIBE_GATEWAY_HISTORY_DIR", str(tmp_path / "custom"))
+    assert history_directory() == tmp_path / "custom"
+
+
+def test_distinct_jobs_with_colliding_old_hashes_have_independent_leases(store, monkeypatch):
+    from types import SimpleNamespace
+    import src.data_gateway.history_store as module
+
+    ids = iter(["00000000" + "a" * 24, "00000040" + "b" * 24])
+    monkeypatch.setattr(module.uuid, "uuid4", lambda: SimpleNamespace(hex=next(ids)))
+    first = store.create(**spec())["id"]
+    second = store.create(**spec())["id"]
+    with store.lease(first), store.lease(second):
+        with pytest.raises(ValueError, match="already running"):
+            with store.lease(first):
+                pass
+    with store.transaction() as db:
+        assert len({r[0] for r in db.execute("SELECT lease_slot FROM jobs")}) == 2

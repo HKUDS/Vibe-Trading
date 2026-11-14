@@ -51,6 +51,15 @@ class HistoryStore:
             """)
             if "owner" not in {row[1] for row in db.execute("PRAGMA table_info(jobs)")}:
                 db.execute("ALTER TABLE jobs ADD COLUMN owner INTEGER")
+            if "lease_slot" not in {row[1] for row in db.execute("PRAGMA table_info(jobs)")}:
+                db.execute("ALTER TABLE jobs ADD COLUMN lease_slot INTEGER")
+            used = {row[0] for row in db.execute("SELECT lease_slot FROM jobs WHERE lease_slot IS NOT NULL")}
+            for row in db.execute("SELECT id FROM jobs WHERE lease_slot IS NULL").fetchall():
+                preferred = int(row["id"][:8], 16) % 64
+                slot = next(i for i in [preferred, *range(64)] if i not in used)
+                db.execute("UPDATE jobs SET lease_slot=? WHERE id=?", (slot, row["id"]))
+                used.add(slot)
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS jobs_lease_slot ON jobs(lease_slot)")
             db.execute("INSERT OR IGNORE INTO settings VALUES(1,?,?)", (quota_bytes, retention_days))
         self._recover_interrupted()
         self.cleaner = threading.Thread(target=self._clean, daemon=True, name="history-cleanup")
@@ -155,7 +164,13 @@ class HistoryStore:
     def lease(self, job):
         """Hold a nonblocking process lease; stale jobs are resumable after exit."""
         self._id(job)
-        with self._file_lock(f"lease-{int(job[:8], 16) % 64}.lock"):
+        # Read only: callers may already hold the metadata write transaction.
+        # Slots are allocated uniquely under that transaction, never UUID-hashed.
+        with sqlite3.connect(self.db_path, timeout=self.lock_timeout) as db:
+            row = db.execute("SELECT lease_slot FROM jobs WHERE id=?", (job,)).fetchone()
+        if row is None:
+            raise ValueError("Unknown history job")
+        with self._file_lock(f"lease-{row[0]}.lock"):
             yield
 
     def _id(self, value):
@@ -261,9 +276,11 @@ class HistoryStore:
             if db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] >= 32:
                 raise ValueError("At most 32 datasets; delete unused datasets first")
             now = time.time()
+            used = {row[0] for row in db.execute("SELECT lease_slot FROM jobs")}
+            slot = next(i for i in range(64) if i not in used)
             db.execute(
-                "INSERT INTO jobs(id,spec,state,created,accessed) VALUES(?,?,?,?,?)",
-                (job, json.dumps(plan["spec"]), "paused", now, now),
+                "INSERT INTO jobs(id,spec,state,created,accessed,lease_slot) VALUES(?,?,?,?,?,?)",
+                (job, json.dumps(plan["spec"]), "paused", now, now, slot),
             )
             db.executemany(
                 "INSERT INTO chunks(job,idx,symbol,start,end) VALUES(?,?,?,?,?)",

@@ -393,6 +393,7 @@ async def exercise(args, output):
             )
 
         async def sample():
+            nonlocal scan_job
             response = await client.get(url + "/_soak/metrics")
             response.raise_for_status()
             samples.append(
@@ -403,6 +404,9 @@ async def exercise(args, output):
                     **response.json(),
                 }
             )
+            for job in response.json()["gateway"].get("scans", []):
+                if scan_job and job["id"] == scan_job["id"]:
+                    scan_job = job
             save()
 
         async def pause(seconds):
@@ -536,7 +540,7 @@ async def exercise(args, output):
                 response.raise_for_status()
                 scan_job = response.json()
             if args.history:
-                history_driver = HistoryDriver(client, url, checks, started)
+                history_driver = HistoryDriver(client, url, checks, started, routed=args.routed_history)
                 history_task = asyncio.create_task(history_driver.run())
             churn_task = asyncio.create_task(churn(active_started + args.cycles * args.cycle_seconds))
             for current_cycle in range(args.cycles):
@@ -597,8 +601,19 @@ async def exercise(args, output):
                     flush=True,
                 )
             await churn_task
-            if scan_job:
+            if scan_job and scan_job["state"] in {"running", "queued"}:
                 scan_job = (await client.get(url + "/data/scans/" + scan_job["id"])).json()
+            if args.finish_scan and scan_job:
+                phase = "scan_completion"
+                until = time.monotonic() + args.scan_completion_timeout
+                while scan_job["state"] in {"running", "queued"}:
+                    if time.monotonic() >= until:
+                        raise RuntimeError("Full scan completion deadline exceeded")
+                    if history_task and history_task.done():
+                        await history_task
+                    await pause(10)
+                    scan_job = (await client.get(url + "/data/scans/" + scan_job["id"])).json()
+                checks.append({"kind": "scan_terminal", **scan_job})
             active_finished = time.monotonic()
         finally:
             await set_fault("online")
@@ -629,6 +644,9 @@ def main():
         "--universe", type=Path, help="Real universe JSON from gateway_scale_probe.universe; enables 64 topics + scan"
     )
     parser.add_argument("--history", action="store_true")
+    parser.add_argument("--routed-history", action="store_true")
+    parser.add_argument("--finish-scan", action="store_true")
+    parser.add_argument("--scan-completion-timeout", type=float, default=7200)
     parser.add_argument("--history-dir", type=Path)
     parser.add_argument("--server", action="store_true")
     parser.add_argument("--port", type=int, default=8911)

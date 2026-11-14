@@ -63,6 +63,9 @@ class ScanQueue:
                 "updated": time.monotonic(),
                 "retries": 0,
                 "last_error": None,
+                "batches": 0,
+                "acquisition_seconds": 0.0,
+                "backoff_seconds": 0.0,
             }
             self.condition.notify_all()
             return self.status(identity)
@@ -85,6 +88,9 @@ class ScanQueue:
             "remaining": job["total"] - job["completed"] - len(job["failed"]),
             "complete": job["state"] == "complete",
             "retention": "idle metadata expires; frames use shared cache",
+            "batches": job["batches"],
+            "acquisition_seconds": round(job["acquisition_seconds"], 3),
+            "backoff_seconds": round(job["backoff_seconds"], 3),
         }
 
     def failures(self, identity, offset=0, limit=100):
@@ -137,13 +143,17 @@ class ScanQueue:
                         job["waiting"].append(item)
                 job["state"] = "running"
                 job["attempts"] += len(items)
+            started = time.monotonic()
             value = None
             successes = set()
             try:
                 value = self.gateway.bars(codes=[item[0] for item in items], **job["params"])
                 if value.get("ok"):
                     successes = set(value.get("data", {}).get("_provenance", {}))
-                retry_after = max(self.gateway.config.cooldown, float(value.get("retry_after_seconds", 0)))
+                retry_after = max(
+                    self.gateway.config.scan_spacing,
+                    float(value.get("retry_after_seconds", self.gateway.config.cooldown)),
+                )
                 error = value.get("error", "Symbol missing from source response")
             except Exception as exc:
                 retry_after, error = self.gateway.config.cooldown, type(exc).__name__
@@ -163,9 +173,17 @@ class ScanQueue:
                     if not job["waiting"]:
                         job["state"] = "partial" if job["failed"] else "complete"
                     job["updated"] = time.monotonic()
-                all_success = all(item[0] in successes for item in items)
+                job["batches"] += 1
+                job["acquisition_seconds"] += time.monotonic() - started
+                # Each missing symbol already has its own retry deadline. A partial
+                # batch must not freeze unrelated ready symbols for that cooldown.
+                # A completely unavailable batch still backs off the whole scanner;
+                # the shared source pacer and bounded background lane also remain.
+                delay = self.gateway.config.scan_spacing if successes else min(300, retry_after)
                 del value, successes, items
-                self.condition.wait(timeout=self.gateway.config.scan_spacing if all_success else min(300, retry_after))
+                waiting = time.monotonic()
+                self.condition.wait(timeout=delay)
+                job["backoff_seconds"] += time.monotonic() - waiting
 
     def close(self):
         with self.condition:

@@ -308,3 +308,86 @@ def test_bulk_scan_reuses_one_source_session_per_batch(tmp_path, monkeypatch):
         assert len(calls) == 1 and set(calls[0]) == {"601398.SH", "600519.SH"}
     finally:
         gateway.close()
+
+
+def test_partial_scan_does_not_cool_down_unrelated_ready_symbols():
+    calls = []
+    ready = threading.Event()
+    config = replace(Config(Path("/tmp/unused")), cooldown=30, scan_spacing=0.001)
+    codes = [f"{600000 + i}.SH" for i in range(16)]
+
+    def bars(**params):
+        calls.append(params["codes"])
+        accepted = [code for code in params["codes"] if code != codes[0]]
+        if codes[-1] in accepted:
+            ready.set()
+        return {"ok": bool(accepted), "data": {"_provenance": {c: {} for c in accepted}}}
+
+    queue = ScanQueue(SimpleNamespace(config=config, bars=bars))
+    try:
+        job = queue.create(codes, start_date="2026-01-01", end_date="2026-01-03")
+        assert ready.wait(1), "one missing symbol blocked the next healthy batch"
+        assert codes[0] not in calls[1]  # Its 30-second retry deadline remains enforced.
+        queue.cancel(job["id"])
+    finally:
+        queue.close()
+
+
+def test_batch_keeps_successful_rows_when_first_symbol_is_missing(tmp_path, monkeypatch):
+    import pandas as pd
+    from backtest.loaders import registry
+
+    registry._ensure_registered()
+    calls = []
+
+    class Loader:
+        name = "tencent"
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, *args, **kwargs):
+            calls.append(list(codes))
+            frame = pd.DataFrame(
+                {k: [1.0, 2.0] for k in ["open", "high", "low", "close", "volume"]},
+                index=pd.date_range("2026-11-02", periods=2),
+            )
+            frame.index.name = "trade_date"
+            return {code: frame for code in codes if code != "600000.SH"}
+
+    monkeypatch.setitem(registry.LOADER_REGISTRY, "tencent", Loader)
+    gateway = MarketDataGateway(Config(tmp_path))
+    try:
+        result = gateway.bars(
+            codes=["600000.SH", "600519.SH"],
+            start_date="2026-11-01",
+            end_date="2026-11-03",
+            source="tencent",
+            exact_source=True,
+        )
+        assert result["ok"] and result["data"]["_unresolved"] == ["600000.SH"]
+        assert "600519.SH" in result["data"]["_coverage"]
+        assert calls == [["600000.SH", "600519.SH"]]
+    finally:
+        gateway.close()
+
+
+def test_scan_respects_short_capacity_retry_without_weakening_network_backoff():
+    config = replace(Config(Path("/tmp/unused")), cooldown=30, scan_spacing=0.001)
+    calls = []
+    recovered = threading.Event()
+
+    def bars(**params):
+        calls.append(time.monotonic())
+        if len(calls) == 1:
+            return {"ok": False, "retry_after_seconds": 0.02, "error": "source_busy"}
+        recovered.set()
+        return {"ok": True, "data": {"_provenance": {"600000.SH": {}}}}
+
+    queue = ScanQueue(SimpleNamespace(config=config, bars=bars))
+    try:
+        queue.create(["600000.SH"], start_date="2026-01-01", end_date="2026-01-03")
+        assert recovered.wait(1), "local capacity release incorrectly waited the network cooldown"
+        assert calls[1] - calls[0] >= 0.018
+    finally:
+        queue.close()

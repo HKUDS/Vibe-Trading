@@ -123,6 +123,14 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                         acquire, {}, min(deadline - time.monotonic(), gateway.config.source_timeout)
                     )
                     attempted_batches[batch_key] = result
+                combined.update({k: v for k, v in result.items() if not k.startswith("_")})
+                for symbol, stamp in result.get("_provenance", {}).items():
+                    provenance[symbol] = {
+                        **stamp,
+                        "requested_source": requested,
+                        "detected_source": first,
+                        "fallback_used": stamp.get("fallback_used", False) or source != first,
+                    }
                 alias = code.split(":", 1)[1] if code.startswith("local:") else code
                 if alias not in result:
                     attempts = result.get("_diagnostics", {}).get(code, {}).get("attempts", [])
@@ -137,14 +145,6 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                     continue
                 coverage[code] = describe_coverage(result[alias], params, market)
                 gateway.router.record(scope, source, True, time.monotonic() - started)
-                combined.update({k: v for k, v in result.items() if not k.startswith("_")})
-                for symbol, stamp in result.get("_provenance", {}).items():
-                    provenance[symbol] = {
-                        **stamp,
-                        "requested_source": requested,
-                        "detected_source": first,
-                        "fallback_used": stamp.get("fallback_used", False) or source != first,
-                    }
                 # Preserve normalization/caliber warnings from the existing layer.
                 for key, value in result.items():
                     if key.startswith("_") and key not in {"_provenance", "_unresolved", "_diagnostics"}:
