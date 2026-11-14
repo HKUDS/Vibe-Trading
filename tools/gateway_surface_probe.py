@@ -59,12 +59,17 @@ async def run(args):
         results = {}
         for name, value in values.items():
             assert len(value["rows"]) == 25 and not value.get("sampled")
+            assert set(value["provenance"]) == {row["symbol"] for row in value["rows"]}
             results[name] = {
                 "rows": len(value["rows"]),
                 "coverage_verified": value["coverage_verified"],
                 "sha256": hashlib.sha256(json.dumps(value["rows"], sort_keys=True).encode()).hexdigest(),
+                "provenance": value["provenance"],
+                "interval": value["interval"],
             }
         assert len({v["sha256"] for v in results.values()}) == 1
+        assert len({json.dumps(v["provenance"], sort_keys=True) for v in results.values()}) == 1
+        assert len({v["interval"] for v in results.values()}) == 1
         bad = "not-a-job"
         http_bad, cli_bad, agent_bad = await asyncio.gather(
             client.get(f"/data/history/jobs/{bad}/rows"),

@@ -219,6 +219,98 @@ def test_tool_pages_complete_rows_and_omits_large_manifest(store, monkeypatch):
     assert len(json.loads(tool.execute(action="rows", job=job["id"]))["data"]["rows"]) == 6
 
 
+def test_row_page_keeps_each_markets_units_and_does_not_guess_missing_currency(store):
+    def fetch(symbol, start, end, interval):
+        rows, meta = fake(symbol, start, end, interval)
+        return rows, {
+            **meta,
+            "quote_currency": {"AAPL.US": "USD", "00700.HK": "HKD"}.get(symbol),
+            "volume_unit": "shares",
+            "adjustment": "raw",
+            "timezone": "source_timezone_unverified",
+        }
+
+    store.fetcher = fetch
+    job = store.create(
+        codes=["AAPL.US", "00700.HK", "VOD.L"], start_date="2026-01-05", end_date="2026-01-05", interval="1D"
+    )["id"]
+    store.run(job)
+    page = store.read(job, 1, 2)
+    assert page["interval"] == "1D"
+    assert set(page["provenance"]) == {"00700.HK", "VOD.L"}
+    assert page["provenance"]["00700.HK"][0]["quote_currency"] == "HKD"
+    assert page["provenance"]["VOD.L"][0]["quote_currency"] is None
+    assert page["provenance"]["00700.HK"][0]["volume_unit"] == "shares"
+    assert page["provenance"]["00700.HK"][0]["timezone"] == "source_timezone_unverified"
+    assert store.read(job, 0, 1)["provenance"]["AAPL.US"][0]["quote_currency"] == "USD"
+
+
+def test_row_page_keeps_chunk_provenance_when_one_symbol_changes_source(store):
+    def fetch(symbol, start, end, interval):
+        rows, meta = fake(symbol, start, end, interval)
+        return rows, {**meta, "source": "first" if start.endswith("01-01") else "second", "quote_currency": "CNY"}
+
+    store.fetcher = fetch
+    job = store.create(codes=["601398.SH"], start_date="2021-01-01", end_date="2021-02-28")["id"]
+    store.run(job)
+    page = store.read(job, 0, 2)
+    entries = page["provenance"]["601398.SH"]
+    assert [entry["source"] for entry in entries] == ["first", "second"]
+    assert [entry["start_date"] for entry in entries] == ["2021-01-01", "2021-02-01"]
+
+
+def test_tool_wide_rows_page_whole_records_with_provenance_and_no_missing_tail(store, monkeypatch):
+    from src.config.limits import TOOL_RESULT_LIMIT
+    from src.tools.history_data_tool import HistoryDataTool
+
+    def fetch(symbol, start, end, interval):
+        from datetime import date, timedelta
+
+        rows = [
+            {
+                "symbol": symbol,
+                "time": str(date(2026, 1, 1) + timedelta(days=i)),
+                **{f"numeric_field_{j}": 12345.6789 for j in range(40)},
+            }
+            for i in range(40)
+        ]
+        return rows, {"source": "fixture", "quote_currency": "USD", "coverage_verified": True}
+
+    store.fetcher = fetch
+    monkeypatch.setattr("src.data_gateway.history_store.get_history_store", lambda: store)
+    job = store.create(codes=["AAPL.US"], start_date="2026-01-01", end_date="2026-02-09", interval="1D")["id"]
+    store.run(job)
+    offset, rows, pages = 0, [], 0
+    while True:
+        encoded = HistoryDataTool().execute(action="rows", job=job, offset=offset)
+        assert len(encoded) <= TOOL_RESULT_LIMIT
+        page = json.loads(encoded)["data"]
+        assert page["rows"] and not page["sampled"]
+        assert page["provenance"]["AAPL.US"][0]["quote_currency"] == "USD"
+        rows.extend(page["rows"])
+        pages += 1
+        if page["next_offset"] is None:
+            break
+        assert page["next_offset"] == len(rows)
+        offset = page["next_offset"]
+    assert pages > 2 and rows == store.read(job, 0, 1000)["rows"]
+
+
+def test_tool_refuses_a_single_oversized_row_instead_of_truncating_json():
+    from src.config.limits import TOOL_RESULT_LIMIT
+    from src.tools.history_data_tool import row_page
+
+    with pytest.raises(ValueError, match="API or CLI"):
+        row_page(
+            {
+                "offset": 0,
+                "total_rows": 1,
+                "rows": [{"symbol": "AAPL.US", "note": "x" * TOOL_RESULT_LIMIT}],
+                "provenance": {},
+            }
+        )
+
+
 def test_two_process_style_stores_share_disk_reservations(store):
     store.settings(quota_bytes=4 * 1024**2)
     first = store.create(**spec())["id"]

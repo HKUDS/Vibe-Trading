@@ -1246,3 +1246,46 @@ the fresh post-fix run is still required.
 Evidence: `/tmp/gateway-router-v10-final-summary.json`, raw report and OS observer
 `/tmp/gateway-router-hour-v10{,-os}-20261114.json` (actual observer filename is
 `gateway-router-hour-v10-os-20261114.json`), `/tmp/gateway-router-v10-final.png`.
+
+Fresh full-range calendar/daily-status verification after v10 shutdown passed
+for both completed datasets: 5m 581,760 rows / 582 pages / 610 hashes in
+34.45 s; 15m 193,920 rows / 194 pages / 610 hashes in 13.06 s. The five-minute
+digest remains `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`;
+the fifteen-minute digest is
+`a55b26e8d61232c8b887233103a777f64320e75f35534ed4d04d8394d00590c3`.
+Reports: `/tmp/gateway-v10-fresh-{5m,15m}-verified.json`.
+
+### Row provenance follow-up and v11 supersession
+
+The post-SQLite-fix v11 server ran 1,022.05 active seconds and acquired 915
+scan symbols with no client/driver error or unexpected HTTP status before an
+intentional SIGINT. Its driver/server/observer exited; the report's
+`CancelledError` records this deliberate stop, not a discovered runtime failure.
+It is **not** a completed hour. `/tmp/gateway-v11-superseded.json` records why:
+review of the mixed-market history path found stored chunk provenance was
+missing from row-page responses, and the Agent status summary also omitted
+chunks. Prices could therefore reach a consumer without their declared currency.
+
+Row pages now retain the interval and the metadata for each included symbol/
+chunk: source, quote currency, adjustment, volume unit, timezone and timestamp
+basis. Missing fields remain null rather than inferred from a ticker. API and
+CLI receive the same metadata; Agent/MCP pages use the existing shared output
+budget, shrinking whole records and preserving the next offset instead of
+truncating JSON. An individually oversized row is refused with an API/CLI
+recovery path. No cache, worker, timeout, storage or coverage threshold changed.
+41 history-store/router checks pass, including mixed currencies, unknown
+metadata, source changes across chunk boundaries, lossless budgeted pagination
+and oversized-row refusal (`/tmp/gateway-history-provenance-v12.xml`).
+
+v11's completed 360-second mixed-client probe observed actual driver transitions
+online → WS outage → all-source outage → online: 32 requests, all 12 bar reads,
+12 option reads and four completed pages succeeded; four unfinished-prefix reads
+were explicitly 409. During the all-source outage, bar caches were still fresh
+(52–54 s) and the stale AAPL option cache was marked stale (67 s), rather than
+misrepresented as a new acquisition. Both crypto topics saw upstream WS and
+same-venue REST fallback. No transport errors. This complements v10's cold-
+request outage test; it does not replace it. Three-market fresh history also
+closed the earlier UK-date gap: 158 rows, HK 52 / Canada 52 / UK 54 exact
+session dates in the offline calendar audit; stored coverage still says
+downloaded/unverified. Evidence: `/tmp/gateway-mixed-client-v11-20261114.json`
+and `/tmp/gateway-v11-three-market-verified.json`.

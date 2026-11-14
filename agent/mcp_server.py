@@ -2561,6 +2561,7 @@ def history_data(action: str, job: str | None = None, codes: list[str] | None = 
     background acquisitions; specify interval="1D" for daily scans. Plan/create require codes and settled ISO dates. Other
     job operations require the returned job id. Source defaults to auto; explicit source pins a provider.
     Rows are never sampled; coverage_verified distinguishes verified from downloaded/unverified data.
+    Row pages retain per-symbol currency, units, timezone and source provenance; null fields remain unknown.
     """
     return _get_registry().execute("history_data", {
         "action": action, "job": job, "codes": codes, "start_date": start_date,

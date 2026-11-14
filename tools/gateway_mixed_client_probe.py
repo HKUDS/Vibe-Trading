@@ -174,8 +174,18 @@ async def run(args):
 
         stream = asyncio.create_task(consume())
         for round_number in range(4):
-            await asyncio.sleep(max(0, started + round_number * args.seconds / 4 - time.monotonic()))
-            metrics = (await client.get(url + "/_soak/metrics")).json()
+            if args.follow_faults:
+                wanted = ("online", "ws_offline", "all_offline", "online")[round_number]
+                while True:
+                    metrics = (await client.get(url + "/_soak/metrics")).json()
+                    if metrics["fault"] == wanted:
+                        break
+                    if time.monotonic() - started >= args.seconds - 25:
+                        raise TimeoutError("Soak did not reach the requested fault round before the stream deadline")
+                    await asyncio.sleep(2)
+            else:
+                await asyncio.sleep(max(0, started + round_number * args.seconds / 4 - time.monotonic()))
+                metrics = (await client.get(url + "/_soak/metrics")).json()
             report["faults"].append(
                 {"round": round_number, "mode": metrics["fault"], "elapsed_s": time.monotonic() - started}
             )
@@ -237,6 +247,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8913)
     parser.add_argument("--seconds", type=float, default=180)
+    parser.add_argument(
+        "--follow-faults", action="store_true", help="Follow the driver's actual online/WS/offline/recovery transitions"
+    )
     parser.add_argument("--job", required=True)
     parser.add_argument("--completed-job")
     parser.add_argument("--output", type=Path, required=True)

@@ -602,6 +602,8 @@ class HistoryStore:
             with self.transaction() as db:
                 db.execute("UPDATE jobs SET accessed=? WHERE id=?", (time.time(), job))
                 chunks = db.execute("SELECT idx,rows,digest FROM chunks WHERE job=? ORDER BY idx", (job,)).fetchall()
+            manifest = {chunk["idx"]: chunk for chunk in state["chunks"]}
+            provenance = {}
             output = []
             skip = offset
             for chunk in chunks:
@@ -619,10 +621,31 @@ class HistoryStore:
                         output.append(json.loads(line))
                         if len(output) >= limit:
                             break
+                info = manifest[chunk["idx"]]
+                meta = info["meta"] or {}
+                provenance.setdefault(info["symbol"], []).append(
+                    {
+                        "start_date": info["start"],
+                        "end_date": info["end"],
+                        **{
+                            key: meta.get(key)
+                            for key in (
+                                "source",
+                                "quote_currency",
+                                "adjustment",
+                                "volume_unit",
+                                "timezone",
+                                "timestamp_basis",
+                            )
+                        },
+                    }
+                )
                 if len(output) >= limit:
                     break
             return {
                 "job": job,
+                "interval": state["spec"]["interval"],
+                "provenance": provenance,
                 "coverage_verified": state["state"] == "complete",
                 "coverage_warning": None
                 if state["state"] == "complete"

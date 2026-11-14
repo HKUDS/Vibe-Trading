@@ -240,7 +240,12 @@ chunk cap is enforced while planning, before an oversized list can accumulate.
 Coverage has two distinct terminal states: `complete` means all chunks have a
 coverage proof; `downloaded` means source rows were acquired without a complete
 calendar proof. Both are readable without sampling; row pages explicitly return
-`coverage_verified` and an unverified-coverage warning where applicable. BaoStock
+`coverage_verified` and an unverified-coverage warning where applicable. Pages
+also carry the interval and per-symbol, per-chunk provenance (source, currency,
+adjustment, volume unit, timezone and timestamp basis). Missing metadata stays
+null; a mixed-market page never inherits the first symbol's units. Agent/MCP
+pages shrink by whole rows to fit the shared tool-output budget, preserving the
+next offset; API/CLI pages keep their requested row limit. BaoStock
 SH/SZ 5m/15m/30m/1H still checks calendar, daily trading status and exact intraday
 grid (raw CNY, shares). Continuous crypto intervals require every expected grid
 point. Other sources preserve observed bounds and are never promoted to verified
@@ -277,7 +282,7 @@ PYTHONPATH=agent python -m src.data_gateway history storage --quota-mb 256 --ret
 
 BaoStock notices are routed to logging under its existing session lock, so CLI
 and MCP stdout remain valid JSON without redirecting other threads. `history_data` provides plan/create/start,
-status (10 jobs per list page), rows (25 per agent page), cancel, pin/unpin, delete, storage and prune.
+status (10 jobs per list page), rows (at most 25 per agent page), cancel, pin/unpin, delete, storage and prune.
 HTTP uses authenticated `/data/history/{plan,storage,prune,jobs}`; individual jobs
 support `resume`, `cancel`, `pin` and `rows` (up to 1,000 rows/page). No endpoint
 loads a whole five-year dataset into RAM. The completion manifest is not evidence

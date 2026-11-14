@@ -2,6 +2,30 @@
 
 import json
 from src.agent.tools import BaseTool
+from src.config.limits import TOOL_RESULT_LIMIT
+from src.tools._result_paging import fit_records
+
+
+def row_page(value):
+    """Preserve units and whole rows within the shared model-output budget."""
+
+    def build(rows, _paging):
+        symbols = {row["symbol"] for row in rows}
+        next_offset = value["offset"] + len(rows)
+        return {
+            "ok": True,
+            "data": {
+                **value,
+                "rows": rows,
+                "provenance": {key: meta for key, meta in value["provenance"].items() if key in symbols},
+                "next_offset": next_offset if next_offset < value["total_rows"] else None,
+            },
+        }
+
+    encoded = fit_records(value["rows"], 0, build)
+    if len(encoded) > TOOL_RESULT_LIMIT:
+        raise ValueError("One row and its provenance exceed the tool limit; read this page through API or CLI")
+    return encoded
 
 
 def summarize(value):
@@ -34,6 +58,7 @@ class HistoryDataTool(BaseTool):
         "Auto routes through compatible existing sources by market and interval; source pins an exact provider. "
         "Plan before create; create returns a job id; start downloads in background; status checks completion. "
         "Rows requires a finished download and returns at most 25 unsampled rows per page with coverage_verified. "
+        "Row pages include per-symbol currency, units, timezone and source provenance; null metadata remains unknown. "
         "Downloaded is not verified complete: inspect coverage_verified and never treat a recent tail as full history. "
         "scan_create queues background bar acquisition (explicit 1D/1W/1M interval), "
         "scan_status and scan_cancel inspect/stop it; scan jobs are process-local coverage metadata, not durable datasets. "
@@ -108,7 +133,7 @@ class HistoryDataTool(BaseTool):
                     source=kwargs.get("source", "auto"),
                 )
             elif action == "rows":
-                result = store.read(job, kwargs.get("offset", 0), 25)
+                return row_page(store.read(job, kwargs.get("offset", 0), 25))
             elif action in {"pin", "unpin"}:
                 result = store.pin(job, action == "pin")
             elif action == "storage":
