@@ -32,7 +32,7 @@ configured `date_format`; an explicitly mapped date column takes precedence.
 
 **Fallback chains (by IP-ban risk):**
 
-- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `yahoo` · `akshare` · `tushare` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`

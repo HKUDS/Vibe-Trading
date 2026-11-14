@@ -168,7 +168,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `get_stock_news` | Market & company news headlines | None* |
 | `get_sec_filings` | SEC EDGAR filings (10-K/10-Q/8-K, etc.) | None |
 | `get_financial_statements` | Income / balance / cash-flow statements | None* |
-| `history_data` | Plan/resume quota-bounded SH/SZ minute datasets; complete, unsampled paged reads | None |
+| `history_data` | Plan/resume quota-bounded historical datasets through compatible market/interval routes; unsampled pages with explicit coverage status | None |
 | `get_options_chain` | Options chain (strikes, IV, OI, Greeks) | None* |
 | `get_stock_profile` | Valuation, analyst estimates & institutional holdings (US/HK) | None |
 | `screen_market` | Market screener with fundamental/technical filters | None* |

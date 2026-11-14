@@ -1127,3 +1127,13 @@ Prune was manually polled once per second (not a housekeeping-thread test);
 report observation 151.85 s. Earlier live-cache probe separately verifies
 housekeeping and actual process restart. No additional source requests during
 quota filling and no fabricated observations.
+
+MCP follow-up: `/tmp/gateway-mcp-v10-20261114.json` uses an actual FastMCP
+protocol session (in-memory transport), real tool registry and history store.
+Its 25 rows match the same digest as HTTP/CLI/Agent; invalid path refused.
+No source/registry mock, no stdio/TCP transport claim. Public inventory checks
+also exposed the missing Yahoo entry in the shared A-share fallback-chain
+bullet; that guide and the related skill reference are corrected. The history
+tool skill description now reflects compatible market/interval routing rather
+than the obsolete SH/SZ-only scope. 115 inventory checks pass
+(`/tmp/gateway-public-inventory-v10-fixed.xml`).
