@@ -65,6 +65,24 @@ class NetworkRouter:
                 return baseline
             return sorted(baseline, key=score)
 
+    def _recovery_ready_at(self, scope, source, row):
+        """Use later success as probe evidence, never as another market's data.
+
+        Called with the router lock held. A success for the same adapter in a
+        different scope permits one early half-open attempt; it does not clear
+        this scope's backoff or bypass its existing probe-frequency budget.
+        """
+        newer_success = any(
+            other_scope != scope
+            and other_source == source
+            and other["success"]
+            and other["checked"] > row["checked"]
+            and self.clock() - other["checked"] <= self.lifetime
+            for (other_scope, other_source), other in self.health.items()
+        )
+        ready = row["checked"] if newer_success else row["checked"] + self.cooldown
+        return max(ready, self.probes.get(scope, 0))
+
     def recovery_probe(self, scope, sources):
         """Claim at most one half-open attempt per scope per cooldown period.
 
@@ -79,7 +97,8 @@ class NetworkRouter:
             candidates = [
                 source
                 for source in sources
-                if self.cooling(scope, source) and now - self.health[(scope, source)]["checked"] >= self.cooldown
+                if self.cooling(scope, source)
+                and self._recovery_ready_at(scope, source, self.health[(scope, source)]) <= now
             ]
             if not candidates:
                 return None
@@ -91,7 +110,18 @@ class NetworkRouter:
             def priority(name):
                 row = self.health[(scope, name)]
                 success_at = row.get("last_success_at")
-                return (success_at is None, -(success_at or 0), row["retry_at"])
+                recent = max(
+                    (
+                        other["checked"]
+                        for (other_scope, other_source), other in self.health.items()
+                        if other_scope != scope
+                        and other_source == name
+                        and other["success"]
+                        and other["checked"] > row["checked"]
+                    ),
+                    default=0,
+                )
+                return (not bool(recent), -recent, success_at is None, -(success_at or 0), row["retry_at"])
 
             source = min(remaining, key=priority)
             self.probe_tried[scope] = tried | {source}
@@ -117,7 +147,7 @@ class NetworkRouter:
                 row = self.health.get((scope, source))
                 if row is None or row["retry_at"] <= now:
                     return 0
-                probe_at = max(row["checked"] + self.cooldown, self.probes.get(scope, 0))
+                probe_at = self._recovery_ready_at(scope, source, row)
                 delays.append(max(0, min(row["retry_at"], probe_at) - now))
             return min(delays, default=self.cooldown)
 

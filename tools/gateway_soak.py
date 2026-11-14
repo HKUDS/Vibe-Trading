@@ -587,9 +587,52 @@ async def exercise(args, output):
                     "shape": shape,
                     "provenance": value.get("data", {}).get("_provenance"),
                     "diagnostics": value.get("data", {}).get("_diagnostics"),
+                    "recovery": value.get("data", {}).get("_recovery"),
+                    "retry_after_seconds": value.get("retry_after_seconds"),
                     "gateway": value.get("gateway"),
                     "error": value.get("error"),
                 }
+            )
+
+        async def mixed_cold_probes():
+            # Distinct bounded preview sizes ensure cold identities each round.
+            end = today - timedelta(days=1)
+            minute_day = end
+            while minute_day.weekday() >= 5:
+                minute_day -= timedelta(days=1)
+            shapes = [
+                (
+                    "mixed_cold_six_markets",
+                    ["AAPL.US", "00700.HK", "TD.TO", "VOD.L", "601398.SH", "BTC-USDT"],
+                    end - timedelta(days=29),
+                    end,
+                    "1D",
+                    700,
+                ),
+                ("mixed_cold_five_year_monthly", ["AAPL.US", "MSFT.US"], end - timedelta(days=1825), end, "1M", 800),
+                (
+                    "mixed_cold_us_minutes",
+                    ["AAPL.US", "MSFT.US"],
+                    minute_day - timedelta(days=1),
+                    minute_day - timedelta(days=1),
+                    "1m",
+                    900,
+                ),
+            ]
+            await asyncio.gather(
+                *(
+                    bar_probe(
+                        label,
+                        {
+                            "codes": codes,
+                            "start_date": str(start),
+                            "end_date": str(end_date),
+                            "interval": interval,
+                            "max_rows": base + current_cycle,
+                        },
+                    )
+                    for label, codes, start, end_date, interval, base in shapes
+                )
             )
 
         async def latency_probe():
@@ -689,6 +732,8 @@ async def exercise(args, output):
                 active = [] if scale_universe else [asyncio.create_task(stream(groups[current_cycle % len(groups)]))]
                 await set_fault("online")
                 await pause(args.cycle_seconds * 0.25)
+                if args.mixed_cold:
+                    await mixed_cold_probes()
                 if prior_fault_probe is not None:
                     await bar_probe("recovered_bar_probe", prior_fault_probe)
                     await bar_probe("hot_bar_probe", prior_fault_probe)
@@ -817,6 +862,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--universe", type=Path, help="Real universe JSON from gateway_scale_probe.universe; enables 64 topics + scan"
+    )
+    parser.add_argument(
+        "--mixed-cold",
+        action="store_true",
+        help="Three concurrent cold market/horizon requests per online cycle, without retries",
     )
     parser.add_argument("--history", action="store_true")
     parser.add_argument("--routed-history", action="store_true")

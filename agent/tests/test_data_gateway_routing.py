@@ -382,3 +382,98 @@ def test_router_retry_delay_keeps_exponential_and_half_open_limits():
     # A healthy alternative must not inherit a failed source's delay.
     router.record("options", "b", True, 0.1)
     assert router.retry_after("options", ["a", "b"]) == 0
+
+
+def test_later_same_adapter_success_allows_one_probe_without_clearing_backoff():
+    now = [100.0]
+    router = NetworkRouter(cooldown=30, clock=lambda: now[0])
+    router.record("bars:a_share:1D", "yahoo", False, 1)
+    # Different adapters and success before this failure prove nothing.
+    router.record("bars:us_equity:1D", "yahoo", True, 0.1)
+    now[0] += 1
+    router.record("bars:crypto:1D", "okx", True, 0.1)
+    assert router.recovery_probe("bars:a_share:1D", ["yahoo"]) is None
+    router.record("bars:us_equity:1D", "yahoo", True, 0.1)
+    assert router.retry_after("bars:a_share:1D", ["yahoo"]) == 0
+    assert router.recovery_probe("bars:a_share:1D", ["yahoo"]) == "yahoo"
+    assert router.cooling("bars:a_share:1D", "yahoo")
+    assert all(router.recovery_probe("bars:a_share:1D", ["yahoo"]) is None for _ in range(100))
+    router.record("bars:a_share:1D", "yahoo", False, 0.1)
+    now[0] += 1
+    router.record("bars:us_equity:1D", "yahoo", True, 0.1)
+    assert router.recovery_probe("bars:a_share:1D", ["yahoo"]) is None
+    assert router.retry_after("bars:a_share:1D", ["yahoo"]) == 29
+
+
+def test_mixed_request_completes_only_cooled_missing_market_after_sibling_success(tmp_path, monkeypatch):
+    import time
+    from backtest.loaders import registry
+    from src import market_data
+
+    registry._ensure_registered()
+    calls = []
+
+    class Loader:
+        name = "recovery_fixture"
+        volume_units = {"us_equity": "shares", "a_share": "shares"}
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, *args, **kwargs):
+            calls.extend(codes)
+            time.sleep(0.02)  # A-share walker first finishes while this call runs.
+            result = {}
+            for code in codes:
+                frame = pd.DataFrame(
+                    {"open": [10.0], "high": [11.0], "low": [9.0], "close": [10.0], "volume": [100.0]},
+                    index=pd.to_datetime(["2026-11-12"]),
+                )
+                frame.index.name = "trade_date"
+                frame.attrs["quote_currency"] = "CNY" if code.endswith(".SH") else "USD"
+                result[code] = frame
+            return result
+
+    monkeypatch.setitem(registry.LOADER_REGISTRY, Loader.name, Loader)
+    for market in ("a_share", "us_equity"):
+        monkeypatch.setitem(registry.FALLBACK_CHAINS, market, [Loader.name])
+    monkeypatch.setattr(registry, "get_source_order_override", lambda market: None)
+    monkeypatch.setattr(market_data, "detect_source", lambda code: Loader.name)
+    gateway = MarketDataGateway(Config(tmp_path))
+    try:
+        gateway.router.record("bars:a_share:1D", Loader.name, False, 0.1)
+        response = gateway.bars(
+            codes=["601398.SH", "AAPL.US"], start_date="2026-11-12", end_date="2026-11-12", interval="1D"
+        )
+        assert response["complete"] is True, response
+        assert calls == ["AAPL.US", "601398.SH"]  # Healthy data is never replayed.
+        assert response["data"]["_recovery"]["601398.SH"]["state"] == "recovered_in_request"
+        assert "retry_after_seconds" not in response
+        assert response["data"]["_provenance"]["601398.SH"]["quote_currency"] == "CNY"
+        assert response["data"]["_provenance"]["AAPL.US"]["quote_currency"] == "USD"
+        assert response["data"]["_diagnostics"]["601398.SH"][0]["reason"] == "network_cooldown"
+    finally:
+        gateway.close()
+
+
+def test_cooldown_partial_exposes_actual_remaining_delay_and_is_not_cached(tmp_path, monkeypatch):
+    from backtest.loaders import registry
+    from src import market_data
+
+    monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
+    monkeypatch.setattr(registry, "get_source_order_override", lambda market: None)
+    monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"a_share": ["blocked"]})
+    monkeypatch.setattr(market_data, "detect_source", lambda code: "blocked")
+    gateway = MarketDataGateway(Config(tmp_path))
+    now = [100.0]
+    gateway.router.clock = lambda: now[0]
+    try:
+        gateway.router.record("bars:a_share:1D", "blocked", False, 1)
+        now[0] += 25
+        value = gateway.bars(codes=["601398.SH"], start_date="2026-11-12", end_date="2026-11-12", interval="1D")
+        assert not value["complete"]
+        assert value["retry_after_seconds"] == 5
+        assert value["data"]["_recovery"]["601398.SH"] == {"state": "waiting_for_route", "retry_after_seconds": 5}
+        assert gateway.cache.stats()["memory_entries"] == 0
+    finally:
+        gateway.close()

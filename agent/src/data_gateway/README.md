@@ -72,7 +72,13 @@ Routing learns from actual requests on this machine. A recent successful route
 is preferred over a recently failing one; failures cool down exponentially.
 A half-open recovery probe first tries a previously successful source, then
 rotates through alternatives if it still fails; there is at most one probe per
-scope per cooldown. Health expires so a changed network can try the original order again. Historical
+scope per cooldown. A later successful acquisition through the same adapter
+in another scope can qualify that one probe early; it never clears the failed
+scope's backoff or substitutes another market's data. Within a mixed request,
+only never-attempted symbols skipped solely for cooldown are reconsidered once
+after sibling markets finish, using the original deadline and source slots.
+Unresolved cooldowns expose `_recovery` and the actual `retry_after_seconds`;
+partial responses are not cached as complete. Health expires so a changed network can try the original order again. Historical
 health is separated by market and acquisition interval (daily/weekly/monthly
 share the daily transport health). No IP geolocation, proxy purchase,
 background scanning or global availability claim is involved. Controlled tests

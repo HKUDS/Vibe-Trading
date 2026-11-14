@@ -1,6 +1,7 @@
 """Reuse bar loaders and normalization with bounded, network-adaptive attempts."""
 
 import json
+import math
 import time
 from datetime import datetime, timedelta, timezone
 from .service import GatewayError, GatewayBusy
@@ -22,6 +23,56 @@ def fetch_bars(gateway, *, exact_source=False, **params):
     walkers = [_walk_bars(gateway, exact_source=exact_source, **{**params, "codes": codes}) for codes in batches]
     until = request_deadline.get() or time.monotonic() + gateway.config.request_timeout
     values = acquire_groups(gateway, walkers, until, parallel=len(walkers) > 1)
+    # Other groups may have demonstrated recovery after an all-cooled group
+    # finished. Complete only those never-attempted symbols, once, inside the
+    # original deadline; keep every healthy group and its fetched data intact.
+    if len(values) > 1 and params.get("source", "auto") == "auto" and not exact_source:
+        from backtest.loaders.base import source_interval
+
+        repairs, owners = [], []
+        for index, value in enumerate(values):
+            eligible = []
+            for code in value["data"]["_unresolved"]:
+                attempts = value["data"]["_diagnostics"].get(code, [])
+                if not attempts or any(a["reason"] != "network_cooldown" for a in attempts):
+                    continue
+                scope = f"bars:{_detect_market(code)}:{source_interval(params.get('interval', '1D'))}"
+                if gateway.router.retry_after(scope, [a["source"] for a in attempts]) <= 0:
+                    eligible.append(code)
+            if eligible and time.monotonic() < until:
+                owners.append((index, eligible))
+                repairs.append(_walk_bars(gateway, **{**params, "codes": eligible}))
+        if repairs:
+            recovered = acquire_groups(gateway, repairs, until, parallel=True)
+            for (index, codes), repair in zip(owners, recovered):
+                original = values[index]
+                old_attempts = original["data"]["_diagnostics"]
+                for code in codes:
+                    repair["data"]["_diagnostics"][code] = old_attempts.get(code, []) + repair["data"][
+                        "_diagnostics"
+                    ].get(code, [])
+                    if code not in repair["data"]["_unresolved"]:
+                        repair["data"].setdefault("_recovery", {})[code] = {
+                            "state": "recovered_in_request",
+                            "source": repair["data"]["_provenance"][code]["source"],
+                        }
+                for code in codes:
+                    original["data"].get("_recovery", {}).pop(code, None)
+                for key, part in repair["data"].items():
+                    if key.startswith("_") and isinstance(part, dict):
+                        original["data"].setdefault(key, {}).update(part)
+                    elif key != "_unresolved":
+                        original["data"][key] = part
+                original["data"]["_unresolved"] = [
+                    c for c in batches[index] if c not in original["data"]["_provenance"]
+                ]
+                original["ok"] = bool(original["data"]["_provenance"])
+                original["complete"] = not original["data"]["_unresolved"] and not any(
+                    row["status"] == "partial" for row in original["data"]["_coverage"].values()
+                )
+                original.pop("retry_after_seconds", None)
+                if not original["complete"] and repair.get("retry_after_seconds"):
+                    original["retry_after_seconds"] = repair["retry_after_seconds"]
     if len(values) == 1:
         return values[0]
     data = {}
@@ -39,7 +90,15 @@ def fetch_bars(gateway, *, exact_source=False, **params):
         "complete_scope": values[0]["complete_scope"],
         "source": "existing_routes",
         "data": data,
-        **({"retry_after_seconds": 1} if any(value.get("retry_after_seconds") == 1 for value in values) else {}),
+        **(
+            {
+                "retry_after_seconds": min(
+                    value["retry_after_seconds"] for value in values if value.get("retry_after_seconds")
+                )
+            }
+            if any(value.get("retry_after_seconds") for value in values)
+            else {}
+        ),
         **({"error": "No compatible source returned data"} if not data.get("_provenance") else {}),
     }
 
@@ -215,6 +274,19 @@ def _walk_bars(gateway, *, exact_source=False, **params):
     combined["_unresolved"] = unresolved
     combined["_diagnostics"] = diagnostics
     combined["_coverage"] = coverage
+    recovery = {}
+    for code in unresolved:
+        attempts = diagnostics.get(code, [])
+        if attempts and all(a["reason"] == "network_cooldown" for a in attempts):
+            scope = f"bars:{_detect_market(code)}:{source_interval(params.get('interval', '1D'))}"
+            recovery[code] = {
+                "state": "waiting_for_route",
+                "retry_after_seconds": max(
+                    1, math.ceil(gateway.router.retry_after(scope, [a["source"] for a in attempts]))
+                ),
+            }
+    if recovery:
+        combined["_recovery"] = recovery
     return {
         "ok": bool(provenance),
         **(
@@ -222,6 +294,7 @@ def _walk_bars(gateway, *, exact_source=False, **params):
             if any(a["reason"] == "source_busy" for rows in diagnostics.values() for a in rows)
             else {}
         ),
+        **({"retry_after_seconds": min(row["retry_after_seconds"] for row in recovery.values())} if recovery else {}),
         "source": "existing_routes",
         "data": combined,
         "complete": not unresolved and not any(row["status"] == "partial" for row in coverage.values()),

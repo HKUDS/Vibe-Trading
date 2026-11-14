@@ -1540,3 +1540,35 @@ separate surface-test server) were independently checked after exit: none alive.
 
 Stable copies, scripts, passing test XMLs and plot are under
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v14/`.
+
+
+## v15: complete cooldown-only gaps from observed recovery (2026-11-14)
+
+The v14 partial came from an A-share group finishing while all its routes cooled;
+later successful Yahoo acquisitions in sibling markets did not reconsider it.
+The fix uses a later successful call to the same adapter in another scope as
+eligibility evidence for one half-open probe. It does NOT clear this scope's
+backoff, bypass the existing one-probe-per-scope-per-cooldown budget, increase
+pacing or substitute another market's prices. A failed probe still backs off;
+older success or another adapter does not qualify. Only missing symbols skipped
+entirely for cooldown are reconsidered once after the sibling groups finish,
+within the same request deadline. Already fetched groups and actual failures
+are not replayed. If recovery is not eligible, the envelope exposes per-symbol
+`_recovery` and actual remaining retry delay instead of a fresh 30-second delay.
+
+158 gateway/history/calendar/profile checks passed in 57.99 seconds. A real-source
+precheck with only A-share health deliberately pre-seeded as cooled completed
+all three simultaneous cold requests: six markets 5.841 s, five-year dual-US
+monthly 3.019 s, dual-US minute 6.518 s. The A-share missing symbol was fetched
+from Yahoo in the same request (`recovered_in_request`), with target currency and
+provenance intact. No client retries or mock prices. Evidence:
+`/tmp/gateway-v15-recovery-live.json`, `/tmp/gateway-v15-regression.xml`.
+
+The full v15 test uses a fresh cache/history directory, 64 topics, all 5224 scan
+symbols, ten-stock five-year minute downloads and four routed historical shapes,
+30 repeated fault cycles of at least 120 seconds, plus three simultaneous cold
+requests per online cycle (`--mixed-cold`). It must finish at least one hour of
+active work and complete the scan; until terminal evidence is appended below,
+this paragraph is a protocol, not a claim of completion. Cache 8/64 MiB, four
+source workers, sixteen pending requests, 6/15-second deadlines and history
+quota 256 MiB are unchanged. No geographic nodes are used.
