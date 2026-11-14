@@ -275,3 +275,59 @@ source whose last failure is at least that old. This prevents repeated outages
 from blocking a recovered network for the longest backoff window. Worker limits,
 request deadlines, same-key throttling and source identity remain enforced.
 Failures report source/stage/type without logging raw upstream bodies or secrets.
+
+### One-hour combined live test
+
+The opt-in harness below runs production HTTP/SSE routes and history downloads
+inside **one** isolated server process. It uses a fresh external directory, real
+upstreams and normal resource limits. Thirty 120-second fault cycles give at
+least one active hour, plus prewarming, probe time and a three-minute idle tail.
+The first download is ten SH/SZ equities, 2021-11-14 through 2026-11-13, at 5m;
+completed jobs are followed by 15m/30m/1H jobs so downloads continue throughout
+the active hour. It cancels the final unfinished job between chunks for idle
+measurement, retaining its verified prefix. No market data is written to Git.
+
+```sh
+PYTHONPATH=agent python tools/gateway_soak.py --history \
+  --history-dir ~/.vibe-trading/history-hour-test-NEW \
+  --cycles 30 --cycle-seconds 120 --warmup 120 --idle 180 \
+  --port 8912 --output /tmp/gateway-hour.json
+python tools/gateway_combined_report.py --input /tmp/gateway-hour.json \
+  --output /tmp/gateway-hour-summary.json --plot /tmp/gateway-hour.png
+```
+
+`--history-dir` must not already exist. Faults abort this child's real upstream
+WebSockets and BaoStock socket, and refuse source calls during simulated total
+outage; they do not disrupt the host network. After exhausted chunk retries, the
+driver explicitly calls the production resume API. This is not a claim that
+failed jobs automatically resume in the product. No forced GC or allocation
+profiler is enabled. macOS reports RSS, current/lifetime-peak physical footprint,
+CPU time, threads and file descriptors; caches are reported separately.
+
+Optional observers run alongside the same workload (the OS observer is macOS-only):
+
+```sh
+python tools/gateway_soak_observer.py --report /tmp/gateway-hour.json --output /tmp/gateway-os.json
+PYTHONPATH=agent python tools/gateway_route_benchmark.py --url http://127.0.0.1:8912 --soak /tmp/gateway-hour.json --output /tmp/gateway-routes.json
+python tools/gateway_stream_latency.py --url http://127.0.0.1:8912 --soak /tmp/gateway-hour.json --output /tmp/gateway-stream-latency.json
+```
+
+The route probe records requested and actual sources, so fallback does not count
+as success for the original source. The stream observer requires a newly fetched
+event after each network transition; replaying an old snapshot cannot establish
+recovery. HTTP and source timings distinguish cache hits, failed requests and
+source work. Reports retain only operational metadata, never price bodies.
+
+For the heavier admission/refresh/batch-scan test:
+
+```sh
+PYTHONPATH=agent python tools/gateway_scale_probe.py --port 8913 --hold 600 --output /tmp/gateway-scale.json
+```
+
+It checks default 16-topic admission, then configures 64 topics (32 stocks × two
+intervals) and submits the actual settled SH/SZ A-share inventory in eight-symbol
+batches. It reports missing data, busy responses and refresh errors as failures.
+It also exercises the existing separate market-ranking tool. See `VALIDATION.md`
+for the failed full-scan/refresh case; a larger topic setting is not a guarantee
+of throughput or coverage. Cache defaults additionally cap entries at 256, and
+50 stocks × three intervals exceeds the current 64-topic configuration maximum.

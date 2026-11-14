@@ -9,6 +9,7 @@ Only operational metadata is saved. No quotes or credentials enter the report.
 import argparse
 import asyncio
 from collections import Counter
+from gateway_soak_history import Timings, HistoryDriver, instrument_history, abort_history
 from contextlib import asynccontextmanager
 import ctypes
 from datetime import datetime, timezone, timedelta
@@ -22,20 +23,28 @@ import threading
 import time
 
 
+class _Usage(ctypes.Structure):
+    _fields_ = [("uuid", ctypes.c_uint8 * 16), ("values", ctypes.c_uint64 * 35)]
+
+
+_LIBPROC = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True) if sys.platform == "darwin" else None
+
+
 def process_memory():
-    """Read current process RSS and macOS physical footprint from the OS."""
-    if sys.platform == "darwin":
-
-        class Usage(ctypes.Structure):
-            _fields_ = [("uuid", ctypes.c_uint8 * 16), ("values", ctypes.c_uint64 * 18)]
-
-        usage = Usage()
-        lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-        if lib.proc_pid_rusage(os.getpid(), 2, ctypes.byref(usage)) != 0:
+    """Read whole-process current/lifetime peak physical memory from the OS."""
+    if _LIBPROC is not None:
+        usage = _Usage()
+        if _LIBPROC.proc_pid_rusage(os.getpid(), 4, ctypes.byref(usage)) != 0:
             raise OSError(ctypes.get_errno(), "proc_pid_rusage failed")
         fds = ctypes.create_string_buffer(65536)
-        count = lib.proc_pidinfo(os.getpid(), 1, 0, fds, len(fds))
-        return {"rss_bytes": usage.values[6], "footprint_bytes": usage.values[7], "fds": count // 8}
+        count = _LIBPROC.proc_pidinfo(os.getpid(), 1, 0, fds, len(fds))
+        return {
+            "rss_bytes": usage.values[6],
+            "footprint_bytes": usage.values[7],
+            "peak_footprint_bytes": usage.values[28],
+            "fds": count // 8,
+            "cpu_seconds": (usage.values[0] + usage.values[1]) / 1e9,
+        }
     status = Path("/proc/self/status").read_text()
     rss = int(next(line.split()[1] for line in status.splitlines() if line.startswith("VmRSS:"))) * 1024
     return {"rss_bytes": rss, "footprint_bytes": None, "fds": len(os.listdir("/proc/self/fd"))}
@@ -58,7 +67,9 @@ def serve(port):
     original_snapshot = streams.okx_snapshot
     sockets = set()
     counts = Counter()
-    fault = {"mode": "online"}
+    fault = {"mode": "online", "epoch": 0}
+    timings = Timings()
+    history = instrument_history(fault, counts, timings) if os.getenv("VIBE_GATEWAY_SOAK_HISTORY") else None
     hubs = []
     slow = []
 
@@ -120,7 +131,20 @@ def serve(port):
         if fault["mode"] == "all_offline":
             counts["source_refused"] += 1
             raise ConnectionError("soak injected network unavailable")
-        return original_invoke(function, params, timeout)
+        submitted = time.monotonic()
+
+        def measured(**kwargs):
+            stamp = time.monotonic()
+            timings.add("source_queue", stamp - submitted)
+            try:
+                result = function(**kwargs)
+            except Exception:
+                timings.add("source_failed", time.monotonic() - stamp)
+                raise
+            timings.add("source_success", time.monotonic() - stamp)
+            return result
+
+        return original_invoke(measured, params, timeout)
 
     gateway.invoke = invoke
 
@@ -128,6 +152,8 @@ def serve(port):
     async def lifespan(app):
         yield
         gateway.close()
+        if history:
+            history.close()
 
     app = FastAPI(lifespan=lifespan)
     api.register_gateway_routes(app, lambda: None)
@@ -167,6 +193,10 @@ def serve(port):
     @app.post("/_soak/fault")
     async def set_fault(mode: str = Query(pattern="^(online|ws_offline|all_offline)$")):
         fault["mode"] = mode
+        if mode == "all_offline":
+            fault["epoch"] += 1
+            if history:
+                abort_history(counts)
         if mode != "online":
             for socket in list(sockets):
                 socket.transport.abort()
@@ -196,6 +226,9 @@ def serve(port):
             "counts": dict(counts),
             "fault": fault["mode"],
             "gateway": await asyncio.to_thread(gateway.status),
+            "history": await asyncio.to_thread(history.status) if history else [],
+            "history_storage": await asyncio.to_thread(history.settings) if history else None,
+            "timings": timings.summary(),
             "subscriptions": hubs[0].status() if hubs else {"clients": 0, "topics": [], "pending_updates": 0},
         }
 
@@ -214,10 +247,19 @@ async def exercise(args, output):
     observed = {}
     phase = "startup"
     current_cycle = -1
+    history_driver = None
+    history_task = None
+    active_started = None
+    active_finished = None
 
     def save():
         document = {
             "started_utc": started_utc,
+            "active_elapsed_s": round((active_finished or time.monotonic()) - active_started, 2)
+            if active_started
+            else 0,
+            "history_enabled": args.history,
+            "history_directory": str(args.history_dir) if args.history else None,
             "elapsed_s": round(time.monotonic() - started, 2),
             "phase": phase,
             "samples": samples,
@@ -298,6 +340,9 @@ async def exercise(args, output):
                         "elapsed_s": round(time.monotonic() - started, 2),
                         "topics": topics,
                         "error_type": type(exc).__name__,
+                        "error": str(exc)[:200],
+                        "cause_type": type(exc.__cause__).__name__ if exc.__cause__ else None,
+                        "cancel_requested": bool(asyncio.current_task().cancelling()),
                         "phase": phase,
                     }
                 )
@@ -344,7 +389,9 @@ async def exercise(args, output):
                 await asyncio.sleep(2)
 
         async def bar_probe(label, body):
+            stamp = time.monotonic()
             response = await client.post(url + "/data/bars", json=body)
+            latency_ms = round((time.monotonic() - stamp) * 1000, 3)
             value = response.json()
             shape = {}
             for symbol in body["codes"]:
@@ -356,6 +403,8 @@ async def exercise(args, output):
             checks.append(
                 {
                     "kind": label,
+                    "latency_ms": latency_ms,
+                    "elapsed_s": round(time.monotonic() - started, 2),
                     "cycle": current_cycle,
                     "status": response.status_code,
                     "ok": value.get("ok"),
@@ -367,6 +416,38 @@ async def exercise(args, output):
                     "error": value.get("error"),
                 }
             )
+
+        async def latency_probe():
+            choices = [("BTC-USDT", "5m", 5), ("AAPL.US", "1D", 365), ("00700.HK", "1D", 365), ("601398.SH", "1D", 365)]
+            code, interval, days = choices[current_cycle % len(choices)]
+            body = {
+                "codes": [code],
+                "interval": interval,
+                "start_date": str(today - timedelta(days=days)),
+                "end_date": str(today),
+                "max_rows": 500 + current_cycle,
+            }
+            await bar_probe("latency_first_bar", body)
+            await bar_probe("latency_repeat_bar", body)
+            for repeat in (False, True):
+                stamp = time.monotonic()
+                response = await client.get(
+                    url + "/data/options", params={"ticker": "AAPL", "full": "true", "allow_stale": "false"}
+                )
+                value = response.json()
+                checks.append(
+                    {
+                        "kind": "latency_repeat_options" if repeat else "latency_first_options",
+                        "cycle": current_cycle,
+                        "elapsed_s": round(time.monotonic() - started, 2),
+                        "latency_ms": round((time.monotonic() - stamp) * 1000, 3),
+                        "status": response.status_code,
+                        "ok": value.get("ok"),
+                        "source": value.get("source"),
+                        "gateway": value.get("gateway"),
+                        "error": value.get("error"),
+                    }
+                )
 
         # Warm every data shape before comparing repeated steady-state cycles.
         phase = "warmup"
@@ -404,6 +485,9 @@ async def exercise(args, output):
             await client.post(url + "/_soak/slow", params={"enabled": "true"})
             (await client.post(url + "/_soak/trace", params={"label": "warm"})).raise_for_status()
             active_started = time.monotonic()
+            if args.history:
+                history_driver = HistoryDriver(client, url, checks, started)
+                history_task = asyncio.create_task(history_driver.run())
             churn_task = asyncio.create_task(churn(active_started + args.cycles * args.cycle_seconds))
             for current_cycle in range(args.cycles):
                 phase = "online"
@@ -412,6 +496,10 @@ async def exercise(args, output):
                 await pause(args.cycle_seconds * 0.25)
                 if prior_fault_probe is not None:
                     await bar_probe("recovered_bar_probe", prior_fault_probe)
+                    await bar_probe("hot_bar_probe", prior_fault_probe)
+                await latency_probe()
+                if history_task and history_task.done():
+                    await history_task  # A dead producer must fail the test, not fake overlap.
                 phase = "ws_offline"
                 await set_fault("ws_offline")
                 await pause(args.cycle_seconds * 0.25)
@@ -447,15 +535,20 @@ async def exercise(args, output):
                     flush=True,
                 )
             await churn_task
+            active_finished = time.monotonic()
         finally:
             await set_fault("online")
             await stop(base)
+            if history_driver:
+                await history_driver.finish(history_task)
             await client.post(url + "/_soak/slow", params={"enabled": "false"})
         phase = "idle"
         await pause(args.idle)
         await sample()
         (await client.post(url + "/_soak/trace", params={"label": "idle"})).raise_for_status()
-        (await client.post(url + "/_soak/trace", params={"label": "idle-collected", "collect": "true"})).raise_for_status()
+        (
+            await client.post(url + "/_soak/trace", params={"label": "idle-collected", "collect": "true"})
+        ).raise_for_status()
         phase = "complete"
         save()
         print(
@@ -466,6 +559,8 @@ async def exercise(args, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--history", action="store_true")
+    parser.add_argument("--history-dir", type=Path)
     parser.add_argument("--server", action="store_true")
     parser.add_argument("--port", type=int, default=8911)
     parser.add_argument("--cycles", type=int, default=12)
@@ -477,9 +572,15 @@ def main():
     if args.server:
         serve(args.port)
         return
+    if args.history and args.history_dir is None:
+        parser.error("--history requires a fresh --history-dir outside the repository")
+    if args.history and args.history_dir.exists():
+        parser.error("--history-dir must be new so the run cannot reuse prior chunks")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="vibe-gateway-soak-cache-") as directory:
         environment = dict(os.environ, VIBE_GATEWAY_CACHE_DIR=directory)
+        if args.history:
+            environment.update(VIBE_GATEWAY_HISTORY_DIR=str(args.history_dir), VIBE_GATEWAY_SOAK_HISTORY="1")
         log = args.output.with_suffix(".server.log")
         with log.open("w") as handle:
             child = subprocess.Popen(

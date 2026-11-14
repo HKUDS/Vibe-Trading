@@ -382,3 +382,193 @@ Metadata reports and plots (no price payloads) are preserved outside the repo:
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-history-20261114/`.
 Real compressed data remains at
 `~/.vibe-trading/history-validation-20261114/45ce1c3e46024465821ab61b0dc4714e/`.
+
+## Deep-use capacity follow-up (2026-11-14)
+
+Production code remains at `4981ed047`; this follow-up adds live test tooling.
+The original combined one-hour run and the separate capacity test use different
+server processes. They share this machine/network and therefore can contend for
+public upstream capacity. They do not measure the full Electron/frontend/LLM app.
+
+### 32 stocks × two intervals and a real SH/SZ scan
+
+`tools/gateway_scale_probe.py` queried BaoStock's 2026-11-13 inventory and selected
+5,224 SH/SZ A-share codes (60/68/00/30 prefixes). This explicitly excludes Beijing,
+B-shares, ETFs and indices; it is not an all-country/all-exchange universe.
+Thirty-two listed stocks were subscribed at both 1D and 1W, eight topics per SSE
+connection. Source workers/pending/cache settings were unchanged.
+
+- Default 16-topic limit: two connections accepted, six returned HTTP 422
+  `Topic capacity reached`; all 16 admitted topics delivered, median first delivery
+  4.035 seconds, last 5.032 seconds. No source error in this 46-second control.
+- Configured 64-topic limit: all eight connections accepted. All 64 topics
+  initially delivered, median 6.2525 seconds, last 10.199 seconds, with no initial
+  source errors. A 65th topic returned 422. Config validation permits at most 64;
+  50 stocks × three intervals (150 topics) is not currently supported.
+- After 90 seconds, the driver submitted the complete 5,224-symbol list in
+  653 requests of at most eight symbols, with two concurrent HTTP requests, while
+  keeping the 64 topics subscribed. Only **79 symbols / 1,738 bars** returned.
+  There were ten HTTP 200 responses (one partial), twenty request-timeout 503s,
+  and 623 busy/cooldown 503s. The full submission pass took 202.924 seconds and
+  is **failed acquisition**, not a successful full-market scan. The test records
+  every missing symbol and does not invent data or downgrade the failure.
+- The driver deliberately records first-pass admission/failure; it does not
+  pretend immediate busy responses are completed work or retry them indefinitely.
+  A reliable scan needs a resumable, backpressure-aware job scheduler; that path
+  does not exist yet. This result must not be extrapolated to a paced scan's
+  maximum eventual coverage.
+- Across the 603-second active stage the subscriptions received 324 snapshots
+  and 251 source errors; some topics had only three distinct acquisition stamps.
+  Raising the topic count alone does **not** establish dependable minute refresh.
+  Inspection confirms watchlists and bulk requests share the same two request
+  coordinators, four source workers and 16 pending-flight limit, with no reserved
+  watchlist capacity. Observed Tencent attempts returned HTTP 501 and Eastmoney
+  historical endpoints failed. These observations do not establish whether 501
+  originated at the provider or an intermediary, or prove an upstream rate limit.
+- A known-symbol control preferring Tencent fell back to BaoStock after 11.65
+  seconds; another request took 17.06 seconds and returned a gateway timeout.
+  One independent control caller hit its 25-second HTTP read timeout. This
+  includes admission/queueing and cannot be reported as pure upstream latency.
+- Physical footprint lifetime peak **114.876 MiB**, ending **114.251 MiB**.
+  Serialized RAM cache peaked at **551,160 bytes**; disk cache at **739,742 bytes**,
+  well below the configured 8/64 MiB budgets. Capacity failure was not caused by
+  filling those caches. After three idle minutes: clients/topics/pending updates,
+  upstream sockets, active requests and memory cache entries all zero; three
+  async tasks remained. Default 16-topic control peak was 98.282 MiB.
+
+The **existing market-ranking tool** is a different product path. Real
+`MarketScreenerTool.execute(market=..., top_n=100)` calls returned 100 rows each:
+A-share 291.126 ms, US 1,271.494 ms, HK 1,352.578 ms. These are upstream-computed
+rankings, not downloading every security's bars to compute arbitrary indicators.
+The tool currently calls Eastmoney directly and has not been integrated with the
+gateway; no alternate-source behavior was verified for this capability.
+
+### Cache capacity interpretation
+
+8 MiB RAM and 64 MiB disk are serialized short-lived response-cache budgets, not
+whole-process limits or a user's total dataset allowance. Defaults also cap each
+entry at 2 MiB and each cache at 256 entries; a cache can evict before reaching its
+byte budget. Persistent historical datasets have a separate 256 MiB default quota,
+30-day idle retention, pinning and bounded paged reads. The previously verified
+581,760-row ten-stock/five-year/5m dataset occupied about 10.6 MiB. That observation
+supports this measured workload, not all markets' compression or full-market
+multi-year intraday storage. The failed capacity run above does not justify
+increasing the cache limits as a throughput fix.
+
+### Completed one-hour combined workload — not an overall stability pass
+
+`tools/gateway_soak.py --history --cycles 30 --cycle-seconds 120 --warmup 120
+--idle 180` completed on one server PID (87319). Wall time was 4,000.76 seconds;
+**active concurrent workload was 3,692.99 seconds / 61.55 minutes**, excluding
+warmup and idle cleanup. Thirty cycles alternated online, WebSocket-only outage,
+recovery and total source refusal. The test aborted real child-local transports,
+not the computer's network. No profiling or forced GC ran in the measured server.
+An independent OS observer recorded 779 samples and normal process completion.
+
+- 1,465 subscriptions and 1,465 unsubscriptions; 6,576 client snapshots across
+  18 topics. There were 71 real upstream WebSocket connections, all closed,
+  15,430 accepted live WS events, and 216 successful REST snapshots.
+- All 30 forced-offline bar probes returned 503. All 29 subsequent recovery
+  probes returned 200. All 30 first/repeated bar and option timing probes
+  returned 200. These checks do not mean every streaming refresh succeeded.
+- **Three client ReadErrors occurred** at elapsed 2,878.99 / 2,911.13 / 3,554.14
+  seconds, on the short-lived BTC/AAPL churn connections. The server log has no
+  matching traceback. Whether cancellation races or another transport condition
+  caused them is unresolved. They remain failed observations. The harness now
+  records bounded error text, cause type and cancellation state for future runs;
+  those fields cannot retrospectively explain this completed run.
+- End state: zero clients/topics/pending updates, upstream sockets, active
+  gateway requests, outstanding measured source calls and RAM cache entries;
+  25 threads, 18 file descriptors and three async tasks remained. History jobs
+  were complete or deliberately paused; reservations were zero. Idle was
+  configured for 180 seconds; sampled timestamps span **179.98 seconds**, so the
+  report's strict `>=180` sample-span flag remains false rather than rounding it
+  into a pass. This does not change the measured 61.55-minute active duration.
+
+**The longer test exposed additional retained process memory.** Physical
+footprint low points during minutes 10–40 were approximately 216–218 MiB. After
+late fallback activity, minutes 50–60 had a median of 302.33 MiB and a minimum of
+270.17 MiB. After idle cleanup, physical footprint was **269.876 MiB** (RSS only
+38.734 MiB); lifetime physical peak was **581.080 MiB**. The late-half regression
+is +2.78 MiB/min, dominated by a late step, not evidence of a constant leak rate.
+The previous nine-minute run did not expose this behavior. Clearing serialized
+cache entries does not resolve it, and this run is **not a memory-stability pass**.
+
+Native `vmmap` controls: at approximately minute 18, malloc live allocations
+were 66.7 MiB and VM_ALLOCATE 129.3 MiB; near minute 53 they were 66.8 MiB and
+187.4 MiB respectively. A separate diagnostic process reproduced large retained
+footprint around repeated real CCXT fetches:
+
+- Normal automatic GC, three thirteen-row BTC daily fetches: post-call footprints
+  131.829 / 304.313 / 235.532 MiB; no exchange instance remained alive by weakref.
+  A subsequent diagnostic GC reduced the last value to 223.610 MiB.
+- Allocation profiling in a separate process showed only **0.114 MiB net traced
+  live-Python growth**, while physical footprint increased **167.047 MiB** from
+  first to third fetch. Profiling overhead changes absolute footprint, so this
+  is a mechanism control, not a replacement for the unprofiled hour run.
+- Restricting Binance metadata to spot-only in another test process made the
+  requests faster but left similar retained footprint. This candidate was
+  **not adopted as a memory fix**. Exchange-instance leakage is not demonstrated;
+  allocator/native retention on this heavy SDK path is the leading explanation,
+  with its exact attribution in the main process still unproven. No production
+  GC workaround or relaxed resource guard was added.
+
+### Historical completeness and time-to-data
+
+The same server completed ten stocks × five years × 5m: **610 chunks / 581,760
+rows**, approximately **31.06 minutes** including injected failures and resumed
+work. It then completed 15m for the same symbols/dates: **610 chunks / 193,920
+rows**, approximately **26.40 minutes**. A 30m follow-up retained 121 completed
+chunks / 19,312 rows and was deliberately paused at the end of the active hour.
+Total physical store use was **16,113,799 bytes / 15.37 MiB**, with no outstanding
+reservation. No full dataset was loaded into the server's memory at once.
+
+Independent fresh-source verification initially failed twice with BaoStock
+`10001001` during concurrent activity. After download work stopped, both fresh
+verifications passed: trading-calendar and daily-status queries, every chunk's
+hash and exact intraday grid, and every unsampled page (582 pages for 5m, 194 for
+15m). All 581,760 five-minute rows also matched the prior independently verified
+canonical SHA256 `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`.
+The source-session error remains an observed concurrency risk; its upstream
+mechanism is not established. The main download itself had one exhausted-retry
+`10001001` failure and was resumed through the production API by the driver.
+The driver also resumed nineteen failures attributed to injected network loss.
+This is not automatic product-level resume after an exhausted retry budget.
+
+Observed HTTP latency on the combined workload (nearest-rank P95, successful
+responses only; failures are counted separately above):
+
+| Path | Samples | P50 | P95 |
+| --- | ---: | ---: | ---: |
+| First bar request, gateway cache miss | 30 | 512.81 ms | 3,565.17 ms |
+| Immediate repeat bar request, fresh cache | 30 | 7.68 ms | 188.44 ms |
+| Option request, actual gateway cache miss | 19 | 1,130.96 ms | 1,652.54 ms |
+| Immediate repeat options, fresh cache | 30 | 6.46 ms | 144.89 ms |
+| Completed history page, 1,000 rows | 6 | 46.12 ms | 69.64 ms |
+
+A separate continuously connected observer measured newly fetched crypto events,
+not cached replay as recovery: WebSocket source age P50 164.64 ms / P95 300.15 ms
+(1,871 events). Post-recovery first WS data P50 2.76 s / P95 13.81 s; after a
+WS-only failure, REST fallback first data P50 **21.47 s** / P95 **27.73 s**. The
+15-second polling cadence therefore does not give seamless fallback. Source
+clock skew is not calibrated, and this measures crypto public ticks, not realtime
+US equity/options entitlements. Option payloads remain delayed snapshots.
+
+The 14 preferred public-route probes obtained data directly from ten sources,
+through fallback for three (AKShare/Eastmoney to Tencent; Stooq to Yahoo), and
+initially failed Wallex after its source wait expired. Wallex later succeeded in
+2.55 s; the subsequent cached response took 7.82 ms. These are one-symbol route
+probes on this network, not proof that every source/symbol is fast or available.
+The 16 GiB / ten-logical-CPU host had high unrelated load and heavy system swap;
+RSS alone substantially understated process memory. No other process was stopped.
+
+### Remaining work established by these tests
+
+Do not market the current implementation as stable full-market scanning plus
+multi-cycle monitoring. The evidence calls for bounded, resumable scan scheduling
+that honors backpressure, preserved capacity for foreground subscriptions,
+capability-specific upstream rate budgets, integration of the separate screening
+path, and a bounded lifecycle for heavy SDK allocations. The three churn read
+errors and BaoStock session failures need discriminating controls. A new long
+run is required after any production fix; the completed run above measures the
+unchanged production implementation at `4981ed047`.
