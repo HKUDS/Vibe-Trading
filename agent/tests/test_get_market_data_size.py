@@ -7,11 +7,17 @@ downsample (every step-th bar, last bar pinned) plus truncation metadata for
 oversized symbols — spanning the full range with no `_gap` sentinel; small
 queries are unchanged (plain list); `max_rows=0` restores the unbounded
 legacy behavior; a negative `max_rows` is invalid and enforces the cap.
+
+The MCP surface also persists every observation under the run workspace, so a
+payload above the tool-result ceiling arrives as a bounded receipt. The row cap
+is a property of the observation, not of the delivery envelope: read the saved
+JSON when the response is a receipt, and check the cap there.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pandas as pd
 
@@ -20,6 +26,17 @@ import mcp_server
 _gmd = getattr(mcp_server.get_market_data, "fn", None) or getattr(
     mcp_server.get_market_data, "__wrapped__", mcp_server.get_market_data
 )
+
+
+def _observation(response: str) -> dict:
+    """Return the full observation, following a persisted receipt when present."""
+    payload = json.loads(response)
+    ref = payload.get("_result_file")
+    if ref is None:
+        return payload
+    saved = Path(ref["path"])
+    assert saved.is_file(), "the receipt must name a readable result file"
+    return json.loads(saved.read_text())
 
 
 def _loader_with_rows(n: int):
@@ -36,7 +53,7 @@ def _loader_with_rows(n: int):
 
 def _call(monkeypatch, n, **kw):
     monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _loader_with_rows(n))
-    return json.loads(_gmd(codes=["X.US"], start_date="2025-01-01", end_date="2026-01-01", source="yfinance", **kw))
+    return _observation(_gmd(codes=["X.US"], start_date="2025-01-01", end_date="2026-01-01", source="yfinance", **kw))
 
 
 def test_oversized_symbol_is_capped_with_metadata(monkeypatch):
@@ -108,7 +125,7 @@ def test_multi_symbol_capped_independently(monkeypatch):
             return {"BIG.US": _frame(big), "SMALL.US": _frame(small)}
 
     monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _Multi)
-    out = json.loads(
+    out = _observation(
         _gmd(
             codes=["BIG.US", "SMALL.US"],
             start_date="2025-01-01",
@@ -118,3 +135,21 @@ def test_multi_symbol_capped_independently(monkeypatch):
     )
     assert isinstance(out["BIG.US"], dict) and out["BIG.US"]["truncated"] is True
     assert isinstance(out["SMALL.US"], list) and len(out["SMALL.US"]) == 10
+
+
+def test_capped_payload_is_delivered_as_a_readable_receipt(monkeypatch):
+    """The capped observation still exceeds the tool-result ceiling, so the MCP
+    surface hands back a receipt. It must name the saved JSON and readable
+    parts, and the preview must not be mistaken for the whole observation."""
+    monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _loader_with_rows(1000))
+    payload = json.loads(
+        _gmd(codes=["X.US"], start_date="2025-01-01", end_date="2026-01-01", source="yfinance")
+    )
+    ref = payload["_result_file"]
+    assert "X.US" not in payload, "a receipt carries no inline symbol payload"
+    assert payload["_preview"].endswith("\n...\n" + json.dumps(
+        json.loads(Path(ref["path"]).read_text()), ensure_ascii=False
+    )[-1000:])
+    parts = sorted(Path(ref["parts_dir"]).iterdir(), key=lambda p: int(p.stem))
+    assert len(parts) == ref["part_count"] > 1
+    assert "".join(part.read_text() for part in parts) == Path(ref["path"]).read_text()
