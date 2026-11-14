@@ -527,3 +527,63 @@ def test_concurrent_page_reader_waits_within_existing_lock_budget(store):
         assert not result
     thread.join(2)
     assert not thread.is_alive() and len(result[0]["rows"]) == 2
+
+
+def _hold_history_from_spawned_process(directory, job, entered, release, result):
+    """Hold a real cross-process file lease while a source is in flight."""
+
+    def fetch(*args):
+        entered.set()
+        if not release.wait(15):
+            raise RuntimeError("Cross-process test source was never released")
+        return fake(*args)
+
+    child = HistoryStore(directory, fetcher=fetch)
+    try:
+        result.put(child.run(job))
+    finally:
+        child.close()
+
+
+def test_spawned_writer_preserves_ownership_and_observes_foreign_cancel(store):
+    import multiprocessing
+
+    context = multiprocessing.get_context("spawn")
+    entered, release, result = context.Event(), context.Event(), context.Queue()
+    job = store.create(**spec())["id"]
+    process = context.Process(
+        target=_hold_history_from_spawned_process,
+        args=(store.directory, job, entered, release, result),
+    )
+    process.start()
+    other = None
+    try:
+        assert entered.wait(10)
+        other = HistoryStore(store.directory, fetcher=fake)
+        state = other.status(job)
+        assert state["state"] == "running" and state["reserved"] > 0
+        # Construction must not recover an actively owned job as interrupted.
+        with pytest.raises(ValueError, match="running"):
+            other.start(job)
+        with pytest.raises(ValueError, match="running"):
+            other.delete(job)
+        assert other.status(job)["reserved"] == state["reserved"]
+        other.cancel(job)
+        release.set()
+        terminal = result.get(timeout=10)
+        process.join(10)
+        assert process.exitcode == 0
+        assert terminal["state"] == "paused" and terminal["reserved"] == 0
+        assert terminal["completed_chunks"] == 1
+        assert other.run(job)["state"] == "complete"
+        assert len(other.read(job, 0, 10)["rows"]) == 6
+    finally:
+        release.set()
+        process.join(10)
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+        if other:
+            other.close()
+        result.close()
+        result.join_thread()

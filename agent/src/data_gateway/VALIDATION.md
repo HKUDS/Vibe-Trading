@@ -1312,3 +1312,112 @@ same identity recovers. A separate check pins the one-probe-per-cooldown limit.
 Gateway/routing/scheduling regression: 48 passed (`/tmp/gateway-cooldown-v13.xml`).
 The v12 incomplete mixed run is retained as failed evidence and superseded; it
 must not count toward the corrected version's one-hour acceptance.
+
+### v13 mixed-client result and measured queue timeout
+
+Production `179545175` passed the 167 current gateway/stream/history/loader
+regressions (`/tmp/gateway-current-v13-regression.xml`). A further actual spawn
+process test passed: another process cannot recover/delete/steal an in-flight
+job; cancellation preserves one committed chunk, and resumption reaches all
+six fixture chunks. This is real process/file/SQLite ownership with controlled
+data, not a real-provider price test (`/tmp/gateway-spawned-writer-v13.xml`).
+
+The 360.065-second mixed client finished 32 requests and six SSE topics. All
+12 option reads retained the right underlying/expiry; all four completed row
+pages succeeded, all four unfinished-prefix reads returned 409. Normal and
+WS-only-outage bar reads were complete. During full outage and immediate
+recovery the cold requests failed explicitly; a separate client then retried
+the exact three shapes while the original SSE client was still running. All
+three eventually returned complete in 103.232 seconds, retaining intermediate
+503/partial responses in the report. This is eventual recovery, not instant
+complete service or zero transient errors.
+
+The extra six-market timeout has a measured breakdown: request
+`1404440380311041` spent 7.595 seconds before coordinator start, then sequential
+source work reached the fixed 15-second deadline (caller returned 15.0103 s;
+coordinator ended 15.0293 s). It was bounded queue/acquisition contention, not
+an unbounded socket read or process crash. The later exact request completed
+in 8.072 seconds with every symbol. Limits/deadlines were not raised. The
+strict long-soak unexpected-error check remains unchanged; this separate
+client's transient error must also be disclosed in the final report.
+
+Evidence: `/tmp/gateway-mixed-client-v13-20261114.json`,
+`/tmp/gateway-mixed-recovery-v13-20261114.json`, and v13 server request traces.
+
+### Final v13: completed hour plus all 5,224 symbols
+
+Frozen production `179545175`, isolated API PID 40620, unchanged 8 MiB RAM /
+64 MiB disk caches, four source slots, sixteen pending requests, one history
+worker, one SDK child and 256 MiB history quota. Only stream-topic capacity
+was explicitly set to the requested 64. No profiler or forced collection.
+
+- Active combined workload: 6,330.02 seconds (**105.50 minutes**); total
+  warmup/load/idle time 6,709.29 seconds. Thirty fault cycles and 1,447 paired
+  subscriptions/unsubscriptions. 560 samples contain all three concurrent
+  workloads. Every one of the final report's **26 checks is true**.
+- Scan complete: **5,224/5,224**, failed 0, remaining 0; 5,681 symbol attempts,
+  457 retries, 711 batches. Acquisition 4,742.474 seconds (79.04 minutes),
+  backoff 1,581.065 seconds (26.35 minutes). `last_error` retains a historical
+  timeout even after success; it is not the final failed-symbol count.
+- Main soak: no client-read/driver/history-driver/cleanup error; all 30 cold
+  bars, 30 heavy-SDK probes, 60 option probes and 29 recovery probes returned
+  200; no successful bar probe was partial. Thirty intentional offline cold
+  probes failed visibly with 503. These claims exclude the separately reported
+  mixed-client timeout, and do not erase transient source/stream failures.
+- New routes: 45 attempts, 11 calendar-verified complete, 33 downloaded with
+  source-calendar limitations, one monthly attempt paused after the test's
+  90-second time slice. All four shapes succeeded on other attempts. Do not
+  call every attempt successful or promote downloaded to verified. Sources
+  observed include Binance, OKX, Tencent and Yahoo.
+- Three ten-stock, five-year datasets completed: 5m 581,760 rows, 15m 193,920,
+  30m 96,960; each 610 chunks. A 1H job kept downloading until scan completion
+  and was intentionally paused with 27 committed chunks/2,164 rows at teardown.
+  Total retained history uses 18,490,319 bytes with reserved bytes 0.
+
+Memory and teardown:
+
+- Parent OS lifetime physical peak **190.657 MiB**; final physical footprint
+  **162.157 MiB**, RSS 29.891 MiB. Independent 0.5-second process-tree samples
+  observed **559.939 MiB** peak, maximum one child, 32 distinct child PIDs, no
+  remaining children. The conservative sum of separate peaks is 587.158 MiB;
+  it is not the simultaneous measured peak.
+- Ten-minute physical medians: 139.45, 141.45, 154.10, 158.09, 159.09, 160.74,
+  158.67, 162.92, 162.30, 164.22, 164.14 MiB. After minute 30 slope +0.071
+  MiB/min; last 30 minutes +0.040 MiB/min. This is warm-up plus a much flatter
+  tail, **not a mathematically flat line or proof of multi-day leak absence**.
+- Actual malloc bytes allocated at ~30/~60/~90/early-idle minutes:
+  49.5/48.8/50.3/48.6 MiB. Allocator fragmentation at those snapshots:
+  11.4/11.4/16.9/16.6 MiB. Physical footprint does not return to cold start
+  merely because live records are freed; RSS is also affected by host paging.
+- 189.94 seconds of observed idle: clients/topics/pending updates, sockets,
+  source flights/queues, history reservations, RAM cache and scan metadata all
+  zero. Disk cache retains 121 entries/3,214,514 bytes as configured. Resident
+  worker threads remain available until server shutdown; driver, API server
+  and observer were independently confirmed exited after the report.
+
+Latency (successful main-soak requests, failures above still retained):
+
+- Cold bars median/p95/max: 2.052/4.689/5.179 seconds; repeated bars
+  3.04/7.52/8.06 milliseconds.
+- Cold options (21 actual misses): 1.520/3.253/5.384 seconds. Repeated options
+  median 1.86 ms; nine first probes also found fresh cache and are separate.
+- History page median/p95: 22.22/29.49 ms. Sixty bar topics each had at least
+  86 new acquisitions; largest gap 174.572 seconds including injected outages.
+- Do not promise every interaction is instant: the separate six-market cold
+  request timed out after 7.595 seconds queueing plus source work, then recovered;
+  the full run also observed event-loop lag up to 3.454 seconds under load.
+  Stocks/options remain polled historical/delayed data, not exchange tick feeds.
+
+Final evidence: `/tmp/gateway-router-v13-final-summary.json`,
+`/tmp/gateway-router-v13-final.png`, raw/OS reports
+`/tmp/gateway-router-hour-v13-20261114.json` and
+`/tmp/gateway-router-hour-v13-os-20261114.json`; reproducible reports and the
+30-scenario matrix accompany this document. No Options Lab/frontend changes.
+
+Independent verification after the v13 server exited re-queried the full-range
+calendar and daily trade status, checked every stored chunk hash and streamed
+every production row page. All three datasets passed:
+
+- 5m: 581,760 rows, 610 chunks, 582 pages, 40.8 seconds; SHA-256 `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`.
+- 15m: 193,920 rows, 610 chunks, 194 pages, 23.08 seconds; SHA-256 `a55b26e8d61232c8b887233103a777f64320e75f35534ed4d04d8394d00590c3`.
+- 30m: 96,960 rows, 610 chunks, 97 pages, 12.95 seconds; SHA-256 `aac161ad3cb74dbdf7293c29b9433f08068c1aa29a6399ca153a65ee87eab9b8`.
