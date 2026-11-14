@@ -1194,3 +1194,11 @@ correcting a misplaced assertion in the new test. Evidence:
 `/tmp/gateway-history-lease-v11-fixed.xml`.
 The already-running v10 process does not contain this fix; its eventual full
 scan must not be presented as a post-v11 memory measurement.
+
+Additional real surface check during v10: HTTP, application CLI and Agent
+tool concurrently read offset 564, limit 25 from the 581,760-row five-minute
+dataset. The first chunk has 576 rows, so this page crosses a physical chunk
+boundary. All three returned the same unsampled 25-row digest
+`4177db82058ed8745e5ffece3799a13ef9445e845b601bac97b3a0e30348fdbe`;
+invalid IDs/paths remained refused. The probe now accepts `--offset`.
+Evidence: `/tmp/gateway-surfaces-v10-chunk-boundary-20261114.json`.
