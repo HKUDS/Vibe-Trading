@@ -162,4 +162,7 @@ def test_shadow_zero_trades_preserves_requested_cash(tmp_path, monkeypatch, capi
     assert result.combined["trade_count"] == 0
     assert result.combined["final_value"] == pytest.approx(capital)
     assert result.shadow_total_pnl == pytest.approx(0)
-    assert result.delta_pnl == pytest.approx(0)
+    # No journal was supplied, so the real side is unmeasured and the delta is
+    # unknown; the old 0.0 read as a measured break-even (#2205).
+    assert result.real_total_pnl is None
+    assert result.delta_pnl is None
