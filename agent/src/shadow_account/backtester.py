@@ -309,13 +309,15 @@ def run_shadow_backtest(
 
 
 
-_CACHE_EPOCH = 2
+_CACHE_EPOCH = 3
 """Bumped when the extractor, the generated engine, or the stored result shape
 changes meaning.
 
 A cached run is derived from (profile inputs, engine semantics, journal,
 window); when one of those changes, results produced before the change must
-miss instead of being served as current.
+miss instead of being served as current. Epoch 3 also invalidates the epoch-2
+files, which stored an unmeasured real PnL as 0.0; upstream used 2 for its
+shadow-cash change, so 2 alone would keep serving them.
 """
 
 
