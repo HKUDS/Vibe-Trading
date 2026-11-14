@@ -67,6 +67,13 @@ def summarize(document, observer=None):
     last_idle = [s for s in samples if s["phase"] == "idle"]
     recovered = [c for c in checks if c["kind"] == "recovered_bar_probe"]
     offline = [c for c in checks if c["kind"] == "offline_bar_probe"]
+    unexpected_http_errors = [
+        c
+        for c in checks
+        if "latency_ms" in c
+        and c.get("status", 200) >= 400
+        and c["kind"] != "offline_bar_probe"
+    ]
     active_history = [s for s in active if any(h["state"] in {"running", "queued", "failed"} for h in s["history"])]
     result = {
         "phase": document["phase"],
@@ -113,7 +120,17 @@ def summarize(document, observer=None):
         "ten_minute_windows": buckets,
         "latencies_ms": {k: distribution(v) for k, v in latencies.items()},
         "http_statuses": {k: dict(v) for k, v in statuses.items()},
+        "unexpected_http_errors": unexpected_http_errors,
         "source_timings_ms": tail["timings"],
+        "timing_maxima_over_samples_ms": {
+            name: max(s["timings"].get(name, {}).get("max_ms", 0) for s in samples)
+            for name in {name for s in samples for name in s["timings"]}
+        },
+        "timing_retention_note": (
+            "Per-sample percentiles retain the latest 4096 measurements per kind. "
+            "Maxima over all recorded samples preserve earlier observed tails; "
+            "they are not inferred from the final rolling window."
+        ),
         "recovery_statuses": dict(Counter(c["status"] for c in recovered)),
         "offline_probe_statuses": dict(Counter(c["status"] for c in offline)),
         "client_errors": [c for c in checks if c["kind"] == "client_error"],
@@ -192,6 +209,7 @@ def summarize(document, observer=None):
             for c in result["history_completed"]
         ),
         "no_client_read_errors": not result["client_errors"],
+        "no_unexpected_http_errors": not unexpected_http_errors,
         "history_driver_survived": not result["history_driver_errors"],
         "driver_and_cleanup_survived": not result["driver_errors"],
         "all_recovery_probes_succeeded": bool(recovered) and all(c["status"] == 200 for c in recovered),

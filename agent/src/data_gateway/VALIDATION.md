@@ -1137,3 +1137,60 @@ bullet; that guide and the related skill reference are corrected. The history
 tool skill description now reflects compatible market/interval routing rather
 than the obsolete SH/SZ-only scope. 115 inventory checks pass
 (`/tmp/gateway-public-inventory-v10-fixed.xml`).
+
+### v10 extended-run diagnostics (not final acceptance)
+
+The same server exceeded one hour and completed 30 fault/churn cycles; the
+5,224-symbol scan continues with 64 subscriptions and history work active.
+The production implementation remains `8439edaab`; later commits concern
+probes/documentation only. Three unique online cold requests returned timeout
+503 (two explicit CCXT daily requests, one BTC five-minute request); an immediate
+repeat of the latter returned cooling-down 503. These are not injected-outage
+successes. Exact-parameter retests during the online scan-completion phase all
+returned 200, cold-cache, in 8.125 / 2.316 / 7.379 seconds. Evidence:
+`/tmp/gateway-v10-timeout-retest.json`. Successful retries establish recovery,
+not absence of the original latency failures. The report now separately checks
+unexpected HTTP errors, preserving them even when every recovery probe succeeds.
+It also retains maxima across sample windows: instrumentation percentiles only
+hold the latest 4,096 observations, so a late rolling maximum must not erase
+an earlier event-loop stall. The captured slow-request stack shows a child SDK
+wait and another source doing pandas conversion; it does not establish a
+deadlock or prove that host load alone caused these remaining timeouts.
+
+Independent offline session audit of the earlier live datasets used
+`exchange_calendars 4.13.2` in an isolated `/tmp` dependency directory. All chunk
+hashes were checked, without changing the catalog or making source requests.
+Five-year/30-year monthly series contain exactly 61/361 distinct months per
+symbol. HK/Canadian daily samples match all 52 expected sessions each. The old
+UK sample lacks 2026-11-13; a fresh production API read during v10 includes it
+and takes 1.625 seconds (`/tmp/gateway-v10-vod-retest.json`). The original
+persisted sample is still incomplete; a later read cannot retroactively certify
+it. US minute samples contain all 5,850 expected regular-session minutes per
+symbol plus one extra 21:00 UTC closing-time point, with zero volume and equal
+OHLC. It is retained as source data, not silently removed or called an ordinary
+minute bar. This audit does not verify prices, official exchange announcements,
+or promote stored `downloaded/calendar-unverified` jobs to complete. Evidence:
+`/tmp/gateway-calendar-audit-20261114.json` and `/tmp/gateway-calendar-audit.py`.
+
+### Deterministic SQLite lease cleanup (v11)
+
+Inspection found a remaining native-resource retention path in `HistoryStore.lease`:
+`with sqlite3.connect(...)` ends the transaction but does **not** close the
+connection. Every lease lookup left its connection to cyclic garbage collection,
+including during the subsequent long-lived file lease. An isolated real-SQLite
+control disabled cyclic GC, performed 200 production lease lookups, and measured
+OS resources: descriptors 3 → 203 and physical footprint +32,374,808 bytes.
+GC then closed the descriptors but the allocator retained the physical pages.
+With explicit `finally: db.close()` before the file lease, the same control
+kept descriptors at 3 and the physical footprint unchanged at all checkpoints.
+The control deliberately disables GC to expose lifetime semantics; it does not
+prove that this path alone explains v10's normal-GC whole-process trend.
+No quota, worker, deadline or lock protection changed. The regression keeps
+strong references to actual connections and asserts they are closed inside the
+lease, including a missing-job lookup. All 23 history-store tests pass after
+correcting a misplaced assertion in the new test. Evidence:
+`/tmp/gateway-lease-before-20261114.json`,
+`/tmp/gateway-lease-after-20261114.json`,
+`/tmp/gateway-history-lease-v11-fixed.xml`.
+The already-running v10 process does not contain this fix; its eventual full
+scan must not be presented as a post-v11 memory measurement.

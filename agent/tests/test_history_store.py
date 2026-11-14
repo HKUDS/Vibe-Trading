@@ -101,6 +101,32 @@ def test_running_lease_blocks_delete_and_cancel_keeps_committed_prefix(store):
     assert status["reserved"] == 0
 
 
+def test_lease_lookup_closes_sqlite_before_yield_even_on_missing_job(store, monkeypatch):
+    """Lease lifetime must not retain a catalog connection or rely on GC."""
+    import sqlite3
+
+    job = store.create(**spec())["id"]
+    connect = sqlite3.connect
+    connections = []
+
+    def tracked_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)  # Keep alive to rule out GC as cleanup.
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    for _ in range(20):
+        with store.lease(job):
+            with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+                connections[-1].execute("SELECT 1")
+    with pytest.raises(ValueError, match="Unknown history job"):
+        with store.lease("f" * 32):
+            pytest.fail("Missing job must not acquire a lease")
+    for connection in connections:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")
+
+
 def test_interrupted_reservation_is_reclaimed_on_reopen(store):
     job = store.create(**spec())["id"]
     with store.transaction() as db:

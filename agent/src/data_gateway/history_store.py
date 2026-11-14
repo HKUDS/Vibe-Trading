@@ -178,8 +178,13 @@ class HistoryStore:
         self._id(job)
         # Read only: callers may already hold the metadata write transaction.
         # Slots are allocated uniquely under that transaction, never UUID-hashed.
-        with sqlite3.connect(self.db_path, timeout=self.lock_timeout) as db:
+        db = sqlite3.connect(self.db_path, timeout=self.lock_timeout)
+        try:
             row = db.execute("SELECT lease_slot FROM jobs WHERE id=?", (job,)).fetchone()
+        finally:
+            # sqlite's transaction context does not close its connection. This
+            # lookup must release native pages/fds before the long-lived lease.
+            db.close()
         if row is None:
             raise ValueError("Unknown history job")
         with self._file_lock(f"lease-{row[0]}.lock", timeout):
