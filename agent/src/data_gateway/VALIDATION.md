@@ -1105,3 +1105,25 @@ verified rows with identical digest; invalid IDs/paths refused. Evidence:
 `/tmp/gateway-surfaces-v10-20261114.json`. This verifies those three actual
 surfaces, not the MCP transport nor migration of legacy research/backtests.
 The server and dataset were isolated from normal user state.
+
+### Completed v10 scenario components (hour/scan still pending)
+
+`/tmp/gateway-mixed-client-v10-20261114.json`: one HTTP/SSE client, 180 s,
+32 requests, six subscribed topics. Normal / WS-only outage / all-source
+outage / recovered rounds: only the three cold bar requests in the all-source
+outage returned 503; all recovered next round. All 12 option requests (including
+a second AAPL expiration) passed identity checks; all four completed-history
+pages succeeded. Four unfinished dataset reads returned the expected explicit
+409. Both crypto topics observed upstream WebSocket and REST fallback, then
+WebSocket again; stocks/options remained polled snapshots. No client transport
+error. This replaces the earlier option-starvation failure for scenario 28.
+
+`/tmp/gateway-quota-v10-20261114.json`: replayed 2,880 verified real records into
+288 distinct production Cache keys. Under unchanged defaults, byte quota
+forced eviction at 178 disk entries / 66,747,890 bytes, memory 8,249,742 bytes
+(22 entries); oldest key absent and newest intact after a new Cache instance.
+After the unchanged 120 s idle expiry, memory was zero and disk intact.
+Prune was manually polled once per second (not a housekeeping-thread test);
+report observation 151.85 s. Earlier live-cache probe separately verifies
+housekeeping and actual process restart. No additional source requests during
+quota filling and no fabricated observations.
