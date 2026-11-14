@@ -2157,3 +2157,101 @@ soak or cross-region network qualification.
 Evidence, controls, final test XML, traces and source-file fingerprints (no market
 price rows committed):
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v21/`.
+
+## v22 — complete 5,224-symbol mixed run (2026-11-15)
+
+**Coverage completed; clean first-attempt coverage and memory stability did not
+pass.** Production stayed at `8c5e73772` throughout. No resource limit, timeout,
+router implementation or process restart changed during this experiment.
+
+One full scan of the dated 2026-11-13 SH/SZ universe requested daily bars for
+2026-11-02..13 while ten five-year 5m jobs and 16 topics (two crypto WebSockets,
+fourteen equity bar refreshes) shared the server. The scan took **79m52s**;
+startup, 180-second idle cleanup and independent verification brought the total
+to **84m39s**. Test-controller memory is excluded from the OS process-tree samples.
+
+| Observation | Result |
+| --- | --- |
+| Terminal scan coverage | 5,224 / 5,224; zero unresolved symbols |
+| Acquisition | 1,568 batches; 6,270 symbol attempts; 1,046 symbol retries |
+| Transient omissions | 800 distinct symbols missed their first attempt; 305 incomplete batches |
+| Second-half retries | 548 additional symbol retries after 2,612 completed |
+| Request deadline | Zero 15-second request timeouts; slowest scan request 7.222s |
+| Source deadline | Two scan batches carried source-timeout diagnostics |
+| Streams | 10,743 SSE deliveries, including 9,561 WebSocket-tagged events; no transport task errors |
+| Retained history verified | 32 datasets, 1,378 chunks, 1,309,536 five-minute rows |
+| Peak process tree | Physical footprint 178.63 MiB; RSS 166.31 MiB |
+| After 180s idle | Footprint 174.75 MiB; RSS 36.88 MiB; RAM cache zero |
+| Final bounded disk use | Cache 1,562,504 bytes; historical storage 26,500,958 bytes; reservation zero |
+
+The SSE counter does not parse source-error payloads; transport continuity does
+not mean every bar refresh succeeded. Traces retain occupied BaoStock admission,
+Yahoo host pacing and HTTP route cooldown diagnostics. Final recovery does not
+erase first-attempt omissions. The raw `report.json` remains `passed: false`.
+
+### Later-half memory
+
+Physical-footprint medians by completed-scan quarter were **128.24, 146.28,
+152.00 and 158.89 MiB**. The second-half OLS slope was **+0.341 MiB/minute**.
+Cache cleanup worked, but whole-process footprint remained elevated. This run
+therefore does **not** establish stable whole-process memory. It also does not
+identify a leak's cause: retained catalogs grew from ten to 32 jobs, an older
+unsupported history range exercised failures, and the v21 test wrapper snapshots
+the catalog twice per historical chunk. Separating live retained objects,
+allocator retention and instrumentation cost requires a controlled follow-up.
+No forced GC or tracemalloc was used. Legacy raw CPU-time fields are excluded
+because their macOS timebase conversion was not validated; RSS/footprint were
+independently cross-checked against the OS.
+
+### Historical load and verification scope
+
+The first ten 2021-11-14..2026-11-13 jobs completed all 610 chunks around minute
+27. An explicit second wave requested 2016-11-14..2021-11-13; the first partial
+month returned no matching minute grid (624 missing bars), and alternatives
+failed. These ten empty jobs were paused, their failure metadata preserved, and
+they were removed through the normal API. They are failures, not successful
+historical-download pressure.
+
+Further explicit ten-job waves repeated the known-working 2021..2026 range in
+new datasets to sustain later load. This is intentional stress acquisition, not
+refetching committed chunks within one job. Three effective waves completed
+30 datasets; the final ten-job wave reached three or four chunks per job before
+the scan ended. Wave transitions have brief gaps, so ten successful downloads
+were not active at every instant. The last wave retired eight completed datasets
+through the API after recording metadata to stay within the 32-job catalog cap;
+this explains the retained-chunk drop in the plot. No raw-data archive bypassed
+the quota.
+
+At shutdown, the retained catalog held **22 complete and ten manually paused**
+jobs. Independent verification checked all retained gzip hashes, symbol/ordered
+5m grids and expected sessions via fresh BaoStock calendar/daily-status queries.
+It covers all 1,309,536 retained rows, including partial prefixes, not the eight
+already-retired datasets. Across retained and retired jobs, 1,866 chunks were
+committed. Server PID 3331 and listener 8926 were independently confirmed absent.
+
+### Limits, reconciliation and reproducibility
+
+Unchanged limits: **8 MiB RAM / 64 MiB disk cache / 2 MiB entries / four source
+workers / sixteen pending requests / 6s source and 15s request deadlines / one
+history worker / four history futures / 256 MiB history quota / 32 catalog jobs**.
+
+The original trace mixed historical fallback calls with scan calls: raw
+`completed_scan_requests: 1704` includes **136 historical fallback requests**.
+`gateway_full_scan_report.partition_bars` separates them and requires all three
+independent queue totals to reconcile: **1,568 batches, 6,270 requested identities,
+1,046 missing identities**. Final quarter boundaries use observed scan progress,
+not input-symbol ordering. Future traces now carry interval/source/date fields
+explicitly; the original measurement and raw report were preserved unchanged.
+The harness's `passed` field tests clean scan coverage; memory is a separate
+reported measurement, never implicitly passed by that flag.
+
+Drivers: `tools/gateway_full_scan_probe.py`, `gateway_full_scan_wave.py` and
+`gateway_full_scan_report.py`; reproduction commands are in the gateway README.
+Only test/reporting tools and documentation changed this turn. The exact launched
+driver and v21 server instrumentation, production hashes, raw metadata and final
+summary/plot are preserved outside Git (no market price rows committed):
+
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v22/`.
+
+Bounded real datasets remain at
+`/Users/wuhaozhe/.vibe-trading/full-scan-ten-v22-20261115/`.

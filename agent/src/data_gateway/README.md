@@ -618,3 +618,38 @@ PYTHONPATH=agent:tools VIBE_TRADING_DATA_CACHE=0 python tools/gateway_scan_conte
 This simulates the observed blocked primary sources and an occupied BaoStock
 session, then fetches real Yahoo bars once within the unchanged default budgets.
 It labels this evidence separately from the all-real mixed restart run.
+
+
+### Complete universe with ten history jobs and live streams (macOS)
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_full_scan_probe.py \
+  --root ~/.vibe-trading/full-scan-NEW --universe /tmp/real-universe.json
+PYTHONPATH=agent:tools python tools/gateway_full_scan_report.py \
+  --root ~/.vibe-trading/full-scan-NEW --output /tmp/full-scan-report
+```
+
+The universe must contain the real 5,224-symbol dated snapshot. This fixed-date
+regression uses the November 2026 scan window and 2021..2026 five-year histories.
+It runs one server without restarts, samples OS parent/child footprint and RSS,
+keeps production resource limits/deadlines unchanged, then observes 180 seconds
+of idle cleanup and independently verifies retained historical prefixes. The
+experiment wall-clock cap is separate from the unchanged 15-second request
+budget. `passed` requires clean scan coverage without retries; memory trend and
+SSE source payload quality require separate assessment.
+
+If all ten historical jobs finish while the scan is still running, explicitly
+add another wave (no automatic replenishment service):
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_full_scan_wave.py \
+  --root ~/.vibe-trading/full-scan-NEW \
+  --start-date 2021-11-14 --end-date 2026-11-13
+```
+
+The helper refuses unfinished prior jobs and records transitions, retiring only
+completed test datasets when necessary to obey the existing 32-job catalog cap.
+These are new datasets for load, not resume requests for committed chunks.
+The report reconciles scan identities/batches against queue counters and separates
+historical fallback calls. See `VALIDATION.md` v22 for the complete run, its
+transient omissions, unsupported older range and unresolved memory increase.

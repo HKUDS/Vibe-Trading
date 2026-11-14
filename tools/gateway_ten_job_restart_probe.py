@@ -56,6 +56,8 @@ def server(args):
         value = original_bars(self, **params)
         if background.get():
             trace({"event": "bars", "codes": params["codes"], "elapsed": time.monotonic() - started,
+                   "interval": params.get("interval", "1D"), "requested_source": params.get("source", "auto"),
+                   "start_date": params.get("start_date"), "end_date": params.get("end_date"),
                    "ok": value.get("ok"), "error": value.get("error"),
                    "returned": list(value.get("data", {}).get("_provenance", {})),
                    "diagnostics": value.get("data", {}).get("_diagnostics", {})})
