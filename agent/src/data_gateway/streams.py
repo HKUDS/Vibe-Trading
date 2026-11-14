@@ -208,6 +208,9 @@ class StreamHub:
         self.listeners: set[Listener] = set()
         self.sequence = 0
         self.closed = False
+        # Only two synchronous acquisitions may occupy the shared async executor.
+        # Remaining topics wait as cancellable tasks, not blocked OS threads.
+        self.acquisitions = asyncio.Semaphore(2)
 
     def subscribe(self, topics):
         topics = tuple(dict.fromkeys(topics))
@@ -261,6 +264,50 @@ class StreamHub:
         for listener in channel.listeners:
             listener.put(topic.key, value)
 
+    async def _acquire(self, function, *args, **kwargs):
+        from functools import partial
+
+        await self.acquisitions.acquire()
+        try:
+            future = asyncio.get_running_loop().run_in_executor(None, partial(function, *args, **kwargs))
+        except BaseException:
+            self.acquisitions.release()
+            raise
+
+        def finished(result):
+            self.acquisitions.release()
+            if not result.cancelled():
+                result.exception()  # Retrieve errors even after the subscriber leaves.
+
+        future.add_done_callback(finished)
+        # Cancellation detaches the subscriber, not the running thread. Keep its
+        # slot until real completion so churn cannot multiply blocked workers.
+        return await asyncio.shield(future)
+
+    def _bar_snapshot(self, topic, today, days):
+        from backtest.loaders.base import resample_bars, source_interval
+
+        value = self.gateway.bars(
+            codes=[topic.symbol],
+            start_date=(today - timedelta(days=days)).isoformat(),
+            end_date=today.isoformat(),
+            interval=source_interval(topic.interval),
+            max_rows=100,
+        )
+        if value.get("ok") and topic.interval in {"1W", "1M"}:
+            import pandas as pd
+
+            rows = value.get("data", {}).get(topic.symbol)
+            if not isinstance(rows, list) or not rows:
+                return {"ok": False, "error": "Cannot aggregate sampled or missing daily bars"}
+            frame = pd.DataFrame(rows).set_index("trade_date")
+            frame.index = pd.to_datetime(frame.index)
+            frame = resample_bars(frame, topic.interval)
+            frame.index = frame.index.strftime("%Y-%m-%d")
+            value["data"][topic.symbol] = json.loads(frame.reset_index().to_json(orient="records"))
+            value.setdefault("gateway", {}).update(base_interval="1D", derived_interval=topic.interval)
+        return value
+
     async def _run(self, topic):
         retry = 1
         while True:
@@ -271,20 +318,22 @@ class StreamHub:
                 if topic.kind == "bars":
                     today = datetime.now(timezone.utc).date()
                     days = 2 if topic.interval in {"1m", "5m", "15m", "30m", "1H", "4H"} else 40
-                    value = await asyncio.to_thread(
-                        self.gateway.bars,
-                        codes=[topic.symbol],
-                        start_date=(today - timedelta(days=days)).isoformat(),
-                        end_date=today.isoformat(),
-                        interval=topic.interval,
-                        max_rows=100,
+                    value = await self._acquire(
+                        self._bar_snapshot,
+                        topic,
+                        today,
+                        days,
                     )
                     value.setdefault("gateway", {}).update({"quality": "historical_bars", "transport": "rest_poll"})
                 else:
-                    value = await asyncio.to_thread(
+                    value = await self._acquire(
                         self.gateway.options_chain, topic.symbol, topic.expiration, full=True, allow_stale=True
                     )
                 self.publish(topic, "snapshot" if value.get("ok") else "source_error", value)
+                if not value.get("ok"):
+                    await asyncio.sleep(min(30, max(retry, value.get("retry_after_seconds", 1))))
+                    retry = min(30, retry * 2)
+                    continue
                 retry = 1
                 refreshing = value.get("gateway", {}).get("refreshing")
                 await asyncio.sleep(3 if refreshing else max(self.config.stream_poll, self.config.ttl))

@@ -589,12 +589,16 @@ export interface LabJob {
   result?: LabResult; error?: string; request?: Record<string, unknown>;
 }
 
+export interface ScanJob { id: string; state: string; total: number; completed: number; failed: number; remaining: number; retries: number; last_error: string | null }
 export interface HistoryStorage { quota_bytes: number; retention_days: number; used_bytes: number; reserved_bytes: number; path: string }
 export interface HistorySpec { codes: string[]; start_date: string; end_date: string; interval: string }
 export interface HistoryJob { id: string; state: string; pinned: number; error: string | null; spec?: HistorySpec; rows?: number; completed_chunks?: number; total_chunks?: number }
 export interface HistoryPlan { chunks: number; estimated_max_rows: number; estimated_uncompressed_bytes: number; storage: HistoryStorage }
 
 export const api = {
+  dataScans: () => request<ScanJob[]>("/data/scans"),
+  createDataScan: (spec: HistorySpec) => request<ScanJob>("/data/scans", { method: "POST", body: JSON.stringify(spec) }),
+  cancelDataScan: (id: string) => request<ScanJob>(`/data/scans/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
   historyStorage: () => request<HistoryStorage>("/data/history/storage"),
   saveHistoryStorage: (quota_bytes: number, retention_days: number) => request<HistoryStorage>("/data/history/storage", { method: "PUT", body: JSON.stringify({ quota_bytes, retention_days }) }),
   historyJobs: () => request<HistoryJob[]>("/data/history/jobs"),

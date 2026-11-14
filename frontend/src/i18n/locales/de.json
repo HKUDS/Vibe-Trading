@@ -2802,6 +2802,11 @@
     "resume": "Fortsetzen / prüfen",
     "unpin": "Bereinigung erlauben",
     "pin": "Behalten",
-    "delete": "Löschen"
+    "delete": "Löschen",
+    "scanStart": "Tagesdaten in Warteschlange stellen",
+    "scanHint": "Verwendet die Symbole und Daten oben. Abonnements haben Vorrang; Fehler werden erneut versucht. Fortschritt verfällt bei Inaktivität, Daten nutzen das bestehende Cache-Limit. Es wird kein vollständiger Marktdatensatz gespeichert.",
+    "scanProgress": "Abgerufen {{completed}} / {{total}} · Fehler {{failed}} · Wiederholungen {{retries}}",
+    "scanPartial": "Teilweise abgerufen",
+    "scanCancelled": "Abgebrochen"
   }
 }

@@ -1,6 +1,7 @@
 """Capability gateway: bounded work, single-flight, cache and source recovery."""
 
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
+from contextvars import copy_context
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -11,6 +12,7 @@ from typing import Any, Callable
 from .cache import Cache
 from .config import Config
 from .routing import NetworkRouter
+from .scheduling import RequestQueue, SourcePacer, background, deadline
 
 
 class GatewayError(Exception):
@@ -45,9 +47,12 @@ class MarketDataGateway:
         self.flights: dict[str, Future] = {}
         self.failures: dict[tuple[str, str], float] = {}
         self.refresh_after: dict[str, float] = {}
-        self.coordinators = ThreadPoolExecutor(max_workers=min(config.workers, 2), thread_name_prefix="gateway-request")
+        self.coordinators = RequestQueue(min(config.workers, 2), config.pending)
+        self.background_slots = threading.BoundedSemaphore(1)
+        self.pacer = SourcePacer(config.source_spacing)
         self.sources = ThreadPoolExecutor(max_workers=config.workers, thread_name_prefix="gateway-source")
         self.source_slots = threading.BoundedSemaphore(config.workers)
+        self.scans = None
         self.stop = threading.Event()
         self.cleaner = threading.Thread(target=self._clean, daemon=True, name="gateway-cache-cleanup")
         self.cleaner.start()
@@ -66,10 +71,21 @@ class MarketDataGateway:
 
     def close(self):
         """Stop housekeeping and cancel queued work without spawning replacements."""
+        if self.scans is not None:
+            self.scans.close()
         self.stop.set()
         self.cleaner.join(timeout=1)
         self.coordinators.shutdown(wait=False, cancel_futures=True)
         self.sources.shutdown(wait=False, cancel_futures=True)
+
+    def scan_queue(self):
+        """Lazily create the single bounded background scan scheduler."""
+        from .scans import ScanQueue
+
+        with self.lock:
+            if self.scans is None:
+                self.scans = ScanQueue(self)
+            return self.scans
 
     def _key(self, capability: str, params: dict) -> str:
         return hashlib.sha256(
@@ -113,7 +129,8 @@ class MarketDataGateway:
                 and time.monotonic() >= self.refresh_after.get(key, 0)
                 and len(self.flights) < self.config.pending
             ):
-                flight = self.coordinators.submit(self._fetch, capability, params, key, cacheable)
+                until = time.monotonic() + self.config.request_timeout
+                flight = self.coordinators.submit(self._fetch, capability, params, key, cacheable, until)
                 self.flights[key] = flight
                 flight.add_done_callback(lambda f: self._done(key, f))
         if cached and allow_stale:
@@ -129,6 +146,7 @@ class MarketDataGateway:
         try:
             return json.loads(json.dumps(flight.result(timeout=self.config.request_timeout), allow_nan=False))
         except TimeoutError:
+            flight.cancel()  # Queued work must not outlive the caller deadline.
             return {
                 "ok": False,
                 "error": "Data request timed out; retry shortly",
@@ -142,12 +160,20 @@ class MarketDataGateway:
             self.flights.pop(key, None)
             if future.cancelled() or future.exception() or not future.result().get("ok"):
                 # Bounded by pending requests plus active cooldowns, cleaned below.
-                self.refresh_after[key] = time.monotonic() + self.config.cooldown
+                delay = self.config.cooldown
+                if future.cancelled():
+                    delay = 1
+                elif not future.exception():
+                    delay = min(delay, future.result().get("retry_after_seconds", delay))
+                self.refresh_after[key] = time.monotonic() + delay
                 while len(self.refresh_after) > self.config.entries:
                     self.refresh_after.pop(next(iter(self.refresh_after)))
 
-    def _fetch(self, capability: str, params: dict, key: str, cacheable: bool) -> dict:
+    def _fetch(self, capability: str, params: dict, key: str, cacheable: bool, until: float) -> dict:
         started = time.monotonic()
+        deadline.set(until)
+        if started >= until:
+            return {"ok": False, "error": "Request expired in queue"}
         routes = self.providers[capability]
         baseline = self.config.sources if capability == "options_chain" else tuple(routes)
         order = self.router.order(capability, baseline)
@@ -160,7 +186,7 @@ class MarketDataGateway:
             if cooling or self.router.cooling(capability, source):
                 attempts.append({"source": source, "status": "cooldown"})
                 continue
-            remaining = self.config.request_timeout - (time.monotonic() - started)
+            remaining = until - time.monotonic()
             if remaining <= 0:
                 break
             attempt_started = time.monotonic()
@@ -171,7 +197,7 @@ class MarketDataGateway:
                         return {
                             **payload,
                             "gateway": {"attempts": [{"source": source, "status": "unavailable"}]},
-                            "retry_after_seconds": self.config.cooldown,
+                            "retry_after_seconds": payload.get("retry_after_seconds", self.config.cooldown),
                         }
                 else:
                     payload = self.invoke(routes[source], params, min(remaining, self.config.source_timeout))
@@ -218,14 +244,36 @@ class MarketDataGateway:
 
     def invoke(self, function, params, timeout):
         """Bound actual source work, retaining timed-out threads in their slots."""
+        is_background = background.get()
+        if is_background and not self.background_slots.acquire(blocking=False):
+            raise GatewayBusy("Background source capacity reached")
         if not self.source_slots.acquire(blocking=False):
+            if is_background:
+                self.background_slots.release()
             raise GatewayBusy("Data source capacity reached")
         try:
-            future = self.sources.submit(function, **params)
+            context = copy_context()
+
+            def acquire():
+                from backtest.loaders.acquisition import source_background, source_deadline
+
+                source_background.set(is_background)
+                source_deadline.set(time.monotonic() + timeout)
+                return function(**params)
+
+            future = self.sources.submit(context.run, acquire)
         except Exception:
             self.source_slots.release()
+            if is_background:
+                self.background_slots.release()
             raise
-        future.add_done_callback(lambda _: self.source_slots.release())
+
+        def release(_):
+            self.source_slots.release()
+            if is_background:
+                self.background_slots.release()
+
+        future.add_done_callback(release)
         return future.result(timeout=timeout)
 
     def _historical_bars(self, routing_policy=None, **params):
@@ -262,11 +310,16 @@ class MarketDataGateway:
 
     def status(self) -> dict:
         """Return limits and occupancy, never cached market data or credentials."""
+        from .isolated import status as worker_status
+
         with self.lock:
             active = len(self.flights)
         return {
             "ok": True,
             "active_requests": active,
+            "scheduler": self.coordinators.status(),
+            "scans": self.scans.status() if self.scans is not None else [],
+            "heavy_worker": worker_status(),
             "cache": self.cache.stats(),
             "limits": {
                 "disk_bytes": self.config.disk_bytes,

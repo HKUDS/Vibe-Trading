@@ -60,6 +60,33 @@ def run_history(args):
         store.close()
 
 
+def add_scan_parser(commands):
+    """Register a bounded scan command shared with the application CLI."""
+    parser = commands.add_parser("scan", help="Queue and await a background bar acquisition scan")
+    parser.add_argument("codes", nargs="+")
+    parser.add_argument("--start", required=True)
+    parser.add_argument("--end", required=True)
+    parser.add_argument("--interval", default="1D")
+
+
+def run_scan(args):
+    """Run a process-local scan until completion, printing progress as JSON."""
+    import time
+
+    gateway = get_gateway()
+    queue = gateway.scan_queue()
+    try:
+        job = queue.create(args.codes, start_date=args.start, end_date=args.end, interval=args.interval)
+        while True:
+            print(json.dumps(job), flush=True)
+            if job["state"] in {"complete", "partial", "cancelled"}:
+                return 0 if job["complete"] else 1
+            time.sleep(1)
+            job = queue.status(job["id"])
+    finally:
+        gateway.close()
+
+
 def main(argv=None):
     """Expose the same gateway used by HTTP and agent tools."""
     parser = argparse.ArgumentParser(description="Unified local data gateway")
@@ -79,7 +106,10 @@ def main(argv=None):
     bars.add_argument("--start", required=True)
     bars.add_argument("--end", required=True)
     add_history_parser(commands)
+    add_scan_parser(commands)
     args = parser.parse_args(argv)
+    if args.command == "scan":
+        raise SystemExit(run_scan(args))
     if args.command == "history":
         return run_history(args)
     gateway = get_gateway()

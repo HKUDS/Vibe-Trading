@@ -379,10 +379,12 @@ def fetch_market_data(
                     attempt_src, remaining, exc,
                 )
                 continue
+            for symbol in remaining:
+                if symbol not in partial:
+                    failure = getattr(loader, "fetch_errors", {}).get(loader_symbols[symbol], "no_data")
+                    record([symbol], serving_source, failure)
             if not partial:
-                record(remaining, serving_source, "no_data")
                 continue
-            record([symbol for symbol in remaining if symbol not in partial], serving_source, "no_data")
             # The resolver can substitute an unavailable optional loader before
             # fetch runs. Attribute every returned symbol to its actual provider.
             serving_source = getattr(loader_cls, "name", None) or attempt_src
@@ -544,7 +546,7 @@ def fetch_market_data(
             code: {"attempts": diagnostics.get(code, []), "recovery": (
                 "Use search_symbol to confirm the symbol and venue; check supported history/interval. source_unavailable means "
                 "the source needs configuration or an optional dependency; fetch_failed means "
-                "the request failed; no_data means that source returned no bars for this range. "
+                "the request failed; network_failure means a transport error; no_data means that source returned no bars for this range. "
                 "For recent intraday bars, narrow the date range or request daily bars."
             )} for code in unresolved
         }

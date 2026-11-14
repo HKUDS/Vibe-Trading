@@ -2802,6 +2802,11 @@
     "resume": "Resume / verify",
     "unpin": "Allow cleanup",
     "pin": "Keep",
-    "delete": "Delete"
+    "delete": "Delete",
+    "scanStart": "Queue daily bar acquisition",
+    "scanHint": "Uses the symbols and dates above. Background acquisition yields to subscriptions and retries failures. Progress expires after inactivity; acquired bars share the existing cache quota. This does not save a complete market dataset.",
+    "scanProgress": "{{completed}} / {{total}} acquired · {{failed}} failed · {{retries}} retries",
+    "scanPartial": "Partially acquired",
+    "scanCancelled": "Cancelled"
   }
 }

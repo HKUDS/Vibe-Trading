@@ -8,7 +8,7 @@ Only operational metadata is saved. No quotes or credentials enter the report.
 
 import argparse
 import asyncio
-from collections import Counter
+from collections import Counter, deque
 from gateway_soak_history import Timings, HistoryDriver, instrument_history, abort_history
 from contextlib import asynccontextmanager
 import ctypes
@@ -259,6 +259,8 @@ async def exercise(args, output):
             if active_started
             else 0,
             "history_enabled": args.history,
+            "scale_universe": scale_universe,
+            "scan_job": scan_job,
             "history_directory": str(args.history_dir) if args.history else None,
             "elapsed_s": round(time.monotonic() - started, 2),
             "phase": phase,
@@ -267,13 +269,15 @@ async def exercise(args, output):
             "checks": checks,
             "counts": dict(counts),
             "topics": observed,
-            "method": "real upstreams; child-only socket abort/source-refusal faults; no forced GC; default gateway limits",
+            "method": "real upstreams; child-only socket abort/source-refusal faults; no forced GC; unchanged workers/pending/cache budgets; topic cap 64 only when --universe is supplied",
         }
         temporary = output.with_suffix(".tmp")
         temporary.write_text(json.dumps(document, indent=2))
         temporary.replace(output)
 
-    async with httpx.AsyncClient(timeout=25, limits=httpx.Limits(max_connections=16)) as client:
+    scale_universe = json.loads(args.universe.read_text()) if args.universe else None
+    scan_job = None
+    async with httpx.AsyncClient(timeout=25, limits=httpx.Limits(max_connections=16, keepalive_expiry=2)) as client:
         for _ in range(120):
             try:
                 await client.get(url + "/_soak/metrics")
@@ -285,9 +289,24 @@ async def exercise(args, output):
 
         async def stream(topics, hold=None):
             counts["subscribes"] += 1
+            trace_events = deque(maxlen=24)
+
+            async def trace(name, info):
+                trace_events.append(
+                    {
+                        "event": name,
+                        "elapsed_s": round(time.monotonic() - started, 4),
+                        "exception": repr(info.get("exception"))[:160] if "exception" in info else None,
+                    }
+                )
+
             try:
                 async with client.stream(
-                    "GET", url + "/data/stream", params={"topics": ",".join(topics)}, timeout=None
+                    "GET",
+                    url + "/data/stream",
+                    params={"topics": ",".join(topics)},
+                    timeout=None,
+                    extensions={"trace": trace},
                 ) as response:
                     response.raise_for_status()
                     async for line in response.aiter_lines():
@@ -307,6 +326,16 @@ async def exercise(args, output):
                             )
                             event = value["event"]
                             row["snapshots" if event == "snapshot" else "errors"] += 1
+                            if event != "snapshot":
+                                reasons = row.setdefault("error_reasons", {})
+                                reason = (phase + ":" + str(payload.get("error", "unknown")))[:160]
+                                if len(reasons) >= 16 and reason not in reasons:
+                                    reason = "other"
+                                reasons[reason] = reasons.get(reason, 0) + 1
+                            fetched = payload.get("gateway", {}).get("fetched_at")
+                            if event == "snapshot" and fetched and fetched != row.get("last_fetched_at"):
+                                row["distinct_acquisitions"] = row.get("distinct_acquisitions", 0) + 1
+                                row["last_fetched_at"] = fetched
                             row["last_s"] = round(time.monotonic() - started, 2)
                             transport = payload.get("gateway", {}).get("transport", "snapshot")
                             row["transports"][transport] = row["transports"].get(transport, 0) + 1
@@ -342,6 +371,7 @@ async def exercise(args, output):
                         "error_type": type(exc).__name__,
                         "error": str(exc)[:200],
                         "cause_type": type(exc.__cause__).__name__ if exc.__cause__ else None,
+                        "trace": list(trace_events),
                         "cancel_requested": bool(asyncio.current_task().cancelling()),
                         "phase": phase,
                     }
@@ -411,6 +441,7 @@ async def exercise(args, output):
                     "complete": value.get("complete"),
                     "request": body,
                     "shape": shape,
+                    "provenance": value.get("data", {}).get("_provenance"),
                     "diagnostics": value.get("data", {}).get("_diagnostics"),
                     "gateway": value.get("gateway"),
                     "error": value.get("error"),
@@ -460,10 +491,10 @@ async def exercise(args, output):
             chain = (await client.get(url + "/data/options", params={"ticker": "AAPL", "full": "true"})).json()
             dates = chain.get("data", {}).get("expirations", [])
             checks.append({"kind": "expiration_discovery", "ok": chain.get("ok"), "count": len(dates)})
-            if len(dates) > 1:
+            if not scale_universe and len(dates) > 1:
                 expiry_topic = f"options:AAPL:{dates[1]}"
                 base.append(asyncio.create_task(stream([expiry_topic])))
-            if len(dates) > 2:
+            if not scale_universe and len(dates) > 2:
                 base.append(asyncio.create_task(stream([f"options:AAPL:{dates[-1]}"])))
             today = datetime.now(timezone.utc).date()
             for days, interval in ((2, "1m"), (365, "1D"), (1825, "1M")):
@@ -478,26 +509,57 @@ async def exercise(args, output):
                     },
                 )
             prior_fault_probe = None
-            for group in groups:
+            if scale_universe:
+                selected = scale_universe["codes"][:30]
+                watched = [f"bars:{code}:{interval}" for code in selected for interval in ("1D", "1W")]
+                for pos in range(0, len(watched), 8):
+                    base.append(asyncio.create_task(stream(watched[pos : pos + 8])))
+                await pause(args.warmup)
+            for group in [] if scale_universe else groups:
                 active = [asyncio.create_task(stream(group))]
                 await pause(args.warmup / len(groups))
                 await stop(active)
             await client.post(url + "/_soak/slow", params={"enabled": "true"})
             (await client.post(url + "/_soak/trace", params={"label": "warm"})).raise_for_status()
             active_started = time.monotonic()
+            if scale_universe:
+                response = await client.post(
+                    url + "/data/scans",
+                    json={
+                        "codes": scale_universe["codes"],
+                        "start_date": str(today - timedelta(days=30)),
+                        "end_date": str(today),
+                        "interval": "1D",
+                        "max_rows": 100,
+                    },
+                )
+                response.raise_for_status()
+                scan_job = response.json()
             if args.history:
                 history_driver = HistoryDriver(client, url, checks, started)
                 history_task = asyncio.create_task(history_driver.run())
             churn_task = asyncio.create_task(churn(active_started + args.cycles * args.cycle_seconds))
             for current_cycle in range(args.cycles):
                 phase = "online"
-                active = [asyncio.create_task(stream(groups[current_cycle % len(groups)]))]
+                active = [] if scale_universe else [asyncio.create_task(stream(groups[current_cycle % len(groups)]))]
                 await set_fault("online")
                 await pause(args.cycle_seconds * 0.25)
                 if prior_fault_probe is not None:
                     await bar_probe("recovered_bar_probe", prior_fault_probe)
                     await bar_probe("hot_bar_probe", prior_fault_probe)
                 await latency_probe()
+                if scale_universe:
+                    await bar_probe(
+                        "heavy_sdk_probe",
+                        {
+                            "codes": ["BTC-USDT"],
+                            "start_date": str(today - timedelta(days=13)),
+                            "end_date": str(today - timedelta(days=1)),
+                            "interval": "1D",
+                            "source": "ccxt",
+                            "max_rows": 100 + current_cycle,
+                        },
+                    )
                 if history_task and history_task.done():
                     await history_task  # A dead producer must fail the test, not fake overlap.
                 phase = "ws_offline"
@@ -535,10 +597,14 @@ async def exercise(args, output):
                     flush=True,
                 )
             await churn_task
+            if scan_job:
+                scan_job = (await client.get(url + "/data/scans/" + scan_job["id"])).json()
             active_finished = time.monotonic()
         finally:
             await set_fault("online")
             await stop(base)
+            if scan_job and scan_job.get("state") in {"running", "queued"}:
+                await client.post(url + "/data/scans/" + scan_job["id"] + "/cancel")
             if history_driver:
                 await history_driver.finish(history_task)
             await client.post(url + "/_soak/slow", params={"enabled": "false"})
@@ -559,6 +625,9 @@ async def exercise(args, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--universe", type=Path, help="Real universe JSON from gateway_scale_probe.universe; enables 64 topics + scan"
+    )
     parser.add_argument("--history", action="store_true")
     parser.add_argument("--history-dir", type=Path)
     parser.add_argument("--server", action="store_true")
@@ -579,6 +648,8 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="vibe-gateway-soak-cache-") as directory:
         environment = dict(os.environ, VIBE_GATEWAY_CACHE_DIR=directory)
+        if args.universe:
+            environment["VIBE_GATEWAY_STREAM_TOPICS"] = "64"
         if args.history:
             environment.update(VIBE_GATEWAY_HISTORY_DIR=str(args.history_dir), VIBE_GATEWAY_SOAK_HISTORY="1")
         log = args.output.with_suffix(".server.log")

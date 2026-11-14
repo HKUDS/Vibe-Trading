@@ -22,7 +22,22 @@ from typing import Callable, Protocol, TypeVar, runtime_checkable
 
 import pandas as pd
 
+from .acquisition import source_background as source_background, source_deadline as source_deadline
+
 logger = logging.getLogger(__name__)
+
+
+
+def acquisition_error_kind(exc: Exception) -> str:
+    """Classify transport failures without retaining exception tracebacks or bodies."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, (OSError, TimeoutError)):
+            return "network_failure"
+        exc = exc.__cause__ or exc.__context__
+    return "fetch_failed"
+
 
 
 # The supported LSE contract settles in GBP. Yahoo may declare an individual

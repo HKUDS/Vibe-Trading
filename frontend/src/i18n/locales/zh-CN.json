@@ -2802,6 +2802,11 @@
     "resume": "续传／校验",
     "unpin": "允许自动清理",
     "pin": "固定保留",
-    "delete": "删除"
+    "delete": "删除",
+    "scanStart": "排队获取日线",
+    "scanHint": "使用上方股票和日期。后台取数为订阅让出资源，失败后自动重试。进度闲置后清理，数据沿用现有缓存配额；不会保存完整市场数据集。",
+    "scanProgress": "已获取 {{completed}} / {{total}} · 失败 {{failed}} · 重试 {{retries}}",
+    "scanPartial": "部分获取",
+    "scanCancelled": "已取消"
   }
 }

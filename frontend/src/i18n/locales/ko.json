@@ -2802,6 +2802,11 @@
     "resume": "재개 / 검증",
     "unpin": "자동 정리 허용",
     "pin": "보관",
-    "delete": "삭제"
+    "delete": "삭제",
+    "scanStart": "일봉 수집 대기열에 추가",
+    "scanHint": "위 종목과 기간을 사용합니다. 구독을 우선하고 실패 시 재시도합니다. 미사용 진행 정보는 정리되며 데이터는 기존 캐시 한도를 따릅니다. 전체 시장 데이터셋을 저장하지 않습니다.",
+    "scanProgress": "수집 {{completed}} / {{total}} · 실패 {{failed}} · 재시도 {{retries}}",
+    "scanPartial": "일부 수집",
+    "scanCancelled": "취소됨"
   }
 }

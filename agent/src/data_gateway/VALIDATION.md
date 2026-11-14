@@ -572,3 +572,61 @@ path, and a bounded lifecycle for heavy SDK allocations. The three churn read
 errors and BaoStock session failures need discriminating controls. A new long
 run is required after any production fix; the completed run above measures the
 unchanged production implementation at `4981ed047`.
+
+## Combined-load repair (2026-11-14, in progress)
+
+The earlier hour and separate scale run above remain failed/limited evidence;
+they are not relabelled as passing after code changes.
+
+Confirmed changes before the next hour:
+
+- Two bounded request coordinators now prioritize foreground work; at most one
+  background acquisition/source call runs. Pending=16 and source workers=4 stay
+  unchanged. Absolute deadlines cancel expired queue entries; cancelled entries
+  cannot accumulate under repeated re-admission. Subscription acquisition slots
+  remain held until the actual thread exits, including after unsubscribe.
+- Scan API/CLI/agent/MCP and the storage page enqueue at most 10,000 total symbols
+  in four process-local jobs. Batches contain at most eight symbols and source
+  admission is weighted by batch size. Only missing symbols retry, with capped
+  exponential backoff. These jobs report acquisition coverage and do not promise
+  persistent whole-market datasets. Cache quotas remain RAM8/disk64 MiB.
+- Daily/weekly/monthly watchlists share daily acquisition and existing resampling.
+  BaoStock sessions prioritize foreground reads with a background turn after four
+  foreground admissions. Local SDK admission failure returns `source_busy`, not a
+  provider network failure; SDK/socket serialization remains intact.
+- Tencent/Eastmoney/AKShare now expose swallowed transport errors as structured
+  per-symbol diagnostics. Empty-symbol responses remain `no_data`. A fresh live
+  Tencent 501 control returned `server: stgw` and a redirect to
+  `waf.tencent.com/501page.html`: this is an observed WAF response, not proof of
+  rate limiting or of the exact rule that caused it. Routing cools it down and
+  switches compatible providers; it does not bypass the WAF.
+- Reusing one CCXT exchange for twelve real calls eliminated repeated growth but
+  retained a large first-allocation footprint. The selected approach instead runs
+  one bounded short-lived interpreter per CCXT request, kills/reaps it on deadline,
+  and exposes its PID/footprint. Twelve real isolated acquisitions all returned
+  13 BTC daily bars; post-call parent footprint stayed about 79.5–82.1 MiB,
+  versus the previous in-process allocation controls documented above. This alone
+  does not measure simultaneous parent+child peak; the new hour includes a 0.5s
+  independent parent/child observer and repeated explicit CCXT probes.
+- A real local HTTP/SSE transport control reproduced empty `ReadError('')` when
+  client/server keep-alive expiry coincided: 1,600 requests yielded 82 ReadErrors
+  and one RemoteProtocolError. Earlier client retirement yielded 1,600 successes,
+  no errors. The soak client now uses 2s expiry before Uvicorn's 5s expiry and
+  records bounded HTTP transport traces on every error. The original three events
+  lacked traces, so their precise retrospective cause cannot be uniquely proven.
+  This correction is in the test/client pooling path; source errors are not hidden.
+
+Short pilots used real 5,224-symbol SH/SZ inventory, 64 simultaneous topics and
+real five-year downloads in one service. They exposed source-health and BaoStock
+contention issues and were followed by the fixes above; they are not substitutes
+for the requested hour. A final live eight-stock BaoStock batch control returned
+all eight symbols in 2.018 seconds without raising resource limits.
+
+Legacy MCP size tests (`test_get_market_data_size.py`, seven failures) expect
+large results inline, while the existing MCP tool spools them. Baseline and current
+300-row market-data output were byte-identical; the baseline/current
+`get_market_data` function AST was identical. These failures are pre-existing
+contract drift, not a reason to relax gateway verification.
+
+Formal combined-hour result: pending. See the next appended result before making
+any memory-stability or full-market coverage claim.

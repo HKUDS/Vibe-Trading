@@ -2557,7 +2557,8 @@ def history_data(action: str, job: str | None = None, codes: list[str] | None = 
     """Plan/resume quota-bounded SH/SZ minute datasets; read complete data in pages.
 
     Actions: plan, create, start, status, rows, cancel, pin, unpin, delete,
-    storage, prune. Plan/create require codes and settled ISO dates. Other
+    storage, prune, scan_create, scan_status, scan_cancel. Scans are process-local
+    background acquisitions; specify interval="1D" for daily scans. Plan/create require codes and settled ISO dates. Other
     job operations require the returned job id. Rows are never sampled.
     """
     return _get_registry().execute("history_data", {

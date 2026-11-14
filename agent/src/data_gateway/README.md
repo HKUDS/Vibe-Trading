@@ -2,7 +2,8 @@
 
 This branch is independent of the options homepage. It contains backend routing,
 continuous read-only subscriptions, API/CLI/tool integration and tests. It does
-not change Options Lab, the frontend, agent core, or order execution.
+not change Options Lab, agent core, or order execution. Storage and acquisition
+controls are available at the existing `/history-storage` page.
 
 ## What runs now
 
@@ -49,6 +50,9 @@ registration. The standalone server checks both loopback client and Host.
 | `GET /data/subscriptions` | Active topics, clients, pending updates and limits |
 | `GET /data/status` | Cache usage, active requests and local-network route health |
 | `POST /data/bars` | Existing bar normalization with bounded/adaptive source attempts |
+| `POST /data/scans` | Queue up to 10,000 public symbols using the same date/interval fields as bars |
+| `GET /data/scans[/{id}]` | Coverage, retry and failure counts for process-local scan jobs |
+| `POST /data/scans/{id}/cancel` | Stop new work; in-flight source slots remain held until completion |
 
 SSE sends `snapshot` and `source_error` events. Each envelope contains `topic`,
 `id`, and `payload`. Reconnecting clients receive current state, not event replay.
@@ -64,7 +68,8 @@ collection rather than assume an atomic multi-page snapshot.
 Routing learns from actual requests on this machine. A recent successful route
 is preferred over a recently failing one; failures cool down exponentially.
 Health expires so a changed network can try the original order again. Historical
-health is separated by market and interval. No IP geolocation, proxy purchase,
+health is separated by market and acquisition interval (daily/weekly/monthly
+share the daily transport health). No IP geolocation, proxy purchase,
 background scanning or global availability claim is involved. Existing source
 credentials/availability checks and explicit no-fallback sources stay enforced.
 
@@ -331,3 +336,60 @@ It also exercises the existing separate market-ranking tool. See `VALIDATION.md`
 for the failed full-scan/refresh case; a larger topic setting is not a guarantee
 of throughput or coverage. Cache defaults additionally cap entries at 256, and
 50 stocks × three intervals exceeds the current 64-topic configuration maximum.
+
+
+## Scan scheduling and subscription capacity
+
+Scan jobs run in batches of at most eight, one background source call at a time.
+The existing two request coordinators prefer foreground work; background work
+cannot occupy both. Network workers remain four, pending flights sixteen, RAM
+cache 8 MiB and disk cache 64 MiB. Source admission spacing is weighted by the
+number of symbols (`VIBE_GATEWAY_SOURCE_SPACING`, default 0.25 seconds per symbol);
+underlying SDK/host throttles remain in effect. This is process-local admission
+pacing, not a promise of a provider's exact HTTP request rate.
+
+`VIBE_GATEWAY_SCAN_SYMBOLS` defaults/maxes at 10,000 across all retained jobs,
+with at most four jobs. `SCAN_ATTEMPTS` defaults to six and `SCAN_SPACING` to 0.25
+seconds. Failed batches back off and only unresolved symbols re-enter the queue.
+Failed symbols never count as completed. Terminal progress metadata expires after
+`MEMORY_IDLE`; scan jobs are **not persistent across restart** and do not create
+a durable whole-market dataset. Acquired frames use the ordinary bounded cache.
+Use the historical dataset API for persistent minute data.
+
+Run `vibe-trading data scan 601398.SH 600519.SH --start 2026-11-01 --end 2026-11-13`
+or `python -m src.data_gateway scan ...`. Agent/MCP `history_data` exposes
+`scan_create`, `scan_status`, `scan_cancel`; specify `interval="1D"` for daily scans.
+The history/storage page offers the same operation using its symbol/date fields.
+
+At most two subscription acquisitions occupy the async executor. Cancellation
+keeps these slots reserved until the actual thread finishes. Daily, weekly and
+monthly subscriptions for the same symbol share one 40-day daily acquisition;
+weekly/monthly aggregation uses the existing market-data implementation. The
+BaoStock SDK remains serialized; foreground reads receive priority, with a
+background turn after at most four foreground admissions. Local admission waits
+are not classified as provider network failures.
+
+CCXT is acquired in one bounded, short-lived child interpreter because repeated
+SDK catalog allocations retained native allocator memory in the long-lived
+process. Its deadline includes startup and it is killed/reaped on timeout. At
+most one child exists; its PID and physical footprint are exposed in status so
+memory monitoring must include it. Other compatible sources remain available.
+No cache or memory budget was raised to accommodate the child.
+
+Combined live validation (fresh history directory required):
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_soak.py --universe /tmp/real-universe.json \
+  --history --history-dir ~/.vibe-trading/history-combined-NEW \
+  --cycles 30 --cycle-seconds 120 --warmup 180 --idle 190 --port 8912 \
+  --output /tmp/combined-hour.json
+PYTHONPATH=agent python tools/gateway_soak_observer.py \
+  --report /tmp/combined-hour.json --output /tmp/combined-os.json
+```
+
+`real-universe.json` must come from `gateway_scale_probe.universe()`, never a
+synthetic symbol count. This mode keeps 64 topics subscribed, queues the entire
+SH/SZ inventory and downloads real five-year minute chunks in the same service.
+The observer samples the parent and actual child PIDs every 0.5 seconds. The
+harness retains all transport errors; its client retires idle HTTP connections
+before Uvicorn's five-second keep-alive timeout to avoid reuse/close races.

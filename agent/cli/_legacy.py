@@ -5523,8 +5523,9 @@ def _build_parser() -> argparse.ArgumentParser:
     data_parser = subparsers.add_parser("data", help="Show research data partner settings")
     data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
     data_subparsers.add_parser("status", help="Show selected Gildata features")
-    from src.data_gateway.__main__ import add_history_parser
+    from src.data_gateway.__main__ import add_history_parser, add_scan_parser
     add_history_parser(data_subparsers)
+    add_scan_parser(data_subparsers)
     channels_parser = subparsers.add_parser("channels", help="Manage IM channel adapters")
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
     channels_status = channels_subparsers.add_parser("status", help="Show IM channel status")
@@ -6689,6 +6690,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "channels":
         return _coerce_exit_code(_dispatch_channels(args))
     if args.command == "data":
+        if args.data_command == "scan":
+            from src.data_gateway.__main__ import run_scan
+            return run_scan(args)
         if args.data_command == "history":
             from src.data_gateway.__main__ import run_history
             try:

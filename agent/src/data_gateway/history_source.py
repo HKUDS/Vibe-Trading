@@ -1,6 +1,7 @@
 """Bounded settled A-share minute chunks using the existing BaoStock transport."""
 
 from contextlib import contextmanager
+from functools import wraps
 from importlib import import_module
 import logging
 from datetime import date, datetime, timedelta
@@ -42,6 +43,21 @@ def _sdk_output():
                 module.print = original
 
 
+def _background_session(function):
+    @wraps(function)
+    def call(*args, **kwargs):
+        from backtest.loaders.base import source_background
+
+        token = source_background.set(True)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            source_background.reset(token)
+
+    return call
+
+
+@_background_session
 def fetch_chunk(symbol: str, start: str, end: str, interval: str):
     """Fetch one month and check every bar against calendar and daily status.
 

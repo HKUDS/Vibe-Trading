@@ -2802,6 +2802,11 @@
     "resume": "Lanjutkan / periksa",
     "unpin": "Izinkan pembersihan",
     "pin": "Simpan tetap",
-    "delete": "Hapus"
+    "delete": "Hapus",
+    "scanStart": "Antrekan pengambilan data harian",
+    "scanHint": "Menggunakan simbol dan tanggal di atas. Memprioritaskan langganan dan mencoba ulang kegagalan. Progres dihapus setelah tidak aktif; data memakai kuota cache yang ada. Tidak menyimpan dataset pasar lengkap.",
+    "scanProgress": "Diambil {{completed}} / {{total}} · Gagal {{failed}} · Percobaan ulang {{retries}}",
+    "scanPartial": "Diambil sebagian",
+    "scanCancelled": "Dibatalkan"
   }
 }

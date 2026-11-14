@@ -72,6 +72,19 @@ def summarize(document):
         "elapsed_s": document["elapsed_s"],
         "active_elapsed_s": document["active_elapsed_s"],
         "same_pid": len({s["pid"] for s in samples}) == 1,
+        "scan_job": document.get("scan_job"),
+        "universe_size": len((document.get("scale_universe") or {}).get("codes", [])),
+        "max_simultaneous_topics": max(len(s["subscriptions"]["topics"]) for s in samples),
+        "combined_workload_samples": sum(
+            len(s["subscriptions"]["topics"]) == 64
+            and any(job["state"] == "running" for job in s["history"])
+            and any(job["state"] == "running" for job in s["gateway"].get("scans", []))
+            for s in active),
+        "completed_child_peak_mib": max(s["gateway"].get("heavy_worker", {}).get("max_completed_child_footprint_bytes", 0) for s in samples) / 2**20,
+        "parent_plus_child_peak_upper_bound_mib": (
+            max(s["peak_footprint_bytes"] for s in samples)
+            + max(s["gateway"].get("heavy_worker", {}).get("max_completed_child_footprint_bytes", 0) for s in samples)
+        ) / 2**20,
         "pid": tail["pid"],
         "counts": document["counts"],
         "upstream_counts": tail["counts"],

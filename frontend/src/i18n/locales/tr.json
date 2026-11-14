@@ -2802,6 +2802,11 @@
     "resume": "Devam et / doğrula",
     "unpin": "Temizlemeye izin ver",
     "pin": "Koru",
-    "delete": "Sil"
+    "delete": "Sil",
+    "scanStart": "Günlük veri alımını sıraya ekle",
+    "scanHint": "Yukarıdaki sembol ve tarihleri kullanır. Aboneliklere öncelik verir ve hataları yeniden dener. İlerleme hareketsizlikte silinir; veriler mevcut önbellek kotasını kullanır. Tam piyasa veri kümesi kaydedilmez.",
+    "scanProgress": "Alınan {{completed}} / {{total}} · Hata {{failed}} · Yeniden deneme {{retries}}",
+    "scanPartial": "Kısmen alındı",
+    "scanCancelled": "İptal edildi"
   }
 }

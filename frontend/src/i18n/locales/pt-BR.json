@@ -2802,6 +2802,11 @@
     "resume": "Retomar / verificar",
     "unpin": "Permitir limpeza",
     "pin": "Manter",
-    "delete": "Excluir"
+    "delete": "Excluir",
+    "scanStart": "Enfileirar coleta diária",
+    "scanHint": "Usa os símbolos e datas acima. Prioriza assinaturas e repete tentativas com falha. O progresso expira por inatividade e os dados usam a cota de cache existente. Não salva um conjunto completo do mercado.",
+    "scanProgress": "Obtidos {{completed}} / {{total}} · Falhas {{failed}} · Novas tentativas {{retries}}",
+    "scanPartial": "Coleta parcial",
+    "scanCancelled": "Cancelado"
   }
 }

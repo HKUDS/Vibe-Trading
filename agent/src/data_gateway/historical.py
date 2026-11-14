@@ -3,7 +3,8 @@
 import json
 import time
 from datetime import datetime, timedelta, timezone
-from .service import GatewayError
+from .service import GatewayError, GatewayBusy
+from .scheduling import deadline as request_deadline
 
 
 def fetch_bars(gateway, **params):
@@ -18,16 +19,22 @@ def fetch_bars(gateway, **params):
     """
     from backtest.engines._market_hooks import _detect_market
     from backtest.loaders import registry
+    from backtest.loaders.base import source_interval
     from src.market_data import detect_source, fetch_market_data_json
 
     registry._ensure_registered()
     requested = params.get("source", "auto")
     combined, provenance, unresolved, diagnostics = {}, {}, [], {}
     coverage = {}
-    deadline = time.monotonic() + gateway.config.request_timeout
+    attempted_batches = {}
+    deadline = request_deadline.get() or (time.monotonic() + gateway.config.request_timeout)
     for code in params["codes"]:
         market = _detect_market(code)
-        scope = f"bars:{market}:{params.get('interval', '1D')}"
+        if code in provenance:
+            coverage[code] = describe_coverage(combined[code], params, market)
+            diagnostics[code] = []
+            continue
+        scope = f"bars:{market}:{source_interval(params.get('interval', '1D'))}"
         first = detect_source(code) if requested == "auto" else requested
         strict = registry.is_no_network_fallback_source(first)
         baseline = [first] if strict else list(dict.fromkeys([first, *registry.FALLBACK_CHAINS.get(market, [])]))
@@ -56,18 +63,48 @@ def fetch_bars(gateway, **params):
                 continue
             started = time.monotonic()
 
-            def acquire(source=source, code=code, params=dict(params)):
+            batch_codes = sorted(
+                [
+                    code,
+                    *[
+                        symbol
+                        for symbol in params["codes"]
+                        if symbol != code
+                        and symbol not in provenance
+                        and _detect_market(symbol) == market
+                        and (requested != "auto" or detect_source(symbol) == first)
+                    ],
+                ][:8]
+            )
+            batch_key = (source, tuple(batch_codes))
+            cached_batch = attempted_batches.get(batch_key)
+
+            def acquire(source=source, code=code, params=dict(params), batch_codes=batch_codes):
                 def exact_loader(name):
                     cls = registry.LOADER_REGISTRY.get(name)
                     if cls is None or not cls().is_available():
                         raise GatewayError("Source is not configured or installed")
                     return cls
 
+                if source == "ccxt":
+                    from .isolated import fetch
+
+                    return fetch(
+                        {
+                            **params,
+                            "codes": batch_codes,
+                            "source": source,
+                            "max_fallback_attempts": 1,
+                            "include_provenance": True,
+                        },
+                        min(deadline - time.monotonic(), gateway.config.source_timeout),
+                        gateway.config.entry_bytes,
+                    )
                 return json.loads(
                     fetch_market_data_json(
                         **{
                             **params,
-                            "codes": [code],
+                            "codes": batch_codes,
                             "source": source,
                             "max_fallback_attempts": 1,
                             "loader_resolver": exact_loader,
@@ -77,13 +114,26 @@ def fetch_bars(gateway, **params):
                 )
 
             try:
-                result = gateway.invoke(acquire, {}, min(remaining, gateway.config.source_timeout))
+                if cached_batch is not None:
+                    result = cached_batch
+                else:
+                    if not gateway.pacer.acquire(source, deadline, cost=len(batch_codes)):
+                        raise GatewayError("Source admission deadline reached")
+                    result = gateway.invoke(
+                        acquire, {}, min(deadline - time.monotonic(), gateway.config.source_timeout)
+                    )
+                    attempted_batches[batch_key] = result
                 alias = code.split(":", 1)[1] if code.startswith("local:") else code
                 if alias not in result:
                     attempts = result.get("_diagnostics", {}).get(code, {}).get("attempts", [])
-                    if any(attempt.get("reason") == "fetch_failed" for attempt in attempts):
+                    if any(attempt.get("reason") in {"fetch_failed", "network_failure"} for attempt in attempts):
                         gateway.router.record(scope, source, False, time.monotonic() - started)
-                    diagnostics[code].append({"source": source, "reason": "no_data_or_source_unavailable"})
+                    reason = (
+                        "source_busy"
+                        if any(a.get("reason") == "source_busy" for a in attempts)
+                        else "no_data_or_source_unavailable"
+                    )
+                    diagnostics[code].append({"source": source, "reason": reason})
                     continue
                 coverage[code] = describe_coverage(result[alias], params, market)
                 gateway.router.record(scope, source, True, time.monotonic() - started)
@@ -101,8 +151,10 @@ def fetch_bars(gateway, **params):
                         combined.setdefault(key, {})[code] = value
                 found = True
                 break
+            except GatewayBusy:
+                diagnostics[code].append({"source": source, "reason": "source_busy"})
             except GatewayError:
-                diagnostics[code].append({"source": source, "reason": "source_busy_or_unavailable"})
+                diagnostics[code].append({"source": source, "reason": "source_unavailable"})
             except Exception as exc:
                 gateway.router.record(scope, source, False, time.monotonic() - started)
                 diagnostics[code].append(
@@ -116,11 +168,17 @@ def fetch_bars(gateway, **params):
         if not found:
             unresolved.append(code)
     combined["_provenance"] = provenance
+    unresolved = [code for code in params["codes"] if code not in provenance]
     combined["_unresolved"] = unresolved
     combined["_diagnostics"] = diagnostics
     combined["_coverage"] = coverage
     return {
         "ok": bool(provenance),
+        **(
+            {"retry_after_seconds": 1}
+            if any(a["reason"] == "source_busy" for rows in diagnostics.values() for a in rows)
+            else {}
+        ),
         "source": "existing_routes",
         "data": combined,
         "complete": not unresolved and not any(row["status"] == "partial" for row in coverage.values()),

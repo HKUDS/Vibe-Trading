@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { HistoryStorageSettings } from "../HistoryStorageSettings";
 
 vi.mock("@/lib/api", () => ({ api: {
+  dataScans: vi.fn(), createDataScan: vi.fn(), cancelDataScan: vi.fn(),
   historyStorage: vi.fn(), historyJobs: vi.fn(), saveHistoryStorage: vi.fn(),
   planHistory: vi.fn(), createHistory: vi.fn(), historyAction: vi.fn(),
   pinHistory: vi.fn(), deleteHistory: vi.fn(), pruneHistory: vi.fn(),
@@ -15,6 +16,7 @@ beforeEach(async () => {
   vi.clearAllMocks(); await i18n.changeLanguage("en");
   vi.mocked(api.historyStorage).mockResolvedValue(storage);
   vi.mocked(api.historyJobs).mockResolvedValue([]);
+  vi.mocked(api.dataScans).mockResolvedValue([]);
 });
 afterEach(cleanup);
 it("estimates first and starts only after the download action", async () => {

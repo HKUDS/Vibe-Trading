@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api, type HistoryJob, type HistoryPlan, type HistorySpec, type HistoryStorage } from "@/lib/api";
+import { api, type HistoryJob, type HistoryPlan, type HistorySpec, type HistoryStorage, type ScanJob } from "@/lib/api";
 
 const field = "rounded-md border bg-background px-3 py-2 text-sm min-w-0";
 const button = "rounded-md border px-3 py-2 text-sm hover:bg-muted disabled:opacity-50";
@@ -9,6 +9,7 @@ const mib = (bytes: number) => (bytes / 1024 ** 2).toFixed(1);
 export function HistoryStorageSettings() {
   const { t } = useTranslation();
   const [storage, setStorage] = useState<HistoryStorage | null>(null);
+  const [scans, setScans] = useState<ScanJob[]>([]);
   const [jobs, setJobs] = useState<HistoryJob[]>([]);
   const [quota, setQuota] = useState(256);
   const [days, setDays] = useState(30);
@@ -20,9 +21,9 @@ export function HistoryStorageSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const refresh = async () => {
-    const [nextStorage, nextJobs] = await Promise.all([api.historyStorage(), api.historyJobs()]);
+    const [nextStorage, nextJobs, nextScans] = await Promise.all([api.historyStorage(), api.historyJobs(), api.dataScans()]);
     setStorage(nextStorage);
-    setJobs(nextJobs);
+    setJobs(nextJobs); setScans(nextScans);
   };
   useEffect(() => {
     let alive = true;
@@ -30,9 +31,9 @@ export function HistoryStorageSettings() {
     const poll = async (initial = false) => {
       try {
         if (document.hidden && !initial) return;
-        const [nextStorage, nextJobs] = await Promise.all([api.historyStorage(), api.historyJobs()]);
+        const [nextStorage, nextJobs, nextScans] = await Promise.all([api.historyStorage(), api.historyJobs(), api.dataScans()]);
         if (!alive) return;
-        setStorage(nextStorage); setJobs(nextJobs);
+        setStorage(nextStorage); setJobs(nextJobs); setScans(nextScans);
         if (initial) { setQuota(nextStorage.quota_bytes / 1024 ** 2); setDays(nextStorage.retention_days); }
       } catch (e) { if (alive) setError(String(e)); }
       finally { if (alive) timer = setTimeout(() => void poll(), 5000); }
@@ -48,6 +49,7 @@ export function HistoryStorageSettings() {
   const states: Record<string, string> = {
     paused: t("history.paused"), queued: t("history.queued"), running: t("history.running"),
     complete: t("history.complete"), failed: t("history.failed"),
+    partial: t("history.scanPartial"), cancelled: t("history.scanCancelled"),
   };
   const change = (set: (value: string) => void, value: string) => { set(value); setPlan(null); };
   return <section className="rounded-xl border bg-card p-6 space-y-5" id="history-storage">
@@ -77,6 +79,14 @@ export function HistoryStorageSettings() {
         <button className={button} disabled={busy}>{t("history.estimate")}</button>
       </div>
     </form>
+    <div className="border-t pt-4 space-y-2">
+      <p className="text-sm text-muted-foreground">{t("history.scanHint")}</p>
+      <button className={button} disabled={busy || !start || !end || !codes.trim()} onClick={() => void act(() => api.createDataScan({ codes: codes.split(/[\s,]+/).filter(Boolean), start_date: start, end_date: end, interval: "1D" }))}>{t("history.scanStart")}</button>
+      {scans.map(scan => <div key={scan.id} className="flex items-center gap-3 text-sm">
+        <p className="flex-1 tabular-nums">{states[scan.state] ?? scan.state} · {t("history.scanProgress", { completed: scan.completed, total: scan.total, failed: scan.failed, retries: scan.retries })}</p>
+        {["queued", "running"].includes(scan.state) && <button className={button} disabled={busy} onClick={() => void act(() => api.cancelDataScan(scan.id))}>{t("history.pause")}</button>}
+      </div>)}
+    </div>
     {plan && <div className="rounded-md bg-muted/50 p-4 space-y-2">
       <p className="text-sm">{t("history.plan", { chunks: plan.result.chunks, rows: plan.result.estimated_max_rows.toLocaleString(), size: mib(plan.result.estimated_uncompressed_bytes) })}</p>
       <button className={button} disabled={busy} onClick={() => void act(async () => { const job = await api.createHistory(plan.spec); await api.historyAction(job.id, "resume"); setPlan(null); })}>{t("history.download")}</button>

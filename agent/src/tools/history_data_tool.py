@@ -23,6 +23,8 @@ class HistoryDataTool(BaseTool):
         "Plan before create; create returns a job id; start downloads in background; status checks completion. "
         "Rows requires a complete dataset and returns at most 25 unsampled rows per page. "
         "Never claim another market or a recent tail is complete multi-year history. "
+        "scan_create queues background bar acquisition (explicit 1D/1W/1M interval), "
+        "scan_status and scan_cancel inspect/stop it; scan jobs are process-local coverage metadata, not durable datasets. "
         "Storage returns global disk quota/retention; pin protects a dataset from automatic cleanup."
     )
     parameters = {
@@ -31,6 +33,9 @@ class HistoryDataTool(BaseTool):
             "action": {
                 "type": "string",
                 "enum": [
+                    "scan_create",
+                    "scan_status",
+                    "scan_cancel",
                     "plan",
                     "create",
                     "start",
@@ -45,10 +50,10 @@ class HistoryDataTool(BaseTool):
                 ],
             },
             "job": {"type": "string"},
-            "codes": {"type": "array", "items": {"type": "string"}, "maxItems": 100},
+            "codes": {"type": "array", "items": {"type": "string"}, "maxItems": 10000},
             "start_date": {"type": "string"},
             "end_date": {"type": "string"},
-            "interval": {"type": "string", "enum": ["5m", "15m", "30m", "1H"]},
+            "interval": {"type": "string", "enum": ["5m", "15m", "30m", "1H", "1D", "1W", "1M"]},
             "offset": {"type": "integer", "minimum": 0},
         },
         "required": ["action"],
@@ -68,7 +73,20 @@ class HistoryDataTool(BaseTool):
         store = get_history_store()
         action, job = kwargs.get("action"), kwargs.get("job")
         try:
-            if action in {"plan", "create"}:
+            if action in {"scan_create", "scan_status", "scan_cancel"}:
+                from src.data_gateway import get_gateway
+
+                queue = get_gateway().scan_queue()
+                if action == "scan_create":
+                    result = queue.create(
+                        codes=kwargs.get("codes") or [],
+                        start_date=kwargs.get("start_date"),
+                        end_date=kwargs.get("end_date"),
+                        interval=kwargs.get("interval", "1D"),
+                    )
+                else:
+                    result = getattr(queue, action.removeprefix("scan_"))(job)
+            elif action in {"plan", "create"}:
                 result = getattr(store, action)(
                     codes=kwargs.get("codes"),
                     start_date=kwargs.get("start_date"),

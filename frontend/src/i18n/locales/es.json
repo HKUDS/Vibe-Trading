@@ -2802,6 +2802,11 @@
     "resume": "Reanudar / verificar",
     "unpin": "Permitir limpieza",
     "pin": "Conservar",
-    "delete": "Eliminar"
+    "delete": "Eliminar",
+    "scanStart": "Poner la descarga diaria en cola",
+    "scanHint": "Usa los símbolos y fechas anteriores. Prioriza las suscripciones y reintenta los fallos. El progreso caduca por inactividad y los datos usan la cuota de caché existente. No guarda un conjunto completo del mercado.",
+    "scanProgress": "Obtenidos {{completed}} / {{total}} · Fallidos {{failed}} · Reintentos {{retries}}",
+    "scanPartial": "Obtención parcial",
+    "scanCancelled": "Cancelado"
   }
 }

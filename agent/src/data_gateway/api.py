@@ -34,6 +34,10 @@ class BarsRequest(BaseModel):
         return self
 
 
+class ScanRequest(BarsRequest):
+    codes: list[str] = Field(min_length=1, max_length=10000)
+
+
 def register_gateway_routes(app: FastAPI, require_auth: Callable):
     """Mount capability and local-storage APIs using the host application's auth."""
 
@@ -105,3 +109,28 @@ def register_gateway_routes(app: FastAPI, require_auth: Callable):
     async def bars(payload: BarsRequest):
         result = await asyncio.to_thread(get_gateway().bars, **payload.model_dump(mode="json"), include_provenance=True)
         return JSONResponse(result, status_code=200 if result.get("ok") else 503)
+
+    @app.post("/data/scans", dependencies=[Depends(require_auth)])
+    async def create_scan(payload: ScanRequest):
+        try:
+            return get_gateway().scan_queue().create(**payload.model_dump(mode="json"))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/data/scans", dependencies=[Depends(require_auth)])
+    async def scans():
+        return get_gateway().scan_queue().status()
+
+    @app.get("/data/scans/{identity}", dependencies=[Depends(require_auth)])
+    async def scan_status(identity: str):
+        try:
+            return get_gateway().scan_queue().status(identity)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/data/scans/{identity}/cancel", dependencies=[Depends(require_auth)])
+    async def cancel_scan(identity: str):
+        try:
+            return get_gateway().scan_queue().cancel(identity)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc

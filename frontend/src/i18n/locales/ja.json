@@ -2802,6 +2802,11 @@
     "resume": "再開・検証",
     "unpin": "自動削除を許可",
     "pin": "保持",
-    "delete": "削除"
+    "delete": "削除",
+    "scanStart": "日足データ取得を予約",
+    "scanHint": "上記の銘柄と期間を使用します。購読を優先し、失敗時に再試行します。進捗は未使用時に削除され、データには既存のキャッシュ上限が適用されます。市場全体の完全なデータセットは保存しません。",
+    "scanProgress": "取得 {{completed}} / {{total}} · 失敗 {{failed}} · 再試行 {{retries}}",
+    "scanPartial": "一部取得",
+    "scanCancelled": "キャンセル済み"
   }
 }

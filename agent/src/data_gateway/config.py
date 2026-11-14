@@ -24,6 +24,10 @@ class Config:
     entries: int = 256
     workers: int = 4
     pending: int = 16
+    scan_symbols: int = 10000
+    scan_attempts: int = 6
+    scan_spacing: float = 0.25
+    source_spacing: float = 0.25
     source_timeout: float = 6
     request_timeout: float = 15
     ttl: float = 60
@@ -66,6 +70,10 @@ class Config:
             entries=int(number("CACHE_ENTRIES", 256, 1, 2048)),
             workers=int(number("WORKERS", 4, 1, 8)),
             pending=int(number("PENDING", 16, 1, 64)),
+            scan_symbols=int(number("SCAN_SYMBOLS", 10000, 1, 10000)),
+            scan_attempts=int(number("SCAN_ATTEMPTS", 6, 1, 10)),
+            scan_spacing=number("SCAN_SPACING", 0.25, 0.1, 30),
+            source_spacing=number("SOURCE_SPACING", 0.25, 0.05, 10),
             source_timeout=number("SOURCE_TIMEOUT", 6, 0.1, 30),
             request_timeout=number("REQUEST_TIMEOUT", 15, 0.2, 60),
             ttl=number("TTL", 60, 1, 3600),
