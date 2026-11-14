@@ -11,6 +11,7 @@ import asyncio
 from collections import Counter, deque
 from gateway_soak_history import Timings, HistoryDriver, instrument_history, abort_history
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 import ctypes
 from datetime import datetime, timezone, timedelta
 import json
@@ -127,6 +128,58 @@ def serve(port):
 
     api.StreamHub = make_hub
     gateway = get_gateway()
+    # Request-scoped metadata only. Context is copied into the production
+    # coordinator/source pools; completed traces are not kept in a global list.
+    request_trace = ContextVar("soak_request_trace", default=None)
+    trace_lock = threading.Lock()
+    original_request, original_fetch = gateway.request, gateway._fetch
+
+    def trace_event(stage):
+        trace = request_trace.get()
+        if trace is not None:
+            with trace_lock:
+                if len(trace["events"]) < 64:
+                    trace["events"].append([stage, round(time.monotonic() - trace["started"], 4)])
+
+    def emit_trace(trace, reason):
+        with trace_lock:
+            record = {k: v for k, v in trace.items() if k not in {"started", "reported"}}
+            record["events"] = list(trace["events"])
+        print(json.dumps({"slow_gateway_request": reason, **record}), flush=True)
+
+    def traced_request(capability, params, **kwargs):
+        trace = {
+            "started": time.monotonic(),
+            "request_id": time.monotonic_ns(),
+            "capability": capability,
+            "params": {k: v for k, v in params.items() if k in {"codes", "ticker", "interval", "source", "max_rows"}},
+            "events": [],
+            "reported": False,
+        }
+        token = request_trace.set(trace)
+        try:
+            value = original_request(capability, params, **kwargs)
+            trace_event("caller_return")
+            if time.monotonic() - trace["started"] >= 12 or "timed out" in str(value.get("error", "")):
+                with trace_lock:
+                    trace["reported"] = True
+                    trace["error"] = value.get("error")
+                emit_trace(trace, "caller_return")
+            return value
+        finally:
+            request_trace.reset(token)
+
+    def traced_fetch(*args):
+        trace_event("coordinator_start")
+        try:
+            return original_fetch(*args)
+        finally:
+            trace_event("coordinator_end")
+            trace = request_trace.get()
+            if trace and trace["reported"]:
+                emit_trace(trace, "late_coordinator_end")
+
+    gateway.request, gateway._fetch = traced_request, traced_fetch
     original_invoke = gateway.invoke
 
     def invoke(function, params, timeout):
@@ -135,15 +188,19 @@ def serve(port):
             counts["source_refused"] += 1
             raise ConnectionError("soak injected network unavailable")
         submitted = time.monotonic()
+        trace_event("source_submit")
 
         def measured(**kwargs):
             stamp = time.monotonic()
+            trace_event("source_start")
             timings.add("source_queue", stamp - submitted)
             try:
                 result = function(**kwargs)
             except Exception:
+                trace_event("source_failed")
                 timings.add("source_failed", time.monotonic() - stamp)
                 raise
+            trace_event("source_success")
             timings.add("source_success", time.monotonic() - stamp)
             return result
 
@@ -158,7 +215,7 @@ def serve(port):
         while not monitor_stop.wait(1):
             now = time.monotonic()
             for row in list(pending_http.values()):
-                if now - row["started"] >= 20 and not row["dumped"]:
+                if now - row["started"] >= 12 and not row["dumped"]:
                     row["dumped"] = True
                     print(
                         json.dumps(
