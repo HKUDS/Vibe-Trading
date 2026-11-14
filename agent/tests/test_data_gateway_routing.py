@@ -5,6 +5,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from src.data_gateway.config import Config
 from src.data_gateway.service import MarketDataGateway
@@ -405,7 +406,8 @@ def test_later_same_adapter_success_allows_one_probe_without_clearing_backoff():
     assert router.retry_after("bars:a_share:1D", ["yahoo"]) == 29
 
 
-def test_mixed_request_completes_only_cooled_missing_market_after_sibling_success(tmp_path, monkeypatch):
+@pytest.mark.parametrize("restored", [True, False])
+def test_mixed_request_completes_only_cooled_missing_market_after_sibling_success(tmp_path, monkeypatch, restored):
     import time
     from backtest.loaders import registry
     from src import market_data
@@ -422,6 +424,8 @@ def test_mixed_request_completes_only_cooled_missing_market_after_sibling_succes
 
         def fetch(self, codes, *args, **kwargs):
             calls.extend(codes)
+            if "601398.SH" in codes and not restored:
+                raise ConnectionError("A-share endpoint still unavailable")
             time.sleep(0.02)  # A-share walker first finishes while this call runs.
             result = {}
             for code in codes:
@@ -445,8 +449,16 @@ def test_mixed_request_completes_only_cooled_missing_market_after_sibling_succes
         response = gateway.bars(
             codes=["601398.SH", "AAPL.US"], start_date="2026-11-12", end_date="2026-11-12", interval="1D"
         )
-        assert response["complete"] is True, response
         assert calls == ["AAPL.US", "601398.SH"]  # Healthy data is never replayed.
+        if not restored:
+            assert response["complete"] is False
+            assert response["data"]["_unresolved"] == ["601398.SH"]
+            assert gateway.router.cooling("bars:a_share:1D", Loader.name)
+            assert gateway.router.recovery_probe("bars:a_share:1D", [Loader.name]) is None
+            assert gateway.cache.stats()["memory_entries"] == 0
+            assert response["data"]["_diagnostics"]["601398.SH"][-1]["reason"] == "no_data_or_source_unavailable"
+            return
+        assert response["complete"] is True, response
         assert response["data"]["_recovery"]["601398.SH"]["state"] == "recovered_in_request"
         assert "retry_after_seconds" not in response
         assert response["data"]["_provenance"]["601398.SH"]["quote_currency"] == "CNY"

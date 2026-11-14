@@ -1572,3 +1572,91 @@ active work and complete the scan; until terminal evidence is appended below,
 this paragraph is a protocol, not a claim of completion. Cache 8/64 MiB, four
 source workers, sixteen pending requests, 6/15-second deadlines and history
 quota 256 MiB are unchanged. No geographic nodes are used.
+
+
+The candidate `ead2cf068` completed the full live run without restart: 6888.42 s
+(114.81 minutes) active, 7270.22 s total including warmup and natural idle.
+All 26 formal workload/resource checks passed. There were 587 observed samples
+with 64 topics, a running scan and a running history job together. Thirty fault
+cycles and 1449 matched subscriptions/unsubscriptions ran; churn/fault injection
+ended before the scan-completion tail, while 64 topics and history remained.
+No unexpected foreground HTTP, client-read, driver or cleanup errors occurred.
+All 30 intentionally offline probes returned explicit 503s. The 29 recovery
+probes all returned 200. This is not a claim that public sources never failed.
+
+All 5224 scan symbols were actually acquired, final failures zero: 729 batches,
+5830 symbol attempts, 606 retries. Acquisition consumed 5341.539 s (89.03 min),
+backoff 1540.376 s (25.67 min). Natural public-source failures during the late
+phase are retained separately from the 30 intentional outages. Scan speed is
+still limited by network acquisition, host pacing, fallback and background
+contention; this does not make a full-market scan instantaneous.
+
+All 90 concurrent cold probes completed on their first client attempts, with
+90 gateway cache misses and 30 unique request keys per shape:
+
+| Cold shape (30 calls each) | Median | p95 | Maximum |
+|---|---:|---:|---:|
+| Six-market daily | 6.796 s | 8.706 s | 11.519 s |
+| Dual-US five-year monthly | 6.382 s | 8.728 s | 8.890 s |
+| Dual-US one-day minute | 9.224 s | 11.088 s | 11.217 s |
+
+The soak cold probes did not naturally emit `recovered_in_request`; that exact
+branch is established by the separate real-source seeded-cooldown precheck
+above, plus deterministic positive and negative gateway tests. A still-broken
+target stays incomplete, is not cached, and cannot spend a second probe budget.
+The final targeted suite passes 17 checks (the original 16 plus the added
+negative variant); the broad 158-check run remains applicable to unchanged
+production code. Cold success is not inferred from later client retries.
+
+Ten stocks' full five-year 5m dataset completed with 610 chunks / 581760 rows,
+production `coverage_verified=true`. After all soak processes exited, a fresh
+independent BaoStock calendar and daily trading-status query verified every
+symbol/date, every compressed chunk hash, all 581760 row identities/timestamps
+and all 582 production-reader pages. The independent run passed in 51.86 s;
+canonical SHA-256 `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`
+also matches the independently verified v13 dataset for this exact range. This
+is a full recheck of v15, not reused v13 evidence. Report:
+`gateway-v15-fresh-5m-verified.json` in the evidence directory below.
+The 15m workload then continued and was
+intentionally paused at teardown at 145 chunks / 46128 rows; it is NOT a second
+complete dataset in this run. The history driver explicitly calls the production
+resume API after bounded failed jobs (41 recorded resumes); this does not prove
+unlimited autonomous recovery without a client. All four additional historical
+shapes completed at least once, but their attempt result is **41 complete / 4
+paused**, not 45 successes. The four pauses reached the harness's 90-second
+per-job scheduling window (92.97–98.61 s including cancellation): two US monthly,
+one HK/CA/UK daily and one US minute. The first monthly partial had 75 rows / 8
+of 12 chunks; retained traces show 11.16–12.22 s coordinator waits followed by
+successful Yahoo requests. The other three retain source-unavailable/cooldown
+or incompatible-fallback diagnostics. Subsequent US monthly acquisition
+completed again. The partials remain in the raw report and formal summary;
+`all_four_routed_history_shapes_acquired` only certifies shape coverage, not
+success of every attempt. No acceptance threshold was relaxed.
+
+Whole-parent physical peak 197.49 MiB, natural-idle final 170.41 MiB. The
+independent 0.5-second observer measured an actual process-tree peak 567.85 MiB,
+at most one SDK child; this is not an arithmetic sum of nonconcurrent peaks.
+Physical memory rose during warmup and the later workload transition: the
+post-minute-30 slope is +0.166 MiB/min, whereas the last 30 active minutes are
+-0.234 MiB/min. Ten-minute medians near 80–100 minutes were ~174–175 MiB, then
+~171 MiB near 100–110. Do not label the entire curve flat or claim a multi-day
+leak proof. Read-only native malloc controls at ~29/~60/~84/~105/late-idle
+minutes were 49.2/49.2/51.1/51.8/50.0 MiB allocated; late-idle fragmentation
+15.3 MiB. No forced GC, tracemalloc or process restart was used. Descriptors
+briefly reached 47 during natural HTTP failures, then fell to 23 at idle;
+lsof snapshots preserve the connection evidence, including idle HTTP pools.
+
+The 190.03-second observed natural idle tail cleared RAM cache, subscriptions,
+pending push updates, upstream WebSockets, source requests, scan metadata and
+history reservations. Disk cache ended at ~2.82 MiB under its unchanged 64 MiB
+cap. Sampled RAM/disk cache peaks were 1410366 / 5008011 bytes; history used
+12393124 bytes with zero reserved under the unchanged 256 MiB quota. All 5775
+actual source calls drained. All 66 established upstream WebSockets closed.
+An independent `ps` check after shutdown found none of the 36 recorded PIDs
+alive (driver, observer, server and 33 distinct SDK children).
+
+Stable raw reports, OS samples, plot, launch metadata, regression XMLs, cold
+audit, native-memory/connection snapshots and exit check are under:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v15/`.
+Real geographic-node testing remains deferred. Local routing fault tests do
+not certify accessibility from other countries or regions.
