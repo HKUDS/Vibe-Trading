@@ -983,3 +983,63 @@ chunk checksum and all 582 production-reader pages, 581,760 rows, are identical
 to the earlier independently calendar-verified dataset (canonical SHA-256
 `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`).
 Evidence: `/tmp/gateway-router-v2-5m-content-verified.json`.
+
+### v4 interruption / v5 continuation
+
+v4 (same `33fe0975a` service) stopped during warmup, last record about 154 seconds,
+with no active mixed workload. On continuation its tool session, controller,
+server and observer were absent. No traceback established a cause; not counted
+as an hour or product pass. Evidence `/tmp/gateway-router-v4-interrupted.json`.
+
+v5 uses the same service and limits, with detached, log-backed owned processes:
+controller 77907, server 77911, observer 77908. Raw
+`/tmp/gateway-router-hour-v5-20261114.json`, OS
+`/tmp/gateway-router-hour-v5-os-20261114.json`, driver log
+`/tmp/gateway-router-hour-v5-20261114.driver.log`. History root
+`/Users/wuhaozhe/.vibe-trading/history-router-hour-v5-20261114`, 5m job
+`32ab4e56075d4e08a06f39ef15a77b15`. Independent mixed client 79473 records
+`/tmp/gateway-mixed-client-v5-20261114.json`, including a second AAPL expiration
+when discovery supplies one. It adds a single client to the existing topics; no
+resource caps are increased. Adjacent loader/caliber/tool contracts: 139 passed
+(`/tmp/gateway-adjacent-contracts-20261114.xml`).
+
+
+v5 failed early, not accepted. Last saved active sample: 47.74 seconds. The
+driver log exposes `httpx.ReadTimeout` while reading history-job status. The
+external mixed client subsequently failed to connect after the server exited.
+At independent inspection the 10-core/16-GiB host had load average 101.95 and
+ordinary shell tools took seconds; the gateway's last sampled footprint was
+133.2 MiB. Host pressure is a confounder, not a proven exclusive root cause.
+Other sessions' processes were not stopped. The driver's finally block could
+mask an earlier exception with the history task's failure; it now persists the
+original exception and each cleanup exception separately, with `phase=failed`.
+No timeout, resource cap or acceptance criterion was relaxed.
+Evidence: `/tmp/gateway-router-v5-failure.json` and the saved driver log.
+
+Short v6 pilot also failed before a saved OS sample: option discovery returned
+`ok=false`, then the first lookback raised ReadTimeout at 42.54 seconds. The
+corrected harness persisted `phase=failed` and the original driver error.
+`/tmp/gateway-v6-pilot.json` is not a memory test. At the following inspection
+host load was 83.59 on 10 logical CPUs. A pure-loopback vs idle-gateway control
+was started before attempting another expensive soak; no other sessions were
+modified.
+
+### Latest responsiveness control and remaining block
+
+Pure local stdlib HTTP: six responses, 2.7-116 ms. Idle gateway status: seven
+responses, 22-283 ms. SPY via API returned 503 after 14.119 seconds. An isolated
+in-process control also failed: Cboe and Yahoo both exceeded the unchanged
+six-second attempt budget, total 12.449 seconds; the subsequent AAPL request
+correctly reported source cooldown. This excludes an entirely dead idle event
+loop, but does not isolate network latency from host CPU/swap pressure during
+source parsing and mixed work. Host load subsequently reached 214.65 on ten
+logical CPUs. No resource/time limits were increased and other sessions were
+not stopped. No more full-hour retries are being launched under these conditions.
+
+Evidence: `/tmp/gateway-local-responsiveness.json`,
+`/tmp/gateway-options-last-control.json`. Current acceptance remains incomplete:
+no passing post-fix hour; no complete 5,224-stock scan; no multi-region runtime
+evidence. The source recovery fixes have passing controlled and earlier live
+controls, not an overall production-readiness claim. Resume when host/source
+responsiveness permits an interpretable bounded short control, then the full
+hour with the same quotas and full-scan continuation.

@@ -53,7 +53,19 @@ async def run(args):
         report["elapsed_s"] = round(time.monotonic() - started, 3)
         args.output.write_text(json.dumps(report, indent=2))
 
+    save()
     async with httpx.AsyncClient(timeout=25, limits=httpx.Limits(max_connections=10)) as client:
+        discovery = (await client.get(url + "/data/options", params={"ticker": "AAPL", "full": "true"})).json()
+        expirations = discovery.get("data", {}).get("expirations", [])
+        report["aapl_discovered_expirations"] = expirations
+        option_requests = [
+            ("options_AAPL", {"ticker": "AAPL", "full": "true"}),
+            ("options_SPY", {"ticker": "SPY", "full": "true"}),
+        ]
+        if len(expirations) > 1:
+            option_requests.append(
+                ("options_AAPL_next", {"ticker": "AAPL", "full": "true", "expiration": expirations[1]})
+            )
 
         async def fetch(label, method, path, round_number, **kwargs):
             stamp = time.monotonic()
@@ -92,6 +104,19 @@ async def run(args):
                         expiration=data.get("expiration"),
                         contracts=len(data.get("calls", [])) + len(data.get("puts", [])),
                         source=value.get("source"),
+                        requested_expiration=kwargs["params"].get("expiration"),
+                        contract_expirations=sorted(
+                            {row.get("expiration") for side in ("calls", "puts") for row in data.get(side, [])}
+                        ),
+                        identity_valid=(
+                            data.get("ticker") == kwargs["params"]["ticker"]
+                            and (
+                                "expiration" not in kwargs["params"]
+                                or data.get("expiration") == kwargs["params"]["expiration"]
+                            )
+                        )
+                        if value.get("ok")
+                        else None,
                     )
                 else:
                     rows = value.get("rows", [])
@@ -101,7 +126,7 @@ async def run(args):
                         next_offset=value.get("next_offset"),
                         first=rows[0].get("time") if rows else None,
                         last=rows[-1].get("time") if rows else None,
-                        note="Read committed prefix while the five-year job is still downloading",
+                        note="Capability probe: unfinished datasets currently refuse prefix reads with 409",
                     )
             except Exception as exc:
                 item["client_error"] = type(exc).__name__
@@ -157,13 +182,13 @@ async def run(args):
                 ),
                 *(
                     fetch(
-                        "options_" + symbol,
+                        label,
                         "GET",
                         "/data/options",
                         round_number,
-                        params={"ticker": symbol, "full": "true"},
+                        params=parameters,
                     )
-                    for symbol in ["AAPL", "SPY"]
+                    for label, parameters in option_requests
                 ),
                 fetch(
                     "large_history_prefix",
@@ -197,7 +222,14 @@ def main():
     parser.add_argument("--seconds", type=float, default=180)
     parser.add_argument("--job", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    asyncio.run(run(parser.parse_args()))
+    args = parser.parse_args()
+    try:
+        asyncio.run(run(args))
+    except Exception as exc:
+        report = json.loads(args.output.read_text()) if args.output.exists() else {}
+        report.update(complete=False, terminal_error=type(exc).__name__, terminal_message=str(exc)[:200])
+        args.output.write_text(json.dumps(report, indent=2))
+        raise
 
 
 if __name__ == "__main__":

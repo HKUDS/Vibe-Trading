@@ -118,6 +118,7 @@ def summarize(document, observer=None):
         "offline_probe_statuses": dict(Counter(c["status"] for c in offline)),
         "client_errors": [c for c in checks if c["kind"] == "client_error"],
         "history_driver_errors": [c for c in checks if c["kind"] == "history_driver_error"],
+        "driver_errors": [c for c in checks if c["kind"] in {"driver_error", "cleanup_error"}],
         "idle_seconds_observed": last_idle[-1]["elapsed_s"] - last_idle[0]["elapsed_s"] if last_idle else 0,
         "final_resources": {
             k: tail[k] for k in ("threads", "fds", "sockets", "async_tasks", "subscriptions", "gateway")
@@ -192,6 +193,7 @@ def summarize(document, observer=None):
         ),
         "no_client_read_errors": not result["client_errors"],
         "history_driver_survived": not result["history_driver_errors"],
+        "driver_and_cleanup_survived": not result["driver_errors"],
         "all_recovery_probes_succeeded": bool(recovered) and all(c["status"] == 200 for c in recovered),
         "all_offline_probes_failed_visibly": bool(offline) and all(c["status"] == 503 for c in offline),
         "subscribers_and_topics_released": tail["subscriptions"]["clients"] == 0

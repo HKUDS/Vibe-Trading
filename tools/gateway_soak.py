@@ -510,6 +510,7 @@ async def exercise(args, output):
         groups = [[f"bars:BTC-USDT:{x}" for x in intervals[i : i + 3]] for i in range(0, 9, 3)]
         groups.append(["bars:AAPL.US:1D", "bars:00700.HK:1D", "bars:601398.SH:1D"])
         expiry_topic = None
+        failure = None
         try:
             chain = (await client.get(url + "/data/options", params={"ticker": "AAPL", "full": "true"})).json()
             dates = chain.get("data", {}).get("expirations", [])
@@ -634,14 +635,48 @@ async def exercise(args, output):
                     scan_job = (await client.get(url + "/data/scans/" + scan_job["id"])).json()
                 checks.append({"kind": "scan_terminal", **scan_job})
             active_finished = time.monotonic()
+        except BaseException as exc:
+            active_finished = time.monotonic()
+            failure = exc
+            checks.append(
+                {
+                    "kind": "driver_error",
+                    "type": type(exc).__name__,
+                    "message": str(exc)[:200],
+                    "elapsed_s": round(time.monotonic() - started, 2),
+                }
+            )
+            phase = "failed"
+            save()
+            raise
         finally:
-            await set_fault("online")
-            await stop(base)
+
+            async def cleanup(label, action):
+                nonlocal phase
+                try:
+                    await action()
+                except BaseException as exc:
+                    checks.append(
+                        {
+                            "kind": "cleanup_error",
+                            "action": label,
+                            "type": type(exc).__name__,
+                            "message": str(exc)[:200],
+                            "elapsed_s": round(time.monotonic() - started, 2),
+                        }
+                    )
+                    phase = "failed"
+                    save()
+                    if failure is None:
+                        raise
+
+            await cleanup("restore_online", lambda: set_fault("online"))
+            await cleanup("stop_clients", lambda: stop(base))
             if scan_job and scan_job.get("state") in {"running", "queued"}:
-                await client.post(url + "/data/scans/" + scan_job["id"] + "/cancel")
+                await cleanup("cancel_scan", lambda: client.post(url + "/data/scans/" + scan_job["id"] + "/cancel"))
             if history_driver:
-                await history_driver.finish(history_task)
-            await client.post(url + "/_soak/slow", params={"enabled": "false"})
+                await cleanup("finish_history", lambda: history_driver.finish(history_task))
+            await cleanup("stop_slow_client", lambda: client.post(url + "/_soak/slow", params={"enabled": "false"}))
         phase = "idle"
         await pause(args.idle)
         await sample()
