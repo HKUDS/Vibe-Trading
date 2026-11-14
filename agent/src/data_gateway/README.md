@@ -80,7 +80,11 @@ after sibling markets finish, using the original deadline and source slots.
 Unresolved cooldowns expose `_recovery` and the actual `retry_after_seconds`;
 partial responses are not cached as complete. Health expires so a changed network can try the original order again. Historical
 health is separated by market and acquisition interval (daily/weekly/monthly
-share the daily transport health). No IP geolocation, proxy purchase,
+share the daily transport health). Persisted downloads share that same circuit
+with ordinary bar requests, including exact-source fallback attempts. They do
+not add a second per-request negative-cache cooldown that could hide fresh
+recovery evidence; source backoff and the one-probe budget still apply.
+No IP geolocation, proxy purchase,
 background scanning or global availability claim is involved. Controlled tests
 cover DNS/TLS failure, HTTP 451/429, slow sources, complete outage and recovery
 after network changes. Real multi-region measurements remain pending because no
@@ -245,7 +249,9 @@ source on resume, and try compatible alternatives on failure. Currency,
 adjustment and volume units must remain consistent across each symbol's chunks;
 a source switch with unknown units/currency is refused. Crypto venue changes
 within one persisted series are refused even when the quote currency matches.
-Daily/monthly chunks cover at most one calendar year (not one request per month);
+Daily chunks cover at most one calendar year. Monthly chunks cover five years
+through the final month (under 1860 daily input bars and at most 61 monthly bars),
+without splitting a monthly aggregate; existing persisted plans are unchanged;
 weekly chunks cover at most 52 weeks without cutting an aggregate. Intraday chunks
 avoid splitting ordinary equity weekends into independent requests. The 4,096
 chunk cap is enforced while planning, before an oversized list can accumulate.
@@ -401,7 +407,12 @@ of throughput or coverage. Cache defaults additionally cap entries at 256, and
 
 Scan jobs run in batches of at most eight, one background source call at a time.
 The existing two request coordinators prefer foreground work; background work
-cannot occupy both. Network workers remain four, pending flights sixteen, RAM
+cannot occupy both. Between source calls, a background coordinator can run one
+waiting background request on its own thread before resuming the scan. This
+cooperation is limited to one suspension level; the original deadlines keep
+running, and the one-background-source gate remains held until real completion.
+Local capacity/rate waits do not mark a source as failed.
+Network workers remain four, pending flights sixteen, RAM
 cache 8 MiB and disk cache 64 MiB. Source admission spacing is weighted by the
 number of symbols (`VIBE_GATEWAY_SOURCE_SPACING`, default 0.25 seconds per symbol);
 underlying SDK/host throttles remain in effect. This is process-local admission

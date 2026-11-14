@@ -344,8 +344,8 @@ def test_skipped_options_routes_do_not_restart_a_full_request_cooldown(tmp_path,
     finished = threading.Event()
     original_done = gateway._done
 
-    def done(key, future):
-        original_done(key, future)
+    def done(key, future, **kwargs):
+        original_done(key, future, **kwargs)
         finished.set()
 
     monkeypatch.setattr(gateway, "_done", done)
@@ -456,7 +456,7 @@ def test_mixed_request_completes_only_cooled_missing_market_after_sibling_succes
             assert gateway.router.cooling("bars:a_share:1D", Loader.name)
             assert gateway.router.recovery_probe("bars:a_share:1D", [Loader.name]) is None
             assert gateway.cache.stats()["memory_entries"] == 0
-            assert response["data"]["_diagnostics"]["601398.SH"][-1]["reason"] == "no_data_or_source_unavailable"
+            assert response["data"]["_diagnostics"]["601398.SH"][-1]["reason"] == "network_failure"
             return
         assert response["complete"] is True, response
         assert response["data"]["_recovery"]["601398.SH"]["state"] == "recovered_in_request"

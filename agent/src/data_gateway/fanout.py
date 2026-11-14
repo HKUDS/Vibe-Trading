@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import time
 from typing import Callable
 
-from .service import GatewayBusy, GatewayError
+from .service import GatewayBusy
 
 
 @dataclass(frozen=True)
@@ -61,24 +61,21 @@ def acquire_groups(gateway, walkers, until, *, parallel):
                     continue
                 timeout = min(remaining, gateway.config.source_timeout)
                 if not parallel:
-                    ready.pop(index)
-                    try:
-                        if not gateway.pacer.acquire(call.source, until, cost=call.cost):
-                            raise GatewayError("Source admission deadline reached")
-                        timeout = min(until - time.monotonic(), gateway.config.source_timeout)
-                        value = gateway.invoke(call.function, {}, timeout)
-                    except Exception as exc:
-                        advance(index, error=exc)
-                    else:
-                        advance(index, value)
-                    continue
+                    # A scan cannot monopolize the background coordinator for
+                    # its entire multi-source batch. Yield at a source boundary;
+                    # the original request clock keeps running while suspended.
+                    gateway.coordinators.cooperate()
+                    remaining = until - time.monotonic()
+                    if remaining <= 0:
+                        continue
+                    timeout = min(remaining, gateway.config.source_timeout)
                 try:
                     future = gateway.submit_source(
                         call.function,
                         {},
                         timeout,
                         admit=lambda call=call: gateway.pacer.try_acquire(call.source, call.cost),
-                        shared_bulk=True,
+                        shared_bulk=parallel,
                     )
                 except GatewayBusy:
                     continue  # Local capacity/rate wait never poisons source health.
@@ -90,7 +87,7 @@ def acquire_groups(gateway, walkers, until, *, parallel):
                     pending[future] = (index, min(until, time.monotonic() + timeout))
             if pending:
                 wait(pending, timeout=min(0.02, max(0, until - time.monotonic())), return_when=FIRST_COMPLETED)
-            elif ready and parallel:
+            elif ready:
                 time.sleep(min(0.02, max(0, until - time.monotonic())))
         return [results[index] for index in range(len(walkers))]
     finally:

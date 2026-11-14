@@ -150,9 +150,9 @@ def test_noncontinuous_minutes_keep_weekends_with_adjacent_sessions():
 
 def test_low_frequency_history_uses_fewer_bounded_requests():
     monthly = router.plan(["AAPL.US"], "2021-11-14", "2026-11-13", "1M", "auto")
-    assert monthly["chunks"] == 6 and monthly["estimated_max_rows"] == 61
+    assert monthly["chunks"] == 1 and monthly["estimated_max_rows"] == 61
     for _, start, end in monthly["parts"]:
-        assert (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days < 366
+        assert (datetime.fromisoformat(end) - datetime.fromisoformat(start)).days < 1860
     daily = router.plan(["BTC-USDT"], "2021-11-14", "2026-11-13", "1D", "auto")
     assert daily["chunks"] == 6
 
@@ -255,5 +255,76 @@ def test_boolean_prices_are_not_numeric_observations():
 
 def test_decades_are_bounded_by_chunks_and_quota_not_a_ten_year_assumption():
     value = router.plan(["AAPL.US"], "1996-11-14", "2026-11-13", "1M", "auto")
-    assert value["chunks"] == 31 and value["estimated_max_rows"] == 361
+    assert value["chunks"] == 6 and value["estimated_max_rows"] == 361
     assert value["routes"]["AAPL.US"]["candidates"][0] == "yahoo"
+
+
+def test_monthly_chunks_never_split_a_month_or_exceed_input_bound():
+    for start in ("1996-02-29", "1996-11-14", "1996-01-01"):
+        result = router.plan(["AAPL.US"], start, "2026-11-13", "1M", "auto")
+        assert result["parts"][0][1] == start
+        assert result["parts"][-1][2] == "2026-11-13"
+        previous = None
+        for _, lower, upper in result["parts"]:
+            left, right = datetime.fromisoformat(lower), datetime.fromisoformat(upper)
+            assert (right - left).days < 1860
+            if previous:
+                assert left == previous + timedelta(days=1) and left.day == 1
+            previous = right
+
+
+@pytest.mark.parametrize("restored", [True, False])
+def test_history_observed_recovery_is_not_masked_by_negative_request_cache(tmp_path, monkeypatch, restored):
+    import pandas as pd
+    from backtest.loaders import registry
+    from src.data_gateway.config import Config
+    from src.data_gateway.service import MarketDataGateway
+
+    registry._ensure_registered()
+    calls = []
+    healthy = False
+
+    class Loader:
+        name = "yahoo"
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, *args, **kwargs):
+            calls.append(codes)
+            if not healthy:
+                raise ConnectionError("controlled transport outage")
+            frame = pd.DataFrame(
+                {k: [10.0] for k in ("open", "high", "low", "close", "volume")},
+                index=pd.DatetimeIndex(["2026-11-12"], name="trade_date"),
+            )
+            return {code: frame for code in codes}
+
+    monkeypatch.setitem(registry.LOADER_REGISTRY, "yahoo", Loader)
+    gateway = MarketDataGateway(Config(tmp_path))
+    monkeypatch.setattr("src.data_gateway.get_gateway", lambda: gateway)
+    monkeypatch.setattr(router, "candidates", lambda *args: ["yahoo"])
+    try:
+        with pytest.raises(router.HistoryRouteError):
+            router.fetch_chunk("AAPL.US", "2026-11-12", "2026-11-12", "1D")
+        row = gateway.router.health[("bars:us_equity:1D", "yahoo")]
+        assert row["failures"] == 1  # One network failure, not one per layer.
+        assert not gateway.refresh_after
+        with pytest.raises(router.HistoryRouteError):
+            router.fetch_chunk("AAPL.US", "2026-11-12", "2026-11-12", "1D")
+        assert len(calls) == 1  # Cooling requests generate no network traffic.
+        gateway.router.record("bars:ca_equity:1D", "yahoo", True, 0.01)
+        healthy = restored
+        if restored:
+            rows, meta = router.fetch_chunk("AAPL.US", "2026-11-12", "2026-11-12", "1D")
+            assert len(rows) == 1 and meta["coverage_verified"]
+        else:
+            with pytest.raises(router.HistoryRouteError):
+                router.fetch_chunk("AAPL.US", "2026-11-12", "2026-11-12", "1D")
+            with pytest.raises(router.HistoryRouteError):
+                router.fetch_chunk("AAPL.US", "2026-11-12", "2026-11-12", "1D")
+            assert gateway.cache.stats()["memory_entries"] == 0
+        assert len(calls) == 2  # Exactly one half-open probe, no storm.
+        assert not any(scope.startswith("history:") for scope, _ in gateway.router.health)
+    finally:
+        gateway.close()

@@ -103,7 +103,7 @@ def fetch_bars(gateway, *, exact_source=False, **params):
     }
 
 
-def _walk_bars(gateway, *, exact_source=False, **params):
+def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params):
     """Fetch only compatible existing routes; preserve per-symbol provenance.
 
     Args:
@@ -120,6 +120,7 @@ def _walk_bars(gateway, *, exact_source=False, **params):
 
     registry._ensure_registered()
     requested = params.get("source", "auto")
+    managed = requested == "auto" or respect_cooldown
     combined, provenance, unresolved, diagnostics = {}, {}, [], {}
     coverage = {}
     calendar_schedules = {}
@@ -147,7 +148,7 @@ def _walk_bars(gateway, *, exact_source=False, **params):
         # A single bounded half-open probe runs only after all ordinary routes.
         def route_attempts():
             yield from ((source, False) for source in candidates)
-            if requested == "auto":
+            if managed:
                 probe = gateway.router.recovery_probe(scope, candidates)
                 if probe:
                     yield probe, True
@@ -157,7 +158,7 @@ def _walk_bars(gateway, *, exact_source=False, **params):
             if remaining <= 0:
                 diagnostics[code].append({"source": source, "reason": "request_deadline"})
                 break
-            if not recovery and requested == "auto" and gateway.router.cooling(scope, source):
+            if not recovery and managed and gateway.router.cooling(scope, source):
                 diagnostics[code].append({"source": source, "reason": "network_cooldown"})
                 continue
             started = time.monotonic()
@@ -239,6 +240,8 @@ def _walk_bars(gateway, *, exact_source=False, **params):
                     reason = (
                         "source_busy"
                         if any(a.get("reason") == "source_busy" for a in attempts)
+                        else "network_failure"
+                        if any(a.get("reason") in {"fetch_failed", "network_failure"} for a in attempts)
                         else "no_data_or_source_unavailable"
                     )
                     diagnostics[code].append({"source": source, "reason": reason})

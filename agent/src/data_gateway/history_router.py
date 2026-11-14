@@ -168,8 +168,16 @@ def plan(codes, start_date, end_date, interval, source):
                 # a standalone acquisition. Empty responses still never prove coverage.
                 if market != "crypto" and (end - last).days <= 2:
                     last = end
-            if interval in {"1D", "1M"}:
+            if interval == "1D":
                 last = min(end, date(cursor.year, 12, 31))
+            if interval == "1M":
+                # Five years through the final month of daily input (<1860 bars),
+                # well below the unchanged 10000-row normalization bound.
+                # End on a month boundary so no monthly bar is split/repeated.
+                last = min(
+                    end,
+                    (date(cursor.year + 5, cursor.month, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1),
+                )
             if interval == "1W":
                 # Never cut one weekly aggregate across two persisted chunks.
                 last = min(end, cursor + timedelta(days=(6 - cursor.weekday()) + 51 * 7))
@@ -322,7 +330,9 @@ def fetch_chunk(symbol, start, end, interval):
     gateway = get_gateway()
     errors = []
     token = background.set(True)
-    scope = f"history:{market}:{interval}"
+    from backtest.loaders.base import source_interval
+
+    scope = f"bars:{market}:{source_interval(interval)}"
     order = candidates(symbol, interval, requested)
     if requested == "auto":
         order = gateway.router.order(scope, order)
@@ -331,24 +341,16 @@ def fetch_chunk(symbol, start, end, interval):
         previous = expected["source"]
         order = [previous, *[item for item in order if item != previous]]
 
-    def attempts():
-        for item in order:
-            if requested == "auto" and gateway.router.cooling(scope, item):
-                errors.append({"source": item, "status": "cooldown", "reason": "temporary network backoff"})
-                continue
-            yield item
-        if requested == "auto":
-            probe = gateway.router.recovery_probe(scope, order)
-            if probe:
-                yield probe
-
     try:
-        for source in attempts():
+        for source in order:
             if context.get("stop_requested", lambda: False)():
                 raise HistoryPaused()
             started = time.monotonic()
             try:
                 if source == "baostock" and interval in _VERIFIED_MINUTES:
+                    if gateway.router.cooling(scope, source) and not gateway.router.recovery_probe(scope, [source]):
+                        errors.append({"source": source, "status": "cooldown", "reason": "temporary network backoff"})
+                        continue
                     rows, meta = baostock_chunk(symbol, start, end, interval)
                     meta = {**meta, "coverage_verified": True}
                 else:
@@ -360,6 +362,7 @@ def fetch_chunk(symbol, start, end, interval):
                         source=source,
                         max_rows=0,
                         exact_source=True,
+                        respect_cooldown=True,
                     )
                     if not value.get("ok"):
                         failures = value.get("data", {}).get("_diagnostics", {}).get(symbol, [])
@@ -373,14 +376,15 @@ def fetch_chunk(symbol, start, end, interval):
                     rows, meta = _normalize(data.get(symbol), symbol, start, end, interval, provenance, market)
                 if not _compatible(meta, expected, market):
                     raise ValueError("Fallback has incompatible currency, adjustment, volume or venue")
-                gateway.router.record(scope, source, True, time.monotonic() - started)
+                if source == "baostock" and interval in _VERIFIED_MINUTES:
+                    gateway.router.record(scope, source, True, time.monotonic() - started)
                 return rows, {
                     **meta,
                     "requested_source": requested,
                     "route_attempts": errors + [{"source": source, "status": "ok"}],
                 }
             except (ValueError, OSError, TimeoutError) as exc:
-                if isinstance(exc, OSError):
+                if isinstance(exc, OSError) and source == "baostock" and interval in _VERIFIED_MINUTES:
                     gateway.router.record(scope, source, False, time.monotonic() - started)
                 errors.append({"source": source, "status": "unavailable", "reason": str(exc)[:160]})
         raise HistoryRouteError(errors)

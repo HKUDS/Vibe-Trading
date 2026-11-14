@@ -135,7 +135,11 @@ class MarketDataGateway:
                 until = time.monotonic() + self.config.request_timeout
                 flight = self.coordinators.submit(self._fetch, capability, params, key, cacheable, until)
                 self.flights[key] = flight
-                flight.add_done_callback(lambda f: self._done(key, f))
+                flight.add_done_callback(
+                    lambda f: self._done(
+                        key, f, route_managed=capability == "bars" and params.get("respect_cooldown", False)
+                    )
+                )
         if cached and allow_stale:
             result = self._decorate(cached, "stale")
             result["gateway"]["refreshing"] = flight is not None and not flight.done()
@@ -159,9 +163,14 @@ class MarketDataGateway:
         except Exception:
             return {"ok": False, "error": "Data acquisition failed; retry or select another expiration"}
 
-    def _done(self, key: str, future: Future):
+    def _done(self, key: str, future: Future, *, route_managed=False):
         with self.lock:
             self.flights.pop(key, None)
+            # Managed historical reads use the shared per-source circuit and
+            # half-open budget. A second per-request negative cache would mask
+            # newly observed source recovery for another full cooldown period.
+            if route_managed:
+                return
             if future.cancelled() or future.exception() or not future.result().get("ok"):
                 # Bounded by pending requests plus active cooldowns, cleaned below.
                 delay = self.config.cooldown

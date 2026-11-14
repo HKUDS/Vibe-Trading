@@ -18,6 +18,8 @@ class RequestQueue:
         self.queues = (deque(), deque())
         self.pending = pending
         self.active_background = 0
+        self.local = threading.local()
+        self.background_yields = 0
         self.closed = False
         self.threads = [
             threading.Thread(target=self._run, daemon=True, name=f"gateway-request-{i}") for i in range(workers)
@@ -50,17 +52,45 @@ class RequestQueue:
                 future, context, function, args = self.queues[lane].popleft()
                 self.active_background += lane
             try:
+                self.local.background = bool(lane)
                 if future.set_running_or_notify_cancel():
                     try:
                         future.set_result(context.run(function, *args))
                     except BaseException as exc:
                         future.set_exception(exc)
             finally:
+                self.local.background = False
                 # Drop completed results/tracebacks before waiting for more work.
                 del future, context, function, args
                 with self.condition:
                     self.active_background -= lane
                     self.condition.notify_all()
+
+    def cooperate(self):
+        """Run one waiting background request between source calls, on this thread.
+
+        The outer request keeps its original deadline. Only a queue worker in
+        the background lane can yield, and only one level of suspension is
+        permitted. No extra coordinator or concurrent background source is
+        created; cancelled futures and their captured contexts are discarded.
+        """
+        if not getattr(self.local, "background", False) or getattr(self.local, "yielding", False):
+            return
+        with self.condition:
+            if self.closed or not self.queues[1]:
+                return
+            future, context, function, args = self.queues[1].popleft()
+            self.background_yields += 1
+        self.local.yielding = True
+        try:
+            if future.set_running_or_notify_cancel():
+                try:
+                    future.set_result(context.run(function, *args))
+                except BaseException as exc:
+                    future.set_exception(exc)
+        finally:
+            self.local.yielding = False
+            del future, context, function, args
 
     def shutdown(self, wait=False, cancel_futures=True):
         cancelled = []
@@ -82,6 +112,7 @@ class RequestQueue:
                 "foreground_queued": len(self.queues[0]),
                 "background_queued": len(self.queues[1]),
                 "background_running": self.active_background,
+                "background_yields": self.background_yields,
             }
 
 

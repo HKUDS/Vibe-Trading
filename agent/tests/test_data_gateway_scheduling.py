@@ -13,6 +13,140 @@ from src.data_gateway.scheduling import RequestQueue, background, SourcePacer
 from src.data_gateway.service import MarketDataGateway, GatewayBusy
 
 
+def test_background_yields_between_sources_without_another_worker(tmp_path):
+    from src.data_gateway.fanout import SourceCall, acquire_groups
+
+    gateway = MarketDataGateway(replace(Config(tmp_path), source_spacing=0))
+    entered, release = threading.Event(), threading.Event()
+    order = []
+
+    def first():
+        entered.set()
+        release.wait(2)
+        order.append("scan-first")
+
+    def scan():
+        yield SourceCall("scan", first, 1)
+        yield SourceCall("scan", lambda: order.append("scan-second"), 1)
+        return "complete"
+
+    token = background.set(True)
+    active = gateway.coordinators.submit(
+        lambda: acquire_groups(gateway, [scan()], time.monotonic() + 2, parallel=False)
+    )
+    try:
+        assert entered.wait(1)
+        history = gateway.coordinators.submit(gateway.invoke, lambda: order.append("history"), {}, 0.5)
+        background.reset(token)
+        assert gateway.coordinators.submit(lambda: "foreground").result(0.5) == "foreground"
+        assert not history.done()
+        release.set()
+        assert active.result(2) == ["complete"]
+        history.result(1)
+        assert order == ["scan-first", "history", "scan-second"]
+        assert gateway.coordinators.status()["background_yields"] == 1
+        assert len(gateway.coordinators.threads) == 2
+        assert gateway.config.workers == 4 and gateway.config.pending == 16
+    finally:
+        release.set()
+        gateway.close()
+
+
+def test_background_cooperation_never_recursively_drains_the_queue():
+    queue = RequestQueue(2, 16)
+    entered, release = threading.Event(), threading.Event()
+    order = []
+
+    def scan():
+        entered.set()
+        release.wait(2)
+        queue.cooperate()
+        order.append("scan-resumed")
+
+    def history():
+        queue.cooperate()  # Must not add another suspended frame/context.
+        order.append("history")
+
+    token = background.set(True)
+    try:
+        active = queue.submit(scan)
+        assert entered.wait(1)
+        next_job = queue.submit(history)
+        last = queue.submit(lambda: order.append("last"))
+        release.set()
+        for future in (active, next_job, last):
+            future.result(1)
+        assert order == ["history", "scan-resumed", "last"]
+    finally:
+        background.reset(token)
+        release.set()
+        queue.shutdown(wait=True)
+
+
+def test_suspended_scan_keeps_its_original_deadline(tmp_path):
+    from src.data_gateway.fanout import SourceCall, acquire_groups
+
+    gateway = MarketDataGateway(replace(Config(tmp_path), source_spacing=0))
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def first():
+        entered.set()
+        release.wait(1)
+
+    def scan():
+        yield SourceCall("scan", first, 1)
+        try:
+            yield SourceCall("scan", lambda: calls.append("expired"), 1)
+        except GatewayBusy:
+            return "deadline"
+
+    token = background.set(True)
+    try:
+        active = gateway.coordinators.submit(
+            lambda: acquire_groups(gateway, [scan()], time.monotonic() + 0.15, parallel=False)
+        )
+        assert entered.wait(1)
+        history = gateway.coordinators.submit(time.sleep, 0.2)
+        release.set()
+        assert active.result(1) == ["deadline"]
+        history.result(1)
+        assert calls == []
+    finally:
+        background.reset(token)
+        release.set()
+        gateway.close()
+
+
+def test_background_timeout_cannot_start_another_source_until_actual_exit(tmp_path):
+    from src.data_gateway.fanout import SourceCall, acquire_groups
+
+    gateway = MarketDataGateway(replace(Config(tmp_path), source_spacing=0, source_timeout=0.02))
+    release = threading.Event()
+    calls = []
+
+    def route():
+        try:
+            yield SourceCall("slow", lambda: release.wait(1), 1)
+        except TimeoutError:
+            pass
+        try:
+            yield SourceCall("fallback", lambda: calls.append("fallback"), 1)
+        except GatewayBusy:
+            return "capacity"
+
+    token = background.set(True)
+    try:
+        assert acquire_groups(gateway, [route()], time.monotonic() + 0.08, parallel=False) == ["capacity"]
+        assert calls == []
+        assert gateway.router.status() == []  # Admission pressure is not source health.
+        background.reset(token)
+        assert gateway.invoke(lambda: "foreground", {}, 0.2) == "foreground"
+    finally:
+        release.set()
+        gateway.close()
+
+
 def test_background_cannot_consume_foreground_coordinator():
     queue = RequestQueue(2, 16)
     entered, release = threading.Event(), threading.Event()

@@ -1660,3 +1660,101 @@ audit, native-memory/connection snapshots and exit check are under:
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v15/`.
 Real geographic-node testing remains deferred. Local routing fault tests do
 not certify accessibility from other countries or regions.
+
+
+## v16: background fairness and one recovery circuit (2026-11-15)
+
+User requested fixing the four v15 routed-history pauses without longer deadlines,
+more cache/memory, or another hour-long test. The original four records remain
+above: a monthly queue convoy (8/12 chunks in 92.974 s), then monthly/HK-CA-UK
+and US-minute source failures/cooldown (1/12, 0/3, 0/2 chunks). A public source
+outage itself cannot be repaired locally. The fix addresses the measured queue
+convoy and the software barriers that kept a recovered source inaccessible.
+
+Confirmed implementation causes and changes:
+
+- The one background coordinator was held for a whole eight-symbol scan request,
+  across its sequential source calls. History therefore repeatedly waited the
+  observed 11–12 seconds before even reaching a source. At source boundaries,
+  the same coordinator now executes one queued background request before resuming
+  the scan. Only one suspension level is permitted. The other coordinator stays
+  available to foreground work, the one-background-source semaphore stays in
+  force through real completion, and no thread/pool/pending limit is added.
+  Source/rate admission is nonblocking and local contention is not recorded as
+  source failure. Suspended scan deadlines are not reset or extended.
+- History previously used a separate `history:<market>:<interval>` health scope,
+  called exact bar routes that did not consult transport cooldown, and also hit
+  the gateway's per-request `refresh_after` negative cache. Those layers could
+  disagree with a newly observed source recovery. Persisted routes now share
+  `bars:<market>:<acquisition interval>` health, including the daily transport
+  for weekly/monthly aggregates. Managed exact-source attempts respect the same
+  circuit/one-half-open-probe budget and omit the redundant request-key failure
+  cache. Wrapped loader network failures remain network diagnostics, rather
+  than collapsing into generic missing-data errors. No venue/caliber guard is
+  relaxed; failed probes stay failed and repeated cooling reads send no traffic.
+- Monthly planning unnecessarily created one chunk per calendar year, including
+  a tiny leading partial year. New monthly plans span five years through the
+  final month: <1860 daily input bars / <=61 monthly bars, below existing bounds.
+  The exact five-year dual-US case uses two chunks instead of twelve, still
+  requiring all 122 calendar-derived rows. Daily/intraday plans, persisted old
+  plans, chunk/entry/storage caps and source deadlines are unchanged.
+
+164 relevant automated checks passed in 55.84 s. Additional suspended-deadline and timed-out-background-slot retention
+regressions passed separately (166 distinct checks total). Four decisive cases run against archived v15
+modules fail (queue order, recovered/still-broken managed route, monthly request
+count), while the same cases pass with v16. The initial old-code control
+accidentally imported current modules because pytest's conftest prepended its
+source directory; it is retained but is NOT old-code evidence. The corrected
+control preimports the archived modules and prints their paths before pytest;
+`/tmp/gateway-v16-old-control-fixed.log` and XML record the four expected failures.
+
+The short live test completed: 571.81 seconds active (9.53 min), 790.91 seconds
+including startup and 190.01-second natural idle. Same server PID 59551; four
+fault cycles, 64 topics, 201 matched subscriptions/unsubscriptions, and 42
+samples with history, the scan and all topics active together. The source code
+in the running candidate matches the final five production files byte-for-byte
+at diff level; only tests/documentation were added during the run.
+
+| Routed task | Complete rows/chunks | Elapsed including recovery |
+|---|---:|---:|
+| Dual-US five-year monthly, first | 122 / 2 | 10.039 s |
+| BTC/ETH daily window of minute bars | 2880 / 2 | 4.027 s |
+| HK/CA/UK daily | 30 / 3 | 3.238 s |
+| Dual-US one-week minute bars | 3900 / 2 | 41.437 s |
+| Dual-US five-year monthly, repeat | 122 / 2 | 3.138 s |
+
+All five attempts completed, none paused at the unchanged 90-second window.
+The US minute task overlapped an injected complete outage, retained two failure
+observations and completed after production resume calls; it is not a no-retry
+claim. All 12 separate simultaneous foreground cold requests completed on their
+first client attempt, max 12.960 s, with no unexpected foreground HTTP/client,
+driver or cleanup errors. Seven background handoffs were measured on the same
+coordinator. This limited live sample plus controlled recovery regressions
+supports the fix, not a guarantee that all public sources are always available.
+
+The 5224-symbol scan was intentionally cancelled after the short workload at
+318 acquired / 392 attempts, 74 requeues, zero terminal symbol failures. The
+large 5m history workload retained 76 verified chunks / 72240 rows, with a
+failed state from the last injected outage/cooldown at teardown; it was not
+resumed to complete 610 chunks. These are background-load prefixes, NOT repeat
+full-scan/full-history acceptance. The existing full hour/universe/data evidence
+remains v15. The unmodified full-run report uses explicit `--partial`: its four
+long-run checks (full scan, hour, >=610 history chunks, complete 5m job) stay false;
+the other 22 checks pass. The short run really received 3419 upstream WS events
+and acquired 87 history chunks across its jobs, despite the >=610 check being
+false. No test threshold was changed to manufacture an all-green hour report.
+
+Peak parent physical footprint 176.75 MiB, idle final 151.44 MiB; independently
+sampled process-tree peak 546.52 MiB, maximum one SDK child. Memory cache, topics,
+listeners, upstream WebSockets, source requests, scan metadata and history
+reservations cleared naturally. All 437 source calls drained and all 10 opened
+upstream WebSockets closed. All seven recorded PIDs (driver, observer, server,
+four SDK children) were independently absent after exit. The unchanged limits
+are 8/64 MiB cache, 4 source workers, 16 pending, 6/15-second source/request
+budgets, 1 history worker and 256 MiB history quota. No forced GC or restart.
+
+Stable raw/OS reports, short summary/plot, candidate patch fingerprint, tests,
+old-code control and exit check:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v16/`.
+Real regional-node tests remain deferred. No Options Lab or protected agent
+core files changed.
