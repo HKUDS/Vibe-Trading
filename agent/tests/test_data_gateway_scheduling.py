@@ -429,3 +429,18 @@ def test_serial_http_symbols_are_split_inside_unchanged_source_deadline(tmp_path
         assert gateway.config.source_timeout == 0.075 and gateway.config.workers == 4
     finally:
         gateway.close()
+
+
+def test_queued_timeout_is_local_pressure_not_network_cooldown(tmp_path):
+    config = replace(Config(tmp_path), workers=1, request_timeout=0.03)
+    gateway = MarketDataGateway(config)
+    release = threading.Event()
+    occupied = gateway.coordinators.submit(release.wait, 1)
+    try:
+        result = gateway.options_chain("AAPL")
+        assert not result["ok"] and result["retry_after_seconds"] == 1
+        assert not gateway.router.health
+    finally:
+        release.set()
+        occupied.result(1)
+        gateway.close()

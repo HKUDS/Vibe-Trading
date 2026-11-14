@@ -200,10 +200,17 @@ class HistoryDriver:
         value = await self.request("POST", "/data/history/jobs", json=spec)
         job = value["id"]
         await self.request("POST", f"/data/history/jobs/{job}/resume")
+        recoveries, retry_at = [], 0.0
         while time.monotonic() - started < 90 and not self.stop.is_set():
             value = await self.request("GET", f"/data/history/jobs/{job}")
-            if value["state"] not in {"running", "queued"}:
+            if value["state"] in {"complete", "downloaded"}:
                 break
+            if value["state"] in {"failed", "paused", "interrupted"} and time.monotonic() >= retry_at:
+                metrics = await self.request("GET", "/_soak/metrics")
+                if metrics["fault"] != "all_offline":
+                    recoveries.append({"error": value.get("error"), "completed_chunks": value["completed_chunks"]})
+                    await self.request("POST", f"/data/history/jobs/{job}/resume")
+                    retry_at = time.monotonic() + 10
             await asyncio.sleep(1)
         if value["state"] in {"running", "queued"}:
             await self.request("POST", f"/data/history/jobs/{job}/cancel")
@@ -214,6 +221,7 @@ class HistoryDriver:
                 await asyncio.sleep(1)
         self.record(
             "routed_history",
+            recoveries=recoveries,
             spec=spec,
             state=value["state"],
             rows=value["rows"],

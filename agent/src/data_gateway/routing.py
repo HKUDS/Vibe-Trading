@@ -19,6 +19,7 @@ class NetworkRouter:
         self.health = OrderedDict()
         self.lock = threading.RLock()
         self.probes = OrderedDict()
+        self.probe_tried = OrderedDict()
 
     def record(self, scope, source, success, elapsed):
         with self.lock:
@@ -28,10 +29,13 @@ class NetworkRouter:
             self.health[key] = {
                 "checked": self.clock(),
                 "success": success,
+                "last_success_at": self.clock() if success else old.get("last_success_at"),
                 "failures": failures,
                 "latency_ms": round(elapsed * 1000, 2),
                 "retry_at": 0 if success else self.clock() + min(self.lifetime, self.cooldown * 2 ** (failures - 1)),
             }
+            if success:
+                self.probe_tried.pop(scope, None)
             while len(self.health) > 512:
                 self.health.popitem(last=False)
 
@@ -79,7 +83,21 @@ class NetworkRouter:
             ]
             if not candidates:
                 return None
-            source = min(candidates, key=lambda name: self.health[(scope, name)]["retry_at"])
+            tried = self.probe_tried.get(scope, set()) & set(candidates)
+            remaining = [source for source in candidates if source not in tried]
+            if not remaining:
+                tried, remaining = set(), candidates
+
+            def priority(name):
+                row = self.health[(scope, name)]
+                success_at = row.get("last_success_at")
+                return (success_at is None, -(success_at or 0), row["retry_at"])
+
+            source = min(remaining, key=priority)
+            self.probe_tried[scope] = tried | {source}
+            self.probe_tried.move_to_end(scope)
+            while len(self.probe_tried) > 512:
+                self.probe_tried.popitem(last=False)
             self.probes[scope] = now + self.cooldown
             self.probes.move_to_end(scope)
             while len(self.probes) > 512:
@@ -96,6 +114,10 @@ class NetworkRouter:
             for key, row in list(self.health.items()):
                 if now - row["checked"] > self.lifetime:
                     self.health.pop(key, None)
+            active_scopes = {key[0] for key in self.health}
+            for scope in list(self.probe_tried):
+                if scope not in active_scopes:
+                    self.probe_tried.pop(scope, None)
 
     def status(self):
         with self.lock:

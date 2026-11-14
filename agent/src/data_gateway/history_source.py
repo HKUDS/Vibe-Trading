@@ -7,6 +7,7 @@ import logging
 from datetime import date, datetime, timedelta
 import math
 import re
+import time
 
 
 @contextmanager
@@ -46,12 +47,19 @@ def _sdk_output():
 def _background_session(function):
     @wraps(function)
     def call(*args, **kwargs):
-        from backtest.loaders.base import source_background
+        from backtest.loaders.base import source_background, source_deadline
+        from backtest.loaders.baostock_loader import _read_timeout
 
         token = source_background.set(True)
+        # Bound the whole calendar/status/minute transaction, not each message
+        # independently. Cancellation is checked before the next route/attempt.
+        until = time.monotonic() + _read_timeout()
+        inherited = source_deadline.get()
+        deadline_token = source_deadline.set(min(until, inherited) if inherited is not None else until)
         try:
             return function(*args, **kwargs)
         finally:
+            source_deadline.reset(deadline_token)
             source_background.reset(token)
 
     return call

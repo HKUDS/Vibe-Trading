@@ -334,6 +334,11 @@ async def exercise(args, output):
                                 reasons[reason] = reasons.get(reason, 0) + 1
                             fetched = payload.get("gateway", {}).get("fetched_at")
                             if event == "snapshot" and fetched and fetched != row.get("last_fetched_at"):
+                                previous = row.get("last_fetched_at")
+                                if previous:
+                                    gap = (datetime.fromisoformat(fetched) - datetime.fromisoformat(previous)).total_seconds()
+                                    row["max_acquisition_gap_seconds"] = max(row.get("max_acquisition_gap_seconds", 0), round(gap, 3))
+                                    row["acquisition_gaps_over_180s"] = row.get("acquisition_gaps_over_180s", 0) + int(gap > 180)
                                 row["distinct_acquisitions"] = row.get("distinct_acquisitions", 0) + 1
                                 row["last_fetched_at"] = fetched
                             row["last_s"] = round(time.monotonic() - started, 2)

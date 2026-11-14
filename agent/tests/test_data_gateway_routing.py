@@ -201,3 +201,30 @@ def test_recovered_source_is_actually_called_while_old_cooldown_would_return_503
             assert response.json()["ok"] and len(calls) == 1
     finally:
         gateway.close()
+
+
+def test_recovery_prefers_previously_working_source_and_rotates_if_it_still_fails():
+    now = [0.0]
+    router = NetworkRouter(cooldown=30, lifetime=300, clock=lambda: now[0])
+    scope = "bars:a_share:1D"
+    router.record(scope, "working", True, 1)
+    for _ in range(4):
+        router.record(scope, "working", False, 1)
+    for _ in range(3):
+        router.record(scope, "blocked", False, 1)
+        router.record(scope, "alternative", False, 1)
+    now[0] = 31
+    assert router.recovery_probe(scope, ["blocked", "working", "alternative"]) == "working"
+    assert all(router.recovery_probe(scope, ["blocked", "working", "alternative"]) is None for _ in range(100))
+    router.record(scope, "working", False, 1)
+    now[0] = 62
+    assert router.recovery_probe(scope, ["blocked", "working", "alternative"]) == "blocked"
+    router.record(scope, "blocked", False, 1)
+    now[0] = 93
+    assert router.recovery_probe(scope, ["blocked", "working", "alternative"]) == "alternative"
+    router.record(scope, "working", True, 1)
+    assert scope not in router.probe_tried
+    assert not router.cooling(scope, "working")
+    now[0] = 500
+    router.prune()
+    assert not router.health and not router.probe_tried

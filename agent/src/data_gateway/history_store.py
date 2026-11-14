@@ -413,12 +413,15 @@ class HistoryStore:
         self.status(job)
         with self.lease(job):
             state = self.status(job)
-            if state["state"] == "queued" and state["cancel"]:
-                with self.transaction() as db:
-                    db.execute("UPDATE jobs SET state='paused' WHERE id=?", (job,))
-                return self.status(job)
             with self.transaction() as db:
-                db.execute("UPDATE jobs SET state='running',cancel=0,reserved=0,error=NULL WHERE id=?", (job,))
+                current = db.execute("SELECT state,cancel FROM jobs WHERE id=?", (job,)).fetchone()
+                cancelled = current["cancel"] and (current["state"] == "queued" or not state["cancel"])
+                if cancelled:
+                    db.execute("UPDATE jobs SET state='paused',reserved=0 WHERE id=?", (job,))
+                else:
+                    db.execute("UPDATE jobs SET state='running',cancel=0,reserved=0,error=NULL WHERE id=?", (job,))
+            if cancelled:
+                return self.status(job)
             failed_index = None
             try:
                 for chunk in state["chunks"]:

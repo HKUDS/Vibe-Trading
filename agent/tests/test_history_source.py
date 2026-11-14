@@ -92,3 +92,31 @@ def test_sdk_notices_do_not_redirect_other_threads_or_mcp_stdout(capsys):
         thread.join()
     assert capsys.readouterr().out == "protocol response\n"
     assert hasattr(sdk, "print") is not missing
+
+
+def test_history_session_has_one_aggregate_deadline_and_restores_parent(monkeypatch):
+    import time
+    from backtest.loaders.base import source_background, source_deadline
+    from src.data_gateway.history_source import _background_session
+
+    monkeypatch.setattr("backtest.loaders.baostock_loader._read_timeout", lambda: 0.05)
+    seen = []
+
+    @_background_session
+    def operation():
+        seen.append((source_deadline.get(), source_background.get()))
+        raise ConnectionError("bounded failure")
+
+    start = time.monotonic()
+    with pytest.raises(ConnectionError):
+        operation()
+    assert start < seen[-1][0] <= time.monotonic() + 0.05
+    assert seen[-1][1] is True and source_deadline.get() is None and source_background.get() is False
+    parent = time.monotonic() + 0.01
+    token = source_deadline.set(parent)
+    try:
+        with pytest.raises(ConnectionError):
+            operation()
+        assert seen[-1][0] == parent and source_deadline.get() == parent
+    finally:
+        source_deadline.reset(token)

@@ -854,4 +854,75 @@ reads now returned all eight at daily/weekly/monthly intervals in 8.006/6.386/6.
 seconds, with fresh-cache repeated reads. Network variation prevents interpreting
 this as a precisely isolated latency benchmark. The missing-first real batch
 also retained all seven healthy symbols and explicitly named the absent one.
-The definitive hour is the subsequent fresh `gateway-router-hour-v2-20261114` run.
+The subsequent fresh `gateway-router-hour-v2-20261114` run was rejected, as documented below.
+
+
+Rejected v2 run pointers:
+- Service commit `52a1c756a`; raw report `/tmp/gateway-router-hour-v2-20261114.json`.
+- Independent observer `/tmp/gateway-router-hour-v2-os-20261114.json`.
+- History root `/Users/wuhaozhe/.vibe-trading/history-router-hour-v2-20261114`.
+- Driver uses 30 × 120-second fault cycles, 180-second warmup, 190-second idle;
+  `--finish-scan` keeps 64 subscriptions and routed history active after the hour
+  until scan terminal (additional timeout 7,200 seconds). Dataset quota remains
+  256 MiB. The raw report saves terminal scan state before idle metadata expires.
+- Current live scenario results: `/tmp/gateway-live-scenarios-20261114.json` and
+  `/tmp/gateway-live-scenarios-v2-20261114.json` (rerun cases 5/10 after HTTP split).
+- Real killed-worker/corrupt-chunk recovery passed: `/tmp/gateway-real-crash-20261114.json`.
+- Latest regression 116 passed; JUnit `/tmp/gateway-router-hour-regression.xml`.
+- Artifact archive `.../01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114`.
+- Final tasks: wait for real hour + scan completion, verify complete 5m dataset
+  independently, generate combined report/plot, finish all 30 scenario statuses,
+  archive evidence, update this document, commit and inspect process cleanup.
+
+
+### v2 rejection and corrective work
+
+The new-router v2 run exercised 30 fault cycles and 3,981.2 active seconds, but
+was **not accepted**. Scan acquired 2,232/5,224 symbols, with 1,652.479 seconds
+in acquisition and 2,328.629 seconds in backoff. Some bar topics had 442–966
+seconds since their last acquisition near minute 61. The final cancellation
+exceeded 45 seconds and the driver exited before an idle tail. No transport
+ReadError is not sufficient evidence of healthy subscriptions.
+
+The half-open chooser favored the earliest retry time, repeatedly probing blocked
+Tencent/Eastmoney over previously successful BaoStock. It now preserves last
+success and rotates bounded recovery attempts. Separately, a real control
+measured BaoStock login 4.044 seconds and two daily queries 4.422/2.696 seconds:
+the unchanged six-second whole-batch budget cannot accommodate that response
+time. An earlier control script failed to advance the SDK row cursor and was
+interrupted; its elapsed time is invalid and excluded.
+
+The existing Yahoo client returned three mainland stock samples in
+0.266/0.648/0.859 seconds, each declaring CNY. Last-session close and volume
+for 601398/000001 matched independent BaoStock responses; the third BaoStock
+control timed out and is not counted as a match. Yahoo A-share admission and
+SH→SS mapping now join the default fallback chain; old complete source-priority
+settings retain their relative order. CNY is required; B shares are excluded.
+A real eight-symbol cold auto request still exceeded its 15-second budget while
+learning failed sources; the subsequent eight-symbol batch returned all eight
+from Yahoo in 11.036 seconds. Cold-start latency is not claimed solved.
+
+History transactions now have an aggregate deadline, and a deterministic
+cancel/start race is fixed under the metadata transaction. The observed v2
+45-second failure was not retrospectively isolated to only one of these causes.
+The driver records acquisition gaps and resumes transiently failed small routed
+jobs after the injected outage; these are explicit driver resume calls, not a
+claim that the production history worker retries indefinitely.
+
+Current regression: 284 passed (`/tmp/gateway-router-v3-regression-final.xml`).
+A fresh short mixed pilot and final-hour rerun are pending; v2 does not substitute
+for their results. Resource/cache limits remain unchanged.
+
+The v3 short pilot completed 2×60-second fault cycles and stopped without the
+45-second cancellation failure (235.69 seconds total, 35-second idle, not an
+hour/memory-idle acceptance). It only acquired 16/256 scan symbols; this exposed
+an additional local pressure issue. Queued request expiration now requests a
+one-second retry, not a network cooldown. Shared HTTP pacing also previously
+ignored the acquisition deadline, letting already-timed-out calls keep sleeping
+and start requests later. It now refuses an impossible local pacing slot without
+reserving it, classifies that as `source_busy`, and caps the HTTP socket timeout
+by the remaining acquisition budget. The rate interval, jitter, concurrency and
+cache limits are unchanged. Focused HTTP/loader/scheduling regression: 90 passed.
+A real recovery-choice control with identical seeded health chose blocked Tencent
+on the old algorithm (failed in 4.802 seconds), and previously working Yahoo on
+the fixed algorithm (both stocks returned in 0.878 seconds).

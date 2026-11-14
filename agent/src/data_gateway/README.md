@@ -9,6 +9,9 @@ controls are available at the existing `/history-storage` page.
 
 - Historical bars reuse the repository loader registry and each market's compatible
   fallback chain, with the existing normalization, currency and provenance rules.
+  Mainland A shares can also fall back to the existing Yahoo transport: `.SH`
+  maps to `.SS`, `.SZ` is retained, and the response must declare CNY. B shares
+  and indices are excluded from that new route.
 - US option snapshots use Cboe then Yahoo by default. `full=true` returns every
   validated standard 100-share contract at one expiration, within the response
   budget. Discover all expiration dates, then request each on demand. Adjusted
@@ -67,7 +70,9 @@ collection rather than assume an atomic multi-page snapshot.
 
 Routing learns from actual requests on this machine. A recent successful route
 is preferred over a recently failing one; failures cool down exponentially.
-Health expires so a changed network can try the original order again. Historical
+A half-open recovery probe first tries a previously successful source, then
+rotates through alternatives if it still fails; there is at most one probe per
+scope per cooldown. Health expires so a changed network can try the original order again. Historical
 health is separated by market and acquisition interval (daily/weekly/monthly
 share the daily transport health). No IP geolocation, proxy purchase,
 background scanning or global availability claim is involved. Existing source
@@ -418,3 +423,17 @@ SH/SZ inventory and downloads real five-year minute chunks in the same service.
 The observer samples the parent and actual child PIDs every 0.5 seconds. The
 harness retains all transport errors; its client retires idle HTTP connections
 before Uvicorn's five-second keep-alive timeout to avoid reuse/close races.
+
+History BaoStock transactions share one aggregate timeout (the existing
+`VIBE_TRADING_BAOSTOCK_TIMEOUT`, default 30 seconds) across lock admission,
+login, calendar/status/bar messages and logout. A cancellation is checked before
+the next attempt, and cannot be lost between queued-state inspection and start.
+This tightens the cancellation bound; it does not increase source concurrency.
+The default six-second gateway bar-source budget may still reject a healthy
+BaoStock endpoint when it is slow. A compatible working alternative can take
+over; no router can guarantee coverage when every eligible source is unavailable.
+
+HTTP pacing respects the current acquisition deadline. A local pacing rejection
+is reported as capacity pressure, does not mark the source as network-down, and
+does not reserve a future request slot. Socket waits use the remaining budget;
+actual work still holds its source slot until it exits.

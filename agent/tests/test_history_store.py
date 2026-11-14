@@ -341,3 +341,22 @@ def test_distinct_jobs_with_colliding_old_hashes_have_independent_leases(store, 
                 pass
     with store.transaction() as db:
         assert len({r[0] for r in db.execute("SELECT lease_slot FROM jobs")}) == 2
+
+
+def test_cancel_between_status_snapshot_and_running_transition_is_not_lost(store, monkeypatch):
+    job = store.create(**spec())["id"]
+    with store.transaction() as db:
+        db.execute("UPDATE jobs SET state='queued',cancel=0 WHERE id=?", (job,))
+    original, reads, fetched = store.status, [0], []
+
+    def status(identity=None):
+        value = original(identity)
+        reads[0] += 1
+        if reads[0] == 2:
+            store.cancel(job)
+        return value
+
+    monkeypatch.setattr(store, "status", status)
+    store.fetcher = lambda *args: (fetched.append(args), {})
+    value = store.run(job)
+    assert value["state"] == "paused" and value["cancel"] and not fetched

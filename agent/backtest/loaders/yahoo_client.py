@@ -84,6 +84,8 @@ def map_symbol(symbol: str) -> str:
     """
     cleaned = symbol.strip()
     upper = cleaned.upper()
+    if upper.endswith(".SH") and len(upper) == 9 and upper[:6].isdigit():
+        return upper[:6] + ".SS"
     if upper.endswith(".US"):
         # US class shares are hyphenated on Yahoo (BRK-B): the dot form
         # returns an empty chart (live-verified), so map BRK.B.US -> BRK-B.

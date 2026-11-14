@@ -29,6 +29,7 @@ from typing import Any
 import requests
 
 from backtest.loaders.base import positive_env_float
+from backtest.loaders.acquisition import SourceAdmissionTimeout, source_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,9 @@ class HostThrottle:
                 # Chain off the previous reservation and add jitter to desync
                 # concurrent callers, baking the jitter into the stored slot.
                 fire_at = last + min_interval + random.uniform(0.0, _JITTER_MAX_S)
+            until = source_deadline.get()
+            if until is not None and fire_at >= until - 0.05:
+                raise SourceAdmissionTimeout("HTTP source pacing exceeds acquisition deadline")
             self._last[bucket] = (fire_at, min_interval)
         sleep_for = fire_at - time.monotonic()
         if sleep_for > 0:
@@ -171,6 +175,12 @@ def throttled_get(
     if headers:
         merged_headers.update(headers)
     _THROTTLE.wait(host_key, min_interval)
+    until = source_deadline.get()
+    if until is not None:
+        remaining = until - time.monotonic() - 0.05
+        if remaining <= 0:
+            raise SourceAdmissionTimeout("HTTP acquisition expired before dispatch")
+        timeout = min(timeout, remaining)
     session = _session_for(host_key)
     return session.get(url, params=params, headers=merged_headers, timeout=timeout)
 

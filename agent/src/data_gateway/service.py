@@ -146,11 +146,11 @@ class MarketDataGateway:
         try:
             return json.loads(json.dumps(flight.result(timeout=self.config.request_timeout), allow_nan=False))
         except TimeoutError:
-            flight.cancel()  # Queued work must not outlive the caller deadline.
+            queued = flight.cancel()  # Queued work must not outlive the caller deadline.
             return {
                 "ok": False,
                 "error": "Data request timed out; retry shortly",
-                "retry_after_seconds": self.config.cooldown,
+                "retry_after_seconds": 1 if queued else self.config.cooldown,
             }
         except Exception:
             return {"ok": False, "error": "Data acquisition failed; retry or select another expiration"}
@@ -173,7 +173,7 @@ class MarketDataGateway:
         started = time.monotonic()
         deadline.set(until)
         if started >= until:
-            return {"ok": False, "error": "Request expired in queue"}
+            return {"ok": False, "error": "Request expired in queue", "retry_after_seconds": 1}
         routes = self.providers[capability]
         baseline = self.config.sources if capability == "options_chain" else tuple(routes)
         order = self.router.order(capability, baseline)

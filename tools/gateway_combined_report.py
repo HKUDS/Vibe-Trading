@@ -126,6 +126,25 @@ def summarize(document, observer=None):
             "One hour cannot establish multi-day leak absence; source availability is not guaranteed",
         ],
     }
+    routed = [row for row in checks if row["kind"] == "routed_history"]
+    result["routed_history"] = {
+        "jobs": len(routed),
+        "states": dict(Counter(row["state"] for row in routed)),
+        "successful_shapes": sorted(
+            {
+                ",".join(row["spec"]["codes"]) + ":" + row["spec"]["interval"]
+                for row in routed
+                if row["state"] in {"complete", "downloaded"} and row["rows"] > 0
+            }
+        ),
+        "sources": sorted({source for row in routed for source in row.get("sources", [])}),
+        "outcomes": routed,
+    }
+    scan_completed_at = next(
+        (row["elapsed_s"] for row in samples if any(job.get("complete") for job in row["gateway"].get("scans", []))),
+        None,
+    )
+    result["scan_completion_active_seconds"] = scan_completed_at - start if scan_completed_at is not None else None
     scan = document.get("scan_job") or {}
     if scan.get("total"):
         result["scan_completed_fraction"] = scan["completed"] / scan["total"]
@@ -153,6 +172,10 @@ def summarize(document, observer=None):
         "history_worker_drained": all(h["state"] not in {"running", "queued"} for h in tail["history"]),
         "idle_observed_three_minutes": result["idle_seconds_observed"] >= 180,
     }
+    if routed:
+        result["checks"]["all_four_routed_history_shapes_acquired"] = (
+            len(result["routed_history"]["successful_shapes"]) >= 4
+        )
     timing = tail["timings"]
     started = timing.get("source_queue", {}).get("count", 0)
     finished = sum(timing.get(key, {}).get("count", 0) for key in ("source_success", "source_failed"))

@@ -185,6 +185,7 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         # for explicit source="mootdx" use. See HKUDS/Vibe-Trading#1729.
         "eastmoney",
         "baostock",
+        "yahoo",
         "akshare",
         "tushare",
         "local",
@@ -563,6 +564,10 @@ def refresh_source_order_overrides() -> None:
         # Preserve the remaining order without treating that as consent.
         if market in {"a_share", "hk_equity", "index"} and order.count("gildata") == 1:
             order.remove("gildata")
+        # Migrate a complete pre-Yahoo mainland ordering without discarding
+        # the user's relative priorities. Arbitrary missing sources still fail.
+        if market == "a_share" and sorted(order) == sorted(s for s in default if s != "yahoo"):
+            order.insert(order.index("local"), "yahoo")
         if order and is_valid_source_order(market, order):
             FALLBACK_CHAINS[market] = order[:]
             _ACTIVE_SOURCE_ORDER_OVERRIDES[market] = order[:]
