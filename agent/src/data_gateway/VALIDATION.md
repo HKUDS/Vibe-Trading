@@ -628,8 +628,9 @@ large results inline, while the existing MCP tool spools them. Baseline and curr
 `get_market_data` function AST was identical. These failures are pre-existing
 contract drift, not a reason to relax gateway verification.
 
-Formal combined-hour result: pending. See the next appended result before making
-any memory-stability or full-market coverage claim.
+Formal combined-hour result: completed; see “Combined-hour final result” below.
+The resource/recovery checks passed, but full-market acquisition did not finish
+in the measured hour; its explicit coverage check remains false.
 
 
 ## Historical router correction (2026-11-14, after combined-hour launch)
@@ -657,11 +658,11 @@ Separate real acquisitions through the new history-job HTTP path:
 
 Native browser interaction also completed AAPL 1m, 2026-11-09..13, five chunks,
 through estimate → candidate-route display → download → downloaded/unverified.
-These observations are separate from the ongoing hour: its parent imported
+These observations are separate from the combined hour: its parent imported
 commit `45a8e0f25` before the new history router existed. Its data acquisition
 continues to exercise the original verified BaoStock adapter. Do not use that
 hour as evidence that the new multi-source downloader passed an hour-long soak.
-The same process observer continues measuring actual children.
+The independent observer measured actual children throughout that hour.
 
 Default history storage also collided with the CLI's existing
 `~/.vibe-trading/history` text file. It now uses `~/.vibe-trading/datasets/history`,
@@ -715,3 +716,85 @@ AAPL monthly download **1996-11-14..2026-11-13** acquired **361 rows in 31 chunk
 through Yahoo, in **24.254 seconds**. It is labelled downloaded/calendar-unverified,
 not verified complete. This is observed source coverage, not a promise that every
 source supplies 30 years or that minute history has the same depth.
+
+
+## Combined-hour final result (2026-11-14)
+
+Measured service version: `45a8e0f25`, before the historical-router commits
+`ffb393951` and `8dd52201f`. The router's separate live acquisitions above and
+111 backend/46 frontend checks must not be conflated with this hour.
+
+The same server PID ran **3,844.48 active seconds (64.07 minutes)**, plus warmup
+and **189.99 seconds observed idle**, 4,221.43 seconds total. Work was real
+upstream acquisition with process-local socket/source fault injection, not a host
+network outage or a multi-region test. There were **30 fault cycles** and
+**1,449 subscribe/unsubscribe pairs**. Limits stayed at 8 MiB RAM cache, 64 MiB
+disk cache, four source workers, sixteen pending requests and 256 MiB history
+quota. Only the topic cap was configured to 64 for this requested stress case.
+
+- 64 concurrent topics comprised 30 stocks × daily/weekly, BTC/ETH streams and
+  AAPL/SPY delayed options. All 60 bar topics received their first result within
+  30.1 seconds, and each recorded 33–37 distinct acquisitions over the run.
+  This is not 64 distinct equities, tick-level equities or realtime options.
+- The 5,224-stock SH/SZ scan acquired **2,439 stocks (46.69%)**, with 3,024 symbol
+  attempts and 585 retries. **2,785 remained** when the test stopped it. No
+  terminally exhausted symbol was recorded, but this is not zero failed attempts
+  or a completed full-market scan. The report's `full_scan_completed` is false.
+  Scan metadata is process-local/idle-expiring; it is not a persistent downloaded
+  archive. No extrapolated completion SLA is claimed.
+- Ten stocks × five years × 5m completed **610 chunks / 581,760 rows**. After
+  shutdown, a fresh independent BaoStock calendar and ten full-range daily-status
+  queries verified every session/minute grid and chunk hash. Reading all **582
+  production-reader pages** reproduced the same canonical SHA-256:
+  `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`.
+  This also matches the separately verified prior dataset. Verification took
+  32.11 seconds. The concurrent 15m continuation reached 439/610 chunks and
+  139,472 rows, then paused; it is not certified complete. Combined disk use
+  was 14,270,275 bytes with zero reserved bytes at idle.
+- **No client ReadError or other client transport exception** occurred. All 29
+  explicit post-fault recovery probes returned 200; all 30 all-offline probes
+  returned visible 503s. The last cycle has stream/history recovery observations
+  but no next-cycle recovery probe. Two ordinary bar probes and one options
+  probe (plus their immediate repeat reads) still returned 503 while routes
+  cooled down after faults. Recovery is not instantaneous or guaranteed when
+  every source is unavailable. These are not silently discarded from latency
+  statistics. The old three ReadErrors still lack enough evidence for a unique
+  retrospective cause; the controlled keep-alive race and its fix are documented
+  above.
+- Parent physical footprint peaked at **180.81 MiB**, settled at **150.20 MiB**;
+  the post-30-minute fitted slope was **−0.04194 MiB/minute**. The 30–40, 40–50
+  and 50–60 minute median footprints were 153.66, 154.13 and 153.17 MiB. This
+  run shows no continued late growth, not proof of multi-day leak absence.
+  Final RSS was 24.77 MiB; macOS physical footprint, including compressed/native
+  allocations, is the more relevant retained-memory figure here.
+- The independent 0.5-second OS observer collected 8,087 samples and observed
+  30 distinct CCXT child PIDs, never more than one concurrently. **Parent plus
+  actual child observed peak was 536.66 MiB**; the sum of independently recorded
+  parent/child lifetime peaks gives a conservative **558.36 MiB upper bound**.
+  Thus total process memory is not the 8 MiB cache limit. Of 30 explicit CCXT
+  probes, 29 returned CCXT data; one hit its deadline and returned compatible
+  OKX fallback, with the timeout retained in diagnostics.
+- At idle: zero subscribers/topics/queued updates, zero upstream sockets, zero
+  child processes, zero queued/active source requests, and zero memory-cache
+  entries/bytes. All 1,713 instrumented actual source calls finished, including
+  calls whose caller could have timed out. The bounded pools retained 25 idle
+  threads and 16 file descriptors; this is not a claim that every allocation
+  returned to startup size. Disk cache retained 1,813,258 unexpired bytes.
+  Independent `ps` and listening-port inspection confirmed the test server
+  stopped, while the separate preview servers stayed available.
+
+Observed successful request latency under this workload: uncached bar reads
+median **2.078 s**, P95 **6.043 s**, max **9.602 s** (28 successes, two 503s);
+repeated cached bars median **2.365 ms**, P95 **4.063 ms**. Uncached option
+snapshots had median **1.309 s**, P95 **3.503 s** (16 cache misses; other first
+reads were cache hits or one 503). Successful historical chunks had median
+**2.472 s**, P95 **6.666 s**, max **19.310 s**; 31 failed chunk attempts remain
+in the evidence. Cache hits are fast; upstream reads and a full-universe scan
+are not uniformly fast. Source pacing and foreground capacity are deliberately
+preserved instead of increasing memory or concurrency to improve this score.
+
+Raw samples, independent OS observations, all-row history verification, final
+summary/plot and router UI/live-probe evidence are archived outside the repository:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-combined-20261114/`.
+The preview is `http://127.0.0.1:5910/history-storage` on the isolated gateway
+API at port 8910. It does not validate the full application's session sidebar.

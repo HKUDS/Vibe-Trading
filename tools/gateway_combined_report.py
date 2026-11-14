@@ -126,7 +126,12 @@ def summarize(document, observer=None):
             "One hour cannot establish multi-day leak absence; source availability is not guaranteed",
         ],
     }
+    scan = document.get("scan_job") or {}
+    if scan.get("total"):
+        result["scan_completed_fraction"] = scan["completed"] / scan["total"]
+        result["scan_unfinished_symbols"] = scan["total"] - scan["completed"]
     result["checks"] = {
+        **({"full_scan_completed": bool(scan.get("complete"))} if scan else {}),
         "completed_one_hour_active": document["phase"] == "complete" and document["active_elapsed_s"] >= 3600,
         "same_server_process": result["same_pid"],
         "real_ws_and_history_work": tail["counts"].get("ws_live_events", 0) > 0
