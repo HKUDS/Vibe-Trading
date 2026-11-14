@@ -310,7 +310,8 @@ def run_shadow_backtest(
 
 
 _CACHE_EPOCH = 2
-"""Bumped when the extractor or the generated engine changes meaning.
+"""Bumped when the extractor, the generated engine, or the stored result shape
+changes meaning.
 
 A cached run is derived from (profile inputs, engine semantics, journal,
 window); when one of those changes, results produced before the change must

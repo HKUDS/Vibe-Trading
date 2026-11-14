@@ -161,3 +161,8 @@ class ShadowBacktestResult:
     shadow_total_pnl: float | None
     real_total_pnl: float | None
     delta_pnl: float | None
+
+    @property
+    def comparison_available(self) -> bool:
+        """True only when both sides were measured, so a delta is meaningful."""
+        return self.shadow_total_pnl is not None and self.real_total_pnl is not None

@@ -923,8 +923,12 @@ def test_render_shadow_report_emits_html(profitable_journal: Path, tmp_path: Pat
 def test_measured_zero_real_pnl_still_renders_a_comparison(
     profitable_journal: Path,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A measured break-even is a real comparison, unlike an unknown real side."""
+    from pypdf import PdfReader
+    from src.shadow_account import reporter
+
     profile = extract_shadow_profile(profitable_journal)
     result = replace(
         _stub_backtest_result(profile),
@@ -938,6 +942,39 @@ def test_measured_zero_real_pnl_still_renders_a_comparison(
     assert "| Real 0.00" in content
     assert "Noise trades" in content
     assert out["sections"]["comparison_available"] is True
+
+    # The same measured zero must survive the ReportLab fallback.
+    monkeypatch.setattr(reporter, "_WEASYPRINT_HTML", False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    pdf_out = reporter.render_shadow_report(profile, result, output_dir=tmp_path)
+    assert pdf_out["engine"] == "reportlab"
+    reader = PdfReader(pdf_out["pdf_path"])
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "| Real 0.00" in text
+    assert "Noise trades" in text
+
+
+@pytest.mark.unit
+def test_measured_sides_without_delta_still_render_a_comparison(
+    profitable_journal: Path,
+    tmp_path: Path,
+) -> None:
+    """Both sides measured: derive the delta instead of blaming the journal."""
+    profile = extract_shadow_profile(profitable_journal)
+    result = replace(
+        _stub_backtest_result(profile),
+        real_total_pnl=0.0,
+        delta_pnl=None,
+    )
+
+    out = render_shadow_report(profile, result, output_dir=tmp_path)
+    content = Path(out["html_path"]).read_text(encoding="utf-8")
+
+    assert out["sections"]["comparison_available"] is True
+    assert out["sections"]["delta_pnl"] == result.shadow_total_pnl
+    assert "no usable journal was available" not in content
+    assert "Noise trades" in content
 
 
 @pytest.mark.unit
@@ -1393,6 +1430,9 @@ def test_reportlab_missing_journal_omits_unmeasured_attribution(
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
 
     assert "no usable journal was available" in text
+    # The old cover printed "Shadow 12500.00 | Real 0.00" and a +12500 delta.
+    assert "| Real " not in text
+    assert "Real 0.00" not in text
     assert "Noise trades" not in text
     assert "No material counterfactual" not in text
     assert "Counterfactual trades were not computed for this run" in text

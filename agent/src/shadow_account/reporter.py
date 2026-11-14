@@ -128,6 +128,12 @@ def _build_sections(
     shadow_pnl = result.shadow_total_pnl
     real_pnl = result.real_total_pnl
     delta_pnl = result.delta_pnl
+    comparison_available = result.comparison_available
+    if delta_pnl is None and shadow_pnl is not None and real_pnl is not None:
+        # Both sides were measured, so the delta is forced arithmetic. Falling
+        # through would make the renderers print the "no usable journal" copy
+        # and hide a real PnL that they did measure.
+        delta_pnl = round(shadow_pnl - real_pnl, 2)
     return {
         "profile": profile,
         "combined_metrics": combined_numeric,
@@ -137,9 +143,7 @@ def _build_sections(
         "shadow_pnl": shadow_pnl,
         "real_pnl": real_pnl,
         "delta_pnl": delta_pnl,
-        "comparison_available": (
-            shadow_pnl is not None and real_pnl is not None and delta_pnl is not None
-        ),
+        "comparison_available": comparison_available,
         "today_signals": today_signals,
     }
 
@@ -239,11 +243,7 @@ def _render_per_market_bar(result: ShadowBacktestResult, path: Path) -> None:
 
 
 def _render_attribution_waterfall(result: ShadowBacktestResult, path: Path) -> None:
-    if (
-        result.shadow_total_pnl is None
-        or result.real_total_pnl is None
-        or result.delta_pnl is None
-    ):
+    if not result.comparison_available:
         return
     attr = result.attribution
     components = [
