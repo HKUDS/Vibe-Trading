@@ -245,11 +245,16 @@ class MarketDataGateway:
                     self.router.record(capability, source, False, time.monotonic() - attempt_started)
                     with self.lock:
                         self.failures[(capability, source)] = time.monotonic() + self.config.cooldown
+        retry_after = self.config.cooldown
+        if any(row["status"] == "busy" for row in attempts):
+            retry_after = 1
+        elif attempts and all(row["status"] == "cooldown" for row in attempts):
+            retry_after = max(1, min(retry_after, self.router.retry_after(capability, order)))
         return {
             "ok": False,
             "error": "No usable data from available sources; retry or select another expiration",
             "gateway": {"attempts": attempts},
-            "retry_after_seconds": 1 if any(row["status"] == "busy" for row in attempts) else self.config.cooldown,
+            "retry_after_seconds": retry_after,
         }
 
     def invoke(self, function, params, timeout):

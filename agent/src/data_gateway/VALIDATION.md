@@ -1278,9 +1278,12 @@ metadata, source changes across chunk boundaries, lossless budgeted pagination
 and oversized-row refusal (`/tmp/gateway-history-provenance-v12.xml`).
 
 v11's completed 360-second mixed-client probe observed actual driver transitions
-online → WS outage → all-source outage → online: 32 requests, all 12 bar reads,
-12 option reads and four completed pages succeeded; four unfinished-prefix reads
-were explicitly 409. During the all-source outage, bar caches were still fresh
+online → WS outage → all-source outage → online: 32 requests, all 12 bar reads
+returned HTTP 200, but the immediate recovery round's six-market result was
+partial (601398.SH and BTC-USDT missing during cooldown). HTTP 200 must not be
+counted as complete acquisition. All 12 option reads and four completed pages
+succeeded; four unfinished-prefix reads were explicitly 409. During the
+all-source outage, bar caches were still fresh
 (52–54 s) and the stale AAPL option cache was marked stale (67 s), rather than
 misrepresented as a new acquisition. Both crypto topics saw upstream WS and
 same-venue REST fallback. No transport errors. This complements v10's cold-
@@ -1289,3 +1292,23 @@ closed the earlier UK-date gap: 158 rows, HK 52 / Canada 52 / UK 54 exact
 session dates in the offline calendar audit; stored coverage still says
 downloaded/unverified. Evidence: `/tmp/gateway-mixed-client-v11-20261114.json`
 and `/tmp/gateway-v11-three-market-verified.json`.
+
+### v12 recovery-boundary failure and v13 correction
+
+v12 (production `57a2f8270`) exposed two immediate option HTTP 503 responses
+at cycle 5, elapsed 870.14 seconds, after the network was restored. These were
+`cooling down or busy` responses (<1 ms), not source/read timeouts. The recorded
+source-health samples show the CBOE/Yahoo cooldown had expired by that probe.
+Code inspection and a failing regression reproduce the extra wait: a different
+request identity arriving one second before the source's half-open deadline
+skips every source, then `_done` starts a new **30-second request cooldown**.
+The old code fails the new test with retry=30 instead of the remaining 1 second.
+
+The correction reports the remaining earliest normal/half-open eligibility when
+all routes were skipped. It does not claim a probe, shorten source backoff,
+increase resource limits, or change actual source-failure cooldowns. Repeated
+callers before the deadline still make zero source calls; after the deadline the
+same identity recovers. A separate check pins the one-probe-per-cooldown limit.
+Gateway/routing/scheduling regression: 48 passed (`/tmp/gateway-cooldown-v13.xml`).
+The v12 incomplete mixed run is retained as failed evidence and superseded; it
+must not count toward the corrected version's one-hour acceptance.

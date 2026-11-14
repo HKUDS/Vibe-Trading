@@ -324,3 +324,61 @@ def test_binance_inherited_sdk_uses_isolation_before_availability(tmp_path, monk
         assert isolated.requires_isolation(Binance)
     finally:
         gateway.close()
+
+
+def test_skipped_options_routes_do_not_restart_a_full_request_cooldown(tmp_path, monkeypatch):
+    """A new symbol just before half-open must recover at the source deadline."""
+    import threading
+    import time
+    from src.data_gateway import service
+
+    now = [100.0]
+    monkeypatch.setattr(service, "time", SimpleNamespace(monotonic=lambda: now[0], time=time.time))
+    calls = []
+    gateway = MarketDataGateway(
+        replace(Config(tmp_path), sources=("test",)),
+        {"options_chain": {"test": lambda **kwargs: calls.append(kwargs["ticker"]) or {"ok": True}}},
+    )
+    gateway.router.clock = lambda: now[0]
+    finished = threading.Event()
+    original_done = gateway._done
+
+    def done(key, future):
+        original_done(key, future)
+        finished.set()
+
+    monkeypatch.setattr(gateway, "_done", done)
+    for _ in range(4):
+        gateway.router.record("options_chain", "test", False, 0.1)
+    gateway.failures[("options_chain", "test")] = now[0] + 30
+    try:
+        now[0] = 129.0
+        first = gateway.options_chain("AAPL", allow_stale=False)
+        assert finished.wait(1)
+        assert not first["ok"] and calls == []
+        assert 0 < first["retry_after_seconds"] <= 1.01
+        # Repeated callers still cannot probe ahead of the original deadline.
+        assert not gateway.options_chain("AAPL", allow_stale=False)["ok"]
+        assert calls == []
+        now[0] = 130.1
+        assert gateway.options_chain("AAPL", allow_stale=False)["ok"]
+        assert calls == ["AAPL"]
+    finally:
+        gateway.close()
+
+
+def test_router_retry_delay_keeps_exponential_and_half_open_limits():
+    now = [100.0]
+    router = NetworkRouter(clock=lambda: now[0])
+    for _ in range(4):
+        router.record("options", "a", False, 1)
+    now[0] = 129
+    assert router.retry_after("options", ["a"]) == 1
+    assert router.recovery_probe("options", ["a"]) is None
+    now[0] = 130
+    assert router.recovery_probe("options", ["a"]) == "a"
+    assert router.retry_after("options", ["a"]) == 30
+    assert router.recovery_probe("options", ["a"]) is None
+    # A healthy alternative must not inherit a failed source's delay.
+    router.record("options", "b", True, 0.1)
+    assert router.retry_after("options", ["a", "b"]) == 0

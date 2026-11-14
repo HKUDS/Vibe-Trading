@@ -70,11 +70,14 @@ def summarize(document, observer=None):
     recovered = [c for c in checks if c["kind"] == "recovered_bar_probe"]
     offline = [c for c in checks if c["kind"] == "offline_bar_probe"]
     unexpected_http_errors = [
+        c for c in checks if "latency_ms" in c and c.get("status", 200) >= 400 and c["kind"] != "offline_bar_probe"
+    ]
+    incomplete_bar_successes = [
         c
         for c in checks
-        if "latency_ms" in c
-        and c.get("status", 200) >= 400
-        and c["kind"] != "offline_bar_probe"
+        if c.get("request", {}).get("codes")
+        and c.get("status") == 200
+        and (c.get("complete") is not True or any(not row.get("rows") for row in c.get("shape", {}).values()))
     ]
     active_history = [s for s in active if any(h["state"] in {"running", "queued", "failed"} for h in s["history"])]
     result = {
@@ -123,6 +126,7 @@ def summarize(document, observer=None):
         "latencies_ms": {k: distribution(v) for k, v in latencies.items()},
         "http_statuses": {k: dict(v) for k, v in statuses.items()},
         "unexpected_http_errors": unexpected_http_errors,
+        "incomplete_successful_bar_probes": incomplete_bar_successes,
         "source_timings_ms": tail["timings"],
         "timing_maxima_over_samples_ms": {
             name: max(s["timings"].get(name, {}).get("max_ms", 0) for s in samples)
@@ -212,6 +216,7 @@ def summarize(document, observer=None):
         ),
         "no_client_read_errors": not result["client_errors"],
         "no_unexpected_http_errors": not unexpected_http_errors,
+        "no_incomplete_successful_bar_probes": not incomplete_bar_successes,
         "history_driver_survived": not result["history_driver_errors"],
         "driver_and_cleanup_survived": not result["driver_errors"],
         "all_recovery_probes_succeeded": bool(recovered) and all(c["status"] == 200 for c in recovered),

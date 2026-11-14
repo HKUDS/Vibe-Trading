@@ -104,6 +104,23 @@ class NetworkRouter:
                 self.probes.popitem(last=False)
             return source
 
+    def retry_after(self, scope, sources):
+        """Return time to the earliest normal or permitted half-open attempt.
+
+        Merely observing an existing cooldown must not start a new cooldown
+        for each request identity. This does not claim a recovery probe.
+        """
+        with self.lock:
+            now = self.clock()
+            delays = []
+            for source in sources:
+                row = self.health.get((scope, source))
+                if row is None or row["retry_at"] <= now:
+                    return 0
+                probe_at = max(row["checked"] + self.cooldown, self.probes.get(scope, 0))
+                delays.append(max(0, min(row["retry_at"], probe_at) - now))
+            return min(delays, default=self.cooldown)
+
     def prune(self):
         """Delete idle network observations instead of retaining historical probes."""
         with self.lock:
