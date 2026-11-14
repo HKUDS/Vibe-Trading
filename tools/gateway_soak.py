@@ -140,6 +140,8 @@ def serve(port):
             with trace_lock:
                 if len(trace["events"]) < 64:
                     trace["events"].append([stage, round(time.monotonic() - trace["started"], 4)])
+                else:
+                    trace["events_truncated"] = True
 
     def emit_trace(trace, reason):
         with trace_lock:
@@ -152,7 +154,11 @@ def serve(port):
             "started": time.monotonic(),
             "request_id": time.monotonic_ns(),
             "capability": capability,
-            "params": {k: v for k, v in params.items() if k in {"codes", "ticker", "interval", "source", "max_rows"}},
+            "params": {
+                k: v
+                for k, v in params.items()
+                if k in {"codes", "ticker", "expiration", "interval", "source", "start_date", "end_date", "max_rows"}
+            },
             "events": [],
             "reported": False,
         }
