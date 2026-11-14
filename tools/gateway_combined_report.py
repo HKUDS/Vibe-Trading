@@ -60,9 +60,11 @@ def summarize(document, observer=None):
             continue
         kind = row["kind"]
         status = row.get("status", 200 if kind == "history_page" else None)
-        statuses[kind][str(status)] += 1
+        if status is not None:
+            statuses[kind][str(status)] += 1
         cache = (row.get("gateway") or {}).get("cache", "none")
-        latencies[f"{kind}:http{status}:cache={cache}"].append(row["latency_ms"])
+        outcome = f"http{status}:cache={cache}" if status is not None else f"state={row.get('state', 'unknown')}"
+        latencies[f"{kind}:{outcome}"].append(row["latency_ms"])
     tail = samples[-1]
     last_idle = [s for s in samples if s["phase"] == "idle"]
     recovered = [c for c in checks if c["kind"] == "recovered_bar_probe"]

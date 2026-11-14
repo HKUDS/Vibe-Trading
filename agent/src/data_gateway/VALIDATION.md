@@ -1202,3 +1202,47 @@ boundary. All three returned the same unsampled 25-row digest
 `4177db82058ed8745e5ffece3799a13ef9445e845b601bac97b3a0e30348fdbe`;
 invalid IDs/paths remained refused. The probe now accepts `--offset`.
 Evidence: `/tmp/gateway-surfaces-v10-chunk-boundary-20261114.json`.
+
+### v10 finished: full universe acquired, cold timeouts remain
+
+Measured production code `8439edaab`, server PID 94913: **7,158.85 active
+seconds (119.31 minutes)**, 30 fault cycles, 1,425 paired subscriptions and
+unsubscriptions, followed by **190.01 observed idle seconds**. The scan finished
+**5,224/5,224, zero failed, zero remaining**: 5,603 symbol attempts, 379 retries,
+701 batches, 5,722.696 s in acquisition and 1,431.648 s in scanner backoff.
+The universe is SH/SZ A shares returned by BaoStock on 2026-11-13, excluding
+Beijing, ETFs, indices and B shares. This is acquisition coverage, not a durable
+full-universe dataset or a verified exchange-calendar audit of every scan row.
+
+All 64 topics acquired data; 60 bar topics, two delayed option snapshots and
+two crypto topics with actual upstream WebSocket/REST fallback. No client read,
+driver, history-driver or cleanup exception. All 29 recovery probes succeeded;
+all 30 deliberately offline probes failed visibly. Five-minute history finished
+610 chunks/581,760 rows; fifteen-minute history also finished 610 chunks/193,920
+rows. Thirty-minute work retained 53,256 rows when deliberately paused for
+cleanup. Four routed history shapes succeeded; some individual routed attempts
+paused during faults and must not be counted as unconditional successes.
+
+The independent OS observer completed on the same PID: parent lifetime physical
+peak **202.782 MiB**, actual concurrent parent-plus-child peak **567.471 MiB**,
+at most one SDK child. Final physical footprint **167.860 MiB**, no children.
+Late overall physical slope +0.192 MiB/min and final-30-minute slope +0.750
+MiB/min remain reported, including the late transient rise; a temporary plateau
+at 80–90 minutes does not establish leak absence. Native allocator bytes
+allocated were 52.4 MiB at 60 minutes and 52.2 MiB in the early idle snapshot;
+allocated bytes, fragmentation, RSS and physical footprint are different metrics.
+The SQLite lifetime defect above is independently reproduced/fixed, not assumed
+to explain every variation in this old process.
+
+All actual source calls drained (5,246 started = 5,238 succeeded + 8 raised).
+Subscribers/topics/pending updates, sockets, in-flight requests, RAM-cache bytes,
+history reservations and expired scan metadata were zero at the idle tail.
+Sampled 8/64 MiB cache budgets held, and the original driver/server/observer all
+exited. **This run still fails the no-unexpected-HTTP-errors check**: three unique
+online cold requests timed out, plus one immediate cooling-down repeat. Exact
+later retests succeeded, as recorded above. It also predates the SQLite fix;
+the fresh post-fix run is still required.
+
+Evidence: `/tmp/gateway-router-v10-final-summary.json`, raw report and OS observer
+`/tmp/gateway-router-hour-v10{,-os}-20261114.json` (actual observer filename is
+`gateway-router-hour-v10-os-20261114.json`), `/tmp/gateway-router-v10-final.png`.
