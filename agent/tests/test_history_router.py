@@ -68,10 +68,10 @@ def test_grid_verified_only_when_all_bars_are_present():
         router._normalize(
             bars("2026-11-12", 4, 60), "AAPL.US", "2026-11-12", "2026-11-12", "4H", {"source": "yahoo"}, "us_equity"
         )
-    _, meta = router._normalize(
-        bars("2026-11-12", 2), "AAPL.US", "2026-11-12", "2026-11-12", "5m", {"source": "yahoo"}, "us_equity"
-    )
-    assert meta["coverage_verified"] is False
+    with pytest.raises(ValueError, match="calendar grid mismatch"):
+        router._normalize(
+            bars("2026-11-12", 2), "AAPL.US", "2026-11-12", "2026-11-12", "5m", {"source": "yahoo"}, "us_equity"
+        )
     with pytest.raises(ValueError, match="outside"):
         router._normalize(
             bars("2026-11-12", 2), "AAPL.US", "2021-11-12", "2021-11-12", "5m", {"source": "yahoo"}, "us_equity"

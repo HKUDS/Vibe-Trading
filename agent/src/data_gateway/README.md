@@ -75,7 +75,10 @@ rotates through alternatives if it still fails; there is at most one probe per
 scope per cooldown. Health expires so a changed network can try the original order again. Historical
 health is separated by market and acquisition interval (daily/weekly/monthly
 share the daily transport health). No IP geolocation, proxy purchase,
-background scanning or global availability claim is involved. Existing source
+background scanning or global availability claim is involved. Controlled tests
+cover DNS/TLS failure, HTTP 451/429, slow sources, complete outage and recovery
+after network changes. Real multi-region measurements remain pending because no
+authorized regional nodes or proxy exits are available. Existing source
 credentials/availability checks and explicit no-fallback sources stay enforced.
 
 Source changes are visible in provenance. A venue, quote currency or adjustment
@@ -197,8 +200,12 @@ a finite soak cannot establish a universal multi-day memory bound.
 ### Historical coverage and large requests
 
 `data._coverage` reports requested/observed bounds and whether returned rows were
-sampled. `complete` detects missing symbols and known leading crypto boundary
-gaps; `complete_scope` explicitly excludes internal-gap/calendar verification.
+sampled. `complete` detects missing symbols, known leading crypto boundary
+gaps and exchange-calendar mismatches for settled, unsampled US/HK/CA/UK bars.
+Each symbol states whether its calendar was actually verified; unknown markets,
+unknown minute timestamp semantics, live ranges and sampled previews remain
+unverified. `complete_scope` names these coverage checks instead of claiming
+that every returned market has a calendar proof.
 A nonempty response is not proof of full coverage. The OKX loader now tries its
 history endpoint when the recent endpoint returns only a nonempty tail.
 
@@ -248,8 +255,19 @@ pages shrink by whole rows to fit the shared tool-output budget, preserving the
 next offset; API/CLI pages keep their requested row limit. BaoStock
 SH/SZ 5m/15m/30m/1H still checks calendar, daily trading status and exact intraday
 grid (raw CNY, shares). Continuous crypto intervals require every expected grid
-point. Other sources preserve observed bounds and are never promoted to verified
-complete merely because they returned rows. A recent tail, missing OHLC, a
+point. US/HK/CA/UK routes additionally verify exact sessions using
+`exchange-calendars` (XNYS/XHKG/XTSE/XLON), including DST, half-days and HK lunch.
+Daily/weekly/monthly endpoints use the last requested session of each period.
+Minute bars require an observed timezone and bar-open convention (the Yahoo
+transport declares UTC). Calendars are built only for the requested chunk; no
+global minute index is retained. Missing, duplicate or unexpected bars fail.
+A Yahoo flat-OHLC, zero-volume point exactly at session close is excluded from
+history with its timestamp/reason recorded; nonzero-volume extra bars fail.
+Closed intervals return zero rows with a calendar proof and no fabricated source.
+Other markets or unknown timestamp semantics preserve unverified coverage;
+nonempty rows alone are never proof. The calendar/version and exclusions travel
+with row-page provenance. Calendar rules are a versioned local reference, not
+a live exchange-status or independent price-verification service. A recent tail, missing OHLC, a
 substituted interval, or a detected truncated boundary fails the chunk visibly.
 Neither auto routing nor chunking manufactures unavailable multi-year minute data.
 
@@ -382,6 +400,14 @@ cache 8 MiB and disk cache 64 MiB. Source admission spacing is weighted by the
 number of symbols (`VIBE_GATEWAY_SOURCE_SPACING`, default 0.25 seconds per symbol);
 underlying SDK/host throttles remain in effect. This is process-local admission
 pacing, not a promise of a provider's exact HTTP request rate.
+
+A foreground multi-market request overlaps independent routes within those same
+four source workers. Fan-out shares at most two slots across requests, leaving
+capacity for a background call and an interactive quote/option call. Markets
+retain their own sequential fallback chain; background scans stay serialized.
+The original 15-second request deadline includes coordinator queue time, and
+timed-out sources retain their slots until they actually finish. Partial results
+are returned explicitly and are not retained as fresh complete cache entries.
 
 `VIBE_GATEWAY_SCAN_SYMBOLS` defaults/maxes at 10,000 across all retained jobs,
 with at most four jobs. `SCAN_ATTEMPTS` defaults to six and `SCAN_SPACING` to 0.25

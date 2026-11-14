@@ -52,6 +52,9 @@ class MarketDataGateway:
         self.pacer = SourcePacer(config.source_spacing)
         self.sources = ThreadPoolExecutor(max_workers=config.workers, thread_name_prefix="gateway-source")
         self.source_slots = threading.BoundedSemaphore(config.workers)
+        # Fan-out uses existing capacity while leaving room for one background
+        # call and one interactive quote/option call at the default four slots.
+        self.fanout_slots = threading.BoundedSemaphore(max(1, config.workers - 2))
         self.scans = None
         self.stop = threading.Event()
         self.cleaner = threading.Thread(target=self._clean, daemon=True, name="gateway-cache-cleanup")
@@ -224,7 +227,7 @@ class MarketDataGateway:
                     "attempts": attempts,
                     "request_ms": round((time.monotonic() - started) * 1000, 2),
                 }
-                if cacheable:
+                if cacheable and payload.get("complete", True):
                     try:
                         self.cache.put(key, payload)
                     except OSError:
@@ -259,14 +262,37 @@ class MarketDataGateway:
 
     def invoke(self, function, params, timeout):
         """Bound actual source work, retaining timed-out threads in their slots."""
+        return self.submit_source(function, params, timeout).result(timeout=timeout)
+
+    def submit_source(self, function, params, timeout, *, admit=None, shared_bulk=False):
+        """Submit into the existing pool; admission and completion own the slot.
+
+        Args:
+            function: The actual source operation, never another coordinator.
+            params: Source arguments.
+            timeout: Source deadline, including SDK isolation.
+            admit: Optional nonblocking rate admission after reserving capacity.
+            shared_bulk: Reserve the shared fan-out budget, not extra workers.
+
+        Returns:
+            A future whose completion releases capacity, even after caller timeout.
+        """
         is_background = background.get()
+        if shared_bulk and not self.fanout_slots.acquire(blocking=False):
+            raise GatewayBusy("Shared fan-out capacity reached")
         if is_background and not self.background_slots.acquire(blocking=False):
+            if shared_bulk:
+                self.fanout_slots.release()
             raise GatewayBusy("Background source capacity reached")
         if not self.source_slots.acquire(blocking=False):
             if is_background:
                 self.background_slots.release()
+            if shared_bulk:
+                self.fanout_slots.release()
             raise GatewayBusy("Data source capacity reached")
         try:
+            if admit is not None and not admit():
+                raise GatewayBusy("Source rate admission is not ready")
             context = copy_context()
 
             def acquire():
@@ -281,15 +307,19 @@ class MarketDataGateway:
             self.source_slots.release()
             if is_background:
                 self.background_slots.release()
+            if shared_bulk:
+                self.fanout_slots.release()
             raise
 
         def release(_):
             self.source_slots.release()
             if is_background:
                 self.background_slots.release()
+            if shared_bulk:
+                self.fanout_slots.release()
 
         future.add_done_callback(release)
-        return future.result(timeout=timeout)
+        return future
 
     def _historical_bars(self, routing_policy=None, exact_source=False, **params):
         from .historical import fetch_bars

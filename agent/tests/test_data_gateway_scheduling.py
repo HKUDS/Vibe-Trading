@@ -444,3 +444,126 @@ def test_queued_timeout_is_local_pressure_not_network_cooldown(tmp_path):
         release.set()
         occupied.result(1)
         gateway.close()
+
+
+def test_six_cold_markets_share_existing_slots_after_foreground_queue_wait(tmp_path, monkeypatch):
+    """Replay queue wait plus serial cross-market work without retries or more slots."""
+    import pandas as pd
+    from backtest.loaders import registry
+
+    registry._ensure_registered()
+    activity = {"active": 0, "peak": 0, "calls": 0}
+    lock = threading.Lock()
+    release, entered = threading.Event(), threading.Event()
+
+    class Loader:
+        name = "yahoo"
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, *args, **kwargs):
+            with lock:
+                activity["active"] += 1
+                activity["peak"] = max(activity["peak"], activity["active"])
+                activity["calls"] += 1
+            try:
+                time.sleep(1.4)
+                frame = pd.DataFrame(
+                    {k: [1.0, 2.0] for k in ("open", "high", "low", "close", "volume")},
+                    index=pd.date_range("2026-11-02", periods=2),
+                )
+                frame.index.name = "trade_date"
+                return {code: frame for code in codes}
+            finally:
+                with lock:
+                    activity["active"] -= 1
+
+    monkeypatch.setitem(registry.LOADER_REGISTRY, "yahoo", Loader)
+    gateway = MarketDataGateway(Config(tmp_path))
+
+    def hold_source():
+        entered.set()
+        release.wait(20)
+
+    token = background.set(True)
+    blocked = gateway.coordinators.submit(gateway.invoke, hold_source, {}, 20)
+    background.reset(token)
+    try:
+        assert entered.wait(1)
+        queued = gateway.coordinators.submit(time.sleep, 7.595)
+        value = gateway.bars(
+            codes=["AAPL.US", "00700.HK", "TD.TO", "VOD.L", "601398.SH", "BTC-USDT"],
+            start_date="2026-11-02",
+            end_date="2026-11-03",
+            source="yahoo",
+            exact_source=True,
+        )
+        assert value.get("complete") is True, value
+        assert len(value["data"]["_provenance"]) == 6
+        assert activity["calls"] == 6  # No request/source replay to hide the deadline.
+        assert 1 < activity["peak"] <= 2  # Two reserved slots remain for background and quotes.
+        assert len(gateway.coordinators.threads) == 2
+        assert gateway.config.workers == 4 and gateway.config.pending == 16
+        queued.result(1)
+    finally:
+        release.set()
+        blocked.result(2)
+        gateway.close()
+
+
+def test_fanout_timeout_keeps_slots_until_actual_sources_exit(tmp_path):
+    from src.data_gateway.fanout import SourceCall, acquire_groups
+
+    gateway = MarketDataGateway(replace(Config(tmp_path), source_timeout=0.04, source_spacing=0))
+    release = threading.Event()
+    entered = []
+
+    def slow():
+        entered.append(1)
+        release.wait(2)
+
+    def route():
+        try:
+            yield SourceCall("slow", slow, 1)
+        except TimeoutError:
+            return {"timed_out": True}
+
+    try:
+        result = acquire_groups(gateway, [route(), route()], time.monotonic() + 0.2, parallel=True)
+        assert result == [{"timed_out": True}, {"timed_out": True}]
+        assert len(entered) == 2
+        assert not gateway.fanout_slots.acquire(blocking=False)
+        assert gateway.invoke(lambda: "foreground", {}, 0.1) == "foreground"
+        release.set()
+        assert gateway.fanout_slots.acquire(timeout=1)
+        assert gateway.fanout_slots.acquire(timeout=1)
+        gateway.fanout_slots.release()
+        gateway.fanout_slots.release()
+    finally:
+        release.set()
+        gateway.close()
+
+
+def test_shared_fanout_leaves_both_background_and_interactive_source_capacity(tmp_path):
+    gateway = MarketDataGateway(Config(tmp_path))
+    release = threading.Event()
+    futures = []
+    try:
+        futures = [gateway.submit_source(release.wait, {"timeout": 2}, 2, shared_bulk=True) for _ in range(2)]
+        try:
+            gateway.submit_source(lambda: None, {}, 0.1, shared_bulk=True)
+            assert False, "A third fan-out source would steal the reserved slots"
+        except GatewayBusy:
+            pass
+        token = background.set(True)
+        try:
+            futures.append(gateway.submit_source(release.wait, {"timeout": 2}, 2))
+        finally:
+            background.reset(token)
+        assert gateway.invoke(lambda: "quote", {}, 0.1) == "quote"
+    finally:
+        release.set()
+        for future in futures:
+            future.result(1)
+        gateway.close()

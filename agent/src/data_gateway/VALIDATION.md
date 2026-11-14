@@ -1421,3 +1421,122 @@ every production row page. All three datasets passed:
 - 5m: 581,760 rows, 610 chunks, 582 pages, 40.8 seconds; SHA-256 `0d37d453f66d93bc75fb2d091129680b1e9091cce3434ba06aeca774543d2119`.
 - 15m: 193,920 rows, 610 chunks, 194 pages, 23.08 seconds; SHA-256 `a55b26e8d61232c8b887233103a777f64320e75f35534ed4d04d8394d00590c3`.
 - 30m: 96,960 rows, 610 chunks, 97 pages, 12.95 seconds; SHA-256 `aac161ad3cb74dbdf7293c29b9433f08068c1aa29a6399ca153a65ee87eab9b8`.
+
+## v14: bounded foreground fan-out and production exchange calendars (2026-11-14)
+
+The v13 six-market cold timeout was real: request `1404440380311041`
+spent 7.595 seconds waiting for a coordinator, then acquired independent markets
+sequentially until the 15-second caller deadline. Its later successful retry
+was recovery evidence, not a fix. `historical.fetch_bars` now groups foreground
+symbols by market and cooperatively drives those independent fallback chains on
+the existing four source workers. There is no extra executor or coordinator.
+A shared two-slot fan-out budget leaves capacity for one background acquisition
+and one ordinary interactive acquisition. Background batches remain serialized;
+source pacing is still weighted by symbol count. Queue time still consumes the
+same 15 seconds; each source still has six seconds. A timed-out call retains its
+actual source/fan-out slots until it exits. Partial responses are no longer saved
+as fresh complete cache entries.
+
+The regression replays 7.595 seconds of coordinator occupancy, six independent
+1.4-second source calls and a held background source at actual default deadlines
+(no scaled CPU/calendar costs). It finishes in the unchanged deadline with exactly
+six acquisitions and at most two concurrent fan-out calls. Separate tests verify
+that timed-out running calls retain capacity and interactive/background calls
+still fit. The 155 gateway/history/calendar/network-profile tests passed in
+51.934 seconds (`/tmp/gateway-current-v14-regression.xml`). Adjacent loader,
+market-data and Windows file-lock tests passed (165); two additional timestamp tests
+verify observed yfinance timezone survives a naive output index and Yahoo
+intraday timestamps explicitly declare UTC bar-open semantics. No protected agent
+core, Options Lab or frontend changes.
+
+Production history now uses versioned `exchange-calendars` 4.13.2 session grids
+for XNYS/XHKG/XTSE/XLON. It constructs only requested schedules, does not use the
+global calendar dispatcher cache, and never builds a retained full-minute index.
+Tests cover US DST, Thanksgiving/half-day, HK lunch, missing/extra/duplicate bars,
+wrong timezones and exact weekly/monthly endpoints. Unknown calendar or timestamp
+semantics stay unverified; known missing sessions fail. The existing BaoStock
+trade-status/grid proof and continuous crypto grid remain unchanged. A known
+Yahoo flat-OHLC/zero-volume session-close point is excluded with an explicit
+record, while a real extra trade is refused. Empty closed intervals need no quote
+source. Calendar proof does not establish prices, exchange status or per-security
+suspensions; the reference version travels with provenance.
+
+Fresh datasets under `~/.vibe-trading/history-calendar-v14-20261114`:
+
+| Case | Rows | Seconds | Production terminal state |
+| --- | ---: | ---: | --- |
+| AAPL/MSFT 2026-10-26..11-13, 1m | 11700 | 6.564 | complete; two excluded close points recorded |
+| AAPL/MSFT 2021-11-14..2026-11-13, 1M | 122 | 8.962 | complete |
+| AAPL/MSFT 1996-11-14..2026-11-13, 1M | 722 | 43.533 | complete |
+| HK/CA/UK 2026-09-01..11-13, 1D | 158 | 4.530 | complete |
+| AAPL closed weekend 2026-11-07..08 | 0 | 0.208 | complete; no price/source fabricated |
+
+All stored row pages passed coverage checks. HK actually encountered Tencent
+HTTP 501 and Eastmoney connection failure before Yahoo completed the request;
+this download used existing source failover, not a claim of zero source attempts.
+The client did not resume/replay a failed job. Evidence:
+`/tmp/gateway-calendar-fresh-v14.json`. Real HTTP, CLI, Agent tool and an actual
+FastMCP in-memory protocol session returned identical 25-row CAD→GBP pages and
+calendar/source/currency metadata; SHA-256 remained
+`286f7d05702a8467a81e18d90f02b42df231c3d9c090696651eb27188b59c282`.
+Evidence: `/tmp/gateway-v14-surfaces.json`, `/tmp/gateway-mcp-v14-20261114.json`.
+
+Regional mechanisms were exercised with six controlled profiles: DNS refusal,
+TLS failure, HTTP 451, HTTP 429, source timeout and complete outage. Across six
+markets, tests verify fallback, per-market identity/currency, skipping sources
+in cooldown, no fake data when all fail, and returning to the original route
+after the network-health TTL expires. These are simulated restrictions, not
+geographical measurements. The user has no authorized regional nodes/proxy exits;
+real cross-region reachability is explicitly deferred. No unrelated SSH hosts
+were used and no server purchase is required for this work.
+
+The targeted v14 mixed-load run intentionally repeats four fault cycles, not a
+new one-hour/full-universe acceptance run. The v13 105.5-minute, 5224/5224 result
+above belongs to the previous revision and is not relabelled as v14 evidence.
+It uses the same 64 topics, 5224-symbol scan queue, multi-year download producer,
+routed history shapes, real upstream sockets, repeated unsubscribe/reconnect and
+190-second idle tail, with all original memory/cache/source/request limits.
+
+Four rounds submit the six-market daily request, dual-US five-year monthly
+request and dual-US one-day minute request simultaneously, using unique valid
+preview sizes as cold keys. There are no client retries: 12/12 return before
+15 seconds; 11/12 are complete. The remaining six-market reply explicitly lacks
+601398.SH because every A-share route is still in the post-outage cooldown. Its
+2.659-second partial response is not counted as success and is not cached.
+Three additional new cold keys after the online recovery phase all complete
+while the upstream WebSocket is disabled and REST remains available. Across the
+five six-market first attempts, four are complete (2.248, 7.298, 4.494, 7.875 s)
+and one is the retained cooldown partial; across all 15 calls the maximum latency
+is 13.202 seconds. This fixes the observed queue-plus-serial-acquisition timeout;
+it does not promise complete data during every outage/recovery phase.
+
+Evidence: `/tmp/gateway-cold-v14-valid.json` and
+`/tmp/gateway-cold-v14-recovered.json`. The initial probe setup mistakenly used
+preview sizes above the public 1000-row limit; three requests were rejected 422
+before any acquisition. That harness error remains in `/tmp/gateway-cold-v14.json`
+and is excluded from the 15 valid requests, not erased or counted as a gateway
+success. The package wheel was built in an isolated build environment and
+inspected for calendars.json, the new modules and the calendar dependency.
+All 322 distinct automated checks across the gateway and adjacent suites passed.
+
+The targeted run finished: active 514.97 seconds, total 801.37 seconds, four fault
+cycles, 201 subscriptions and 201 unsubscriptions. Forty samples overlap all
+64 topics, the scan and history. All four routed historical shapes completed
+with calendar/grid proof; the five-year minute job remains only a partial
+prefix in this short regression. The scan deliberately stopped at 336/5224 when
+the four cycles ended. It is not a replacement for the v13 full scan. The formal
+hour/full-scan checker retains its unmet long-run checks; the report is produced
+with its explicit `--partial` mode, not weakened acceptance thresholds.
+
+The parent physical-footprint peak was 165.02 MiB, final 139.77 MiB; independently
+sampled process-tree peak 536.36 MiB with at most one SDK child. This short run
+cannot answer multi-hour memory slope after this change. The 190-second natural
+idle tail cleared RAM cache, subscriptions, sockets, source/coordination queues,
+scan metadata and history reservations. Disk cache stayed 2,886,290 bytes under
+the unchanged 64 MiB cap. Main harness read/driver/cleanup errors were zero;
+the separate cold-client cooldown partial remains explicitly reported above.
+All eight recorded PIDs (driver, observer, server, four SDK children and the
+separate surface-test server) were independently checked after exit: none alive.
+
+Stable copies, scripts, passing test XMLs and plot are under
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v14/`.

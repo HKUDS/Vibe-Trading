@@ -284,6 +284,11 @@ def _normalize(rows, symbol, start, end, interval, provenance, market):
         "timestamp_basis": "source_timestamp",
         "timezone": "UTC" if market == "crypto" else "source_timezone_unverified",
     }
+    if market != "crypto":
+        from .calendars import validate
+
+        output, calendar_meta = validate(output, market, start, end, interval, provenance)
+        meta.update(calendar_meta)
     return output, meta
 
 
@@ -295,6 +300,25 @@ def fetch_chunk(symbol, start, end, interval):
     context = history_context.get() or {"source": "auto"}
     requested, expected = context.get("source", "auto"), context.get("expected")
     market = market_for(symbol)
+    if (date.fromisoformat(end) - date.fromisoformat(start)).days < 7:
+        from .calendars import schedule
+
+        found = schedule(market, start, end)
+        if found is not None and found[2].empty:
+            import exchange_calendars
+
+            return [], {
+                "source": None,
+                "interval": interval,
+                "coverage_verified": True,
+                "coverage": "exchange_closed_interval",
+                "calendar": found[0],
+                "calendar_version": exchange_calendars.__version__,
+                "sessions": 0,
+                "timezone": found[1],
+                "timestamp_basis": "session_date",
+                "requested_source": requested,
+            }
     gateway = get_gateway()
     errors = []
     token = background.set(True)

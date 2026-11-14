@@ -8,6 +8,43 @@ from .scheduling import deadline as request_deadline
 
 
 def fetch_bars(gateway, *, exact_source=False, **params):
+    """Overlap independent markets using existing source slots and one deadline."""
+    from backtest.engines._market_hooks import _detect_market
+    from .fanout import acquire_groups
+    from .scheduling import background
+
+    groups = {}
+    for code in params["codes"]:
+        groups.setdefault(_detect_market(code), []).append(code)
+    # Background scans/history retain their one-source admission and serialized
+    # execution. No additional executor, coordinator, cache or retry is created.
+    batches = [params["codes"]] if background.get() else list(groups.values())
+    walkers = [_walk_bars(gateway, exact_source=exact_source, **{**params, "codes": codes}) for codes in batches]
+    until = request_deadline.get() or time.monotonic() + gateway.config.request_timeout
+    values = acquire_groups(gateway, walkers, until, parallel=len(walkers) > 1)
+    if len(values) == 1:
+        return values[0]
+    data = {}
+    for value in values:
+        for key, part in value["data"].items():
+            if key.startswith("_") and isinstance(part, dict):
+                data.setdefault(key, {}).update(part)
+            elif key == "_unresolved":
+                data.setdefault(key, []).extend(part)
+            else:
+                data[key] = part
+    return {
+        "ok": any(value["ok"] for value in values),
+        "complete": all(value["complete"] for value in values),
+        "complete_scope": values[0]["complete_scope"],
+        "source": "existing_routes",
+        "data": data,
+        **({"retry_after_seconds": 1} if any(value.get("retry_after_seconds") == 1 for value in values) else {}),
+        **({"error": "No compatible source returned data"} if not data.get("_provenance") else {}),
+    }
+
+
+def _walk_bars(gateway, *, exact_source=False, **params):
     """Fetch only compatible existing routes; preserve per-symbol provenance.
 
     Args:
@@ -26,12 +63,15 @@ def fetch_bars(gateway, *, exact_source=False, **params):
     requested = params.get("source", "auto")
     combined, provenance, unresolved, diagnostics = {}, {}, [], {}
     coverage = {}
+    calendar_schedules = {}
     attempted_batches = {}
     deadline = request_deadline.get() or (time.monotonic() + gateway.config.request_timeout)
     for code in params["codes"]:
         market = _detect_market(code)
         if code in provenance:
-            coverage[code] = describe_coverage(combined[code], params, market)
+            coverage[code] = describe_coverage(
+                combined[code], params, market, provenance.get(code, {}), calendar_schedules
+            )
             diagnostics[code] = []
             continue
         scope = f"bars:{market}:{source_interval(params.get('interval', '1D'))}"
@@ -120,11 +160,9 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                 if cached_batch is not None:
                     result = cached_batch
                 else:
-                    if not gateway.pacer.acquire(source, deadline, cost=len(batch_codes)):
-                        raise GatewayError("Source admission deadline reached")
-                    result = gateway.invoke(
-                        acquire, {}, min(deadline - time.monotonic(), gateway.config.source_timeout)
-                    )
+                    from .fanout import SourceCall
+
+                    result = yield SourceCall(source, acquire, len(batch_codes))
                     attempted_batches[batch_key] = result
                 combined.update({k: v for k, v in result.items() if not k.startswith("_")})
                 for symbol, stamp in result.get("_provenance", {}).items():
@@ -146,7 +184,9 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                     )
                     diagnostics[code].append({"source": source, "reason": reason})
                     continue
-                coverage[code] = describe_coverage(result[alias], params, market)
+                coverage[code] = describe_coverage(
+                    result[alias], params, market, provenance.get(code, {}), calendar_schedules
+                )
                 gateway.router.record(scope, source, True, time.monotonic() - started)
                 # Preserve normalization/caliber warnings from the existing layer.
                 for key, value in result.items():
@@ -185,16 +225,16 @@ def fetch_bars(gateway, *, exact_source=False, **params):
         "source": "existing_routes",
         "data": combined,
         "complete": not unresolved and not any(row["status"] == "partial" for row in coverage.values()),
-        "complete_scope": "symbols_and_detected_boundary_gaps; internal gaps and exchange calendars are not verified",
+        "complete_scope": "requested_symbols_and_coverage_checks; see per-symbol calendar verification and sampling metadata",
         **({"error": "No compatible source returned data"} if not provenance else {}),
     }
 
 
-def describe_coverage(value, params, market):
+def describe_coverage(value, params, market, provenance=None, schedules=None):
     """Expose observed bounds without claiming that a nonempty frame is complete.
 
-    Continuous crypto bars can prove a leading boundary gap. Other markets need
-    an exchange calendar; their full interval coverage remains unverified.
+    Settled unsampled exchange bars use the same calendar check as downloads.
+    Unknown calendars, live ranges and sampled results stay explicitly unverified.
     """
     rows = value if isinstance(value, list) else value.get("data", [])
     stamps = [row.get("trade_date") for row in rows if isinstance(row, dict) and row.get("trade_date")]
@@ -217,4 +257,36 @@ def describe_coverage(value, params, market):
                 result.update(status="partial", reason="Source starts after the requested continuous-market interval")
         except (ValueError, TypeError):
             pass
+    if (
+        market != "crypto"
+        and not result["sampled"]
+        and params["end_date"] < datetime.now(timezone.utc).date().isoformat()
+    ):
+        from .calendars import schedule, validate, CalendarCoverageError
+
+        schedules = schedules if schedules is not None else {}
+        key = (market, params["start_date"], params["end_date"])
+        try:
+            if key not in schedules:
+                schedules[key] = schedule(*key)
+            if schedules[key] is not None:
+                kept, meta = validate(
+                    rows,
+                    market,
+                    params["start_date"],
+                    params["end_date"],
+                    interval,
+                    provenance or {},
+                    prepared=schedules[key],
+                )
+                result.update(meta)
+                if meta["coverage_verified"]:
+                    result.update(status="verified", reason="Exact exchange session grid verified")
+                    if len(kept) != len(rows):
+                        result.update(
+                            status="partial",
+                            reason="Source contains non-bar close points; normalized history excludes and reports them",
+                        )
+        except CalendarCoverageError as exc:
+            result.update(status="partial", coverage_verified=False, reason=str(exc))
     return result

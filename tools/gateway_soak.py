@@ -186,15 +186,22 @@ def serve(port):
                 emit_trace(trace, "late_coordinator_end")
 
     gateway.request, gateway._fetch = traced_request, traced_fetch
-    original_invoke = gateway.invoke
+    original_submit_source = gateway.submit_source
 
-    def invoke(function, params, timeout):
-        counts["source_attempts"] += 1
+    def submit_source(function, params, timeout, **admission):
         if fault["mode"] == "all_offline":
             counts["source_refused"] += 1
             raise ConnectionError("soak injected network unavailable")
         submitted = time.monotonic()
-        trace_event("source_submit")
+        original_admit = admission.get("admit")
+
+        def admit():
+            if original_admit is not None and not original_admit():
+                return False
+            trace_event("source_submit")
+            return True
+
+        admission["admit"] = admit
 
         def measured(**kwargs):
             stamp = time.monotonic()
@@ -210,9 +217,11 @@ def serve(port):
             timings.add("source_success", time.monotonic() - stamp)
             return result
 
-        return original_invoke(measured, params, timeout)
+        future = original_submit_source(measured, params, timeout, **admission)
+        counts["source_attempts"] += 1
+        return future
 
-    gateway.invoke = invoke
+    gateway.submit_source = submit_source
 
     pending_http = {}
     monitor_stop = threading.Event()

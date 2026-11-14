@@ -315,6 +315,8 @@ class TestFetch:
         assert frame.attrs == {
             "quote_currency": "GBP",
             "currency_conversion": "GBp→GBP (÷100)",
+            "timestamp_basis": "session_date",
+            "timezone": "UTC",
         }
         assert mock_chart.call_args.args[0] == "VOD.L"
 
@@ -331,6 +333,8 @@ class TestFetch:
         assert frame.attrs == {
             "quote_currency": "GBP",
             "currency_conversion": "none",
+            "timestamp_basis": "session_date",
+            "timezone": "UTC",
         }
 
     def test_usd_quoted_lse_line_is_omitted(self):
@@ -452,3 +456,12 @@ def test_mainland_currency_and_original_identity(symbol, currency):
     if out:
         assert out[symbol].attrs["quote_currency"] == "CNY"
         assert DataLoader.volume_units["a_share"] == "shares"
+
+
+def test_intraday_normalization_declares_utc_bar_open():
+    frame = _rows_to_frame(
+        [_intraday_stamped_row("2026-11-12", 10, 11, 9, 10, 100)],
+        "2026-11-12", "2026-11-12", interval="1m",
+    )
+    assert frame.index[0] == pd.Timestamp("2026-11-12 14:30")
+    assert frame.attrs == {"timezone": "UTC", "timestamp_basis": "bar_open"}

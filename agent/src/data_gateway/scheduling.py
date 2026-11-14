@@ -103,3 +103,12 @@ class SourcePacer:
                     return True
             time.sleep(min(delay, max(0, until - time.monotonic())))
         return False
+
+    def try_acquire(self, source, cost=1):
+        """Admit without blocking a coordinator or holding a source thread idle."""
+        with self.lock:
+            now = time.monotonic()
+            if self.next.get(source, 0) > now:
+                return False
+            self.next[source] = now + self.spacing * max(1, cost)
+            return True

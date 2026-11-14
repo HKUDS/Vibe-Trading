@@ -190,7 +190,9 @@ def _rows_to_frame(
     lower = pd.Timestamp(start_date).normalize()
     upper = pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)
     frame = frame[(frame.index >= lower) & (frame.index < upper)]
-    return frame.astype(float).sort_index()
+    frame = frame.astype(float).sort_index()
+    frame.attrs.update(timezone="UTC", timestamp_basis="bar_open" if _is_intraday_interval(interval) else "session_date")
+    return frame
 
 
 @register

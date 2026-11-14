@@ -449,6 +449,9 @@ def fetch_market_data(
             quote_currency = frame_attrs.get("quote_currency")
             if isinstance(quote_currency, str) and quote_currency:
                 entry["quote_currency"] = quote_currency
+            for field in ("timezone", "timestamp_basis"):
+                if isinstance(frame_attrs.get(field), str) and frame_attrs[field]:
+                    entry[field] = frame_attrs[field]
             if extra_provenance:
                 entry.update(extra_provenance)
             provenance[symbol] = entry

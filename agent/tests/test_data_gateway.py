@@ -266,3 +266,22 @@ def test_idle_cleanup_runs_without_any_followup_request(gateways):
         time.sleep(0.01)
     assert g.cache.stats()["memory_entries"] == 0
     assert g.cache.stats()["disk_entries"] == 1
+
+
+def test_partial_result_is_not_retained_as_a_fresh_complete_request(tmp_path):
+    calls = []
+
+    def provider(**kwargs):
+        calls.append(1)
+        return {"ok": True, "complete": len(calls) > 1, "data": {"rows": [1]}}
+
+    gateway = MarketDataGateway(Config(tmp_path), {"bars": {"test": provider}})
+    try:
+        first = gateway.request("bars", {})
+        assert first["ok"] and not first["complete"]
+        assert gateway.cache.stats()["memory_entries"] == 0
+        second = gateway.request("bars", {})
+        assert second["complete"] and len(calls) == 2
+        assert second["gateway"]["cache"] == "miss"
+    finally:
+        gateway.close()

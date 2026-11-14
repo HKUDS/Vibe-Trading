@@ -497,7 +497,7 @@ class HistoryStore:
 
                             with self.transaction() as db:
                                 prior = db.execute(
-                                    "SELECT meta FROM chunks WHERE job=? AND symbol=? AND state='complete' AND idx!=? ORDER BY idx LIMIT 1",
+                                    "SELECT meta FROM chunks WHERE job=? AND symbol=? AND state='complete' AND rows>0 AND idx!=? ORDER BY idx LIMIT 1",
                                     (job, chunk["symbol"], chunk["idx"]),
                                 ).fetchone()
                             token = history_context.set(
@@ -636,6 +636,11 @@ class HistoryStore:
                                 "volume_unit",
                                 "timezone",
                                 "timestamp_basis",
+                                "calendar",
+                                "calendar_version",
+                                "coverage",
+                                "coverage_verified",
+                                "excluded_source_points",
                             )
                         },
                     }
