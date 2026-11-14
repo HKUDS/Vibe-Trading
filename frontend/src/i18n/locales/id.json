@@ -2776,6 +2776,7 @@
     "invalidChoices": "Masukkan nilai untuk setiap pilihan."
   },
   "history": {
+    "retrying": "Koneksi terputus · mencoba kembali otomatis dalam {{seconds}} detik",
     "title": "Penyimpanan data historis",
     "description": "Unduh dalam potongan terbatas; lanjutkan tanpa mengunduh ulang potongan lengkap yang utuh.",
     "usage": "{{used}} / {{quota}} MiB terpakai · {{reserved}} MiB dicadangkan",

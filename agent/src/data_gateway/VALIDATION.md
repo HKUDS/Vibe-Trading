@@ -1758,3 +1758,71 @@ old-code control and exit check:
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v16/`.
 Real regional-node tests remain deferred. No Options Lab or protected agent
 core files changed.
+
+## v17: service-owned automatic history continuation (2026-11-15)
+
+The missing behavior in v15/v16 was durable dispatch after the bounded per-chunk
+attempts failed. Those drivers invoked `/resume`; the production service did not.
+`HistoryStore.start()` now enables persisted recovery. Transient acquisition,
+source cooldown and temporary admission failures schedule `retry_at`; the existing
+cleaner dispatches due work through the unchanged single-worker/four-job queue.
+Default spacing is 30, 60, 120, 240, then 300 seconds, reset by a committed chunk.
+Waiting releases reservations. The lease plus a transactional state recheck
+prevents two services or a stale dispatcher from overriding Pause or double
+claiming. Waiting prefixes are protected from quota eviction, but normal idle
+expiry still applies. Invalid/incomplete data and disk exhaustion stay visible
+without indefinite automatic retry. Existing migrated jobs default to disabled
+until explicitly started. Retry schedules survive store reopening; active jobs
+interrupted by process exit still use the existing paused recovery behavior.
+
+### Real-source short test
+
+`tools/gateway_history_recovery_probe.py` starts a fresh standalone production
+HTTP/SSE service. It sends **one initial resume POST**, commits real Yahoo AAPL
+monthly history for 2021-11-14 through 2026-11-13, and injects a transport exception
+at the MSFT fetch boundary. After observing `failed`, `retry_count=1`, a durable
+retry deadline, one completed chunk and zero reserved bytes, the driver only
+removes the transport fault. No recovery method, scheduler method or further
+resume API is invoked. Successful rows are real provider data, not fixture prices.
+This is a targeted transport fault, not a host-wide physical disconnection.
+
+Observed: fault removed at 10.131 seconds; automatic completion at **43.508
+seconds** from test start (33.378 seconds after restoration); total including
+cleanup **46.532 seconds**. Both calendar-verified chunks yielded **122 monthly
+rows**. AAPL's compressed SHA256 was unchanged and its source boundary was called
+once; MSFT had three injected failures and one subsequent successful fetch.
+There were **64 subscribed topics / eight SSE clients**, 138 delivered SSE events,
+533 upstream crypto WebSocket events and no stream-task errors. The concurrent
+5,224-symbol scan reached **112/5,224**, no failed symbols, and was deliberately
+cancelled; this does not repeat or claim the previous full-scan acceptance.
+
+All existing limits stayed unchanged: 8 MiB memory cache, 64 MiB disk cache,
+2 MiB entry/chunk, four gateway workers, 16 pending requests, six-second source
+and 15-second request budgets, 256 MiB history quota, one history worker. The
+only load override was the previously authorized 64 topics. Idle observations
+showed zero active requests, background queue/running work, sockets and clients;
+history reservations were zero. The server PID 74722 was independently checked
+absent after shutdown. Parent physical footprint was 114.39 MiB at the final
+sample. This short sample is **not** a new long-duration memory stability claim.
+
+### Regression checks and UI
+
+- 13 automatic-recovery cases pass: autonomous continuation and intact-prefix
+  reuse; pause versus stale dispatch; durable schedules and two dispatchers;
+  permanent failures; bounded backoff and healthy-job admission; quota protection,
+  idle expiry and delete; routing classification for network/cooldown/capacity/
+  timeout versus absent history.
+- 45 existing history store/router cases plus 80 API/routing/scheduling/calendar/
+  source cases pass (138 distinct backend cases total, grouped runs).
+- 47 frontend storage/i18n cases pass, including the waiting-state Pause action
+  and **no browser resume call**. Eleven locale keys are present. CUA inspected
+  the actual storage component in a temporary Chinese UI fixture; the retry
+  countdown and Pause button rendered legibly. This UI fixture is not live-data
+  verification; the separate HTTP probe above provides that evidence.
+- Ruff and diff whitespace checks pass. Full frontend TypeScript build remains
+  blocked by existing `PayoffComparisons.tsx:43,47` dynamic translation-key errors.
+  A pristine `git archive HEAD frontend` control reproduced exactly those two
+  errors before this change. Options files were not modified.
+
+Evidence (metadata, logs, XML; no market-price payload committed):
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v17/`.

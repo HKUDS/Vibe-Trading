@@ -128,12 +128,12 @@ export function HistoryStorageSettings() {
       <button className={button} disabled={busy} onClick={() => void act(async () => { const job = await api.createHistory(plan.spec); await api.historyAction(job.id, "resume"); setPlan(null); })}>{t("history.download")}</button>
     </div>}
     <div className="divide-y">{jobs.map(job => <div key={job.id} className="py-3 flex flex-wrap items-center gap-3">
-      <div className="min-w-0 flex-1 text-sm"><span className="font-mono">{job.spec?.codes.join(", ") ?? job.id.slice(0, 8)}</span> · {states[job.state] ?? job.state}{job.pinned ? ` · ${t("history.pinned")}` : ""}
+      <div className="min-w-0 flex-1 text-sm"><span className="font-mono">{job.spec?.codes.join(", ") ?? job.id.slice(0, 8)}</span> · {job.retry_at ? t("history.retrying", { seconds: Math.max(0, Math.ceil(job.retry_at - Date.now() / 1000)) }) : (states[job.state] ?? job.state)}{job.pinned ? ` · ${t("history.pinned")}` : ""}
         <p className="text-xs text-muted-foreground tabular-nums">{job.spec?.start_date} → {job.spec?.end_date} · {job.spec?.interval} · {job.completed_chunks} / {job.total_chunks}{job.sources?.length ? ` · ${job.sources.join(", ")}` : ""}</p>
         {job.state === "downloaded" && <p className="text-xs text-muted-foreground">{t("history.coverageHint")}</p>}
         {job.error && <p className="text-destructive break-words">{job.error}</p>}
       </div>
-      <button className={button} disabled={busy} onClick={() => void act(() => api.historyAction(job.id, ["running", "queued"].includes(job.state) ? "cancel" : "resume"))}>{["running", "queued"].includes(job.state) ? t("history.pause") : t("history.resume")}</button>
+      <button className={button} disabled={busy} onClick={() => void act(() => api.historyAction(job.id, (job.retry_at || ["running", "queued"].includes(job.state)) ? "cancel" : "resume"))}>{(job.retry_at || ["running", "queued"].includes(job.state)) ? t("history.pause") : t("history.resume")}</button>
       <button className={button} disabled={busy} onClick={() => void act(() => api.pinHistory(job.id, !job.pinned))}>{job.pinned ? t("history.unpin") : t("history.pin")}</button>
       <button className={button} disabled={busy || ["running", "queued"].includes(job.state)} onClick={() => void act(() => api.deleteHistory(job.id))}>{t("history.delete")}</button>
     </div>)}</div>

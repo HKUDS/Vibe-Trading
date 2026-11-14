@@ -25,6 +25,7 @@ class HistoryRouteError(ConnectionError):
 
     def __init__(self, attempts):
         self.attempts = attempts[:32]
+        self.retryable = any(row.get("status") in {"transient", "cooldown"} for row in self.attempts)
         detail = "; ".join(f"{row['source']}: {row['reason']}" for row in self.attempts)
         super().__init__("No source supplied a compatible chunk: " + detail[:800])
 
@@ -366,7 +367,11 @@ def fetch_chunk(symbol, start, end, interval):
                     )
                     if not value.get("ok"):
                         failures = value.get("data", {}).get("_diagnostics", {}).get(symbol, [])
-                        network = any(row.get("reason") in {"network_failure", "timeout"} for row in failures)
+                        network = any(
+                            row.get("reason")
+                            in {"network_failure", "timeout", "network_cooldown", "source_busy", "request_deadline"}
+                            for row in failures
+                        ) or (not failures and bool(value.get("retry_after_seconds")))
                         error = ConnectionError if network else ValueError
                         raise error(value.get("error", "Source acquisition unavailable"))
                     data = value.get("data", {})
@@ -386,7 +391,13 @@ def fetch_chunk(symbol, start, end, interval):
             except (ValueError, OSError, TimeoutError) as exc:
                 if isinstance(exc, OSError) and source == "baostock" and interval in _VERIFIED_MINUTES:
                     gateway.router.record(scope, source, False, time.monotonic() - started)
-                errors.append({"source": source, "status": "unavailable", "reason": str(exc)[:160]})
+                errors.append(
+                    {
+                        "source": source,
+                        "status": "transient" if isinstance(exc, (ConnectionError, TimeoutError)) else "unavailable",
+                        "reason": str(exc)[:160],
+                    }
+                )
         raise HistoryRouteError(errors)
     finally:
         background.reset(token)

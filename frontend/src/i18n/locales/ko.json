@@ -2776,6 +2776,7 @@
     "invalidChoices": "모든 후보 값을 입력하세요."
   },
   "history": {
+    "retrying": "연결 중단 · {{seconds}}초 후 자동 재시도",
     "title": "과거 데이터 저장",
     "description": "크기를 제한한 청크로 다운로드합니다. 재개 시 무결성이 확인된 청크는 다시 받지 않습니다.",
     "usage": "{{used}} / {{quota}} MiB 사용 · {{reserved}} MiB 예약",

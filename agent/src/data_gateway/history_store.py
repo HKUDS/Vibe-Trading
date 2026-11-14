@@ -43,6 +43,8 @@ class HistoryStore:
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-download")
         self.futures = {}
         self.stop = threading.Event()
+        self.retry_base = number("HISTORY_RETRY_BASE", 30, 1, 300)
+        self.retry_max = number("HISTORY_RETRY_MAX", 300, self.retry_base, 3600)
         with self.transaction() as db:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),quota INTEGER,retention INTEGER);
@@ -53,6 +55,14 @@ class HistoryStore:
                 db.execute("ALTER TABLE jobs ADD COLUMN owner INTEGER")
             if "lease_slot" not in {row[1] for row in db.execute("PRAGMA table_info(jobs)")}:
                 db.execute("ALTER TABLE jobs ADD COLUMN lease_slot INTEGER")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
+            for name, declaration in {
+                "auto_resume": "INTEGER DEFAULT 0",
+                "retry_at": "REAL DEFAULT 0",
+                "retry_count": "INTEGER DEFAULT 0",
+            }.items():
+                if name not in columns:
+                    db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {declaration}")
             used = {row[0] for row in db.execute("SELECT lease_slot FROM jobs WHERE lease_slot IS NOT NULL")}
             for row in db.execute("SELECT id FROM jobs WHERE lease_slot IS NULL").fetchall():
                 preferred = int(row["id"][:8], 16) % 64
@@ -233,6 +243,8 @@ class HistoryStore:
         ).fetchall():
             if row["id"] == exclude:
                 continue
+            if row["retry_at"] and row["accessed"] >= cutoff:
+                continue  # Waiting downloads release reservations, not their committed prefix.
             if row["accessed"] >= cutoff and usage + reserved + required <= settings["quota"]:
                 continue
             try:
@@ -256,12 +268,34 @@ class HistoryStore:
         return self.settings()
 
     def _clean(self):
-        while not self.stop.wait(30):
+        next_cleanup = time.monotonic() + 30
+        while not self.stop.wait(1):
             try:
-                self._recover_interrupted()
-                self.prune()
+                if time.monotonic() >= next_cleanup:
+                    self._recover_interrupted()
+                    self.prune()
+                    next_cleanup = time.monotonic() + 30
+                self._resume_due()
             except (OSError, ValueError, sqlite3.Error):
                 pass
+
+    def _resume_due(self):
+        """Dispatch due durable retries through the existing bounded worker queue."""
+        with self.snapshot() as db:
+            jobs = [
+                row[0]
+                for row in db.execute(
+                    "SELECT id FROM jobs WHERE state='failed' AND auto_resume=1 AND cancel=0 AND retry_at>0 AND retry_at<=? ORDER BY retry_at LIMIT 4",
+                    (time.time(),),
+                )
+            ]
+        for job in jobs:
+            if self.stop.is_set():
+                return
+            try:
+                self.start(job, _automatic=True)
+            except ValueError:
+                continue  # Another process, pause/delete, or bounded queue won the race.
 
     def settings(self, *, quota_bytes=None, retention_days=None):
         """Read/update global quota; shrinking never evicts pinned/running jobs."""
@@ -330,7 +364,7 @@ class HistoryStore:
                 jobs = [
                     dict(row)
                     for row in db.execute(
-                        "SELECT id,spec,state,created,accessed,pinned,error FROM jobs ORDER BY created DESC"
+                        "SELECT id,spec,state,created,accessed,pinned,error,auto_resume,retry_at,retry_count FROM jobs ORDER BY created DESC"
                     )
                 ]
                 for item in jobs:
@@ -391,8 +425,10 @@ class HistoryStore:
             summary["coverage_verified"] = summary["state"] == "complete"
             return summary
 
-    def start(self, job):
+    def start(self, job, *, _automatic=False):
         with self.lock:
+            if self.stop.is_set():
+                raise ValueError("History service is closed")
             self.futures = {key: value for key, value in self.futures.items() if not value.done()}
             if job in self.futures:
                 return self.status(job)
@@ -400,10 +436,20 @@ class HistoryStore:
                 raise ValueError("History worker queue is full")
             self.status(job)
             with self.lease(job), self.transaction() as db:
-                state = db.execute("SELECT state FROM jobs WHERE id=?", (job,)).fetchone()[0]
-                if state in {"running", "queued"}:
+                row = db.execute("SELECT * FROM jobs WHERE id=?", (job,)).fetchone()
+                if _automatic and not (
+                    row["state"] == "failed"
+                    and row["auto_resume"]
+                    and not row["cancel"]
+                    and 0 < row["retry_at"] <= time.time()
+                ):
+                    return self.status(job)
+                if row["state"] in {"running", "queued"}:
                     raise ValueError("History job is already running or queued")
-                db.execute("UPDATE jobs SET state='queued',cancel=0,owner=? WHERE id=?", (os.getpid(), job))
+                db.execute(
+                    "UPDATE jobs SET state='queued',cancel=0,owner=?,auto_resume=1,retry_at=0,retry_count=? WHERE id=?",
+                    (os.getpid(), row["retry_count"] if _automatic else 0, job),
+                )
             self.futures[job] = self.executor.submit(self.run, job)
             self.futures[job].add_done_callback(lambda future: self._finished(job, future))
         return self.status(job)
@@ -421,7 +467,10 @@ class HistoryStore:
     def cancel(self, job):
         self.status(job)
         with self.transaction() as db:
-            db.execute("UPDATE jobs SET cancel=1 WHERE id=?", (job,))
+            db.execute(
+                "UPDATE jobs SET cancel=1,auto_resume=0,retry_at=0,state=CASE WHEN retry_at>0 THEN 'paused' ELSE state END WHERE id=?",
+                (job,),
+            )
         return self.status(job)
 
     def pin(self, job, pinned):
@@ -459,6 +508,7 @@ class HistoryStore:
             if cancelled:
                 return self.status(job)
             failed_index = None
+            retryable = False
             try:
                 for chunk in state["chunks"]:
                     failed_index = chunk["idx"]
@@ -516,8 +566,13 @@ class HistoryStore:
                             error = None
                             break
                         except (ConnectionError, TimeoutError, OSError) as exc:
+                            retryable = getattr(exc, "retryable", isinstance(exc, (ConnectionError, TimeoutError)))
                             if error is None:
                                 error = exc
+                            if self._stop_requested(job):
+                                from .history_router import HistoryPaused
+
+                                raise HistoryPaused() from exc
                             if self.stop.wait(min(8, 2**attempt)):
                                 break
                     if error is not None:
@@ -545,7 +600,10 @@ class HistoryStore:
                                 "UPDATE chunks SET state='complete',rows=?,bytes=?,digest=?,meta=?,error=NULL WHERE job=? AND idx=?",
                                 (len(rows), size, digest, json.dumps(meta), job, chunk["idx"]),
                             )
-                            db.execute("UPDATE jobs SET reserved=0,accessed=? WHERE id=?", (time.time(), job))
+                            db.execute(
+                                "UPDATE jobs SET reserved=0,accessed=?,retry_count=0,retry_at=0 WHERE id=?",
+                                (time.time(), job),
+                            )
                         del rows
                     finally:
                         temporary.unlink(missing_ok=True)
@@ -558,12 +616,26 @@ class HistoryStore:
                         for row in db.execute("SELECT meta FROM chunks WHERE job=? AND state='complete'", (job,))
                     )
                     final = "paused" if pending else "complete" if verified else "downloaded"
-                    db.execute("UPDATE jobs SET state=?,reserved=0 WHERE id=?", (final, job))
+                    db.execute("UPDATE jobs SET state=?,reserved=0,retry_at=0,auto_resume=0 WHERE id=?", (final, job))
             except Exception as exc:
                 from .history_router import HistoryPaused
 
                 paused = isinstance(exc, HistoryPaused)
                 with self.transaction() as db:
+                    current = db.execute(
+                        "SELECT auto_resume,cancel,retry_count FROM jobs WHERE id=?", (job,)
+                    ).fetchone()
+                    paused = paused or bool(current["cancel"])
+                    retry = (
+                        retryable
+                        and isinstance(exc, (ConnectionError, TimeoutError))
+                        and current["auto_resume"]
+                        and not paused
+                    )
+                    count = current["retry_count"] + 1 if retry else current["retry_count"]
+                    retry_at = (
+                        time.time() + min(self.retry_max, self.retry_base * 2 ** min(count - 1, 12)) if retry else 0
+                    )
                     if failed_index is not None and not paused:
                         db.execute(
                             "UPDATE chunks SET error=? WHERE job=? AND idx=?", (str(exc)[:800], job, failed_index)
@@ -578,10 +650,12 @@ class HistoryStore:
                                 ),
                             )
                     db.execute(
-                        "UPDATE jobs SET state=?,reserved=0,error=? WHERE id=?",
+                        "UPDATE jobs SET state=?,reserved=0,error=?,retry_at=?,retry_count=? WHERE id=?",
                         (
                             "paused" if paused or isinstance(exc, HistoryCapacityError) else "failed",
                             None if paused else type(exc).__name__ + ": " + str(exc)[:240],
+                            retry_at,
+                            count,
                             job,
                         ),
                     )

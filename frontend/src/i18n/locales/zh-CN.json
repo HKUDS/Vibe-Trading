@@ -2776,6 +2776,7 @@
     "invalidChoices": "请填写每个候选值，逗号之间不能留空。"
   },
   "history": {
+    "retrying": "连接中断 · {{seconds}} 秒后自动续传",
     "title": "历史数据存储",
     "description": "按有限大小分块下载，暂停后可续传，不重复下载完整且校验通过的分块。",
     "usage": "已用 {{used}} / {{quota}} MiB · 已预留 {{reserved}} MiB",

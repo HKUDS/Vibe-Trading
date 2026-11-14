@@ -56,7 +56,7 @@ class HistoryDataTool(BaseTool):
     description = (
         "Plan and resume large historical datasets with bounded local storage. "
         "Auto routes through compatible existing sources by market and interval; source pins an exact provider. "
-        "Plan before create; create returns a job id; start downloads in background; status checks completion. "
+        "Plan before create; create returns a job id; start downloads in background; status checks completion. Transient failures retry automatically while the service runs; retry_at is the next retry time. Cancel disables automatic resume. "
         "Rows requires a finished download and returns at most 25 unsampled rows per page with coverage_verified. "
         "Row pages include per-symbol currency, units, timezone and source provenance; null metadata remains unknown. "
         "Downloaded is not verified complete: inspect coverage_verified and never treat a recent tail as full history. "
@@ -146,7 +146,20 @@ class HistoryDataTool(BaseTool):
                     raise ValueError("offset must be non-negative")
                 jobs = store.status()
                 page = [
-                    {key: row.get(key) for key in ("id", "state", "pinned", "rows", "completed_chunks", "total_chunks")}
+                    {
+                        key: row.get(key)
+                        for key in (
+                            "id",
+                            "state",
+                            "pinned",
+                            "rows",
+                            "completed_chunks",
+                            "total_chunks",
+                            "auto_resume",
+                            "retry_at",
+                            "retry_count",
+                        )
+                    }
                     for row in jobs[offset : offset + 10]
                 ]
                 result = {

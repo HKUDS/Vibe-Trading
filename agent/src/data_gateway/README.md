@@ -231,6 +231,26 @@ Settings → Historical data storage (also `/history-storage`) offers an estimat
 before downloading, a shared disk limit, idle retention, pause/resume, pin and
 delete. Defaults are **256 MiB and 30 unused days**; limits are 4 MiB–10 GiB and
 1–365 days. This budget is separate from the 64 MiB short-lived gateway cache.
+Once a user starts a job, exhausted transient network/cooldown/capacity attempts
+schedule automatic continuation in the service. The existing cleanup thread
+checks durable `retry_at` deadlines every second and dispatches through the same
+one-worker/four-job queue. Backoff defaults to 30 seconds, doubles after another
+failed run, and caps at 300 seconds (`VIBE_GATEWAY_HISTORY_RETRY_BASE` /
+`VIBE_GATEWAY_HISTORY_RETRY_MAX`). These are retry spacing, not longer request
+or source timeouts. A successful chunk resets the backoff. Waiting jobs release
+reservations and retain verified chunks; no client resume loop is needed.
+
+API/Agent/MCP status exposes `auto_resume`, Unix-seconds `retry_at`, and
+`retry_count`. A waiting retry retains state `failed` and its error for diagnosis;
+the Web UI shows the next retry and offers Pause. Pause/delete disable recovery;
+invalid data, missing historical coverage and disk exhaustion do not retry
+forever. Waiting chunks remain protected from quota eviction until their normal
+idle retention expires. Retry schedules survive reopening the store, but a
+process interrupted *during* an active download retains the existing paused
+recovery behavior. Old jobs migrate with automatic recovery disabled until the
+user starts them again. The service must remain running with history storage
+initialized; CLI `history run` stays alive while waiting and Ctrl-C pauses it.
+
 Storage is created lazily at `~/.vibe-trading/datasets/history`; override with
 `VIBE_GATEWAY_HISTORY_DIR` outside every Git checkout. No data is committed.
 
@@ -369,8 +389,8 @@ python tools/gateway_combined_report.py --input /tmp/gateway-hour.json \
 `--history-dir` must not already exist. Faults abort this child's real upstream
 WebSockets and BaoStock socket, and refuse source calls during simulated total
 outage; they do not disrupt the host network. After exhausted chunk retries, the
-driver explicitly calls the production resume API. This is not a claim that
-failed jobs automatically resume in the product. No forced GC or allocation
+legacy driver explicitly calls the production resume API. Its historical results
+do not establish autonomous recovery; the dedicated recovery probe below does. No forced GC or allocation
 profiler is enabled. macOS reports RSS, current/lifetime-peak physical footprint,
 CPU time, threads and file descriptors; caches are reported separately.
 
@@ -485,3 +505,21 @@ HTTP pacing respects the current acquisition deadline. A local pacing rejection
 is reported as capacity pressure, does not mark the source as network-down, and
 does not reserve a future request slot. Socket waits use the remaining budget;
 actual work still holds its source slot until it exits.
+
+### Automatic history recovery short probe
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_history_recovery_probe.py \
+  --history ~/.vibe-trading/history-recovery-NEW --fault /tmp/recovery-offline \
+  --calls /tmp/recovery-calls-NEW.jsonl --output /tmp/recovery-NEW.json \
+  --universe /tmp/real-universe.json
+```
+
+This starts two real five-year monthly datasets once, commits the first symbol,
+then injects a transport exception for the second. It restores transport after
+observing durable retry state and performs **no further resume calls**. The
+production scheduler must finish, preserve the first chunk's hash, and expose
+122 calendar-verified rows. During recovery, 64 topics and a 5,224-symbol scan
+queue provide background load; this short test intentionally cancels the scan
+rather than claiming full scan completion. No request budgets or resource limits
+are increased. See VALIDATION.md v17 for measured results and limitations.

@@ -2776,6 +2776,7 @@
     "invalidChoices": "Her seçenek için bir değer girin."
   },
   "history": {
+    "retrying": "Bağlantı kesildi · {{seconds}} saniye sonra otomatik yeniden deneme",
     "title": "Geçmiş veri depolama",
     "description": "Sınırlı boyutlu parçalar halinde indirin; sağlam tamamlanmış parçaları tekrar indirmeden devam edin.",
     "usage": "{{used}} / {{quota}} MiB kullanıldı · {{reserved}} MiB ayrıldı",

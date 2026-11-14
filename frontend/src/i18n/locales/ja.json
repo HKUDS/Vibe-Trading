@@ -2776,6 +2776,7 @@
     "invalidChoices": "各候補に値を入力してください。"
   },
   "history": {
+    "retrying": "接続が中断されました · {{seconds}}秒後に自動再試行",
     "title": "過去データの保存",
     "description": "サイズを制限して分割取得。再開時は正常な取得済みチャンクを再取得しません。",
     "usage": "{{used}} / {{quota}} MiB 使用 · {{reserved}} MiB 予約",

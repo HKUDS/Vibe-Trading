@@ -36,6 +36,13 @@ def run_history(args):
                 codes=args.codes, start_date=args.start, end_date=args.end, interval=args.interval, source=args.source
             )
             result.pop("parts", None)
+        elif args.action == "run":
+            import time
+
+            result = store.start(args.job)
+            while result["state"] in {"running", "queued"} or result.get("retry_at", 0):
+                time.sleep(0.25)
+                result = store.status(args.job)
         elif args.action == "storage":
             result = store.settings(
                 quota_bytes=args.quota_mb * 1024**2 if args.quota_mb is not None else None,
@@ -54,6 +61,10 @@ def run_history(args):
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         if args.action == "run" and result.get("state") not in {"complete", "downloaded"}:
             raise SystemExit(1)
+    except KeyboardInterrupt:
+        if args.action == "run":
+            store.cancel(args.job)
+        raise
     except ValueError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         raise SystemExit(1) from None

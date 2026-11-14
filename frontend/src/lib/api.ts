@@ -592,7 +592,7 @@ export interface LabJob {
 export interface ScanJob { id: string; state: string; total: number; completed: number; failed: number; remaining: number; retries: number; last_error: string | null }
 export interface HistoryStorage { quota_bytes: number; retention_days: number; used_bytes: number; reserved_bytes: number; path: string }
 export interface HistorySpec { codes: string[]; start_date: string; end_date: string; interval: string; source?: string }
-export interface HistoryJob { sources?: string[]; id: string; state: string; pinned: number; error: string | null; spec?: HistorySpec; rows?: number; completed_chunks?: number; total_chunks?: number }
+export interface HistoryJob { auto_resume?: number; retry_at?: number; retry_count?: number; sources?: string[]; id: string; state: string; pinned: number; error: string | null; spec?: HistorySpec; rows?: number; completed_chunks?: number; total_chunks?: number }
 export interface GatewayCapabilities { history_datasets: { markets: string[]; intervals: string[]; sources: Array<{ source: string; markets: string[]; intervals: string[] | null; requires_auth: boolean }> } }
 export interface HistoryPlan { routes?: Record<string, { market: string; candidates: string[] }>; chunks: number; estimated_max_rows: number; estimated_uncompressed_bytes: number; storage: HistoryStorage }
 

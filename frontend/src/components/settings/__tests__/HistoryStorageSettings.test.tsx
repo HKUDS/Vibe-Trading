@@ -52,3 +52,13 @@ it("exposes auto routing and keeps one-minute data and unverified coverage expli
   expect(screen.getByText(/Downloaded · coverage unverified/)).toBeVisible();
   expect(screen.getByText(/Only calendar\/grid-verified datasets/)).toBeVisible();
 });
+
+it("shows automatic recovery and lets the user pause it without a resume call", async () => {
+  vi.mocked(api.historyJobs).mockResolvedValue([{ id: "waiting", state: "failed", pinned: 0, error: "ConnectionError", auto_resume: 1, retry_at: Date.now() / 1000 + 30, retry_count: 1 }]);
+  vi.mocked(api.historyAction).mockResolvedValue({ id: "waiting", state: "paused", pinned: 0, error: null, retry_at: 0 });
+  render(<HistoryStorageSettings />);
+  expect(await screen.findByText(/automatically retrying in/)).toBeVisible();
+  expect(api.historyAction).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Pause", exact: true }));
+  await waitFor(() => expect(api.historyAction).toHaveBeenCalledWith("waiting", "cancel"));
+});

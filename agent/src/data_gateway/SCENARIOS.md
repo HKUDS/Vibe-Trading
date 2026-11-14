@@ -48,3 +48,14 @@ BTC/ETH 分钟线 4.027 s，美股分钟线含断网恢复 41.437 s；均低于�
 12/12 并发冷请求首次完整，最长 12.960 s；166 项不同自动回归通过。
 扫描只获取 318/5224 后主动取消，大历史仅保留 76 块且最终断网失败状态未补跑，
 不能替代 29/30 的 v15 全量结果；限额未增加，三分钟自然清理及七个 PID 退出已核对。
+
+### v17 follow-up: automatic historical recovery
+
+A separate 46.53-second real-source probe now covers the previously missing
+product behavior: one initial start, transient failure after a committed chunk,
+transport restoration, and production-owned continuation with no further resume
+API calls. Both five-year monthly symbols completed (122 verified rows), the
+first chunk was unchanged, and 64 topics plus the full scan queue remained active
+as background load. The short scan ended at 112/5,224 intentionally. This adds
+recovery coverage; it is not another full scan/hour acceptance. See VALIDATION.md
+v17 for limits, classified failures, UI/build checks and raw evidence.

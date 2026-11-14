@@ -2776,6 +2776,7 @@
     "invalidChoices": "Enter a value for every choice."
   },
   "history": {
+    "retrying": "Connection interrupted · automatically retrying in {{seconds}}s",
     "title": "Historical data storage",
     "description": "Download in bounded chunks; resume without downloading intact completed chunks again.",
     "usage": "{{used}} / {{quota}} MiB used · {{reserved}} MiB reserved",

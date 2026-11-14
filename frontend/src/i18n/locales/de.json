@@ -2776,6 +2776,7 @@
     "invalidChoices": "Geben Sie für jede Auswahl einen Wert ein."
   },
   "history": {
+    "retrying": "Verbindung unterbrochen · automatischer Wiederholungsversuch in {{seconds}} s",
     "title": "Historische Daten speichern",
     "description": "In begrenzten Blöcken herunterladen; beim Fortsetzen intakte fertige Blöcke wiederverwenden.",
     "usage": "{{used}} / {{quota}} MiB belegt · {{reserved}} MiB reserviert",

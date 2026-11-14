@@ -2776,6 +2776,7 @@
     "invalidChoices": "Introduce un valor para cada opción."
   },
   "history": {
+    "retrying": "Conexión interrumpida · reintento automático en {{seconds}} s",
     "title": "Almacenamiento histórico",
     "description": "Descarga por bloques limitados; reanuda sin volver a descargar bloques completos e íntegros.",
     "usage": "{{used}} / {{quota}} MiB usados · {{reserved}} MiB reservados",
