@@ -126,7 +126,11 @@ async def run(args):
                         next_offset=value.get("next_offset"),
                         first=rows[0].get("time") if rows else None,
                         last=rows[-1].get("time") if rows else None,
-                        note="Capability probe: unfinished datasets currently refuse prefix reads with 409",
+                        note=(
+                            "Completed dataset: unsampled production page"
+                            if label == "completed_history_page"
+                            else "Capability probe: unfinished datasets currently refuse prefix reads with 409"
+                        ),
                     )
             except Exception as exc:
                 item["client_error"] = type(exc).__name__
@@ -190,6 +194,19 @@ async def run(args):
                     )
                     for label, parameters in option_requests
                 ),
+                *(
+                    [
+                        fetch(
+                            "completed_history_page",
+                            "GET",
+                            f"/data/history/jobs/{args.completed_job}/rows",
+                            round_number,
+                            params={"offset": round_number * 100, "limit": 1000},
+                        )
+                    ]
+                    if args.completed_job
+                    else []
+                ),
                 fetch(
                     "large_history_prefix",
                     "GET",
@@ -221,6 +238,7 @@ def main():
     parser.add_argument("--port", type=int, default=8913)
     parser.add_argument("--seconds", type=float, default=180)
     parser.add_argument("--job", required=True)
+    parser.add_argument("--completed-job")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:

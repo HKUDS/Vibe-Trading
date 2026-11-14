@@ -1081,3 +1081,27 @@ a gateway timeout while continuing their original retry budget in a worker.
 bounded socket attempt and no subsequent retry. Existing successful pagination
 and retries without a gateway deadline still pass. Evidence:
 `/tmp/gateway-deadline-v9-regression.xml`. No budget was increased.
+
+### 2026-11-14 — v9 metadata contention, v10 snapshot reads
+
+v9 failed at active 11.57 seconds: `_soak/metrics` surfaced
+`History storage busy; retry shortly` from `status()` taking the global write
+lock while the large history job was being created. This is retained as a
+failure (`/tmp/gateway-router-hour-v9-20261114.json`), not an hour result.
+Read-only `status()` and unchanged `settings()` now use a SQLite committed
+read snapshot without the mutation lock or a pointless UPDATE. Mutations
+retain the same timed process/file lock and quota checks. Page readers wait
+within the existing two-second lock budget for another reader's lease;
+mutators still refuse an occupied job. No lock budget is increased.
+Tests hold an uncommitted writer and confirm readers see the old consistent
+state, then the committed state; the foreign-lock test still refuses writes.
+22 history-store tests passed (`/tmp/gateway-history-store-v10.xml`); the
+history router/API run had 37 passing checks and the one now-updated assertion
+that formerly required read-only settings to contend on the write lock.
+
+Real HTTP + application CLI subprocess + agent tool subprocess read the same
+completed BTC/ETH minute dataset concurrently: each returned 25 unsampled,
+verified rows with identical digest; invalid IDs/paths refused. Evidence:
+`/tmp/gateway-surfaces-v10-20261114.json`. This verifies those three actual
+surfaces, not the MCP transport nor migration of legacy research/backtests.
+The server and dataset were isolated from normal user state.

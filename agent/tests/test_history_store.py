@@ -236,8 +236,9 @@ def test_foreign_metadata_lock_has_bounded_wait(store):
     store.lock_timeout = 0.05
     with Cache.disk_lock(store):
         started = time.monotonic()
+        assert store.settings()["quota_bytes"] == 256 * 1024**2
         with pytest.raises(ValueError, match="busy"):
-            store.settings()
+            store.settings(retention_days=17)
         assert time.monotonic() - started < 0.5
     assert store.settings()["quota_bytes"] == 256 * 1024**2
 
@@ -360,3 +361,51 @@ def test_cancel_between_status_snapshot_and_running_transition_is_not_lost(store
     store.fetcher = lambda *args: (fetched.append(args), {})
     value = store.run(job)
     assert value["state"] == "paused" and value["cancel"] and not fetched
+
+
+def test_status_and_storage_read_committed_snapshot_while_writer_holds_lock(store):
+    job = store.create(**spec())["id"]
+    locked, release = threading.Event(), threading.Event()
+
+    def writer():
+        with store.transaction() as db:
+            db.execute("UPDATE jobs SET state='queued' WHERE id=?", (job,))
+            db.execute("UPDATE settings SET retention=17")
+            locked.set()
+            assert release.wait(5)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    assert locked.wait(2)
+    try:
+        before = time.monotonic()
+        assert store.status(job)["state"] == "paused"
+        assert store.status()[0]["state"] == "paused"
+        assert store.settings()["retention_days"] == 30
+        assert time.monotonic() - before < store.lock_timeout
+    finally:
+        release.set()
+        thread.join(2)
+    assert not thread.is_alive()
+    assert store.status(job)["state"] == "queued"
+    assert store.settings()["retention_days"] == 17
+
+
+def test_concurrent_page_reader_waits_within_existing_lock_budget(store):
+    job = store.create(**spec())["id"]
+    store.run(job)
+    result = []
+    started = threading.Event()
+
+    def reader():
+        started.set()
+        result.append(store.read(job, 0, 2))
+
+    with store.lease(job):
+        thread = threading.Thread(target=reader)
+        thread.start()
+        assert started.wait(1)
+        time.sleep(0.05)
+        assert not result
+    thread.join(2)
+    assert not thread.is_alive() and len(result[0]["rows"]) == 2

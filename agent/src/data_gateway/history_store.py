@@ -109,6 +109,18 @@ class HistoryStore:
                 db.close()
 
     @contextmanager
+    def snapshot(self):
+        """Read a committed catalog snapshot without taking the mutation lock."""
+        db = sqlite3.connect(self.db_path.as_uri() + "?mode=ro", uri=True, timeout=self.lock_timeout)
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute("BEGIN")
+            yield db
+        finally:
+            db.rollback()
+            db.close()
+
+    @contextmanager
     def _metadata_guard(self):
         if not self.lock.acquire(timeout=self.lock_timeout):
             raise ValueError("History storage busy; retry shortly")
@@ -161,7 +173,7 @@ class HistoryStore:
                 release()
 
     @contextmanager
-    def lease(self, job):
+    def lease(self, job, timeout=0):
         """Hold a nonblocking process lease; stale jobs are resumable after exit."""
         self._id(job)
         # Read only: callers may already hold the metadata write transaction.
@@ -170,7 +182,7 @@ class HistoryStore:
             row = db.execute("SELECT lease_slot FROM jobs WHERE id=?", (job,)).fetchone()
         if row is None:
             raise ValueError("Unknown history job")
-        with self._file_lock(f"lease-{row[0]}.lock"):
+        with self._file_lock(f"lease-{row[0]}.lock", timeout):
             yield
 
     def _id(self, value):
@@ -185,7 +197,15 @@ class HistoryStore:
         return path
 
     def _usage(self):
-        return sum(p.stat().st_size for p in self.directory.rglob("*") if p.is_file() and not p.is_symlink())
+        total = 0
+        for path in self.directory.rglob("*"):
+            try:
+                if path.is_file() and not path.is_symlink():
+                    total += path.stat().st_size
+            except FileNotFoundError:
+                # Read-only status can race an atomic replacement or eviction.
+                continue
+        return total
 
     def _remove(self, db, job):
         self._id(job)
@@ -240,6 +260,17 @@ class HistoryStore:
 
     def settings(self, *, quota_bytes=None, retention_days=None):
         """Read/update global quota; shrinking never evicts pinned/running jobs."""
+        if quota_bytes is None and retention_days is None:
+            with self.snapshot() as db:
+                row = db.execute("SELECT * FROM settings WHERE id=1").fetchone()
+                reserved = db.execute("SELECT COALESCE(SUM(reserved),0) FROM jobs").fetchone()[0]
+            return {
+                "quota_bytes": row["quota"],
+                "retention_days": row["retention"],
+                "used_bytes": self._usage(),
+                "reserved_bytes": reserved,
+                "path": str(self.directory),
+            }
         with self.transaction() as db:
             old = db.execute("SELECT * FROM settings WHERE id=1").fetchone()
             quota = old["quota"] if quota_bytes is None else quota_bytes
@@ -289,7 +320,7 @@ class HistoryStore:
         return self.status(job)
 
     def status(self, job=None):
-        with self.transaction() as db:
+        with self.snapshot() as db:
             if job is None:
                 jobs = [
                     dict(row)
@@ -559,7 +590,7 @@ class HistoryStore:
         """Read a bounded page of complete, hash-verified chunks without sampling."""
         if not isinstance(offset, int) or offset < 0 or not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise ValueError("Rows require offset>=0 and limit=1..1000")
-        with self.lease(job):
+        with self.lease(job, timeout=self.lock_timeout):
             state = self.status(job)
             if state["state"] not in {"complete", "downloaded"}:
                 raise ValueError("Dataset is not complete; inspect chunk errors or resume")
