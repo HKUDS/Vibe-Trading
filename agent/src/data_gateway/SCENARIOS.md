@@ -69,3 +69,14 @@ after launch. Each returned 183 verified monthly rows, reused the committed
 prefix, and made no source calls for manually paused or never-started jobs.
 No post-restart resume API call or resource-limit increase was used. See v18 in
 VALIDATION.md for the shutdown race found and fixed, scope and raw evidence.
+
+### v19 follow-up: multi-year minute data and mixed restart load
+
+One complete five-year 5m series survived four alternating normal/forced restarts
+while default-budget 16-topic streaming and a 5,224-symbol scan queue were active.
+The 3m19s test verified all 61 chunks / 58,176 rows against independent full-range
+calendar/status data and all HTTP pages. No committed chunk was re-fetched; only
+four uncommitted interrupted results were reacquired. The manually paused task
+made zero history calls. Every process delivered live WebSocket updates and scan
+progress. Resource limits were unchanged; scan prefixes are not full scan coverage.
+See VALIDATION.md v19 for the exact scope and evidence.

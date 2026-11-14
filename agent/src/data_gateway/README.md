@@ -543,3 +543,23 @@ process mounts the production gateway lifespan. The driver waits for completion
 by reading the catalog directly, so no history HTTP call initializes the service
 and no resume call can mask missing startup recovery. Started jobs must finish;
 paused and never-started jobs must make no source calls. No resource limits change.
+
+### Multi-year minute history across repeated restarts
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_minute_restart_probe.py \
+  --root ~/.vibe-trading/history-minute-restart-NEW \
+  --universe /tmp/real-universe.json
+```
+
+This bounded short probe downloads one complete five-year 5-minute series, with
+16 default-budget subscriptions (crypto WebSocket plus equity bars) and the real
+5,224-symbol scan queue alongside it. Four process restarts alternate normal
+shutdown and forced termination. A test-only post-fetch hold interrupts a chunk
+before it commits; such an unfinished chunk must be reacquired. Already committed
+chunks must retain their hashes and must not be fetched again. A second five-year
+job is started then manually paused and must remain dormant across every restart.
+No post-restart resume API calls are made. After completion, every HTTP row page
+is hashed and compared with a separate full-range calendar/daily-status and
+intraday-grid verification. Reports distinguish partial scan load from a complete
+scan, and interrupted attempts from repeated downloads of completed data.

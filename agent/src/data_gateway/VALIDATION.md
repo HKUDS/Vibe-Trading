@@ -1888,3 +1888,66 @@ history storage, gateway HTTP and subscription lifecycle suites. The cooperative
 checkpoint case was rechecked after tightening its asynchronous-future assertion.
 Ruff and whitespace checks passed. No frontend source changed in this revision,
 so its previous validation/build limitation was not re-run or reclassified.
+
+## v19: five-year minute history across four mixed-load restarts (2026-11-15)
+
+No production code or resource configuration changed. The new reproducible short
+probe `tools/gateway_minute_restart_probe.py` ran the current v18 production app
+lifespan and history router, with a real **601398.SH / five-year / 5m** dataset
+(2021-11-14 through 2026-11-13). A second five-year task, 600519.SH, was started
+then manually paused while queued. Each process simultaneously had **16 default-
+budget topics** (two crypto WebSocket topics plus 14 equity-bar topics) and a
+real 5,224-symbol scan queue. No topic-budget override was needed.
+
+Four restarts alternated normal SIGTERM and forced SIGKILL after **2, 7, 15 and
+30 committed chunks**. A test-only hold occurred after a real source fetch but
+before that chunk's durable commit. This deliberately tests the difficult
+uncommitted-result boundary. Source prices were never synthesized. New processes
+used production startup recovery; the client reconnected subscriptions and
+queued scan load but made **zero post-restart history resume calls**. Progress
+until each checkpoint was observed through read-only SQLite, not history HTTP
+requests that could mask missing initialization. The only two start calls were
+the initial main and subsequently paused jobs.
+
+### Observed result
+
+- **198.575 seconds total (3 min 19 s)** including independent verification;
+  download, restart and HTTP-page portion: 190.717 seconds.
+- **61/61 chunks, 58,176 five-minute rows, 1,212 traded sessions**. First bar
+  2021-11-15 09:35, last bar 2026-11-13 15:00, Asia/Shanghai.
+- **65 fetch attempts = 61 unique chunks + four interrupted/uncommitted chunks**.
+  Completed prefixes retained their compressed SHA256 hashes. The call-log audit
+  also checks every phase against the previously committed chunk boundary:
+  **zero calls for already committed chunks**, including previously interrupted
+  chunks once they had committed. Reacquiring an uncommitted result after killing
+  its process is necessary; this is not a claim of exactly-once network delivery.
+- A separate fresh full-range BaoStock calendar/daily-status query matched all
+  1,212 sessions. Every bar passed exact intraday-grid, identity and strict
+  ordering checks, detecting gaps and duplicates across month/restart boundaries.
+  Every row from **59 actual HTTP pages** matched the canonical full-data digest
+  and the separate verifier's 59 store-reader pages. Canonical SHA256:
+  `63210f5b53f22e8daf1dc0b65d99bc7f690ed52f92262391c829236f490c8332`.
+- The manually paused task remained disabled with **zero history fetches and zero
+  rows across all five processes**. Ordinary scan/quote activity is separate from
+  that task and does not count as waking the download.
+- **428 SSE deliveries, including 350 WebSocket-tagged updates**, with live
+  WebSocket updates in every process and zero stream-task errors. Each process's
+  scan progressed: **16, 72, 152, 304, 288** completed symbols at the checkpoints,
+  with zero failed symbols. These restarted scan prefixes overlap; they are not
+  added as unique coverage and do **not** claim a full 5,224-symbol scan.
+- Final history reservations were zero; all five server PIDs (85026, 85104,
+  85200, 85292, 85622) were independently observed absent after completion.
+
+The captured gateway limits in every process remained **8 MiB memory cache,
+64 MiB disk cache, four workers and 16 pending requests**. History quota remained
+**256 MiB**, with the existing one-worker/2 MiB chunk limits and six/15-second
+source/request budgets. This test validates restart integrity and mixed-load
+progress, not another hour-long whole-process memory bound.
+
+Ruff and whitespace checks passed. The final report-audit helper was replayed
+against the captured call log/catalog/stream metrics; it passes the committed-
+prefix, live-stream, scan-progress, pause and unchanged-limit assertions. The
+production code was unchanged, so the v18 regression evidence is retained rather
+than repeating unrelated suites. Raw metadata, logs, calls and independent
+verification are outside the checkout (no price rows committed):
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v19/`.
