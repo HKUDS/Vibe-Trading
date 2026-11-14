@@ -283,3 +283,44 @@ def test_options_capacity_pressure_has_short_retry_without_poisoning_health(tmp_
         assert gateway.options_chain("SPY")["ok"] and calls == [1]
     finally:
         gateway.close()
+
+
+def test_binance_inherited_sdk_uses_isolation_before_availability(tmp_path, monkeypatch):
+    from backtest.loaders import registry
+    from backtest.loaders.binance_loader import DataLoader as Binance
+    from backtest.loaders.ccxt_loader import DataLoader as Ccxt
+    from src.data_gateway import isolated
+
+    registry._ensure_registered()
+    calls = []
+
+    def forbidden(self):
+        raise AssertionError("Heavy SDK availability imported in the parent")
+
+    def child(params, timeout, limit):
+        calls.append(params["source"])
+        assert 0 < timeout <= 6
+        assert limit == 2 * 1024**2
+        return {
+            "BTC-USDT": [{"trade_date": "2026-11-12", "close": 100}],
+            "_provenance": {"BTC-USDT": {"source": params["source"], "quote_currency": "USDT"}},
+        }
+
+    monkeypatch.setattr(Ccxt, "is_available", forbidden)
+    monkeypatch.setattr(isolated, "fetch", child)
+    gateway = MarketDataGateway(Config(tmp_path))
+    try:
+        for source in ("binance", "ccxt"):
+            result = gateway.bars(
+                source=source,
+                codes=["BTC-USDT"],
+                start_date="2026-11-12",
+                end_date="2026-11-12",
+                interval="1D",
+            )
+            assert result["ok"], result
+            assert result["data"]["_provenance"]["BTC-USDT"]["source"] == source
+        assert calls == ["binance", "ccxt"]
+        assert isolated.requires_isolation(Binance)
+    finally:
+        gateway.close()

@@ -1043,3 +1043,41 @@ evidence. The source recovery fixes have passing controlled and earlier live
 controls, not an overall production-readiness claim. Resume when host/source
 responsiveness permits an interpretable bounded short control, then the full
 hour with the same quotas and full-scan continuation.
+
+### 2026-11-14 09:31 UTC — v7 timeout stacks and inherited SDK isolation
+
+The new test-only watchdog captured slow `/data/bars` and history status requests
+in `/tmp/gateway-v7-pilot.server.log`. The source thread was importing `ccxt` via
+`binance_loader.DataLoader.is_available`, inherited from `CcxtDataLoader`.
+`historical.py` isolated only a route literally named `ccxt`, so the Binance
+fallback bypassed isolation and kept the SDK in the API process. This is a
+confirmed isolation defect; the stacks do not establish it as the exclusive
+cause of every earlier read timeout (host load also varied materially).
+
+Isolation now checks the actual loader inheritance, without importing optional
+loaders as a side effect, and the child resolves the requested CCXT-backed
+adapter instead of always returning the generic CCXT loader. Same one-child
+slot, 6-second source budget and existing response limit. Real explicit Binance
+probe: 8.778 s including timeout then fallback, successful data response, no
+`ccxt` import in the parent, child exited. Report:
+`/tmp/gateway-binance-isolation-v8.json`. New regression prevents either Binance
+or CCXT availability checks from running in the parent and checks provenance.
+83 relevant gateway/history tests passed (`/tmp/gateway-v8-regression.xml`).
+
+The soak now retains bounded HTTP latency and event-loop lag samples and dumps
+threads once per request exceeding 20 seconds. No timeout or resource limit is
+relaxed. v7 failed and is retained; v8 is a short diagnostic, not one-hour
+acceptance. Its current outcome must be read from the final report.
+
+v8 short test reached `complete` in 264.8 seconds with two fault cycles and
+normal history cancellation; no HTTP read failure. It is not hour acceptance;
+the routed monthly job was interrupted after 5/12 chunks under injected faults.
+
+A separate source-code audit confirmed Tencent socket/retry waits and OKX's
+pagination deadline could outlive the gateway source deadline. Both now cap
+network/retry waits by the inherited absolute deadline, rather than returning
+a gateway timeout while continuing their original retry budget in a worker.
+35 loader tests passed, including new deadline-exhaustion tests proving one
+bounded socket attempt and no subsequent retry. Existing successful pagination
+and retries without a gateway deadline still pass. Evidence:
+`/tmp/gateway-deadline-v9-regression.xml`. No budget was increased.

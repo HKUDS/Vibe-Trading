@@ -342,3 +342,25 @@ def test_midwalk_empty_page_that_persists_ends_the_walk(monkeypatch) -> None:
 
     assert calls["n"] == 3
     assert len(df) == tencent_loader._PAGE_SIZE
+
+
+def test_gateway_deadline_caps_socket_and_prevents_late_retry(monkeypatch):
+    from backtest.loaders.acquisition import source_deadline
+
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(tencent_loader.time, "monotonic", lambda: now[0])
+
+    def expire(req, timeout, **kwargs):
+        calls.append(timeout)
+        now[0] += timeout
+        raise TimeoutError("socket timeout")
+
+    monkeypatch.setattr(urllib.request, "urlopen", expire)
+    token = source_deadline.set(101.0)
+    try:
+        with pytest.raises(TimeoutError, match="Acquisition deadline"):
+            tencent_loader.DataLoader()._fetch_one("600519.SH", "2026-01-01", "2026-01-31")
+        assert calls == [1.0]
+    finally:
+        source_deadline.reset(token)

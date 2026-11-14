@@ -24,6 +24,7 @@ from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
+from backtest.loaders.acquisition import remaining_timeout, source_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +100,6 @@ class DataLoader:
         self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
-            from .acquisition import source_deadline
-            import time
-
             until = source_deadline.get()
             if until is not None and time.monotonic() >= until:
                 self.fetch_errors[code] = "request_deadline"
@@ -187,8 +185,9 @@ class DataLoader:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://web.ifzq.gtimg.cn/",
         })
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
+        with urllib.request.urlopen(req, timeout=remaining_timeout(15), context=_SSL_CONTEXT) as resp:
             raw = resp.read().decode("utf-8")
+        remaining_timeout(15)
 
         data = json.loads(raw)
         # Response: {"code":0,"data":{"sh601595":{"day":[["2026-06-01","21.32",...], ...]}}}
@@ -273,6 +272,7 @@ class DataLoader:
             page: Optional[pd.DataFrame] = None
             last_error: Optional[Exception] = None
             for attempt in range(_PAGE_RETRIES):
+                remaining_timeout(15)
                 try:
                     page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                     last_error = None
@@ -280,7 +280,7 @@ class DataLoader:
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     last_error = exc
                     if attempt < _PAGE_RETRIES - 1:
-                        time.sleep(_PAGE_BACKOFF * (2 ** attempt))
+                        time.sleep(remaining_timeout(_PAGE_BACKOFF * (2 ** attempt)))
             if last_error is not None:
                 # Partial pages already collected would read as a complete
                 # history downstream; a failed page is an error, not a series.
@@ -297,7 +297,8 @@ class DataLoader:
                 # history, or a throttled reply. One re-request decides — a
                 # transient glitch returns data, a genuine boundary stays
                 # empty and terminates the walk.
-                time.sleep(_PAGE_BACKOFF)
+                time.sleep(remaining_timeout(_PAGE_BACKOFF))
+                remaining_timeout(15)
                 try:
                     page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                 except Exception as exc:  # noqa: BLE001 - transient network jitter

@@ -89,9 +89,9 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                         raise GatewayError("Source is not configured or installed")
                     return cls
 
-                if source == "ccxt":
-                    from .isolated import fetch
+                from .isolated import fetch, requires_isolation
 
+                if requires_isolation(registry.LOADER_REGISTRY.get(source)):
                     return fetch(
                         {
                             **params,

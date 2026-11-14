@@ -55,6 +55,9 @@ def serve(port):
     import uvicorn
     import gc
     import tracemalloc
+    import faulthandler
+
+    faulthandler.enable()
 
     trace_dir = os.environ.get("VIBE_GATEWAY_TRACE_DIR")
     trace_baseline = None
@@ -148,9 +151,41 @@ def serve(port):
 
     gateway.invoke = invoke
 
+    pending_http = {}
+    monitor_stop = threading.Event()
+
+    def watchdog():
+        while not monitor_stop.wait(1):
+            now = time.monotonic()
+            for row in list(pending_http.values()):
+                if now - row["started"] >= 20 and not row["dumped"]:
+                    row["dumped"] = True
+                    print(
+                        json.dumps(
+                            {"slow_request": row["path"], "seconds": now - row["started"], "load": os.getloadavg()}
+                        ),
+                        flush=True,
+                    )
+                    faulthandler.dump_traceback()
+
+    async def heartbeat():
+        while True:
+            stamp = time.monotonic()
+            await asyncio.sleep(0.25)
+            timings.add("event_loop_lag", max(0, time.monotonic() - stamp - 0.25))
+
     @asynccontextmanager
     async def lifespan(app):
-        yield
+        monitor = threading.Thread(target=watchdog, daemon=True, name="soak-watchdog")
+        monitor.start()
+        beat = asyncio.create_task(heartbeat())
+        try:
+            yield
+        finally:
+            beat.cancel()
+            await asyncio.gather(beat, return_exceptions=True)
+            monitor_stop.set()
+            monitor.join(timeout=2)
         gateway.close()
         if history:
             history.close()
@@ -232,7 +267,21 @@ def serve(port):
             "subscriptions": hubs[0].status() if hubs else {"clients": 0, "topics": [], "pending_updates": 0},
         }
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
+    async def measured_app(scope, receive, send):
+        if scope["type"] != "http" or scope["path"] == "/data/stream":
+            return await app(scope, receive, send)
+        key = id(scope)
+        row = {"path": scope["path"], "started": time.monotonic(), "dumped": False}
+        pending_http[key] = row
+        try:
+            return await app(scope, receive, send)
+        finally:
+            pending_http.pop(key, None)
+            # Group paths, never retain unbounded job IDs.
+            group = "/".join(scope["path"].split("/")[:3])
+            timings.add("http:" + group, time.monotonic() - row["started"])
+
+    uvicorn.run(measured_app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
 
 
 async def exercise(args, output):

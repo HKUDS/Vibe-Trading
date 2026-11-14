@@ -29,6 +29,17 @@ from typing import Dict, List, Optional
 import pandas as pd
 import requests
 
+from backtest.loaders.acquisition import source_deadline
+from backtest.loaders.base import (
+    cached_loader_fetch,
+    check_budget,
+    positive_env_float,
+    positive_env_int,
+    retry_with_budget,
+    validate_date_range,
+)
+from backtest.loaders.registry import register
+
 logger = logging.getLogger(__name__)
 
 # Project / connector period tokens -> OKX candle ``bar`` strings.
@@ -46,15 +57,7 @@ _INTERVAL_MAP = {
     "1D": "1D",
 }
 
-from backtest.loaders.base import (
-    cached_loader_fetch,
-    check_budget,
-    positive_env_float,
-    positive_env_int,
-    retry_with_budget,
-    validate_date_range,
-)
-from backtest.loaders.registry import register
+
 
 BASE_URL = "https://www.okx.com/api/v5"
 CANDLES_PATH = f"{BASE_URL}/market/candles"
@@ -295,6 +298,9 @@ class DataLoader:
         all_rows: list = []
         after = str(end_ts)
         deadline = time.monotonic() + _OKX_FETCH_BUDGET_S
+        inherited = source_deadline.get()
+        if inherited is not None:
+            deadline = min(deadline, inherited)
         label = f"OKX fetch for {inst_id} via {endpoint.rsplit('/', 1)[-1]}"
 
         for _ in range(max_pages):
@@ -307,10 +313,11 @@ class DataLoader:
             }
 
             def _do_request(params=params) -> dict:
+                check_budget(deadline, label)
                 resp = session.get(
                     endpoint,
                     params=params,
-                    timeout=_OKX_TIMEOUT,
+                    timeout=min(_OKX_TIMEOUT, max(0.001, deadline - time.monotonic())),
                 )
                 # Transient gateway / rate-limit → raise for retry_with_budget
                 if resp.status_code in {429, 500, 502, 503, 504}:

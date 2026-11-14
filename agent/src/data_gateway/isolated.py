@@ -42,8 +42,15 @@ def status():
         }
 
 
+def requires_isolation(loader):
+    """Include adapters inheriting the heavy SDK, notably the Binance route."""
+    module = sys.modules.get("backtest.loaders.ccxt_loader")
+    base = getattr(module, "DataLoader", None)
+    return isinstance(loader, type) and isinstance(base, type) and issubclass(loader, base)
+
+
 def fetch(params, timeout, limit):
-    """Run one CCXT acquisition with the original source identity and deadline.
+    """Run one CCXT-backed acquisition with the original source identity and deadline.
 
     Args:
         params: Normalized market-data arguments for one symbol.
@@ -102,13 +109,16 @@ def main():
     limit = int(sys.argv[1])
     try:
         with redirect_stdout(sys.stderr):
-            from backtest.loaders.ccxt_loader import DataLoader
+            from backtest.loaders import registry
             from src.market_data import fetch_market_data_json
 
+            registry._ensure_registered()
+
             def resolve(name):
-                if name != "ccxt":
+                loader = registry.LOADER_REGISTRY.get(name)
+                if name != params["source"] or not requires_isolation(loader):
                     raise ValueError("Unexpected isolated source")
-                return DataLoader
+                return loader
 
             value = fetch_market_data_json(**params, loader_resolver=resolve)
         encoded = value.encode()
