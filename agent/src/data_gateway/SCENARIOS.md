@@ -80,3 +80,16 @@ four uncommitted interrupted results were reacquired. The manually paused task
 made zero history calls. Every process delivered live WebSocket updates and scan
 progress. Resource limits were unchanged; scan prefixes are not full scan coverage.
 See VALIDATION.md v19 for the exact scope and evidence.
+
+### v20 follow-up: ten separate jobs, bounded admission and fairness
+
+The old implementation rejected starts 5–10 and monopolized its worker for a
+whole dataset. Accepted work now waits in the existing 32-job catalog, with one
+chunk per turn and unchanged one-worker/four-future bounds. In a 4m24s mixed test,
+all ten five-year requests made progress; after pausing one running, one executor-
+queued and one disk-waiting job, all seven others advanced after each of three
+restarts. Verified 58/610 planned chunks (51,600 rows) across ten continuous
+prefixes, zero committed re-fetches and zero post-pause calls. This is not a full
+ten-dataset completion claim. Real WebSocket updates continued, but scanning had
+missing-symbol and 15-second-deadline retries; see v20 VALIDATION.md for retained
+errors, resource observations and exact evidence.

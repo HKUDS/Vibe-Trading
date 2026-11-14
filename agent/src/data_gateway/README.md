@@ -234,7 +234,7 @@ delete. Defaults are **256 MiB and 30 unused days**; limits are 4 MiB–10 GiB a
 Once a user starts a job, exhausted transient network/cooldown/capacity attempts
 schedule automatic continuation in the service. The existing cleanup thread
 checks durable `retry_at` deadlines every second and dispatches through the same
-one-worker/four-job queue. Backoff defaults to 30 seconds, doubles after another
+one-worker/four-job in-memory queue. Backoff defaults to 30 seconds, doubles after another
 failed run, and caps at 300 seconds (`VIBE_GATEWAY_HISTORY_RETRY_BASE` /
 `VIBE_GATEWAY_HISTORY_RETRY_MAX`). These are retry spacing, not longer request
 or source timeouts. A successful chunk resets the backoff. Waiting jobs release
@@ -308,8 +308,15 @@ a live exchange-status or independent price-verification service. A recent tail,
 substituted interval, or a detected truncated boundary fails the chunk visibly.
 Neither auto routing nor chunking manufactures unavailable multi-year minute data.
 
-One download worker handles at most four queued jobs; each store permits at most
-32 jobs, 100 symbols/job and 4,096 chunks/job. Global cross-process reservations
+One download worker holds at most four submitted futures; each store permits at most
+32 jobs, 100 symbols/job and 4,096 chunks/job. User-started jobs beyond the four
+in-memory slots remain as `waiting` records in that existing 32-job catalog;
+start accepts their durable intent without allocating more workers or futures.
+The worker yields after each committed chunk and the dispatcher admits the oldest
+waiting/retry-ready work. This lets large downloads share the worker instead of
+making every later task wait for an entire five-year dataset. Pause disables both
+waiting and active intent; waiting is displayed as Queued and is included in CLI
+completion polling. This does not mean ten simultaneous source connections. Global cross-process reservations
 cover each compressed chunk plus catalog overhead. A chunk cannot write past its
 2 MiB reservation. Completed gzip JSONL files are atomically renamed and SHA256
 verified on resume/read. Interrupted jobs retain their completed prefix. Network
@@ -563,3 +570,20 @@ No post-restart resume API calls are made. After completion, every HTTP row page
 is hashed and compared with a separate full-range calendar/daily-status and
 intraday-grid verification. Reports distinguish partial scan load from a complete
 scan, and interrupted attempts from repeated downloads of completed data.
+
+### Ten historical jobs with mixed load and manual pauses
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_ten_job_restart_probe.py \
+  --root ~/.vibe-trading/history-ten-restart-NEW \
+  --universe /tmp/real-universe.json
+```
+
+Submits ten separate five-year 5m jobs once, pauses a running job, an executor-
+queued job and a catalog-waiting job, then restarts with live subscriptions and
+scan load. All seven unpaused jobs must advance after every restart. It verifies
+every committed prefix against independent calendar/daily-status queries, checks
+prefix hashes and source calls for duplicate completed acquisition, and measures
+one active history fetch / at most four submitted futures. The short test is
+explicitly not a full download of all 610 planned chunks. No resource limits
+are raised and no client resume loop is used after restart.

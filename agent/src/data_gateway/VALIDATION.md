@@ -1951,3 +1951,104 @@ production code was unchanged, so the v18 regression evidence is retained rather
 than repeating unrelated suites. Raw metadata, logs, calls and independent
 verification are outside the checkout (no price rows committed):
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v19/`.
+
+## v20: ten independent historical jobs sharing bounded workers (2026-11-15)
+
+A focused pre-change admission control held one fetch and submitted ten jobs to
+the real HistoryStore: tasks 1–4 were queued, **5–10 raised `History worker queue
+is full`**. The old executor also ran every chunk of one job before another got a
+turn. Merely testing one ten-symbol job would hide both the admission problem and
+independent pause semantics, so this revision uses ten separate jobs.
+
+### Changes without higher resource caps
+
+The existing **32-job disk catalog** now retains accepted overflow intent as
+`waiting`. This allocates no extra futures: the executor still has **one worker
+and at most four submitted jobs**. Scheduled work yields after one committed
+chunk; the dispatcher chooses the oldest waiting/retry-ready job. Direct internal
+`run()` retains its full-job behavior; API/Agent/MCP start and CLI run use bounded
+turns. Pause clears durable waiting intent immediately, and restart dispatch uses
+the same lease/state recheck. Waiting prefixes retain the same retention/quota
+protection as delayed retries. The Web UI displays Waiting as the existing Queued
+translation and offers Pause; CLI polling includes Waiting. No locale key or
+Options Lab change was needed.
+
+### Real-source short mixed test
+
+`tools/gateway_ten_job_restart_probe.py` submitted **ten individual five-year 5m
+requests once**, 2021-11-14 through 2026-11-13, using 601398.SH, 600519.SH,
+600036.SH, 600000.SH, 601318.SH, 600030.SH, 600276.SH, 000001.SZ, 000002.SZ,
+000333.SZ. Every job acquired a real prefix before any pauses. At the first
+checkpoint it paused **600036.SH while running**, **600000.SH in the executor
+queue**, and **601398.SH waiting in the durable catalog**. It then performed
+**three restarts**, normal / forced termination / normal, with no subsequent
+resume call. Every process had 16 default-budget subscription topics (two crypto
+WebSockets and 14 equity bars), plus the real 5,224-symbol scan queue.
+
+The run took **263.533 seconds (4m24s)** including independent verification;
+253.772 seconds through final process cleanup. All ten initial starts succeeded.
+Observed committed chunks at the four checkpoints:
+
+| Symbol | Before first restart | Second checkpoint | Third checkpoint | Final prefix |
+|---|---:|---:|---:|---:|
+| 601398.SH (paused) | 2 | 2 | 2 | 2 |
+| 600519.SH | 2 | 4 | 6 | 8 |
+| 600036.SH (paused) | 1 | 1 | 1 | 1 |
+| 600000.SH (paused) | 1 | 1 | 1 | 1 |
+| 601318.SH | 1 | 4 | 6 | 8 |
+| 600030.SH | 1 | 3 | 5 | 7 |
+| 600276.SH | 1 | 3 | 5 | 8 |
+| 000001.SZ | 1 | 3 | 6 | 8 |
+| 000002.SZ | 1 | 4 | 6 | 8 |
+| 000333.SZ | 1 | 3 | 5 | 7 |
+
+All seven unpaused tasks advanced after **every restart**. Each paused task had
+**zero new fetch starts after its pause acknowledgement**. Completed prefix
+hashes remained unchanged; every source attempt recorded whether its chunk was
+already committed: **zero duplicate committed-chunk fetches**. There were 62
+acquired attempts / 60 distinct chunk ranges, with 58 committed and the remainder
+interrupted before commit or deliberately stopped at final cleanup. Uncommitted
+results are allowed to be reacquired; network delivery is not exactly once.
+
+Independent fresh BaoStock calendar/daily-status queries verified every completed
+prefix, streaming all gzip records through strict symbol, order and exact 5m
+intraday-grid checks. **58 / 610 planned chunks, 51,600 real rows** were verified
+without gaps or duplicates **inside those prefixes**. Prefixes end between
+2021-11-30 and 2022-06-30. This short test **does not certify all ten five-year
+datasets as downloaded**. Incomplete jobs remain unreadable through the completed-
+dataset row API; the verifier does not change that contract or forge completion.
+All remaining jobs were explicitly paused at test cleanup, leaving zero reserved
+bytes; all four server PIDs (90161, 90629, 91469, 91970) were independently absent.
+
+### Mixed-load result and limits
+
+There were **527 SSE deliveries / 464 WebSocket-tagged updates**, with real live
+updates in every process and zero stream-task errors. Scan checkpoint completion
+counts were **35, 96, 8, 112 / 5,224**, with zero terminal failed symbols, but the
+scan was **not error-free**: five missing-symbol retries in phase 0 and eight
+symbol retries following a **15-second request deadline** in phase 2. Logs show
+Tencent HTTP 501/deadline failures, Eastmoney proxy disconnects and upstream read
+timeouts during fallback. Those observations establish upstream failures and
+budget exhaustion; they do not prove zero scheduling contention. The phase-2
+snapshot includes 30.255 seconds of scan backoff, explaining much of its slow
+progress. Restarted scan prefixes overlap and are not added as unique coverage.
+These retries are retained as a limitation, not relabeled as a clean full scan.
+
+Each worker snapshot and poll stayed at **one concurrent historical fetch,
+executor max_workers=1, at most four futures**. Every captured gateway limit
+remained **8 MiB RAM cache / 64 MiB disk cache / four gateway workers / 16 pending
+requests**; history quota remains **256 MiB**, chunks **2 MiB**, catalog **32 jobs**,
+source/request deadlines **six/15 seconds**. No worker/cache/memory limit was
+increased. This short run is not another long-duration whole-process memory test.
+
+Validation: **96 distinct backend tests** passed in grouped runs (50 history
+admission/fairness/restart/store tests; 46 HTTP/stream/router/calendar tests), plus
+**48 frontend/storage/i18n tests**. Ruff and whitespace checks passed. CUA inspected
+the actual storage component connected to the live mixed-test server, verifying
+queued/Pause and paused/Resume states and progress counts. Full frontend build
+still has only the two pre-existing `PayoffComparisons.tsx:43,47` dynamic-key type
+errors reproduced in v17; Options files were untouched.
+
+Evidence (pre-fix admission control, real run, per-prefix verification, calls,
+logs and test XML; no price rows committed):
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v20/`.

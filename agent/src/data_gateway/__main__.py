@@ -40,7 +40,7 @@ def run_history(args):
             import time
 
             result = store.start(args.job)
-            while result["state"] in {"running", "queued"} or result.get("retry_at", 0):
+            while result["state"] in {"running", "queued", "waiting"} or result.get("retry_at", 0):
                 time.sleep(0.25)
                 result = store.status(args.job)
         elif args.action == "storage":

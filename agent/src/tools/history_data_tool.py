@@ -56,7 +56,7 @@ class HistoryDataTool(BaseTool):
     description = (
         "Plan and resume large historical datasets with bounded local storage. "
         "Auto routes through compatible existing sources by market and interval; source pins an exact provider. "
-        "Plan before create; create returns a job id; start downloads in background; status checks completion. Transient failures retry automatically while the service runs; unfinished started jobs continue when the application reopens. retry_at is the next retry time. Cancel persists across restarts and disables automatic resume. "
+        "Plan before create; create returns a job id; start accepts work into the bounded durable catalog; waiting means queued for a worker, with chunk-level turns between jobs; status checks completion. Transient failures retry automatically while the service runs; unfinished started jobs continue when the application reopens. retry_at is the next retry time. Cancel persists across restarts and disables automatic resume. "
         "Rows requires a finished download and returns at most 25 unsampled rows per page with coverage_verified. "
         "Row pages include per-symbol currency, units, timezone and source provenance; null metadata remains unknown. "
         "Downloaded is not verified complete: inspect coverage_verified and never treat a recent tail as full history. "

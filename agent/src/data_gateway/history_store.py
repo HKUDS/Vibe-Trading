@@ -250,7 +250,7 @@ class HistoryStore:
         ).fetchall():
             if row["id"] == exclude:
                 continue
-            if row["retry_at"] and row["accessed"] >= cutoff:
+            if (row["retry_at"] or row["state"] == "waiting") and row["accessed"] >= cutoff:
                 continue  # Waiting downloads release reservations, not their committed prefix.
             if row["accessed"] >= cutoff and usage + reserved + required <= settings["quota"]:
                 continue
@@ -292,7 +292,9 @@ class HistoryStore:
             jobs = [
                 row[0]
                 for row in db.execute(
-                    "SELECT id FROM jobs WHERE state='failed' AND auto_resume=1 AND cancel=0 AND retry_at>0 AND retry_at<=? ORDER BY retry_at LIMIT 4",
+                    "SELECT id FROM jobs WHERE auto_resume=1 AND cancel=0 AND "
+                    "(state='waiting' OR (state='failed' AND retry_at>0 AND retry_at<=?)) "
+                    "ORDER BY CASE WHEN state='waiting' THEN accessed ELSE retry_at END,created LIMIT 4",
                     (time.time(),),
                 )
             ]
@@ -439,25 +441,32 @@ class HistoryStore:
             self.futures = {key: value for key, value in self.futures.items() if not value.done()}
             if job in self.futures:
                 return self.status(job)
-            if len(self.futures) >= 4:
+            full = len(self.futures) >= 4
+            if full and _automatic:
                 raise ValueError("History worker queue is full")
             self.status(job)
             with self.lease(job), self.transaction() as db:
                 row = db.execute("SELECT * FROM jobs WHERE id=?", (job,)).fetchone()
                 if _automatic and not (
-                    row["state"] == "failed"
-                    and row["auto_resume"]
+                    row["auto_resume"]
                     and not row["cancel"]
-                    and 0 < row["retry_at"] <= time.time()
+                    and (row["state"] == "waiting" or (row["state"] == "failed" and 0 < row["retry_at"] <= time.time()))
                 ):
                     return self.status(job)
                 if row["state"] in {"running", "queued"}:
                     raise ValueError("History job is already running or queued")
                 db.execute(
-                    "UPDATE jobs SET state='queued',cancel=0,owner=?,auto_resume=1,retry_at=0,retry_count=? WHERE id=?",
-                    (os.getpid(), row["retry_count"] if _automatic else 0, job),
+                    "UPDATE jobs SET state=?,cancel=0,owner=?,auto_resume=1,retry_at=0,retry_count=? WHERE id=?",
+                    (
+                        "waiting" if full else "queued",
+                        None if full else os.getpid(),
+                        row["retry_count"] if _automatic else 0,
+                        job,
+                    ),
                 )
-            self.futures[job] = self.executor.submit(self.run, job)
+            if full:
+                return self.status(job)
+            self.futures[job] = self.executor.submit(self.run, job, max_chunks=1)
             self.futures[job].add_done_callback(lambda future: self._finished(job, future))
         return self.status(job)
 
@@ -483,7 +492,7 @@ class HistoryStore:
         self.status(job)
         with self.transaction() as db:
             db.execute(
-                "UPDATE jobs SET cancel=1,auto_resume=0,retry_at=0,state=CASE WHEN retry_at>0 THEN 'paused' ELSE state END WHERE id=?",
+                "UPDATE jobs SET cancel=1,auto_resume=0,retry_at=0,state=CASE WHEN retry_at>0 OR state='waiting' THEN 'paused' ELSE state END WHERE id=?",
                 (job,),
             )
         return self.status(job)
@@ -508,7 +517,7 @@ class HistoryStore:
         with self.transaction() as db:
             return bool(db.execute("SELECT cancel FROM jobs WHERE id=?", (job,)).fetchone()[0])
 
-    def run(self, job):
+    def run(self, job, *, max_chunks=None):
         """Resume verified chunks; bounded retries preserve all completed work."""
         self.status(job)
         with self.lease(job):
@@ -524,6 +533,7 @@ class HistoryStore:
                 return self.status(job)
             failed_index = None
             retryable = False
+            downloaded = 0
             try:
                 for chunk in state["chunks"]:
                     failed_index = chunk["idx"]
@@ -622,6 +632,9 @@ class HistoryStore:
                         del rows
                     finally:
                         temporary.unlink(missing_ok=True)
+                    downloaded += 1
+                    if max_chunks is not None and downloaded >= max_chunks:
+                        break
                 with self.transaction() as db:
                     pending = db.execute(
                         "SELECT COUNT(*) FROM chunks WHERE job=? AND state!='complete'", (job,)
@@ -633,6 +646,15 @@ class HistoryStore:
                     final = "paused" if pending else "complete" if verified else "downloaded"
                     if pending and self.stop.is_set():
                         self._interrupted(db, job)
+                    elif pending and max_chunks is not None:
+                        # Yield one completed chunk, preserving the user's intent.
+                        # The existing accessed timestamp puts this job after
+                        # older waiting jobs without growing the in-memory queue.
+                        db.execute(
+                            "UPDATE jobs SET state=CASE WHEN auto_resume=1 AND cancel=0 THEN 'waiting' ELSE 'paused' END,"
+                            "reserved=0,owner=NULL,retry_at=0 WHERE id=?",
+                            (job,),
+                        )
                     else:
                         db.execute(
                             "UPDATE jobs SET state=?,reserved=0,retry_at=0,auto_resume=0 WHERE id=?", (final, job)

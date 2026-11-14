@@ -62,3 +62,13 @@ it("shows automatic recovery and lets the user pause it without a resume call", 
   fireEvent.click(screen.getByRole("button", { name: "Pause", exact: true }));
   await waitFor(() => expect(api.historyAction).toHaveBeenCalledWith("waiting", "cancel"));
 });
+
+it("shows a durable waiting job as queued and pauses it rather than starting it again", async () => {
+  vi.mocked(api.historyJobs).mockResolvedValue([{ id: "waiting-slot", state: "waiting", pinned: 0, error: null, auto_resume: 1, retry_at: 0 }]);
+  vi.mocked(api.historyAction).mockResolvedValue({ id: "waiting-slot", state: "paused", pinned: 0, error: null });
+  render(<HistoryStorageSettings />);
+  await screen.findByText(/Queued/);
+  expect(api.historyAction).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Pause", exact: true }));
+  await waitFor(() => expect(api.historyAction).toHaveBeenCalledWith("waiting-slot", "cancel"));
+});

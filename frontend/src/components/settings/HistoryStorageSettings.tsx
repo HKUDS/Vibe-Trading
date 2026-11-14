@@ -71,7 +71,7 @@ export function HistoryStorageSettings() {
     finally { setBusy(false); }
   };
   const states: Record<string, string> = {
-    paused: t("history.paused"), queued: t("history.queued"), running: t("history.running"),
+    paused: t("history.paused"), waiting: t("history.queued"), queued: t("history.queued"), running: t("history.running"),
     complete: t("history.complete"), downloaded: t("history.downloaded"), failed: t("history.failed"),
     partial: t("history.scanPartial"), cancelled: t("history.scanCancelled"),
   };
@@ -133,9 +133,9 @@ export function HistoryStorageSettings() {
         {job.state === "downloaded" && <p className="text-xs text-muted-foreground">{t("history.coverageHint")}</p>}
         {job.error && <p className="text-destructive break-words">{job.error}</p>}
       </div>
-      <button className={button} disabled={busy} onClick={() => void act(() => api.historyAction(job.id, (job.retry_at || ["running", "queued"].includes(job.state)) ? "cancel" : "resume"))}>{(job.retry_at || ["running", "queued"].includes(job.state)) ? t("history.pause") : t("history.resume")}</button>
+      <button className={button} disabled={busy} onClick={() => void act(() => api.historyAction(job.id, (job.retry_at || ["running", "queued", "waiting"].includes(job.state)) ? "cancel" : "resume"))}>{(job.retry_at || ["running", "queued", "waiting"].includes(job.state)) ? t("history.pause") : t("history.resume")}</button>
       <button className={button} disabled={busy} onClick={() => void act(() => api.pinHistory(job.id, !job.pinned))}>{job.pinned ? t("history.unpin") : t("history.pin")}</button>
-      <button className={button} disabled={busy || ["running", "queued"].includes(job.state)} onClick={() => void act(() => api.deleteHistory(job.id))}>{t("history.delete")}</button>
+      <button className={button} disabled={busy || ["running", "queued", "waiting"].includes(job.state)} onClick={() => void act(() => api.deleteHistory(job.id))}>{t("history.delete")}</button>
     </div>)}</div>
   </section>;
 }
