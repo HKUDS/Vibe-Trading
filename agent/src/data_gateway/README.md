@@ -97,6 +97,7 @@ Delta remains missing. No synthetic substitute is generated when sources fail.
 | `WORKERS` | 4 | Concurrent source calls, including timed-out calls still running |
 | `PENDING` | 16 | Distinct queued/in-flight requests |
 | `SOURCE_TIMEOUT` | 6 s | Wait budget per source attempt |
+| `HTTP_BATCH_SYMBOLS` | 4 | Symbols per serial HTTP-loader invocation; scan batches stay at eight and BaoStock shares one eight-symbol session |
 | `REQUEST_TIMEOUT` | 15 s | Overall acquisition wait budget |
 | `HTTP_TIMEOUT` | 5 s | Cboe socket/read deadline |
 | `TTL` / `STALE_TTL` | 60 / 900 s | Cache freshness / maximum stale reuse |

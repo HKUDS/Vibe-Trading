@@ -28,6 +28,7 @@ class Config:
     scan_attempts: int = 6
     scan_spacing: float = 0.25
     source_spacing: float = 0.25
+    http_batch_symbols: int = 4
     source_timeout: float = 6
     request_timeout: float = 15
     ttl: float = 60
@@ -74,6 +75,7 @@ class Config:
             scan_attempts=int(number("SCAN_ATTEMPTS", 6, 1, 10)),
             scan_spacing=number("SCAN_SPACING", 0.25, 0.1, 30),
             source_spacing=number("SOURCE_SPACING", 0.25, 0.05, 10),
+            http_batch_symbols=int(number("HTTP_BATCH_SYMBOLS", 4, 1, 8)),
             source_timeout=number("SOURCE_TIMEOUT", 6, 0.1, 30),
             request_timeout=number("REQUEST_TIMEOUT", 15, 0.2, 60),
             ttl=number("TTL", 60, 1, 3600),

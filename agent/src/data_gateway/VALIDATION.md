@@ -798,3 +798,60 @@ summary/plot and router UI/live-probe evidence are archived outside the reposito
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-combined-20261114/`.
 The preview is `http://127.0.0.1:5910/history-storage` on the isolated gateway
 API at port 8910. It does not validate the full application's session sidebar.
+
+
+## Routed mixed-load follow-up (2026-11-14, in progress)
+
+User requested a new hour with the actual historical router, all 5,224 scan
+symbols acquired, and 30 progressively complex scenarios. The scenario matrix
+is `SCENARIOS.md`; pending entries are not passes. The new measured service
+fingerprint is `3a43794f8` and uses fresh history/cache directories. All memory,
+disk, source-worker and pending limits remain unchanged.
+
+Confirmed scheduling defects fixed before launch:
+
+1. A partial scan batch imposed the whole source cooldown on all unrelated
+   ready symbols, although each missing symbol already had its retry deadline.
+   Successful partial batches now use ordinary scan spacing. Total source
+   outages retain backoff; source pacing and single background capacity remain.
+2. The scanner replaced the gateway's short local-capacity retry hint with the
+   longer network cooldown. It now honors that existing hint; it does not lower
+   the actual source pacer or network failure backoff.
+3. When a batch's first symbol was absent, valid other symbols returned by the
+   loader were discarded before provenance was merged. Valid rows now survive
+   and are not requested again. Controlled regression pins a missing-first batch.
+4. Expanded cross-instance tests exposed an intermittent UUID modulo-64 lease
+   collision between unrelated historical jobs. The catalog now assigns unique
+   slots transactionally (same bounded 64 lock files, at most 32 datasets).
+   Same-job duplicate execution remains refused. Existing catalogs gain slots
+   on opening; old/new binaries should not run concurrently on one catalog.
+
+Previous-hour samples contain 2,024.7 seconds of intervals where neither scan
+attempts nor completed count changed. This is a sampled stall observation, not
+proof that all those seconds have one cause. New per-job acquisition/backoff
+counters separate the costs. Short pilot 2 acquired 56/256 with 46.831 seconds
+inside acquisition and 61.779 seconds in scanner backoff under compressed fault
+cycles. Its real routed AAPL/MSFT five-year monthly job returned all 122 rows in
+12 chunks. Short pilots are not an hour result or the requested full scan.
+
+New soak history time-shares the same single worker using production pause,
+resume and delete APIs: long auto-routed ten-stock 5m/15m jobs alternate with
+US monthly, crypto minute, HK/Canada/UK daily and US minute datasets throughout
+the run. The driver explicitly resumes newly created paused jobs. A dedicated
+small-scenario run exercises additional real multi-market requests; controlled
+fault regressions are labelled separately from live source results.
+
+
+The first follow-up launch was stopped during its early cycles after an additional
+real scenario exposed an eight-symbol US daily timeout. It is retained as an
+aborted diagnostic run, not an hour pass. Yahoo's adapter loops symbols serially,
+while one gateway invocation had a single six-second source deadline. HTTP batches
+are now limited to four symbols per invocation (configurable 1..8), within the
+unchanged fifteen-second overall request deadline. BaoStock keeps eight symbols
+per login; actual source pacing/concurrency/cache limits do not increase. A
+controlled timing regression covers the old self-timeout; real cold eight-stock
+reads now returned all eight at daily/weekly/monthly intervals in 8.006/6.386/6.366
+seconds, with fresh-cache repeated reads. Network variation prevents interpreting
+this as a precisely isolated latency benchmark. The missing-first real batch
+also retained all seven healthy symbols and explicitly named the absent one.
+The definitive hour is the subsequent fresh `gateway-router-hour-v2-20261114` run.

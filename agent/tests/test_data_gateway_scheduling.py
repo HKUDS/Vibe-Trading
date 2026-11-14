@@ -391,3 +391,41 @@ def test_scan_respects_short_capacity_retry_without_weakening_network_backoff():
         assert calls[1] - calls[0] >= 0.018
     finally:
         queue.close()
+
+
+def test_serial_http_symbols_are_split_inside_unchanged_source_deadline(tmp_path, monkeypatch):
+    import pandas as pd
+    from backtest.loaders import registry
+
+    registry._ensure_registered()
+    calls = []
+
+    class Loader:
+        name = "yahoo"
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, *args, **kwargs):
+            calls.append(list(codes))
+            time.sleep(0.01 * len(codes))
+            frame = pd.DataFrame(
+                {k: [1.0, 2.0] for k in ["open", "high", "low", "close", "volume"]},
+                index=pd.date_range("2026-11-02", periods=2),
+            )
+            frame.index.name = "trade_date"
+            return {code: frame for code in codes}
+
+    monkeypatch.setitem(registry.LOADER_REGISTRY, "yahoo", Loader)
+    config = replace(Config(tmp_path), source_timeout=0.075, request_timeout=1, source_spacing=0)
+    gateway = MarketDataGateway(config)
+    codes = ["AAPL.US", "MSFT.US", "NVDA.US", "AMZN.US", "META.US", "GOOGL.US", "TSLA.US", "SPY.US"]
+    try:
+        value = gateway.bars(
+            codes=codes, start_date="2026-11-01", end_date="2026-11-03", source="yahoo", exact_source=True
+        )
+        assert value["ok"] and not value["data"]["_unresolved"]
+        assert len(calls) == 2 and all(len(batch) == 4 for batch in calls)
+        assert gateway.config.source_timeout == 0.075 and gateway.config.workers == 4
+    finally:
+        gateway.close()

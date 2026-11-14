@@ -63,6 +63,9 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                 continue
             started = time.monotonic()
 
+            # HTTP adapters loop symbols serially inside one timed invocation.
+            # Smaller batches fit the same deadline; BaoStock shares one login.
+            batch_size = 8 if source == "baostock" else gateway.config.http_batch_symbols
             batch_codes = sorted(
                 [
                     code,
@@ -74,7 +77,7 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                         and _detect_market(symbol) == market
                         and (requested != "auto" or detect_source(symbol) == first)
                     ],
-                ][:8]
+                ][:batch_size]
             )
             batch_key = (source, tuple(batch_codes))
             cached_batch = attempted_batches.get(batch_key)
