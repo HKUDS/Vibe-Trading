@@ -2885,3 +2885,45 @@ thresholds were not increased: memory cache 8 MiB, disk cache 64 MiB, four sourc
 workers, sixteen pending, source/request deadlines 6/15 seconds. No retries,
 execution timeouts, model settings or options UI changes. Task artifacts add
 storage alongside JSON; this does not claim whole-process memory was profiled.
+
+## v33 — CSV optimization merged-main regression check (2026-11-15)
+
+Fetched origin/main at `9302fa171`; CSV optimization `9a7253ff6` fast-forwarded
+main with no conflicts. No implementation changes were needed. The exact prior
+six-market and options/HK/BTC prompts ran against the merged code with the same
+configured `deepseek-v4-1-flash-261017` model and a fresh isolated task runtime.
+Evidence outside Git:
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-csv-main-merged-20261115/`
+(`audit.py`, `report.json`, source observations, CSVs and traces).
+
+| Task | End-to-end | Model iterations | Data-tool wall time | Verified output |
+| --- | ---: | ---: | ---: | --- |
+| Six-market closes + CSV | 18.645 s | 5 | 2.050 s | 6 markets / 12 requested closes |
+| Options + HK daily + BTC 5m | 25.994 s | 3 | 2.732 s | 4 contracts / 5 daily rows / 288 bars |
+
+Six-market processing used one local Python execution on the emitted CSV, with
+no separate structure/header/post-write inspection. The model requested two extra
+leading dates (Nov 10–13 instead of Nov 12–13), so 24 source rows were exported;
+its final comparison correctly selected all twelve requested closes. This
+avoidable wider date choice remains model discretion, not a data gap. Options
+identity resolution completed before the chain read; the mixed task used no
+Python. Neither task made duplicate bar requests, errored tool calls, external
+MCP task calls or direct generated-code downloads. The independent real Yahoo
+MCP alternative was available and preflighted.
+
+The audit checked the generated comparison CSV's closes, currency, sources,
+adjustment and changes against observations; option expiries and bid/ask
+arithmetic; HK calendar completeness in both runtime metadata and independent
+XHKG validation; BTC uniqueness, 300-second spacing and statistics. All three
+CSV sidecars (24 / 5 / 288 rows, 3,153 / 598 / 26,314 bytes) matched JSON cells,
+checksums and actual previews. Tool envelopes remained within the unchanged
+10K output cap. No test or temporary MCP processes remained.
+
+741 focused routing/identity/grounding/options/API/market/CSV/artifact tests
+passed, with one warning. Observed cache limits stayed 8 MiB memory and 64 MiB
+disk, four workers and sixteen pending; configuration and source/request
+6/15-second deadlines were unchanged. No retry or task timeout changes. No
+regression was observed in these checks; single-run latency is not a statistical
+guarantee, and the two tasks share one gateway process. Narrative beyond the
+verified observations is not certified, and Python audit hooks are not an OS
+network sandbox. No market observations or credentials are committed.
