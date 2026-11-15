@@ -83,7 +83,10 @@ class MarketDataTool(BaseTool):
     description = (
         "Fetch normalized OHLCV market data through the unified data gateway. "
         "Use this for stock, ETF, index, or crypto price bars rather than direct "
-        "yfinance/OKX/Tushare scripts; compute on the returned artifacts. Volume units are source- and market-dependent "
+        "yfinance/OKX/Tushare scripts; compute on the returned artifacts. "
+        "With a task workspace, the returned bars are also exported to CSV using Python by default, "
+        "with currencies/source metadata and a checked row count/checksum; no export script is needed. "
+        "Volume units are source- and market-dependent "
         "(A-share sources report board lots of 100 shares, HK/US sources report single "
         "shares); read the per-symbol _provenance.volume_unit field ('lots' / 'shares' / "
         "null=undeclared) before interpreting or comparing volume values. Price caliber "
@@ -98,6 +101,10 @@ class MarketDataTool(BaseTool):
         "type": "object",
         "properties": {
             "run_dir": {"type": "string", "description": "Workspace for a saved full JSON result usable by quantlib_call; injected by agent sessions."},
+            "export_csv": {
+                "type": "boolean", "default": True,
+                "description": "Default true when run_dir is available. Save a ready-to-use CSV from the same returned rows, with symbol, OHLCV, currency, source, adjustment and sampling flags. No extra fetch. Returns path, columns, rows and checksum. Sampling cap still applies; use max_rows=0 for all rows in a bounded window.",
+            },
             "codes": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -233,6 +240,21 @@ class MarketDataTool(BaseTool):
             # behavior here so both surfaces agree.
             max_rows = DEFAULT_MAX_ROWS
 
+        export_csv = kwargs.get("export_csv", True)
+        if not isinstance(export_csv, bool):
+            return _error("export_csv must be a boolean")
+        if export_csv and not kwargs.get("run_dir") and "export_csv" not in kwargs:
+            export_csv = False  # Direct legacy callers without an artifact workspace.
+        if export_csv:
+            from src.tools.path_utils import safe_run_dir
+
+            if not kwargs.get("run_dir"):
+                return _error("export_csv requires an authorized run_dir workspace")
+            try:
+                safe_run_dir(str(kwargs["run_dir"]))
+            except ValueError as exc:
+                return _error(str(exc))
+
         fetch_kwargs: dict[str, Any] = {
             "codes": codes,
             "start_date": start_date,
@@ -252,4 +274,11 @@ class MarketDataTool(BaseTool):
         summary = summarize_bars(payload, normalized_interval)
         if summary:
             payload["_summary"] = summary
-        return persist_calculation_result(json.dumps(payload, ensure_ascii=False), kwargs.get("run_dir"))
+            payload["_data_layout"] = {
+                "symbol_values": "list of bar objects; sampled values are {rows, returned, truncated, data: [bar objects]}",
+                "metadata_keys": "underscore-prefixed; _provenance is keyed by symbol",
+                "bar_fields": ["trade_date", "open", "high", "low", "close", "volume"],
+            }
+        return persist_calculation_result(
+            json.dumps(payload, ensure_ascii=False), kwargs.get("run_dir"), export_csv=export_csv,
+        )

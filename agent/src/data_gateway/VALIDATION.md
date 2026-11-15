@@ -2825,3 +2825,63 @@ one warning. No implementation changes were needed for the merge. Limits remain
 8 MiB memory cache / 64 MiB disk, four workers / sixteen pending; the unchanged
 configuration retains 6-second source and 15-second request deadlines. No retry,
 timeout, production configuration or options interaction changes were made.
+
+## v32 — Deliver CSV and its structure with acquired bars (2026-11-15)
+
+Base `9302fa171` on `codex/market-csv-artifacts`. The preceding six-market trace
+spent two Python calls discovering JSON structure, one generating CSV and another
+checking/reformatting it. This change supplies the missing structure and artifact
+in the data tool rather than only advising the model to use fewer turns.
+
+MarketDataTool now includes `_data_layout` in bounded receipts. With an authorized
+task workspace it also streams the already acquired rows to immutable `bars.csv`
+by default (`export_csv=false` opts out); legacy direct callers without run_dir
+keep their JSON-only behavior. MCP exposes the same option, and existing CLI/Web
+agent sessions use the same tool lifecycle. No separate acquisition path, new tool
+or frontend interaction is introduced. The receipt carries columns, actual row
+count, bytes, SHA-256 and the exact header/first two records within an output
+preview budget. Symbols, full timestamps, prices, currency/source/adjustment,
+volume units, timezone and sampling status are preserved; missing metadata stays
+empty. CSV is a task artifact beside JSON, not a gateway cache entry.
+
+Export is row-streamed without a second DataFrame or full CSV string. A temporary
+file is published without overwriting existing files; a changed CSV, escaping
+symlink or storage failure is reported while the JSON observation remains usable.
+Default sampling limits still apply, sampled rows are explicitly labelled, and
+missing-market diagnostics survive the bounded receipt. The original JSON bytes
+and checksum are unchanged by CSV generation.
+
+Same six-market prompt and configured `deepseek-v4-1-flash-261017` model. All
+samples retained outside Git under
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/`:
+
+| Implementation | Evidence directory | Seconds | Model iterations | Shell calls |
+| --- | --- | ---: | ---: | ---: |
+| Previous main | gateway-main-merged-short-20261115 | 29.718 | 8 | 4 |
+| JSON layout + opt-in CSV | gateway-csv-short-20261115 | 21.737 | 6 | 2 |
+| Default CSV sidecar | gateway-csv-final-20261115 | 28.710 | 7 | 3 |
+| CSV with exact preview (final) | gateway-csv-preview-20261115 | 20.747 | 5 | 1 |
+
+The opt-in sample did not select CSV export. Default export was used in the next
+sample, but the model still inspected its header. The final implementation exposed
+the actual preview; the model used one local pandas execution to produce long and
+wide comparison CSVs, without separate shape/header/post-write checks. There was
+one batched data acquisition, zero tool errors, zero external-MCP task calls, and
+no direct network acquisition in the generated script. Model discretion remains:
+it can still generate custom projections or checks. The final single sample is
+about 30% faster than the baseline, not a statistical latency guarantee.
+
+Final `audit.py` / `report.json` verify all 6 markets / 12 closes, dates, currencies,
+sources, CSV checksum/preview, both agent-generated comparison CSVs and their
+percent changes against the acquired observations. The default sidecar occupies
+1,632 bytes in this task. Process inspection found no remaining test/MCP processes.
+Generated prose beyond these observations is not certified; Python socket audit
+is not an OS network sandbox. No market observations were committed.
+
+359 focused tests passed: CSV integrity/escaping/error/sampling/default/opt-out,
+MCP forwarding, JSON/MCP output bounds, artifact delivery, grounding, market tools,
+Japan routing and gateway consumers. Ruff and diff checks passed. Resources and
+thresholds were not increased: memory cache 8 MiB, disk cache 64 MiB, four source
+workers, sixteen pending, source/request deadlines 6/15 seconds. No retries,
+execution timeouts, model settings or options UI changes. Task artifacts add
+storage alongside JSON; this does not claim whole-process memory was profiled.

@@ -13,12 +13,13 @@ from src.tools.redaction import redact_tool_result
 logger = logging.getLogger(__name__)
 
 
-def persist_calculation_result(result: str, run_dir: str | Path | None) -> str:
+def persist_calculation_result(result: str, run_dir: str | Path | None, *, export_csv: bool = False) -> str:
     """Keep a JSON observation addressable by calculation tools and file readers.
 
     Args:
         result: Full JSON result, before any presentation truncation.
         run_dir: Authorized workspace; omission retains the original response.
+        export_csv: Also save normalized market bars as a CSV from these rows.
 
     Returns:
         Result with a file reference, or a bounded receipt for a large result.
@@ -45,6 +46,13 @@ def persist_calculation_result(result: str, run_dir: str | Path | None) -> str:
         payload['_artifact_error'] = str(exc)
         return json.dumps(payload, ensure_ascii=False)
     payload['_result_file'] = ref
+    if export_csv:
+        from src.data_gateway.bar_artifact import export_bars_csv
+
+        try:
+            payload['_csv_file'] = export_bars_csv(payload, folder, root)
+        except (OSError, ValueError) as exc:
+            payload['_csv_error'] = str(exc)
     encoded = json.dumps(payload, ensure_ascii=False)
     if len(encoded) <= TOOL_RESULT_LIMIT:
         return encoded
@@ -54,6 +62,9 @@ def persist_calculation_result(result: str, run_dir: str | Path | None) -> str:
         'Inspect the saved JSON before requesting more data. Only if rows are explicitly sampled/truncated and consecutive bars are needed, fetch max_rows=0 for the bounded window. Read parts/1.txt onward for prose inspection.'
     )}
     for key in ('ok', 'status', 'module', 'function', 'input_sources'):
+        if key in payload:
+            receipt[key] = payload[key]
+    for key in ('_csv_file', '_csv_error', '_data_layout'):
         if key in payload:
             receipt[key] = payload[key]
     if isinstance(payload.get('_summary'), dict):

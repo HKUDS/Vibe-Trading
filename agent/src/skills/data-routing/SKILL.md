@@ -10,6 +10,11 @@ This skill maps a research need to the existing gateway-backed tool; the model
 must not recreate a separate provider-selection or retry loop.
 
 Use `get_market_data`, `get_options_chain`, and the research tools below first.
+`get_market_data` with a task workspace exports the same returned rows to CSV
+in Python by default (`export_csv=false` disables the sidecar) with source/currency/adjustment metadata and sampling flags. Its
+`_csv_file` receipt provides the path, columns, row count and checksum. Sampling
+still applies; this is a task artifact, not another acquisition or a full-history
+download. `_data_layout` describes the saved JSON structure for custom calculations.
 For Python bars use `src.market_data.fetch_market_data`; for additional vendor
 fields use `src.data_gateway.skill_sources` or a `managed_reader` that creates,
 reads and materializes its SDK result inside the bounded callback. Do not return
