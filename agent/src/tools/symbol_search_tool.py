@@ -280,6 +280,11 @@ class SymbolSearchTool(BaseTool):
             return _error("'query' is required and must be a non-empty string")
 
         limit = _clamp_limit(kwargs.get("limit", _DEFAULT_LIMIT))
+        # .US is our venue suffix, not a Yahoo/Eastmoney search spelling.
+        # Keep the asserted identity in the result, and require an observed
+        # exact match after converting the provider query (never invent a hit).
+        explicit_us = query.upper() if re.fullmatch(r"[A-Z][A-Z0-9&.\-]{0,19}\.US", query, re.I) else None
+        provider_query = explicit_us[:-3] if explicit_us else query
 
         candidates: List[Dict[str, Any]] = []
         sources: Dict[str, str] = {}
@@ -311,7 +316,7 @@ class SymbolSearchTool(BaseTool):
                 sources[public_source] = public_status or "ok"
                 candidates.extend(public_hits)
 
-        em_hits, sources["eastmoney"] = _search_eastmoney(query)
+        em_hits, sources["eastmoney"] = _search_eastmoney(provider_query)
         candidates.extend(em_hits)
 
         # An explicit FX pair searches Yahoo by its canonical ``XXXYYY=X``
@@ -320,7 +325,7 @@ class SymbolSearchTool(BaseTool):
         # Yahoo (the earlier "GBP/USD -> 0 candidates" failure) never turns a
         # canonical pair into nothing.
         fx_pair = _canonical_fx_pair(query)
-        yh_hits, sources["yahoo"] = _search_yahoo(fx_pair or query)
+        yh_hits, sources["yahoo"] = _search_yahoo(fx_pair or provider_query)
         candidates.extend(yh_hits)
         if fx_pair is not None:
             pair_no_x = fx_pair[:-2]
@@ -394,6 +399,9 @@ class SymbolSearchTool(BaseTool):
                 for c in candidates
                 if _is_canadian_symbol(str(c.get("symbol") or ""))
             ]
+
+        if explicit_us is not None:
+            candidates = [c for c in candidates if str(c.get("symbol") or "").upper() == explicit_us]
 
         merged = _merge_candidates(candidates)
         merged, sources["sec_edgar"] = _enrich_us_cik(merged)

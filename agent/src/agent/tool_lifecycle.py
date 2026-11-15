@@ -46,6 +46,52 @@ def _format_timeout(seconds: float) -> str:
 class ToolCallLifecycle:
     """Run tools against the AgentLoop owner state; no independent lifecycle."""
 
+    def _identity_dependency_query(self, tc: Any) -> str | None:
+        """Read the opted-in dependency without issuing a refused consumer call."""
+        if self._identity is None or self._cancel_event.is_set():
+            return None
+        from src.providers.tool_policy import _deny_prefixes
+
+        tool = self.registry.get(tc.name)
+        field = getattr(tool, "identity_argument", None)
+        if not field or not self._is_tool_readonly(tc.name) or tc.name.startswith(_deny_prefixes()):
+            return None
+        if self.registry.get("search_symbol") is None:
+            return None
+        return self._identity.pending_resolution_query(tc.arguments, field)
+
+    def _prepare_identity_dependencies(
+        self, tool_calls, context, trace, react_trace, iteration,
+    ) -> dict[str, str]:
+        """Resolve new dependencies through the ordinary bounded tool lifecycle.
+
+        Internal prerequisite results go to the audit/identity ledger, not to
+        provider tool messages with invented call IDs. Failures are attached to
+        the requesting consumer's normal refusal so the model can see the cause.
+        """
+        from src.providers.chat import ToolCallRequest
+
+        outcomes = {}
+        for tc in tool_calls:
+            query = self._identity_dependency_query(tc)
+            if query is None:
+                continue
+            dependency = ToolCallRequest(
+                id=f"{tc.id}:identity", name="search_symbol", arguments={"query": query},
+            )
+            trace.write({
+                "type": "identity_dependency", "iter": iteration,
+                "parent_call_id": tc.id, "call_id": dependency.id,
+                "tool": dependency.name, "query": query,
+            })
+            internal_messages = []
+            self._process_tool_calls(
+                [dependency], context, internal_messages, trace, react_trace, iteration,
+            )
+            if internal_messages:
+                outcomes[tc.id] = internal_messages[-1]["content"]
+        return outcomes
+
     def _process_tool_calls(
         self,
         tool_calls: list,
@@ -68,6 +114,19 @@ class ToolCallLifecycle:
         Returns:
             Tuple of (compact_requested, focus_topic).
         """
+        # Move a matching explicit resolver ahead of its dependent read. Keep
+        # its real provider call ID and produce exactly one result for it.
+        tool_calls = list(tool_calls)
+        for index, tc in enumerate(tool_calls):
+            query = self._identity_dependency_query(tc)
+            if query is None:
+                continue
+            for later in range(index + 1, len(tool_calls)):
+                other = tool_calls[later]
+                if other.name == "search_symbol" and str(other.arguments.get("query", "")).strip().casefold() == query.casefold():
+                    tool_calls.insert(index, tool_calls.pop(later))
+                    break
+
         # A resolver is a real data dependency. Execute it at a boundary so
         # subsequent reads see its result rather than a stale pre-turn snapshot.
         if len(tool_calls) > 1 and any(tc.name == "search_symbol" for tc in tool_calls):
@@ -93,6 +152,22 @@ class ToolCallLifecycle:
                 focus_topic = focus or focus_topic
             return compact_requested, focus_topic
 
+        # Do not pull an implicit prerequisite ahead of a prior mutation.
+        for index, tc in enumerate(tool_calls):
+            if self._identity_dependency_query(tc) is not None and any(
+                not self._is_tool_readonly(previous.name) for previous in tool_calls[:index]
+            ):
+                compact_a, focus_a = self._process_tool_calls(
+                    tool_calls[:index], context, messages, trace, react_trace, iteration,
+                )
+                compact_b, focus_b = self._process_tool_calls(
+                    tool_calls[index:], context, messages, trace, react_trace, iteration,
+                )
+                return compact_a or compact_b, focus_b or focus_a
+
+        dependency_results = self._prepare_identity_dependencies(
+            tool_calls, context, trace, react_trace, iteration,
+        )
         compact_requested = False
         focus_topic = ""
         execution_plan: list[tuple[Any, str | None]] = []
@@ -206,15 +281,12 @@ class ToolCallLifecycle:
                     batch_identity_status=batch_identity_status,
                 )
                 if not authorization.allowed:
-                    execution_plan.append(
-                        (
-                            tc,
-                            authorization.error_payload(
-                                tc.name,
-                                self._identity.identity_summary(),
-                            ),
-                        )
-                    )
+                    refused = authorization.error_payload(tc.name, self._identity.identity_summary())
+                    if tc.id in dependency_results:
+                        payload = json.loads(refused)
+                        payload["identity_resolution"] = dependency_results[tc.id]
+                        refused = json.dumps(payload, ensure_ascii=False)
+                    execution_plan.append((tc, refused))
                     continue
 
             # A successful readonly call whose visible result was removed by

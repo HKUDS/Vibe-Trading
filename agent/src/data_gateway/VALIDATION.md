@@ -2726,3 +2726,63 @@ partial-request diagnostics, handled optional arithmetic overflow and required
 explicit resolver opt-in; these paths are covered by the focused suite. The
 recorded real-task inputs/observations above predate the receipt-compatibility
 hardening. No extra long stress run was performed.
+
+## v30 — Resolve identity before the first options read (2026-11-15)
+
+Built on `5688a4d92`. OptionsChainTool declares its identity argument; the agent
+execution layer resolves a new, unresolved identity through the ordinary
+`search_symbol` lifecycle before taking the authorization snapshot or invoking
+options. An explicit same-query resolver later in the batch is moved before its
+consumer and runs once. Implicit prerequisites preserve earlier mutations.
+Internal calls have trace links to the requesting call; their results update the
+identity ledger without inventing tool-response IDs in the provider conversation.
+
+The existing identity authorization rules are unchanged. Known identities need
+no search; failed/ambiguous queries are not automatically retried. Existing
+conflicts and cross-venue mismatches are not automatically settled. Deny policy,
+resolver availability, cancellation and ordinary tool deadlines still apply.
+A failed prerequisite remains a refusal with its resolution diagnostic attached.
+
+The first real replay exposed a second cause: the actual prior failed request
+used `AAPL.US`, whose project-specific suffix yielded no candidates when sent
+unchanged to Yahoo/Eastmoney search. Those provider queries now use `AAPL`, while
+the response retains the original query and accepts only observed candidates
+whose full canonical symbol exactly matches `AAPL.US`. Wrong-market hits and
+empty responses remain unresolved; no candidate is synthesized.
+
+Evidence outside Git, under
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/`:
+
+- `gateway-option-identity-order-20261115/`: identical prior options/HK/BTC prompt
+  and `deepseek-v4-1-flash-261017` model; 28.412 seconds, three model iterations,
+  zero tool errors/identity refusals, two actual symbol searches, zero Python or
+  external-MCP task calls. Previous sample: 28.056 seconds, five iterations and
+  one identity refusal. End-to-end latency is effectively unchanged; these are
+  single samples. The model naturally resolved first, so this alone does not
+  demonstrate automatic prerequisite insertion.
+- `gateway-option-identity-replay-final-20261115/`: captured the exact previously
+  failed three-call batch (options first, HK daily and BTC 5m), retaining its
+  arguments and call IDs, and executed it through the current lifecycle against
+  real providers. This is a tool-plan replay, not a new model generation.
+  In 4.052 seconds, the automatic AAPL.US search completed before options began;
+  all three data calls succeeded without an identity refusal. The original
+  three provider response IDs were preserved. This final replay includes the
+  canonical-query fix; the real-model run above preceded that narrowly scoped fix.
+
+`audit.py` / `report.json` independently check prompt equality, the previous
+failed batch, resolver-before-options trace order, four option contracts,
+expiration/bid-ask calculations, five HK daily rows, 288 unique BTC bars at
+300-second spacing and their summary statistics. No test or MCP processes remain.
+Narrative claims beyond these observations are not certified; Python audit hooks
+are not an OS network sandbox.
+
+Validation: 461 tests passed across identity prerequisites/reuse, grounding,
+resolution context, output discipline, deterministic replay, tool policy,
+options and symbol search. New cases cover ambiguity, empty/network/wrong-symbol
+results, forbidden/unavailable tools, prior mutations, repeated consumers,
+conflicts, cross-venue mismatches and cancellation. Canonical .US search tests
+require an observed exact match, including lowercase input and BRK-B.US.
+
+No prompt, options UI, cache/memory limit, timeout or retry-budget changes:
+8 MiB memory, 64 MiB disk, four workers, sixteen pending; source/request deadlines
+remain unchanged. No long stress test was run.

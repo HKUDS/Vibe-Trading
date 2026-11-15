@@ -474,6 +474,25 @@ class IdentityLedger:
         self._seed_symbols(user_message, source="user_message")
         self.persist()
 
+    def pending_resolution_query(self, arguments: Mapping[str, Any], field: str) -> str | None:
+        """Find a new unresolved dependency without changing authorization.
+
+        Never re-resolve a failed/ambiguous query automatically, settle a
+        contradiction, or authorize a second venue by rewriting the caller.
+        The existing consumer gate still decides after the resolver finishes.
+        """
+        query = arguments.get(field)
+        if not isinstance(query, str) or not query.strip():
+            return None
+        query = query.strip()
+        if self.identity_status == "conflicting":
+            return None
+        if self._match_authorized_symbol(query, self.authorized_symbols) is not None:
+            return None
+        if _query_key(query) in self._identities or self._venue_mismatch_hints(query, self.authorized_symbols):
+            return None
+        return query
+
     def reusable_resolution(self, arguments: Mapping[str, Any]) -> str | None:
         """Reuse an exact, settled session identity without asserting a fresh lookup.
 

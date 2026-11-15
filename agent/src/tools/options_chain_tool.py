@@ -19,6 +19,8 @@ class OptionsChainTool(BaseTool):
     """Fetch observed US option snapshots through the shared data gateway."""
 
     name = "get_options_chain"
+    # The agent scheduler resolves this argument before its normal identity gate.
+    identity_argument = "ticker"
     description = (
         "Resolve a bare/ambiguous underlying with search_symbol first, in a separate turn; "
         "reuse a canonical user-provided or already resolved US identity. "
