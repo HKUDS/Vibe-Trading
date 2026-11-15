@@ -353,7 +353,7 @@
           "additionalProperties": false,
           "required": ["buckets"],
           "properties": {
-            "buckets": { "type": "array", "items": { "$ref": "#/$defs/bucket" } }
+            "buckets": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/bucket" } }
           }
         },
         "marketSession": {
