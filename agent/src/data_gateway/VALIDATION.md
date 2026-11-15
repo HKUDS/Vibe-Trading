@@ -2990,3 +2990,47 @@ benchmark warmup, identity/grounding/CSV/market/API/MCP paths. Resources remain
 8 MiB memory cache / 64 MiB disk, four source workers / sixteen pending; existing
 6-second source and 15-second request deadlines and task watchdog are unchanged.
 No long stress test or options interaction changes were made.
+
+## v35 — Exact-date fix merged-main short regression (2026-11-15)
+
+Fetched origin/main at `b3c3b5a7c`; `405c7ee03` fast-forwarded local main
+without conflicts or further implementation changes. Ran the same six-market
+and options/HK/BTC prompts with `deepseek-v4-1-flash-261017` in a fresh isolated
+runtime. Evidence outside Git:
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-date-window-main-merged-20261115/`
+(`audit.py`, `report.json`, `regression.log`, actual acquisition arguments,
+source observations, CSVs and traces).
+
+| Task | End-to-end | Model iterations | Data-tool wall time | Verified output |
+| --- | ---: | ---: | ---: | --- |
+| Six-market closes + CSV | 24.291 s | 6 | 3.010 s | 6 markets / exactly 12 requested closes |
+| Options + HK daily + BTC 5m | 26.519 s | 3 | 3.736 s | 4 contracts / 5 daily rows / 288 bars |
+
+The six-market acquisition boundary received Nov 12–13 exactly; every symbol
+returned those two dates. Both generated long/wide CSVs matched observations,
+including closes, currencies, sources and changes. The model itself chose the
+correct dates this time; enforcement against the previous wider call and real
+explicit-warmup preservation retain the v34 replay evidence on identical code.
+The mixed request has multiple date windows and remained unaffected. Options
+identity resolution preceded acquisition; option expiry/mid/spread arithmetic,
+HK runtime and independent XHKG coverage, BTC unique 300-second spacing and
+statistics, and all three CSV checksums/previews/cells were independently checked.
+The CSV sidecars contained 12 / 5 / 288 rows and stayed within the tool output cap.
+Neither task had tool errors, duplicate bar acquisitions or external MCP task
+calls. The independent Yahoo MCP alternative was exposed and preflighted; no
+direct downloads appeared in generated Python or observed subprocess sockets.
+No test or temporary MCP processes remained.
+
+846 regression tests passed, one warning, including date normalization,
+explicit warmup, technical-indicator/backtest/options/benchmark lookbacks and
+identity/grounding/CSV/market/API/MCP paths. The resource configuration file is
+unchanged from the previous main; runtime limits and resolved configuration were
+checked: memory cache 8 MiB, disk cache 64 MiB, four source workers, sixteen
+pending, source/request deadlines 6/15 seconds. The existing 110-second task
+watchdog, retry settings and model configuration were not changed.
+
+Six-market processing still used two local Python calls (inspection and CSV
+projection), versus one in v33; no speed improvement is claimed. These are
+single samples sharing one gateway process, not latency guarantees. Generated
+narrative is not certified beyond audited observations, and Python audit hooks
+are not an OS network sandbox. No market observations or credentials are committed.
