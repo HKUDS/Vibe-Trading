@@ -7,8 +7,8 @@ Backed by: `src.data_gateway.get_gateway().options_chain` (Cboe delayed snapshot
 Description: Read-only agent/CLI tool that returns the US-listed options ladder
 (calls and puts) for a single expiration, plus the list of available
 expirations. Use it for an options snapshot — strike, bid/ask, last price,
-volume, open interest, implied volatility, and the in/out-of-money flag. For
-raw chain payloads call `yahoo_client.get_options` directly.
+volume, open interest, implied volatility, and the in/out-of-money flag. Use
+`offset` to page the complete source expiration when nearby rows are insufficient.
 
 Each side is capped at 60 nearby contracts so a deep chain cannot blow up the model
 payload.
@@ -56,6 +56,12 @@ The additive `gateway` object records cache state (`miss`, `fresh`, `stale`),
 acquisition time, source timestamp when supplied, quality and source attempts.
 A fresh cache is not a live quote. `executable` is always false; missing Delta
 is not estimated. Repeated reads share the same gateway as the API and CLI.
+
+`last_trade_time` is the last execution time, **not** the bid/ask quote timestamp.
+When `quote_time_known=false`, report quote time as unavailable, including in
+any table column labelled quote time. `fetched_at` is gateway retrieval time.
+Preserve source timestamp strings without inventing their timezone; an unzoned
+Cboe timestamp must not be labelled Eastern/UTC or converted between zones.
 
 On failure:
 

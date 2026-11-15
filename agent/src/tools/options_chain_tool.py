@@ -22,6 +22,10 @@ class OptionsChainTool(BaseTool):
         "via the shared cached data gateway: per-contract strike, bid/ask, last price, volume, "
         "open interest, implied volatility, and in-the-money flag, plus the list "
         "of available expirations (epoch seconds). Read-only US options data. "
+        "last_trade_time is the last execution time, NEVER the bid/ask quote time. "
+        "When quote_time_known is false, label the quote timestamp unavailable. "
+        "Do not assign a timezone to unzoned provider timestamps; fetched_at is "
+        "gateway retrieval time, not market quote time. "
         'Example: get_options_chain(ticker="AAPL").'
     )
     parameters = {

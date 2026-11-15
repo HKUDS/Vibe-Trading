@@ -2,7 +2,7 @@
 
 This branch is independent of the options homepage. It contains backend routing,
 continuous read-only subscriptions, API/CLI/tool integration and tests. It does
-not change Options Lab, agent core, or order execution. Storage and acquisition
+not change Options Lab interaction, agent execution logic, or order execution. Storage and acquisition
 controls are available at the existing `/history-storage` page.
 
 ## What runs now

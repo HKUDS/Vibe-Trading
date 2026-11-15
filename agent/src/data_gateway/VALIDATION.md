@@ -2529,3 +2529,56 @@ readonly classification. A second shell/background/deferred-tool selection passe
 no live LLM compliance benchmark or network-sandbox claim is made. No acquisition,
 resource limits, option interaction, subprocess runtime or remote MCP call path
 was changed.
+
+
+## v27 — Main integration and real tasks (2026-11-15)
+
+Fetched origin/main at 19c83de9c; it was already an ancestor of gateway commit
+d070af8b7. Fast-forwarded the clean main worktree with no merge conflicts. The
+separate research-experience checkout's in-progress merge was not touched.
+All runs below use code from the main worktree, not the feature worktree.
+
+Post-merge checks: 274 gateway/history/market/API/MCP/UI/options tests passed;
+frontend production build passed (existing chunk-size advisory only). After the
+small quote-time guidance correction below, 908 options/guidance/skill-reference
+tests passed. These selections overlap and are not additive. No limits changed.
+
+Real model tasks used the user's already selected custom provider/model
+(deepseek-v4-1-flash-261017), the normal AgentLoop and full registry with shell
+capability. No model was substituted and no response was mocked. The first
+harness initialization failed because its isolated runtime could not find the
+active custom profile; the corrected harness resolves a read-only provider
+snapshot first and stores only task outputs in its isolated runtime. Credentials
+were not copied into evidence or committed.
+
+1. Cross-market research (40.58 s): agent fetched AAPL.US, 00700.HK and 600519.SH
+   for 2026-11-09..13, then wrote and ran Python on the gateway's returned JSON
+   artifact. Produced 15 daily CSV rows and 3 summary rows. Independently checked
+   closes, first-to-last returns, sources and adjustment labels against the raw
+   tool artifact. The generated script imports only json/pandas and performs no
+   network acquisition. Mainland calendar coverage remains explicitly unverified;
+   five returned rows are not reported as a verified exchange calendar.
+2. AAPL options query (37.76 s): real Cboe data, nearest unexpired expiration,
+   three near-money calls and puts, delayed/unknown quote-time metadata. Initial
+   answer mislabeled last-trade times as quote times and inferred a timezone.
+   Added explicit tool-description/reference guidance separating last execution,
+   bid/ask quote time and gateway retrieval time; no options UI/schema changes.
+   Re-ran the same user task (29.43 s): answer identifies quote timestamp as
+   unavailable, preserves unzoned source strings, labels last_trade_time separately,
+   and discloses stale/delayed cache status. This is an observed model run, not a
+   guarantee that all future generations obey the guidance.
+3. Concurrent history/stream task (12.08 s): real BTC-USDT and ETH-USDT 5-minute
+   data for 2026-11-12..13, 2 completed chunks / 1,152 rows. Read every row through
+   the history API and independently verified 576 unique symbol/timestamps per
+   coin, exactly 300 seconds apart without gaps. API and agent history pages
+   match. During download, both crypto topics received real WebSocket ticks;
+   144 collected updates included initial REST snapshots and WebSocket events.
+   After unsubscribe: 0 clients, 0 topics, 0 pending updates.
+
+Observed resource defaults remain 8 MiB RAM snapshot cache / 64 MiB disk snapshot
+cache / 4 source workers / 16 pending requests. No hour-long soak was repeated.
+No live orders or outbound messages were requested or executed.
+
+Raw task outputs, generated CSV/Python, initial/recheck responses, stream/history
+results and independent audit are outside git:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-main-20261115/`.
