@@ -254,6 +254,7 @@ class AgentLoop(ToolCallLifecycle):
         self._run_iteration: int = 0
         self._has_run = False
         self._identity: IdentityLedger | None = None
+        self._user_data_window = None
         self._released_fallback = False
         self._released_fallback_reason: str | None = None
         self._written_files: set[str] = set()
@@ -436,6 +437,9 @@ class AgentLoop(ToolCallLifecycle):
             self.memory.run_dir = str(run_dir)
 
         state_store.save_request(run_dir, user_message, {"session_id": session_id})
+        from src.agent.data_window import UserDataWindow
+
+        self._user_data_window = UserDataWindow.parse(user_message)
         self._identity = IdentityLedger(
             run_dir=run_dir,
             user_message=user_message,

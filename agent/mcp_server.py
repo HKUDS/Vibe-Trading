@@ -2118,6 +2118,7 @@ def get_market_data(
     max_rows: int = DEFAULT_MAX_ROWS,
     run_dir: str | None = None,
     export_csv: bool = True,
+    warmup_start_date: str | None = None,
 ) -> str:
     """Fetch OHLCV market data for stocks, crypto, or mixed symbols.
 
@@ -2138,6 +2139,8 @@ def get_market_data(
         run_dir: Calculation workspace; defaults to runtime runs/mcp-calculations and returns a full result reference.
         export_csv: Save a CSV by default from the same returned rows, with provenance,
             sampling flags, columns, row count and checksum. No extra fetch.
+        warmup_start_date: Optional calculation-history start before start_date.
+            Returned rows include this prefix; start_date remains the analysis start.
         codes: List of symbols (e.g. ["AAPL.US", "TD.TO", "BTC-USDT", "000001.SZ"]).
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
@@ -2177,6 +2180,7 @@ def get_market_data(
             "max_rows": max_rows,
             "run_dir": run_dir or _calculation_workspace(),
             "export_csv": export_csv,
+            "warmup_start_date": warmup_start_date,
             # Internal hook, not an agent-facing parameter: keeps the MCP
             # surface resolving loaders through mcp_server._get_loader (the
             # contract the regression tests and the server's own loader

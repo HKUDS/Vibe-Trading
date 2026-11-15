@@ -2927,3 +2927,66 @@ regression was observed in these checks; single-run latency is not a statistical
 guarantee, and the two tasks share one gateway process. Narrative beyond the
 verified observations is not certified, and Python audit hooks are not an OS
 network sandbox. No market observations or credentials are committed.
+
+## v34 — Bind direct market reads to explicit user dates (2026-11-15)
+
+Base `b3c3b5a7c` on `codex/exact-market-date-windows`. The prior six-market model
+requested Nov 10–13 for a user asking Nov 12–13, then discarded the extra dates
+in its CSV. The fix acts before tool authorization/deduplication and acquisition,
+not by filtering already downloaded output or relying only on a prompt.
+
+The agent binds one unambiguous literal ISO date range and canonical instruments
+from the current user turn. Only an opted-in direct MarketDataTool read of those
+instruments is normalized: overlapping date padding is intersected with the user
+range. Provider call IDs/signatures and the original model arguments are not
+mutated; the trace records original/effective dates, and the result's
+`_request_window` exposes a correction. Invalid arguments retain their ordinary
+validation. Exact/subrange reads are unchanged. Ambiguous/multiple ranges,
+relative dates, disjoint comparisons and reads containing new instruments are
+not guessed. This is not a general multilingual intent parser or a constraint
+on arbitrary shell/MCP code.
+
+`get_market_data` (agent/CLI/Web session tool and MCP) now accepts explicit
+`warmup_start_date`. Analysis start/end remain separate from acquisition start;
+returned rows and CSV include the declared prefix, with normal sampling rules
+unchanged. A missing/invalid warmup date is never invented. Existing technical
+indicator lookbacks and backtest/options/benchmark warmup operate through their
+existing paths and do not opt into this normalization. No identity guard, source
+routing, cache/resource limit, timeout or retry budget was loosened.
+
+Evidence outside Git under
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/`:
+
+- `gateway-date-window-20261115/`: same six-market prompt and configured
+  `deepseek-v4-1-flash-261017`, success in 35.061 seconds / eight model iterations.
+  Observed arguments at the actual market-acquisition boundary were exactly
+  Nov 12–13. All six markets returned two rows; the 12-row CSV and the final
+  six-row comparison's closes/currencies/sources/changes independently matched
+  observations. No errors, repeated acquisition, external-MCP task calls or
+  direct generated-code downloads. The model chose the correct dates itself;
+  this run alone does not prove the normalization branch. Four local shell
+  inspection/processing calls reappeared, versus one in the previous sample;
+  latency increased from 18.645 seconds. No speed improvement is claimed, and
+  no extra model rerun was made to select a faster sample.
+- `gateway-date-window-replay-20261115/`: replayed the exact prior wider call,
+  retaining its arguments and call ID (apart from the runtime-injected run_dir),
+  against real providers through the tool lifecycle. It acquired Nov 12–13,
+  twelve rows, in 2.975 seconds; the trace proves correction before acquisition.
+  A second replay added explicit warmup_start_date=Nov 10: analysis remained
+  Nov 12–13, acquisition retained Nov 10–13 and all 24 rows (2.494 seconds).
+  Three-bar means at the first analysis date were checked against each symbol's
+  real warmup rows. These are captured-call replays, not new model generations.
+
+`audit.py` / `report.json` retain prompt/model equality, actual acquisition
+arguments, replay outcomes, checksum/cell checks and limitations. No test/MCP
+processes remained. The temporary independent Yahoo MCP alternative was exposed
+and preflighted; Python audit hooks are not an OS network sandbox. Generated
+prose beyond the audited observations is not certified.
+
+846 tests passed, one warning: window extraction/normalization, exact/subrange/
+comparison/multiwindow behavior, invalid arguments, explicit warmup and rolling
+calculation, actual technical-indicator lookback, existing backtest/options/
+benchmark warmup, identity/grounding/CSV/market/API/MCP paths. Resources remain
+8 MiB memory cache / 64 MiB disk, four source workers / sixteen pending; existing
+6-second source and 15-second request deadlines and task watchdog are unchanged.
+No long stress test or options interaction changes were made.

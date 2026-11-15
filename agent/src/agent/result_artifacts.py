@@ -64,7 +64,7 @@ def persist_calculation_result(result: str, run_dir: str | Path | None, *, expor
     for key in ('ok', 'status', 'module', 'function', 'input_sources'):
         if key in payload:
             receipt[key] = payload[key]
-    for key in ('_csv_file', '_csv_error', '_data_layout'):
+    for key in ('_csv_file', '_csv_error', '_data_layout', '_request_window'):
         if key in payload:
             receipt[key] = payload[key]
     if isinstance(payload.get('_summary'), dict):

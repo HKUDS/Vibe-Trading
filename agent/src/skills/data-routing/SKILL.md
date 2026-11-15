@@ -63,7 +63,14 @@ Account reads and mutations retain their own authorization and order gates.
 
 Resolve bare or ambiguous stock names once before dependent reads, including
 options. Batch canonical symbols with the same exact requested dates and
-interval. Reuse the options response's underlying price when sufficient. For a
+interval. For `get_market_data`, keep `start_date`/`end_date` as the analysis
+window. When calculation history is needed, set `warmup_start_date` explicitly
+before `start_date`; the result's `_request_window` distinguishes analysis and
+acquisition dates, and returned rows/CSV include the prefix. The agent runtime
+clips accidental overlapping date padding for a single literal ISO date range
+and canonical instruments named in the current user request. Multiple windows,
+disjoint comparisons and indicator/backtest internal warmup remain separate.
+Reuse the options response's underlying price when sufficient. For a
 bounded full-day minute calculation, request `max_rows=0` on the first call;
 a sampled result's artifact also contains sampled rows. Inspect an existing
 artifact before fetching again, and combine inspection, calculation and CSV

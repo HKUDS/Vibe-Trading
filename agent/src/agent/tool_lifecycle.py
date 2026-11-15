@@ -117,6 +117,26 @@ class ToolCallLifecycle:
         # Move a matching explicit resolver ahead of its dependent read. Keep
         # its real provider call ID and produce exactly one result for it.
         tool_calls = list(tool_calls)
+        window = getattr(self, "_user_data_window", None)
+        if window is not None:
+            from copy import copy
+
+            for index, tc in enumerate(tool_calls):
+                if not getattr(self.registry.get(tc.name), "use_user_date_window", False):
+                    continue
+                arguments = window.normalize(tc.arguments)
+                if arguments is not tc.arguments:
+                    effective = copy(tc)
+                    effective.arguments = arguments
+                    tool_calls[index] = effective
+                    trace.write({
+                        "type": "data_window_normalized", "iter": iteration,
+                        "call_id": tc.id, "tool": tc.name,
+                        "original_start": tc.arguments.get("start_date"),
+                        "original_end": tc.arguments.get("end_date"),
+                        "effective_start": arguments["start_date"],
+                        "effective_end": arguments["end_date"],
+                    })
         for index, tc in enumerate(tool_calls):
             query = self._identity_dependency_query(tc)
             if query is None:

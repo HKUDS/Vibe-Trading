@@ -80,6 +80,7 @@ class MarketDataTool(BaseTool):
     """Fetch normalized OHLCV data through repository loaders."""
 
     name = "get_market_data"
+    use_user_date_window = True
     description = (
         "Fetch normalized OHLCV market data through the unified data gateway. "
         "Use this for stock, ETF, index, or crypto price bars rather than direct "
@@ -115,11 +116,15 @@ class MarketDataTool(BaseTool):
             },
             "start_date": {
                 "type": "string",
-                "description": "Start date in YYYY-MM-DD format.",
+                "description": "Requested analysis start in YYYY-MM-DD. Explicit user ranges are enforced by the runtime; put necessary calculation history in warmup_start_date instead of padding this date.",
             },
             "end_date": {
                 "type": "string",
                 "description": "End date in YYYY-MM-DD format.",
+            },
+            "warmup_start_date": {
+                "type": "string",
+                "description": "Optional earlier YYYY-MM-DD for indicator/rolling-return warmup. Acquires and returns the prefix through end_date without changing the analysis start_date. Omit for close snapshots or CSV exports without lookback calculations. Existing sampling cap still applies.",
             },
             "source": {
                 "type": "string",
@@ -199,6 +204,13 @@ class MarketDataTool(BaseTool):
                 f"start_date ({start_date}) must not be after end_date ({end_date})"
             )
 
+        warmup_start = kwargs.get("warmup_start_date")
+        if warmup_start is not None:
+            if not isinstance(warmup_start, str) or not _valid_iso_date(warmup_start):
+                return _error("warmup_start_date must be a YYYY-MM-DD date")
+            if warmup_start >= start_date:
+                return _error("warmup_start_date must precede the analysis start_date")
+
         source = kwargs.get("source", "auto")
         if source not in _SOURCE_ENUM:
             return _error(f"source must be one of {_SOURCE_ENUM}")
@@ -257,7 +269,7 @@ class MarketDataTool(BaseTool):
 
         fetch_kwargs: dict[str, Any] = {
             "codes": codes,
-            "start_date": start_date,
+            "start_date": warmup_start or start_date,
             "end_date": end_date,
             "source": source,
             "interval": normalized_interval,
@@ -271,6 +283,14 @@ class MarketDataTool(BaseTool):
         from src.data_gateway.bar_summary import summarize_bars
 
         payload = json.loads(fetch_market_data_json(**fetch_kwargs))
+        if warmup_start or isinstance(kwargs.get("_user_date_window"), dict):
+            payload["_request_window"] = {
+                "analysis_start": start_date, "analysis_end": end_date,
+                "acquisition_start": warmup_start or start_date, "acquisition_end": end_date,
+                "warmup_start_date": warmup_start,
+            }
+            if isinstance(kwargs.get("_user_date_window"), dict):
+                payload["_request_window"]["normalization"] = kwargs["_user_date_window"]
         summary = summarize_bars(payload, normalized_interval)
         if summary:
             payload["_summary"] = summary
