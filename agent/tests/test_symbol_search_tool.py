@@ -1307,3 +1307,36 @@ def test_eastmoney_market_zero_splits_beijing_from_shenzhen(quote_id: str, expec
     candidate = ss._eastmoney_candidate(row)
     assert candidate is not None
     assert candidate["symbol"] == expected
+
+
+@pytest.mark.parametrize("query,expected", [("AAPL.US", "AAPL"), ("aapl.us", "AAPL"), ("BRK-B.US", "BRK-B")])
+def test_project_us_suffix_is_translated_only_for_provider_search(monkeypatch, query, expected):
+    calls = []
+    monkeypatch.setattr(ss, "_search_selected_connector", lambda *args: ([], None, None))
+    monkeypatch.setattr("src.tools.gildata_identity.search_candidates", lambda *args: ([], None))
+    monkeypatch.setattr(ss.sec_edgar_client, "cik_for", lambda *args: None)
+
+    def search(text):
+        calls.append(text)
+        return [
+            {"symbol": expected + ".US", "market": "us", "source": "fixture"},
+            {"symbol": expected + ".L", "market": "uk", "source": "fixture"},
+            {"symbol": "MSFT.US", "market": "us", "source": "fixture"},
+        ], "ok"
+
+    monkeypatch.setattr(ss, "_search_eastmoney", search)
+    monkeypatch.setattr(ss, "_search_yahoo", search)
+    result = json.loads(ss.SymbolSearchTool.execute.__wrapped__(ss.SymbolSearchTool(), query=query))
+    assert calls == [expected, expected]
+    assert result["data"]["query"] == query
+    assert [c["symbol"] for c in result["data"]["candidates"]] == [expected + ".US"]
+
+
+def test_project_us_query_cannot_fabricate_identity_from_wrong_or_missing_hits(monkeypatch):
+    monkeypatch.setattr(ss, "_search_selected_connector", lambda *args: ([], None, None))
+    monkeypatch.setattr("src.tools.gildata_identity.search_candidates", lambda *args: ([], None))
+    monkeypatch.setattr(ss, "_search_eastmoney", lambda *args: ([], "ok"))
+    monkeypatch.setattr(ss, "_search_yahoo", lambda *args: ([{"symbol": "AAPL.L", "market": "uk", "source": "fixture"}], "ok"))
+    result = json.loads(ss.SymbolSearchTool.execute.__wrapped__(ss.SymbolSearchTool(), query="AAPL.US"))
+    assert result["data"]["query"] == "AAPL.US"
+    assert result["data"]["candidates"] == [] and result["data"]["count"] == 0

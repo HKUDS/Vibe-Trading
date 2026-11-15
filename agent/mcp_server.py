@@ -2085,6 +2085,9 @@ def _get_loader(source: str):
     return get_loader(source)
 
 
+_get_loader.gateway_default_resolver = True
+
+
 def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     """Bound a per-symbol row list to keep the MCP payload within budget.
 
@@ -2114,6 +2117,8 @@ def get_market_data(
     interval: str = "1D",
     max_rows: int = DEFAULT_MAX_ROWS,
     run_dir: str | None = None,
+    export_csv: bool = True,
+    warmup_start_date: str | None = None,
 ) -> str:
     """Fetch OHLCV market data for stocks, crypto, or mixed symbols.
 
@@ -2132,6 +2137,10 @@ def get_market_data(
 
     Args:
         run_dir: Calculation workspace; defaults to runtime runs/mcp-calculations and returns a full result reference.
+        export_csv: Save a CSV by default from the same returned rows, with provenance,
+            sampling flags, columns, row count and checksum. No extra fetch.
+        warmup_start_date: Optional calculation-history start before start_date.
+            Returned rows include this prefix; start_date remains the analysis start.
         codes: List of symbols (e.g. ["AAPL.US", "TD.TO", "BTC-USDT", "000001.SZ"]).
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
@@ -2170,6 +2179,8 @@ def get_market_data(
             "interval": interval,
             "max_rows": max_rows,
             "run_dir": run_dir or _calculation_workspace(),
+            "export_csv": export_csv,
+            "warmup_start_date": warmup_start_date,
             # Internal hook, not an agent-facing parameter: keeps the MCP
             # surface resolving loaders through mcp_server._get_loader (the
             # contract the regression tests and the server's own loader
@@ -2528,23 +2539,48 @@ def get_financial_statements(code: str, statement: str = "indicators", period: s
 
 
 @mcp.tool
-def get_options_chain(ticker: str, expiration: int | None = None) -> str:
+def get_options_chain(ticker: str, expiration: int | None = None, offset: int | None = None, near_spot_count: int | None = None) -> str:
     """Fetch the US-listed options chain (calls and puts) for one expiration.
 
     Returns per-contract strike, bid/ask, last price, volume, open interest,
     implied volatility, and in-the-money flag, plus the list of available
-    expirations (epoch seconds) via Yahoo Finance. Read-only US options data.
+    expirations (epoch seconds) via the shared data gateway. Read-only US options data.
 
     Args:
         ticker: US underlying symbol (e.g. "AAPL" or "AAPL.US").
         expiration: Optional expiration as Unix epoch seconds (one of the
             returned expirations). Omit for the nearest expiration.
+        offset: Optional strike-order page offset, 60 rows per side; omit for near-spot contracts.
+        near_spot_count: Optional nearest strikes per side (1..60), incompatible with offset.
     """
     params: dict[str, Any] = {"ticker": ticker}
     if expiration is not None:
         params["expiration"] = expiration
+    if offset is not None:
+        params["offset"] = offset
+    if near_spot_count is not None:
+        params["near_spot_count"] = near_spot_count
     registry = _get_registry()
     return registry.execute("get_options_chain", params)
+
+
+@mcp.tool
+def history_data(action: str, job: str | None = None, codes: list[str] | None = None,
+                 start_date: str | None = None, end_date: str | None = None,
+                 interval: str = "5m", offset: int = 0, source: str = "auto") -> str:
+    """Plan/resume quota-bounded routed historical datasets; read unsampled pages.
+
+    Actions: plan, create, start, status, rows, cancel, pin, unpin, delete,
+    storage, prune, scan_create, scan_status, scan_cancel. Scans are process-local
+    background acquisitions; specify interval="1D" for daily scans. Plan/create require codes and settled ISO dates. Other
+    job operations require the returned job id. Source defaults to auto; explicit source pins a provider.
+    Rows are never sampled; coverage_verified distinguishes verified from downloaded/unverified data.
+    Row pages retain per-symbol currency, units, timezone and source provenance; null fields remain unknown.
+    """
+    return _get_registry().execute("history_data", {
+        "action": action, "job": job, "codes": codes, "start_date": start_date,
+        "end_date": end_date, "interval": interval, "offset": offset, "source": source,
+    })
 
 
 @mcp.tool
@@ -2590,7 +2626,7 @@ def screen_market(market: str, sort_by: str = "change_pct", top_n: int = 30) -> 
 
 
 @mcp.tool
-def search_symbol(query: str, limit: int = 10) -> str:
+def search_symbol(query: str, limit: int = 10, refresh: bool = False) -> str:
     """Resolve a company name or ticker fragment to candidate trading symbols.
 
     Returns candidates with their market in the project's symbol convention
@@ -2602,9 +2638,13 @@ def search_symbol(query: str, limit: int = 10) -> str:
     Args:
         query: Free-text company name or ticker fragment (Chinese or English).
         limit: Maximum number of merged candidates to return.
+        refresh: Request resolver verification instead of session identity reuse.
     """
     registry = _get_registry()
-    return registry.execute("search_symbol", {"query": query, "limit": limit})
+    params = {"query": query, "limit": limit}
+    if refresh:
+        params["refresh"] = True
+    return registry.execute("search_symbol", params)
 
 
 @mcp.tool

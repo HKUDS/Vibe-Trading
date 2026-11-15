@@ -42,8 +42,10 @@ ti_yoy | float | Y | 第三产业同比增速（%）
 **接口调用**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 df = pro.cn_gdp(start_q='2018Q1', end_q='2019Q3')
 

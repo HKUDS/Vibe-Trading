@@ -31,6 +31,7 @@ const ASSET_CLASS_LABEL_KEYS = {
   br_equity: "runDetail.positions.assetClass.br_equity",
   uk_equity: "runDetail.positions.assetClass.uk_equity",
   vietnam_equity: "runDetail.positions.assetClass.vietnam_equity",
+  jp_equity: "runDetail.positions.assetClass.jp_equity",
   kr_equity: "runDetail.positions.assetClass.kr_equity",
   india_equity: "runDetail.positions.assetClass.india_equity",
   crypto: "runDetail.positions.assetClass.crypto",

@@ -23,6 +23,7 @@ import logging
 from typing import Any
 
 from backtest.loaders._http import resolve_min_interval, throttled_get_json
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.config.limits import TOOL_RESULT_LIMIT
@@ -111,6 +112,7 @@ class FredMacroTool(BaseTool):
         """
         return bool(get_env_config().data.fred_api_key)
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         """Fetch one FRED series and return a JSON envelope.
 

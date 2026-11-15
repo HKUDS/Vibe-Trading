@@ -9,7 +9,7 @@ Tests mock the session or the helper that creates it.
 from __future__ import annotations
 
 import importlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -215,3 +215,55 @@ def test_okx_session_empty_without_proxy(monkeypatch):
         monkeypatch.delenv(key, raising=False)
     s = okx._okx_session()
     assert not s.proxies
+
+
+def test_nonempty_recent_tail_still_tries_history(monkeypatch):
+    """A recent endpoint's nonempty tail is not the requested history."""
+    calls = []
+
+    def paginate(self, session, endpoint, *args):
+        calls.append(endpoint)
+        first = "2026-05-04" if endpoint == okx.CANDLES_PATH else "2026-05-01"
+        return pd.DataFrame({"close": [1.0]}, index=pd.to_datetime([first]))
+
+    monkeypatch.setattr(DataLoader, "_paginate", paginate)
+    frame = DataLoader()._fetch_candles(MagicMock(), "BTC-USDT", S, E, "1m", 20, prefer_history=False)
+    assert calls == [okx.CANDLES_PATH, okx.HISTORY_CANDLES_PATH]
+    assert frame.index.min() == pd.Timestamp("2026-05-01")
+
+
+def test_history_failure_preserves_partial_tail_with_warning(monkeypatch, caplog):
+    def paginate(self, session, endpoint, *args):
+        if endpoint == okx.HISTORY_CANDLES_PATH:
+            raise requests.ConnectionError("offline")
+        return pd.DataFrame({"close": [1.0]}, index=pd.to_datetime(["2026-05-04"]))
+
+    monkeypatch.setattr(DataLoader, "_paginate", paginate)
+    frame = DataLoader()._fetch_candles(MagicMock(), "BTC-USDT", S, E, "1m", 20, prefer_history=False)
+    assert frame.index.min() == pd.Timestamp("2026-05-04")
+    assert "partial start coverage" in caplog.text
+
+
+def test_gateway_deadline_caps_okx_socket_and_no_late_page(monkeypatch):
+    from backtest.loaders import okx
+    from backtest.loaders.acquisition import source_deadline
+    from types import SimpleNamespace
+    import requests
+
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(okx.time, "monotonic", lambda: now[0])
+
+    def expire(*args, timeout, **kwargs):
+        calls.append(timeout)
+        now[0] += timeout
+        raise requests.Timeout("socket deadline")
+
+    token = source_deadline.set(101.0)
+    try:
+        with pytest.raises(TimeoutError):
+            okx.DataLoader()._paginate(SimpleNamespace(get=expire), okx.HISTORY_CANDLES_PATH,
+                                      "BTC-USDT", 0, 1000, "1m", 10)
+        assert calls == [1.0]
+    finally:
+        source_deadline.reset(token)

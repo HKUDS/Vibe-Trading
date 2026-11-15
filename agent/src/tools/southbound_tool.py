@@ -41,6 +41,7 @@ from typing import Any
 import requests
 
 from backtest.loaders import eastmoney_client
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -287,6 +288,7 @@ class SouthboundFlowTool(BaseTool):
         "required": [],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Fetch latest + recent-daily Southbound net flow as a JSON envelope.
 

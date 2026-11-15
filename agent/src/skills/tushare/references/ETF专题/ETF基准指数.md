@@ -39,6 +39,10 @@ adj_circle | str | Y | 指数成份证券调整周期
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 
 #获取当前ETF跟踪的基准指数列表
 df = pro.etf_index(fields='ts_code,indx_name,pub_date,bp')

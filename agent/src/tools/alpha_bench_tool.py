@@ -331,6 +331,8 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     except ImportError as exc:
         raise RuntimeError(f"tushare not installed: {exc}") from exc
 
+    from src.data_gateway.reads import managed_reader
+
     pro = ts.pro_api(token)
     sd = start.replace("-", "")
     ed = end.replace("-", "")
@@ -343,7 +345,7 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
         # Reach back before ``start`` so the snapshot that was in force on the
         # first requested day is included; Tushare publishes month-end rosters.
         lookback = (pd.Timestamp(start) - pd.Timedelta(days=60)).strftime("%Y%m%d")
-        weights = pro.index_weight(
+        weights = managed_reader(pro.index_weight)(
             index_code="399300.SZ", start_date=lookback, end_date=ed
         )
         if weights is not None and not weights.empty:
@@ -383,7 +385,7 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     # loader drops. Tushare's free tier permits ~200 calls/min so 4 concurrent
     # workers is comfortably under the rate limit even for a full 300-name list.
     def _fetch_one(code: str) -> tuple[str, pd.DataFrame | None]:
-        df = _retry(lambda: pro.daily(ts_code=code, start_date=sd, end_date=ed))
+        df = _retry(lambda: managed_reader(pro.daily)(ts_code=code, start_date=sd, end_date=ed))
         if df is None or df.empty:
             return code, None
         df = df.sort_values("trade_date").copy()
@@ -395,7 +397,7 @@ def _load_csi300_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
         keep = [c for c in ("open", "high", "low", "close", "volume", "amount") if c in df.columns]
         df = df[keep].dropna(subset=["open", "high", "low", "close"])
-        factor = _retry(lambda: pro.adj_factor(ts_code=code, start_date=sd, end_date=ed))
+        factor = _retry(lambda: managed_reader(pro.adj_factor)(ts_code=code, start_date=sd, end_date=ed))
         return code, _apply_qfq(df, factor)
 
     fetched: dict[str, pd.DataFrame] = {}
@@ -583,9 +585,9 @@ def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
     try:
         import io
 
-        import requests
+        from src.data_gateway.reads import public_http_get
 
-        resp = requests.get(
+        resp = public_http_get(
             url,
             headers={
                 "User-Agent": (

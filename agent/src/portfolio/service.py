@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.data_gateway.reads import managed_reader
+
 import csv
 import io
 import json
@@ -1181,6 +1183,7 @@ class PortfolioService:
                            source="legacy_cache").validated(), True
 
     @staticmethod
+    @managed_reader
     def _fetch_fx() -> FxQuote:
         """Read Frankfurter v1's dated reference rates; no intraday FX claim."""
         url = "https://api.frankfurter.app/latest?from=USD&to=CNY,HKD,EUR"

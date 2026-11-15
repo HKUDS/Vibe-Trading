@@ -357,3 +357,10 @@ Posting `{}` schedules a template on its own suggested cadence with its declared
 entry points for frozen-input cost scenarios, training-only parameter selection
 and OOS/holdout execution, source/history audits and offline task replays.
 Run `vibe-trading research-lab --help` or open `/research-lab`.
+
+### Large historical datasets
+
+`vibe-trading data history --help` exposes plan/create/run/status/rows, storage
+quota and retention, pin/unpin, cancel, delete and prune. The same service backs
+`/data/history/*`, the `history_data` Agent/MCP tool, and Settings → Historical
+data storage. See [gateway limits and source coverage](../agent/src/data_gateway/README.md#persistent-minute-datasets).

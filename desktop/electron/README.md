@@ -36,9 +36,8 @@ remaining signed Windows validation.
 - Prevents in-window navigation away from the local backend origin.
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for the trust boundary and residual
-risks. See [REVIEW_NOTES.md](REVIEW_NOTES.md) for the file inventory and
-validation ledger. See [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) for the
-packaging-specific boundary and build commands.
+risks. See [WINDOWS_PACKAGING.md](WINDOWS_PACKAGING.md) for the packaging-specific
+boundary and build commands.
 
 ## Run from source
 

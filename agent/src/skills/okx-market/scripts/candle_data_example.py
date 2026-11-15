@@ -4,7 +4,7 @@
 
 from typing import Optional
 
-import requests
+from src.data_gateway.reads import public_http_get
 import pandas as pd
 from datetime import datetime
 
@@ -26,7 +26,7 @@ def get_candles(inst_id: str, bar: str = "1D", limit: int = 100) -> Optional[pd.
         DataFrame (ts, open, high, low, close, vol)，失败返回 None。
     """
     try:
-        resp = requests.get(f"{BASE_URL}/market/candles", params={
+        resp = public_http_get(f"{BASE_URL}/market/candles", params={
             "instId": inst_id, "bar": bar, "limit": str(limit)
         })
         data = resp.json()
@@ -57,7 +57,7 @@ def get_index_candles(inst_id: str, bar: str = "1D", limit: int = 100) -> Option
         DataFrame (ts, open, high, low, close)，失败返回 None。
     """
     try:
-        resp = requests.get(f"{BASE_URL}/market/index-candles", params={
+        resp = public_http_get(f"{BASE_URL}/market/index-candles", params={
             "instId": inst_id, "bar": bar, "limit": str(limit)
         })
         data = resp.json()

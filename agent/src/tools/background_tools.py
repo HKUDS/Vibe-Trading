@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.tools import BaseTool
+from src.data_gateway.guidance import SHELL_DATA_GUIDANCE
 from src.tools._shell_safety import broad_python_kill_error
 
 WORKDIR = Path(__file__).resolve().parents[2]
@@ -577,7 +578,7 @@ class BackgroundRunTool(BaseTool):
         "task_id immediately and times out after 300 seconds. On Windows the "
         "shell is cmd.exe, not PowerShell. Poll with check_background and stop "
         "only with cancel_background; never use taskkill/pkill/killall."
-    )
+    ) + SHELL_DATA_GUIDANCE
     parameters = {"type": "object", "properties": {
         "command": {"type": "string", "description": "Shell command to run in background"},
     }, "required": ["command"]}

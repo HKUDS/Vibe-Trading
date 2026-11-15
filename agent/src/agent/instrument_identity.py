@@ -110,6 +110,7 @@ _JOINED_CRYPTO_RE = re.compile(
 
 _CANONICAL_SYMBOL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
+    r"[A-Z0-9]{4}\.T|"
     r"\d{3,6}\.(?:SH|SZ|BJ|SS|HK|KS|KQ)|"
     # Futu writes the venue as a PREFIX (HK.00700 / SH.600519 / US.AAPL). The
     # suffix branch above cannot see it, so a user who pasted a connector code
@@ -244,6 +245,7 @@ def _infer_venue(symbol: str) -> str | None:
         ".SZ": "shenzhen",
         ".BJ": "beijing",
         ".HK": "hong_kong",
+        ".T": "tokyo",
         ".KS": "kospi",
         ".KQ": "kosdaq",
         ".NS": "nse",
@@ -311,6 +313,7 @@ def _infer_currency(symbol: str) -> str | None:
         ".SZ": "CNY",
         ".BJ": "CNY",
         ".HK": "HKD",
+        ".T": "JPY",
         ".KS": "KRW",
         ".KQ": "KRW",
         ".NS": "INR",
@@ -470,6 +473,55 @@ class IdentityLedger:
         self._identity_required = False
         self._seed_symbols(user_message, source="user_message")
         self.persist()
+
+    def pending_resolution_query(self, arguments: Mapping[str, Any], field: str) -> str | None:
+        """Find a new unresolved dependency without changing authorization.
+
+        Never re-resolve a failed/ambiguous query automatically, settle a
+        contradiction, or authorize a second venue by rewriting the caller.
+        The existing consumer gate still decides after the resolver finishes.
+        """
+        query = arguments.get(field)
+        if not isinstance(query, str) or not query.strip():
+            return None
+        query = query.strip()
+        if self.identity_status == "conflicting":
+            return None
+        if self._match_authorized_symbol(query, self.authorized_symbols) is not None:
+            return None
+        if _query_key(query) in self._identities or self._venue_mismatch_hints(query, self.authorized_symbols):
+            return None
+        return query
+
+    def reusable_resolution(self, arguments: Mapping[str, Any]) -> str | None:
+        """Reuse an exact, settled session identity without asserting a fresh lookup.
+
+        Bare names, extra search text, contextual constraints, conflicts and
+        explicit refreshes still require the real resolver. Nothing mutates the
+        ledger: a user assertion remains a user assertion, not provider evidence.
+        """
+        if arguments.get("refresh") or self.identity_status != "locked":
+            return None
+        query = str(arguments.get("query") or "").strip()
+        symbol = _normalize_symbol(query)
+        if _scan_symbols(query) != {symbol} or query.upper() != symbol:
+            return None
+        if self.resolution_context.constraints_for(query):
+            return None
+        records = [r for r in self._identities.values() if r.symbol == symbol]
+        if not records or any(r.status != "locked" for r in records):
+            return None
+        record = records[0]
+        return json.dumps({
+            "ok": True, "source": "session_identity", "reused": True,
+            "network_lookup_performed": False,
+            "data": {"query": query, "count": 1, "candidates": [{
+                "symbol": symbol, "venue": record.venue,
+                "instrument_type": record.instrument_type, "currency": record.currency,
+                "source": record.source,
+            }], "identity_version": record.version},
+            "message": "Reused the existing identity only; no fresh listing or issuer metadata was fetched. Set refresh=true for resolver verification through the gateway, with its normal cache/freshness policy.",
+        }, ensure_ascii=False)
 
     def authorize_tool_call(
         self,

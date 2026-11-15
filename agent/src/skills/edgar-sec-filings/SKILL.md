@@ -41,8 +41,9 @@ url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=AAPL&type=
 ### Via yfinance (structured data)
 
 ```python
-import yfinance as yf
-ticker = yf.Ticker("AAPL")
+from src.data_gateway.skill_sources import yahoo_ticker
+
+ticker = yahoo_ticker("AAPL")
 
 # Financial statements (derived from 10-K/10-Q)
 income = ticker.financials           # Annual income statement

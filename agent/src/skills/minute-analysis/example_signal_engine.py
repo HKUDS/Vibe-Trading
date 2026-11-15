@@ -8,7 +8,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import requests
+from src.data_gateway.reads import public_http_get
 
 
 BASE_URL = "https://www.okx.com/api/v5"
@@ -27,7 +27,7 @@ def fetch_minute_candles(
     Returns:
         OHLCV DataFrame，index 为 datetime。None 表示获取失败。
     """
-    resp = requests.get(
+    resp = public_http_get(
         f"{BASE_URL}/market/candles",
         params={"instId": inst_id, "bar": bar, "limit": str(min(limit, 300))},
         timeout=15,

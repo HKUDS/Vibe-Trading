@@ -37,6 +37,7 @@ from src.swarm.models import (
 from src.swarm.context import WorkerContext
 from src.swarm import checkpoint
 from src.tools import build_swarm_registry
+from src.data_gateway.guidance import DATA_ACCESS_POLICY
 from src.tools.mcp import MCPRemoteTool
 from src.tools.redaction import redact_payload, redact_tool_result
 
@@ -322,16 +323,7 @@ def build_worker_prompt(
             f"## Available Skills (use load_skill to access full documentation)\n\n{skill_descriptions}"
         )
 
-    if "get_market_data" in (agent_spec.tools or []):
-        prompt_parts.append(
-            "## Market Data Tool Policy\n\n"
-            "For OHLCV price bars, recent closes, volume, technical indicators, "
-            "or return calculations, call `get_market_data` before writing raw "
-            "provider scripts. It uses the repository loader layer, normalizes "
-            "symbols, drops malformed OHLC rows, and returns strict JSON. Use "
-            "raw yfinance scripts only for fields outside OHLCV coverage, such "
-            "as fundamentals, holders, options, or corporate metadata."
-        )
+    prompt_parts.append(DATA_ACCESS_POLICY)
 
     prompt_parts.append(
         "## Research Evidence and Assumptions\n\n"

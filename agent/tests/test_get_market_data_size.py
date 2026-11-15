@@ -48,7 +48,7 @@ def _read_result(raw: str) -> dict:
     assert hashlib.sha256(saved).hexdigest() == ref["sha256"]
     payload = json.loads(saved)
     if "_preview" not in response:
-        assert {key: value for key, value in response.items() if key != "_result_file"} == payload
+        assert {key: value for key, value in response.items() if key not in {"_result_file", "_csv_file"}} == payload
     return payload
 
 

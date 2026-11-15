@@ -4,6 +4,7 @@
 基金数据获取示例脚本
 """
 
+from src.data_gateway.skill_sources import tushare_client
 import tushare as ts
 import pandas as pd
 import os
@@ -14,7 +15,7 @@ from src.config.accessor import get_env_config
 token = get_env_config().data.tushare_token or ts.get_token()
 
 # 初始化pro接口
-pro = ts.pro_api(token)
+pro = tushare_client(token)
 
 
 def get_fund_list():

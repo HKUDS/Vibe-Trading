@@ -50,8 +50,10 @@ on | float | Y | 隔夜
 **接口调用**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 df = pro.shibor(start_date='20180101', end_date='20181101')
 

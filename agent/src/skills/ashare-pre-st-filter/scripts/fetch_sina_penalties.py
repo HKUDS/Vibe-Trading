@@ -29,6 +29,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from src.data_gateway.reads import managed_reader
+
 ALLOWED_HOST = "vip.stock.finance.sina.com.cn"
 URL_TEMPLATE = (
     "https://vip.stock.finance.sina.com.cn/corp/go.php/vGP_GetOutOfLine/stockid/{code6}.phtml"
@@ -241,6 +243,7 @@ def _annotate_relevance(
     return records
 
 
+@managed_reader
 def _http_get_gbk(url: str, *, timeout: int = DEFAULT_TIMEOUT) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
