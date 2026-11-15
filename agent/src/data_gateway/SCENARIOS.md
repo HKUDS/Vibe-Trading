@@ -57,8 +57,7 @@ transport restoration, and production-owned continuation with no further resume
 API calls. Both five-year monthly symbols completed (122 verified rows), the
 first chunk was unchanged, and 64 topics plus the full scan queue remained active
 as background load. The short scan ended at 112/5,224 intentionally. This adds
-recovery coverage; it is not another full scan/hour acceptance. See VALIDATION.md
-v17 for limits, classified failures, UI/build checks and raw evidence.
+recovery coverage; it is not another full scan/hour acceptance.
 
 ### v18 follow-up: application close and reopen
 
@@ -67,8 +66,7 @@ visit. Real-source normal-close and forced-kill tests completed in 6.54 and 5.69
 seconds total; both restarted services completed acquisition about 3.6 seconds
 after launch. Each returned 183 verified monthly rows, reused the committed
 prefix, and made no source calls for manually paused or never-started jobs.
-No post-restart resume API call or resource-limit increase was used. See v18 in
-VALIDATION.md for the shutdown race found and fixed, scope and raw evidence.
+No post-restart resume API call or resource-limit increase was used.
 
 ### v19 follow-up: multi-year minute data and mixed restart load
 
@@ -79,7 +77,6 @@ calendar/status data and all HTTP pages. No committed chunk was re-fetched; only
 four uncommitted interrupted results were reacquired. The manually paused task
 made zero history calls. Every process delivered live WebSocket updates and scan
 progress. Resource limits were unchanged; scan prefixes are not full scan coverage.
-See VALIDATION.md v19 for the exact scope and evidence.
 
 ### v20 follow-up: ten separate jobs, bounded admission and fairness
 
@@ -91,5 +88,4 @@ queued and one disk-waiting job, all seven others advanced after each of three
 restarts. Verified 58/610 planned chunks (51,600 rows) across ten continuous
 prefixes, zero committed re-fetches and zero post-pause calls. This is not a full
 ten-dataset completion claim. Real WebSocket updates continued, but scanning had
-missing-symbol and 15-second-deadline retries; see v20 VALIDATION.md for retained
-errors, resource observations and exact evidence.
+missing-symbol and 15-second-deadline retries.

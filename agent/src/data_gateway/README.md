@@ -170,8 +170,8 @@ PYTHONPATH=agent python -m pytest agent/tests/test_data_gateway*.py agent/tests/
 Tests exercise bounded queues, shared subscriptions, unsubscribe cleanup, socket
 recovery, REST fallback and cessation after socket recovery, source-time ordering,
 full-expiration coverage, network-route learning/expiry, historical fallback,
-cache cleanup, timeouts and authentication. See `VALIDATION.md` for measured live
-results and remaining limits. One-machine validation is not a global network SLA.
+cache cleanup, timeouts and authentication. One-machine validation is not a
+global network SLA.
 
 ### Shared consumers (2026-11-15)
 
@@ -509,8 +509,8 @@ PYTHONPATH=agent python tools/gateway_scale_probe.py --port 8913 --hold 600 --ou
 It checks default 16-topic admission, then configures 64 topics (32 stocks × two
 intervals) and submits the actual settled SH/SZ A-share inventory in eight-symbol
 batches. It reports missing data, busy responses and refresh errors as failures.
-It also exercises the existing separate market-ranking tool. See `VALIDATION.md`
-for the failed full-scan/refresh case; a larger topic setting is not a guarantee
+It also exercises the existing separate market-ranking tool. Full-scan/refresh
+tests have encountered failures; a larger topic setting is not a guarantee
 of throughput or coverage. Cache defaults additionally cap entries at 256, and
 50 stocks × three intervals exceeds the current 64-topic configuration maximum.
 
@@ -627,7 +627,7 @@ production scheduler must finish, preserve the first chunk's hash, and expose
 122 calendar-verified rows. During recovery, 64 topics and a 5,224-symbol scan
 queue provide background load; this short test intentionally cancels the scan
 rather than claiming full scan completion. No request budgets or resource limits
-are increased. See VALIDATION.md v17 for measured results and limitations.
+are increased.
 
 ### Application restart short probe
 
@@ -731,8 +731,8 @@ The helper refuses unfinished prior jobs and records transitions, retiring only
 completed test datasets when necessary to obey the existing 32-job catalog cap.
 These are new datasets for load, not resume requests for committed chunks.
 The report reconciles scan identities/batches against queue counters and separates
-historical fallback calls. See `VALIDATION.md` v22 for the complete run, its
-transient omissions, unsupported older range and unresolved memory increase.
+historical fallback calls. Prior full-scan testing observed transient omissions,
+an unsupported older range and an unresolved memory increase.
 
 ### Attribute memory before declaring a gateway leak
 
