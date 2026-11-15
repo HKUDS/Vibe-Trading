@@ -8,6 +8,16 @@ from .service import GatewayError, GatewayBusy
 from .scheduling import deadline as request_deadline
 
 
+def _available(loader):
+    """Check configuration without letting a broken alternative poison a route."""
+    try:
+        return loader is not None and loader().is_available()
+    except Exception:
+        # Some optional SDKs initialize in their constructor and raise when
+        # credentials are absent. This is not the active source's failure.
+        return False
+
+
 def fetch_bars(gateway, *, exact_source=False, **params):
     """Overlap independent markets using existing source slots and one deadline."""
     from backtest.engines._market_hooks import _detect_market
@@ -144,16 +154,21 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
         candidates = gateway.router.order(scope, baseline) if requested == "auto" and not strict else baseline
         found = False
         diagnostics[code] = []
+        deferred_admissions = []
 
         # A single bounded half-open probe runs only after all ordinary routes.
         def route_attempts():
-            yield from ((source, False) for source in candidates)
+            yield from ((source, False, False) for source in candidates)
+            # An SDK that yielded before login has not attempted acquisition.
+            # If every alternative failed, admit that original read through its
+            # fair queue within the same request/source deadlines, once.
+            yield from ((source, False, True) for source in deferred_admissions)
             if managed:
                 probe = gateway.router.recovery_probe(scope, candidates)
                 if probe:
-                    yield probe, True
+                    yield probe, True, False
 
-        for source, recovery in route_attempts():
+        for source, recovery, wait_for_admission in route_attempts():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 diagnostics[code].append({"source": source, "reason": "request_deadline"})
@@ -181,8 +196,9 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                 ][:batch_size]
             )
             cached_batch = attempted_symbols.get((source, code))
+            admission = {"yielded": False}
 
-            def acquire(source=source, code=code, params=dict(params), batch_codes=batch_codes):
+            def acquire(source=source, code=code, params=dict(params), batch_codes=batch_codes, admission=admission):
                 def exact_loader(name):
                     cls = registry.LOADER_REGISTRY.get(name)
                     if cls is None or not cls().is_available():
@@ -203,9 +219,20 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                         min(deadline - time.monotonic(), gateway.config.source_timeout),
                         gateway.config.entry_bytes,
                     )
-                from backtest.loaders.acquisition import source_can_fallback
+                from backtest.loaders.acquisition import source_can_fallback, source_admission_yielded
 
-                token = source_can_fallback.set(requested == "auto" and not strict and len(candidates) > 1)
+                # A configured chain is not an available escape route. In
+                # particular, do not abandon the only healthy SDK session for
+                # cooled HTTP sources or an unconfigured token/file adapter.
+                alternatives = any(
+                    other != source
+                    and not gateway.router.cooling(scope, other)
+                    and (other, code) not in attempted_symbols
+                    and _available(registry.LOADER_REGISTRY.get(other))
+                    for other in candidates
+                ) if requested == "auto" and not strict and not wait_for_admission else False
+                token = source_can_fallback.set(alternatives)
+                yield_token = source_admission_yielded.set(False)
                 try:
                     return json.loads(
                         fetch_market_data_json(
@@ -220,6 +247,8 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                         )
                     )
                 finally:
+                    admission["yielded"] = source_admission_yielded.get()
+                    source_admission_yielded.reset(yield_token)
                     source_can_fallback.reset(token)
 
             try:
@@ -229,8 +258,16 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                     from .fanout import SourceCall
 
                     result = yield SourceCall(source, acquire, len(batch_codes))
-                    for symbol in batch_codes:
-                        attempted_symbols[source, symbol] = result
+                    local_busy = not result.get("_provenance") and all(
+                        (attempts := result.get("_diagnostics", {}).get(symbol, {}).get("attempts", []))
+                        and all(a.get("reason") == "source_busy" for a in attempts)
+                        for symbol in batch_codes
+                    )
+                    if local_busy and admission["yielded"] and not wait_for_admission:
+                        deferred_admissions.append(source)
+                    else:
+                        for symbol in batch_codes:
+                            attempted_symbols[source, symbol] = result
                     # A successful head symbol does not erase transport failures
                     # elsewhere in the same serial batch. Record the attempt once.
                     network_failed = any(

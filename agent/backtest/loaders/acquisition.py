@@ -6,6 +6,8 @@ import time
 source_background = ContextVar("source_background", default=False)
 # A routed read can use another adapter instead of queueing for a busy SDK.
 source_can_fallback = ContextVar("source_can_fallback", default=False)
+# Set only when an SDK voluntarily yields before any login/query is sent.
+source_admission_yielded = ContextVar("source_admission_yielded", default=False)
 source_deadline = ContextVar("source_deadline", default=None)
 
 

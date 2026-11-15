@@ -653,3 +653,38 @@ These are new datasets for load, not resume requests for committed chunks.
 The report reconciles scan identities/batches against queue counters and separates
 historical fallback calls. See `VALIDATION.md` v22 for the complete run, its
 transient omissions, unsupported older range and unresolved memory increase.
+
+### Attribute memory before declaring a gateway leak
+
+Run each catalog replay in a fresh process against a **stopped** probe catalog:
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_memory_attribution_probe.py \
+  --root ~/.vibe-trading/full-scan-OLD --mode legacy
+# Repeat with --mode closed, --mode narrow, and --mode gateway-catalog.
+```
+
+These read-only controls separate unclosed observer SQLite connections, full
+catalog materialization, narrow observer queries and the production history
+status methods. They perform no network acquisition or forced garbage collection.
+The legacy mode deliberately reproduces the old test defect; it is not a gateway
+configuration.
+
+For a real mixed short test with ten five-year jobs, sixteen topics and a scan:
+
+```sh
+PYTHONPATH=agent:tools python tools/gateway_mixed_memory_probe.py \
+  --root ~/.vibe-trading/mixed-plain-NEW --universe /tmp/real-universe.json \
+  --mode plain
+# After completion, repeat in a fresh directory with --mode instrumented.
+```
+
+Defaults are four minutes of acquisition plus three minutes of idle cleanup.
+The plain child runs the gateway development entry directly, without a tracing
+wrapper or probe endpoint. The external controller records its own memory
+separately from the server process tree and writes samples incrementally. The
+instrumented variant adds bounded identity/call traces with explicitly closed
+SQLite reads. Both retain the same production limits, deadlines and scan retry
+policy, and independently verify retained historical prefixes after shutdown.
+A short scan is intentionally cancelled; it does not certify all 5,224 symbols.
+Do not overlap an independent upstream verifier with another live experiment.

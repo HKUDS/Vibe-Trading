@@ -8,6 +8,7 @@ sources; a test-only post-fetch hold makes the crash boundary deterministic.
 import argparse
 import asyncio
 from collections import Counter
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -19,7 +20,7 @@ import time
 
 
 def snapshot(root):
-    with sqlite3.connect(root / "history/catalog.sqlite") as db:
+    with closing(sqlite3.connect(root / "history/catalog.sqlite")) as db:
         db.row_factory = sqlite3.Row
         return [dict(row) for row in db.execute("SELECT * FROM jobs")], [
             dict(row) for row in db.execute("SELECT * FROM chunks ORDER BY job,idx")

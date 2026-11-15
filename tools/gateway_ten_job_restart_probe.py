@@ -8,11 +8,13 @@ jobs are manually paused (running, executor-queued and catalog-waiting). Existin
 import argparse
 import asyncio
 from collections import Counter
+from contextlib import closing
 from datetime import datetime, timedelta
 import gzip
 import hashlib
 import json
 import os
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
@@ -65,8 +67,8 @@ def server(args):
 
     def submit(self, function, params, timeout, **kwargs):
         defaults = getattr(function, "__defaults__", None)
-        if defaults and len(defaults) == 4 and isinstance(defaults[3], list):
-            source, _, _, codes = defaults
+        if defaults and len(defaults) >= 4 and isinstance(defaults[3], list):
+            source, _, _, codes = defaults[:4]
             is_background = background.get()
 
             def traced(**arguments):
@@ -102,18 +104,19 @@ def server(args):
         counters["active"] += 1
         counters["peak"] = max(counters["peak"], counters["active"])
         counters["futures_peak"] = max(counters["futures_peak"], len(history_store._instance.futures))
-        _, chunks = snapshot(args.root)
-        already = any(
-            c["symbol"] == symbol and c["start"] == start and c["end"] == end and c["state"] == "complete"
-            for c in chunks
-        )
+        with closing(sqlite3.connect(args.root / "history/catalog.sqlite")) as db:
+            already = bool(db.execute(
+                "SELECT 1 FROM chunks WHERE symbol=? AND start=? AND end=? AND state='complete' LIMIT 1",
+                (symbol, start, end),
+            ).fetchone())
         identity = {"symbol": symbol, "start": start, "end": end}
         record({**identity, "event": "attempt", "already_complete": already})
         try:
             rows, meta = original(symbol, start, end, interval)
             record({**identity, "event": "acquired", "rows": len(rows)})
-            _, chunks = snapshot(args.root)
-            if not held and sum(c["state"] == "complete" for c in chunks) >= args.hold:
+            with closing(sqlite3.connect(args.root / "history/catalog.sqlite")) as db:
+                completed = db.execute("SELECT COUNT(*) FROM chunks WHERE state='complete'").fetchone()[0]
+            if not held and completed >= args.hold:
                 held = True
                 (args.root / f"held-{args.phase}.json").write_text(json.dumps(identity))
                 context = history_router.history_context.get() or {}

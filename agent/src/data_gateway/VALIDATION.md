@@ -2255,3 +2255,113 @@ summary/plot are preserved outside Git (no market price rows committed):
 
 Bounded real datasets remain at
 `/Users/wuhaozhe/.vibe-trading/full-scan-ten-v22-20261115/`.
+
+## v23 — admission and observer-memory diagnosis (2026-11-15, completed)
+
+The v22 trace partitions reconcile to 1,046 missing symbol attempts. Its largest
+pattern (975) is BaoStock local admission busy, unconfigured token/file sources,
+and cooled HTTP alternatives. The auto-route SDK hint used chain length as a
+proxy for a usable fallback, so it abandoned the only usable session. The fix
+checks current health/configuration, isolates optional SDK constructor failures,
+and queues a wholly local, pre-network admission once after alternatives fail.
+A source that already made a network attempt does not qualify. An explicit
+`source_admission_yielded` context marker is set only by the SDK before login;
+a bare HTTP `source_busy` report cannot authorize redispatch. Both source and
+request deadlines, source workers, scan attempts and all cache/quota caps remain
+unchanged. Regression checks count actual SDK acquisitions and preserve explicit
+source waits, healthy bypass and refusal of mixed/network-failure redispatch.
+
+The old test wrapper also read the complete catalog twice per chunk using
+`with sqlite3.connect(...)`; this commits/rolls back but does **not** close the
+connection. Replaying 401 reads of the same stopped 32-job catalog in independent
+processes, with no explicit GC or network, measured:
+
+| Read path | First → final physical footprint | Open connections at end |
+| --- | --- | --- |
+| Original test full snapshot | 21.25 → 105.58 MiB | 63 |
+| Same snapshot, explicit close | 19.16 → 21.08 MiB | 0 |
+| Fixed narrow test queries | 17.70 → 18.20 MiB | 0 |
+| Production catalog status methods | 18.00 → 18.50 MiB | 0 |
+
+Thus the measured v22 server included significant test-observer allocation; the
+external controller was already excluded, but in-server observer code was not.
+The snapshot helper now explicitly closes on success/error, and the ten-job
+wrapper uses scalar existence/count queries instead of constructing full tables.
+The short mixed driver records server and external-controller memory separately;
+its plain mode executes the unmodified development entry with no probe hooks.
+
+Two preliminary mixed candidates are retained, not passed: the first exposed an
+optional SDK constructor exception contaminating the active source's health; the
+second exposed busy admission followed by failed alternatives. Their scans had
+20 and four retries respectively. Their independent verifiers returned BaoStock
+10001001 while other live test traffic overlapped, so those prefixes are not
+counted verified. A duplicate cleanup call also met already-expired scan metadata
+(404); the new driver's stop operation is now idempotent. These are separate
+from the final production version's results below.
+
+
+### Final real mixed short test
+
+The frozen final production version ran as the **plain development server**, with
+no probe endpoint, monkeypatch or in-server observer. Four minutes of load plus
+180 seconds of idle cleanup and independent verification took 435 seconds total.
+
+| Observation | Final plain server |
+| --- | --- |
+| Workload | Ten 2021-11-14..2026-11-13 5m jobs; 16 topics; one 5,224-code queued scan |
+| Completed scan at planned stop | 252 identities / 63 batches; zero retries, zero terminal failures |
+| In-flight boundary | Four further identities were admitted when the short scan was cancelled; not counted as completed |
+| Stream deliveries | 539 SSE events, 482 WebSocket-tagged; zero source-error events or transport errors |
+| Retained history | All ten prefixes independently verified: 110 chunks, 103,872 rows |
+| Final persistent state | Ten paused jobs, all `auto_resume=0`; reservation zero |
+| History storage | 2,244,786 bytes under unchanged 256 MiB quota |
+| Server footprint peak | 121.84 MiB at 117.6 seconds, in the first half |
+| Second-half server footprint | 120.72–121.72 MiB; median 121.53 MiB |
+| External controller footprint | 34.19–34.84 MiB |
+| After idle cleanup | RAM cache zero; server footprint 121.72 MiB; RSS 31.69 MiB |
+| Controller errors | None |
+
+All retained rows were streamed from compressed files, hash checked, and compared
+with fresh independent BaoStock trading-calendar/daily-status queries and the
+exact 5m session grid. This verifies downloaded prefixes, not ten full five-year
+downloads. The short scan was deliberately cancelled; `scan_final` in the driver
+is its progress immediately before cancellation, **not** a completed full scan.
+No repeated hour-long or full-universe test is claimed.
+
+The second-half linear footprint fit is still **+0.405 MiB/minute**, and is
+preserved in `summary.json`, not rounded to zero. Here that window starts after a
+~1 MiB drop at minute two and returns within the already-observed high-water mark:
+minute-two peak 121.84 MiB exceeds minute-three peak 121.53 and minute-four peak
+121.72. The observed one-MiB band and idle plateau do not reproduce v22's growing
+quarterly peaks, but this short test cannot prove indefinite memory stability or
+attribute every native allocator page. No forced GC or allocator trimming was
+used to obtain these numbers.
+
+A preceding light-observer run exercised the same successful SDK admission path
+before the final explicit-yield guard was added. It completed 240 scan identities
+at its stop boundary; all **61** traced batches (including one finishing after
+cancellation) returned every requested identity. Maximum observed request was
+**10.937 seconds**, with zero request or source-timeout diagnostics. All ten
+historical prefixes (111 chunks / 104,640 rows) independently verified. Its raw
+report retains the obsolete double-cleanup 404; the final plain driver fixes it.
+This is corroborating path evidence, not a byte-identical network speed benchmark.
+An intermediate plain run was stopped before completion to add the explicit SDK
+marker and is not counted as a passing final run.
+
+Final verification: **186 relevant tests passed**, including SDK admission,
+foreground priority, deadlines, routing, cache/API/streams, historical recovery,
+calendar coverage, explicit SQLite close on success/error and no redispatch of
+network/HTTP-busy failures. Ruff, compilation and whitespace checks passed. Limits
+remain 8/64 MiB caches, 2 MiB entries, four source workers, sixteen pending
+requests, 6s source / 15s request deadlines, six scan attempts, one history worker,
+four history futures, 256 MiB historical quota and 32 catalog jobs.
+
+All five server/controller PID pairs from this diagnosis were independently
+confirmed absent; ports 8926 and 8927 had no listener. Final source fingerprints,
+original rejected reports, raw metadata/logs, JUnit results, memory attribution
+controls and the memory plot are outside Git at:
+
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-router-hour-20261114/v23/`.
+
+Final retained market data remains only at
+`/Users/wuhaozhe/.vibe-trading/gateway-v23-final-plain/`.

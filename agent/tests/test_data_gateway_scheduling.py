@@ -835,6 +835,10 @@ def test_auto_route_bypasses_busy_sdk_but_explicit_source_keeps_waiting(tmp_path
     from src import market_data
 
     calls = []
+    monkeypatch.setattr(registry, "LOADER_REGISTRY", {
+        "baostock": lambda: SimpleNamespace(is_available=lambda: True),
+        "healthy": lambda: SimpleNamespace(is_available=lambda: True),
+    })
     monkeypatch.setattr(registry, "_ensure_registered", lambda: None)
     monkeypatch.setattr(registry, "FALLBACK_CHAINS", {"a_share": ["baostock", "healthy"]})
     monkeypatch.setattr(registry, "get_source_order_override", lambda market: None)

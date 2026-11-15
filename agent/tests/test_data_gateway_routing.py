@@ -496,3 +496,116 @@ def test_known_healthy_fallback_precedes_unobserved_baseline():
     router.record("bars:a_share:1D", "yahoo", True, 0.1)
     assert router.order("bars:a_share:1D", ["tencent", "yahoo"]) == ["yahoo", "tencent"]
     assert router.order("bars:hk_equity:1D", ["tencent", "yahoo"]) == ["tencent", "yahoo"]
+
+
+@pytest.mark.parametrize('escape', ['cooled', 'unconfigured', 'broken', 'healthy', 'fails'])
+def test_sdk_waits_when_declared_fallbacks_are_not_available(tmp_path, monkeypatch, escape):
+    """A busy sole healthy source waits once; a real alternative still bypasses it."""
+    import threading
+    from backtest.loaders import registry, baostock_loader
+    from backtest.loaders.acquisition import source_can_fallback
+    from src import market_data
+
+    calls = []
+    sdk_network_reads = []
+    holding, release = threading.Event(), threading.Event()
+
+    def hold():
+        with baostock_loader._session_admission(2) as acquired:
+            assert acquired
+            holding.set()
+            release.wait(2)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    assert holding.wait(1)
+
+    class SDK:
+        name = 'sdk'
+        volume_units = {'us_equity': 'shares'}
+
+        def is_available(self):
+            return True
+
+        def fetch(self, codes, *args, **kwargs):
+            calls.append(('sdk', source_can_fallback.get()))
+            with baostock_loader._session_admission(1) as admitted:
+                if not admitted:
+                    self.fetch_errors = {c: 'source_busy' for c in codes}
+                    return {}
+                sdk_network_reads.append(tuple(codes))
+                return {c: pd.DataFrame({'close': [100.]}, index=pd.to_datetime(['2026-01-02'])) for c in codes}
+
+    class Alternative(SDK):
+        name = 'alternative'
+
+        def __init__(self):
+            if escape == 'broken':
+                raise RuntimeError('Optional SDK lacks credentials')
+
+        def is_available(self):
+            return escape != 'unconfigured'
+
+        def fetch(self, codes, *args, **kwargs):
+            calls.append(('alternative', source_can_fallback.get()))
+            if escape == 'fails':
+                raise ConnectionError('Alternative failed before usable data')
+            return {c: pd.DataFrame({'close': [101.]}, index=pd.to_datetime(['2026-01-02'])) for c in codes}
+
+    monkeypatch.setattr(registry, '_ensure_registered', lambda: None)
+    monkeypatch.setattr(registry, 'refresh_source_order_overrides', lambda: None)
+    monkeypatch.setattr(registry, 'LOADER_REGISTRY', {'sdk': SDK, 'alternative': Alternative})
+    monkeypatch.setattr(registry, 'FALLBACK_CHAINS', {'us_equity': ['sdk', 'alternative']})
+    monkeypatch.setattr(market_data, 'detect_source', lambda code: 'sdk')
+    gateway = MarketDataGateway(Config(tmp_path))
+    if escape == 'cooled':
+        gateway.router.record('bars:us_equity:1D', 'alternative', False, .01)
+    timer = threading.Timer(.15, release.set)
+    timer.start()
+    try:
+        value = gateway.bars(codes=['AAPL.US'], start_date='2026-01-02', end_date='2026-01-02')
+        assert value['ok'], value
+        assert len(sdk_network_reads) == (0 if escape == 'healthy' else 1)
+        assert calls[0] == ('sdk', escape in {'healthy', 'fails'})
+        assert [c[0] for c in calls] == (['sdk', 'alternative', 'sdk'] if escape == 'fails' else ['sdk', 'alternative'] if escape == 'healthy' else ['sdk'])
+        if escape == 'fails':
+            assert calls[-1] == ('sdk', False)
+            assert not gateway.router.cooling('bars:us_equity:1D', 'sdk')
+        assert value['data']['_provenance']['AAPL.US']['source'] == ('alternative' if escape == 'healthy' else 'sdk')
+    finally:
+        release.set()
+        timer.join()
+        thread.join()
+        gateway.close()
+
+
+@pytest.mark.parametrize('reasons', [['source_busy'], ['source_busy', 'network_failure']])
+def test_failed_network_attempt_is_never_reissued_as_deferred_admission(tmp_path, monkeypatch, reasons):
+    """Only wholly local admission failures qualify; mixed/network failures do not."""
+    import json
+    from backtest.loaders import registry
+    from src import market_data
+
+    calls = []
+    monkeypatch.setattr(registry, '_ensure_registered', lambda: None)
+    monkeypatch.setattr(registry, 'get_source_order_override', lambda market: None)
+    monkeypatch.setattr(registry, 'LOADER_REGISTRY', {
+        source: lambda: SimpleNamespace(is_available=lambda: True) for source in ('first', 'second')
+    })
+    monkeypatch.setattr(registry, 'FALLBACK_CHAINS', {'us_equity': ['first', 'second']})
+    monkeypatch.setattr(market_data, 'detect_source', lambda code: 'first')
+
+    def fetch(**params):
+        calls.append(params['source'])
+        return json.dumps({'_diagnostics': {c: {'attempts': [
+            {'reason': reason} for reason in reasons
+        ]} for c in params['codes']}})
+
+    monkeypatch.setattr(market_data, 'fetch_market_data_json', fetch)
+    gateway = MarketDataGateway(Config(tmp_path))
+    try:
+        value = gateway.bars(codes=['AAPL.US'], start_date='2026-01-02', end_date='2026-01-02')
+        assert not value['ok']
+        assert calls == ['first', 'second']
+    finally:
+        gateway.close()
