@@ -536,7 +536,7 @@ class NapcatChannel(BaseChannel):
                     url,
                 )
                 return None
-        except (TypeError, KeyError):
+        except (TypeError, KeyError, ValueError):
             pass
 
         try:
