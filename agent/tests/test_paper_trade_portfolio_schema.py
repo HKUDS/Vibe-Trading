@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Literal, TypeAlias, assert_never
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
@@ -30,6 +31,56 @@ from src.tools.paper_trade.portfolio.schema import (
     parse_portfolio_request,
 )
 from tests.paper_trade_portfolio_fixture import valid_portfolio_payload as _valid_payload
+
+MIRROR_CONTRACT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "schema"
+    / "tool_contracts"
+    / "paper_trade_step-v2.0.json"
+)
+BoundaryDefect: TypeAlias = Literal[
+    "benchmark_start_eur",
+    "unused_eur_gbp_fx",
+    "epoch_planning_at",
+    "epoch_valuation_at",
+    "epoch_session_as_of",
+    "epoch_fx_as_of",
+    "epoch_benchmark_observed_at",
+    "empty_buckets",
+]
+
+
+def _mutate_boundary_defect(payload: dict, case: BoundaryDefect) -> None:
+    match case:
+        case "benchmark_start_eur":
+            payload["benchmark"]["start"]["currency"] = "EUR"
+        case "unused_eur_gbp_fx":
+            payload["fx_snapshots"].append(
+                {
+                    "rate_id": "unused-eur-gbp",
+                    "from": "EUR",
+                    "to": "GBP",
+                    "rate": "1.17",
+                    "as_of": "2026-11-13T11:00:00+00:00",
+                    "source": "unused-fix",
+                }
+            )
+        case "epoch_planning_at":
+            payload["planning_at"] = 0
+        case "epoch_valuation_at":
+            payload["valuation_at"] = 0
+        case "epoch_session_as_of":
+            payload["sessions"][0]["as_of"] = 0
+        case "epoch_fx_as_of":
+            payload["fx_snapshots"][0]["as_of"] = 0
+        case "epoch_benchmark_observed_at":
+            payload["benchmark"]["start"]["observed_at"] = 0
+        case "empty_buckets":
+            payload["portfolio_state"]["buckets"] = []
+            payload["orders"] = []
+            payload["fx_conversions"] = []
+        case unreachable:
+            assert_never(unreachable)
 
 
 def test_parse_three_market_portfolio_request() -> None:
@@ -66,6 +117,76 @@ def _assert_invalid(
     assert error.code == "INVALID_REQUEST"
     assert (error.reason, error.path, error.bucket_id) == (reason, path, bucket_id)
     assert str(error) == f"INVALID_REQUEST:{reason}:{path}"
+
+
+@pytest.mark.parametrize(
+    ("case", "reason", "path", "schema_path"),
+    [
+        (
+            "benchmark_start_eur",
+            "invalid_field",
+            "benchmark.start.currency",
+            ("benchmark", "start", "currency"),
+        ),
+        (
+            "unused_eur_gbp_fx",
+            "invalid_field",
+            "fx_snapshots[2].from",
+            ("fx_snapshots", 2, "from"),
+        ),
+        ("epoch_planning_at", "invalid_timestamp", "planning_at", ("planning_at",)),
+        ("epoch_valuation_at", "invalid_timestamp", "valuation_at", ("valuation_at",)),
+        (
+            "epoch_session_as_of",
+            "invalid_timestamp",
+            "sessions[0].as_of",
+            ("sessions", 0, "as_of"),
+        ),
+        (
+            "epoch_fx_as_of",
+            "invalid_timestamp",
+            "fx_snapshots[0].as_of",
+            ("fx_snapshots", 0, "as_of"),
+        ),
+        (
+            "epoch_benchmark_observed_at",
+            "invalid_timestamp",
+            "benchmark.start.observed_at",
+            ("benchmark", "start", "observed_at"),
+        ),
+        (
+            "empty_buckets",
+            "invalid_field",
+            "portfolio_state.buckets",
+            ("portfolio_state", "buckets"),
+        ),
+    ],
+)
+def test_parser_and_contracts_reject_the_same_boundary_defects(
+    case: BoundaryDefect,
+    reason: str,
+    path: str,
+    schema_path: tuple[str | int, ...],
+) -> None:
+    # Given one verifier-confirmed mutation of an otherwise valid request.
+    payload = _valid_payload()
+    _mutate_boundary_defect(payload, case)
+
+    # When / Then the parser rejects it with stable machine-readable details.
+    _assert_invalid(payload, reason=reason, path=path)
+
+    # And both independently reachable Draft 2020-12 contracts reject the same field.
+    for contract_path in (CONTRACT_PATH, MIRROR_CONTRACT_PATH):
+        document = json.loads(contract_path.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(
+            document["schemas"]["request"],
+            format_checker=FormatChecker(),
+        )
+        errors = list(validator.iter_errors(payload))
+        assert any(tuple(error.absolute_path) == schema_path for error in errors), (
+            contract_path,
+            errors,
+        )
 
 
 @pytest.mark.parametrize("field", ["mode", "schema_version"])
@@ -283,18 +404,20 @@ def test_explicit_orders_cannot_set_a_nonzero_rebalance_band() -> None:
 
 
 def test_packaged_contract_validates_the_three_market_request() -> None:
-    # Given the independently authored three-market fixture and packaged JSON.
+    # Given the independently authored three-market fixture and both contract copies.
     payload = _valid_payload()
-    document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
-    request_schema = document["schemas"]["request"]
-    Draft202012Validator.check_schema(request_schema)
 
-    # When a real Draft 2020-12 validator checks formats and values.
-    validator = Draft202012Validator(request_schema, format_checker=FormatChecker())
-    errors = list(validator.iter_errors(payload))
+    for contract_path in (CONTRACT_PATH, MIRROR_CONTRACT_PATH):
+        document = json.loads(contract_path.read_text(encoding="utf-8"))
+        request_schema = document["schemas"]["request"]
+        Draft202012Validator.check_schema(request_schema)
 
-    # Then no schema or format violation remains.
-    assert errors == []
+        # When a real Draft 2020-12 validator checks formats and values.
+        validator = Draft202012Validator(request_schema, format_checker=FormatChecker())
+        errors = list(validator.iter_errors(payload))
+
+        # Then no schema or format violation remains in either copy.
+        assert errors == [], (contract_path, errors)
 
 
 def test_packaged_contract_and_published_mirror_are_byte_identical() -> None:

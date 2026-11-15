@@ -122,6 +122,9 @@ def _preflight(payload: JsonValue) -> None:
         _reject("invalid_mode", "mode")
     if request.get("schema_version") != "pt-v2.0":
         _reject("invalid_schema_version", "schema_version")
+    base_currency = request.get("base_currency")
+    if isinstance(base_currency, str) and base_currency not in set(_CANONICAL_CURRENCIES.values()):
+        _reject("invalid_base_currency", "base_currency")
     for field in _LEGACY_FIELDS:
         if field in request:
             _reject("legacy_field_forbidden", field)
