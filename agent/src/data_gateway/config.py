@@ -1,13 +1,14 @@
 """Resource limits for the local data gateway, independent of runtime repo paths."""
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
+
+from src.config.accessor import get_env_value
 
 
 def number(name: str, default: float, minimum: float, maximum: float) -> float:
     """Read a bounded numeric environment setting, refusing invalid values."""
-    value = float(os.getenv("VIBE_GATEWAY_" + name, str(default)))
+    value = float(get_env_value("VIBE_GATEWAY_" + name, str(default)))
     if not minimum <= value <= maximum:
         raise ValueError(f"VIBE_GATEWAY_{name} must be between {minimum} and {maximum}")
     return value
@@ -50,7 +51,7 @@ class Config:
     def from_env(cls) -> "Config":
         """Resolve explicit limits. Cache never follows VIBE_TRADING_HOME."""
         directory = (
-            Path(os.getenv("VIBE_GATEWAY_CACHE_DIR", str(Path.home() / ".vibe-trading/cache/gateway")))
+            Path(get_env_value("VIBE_GATEWAY_CACHE_DIR", str(Path.home() / ".vibe-trading/cache/gateway")))
             .expanduser()
             .resolve()
         )
@@ -59,7 +60,7 @@ class Config:
         if directory == repo or repo in directory.parents:
             raise ValueError("Gateway cache must be outside the repository")
         sources = tuple(
-            x.strip() for x in os.getenv("VIBE_GATEWAY_OPTIONS_SOURCES", "cboe,yahoo").split(",") if x.strip()
+            x.strip() for x in get_env_value("VIBE_GATEWAY_OPTIONS_SOURCES", "cboe,yahoo").split(",") if x.strip()
         )
         if not sources or any(s not in {"yahoo", "cboe"} for s in sources):
             raise ValueError("Gateway options sources must contain yahoo and/or cboe")

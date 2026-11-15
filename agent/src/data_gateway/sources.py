@@ -3,10 +3,11 @@
 from datetime import datetime, timezone
 import json
 import math
-import os
 import re
 import time
 from typing import Any
+
+from src.config.accessor import get_env_value
 
 from .service import GatewayError
 
@@ -139,7 +140,7 @@ def cboe_options(ticker: str, expiration: int | None = None, full: bool = False)
     # URL host is fixed; caller validation plus this check excludes path injection.
     if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,15}", ticker):
         raise GatewayError("Invalid underlying")
-    timeout = float(os.getenv("VIBE_GATEWAY_HTTP_TIMEOUT", "5"))
+    timeout = float(get_env_value("VIBE_GATEWAY_HTTP_TIMEOUT", "5"))
     if not 0.1 <= timeout <= 20:
         raise ValueError("VIBE_GATEWAY_HTTP_TIMEOUT must be between .1 and 20")
     with requests.get(

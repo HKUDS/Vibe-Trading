@@ -5,7 +5,11 @@ Production mounts register_gateway_routes with the existing require_auth hook.
 """
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
+
+from src.config.accessor import get_env_value
+
 from . import get_gateway
 from .api import register_gateway_routes
 
@@ -30,7 +34,6 @@ def loopback_only(request: Request):
 register_gateway_routes(app, loopback_only)
 
 if __name__ == "__main__":
-    import os
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("VIBE_GATEWAY_PORT", "8910")))
+    uvicorn.run(app, host="127.0.0.1", port=int(get_env_value("VIBE_GATEWAY_PORT", "8910")))

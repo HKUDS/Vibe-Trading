@@ -14,6 +14,8 @@ import threading
 import time
 import uuid
 
+from src.config.accessor import get_env_value
+
 from .config import number
 
 
@@ -814,7 +816,7 @@ _instance_lock = threading.Lock()
 
 def history_directory():
     """Resolve the shared on-disk store independently of the application's cwd."""
-    override = os.getenv("VIBE_GATEWAY_HISTORY_DIR")
+    override = get_env_value("VIBE_GATEWAY_HISTORY_DIR")
     if override:
         return Path(override)
     root = Path.home() / ".vibe-trading"
