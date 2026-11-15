@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const electronRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageInfo = JSON.parse(await readFile(path.join(electronRoot, "package.json"), "utf8"));
+const updateArtifactUrl = process.env.VIBE_TRADING_DESKTOP_UPDATE_ARTIFACT_URL;
+if (packageInfo.desktopUpdates?.feedUrl && !updateArtifactUrl) {
+  throw new Error("An update-enabled build requires VIBE_TRADING_DESKTOP_UPDATE_ARTIFACT_URL for its release manifest");
+}
 const signaturePowerShell = resolveSignaturePowerShell();
 const certificate = (process.env.WIN_CSC_LINK ?? process.env.CSC_LINK)?.trim();
 const password = process.env.WIN_CSC_KEY_PASSWORD ?? process.env.CSC_KEY_PASSWORD;
@@ -75,6 +80,23 @@ await writeFile(
   `${installerHash}  ${path.basename(installers[0])}\n`,
   "ascii",
 );
+if (updateArtifactUrl) {
+  const { verifyWindowsUpdateCandidate } = await import("../dist/update-verification.js");
+  const verified = await verifyWindowsUpdateCandidate({
+    artifactPath: installers[0], version: packageInfo.version, expectedSha256: installerHash,
+  }, {
+    currentVersion: "0.0.0",
+    allowedPublisherCertificateSha256: packageInfo.desktopUpdates.allowedPublisherCertificateSha256,
+  });
+  if (!verified.accepted) throw new Error(verified.detail);
+  for (const value of [updateArtifactUrl, packageInfo.desktopUpdates.feedUrl]) {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) throw new Error("Update URLs must use HTTPS without credentials");
+  }
+  await writeFile(path.join(releaseDirectory, "desktop-update.json"), JSON.stringify({
+    version: packageInfo.version, url: updateArtifactUrl, sha256: installerHash,
+  }, null, 2) + "\n");
+}
 console.log(`Signed installer ready: ${installers[0]}`);
 console.log(`SHA-256: ${installerHash}`);
 

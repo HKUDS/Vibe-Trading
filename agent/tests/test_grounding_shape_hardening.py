@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from tests.grounding_parameter_helpers import declared_parameter
-from src.agent.grounding.figures import Figure, parse_figures_block, scan_figures, strip_figures_block
+from evals.grounding.figures import Figure, parse_figures_block, scan_figures
 
 pytestmark = pytest.mark.unit
 
@@ -281,8 +281,6 @@ def test_a_stray_opener_cannot_swallow_the_declaration_block(tmp_path: Path) -> 
 
     assert _values(refused) == ["0.888"]
     assert passed.valid, passed.issues
-    assert passed.released_text == "```python\n" + HDR
-    assert "observed" not in refused.released_text
 
 
 def test_a_figures_fence_quoted_inside_a_longer_fence_declares_nothing() -> None:
@@ -499,16 +497,12 @@ def test_every_figures_block_declares_and_every_one_is_stripped(tmp_path: Path) 
     assert block.span == (len(HDR) + 2, len(HDR) + len(first))
     assert len(block.spans) == 2
 
-    stripped = strip_figures_block(draft, block)
-    assert stripped == HDR + "\n\n第一档 0.646 元。"
 
     ledger = _ledger(tmp_path)
     passed = ledger.validate_final_answer(HDR + declared_parameter("97%") + _block(HDR_ROW) + "\n\n第一档 0.646 元。" + _block("0.646 | derived | 0.666 × 0.97 | c1"))
     refused = ledger.validate_final_answer(HDR + declared_parameter("97%") + _block(HDR_ROW) + "\n\n第一档 0.700 元。" + _block("0.700 | derived | 0.666 × 0.97 | c1"))
     assert passed.valid, passed.issues
-    assert passed.released_text == HDR + "\n\nChosen coefficient: 97%." + "\n\n第一档 0.646 元。"
     assert _values(refused) == ["0.700"]
-    assert "```" not in refused.released_text
 
 
 def test_a_second_figures_opener_ends_an_unclosed_first_block() -> None:
@@ -518,13 +512,6 @@ def test_a_second_figures_opener_ends_an_unclosed_first_block() -> None:
     assert block.malformed == ()
 
 
-def test_streaming_holds_back_from_the_first_block() -> None:
-    lead = "先说结论。"
-    text = lead + _block(HDR_ROW) + "\n\n更多。" + _block("3 | count | n")
-
-    assert GroundingLedger.streamable_length(text) == len(lead) + 2
-    # A measurement before the block holds the stream earlier still.
-    assert GroundingLedger.streamable_length(HDR + _block(HDR_ROW)) == HDR.index("0.666")
 
 
 # ---------------------------------------------------------------------------
@@ -575,81 +562,16 @@ def test_yen_and_won_are_currency_marks(text: str, shape: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_a_cut_figure_is_also_cut_where_a_code_fence_restates_it(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = (
-        HDR + " 建议买入价 2.50 元。\n\n```python\nentry = 2.50\nalso = 2" + BACKSLASH
-        + ".50\nstop = 0.60\n```\n" + _block(HDR_ROW, "2.50 | proposed | entry")
-    )
-
-    released = ledger.redacted_release(draft, ledger.validate_final_answer(draft))
-
-    assert released is not None
-    assert "2.50" not in released and "2" + BACKSLASH + ".50" not in released
-    assert "stop = 0.60" in released
-    assert "最新收盘 0.666 元" in released
-    assert "※ 略去 3 处" in released
-    assert ledger.figures_removed == 3
 
 
-def test_a_malformed_block_is_dropped_and_the_draft_is_cut_as_usual(tmp_path: Path) -> None:
-    """An unreadable declaration used to force the canned fallback."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 0.65 元，止损 2.50 元。" + _block(HDR_ROW, "0.65 | proposed | entry", "2.50 is my stop")
-
-    validation = ledger.validate_final_answer(draft)
-    assert "figures_block_malformed" in [issue["code"] for issue in validation.issues]
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "最新收盘 0.666 元" in released
-    # Without the block, 0.65 is an observed claim like any other and is cut too.
-    assert "0.65" not in released and "2.50" not in released
-    assert "figures" not in released and "observed" not in released
-    assert "※ 略去 2 处" in released
 
 
-def test_a_malformed_line_with_nothing_to_cut_releases_the_checked_text(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = HDR + _block(HDR_ROW, "see above")
-
-    released = ledger.redacted_release(draft, ledger.validate_final_answer(draft))
-
-    assert released == HDR
 
 
-def test_a_malformed_block_does_not_release_what_still_fails(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = "600000.SH 最新收盘 9.99 元。" + _block("9.99 | observed | close", "see above")
-
-    assert ledger.redacted_release(draft, ledger.validate_final_answer(draft)) is None
 
 
-def test_a_flagged_span_that_is_not_a_located_figure_refuses_release(tmp_path: Path) -> None:
-    """The cut anchors on a figure the scan found; any other span fails closed."""
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议买入价 2.50 元。"
-    validation = ledger.validate_final_answer(draft)
-    [issue] = validation.issues
-    shifted = dict(issue, span=[issue["span"][0] - 2, issue["span"][1]])
-
-    assert ledger.redacted_release(draft, validation) is not None
-    assert ledger.redacted_release(draft, type(validation)(False, [shifted])) is None
-    # A locatable issue beside it does not carry the unlocatable one through.
-    assert ledger.redacted_release(draft, type(validation)(False, [issue, shifted])) is None
 
 
-def test_an_undeclared_figure_on_the_last_draft_is_cut_not_fallen_back(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 建议持有 3.5 个月。" + _block(HDR_ROW)
-
-    validation = ledger.validate_final_answer(draft)
-    assert [issue["code"] for issue in validation.issues] == ["figure_undeclared"]
-    released = ledger.redacted_release(draft, validation)
-
-    assert released is not None
-    assert "3.5" not in released and "最新收盘 0.666 元" in released
-    assert "※ 略去 1 处" in released
 
 
 # ---------------------------------------------------------------------------
@@ -657,17 +579,6 @@ def test_an_undeclared_figure_on_the_last_draft_is_cut_not_fallen_back(tmp_path:
 # ---------------------------------------------------------------------------
 
 
-def test_a_three_character_currency_word_is_money_and_a_four_character_run_is_not(
-    tmp_path: Path,
-) -> None:
-    assert _shapes("报价 100 人民币")["100"] == "measured"
-    assert _shapes("报价 100 人民币元宵")["100"] == "bare"
-
-    ledger = _ledger(tmp_path)
-    draft = HDR + " 另报价 100 人民币。"
-    released = ledger.redacted_release(draft, ledger.validate_final_answer(draft))
-    assert released is not None
-    assert "另报价（略※）。" in released and "人民币" not in released
 
 
 def test_a_line_opening_with_a_figure_is_not_an_ordinal(tmp_path: Path) -> None:

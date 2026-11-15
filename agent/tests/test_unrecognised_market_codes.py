@@ -34,7 +34,7 @@ _MESSAGE_EXAMPLES = (
     "codes, refused",
     [
         (["BHP.AX"], "BHP.AX"),
-        (["local:7203.T"], "local:7203.T"),
+        (["local:BHP.AX"], "local:BHP.AX"),
         (["AAPL.US", "BRK.B"], "BRK.B"),
         (["00700"], "00700"),
         (["60051.SS"], "60051.SS"),

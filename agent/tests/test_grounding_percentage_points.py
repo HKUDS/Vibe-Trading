@@ -23,8 +23,8 @@ import tempfile
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.figures import parse_figures_block, scan_figures
+from evals.grounding import GroundingLedger
+from evals.grounding.figures import parse_figures_block, scan_figures
 
 
 def _shapes(text: str) -> list[str]:

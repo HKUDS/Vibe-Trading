@@ -7,6 +7,7 @@ from importlib.metadata import Distribution
 from subprocess import CompletedProcess
 
 import pytest
+from src import update as update_core
 
 from cli.commands import update
 
@@ -18,7 +19,7 @@ def install_metadata(tmp_path, monkeypatch):
         metadata.mkdir(exist_ok=True)
         (metadata / "METADATA").write_text("Name: vibe-trading-ai\nVersion: 0.1\n")
         (metadata / "direct_url.json").write_text(json.dumps(direct_url))
-        monkeypatch.setattr(update, "distribution", lambda _: Distribution.at(metadata))
+        monkeypatch.setattr(update_core, "distribution", lambda _: Distribution.at(metadata))
 
     return install
 

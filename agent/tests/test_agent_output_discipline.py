@@ -1,22 +1,4 @@
-"""Output discipline: the prompt text, the gate behind it, and skill disclosure.
-
-Two defects motivate this file. The agent has been observed overwriting a value
-a tool returned with one it remembered, and naming instruments no tool in the
-session ever returned. The Output Principles answer both, and they are literal
-template text so that no per-session input can edit them.
-
-Prompt text is an instruction, not a gate. The middle section covers the part of
-that contract ``src.agent.grounding`` decides mechanically before an answer is
-released, and — just as importantly — pins the false-positive envelope, because
-a gate that rejects correct answers costs three LLM round trips and then hands
-the user a fallback.
-
-The last section covers the load_skill envelope. Measured on the bundled corpus:
-88 bundled skills, 35 of which cannot be delivered in one tool result of
-TOOL_RESULT_LIMIT (10,000) characters, worst case ``tushare`` at 102,890 — 9.1%
-of it in one page. Those 35 now open with their heading map so the agent can
-name what it wants; the other 53 are still returned whole in one call.
-"""
+"""Research prompts and offline evidence diagnostics, without delivery gates."""
 
 from __future__ import annotations
 
@@ -26,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from src.agent.context import _SYSTEM_PROMPT, ContextBuilder
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import (
     SkillsLoader,
@@ -250,50 +232,6 @@ class TestPrincipleOneReachesEveryTool:
         assert generic.valid is True, generic.issues
 
 
-class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
-    """A figure needs an instrument the session actually touched (#886/#887)."""
-
-    def test_a_figure_on_an_unhandled_ticker_is_rejected(self, tmp_path: Path) -> None:
-        result = _ledger(tmp_path).validate_final_answer(
-            f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。"
-        )
-
-        assert result.valid is False
-        codes = [issue["code"] for issue in result.issues]
-        assert "unsourced_symbol_figures" in codes
-        assert any(issue.get("symbol") == "600519.SH" for issue in result.issues)
-
-    def test_a_table_row_counts_as_attaching_a_figure(self, tmp_path: Path) -> None:
-        result = _ledger(tmp_path).validate_final_answer(
-            "| 代码 | 收盘 |\n|---|---|\n| 600519.SH | 1680.0 |"
-        )
-
-        assert result.valid is False
-        assert "unsourced_symbol_figures" in [issue["code"] for issue in result.issues]
-
-    def test_a_failed_call_does_not_launder_the_ticker(self, tmp_path: Path) -> None:
-        ledger = _ledger(tmp_path)
-        ledger.ingest_tool_result(
-            tool_name="get_market_data",
-            arguments={"symbols": ["FAKE.US"]},
-            result=json.dumps({"ok": False, "error": "unknown symbol FAKE.US"}),
-            call_id="miss",
-            success=False,
-        )
-
-        result = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\nFAKE.US 收盘 9.9。")
-
-        assert result.valid is False
-        assert "unsourced_symbol_figures" in [issue["code"] for issue in result.issues]
-
-    def test_the_correction_names_the_way_out(self, tmp_path: Path) -> None:
-        ledger = _ledger(tmp_path)
-        validation = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。")
-
-        prompt = ledger.correction_prompt(validation)
-
-        assert "600519.SH" in prompt
-        assert "not retrieved" in prompt
 
 
 class TestTheGateDoesNotKillCorrectAnswers:
@@ -732,12 +670,13 @@ class TestTheSemanticPrinciplesStayInThePrompt:
         ):
             assert principle in prompt
 
-    def test_the_prompt_tells_the_model_which_ones_are_enforced(self) -> None:
-        """The model can only satisfy a gate it has been told about."""
+    def test_the_prompt_explains_evidence_without_a_hidden_protocol(self) -> None:
+        """Evidence guidance does not promise automatic report censorship."""
         prompt = _rendered_prompt()
 
-        assert "checked mechanically before your answer is released" in prompt
-        assert "figures to a symbol this session never handled" in prompt
+        assert "Explain evidence and assumptions" in prompt
+        assert "checked mechanically before your answer is released" not in prompt
+        assert "```figures" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -1123,3 +1062,40 @@ class TestBundledCorpusActuallyNeedsThis:
         ]
 
         assert oversized == []
+
+
+class TestPrincipleThreeBlocksFiguresOnUnhandledSymbols:
+    """A figure needs an instrument the session actually touched (#886/#887)."""
+
+    def test_a_figure_on_an_unhandled_ticker_is_rejected(self, tmp_path: Path) -> None:
+        result = _ledger(tmp_path).validate_final_answer(
+            f"{_GROUNDED_ANSWER}\n600519.SH 收盘 1680.0。"
+        )
+
+        assert result.valid is False
+        codes = [issue["code"] for issue in result.issues]
+        assert "unsourced_symbol_figures" in codes
+        assert any(issue.get("symbol") == "600519.SH" for issue in result.issues)
+
+    def test_a_table_row_counts_as_attaching_a_figure(self, tmp_path: Path) -> None:
+        result = _ledger(tmp_path).validate_final_answer(
+            "| 代码 | 收盘 |\n|---|---|\n| 600519.SH | 1680.0 |"
+        )
+
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [issue["code"] for issue in result.issues]
+
+    def test_a_failed_call_does_not_launder_the_ticker(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path)
+        ledger.ingest_tool_result(
+            tool_name="get_market_data",
+            arguments={"symbols": ["FAKE.US"]},
+            result=json.dumps({"ok": False, "error": "unknown symbol FAKE.US"}),
+            call_id="miss",
+            success=False,
+        )
+
+        result = ledger.validate_final_answer(f"{_GROUNDED_ANSWER}\nFAKE.US 收盘 9.9。")
+
+        assert result.valid is False
+        assert "unsourced_symbol_figures" in [issue["code"] for issue in result.issues]

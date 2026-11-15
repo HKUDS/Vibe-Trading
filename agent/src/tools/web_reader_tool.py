@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import requests
 
 from src.agent.progress import emit_progress
+from src.data_gateway.reads import managed_reader, public_data_read
 from src.agent.tools import BaseTool
 from src.tools._arguments import boolean_argument
 from src.security.scanner import with_security_warnings
@@ -59,6 +60,7 @@ def _url_allowed(url: str) -> tuple[bool, str]:
     return True, ""
 
 
+@managed_reader
 def read_url(url: str, no_cache: bool = False) -> str:
     """Fetch web page content via the Jina Reader API.
 
@@ -161,6 +163,7 @@ class WebReaderTool(BaseTool):
     # remains the explicit freshness escape hatch and bypasses that replay.
     replay_after_compaction = True
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs) -> str:
         """Fetch web page."""
         try:

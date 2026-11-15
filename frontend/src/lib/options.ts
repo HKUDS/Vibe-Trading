@@ -24,7 +24,26 @@ export interface OptionLeg {
   premium?: number;
 }
 
+export interface PayoffAlternative { label: string; legs: OptionLeg[] }
+
+export interface PayoffComparison {
+  left_label: string;
+  right_label: string;
+  status: "ok" | "unavailable";
+  reason?: string;
+  metrics?: Record<string, {
+    status?: "unavailable";
+    reason?: string;
+    left_decimal?: number;
+    right_decimal?: number;
+    relation?: "higher" | "lower" | "equal";
+    difference_percentage_points?: number;
+  }>;
+}
+
 export interface OptionsPayoffRequest {
+  label?: string;
+  alternatives?: PayoffAlternative[];
   legs: OptionLeg[];
   entry_spot: number;
   expiry_days: number;
@@ -34,6 +53,9 @@ export interface OptionsPayoffRequest {
   volatility?: number;
   /** Contract multiplier, default 1. */
   multiplier?: number;
+  /** Signed stock units per multiplier; 1 covers one option contract. */
+  underlying_qty?: number;
+  price_as_of?: string;
   /** Fraction in [0, 1), default 0.001. */
   commission_rate?: number;
   spot_min?: number;
@@ -42,6 +64,7 @@ export interface OptionsPayoffRequest {
   spot_points?: number;
   /** IV scenarios as annualized fractions (max 9). */
   scenario_iv_values?: number[];
+  expiry_spot_values?: number[];
 }
 
 export interface BreakevenInterval {
@@ -83,10 +106,12 @@ export interface ScenarioGrid {
 }
 
 export interface OptionsPayoffResponse {
+  comparisons?: PayoffComparison[];
   status: "ok";
   inputs: Record<string, unknown>;
   summary: OptionsPayoffSummary;
   greeks: OptionsGreeks;
+  expiry_scenarios?: Array<{ spot: number; pnl: number; return_fraction: number | null; return_percent: number | null }>;
   expiry_curve: ExpiryCurve;
   scenario_grid: ScenarioGrid;
   limitations: string[];
@@ -183,8 +208,10 @@ export interface OptionsLabParams {
   risk_free_rate_pct: number;
   /** Contract multiplier; 100 = standard US equity contract. */
   multiplier: number;
+  underlying_qty?: number;
   /** Percent: 0.1 = 0.1%. Sent as 0.001. */
   commission_rate_pct: number;
+  expiry_spots_text?: string;
 }
 
 export const DEFAULT_PARAMS: OptionsLabParams = {
@@ -193,6 +220,7 @@ export const DEFAULT_PARAMS: OptionsLabParams = {
   volatility_pct: 30,
   risk_free_rate_pct: 5,
   multiplier: 100,
+  underlying_qty: 0,
   commission_rate_pct: 0.1,
 };
 
@@ -351,6 +379,7 @@ export function buildPayoffRequest(
   if (!Number.isFinite(p.volatility_pct) || p.volatility_pct <= 0) return null;
   if (!Number.isFinite(p.risk_free_rate_pct)) return null;
   if (!Number.isFinite(p.multiplier) || p.multiplier <= 0) return null;
+  if (!Number.isFinite(p.underlying_qty ?? 0)) return null;
   if (!Number.isFinite(p.commission_rate_pct) || p.commission_rate_pct < 0 || p.commission_rate_pct >= 100) {
     return null;
   }
@@ -361,7 +390,11 @@ export function buildPayoffRequest(
     if (!Number.isInteger(leg.qty) || leg.qty === 0) return null;
     if (leg.premium !== undefined && (!Number.isFinite(leg.premium) || leg.premium < 0)) return null;
   }
+  const text = (p.expiry_spots_text ?? "").trim();
+  const expirySpots = text ? text.split(/[,，]/).map((value) => value.trim()) : [];
+  if (expirySpots.length > 501 || expirySpots.some((value) => value === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) return null;
   return {
+    ...(expirySpots.length ? { expiry_spot_values: expirySpots.map(Number) } : {}),
     legs: legs.map((l) => ({
       option_type: l.option_type,
       strike: l.strike,
@@ -373,6 +406,7 @@ export function buildPayoffRequest(
     risk_free_rate: pctToFraction(p.risk_free_rate_pct),
     volatility: pctToFraction(p.volatility_pct),
     multiplier: p.multiplier,
+    underlying_qty: p.underlying_qty ?? 0,
     commission_rate: pctToFraction(p.commission_rate_pct),
   };
 }

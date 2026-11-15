@@ -268,7 +268,7 @@ def render_config(
         "start_date": start_date,
         "end_date": end_date,
         "interval": interval,
-        "initial_capital": initial_capital,
+        "initial_cash": initial_capital,
         "engine": "daily",
         "shadow_id": profile.shadow_id,
     }

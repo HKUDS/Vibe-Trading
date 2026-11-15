@@ -12,6 +12,7 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools._arguments import boolean_argument
 from src.config.accessor import get_env_config
@@ -1089,6 +1090,7 @@ class TaiwanStockDataTool(BaseTool):
 
         return attempt(best_keep)
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         """Run one read-only snapshot query.
 

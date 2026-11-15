@@ -8,11 +8,13 @@ import {
   buildPresetLegs,
   DEFAULT_PARAMS,
   type OptionLeg,
+  type PayoffAlternative,
   type OptionsLabParams,
   type OptionsPayoffRequest,
   type OptionsPayoffResponse,
 } from "@/lib/options";
 import { StrategyBuilder } from "@/components/options/StrategyBuilder";
+import { PayoffComparisons } from "@/components/options/PayoffComparisons";
 import { GreeksCards } from "@/components/options/GreeksCards";
 import { OptionsChainTable } from "@/components/options/OptionsChainTable";
 import { OptionsPayoffChart } from "@/components/charts/OptionsPayoffChart";
@@ -60,6 +62,8 @@ export function OptionsLab() {
   const { t } = useTranslation();
 
   const [draft, setDraft] = useAnalysisState("options", {
+    label: null as string | null,
+    alternatives: null as PayoffAlternative[] | null,
     params: DEFAULT_PARAMS as OptionsLabParams,
     legs: buildPresetLegs("long_call", DEFAULT_PARAMS.entry_spot) ?? [],
     activePresetId: "long_call" as string | null,
@@ -68,13 +72,18 @@ export function OptionsLab() {
     updatedAt: "",
   });
   const { params, legs, activePresetId, result, resultRequest, updatedAt } = draft;
+  const label = draft.label ?? t("options.comparison.current");
+  const alternatives = draft.alternatives ?? [];
   const setParams = (params: OptionsLabParams) => setDraft((d) => ({ ...d, params }));
   const [retry, setRetry] = useState(0);
   const [chainOpen, setChainOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const req = useMemo(() => buildPayoffRequest(legs, params), [legs, params]);
+  const req = useMemo(() => {
+    const primary = buildPayoffRequest(legs, params);
+    return primary ? { ...primary, label, alternatives } : null;
+  }, [legs, params, label, alternatives]);
   const signature = req ? JSON.stringify(req) : null;
   const currentSignature = useRef(signature);
   currentSignature.current = signature;
@@ -219,6 +228,31 @@ export function OptionsLab() {
           </section>
         </div>
       </div>
+
+      {!!result?.expiry_scenarios?.length && (
+        <section className="overflow-x-auto rounded-xl border border-border/60 bg-card p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold">{t("options.expiryScenarios.title")}</h2>
+          <table className="w-full text-sm tabular-nums">
+            <thead><tr className="text-start text-muted-foreground">
+              <th className="p-2 text-start">{t("options.expiryScenarios.spot")}</th>
+              <th className="p-2 text-end">{t("options.expiryScenarios.pnl")}</th>
+              <th className="p-2 text-end">{t("options.expiryScenarios.return")}</th>
+            </tr></thead>
+            <tbody>{result.expiry_scenarios.map((row, index) => (
+              <tr key={index} className="border-t border-border/40">
+                <td className="p-2">{row.spot.toLocaleString()}</td>
+                <td className="p-2 text-end">{row.pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="p-2 text-end">{row.return_percent == null ? "—" : `${row.return_percent.toFixed(2)}%`}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </section>
+      )}
+
+      <PayoffComparisons
+        label={label} alternatives={alternatives} legs={legs} comparisons={result?.comparisons}
+        onChange={(label, alternatives) => setDraft((d) => ({ ...d, label, alternatives }))}
+      />
 
       {/* Portfolio Greeks */}
       {result && <GreeksCards greeks={result.greeks} />}

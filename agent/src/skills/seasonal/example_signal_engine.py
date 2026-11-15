@@ -98,7 +98,7 @@ class SignalEngine:
 
 
 if __name__ == "__main__":
-    import requests
+    from src.data_gateway.reads import public_http_get
 
     def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
         """从 OKX API 获取 K 线数据。
@@ -111,7 +111,7 @@ if __name__ == "__main__":
         Returns:
             OHLCV DataFrame。
         """
-        resp = requests.get(
+        resp = public_http_get(
             "https://www.okx.com/api/v5/market/candles",
             params={"instId": inst_id, "bar": bar, "limit": str(limit)},
         )

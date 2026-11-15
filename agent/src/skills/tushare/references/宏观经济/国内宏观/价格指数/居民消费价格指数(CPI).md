@@ -44,8 +44,10 @@ cnt_accu | float | Y | 农村累计值
 **接口调用**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 df = pro.cn_cpi(start_m='201801', end_m='201903')
 

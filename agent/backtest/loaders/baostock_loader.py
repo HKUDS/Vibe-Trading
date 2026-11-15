@@ -33,6 +33,56 @@ _READ_TIMEOUT_ENV = "VIBE_TRADING_BAOSTOCK_TIMEOUT"
 _DEFAULT_READ_TIMEOUT = 30.0
 # BaoStock owns one process-global socket and user context, even across instances.
 _BAOSTOCK_LOCK = threading.Lock()
+_SESSION_CONDITION = threading.Condition()
+_SESSION_WAITERS = []
+_SESSION_ACTIVE = False
+_FOREGROUND_BURST = 0
+
+
+@contextmanager
+def _session_admission(timeout):
+    """Prioritize live reads, while allowing one background turn after four reads."""
+    from .base import source_background, source_deadline
+    from .acquisition import source_can_fallback, source_admission_yielded
+
+    global _SESSION_ACTIVE, _FOREGROUND_BURST
+    until = time.monotonic() + timeout
+    requested_deadline = source_deadline.get()
+    if requested_deadline is not None:
+        until = min(until, requested_deadline - 0.25)
+    ticket = (source_background.get(), object())
+    acquired = False
+    with _SESSION_CONDITION:
+        _SESSION_WAITERS.append(ticket)
+        try:
+            while time.monotonic() < until:
+                foreground = [item for item in _SESSION_WAITERS if not item[0]]
+                background_waiters = [item for item in _SESSION_WAITERS if item[0]]
+                selected = (
+                    (background_waiters if _FOREGROUND_BURST >= 4 else foreground) or foreground or background_waiters
+                )[0]
+                if not _SESSION_ACTIVE and selected is ticket:
+                    _SESSION_ACTIVE = True
+                    _FOREGROUND_BURST = 0 if ticket[0] else min(4, _FOREGROUND_BURST + 1)
+                    acquired = True
+                    break
+                if source_can_fallback.get():
+                    # Do not spend an auto-route's network budget waiting for
+                    # another request's global SDK session. Exact-source reads
+                    # and durable downloads retain the existing fair queue.
+                    source_admission_yielded.set(True)
+                    break
+                _SESSION_CONDITION.wait(timeout=max(0, until - time.monotonic()))
+        finally:
+            _SESSION_WAITERS.remove(ticket)
+            _SESSION_CONDITION.notify_all()
+    try:
+        yield max(0, until - time.monotonic()) if acquired else None
+    finally:
+        if acquired:
+            with _SESSION_CONDITION:
+                _SESSION_ACTIVE = False
+                _SESSION_CONDITION.notify_all()
 
 
 def _read_timeout() -> float:
@@ -124,10 +174,21 @@ def _connect_with_timeout(self, timeout: float, api_key: str = "0") -> None:
 
 @contextmanager
 def _baostock_socket_guard(timeout: float):
-    """Bound all baostock socket IO for the lifetime of one fetch."""
-    import baostock
+    """Bound and fairly admit SDK sessions without changing their serialization."""
+    with _session_admission(timeout) as remaining:
+        if remaining is None:
+            yield False
+        else:
+            with _guard_transport(timeout, remaining) as acquired:
+                yield acquired
 
-    if not _BAOSTOCK_LOCK.acquire(timeout=timeout):
+
+@contextmanager
+def _guard_transport(timeout, lock_timeout):
+    import baostock
+    from .base import source_deadline
+
+    if not _BAOSTOCK_LOCK.acquire(timeout=lock_timeout):
         logger.warning("baostock session busy; falling back")
         yield False
         return
@@ -139,8 +200,13 @@ def _baostock_socket_guard(timeout: float):
     original_connect = socketutil.SocketUtil.connect
     previous_socket = getattr(context, "default_socket", None)
     context.default_socket = None
-    socketutil.send_msg = lambda msg: _bounded_send_msg(msg, timeout)
-    socketutil.SocketUtil.connect = lambda util, api_key="0": _connect_with_timeout(util, timeout, api_key)
+
+    def budget():
+        until = source_deadline.get()
+        return timeout if until is None else max(0.001, min(timeout, until - time.monotonic()))
+
+    socketutil.send_msg = lambda msg: _bounded_send_msg(msg, budget())
+    socketutil.SocketUtil.connect = lambda util, api_key="0": _connect_with_timeout(util, budget(), api_key)
     try:
         yield True
     finally:
@@ -218,8 +284,10 @@ class DataLoader:
 
         import baostock as bs
 
+        self.fetch_errors = {}
         with _baostock_socket_guard(_read_timeout()) as acquired:
             if not acquired:
+                self.fetch_errors = {code: "source_busy" for code in codes}
                 return {}
             lg = bs.login()
             if lg.error_code != "0":

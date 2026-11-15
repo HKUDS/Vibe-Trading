@@ -42,6 +42,10 @@ rank_time | str | Y | 排行榜获取时间
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 
 #获取查询月份券商金股
 df = pro.dc_hot(trade_date='20240415', market='A股市场',hot_type='人气榜',  fields='ts_code,ts_name,rank')

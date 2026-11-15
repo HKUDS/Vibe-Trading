@@ -47,6 +47,10 @@ trade_time | str | N | 交易时间
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 
 #获取今日所有深市ETF实时日线和成交笔数
 df = pro.rt_etf_k(ts_code='1*.SZ')

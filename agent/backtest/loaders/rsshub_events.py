@@ -33,6 +33,8 @@ from defusedxml import ElementTree as ET
 from defusedxml.common import DefusedXmlException
 
 from backtest.loaders.base import positive_env_float, retry_with_budget
+from backtest.loaders.acquisition import remaining_timeout
+from src.data_gateway.reads import managed_reader
 
 logger = logging.getLogger(__name__)
 
@@ -440,8 +442,9 @@ class RSSHubEventProvider:
         client = self._client or self._default_client()
         deadline = time.monotonic() + budget
 
+        @managed_reader
         def _do() -> str:
-            response = client.get(url, timeout=timeout)
+            response = client.get(url, timeout=remaining_timeout(timeout))
             response.raise_for_status()
             return response.text
 

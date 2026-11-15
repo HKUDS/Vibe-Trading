@@ -220,13 +220,16 @@ def test_format_renders_table_and_range() -> None:
     ]
     block = grounding.format_grounding_block({"NVDA.US": rows})
 
-    assert "Ground Truth" in block
+    assert "Initial Market Snapshot" in block
+    assert "older than" in block
+    assert "recompute dependent" in block
+    assert "authoritative current prices" not in block
     assert "NVDA.US" in block
     assert "215.20" in block            # last close
     assert "207.80 – 215.20" in block   # window range (min/max close)
     assert "2026-05-06 → 2026-05-08" in block
     # The instruction text must survive — it's the whole point.
-    assert "Do NOT cite prices" in block
+    assert "instead of recalling prices from training" in block
 
 
 # --------------------------------------------------------------------------- #
@@ -252,7 +255,7 @@ def test_worker_prompt_includes_grounding_block_when_provided() -> None:
 
 def test_worker_prompt_omits_grounding_section_when_block_empty() -> None:
     prompt = build_worker_prompt(_spec(), {}, "(no matching skills)")
-    # No rendered Ground Truth section. The Data Citation Discipline below
+    # No rendered Ground Truth section. The Research Evidence and Assumptions below
     # may reference "Ground Truth block above (if present)" as a referent;
     # that's fine. What must not appear is the actual section header.
     assert "## Ground Truth" not in prompt
@@ -264,22 +267,24 @@ def test_worker_prompt_always_includes_data_citation_discipline() -> None:
     swarm reports citing prices the agent never actually fetched; the
     grounding-block rule only covered runs with explicit symbols in user_vars."""
     bare = build_worker_prompt(_spec(), {}, "(no matching skills)")
-    assert "Data Citation Discipline" in bare
-    assert "HARD RULE" in bare
-    assert "may NOT cite numbers from memory or training data" in bare
+    assert "Research Evidence and Assumptions" in bare
+    assert "Clearly label proposed prices" in bare
+    assert "No fixed citation" in bare
+    assert "omit the number" not in bare
+    assert "observed market/company facts" in bare
 
     with_grounding = build_worker_prompt(
         _spec(), {}, "(no matching skills)",
         grounding_block="## Ground Truth — Recent Market Data\n\nNVDA.US ...",
     )
-    assert with_grounding.count("Data Citation Discipline") == 1
+    assert with_grounding.count("Research Evidence and Assumptions") == 1
 
 
 def test_worker_prompt_data_citation_discipline_precedes_execution_rules() -> None:
     """The discipline must be in scope before Phase 1/2/3 execution rules
     so the worker sees it while planning the first tool call."""
     prompt = build_worker_prompt(_spec(), {}, "(no matching skills)")
-    assert prompt.index("Data Citation Discipline") < prompt.index("## Execution Rules")
+    assert prompt.index("Research Evidence and Assumptions") < prompt.index("## Execution Rules")
 
 
 def test_worker_prompt_data_citation_rule_targets_aggregator_roles() -> None:
@@ -287,10 +292,9 @@ def test_worker_prompt_data_citation_rule_targets_aggregator_roles() -> None:
     that lack data tools, since those were the worst-case path in #106
     (equity_research_team aggregator has [bash, read_file, write_file] only)."""
     prompt = build_worker_prompt(_spec(), {}, "(no matching skills)")
-    # Aggregators must be told not to invent numbers upstream omitted.
-    lowered = prompt.lower()
-    assert "synthesis" in lowered or "aggregator" in lowered
-    assert "upstream did not provide" in prompt
+    assert "Reusing upstream data is valid" in prompt
+    assert "Independent judgment does not imply newly verified facts" in prompt
+    assert "When data is missing, explain the gap" in prompt
 
 
 def test_runtime_threads_grounding_block_into_layer_workers(tmp_path, monkeypatch) -> None:

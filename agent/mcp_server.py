@@ -1243,6 +1243,11 @@ def analyze_options_payoff(
     spot_max: float | None = None,
     spot_points: int = 121,
     scenario_iv_values: _lenient_float_list_opt = None,
+    underlying_qty: float = 0.0,
+    price_as_of: str | None = None,
+    expiry_spot_values: _lenient_float_list_opt = None,
+    label: str = "base",
+    alternatives: _lenient_dict_list_opt = None,
 ) -> str:
     """Analyze a multi-leg option strategy's payoff and spot/IV scenarios.
 
@@ -1252,6 +1257,9 @@ def analyze_options_payoff(
     Research only; this tool cannot place orders.
 
     Args:
+        label: Name of the base strategy.
+        alternatives: Named {label, legs} strategies on shared pricing assumptions;
+            returns their calculations and cap/floor/cost comparisons in this call.
         legs: Option leg objects with ``option_type`` (call/put), positive
             ``strike``, signed integer ``qty``, and optional per-share
             ``premium``. Positive quantity is long; negative is short.
@@ -1259,6 +1267,9 @@ def analyze_options_payoff(
         expiry_days: Non-negative calendar days to expiry.
         risk_free_rate: Annual continuously compounded risk-free rate.
         volatility: Annualized entry volatility, e.g. 0.3 for 30%.
+        underlying_qty: Signed stock units per multiplier, 1 for a covered collar.
+        price_as_of: Observation date for the entry price.
+        expiry_spot_values: Exact non-negative expiry scenario prices for P&L and returns.
         multiplier: Currency multiplier per option price unit.
         commission_rate: Entry commission fraction, aligned with the options
             backtest engine.
@@ -1270,14 +1281,20 @@ def analyze_options_payoff(
     """
     params: dict[str, Any] = {
         "legs": legs,
+        "label": label,
+        "alternatives": alternatives or [],
         "entry_spot": entry_spot,
         "expiry_days": expiry_days,
         "risk_free_rate": risk_free_rate,
         "volatility": volatility,
         "multiplier": multiplier,
+        "underlying_qty": underlying_qty,
+        "price_as_of": price_as_of,
         "commission_rate": commission_rate,
         "spot_points": spot_points,
     }
+    if expiry_spot_values is not None:
+        params["expiry_spot_values"] = expiry_spot_values
     if spot_min is not None:
         params["spot_min"] = spot_min
     if spot_max is not None:
@@ -2111,6 +2128,9 @@ def _get_loader(source: str):
     return get_loader(source)
 
 
+_get_loader.gateway_default_resolver = True
+
+
 def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     """Bound a per-symbol row list to keep the MCP payload within budget.
 
@@ -2125,6 +2145,12 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     return cap_rows(records, max_rows)
 
 
+def _calculation_workspace() -> str:
+    """Use the normal runtime run root for MCP observations and calculations."""
+    from src.config.paths import get_runs_dir
+    return str(get_runs_dir() / "mcp-calculations")
+
+
 @mcp.tool
 def get_market_data(
     codes: _lenient_str_list,
@@ -2133,6 +2159,9 @@ def get_market_data(
     source: str = "auto",
     interval: str = "1D",
     max_rows: int = DEFAULT_MAX_ROWS,
+    run_dir: str | None = None,
+    export_csv: bool = True,
+    warmup_start_date: str | None = None,
 ) -> str:
     """Fetch OHLCV market data for stocks, crypto, or mixed symbols.
 
@@ -2150,6 +2179,11 @@ def get_market_data(
     - "auto": auto-detect based on symbol format (with fallback)
 
     Args:
+        run_dir: Calculation workspace; defaults to runtime runs/mcp-calculations and returns a full result reference.
+        export_csv: Save a CSV by default from the same returned rows, with provenance,
+            sampling flags, columns, row count and checksum. No extra fetch.
+        warmup_start_date: Optional calculation-history start before start_date.
+            Returned rows include this prefix; start_date remains the analysis start.
         codes: List of symbols (e.g. ["AAPL.US", "TD.TO", "BTC-USDT", "000001.SZ"]).
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
@@ -2187,6 +2221,9 @@ def get_market_data(
             "source": source,
             "interval": interval,
             "max_rows": max_rows,
+            "run_dir": run_dir or _calculation_workspace(),
+            "export_csv": export_csv,
+            "warmup_start_date": warmup_start_date,
             # Internal hook, not an agent-facing parameter: keeps the MCP
             # surface resolving loaders through mcp_server._get_loader (the
             # contract the regression tests and the server's own loader
@@ -2545,23 +2582,48 @@ def get_financial_statements(code: str, statement: str = "indicators", period: s
 
 
 @mcp.tool
-def get_options_chain(ticker: str, expiration: int | None = None) -> str:
+def get_options_chain(ticker: str, expiration: int | None = None, offset: int | None = None, near_spot_count: int | None = None) -> str:
     """Fetch the US-listed options chain (calls and puts) for one expiration.
 
     Returns per-contract strike, bid/ask, last price, volume, open interest,
     implied volatility, and in-the-money flag, plus the list of available
-    expirations (epoch seconds) via Yahoo Finance. Read-only US options data.
+    expirations (epoch seconds) via the shared data gateway. Read-only US options data.
 
     Args:
         ticker: US underlying symbol (e.g. "AAPL" or "AAPL.US").
         expiration: Optional expiration as Unix epoch seconds (one of the
             returned expirations). Omit for the nearest expiration.
+        offset: Optional strike-order page offset, 60 rows per side; omit for near-spot contracts.
+        near_spot_count: Optional nearest strikes per side (1..60), incompatible with offset.
     """
     params: dict[str, Any] = {"ticker": ticker}
     if expiration is not None:
         params["expiration"] = expiration
+    if offset is not None:
+        params["offset"] = offset
+    if near_spot_count is not None:
+        params["near_spot_count"] = near_spot_count
     registry = _get_registry()
     return registry.execute("get_options_chain", params)
+
+
+@mcp.tool
+def history_data(action: str, job: str | None = None, codes: list[str] | None = None,
+                 start_date: str | None = None, end_date: str | None = None,
+                 interval: str = "5m", offset: int = 0, source: str = "auto") -> str:
+    """Plan/resume quota-bounded routed historical datasets; read unsampled pages.
+
+    Actions: plan, create, start, status, rows, cancel, pin, unpin, delete,
+    storage, prune, scan_create, scan_status, scan_cancel. Scans are process-local
+    background acquisitions; specify interval="1D" for daily scans. Plan/create require codes and settled ISO dates. Other
+    job operations require the returned job id. Source defaults to auto; explicit source pins a provider.
+    Rows are never sampled; coverage_verified distinguishes verified from downloaded/unverified data.
+    Row pages retain per-symbol currency, units, timezone and source provenance; null fields remain unknown.
+    """
+    return _get_registry().execute("history_data", {
+        "action": action, "job": job, "codes": codes, "start_date": start_date,
+        "end_date": end_date, "interval": interval, "offset": offset, "source": source,
+    })
 
 
 @mcp.tool
@@ -2607,7 +2669,7 @@ def screen_market(market: str, sort_by: str = "change_pct", top_n: int = 30) -> 
 
 
 @mcp.tool
-def search_symbol(query: str, limit: int = 10) -> str:
+def search_symbol(query: str, limit: int = 10, refresh: bool = False) -> str:
     """Resolve a company name or ticker fragment to candidate trading symbols.
 
     Returns candidates with their market in the project's symbol convention
@@ -2619,9 +2681,13 @@ def search_symbol(query: str, limit: int = 10) -> str:
     Args:
         query: Free-text company name or ticker fragment (Chinese or English).
         limit: Maximum number of merged candidates to return.
+        refresh: Request resolver verification instead of session identity reuse.
     """
     registry = _get_registry()
-    return registry.execute("search_symbol", {"query": query, "limit": limit})
+    params = {"query": query, "limit": limit}
+    if refresh:
+        params["refresh"] = True
+    return registry.execute("search_symbol", params)
 
 
 @mcp.tool
@@ -2930,7 +2996,10 @@ def _register_mirrored_tool(tool_cls: Any) -> bool:
 
         def _call(**kwargs: Any) -> str:
             """Forward an MCP call to the auto-discovered local tool registry."""
-            return _get_registry().execute(name, _mirrored_call_params(schema, kwargs))
+            params = _mirrored_call_params(schema, kwargs)
+            if name == "quantlib_call" and params.get("action") == "call":
+                params.setdefault("run_dir", _calculation_workspace())
+            return _get_registry().execute(name, params)
 
         mcp.add_tool(
             FunctionTool(
@@ -2993,6 +3062,7 @@ def _run_to_dict(run, *, timed_out: bool = False, is_stale: bool = False) -> dic
         "error": run_level_error(run),
         "tasks": [serialize_task(t) for t in run.tasks],
         "final_report": run.final_report,
+        "report_is_partial": run.report_is_partial,
         "total_input_tokens": run.total_input_tokens,
         "total_output_tokens": run.total_output_tokens,
         "provider": public_provider_metadata(run.provider),
@@ -3150,7 +3220,8 @@ def retry_run(run_id: str, resume: bool = False) -> str:
 
     With ``resume=True`` (replay), completed upstream tasks and their artifacts
     are carried into the new run as-is and only the failed/cancelled subgraph
-    re-executes — completed independent branches are not re-run. ``resume``
+    continues from compatible saved context, or restarts from retained reports
+    when no checkpoint exists. Completed independent branches are not re-run. ``resume``
     only applies to a ``failed`` or ``cancelled`` run; ``resume=True`` for any
     other status is refused with an error (a plain retry without ``resume``
     remains available for any non-running run).
@@ -3441,7 +3512,7 @@ def main():
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
     # After the shell-tool decision: that switch must come from the launch
     # flag or process env, never from a .env written for the web server.
-    from src.providers.llm import _ensure_dotenv
+    from src.providers.settings import _ensure_dotenv
 
     _ensure_dotenv()
     _registry = None

@@ -50,7 +50,6 @@ def _inputs(**over: object) -> OutcomeInputs:
         has_output=True,
         released_fallback=False,
         released_fallback_reason=None,
-        grounding_validation_count=0,
         pending_write_directive=lambda: None,
         empty_model_response_iter=None,
         empty_response_provider="openai",
@@ -105,13 +104,12 @@ class TestResolveFinalStatus:
         assert out.reason is not None
         assert "unverified figures" in out.reason
 
-    def test_success_fallback_reason_built_lazily_from_count(self) -> None:
+    def test_success_fallback_has_delivery_reason(self) -> None:
         out = resolve_final_status(
-            _inputs(released_fallback=True, grounding_validation_count=3)
+            _inputs(released_fallback=True)
         )
         assert out.reason is not None
-        assert "3" in out.reason
-        assert "deterministic fallback" in out.reason
+        assert "could not be delivered" in out.reason
 
     def test_success_with_pending_write_directive(self) -> None:
         calls: list[int] = []

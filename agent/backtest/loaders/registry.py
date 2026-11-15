@@ -71,6 +71,10 @@ def register(cls: Type[Any]) -> Type[Any]:
 
     The class must have a ``name`` class attribute.
     """
+    from src.data_gateway.reads import loader_read
+
+    if not getattr(cls.fetch, "gateway_public_read", False):
+        cls.fetch = loader_read(cls.fetch)
     LOADER_REGISTRY[cls.name] = cls
     return cls
 
@@ -185,6 +189,7 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         # for explicit source="mootdx" use. See HKUDS/Vibe-Trading#1729.
         "eastmoney",
         "baostock",
+        "yahoo",
         "akshare",
         "tushare",
         "local",
@@ -218,6 +223,7 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
         "local",
     ],
     "india_equity": ["yahoo", "yfinance", "india_broker", "local"],
+    "jp_equity": ["yahoo", "yfinance", "local"],
     "kr_equity": ["pykrx", "yahoo", "yfinance", "local"],
     # TSX (.TO) / TSX Venture (.V): direct Yahoo first, SDK fallback second.
     "ca_equity": ["yahoo", "yfinance", "local"],
@@ -563,6 +569,10 @@ def refresh_source_order_overrides() -> None:
         # Preserve the remaining order without treating that as consent.
         if market in {"a_share", "hk_equity", "index"} and order.count("gildata") == 1:
             order.remove("gildata")
+        # Migrate a complete pre-Yahoo mainland ordering without discarding
+        # the user's relative priorities. Arbitrary missing sources still fail.
+        if market == "a_share" and sorted(order) == sorted(s for s in default if s != "yahoo"):
+            order.insert(order.index("local"), "yahoo")
         if order and is_valid_source_order(market, order):
             FALLBACK_CHAINS[market] = order[:]
             _ACTIVE_SOURCE_ORDER_OVERRIDES[market] = order[:]

@@ -89,7 +89,10 @@ class TestCliInit:
     def test_cmd_init_ollama_skips_api_key(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"
 
+        env_path.write_text("OPENROUTER_API_KEY=old-key\nLANGCHAIN_REASONING_EFFORT=high\n")
+
         with patch.object(cli, "_INIT_ENV_PATH", env_path), \
+             patch.object(cli.Confirm, "ask", return_value=True), \
              patch.object(
                  cli.IntPrompt,
                  "ask",
@@ -114,6 +117,7 @@ class TestCliInit:
         assert "LANGCHAIN_MODEL_NAME=qwen2.5:32b" in content
         assert "OPENAI_API_KEY=" not in content
         assert "OPENROUTER_API_KEY=" not in content
+        assert "LANGCHAIN_REASONING_EFFORT=" not in content
 
     def test_cmd_init_openai_codex_uses_supported_default_and_oauth(self, tmp_path: Path) -> None:
         env_path = tmp_path / ".env"

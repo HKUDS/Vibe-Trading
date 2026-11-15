@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.config.limits import TOOL_RESULT_LIMIT
 
@@ -116,6 +117,7 @@ class BrMarketDataTool(BaseTool):
     }
     repeatable = True
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         action = str(kwargs.get("action") or "").strip().lower()
         handlers: dict[str, Callable[[sqlite3.Connection, dict], str]] = {

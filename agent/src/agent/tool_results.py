@@ -22,8 +22,9 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from src.agent.grounding.evidence import ARCHIVE_MANIFEST as _ARCHIVE_MANIFEST
 from src.tools.path_utils import safe_run_dir
+
+ARCHIVE_MANIFEST = ".archived_backtest.json"
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ def _is_tool_success(result: str) -> bool:
 # it verbatim hands the user mojibake instead of an answer. Both DSML bar
 # spellings are covered: ASCII double bars and fullwidth double bars, opening
 # and closing tags (a draft ending in "</｜｜DSML｜｜invoke>" once reached the
-# grounding gate as three unreadable figures-block lines).
+# response parser as unparsed protocol).
 _FORCED_TEXT_TOOL_CALL_RE = re.compile(
     r"<\s*/?\s*(?:invoke|parameter|tool_calls|dsml)\b",
     re.IGNORECASE,
@@ -150,9 +151,9 @@ def _normalize_tool_run_dir(args: dict[str, Any], memory_run_dir: str | None) ->
     return normalized
 
 
-# ``_ARCHIVE_MANIFEST`` names the backtest an archived run currently describes,
+# ``ARCHIVE_MANIFEST`` names the backtest an archived run currently describes,
 # and the files that archive placed there, so the next one can replace exactly
-# its own output. The grounding ledger reads it to tell whose copy it is.
+# its own output. Offline diagnostics can distinguish the original producer.
 
 
 def _previously_archived(target: Path) -> set[str]:
@@ -165,7 +166,7 @@ def _previously_archived(target: Path) -> set[str]:
     turn, which beats refusing to archive a backtest the user is waiting for.
     """
     try:
-        payload = json.loads((target / _ARCHIVE_MANIFEST).read_text(encoding="utf-8"))
+        payload = json.loads((target / ARCHIVE_MANIFEST).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return set()
     files = payload.get("files") if isinstance(payload, dict) else None
@@ -203,7 +204,7 @@ def _archive_backtest_result(
     alongside the later one's output — one artifacts directory describing two
     different runs, which ``/runs/{id}`` then lists as artifacts of the current
     one.  Only files a previous archive placed here are removed, recorded in
-    :data:`_ARCHIVE_MANIFEST`; anything the active run wrote itself (notably
+    :data:`ARCHIVE_MANIFEST`; anything the active run wrote itself (notably
     ``code/signal_engine.py``, written before ``backtest`` is called) is
     untouched, which is why the manifest exists instead of a blanket wipe.
 
@@ -250,7 +251,7 @@ def _archive_backtest_result(
             ]
     for stale in previously_archived - set(archived):
         (target / stale).unlink(missing_ok=True)
-    (target / _ARCHIVE_MANIFEST).write_text(
+    (target / ARCHIVE_MANIFEST).write_text(
         json.dumps({
             "source_run": source.name,
             "source_run_dir": str(source.resolve()),

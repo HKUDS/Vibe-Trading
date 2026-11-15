@@ -97,8 +97,16 @@ class DataLoader:
         """
         validate_date_range(start_date, end_date)
 
+        self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
+            from .acquisition import source_deadline
+            import time
+
+            until = source_deadline.get()
+            if until is not None and time.monotonic() >= until:
+                self.fetch_errors[code] = "request_deadline"
+                continue
             try:
                 df = cached_loader_fetch(
                     source=self.name,
@@ -145,6 +153,9 @@ class DataLoader:
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:  # noqa: BLE001 - one bad symbol must not abort
+                from .base import acquisition_error_kind
+
+                self.fetch_errors[code] = acquisition_error_kind(exc)
                 logger.warning("eastmoney failed for %s: %s", code, exc)
         return result
 

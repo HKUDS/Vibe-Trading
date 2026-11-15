@@ -128,7 +128,7 @@ def test_partial_and_full_results_stay_successful(monkeypatch, good_only):
 
 def test_grounding_still_records_each_unavailable_symbol(tmp_path):
     """The failed envelope keeps per-symbol unavailable evidence."""
-    from src.agent.grounding.ledger import GroundingLedger
+    from evals.grounding.ledger import GroundingLedger
 
     ledger = GroundingLedger(run_dir=tmp_path, user_message="price of AAA.US")
     raw = json.dumps({"status": "error", "error_code": "no_market_data", "error": "x",

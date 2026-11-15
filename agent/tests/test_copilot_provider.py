@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import threading
@@ -13,19 +14,16 @@ import pytest
 
 import api_server  # noqa: F401
 from src.api import settings_routes
-from src.providers import capabilities as caps_mod
 from src.providers import copilot_auth
-from src.providers.capabilities import (
-    get_llm_credentials,
-    get_provider_capabilities,
-)
+from src.providers.settings import get_llm_credentials
+from src.providers.registry import get_provider_capabilities
 
 
 @pytest.fixture(autouse=True)
 def _clear_token_cache():
-    caps_mod._gh_cli_token_cache = None
+    copilot_auth._gh_cli_token_cache = None
     yield
-    caps_mod._gh_cli_token_cache = None
+    copilot_auth._gh_cli_token_cache = None
 
 
 @pytest.fixture
@@ -120,7 +118,7 @@ def test_gh_cli_token_cache_expires_after_sixty_seconds(
         resolutions.append(None)
         return next(tokens), "gh auth token"
 
-    monkeypatch.setattr(caps_mod, "monotonic", lambda: now[0], raising=False)
+    monkeypatch.setattr(copilot_auth, "monotonic", lambda: now[0], raising=False)
     monkeypatch.setattr(copilot_auth, "resolve_copilot_token", resolve_token)
 
     first = get_llm_credentials("copilot", "claude-sonnet-5")["api_key"]
@@ -149,7 +147,7 @@ def test_credential_cache_refreshes_empty_and_removed_credentials(
 ) -> None:
     now = [0.0]
     tokens = iter((initial, refreshed))
-    monkeypatch.setattr(caps_mod, "monotonic", lambda: now[0])
+    monkeypatch.setattr(copilot_auth, "monotonic", lambda: now[0])
     monkeypatch.setattr(copilot_auth, "gh_cli_token", lambda: next(tokens))
 
     assert get_llm_credentials("copilot", "test-model")["api_key"] == initial
@@ -158,8 +156,8 @@ def test_credential_cache_refreshes_empty_and_removed_credentials(
 
 
 def test_concurrent_expired_credential_reads_share_one_refresh(no_ambient_credentials, monkeypatch) -> None:
-    caps_mod._gh_cli_token_cache = (0.0, "gho_expired")
-    monkeypatch.setattr(caps_mod, "monotonic", lambda: 60.0)
+    copilot_auth._gh_cli_token_cache = (0.0, "gho_expired")
+    monkeypatch.setattr(copilot_auth, "monotonic", lambda: 60.0)
     callers = threading.Barrier(8)
     refresh_started = threading.Event()
     release_refresh = threading.Event()
@@ -188,8 +186,8 @@ def test_concurrent_expired_credential_reads_share_one_refresh(no_ambient_creden
 
 @pytest.mark.parametrize("failure", ["timeout", "nonzero", "unsupported"])
 def test_failed_cli_refresh_does_not_reuse_expired_token(monkeypatch, failure):
-    caps_mod._gh_cli_token_cache = (0.0, "gho_expired")
-    monkeypatch.setattr(caps_mod, "monotonic", lambda: 60.0)
+    copilot_auth._gh_cli_token_cache = (0.0, "gho_expired")
+    monkeypatch.setattr(copilot_auth, "monotonic", lambda: 60.0)
     monkeypatch.setattr(copilot_auth.shutil, "which", lambda _name: "/fake/gh")
 
     def run(*_args, **_kwargs):
@@ -206,11 +204,13 @@ def test_failed_cli_refresh_does_not_reuse_expired_token(monkeypatch, failure):
         "resolve_copilot_token",
         lambda: (copilot_auth.gh_cli_token(), "gh auth token"),
     )
-    assert caps_mod._gh_cli_token() == ""
-    assert caps_mod._gh_cli_token_cache == (60.0, "")
+    assert copilot_auth._gh_cli_token() == ""
+    assert copilot_auth._gh_cli_token_cache == (60.0, "")
 
 
-def test_same_sdk_wrapper_resolves_credentials_for_each_request(no_ambient_credentials, monkeypatch) -> None:
+@pytest.mark.parametrize("method", ["invoke", "ainvoke", "stream"])
+@pytest.mark.parametrize("token", [None, "gho_snapshot"])
+def test_same_sdk_wrapper_resolves_credentials_for_each_request(no_ambient_credentials, monkeypatch, method, token) -> None:
     """Exercise the real wrapper/client boundary without a Copilot account."""
     sdk = ModuleType("copilot")
     events = ModuleType("copilot.session_events")
@@ -267,11 +267,18 @@ def test_same_sdk_wrapper_resolves_credentials_for_each_request(no_ambient_crede
     tokens = iter(("gho_first", "gho_rotated", ""))
     monkeypatch.setattr(copilot_auth, "gh_cli_token", lambda: next(tokens))
     # A stale diagnostic cache must never leak into the SDK request path.
-    caps_mod._gh_cli_token_cache = (0.0, "gho_stale_diagnostic")
-    llm = copilot_auth.CopilotSDKLLM(model="test-model", timeout=2)
+    copilot_auth._gh_cli_token_cache = (0.0, "gho_stale_diagnostic")
+    llm = copilot_auth.CopilotSDKLLM(model="test-model", timeout=2, token=token).bind_tools([])
+    if token:
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "gho_new_default")
     for _ in range(3):
-        assert llm.invoke([{"role": "user", "content": "hello"}]).content == "ok"
-    assert seen_options == [{"github_token": "gho_first"}, {"github_token": "gho_rotated"}, {}]
+        result = getattr(llm, method)([{"role": "user", "content": "hello"}])
+        if method == "ainvoke":
+            result = asyncio.run(result)
+        content = "".join(chunk.content for chunk in result) if method == "stream" else result.content
+        assert content == "ok"
+    expected = [{"github_token": token}] * 3 if token else [{"github_token": "gho_first"}, {"github_token": "gho_rotated"}, {}]
+    assert seen_options == expected
 
 
 def test_credentials_do_not_require_openai_base_url(

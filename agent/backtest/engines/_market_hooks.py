@@ -128,6 +128,7 @@ _CN_FUTURES_DATED3_PATTERN = r"^(?:{})\d{{3}}$".format(
 )
 
 _MARKET_PATTERNS = [
+    (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "jp_equity"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
     (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
     # US equities: tickers may carry a class-share dot (BRK.B.US, BF.B.US)
@@ -280,6 +281,7 @@ _MARKET_CURRENCY = {
     "hk_equity": "HKD",
     "india_equity": "INR",
     "kr_equity": "KRW",
+    "jp_equity": "JPY",
     "ca_equity": "CAD",
     "ar_equity": "ARS",
     "br_equity": "BRL",

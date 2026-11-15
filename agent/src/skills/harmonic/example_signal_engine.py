@@ -441,9 +441,9 @@ def _fetch_okx(
     Raises:
         KeyError: API 返回格式异常时。
     """
-    import requests
+    from src.data_gateway.reads import public_http_get
 
-    resp = requests.get(
+    resp = public_http_get(
         "https://www.okx.com/api/v5/market/candles",
         params={"instId": inst_id, "bar": bar, "limit": str(limit)},
     )

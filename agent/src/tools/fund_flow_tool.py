@@ -25,6 +25,7 @@ import math
 from typing import Any
 
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools import tushare_fallbacks
 
@@ -219,6 +220,7 @@ class FundFlowTool(BaseTool):
         "required": ["codes"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Resolve symbols, fetch fund flow per symbol, return a JSON envelope.
 

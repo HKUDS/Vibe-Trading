@@ -420,11 +420,11 @@ python agent/src/skills/ashare-pre-st-filter/scripts/fetch_sina_penalties.py \
 用于减少 LLM 调用顺序漂移，按下列骨架组织：
 
 ```python
-import os, json, subprocess
-import tushare as ts
+from src.data_gateway.skill_sources import tushare_client
 
+import os, json, subprocess
 ts_code = '000729.SZ'
-pro = ts.pro_api(os.environ['TUSHARE_TOKEN'])
+pro = tushare_client(os.environ['TUSHARE_TOKEN'])
 
 # === Step 0: M0 当前状态 ===
 basic = pro.stock_basic(ts_code=ts_code, fields='ts_code,name,market').to_dict('records')[0]

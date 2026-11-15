@@ -32,7 +32,7 @@ configured `date_format`; an explicitly mapped date column takes precedence.
 
 **Fallback chains (by IP-ban risk):**
 
-- **A-share** → `tencent` · `eastmoney` · `baostock` · `akshare` · `tushare` · `local`
+- **A-share** → `tencent` · `eastmoney` · `baostock` · `yahoo` · `akshare` · `tushare` · `local`
 - **US** → `yahoo` · `stooq` · `sina` · `eastmoney` · `yfinance` · `tiingo` · `fmp` · `finnhub` · `alphavantage` · `longbridge` · `akshare` · `local`
 - **HK** → `tencent` · `eastmoney` · `yahoo` · `futu` · `akshare` · `yfinance` · `tushare` · `longbridge` · `local`
 - **India (NSE/BSE)** → `yahoo` · `yfinance` · `india_broker` · `local`
@@ -320,7 +320,7 @@ The shared backtest market classifier recognizes `BTC/USD`, `ETH/USD`,
 </details>
 
 <details>
-<summary><b>Quant Library</b> <sub>310 tested functions across 25 modules, callable from every transport</sub></summary>
+<summary><b>Quant Library</b> <sub>312 tested functions across 26 modules, callable from every transport</sub></summary>
 
 `src/quantlib` holds one tested implementation of each piece of finance math the
 agent needs. Skills **import** these rather than carrying formulas inside
@@ -418,7 +418,7 @@ Vibe-Trading/
 ├── agent/                          # Backend (Python)
 │   ├── cli/                        # CLI package — interactive TUI + subcommands
 │   ├── api_server.py               # FastAPI server — runs, sessions, upload, swarm, SSE
-│   ├── mcp_server.py               # MCP server with 84 tools for OpenClaw / Claude Desktop
+│   ├── mcp_server.py               # MCP server — 85 tools for OpenClaw / Claude Desktop
 │   │
 │   ├── src/
 │   │   ├── agent/                  # ReAct agent core

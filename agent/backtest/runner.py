@@ -91,6 +91,7 @@ class BacktestConfigSchema(BaseModel):
     interval: str = "1D"
     engine: str = "daily"
     position_adjustment: Literal["hold", "rebalance"] = "hold"
+    intentional_signal_delay_bars: int = Field(default=0, ge=0, strict=True)
     rebalance_mask: RebalanceMask = None
     # Under "rebalance", a resize executes only once the held weight has
     # drifted further than this fraction of its target -- the tolerance band
@@ -133,6 +134,8 @@ class BacktestConfigSchema(BaseModel):
         # under yfinance -- and the run still succeeded. A bare six-digit code
         # and Yahoo's ``.SS`` Shanghai spelling are mainland listings that no
         # routing rule names; the loaders and the benchmark resolve both.
+        if any(matched_market(c.strip()) == "jp_equity" for c in v):
+            raise ValueError("Japan market data is supported, but Japanese backtest execution rules are not implemented")
         unrecognised = [
             c for c in v
             if matched_market(c.strip()) is None
@@ -1521,6 +1524,10 @@ def main(run_dir: Path) -> None:
         sys.exit(1)
 
     try:
+        if config.get("engine", "daily") == "daily":
+            from backtest.signal_timing import validate_signal_timing
+
+            validate_signal_timing(signal_path, config.get("intentional_signal_delay_bars", 0))
         signal_module = _load_module_from_file(signal_path, "signal_engine")
     except ValueError as exc:
         # Source-level AST validation (circular self-import, unsafe imports,
@@ -1793,6 +1800,9 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     """
     # Detect dominant market type from codes
     markets = {_detect_market(c) for c in codes} if codes else set()
+
+    if "jp_equity" in markets:
+        raise ValueError("Japanese backtest execution rules are not implemented; market data is available")
 
     # The Hong Kong pool books in HKD. HKEX numbers its RMB and USD counters
     # in their own code ranges, and no source in the hk_equity chain but Yahoo

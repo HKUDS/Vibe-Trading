@@ -19,6 +19,7 @@ DEFAULT_MAX_ROWS = 250
 # throttle-tolerant Yahoo public endpoint first (lower IP-ban risk than the
 # yfinance SDK), A-shares and HK equities to the never-banned Tencent endpoint.
 _SOURCE_PATTERNS = [
+    (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "yahoo"),
     (re.compile(r"^local:", re.I), "local"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "tencent"),
     (re.compile(r"^[A-Z0-9&.\-]+\.US$", re.I), "yahoo"),
@@ -66,24 +67,44 @@ _SOURCE_PATTERNS = [
 ]
 
 
+def data_market(code: str) -> str:
+    """Resolve a data identity without the legacy backtest A-share default.
+
+    Raises:
+        ValueError: No public market rule recognizes the symbol.
+    """
+    from backtest.engines._market_hooks import _detect_market, matched_market
+
+    clean = code.strip().upper()
+    if clean.startswith("LOCAL:"):
+        return _detect_market(clean)
+    market = matched_market(clean)
+    if market is not None:
+        return market
+    if re.fullmatch(r"\d{6}(?:\.SS)?", clean):
+        return "a_share"
+    if re.fullmatch(r"[A-Z]+[-/]?(?:IRT|TMN)", clean):
+        return "crypto"
+    raise ValueError(f"Unsupported market identity: {code}. Use search_symbol to resolve a supported venue.")
+
+
 def detect_source(code: str) -> str:
-    """Infer the best loader source for a normalized symbol."""
-    from backtest.engines._market_hooks import _detect_market
+    """Infer the best loader source only for a recognized data identity."""
     from backtest.loaders.registry import FALLBACK_CHAINS
 
-    market = _detect_market(code.strip().upper())
+    clean = code.strip().upper()
+    market = data_market(clean)
     for pattern, source in _SOURCE_PATTERNS:
-        if pattern.match(code):
-            # XXX/USD also matches known crypto bases. Keep the shared market
-            # classification authoritative over this broad forex-source rule.
+        if pattern.match(clean):
             if source == "mt5" and market == "crypto":
                 continue
             return source
     if market == "a_share":
-        return "tushare"  # Keep the documented fallback for unknown symbols.
+        return "tushare"
     chain = FALLBACK_CHAINS.get(market, [])
-    return chain[0] if chain else "tushare"
-
+    if not chain:
+        raise ValueError(f"No data route for market: {market}")
+    return chain[0]
 
 
 def normalize_crypto_symbol(code: str) -> str:
@@ -196,7 +217,7 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def fetch_market_data(
+def _fetch_market_data_direct(
     *,
     codes: list[str],
     start_date: str,
@@ -256,8 +277,13 @@ def fetch_market_data(
 
     groups: dict[tuple[str, str], list[str]] = {}
     for code in codes:
+        try:
+            market = data_market(code)
+        except ValueError as exc:
+            diagnostics[code] = [{"source": "router", "reason": "unsupported_market", "detail": str(exc)}]
+            continue
         src = detect_source(code) if source == "auto" else source
-        groups.setdefault((src, _detect_market(code)), []).append(code)
+        groups.setdefault((src, market), []).append(code)
 
     def _chain_for(src: str, market: str) -> list[str]:
         """Return the ordered fallback chain for ``src``.
@@ -276,9 +302,6 @@ def fetch_market_data(
         market_chain = FALLBACK_CHAINS.get(market, [])
         if src in market_chain:
             return market_chain
-        for chain in FALLBACK_CHAINS.values():
-            if src in chain:
-                return chain
         return [src]
 
     def _fetch_via_chain(
@@ -355,7 +378,12 @@ def fetch_market_data(
                 loader = loader_cls()
                 # Weekly and monthly bars are built from daily ones (#1479).
                 loader_symbols = {symbol: normalize_crypto_symbol(symbol) for symbol in remaining}
-                fetched = loader.fetch(
+                from src.data_gateway.reads import managed_reader
+
+                fetch = loader.fetch
+                if not getattr(fetch, "gateway_public_read", False):
+                    fetch = managed_reader(fetch)
+                fetched = fetch(
                     list(dict.fromkeys(loader_symbols.values())), start_date, end_date, interval=source_interval(interval)
                 )
                 partial = {
@@ -379,10 +407,12 @@ def fetch_market_data(
                     attempt_src, remaining, exc,
                 )
                 continue
+            for symbol in remaining:
+                if symbol not in partial:
+                    failure = getattr(loader, "fetch_errors", {}).get(loader_symbols[symbol], "no_data")
+                    record([symbol], serving_source, failure)
             if not partial:
-                record(remaining, serving_source, "no_data")
                 continue
-            record([symbol for symbol in remaining if symbol not in partial], serving_source, "no_data")
             # The resolver can substitute an unavailable optional loader before
             # fetch runs. Attribute every returned symbol to its actual provider.
             serving_source = getattr(loader_cls, "name", None) or attempt_src
@@ -447,6 +477,23 @@ def fetch_market_data(
             quote_currency = frame_attrs.get("quote_currency")
             if isinstance(quote_currency, str) and quote_currency:
                 entry["quote_currency"] = quote_currency
+                entry["quote_currency_basis"] = "source_metadata"
+            elif market == "a_share" or market.endswith("_equity"):
+                # Settlement currency is not a crypto quote asset (USDT != USD).
+                # Only equity market contracts fill an absent source declaration.
+                from backtest.engines._market_hooks import code_currency, matched_market
+
+                clean = symbol.strip().upper()
+                if not clean.startswith("LOCAL:") and (
+                    matched_market(clean) is not None or re.fullmatch(r"\d{6}(?:\.SS)?", clean)
+                ):
+                    currency = code_currency(clean)
+                    if not currency.startswith("UNKNOWN"):
+                        entry["quote_currency"] = currency
+                        entry["quote_currency_basis"] = "instrument_market_contract"
+            for field in ("timezone", "timestamp_basis"):
+                if isinstance(frame_attrs.get(field), str) and frame_attrs[field]:
+                    entry[field] = frame_attrs[field]
             if extra_provenance:
                 entry.update(extra_provenance)
             provenance[symbol] = entry
@@ -544,12 +591,55 @@ def fetch_market_data(
             code: {"attempts": diagnostics.get(code, []), "recovery": (
                 "Use search_symbol to confirm the symbol and venue; check supported history/interval. source_unavailable means "
                 "the source needs configuration or an optional dependency; fetch_failed means "
-                "the request failed; no_data means that source returned no bars for this range. "
+                "the request failed; network_failure means a transport error; no_data means that source returned no bars for this range. "
                 "For recent intraday bars, narrow the date range or request daily bars."
             )} for code in unresolved
         }
 
     return results
+
+
+def fetch_market_data(
+    *, codes: list[str], start_date: str, end_date: str, source: str = "auto",
+    interval: str = "1D", max_rows: int = DEFAULT_MAX_ROWS,
+    loader_resolver: Callable[[str], type] = get_loader,
+    fallback_chain_provider: Callable[[str], list[str]] | None = None,
+    max_fallback_attempts: int = 5, include_provenance: bool = False,
+    as_frames: bool = False,
+) -> dict[str, Any]:
+    """Read public snapshots through the same gateway used by pages and streams.
+
+    Full analysis frames and explicit resolver integrations retain the loader
+    contract; registered loaders still acquire through the gateway source pool.
+    Gateway source workers call the raw normalizer inline, avoiding recursion.
+    """
+    from src.data_gateway import get_gateway
+    from src.data_gateway.reads import owned_source
+
+    params = dict(codes=codes, start_date=start_date, end_date=end_date,
+                  source=source, interval=interval, max_rows=max_rows)
+    default_resolver = loader_resolver is get_loader or getattr(loader_resolver, "gateway_default_resolver", False)
+    if (owned_source.get() or as_frames or max_rows == 0 or not default_resolver
+            or fallback_chain_provider is not None or max_fallback_attempts != 5):
+        return _fetch_market_data_direct(
+            **params, loader_resolver=loader_resolver,
+            fallback_chain_provider=fallback_chain_provider,
+            max_fallback_attempts=max_fallback_attempts,
+            include_provenance=include_provenance, as_frames=as_frames,
+        )
+    response = get_gateway().bars(**params, include_provenance=True)
+    payload = response.get("data")
+    if not isinstance(payload, dict):
+        payload = {"_unresolved": list(codes), "_diagnostics": {
+            code: [{"source": "gateway", "reason": "gateway_unavailable",
+                    "detail": response.get("error", "Data unavailable")}]
+            for code in codes
+        }}
+    if not include_provenance:
+        payload.pop("_provenance", None)
+    # Keep the observed reader schema: gateway status never masquerades as a
+    # symbol or as a measured market value in the grounding ledger.
+    return payload
 
 
 def fetch_market_data_json(**kwargs: Any) -> str:

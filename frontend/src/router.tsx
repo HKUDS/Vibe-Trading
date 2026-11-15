@@ -10,6 +10,7 @@ const RunDetail = lazy(() =>
 const Compare = lazy(() =>
   import("@/pages/Compare").then((m) => ({ default: m.Compare })),
 );
+const HistoryStorage = lazy(() => import("./components/settings/HistoryStorageSettings").then(m => ({ default: m.HistoryStorageSettings })));
 const Settings = lazy(() =>
   import("@/pages/Settings").then((m) => ({ default: m.Settings })),
 );
@@ -75,6 +76,7 @@ export const router = createBrowserRouter([
       { path: "/paper-trading", element: wrap(PaperTrading) },
       { path: "/portfolio", element: wrap(Portfolio) },
       { path: "/settings", element: wrap(Settings) },
+      { path: "/history-storage", element: wrap(HistoryStorage) },
       { path: "/runs/:runId", element: wrap(RunDetail) },
       { path: "/compare", element: wrap(Compare) },
       { path: "/correlation", element: wrap(Correlation) },

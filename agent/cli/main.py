@@ -296,7 +296,7 @@ def _maybe_run_onboarding() -> bool:
 
 
 def _env_candidates() -> tuple[Path, ...]:
-    """Return provider `.env` candidates in the same order as ``src.providers.llm``."""
+    """Return provider `.env` candidates in the same order as ``src.providers.settings``."""
     return (_ENV_PATH, _PROJECT_ENV_PATH, _CWD_ENV_PATH)
 
 

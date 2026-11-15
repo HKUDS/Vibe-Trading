@@ -18,6 +18,9 @@ Responses API for endpoints that support it.
 
 from __future__ import annotations
 
+from src.providers import llm as _provider_adapters
+from src.providers import settings as _provider_configuration
+
 import importlib.util
 import json
 import os
@@ -42,7 +45,7 @@ def _pin_dotenv_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     developer's own ``~/.vibe-trading/.env`` and leak real provider settings
     into the assertions. ``monkeypatch`` restores the module flag afterwards.
     """
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", True)
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", True)
 
 
 @pytest.fixture
@@ -104,7 +107,7 @@ def _capture_kwargs(env: dict[str, str]) -> dict[str, Any]:
             captured.update(kwargs)
 
     with patch.dict(os.environ, env, clear=True):
-        with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+        with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
             build_llm()
     return captured
 
@@ -129,9 +132,13 @@ def test_uses_responses_api_matches_provider_route(
     native_available: bool,
     expected: bool,
 ) -> None:
-    monkeypatch.setattr(llm_mod, "_native_deepseek_adapter_available", lambda: native_available)
+    monkeypatch.setattr(_provider_adapters, "_native_deepseek_adapter_available", lambda: native_available)
 
+    monkeypatch.setenv("LANGCHAIN_MAX_TOKENS", "-1")
+    if adapter is not None:
+        monkeypatch.setenv("VIBE_TRADING_DEEPSEEK_ADAPTER", adapter)
     assert uses_responses_api(provider, True, adapter) is expected
+    assert uses_responses_api(provider, True) is expected
 
 
 class TestDirectOpenAI:
@@ -270,14 +277,14 @@ class TestUnsupportedProviders:
         A new provider flipping ``top_level_reasoning_effort=True`` has to be
         added to this set deliberately, with live evidence (or, for moonshot,
         its published contract — issue #2020, pending live confirmation; see
-        its entry in capabilities.py), rather than picked up by a broad
+        its entry in llm_providers.json), rather than picked up by a broad
         predicate. If this fails, someone widened the allowlist — confirm a
         real request to that endpoint succeeded before updating it.
         """
-        from src.providers.capabilities import _PROVIDERS
+        from src.providers.registry import provider_catalog, get_provider_capabilities
 
-        allowlisted = {name for name, caps in _PROVIDERS.items() if caps.top_level_reasoning_effort}
-        assert allowlisted == {"openai", "deepseek", "moonshot", "kimi"}
+        allowlisted = {row["name"] for row in provider_catalog() if get_provider_capabilities(row["name"]).top_level_reasoning_effort}
+        assert allowlisted == {"openai", "deepseek", "moonshot"}
 
     def test_explicit_openai_provider_keeps_effort_for_deepseek_model(self) -> None:
         kwargs = _capture_kwargs(
@@ -445,7 +452,7 @@ class TestAnthropicNativeProvider:
                 captured.update(kwargs)
 
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "_make_temperature_safe_anthropic", lambda _: _FakeChatAnthropic):
+            with patch.object(_provider_adapters, "_make_temperature_safe_anthropic", lambda _: _FakeChatAnthropic):
                 build_llm()
         return captured
 
@@ -468,7 +475,7 @@ class TestAnthropicNativeProvider:
     def test_unset_effort_stays_absent(self) -> None:
         kwargs = self._capture(self._env())
 
-        assert kwargs["reasoning_effort"] is None
+        assert kwargs.get("reasoning_effort") is None
 
     def test_temperature_is_omitted_when_effort_is_sent(self) -> None:
         """Effort enables adaptive thinking, which rejects temperature != 1.
@@ -502,7 +509,7 @@ class TestAnthropicNativeProvider:
             )
         )
 
-        assert kwargs["reasoning_effort"] is None
+        assert kwargs.get("reasoning_effort") is None
         assert kwargs["temperature"] == 0.0
 
     def test_an_unrecognised_model_is_not_sent_it(self) -> None:
@@ -510,7 +517,7 @@ class TestAnthropicNativeProvider:
 
         Guessing wrong breaks the request outright, while a missing entry only
         leaves the effort setting inert — the same asymmetry that keeps
-        `top_level_reasoning_effort` a positive allowlist in capabilities.py.
+        `top_level_reasoning_effort` a positive allowlist in llm_providers.json.
         """
         kwargs = self._capture(
             self._env(
@@ -519,14 +526,13 @@ class TestAnthropicNativeProvider:
             )
         )
 
-        assert kwargs["reasoning_effort"] is None
+        assert kwargs.get("reasoning_effort") is None
 
     def test_an_adapter_without_the_field_is_not_sent_it(self) -> None:
         """pyproject allows langchain-anthropic>=1.3.0, which predates the field.
 
-        ChatAnthropic sets `extra="ignore"`, so an older install would swallow
-        the kwarg silently — while the caller still paid the dropped
-        temperature. Sending neither is the honest outcome.
+        Older adapters can move unknown kwargs into the API payload. Omit
+        the field entirely and preserve the configured temperature.
         """
         captured: dict[str, Any] = {}
 
@@ -541,15 +547,15 @@ class TestAnthropicNativeProvider:
         old_module = SimpleNamespace(ChatAnthropic=_OldChatAnthropic)
 
         with patch.dict(os.environ, self._env(LANGCHAIN_REASONING_EFFORT="high"), clear=True):
-            with patch.object(llm_mod, "import_module", lambda _: old_module):
+            with patch.object(_provider_adapters, "import_module", lambda _: old_module):
                 with patch.object(
-                    llm_mod,
+                    _provider_adapters,
                     "_make_temperature_safe_anthropic",
                     lambda _: _OldChatAnthropic,
                 ):
                     build_llm()
 
-        assert captured["reasoning_effort"] is None
+        assert "reasoning_effort" not in captured
         assert captured["temperature"] == 0.0
 
     def test_the_installed_adapter_renders_effort_as_output_config(self) -> None:

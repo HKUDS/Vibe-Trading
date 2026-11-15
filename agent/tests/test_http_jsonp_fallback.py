@@ -93,4 +93,6 @@ def test_browser_transport_obeys_the_same_throttle_and_decodes_jsonp(monkeypatch
         "result": {"cmsArticleWebOld": []}
     }
     assert waits == [("eastmoney", 0.5)]
-    assert calls[0][1]["timeout"] == 15.0
+    # The source budget now bounds every transport, including curl fallback.
+    from src.data_gateway import get_gateway
+    assert 0 < calls[0][1]["timeout"] <= get_gateway().config.source_timeout

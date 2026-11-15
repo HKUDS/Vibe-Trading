@@ -10,7 +10,6 @@ worker stay in sync.
 
 from __future__ import annotations
 
-import os
 
 from src.config.accessor import get_env_config
 

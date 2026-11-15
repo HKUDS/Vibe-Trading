@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from src.providers import settings as _provider_configuration
+
 import json
 import time
 from pathlib import Path
@@ -70,7 +72,7 @@ def test_codex_base_url_is_restricted_to_chatgpt_endpoint() -> None:
 
 
 def test_build_llm_returns_codex_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", True)
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", True)
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai-codex")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", DEFAULT_CODEX_MODEL)
     monkeypatch.setenv("OPENAI_CODEX_BASE_URL", DEFAULT_CODEX_URL)

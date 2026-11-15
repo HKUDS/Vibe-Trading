@@ -84,7 +84,7 @@ def _load_cli_env() -> None:
     themselves before reading credentials.
     """
     try:
-        from src.providers.llm import _ensure_dotenv
+        from src.providers.settings import _ensure_dotenv
 
         _ensure_dotenv()
     except Exception:

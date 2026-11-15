@@ -22,7 +22,8 @@ The first version reads these files only:
 - `req.json`
 - `state.json`
 - `trace.jsonl` and safe prompt/content sidecars
-- `artifacts/grounding_evidence.json`
+- `artifacts/identity_evidence.json` (current instrument resolution)
+- `artifacts/grounding_evidence.json` (legacy/offline numeric diagnostics)
 - `llm_usage.json`
 - `run_manifest.json`
 
@@ -53,3 +54,26 @@ measure live Agent quality. Run production prompts unchanged through the
 normal Agent, then bind the actual persisted artifacts for a real evaluation.
 The stricter Research Lab command exits 2 for incomplete coverage, while the
 original standalone harness CLI retains its existing exit behavior.
+
+## Research delivery and offline diagnostics
+
+The research runtime imports only `src.agent.instrument_identity` for instrument
+resolution and tool authorization. Numeric diagnostics live in `evals.grounding`;
+no runtime path imports them. They emit findings only: no correction prompts,
+redaction, fallback answers, declaration stripping or streaming limits. Legacy
+figures declarations remain readable solely for historical evaluation. Missing
+numeric diagnostics do not constitute a numeric correctness pass.
+
+`agent/tests/fixtures/research_output/collar_sign.json` preserves a human-reviewed
+real PM transcription error: the reported cap was −18.5%, while the tool computed
++18.532041639%. Its report hash and producing run identify the unchanged original.
+`test_research_cleanup.py` uses the existing measurement evaluator to fail the
+negative claim and pass the positive rounding control, without altering either.
+No heuristic is added to infer a claim's meaning from arbitrary report prose.
+
+The same offline regression set also retains two errors observed in the cleanup
+validation: confusing GPD scale with mean excess loss, and misstating collar
+returns at scenario endpoints. Human-reviewed claims and source/report hashes
+are stored alongside the sign case; the existing measurement evaluator checks
+them against independent calculations. Correctly rounded controls pass. No
+production parser, report gate, or rewriting rule is added for these cases.

@@ -171,7 +171,9 @@ class LLMConfig(_EnvBase):
     langchain_max_tokens: int | None = Field(
         alias="LANGCHAIN_MAX_TOKENS", default=None, gt=0
     )
-    anthropic_max_tokens: int | None = Field(alias="ANTHROPIC_MAX_TOKENS", default=None, gt=0)
+    # Use an explicit, configurable output budget so unknown proxy aliases do
+    # not silently inherit the adapter's 4096-token fallback (including thinking).
+    anthropic_max_tokens: int | None = Field(alias="ANTHROPIC_MAX_TOKENS", default=16384, gt=0)
     timeout_seconds: int = Field(alias="TIMEOUT_SECONDS", default=120)
     max_retries: int = Field(alias="MAX_RETRIES", default=2)
     langchain_reasoning_effort: str = Field(alias="LANGCHAIN_REASONING_EFFORT", default="")
@@ -299,6 +301,7 @@ class DataConfig(_EnvBase):
     market_data_order_hk_equity: str = Field(alias="MARKET_DATA_ORDER_HK_EQUITY", default="")
     market_data_order_india_equity: str = Field(alias="MARKET_DATA_ORDER_INDIA_EQUITY", default="")
     market_data_order_kr_equity: str = Field(alias="MARKET_DATA_ORDER_KR_EQUITY", default="")
+    market_data_order_jp_equity: str = Field(alias="MARKET_DATA_ORDER_JP_EQUITY", default="")
     market_data_order_ca_equity: str = Field(alias="MARKET_DATA_ORDER_CA_EQUITY", default="")
     market_data_order_ar_equity: str = Field(alias="MARKET_DATA_ORDER_AR_EQUITY", default="")
     market_data_order_br_equity: str = Field(alias="MARKET_DATA_ORDER_BR_EQUITY", default="")

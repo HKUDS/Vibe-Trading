@@ -130,7 +130,7 @@ def test_swarm_worker_passes_spec_skills_as_allowlist(tmp_path: Path) -> None:
             pass
 
         def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
-            from src.providers.llm import LLMResponse
+            from src.providers.chat import LLMResponse
 
             return LLMResponse(content="done")
 
@@ -185,7 +185,7 @@ def test_swarm_worker_empty_skills_stays_unrestricted(tmp_path: Path) -> None:
             pass
 
         def stream_chat(self, messages, tools=None, on_text_chunk=None, timeout=None, on_waiting_chunk=None):
-            from src.providers.llm import LLMResponse
+            from src.providers.chat import LLMResponse
 
             return LLMResponse(content="done")
 

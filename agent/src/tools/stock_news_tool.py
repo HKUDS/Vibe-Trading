@@ -31,6 +31,7 @@ from typing import Any
 
 from backtest.loaders import eastmoney_client, yahoo_client
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -307,6 +308,7 @@ class StockNewsTool(BaseTool):
         "required": [],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Fetch news headlines for one stock or the broad market.
 

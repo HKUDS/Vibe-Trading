@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
+import { assertDataOutsideInstallation, checkDesktopUpdate, stageDesktopUpdate } from "../dist/update.js";
 import { BackendManager } from "../dist/backend-manager.js";
 import { getDesktopMessages } from "../dist/locales.js";
 import { UpdateRecoveryJournal } from "../dist/update-recovery.js";
@@ -21,6 +22,15 @@ const fixtureHash = createHash("sha256").update(fixture).digest("hex");
 const publisher = "ab".repeat(32);
 const otherPublisher = "cd".repeat(32);
 const testRoot = await mkdtemp(path.join(os.tmpdir(), "vibe-update-safety-"));
+assertDataOutsideInstallation(path.join(testRoot, "program"), [path.join(testRoot, "profile")]);
+for (const directory of [path.join(testRoot, "program"), path.join(testRoot, "program", "sessions"), "relative-data"]) {
+  assert.throws(() => assertDataOutsideInstallation(path.join(testRoot, "program"), [directory]));
+}
+await mkdir(path.join(testRoot, "program"));
+await symlink(path.join(testRoot, "program"), path.join(testRoot, "profile-link"), "junction");
+assert.throws(() => assertDataOutsideInstallation(path.join(testRoot, "program"), [
+  path.join(testRoot, "profile-link", "not-created-yet", "sessions"),
+]));
 const artifactPath = path.join(testRoot, "candidate.exe");
 await writeFile(artifactPath, fixture);
 
@@ -31,10 +41,33 @@ const policy = {
 };
 const validSignature = () => ({
   status: "Valid",
+  productVersion: candidate.version,
   artifactSha256: fixtureHash,
   signerSubject: "CN=Vibe-Trading Test Publisher",
   certificateSha256: publisher,
 });
+
+await expectRejection(candidate, policy, () => ({ ...validSignature(), productVersion: "0.2.9" }), "artifact-version-mismatch");
+
+// Exercise the new feed/download boundary; signature and journal cases stay below.
+const originalFetch = globalThis.fetch;
+try {
+  const release = { version: "0.3.1", url: "https://updates.example/installer.exe", sha256: fixtureHash };
+  const feedPolicy = { feedUrl: "https://updates.example/latest.json", allowedPublisherCertificateSha256: [publisher] };
+  globalThis.fetch = async () => Response.json(release);
+  assert.deepEqual(await checkDesktopUpdate(feedPolicy), release);
+  await assert.rejects(checkDesktopUpdate({ ...feedPolicy, allowedPublisherCertificateSha256: [] }), /not configured/u);
+  let requests = 0;
+  globalThis.fetch = async () => { requests++; return new Response(null, { status: 302, headers: { location: "http://insecure.example/file" } }); };
+  await assert.rejects(checkDesktopUpdate(feedPolicy), /HTTPS/u);
+  assert.equal(requests, 1, "an insecure redirect must not be followed");
+  globalThis.fetch = async () => new Response("tampered download");
+  const downloadDirectory = path.join(testRoot, "download");
+  await assert.rejects(stageDesktopUpdate(release, feedPolicy, "0.3.0", downloadDirectory), /SHA-256/u);
+  assert.deepEqual(await (await import("node:fs/promises")).readdir(downloadDirectory), []);
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 const accepted = await verifyWindowsUpdateCandidate(candidate, policy, validSignature);
 assert.equal(accepted.accepted, true);
@@ -134,29 +167,33 @@ if (process.platform === "win32") {
 for (const scenario of [
   { phase: "verified", disposition: "discarded-before-shutdown" },
   { phase: "backend-stopped", disposition: "interrupted-before-installer" },
-  { phase: "installer-launched", disposition: "installer-failed-or-interrupted" },
+  { phase: "installer-launched", disposition: "manual-intervention-required" },
+  { phase: "spawn-failed", disposition: "interrupted-before-installer" },
 ]) {
   const directory = await mkdtemp(path.join(testRoot, "recovery-"));
   const journal = new UpdateRecoveryJournal(directory);
   const stagedArtifact = path.join(directory, "update.exe");
   await writeFile(stagedArtifact, fixture);
   let attempt = await journal.begin(newAttempt("update.exe"));
-  if (scenario.phase === "backend-stopped" || scenario.phase === "installer-launched") {
+  if (scenario.phase !== "verified") {
     attempt = await journal.advance(attempt.attemptId, "backend-stopped");
   }
-  if (scenario.phase === "installer-launched") {
+  if (["installer-launched", "spawn-failed"].includes(scenario.phase)) {
     attempt = await journal.advance(attempt.attemptId, "installer-launched");
   }
-  const recovery = await journal.recover("0.3.0");
+  if (scenario.phase === "spawn-failed") await journal.advance(attempt.attemptId, "backend-stopped");
+  const recovery = await journal.recover("0.3.0", false);
   assert.equal(recovery.disposition, scenario.disposition);
-  assert.equal(await exists(stagedArtifact), false);
-  assert.equal(await exists(journal.journalPath), false);
+  assert.equal(await exists(stagedArtifact), scenario.phase === "installer-launched");
+  assert.equal(await exists(journal.journalPath), scenario.phase === "installer-launched");
 }
 
 const completedDirectory = await mkdtemp(path.join(testRoot, "completed-"));
 const completedJournal = new UpdateRecoveryJournal(completedDirectory);
 await writeFile(path.join(completedDirectory, "update.exe"), fixture);
 await completedJournal.begin(newAttempt("update.exe"));
+assert.equal((await completedJournal.recover("0.3.1", false)).disposition, "none");
+assert.equal(await exists(completedJournal.journalPath), true);
 assert.equal((await completedJournal.recover("0.3.1")).disposition, "completed");
 
 const mismatchDirectory = await mkdtemp(path.join(testRoot, "mismatch-"));
@@ -252,11 +289,11 @@ assert.equal(retainedManager.url, undefined);
 assert.equal(retainedManager.processId, undefined);
 
 console.log(JSON.stringify({
-  verificationCases: ["accepted", "tampered", "unsigned", "invalid-signature", "wrong-publisher", "downgraded", "mutation-during-verification", "mutation-before-launch"],
+  verificationCases: ["accepted", "tampered", "unsigned", "invalid-signature", "wrong-publisher", "signed-version-mismatch", "downgraded", "mutation-during-verification", "mutation-before-launch"],
   recoveryPhases: ["verified", "backend-stopped", "installer-launched", "completed", "version-mismatch", "path-traversal", "concurrent-begin"],
   shutdownFailureRetryVerified: true,
   authenticodeAdapterVerified,
-  updaterEnabled: false,
+  releaseChannelConfigured: false,
 }, null, 2));
 
 async function expectRejection(candidateValue, policyValue, inspector, expectedCode) {

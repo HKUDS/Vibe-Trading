@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-import os
 import re
-import tempfile
 from pathlib import Path
-from typing import Dict
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse
 
-from src.api._compat import host_attr as _host_attr
+from src.config.dotenv import (
+    _atomic_write_secret as _atomic_write_secret,
+    _dotenv_key as _dotenv_key,
+    _ensure_agent_env_file as _ensure_agent_env_file,
+    _format_env_value as _format_env_value,
+    _read_env_values as _read_env_values,
+    _strip_env_value as _strip_env_value,
+    _write_env_values as _write_env_values,
+)
 from src.config.paths import get_runs_dir, get_sessions_dir, get_uploads_dir
 
 
@@ -70,116 +75,6 @@ async def _spa_html_deep_link_fallback(request: Request, call_next):
 # ============================================================================
 
 
-def _atomic_write_secret(path: Path, content: str) -> None:
-    """Write *content* to *path* atomically with 0600 permissions.
-
-    The file holds provider API keys, so a crash mid-write must never leave a
-    half-written or world-readable secret. The primary path writes to a sibling
-    temp file (created 0600 by ``mkstemp``) and ``os.replace``s it onto the
-    target — an atomic swap on the same filesystem.
-
-    Fallback: when the parent directory is read-only (the ``.env`` is
-    bind-mounted into a container whose rootfs is ``read_only: true``, so no
-    sibling temp file can be created) the swap is impossible. There we write in
-    place, still enforcing 0600; atomicity is sacrificed for that one edge but
-    the secret still persists and stays owner-only.
-    """
-    data = content.encode("utf-8")
-    try:
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".env.", suffix=".tmp")
-    except OSError:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.write(fd, data)
-        finally:
-            os.close(fd)
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-        return
-    try:
-        os.write(fd, data)
-        # ``os.fchmod`` is unavailable on Windows.  Keep descriptor-level
-        # permission hardening on platforms that support it, then use the
-        # portable path-based best effort after the descriptor is closed.
-        if hasattr(os, "fchmod"):
-            os.fchmod(fd, 0o600)
-    finally:
-        os.close(fd)
-    try:
-        os.chmod(tmp, 0o600)
-    except OSError:
-        # Windows ACLs govern effective access and chmod may be unsupported
-        # or map only to the read-only flag.
-        pass
-    try:
-        os.replace(tmp, path)
-    except BaseException:
-        # Never leave a stray temp file holding the secret behind.
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
-def _ensure_agent_env_file(path: Path | None = None) -> Path:
-    """Ensure the selected settings dotenv exists with private permissions."""
-    env_path = path or _host_attr("ENV_PATH", ENV_PATH)
-    env_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not env_path.exists():
-        _atomic_write_secret(env_path, "# Created by Vibe-Trading Web UI settings.\n")
-    return env_path
-
-
-def _strip_env_value(value: str) -> str:
-    """Remove basic dotenv quotes and inline comments."""
-    value = value.strip()
-    if value[:1] in {"'", '"'}:
-        q = value[0]
-        i = 1
-        while i < len(value):
-            if value[i] == "\\" and i + 1 < len(value):
-                i += 2
-                continue
-            if value[i] == q:
-                return value[1:i].strip()
-            i += 1
-        return value
-    if " #" in value:
-        value = value.split(" #", 1)[0].rstrip()
-    return value.strip()
-
-
-def _dotenv_key(raw_key: str) -> str:
-    """Return the canonical env key, stripping an optional ``export `` prefix.
-
-    python-dotenv accepts ``export KEY=value``; Settings must too so reads and
-    upserts hit the same key users set when sourcing a shell-style dotenv.
-    """
-    key = raw_key.strip()
-    if key.lower().startswith("export "):
-        key = key[7:].strip()
-    return key
-
-
-def _read_env_values(path: Path) -> Dict[str, str]:
-    """Read active KEY=value entries from a dotenv file."""
-    values: Dict[str, str] = {}
-    if not path.exists():
-        return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = _dotenv_key(key)
-        if key:
-            values[key] = _strip_env_value(value)
-    return values
-
-
 def _project_relative_path(path: Path) -> str:
     """Return a project-relative display path without leaking an absolute path."""
     if path == ENV_PATH:
@@ -188,50 +83,6 @@ def _project_relative_path(path: Path) -> str:
         return path.resolve().relative_to(AGENT_DIR.parent.resolve()).as_posix()
     except ValueError:
         return path.name
-
-
-def _format_env_value(value: str) -> str:
-    """Format a dotenv value without allowing multiline injection."""
-    if "\n" in value or "\r" in value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Environment values cannot contain newlines",
-        )
-    value = value.strip()
-    if not value:
-        return ""
-    if any(ch.isspace() for ch in value) or "#" in value:
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    return value
-
-
-def _write_env_values(path: Path, updates: Dict[str, str]) -> None:
-    """Upsert active dotenv values while preserving comments and ordering."""
-    _ensure_agent_env_file(path)
-    lines = path.read_text(encoding="utf-8").splitlines()
-    # Last active KEY= wins on read; update that line so upserts stick.
-    last_active: Dict[str, int] = {}
-    for index, raw in enumerate(lines):
-        stripped = raw.lstrip()
-        if stripped.startswith("#") or "=" not in stripped:
-            continue
-        key = _dotenv_key(stripped.split("=", 1)[0])
-        if key in updates:
-            last_active[key] = index
-    seen: set[str] = set()
-    for key, index in last_active.items():
-        stripped = lines[index].lstrip()
-        prefix = "export " if stripped.lower().startswith("export ") else ""
-        lines[index] = f"{prefix}{key}={_format_env_value(updates[key])}"
-        seen.add(key)
-    missing = [key for key in updates if key not in seen]
-    if missing:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.append("# Updated from Web UI")
-        for key in missing:
-            lines.append(f"{key}={_format_env_value(updates[key])}")
-    _atomic_write_secret(path, "\n".join(lines) + "\n")
 
 
 def _is_configured_secret(value: str, placeholders: set[str]) -> bool:

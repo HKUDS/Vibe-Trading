@@ -7,12 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.context import _SYSTEM_PROMPT
-from src.agent.grounding import GroundingLedger
-from src.agent.loop import AgentLoop
-from src.agent.tools import BaseTool, ToolRegistry
-from src.agent.trace import TraceWriter
-from src.providers.chat import LLMResponse, ToolCallRequest
+from evals.grounding import GroundingLedger
 
 pytestmark = pytest.mark.unit
 
@@ -38,20 +33,6 @@ def _check(ledger: GroundingLedger, ref: str, written: str = "12.5"):
     )
 
 
-def test_alias_stays_rejected_and_lists_the_real_ref(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, {"call_9f3a": 12.5})
-
-    result = _check(ledger, f"r1::{PATH}")
-
-    assert result.valid is False
-    issue = result.issues[0]
-    assert issue["reason"] == "unknown_call_id"
-    assert issue["field_ref_candidates"] == [f"call_9f3a::{PATH}"]
-    correction = ledger.correction_prompt(result)
-    assert f"call_9f3a::{PATH}" in correction
-    assert "not an alias" in correction
-    # The suggestion is advisory: only the exact ref is accepted.
-    assert _check(ledger, f"call_9f3a::{PATH}").valid is True
 
 
 def test_alias_with_a_shortened_path_lists_the_full_path(tmp_path: Path) -> None:
@@ -110,10 +91,6 @@ def test_a_bare_unknown_ref_does_not_get_candidates(tmp_path: Path) -> None:
     assert not any(issue.get("reason") == "unknown_call_id" for issue in result.issues)
 
 
-def test_prompt_example_is_a_placeholder_not_a_call_id_shape() -> None:
-    assert "q1::" not in _SYSTEM_PROMPT
-    assert "<call_id>::historical_var" in _SYSTEM_PROMPT
-    assert "never invent a short alias" in _SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize("written", ["12.6", "12.55", "15.0"])
@@ -245,115 +222,3 @@ def test_analysis_only_candidates_preserve_the_figure_kind(tmp_path: Path, writt
         assert _check(ledger, ref, written).valid
     else:
         assert not any(issue.get("field_ref_candidates") for issue in result.issues)
-
-
-class _ReportTool(BaseTool):
-    name = "report_tool"
-    description = "Return summary metrics."
-    parameters = {"type": "object", "properties": {}}
-
-    def __init__(self, result: str) -> None:
-        self.result = result
-
-    def execute(self, **_kwargs) -> str:
-        return self.result
-
-
-def test_agent_loop_sends_the_hint_and_releases_the_corrected_answer(tmp_path: Path) -> None:
-    """Replay the provider response locally through the actual tool and release path."""
-    exact_ref = f"call_9f3a::{PATH}"
-
-    def draft(ref: str) -> str:
-        return f"Total return 12.5.\n```figures\n12.5 | observed | total return | {ref}\n```"
-
-    class CopyingLLM:
-        calls = 0
-
-        def stream_chat(self, messages, on_text_chunk=None, **_kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                return LLMResponse(tool_calls=[ToolCallRequest("call_9f3a", "report_tool", {})])
-            if self.calls == 2:
-                content = draft(f"r1::{PATH}")
-            else:
-                assert self.calls == 3
-                correction = messages[-1]["content"]
-                assert exact_ref in correction
-                assert "not an alias" in correction
-                content = draft(exact_ref)
-            if on_text_chunk:
-                on_text_chunk(content)
-            return LLMResponse(content=content)
-
-        def chat(self, _messages, **_kwargs):
-            return LLMResponse(content="")
-
-    registry = ToolRegistry()
-    registry.register(_ReportTool(json.dumps({"data": {"summary": {"total_return": 12.5}}})))
-    llm = CopyingLLM()
-    events = []
-    agent = AgentLoop(
-        registry=registry,
-        llm=llm,
-        max_iterations=5,
-        event_callback=lambda event, data: events.append((event, data)),
-    )
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    agent.memory.run_dir = str(run_dir)
-    result = agent.run("Report the total return")
-
-    assert result["status"] == "success"
-    assert not result.get("degraded")
-    assert result["content"] == "Total return 12.5."
-    assert llm.calls == 3
-    rejected = [event for event in TraceWriter.read(run_dir) if event.get("type") == "answer_rejected"]
-    assert len(rejected) == 1
-    assert rejected[0]["issues"][0]["reason"] == "unknown_call_id"
-    assert rejected[0]["issues"][0]["field_ref_candidates"] == [exact_ref]
-    assert any(event == "grounding_status" and data["stage"] == "revising" for event, data in events)
-
-
-def test_agent_loop_keeps_clean_figures_and_revalidates_the_repair(tmp_path: Path) -> None:
-    """Exercise keep feedback through the actual AgentLoop without a paid model."""
-    class RepairingLLM:
-        calls = 0
-
-        def stream_chat(self, messages, on_text_chunk=None, **_kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                return LLMResponse(tool_calls=[ToolCallRequest("call_report", "report_tool", {})])
-            if self.calls == 2:
-                drawdown = "99.9"
-            else:
-                assert self.calls == 3
-                keep = next(line for line in messages[-1]["content"].splitlines() if "checked clean" in line)
-                assert "12.5" in keep and "99.9" not in keep
-                drawdown = "23.75"
-            content = (
-                f"Total return 12.5. Maximum drawdown {drawdown}.\n"
-                "```figures\n12.5 | observed | total return | call_report::data.summary.total_return\n"
-                f"{drawdown} | observed | maximum drawdown | call_report::data.summary.max_drawdown\n```"
-            )
-            if on_text_chunk:
-                on_text_chunk(content)
-            return LLMResponse(content=content)
-
-        def chat(self, _messages, **_kwargs):
-            return LLMResponse(content="")
-
-    registry = ToolRegistry()
-    registry.register(_ReportTool(json.dumps({"data": {"summary": {"total_return": 12.5, "max_drawdown": 23.75}}})))
-    llm = RepairingLLM()
-    agent = AgentLoop(registry=registry, llm=llm, max_iterations=5)
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    agent.memory.run_dir = str(run_dir)
-    result = agent.run("Report the total return and maximum drawdown")
-    assert result["status"] == "success"
-    assert result["content"] == "Total return 12.5. Maximum drawdown 23.75."
-    assert not result.get("degraded")
-    assert llm.calls == 3
-    rejected = [event for event in TraceWriter.read(run_dir) if event.get("type") == "answer_rejected"]
-    assert len(rejected) == 1
-    assert rejected[0]["issues"][0]["value"] == "99.9"
