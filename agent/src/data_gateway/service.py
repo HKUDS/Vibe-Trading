@@ -315,7 +315,9 @@ class MarketDataGateway:
                 current_gateway.set(self)
                 owned_source.set(True)
                 source_background.set(is_background)
-                source_deadline.set(time.monotonic() + timeout)
+                until = time.monotonic() + timeout
+                parent_deadline = source_deadline.get()
+                source_deadline.set(min(until, parent_deadline) if parent_deadline is not None else until)
                 return function(**params)
 
             future = self.sources.submit(context.run, acquire)

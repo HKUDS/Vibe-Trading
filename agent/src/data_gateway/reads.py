@@ -84,22 +84,31 @@ def read(gateway, operation, params, acquire, *, cacheable=True):
         if remaining <= 0:
             raise TimeoutError("Data request expired before nested acquisition")
         return gateway.invoke(lambda: acquire(), {}, remaining)
-    policy = {k: v for k, v in os.environ.items() if k.startswith("MARKET_DATA_ORDER_")}
-    from src.config.accessor import get_env_config
+    # Only reusable snapshots need configuration/argument cache identity.
+    # Opaque acquisitions keep caller validation and never share cached data.
+    if cacheable:
+        policy = {k: v for k, v in os.environ.items() if k.startswith("MARKET_DATA_ORDER_")}
+        from src.config.accessor import get_env_config
 
-    # Settings can change routing/entitlements/contact headers mid-process.
-    # Hash the data config; never persist credentials or contact information.
-    configuration = hashlib.sha256(get_env_config().data.model_dump_json().encode()).hexdigest()
-    identity = {"arguments": params, "routing_policy": policy, "configuration": configuration}
-    # Opaque/mutable acquisitions cannot assume that two instances have the
-    # same credentials, local file revision, SDK connection or adjustment mode.
+        configuration = hashlib.sha256(get_env_config().data.model_dump_json().encode()).hexdigest()
+        identity = {"arguments": params, "routing_policy": policy, "configuration": configuration}
+        try:
+            key = gateway._key("reader:v1:" + operation, identity)
+        except (TypeError, ValueError):
+            # Invalid arguments must still reach the reader's existing validation
+            # inside the bounded source slot, without cache reuse or persistence.
+            cacheable = False
     if not cacheable:
-        identity["acquisition"] = uuid.uuid4().hex
-    key = gateway._key("reader:v1:" + operation, identity)
+        key = "reader:uncached:" + uuid.uuid4().hex
     cached = gateway.cache.get(key) if cacheable else None
     if cached and time.time() - cached["stored_at"] <= gateway.config.ttl:
         return cached["payload"]["value"]
+    from backtest.loaders.acquisition import source_deadline
+
     until = time.monotonic() + gateway.config.request_timeout
+    parent_deadline = source_deadline.get()
+    if parent_deadline is not None:
+        until = min(until, parent_deadline)
 
     def execute():
         from .scheduling import deadline

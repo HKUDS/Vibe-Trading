@@ -80,6 +80,42 @@ def test_uncached_instance_and_large_result_preserve_every_row(gateway):
     assert not list(gateway.config.cache_dir.glob("*.json"))
 
 
+@pytest.mark.parametrize("direct", [False, True])
+def test_existing_acquisition_deadline_survives_gateway_handoff(gateway, direct):
+    from backtest.loaders.acquisition import source_deadline
+
+    parent = time.monotonic() + 1
+    token = source_deadline.set(parent)
+    try:
+        if direct:
+            observed = gateway.submit_source(source_deadline.get, {}, 30).result(timeout=1)
+        else:
+            observed = read(gateway, "deadline", {}, source_deadline.get, cacheable=False)
+        assert observed <= parent
+        assert source_deadline.get() == parent
+    finally:
+        source_deadline.reset(token)
+
+
+@pytest.mark.parametrize("argument", [float("nan"), float("inf"), object()])
+def test_uncacheable_arguments_reach_reader_validation_without_caching(gateway, argument):
+    from src.data_gateway.reads import owned_source
+
+    calls = []
+
+    def validate():
+        assert owned_source.get()
+        calls.append(argument)
+        raise ValueError("reader rejected argument")
+
+    for _ in range(2):
+        with pytest.raises(ValueError, match="reader rejected argument"):
+            read(gateway, "validation", {"value": argument}, validate)
+    assert len(calls) == 2
+    assert not gateway.cache.memory
+    assert not list(gateway.config.cache_dir.glob("*.json"))
+
+
 def test_nested_reader_does_not_enqueue_behind_its_source(gateway):
     @managed_reader
     def inner():

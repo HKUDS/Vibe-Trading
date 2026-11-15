@@ -181,18 +181,19 @@ class TestRegistry:
             def recognize(self, image):
                 return "fake"
 
-        # Mock _discover_plugins to return our fake plugin
-        monkeypatch.setattr(
-            ocr_engine,
-            "_discover_plugins",
-            lambda: {"rapid": FakePluginEngine},
-        )
+        # Restore discovery before fixture teardown clears its real LRU cache.
+        with monkeypatch.context() as patch:
+            # Mock _discover_plugins to return our fake plugin
+            patch.setattr(
+                ocr_engine,
+                "_discover_plugins",
+                lambda: {"rapid": FakePluginEngine},
+            )
 
-        engines = ocr_engine._all_engines()
-        rapid_cls = engines["rapid"]
-        engine = rapid_cls()
-        assert engine.install_hint == "fake plugin"
-
+            engines = ocr_engine._all_engines()
+            rapid_cls = engines["rapid"]
+            engine = rapid_cls()
+            assert engine.install_hint == "fake plugin"
 
 # ---------------------------------------------------------------------------
 # Install hints

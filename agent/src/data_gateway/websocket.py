@@ -31,5 +31,11 @@ class PublicConnection(ClientConnection):
         try:
             super().connection_lost(exc)
         finally:
-            for error in (self.protocol.parser_exc, self.protocol.handshake_exc, self.recv_exc):
+            # websockets 17 renamed recv_exc to connection_exc.
+            for error in (
+                self.protocol.parser_exc,
+                self.protocol.handshake_exc,
+                getattr(self, "recv_exc", None),
+                getattr(self, "connection_exc", None),
+            ):
                 release_error_frames(error)

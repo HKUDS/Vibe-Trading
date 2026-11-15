@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (83)
+## Available MCP Tools (84)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
