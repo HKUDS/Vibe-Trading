@@ -447,7 +447,7 @@ class HistoryStore:
             if full and _automatic:
                 raise ValueError("History worker queue is full")
             self.status(job)
-            with self.lease(job), self.transaction() as db:
+            with self.transaction() as db:
                 row = db.execute("SELECT * FROM jobs WHERE id=?", (job,)).fetchone()
                 if _automatic and not (
                     row["auto_resume"]
@@ -457,15 +457,19 @@ class HistoryStore:
                     return self.status(job)
                 if row["state"] in {"running", "queued"}:
                     raise ValueError("History job is already running or queued")
-                db.execute(
-                    "UPDATE jobs SET state=?,cancel=0,owner=?,auto_resume=1,retry_at=0,retry_count=? WHERE id=?",
-                    (
-                        "waiting" if full else "queued",
-                        None if full else os.getpid(),
-                        row["retry_count"] if _automatic else 0,
-                        job,
-                    ),
-                )
+                # Ineligible dispatchers must not briefly take a queued
+                # worker's lease: its nonblocking acquisition would fail.
+                # Keep the eligibility check and claim in one transaction.
+                with self.lease(job):
+                    db.execute(
+                        "UPDATE jobs SET state=?,cancel=0,owner=?,auto_resume=1,retry_at=0,retry_count=? WHERE id=?",
+                        (
+                            "waiting" if full else "queued",
+                            None if full else os.getpid(),
+                            row["retry_count"] if _automatic else 0,
+                            job,
+                        ),
+                    )
             if full:
                 return self.status(job)
             self.futures[job] = self.executor.submit(self.run, job, max_chunks=1)

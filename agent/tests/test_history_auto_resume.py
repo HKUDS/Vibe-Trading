@@ -1,6 +1,8 @@
 """Durable retry dispatch, user intent and recovery without client resume loops."""
 
+from contextlib import contextmanager
 import hashlib
+import os
 import threading
 import time
 
@@ -113,6 +115,37 @@ def test_retry_schedule_survives_restart_and_two_dispatchers_claim_once(store):
         release.set()
         a.close()
         b.close()
+
+
+def test_stale_dispatcher_does_not_take_queued_workers_lease(store, monkeypatch):
+    job = create(store)
+    with store.transaction() as db:
+        db.execute(
+            "UPDATE jobs SET state='queued',auto_resume=1,owner=? WHERE id=?",
+            (os.getpid(), job),
+        )
+    other = HistoryStore(store.directory, fetcher=rows)
+    original_lease = other.lease
+    worker_errors = []
+
+    @contextmanager
+    def race_worker(job_id, timeout=0):
+        with original_lease(job_id, timeout):
+            # Force the queued worker to enter while a stale dispatcher is
+            # checking the same job. That check must not hold its worker lease.
+            try:
+                store.run(job_id)
+            except ValueError as exc:
+                worker_errors.append(exc)
+            yield
+
+    monkeypatch.setattr(other, "lease", race_worker)
+    try:
+        assert other.start(job, _automatic=True)["state"] == "queued"
+        assert not worker_errors
+        assert store.run(job)["state"] == "complete"
+    finally:
+        other.close()
 
 
 @pytest.mark.parametrize(
