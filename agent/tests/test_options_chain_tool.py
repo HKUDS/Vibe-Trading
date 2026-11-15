@@ -148,3 +148,13 @@ def test_mcp_exposes_and_forwards_the_same_small_window(monkeypatch):
     monkeypatch.setattr(mcp_server, "_get_registry", lambda: registry)
     assert json.loads(call("AAPL.US", near_spot_count=2))["ok"]
     registry.execute.assert_called_once_with("get_options_chain", {"ticker": "AAPL.US", "near_spot_count": 2})
+
+
+def test_dates_and_quote_calculations_are_explicit_without_extra_source_read(source):
+    result = json.loads(OptionsChainTool().execute(ticker="AAPL", near_spot_count=2))
+    data = result["data"]
+    assert data["expiration_date"] == "2030-01-01"
+    row = data["calls"][0]
+    assert row["mid_price"] == 3.5 and row["bid_ask_spread"] == 1
+    assert "midpoint_not_execution_price" in row["quote_calculation_basis"]
+    assert source.call_count == 1

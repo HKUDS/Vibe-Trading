@@ -474,6 +474,36 @@ class IdentityLedger:
         self._seed_symbols(user_message, source="user_message")
         self.persist()
 
+    def reusable_resolution(self, arguments: Mapping[str, Any]) -> str | None:
+        """Reuse an exact, settled session identity without asserting a fresh lookup.
+
+        Bare names, extra search text, contextual constraints, conflicts and
+        explicit refreshes still require the real resolver. Nothing mutates the
+        ledger: a user assertion remains a user assertion, not provider evidence.
+        """
+        if arguments.get("refresh") or self.identity_status != "locked":
+            return None
+        query = str(arguments.get("query") or "").strip()
+        symbol = _normalize_symbol(query)
+        if _scan_symbols(query) != {symbol} or query.upper() != symbol:
+            return None
+        if self.resolution_context.constraints_for(query):
+            return None
+        records = [r for r in self._identities.values() if r.symbol == symbol]
+        if not records or any(r.status != "locked" for r in records):
+            return None
+        record = records[0]
+        return json.dumps({
+            "ok": True, "source": "session_identity", "reused": True,
+            "network_lookup_performed": False,
+            "data": {"query": query, "count": 1, "candidates": [{
+                "symbol": symbol, "venue": record.venue,
+                "instrument_type": record.instrument_type, "currency": record.currency,
+                "source": record.source,
+            }], "identity_version": record.version},
+            "message": "Reused the existing identity only; no fresh listing or issuer metadata was fetched. Set refresh=true for resolver verification through the gateway, with its normal cache/freshness policy.",
+        }, ensure_ascii=False)
+
     def authorize_tool_call(
         self,
         tool_name: str,

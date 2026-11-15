@@ -172,6 +172,31 @@ class ToolCallLifecycle:
                     iteration,
                 )
                 continue
+            if (
+                self._identity is not None and tc.name == "search_symbol"
+                and getattr(tool_def, "reuse_session_identity", False)
+            ):
+                from src.providers.tool_policy import _deny_prefixes
+
+                reused = (
+                    None if tc.name.startswith(_deny_prefixes())
+                    else self._identity.reusable_resolution(tc.arguments)
+                )
+                if reused is not None:
+                    self._emit("tool_call", {
+                        "tool": tc.name, "arguments": redact_payload(tc.arguments),
+                        "iter": iteration, "call_id": tc.id,
+                    })
+                    trace.write({
+                        "type": "identity_reused", "iter": iteration, "tool": tc.name,
+                        "call_id": tc.id, "args": redact_payload(tc.arguments),
+                    })
+                    self._tool_progress.note("reused", tc.name)
+                    self._finalize_tool_result(
+                        tc, reused, 0, context, messages, trace, react_trace, iteration,
+                        update_memory=False, update_identity=False,
+                    )
+                    continue
             if self._identity is not None:
                 authorization = self._identity.authorize_tool_call(
                     tc.name,
@@ -830,6 +855,7 @@ class ToolCallLifecycle:
         iteration: int,
         *,
         update_memory: bool = True,
+        update_identity: bool = True,
     ) -> None:
         """Record a tool result: update memory, append message, write trace, emit event.
 
@@ -843,6 +869,7 @@ class ToolCallLifecycle:
             react_trace: React trace list.
             iteration: Current iteration.
             update_memory: Whether this call reached the tool implementation.
+            update_identity: False for a local replay of an unchanged identity.
         """
         # Scrub before caching, truncation and model context, not just the
         # downstream trace/event preview. Shell stdout may hold credentials.
@@ -875,7 +902,7 @@ class ToolCallLifecycle:
             if tc.name in {"write_file", "edit_file"}:
                 self._record_written_target(tc.arguments)
 
-        if self._identity is not None:
+        if self._identity is not None and update_identity:
             self._identity.ingest_tool_result(
                 tool_name=tc.name,
                 arguments=_normalize_tool_run_dir(tc.arguments, self.memory.run_dir),

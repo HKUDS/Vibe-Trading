@@ -2657,3 +2657,72 @@ not a statistically established latency guarantee or four isolated cold starts.
   the existing bundle-size warning. No visual redesign was made or claimed.
 - Independent process inspection found no remaining test harness or temporary
   MCP processes. No market observations or credentials are committed.
+
+## v29 — Reduce mixed-options agent work in execution/data delivery (2026-11-15)
+
+Base `7a8635a16`. No system-prompt changes, new executors/caches, increased
+resource caps, deadline changes, retries or options UI changes.
+
+Execution changes:
+
+- The actual agent tool lifecycle reuses an exact canonical identity already
+  locked in this session. The response says `source=session_identity`,
+  `network_lookup_performed=false`, and preserves the original evidence source
+  and ledger version. User-provided identity is never promoted to provider
+  verification. Bare names, new symbols, extra query text, contextual constraints
+  and conflicting/unsettled identities still require resolution. Only the
+  concrete resolver opts into this shortcut; tool deny policy still applies.
+  `search_symbol(refresh=true)` (also exposed by MCP) requests the gateway-backed
+  resolver instead of identity reuse; its normal freshness/cache rules apply.
+- MarketDataTool returns an observed-series summary: count, sampling status,
+  endpoints, provenance, coverage metadata, sequence irregularities and scalar
+  statistics. It iterates existing rows, performs no acquisition and retains no
+  new cache. Statistics are explicitly calculated from returned rows, not total
+  return; missing fields/overflow remain unavailable. Daily exchange breaks are
+  not inferred from a continuous-minute spacing test.
+- Oversized-result receipts carry this bounded summary and retain missing-symbol
+  diagnostics. Full JSON and its checksum remain intact, the 10K output budget
+  is unchanged, and `_preview` is preserved as the existing partial-receipt
+  discriminator. If the summary itself is too large, it remains in the artifact.
+- Options expose the chosen source expiration as an explicitly UTC-derived ISO
+  date, plus mid-price and spread derived from the returned bid/ask. A midpoint
+  is labelled as a calculation, not an executable price. Source timestamps,
+  delay flags, pagination and identity authorization are unchanged.
+
+The exact prior options/HK/BTC task and configured
+`deepseek-v4-1-flash-261017` model were used. Evidence outside Git:
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/`:
+`gateway-mixed-structural-20261115/` and
+`gateway-mixed-structural-final-20261115/` (`audit.py`, `report.json`, traces).
+
+| Observation | Previous final sample | First implementation | Summary with statistics |
+| --- | ---: | ---: | ---: |
+| End-to-end seconds | 50.502 | 29.681 | 28.056 |
+| Model iterations | 7 | 5 | 5 |
+| Real resolver tool executions | 3 | 1 | 1 |
+| Local Python executions | 3 | 2 | 0 |
+
+The first implementation trace proves the HK search was answered from the
+existing identity with no upstream call. The final sample's data-tool wall
+union was 5.235 seconds. It issued one unresolved AAPL options call which the
+existing identity gate refused, then searched AAPL and fetched the chain;
+this remains an avoidable ordering error, not a relaxed guard. No duplicate
+bar download or external-MCP task call occurred. An independent real Yahoo MCP
+was exposed and preflighted, with only its setup call observed. These are single
+samples, not a statistical latency guarantee.
+
+Independent checks: 288 BTC bars with unique 300-second spacing; high, low,
+volume sum and first/last-close change recalculated from the artifact; five HK
+bars with calendar metadata; four near-price option contracts with dates and
+mid/spread calculations independently checked. Generated prose beyond these
+observations is not certified. Python socket hooks are not an OS network sandbox.
+No test/MCP processes remained after completion. Limits stayed 8 MiB memory,
+64 MiB disk, four workers, sixteen pending; source/request deadlines unchanged.
+
+Validation: combined identity/grounding/artifact/tool/API suite 497 passed;
+final targeted identity, summary, MCP output-size, tool-policy and options suite
+80 passed. Final hardening retained the MCP `_preview` discriminator, preserved
+partial-request diagnostics, handled optional arithmetic overflow and required
+explicit resolver opt-in; these paths are covered by the focused suite. The
+recorded real-task inputs/observations above predate the receipt-compatibility
+hardening. No extra long stress run was performed.

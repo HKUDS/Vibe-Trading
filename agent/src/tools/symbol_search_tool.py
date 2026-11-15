@@ -240,6 +240,11 @@ class SymbolSearchTool(BaseTool):
                     "English both accepted."
                 ),
             },
+            "refresh": {
+                "type": "boolean",
+                "description": "Use the gateway-backed resolver instead of reusing a settled session identity; use for listing/issuer verification or additional metadata. Normal gateway cache/freshness policy still applies.",
+                "default": False,
+            },
             "limit": {
                 "type": "integer",
                 "description": (
@@ -252,6 +257,7 @@ class SymbolSearchTool(BaseTool):
         "required": ["query"],
     }
     repeatable = True
+    reuse_session_identity = True
 
     @public_data_read()
     def execute(self, **kwargs: Any) -> str:

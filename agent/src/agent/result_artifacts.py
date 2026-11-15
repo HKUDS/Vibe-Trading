@@ -56,6 +56,22 @@ def persist_calculation_result(result: str, run_dir: str | Path | None) -> str:
     for key in ('ok', 'status', 'module', 'function', 'input_sources'):
         if key in payload:
             receipt[key] = payload[key]
+    if isinstance(payload.get('_summary'), dict):
+        candidate = {**receipt, '_summary': payload['_summary'], '_delivery': (
+            'Full bars saved at _result_file. _summary contains observed counts, endpoints, '
+            'sequence checks, statistics and provenance; it does not assert calendar completeness. '
+            'Use that summary directly for a snapshot. Read the artifact for calculations needing '
+            'other fields or individual bars; no refetch is needed.'
+        )}
+        # Preserve the existing receipt discriminator for MCP consumers: no
+        # _preview means the inline response itself contains the full payload.
+        candidate['_preview'] = json.dumps(payload['_summary'], ensure_ascii=False)[:200]
+        for key in ('_unresolved', '_diagnostics', '_recovery', 'complete'):
+            if key in payload:
+                candidate[key] = payload[key]
+        if len(json.dumps(candidate, ensure_ascii=False)) <= TOOL_RESULT_LIMIT:
+            return json.dumps(candidate, ensure_ascii=False)
+        receipt['_summary_omitted'] = 'Summary exceeds the tool envelope; read the saved artifact.'
     receipt['_preview'] = result[:1000] + '\n...\n' + result[-1000:]
     if len(json.dumps(receipt, ensure_ascii=False)) > TOOL_RESULT_LIMIT:
         receipt.pop('input_sources', None)

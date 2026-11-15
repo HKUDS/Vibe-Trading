@@ -6,6 +6,8 @@ No live-execution capability is exposed by this tool.
 
 from __future__ import annotations
 import json
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Optional
 
 from src.agent.tools import BaseTool
@@ -102,12 +104,24 @@ class OptionsChainTool(BaseTool):
         )
         if result.get("ok"):
             data = result["data"]
+            try:
+                data["expiration_date"] = datetime.fromtimestamp(data["expiration"], timezone.utc).date().isoformat()
+            except (ValueError, OverflowError, OSError, TypeError):
+                data["expiration_date"] = None
+            data["expiration_date_basis"] = "source_expiration_epoch_UTC_date"
             for side in ("calls", "puts"):
                 if offset is None:
                     nearest = sorted(data[side], key=lambda row: abs(row["strike"] - data["underlying_price"]))
                     data[side] = sorted(nearest[:near_spot_count], key=lambda row: row["strike"])
                 else:
                     data[side] = data[side][offset : offset + _MAX_CONTRACTS_PER_SIDE]
+                for row in data[side]:
+                    bid, ask = row.get("bid"), row.get("ask")
+                    if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) and 0 <= bid <= ask:
+                        b, a = Decimal(str(bid)), Decimal(str(ask))
+                        row["mid_price"] = float((a + b) / 2)
+                        row["bid_ask_spread"] = float(a - b)
+                        row["quote_calculation_basis"] = "derived_from_returned_bid_ask; midpoint_not_execution_price"
                 data[side + "_count"] = len(data[side])
             data["complete_expiration"] = all(
                 len(data[s]) == data.get(s + "_total", len(data[s])) for s in ("calls", "puts")

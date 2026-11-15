@@ -2618,7 +2618,7 @@ def screen_market(market: str, sort_by: str = "change_pct", top_n: int = 30) -> 
 
 
 @mcp.tool
-def search_symbol(query: str, limit: int = 10) -> str:
+def search_symbol(query: str, limit: int = 10, refresh: bool = False) -> str:
     """Resolve a company name or ticker fragment to candidate trading symbols.
 
     Returns candidates with their market in the project's symbol convention
@@ -2630,9 +2630,13 @@ def search_symbol(query: str, limit: int = 10) -> str:
     Args:
         query: Free-text company name or ticker fragment (Chinese or English).
         limit: Maximum number of merged candidates to return.
+        refresh: Request resolver verification instead of session identity reuse.
     """
     registry = _get_registry()
-    return registry.execute("search_symbol", {"query": query, "limit": limit})
+    params = {"query": query, "limit": limit}
+    if refresh:
+        params["refresh"] = True
+    return registry.execute("search_symbol", params)
 
 
 @mcp.tool
