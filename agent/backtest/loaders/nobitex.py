@@ -21,6 +21,9 @@ Source facts (verified against apidocs.nobitex.ir + live probes, 2026-08-26):
 
 from __future__ import annotations
 
+from src.data_gateway.reads import availability_probe
+from backtest.loaders.acquisition import remaining_timeout
+
 import logging
 import time
 from typing import Dict, List, Optional
@@ -101,6 +104,7 @@ class DataLoader:
         """No credentials required for public candles."""
         pass
 
+    @availability_probe
     def is_available(self) -> bool:
         """Probe the public endpoint with a 1-candle request."""
         try:
@@ -112,7 +116,7 @@ class DataLoader:
                     "countback": 1,
                     "to": int(time.time()),
                 },
-                timeout=_NOBITEX_PROBE_TIMEOUT_S,
+                timeout=remaining_timeout(_NOBITEX_PROBE_TIMEOUT_S),
             )
             if resp.status_code != 200:
                 logger.warning("Nobitex probe HTTP %s", resp.status_code)

@@ -633,6 +633,9 @@ GPR_DATA_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_export.xls"
 # GDELT 2.0 provides global news-event data updated every 15 minutes
 # Includes the CAMEO event code system for military / diplomatic / conflict classification
 
+from src.data_gateway.reads import managed_reader
+
+@managed_reader
 def query_gdelt_events(country_code, event_type, start_date, end_date):
     """Query GDELT geopolitical event data.
 
@@ -668,6 +671,8 @@ def query_gdelt_events(country_code, event_type, start_date, end_date):
 ### 3. ACLED Armed Conflict Location & Event Data
 
 ```python
+from src.data_gateway.reads import public_http_get
+
 # Armed Conflict Location & Event Data Project
 # https://acleddata.com/
 # Covers 100+ countries and is free for approved academic access
@@ -686,7 +691,6 @@ def fetch_acled_events(country, start_date, end_date, api_key):
     Returns:
         pd.DataFrame: Conflict event data
     """
-    import requests
     import pandas as pd
 
     params = {
@@ -697,7 +701,7 @@ def fetch_acled_events(country, start_date, end_date, api_key):
         "event_date_where": "BETWEEN",
         "export_type": "json"
     }
-    resp = requests.get(ACLED_API_BASE, params=params)
+    resp = public_http_get(ACLED_API_BASE, params=params)
     return pd.DataFrame(resp.json()["data"])
 ```
 

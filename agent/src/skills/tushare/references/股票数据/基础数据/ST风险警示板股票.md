@@ -32,6 +32,10 @@ st_explain | str | Y | st变更详细原因
 
 ### 代码示例
 ```
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
     # 拉取接口st数据
     df = pro.st(**{
     "ts_code": "300125.SZ",

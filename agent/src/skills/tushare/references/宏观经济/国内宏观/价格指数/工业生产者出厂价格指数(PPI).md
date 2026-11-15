@@ -58,8 +58,10 @@ ppi_cg_dcg_accu | float | Y | PPI：生活资料：耐用消费品类：累计�
 **接口调用**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 df = pro.cn_ppi(start_m='201905', end_m='202005')
 

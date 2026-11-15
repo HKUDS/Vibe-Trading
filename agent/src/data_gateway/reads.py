@@ -18,6 +18,7 @@ import time
 import uuid
 
 owned_source = ContextVar("gateway_owned_source", default=False)
+current_gateway = ContextVar("gateway_current", default=None)
 
 
 def _usable(value):
@@ -69,6 +70,20 @@ def read(gateway, operation, params, acquire, *, cacheable=True):
 
     if owned_source.get():
         return acquire()
+    # A source probe invoked by an existing coordinator must use that gateway's
+    # source pool directly, not queue behind its own occupied coordinator.
+    if current_gateway.get() is gateway:
+        from .scheduling import deadline
+
+        until = deadline.get()
+        remaining = (
+            gateway.config.source_timeout
+            if until is None
+            else min(gateway.config.source_timeout, until - time.monotonic())
+        )
+        if remaining <= 0:
+            raise TimeoutError("Data request expired before nested acquisition")
+        return gateway.invoke(lambda: acquire(), {}, remaining)
     policy = {k: v for k, v in os.environ.items() if k.startswith("MARKET_DATA_ORDER_")}
     from src.config.accessor import get_env_config
 
@@ -87,6 +102,10 @@ def read(gateway, operation, params, acquire, *, cacheable=True):
     until = time.monotonic() + gateway.config.request_timeout
 
     def execute():
+        from .scheduling import deadline
+
+        current_gateway.set(gateway)
+        deadline.set(until)
         remaining = until - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("Data request expired in queue")
@@ -150,7 +169,11 @@ def public_data_read(*, cacheable=True):
             operation = f"tool:{type(self).__module__}.{type(self).__qualname__}"
             try:
                 return read(
-                    get_gateway(), operation, params, lambda: function(self, *args, **kwargs), cacheable=cacheable
+                    (current_gateway.get() or get_gateway()),
+                    operation,
+                    params,
+                    lambda: function(self, *args, **kwargs),
+                    cacheable=cacheable,
                 )
             except (GatewayError, TimeoutError) as exc:
                 return json.dumps(
@@ -183,7 +206,7 @@ def loader_read(function):
             return function(self, *args, **kwargs)
         from . import get_gateway
 
-        gateway = get_gateway()
+        gateway = current_gateway.get() or get_gateway()
         arguments = signature.bind(self, *args, **kwargs)
         codes = arguments.arguments.get("codes")
         batch_size = gateway.config.http_batch_symbols
@@ -235,8 +258,9 @@ def managed_reader(function):
         from . import get_gateway
 
         return read(
-            get_gateway(),
-            function.__module__ + "." + function.__qualname__,
+            current_gateway.get() or get_gateway(),
+            getattr(function, "__module__", type(function).__module__)
+            + "." + getattr(function, "__qualname__", type(function).__qualname__),
             {},
             lambda: function(*args, **kwargs),
             cacheable=False,
@@ -270,3 +294,51 @@ def public_http_get(*args, **kwargs):
         return acquire()
     except (GatewayError, TimeoutError) as exc:
         raise requests.exceptions.Timeout(str(exc) or "Data gateway acquisition timed out") from exc
+
+
+def managed_async_reader(function):
+    """Run a self-contained async collector in the existing bounded source pool.
+
+    The collector must create and close its async clients inside its body.
+    No private SDK object or lazy iterator may escape to the caller's loop.
+    """
+    import asyncio
+
+    @wraps(function)
+    async def acquire(*args, **kwargs):
+        from . import get_gateway
+        from backtest.loaders.acquisition import source_deadline
+
+        gateway = current_gateway.get() or get_gateway()
+
+        async def collect():
+            until = source_deadline.get()
+            remaining = gateway.config.source_timeout if until is None else until - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Async data acquisition expired")
+            return await asyncio.wait_for(function(*args, **kwargs), timeout=remaining)
+
+        if owned_source.get():
+            return await collect()
+        future = gateway.submit_source(lambda: asyncio.run(collect()), {}, gateway.config.source_timeout)
+        return await asyncio.wait_for(asyncio.wrap_future(future), timeout=gateway.config.source_timeout)
+
+    acquire.gateway_public_read = True
+    return acquire
+
+
+def availability_probe(function):
+    """Keep a network availability probe bounded and preserve its boolean API."""
+    wrapped = managed_reader(function)
+
+    @wraps(function)
+    def probe(*args, **kwargs):
+        from .service import GatewayError
+
+        try:
+            return wrapped(*args, **kwargs)
+        except (GatewayError, TimeoutError):
+            return False
+
+    probe.gateway_public_read = True
+    return probe

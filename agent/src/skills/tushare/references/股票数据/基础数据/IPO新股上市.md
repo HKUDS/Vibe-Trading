@@ -34,8 +34,10 @@ ballot | float | Y | 中签率
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 df = pro.new_share(start_date='20180901', end_date='20181018')
 

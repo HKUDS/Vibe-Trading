@@ -217,6 +217,33 @@ Large opaque results are not silently truncated to meet the 2 MiB entry limit;
 they are returned without persistent snapshot retention. Caller-owned analysis
 frames can still use memory proportional to the requested analysis.
 
+The boundary audit also covers custom resolver loaders, network availability
+probes, RSS event feeds, CSI 300 universe reads, industry/valuation panels and
+PIT fundamentals. BaoStock valuation reads materialize one serialized symbol
+session per acquisition; session cleanup remains inside the owned source slot.
+Coordinator-side probes use their current gateway directly, avoiding a nested
+request queued behind its own coordinator.
+
+Broker quote/history/search/reference-data reads share acquisition capacity
+without public caching or changes to credential selection. Account, position
+and order operations retain their authorized broker channels.
+
+Bundled skill Python scripts **and Markdown code examples** use the same
+boundary. `skill_sources.tushare_client`, `tushare_bar`, `akshare_query`,
+`yahoo_ticker` and `yahoo_download` preserve vendor result schemas for additional
+research fields. The Yahoo adapter materializes lazy fast-info inside the slot
+and disables a second download thread pool. A custom synchronous collector can
+use `managed_reader`; an async collector can use `managed_async_reader` when it
+creates and closes all clients inside its body. Collectors must materialize network results before returning; credentials are
+not persisted in the public cache.
+
+This is application integration, not a network sandbox: arbitrary user/model
+Python and separately installed third-party MCP servers can still create their
+own clients. The bundled routing skill directs research to supported tools and
+bounded adapters, and regression guards scan its executable examples. Software
+updates, LLM transport, messaging and authorized order submission are not market
+data reads and are not redirected through this gateway.
+
 Historical dataset storage remains available in Settings and at
 `/history-storage`. No frontend interaction change is required for these
 existing consumers to use the gateway.

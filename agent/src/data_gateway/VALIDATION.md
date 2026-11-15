@@ -2434,3 +2434,70 @@ Evidence outside the checkout:
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-consumers-20261115/`.
 Multi-region live verification and optional SDK environments remain unverified;
 no new claim is made for them.
+
+
+## v25 — Consumer bypass audit (2026-11-15)
+
+Scope: inspect page/API, Agent, MCP, CLI and bundled skills after v24. No
+frontend/options interaction, agent core, resource limits, retry counts or
+request deadlines changed; no new soak run.
+
+Found and closed:
+
+- Network/terminal loader-availability probes (OKX/Nobitex/Wallex/Futu/MT5), RSS feeds, preflight
+  market probes and custom resolver loader hooks now enter shared acquisition.
+- CSI 300 constituents/daily/factors, industry/valuation Tushare endpoints and
+  PIT fundamental reads were outside registered bar-loader fetches. Each actual
+  acquisition now uses the shared source pool. BaoStock valuation sessions are
+  bounded per symbol and materialized before session cleanup/slot release.
+- Broker public quote/history/search/reference-data service entrypoints now use
+  uncached acquisition. Credential isolation and account/order authorization
+  paths remain unchanged.
+- 256 bundled skill Markdown files and two Tushare Python scripts now point at
+  gateway-backed reads or wrap their SDK collector. This includes code examples
+  in reference pages, not just top-level SKILL.md. Yahoo lazy properties are
+  materialized within acquisition; SDK download fan-out is disabled.
+- Nested coordinator probes keep the owning gateway and directly use its source
+  pool, avoiding self-queue deadlocks. Dynamic SDK callables (including Tushare's
+  functools.partial endpoints) retain their schema and exception behavior.
+
+Validation (overlapping selections; do not add counts):
+
+- Gateway, market-data, preflight, RSS, routing, options, alpha, broker services,
+  portfolio and enforcement selection: 601 passed.
+- Tushare loader/fundamentals, industry, valuation, alpha and boundary selection:
+  172 passed, 4 skipped (live Tushare tests require TUSHARE_TOKEN).
+- Loader probes, skill-reference links, UI services and MCP regression/paging:
+  970 passed. Final Futu/MT5 probe and boundary selection: 92 passed.
+- Broker/boundary/portfolio selection: 209 passed before the final two boundary
+  tests were added; the 601-pass selection includes those final tests.
+- All 355 previously parseable Python fences in changed Markdown remain
+  parseable; all changed Python parses. Changed runtime Python and new tests
+  pass Ruff. The existing malformed noqa in okx.py emits a warning.
+- Guards scan bundled skill Python/Markdown for direct provider primitives,
+  pin central frontend fetch entrypoints and reject provider SDK imports in
+  the MCP facade. Behavioral tests assert actual source ownership, nested
+  concurrency, async cancellation/cleanup and credential-specific uncached reads.
+
+Live, on this machine with unchanged defaults:
+
+- OKX availability probe: successful in 0.546 s, one gateway source call.
+- API bars: HTTP 200, 1.684 s acquisition, AAPL.US and 600519.SH each returned
+  five daily rows for 2026-11-09..2026-11-13.
+- Agent and MCP returned those identical nonempty rows with zero additional
+  source calls. Their wall times (0.996 s / 3.128 s) include artifact/registry
+  work and are not upstream latency measurements.
+- Bundled Yahoo SDK adapter: five rows in 1.118 s, one source call, executed on
+  gateway-source threads. Cache: one entry / 2,983 bytes; active requests zero.
+- Limits: 8 MiB RAM cache, 64 MiB disk cache, 4 source workers, 16 pending.
+
+The first live observer omitted submit_source's keyword arguments and caused
+API 503; it is retained as probe-observer-error.json and excluded from passing
+evidence. The corrected observer preserves the real signature and made no
+provider substitutions. Evidence and probe are outside the repository at:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-boundaries-20261115/`.
+
+No live credentialed Tushare/social/broker account validation or cross-region
+claim is made. Arbitrary generated Python and externally installed MCP servers
+are not network-sandboxed by this integration. Existing options/frontend build
+and locale evidence from v24 is reused because those files are unchanged.

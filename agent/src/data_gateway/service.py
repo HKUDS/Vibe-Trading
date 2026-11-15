@@ -183,6 +183,9 @@ class MarketDataGateway:
                     self.refresh_after.pop(next(iter(self.refresh_after)))
 
     def _fetch(self, capability: str, params: dict, key: str, cacheable: bool, until: float) -> dict:
+        from .reads import current_gateway
+
+        current_gateway.set(self)
         started = time.monotonic()
         deadline.set(until)
         if started >= until:
@@ -307,8 +310,9 @@ class MarketDataGateway:
             def acquire():
                 from backtest.loaders.acquisition import source_background, source_deadline
 
-                from .reads import owned_source
+                from .reads import owned_source, current_gateway
 
+                current_gateway.set(self)
                 owned_source.set(True)
                 source_background.set(is_background)
                 source_deadline.set(time.monotonic() + timeout)

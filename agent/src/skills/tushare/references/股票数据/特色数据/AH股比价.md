@@ -45,8 +45,10 @@ ah_premium | float | Y | 溢价(A/H)%
 **接口用法**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 #获取20250812日所有的AH股比价数据
 df = pro.stk_ah_comparison(trade_date='20250812')

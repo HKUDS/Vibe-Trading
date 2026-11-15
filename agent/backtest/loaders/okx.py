@@ -21,6 +21,9 @@ Hardening (2026-07 local audit)
 
 from __future__ import annotations
 
+from src.data_gateway.reads import availability_probe
+from backtest.loaders.acquisition import remaining_timeout
+
 import logging
 import os
 import time
@@ -109,6 +112,7 @@ class DataLoader:
     markets = {"crypto"}
     requires_auth = False
 
+    @availability_probe
     def is_available(self) -> bool:
         """Probe public candles with a short timeout (honours proxy env)."""
         try:
@@ -116,7 +120,7 @@ class DataLoader:
             resp = session.get(
                 CANDLES_PATH,
                 params={"instId": "BTC-USDT", "bar": "1D", "limit": "1"},
-                timeout=_OKX_PROBE_TIMEOUT,
+                timeout=remaining_timeout(_OKX_PROBE_TIMEOUT),
             )
             if resp.status_code != 200:
                 logger.warning("OKX probe HTTP %s", resp.status_code)

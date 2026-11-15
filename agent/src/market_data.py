@@ -355,7 +355,12 @@ def _fetch_market_data_direct(
                 loader = loader_cls()
                 # Weekly and monthly bars are built from daily ones (#1479).
                 loader_symbols = {symbol: normalize_crypto_symbol(symbol) for symbol in remaining}
-                fetched = loader.fetch(
+                from src.data_gateway.reads import managed_reader
+
+                fetch = loader.fetch
+                if not getattr(fetch, "gateway_public_read", False):
+                    fetch = managed_reader(fetch)
+                fetched = fetch(
                     list(dict.fromkeys(loader_symbols.values())), start_date, end_date, interval=source_interval(interval)
                 )
                 partial = {
