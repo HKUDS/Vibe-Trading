@@ -18,6 +18,42 @@ Credential-scoped data uses uncached acquisition and keeps existing authorizatio
 Large history requests use `history_data`; do not download whole years into an
 unbounded script cache. These adapters share the existing resource limits.
 
+## Generated Python and external MCP
+
+For supported data, acquire it with the available gateway-backed tool in the
+agent process and calculate from the returned artifact path. Do not refetch the
+same observations inside `bash` or `background_run`. A saved artifact is a
+returned file, not a path to guess. This keeps repeated requests in the host's
+shared cache and acquisition pool.
+
+For an additional vendor field that the existing tools do not expose:
+
+```python
+from src.data_gateway.skill_sources import yahoo_ticker
+
+# This adapter materializes the field inside bounded acquisition.
+profile = yahoo_ticker("AAPL").info
+print(profile)
+```
+
+For other SDKs, place client creation, the read, full result materialization and
+client cleanup inside a `managed_reader` function. Use `managed_async_reader`
+only for a self-contained async collector that also closes its clients. These
+are process-local limits: launching many Python children creates independent
+gateways. Do not use per-symbol subprocesses or add polling/retry/cache loops to
+get around the host's limits. Use `history_data` for large persisted downloads
+when it is available in the current tool catalog.
+
+For public-data MCP calls, first select a gateway-backed equivalent with the
+same market, instrument, interval and price basis. A busy response, timeout or
+cooldown is a recovery condition, not missing coverage: follow the returned
+recovery instructions, and do not switch to raw Python or another MCP provider
+to evade it. If a capability truly is not covered, or the user explicitly needs
+a particular provider, keep using the existing authorized MCP tool and disclose
+its source and the gateway-coverage gap. This policy does not intercept remote
+server network activity; do not claim external MCP reads share the local cache.
+Account reads and mutations retain their own authorization and order gates.
+
 ## Source Overview
 
 Every name here is a registered OHLCV/backtest source in `VALID_SOURCES`.

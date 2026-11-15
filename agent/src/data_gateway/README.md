@@ -237,6 +237,17 @@ use `managed_reader`; an async collector can use `managed_async_reader` when it
 creates and closes all clients inside its body. Collectors must materialize network results before returning; credentials are
 not persisted in the public cache.
 
+The main agent, every swarm worker, shell/background tool descriptions and
+external MCP descriptions share a gateway-first model policy. It removes the
+old prompt exceptions suggesting raw bash/yfinance for prices or fundamentals.
+Generated analysis should consume tool-returned artifacts. Additional fields
+use the bounded SDK adapters. Timeouts/cooldowns are recovery conditions, not
+permission to switch transports, multiply child gateways or raise limits.
+Genuinely uncovered external MCP capabilities and explicitly requested providers
+remain available with their source and local-gateway coverage gap disclosed;
+account/order authorization is unchanged. This policy guides model choices and
+does not change MCP dispatch, subprocess execution or the runtime resource caps.
+
 This is application integration, not a network sandbox: arbitrary user/model
 Python and separately installed third-party MCP servers can still create their
 own clients. The bundled routing skill directs research to supported tools and

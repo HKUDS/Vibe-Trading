@@ -2501,3 +2501,31 @@ No live credentialed Tushare/social/broker account validation or cross-region
 claim is made. Arbitrary generated Python and externally installed MCP servers
 are not network-sandboxed by this integration. Existing options/frontend build
 and locale evidence from v24 is reused because those files are unchanged.
+
+
+## v26 — Gateway-first agent prompts (2026-11-15)
+
+Following the user's suggestion to address generated Python and external MCP
+through prompts, this change adds one shared model policy to the actual main
+system prompt, all swarm worker prompts, bash/background descriptions and
+remote MCP tool descriptions. It removes two contradictory older instructions
+that encouraged raw bash/yfinance (trading-plan prices and worker fundamentals).
+The data-routing skill now gives an executable adapter example and distinguishes
+source coverage gaps from gateway cooldown/timeout recovery.
+
+The default flow is gateway tool → returned artifact → Python calculation.
+Additional vendor fields use bounded adapters; per-symbol subprocess gateways
+and independent polling/retry/cache loops are discouraged. External MCP tools
+retain original schemas, dispatch and authorization. An uncovered capability or
+explicit provider requirement remains usable with the source/coverage gap
+reported, rather than silently calling it gateway-managed.
+
+Validation: 143 tests passed across actual main/worker prompt construction,
+prompt-cache stability, market-data, MCP adapter dispatch, swarm grounding/context
+and gateway boundaries. Tests verify the emitted system message, tool descriptions,
+removal of the old exceptions, preserved remote schemas/arguments and unchanged
+readonly classification. A second shell/background/deferred-tool selection passed
+62 tests. These overlapping selections do not prove model compliance on every turn;
+no live LLM compliance benchmark or network-sandbox claim is made. No acquisition,
+resource limits, option interaction, subprocess runtime or remote MCP call path
+was changed.

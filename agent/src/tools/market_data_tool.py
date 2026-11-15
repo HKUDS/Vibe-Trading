@@ -81,9 +81,9 @@ class MarketDataTool(BaseTool):
 
     name = "get_market_data"
     description = (
-        "Fetch normalized OHLCV market data through the repository loader layer. "
-        "Use this for stock, ETF, index, or crypto price bars before writing raw "
-        "yfinance/OKX/Tushare scripts. Volume units are source- and market-dependent "
+        "Fetch normalized OHLCV market data through the unified data gateway. "
+        "Use this for stock, ETF, index, or crypto price bars rather than direct "
+        "yfinance/OKX/Tushare scripts; compute on the returned artifacts. Volume units are source- and market-dependent "
         "(A-share sources report board lots of 100 shares, HK/US sources report single "
         "shares); read the per-symbol _provenance.volume_unit field ('lots' / 'shares' / "
         "null=undeclared) before interpreting or comparing volume values. Price caliber "
