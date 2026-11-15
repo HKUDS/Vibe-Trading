@@ -307,6 +307,9 @@ class MarketDataGateway:
             def acquire():
                 from backtest.loaders.acquisition import source_background, source_deadline
 
+                from .reads import owned_source
+
+                owned_source.set(True)
                 source_background.set(is_background)
                 source_deadline.set(time.monotonic() + timeout)
                 return function(**params)

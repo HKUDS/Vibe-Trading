@@ -33,9 +33,9 @@ def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     Returns:
         包含 open/high/low/close/volume 列的 DataFrame，index 为 datetime。
     """
-    import requests
+    from src.data_gateway.reads import public_http_get
 
-    resp = requests.get(
+    resp = public_http_get(
         "https://www.okx.com/api/v5/market/candles",
         params={"instId": inst_id, "bar": bar, "limit": str(limit)},
     )

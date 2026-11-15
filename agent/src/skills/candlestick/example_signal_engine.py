@@ -546,9 +546,9 @@ def _fetch_okx(inst_id: str, bar: str = "1D", limit: int = 300) -> pd.DataFrame:
     Raises:
         KeyError: 当 API 返回格式异常时。
     """
-    import requests
+    from src.data_gateway.reads import public_http_get
 
-    resp = requests.get("https://www.okx.com/api/v5/market/candles", params={
+    resp = public_http_get("https://www.okx.com/api/v5/market/candles", params={
         "instId": inst_id, "bar": bar, "limit": str(limit)
     })
     candles = resp.json()["data"]

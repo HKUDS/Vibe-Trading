@@ -10,6 +10,15 @@ def capabilities(config):
     refresh_source_order_overrides()
     return {
         "ok": True,
+        "consumers": {
+            "snapshots": "shared by page REST routes, agent tools, MCP and CLI",
+            "research": "financial statements, fundamentals, news, flows, screening, holdings, filings, macro and discovery tools",
+            "analysis": "registered loaders for backtests, paper simulation, chart reconstruction and indicators",
+            "public_http": "shared public HTTP clients and bundled skill examples",
+            "cache_policy": "successful public JSON only; incomplete/error results, depth, credential-scoped reads and mutable files are not reused",
+            "frames": "full caller-owned DataFrames, unchanged index/dtypes/attrs; not retained in snapshot cache",
+            "private_accounts": "separate authorized broker channels; never public snapshot cache",
+        },
         "historical_bars": {
             "markets": {market: list(sources) for market, sources in FALLBACK_CHAINS.items()},
             "routing": "existing compatible chains with local-network health",

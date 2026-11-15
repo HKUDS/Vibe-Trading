@@ -84,6 +84,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backtest.loaders.ccxt_loader import _CCXT_TIMEOUT_MS, _ccxt_proxy_config
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -343,6 +344,7 @@ class OrderBookDepthTool(BaseTool):
         "required": ["symbol"],
     }
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         """Fetch one order-book snapshot and return the depth/spread/imbalance/impact envelope.
 

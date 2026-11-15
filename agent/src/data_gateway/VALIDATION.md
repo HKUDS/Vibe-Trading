@@ -2365,3 +2365,72 @@ controls and the memory plot are outside Git at:
 
 Final retained market data remains only at
 `/Users/wuhaozhe/.vibe-trading/gateway-v23-final-plain/`.
+
+
+## v24 — Existing consumers share gateway acquisition (2026-11-15)
+
+Scope: align `codex/data-gateway` with `origin/main` `19c83de9c` (merge
+`8fafb5d37`), then connect existing consumers. No options interaction changes,
+no new hour-long soak, no resource/timeout/retry-limit increases.
+
+Implementation: public `fetch_market_data` snapshots share `/data/bars`;
+33 public-data tool modules use shared acquisition, retaining their providers
+and parsers. Registered loaders cover full-frame analysis, backtests, paper
+simulation and chart reconstruction. Large symbol universes use sequential
+chunks of the existing batch size in the shared background lane. Shared HTTP
+clients, bundled skill examples, portfolio reference FX and the read-only
+public market-cap lookup also enter shared acquisition. Account/order
+operations remain outside the public snapshot cache. Artifact persistence stays
+with the requesting run. Internal custom resolver hooks retain their contract.
+
+Cache reuse covers successful public JSON only. Settings changes change its
+identity; errors and nested partial failures do not become fresh snapshots.
+Depth, keyed/entitlement-scoped reads, mutable files and full DataFrames are
+not persisted by this adapter. Opaque results retain every row/dtype/attr;
+caller-owned analysis memory is not bounded by the snapshot cache's RAM cap.
+The pre-existing explicitly enabled loader cache is not enabled or enlarged.
+
+Validation evidence (overlapping suites; do not add these counts):
+
+- Initial gateway/market/news/depth selection: 133 passed. Market-data/MCP,
+  fundamentals, statements, screening/search selection: 237 passed.
+- Wider public-reader/gateway selection: 1005 passed initially, two cache
+  expectation failures identified. Configuration invalidation was fixed;
+  the profile parser test now explicitly requests a new snapshot. The focused
+  profile/papers/HTTP/consumer rerun passed all 129 after updating the curl
+  timeout assertion to the unchanged 6-second source budget.
+- Wider loader/analysis/paper/portfolio selection: 1991 passed, 9 skipped;
+  its only failure was that same old curl timeout assertion, resolved above.
+- MCP inventories, UI services, existing options routes, SEC paging, skill
+  causality and consumer boundaries: 195 passed.
+- After bulk chunking: consumer, BaoStock/Tencent, market-data, alpha and paper
+  golden selection: 133 passed. Final consumer/scheduling selection: 39 passed.
+- Frontend production build passed; 43 locale tests passed across 11 locales.
+  New/changed non-skill Python passes Ruff; all changed Python parses. The
+  pre-existing example-engine lint findings are outside the changed lines.
+
+Live public-network observations, not an all-provider/region SLA:
+
+- Mixed AAPL.US + 600519.SH snapshot: 0.845 s cold, 0.001 s repeated;
+  sources Yahoo/Tencent with original currency and adjustment provenance.
+- Stock news: 0.850 s cold; company profile: 2.097 s; option chain: 0.920 s.
+  Repeated call timings rounded to 0.000–0.001 s. Four cache entries totalled 45,114 bytes;
+  active requests returned to zero.
+- Real `/data/bars` request via ASGI: HTTP 200 in 1.164 s; the agent read the
+  identical rows in 0.001 s. MCP returned identical rows (cold registry
+  initialization included). The initial probe used an artifact directory outside its
+  allowed run roots, so it was not counted as evidence of artifact delivery.
+  A follow-up configured an isolated authorized run root: agent cold read
+  1.263 s / one source call; MCP cold registry read 1.416 s / zero source calls;
+  MCP warm read 0.003 s / zero source calls. All three wrote their artifacts
+  into their own run directories, outside the gateway cache.
+- Full DataFrames for ten US stocks, 2026-10-01..2026-11-13: 8.074 s,
+  ten results of 32 rows each, no unresolved symbols. This validates the full
+  analysis boundary, not a new multi-year minute-data soak.
+- Limits observed unchanged: 8 MiB RAM / 64 MiB disk snapshot cache,
+  four source workers, sixteen pending requests; no active request remained.
+
+Evidence outside the checkout:
+`/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-consumers-20261115/`.
+Multi-region live verification and optional SDK environments remain unverified;
+no new claim is made for them.

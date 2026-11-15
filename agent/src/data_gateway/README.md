@@ -173,11 +173,53 @@ full-expiration coverage, network-route learning/expiry, historical fallback,
 cache cleanup, timeouts and authentication. See `VALIDATION.md` for measured live
 results and remaining limits. One-machine validation is not a global network SLA.
 
-Other existing research tools/backtest entrypoints retain their current loader calls;
-this branch provides the shared gateway and connects the existing options-chain
-Agent/MCP surface. A wholesale Agent/tool migration is not part of this isolated
-backend change. Historical dataset storage is now available in Settings and at
-`/history-storage`; the options UI and Options Lab remain unchanged.
+### Shared consumers (2026-11-15)
+
+The existing page routes, CLI and Agent/MCP market-data tools now share the
+snapshot gateway. `get_market_data` uses the same bar request identity as
+`POST /data/bars`; artifact persistence remains outside the shared acquisition,
+so cached results never reuse another caller's run directory. Options Lab's
+interaction and the existing option-chain route are unchanged.
+
+Public JSON readers for company profiles, financial statements/fundamentals,
+news, screening, flows, sectors, ownership/ETF holdings, SEC filings,
+prediction markets and research papers share the gateway's existing queues,
+source workers and bounded cache. Their existing free-provider parsers and
+fallback rules are retained. Settings changes invalidate reader cache identity
+using a digest of the data configuration, never stored credentials. Errors,
+including errors nested in a partial multi-entity result, are not cached.
+
+Order-book depth, keyed/entitlement-scoped data readers, mutable local research
+DBs and arbitrary web search/read requests share acquisition capacity but do
+not persist a public snapshot. Their original validation/authorization stays
+in the reader. Broker account/position/order operations remain on their
+separate authorized channels. Public portfolio FX and the public market-cap
+lookup use shared acquisition without caching account data or changing gates.
+
+Registered bar loaders also use the gateway source pool for existing backtests,
+paper simulation, chart reconstruction, technical indicators and full-series
+analysis. Large analysis universes use the shared background lane (leaving foreground
+capacity) and are read in sequential chunks of the existing
+`http_batch_symbols` size, each using the existing acquisition deadline; the
+analysis as a whole can span multiple acquisitions. DataFrames retain every row, index, dtype and attr and are handed
+back to their caller, not stored in the snapshot cache. The pre-existing
+explicit opt-in loader cache remains an independent user setting; the gateway
+does not enable it. Use history jobs for large persisted, resumable datasets.
+Internal injected resolver hooks retain their existing integration contract.
+
+Shared HTTP clients and bundled skill examples enter the same acquisition
+boundary. A nested provider operation already inside a gateway source slot
+runs inline; it never queues behind itself. Source timeout remains 6 seconds,
+request deadline 15 seconds, with 4 source slots and 16 pending requests.
+Timed-out source work retains its slot until it actually ends. Curl and POST
+transports now also cap their socket timeout to the remaining source budget.
+Large opaque results are not silently truncated to meet the 2 MiB entry limit;
+they are returned without persistent snapshot retention. Caller-owned analysis
+frames can still use memory proportional to the requested analysis.
+
+Historical dataset storage remains available in Settings and at
+`/history-storage`. No frontend interaction change is required for these
+existing consumers to use the gateway.
 
 ### Whole-process soak (opt-in, live public network)
 

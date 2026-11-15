@@ -196,7 +196,7 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-def fetch_market_data(
+def _fetch_market_data_direct(
     *,
     codes: list[str],
     start_date: str,
@@ -555,6 +555,49 @@ def fetch_market_data(
         }
 
     return results
+
+
+def fetch_market_data(
+    *, codes: list[str], start_date: str, end_date: str, source: str = "auto",
+    interval: str = "1D", max_rows: int = DEFAULT_MAX_ROWS,
+    loader_resolver: Callable[[str], type] = get_loader,
+    fallback_chain_provider: Callable[[str], list[str]] | None = None,
+    max_fallback_attempts: int = 5, include_provenance: bool = False,
+    as_frames: bool = False,
+) -> dict[str, Any]:
+    """Read public snapshots through the same gateway used by pages and streams.
+
+    Full analysis frames and explicit resolver integrations retain the loader
+    contract; registered loaders still acquire through the gateway source pool.
+    Gateway source workers call the raw normalizer inline, avoiding recursion.
+    """
+    from src.data_gateway import get_gateway
+    from src.data_gateway.reads import owned_source
+
+    params = dict(codes=codes, start_date=start_date, end_date=end_date,
+                  source=source, interval=interval, max_rows=max_rows)
+    default_resolver = loader_resolver is get_loader or getattr(loader_resolver, "gateway_default_resolver", False)
+    if (owned_source.get() or as_frames or max_rows == 0 or not default_resolver
+            or fallback_chain_provider is not None or max_fallback_attempts != 5):
+        return _fetch_market_data_direct(
+            **params, loader_resolver=loader_resolver,
+            fallback_chain_provider=fallback_chain_provider,
+            max_fallback_attempts=max_fallback_attempts,
+            include_provenance=include_provenance, as_frames=as_frames,
+        )
+    response = get_gateway().bars(**params, include_provenance=True)
+    payload = response.get("data")
+    if not isinstance(payload, dict):
+        payload = {"_unresolved": list(codes), "_diagnostics": {
+            code: [{"source": "gateway", "reason": "gateway_unavailable",
+                    "detail": response.get("error", "Data unavailable")}]
+            for code in codes
+        }}
+    if not include_provenance:
+        payload.pop("_provenance", None)
+    # Keep the observed reader schema: gateway status never masquerades as a
+    # symbol or as a measured market value in the grounding ledger.
+    return payload
 
 
 def fetch_market_data_json(**kwargs: Any) -> str:

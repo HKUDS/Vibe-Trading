@@ -30,6 +30,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from backtest.loaders import eastmoney_client, sec_edgar_client, yahoo_client
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.market_data import FIAT_CODES, canonical_fx_pair
 
@@ -251,6 +252,7 @@ class SymbolSearchTool(BaseTool):
     }
     repeatable = True
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Fan out across providers and return a merged candidate envelope.
 

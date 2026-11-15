@@ -71,6 +71,10 @@ def register(cls: Type[Any]) -> Type[Any]:
 
     The class must have a ``name`` class attribute.
     """
+    from src.data_gateway.reads import loader_read
+
+    if not getattr(cls.fetch, "gateway_public_read", False):
+        cls.fetch = loader_read(cls.fetch)
     LOADER_REGISTRY[cls.name] = cls
     return cls
 

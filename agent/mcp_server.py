@@ -2085,6 +2085,9 @@ def _get_loader(source: str):
     return get_loader(source)
 
 
+_get_loader.gateway_default_resolver = True
+
+
 def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     """Bound a per-symbol row list to keep the MCP payload within budget.
 

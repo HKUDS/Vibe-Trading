@@ -32,6 +32,7 @@ from backtest.loaders._http import (
     throttled_get,
 )
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,7 @@ class ResearchReportsTool(BaseTool):
         "required": ["code"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Resolve the symbol, fetch reports + consensus, return a JSON envelope.
 

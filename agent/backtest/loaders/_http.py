@@ -18,6 +18,8 @@ machines. For batch jobs raise the relevant ``*_MIN_INTERVAL`` env var.
 
 from __future__ import annotations
 
+from src.data_gateway.reads import managed_reader
+
 import json
 import logging
 import random
@@ -144,6 +146,18 @@ def resolve_min_interval(env_name: str, default: float) -> float:
     return positive_env_float(env_name, default)
 
 
+def _acquisition_timeout(timeout: float) -> float:
+    """Keep each HTTP transport inside its already assigned source budget."""
+    until = source_deadline.get()
+    if until is not None:
+        remaining = until - time.monotonic() - 0.05
+        if remaining <= 0:
+            raise SourceAdmissionTimeout("HTTP acquisition expired before dispatch")
+        timeout = min(timeout, remaining)
+    return timeout
+
+
+@managed_reader
 def throttled_get(
     url: str,
     *,
@@ -175,12 +189,7 @@ def throttled_get(
     if headers:
         merged_headers.update(headers)
     _THROTTLE.wait(host_key, min_interval)
-    until = source_deadline.get()
-    if until is not None:
-        remaining = until - time.monotonic() - 0.05
-        if remaining <= 0:
-            raise SourceAdmissionTimeout("HTTP acquisition expired before dispatch")
-        timeout = min(timeout, remaining)
+    timeout = _acquisition_timeout(timeout)
     session = _session_for(host_key)
     return session.get(url, params=params, headers=merged_headers, timeout=timeout)
 
@@ -262,6 +271,7 @@ def throttled_get_json(
         return decoded
 
 
+@managed_reader
 def throttled_browser_get_json(
     url: str, *, host_key: str, min_interval: float,
     params: dict[str, Any] | None = None, timeout: float = 15.0,
@@ -288,7 +298,7 @@ def throttled_browser_get_json(
         raise RuntimeError("Eastmoney filtered the client TLS fingerprint; install curl_cffi to enable the browser transport.") from exc
     _THROTTLE.wait(host_key, min_interval)
     with browser_requests.Session(impersonate="chrome") as session:
-        response = session.get(url, params=params, timeout=timeout)
+        response = session.get(url, params=params, timeout=_acquisition_timeout(timeout))
         response.raise_for_status()
         decoded = decode_jsonp_body(response.text)
     if decoded is None:
@@ -296,6 +306,7 @@ def throttled_browser_get_json(
     return decoded
 
 
+@managed_reader
 def throttled_post_json(
     url: str,
     *,
@@ -319,7 +330,7 @@ def throttled_post_json(
     _THROTTLE.wait(host_key, min_interval)
     session = _session_for(host_key)
     response = session.post(
-        url, json=json_body, params=params, headers=merged_headers, timeout=timeout
+        url, json=json_body, params=params, headers=merged_headers, timeout=_acquisition_timeout(timeout)
     )
     response.raise_for_status()
     return response.json()

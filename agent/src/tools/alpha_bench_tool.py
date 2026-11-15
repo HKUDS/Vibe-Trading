@@ -583,9 +583,9 @@ def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
     try:
         import io
 
-        import requests
+        from src.data_gateway.reads import public_http_get
 
-        resp = requests.get(
+        resp = public_http_get(
             url,
             headers={
                 "User-Agent": (
