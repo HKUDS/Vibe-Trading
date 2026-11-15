@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.provider_helpers import chat_with_adapter
+
 import json
 from pathlib import Path
 from typing import Any, Callable
@@ -12,7 +14,7 @@ from src.agent.loop import AgentLoop
 from src.agent.progress import emit_progress
 from src.agent.tools import BaseTool, ToolRegistry
 from src.memory.persistent import PersistentMemory
-from src.providers.chat import ChatLLM, LLMResponse, ToolCallRequest
+from src.providers.chat import LLMResponse, ToolCallRequest
 
 
 class _Chunk:
@@ -60,11 +62,8 @@ class _EchoProbeTool(BaseTool):
         return json.dumps({"status": "ok", "marker": kwargs.get("marker")})
 
 
-def _chat_llm(fake_llm: _ScriptedStreamingLLM) -> ChatLLM:
-    client = ChatLLM.__new__(ChatLLM)
-    client.model_name = "deepseek-v4-pro"
-    client._llm = fake_llm
-    return client
+def _chat_llm(fake_llm: _ScriptedStreamingLLM):
+    return chat_with_adapter(fake_llm, model="deepseek-v4-pro")
 
 
 def test_agent_loop_executes_dsml_textual_tool_call(

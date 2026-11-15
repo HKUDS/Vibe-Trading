@@ -7,15 +7,20 @@ downsample (every step-th bar, last bar pinned) plus truncation metadata for
 oversized symbols — spanning the full range with no `_gap` sentinel; small
 queries are unchanged (plain list); `max_rows=0` restores the unbounded
 legacy behavior; a negative `max_rows` is invalid and enforces the cap.
+Large MCP responses deliver a bounded receipt; inspect its checksummed result
+file for the same per-symbol row contract.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 
 import pandas as pd
 
 import mcp_server
+from src.config.limits import TOOL_RESULT_LIMIT
 
 _gmd = getattr(mcp_server.get_market_data, "fn", None) or getattr(
     mcp_server.get_market_data, "__wrapped__", mcp_server.get_market_data
@@ -34,9 +39,22 @@ def _loader_with_rows(n: int):
     return _L
 
 
+def _read_result(raw: str) -> dict:
+    """Read the actual MCP delivery, verifying its bounded, lossless artifact."""
+    assert len(raw) <= TOOL_RESULT_LIMIT
+    response = json.loads(raw)
+    ref = response["_result_file"]
+    saved = Path(ref["path"]).read_bytes()
+    assert hashlib.sha256(saved).hexdigest() == ref["sha256"]
+    payload = json.loads(saved)
+    if "_preview" not in response:
+        assert {key: value for key, value in response.items() if key != "_result_file"} == payload
+    return payload
+
+
 def _call(monkeypatch, n, **kw):
     monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _loader_with_rows(n))
-    return json.loads(_gmd(codes=["X.US"], start_date="2025-01-01", end_date="2026-01-01", source="yfinance", **kw))
+    return _read_result(_gmd(codes=["X.US"], start_date="2025-01-01", end_date="2026-01-01", source="yfinance", **kw))
 
 
 def test_oversized_symbol_is_capped_with_metadata(monkeypatch):
@@ -108,7 +126,7 @@ def test_multi_symbol_capped_independently(monkeypatch):
             return {"BIG.US": _frame(big), "SMALL.US": _frame(small)}
 
     monkeypatch.setattr(mcp_server, "_get_loader", lambda src: _Multi)
-    out = json.loads(
+    out = _read_result(
         _gmd(
             codes=["BIG.US", "SMALL.US"],
             start_date="2025-01-01",

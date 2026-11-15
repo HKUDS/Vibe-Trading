@@ -555,7 +555,7 @@
     "subtitle": "Konfigurasikan kredensial model dan token sumber data pasar untuk proyek lokal ini.",
     "unavailable": "Pengaturan tidak tersedia",
     "llmSettings": "Pengaturan LLM",
-    "llmSettingsDesc": "Pilih model yang digunakan oleh Agent dan simpan ke file agent/.env lokal proyek.",
+    "llmSettingsDesc": "Pilih model yang digunakan oleh Agent dan simpan ke ~/.vibe-trading/.env.",
     "connection": "Koneksi",
     "model": "Model",
     "useProviderDefaults": "Gunakan pengaturan bawaan provider",
@@ -2816,5 +2816,25 @@
     "credentialsRequired": "Memerlukan kredensial",
     "downloaded": "Diunduh · cakupan belum diverifikasi",
     "coverageHint": "Baris yang tersedia disimpan tanpa sampling. Hanya data yang diverifikasi dengan kalender atau kisi waktu ditandai lengkap; riwayat yang hilang tidak diganti data terbaru."
+  },
+  "updates": {
+    "title": "Pembaruan perangkat lunak",
+    "preserve": "Konfigurasi, kredensial, dan percakapan yang ada tetap digunakan. Pertahankan akun instalasi dan direktori data yang sama.",
+    "check": "Periksa pembaruan",
+    "working": "Mohon tunggu…",
+    "current": "Versi berjalan: {{version}}",
+    "available": "Versi baru tersedia: {{version}}",
+    "currentLatest": "Rilis terbaru: {{version}}. Tidak ada versi lebih baru.",
+    "pip": "Jalankan perintah ini pada lingkungan Python server yang ada, lalu mulai ulang layanan.",
+    "container": "Di host penerapan, perbarui image atau bangun ulang layanan dengan konfigurasi Compose asli. Pertahankan semua volume data.",
+    "desktop": "Selesaikan pekerjaan aktif sebelum memperbarui. Aplikasi akan ditutup, memasang pembaruan terverifikasi, lalu dibuka kembali.",
+    "source": "Perbarui melalui sumber atau pengelola paket asli, pertahankan perubahan lokal, dependensi tambahan, dan batasan versi. Mulai ulang layanan yang sama.",
+    "manual": "Build ini belum memiliki saluran pembaruan otomatis. Pasang rilis Desktop berikutnya dari distributor asli di atas instalasi ini dan pertahankan data pengguna.",
+    "completed": "Versi Desktop tujuan dan backend telah dimulai.",
+    "interrupted": "Pembaruan sebelumnya tidak selesai dengan benar. Periksa log desktop sebelum mencoba lagi; jangan hapus berkas konfigurasi atau pemulihan.",
+    "install": "Perbarui dan mulai ulang",
+    "installing": "Mengunduh dan memverifikasi pembaruan. Aplikasi akan dimulai ulang setelah pemasangan.",
+    "checkFailed": "Pembaruan tidak dapat diperiksa. Periksa koneksi atau akses server dan coba lagi.",
+    "installFailed": "Pemasang tidak dapat dijalankan. Data Anda tetap tersimpan. Periksa log desktop, lalu periksa pembaruan lagi."
   }
 }

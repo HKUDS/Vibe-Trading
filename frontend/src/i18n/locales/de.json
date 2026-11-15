@@ -555,7 +555,7 @@
     "subtitle": "Konfigurieren Sie Modell-Anmeldeinformationen und Marktdaten-Tokens für dieses lokale Projekt.",
     "unavailable": "Einstellungen sind nicht verfügbar",
     "llmSettings": "LLM-Einstellungen",
-    "llmSettingsDesc": "Wählen Sie das vom Agenten verwendete Modell und speichern Sie es in der projektlokalen agent/.env-Datei.",
+    "llmSettingsDesc": "Wählen Sie das vom Agenten verwendete Modell und speichern Sie es in ~/.vibe-trading/.env.",
     "connection": "Verbindung",
     "model": "Modell",
     "useProviderDefaults": "Anbieterstandards verwenden",
@@ -2816,5 +2816,25 @@
     "credentialsRequired": "Zugangsdaten erforderlich",
     "downloaded": "Heruntergeladen · Abdeckung ungeprüft",
     "coverageHint": "Verfügbare Zeilen werden ohne Stichproben gespeichert. Nur anhand von Handelskalender oder Zeitraster geprüfte Daten gelten als vollständig; fehlende Historie wird nicht durch aktuelle Daten ersetzt."
+  },
+  "updates": {
+    "title": "Softwareupdates",
+    "preserve": "Einstellungen, Zugangsdaten und Gespräche bleiben erhalten. Verwenden Sie dasselbe Installationskonto und dieselben Datenverzeichnisse.",
+    "check": "Nach Updates suchen",
+    "working": "Bitte warten…",
+    "current": "Laufende Version: {{version}}",
+    "available": "Neue Version verfügbar: {{version}}",
+    "currentLatest": "Neueste Veröffentlichung: {{version}}. Keine neuere Version verfügbar.",
+    "pip": "Führen Sie diesen Befehl in der bestehenden Python-Umgebung des Servers aus und starten Sie den Dienst neu.",
+    "container": "Aktualisieren oder bauen Sie den Dienst auf dem Bereitstellungshost mit der bisherigen Compose-Konfiguration. Behalten Sie alle Datenvolumes.",
+    "desktop": "Beenden Sie zuerst laufende Aufgaben. Die App schließt, installiert das geprüfte Update und startet erneut.",
+    "source": "Aktualisieren Sie über den ursprünglichen Quellcode oder Paketmanager. Behalten Sie lokale Änderungen, Extras und Versionsvorgaben bei und starten Sie denselben Dienst neu.",
+    "manual": "Dieser Build hat keinen automatischen Updatekanal. Installieren Sie die nächste Desktop-Version des ursprünglichen Anbieters über diese Installation und behalten Sie die Benutzerdaten.",
+    "completed": "Die Zielversion von Desktop und ihr Backend wurden gestartet.",
+    "interrupted": "Das letzte Update wurde nicht ordnungsgemäß abgeschlossen. Prüfen Sie die Desktop-Protokolle. Löschen Sie keine Konfigurations- oder Wiederherstellungsdateien.",
+    "install": "Aktualisieren und neu starten",
+    "installing": "Update wird heruntergeladen und geprüft. Die App startet nach der Installation neu.",
+    "checkFailed": "Updates konnten nicht geprüft werden. Prüfen Sie Verbindung und Serverzugriff und versuchen Sie es erneut.",
+    "installFailed": "Übergabe an das Installationsprogramm fehlgeschlagen. Ihre Daten wurden behalten. Prüfen Sie die Protokolle und suchen Sie erneut nach Updates."
   }
 }

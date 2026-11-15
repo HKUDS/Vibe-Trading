@@ -57,18 +57,21 @@
 
 ## 📰 Berita
 
+- **2026-11-14** 🔌 **Gateway LLM terpadu dan pemeriksaan versi** — Agent, CLI, API, dan Swarm kini menggunakan satu katalog dan lapisan konfigurasi untuk penyedia model. Pengaturan setiap klien tetap terisolasi, adaptor native mematuhi pengaturan proxy eksplisit, dan pengalihan lintas origin diblokir sebelum kredensial atau isi permintaan diteruskan.
+  Periksa versi baru melalui pengaturan Web. Desktop kini mendukung pembaruan bertanda tangan digital dengan verifikasi dan pemulihan; distribusinya memerlukan konfigurasi feed pembaruan dan sertifikat penerbit. **Sudah di `main`, untuk rilis pip berikutnya.**
+
 - **2026-11-13** 🛠️ **Penyampaian riset dan alat kalkulasi** — Jawaban riset dialirkan tanpa penghapusan angka otomatis, penulisan ulang paksa, atau penilaian selesai berdasarkan format. Eksekusi komite yang terhenti menyimpan hasil parsial dan dapat melanjutkan peran yang belum selesai dengan memakai kembali pekerjaan yang sudah selesai.
   Referensi data pasar lengkap terhubung ke kalkulasi QuantLib tanpa shell, dan bukti sumber dibagikan antarperan. Options Lab dan `options_payoff` menghitung strategi saham plus opsi serta membandingkan beberapa alternatif dalam satu panggilan, dengan biaya, batas laba/rugi, dan arah perbandingan yang eksplisit. Biaya backtest efektif serta status keluaran terpotong atau kesalahan tetap jelas; batas otorisasi trading riil tetap berlaku. **Belum dirilis.**
 
 - **2026-11-12** 🛠️ **Perbaikan waktu eksekusi, angka laporan, dan status riset** — Akun bayangan memakai modal awal yang diminta; respons worker yang terpotong oleh batas token tidak lagi dianggap selesai. PM komite dapat menyintesis laporan hulu yang valid tanpa mengambil ulang data. Adaptor Anthropic native memakai batas keluaran default 16.384 token yang dapat diubah.
   Strategi yang dihasilkan menolak pergeseran tambahan yang terdeteksi pada target keluaran kecuali dinyatakan sebagai penundaan yang disengaja; lookback indikator tetap diizinkan. Grounding mendukung variasi penulisan satuan besaran dan deklarasi nilai observasi yang presisi tanpa melonggarkan pemeriksaan bukti. Backtest SPY/GLD cocok dengan pembukuan independen untuk seluruh 206/140 eksekusi dan imbal hasil total. **Belum dirilis.**
 
+<details>
+<summary>Berita sebelumnya</summary>
+
 - **2026-11-11** 🧾 **Eksekusi parsial pada simulasi perdagangan dan rekonsiliasi buku besar** — Aktifkan secara opsional batas volume per order, eksekusi parsial, dan keluaran status order untuk simulasi saham A Tiongkok dengan bar lima menit ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). Tool Agent/MCP baru `paper_trade_reconcile` merekonsiliasi biaya, kas, posisi, dan perhitungan nilai aset bersih secara independen berdasarkan catatan eksekusi yang dikembalikan ([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   Format header persentase beberapa baris yang didukung serta kutipan eksplisit bilangan bulat dari dokumen kini ditangani dengan benar, dengan tetap mempertahankan label aslinya ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). Juga memperbaiki input benchmark faktor ketat ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) dan mencegah giliran percakapan melalui kanal mengembalikan jawaban sebelumnya saat waktu tunggu habis ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
   Terima kasih [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), dan [@divya0795](https://github.com/divya0795)! **Tersedia di `main` untuk rilis pip berikutnya.**
-
-<details>
-<summary>Berita sebelumnya</summary>
 
 - **2026-11-10** 📊 **Permukaan IV interaktif dan perbaikan analisis opsi** — Edit grid IV berdasarkan harga kesepakatan dan jatuh tempo di Options Lab, dengan penanda nilai observasi/interpolasi dan tanpa ekstrapolasi ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Memperbaiki preset untuk aset berharga rendah, kuantitas, tanggal jatuh tempo, percobaan ulang, pemuatan yang macet saat bahasa diganti, serta batas 20 kaki opsi. Kode kontrak Zhengzhou dengan bagian jatuh tempo tiga digit seperti `CF501` kini menggunakan aturan futures Tiongkok dalam backtest ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).

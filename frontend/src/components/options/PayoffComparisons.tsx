@@ -40,11 +40,11 @@ export function PayoffComparisons({ label, alternatives, legs, comparisons, onCh
         </li>)}
       </ul>
       {!!comparisons?.length && <div className="mt-3 overflow-x-auto"><table className="w-full text-sm tabular-nums">
-        <thead><tr>{["metric", "alternative", "baseline", "difference"].map((key) => <th key={key} className="p-2 text-start">{t(`options.comparison.${key}`)}</th>)}</tr></thead>
+        <thead><tr>{(["metric", "alternative", "baseline", "difference"] as const).map((key) => <th key={key} className="p-2 text-start">{t(`options.comparison.${key}`)}</th>)}</tr></thead>
         <tbody>{comparisons.map((comparison) => comparison.status !== "ok"
           ? <tr key={comparison.left_label}><td colSpan={4} className="p-2">{comparison.left_label}: {comparison.reason}</td></tr>
           : Object.entries(comparison.metrics ?? {}).map(([metric, values]) => <tr key={`${comparison.left_label}-${metric}`} className="border-t border-border/40">
-            <td className="p-2">{t(`options.comparison.${metric}`)}</td>
+            <td className="p-2">{t(`options.comparison.${metric}`, { defaultValue: metric })}</td>
             <td className="p-2">{comparison.left_label}: {percent(values.left_decimal)}</td>
             <td className="p-2">{comparison.right_label}: {percent(values.right_decimal)}</td>
             <td className="p-2">{values.relation ? `${t(`options.comparison.${values.relation}`)} · ${values.difference_percentage_points?.toFixed(2)}` : "—"}</td>

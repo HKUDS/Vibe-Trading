@@ -14,7 +14,7 @@ import pytest
 import api_server  # noqa: F401
 from src.api import settings_routes
 from src.providers import claude_cli
-from src.providers.capabilities import get_provider_capabilities
+from src.providers.registry import get_provider_capabilities
 from src.providers.chat import ChatLLM
 from src.swarm.models import public_provider_metadata
 from tests.claude_cli_helpers import install_fake_cli, payload, tool, use_provider
@@ -49,24 +49,26 @@ def test_claude_cli_label_survives_public_run_metadata() -> None:
     assert public_provider_metadata("claude-cli") == "claude-cli"
 
 
-def test_sync_provider_env_clears_openai_transport(monkeypatch) -> None:
-    import src.providers.llm as llm
+def test_cli_config_does_not_use_or_destroy_openai_credentials(monkeypatch) -> None:
+    from src.providers.settings import _sync_provider_env
 
     use_provider(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-should-be-removed")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.invalid/v1")
-    llm._sync_provider_env()
+    _sync_provider_env()
     import os
 
-    assert "OPENAI_API_KEY" not in os.environ
-    assert "OPENAI_BASE_URL" not in os.environ
+    from src.providers.settings import resolve_config
+    assert resolve_config().api_key == ""
+    assert os.environ["OPENAI_API_KEY"] == "sk-should-be-removed"
+    assert os.environ["OPENAI_BASE_URL"] == "https://example.invalid/v1"
 
 
 def test_build_llm_returns_cli_wrapper(monkeypatch) -> None:
-    import src.providers.llm as llm
+    from src.providers.llm import build_llm
 
     use_provider(monkeypatch)
-    model = llm.build_llm()
+    model = build_llm()
     assert isinstance(model, claude_cli.ClaudeCliLLM)
     assert model.model == "claude-opus-5-5"
 
@@ -505,15 +507,15 @@ def test_settings_report_cli_login(monkeypatch) -> None:
 
 
 def test_preflight_uses_cli_login(monkeypatch) -> None:
-    import src.providers.llm as llm
+    from src.providers import settings, llm as llm_module
     from src import preflight
 
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "claude-cli")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "claude-opus-5-5")
-    monkeypatch.setattr(llm, "_ensure_dotenv", lambda: None)
-    monkeypatch.setattr(llm, "_sync_provider_env", lambda: None)
+    monkeypatch.setattr(settings, "_ensure_dotenv", lambda: None)
+    monkeypatch.setattr(settings, "_sync_provider_env", lambda: None)
     monkeypatch.setattr(
-        llm,
+        llm_module,
         "provider_diagnostics",
         lambda: {"base_url": "", "timeout_seconds": 120, "max_retries": 2, "proxy": {}},
     )

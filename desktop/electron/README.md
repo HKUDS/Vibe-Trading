@@ -4,15 +4,11 @@ This directory contains an Electron host for the existing Vibe-Trading FastAPI
 and React application. The Windows packaging layer can assemble an unsigned
 NSIS review artifact or require and verify Authenticode signing for a
 publishable installer. Both use an isolated Python runtime and encrypted
-credential storage. This layer does not contain an updater, optional IM
-adapters, personal WeChat pairing, or changes to the agent loop and provider
-behavior.
-
-It also contains dormant, fail-closed building blocks for a future signed
-updater: Authenticode/publisher/version verification, an interruption-recovery
-journal, and a strict backend shutdown result. They do not check a feed,
-download an artifact, launch an installer, or enable updates. See
-[UPDATE_SAFETY.md](UPDATE_SAFETY.md).
+credential storage. Settings includes signed Desktop updates and Web version
+checks. Automatic Desktop installation requires a configured HTTPS release feed
+and pinned publisher certificates; both remain unconfigured in this checkout.
+See [UPDATE_SAFETY.md](UPDATE_SAFETY.md) for release setup, data retention and the
+remaining signed Windows validation.
 
 ## What the shell does
 
@@ -85,7 +81,7 @@ the parent-death path by force-terminating only the Electron main PID before
 checking that the Python process and loopback listener are gone. Both graceful
 and parent-death tests keep a separate Python sentinel alive throughout the
 owned-process cleanup. The update-safety test exercises the rejection matrix
-and every journal recovery phase without enabling an updater, including
+and every journal recovery phase without launching an installer, including
 artifact mutation, concurrent journal creation, and failed-shutdown retry.
 
 Backend resolution is intentionally narrow. It checks an explicit
@@ -108,9 +104,12 @@ layers. The packaging layer adds Electron Builder, an unsigned NSIS review
 artifact, a checksum-pinned CPython 3.12.10 base runtime, and `safeStorage`
 credential migration.
 
+The LLM credential allowlist comes from `agent/src/providers/llm_providers.json`,
+copied into `dist` at build time; new providers need no separate desktop entry.
+The store also retains the non-LLM `TUSHARE_TOKEN` and `GILDATA_TOKEN` credentials.
+
 It intentionally excludes:
 
-- update checks or release-feed configuration;
 - provider/model discovery and response metadata;
 - optional IM adapters and personal WeChat pairing;
 - broker-specific optional packages.

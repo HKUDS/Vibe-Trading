@@ -596,6 +596,14 @@ export interface HistoryJob { auto_resume?: number; retry_at?: number; retry_cou
 export interface GatewayCapabilities { history_datasets: { markets: string[]; intervals: string[]; sources: Array<{ source: string; markets: string[]; intervals: string[] | null; requires_auth: boolean }> } }
 export interface HistoryPlan { routes?: Record<string, { market: string; candidates: string[] }>; chunks: number; estimated_max_rows: number; estimated_uncompressed_bytes: number; storage: HistoryStorage }
 
+export interface SoftwareUpdate {
+  current_version: string;
+  latest_version: string | null;
+  available: boolean;
+  method: "wheel" | "editable" | "checkout" | "vcs" | "container" | "desktop" | "desktop-manual" | "desktop-unconfigured";
+  recovery?: string;
+}
+
 export const api = {
   dataScans: () => request<ScanJob[]>("/data/scans"),
   createDataScan: (spec: HistorySpec) => request<ScanJob>("/data/scans", { method: "POST", body: JSON.stringify(spec) }),
@@ -611,6 +619,8 @@ export const api = {
   pinHistory: (id: string, pinned: boolean) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/pin?pinned=${pinned}`, { method: "PUT" }),
   deleteHistory: (id: string) => request(`/data/history/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   pruneHistory: () => request<HistoryStorage>("/data/history/prune", { method: "POST" }),
+
+  checkForUpdates: () => request<SoftwareUpdate>("/api/system/update"),
   getResearchLabCatalog: () => request<LabCatalog>("/api/research-lab/catalog"),
   startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
     request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),
@@ -1091,6 +1101,9 @@ export interface SwarmRunSummary {
 }
 
 export interface LLMProviderOption {
+  backend?: string;
+  automatic_model_list?: boolean;
+  model_options?: string[];
   name: string;
   label: string;
   api_key_env?: string | null;

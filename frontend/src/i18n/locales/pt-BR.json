@@ -555,7 +555,7 @@
     "subtitle": "Configure credenciais de modelo e tokens de origem de dados de mercado para este projeto local.",
     "unavailable": "As configurações não estão disponíveis",
     "llmSettings": "Configurações de LLM",
-    "llmSettingsDesc": "Escolha o modelo usado pelo agente e salve-o no arquivo agent/.env local do projeto.",
+    "llmSettingsDesc": "Escolha o modelo usado pelo agente e salve-o em ~/.vibe-trading/.env.",
     "connection": "Conexão",
     "model": "Modelo",
     "useProviderDefaults": "Usar padrões do provedor",
@@ -2816,5 +2816,25 @@
     "credentialsRequired": "Exige credenciais",
     "downloaded": "Baixado · cobertura não verificada",
     "coverageHint": "As linhas disponíveis são salvas sem amostragem. Só dados verificados pelo calendário ou grade temporal são marcados como completos; lacunas históricas não são substituídas por dados recentes."
+  },
+  "updates": {
+    "title": "Atualizações",
+    "preserve": "As configurações, credenciais e conversas serão mantidas. Use a mesma conta de instalação e os mesmos diretórios de dados.",
+    "check": "Verificar atualizações",
+    "working": "Aguarde…",
+    "current": "Versão em execução: {{version}}",
+    "available": "Nova versão disponível: {{version}}",
+    "currentLatest": "Última versão publicada: {{version}}. Não há versão mais recente.",
+    "pip": "Execute este comando no ambiente Python existente do servidor e reinicie o serviço.",
+    "container": "No host de implantação, atualize a imagem ou reconstrua o serviço com a configuração Compose original. Mantenha todos os volumes de dados.",
+    "desktop": "Conclua as tarefas ativas antes de atualizar. O aplicativo fechará, instalará a atualização verificada e abrirá novamente.",
+    "source": "Atualize pelo código-fonte ou gerenciador de pacotes original, mantendo alterações locais, extras e restrições. Reinicie o mesmo serviço.",
+    "manual": "Esta compilação não tem canal de atualização automática. Instale a próxima versão de Desktop do distribuidor original sobre esta instalação e preserve os dados.",
+    "completed": "A versão de destino do Desktop e seu backend foram iniciados.",
+    "interrupted": "A atualização anterior não terminou corretamente. Verifique os logs antes de tentar novamente; não exclua arquivos de configuração ou recuperação.",
+    "install": "Atualizar e reiniciar",
+    "installing": "Baixando e verificando a atualização. O aplicativo reiniciará após a instalação.",
+    "checkFailed": "Não foi possível verificar atualizações. Verifique a conexão ou o acesso ao servidor e tente novamente.",
+    "installFailed": "Não foi possível iniciar a instalação. Seus dados foram mantidos. Verifique os logs e procure atualizações novamente."
   }
 }

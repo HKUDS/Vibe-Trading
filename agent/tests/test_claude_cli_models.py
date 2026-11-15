@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.providers import claude_cli, claude_cli_models
+from src.providers import claude_cli
 from tests.claude_cli_helpers import (
     install_fake_cli,
     install_fake_init_cli,
@@ -58,7 +58,7 @@ def test_model_list_dedupes_on_resolved_name_and_keeps_levels(fake_init_cli) -> 
     set_reply, calls = fake_init_cli
     set_reply({"models": _CLI_MODELS})
 
-    models = claude_cli_models.list_claude_cli_models()
+    models = claude_cli.list_claude_cli_models()
 
     assert [m.model_id for m in models] == [
         "claude-opus-5-5",
@@ -79,7 +79,7 @@ def test_model_list_skips_lines_that_are_not_json(fake_init_cli) -> None:
     set_reply, _ = fake_init_cli
     set_reply({"models": [_CLI_MODELS[3]]})
 
-    models = claude_cli_models.list_claude_cli_models()
+    models = claude_cli.list_claude_cli_models()
 
     assert [m.model_id for m in models] == ["claude-sonnet-4-6"]
 
@@ -88,11 +88,11 @@ def test_model_list_is_cached_until_refresh(fake_init_cli) -> None:
     set_reply, calls = fake_init_cli
     set_reply({"models": _CLI_MODELS})
 
-    claude_cli_models.list_claude_cli_models()
-    claude_cli_models.list_claude_cli_models()
+    claude_cli.list_claude_cli_models()
+    claude_cli.list_claude_cli_models()
     assert len(calls()) == 1
 
-    claude_cli_models.list_claude_cli_models(refresh=True)
+    claude_cli.list_claude_cli_models(refresh=True)
     assert len(calls()) == 2
 
 
@@ -102,7 +102,7 @@ def test_model_list_failure_raises(fake_init_cli, reply) -> None:
     set_reply(reply)
 
     with pytest.raises(RuntimeError, match="model list unavailable"):
-        claude_cli_models.list_claude_cli_models()
+        claude_cli.list_claude_cli_models()
 
 
 # --- reasoning effort ---------------------------------------------------------
@@ -142,16 +142,16 @@ def test_malformed_control_response_is_reported_not_crashed(monkeypatch) -> None
         return subprocess.CompletedProcess(cmd, 0, stdout=line + "\n", stderr="")
 
     monkeypatch.setenv("CLAUDE_CLI_PATH", "/bin/true")
-    monkeypatch.setattr(claude_cli_models, "_model_cache", {})
+    monkeypatch.setattr(claude_cli, "_model_cache", {})
     # Replace the module's reference, not the shared ``subprocess`` module (#1123).
     monkeypatch.setattr(
-        claude_cli_models,
+        claude_cli,
         "subprocess",
         SimpleNamespace(run=fake_run, SubprocessError=subprocess.SubprocessError),
     )
 
     with pytest.raises(RuntimeError, match="model list unavailable"):
-        claude_cli_models.list_claude_cli_models()
+        claude_cli.list_claude_cli_models()
 
 
 @pytest.mark.parametrize("raw", ["High", " high "])

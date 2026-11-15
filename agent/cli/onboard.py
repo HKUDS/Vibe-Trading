@@ -14,8 +14,6 @@ directly so Esc / Left-arrow can be bound to a back-step sentinel.
 
 from __future__ import annotations
 
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Final, Sequence
@@ -31,7 +29,7 @@ CANCEL = object()
 
 
 # ---------------------------------------------------------------------------
-# Provider catalogue — mirrors _PROVIDER_CHOICES in cli/_legacy.py
+# Provider catalogue — projected from the shared provider registry
 # ---------------------------------------------------------------------------
 
 
@@ -50,59 +48,9 @@ class Provider:
     suggested_models: tuple[str, ...]
 
 
-PROVIDERS: Final[tuple[Provider, ...]] = (
-    Provider("openrouter", "OpenRouter", "recommended — 200+ models, one key",
-             "deepseek/deepseek-v4-pro",
-             "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL",
-             "https://openrouter.ai/api/v1", "sk-or-",
-             ("deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash",
-              "openai/gpt-5.5-pro", "google/gemini-3.5-flash")),
-    Provider("openai", "OpenAI", "GPT-5.5 direct",
-             "gpt-5.5", "OPENAI_API_KEY", "OPENAI_BASE_URL",
-             "https://api.openai.com/v1", "sk-",
-             ("gpt-5.5", "gpt-5.5-pro", "gpt-5.5-instant")),
-    Provider("anthropic", "Anthropic", "Anthropic Messages API or compatible proxy",
-             "claude-sonnet-4-6", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
-             "https://api.anthropic.com", None,
-             ("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5")),
-    Provider("openai-codex", "OpenAI Codex", "ChatGPT OAuth for Codex",
-             "openai-codex/gpt-6-sol", None, "OPENAI_CODEX_BASE_URL",
-             "https://chatgpt.com/backend-api/codex/responses", None,
-             ("openai-codex/gpt-6-sol", "openai-codex/gpt-6-astra", "openai-codex/gpt-6-luna")),
-    Provider("deepseek", "DeepSeek",
-             "cheapest tier — good for batch backtest research",
-             "deepseek-v4-pro", "DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL",
-             "https://api.deepseek.com/v1", "sk-",
-             ("deepseek-v4-pro", "deepseek-flash")),
-    Provider("opencode", "OpenCode", "Go / Zen relay — DeepSeek, GLM, Kimi, Qwen under one key",
-             "deepseek-v4.1-flash", "OPENCODE_API_KEY", "OPENCODE_BASE_URL",
-             "https://opencode.ai/zen/go/v1", "sk-",
-             ("deepseek-v4.1-flash", "deepseek-v4-pro", "glm-5.3-flash")),
-    Provider("siliconflow-cn", "SiliconFlow (CN)", "OpenAI-compatible MaaS endpoint in China",
-             "deepseek-ai/DeepSeek-V3.1-Terminus",
-             "SILICONFLOW_API_KEY", "SILICONFLOW_BASE_URL",
-             "https://api.siliconflow.cn/v1", "sk-",
-             ("deepseek-ai/DeepSeek-V3.1-Terminus",)),
-    Provider("siliconflow-global", "SiliconFlow (Global)", "OpenAI-compatible global MaaS endpoint",
-             "deepseek-ai/DeepSeek-V3.1-Terminus",
-             "SILICONFLOW_GLOBAL_API_KEY", "SILICONFLOW_GLOBAL_BASE_URL",
-             "https://api.siliconflow.com/v1", "sk-",
-             ("deepseek-ai/DeepSeek-V3.1-Terminus",)),
-    Provider("modelscope", "ModelScope", "Alibaba's OpenAI-compatible MaaS platform",
-             "Qwen/Qwen3.5-27B",
-             "MODELSCOPE_API_KEY", "MODELSCOPE_BASE_URL",
-             "https://api-inference.modelscope.cn/v1", None,
-             ("Qwen/Qwen3.5-27B", "Qwen/Qwen3.5-397B-A17B", "Qwen/Qwen3-235B-A22B")),
-    Provider("nvidia", "NVIDIA NIM", "hosted NVIDIA API catalog",
-             "nvidia/nemotron-3-ultra-550b-a55b",
-             "NVIDIA_API_KEY", "NVIDIA_BASE_URL",
-             "https://integrate.api.nvidia.com/v1", "nvapi-",
-             ("nvidia/nemotron-3-ultra-550b-a55b",)),
-    Provider("ollama", "Ollama", "local, free, no API key",
-             "qwen2.5:32b", None, "OLLAMA_BASE_URL",
-             "http://localhost:11434", None,
-             ("qwen2.5:32b", "llama3.3:70b", "deepseek-r1:14b")),
-)
+from src.providers.registry import onboarding_choices
+
+PROVIDERS: Final[tuple[Provider, ...]] = tuple(Provider(**item) for item in onboarding_choices())
 
 TIMEOUT_CHOICES: Final[tuple[tuple[str, str], ...]] = (
     ("2400", "2400s (4 minutes — research mode, recommended)"),
@@ -121,59 +69,25 @@ def _env_path() -> Path: return _env_dir() / ".env"
 def _partial_path() -> Path: return _env_dir() / ".env.partial"
 
 
-def _render_env(values: dict[str, str]) -> str:
-    """Render values as a stable ``.env`` body (KEY=value lines)."""
-    return "\n".join(f"{k}={v}" for k, v in values.items() if v) + "\n"
+from src.config.dotenv import _atomic_write_secret, render_env as _render_env
+from src.providers.settings import SettingsStore
 
 
 def _save_partial(values: dict[str, str]) -> None:
-    """Best-effort atomic write to ``.env.partial`` (crash-resilience nicety).
-
-    Mirrors :func:`_finalize`: ``mkstemp`` creates the temp file 0600-only, so
-    the mode is never applied to an already-visible file, and ``replace`` swaps
-    it in atomically. Writing to the destination directly would defeat the whole
-    point of the file — unlinking it first, or truncating it on open, throws away
-    the recovery state this function exists to preserve if the very next write
-    fails.
-    """
+    """Save recovery state atomically; a failed save leaves the prior file intact."""
     try:
         _env_dir().mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(prefix=".env.partial.", dir=str(_env_dir()))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(_render_env(values))
-            Path(tmp_name).replace(_partial_path())
-        finally:
-            try:
-                Path(tmp_name).unlink()
-            except (FileNotFoundError, OSError):
-                pass
+        _atomic_write_secret(_partial_path(), _render_env(values), allow_in_place=False)
     except OSError:
         pass
 
 
 def _finalize(values: dict[str, str]) -> Path:
-    """Atomically write ``.env``. Returns the final path."""
-    _env_dir().mkdir(parents=True, exist_ok=True)
-    content = _render_env(values)
-    fd, tmp_name = tempfile.mkstemp(prefix=".env.", dir=str(_env_dir()))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        tmp_path = Path(tmp_name)
-        try:
-            tmp_path.chmod(0o600)
-        except OSError:
-            pass
-        tmp_path.replace(_env_path())
-    finally:
-        try:
-            Path(tmp_name).unlink()
-        except (FileNotFoundError, OSError):
-            pass
+    """Persist through the same private settings store used by API and setup."""
+    SettingsStore(path=_env_path()).persist(values, replace=True)
     try:
         _partial_path().unlink()
-    except (FileNotFoundError, OSError):
+    except OSError:
         pass
     return _env_path()
 

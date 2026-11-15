@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from src.api import settings_routes
+from src.providers import discovery
 from src.providers import openai_codex
 
 
@@ -27,10 +28,10 @@ def _run(monkeypatch: pytest.MonkeyPatch, handler, *, token=None):
 
     monkeypatch.setattr(openai_codex, "_get_codex_token", get_token)
     monkeypatch.setattr(
-        settings_routes.httpx, "AsyncClient",
+        discovery.httpx, "AsyncClient",
         lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
     )
-    result = asyncio.run(settings_routes._list_openai_codex_models(PROVIDER))
+    result = asyncio.run(discovery._list_openai_codex_models(PROVIDER))
     return result, calls
 
 
@@ -109,9 +110,9 @@ def test_refreshes_once_after_401_with_rejected_token(monkeypatch):
         return SimpleNamespace(access="old-access", account_id="fake-account")
 
     monkeypatch.setattr(openai_codex, "_get_codex_token", get_token)
-    monkeypatch.setattr(settings_routes.httpx, "AsyncClient",
+    monkeypatch.setattr(discovery.httpx, "AsyncClient",
                         lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs))
-    result = asyncio.run(settings_routes._list_openai_codex_models(PROVIDER))
+    result = asyncio.run(discovery._list_openai_codex_models(PROVIDER))
     assert result.source == "provider"
     assert seen == ["Bearer old-access", "Bearer new-access"]
     assert calls == [{}, {"force_refresh": True, "rejected_access": "old-access"}]
@@ -121,7 +122,7 @@ def test_missing_oauth_session_returns_safe_fallback(monkeypatch):
     def missing(**kwargs):
         raise RuntimeError("private-token-must-never-be-logged")
     monkeypatch.setattr(openai_codex, "_get_codex_token", missing)
-    result = asyncio.run(settings_routes._list_openai_codex_models(PROVIDER))
+    result = asyncio.run(discovery._list_openai_codex_models(PROVIDER))
     assert result.warning_code == "model_list_unavailable"
     assert "private-token" not in str(result.model_dump())
 

@@ -555,7 +555,7 @@
     "subtitle": "Configure model credentials and market data source tokens for this local project.",
     "unavailable": "Settings are unavailable",
     "llmSettings": "LLM Settings",
-    "llmSettingsDesc": "Choose the model used by the agent and save it to the project-local agent/.env file.",
+    "llmSettingsDesc": "Choose the model used by the agent and save it to ~/.vibe-trading/.env.",
     "connection": "Connection",
     "model": "Model",
     "useProviderDefaults": "Use provider defaults",
@@ -2816,5 +2816,25 @@
     "credentialsRequired": "Credentials required",
     "downloaded": "Downloaded · coverage unverified",
     "coverageHint": "Available rows are saved without sampling. Only calendar/grid-verified datasets are marked complete; missing history is reported, never replaced with recent data."
+  },
+  "updates": {
+    "title": "Software updates",
+    "preserve": "Updates reuse your existing configuration, credentials and conversations. Keep the same installation account and data directories.",
+    "check": "Check for updates",
+    "working": "Please wait…",
+    "current": "Running version: {{version}}",
+    "available": "New version available: {{version}}",
+    "currentLatest": "Latest release: {{version}}. No newer version is available.",
+    "pip": "Run this command on the server with its existing Python environment, then restart the service.",
+    "container": "On the deployment host, update the image or rebuild the service using the original Compose setup. Keep all existing data volumes.",
+    "desktop": "Finish active work before updating. The app will close, install the verified update and reopen.",
+    "source": "Update through the original source checkout or package manager, preserving local changes, extras and constraints. Then restart the same service.",
+    "manual": "This build does not have an automatic update channel. Install the next Desktop release from the original distributor over this installation; retain its user data.",
+    "completed": "The target Desktop version has started with its backend.",
+    "interrupted": "The previous update did not complete cleanly. Check the desktop logs before retrying; do not delete configuration or recovery files.",
+    "install": "Update and restart",
+    "installing": "Downloading and verifying the update. The app will restart after installation.",
+    "checkFailed": "Could not check for updates. Check your connection or server access and try again.",
+    "installFailed": "Update could not be handed off. Your data has been retained. Check desktop logs, then check for updates again."
   }
 }

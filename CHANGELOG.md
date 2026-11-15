@@ -5,6 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed — 2026-11-14
+
+- Unified provider configuration and discovery across Agent, CLI, API, Swarm
+  and Desktop credential storage. Each client keeps its resolved settings;
+  native adapters honor explicit proxy routing. Cross-origin redirects are
+  refused before forwarding credentials or request bodies.
+- Added Web version checks and opt-in signed Desktop update handling with
+  verification and recovery. Desktop distribution still requires a configured
+  update feed and publisher certificates.
+- Integrated with the current research runtime: direct answer streaming,
+  instrument identity checks and interrupted Swarm continuation remain intact.
+  Obsolete numeric redaction and forced answer rewriting are not restored.
+- Fixed Options Lab comparison translation-key typing so the frontend builds.
+
 ### Fixed
 
 - Grounding reads explicit currency and magnitude suffixes in numeric tool

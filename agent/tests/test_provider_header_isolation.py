@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.providers import llm as _provider_adapters
+from src.providers import settings as _provider_configuration
+
 import asyncio
 import json
 import os
@@ -37,175 +40,77 @@ def _stream_response(text: str) -> httpx.Response:
     )
 
 
-@pytest.mark.skipif(
-    ChatOpenAIWithReasoning is None,
-    reason="langchain-openai is not installed",
-)
-def test_openrouter_ignores_non_ascii_ambient_openai_headers() -> None:
-    """OpenRouter must not inherit OpenAI-only headers from the host process."""
-    seen: dict[str, object] = {}
+@pytest.mark.skipif(ChatOpenAIWithReasoning is None, reason="langchain-openai is not installed")
+@pytest.mark.parametrize("provider,with_explicit_headers", [
+    ("openai", False), ("openrouter", False), ("openrouter", True), ("kimi-coding", True),
+], ids=["direct-openai", "relay-default-headers", "relay-explicit-headers", "kimi-explicit-headers"])
+@pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
+def test_stream_headers_stay_provider_scoped(provider, with_explicit_headers, asynchronous):
+    """Direct OpenAI keeps its headers; relays isolate them on both stream paths."""
+    seen = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen["headers"] = dict(request.headers)
-        seen["body"] = request.content.decode("utf-8")
-        return _stream_response("résultat")
-
-    env = {
-        "OPENAI_CUSTOM_HEADERS": (
-            f"X-Debug: {'x' * 3069}à\nauthorization: stale-à\nX-Explicit: ambient-value\nx-case: ambient-à"
-        ),
-        "OPENAI_ORG_ID": "org-à",
-        "OPENAI_PROJECT_ID": "project-à",
-    }
-    with patch.dict(os.environ, env, clear=True):
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            llm = ChatOpenAIWithReasoning(
-                model="deepseek/deepseek-v4-pro",
-                api_key="sk-or-test",
-                base_url="https://openrouter.invalid/api/v1",
-                default_headers={
-                    "X-Explicit": "provider-value",
-                    "X-Case": "provider-value",
-                },
-                http_client=client,
-                vibe_provider="openrouter",
-                vibe_api_key="sk-or-test",
-            )
-            result = "".join(chunk.content for chunk in llm.stream("entrée"))
-
-    headers = seen["headers"]
-    assert isinstance(headers, dict)
-    assert result == "résultat"
-    assert "entrée" in str(seen["body"])
-    assert "x-debug" not in headers
-    assert "openai-organization" not in headers
-    assert "openai-project" not in headers
-    assert headers["authorization"] == "Bearer sk-or-test"
-    assert headers["x-explicit"] == "provider-value"
-    assert headers["x-case"] == "provider-value"
-
-
-@pytest.mark.skipif(
-    ChatOpenAIWithReasoning is None,
-    reason="langchain-openai is not installed",
-)
-def test_direct_openai_preserves_ambient_headers() -> None:
-    """Header isolation must not change explicit direct-OpenAI behavior."""
-    seen: dict[str, str] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(dict(request.headers))
-        return _stream_response("ok")
-
-    env = {
-        "OPENAI_CUSTOM_HEADERS": "X-Debug: keep-me",
-        "OPENAI_ORG_ID": "org-test",
-        "OPENAI_PROJECT_ID": "project-test",
-    }
-    with patch.dict(os.environ, env, clear=True):
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            llm = ChatOpenAIWithReasoning(
-                model="gpt-test",
-                api_key="sk-test",
-                base_url="https://api.openai.invalid/v1",
-                http_client=client,
-                vibe_provider="openai",
-                vibe_api_key="sk-test",
-            )
-            list(llm.stream("hello"))
-
-    assert seen["x-debug"] == "keep-me"
-    assert seen["openai-organization"] == "org-test"
-    assert seen["openai-project"] == "project-test"
-
-
-@pytest.mark.skipif(
-    ChatOpenAIWithReasoning is None,
-    reason="langchain-openai is not installed",
-)
-def test_openrouter_async_stream_ignores_non_ascii_ambient_headers() -> None:
-    """The async provider path used by API sessions must apply the same isolation."""
-    seen: dict[str, str] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.update(dict(request.headers))
+    def handler(request):
+        seen.append(request)
         return _stream_response("异步 résultat")
 
-    async def scenario() -> str:
-        with patch.dict(
-            os.environ,
-            {"OPENAI_CUSTOM_HEADERS": "X-Bad: ambient-à"},
-            clear=True,
-        ):
-            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-                llm = ChatOpenAIWithReasoning(
-                    model="deepseek/deepseek-v4-pro",
-                    api_key="sk-or-test",
-                    base_url="https://openrouter.invalid/api/v1",
-                    http_async_client=client,
-                    vibe_provider="openrouter",
-                    vibe_api_key="sk-or-test",
+    direct = provider == "openai"
+    env = {
+        "OPENAI_CUSTOM_HEADERS": "X-Debug: keep-me" if direct else (
+            f"X-Debug: {'x' * 3069}à\nauthorization: stale-à\n"
+            "X-Other: ambient\nX-Explicit: ambient-value\nx-case: ambient-à\nuser-agent: ambient"
+        ),
+        "OPENAI_ORG_ID": "org-test" if direct else "org-à",
+        "OPENAI_PROJECT_ID": "project-test" if direct else "project-à",
+    }
+    explicit = {
+        "X-Explicit": "provider-value", "X-Case": "provider-value", "User-Agent": "provider-value",
+    } if with_explicit_headers else None
+
+    async def scenario():
+        with httpx.Client(transport=httpx.MockTransport(handler)) as sync_client:
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as async_client:
+                adapter = ChatOpenAIWithReasoning(
+                    model="header-test", api_key="sk-test", base_url="https://relay.invalid/v1",
+                    default_headers=explicit, http_client=sync_client, http_async_client=async_client,
+                    vibe_provider=provider, vibe_api_key="sk-test",
                 )
-                parts: list[str] = []
-                async for chunk in llm.astream("异步 entrée"):
-                    parts.append(str(chunk.content))
-                return "".join(parts)
+                if asynchronous:
+                    chunks = [chunk async for chunk in adapter.astream("异步 entrée")]
+                else:
+                    chunks = list(adapter.stream("异步 entrée"))
+                return "".join(chunk.content for chunk in chunks), adapter
 
-    assert asyncio.run(scenario()) == "异步 résultat"
-    assert "x-bad" not in seen
-    assert seen["authorization"] == "Bearer sk-or-test"
-
-
-@pytest.mark.skipif(
-    ChatOpenAIWithReasoning is None,
-    reason="langchain-openai is not installed",
-)
-def test_an_explicit_header_wins_over_its_ambient_twin_on_the_wire() -> None:
-    """One header, the explicit value, whatever spelling the ambient env used (#1573).
-
-    openai 2.53 (and 3.19.0) merge OPENAI_CUSTOM_HEADERS under default_headers
-    with a plain dict (an ambient ``user-agent`` beside an explicit ``User-Agent``
-    sent both); openai 3.19.2 merges case-insensitively and applies a per-request
-    omit the same way (an omit for the ambient spelling stripped the explicit
-    header). The repo's lock pins 2.53 and CI installs the newest, so both must
-    hold.
-    """
-    seen: list[httpx.Headers] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.headers)
-        return _stream_response("ok")
-
-    env = {"OPENAI_CUSTOM_HEADERS": "user-agent: ambient\nX-Other: ambient"}
     with patch.dict(os.environ, env, clear=True):
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            llm = ChatOpenAIWithReasoning(
-                model="kimi-for-coding",
-                api_key="sk-test",
-                base_url="https://relay.invalid/v1",
-                default_headers={"User-Agent": "provider-value"},
-                http_client=client,
-                vibe_provider="kimi-coding",
-                vibe_api_key="sk-test",
-            )
-            list(llm.stream("hello"))
+        result, adapter = asyncio.run(scenario())
 
-    assert seen[0].get_list("user-agent") == ["provider-value"]
-    assert "x-other" not in seen[0]
-    # The wire above is checked against whichever openai CI installed; the
-    # overrides are checked here so both merge styles are pinned on any version:
-    # the ambient spelling is omitted (2.x), and the explicit value comes after
-    # that omit (3.x drops every spelling of a name when it meets the omit).
-    overrides = llm._provider_scoped_extra_headers()
-    names = list(overrides)
-    assert type(overrides["user-agent"]).__name__ == "Omit"
-    assert overrides["User-Agent"] == "provider-value"
-    assert names.index("User-Agent") > names.index("user-agent")
+    assert result == "异步 résultat"
+    assert len(seen) == 1
+    assert "异步 entrée" in seen[0].content.decode("utf-8")
+    headers = seen[0].headers
+    assert headers.get_list("authorization") == ["Bearer sk-test"]
+    if direct:
+        assert headers["x-debug"] == "keep-me"
+        assert headers["openai-organization"] == "org-test"
+        assert headers["openai-project"] == "project-test"
+    else:
+        assert not {"x-debug", "x-other", "openai-organization", "openai-project"}.intersection(headers)
+        # SDK 2.x merges by spelling; 3.x applies Omit case-insensitively.
+        # Pin both the wire and override ordering so either SDK stays covered.
+        overrides = adapter._provider_scoped_extra_headers()
+        assert type(overrides["user-agent"]).__name__ == "Omit"
+        if explicit:
+            for name in explicit:
+                assert headers.get_list(name) == ["provider-value"]
+            assert overrides["User-Agent"] == "provider-value"
+            names = list(overrides)
+            assert names.index("User-Agent") > names.index("user-agent")
+        else:
+            assert not {"x-explicit", "x-case"}.intersection(headers)
+            assert headers.get("user-agent") != "ambient"
 
 
 def test_build_rejects_non_ascii_openrouter_api_key_before_transport() -> None:
     """A malformed Bearer credential should name its setting without leaking it."""
-    import src.providers.llm as llm_mod
 
     env = {
         "LANGCHAIN_PROVIDER": "openrouter",
@@ -214,7 +119,7 @@ def test_build_rejects_non_ascii_openrouter_api_key_before_transport() -> None:
         "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
     }
     try:
-        with patch.object(llm_mod, "_dotenv_loaded", True):
+        with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
                 with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY.*non-ASCII") as excinfo:
                     build_llm()
@@ -226,7 +131,6 @@ def test_build_rejects_non_ascii_openrouter_api_key_before_transport() -> None:
 
 def test_build_passes_openrouter_credentials_explicitly() -> None:
     """The relay client should retain the selected key for header restoration."""
-    import src.providers.llm as llm_mod
 
     captured: dict[str, object] = {}
 
@@ -241,9 +145,9 @@ def test_build_passes_openrouter_credentials_explicitly() -> None:
         "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
     }
     try:
-        with patch.object(llm_mod, "_dotenv_loaded", True):
+        with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
-                with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+                with patch.object(_provider_adapters, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                     build_llm()
     finally:
         reset_env_config()
@@ -256,7 +160,6 @@ def test_build_passes_openrouter_credentials_explicitly() -> None:
 
 def test_provider_doctor_reports_header_safety_without_values() -> None:
     """Doctor should identify a bad header source while keeping values secret."""
-    import src.providers.llm as llm_mod
 
     env = {
         "LANGCHAIN_PROVIDER": "openrouter",
@@ -266,7 +169,7 @@ def test_provider_doctor_reports_header_safety_without_values() -> None:
         "OPENAI_CUSTOM_HEADERS": "X-Debug: private-à",
     }
     try:
-        with patch.object(llm_mod, "_dotenv_loaded", True):
+        with patch.object(_provider_configuration, "_dotenv_loaded", True):
             with patch.dict(os.environ, env, clear=True):
                 diagnostics = provider_diagnostics()
     finally:
@@ -358,7 +261,6 @@ def test_stream_requests_usage_and_forwards_real_counts() -> None:
 def test_stream_usage_rejection_self_heals_and_is_remembered() -> None:
     """An endpoint that 400s on stream_options gets one stateless retry, and
     later calls skip the doomed attempt entirely."""
-    import src.providers.llm as llm_mod
 
     calls: list[str] = []
 
@@ -377,7 +279,7 @@ def test_stream_usage_rejection_self_heals_and_is_remembered() -> None:
         )
 
     model = "gpt-usage-reject-test"
-    llm_mod._STREAM_USAGE_UNSUPPORTED.discard(model)
+    _provider_adapters._STREAM_USAGE_UNSUPPORTED.clear()
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         llm = ChatOpenAIWithReasoning(
             model=model,
@@ -399,15 +301,14 @@ def test_stream_usage_rejection_self_heals_and_is_remembered() -> None:
     assert '"stream_options"' in calls[0]
     assert '"stream_options"' not in calls[1]
     assert '"stream_options"' not in calls[2]
-    llm_mod._STREAM_USAGE_UNSUPPORTED.discard(model)
+    _provider_adapters._STREAM_USAGE_UNSUPPORTED.clear()
 
 
 def test_stream_usage_unsupported_error_detection() -> None:
-    import src.providers.llm as llm_mod
 
-    assert llm_mod._is_stream_usage_unsupported_error(ValueError("Unknown parameter: 'stream_options' is unsupported"))
-    assert llm_mod._is_stream_usage_unsupported_error(
+    assert _provider_adapters._is_stream_usage_unsupported_error(ValueError("Unknown parameter: 'stream_options' is unsupported"))
+    assert _provider_adapters._is_stream_usage_unsupported_error(
         ValueError("include_usage is not a valid field for this endpoint")
     )
-    assert not llm_mod._is_stream_usage_unsupported_error(ValueError("model overloaded, retry later"))
-    assert not llm_mod._is_stream_usage_unsupported_error(ValueError("temperature is unsupported"))
+    assert not _provider_adapters._is_stream_usage_unsupported_error(ValueError("model overloaded, retry later"))
+    assert not _provider_adapters._is_stream_usage_unsupported_error(ValueError("temperature is unsupported"))

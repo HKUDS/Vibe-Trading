@@ -1,3 +1,4 @@
+import type { SoftwareUpdate } from "@/lib/api";
 export {};
 
 export interface DesktopCredentialStatus {
@@ -10,6 +11,8 @@ declare global {
   interface Window {
     vibeDesktop?: {
       isDesktop: boolean;
+      checkForUpdates: () => Promise<SoftwareUpdate>;
+      installUpdate: () => Promise<void>;
       restartBackend: () => Promise<boolean>;
       getCredentialStatus: () => Promise<DesktopCredentialStatus>;
       setCredential: (

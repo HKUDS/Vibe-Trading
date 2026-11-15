@@ -1,6 +1,7 @@
 """Tests for the custom OpenAI-compatible provider manager."""
 
 from __future__ import annotations
+from src.providers import custom_profiles
 
 import json
 from pathlib import Path
@@ -31,7 +32,7 @@ class _MemoryCredentials:
 @pytest.fixture()
 def custom_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CustomProviderStore:
     store = CustomProviderStore(tmp_path / "custom-providers.json", _MemoryCredentials())
-    monkeypatch.setattr(custom_provider_routes, "_build_store", lambda: store)
+    monkeypatch.setattr(custom_provider_routes, "CustomProviderStore", lambda: store)
     return store
 
 
@@ -70,12 +71,12 @@ def test_custom_provider_dns_target_rejects_non_public_resolution(
     monkeypatch: pytest.MonkeyPatch, resolved: str
 ) -> None:
     monkeypatch.setattr(
-        custom_provider_routes.socket,
+        custom_profiles.socket,
         "getaddrinfo",
         lambda *_args, **_kwargs: [(None, None, None, "", (resolved, 0))],
     )
     with pytest.raises(ValueError, match="resolves to a local or private network address"):
-        custom_provider_routes._reject_private_dns_targets("https://provider.example/v1")
+        custom_profiles._reject_private_dns_targets("https://provider.example/v1")
 
 
 def test_store_never_serializes_api_key(tmp_path: Path) -> None:
@@ -166,7 +167,7 @@ def test_activation_requires_explicit_confirmation(
         model="glm-5.3-flash",
         api_key="secret-key",
     )
-    monkeypatch.setattr(custom_provider_routes, "_activate_profile", lambda profile: {"status": "ok"})
+    monkeypatch.setattr(custom_provider_routes, "activate_custom_provider", lambda profile, **kwargs: {"status": "ok"})
 
     response = client.post(
         "/settings/custom-providers/hilinkup/activate",
@@ -180,8 +181,8 @@ def test_activation_requires_explicit_confirmation(
 def test_activate_constructs_a_model_with_one_vault_profile(
     client, custom_store, tmp_path, monkeypatch
 ):
-    from src.providers import custom_profiles, llm
-    from src.providers.capabilities import get_llm_credentials
+    from src.providers import llm, settings as provider_settings
+    from src.providers.settings import get_llm_credentials
 
     custom_store.save(profile_id="alpha", label="Alpha", base_url="https://alpha.example/v1", model="alpha-model", api_key="alpha-secret")
     monkeypatch.setattr(custom_profiles, "CustomProviderStore", lambda: custom_store)
@@ -192,7 +193,7 @@ def test_activate_constructs_a_model_with_one_vault_profile(
     # Track process values so pytest restores them after the route updates them.
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "other-model")
-    monkeypatch.setattr(llm, "_ensure_dotenv", lambda: None)
+    monkeypatch.setattr(provider_settings, "_ensure_dotenv", lambda: None)
     response = client.post("/settings/custom-providers/alpha/activate", json={"confirm": True})
     assert response.status_code == 200
     assert "secret" not in response.text
@@ -215,7 +216,7 @@ def test_activate_constructs_a_model_with_one_vault_profile(
 
 def test_missing_vault_profile_never_falls_back_to_an_ambient_key(custom_store, monkeypatch):
     from src.providers import custom_profiles
-    from src.providers.capabilities import get_llm_credentials
+    from src.providers.settings import get_llm_credentials
 
     monkeypatch.setattr(custom_profiles, "CustomProviderStore", lambda: custom_store)
     monkeypatch.setenv("OPENAI_API_KEY", "other-provider-secret")
@@ -247,17 +248,16 @@ def test_full_completion_url_normalizes_to_the_runtime_api_root():
 
 
 def test_failed_activation_keeps_previous_profile(custom_store, tmp_path, monkeypatch):
-    from src.api import settings_routes
-    from fastapi import HTTPException
+    from src.providers.settings import SettingsStore
 
     for name in ("first", "second"):
         custom_store.save(profile_id=name, label=name, base_url=f"https://{name}.test/v1", model=name, api_key=f"{name}-key")
     custom_store.activate("first")
-    def fail_write(_):
-        raise HTTPException(status_code=503, detail="Unable to save settings")
-    monkeypatch.setattr(settings_routes, "_persist_settings_updates", fail_write)
-    with pytest.raises(HTTPException):
-        settings_routes.activate_custom_provider(custom_store.get("second"), store=custom_store)
+    def fail_write(self, _, **kwargs):
+        raise OSError("Unable to save settings")
+    monkeypatch.setattr(SettingsStore, "persist", fail_write)
+    with pytest.raises(OSError):
+        custom_profiles.activate_custom_provider("second", store=custom_store)
     assert custom_store._read()["active_id"] == "first"
 
 
@@ -270,8 +270,9 @@ def test_real_completion_transport_redacts_key_and_sends_expected_request(monkey
     def handle(request):
         seen.append(request)
         return httpx.Response(200, json={"choices": [{"message": {"content": "OK synthetic-secret"}}]})
-    monkeypatch.setattr(custom_provider_routes, "_reject_private_dns_targets", lambda _: None)
-    monkeypatch.setattr(custom_provider_routes, "_provider_async_client", lambda _url: actual_client(transport=httpx.MockTransport(handle)))
+    monkeypatch.setattr(custom_profiles, "_reject_private_dns_targets", lambda _: None)
+    monkeypatch.setattr(custom_profiles, "proxy_applies", lambda _: False)
+    monkeypatch.setattr(custom_profiles, "public_only_async_client", lambda **kw: actual_client(transport=httpx.MockTransport(handle), **kw))
     result = asyncio.run(custom_provider_routes._perform_completion_test(base_url="https://example.test/v1", model="demo", api_key="synthetic-secret"))
     assert result["response_preview"] == "OK [redacted]"
     assert str(seen[0].url) == "https://example.test/v1/chat/completions"
@@ -283,7 +284,28 @@ def test_cli_custom_commands_are_registered():
     import subprocess
     import sys
 
-    result = subprocess.run([sys.executable, "-m", "cli.main", "provider", "custom", "--help"], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "cli.main", "provider", "custom", "--help"],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
     assert result.returncode == 0
     assert "activate" in result.stdout
     assert "add" in result.stdout
+
+
+def test_activation_write_failure_is_actionable_and_rolls_back(client, custom_store, monkeypatch):
+    from src.providers.settings import SettingsStore
+
+    custom_store.save(profile_id='first', label='First', base_url='https://first.test/v1', model='first', api_key='key')
+    custom_store.save(profile_id='second', label='Second', base_url='https://second.test/v1', model='second', api_key='key')
+    custom_store.activate('first')
+
+    def fail_write(self, updates, **kwargs):
+        raise PermissionError('private filesystem path')
+
+    monkeypatch.setattr(SettingsStore, 'persist', fail_write)
+    response = client.post('/settings/custom-providers/second/activate', json={'confirm': True})
+    assert response.status_code == 503
+    assert 'check ownership and permissions' in response.json()['detail']
+    assert 'private filesystem path' not in response.text
+    assert custom_store._read()['active_id'] == 'first'

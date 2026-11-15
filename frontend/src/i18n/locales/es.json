@@ -555,7 +555,7 @@
     "subtitle": "Configura las credenciales del modelo y los tokens de fuentes de datos de mercado para este proyecto local.",
     "unavailable": "La configuración no está disponible",
     "llmSettings": "Configuración del LLM",
-    "llmSettingsDesc": "Elige el modelo que usará el agente y guárdalo en el archivo agent/.env local del proyecto.",
+    "llmSettingsDesc": "Elige el modelo que usará el agente y guárdalo en ~/.vibe-trading/.env.",
     "connection": "Conexión",
     "model": "Modelo",
     "useProviderDefaults": "Usar valores predeterminados del proveedor",
@@ -2816,5 +2816,25 @@
     "credentialsRequired": "Requiere credenciales",
     "downloaded": "Descargado · cobertura sin verificar",
     "coverageHint": "Las filas disponibles se guardan sin muestreo. Solo se marcan completos los datos verificados por calendario o rejilla temporal; los huecos no se sustituyen por datos recientes."
+  },
+  "updates": {
+    "title": "Actualizaciones",
+    "preserve": "Se conservan la configuración, las credenciales y las conversaciones. Mantén la misma cuenta de instalación y los directorios de datos.",
+    "check": "Buscar actualizaciones",
+    "working": "Espera…",
+    "current": "Versión en ejecución: {{version}}",
+    "available": "Nueva versión disponible: {{version}}",
+    "currentLatest": "Última versión publicada: {{version}}. No hay una versión más reciente.",
+    "pip": "Ejecuta este comando en el entorno Python existente del servidor y reinicia el servicio.",
+    "container": "Actualiza la imagen o reconstruye el servicio en el host de despliegue con la configuración Compose original. Conserva todos los volúmenes de datos.",
+    "desktop": "Termina las tareas activas antes de actualizar. La aplicación se cerrará, instalará la actualización verificada y volverá a abrirse.",
+    "source": "Actualiza mediante el código fuente o el gestor de paquetes original, conservando cambios locales, extras y restricciones. Reinicia el mismo servicio.",
+    "manual": "Esta compilación no tiene un canal de actualización automática. Instala la siguiente versión de Desktop del distribuidor original sobre esta instalación y conserva los datos.",
+    "completed": "La versión de destino de Desktop y su backend han arrancado.",
+    "interrupted": "La actualización anterior no terminó correctamente. Revisa los registros antes de reintentar; no borres archivos de configuración ni recuperación.",
+    "install": "Actualizar y reiniciar",
+    "installing": "Descargando y verificando la actualización. La aplicación se reiniciará después de instalarla.",
+    "checkFailed": "No se pudieron buscar actualizaciones. Comprueba la conexión o el acceso al servidor e inténtalo de nuevo.",
+    "installFailed": "No se pudo iniciar la instalación. Tus datos se conservan. Revisa los registros y busca actualizaciones de nuevo."
   }
 }

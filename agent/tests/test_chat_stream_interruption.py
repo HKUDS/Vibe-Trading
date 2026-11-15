@@ -9,31 +9,19 @@ and stopping really closes the stream rather than abandoning a thread.
 
 from __future__ import annotations
 
+from tests.provider_helpers import chat_with_adapter
+
 import threading
 import time
-from typing import Any
 
 import pytest
-
-from src.providers.chat import ChatLLM
-
-
-class _Chunk:
-    def __init__(self, content: str = "", finish_reason: str = "stop") -> None:
-        self.content = content
-        self.tool_calls: list[dict[str, Any]] = []
-        self.additional_kwargs: dict[str, Any] = {}
-        self.response_metadata = {"finish_reason": finish_reason}
-        self.usage_metadata = None
-
-    def __add__(self, other: "_Chunk") -> "_Chunk":
-        return _Chunk(self.content + other.content, other.response_metadata.get("finish_reason", "stop"))
-
+from langchain_core.messages import AIMessageChunk
+from src.providers.chat import ProviderStreamError
 
 class _SilentStream:
     """A stream whose first chunk only arrives when the test releases it."""
 
-    def __init__(self, *, chunk: _Chunk | None = None, hold: float = 3.0) -> None:
+    def __init__(self, *, chunk: AIMessageChunk | None = None, hold: float = 3.0) -> None:
         self.chunk = chunk
         self.hold = hold
         self.closed = False
@@ -43,7 +31,7 @@ class _SilentStream:
     def __iter__(self):
         return self
 
-    def __next__(self) -> _Chunk:
+    def __next__(self) -> AIMessageChunk:
         if self.closed:
             raise StopIteration
         if not self.released.wait(self.hold):
@@ -74,107 +62,44 @@ class _FakeLLM:
 
     def invoke(self, messages, config=None, **kwargs):
         self.invoke_called += 1
-        return _Chunk("fallback")
+        return AIMessageChunk(content="fallback")
 
 
-def _client(stream: _SilentStream) -> ChatLLM:
-    client = ChatLLM.__new__(ChatLLM)
-    client.model_name = "fake"
-    client._llm = _FakeLLM(stream)
-    return client
+def _client(stream: _SilentStream):
+    return chat_with_adapter(_FakeLLM(stream), model="fake")
 
 
-def test_idle_timeout_interrupts_a_silent_stream() -> None:
-    stream = _SilentStream()
-    started = time.monotonic()
-
-    with pytest.raises(Exception):
-        _client(stream).stream_chat(
-            [{"role": "user", "content": "hi"}],
-            idle_timeout_s=0.15,
-        )
-
-    assert time.monotonic() - started < 5
-    assert stream.closed, "the stream must be closed, not merely abandoned"
-
-
-def test_cancel_interrupts_a_silent_stream() -> None:
-    stream = _SilentStream()
-    cancel = threading.Event()
-    threading.Timer(0.15, cancel.set).start()
-    started = time.monotonic()
-
-    response = _client(stream).stream_chat(
-        [{"role": "user", "content": "hi"}],
-        should_cancel=cancel.is_set,
-    )
-
-    assert time.monotonic() - started < 5
-    assert stream.closed
-    assert response.content == ""
-
-
-def test_total_timeout_interrupts_a_silent_stream() -> None:
-    stream = _SilentStream()
-    started = time.monotonic()
-
-    with pytest.raises(Exception):
-        _client(stream).stream_chat(
-            [{"role": "user", "content": "hi"}],
-            timeout=1,
-        )
-
-    assert time.monotonic() - started < 5
-    assert stream.closed
-
-
-def test_no_replay_after_an_interrupted_stream() -> None:
-    """A cancelled or timed-out stream must not fall back and resend the request."""
-    stream = _SilentStream()
+@pytest.mark.parametrize("stop", ["idle timeout", "total timeout", "cancel"])
+def test_silent_stream_stops_closes_and_never_replays_or_delivers_late_text(stop):
+    stream = _SilentStream(chunk=AIMessageChunk(content="late"))
     client = _client(stream)
     cancel = threading.Event()
-    threading.Timer(0.1, cancel.set).start()
-
-    client.stream_chat([{"role": "user", "content": "hi"}], should_cancel=cancel.is_set)
-
-    assert client._llm.invoke_called == 0
-
-
-def test_no_replay_after_partial_output() -> None:
-    """Once text has been emitted a fallback invoke would replay the turn."""
-    stream = _SilentStream(chunk=_Chunk("partial"))
-    client = _client(stream)
-
-    with pytest.raises(Exception):
-        client.stream_chat(
-            [{"role": "user", "content": "hi"}],
-            on_text_chunk=lambda text: None,
-            idle_timeout_s=0.2,
-        )
-
-    assert client._llm.invoke_called == 0
-
-
-def test_a_late_chunk_after_cancel_never_reaches_the_caller() -> None:
-    stream = _SilentStream()
-    client = _client(stream)
-    cancel = threading.Event()
-    threading.Timer(0.1, cancel.set).start()
-    seen: list[str] = []
-
-    client.stream_chat(
-        [{"role": "user", "content": "hi"}],
-        on_text_chunk=seen.append,
-        should_cancel=cancel.is_set,
-    )
-    stream.released.set()
-    time.sleep(0.2)
-
-    assert seen == []
+    timer = threading.Timer(0.1, cancel.set)
+    options = {"idle_timeout_s": 0.15} if stop == "idle timeout" else {"timeout": 1}
+    seen = []
+    started = time.monotonic()
+    try:
+        if stop == "cancel":
+            timer.start()
+            response = client.stream_chat([], should_cancel=cancel.is_set, on_text_chunk=seen.append)
+            assert response.content == "" and not response.tool_calls
+        else:
+            with pytest.raises(ProviderStreamError, match=stop) as caught:
+                client.stream_chat([], on_text_chunk=seen.append, **options)
+            assert caught.value.retryable
+        assert time.monotonic() - started < 5
+        assert stream.closed and stream.close_count == 1
+        assert client._llm.invoke_called == 0
+        stream.released.set()
+        time.sleep(0.05)
+        assert seen == []
+    finally:
+        timer.cancel()
+        stream.close()
 
 
 def test_a_delivered_stream_still_reports_its_answer() -> None:
-    stream = _SilentStream(chunk=_Chunk("hello"))
+    stream = _SilentStream(chunk=AIMessageChunk(content="hello"))
     stream.released.set()
     client = _client(stream)
 
@@ -226,17 +151,16 @@ def test_busy_generator_is_closed_when_pending_pull_returns():
 
 
 def test_consumer_exception_closes_stream():
-    stream = _SilentStream(chunk=_Chunk("hello"))
+    stream = _SilentStream(chunk=AIMessageChunk(content="hello"))
     stream.released.set()
     def fail(text):
         raise RuntimeError("consumer failed")
-    with pytest.raises(Exception, match="consumer failed"):
+    with pytest.raises(ProviderStreamError, match="consumer failed"):
         _client(stream).stream_chat([], idle_timeout_s=1, on_text_chunk=fail)
     assert stream.closed
 
 
 def test_partial_stream_no_chunk_error_never_replays():
-    from langchain_core.messages import AIMessageChunk
     class Provider:
         invoke_called = False
         def stream(self, *args, **kwargs):
@@ -246,9 +170,8 @@ def test_partial_stream_no_chunk_error_never_replays():
             self.invoke_called = True
             return AIMessageChunk(content="replayed")
     provider = Provider()
-    client = _client(_SilentStream())
-    client._llm = provider
-    with pytest.raises(Exception):
+    client = chat_with_adapter(provider)
+    with pytest.raises(ProviderStreamError, match="No generation chunks"):
         client.stream_chat([], idle_timeout_s=1)
     assert not provider.invoke_called
 

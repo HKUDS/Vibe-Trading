@@ -424,7 +424,7 @@ def _terminal_width() -> int:
 def _ensure_cli_env() -> None:
     """Load dotenv values before a CLI path reads configuration."""
     try:
-        from src.providers.llm import _ensure_dotenv
+        from src.providers.settings import _ensure_dotenv
 
         _ensure_dotenv()
     except Exception:
@@ -2112,10 +2112,11 @@ def cmd_interactive(max_iter: int) -> None:
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted[/yellow]")
             continue
+        finally:
+            history.append({"role": "user", "content": user_input})
         stats.last_elapsed = time.perf_counter() - start
         stats.tool_count += dashboard.iterations
         _print_result(result, stats.last_elapsed)
-        history.append({"role": "user", "content": user_input})
         if result.get("content"):
             history.append({"role": "assistant", "content": result["content"]})
 
@@ -2935,7 +2936,7 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
         console.print(f"[red]Session {session_id} not found[/red]")
         return
 
-    messages = store.get_messages(session_id)
+    messages = store.get_messages(session_id, limit=None)
     history: List[Dict[str, str]] = []
     for msg in messages:
         if msg.role in ("user", "assistant") and msg.content.strip():
@@ -2985,12 +2986,12 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
                 console.print("\n[yellow]Interrupted[/yellow]")
                 continue
             finally:
+                history.append({"role": "user", "content": prompt})
                 _stop_timer.set()
                 _timer.join(timeout=1)
 
         stats.last_elapsed = time.perf_counter() - run_start
         _print_result(result, stats.last_elapsed)
-        history.append({"role": "user", "content": prompt})
         if result.get("content"):
             history.append({"role": "assistant", "content": result["content"]})
 
@@ -5512,11 +5513,12 @@ def _build_parser() -> argparse.ArgumentParser:
     office_parser = subparsers.add_parser("office", help="Manage the shared research task board")
     office_parser.add_argument("office_args", nargs=argparse.REMAINDER)
 
-    provider_parser = subparsers.add_parser("provider", help="Manage OAuth providers")
+    provider_parser = subparsers.add_parser("provider", help="Manage LLM providers")
     provider_subparsers = provider_parser.add_subparsers(dest="provider_command")
     login_parser = provider_subparsers.add_parser("login", help="Authenticate with an OAuth provider")
     login_parser.add_argument("provider", help="OAuth provider name, e.g. openai-codex")
     provider_subparsers.add_parser("doctor", help="Print redacted provider diagnostics")
+    provider_subparsers.add_parser("list", help="List the shared provider catalog as JSON")
     from cli.custom_providers import configure_parser as configure_custom_providers
     configure_custom_providers(provider_subparsers.add_parser("custom", help="Manage tested custom model endpoints"))
 
@@ -5840,208 +5842,9 @@ def _handle_prompt_command(
 
 _INIT_ENV_PATH = Path.home() / ".vibe-trading" / ".env"
 
-_PROVIDER_CHOICES: list[dict[str, str | None]] = [
-    {
-        "label": "OpenRouter (recommended - multiple models)",
-        "provider": "openrouter",
-        "key_env": "OPENROUTER_API_KEY",
-        "base_env": "OPENROUTER_BASE_URL",
-        "base_url": "https://openrouter.ai/api/v1",
-        "model": "deepseek/deepseek-v4-pro",
-        "key_prefix": "sk-or-",
-        "key_placeholder": "sk-or-v1-...",
-    },
-    {
-        "label": "DeepSeek",
-        "provider": "deepseek",
-        "key_env": "DEEPSEEK_API_KEY",
-        "base_env": "DEEPSEEK_BASE_URL",
-        "base_url": "https://api.deepseek.com/v1",
-        "model": "deepseek-v4-pro",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "OpenCode (Go / Zen)",
-        "provider": "opencode",
-        "key_env": "OPENCODE_API_KEY",
-        "base_env": "OPENCODE_BASE_URL",
-        "base_url": "https://opencode.ai/zen/go/v1",
-        "model": "deepseek-v4.1-flash",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "SiliconFlow (CN)",
-        "provider": "siliconflow-cn",
-        "key_env": "SILICONFLOW_API_KEY",
-        "base_env": "SILICONFLOW_BASE_URL",
-        "base_url": "https://api.siliconflow.cn/v1",
-        "model": "deepseek-ai/DeepSeek-V3.1-Terminus",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "SiliconFlow (Global)",
-        "provider": "siliconflow-global",
-        "key_env": "SILICONFLOW_GLOBAL_API_KEY",
-        "base_env": "SILICONFLOW_GLOBAL_BASE_URL",
-        "base_url": "https://api.siliconflow.com/v1",
-        "model": "deepseek-ai/DeepSeek-V3.1-Terminus",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "ModelScope",
-        "provider": "modelscope",
-        "key_env": "MODELSCOPE_API_KEY",
-        "base_env": "MODELSCOPE_BASE_URL",
-        "base_url": "https://api-inference.modelscope.cn/v1",
-        "model": "Qwen/Qwen3.5-27B",
-        "key_prefix": None,
-        "key_placeholder": "api-key...",
-    },
-    {
-        "label": "NVIDIA NIM",
-        "provider": "nvidia",
-        "key_env": "NVIDIA_API_KEY",
-        "base_env": "NVIDIA_BASE_URL",
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "model": "nvidia/nemotron-3-ultra-550b-a55b",
-        "key_prefix": "nvapi-",
-        "key_placeholder": "nvapi-...",
-    },
-    {
-        "label": "OpenAI",
-        "provider": "openai",
-        "key_env": "OPENAI_API_KEY",
-        "base_env": "OPENAI_BASE_URL",
-        "base_url": "https://api.openai.com/v1",
-        "model": "gpt-5.5",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "Gemini",
-        "provider": "gemini",
-        "key_env": "GEMINI_API_KEY",
-        "base_env": "GEMINI_BASE_URL",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "model": "gemini-3.5-flash",
-        "key_prefix": None,
-        "key_placeholder": "api-key...",
-    },
-    {
-        "label": "Groq",
-        "provider": "groq",
-        "key_env": "GROQ_API_KEY",
-        "base_env": "GROQ_BASE_URL",
-        "base_url": "https://api.groq.com/openai/v1",
-        "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
-        "key_prefix": "gsk_",
-        "key_placeholder": "gsk_...",
-    },
-    {
-        "label": "DashScope / Qwen",
-        "provider": "dashscope",
-        "key_env": "DASHSCOPE_API_KEY",
-        "base_env": "DASHSCOPE_BASE_URL",
-        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "model": "qwen-plus-latest",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "Zhipu",
-        "provider": "zhipu",
-        "key_env": "ZHIPU_API_KEY",
-        "base_env": "ZHIPU_BASE_URL",
-        "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "model": "glm-5.1",
-        "key_prefix": None,
-        "key_placeholder": "api-key...",
-    },
-    {
-        "label": "Moonshot / Kimi",
-        "provider": "moonshot",
-        "key_env": "MOONSHOT_API_KEY",
-        "base_env": "MOONSHOT_BASE_URL",
-        "base_url": "https://api.moonshot.ai/v1",
-        "model": "kimi-k2.6",
-        "key_prefix": "sk-",
-        "key_placeholder": "sk-...",
-    },
-    {
-        "label": "MiniMax",
-        "provider": "minimax",
-        "key_env": "MINIMAX_API_KEY",
-        "base_env": "MINIMAX_BASE_URL",
-        "base_url": "https://api.minimax.io/v1",
-        "model": "MiniMax-M3.1-Flash",
-        "key_prefix": None,
-        "key_placeholder": "api-key...",
-    },
-    {
-        "label": "Xiaomi MIMO",
-        "provider": "mimo",
-        "key_env": "MIMO_API_KEY",
-        "base_env": "MIMO_BASE_URL",
-        "base_url": "https://api.xiaomimimo.com/v1",
-        "model": "MiMo-72B-A27B",
-        "key_prefix": None,
-        "key_placeholder": "api-key...",
-    },
-    {
-        "label": "Novita AI",
-        "provider": "novita",
-        "key_env": "NOVITA_API_KEY",
-        "base_env": "NOVITA_BASE_URL",
-        "base_url": "https://api.novita.ai/openai",
-        "model": "moonshotai/kimi-k3",
-        "key_prefix": "sk_",
-        "key_placeholder": "sk_...",
-    },
-    {
-        "label": "iFlytek Spark",
-        "provider": "spark",
-        "key_env": "SPARK_API_KEY",
-        "base_env": "SPARK_BASE_URL",
-        "base_url": "https://spark-api-open.xf-yun.com/v1",
-        "model": "4.0Ultra",
-        "key_prefix": None,
-        "key_placeholder": "api-password...",
-    },
-    {
-        "label": "Z.ai (Coding platform)",
-        "provider": "zai",
-        "key_env": "ZAI_API_KEY",
-        "base_env": "ZAI_BASE_URL",
-        "base_url": "https://api.z.ai/api/coding/paas/v4",
-        "model": "glm-5.1",
-        "key_prefix": None,
-        "key_placeholder": "api-key...",
-    },
-    {
-        "label": "Ollama (local, free)",
-        "provider": "ollama",
-        "key_env": None,
-        "base_env": "OLLAMA_BASE_URL",
-        "base_url": "http://localhost:11434",
-        "model": "qwen2.5:32b",
-        "key_prefix": None,
-        "key_placeholder": None,
-    },
-    {
-        "label": "OpenAI Codex (ChatGPT OAuth)",
-        "provider": "openai-codex",
-        "key_env": None,
-        "base_env": "OPENAI_CODEX_BASE_URL",
-        "base_url": "https://chatgpt.com/backend-api/codex/responses",
-        "model": "openai-codex/gpt-6-sol",
-        "key_prefix": None,
-        "key_placeholder": None,
-    },
-]
+from src.providers.registry import setup_choices
+
+_PROVIDER_CHOICES = setup_choices()
 
 
 def _validate_api_key(api_key: str, expected_prefix: str | None) -> bool:
@@ -6051,52 +5854,7 @@ def _validate_api_key(api_key: str, expected_prefix: str | None) -> bool:
     return api_key.startswith(expected_prefix)
 
 
-def _render_env_content(config: dict[str, str]) -> str:
-    """Render .env content with stable ordering."""
-    ordered_keys = [
-        "LANGCHAIN_TEMPERATURE",
-        "LANGCHAIN_PROVIDER",
-        "OPENROUTER_API_KEY",
-        "OPENROUTER_BASE_URL",
-        "DEEPSEEK_API_KEY",
-        "DEEPSEEK_BASE_URL",
-        "NVIDIA_API_KEY",
-        "NVIDIA_BASE_URL",
-        "OPENAI_API_KEY",
-        "OPENAI_BASE_URL",
-        "OPENAI_CODEX_BASE_URL",
-        "GEMINI_API_KEY",
-        "GEMINI_BASE_URL",
-        "GROQ_API_KEY",
-        "GROQ_BASE_URL",
-        "NOVITA_API_KEY",
-        "NOVITA_BASE_URL",
-        "DASHSCOPE_API_KEY",
-        "DASHSCOPE_BASE_URL",
-        "ZHIPU_API_KEY",
-        "ZHIPU_BASE_URL",
-        "MOONSHOT_API_KEY",
-        "MOONSHOT_BASE_URL",
-        "MINIMAX_API_KEY",
-        "MINIMAX_BASE_URL",
-        "MIMO_API_KEY",
-        "MIMO_BASE_URL",
-        "SPARK_API_KEY",
-        "SPARK_BASE_URL",
-        "ZAI_API_KEY",
-        "ZAI_BASE_URL",
-        "OLLAMA_BASE_URL",
-        "LANGCHAIN_MODEL_NAME",
-        "TUSHARE_TOKEN",
-        "TIMEOUT_SECONDS",
-        "MAX_RETRIES",
-    ]
-    lines: list[str] = []
-    for key in ordered_keys:
-        value = config.get(key)
-        if value:
-            lines.append(f"{key}={value}")
-    return "\n".join(lines) + "\n"
+from src.config.dotenv import render_env as _render_env_content  # noqa: F401 — legacy cli export
 
 
 from src.memory.persistent import MEMORY_TYPES  # noqa: E402  source-of-truth for choices/invariants
@@ -6320,12 +6078,9 @@ def cmd_init() -> int:
     if tushare_token:
         env_values["TUSHARE_TOKEN"] = tushare_token
 
-    _INIT_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _INIT_ENV_PATH.write_text(_render_env_content(env_values), encoding="utf-8")
-    try:
-        _INIT_ENV_PATH.chmod(0o600)
-    except OSError:
-        pass
+    from src.providers.settings import SettingsStore
+
+    SettingsStore(path=_INIT_ENV_PATH).persist(env_values, replace=True)
 
     next_steps = Table.grid(expand=True)
     next_steps.add_column(width=10, style="dim")
@@ -6680,6 +6435,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "provider":
         if args.provider_command == "login":
             return cmd_provider_login(args.provider)
+        if args.provider_command == "list":
+            from src.providers.registry import provider_catalog as catalog
+
+            console.print_json(data=catalog())
+            return EXIT_SUCCESS
         if args.provider_command == "doctor":
             return cmd_provider_doctor()
         if args.provider_command == "custom":

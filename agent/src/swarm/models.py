@@ -12,45 +12,13 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 from src.tools.redaction import redact_text
+from src.providers.registry import provider_names
 
 
 _PUBLIC_METADATA_MAX_LENGTH = 128
 _REDACTED_METADATA = "[redacted]"
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
-_PUBLIC_PROVIDERS = frozenset(
-    {
-        "anthropic",
-        "claude-cli",
-        "dashscope",
-        "deepseek",
-        "gemini",
-        "glm",
-        "groq",
-        "iflytek",
-        "kimi",
-        "kimi-coding",
-        "mimo",
-        "minimax",
-        "modelscope",
-        "moonshot",
-        "nvidia",
-        "nvidia-nim",
-        "ollama",
-        "openai",
-        "openai-codex",
-        "openai_codex",
-        "opencode",
-        "opencode-go",
-        "opencode-zen",
-        "openrouter",
-        "qwen",
-        "siliconflow-cn",
-        "siliconflow-global",
-        "spark",
-        "zai",
-        "zhipu",
-    }
-)
+_PUBLIC_PROVIDERS = provider_names() | {"openai_codex"}
 _MODEL_ENDPOINT_PREFIX = re.compile(
     r"^(?:/|localhost|(?:[0-9]{1,3}\.){3}[0-9]{1,3}|\[[0-9a-f:.]+\]|[^/:]+\.[a-z]{2,}|[^/:]+(?=:[0-9]+(?:/|$)))(?::[0-9]+)?(?:/|$)|^[^/]+/(?:api|v[0-9]+(?:alpha|beta)?[0-9]*)(?:/|$)",
     re.IGNORECASE,

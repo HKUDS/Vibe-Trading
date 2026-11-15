@@ -549,7 +549,7 @@
     "subtitle": "配置此本地项目的模型凭证和市场数据源 Token。",
     "unavailable": "设置不可用",
     "llmSettings": "LLM 设置",
-    "llmSettingsDesc": "选择智能体使用的模型，并将其保存到项目本地的 agent/.env 文件中。",
+    "llmSettingsDesc": "选择智能体使用的模型，并保存到 ~/.vibe-trading/.env。",
     "connection": "连接",
     "model": "模型",
     "useProviderDefaults": "使用提供商默认设置",
@@ -2816,5 +2816,25 @@
     "credentialsRequired": "需要凭据",
     "downloaded": "已下载 · 覆盖未验证",
     "coverageHint": "可用数据按原始行保存，不抽样。只有通过交易日历或时间网格验证的数据才标为完整；历史缺口会明确报告，不用近期数据替代。"
+  },
+  "updates": {
+    "title": "软件更新",
+    "preserve": "更新会沿用现有配置、凭据和会话。请保持相同的安装账户和数据目录。",
+    "check": "检查更新",
+    "working": "请稍候…",
+    "current": "运行版本：{{version}}",
+    "available": "发现新版本：{{version}}",
+    "currentLatest": "最新发布版：{{version}}，暂无更高版本。",
+    "pip": "在服务所在机器的原 Python 环境中运行此命令，然后重启服务。",
+    "container": "在部署主机上按原 Compose 配置更新镜像或重新构建服务，保留所有现有数据卷。",
+    "desktop": "请先结束正在进行的任务。应用将关闭、安装已验证的更新并重新打开。",
+    "source": "通过原源码目录或包管理器更新，保留本地改动、可选依赖和版本约束，然后重启原服务。",
+    "manual": "此构建尚无自动更新渠道。请从原发布方获取下一版 Desktop，覆盖安装并保留用户数据。",
+    "completed": "目标 Desktop 版本及其后端已启动。",
+    "interrupted": "上次更新未正常完成。重试前请检查桌面日志，不要删除配置或恢复文件。",
+    "install": "更新并重启",
+    "installing": "正在下载并验证更新，安装后应用将重新启动。",
+    "checkFailed": "无法检查更新，请检查网络或服务访问权限后重试。",
+    "installFailed": "更新未能交接给安装程序，数据已保留。请检查桌面日志，然后重新检查更新。"
   }
 }

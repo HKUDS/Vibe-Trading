@@ -57,18 +57,21 @@
 
 ## 📰 新闻
 
+- **2026-11-14** 🔌 **统一 LLM 网关与版本检查** — Agent、CLI、API 和 Swarm 的模型服务接入统一到同一份目录与配置层。客户端配置相互隔离，原生适配器遵守显式代理设置，跨来源重定向在转发凭据或请求正文前被拦截。
+  Web 设置页新增版本检查；桌面端新增签名更新的校验与恢复支持，分发前需配置更新源和发布者证书。**已合入 `main`，随下一次 pip 发版提供。**
+
 - **2026-11-13** 🛠️ **研究交付与计算工具重构** — 研究回答直接流式交付，移除自动删数、强制改写和按格式判断完成的门槛。委员会运行中断时保留部分成果，支持复用已完成工作、续跑未完成角色。
   完整行情引用接入无需 shell 的 QuantLib 计算，委员会角色之间传递原始证据。Options Lab 与 `options_payoff` 支持股票加期权组合，并在一次调用中计算、比较多个方案，直接返回费用、收益边界和比较方向。回测实际费用及截断、错误状态明确呈现，实盘交易授权限额继续保留。**尚未发布。**
 
 - **2026-11-12** 🛠️ **回测时序、报告数字与研究完成判定修复** — 影子账户按指定本金运行；因输出 token 上限截断的 worker 回复不再判为完成。委员会 PM 可直接综合有效的上游报告，无须重复取数；原生 Anthropic 适配器默认输出预算设为可配置的 16,384 tokens。
   生成策略若被检测到对输出目标额外移位，须明确声明为有意延迟，否则拒绝运行；正常指标 lookback 保持可用。Grounding 支持金额单位的不同写法及精确观测值声明，同时保留证据校验。SPY／GLD 实际回测的 206／140 笔成交及总收益均与独立账本一致。**尚未发布。**
 
+<details>
+<summary>更早的新闻</summary>
+
 - **2026-11-11** 🧾 **模拟交易部分成交与独立账本对账** — A 股 5 分钟模拟交易可选择启用逐笔订单的成交量上限、部分成交和订单状态输出（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)）。新增 `paper_trade_reconcile` Agent/MCP 工具，根据返回的成交记录，独立核对费用、现金、持仓和净值计算（[#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)）。
   正确处理受支持的跨行百分比表头，并允许在保留原文标签的前提下明确引用文档中的整数（[#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185)、[#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)）。另修复严格因子基准评测的输入（[#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)），避免渠道会话超时后返回上一轮答案（[#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)）。
   感谢 [@shadowinlife](https://github.com/shadowinlife)、[@he-yufeng](https://github.com/he-yufeng)、[@Jackzigen](https://github.com/Jackzigen) 和 [@divya0795](https://github.com/divya0795)！**已在 `main`，随下一次 pip 版本发布。**
-
-<details>
-<summary>更早的新闻</summary>
 
 - **2026-11-10** 📊 **可编辑波动率曲面与期权分析修复** — 在 Options Lab 编辑行权价与到期日的隐含波动率网格，区分观测值与插值，并拒绝外推（[#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)）。
   修复低价策略预设、数量输入、到期日显示、失败重试、切换语言卡加载及 20 腿上限；`CF501` 等郑商所三位交割年月合约代码现在按中国期货规则回测（[#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)）。

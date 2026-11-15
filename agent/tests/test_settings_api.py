@@ -1,6 +1,7 @@
 """Regression tests for local settings API endpoints."""
 
 from __future__ import annotations
+from src.providers import settings as provider_settings
 
 import os
 from pathlib import Path
@@ -254,20 +255,24 @@ def test_update_deepseek_settings_uses_exact_reported_payload(
     assert "DEEPSEEK_BASE_URL=https://api.deepseek.com/v1" in env_text
 
 
+@pytest.mark.parametrize("provider,key", [
+    ("deepseek", "DEEPSEEK_API_KEY"), ("opencode", "OPENCODE_API_KEY"), ("novita", "NOVITA_API_KEY"),
+])
 def test_desktop_secure_mode_never_persists_injected_llm_key(
     client: TestClient,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    key: str,
 ) -> None:
     monkeypatch.setenv("VIBE_TRADING_DESKTOP_SECURE_CREDENTIALS", "1")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "dpapi-decrypted-key")
+    monkeypatch.setenv(key, "dpapi-decrypted-key")
 
     response = client.put(
         "/settings/llm",
         json={
-            "provider": "deepseek",
-            "model_name": "deepseek-chat",
-            "base_url": "https://api.deepseek.com/v1",
+            "provider": provider,
+            "model_name": "test-model",
         },
     )
 
@@ -275,7 +280,7 @@ def test_desktop_secure_mode_never_persists_injected_llm_key(
     assert response.json()["api_key_configured"] is True
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "dpapi-decrypted-key" not in env_text
-    assert "DEEPSEEK_API_KEY=" in env_text
+    assert f"{key}=" in env_text
 
 
 @pytest.mark.parametrize(
@@ -351,7 +356,7 @@ def test_settings_write_permission_error_is_actionable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        api_server,
+        provider_settings,
         "_write_env_values",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("denied")),
     )
@@ -610,7 +615,7 @@ def test_atomic_write_secret_is_crash_safe(
 ) -> None:
     """A crash during the replace must not corrupt or truncate the secret file,
     nor leave a stray temp file holding the secret behind."""
-    from src.api import helpers
+    from src.config import dotenv as helpers
 
     target = tmp_path / ".env"
     target.write_text("OLD=1\n", encoding="utf-8")
@@ -631,7 +636,7 @@ def test_atomic_write_secret_is_crash_safe(
 
 def test_atomic_write_secret_creates_0600_file(tmp_path: Path) -> None:
     """Fresh secret files are created owner-only via the atomic path."""
-    from src.api import helpers
+    from src.config import dotenv as helpers
 
     target = tmp_path / ".env"
     helpers._atomic_write_secret(target, "KEY=value\n")
@@ -645,7 +650,7 @@ def test_atomic_write_secret_supports_platforms_without_fchmod(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Windows must be able to persist Web UI settings without ``os.fchmod``."""
-    from src.api import helpers
+    from src.config import dotenv as helpers
 
     monkeypatch.delattr(helpers.os, "fchmod", raising=False)
     target = tmp_path / ".env"
@@ -812,18 +817,18 @@ def test_update_source_orders_rejects_unknown_market(
 def test_claude_cli_model_list_skips_base_url_checks_and_reports_effort_levels(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.providers import claude_cli_models
+    from src.providers import claude_cli
 
     observed: dict[str, bool] = {}
 
     def fake_list(*, refresh: bool = False):
         observed["refresh"] = refresh
         return [
-            claude_cli_models.ClaudeCliModel("claude-sonnet-4-6", ("low", "medium", "high", "max")),
-            claude_cli_models.ClaudeCliModel("claude-haiku-4-5-20251001", ()),
+            claude_cli.ClaudeCliModel("claude-sonnet-4-6", ("low", "medium", "high", "max")),
+            claude_cli.ClaudeCliModel("claude-haiku-4-5-20251001", ()),
         ]
 
-    monkeypatch.setattr(claude_cli_models, "list_claude_cli_models", fake_list)
+    monkeypatch.setattr(claude_cli, "list_claude_cli_models", fake_list)
     response = client.post(
         "/settings/llm/models", json={"provider": "claude-cli", "refresh": True}
     )
@@ -846,12 +851,12 @@ def test_claude_cli_model_list_skips_base_url_checks_and_reports_effort_levels(
 def test_claude_cli_model_list_falls_back_when_cli_is_unavailable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.providers import claude_cli_models
+    from src.providers import claude_cli
 
     def failing_list(*, refresh: bool = False):
         raise RuntimeError("claude model list unavailable")
 
-    monkeypatch.setattr(claude_cli_models, "list_claude_cli_models", failing_list)
+    monkeypatch.setattr(claude_cli, "list_claude_cli_models", failing_list)
     response = client.post("/settings/llm/models", json={"provider": "claude-cli"})
 
     assert response.status_code == 200

@@ -459,7 +459,7 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
         return []
 
     try:
-        from src.providers.llm import _ensure_dotenv
+        from src.providers.settings import _ensure_dotenv
 
         _ensure_dotenv()
     except Exception:

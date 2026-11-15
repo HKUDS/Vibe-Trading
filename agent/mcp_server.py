@@ -3451,7 +3451,7 @@ def main():
     _include_shell_tools = _resolve_include_shell_tools(args.enable_shell_tools)
     # After the shell-tool decision: that switch must come from the launch
     # flag or process env, never from a .env written for the web server.
-    from src.providers.llm import _ensure_dotenv
+    from src.providers.settings import _ensure_dotenv
 
     _ensure_dotenv()
     _registry = None

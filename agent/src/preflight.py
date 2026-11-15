@@ -7,7 +7,6 @@ LLM provider failure is critical (blocks startup).
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from importlib.util import find_spec
 from typing import List, Optional
@@ -31,7 +30,8 @@ class CheckResult:
 
 def _check_llm_provider() -> CheckResult:
     """Verify LLM provider connectivity."""
-    from src.providers.llm import _ensure_dotenv, _sync_provider_env, provider_diagnostics
+    from src.providers.settings import _ensure_dotenv, _sync_provider_env
+    from src.providers.llm import provider_diagnostics
 
     _ensure_dotenv()
     # The EnvConfig singleton may have been cached before _ensure_dotenv()
@@ -62,7 +62,8 @@ def _check_llm_provider() -> CheckResult:
 
     _sync_provider_env()
     diagnostics = provider_diagnostics()
-    base_url = os.getenv("OPENAI_BASE_URL", "") or os.getenv("OPENAI_API_BASE", "")  # noqa: env-gate — diagnostic base URL fallback
+    from src.providers.settings import resolve_config
+    base_url = resolve_config().base_url
     proxy_label = ",".join(sorted(diagnostics.get("proxy", {}).keys())) or "none"
     diag_hint = (
         f"base={diagnostics['base_url']} "

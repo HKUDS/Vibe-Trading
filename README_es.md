@@ -57,18 +57,21 @@
 
 ## 📰 Noticias
 
+- **2026-11-14** 🔌 **Pasarela LLM unificada y comprobación de versiones** — Agent, CLI, API y Swarm comparten un catálogo y una capa de configuración para los proveedores de modelos. La configuración de cada cliente permanece aislada, los adaptadores nativos respetan el proxy explícito y las redirecciones a otro origen se bloquean antes de reenviar credenciales o el cuerpo de la solicitud.
+  Consulta nuevas versiones desde los ajustes Web. Desktop incorpora soporte para actualizaciones firmadas con verificación y recuperación; su distribución requiere configurar la fuente de actualizaciones y los certificados del editor. **En `main`, para la próxima versión de pip.**
+
 - **2026-11-13** 🛠️ **Entrega de análisis y herramientas de cálculo** — Las respuestas se transmiten sin borrar cifras automáticamente, forzar reescrituras ni decidir la finalización por el formato. Las ejecuciones interrumpidas del comité conservan resultados parciales y permiten reanudar los roles pendientes reutilizando el trabajo completado.
   Las referencias a datos de mercado completos alimentan cálculos con QuantLib sin shell, y los roles comparten la evidencia original. Options Lab y `options_payoff` calculan estrategias de acciones y opciones y comparan varias alternativas en una sola llamada, devolviendo costes, límites de pérdidas y ganancias y la dirección de las comparaciones. Se mantienen explícitos los costes efectivos del backtest y los estados de truncamiento o error, así como los límites de autorización para operar en real. **Aún no publicado.**
 
 - **2026-11-12** 🛠️ **Correcciones en tiempos de ejecución, cifras e investigación** — La cuenta sombra usa el capital inicial solicitado; las respuestas de los workers truncadas por el límite de tokens ya no se consideran completas. El PM del comité puede sintetizar informes previos válidos sin volver a consultar los datos. El adaptador nativo de Anthropic usa por defecto 16.384 tokens de salida, configurables.
   Las estrategias generadas rechazan los desplazamientos adicionales detectados en las señales de salida salvo que se declaren intencionales; se conservan los períodos retrospectivos de los indicadores. Grounding admite distintas notaciones de magnitud y declaraciones de valores observados precisos sin relajar la verificación de evidencia. Los backtests de SPY/GLD coinciden con una contabilidad independiente en las 206/140 ejecuciones y en la rentabilidad total. **Aún no publicado.**
 
+<details>
+<summary>Noticias anteriores</summary>
+
 - **2026-11-11** 🧾 **Ejecuciones parciales en trading simulado y conciliación independiente** — Activa límites de volumen por orden, ejecuciones parciales y estados de las órdenes en las simulaciones de acciones A de China con velas de cinco minutos ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). La nueva herramienta Agent/MCP `paper_trade_reconcile` permite conciliar de forma independiente las comisiones, el efectivo, las posiciones y los cálculos del valor neto de los activos a partir de las ejecuciones devueltas ([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
   Se procesan correctamente los formatos admitidos de encabezados porcentuales repartidos en varias líneas y las citas explícitas de enteros de documentos, conservando sus etiquetas originales ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). También se corrigen las entradas del benchmark estricto de factores ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) y se evita devolver una respuesta anterior cuando un turno de conversación por un canal agota su tiempo de espera ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
   ¡Gracias a [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen) y [@divya0795](https://github.com/divya0795)! **Disponible en `main`, para la próxima versión de pip.**
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-11-10** 📊 **Superficies de volatilidad implícita interactivas y correcciones del análisis de opciones** — Edita la cuadrícula por precio de ejercicio y vencimiento en Options Lab, con valores observados e interpolados diferenciados y sin extrapolación ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
   Se corrigen las estrategias predefinidas para precios bajos, cantidades, fechas de vencimiento, reintentos, carga bloqueada al cambiar de idioma y límite de 20 patas. Los contratos de Zhengzhou con vencimiento de tres dígitos, como `CF501`, ya usan las reglas de futuros chinos en el backtest ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
