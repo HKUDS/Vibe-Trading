@@ -20,13 +20,18 @@ def _available(loader):
 
 def fetch_bars(gateway, *, exact_source=False, **params):
     """Overlap independent markets using existing source slots and one deadline."""
-    from backtest.engines._market_hooks import _detect_market
     from .fanout import acquire_groups
     from .scheduling import background
 
+    from src.market_data import data_market
+
     groups = {}
     for code in params["codes"]:
-        groups.setdefault(_detect_market(code), []).append(code)
+        try:
+            market = data_market(code)
+        except ValueError:
+            market = "unsupported"
+        groups.setdefault(market, []).append(code)
     # Background scans/history retain their one-source admission and serialized
     # execution. No additional executor, coordinator, cache or retry is created.
     batches = [params["codes"]] if background.get() else list(groups.values())
@@ -46,7 +51,7 @@ def fetch_bars(gateway, *, exact_source=False, **params):
                 attempts = value["data"]["_diagnostics"].get(code, [])
                 if not attempts or any(a["reason"] != "network_cooldown" for a in attempts):
                     continue
-                scope = f"bars:{_detect_market(code)}:{source_interval(params.get('interval', '1D'))}"
+                scope = f"bars:{data_market(code)}:{source_interval(params.get('interval', '1D'))}"
                 if gateway.router.retry_after(scope, [a["source"] for a in attempts]) <= 0:
                     eligible.append(code)
             if eligible and time.monotonic() < until:
@@ -123,10 +128,9 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
     Returns:
         Historical data with missing symbols and an explicit completeness flag.
     """
-    from backtest.engines._market_hooks import _detect_market
     from backtest.loaders import registry
     from backtest.loaders.base import source_interval
-    from src.market_data import detect_source, fetch_market_data_json
+    from src.market_data import data_market, detect_source, fetch_market_data_json
 
     registry._ensure_registered()
     requested = params.get("source", "auto")
@@ -135,9 +139,20 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
     coverage = {}
     calendar_schedules = {}
     attempted_symbols = {}
+    markets_by_code = {}
+    for symbol in params["codes"]:
+        try:
+            markets_by_code[symbol] = data_market(symbol)
+        except ValueError:
+            pass
     deadline = request_deadline.get() or (time.monotonic() + gateway.config.request_timeout)
     for code in params["codes"]:
-        market = _detect_market(code)
+        try:
+            market = data_market(code)
+        except ValueError as exc:
+            unresolved.append(code)
+            diagnostics[code] = [{"source": "router", "reason": "unsupported_market", "detail": str(exc)}]
+            continue
         if code in provenance:
             coverage[code] = describe_coverage(
                 combined[code], params, market, provenance.get(code, {}), calendar_schedules
@@ -190,7 +205,7 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
                         if symbol != code
                         and symbol not in provenance
                         and (source, symbol) not in attempted_symbols
-                        and _detect_market(symbol) == market
+                        and markets_by_code.get(symbol) == market
                         and (requested != "auto" or detect_source(symbol) == first)
                     ],
                 ][:batch_size]
@@ -331,7 +346,7 @@ def _walk_bars(gateway, *, exact_source=False, respect_cooldown=False, **params)
     for code in unresolved:
         attempts = diagnostics.get(code, [])
         if attempts and all(a["reason"] == "network_cooldown" for a in attempts):
-            scope = f"bars:{_detect_market(code)}:{source_interval(params.get('interval', '1D'))}"
+            scope = f"bars:{data_market(code)}:{source_interval(params.get('interval', '1D'))}"
             recovery[code] = {
                 "state": "waiting_for_route",
                 "retry_after_seconds": max(

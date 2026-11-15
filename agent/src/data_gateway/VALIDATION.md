@@ -2582,3 +2582,78 @@ No live orders or outbound messages were requested or executed.
 Raw task outputs, generated CSV/Python, initial/recheck responses, stream/history
 results and independent audit are outside git:
 `/Users/wuhaozhe/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-main-20261115/`.
+
+## v28 — Japan routing and short real-agent follow-up (2026-11-15)
+
+Base `3a15f1fd5` on `codex/japan-gateway-routing`. No resource limits, deadlines,
+retry budgets, options interaction or Options Lab changes. Evidence is outside
+Git at `~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/`:
+`gateway-japan-agent-final-20261115/verified-report.json` and
+`gateway-japan-options-verified-20261115/`. `audit.py` independently checks the
+CSV values, dates, source/currency metadata, bar spacing and actual commands.
+
+Confirmed cause: `7203.T` was absent from the market matcher and Yahoo loader's
+symbol gate. Public reads inherited the legacy A-share default. Japan now has
+its own Yahoo → yfinance → local chain, JPY identity, declared-currency checking,
+XTKS session validation, symbol-search identity and source-priority/position
+labels in all eleven locales. A public `data_market` boundary rejects unknown
+venues before source admission, including full-frame/full-row and background
+mixed batches. It preserves healthy rows and reports `unsupported_market` for
+the missing identity; it does not retry it through China. Explicit sources
+outside their market chain no longer borrow another market's fallback chain.
+The old backtest/journal `_detect_market` default is unchanged. Japanese
+backtests explicitly refuse unimplemented execution rules, including local and
+composite engine entry points; data support does not imply execution support.
+
+Agent changes: acquisition guidance asks for exact windows, batching, full rows
+once for bounded computations, artifact reuse and consolidated local analysis.
+The artifact receipt no longer unconditionally instructs a full-data refetch.
+Missing equity currency metadata is accompanied by
+`quote_currency_basis=instrument_market_contract`; source declarations remain
+authoritative and use `source_metadata`. A verification run exposed a faulty
+initial extension of this fallback to crypto settlement currency: it is now
+restricted to equities, and a regression test ensures USDT is not labelled USD.
+That intermediate result is retained but excluded from the final options result.
+Options tools now offer optional `near_spot_count=1..60` through agent, MCP and
+REST, with the existing 60-row default/pagination intact. The two-strike request
+reuses the same source cache and avoids returning an unnecessary full window.
+
+Same four prompts and configured `deepseek-v4-1-flash-261017` model as the prior
+real-task sample. Tools included ordinary Python computation and a temporary
+independent MCP server backed by real Yahoo data; its preflight succeeded.
+Production MCP configuration was not changed. The final options-only follow-up
+used a fresh isolated gateway after the metadata correction; the other three
+measurements come from the preceding four-task run. These are single samples,
+not a statistically established latency guarantee or four isolated cold starts.
+
+| Task | Prior seconds | Final seconds | Model iterations prior → final | Data-tool wall seconds |
+| --- | ---: | ---: | ---: | ---: |
+| US/HK/A-share returns + CSV | 19.951 | 14.874 | 5 → 5 | 0.921 |
+| Three markets, weekly + monthly | 14.736 | 11.804 | 3 → 3 | 1.022 |
+| US/HK/A/JP/KR/CA closes + CSV | 27.207 | 19.599 | 7 → 5 | 2.348 |
+| US options + HK daily + BTC 5m | 50.952 | 50.502 | 8 → 7 | 7.337 |
+
+- Six markets: **6/6**, with **12/12** requested close observations verified
+  against the returned artifacts; previously 5/6 and two empty Japan rows.
+- Returns CSV: all three returns recalculated. Weekly/monthly: 11/3 bars for
+  each symbol. BTC: 288 unique bars, each timestamp gap exactly 300 seconds.
+- No identical bar requests, identity refusals, external MCP task calls or
+  direct network acquisition in the reviewed generated Python. Socket audit
+  observed no generated-Python connections, but is not an OS network sandbox.
+- Options used one chain call with `near_spot_count=2`. Final latency is
+  essentially unchanged: the agent additionally searched already canonical HK
+  and BTC symbols and used three local calculation turns. Prompt guidance is
+  not a guarantee of minimal turns; one six-market request still included an
+  extra leading day. Do not claim this inefficiency is fully eliminated.
+- A separate live gateway request returned both Japan rows, verified the XTKS
+  calendar and rejected `BHP.AX` without losing Japan, in 1.953 seconds. The
+  persisted-history planner also admitted the Japan route.
+- Observed limits remain 8 MiB memory cache, 64 MiB disk, 4 source workers and
+  16 pending. Existing 6s source/15s request deadlines were not changed.
+- Relevant combined backend suite: 455 passed before the final options selector
+  and crypto-metadata correction; final routing/options/API/MCP/backtest-guard
+  follow-up: 93 passed. Currency/market-data follow-up: 122 passed.
+  Frontend locale/positions tests: 107 passed; production build passed with
+  the existing bundle-size warning. No visual redesign was made or claimed.
+- Independent process inspection found no remaining test harness or temporary
+  MCP processes. No market observations or credentials are committed.

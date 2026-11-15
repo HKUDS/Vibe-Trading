@@ -103,7 +103,7 @@ class MarketDataTool(BaseTool):
                 "items": {"type": "string"},
                 "description": (
                     'Symbols such as ["AAPL.US"], ["700.HK"], ["TD.TO"], '
-                    '["PNG.V"], or ["BTC-USDT"].'
+                    '["PNG.V"], ["7203.T"] (Japan), or ["BTC-USDT"].'
                 ),
             },
             "start_date": {
@@ -123,8 +123,8 @@ class MarketDataTool(BaseTool):
                     "and the market quotes opt-in, with no fallback in either direction. "
                     "Use 'longbridge' explicitly for US/HK OHLCV through the "
                     "Longbridge OpenAPI (requires Longbridge credentials). "
-                    "Free, no key: yfinance/yahoo (US/HK/Canada equities; "
-                    "Canada uses .TO/.V), okx/ccxt/binance "
+                    "Free, no key: yfinance/yahoo (US/HK/Japan/Canada equities; "
+                    "Japan uses .T, Canada uses .TO/.V), okx/ccxt/binance "
                     "(crypto), baostock/tencent/eastmoney/sina/akshare "
                     "(China A-shares), futu (HK/A via local FutuOpenD), stooq "
                     "(global EOD), pykrx (Korea KRX daily "
@@ -149,7 +149,7 @@ class MarketDataTool(BaseTool):
             },
             "max_rows": {
                 "type": "integer",
-                "description": "Per-symbol row cap. Use 0 only when the full series is required.",
+                "description": "Per-symbol output sampling cap, including saved JSON. For a bounded day of minute bars needed for calculations use 0 on the FIRST call; a small cap saves only sampled rows. Large downloads use history_data.",
                 "default": DEFAULT_MAX_ROWS,
             },
         },

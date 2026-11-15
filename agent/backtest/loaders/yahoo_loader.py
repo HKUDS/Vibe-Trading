@@ -68,7 +68,7 @@ def _is_supported(code: str) -> bool:
     return upper.endswith(
         (
             ".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", ".BA",
-            ".SA", ".L", "=F", "=X",
+            ".SA", ".L", ".T", "=F", "=X",
         )
     )
 
@@ -201,7 +201,7 @@ class DataLoader:
 
     name = "yahoo"
     markets = {
-        "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
+        "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
         "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share",
     }
     # Yahoo chart volume is single shares for US/HK equities

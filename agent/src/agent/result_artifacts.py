@@ -51,7 +51,7 @@ def persist_calculation_result(result: str, run_dir: str | Path | None) -> str:
     receipt = {'_result_file': ref, '_delivery': (
         'Full JSON saved. Pass a __data_ref__ argument to quantlib_call with path, '
         'pointer (e.g. /NVDA.US), column=close, index=trade_date, transform=pct_change. '
-        'For consecutive returns fetch max_rows=0. Read parts/1.txt onward for prose inspection.'
+        'Inspect the saved JSON before requesting more data. Only if rows are explicitly sampled/truncated and consecutive bars are needed, fetch max_rows=0 for the bounded window. Read parts/1.txt onward for prose inspection.'
     )}
     for key in ('ok', 'status', 'module', 'function', 'input_sources'):
         if key in payload:

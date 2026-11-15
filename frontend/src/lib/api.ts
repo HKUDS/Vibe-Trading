@@ -910,10 +910,11 @@ export const api = {
       body: JSON.stringify(body),
       signal,
     }),
-  getOptionsChain: (ticker: string, expiration?: number) => {
+  getOptionsChain: (ticker: string, expiration?: number, nearSpotCount?: number) => {
     const q = new URLSearchParams();
     q.set("ticker", ticker);
     if (expiration !== undefined) q.set("expiration", String(expiration));
+    if (nearSpotCount !== undefined) q.set("near_spot_count", String(nearSpotCount));
     return request<OptionsChainResponse>(`/options/chain?${q.toString()}`);
   },
 
@@ -1689,6 +1690,7 @@ export type SectorAssetClass =
   | "hk_equity"
   | "india_equity"
   | "kr_equity"
+  | "jp_equity"
   | "ca_equity"
   | "ar_equity"
   | "br_equity"

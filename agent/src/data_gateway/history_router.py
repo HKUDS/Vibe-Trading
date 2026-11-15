@@ -69,19 +69,11 @@ def inventory():
 
 def market_for(symbol):
     """Require a public identity understood by the existing market-data layer."""
-    from backtest.engines._market_hooks import matched_market
-    from src.market_data import detect_source
+    from src.market_data import data_market
 
     if not isinstance(symbol, str) or len(symbol) > 64 or symbol.lower().startswith("local:"):
         raise ValueError("Expected a public market symbol")
-    market = matched_market(symbol.upper())
-    if market is None and detect_source(symbol.upper()) in {"nobitex", "wallex"}:
-        market = "crypto"
-    if market is None and re.fullmatch(r"\d{6}(?:\.SS)?", symbol.upper()):
-        market = "a_share"
-    if market is None:
-        raise ValueError(f"Unsupported market identity: {symbol}")
-    return market
+    return data_market(symbol)
 
 
 def candidates(symbol, interval, source="auto"):

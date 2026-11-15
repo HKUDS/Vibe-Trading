@@ -95,6 +95,8 @@ def test_market_data_json_can_include_actual_source_provenance():
         "currency_conversion": "none",
         "volume_unit": None,
         "adjustment": "split_dividend",
+        "quote_currency": "USD",
+        "quote_currency_basis": "instrument_market_contract",
     }
 
 

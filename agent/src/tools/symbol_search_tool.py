@@ -156,6 +156,7 @@ _MARKET_BY_SUFFIX: Dict[str, str] = {
     "US": "us",
     "NS": "in",
     "BO": "in",
+    "T": "jp",
     "KS": "kr",
     "KQ": "kr",
     "TO": "ca",

@@ -379,3 +379,17 @@ def test_exact_expiry_prices_use_the_real_engine():
     assert [row["spot"] for row in rows] == [160, 180]
     assert rows[0]["return_percent"] == pytest.approx(-5.536795234370298)
     assert rows[1]["return_percent"] == pytest.approx(6.4976232023587475)
+
+
+def test_chain_optional_near_spot_count_passes_through(monkeypatch):
+    seen = {}
+
+    def fake_execute(self, **kwargs):
+        seen.update(kwargs)
+        return _OK_CHAIN
+
+    monkeypatch.setattr("src.api.options_routes.OptionsChainTool.execute", fake_execute)
+    response = _client().get("/options/chain", params={"ticker": "AAPL", "near_spot_count": 2})
+    assert response.status_code == 200
+    assert seen == {"ticker": "AAPL", "near_spot_count": 2}
+    assert _client().get("/options/chain", params={"ticker": "AAPL", "near_spot_count": 61}).status_code == 422

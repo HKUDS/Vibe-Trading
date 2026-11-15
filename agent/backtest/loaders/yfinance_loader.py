@@ -262,7 +262,7 @@ class DataLoader:
 
     name = "yfinance"
     markets = {
-        "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
+        "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
         "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "crypto",
     }
     # yfinance volume is single shares for US/HK equities

@@ -110,6 +110,7 @@ _JOINED_CRYPTO_RE = re.compile(
 
 _CANONICAL_SYMBOL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:"
+    r"[A-Z0-9]{4}\.T|"
     r"\d{3,6}\.(?:SH|SZ|BJ|SS|HK|KS|KQ)|"
     # Futu writes the venue as a PREFIX (HK.00700 / SH.600519 / US.AAPL). The
     # suffix branch above cannot see it, so a user who pasted a connector code
@@ -244,6 +245,7 @@ def _infer_venue(symbol: str) -> str | None:
         ".SZ": "shenzhen",
         ".BJ": "beijing",
         ".HK": "hong_kong",
+        ".T": "tokyo",
         ".KS": "kospi",
         ".KQ": "kosdaq",
         ".NS": "nse",
@@ -311,6 +313,7 @@ def _infer_currency(symbol: str) -> str | None:
         ".SZ": "CNY",
         ".BJ": "CNY",
         ".HK": "HKD",
+        ".T": "JPY",
         ".KS": "KRW",
         ".KQ": "KRW",
         ".NS": "INR",

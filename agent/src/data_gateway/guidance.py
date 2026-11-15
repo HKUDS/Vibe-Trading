@@ -8,6 +8,19 @@ for options, or the matching profile, fundamentals, news or screening tool.
 Load deferred tool schemas when available; never invent a tool the current
 registry/worker does not expose. Reuse returned data and artifact paths.
 
+Plan acquisition before calling: resolve ambiguous or bare stock tickers once
+with search_symbol before dependent reads (including option chains). Keep explicit
+canonical symbols from the user. Group symbols sharing dates and interval in one
+get_market_data call; independent intervals/products can run together. Use the
+exact inclusive dates requested, without padding unless the calculation needs
+warmup. Fetch enough rows once: for a bounded one-day minute series needed for
+computation, request all rows with max_rows=0 instead of fetching a preview and
+then the same bars again. For large history use history_data. Inspect truncation
+and coverage metadata; never infer completeness from a preview. Reuse artifacts
+already covering the task. Combine artifact inspection, calculations and CSV
+writing in one Python execution when possible. Once requested outputs exist,
+answer concisely; do not add exploratory reads or extra analysis rounds.
+
 Python is for computation on those artifacts by default. Do not substitute raw
 requests/httpx, curl, yfinance, Tushare, AKShare or a broker SDK for a supported
 gateway read. When a genuinely missing field needs Python, consult data-routing

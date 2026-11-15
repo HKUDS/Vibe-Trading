@@ -288,6 +288,7 @@ def register_options_routes(
     async def options_chain(
         ticker: str | None = Query(None, max_length=64),
         expiration: int | None = Query(None),
+        near_spot_count: int | None = Query(None, ge=1, le=60),
     ) -> Response:
         """Wrap ``OptionsChainTool`` (Yahoo network I/O, run in a thread)."""
         if ticker is None or not ticker.strip():
@@ -297,6 +298,8 @@ def register_options_routes(
         kwargs: dict[str, Any] = {"ticker": ticker}
         if expiration is not None:
             kwargs["expiration"] = expiration
+        if near_spot_count is not None:
+            kwargs["near_spot_count"] = near_spot_count
         tool = OptionsChainTool()
         try:
             raw = await asyncio.to_thread(tool.execute, **kwargs)

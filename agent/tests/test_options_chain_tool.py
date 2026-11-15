@@ -111,3 +111,40 @@ def test_tool_pages_all_strikes_beyond_the_near_spot_window(source):
     assert response["data"]["calls"][-1]["strike"] == 300
     assert response["data"]["next_offset"] is None
     assert not response["data"]["complete_expiration"]
+
+
+def test_small_near_spot_result_preserves_source_cache_and_default_window(source):
+    for side, letter in (("calls", "C"), ("puts", "P")):
+        source.return_value["options"][0][side] = [
+            {"contractSymbol": f"AAPL300101{letter}{strike * 1000:08d}", "strike": strike,
+             "expiration": 1893456000, "bid": 3, "ask": 4}
+            for strike in range(100, 301)
+        ]
+    small = json.loads(OptionsChainTool().execute(ticker="AAPL", near_spot_count=2))
+    for side in ("calls", "puts"):
+        assert [r["strike"] for r in small["data"][side]] == [199, 200]
+        assert small["data"][side + "_count"] == 2
+    assert not small["data"]["complete_expiration"]
+    regular = json.loads(OptionsChainTool().execute(ticker="AAPL"))
+    assert regular["data"]["calls_count"] == 60
+    assert source.call_count == 1
+
+
+@pytest.mark.parametrize("params", [{"near_spot_count": n} for n in [0, 61, True, 1.5, "2"]] + [{"near_spot_count": 2, "offset": 0}])
+def test_invalid_near_spot_count_does_not_acquire(source, params):
+    assert not json.loads(OptionsChainTool().execute(ticker="AAPL", **params))["ok"]
+    source.assert_not_called()
+
+
+def test_mcp_exposes_and_forwards_the_same_small_window(monkeypatch):
+    import inspect
+    import mcp_server
+
+    wrapped = mcp_server.get_options_chain
+    call = getattr(wrapped, "fn", None) or getattr(wrapped, "__wrapped__", wrapped)
+    assert set(OptionsChainTool.parameters["properties"]) <= set(inspect.signature(call).parameters)
+    registry = Mock()
+    registry.execute.return_value = '{"ok": true}'
+    monkeypatch.setattr(mcp_server, "_get_registry", lambda: registry)
+    assert json.loads(call("AAPL.US", near_spot_count=2))["ok"]
+    registry.execute.assert_called_once_with("get_options_chain", {"ticker": "AAPL.US", "near_spot_count": 2})

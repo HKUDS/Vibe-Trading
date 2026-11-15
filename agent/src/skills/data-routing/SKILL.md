@@ -54,6 +54,24 @@ its source and the gateway-coverage gap. This policy does not intercept remote
 server network activity; do not claim external MCP reads share the local cache.
 Account reads and mutations retain their own authorization and order gates.
 
+## Acquisition planning
+
+Resolve bare or ambiguous stock names once before dependent reads, including
+options. Batch canonical symbols with the same exact requested dates and
+interval. Reuse the options response's underlying price when sufficient. For a
+bounded full-day minute calculation, request `max_rows=0` on the first call;
+a sampled result's artifact also contains sampled rows. Inspect an existing
+artifact before fetching again, and combine inspection, calculation and CSV
+writing in one Python execution where possible. Preserve `quote_currency_basis`:
+`source_metadata` is declared upstream; `instrument_market_contract` is the
+project's instrument currency rule, not a vendor declaration.
+
+Japanese `.T` bars (for example `7203.T`) route through Yahoo then yfinance,
+with JPY metadata required and XTKS calendar checks. This is data coverage;
+Japanese backtest execution rules are not implemented. An unknown public venue
+returns `unsupported_market`, never an A-share fallback. Resolve the symbol or
+report the unsupported coverage instead of changing transports.
+
 ## Source Overview
 
 Every name here is a registered OHLCV/backtest source in `VALID_SOURCES`.
@@ -64,7 +82,7 @@ per-source skill.
 |--------|---------|----------------|---------|-------|
 | tushare | A-shares, funds, futures, macro | Yes (`TUSHARE_TOKEN`) | China network | tushare |
 | akshare | A-shares, US, HK, futures, macro, forex | No | Unrestricted | akshare |
-| yfinance | US, HK, Canada (TSX/TSXV) stocks, ETFs | No | Needs Yahoo access | yfinance |
+| yfinance | US, HK, Japan (.T), Canada (TSX/TSXV) stocks, ETFs | No | Needs Yahoo access | yfinance |
 | okx | Crypto (OKX exchange) | No | Needs okx.com access | okx-market |
 | nobitex | Crypto, IRT/Toman-quoted pairs (BTC-IRT, USDT-IRT — Iran market premium) | No | Needs apiv2.nobitex.ir access | data-routing (explicit `*IRT` routing only) |
 | wallex | Crypto, TMN/Toman-quoted pairs (USDT-TMN, BTC-TMN — Iran market premium) | No | Needs api.wallex.ir access | data-routing (explicit `*TMN` routing only; truly serves 1m/1h/1d) |

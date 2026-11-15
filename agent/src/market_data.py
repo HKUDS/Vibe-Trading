@@ -19,6 +19,7 @@ DEFAULT_MAX_ROWS = 250
 # throttle-tolerant Yahoo public endpoint first (lower IP-ban risk than the
 # yfinance SDK), A-shares and HK equities to the never-banned Tencent endpoint.
 _SOURCE_PATTERNS = [
+    (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "yahoo"),
     (re.compile(r"^local:", re.I), "local"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "tencent"),
     (re.compile(r"^[A-Z0-9&.\-]+\.US$", re.I), "yahoo"),
@@ -66,24 +67,44 @@ _SOURCE_PATTERNS = [
 ]
 
 
+def data_market(code: str) -> str:
+    """Resolve a data identity without the legacy backtest A-share default.
+
+    Raises:
+        ValueError: No public market rule recognizes the symbol.
+    """
+    from backtest.engines._market_hooks import _detect_market, matched_market
+
+    clean = code.strip().upper()
+    if clean.startswith("LOCAL:"):
+        return _detect_market(clean)
+    market = matched_market(clean)
+    if market is not None:
+        return market
+    if re.fullmatch(r"\d{6}(?:\.SS)?", clean):
+        return "a_share"
+    if re.fullmatch(r"[A-Z]+[-/]?(?:IRT|TMN)", clean):
+        return "crypto"
+    raise ValueError(f"Unsupported market identity: {code}. Use search_symbol to resolve a supported venue.")
+
+
 def detect_source(code: str) -> str:
-    """Infer the best loader source for a normalized symbol."""
-    from backtest.engines._market_hooks import _detect_market
+    """Infer the best loader source only for a recognized data identity."""
     from backtest.loaders.registry import FALLBACK_CHAINS
 
-    market = _detect_market(code.strip().upper())
+    clean = code.strip().upper()
+    market = data_market(clean)
     for pattern, source in _SOURCE_PATTERNS:
-        if pattern.match(code):
-            # XXX/USD also matches known crypto bases. Keep the shared market
-            # classification authoritative over this broad forex-source rule.
+        if pattern.match(clean):
             if source == "mt5" and market == "crypto":
                 continue
             return source
     if market == "a_share":
-        return "tushare"  # Keep the documented fallback for unknown symbols.
+        return "tushare"
     chain = FALLBACK_CHAINS.get(market, [])
-    return chain[0] if chain else "tushare"
-
+    if not chain:
+        raise ValueError(f"No data route for market: {market}")
+    return chain[0]
 
 
 def normalize_crypto_symbol(code: str) -> str:
@@ -256,8 +277,13 @@ def _fetch_market_data_direct(
 
     groups: dict[tuple[str, str], list[str]] = {}
     for code in codes:
+        try:
+            market = data_market(code)
+        except ValueError as exc:
+            diagnostics[code] = [{"source": "router", "reason": "unsupported_market", "detail": str(exc)}]
+            continue
         src = detect_source(code) if source == "auto" else source
-        groups.setdefault((src, _detect_market(code)), []).append(code)
+        groups.setdefault((src, market), []).append(code)
 
     def _chain_for(src: str, market: str) -> list[str]:
         """Return the ordered fallback chain for ``src``.
@@ -276,9 +302,6 @@ def _fetch_market_data_direct(
         market_chain = FALLBACK_CHAINS.get(market, [])
         if src in market_chain:
             return market_chain
-        for chain in FALLBACK_CHAINS.values():
-            if src in chain:
-                return chain
         return [src]
 
     def _fetch_via_chain(
@@ -454,6 +477,20 @@ def _fetch_market_data_direct(
             quote_currency = frame_attrs.get("quote_currency")
             if isinstance(quote_currency, str) and quote_currency:
                 entry["quote_currency"] = quote_currency
+                entry["quote_currency_basis"] = "source_metadata"
+            elif market == "a_share" or market.endswith("_equity"):
+                # Settlement currency is not a crypto quote asset (USDT != USD).
+                # Only equity market contracts fill an absent source declaration.
+                from backtest.engines._market_hooks import code_currency, matched_market
+
+                clean = symbol.strip().upper()
+                if not clean.startswith("LOCAL:") and (
+                    matched_market(clean) is not None or re.fullmatch(r"\d{6}(?:\.SS)?", clean)
+                ):
+                    currency = code_currency(clean)
+                    if not currency.startswith("UNKNOWN"):
+                        entry["quote_currency"] = currency
+                        entry["quote_currency_basis"] = "instrument_market_contract"
             for field in ("timezone", "timestamp_basis"):
                 if isinstance(frame_attrs.get(field), str) and frame_attrs[field]:
                     entry[field] = frame_attrs[field]

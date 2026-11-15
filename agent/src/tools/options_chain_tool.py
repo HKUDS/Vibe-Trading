@@ -18,15 +18,19 @@ class OptionsChainTool(BaseTool):
 
     name = "get_options_chain"
     description = (
+        "Resolve a bare/ambiguous underlying with search_symbol first, in a separate turn; "
+        "reuse a canonical user-provided or already resolved US identity. "
         "Fetch the US-listed options chain (calls and puts) for one expiration "
         "via the shared cached data gateway: per-contract strike, bid/ask, last price, volume, "
         "open interest, implied volatility, and in-the-money flag, plus the list "
         "of available expirations (epoch seconds). Read-only US options data. "
+        "For a few near-price contracts, set near_spot_count to the requested number per side; "
+        "use the included underlying_price without an extra stock-price read. "
         "last_trade_time is the last execution time, NEVER the bid/ask quote time. "
         "When quote_time_known is false, label the quote timestamp unavailable. "
         "Do not assign a timezone to unzoned provider timestamps; fetched_at is "
         "gateway retrieval time, not market quote time. "
-        'Example: get_options_chain(ticker="AAPL").'
+        'Example after identity resolution: get_options_chain(ticker="AAPL.US").'
     )
     parameters = {
         "type": "object",
@@ -34,8 +38,14 @@ class OptionsChainTool(BaseTool):
             "ticker": {
                 "type": "string",
                 "description": (
-                    "US underlying symbol, e.g. 'AAPL' or 'AAPL.US' (the .US suffix is stripped). Required."
+                    "Resolved US underlying, e.g. 'AAPL.US' (suffix stripped by provider). For bare 'AAPL', call search_symbol first and wait for its result. Required."
                 ),
+            },
+            "near_spot_count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": _MAX_CONTRACTS_PER_SIDE,
+                "description": "Nearest strikes per side (e.g. 2 for two calls and two puts). Defaults to 60. Do not combine with offset.",
             },
             "offset": {
                 "type": "integer",
@@ -82,6 +92,11 @@ class OptionsChainTool(BaseTool):
         offset = kwargs.get("offset")
         if offset is not None and (isinstance(offset, bool) or not isinstance(offset, int) or offset < 0):
             return _error("offset must be a non-negative integer")
+        near_spot_count = kwargs.get("near_spot_count", _MAX_CONTRACTS_PER_SIDE)
+        if isinstance(near_spot_count, bool) or not isinstance(near_spot_count, int) or not 1 <= near_spot_count <= _MAX_CONTRACTS_PER_SIDE:
+            return _error(f"near_spot_count must be an integer from 1 to {_MAX_CONTRACTS_PER_SIDE}")
+        if offset is not None and "near_spot_count" in kwargs:
+            return _error("near_spot_count cannot be combined with offset")
         result = get_gateway().options_chain(
             ticker, normalized_expiration, **({"full": True} if offset is not None else {})
         )
@@ -90,7 +105,7 @@ class OptionsChainTool(BaseTool):
             for side in ("calls", "puts"):
                 if offset is None:
                     nearest = sorted(data[side], key=lambda row: abs(row["strike"] - data["underlying_price"]))
-                    data[side] = sorted(nearest[:_MAX_CONTRACTS_PER_SIDE], key=lambda row: row["strike"])
+                    data[side] = sorted(nearest[:near_spot_count], key=lambda row: row["strike"])
                 else:
                     data[side] = data[side][offset : offset + _MAX_CONTRACTS_PER_SIDE]
                 data[side + "_count"] = len(data[side])
