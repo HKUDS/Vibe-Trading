@@ -2786,3 +2786,42 @@ require an observed exact match, including lowercase input and BRK-B.US.
 No prompt, options UI, cache/memory limit, timeout or retry-budget changes:
 8 MiB memory, 64 MiB disk, four workers, sixteen pending; source/request deadlines
 remain unchanged. No long stress test was run.
+
+## v31 — Merge follow-up fixes into main and real-task short test (2026-11-15)
+
+Fetched origin/main at `3a15f1fd5`; the three fixes `7a8635a16`, `5688a4d92`
+and `8f7d1441a` fast-forwarded main with no conflicts. Tested the resulting
+`8f7d1441a` code using the same six-market and options/HK/BTC prompts and
+configured `deepseek-v4-1-flash-261017` model. Evidence remains outside Git:
+`~/.codex/visualizations/2026/11/10/01a1c47d-d274-73c2-a6fa-75631dd811cd/gateway-main-merged-short-20261115/`
+(`audit.py`, `report.json`, traces, CSV and source observations).
+
+| Task | End-to-end | Model iterations | Data-tool wall time | Observed completeness |
+| --- | ---: | ---: | ---: | --- |
+| US/HK/A/JP/KR/CA closes + CSV | 29.718 s | 8 | 3.222 s | 6/6 markets, 12/12 closes |
+| AAPL options + HK daily + BTC 5m | 26.122 s | 4 | 4.094 s | 4 contracts, 5 daily rows, 288 bars |
+
+Both tasks completed without tool errors, duplicate bar requests or external-MCP
+task calls. Options identity resolution completed before chain acquisition.
+The independent Yahoo MCP alternative was available and preflighted. Six-market
+Python executed four local inspection/CSV steps; code review and socket audit
+found no direct network acquisition. This model overhead is still present:
+29.718 seconds is slower than the earlier 19.599-second six-market sample.
+The options task used no Python. These single samples share one fresh process
+and gateway; the second task is not an isolated cold start.
+
+Independent verification checked every CSV close/date/currency/source, option
+expiry and bid/ask arithmetic, and BTC uniqueness, 300-second spacing and summary
+statistics. In this run the model requested HK with max_rows=0: that existing
+full-row path truthfully reports calendar_not_checked_on_this_path, unlike the
+bounded-row path in the previous sample. The audit separately validated all five
+HK sessions against XHKG. Runtime metadata was not changed, and the agent did
+not claim that runtime calendar validation had occurred. No test/MCP processes
+remained after completion. Narrative beyond the verified observations is not
+certified; Python audit hooks are not an OS network sandbox.
+
+Combined routing/identity/grounding/options/API/market-data suite: 714 passed,
+one warning. No implementation changes were needed for the merge. Limits remain
+8 MiB memory cache / 64 MiB disk, four workers / sixteen pending; the unchanged
+configuration retains 6-second source and 15-second request deadlines. No retry,
+timeout, production configuration or options interaction changes were made.
