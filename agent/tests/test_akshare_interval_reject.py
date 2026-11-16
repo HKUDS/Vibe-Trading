@@ -10,7 +10,7 @@ from backtest.loaders.akshare_loader import DataLoader, _INTERVAL_MAP_DAILY
 
 
 def test_akshare_a_share_rejects_minute_interval() -> None:
-    ak = MagicMock()
+    ak = MagicMock(spec=["stock_zh_a_hist"])
     loader = DataLoader()
     with pytest.raises(ValueError, match="Unsupported interval"):
         loader._fetch_a_share(ak, "600519.SH", "2026-01-01", "2026-01-31", "1m")
@@ -20,7 +20,7 @@ def test_akshare_a_share_rejects_minute_interval() -> None:
 def test_akshare_a_share_keeps_supported_monthly(monkeypatch) -> None:
     import pandas as pd
 
-    ak = MagicMock()
+    ak = MagicMock(spec=["stock_zh_a_hist"])
     ak.stock_zh_a_hist.return_value = pd.DataFrame(
         {
             "日期": ["2026-01-31"],
