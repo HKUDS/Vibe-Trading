@@ -27,6 +27,9 @@ _DEFAULT_DB_PATH = get_runtime_root() / "memory_index.db"
 # Body text truncation limit (chars)
 _MAX_BODY_LEN = 50_000
 
+# Version 1 repairs external-content FTS tokens left behind by INSERT OR REPLACE.
+_FTS_INDEX_VERSION = 1
+
 # CJK Unicode range boundaries for ideograph detection
 _CJK_RANGE_MAIN = (0x4E00, 0x9FFF)
 _CJK_RANGE_EXT_A = (0x3400, 0x4DBF)
@@ -202,6 +205,17 @@ class MemoryMatch:
     rank: float
 
 
+# Upsert by id. INSERT OR REPLACE would delete the old row without firing the
+# memories_ad trigger (SQLite fires delete triggers for REPLACE only with
+# recursive_triggers on), leaving its terms in the external-content FTS index.
+# ON CONFLICT ... DO UPDATE fires memories_au, which swaps the FTS row.
+_UPSERT_SQL = (
+    "INSERT INTO memories (id, title, description, keywords, body) VALUES (?, ?, ?, ?, ?) "
+    "ON CONFLICT(id) DO UPDATE SET title = excluded.title, description = excluded.description, "
+    "keywords = excluded.keywords, body = excluded.body"
+)
+
+
 class MemorySearchIndex:
     """SQLite FTS5 index for memory full-text search.
 
@@ -287,6 +301,20 @@ class MemorySearchIndex:
                 pass
         conn.commit()
 
+        # Upgrade the derived index before serving searches. Replacing future
+        # rows alone cannot remove old tokens already pointing at reused rowids.
+        # Keep the marker and rebuild atomic, so a failed repair is retried on
+        # the next open and never exposes stale search hits in this process.
+        try:
+            with conn:
+                version = conn.execute("PRAGMA user_version").fetchone()[0]
+                if version < _FTS_INDEX_VERSION:
+                    conn.execute("INSERT INTO memories_fts(memories_fts) VALUES ('rebuild')")
+                    conn.execute(f"PRAGMA user_version={_FTS_INDEX_VERSION}")
+        except sqlite3.DatabaseError as exc:
+            self._fts_available = False
+            logger.warning("FTS5 index upgrade failed, search disabled: %s", exc)
+
     def _is_index_populated(self) -> bool:
         """Check if the FTS5 index has any entries."""
         conn = self._get_conn()
@@ -317,8 +345,7 @@ class MemorySearchIndex:
             conn = self._get_conn()
             try:
                 conn.execute(
-                    "INSERT OR REPLACE INTO memories (id, title, description, keywords, body) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    _UPSERT_SQL,
                     (
                         entry_id,
                         self._prepare_cjk(title),
@@ -430,8 +457,7 @@ class MemorySearchIndex:
                 )
                 try:
                     conn.execute(
-                        "INSERT OR REPLACE INTO memories "
-                        "(id, title, description, keywords, body) VALUES (?, ?, ?, ?, ?)",
+                        _UPSERT_SQL,
                         (
                             entry_id,
                             self._prepare_cjk(title or ""),
