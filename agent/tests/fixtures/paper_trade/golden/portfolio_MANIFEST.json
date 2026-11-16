@@ -1,0 +1,35 @@
+{
+  "schema": "paper_trade.portfolio_golden_manifest/v1",
+  "generator": "task-14 PR2 gate generation from test_paper_trade_portfolio_golden.py scenarios; frozen at commit time",
+  "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. Regeneration requires a human-verified diff naming the reason.",
+  "goldens": [
+    {
+      "file": "portfolio_explicit_orders_cn_hk_us.json",
+      "sha256": "849ec091f0cd78f074b779c21540fd9ee69657b5b19a2eb896243fe859913b9c",
+      "bytes": 4302,
+      "document_hash": "4508e888743f8d4ff05443586430465ec08bbf92337af991ec3744c04e89e73f",
+      "scenario": "explicit cn_a+hk+us buys on 2026-11-13: cn 600519.SH 100, hk 00700.HK 100, us AAPL.US 10; cn cash 200000.00 CNY, hk fee override commission_rate 0.0003 / commission_min 20.00, no FX conversions"
+    },
+    {
+      "file": "portfolio_target_weights_conversion.json",
+      "sha256": "e2973c6e94df179d060af11c7fa9642f9bb1f46df6f2e4a819566ca1fe6a85b5",
+      "bytes": 4254,
+      "document_hash": "d54b00cc9421e0da74bfebdbe9d6270f10a75b2de4b3995f9c861ea65a04ce0d",
+      "scenario": "target weights on 2026-11-13 (cn 0.00, hk 0.16, us 0.20) with one caller-declared pre-fill CNY->USD conversion of 1000.00 at 0.14"
+    },
+    {
+      "file": "portfolio_cn_open_hk_closed_us_open.json",
+      "sha256": "3b1b1ed70a05aea3a85d116105e7562f823bab92de99c48b2994415a01358d0b",
+      "bytes": 3933,
+      "document_hash": "7cc2be8abb7bb678b97d15351dd6573c135c05af9d51ba804c87bf9c673a5960",
+      "scenario": "CN-open/HK-closed/US-open on 2026-11-13: cn buy 100 and us buy 10; closed HK holdings carried at the 2026-11-12 prior mark 410.00 with no matcher run"
+    },
+    {
+      "file": "portfolio_per_order_rejection.json",
+      "sha256": "f0cfd52815de924b43078abacd3f5a45a7ffa0ba61805cf9cfcad5ef57f0a339",
+      "bytes": 3928,
+      "document_hash": "1390910442f50ca7324ecb3c25955e54739ac7a09521a1325c5b7e49582c767d",
+      "scenario": "per-order rejection on 2026-11-13: cn sell 100 fills while the us buy 10 with limit 300.00 is rejected as limit_not_marketable and forces complete=false"
+    }
+  ]
+}
