@@ -237,12 +237,15 @@ Required: `tool`, `schema_version`, `mode`, `account_id`, `base_currency`,
 | `orders` | Explicit orders `{order_id, bucket_id, symbol, currency, side, qty, limit?}`. The caller `order_id` is preserved as the public `plan_order_id`. |
 | `target_weights` | Long-only `{bucket_id, symbol, currency, weight}` with a total at most `1`. Orders are sized from dated prior marks and whole-lot floored; residual cash stays in its own bucket. |
 | `rebalance_band` | Target-weights only, default `"0"`. `0` rebalances every line; a line whose absolute current/target gap is within the band is skipped. |
+| `benchmark` | Optional `{benchmark_id, start, end}`; each observation is `{observed_at, value, currency, rate_id?}`. `observed_at` is offset-aware, the end observation is dated `trade_date` and no later than `valuation_at`; a non-base currency names its own direct pair, checked against that observation. No default benchmark is inferred. |
+| `sectors` | Optional `{bucket_id, symbol, sector}` rows; a position without one is reported under `unclassified`. |
 
 `planning_at` must precede `valuation_at`; both are offset-aware ISO-8601
 timestamps. An FX snapshot must not be later than the instant that uses it
 (`planning_at` for conversions and target sizing, `valuation_at` for the final
-valuation). A request with both `orders` and `target_weights`, or with neither,
-is `INVALID_REQUEST`.
+valuation, each benchmark observation's `observed_at` for its translation). A
+request with both `orders` and `target_weights`, or with neither, is
+`INVALID_REQUEST`.
 
 ### Sessions, marks and valuation
 
@@ -274,9 +277,27 @@ sum to `position_value_base`; a held position without a caller sector is placed
 in the explicit `unclassified` bucket. Every cash, position, conversion,
 bucket, currency, market and sector value carries its dated mark and/or direct
 FX `rate_id`, `as_of` and `source`. A missing valuation mark or direct FX pair
-is a declared error, never an inferred price or currency. There is still no
-benchmark, Brinson attribution, sector allocation/selection, contribution or
-multi-day analytics.
+is a declared error, never an inferred price or currency.
+
+A caller may also declare one `benchmark` with dated `start` and `end`
+observations. Each observation names a positive level, its currency and, when
+the currency differs from `base_currency`, the `rate_id` of its own direct pair
+to the base currency; the engine never inverts, triangulates, interpolates or
+fetches a rate. The object reports the one-day `benchmark_return`, the
+portfolio's own one-day return from prior planning marks to the reported NAV,
+and `deviation = portfolio_return - benchmark_return`, with the exact values and
+both observations' translated levels. The reported start NAV is the ledger's
+bucket-reported sum; `portfolio_start_rounding_residual` is
+`exact_start_nav_base - reported_start_nav_base`, so
+`reported_start_nav_base + portfolio_start_rounding_residual =
+exact_start_nav_base` even when the exact total would round to a different
+cent. The end observation must follow the start,
+be dated the trade date and be no more than one day before `valuation_at`;
+missing, naive, reversed, future, stale or currency-mismatched observations are
+declared errors. With no caller benchmark the document carries an explicit
+`benchmark: null`; there is no default index. Brinson attribution, sector
+allocation/selection, contribution and multi-day period attribution remain out
+of scope.
 
 ### Example: explicit orders, conversion and a closed market
 
@@ -450,9 +471,10 @@ its existing envelope (`received_state_hash` where computable).
   this contract.
 - **Analytics are single-day valuation evidence.** `sectors` produce caller
   sector exposure with an explicit `unclassified` bucket, and the document
-  reports NAV, exposure and concentration. There is no benchmark, Brinson
-  attribution, sector allocation/selection, contribution or multi-day
-  analytics yet.
+  reports NAV, exposure, concentration and an optional caller benchmark with
+  its one-day return and deviation. There is no default benchmark, Brinson
+  attribution, sector allocation/selection, contribution or multi-day analytics
+  yet.
 - **No saved account or UI.** Portfolio mode is stateless. Saved paper accounts,
   the Web page, persistence and portfolio history remain daily single-market
   surfaces only.
@@ -559,9 +581,9 @@ state and writes nothing.
 ## Known limits
 
 - **Portfolio mode is a separate, single-day contract.** It has no portfolio
-  reconcile, benchmark/Brinson or contribution attribution, multi-day
-  attribution, saved account, UI, persistence, 5m, volume-share,
-  margin/shorting or broker support. Its full limits are listed under
+  reconcile, Brinson or contribution attribution, multi-day attribution, saved
+  account, UI, persistence, 5m, volume-share, margin/shorting or broker
+  support. Its full limits are listed under
   [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
 - **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
   for any symbol is inferred closed: the day is recorded as
