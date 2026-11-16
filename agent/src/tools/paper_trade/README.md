@@ -295,9 +295,46 @@ cent. The end observation must follow the start,
 be dated the trade date and be no more than one day before `valuation_at`;
 missing, naive, reversed, future, stale or currency-mismatched observations are
 declared errors. With no caller benchmark the document carries an explicit
-`benchmark: null`; there is no default index. Brinson attribution, sector
-allocation/selection, contribution and multi-day period attribution remain out
-of scope.
+`benchmark: null`; there is no default index.
+
+The same `analytics` object also carries an optional one-day `attribution`
+document. It is a pure Decimal bridge from the actual opening ledger at strictly
+prior planning marks and planning FX through settled conversions and every
+execution fill to the ending ledger at the valuation marks and FX:
+
+```
+NAV_end_exact - NAV_start_exact
+  = sum(position_contribution)
+  + sum(cash_fx_effects)
+  + conversion_effects
+  + fee_effects
+  + rounding_residual
+```
+
+Each symbol row splits into a market (mark and trade-cash) part and a currency
+(FX revaluation of the opening local value) part; market and currency roll-ups
+repeat the full view. Conversion rows keep the source debit, target credit,
+converted amount and the explicit rounding loss. Fee rows are negative base
+effects. Execution rows compare each fill's exact quantity × price with the
+execution adapter's two-decimal cash notional, so the final residual is the
+computed cash-rounding amount, never a fitted plug. Missing inputs, mutated
+fills, conversions or marks, a nonzero unexplained residual, or a cross-bucket
+identity error produce field-level `reconciliation.issues` and
+`reconciled: false`; a step does not publish a success document in that state.
+`not_verified` records that caller marks and the prepared execution snapshot are
+not independently re-fetched and that this is not a broker audit.
+
+The weight tie-out publishes each instrument's caller `target_weight` (when a
+target plan supplied one), the order plan's `planned_weight`, the end-ledger
+`realized_weight`, and the `lot_gap` (planned minus target), `price_gap`
+(planning marks to end marks/FX), `reject_gap` (planned to realized quantity) and
+a portfolio `cash_gap`. Their sum plus `valuation_rounding_weight` equals the
+declared `weight_rounding_residual` within
+`weight_rounding_tolerance`; targets remain caller declarations and are not
+promised exact executions. A document created before this field existed remains
+valid without `attribution`. Brinson allocation/selection/interaction, sector
+attribution and multi-day period attribution remain out of scope; the published
+scope is exactly one day.
 
 ### Example: explicit orders, conversion and a closed market
 
@@ -471,10 +508,10 @@ its existing envelope (`received_state_hash` where computable).
   this contract.
 - **Analytics are single-day valuation evidence.** `sectors` produce caller
   sector exposure with an explicit `unclassified` bucket, and the document
-  reports NAV, exposure, concentration and an optional caller benchmark with
-  its one-day return and deviation. There is no default benchmark, Brinson
-  attribution, sector allocation/selection, contribution or multi-day analytics
-  yet.
+  reports NAV, exposure, concentration, an optional caller benchmark with its
+  one-day return and deviation, and the optional one-day contribution/weight
+  attribution above. There is no default benchmark and no Brinson
+  allocation/selection, sector attribution or multi-day period attribution.
 - **No saved account or UI.** Portfolio mode is stateless. Saved paper accounts,
   the Web page, persistence and portfolio history remain daily single-market
   surfaces only.
@@ -581,10 +618,10 @@ state and writes nothing.
 ## Known limits
 
 - **Portfolio mode is a separate, single-day contract.** It has no portfolio
-  reconcile, Brinson or contribution attribution, multi-day attribution, saved
-  account, UI, persistence, 5m, volume-share, margin/shorting or broker
-  support. Its full limits are listed under
-  [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
+  reconcile, Brinson allocation/selection, sector or multi-day attribution,
+  saved account, UI, persistence, 5m, volume-share, margin/shorting or broker
+  support. Its one-day contribution and weight-gap attribution is documented
+  under [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
 - **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
   for any symbol is inferred closed: the day is recorded as
   `market_closed_inferred` with a warning, no NAV row is produced for it, its
