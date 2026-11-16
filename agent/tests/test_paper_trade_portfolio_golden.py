@@ -56,7 +56,7 @@ PRIOR_DATE = "2026-11-12"
 _GOLDEN_DIR = Path(__file__).parent / "fixtures" / "paper_trade" / "golden"
 _AGENT_ROOT = Path(__file__).resolve().parents[1]
 
-_EXPLICIT = "portfolio_explicit_orders_cn_hk_us"
+_EXPLICIT = "portfolio_explicit_cn_hk_us"
 _TARGET = "portfolio_target_weights_conversion"
 _CLOSED = "portfolio_cn_open_hk_closed_us_open"
 _REJECTION = "portfolio_per_order_rejection"

@@ -4,7 +4,7 @@
   "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. Regeneration requires a human-verified diff naming the reason.",
   "goldens": [
     {
-      "file": "portfolio_explicit_orders_cn_hk_us.json",
+      "file": "portfolio_explicit_cn_hk_us.json",
       "sha256": "849ec091f0cd78f074b779c21540fd9ee69657b5b19a2eb896243fe859913b9c",
       "bytes": 4302,
       "document_hash": "4508e888743f8d4ff05443586430465ec08bbf92337af991ec3744c04e89e73f",
