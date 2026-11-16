@@ -1,34 +1,34 @@
 {
   "schema": "paper_trade.portfolio_golden_manifest/v1",
-  "generator": "task-14 PR2 gate generation from test_paper_trade_portfolio_golden.py scenarios; frozen at commit time",
-  "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. Regeneration requires a human-verified diff naming the reason.",
+  "generator": "task-22 analytics regeneration from test_paper_trade_portfolio_golden.py scenarios; adds the optional analytics object and refreshed document hashes",
+  "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. The task-22 regeneration adds exact NAV/exposure/concentration/sector analytics; regeneration still requires a human-verified diff naming the reason.",
   "goldens": [
     {
       "file": "portfolio_explicit_cn_hk_us.json",
-      "sha256": "849ec091f0cd78f074b779c21540fd9ee69657b5b19a2eb896243fe859913b9c",
-      "bytes": 4302,
-      "document_hash": "4508e888743f8d4ff05443586430465ec08bbf92337af991ec3744c04e89e73f",
+      "sha256": "d5ad2baaa5e399c694c29d69dd4d63e06bbcef94692373fe9859c9ae1b2c8718",
+      "bytes": 13728,
+      "document_hash": "0ed3d2127a2d0916f6f3214fcf54b5c698c3c911b3fa0eb9e656ce7f0992b08a",
       "scenario": "explicit cn_a+hk+us buys on 2026-11-13: cn 600519.SH 100, hk 00700.HK 100, us AAPL.US 10; cn cash 200000.00 CNY, hk fee override commission_rate 0.0003 / commission_min 20.00, no FX conversions"
     },
     {
       "file": "portfolio_target_weights_conversion.json",
-      "sha256": "e2973c6e94df179d060af11c7fa9642f9bb1f46df6f2e4a819566ca1fe6a85b5",
-      "bytes": 4254,
-      "document_hash": "d54b00cc9421e0da74bfebdbe9d6270f10a75b2de4b3995f9c861ea65a04ce0d",
+      "sha256": "5ec6e46250ae70b0de232d93f098021f8adf15d07ac6f7f2f949b4c5b49f6bac",
+      "bytes": 13050,
+      "document_hash": "1261695fd290a71683026ae4d5f8a99a907db94ec43e620a162aab80e0008d59",
       "scenario": "target weights on 2026-11-13 (cn 0.00, hk 0.16, us 0.20) with one caller-declared pre-fill CNY->USD conversion of 1000.00 at 0.14"
     },
     {
       "file": "portfolio_cn_open_hk_closed_us_open.json",
-      "sha256": "3b1b1ed70a05aea3a85d116105e7562f823bab92de99c48b2994415a01358d0b",
-      "bytes": 3933,
-      "document_hash": "7cc2be8abb7bb678b97d15351dd6573c135c05af9d51ba804c87bf9c673a5960",
+      "sha256": "4a678993f103a137750c4cec7a7ca5f4eb9c427b4f761264f5504cc3c9a4e67c",
+      "bytes": 13363,
+      "document_hash": "b191c60ea6272f3ce193050f394d760069ed09e0db7ecca54bd51f4f755a8745",
       "scenario": "CN-open/HK-closed/US-open on 2026-11-13: cn buy 100 and us buy 10; closed HK holdings carried at the 2026-11-12 prior mark 410.00 with no matcher run"
     },
     {
       "file": "portfolio_per_order_rejection.json",
-      "sha256": "f0cfd52815de924b43078abacd3f5a45a7ffa0ba61805cf9cfcad5ef57f0a339",
-      "bytes": 3928,
-      "document_hash": "1390910442f50ca7324ecb3c25955e54739ac7a09521a1325c5b7e49582c767d",
+      "sha256": "f0606ec5923bac218da3f8db684f6d1f81f12fb16eefe59b9d4aa949b61b3ac9",
+      "bytes": 11101,
+      "document_hash": "258fe539b7490975f78d3ad72bc6e6c9dc37f6e3c3a8fadaba583dbfda8002e5",
       "scenario": "per-order rejection on 2026-11-13: cn sell 100 fills while the us buy 10 with limit 300.00 is rejected as limit_not_marketable and forces complete=false"
     }
   ]
