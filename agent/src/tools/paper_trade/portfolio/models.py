@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated, Literal, TypeAlias
+from typing import Annotated, Any, Literal, TypeAlias
 
 from pydantic import (
     AwareDatetime,
@@ -405,6 +405,37 @@ class AnalyticsSectorExposure(PortfolioModel):
     provenance: AnalyticsProvenance
 
 
+class AnalyticsBenchmarkObservation(PortfolioModel):
+    """One caller-declared benchmark level with its direct-pair translation."""
+
+    observed_at: WireDatetime
+    value: DecimalString
+    currency: Currency
+    value_base: DecimalString
+    exact_value_base: DecimalString
+    rounding_residual: DecimalString
+    fx: AnalyticsFxReference
+
+
+class AnalyticsBenchmark(PortfolioModel):
+    """One-day benchmark return, portfolio return and their exact deviation."""
+
+    benchmark_id: NonEmptyString
+    start: AnalyticsBenchmarkObservation
+    end: AnalyticsBenchmarkObservation
+    benchmark_return: DecimalString
+    exact_benchmark_return: DecimalString
+    portfolio_start_nav_base: DecimalString
+    portfolio_start_exact_nav_base: DecimalString
+    portfolio_start_rounding_residual: DecimalString
+    portfolio_end_nav_base: DecimalString
+    portfolio_end_exact_nav_base: DecimalString
+    portfolio_return: DecimalString
+    exact_portfolio_return: DecimalString
+    deviation: DecimalString
+    exact_deviation: DecimalString
+
+
 class AnalyticsNavBridge(PortfolioModel):
     """Cash plus marked positions plus explicit valuation rounding equals NAV."""
 
@@ -438,6 +469,7 @@ class PortfolioAnalytics(PortfolioModel):
     concentration: AnalyticsConcentration
     sector_exposures: tuple[AnalyticsSectorExposure, ...]
     provenance: AnalyticsProvenance
+    benchmark: AnalyticsBenchmark | None = None
     warnings: tuple[str, ...] = ()
     unclassified_sector: Literal["unclassified"] = "unclassified"
 
@@ -467,6 +499,19 @@ class PortfolioResult(PortfolioModel):
     complete: bool
     hashes: PortfolioHashes
     analytics: PortfolioAnalytics | None = None
+
+    @field_serializer("analytics", when_used="json")
+    def serialize_analytics(
+        self,
+        analytics: PortfolioAnalytics | None,
+    ) -> dict[str, Any] | None:
+        """Keep the new analytics shape explicit while old documents omit it."""
+        if analytics is None:
+            return None
+        omit_none = analytics.benchmark is None and "benchmark" not in (
+            analytics.model_fields_set
+        )
+        return analytics.model_dump(mode="json", by_alias=True, exclude_none=omit_none)
 
 
 PortfolioDocument: TypeAlias = PortfolioResult | PortfolioErrorResult
