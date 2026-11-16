@@ -269,3 +269,15 @@ describe("downsampleDates", () => {
     expect(result).not.toBe(dates);
   });
 });
+
+// Taiwan exchange suffixes share one market, including letter-ending ETF codes.
+describe("Taiwan asset classification", () => {
+  it.each(["2330.TW", "6488.TWO", "00400A.TW", " 2330.tw ", "6488.two"])(
+    "classifies %s as Taiwan equity", (symbol) => {
+      expect(classifyAssetClass(symbol)).toBe("taiwan_equity");
+    },
+  );
+  it.each(["2330.TWX", "6488.TWOX", "2330"])("does not overmatch %s", (symbol) => {
+    expect(classifyAssetClass(symbol)).toBe("other");
+  });
+});

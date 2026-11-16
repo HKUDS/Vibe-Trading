@@ -1453,6 +1453,7 @@
         "ar_equity": "Argentinien-Aktien",
         "br_equity": "Brasilien-Aktien",
         "uk_equity": "UK-Aktien",
+        "taiwan_equity": "Taiwanesische Aktien",
         "vietnam_equity": "Vietnam-Aktien",
         "other": "Sonstige"
       }

@@ -12,6 +12,7 @@ export type AssetClass =
   | "ar_equity"
   | "br_equity"
   | "uk_equity"
+  | "taiwan_equity"
   | "vietnam_equity"
   | "kr_equity"
   | "india_equity"
@@ -49,6 +50,8 @@ const EQUITY_SUFFIX_MAP: Record<string, AssetClass> = {
   BA: "ar_equity",
   SA: "br_equity",
   L: "uk_equity",
+  TW: "taiwan_equity",
+  TWO: "taiwan_equity",
   VN: "vietnam_equity",
   KS: "kr_equity",
   KQ: "kr_equity",
