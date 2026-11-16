@@ -257,6 +257,191 @@ class PortfolioHashes(PortfolioModel):
     document_hash: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
 
+class AnalyticsMarkReference(PortfolioModel):
+    """One dated valuation mark, never an inferred or carried-forward guess."""
+
+    price_date: date
+    source: NonEmptyString
+    as_of: WireDatetime
+
+
+class AnalyticsFxReference(PortfolioModel):
+    """One direct FX pair (or the explicit base-currency identity) used here."""
+
+    rate_id: NonEmptyString
+    from_currency: Currency
+    to_currency: Currency
+    rate: DecimalString
+    as_of: WireDatetime
+    source: NonEmptyString
+
+
+class AnalyticsProvenance(PortfolioModel):
+    """Dated marks and direct pairs behind one aggregate analytics value."""
+
+    price_dates: tuple[date, ...]
+    fx: tuple[AnalyticsFxReference, ...]
+
+
+class AnalyticsCashRow(PortfolioModel):
+    """One bucket's local cash translated through its declared direct pair."""
+
+    bucket_id: NonEmptyString
+    market: Market
+    currency: Currency
+    valuation_date: date
+    amount: DecimalString
+    fx: AnalyticsFxReference
+    value_base: DecimalString
+    exact_value_base: DecimalString
+    rounding_residual: DecimalString
+
+
+class AnalyticsPositionRow(PortfolioModel):
+    """One held position's marked value, FX translation and NAV weight."""
+
+    bucket_id: NonEmptyString
+    market: Market
+    currency: Currency
+    symbol: NonEmptyString
+    qty: int = Field(strict=True, ge=0)
+    price: DecimalString
+    mark: AnalyticsMarkReference
+    local_value: DecimalString
+    fx: AnalyticsFxReference
+    value_base: DecimalString
+    exact_value_base: DecimalString
+    rounding_residual: DecimalString
+    weight: DecimalString
+
+
+class AnalyticsConversionRow(PortfolioModel):
+    """One settled conversion's exact amount and explicit rounding evidence."""
+
+    rate_id: NonEmptyString
+    from_bucket_id: NonEmptyString
+    to_bucket_id: NonEmptyString
+    from_currency: Currency
+    to_currency: Currency
+    source_amount: DecimalString
+    rate: DecimalString
+    exact_converted: DecimalString
+    converted_amount: DecimalString
+    rounding_residual_local: DecimalString
+    valuation_fx: AnalyticsFxReference
+    rounding_residual_base: DecimalString
+
+
+class AnalyticsBucketExposure(PortfolioModel):
+    """One bucket's cash, marked positions and the residual from rounding."""
+
+    bucket_id: NonEmptyString
+    market: Market
+    currency: Currency
+    cash_base: DecimalString
+    position_value_base: DecimalString
+    valuation_rounding: DecimalString
+    value_base: DecimalString
+    exact_value_base: DecimalString
+    rounding_residual: DecimalString
+    fx: AnalyticsFxReference
+    provenance: AnalyticsProvenance
+
+
+class AnalyticsCurrencyExposure(PortfolioModel):
+    """One settlement currency's share of base NAV."""
+
+    currency: Currency
+    cash_base: DecimalString
+    position_value_base: DecimalString
+    valuation_rounding: DecimalString
+    value_base: DecimalString
+    weight: DecimalString
+    bucket_ids: tuple[NonEmptyString, ...]
+    provenance: AnalyticsProvenance
+
+
+class AnalyticsMarketExposure(PortfolioModel):
+    """One canonical market's share of base NAV."""
+
+    market: Market
+    cash_base: DecimalString
+    position_value_base: DecimalString
+    valuation_rounding: DecimalString
+    value_base: DecimalString
+    weight: DecimalString
+    bucket_ids: tuple[NonEmptyString, ...]
+    provenance: AnalyticsProvenance
+
+
+class AnalyticsPositionWeight(PortfolioModel):
+    """One position's base value and its share of NAV."""
+
+    bucket_id: NonEmptyString
+    symbol: NonEmptyString
+    value_base: DecimalString
+    weight: DecimalString
+
+
+class AnalyticsConcentration(PortfolioModel):
+    """Top-1/top-5/HHI over position value divided by base NAV."""
+
+    position_count: int = Field(strict=True, ge=0)
+    top_1: DecimalString
+    top_5: DecimalString
+    hhi: DecimalString
+    position_weights: tuple[AnalyticsPositionWeight, ...]
+    provenance: AnalyticsProvenance
+
+
+class AnalyticsSectorExposure(PortfolioModel):
+    """Caller-declared sector value, including the explicit unclassified bucket."""
+
+    sector: NonEmptyString
+    value_base: DecimalString
+    weight_of_positions: DecimalString
+    bucket_ids: tuple[NonEmptyString, ...]
+    symbols: tuple[NonEmptyString, ...]
+    provenance: AnalyticsProvenance
+
+
+class AnalyticsNavBridge(PortfolioModel):
+    """Cash plus marked positions plus explicit valuation rounding equals NAV."""
+
+    cash_base: DecimalString
+    position_value_base: DecimalString
+    valuation_rounding: DecimalString
+    nav_base: DecimalString
+    exact_nav_base: DecimalString
+    rounding_residual: DecimalString
+    conversion_rounding_base: DecimalString
+
+
+class PortfolioAnalytics(PortfolioModel):
+    """Optional exact post-valuation evidence attached to a portfolio step."""
+
+    base_currency: Currency
+    valuation_at: WireDatetime
+    nav_base: DecimalString
+    cash_base: DecimalString
+    position_value_base: DecimalString
+    valuation_rounding: DecimalString
+    exact_nav_base: DecimalString
+    rounding_residual: DecimalString
+    nav_bridge: AnalyticsNavBridge
+    cash_rows: tuple[AnalyticsCashRow, ...]
+    position_rows: tuple[AnalyticsPositionRow, ...]
+    conversion_rows: tuple[AnalyticsConversionRow, ...]
+    bucket_exposures: tuple[AnalyticsBucketExposure, ...]
+    currency_exposures: tuple[AnalyticsCurrencyExposure, ...]
+    market_exposures: tuple[AnalyticsMarketExposure, ...]
+    concentration: AnalyticsConcentration
+    sector_exposures: tuple[AnalyticsSectorExposure, ...]
+    provenance: AnalyticsProvenance
+    warnings: tuple[str, ...] = ()
+    unclassified_sector: Literal["unclassified"] = "unclassified"
+
+
 class PortfolioResult(PortfolioModel):
     status: Literal["success"] = "success"
     tool: Literal["paper_trade_step"] = "paper_trade_step"
@@ -281,6 +466,7 @@ class PortfolioResult(PortfolioModel):
     errors: tuple[PortfolioIssue, ...]
     complete: bool
     hashes: PortfolioHashes
+    analytics: PortfolioAnalytics | None = None
 
 
 PortfolioDocument: TypeAlias = PortfolioResult | PortfolioErrorResult
