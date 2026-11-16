@@ -21,6 +21,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Memory search uses trigger-safe updates and repairs legacy FTS indexes once
+  on upgrade, preventing stale terms from matching unrelated memories (#2234).
+- Anthropic temperature recovery recognizes the reported field-validation
+  error without treating unrelated extra-input errors as temperature refusals
+  (#2218, #2221); streams are never replayed after emitting output.
+- Signal pairing approvals work for phone/UUID identities without publishing
+  empty denied messages or bypassing disabled-DM and group policies (#2233).
+- Napcat preserves accompanying text when image-size metadata is malformed or
+  overflows, while continuing to enforce the actual download byte limit
+  (#2227, #2230). Mixed-success PDF OCR reports degraded quality (#2228, #2231).
+- AKShare history loaders accept current and legacy A-share, US, HK and FX
+  endpoint names, including the unadjusted A-share companion. Upstream access
+  failures remain visible in public-loader health checks.
+
 - Grounding reads explicit currency and magnitude suffixes in numeric tool
   fields such as `revenue_usd_bn`, preserving valid currency-marked claims
   while checking the referenced field in base units.
