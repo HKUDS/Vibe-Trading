@@ -524,7 +524,12 @@ def test_loader_defaults_to_v11_and_rejects_an_unknown_version() -> None:
 
 def test_tool_parameters_expose_the_four_optional_fields() -> None:
     parameters = PaperTradeStepTool.parameters
-    properties = parameters["properties"]
+    legacy = next(
+        branch
+        for branch in parameters["oneOf"]
+        if branch["properties"]["mode"]["const"] == "single"
+    )
+    properties = legacy["properties"]
     assert properties["interval"]["enum"] == ["1d", "5m"]
     assert properties["interval"]["default"] == "1d"
     assert properties["session"]["enum"] == ["auto", "cn_a"]
@@ -537,7 +542,7 @@ def test_tool_parameters_expose_the_four_optional_fields() -> None:
     assert properties["order_volume_ratio"]["default"] == 1.0
     assert properties["order_volume_ratio"]["exclusiveMinimum"] == 0
     assert properties["order_volume_ratio"]["maximum"] == 1
-    assert parameters["required"] == [
+    assert legacy["required"] == [
         "account_id",
         "market",
         "account_state",

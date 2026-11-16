@@ -43,7 +43,7 @@ from .limits_cn_a import ClickHouseLimitsClient
 from .portfolio import run_portfolio_step
 from .portfolio.models import PortfolioErrorResult, PortfolioIssue
 from .portfolio.orchestrator import OrchestrationError
-from .portfolio.schema import PortfolioRequestError
+from .portfolio.schema import PortfolioRequestError, load_portfolio_contract_schema
 from .portfolio.sessions import PortfolioSessionError
 from .schema import (
     DateRange,
@@ -94,6 +94,164 @@ _PORTFOLIO_ONLY_FIELDS = (
     "benchmark",
     "sectors",
 )
+
+
+#: The legacy single-market request keeps this exact required list.  The
+#: portfolio branch below must never inherit it: its own envelope carries the
+#: pt-v2.0 required fields instead (GAP-8).
+_LEGACY_REQUIRED = (
+    "account_id",
+    "market",
+    "account_state",
+    "from_date",
+    "to_date",
+)
+
+#: Legacy single-market properties, published unchanged since pt-v1.1 except
+#: for the optional explicit ``mode=single`` discriminator added by the oneOf.
+_LEGACY_PROPERTIES: dict[str, Any] = {
+    "account_id": {
+        "type": "string",
+        "description": "Account identifier, echoed verbatim (R4).",
+    },
+    "market": {
+        "type": "string",
+        "enum": ["cn_a", "hk", "us"],
+        "description": "Market whose frozen rules govern matching.",
+    },
+    "account_state": {
+        "type": "object",
+        "description": (
+            "RM-injected ledger snapshot {cash, positions:[{symbol, qty, "
+            "avg_cost}]}. Hashed raw for received_state_hash (AM-4-1)."
+        ),
+        "properties": {
+            "cash": {"type": "number"},
+            "positions": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["cash"],
+    },
+    "from_date": {
+        "type": "string",
+        "description": "Inclusive range start YYYY-MM-DD (orders mode: == to_date, AM-3).",
+    },
+    "to_date": {
+        "type": "string",
+        "description": "Inclusive range end YYYY-MM-DD (the target trading day).",
+    },
+    "orders": {
+        "type": "array",
+        "description": (
+            "Orders mode: array of {symbol, side, qty, limit?}. XOR with "
+            "strategy_path; an empty array is the pure-valuation path."
+        ),
+        "items": {"type": "object"},
+    },
+    "strategy_path": {
+        "type": "string",
+        "description": (
+            "Strategy mode (Step 7): path to an AST-hardened strategy whose "
+            "per-day orders are matched. XOR with orders."
+        ),
+    },
+    "fee_model": {
+        "type": "object",
+        "description": (
+            "Optional per-key fee overrides merged over the market defaults "
+            "(AM-4-3: RM always injects it explicitly)."
+        ),
+    },
+    "interval": {
+        "type": "string",
+        "enum": ["1d", "5m"],
+        "default": "1d",
+        "description": (
+            "Optional pt-v1.2 bar interval. '1d' (default) keeps the pt-v1.1 "
+            "daily close-price path; '5m' is cn_a-only and matches the whole "
+            "continuous session as one bar (D1)."
+        ),
+    },
+    "session": {
+        "type": "string",
+        "enum": ["auto", "cn_a"],
+        "default": "auto",
+        "description": (
+            "Optional pt-v1.2 session selector. 'auto' resolves to cn_a for "
+            "market=cn_a and is inert for hk/us; 'cn_a' requires market=cn_a (D5)."
+        ),
+    },
+    "path_model": {
+        "type": "string",
+        "enum": ["bar_median", "bar_close"],
+        "default": "bar_median",
+        "description": (
+            "Optional pt-v1.2 reference-price model for interval='5m': "
+            "median(open, high, low, close) or the bar close (D1). Ignored for '1d'."
+        ),
+    },
+    "fill_model": {
+        "type": "string",
+        "enum": ["all_or_none", "volume_share"],
+        "default": "all_or_none",
+        "description": (
+            "Optional fill model: 'all_or_none' (the default) fills every "
+            "order whole or not at all. 'volume_share' opts into pt-v1.3 "
+            "per-order partial fills capped by each order's own share of "
+            "the matched volume; it requires interval='5m' and market='cn_a'."
+        ),
+    },
+    "order_volume_ratio": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 1,
+        "default": 1.0,
+        "description": (
+            "Optional pt-v1.3 per-order share of available volume, 0 < r <= 1. "
+            "Accepted only together with fill_model='volume_share' (a ratio "
+            "without it is INVALID_REQUEST); omitted or null means 1.0, which "
+            "does not reduce fills. Each order is capped independently."
+        ),
+    },
+}
+
+
+def _published_parameters() -> dict[str, Any]:
+    """Build the self-contained discriminated Agent schema for one step.
+
+    The legacy branch is the pt-v1.1/v1.2/v1.3 single-market envelope with the
+    optional ``mode=single`` discriminator.  The portfolio branch is the
+    packaged pt-v2.0 request schema inlined from the single contract source;
+    its ``$defs`` are hoisted to this document's root so every local
+    ``#/$defs/...`` reference resolves without an external file reference.
+    """
+    portfolio_request = load_portfolio_contract_schema("request")
+    definitions = portfolio_request.pop("$defs", {})
+    portfolio_request.pop("$id", None)
+    portfolio_request.pop("$schema", None)
+
+    legacy_request = {
+        "title": "paper_trade_step legacy single-market request",
+        "type": "object",
+        "properties": {
+            **_LEGACY_PROPERTIES,
+            "mode": {
+                "type": "string",
+                "const": "single",
+                "description": (
+                    "Optional explicit legacy single-market discriminator; "
+                    "omission keeps the legacy default. Portfolio mode selects "
+                    "the other oneOf branch."
+                ),
+            },
+        },
+        "required": list(_LEGACY_REQUIRED),
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "oneOf": [legacy_request, portfolio_request],
+        "$defs": definitions,
+    }
 
 
 class PaperTradeDocument(str):
@@ -777,114 +935,7 @@ class PaperTradeStepTool(BaseTool):
 
     name = "paper_trade_step"
     description = _DESCRIPTION
-    parameters = {
-        "type": "object",
-        "properties": {
-            "account_id": {
-                "type": "string",
-                "description": "Account identifier, echoed verbatim (R4).",
-            },
-            "market": {
-                "type": "string",
-                "enum": ["cn_a", "hk", "us"],
-                "description": "Market whose frozen rules govern matching.",
-            },
-            "account_state": {
-                "type": "object",
-                "description": (
-                    "RM-injected ledger snapshot {cash, positions:[{symbol, qty, "
-                    "avg_cost}]}. Hashed raw for received_state_hash (AM-4-1)."
-                ),
-                "properties": {
-                    "cash": {"type": "number"},
-                    "positions": {"type": "array", "items": {"type": "object"}},
-                },
-                "required": ["cash"],
-            },
-            "from_date": {
-                "type": "string",
-                "description": "Inclusive range start YYYY-MM-DD (orders mode: == to_date, AM-3).",
-            },
-            "to_date": {
-                "type": "string",
-                "description": "Inclusive range end YYYY-MM-DD (the target trading day).",
-            },
-            "orders": {
-                "type": "array",
-                "description": (
-                    "Orders mode: array of {symbol, side, qty, limit?}. XOR with "
-                    "strategy_path; an empty array is the pure-valuation path."
-                ),
-                "items": {"type": "object"},
-            },
-            "strategy_path": {
-                "type": "string",
-                "description": (
-                    "Strategy mode (Step 7): path to an AST-hardened strategy whose "
-                    "per-day orders are matched. XOR with orders."
-                ),
-            },
-            "fee_model": {
-                "type": "object",
-                "description": (
-                    "Optional per-key fee overrides merged over the market defaults "
-                    "(AM-4-3: RM always injects it explicitly)."
-                ),
-            },
-            "interval": {
-                "type": "string",
-                "enum": ["1d", "5m"],
-                "default": "1d",
-                "description": (
-                    "Optional pt-v1.2 bar interval. '1d' (default) keeps the pt-v1.1 "
-                    "daily close-price path; '5m' is cn_a-only and matches the whole "
-                    "continuous session as one bar (D1)."
-                ),
-            },
-            "session": {
-                "type": "string",
-                "enum": ["auto", "cn_a"],
-                "default": "auto",
-                "description": (
-                    "Optional pt-v1.2 session selector. 'auto' resolves to cn_a for "
-                    "market=cn_a and is inert for hk/us; 'cn_a' requires market=cn_a (D5)."
-                ),
-            },
-            "path_model": {
-                "type": "string",
-                "enum": ["bar_median", "bar_close"],
-                "default": "bar_median",
-                "description": (
-                    "Optional pt-v1.2 reference-price model for interval='5m': "
-                    "median(open, high, low, close) or the bar close (D1). Ignored for '1d'."
-                ),
-            },
-            "fill_model": {
-                "type": "string",
-                "enum": ["all_or_none", "volume_share"],
-                "default": "all_or_none",
-                "description": (
-                    "Optional fill model: 'all_or_none' (the default) fills every "
-                    "order whole or not at all. 'volume_share' opts into pt-v1.3 "
-                    "per-order partial fills capped by each order's own share of "
-                    "the matched volume; it requires interval='5m' and market='cn_a'."
-                ),
-            },
-            "order_volume_ratio": {
-                "type": "number",
-                "exclusiveMinimum": 0,
-                "maximum": 1,
-                "default": 1.0,
-                "description": (
-                    "Optional pt-v1.3 per-order share of available volume, 0 < r <= 1. "
-                    "Accepted only together with fill_model='volume_share' (a ratio "
-                    "without it is INVALID_REQUEST); omitted or null means 1.0, which "
-                    "does not reduce fills. Each order is capped independently."
-                ),
-            },
-        },
-        "required": ["account_id", "market", "account_state", "from_date", "to_date"],
-    }
+    parameters = _published_parameters()
     repeatable = True
     is_readonly = True
     # Not `deterministic`: the result depends on served market data, which
