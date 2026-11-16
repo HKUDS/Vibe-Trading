@@ -436,6 +436,227 @@ class AnalyticsBenchmark(PortfolioModel):
     exact_deviation: DecimalString
 
 
+class AnalyticsAttributionNav(PortfolioModel):
+    """Opening and ending exact NAV around one completed trading day."""
+
+    start_at: WireDatetime
+    end_at: WireDatetime
+    start_nav_base: DecimalString
+    start_exact_nav_base: DecimalString
+    start_rounding_residual: DecimalString
+    end_nav_base: DecimalString
+    end_exact_nav_base: DecimalString
+    end_rounding_residual: DecimalString
+    nav_change_reported: DecimalString
+    nav_change_exact: DecimalString
+
+
+class AnalyticsSymbolContribution(PortfolioModel):
+    """One instrument's market, currency and trade-cash contribution."""
+
+    bucket_id: NonEmptyString
+    market: Market
+    currency: Currency
+    symbol: NonEmptyString
+    opening_qty: int = Field(strict=True, ge=0)
+    ending_qty: int = Field(strict=True, ge=0)
+    traded_qty: int = Field(strict=True)
+    opening_price: DecimalString
+    ending_price: DecimalString
+    opening_mark: AnalyticsMarkReference
+    ending_mark: AnalyticsMarkReference
+    opening_fx: AnalyticsFxReference
+    ending_fx: AnalyticsFxReference
+    opening_local_value: DecimalString
+    ending_local_value: DecimalString
+    opening_value_base: DecimalString
+    ending_value_base: DecimalString
+    trade_cash_base: DecimalString
+    market_contribution_base: DecimalString
+    currency_contribution_base: DecimalString
+    total_contribution_base: DecimalString
+    outcome: Literal["unchanged", "opened", "increased", "reduced", "closed"]
+
+
+class AnalyticsCashFxEffect(PortfolioModel):
+    """One bucket's opening-cash FX revaluation, explicitly valued at both ends."""
+
+    bucket_id: NonEmptyString
+    market: Market
+    currency: Currency
+    opening_cash: DecimalString
+    ending_cash: DecimalString
+    opening_fx: AnalyticsFxReference
+    ending_fx: AnalyticsFxReference
+    cash_fx_effect_base: DecimalString
+
+
+class AnalyticsConversionEffect(PortfolioModel):
+    """One settled conversion's source, target and conversion-rounding effects."""
+
+    rate_id: NonEmptyString
+    from_bucket_id: NonEmptyString
+    to_bucket_id: NonEmptyString
+    from_currency: Currency
+    to_currency: Currency
+    source_amount: DecimalString
+    rate: DecimalString
+    exact_converted: DecimalString
+    converted_amount: DecimalString
+    rounding_residual_local: DecimalString
+    source_fx: AnalyticsFxReference
+    target_fx: AnalyticsFxReference
+    source_effect_base: DecimalString
+    target_effect_base: DecimalString
+    conversion_effect_base: DecimalString
+    rounding_loss_base: DecimalString
+
+
+class AnalyticsFeeEffect(PortfolioModel):
+    """One fill's local fee translated to a signed base-currency effect."""
+
+    plan_order_id: NonEmptyString
+    bucket_id: NonEmptyString
+    symbol: NonEmptyString
+    side: Literal["buy", "sell"]
+    qty: int = Field(strict=True, gt=0)
+    execution_price: DecimalString
+    fee_local: DecimalString
+    fx: AnalyticsFxReference
+    fee_effect_base: DecimalString
+
+
+class AnalyticsExecutionRounding(PortfolioModel):
+    """One fill's exact notional versus its two-decimal execution cash notional."""
+
+    plan_order_id: NonEmptyString
+    bucket_id: NonEmptyString
+    symbol: NonEmptyString
+    side: Literal["buy", "sell"]
+    qty: int = Field(strict=True, gt=0)
+    execution_price: DecimalString
+    exact_notional_local: DecimalString
+    notional_local: DecimalString
+    rounding_local: DecimalString
+    fx: AnalyticsFxReference
+    rounding_effect_base: DecimalString
+
+
+class AnalyticsMarketContribution(PortfolioModel):
+    """One canonical market's complete one-day contribution view."""
+
+    market: Market
+    position_contribution_base: DecimalString
+    cash_fx_effect_base: DecimalString
+    conversion_effect_base: DecimalString
+    fee_effect_base: DecimalString
+    total_contribution_base: DecimalString
+    bucket_ids: tuple[NonEmptyString, ...]
+
+
+class AnalyticsCurrencyContribution(PortfolioModel):
+    """One settlement currency's complete one-day contribution view."""
+
+    currency: Currency
+    position_contribution_base: DecimalString
+    cash_fx_effect_base: DecimalString
+    conversion_effect_base: DecimalString
+    fee_effect_base: DecimalString
+    total_contribution_base: DecimalString
+    bucket_ids: tuple[NonEmptyString, ...]
+
+
+class AnalyticsWeightRow(PortfolioModel):
+    """One instrument's target, planned and realized weight tie-out."""
+
+    bucket_id: NonEmptyString
+    market: Market
+    currency: Currency
+    symbol: NonEmptyString
+    target_weight: DecimalString | None = None
+    planned_weight: DecimalString
+    planned_at_end_weight: DecimalString
+    realized_weight: DecimalString
+    target_gap: DecimalString | None = None
+    lot_gap: DecimalString
+    price_gap: DecimalString
+    reject_gap: DecimalString
+    planned_value_base: DecimalString
+    planned_at_end_value_base: DecimalString
+    realized_value_base: DecimalString
+    planned_qty: int = Field(strict=True, ge=0)
+    realized_qty: int = Field(strict=True, ge=0)
+    qty_gap: int = Field(strict=True)
+    outcome: Literal["filled", "rejected", "canceled", "not_ordered"]
+
+
+class AnalyticsWeightReconciliation(PortfolioModel):
+    """Target/planned/realized weights plus their declared rounding residual."""
+
+    planning_nav_base: DecimalString
+    planning_exact_nav_base: DecimalString
+    planning_rounding_residual: DecimalString
+    target_weight_total: DecimalString | None = None
+    target_cash_weight: DecimalString | None = None
+    planned_weight_total: DecimalString
+    planned_cash_weight: DecimalString
+    realized_weight_total: DecimalString
+    realized_cash_weight: DecimalString
+    valuation_rounding_weight: DecimalString
+    lot_gap_total: DecimalString
+    price_gap_total: DecimalString
+    reject_gap_total: DecimalString
+    cash_gap: DecimalString
+    weight_rounding_residual: DecimalString
+    weight_rounding_tolerance: DecimalString
+    reconciled: bool
+    weight_basis: Literal["planning_marks"] = "planning_marks"
+    realized_weight_status: Literal["end_ledger_valuation"] = "end_ledger_valuation"
+    rows: tuple[AnalyticsWeightRow, ...]
+
+
+class AnalyticsReconciliationCheck(PortfolioModel):
+    """One named attribution check and its deterministic verdict."""
+
+    name: NonEmptyString
+    passed: bool
+    detail: str = ""
+
+
+class AnalyticsAttributionReconciliation(PortfolioModel):
+    """Explicit reconciliation verdict; a falsy result is never a success."""
+
+    reconciled: bool
+    checks: tuple[AnalyticsReconciliationCheck, ...]
+    issues: tuple[PortfolioIssue, ...]
+    not_verified: tuple[str, ...]
+
+
+class AnalyticsAttribution(PortfolioModel):
+    """Optional exact one-day contribution, FX and weight-gap evidence."""
+
+    scope: Literal["one_day"] = "one_day"
+    formula_version: Literal["pt-attribution-v1"] = "pt-attribution-v1"
+    base_currency: Currency
+    nav: AnalyticsAttributionNav
+    symbol_contributions: tuple[AnalyticsSymbolContribution, ...]
+    cash_fx_effects: tuple[AnalyticsCashFxEffect, ...]
+    conversion_effects: tuple[AnalyticsConversionEffect, ...]
+    fee_effects: tuple[AnalyticsFeeEffect, ...]
+    execution_rounding: tuple[AnalyticsExecutionRounding, ...]
+    market_contributions: tuple[AnalyticsMarketContribution, ...]
+    currency_contributions: tuple[AnalyticsCurrencyContribution, ...]
+    position_contribution_base: DecimalString
+    cash_fx_effect_base: DecimalString
+    conversion_effect_base: DecimalString
+    fee_effect_base: DecimalString
+    rounding_residual: DecimalString
+    expected_rounding_residual: DecimalString
+    weights: AnalyticsWeightReconciliation
+    reconciliation: AnalyticsAttributionReconciliation
+    provenance: AnalyticsProvenance
+
+
 class AnalyticsNavBridge(PortfolioModel):
     """Cash plus marked positions plus explicit valuation rounding equals NAV."""
 
@@ -446,6 +667,18 @@ class AnalyticsNavBridge(PortfolioModel):
     exact_nav_base: DecimalString
     rounding_residual: DecimalString
     conversion_rounding_base: DecimalString
+
+
+def _drop_none(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _drop_none(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    if isinstance(value, list):
+        return [_drop_none(item) for item in value]
+    return value
 
 
 class PortfolioAnalytics(PortfolioModel):
@@ -470,6 +703,7 @@ class PortfolioAnalytics(PortfolioModel):
     sector_exposures: tuple[AnalyticsSectorExposure, ...]
     provenance: AnalyticsProvenance
     benchmark: AnalyticsBenchmark | None = None
+    attribution: AnalyticsAttribution | None = None
     warnings: tuple[str, ...] = ()
     unclassified_sector: Literal["unclassified"] = "unclassified"
 
@@ -511,7 +745,15 @@ class PortfolioResult(PortfolioModel):
         omit_none = analytics.benchmark is None and "benchmark" not in (
             analytics.model_fields_set
         )
-        return analytics.model_dump(mode="json", by_alias=True, exclude_none=omit_none)
+        dumped = analytics.model_dump(
+            mode="json",
+            by_alias=True,
+            exclude_none=omit_none,
+        )
+        attribution = dumped.pop("attribution", None)
+        if attribution is not None or "attribution" in analytics.model_fields_set:
+            dumped["attribution"] = _drop_none(attribution)
+        return dumped
 
 
 PortfolioDocument: TypeAlias = PortfolioResult | PortfolioErrorResult
