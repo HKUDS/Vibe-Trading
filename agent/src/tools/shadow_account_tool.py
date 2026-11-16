@@ -306,7 +306,7 @@ class RenderShadowReportTool(BaseTool):
                         late_exit_pnl=0.0, overtrading_pnl=0.0, counterfactual_trades=(),
                     ),
                     shadow_total_pnl=None,
-                    real_total_pnl=0.0,
+                    real_total_pnl=None,
                     delta_pnl=None,
                 )
 
