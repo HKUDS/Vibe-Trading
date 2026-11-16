@@ -57,7 +57,10 @@ committed. The Web client reloads it automatically on a request error.
 
 The pure `paper_trade_step` agent/MCP tool and `vibe-trading paper step payload.json`
 remain stateless and accept historical dates for reproducible research. Their
-orders mode requires a single date. Saved accounts enforce forward-only dates.
+single-market orders mode requires a single date. Saved accounts enforce
+forward-only dates. The same stateless surfaces also accept the pt-v2.0
+portfolio payload described under [Cross-market portfolio
+steps](#cross-market-portfolio-steps-pt-v20).
 
 ## Strategy contract
 
@@ -195,6 +198,253 @@ a limit order waits while its side is blocked by a price limit, while a blocked
 market order is canceled immediately. Zero-volume bars cannot fill. Corporate
 actions remain fail-closed.
 
+## Cross-market portfolio steps (pt-v2.0)
+
+`paper_trade_step` keeps its name and registration count. The raw `mode` selects
+one of two request contracts:
+
+- **Single-market (default):** omit `mode`, or send `mode: "single"`. The
+  pt-v1.1/v1.2/v1.3 contract above is unchanged.
+- **Portfolio:** send `mode: "portfolio"` and `schema_version: "pt-v2.0"`.
+  This branch has its own envelope and never inherits `market`,
+  `account_state`, `from_date`, `to_date`, `strategy_path`, `volume_share`,
+  `order_volume_ratio`, `path_model`, `session` or `fee_model`.
+
+Both branches are stateless research simulations; the portfolio branch is not
+available to saved accounts. The same payload works through the agent tool, the
+MCP tool, `POST /api/paper-trade/step` and `vibe-trading paper step`.
+
+Portfolio mode is one completed **daily** step for one `trade_date`.
+`interval` is fixed to `"1d"` and `fill_model` to `"all_or_none"`; five-minute
+bars, `volume_share`, strategy files, margin, shorting and broker orders are not
+part of this mode. The request uses canonical fixed-point decimal strings (no
+floats, exponents, `NaN` or `Infinity`) and integer whole-share quantities.
+
+### Request contract
+
+Required: `tool`, `schema_version`, `mode`, `account_id`, `base_currency`,
+`trade_date`, `planning_at`, `valuation_at`, `portfolio_state`, `sessions` and
+exactly one of `orders` / `target_weights`.
+
+| Field | Meaning |
+| --- | --- |
+| `base_currency` | `CNY`, `HKD` or `USD`. Every bucket's NAV is translated to it through a declared direct FX pair. |
+| `portfolio_state.buckets` | Isolated accounts. `bucket_id` is the caller's stable identifier and labels every order, target, fill, rejection, cancellation and `bucket_results` row. |
+| `bucket.market` / `bucket.currency` | `cn_a`/`CNY`, `hk`/`HKD`, `us`/`USD`; a bucket, its positions, orders, targets and fee model must use that canonical currency. Non-HKD HK counters are rejected. |
+| `sessions` | Exactly one caller-declared `{market, status, source, as_of}` for each bucket market. `status` is `open` or `closed`; the engine does not infer a holiday or override the declaration. |
+| `fx_snapshots` | Direct pairs only: `1 unit of from == rate units of to`, identified by `rate_id`. The engine never inverts, triangulates, refreshes or caches a pair. |
+| `fx_conversions` | Optional caller-declared pre-fill conversions. Each debits the named source bucket's **opening cash** and credits the target; a fill, another bucket or an earlier conversion's proceeds cannot fund it. |
+| `orders` | Explicit orders `{order_id, bucket_id, symbol, currency, side, qty, limit?}`. The caller `order_id` is preserved as the public `plan_order_id`. |
+| `target_weights` | Long-only `{bucket_id, symbol, currency, weight}` with a total at most `1`. Orders are sized from dated prior marks and whole-lot floored; residual cash stays in its own bucket. |
+| `rebalance_band` | Target-weights only, default `"0"`. `0` rebalances every line; a line whose absolute current/target gap is within the band is skipped. |
+
+`planning_at` must precede `valuation_at`; both are offset-aware ISO-8601
+timestamps. An FX snapshot must not be later than the instant that uses it
+(`planning_at` for conversions and target sizing, `valuation_at` for the final
+valuation). A request with both `orders` and `target_weights`, or with neither,
+is `INVALID_REQUEST`.
+
+### Sessions, marks and valuation
+
+For an **open** bucket the engine requires target-day bars and runs the daily
+matcher. For a **closed** bucket it runs no matcher: held positions are valued
+from dated prior marks strictly before `trade_date`, and the success document
+includes a `"<bucket_id>: market closed; valued at prior marks (no matcher
+run)"` warning. An order or a nonzero target on a closed bucket is rejected
+`required_bucket_closed`. For `cn_a`, the declared status must agree with the
+snapshot trading calendar.
+
+Every bucket's planning NAV uses marks strictly before `trade_date`; equity
+targets are sized from those marks. Fills are booked at the target-day close,
+so realized weights after a fill can differ from the target or planned weight;
+the document does not claim exact post-trade weights. Open buckets are valued at
+their target-day closes and closed buckets at their dated prior marks. A
+bucket's `nav_base` is its reported local NAV translated through its direct
+`fx_rate_id`; the exact bridge retains its rounding residual.
+
+### Example: explicit orders, conversion and a closed market
+
+<!-- pt-v2.0-request: explicit-orders -->
+```json
+{
+  "tool": "paper_trade_step",
+  "schema_version": "pt-v2.0",
+  "mode": "portfolio",
+  "account_id": "portfolio-cross-market-01",
+  "base_currency": "USD",
+  "trade_date": "2026-11-13",
+  "planning_at": "2026-11-13T12:00:00+00:00",
+  "valuation_at": "2026-11-13T21:00:00+00:00",
+  "interval": "1d",
+  "fill_model": "all_or_none",
+  "portfolio_state": {
+    "buckets": [
+      {
+        "bucket_id": "cn",
+        "market": "cn_a",
+        "currency": "CNY",
+        "cash": "100000.00",
+        "positions": [
+          {"symbol": "600519.SH", "qty": 100, "avg_cost": "1400.00", "currency": "CNY"}
+        ]
+      },
+      {
+        "bucket_id": "hk",
+        "market": "hk",
+        "currency": "HKD",
+        "cash": "50000.00",
+        "positions": [
+          {"symbol": "00700.HK", "qty": 100, "avg_cost": "300.00", "currency": "HKD"}
+        ],
+        "fee_model": {
+          "currency": "HKD",
+          "parameters": {"commission_rate": "0.0003"}
+        }
+      },
+      {
+        "bucket_id": "us",
+        "market": "us",
+        "currency": "USD",
+        "cash": "25000.00",
+        "positions": []
+      }
+    ]
+  },
+  "sessions": [
+    {"market": "cn_a", "status": "open", "source": "caller-calendar", "as_of": "2026-11-13T01:00:00+00:00"},
+    {"market": "hk", "status": "closed", "source": "caller-calendar", "as_of": "2026-11-13T01:00:00+00:00"},
+    {"market": "us", "status": "open", "source": "caller-calendar", "as_of": "2026-11-13T01:00:00+00:00"}
+  ],
+  "fx_snapshots": [
+    {"rate_id": "cny-usd-fix", "from": "CNY", "to": "USD", "rate": "0.14", "as_of": "2026-11-13T11:00:00+00:00", "source": "caller-fix"},
+    {"rate_id": "hkd-usd-fix", "from": "HKD", "to": "USD", "rate": "0.128", "as_of": "2026-11-13T11:00:00+00:00", "source": "caller-fix"}
+  ],
+  "fx_conversions": [
+    {"rate_id": "cny-usd-fix", "from_bucket_id": "cn", "to_bucket_id": "us", "amount": "1000.00"}
+  ],
+  "orders": [
+    {"order_id": "cn-buy-1", "bucket_id": "cn", "symbol": "600519.SH", "currency": "CNY", "side": "buy", "qty": 100},
+    {"order_id": "us-buy-1", "bucket_id": "us", "symbol": "AAPL.US", "currency": "USD", "side": "buy", "qty": 10}
+  ]
+}
+```
+
+In this example `cn` and `us` are open and receive orders. `hk` is declared
+closed, so it receives no order and is carried at its prior close. The declared
+conversion moves CNY opening cash to the USD bucket before planning; it cannot
+be funded by either fill.
+
+### Example: target weights
+
+<!-- pt-v2.0-request: target-weights -->
+```json
+{
+  "tool": "paper_trade_step",
+  "schema_version": "pt-v2.0",
+  "mode": "portfolio",
+  "account_id": "portfolio-target-weights-01",
+  "base_currency": "USD",
+  "trade_date": "2026-11-13",
+  "planning_at": "2026-11-13T12:00:00+00:00",
+  "valuation_at": "2026-11-13T21:00:00+00:00",
+  "interval": "1d",
+  "fill_model": "all_or_none",
+  "portfolio_state": {
+    "buckets": [
+      {
+        "bucket_id": "cn",
+        "market": "cn_a",
+        "currency": "CNY",
+        "cash": "100000.00",
+        "positions": [
+          {"symbol": "600519.SH", "qty": 100, "avg_cost": "1400.00", "currency": "CNY"}
+        ]
+      },
+      {
+        "bucket_id": "us",
+        "market": "us",
+        "currency": "USD",
+        "cash": "25000.00",
+        "positions": []
+      }
+    ]
+  },
+  "sessions": [
+    {"market": "cn_a", "status": "open", "source": "caller-calendar", "as_of": "2026-11-13T01:00:00+00:00"},
+    {"market": "us", "status": "open", "source": "caller-calendar", "as_of": "2026-11-13T01:00:00+00:00"}
+  ],
+  "fx_snapshots": [
+    {"rate_id": "cny-usd-fix", "from": "CNY", "to": "USD", "rate": "0.14", "as_of": "2026-11-13T11:00:00+00:00", "source": "caller-fix"}
+  ],
+  "target_weights": [
+    {"bucket_id": "cn", "symbol": "600519.SH", "currency": "CNY", "weight": "0.00"},
+    {"bucket_id": "us", "symbol": "AAPL.US", "currency": "USD", "weight": "0.20"}
+  ],
+  "rebalance_band": "0.01"
+}
+```
+
+Generated target-weight order IDs in subsequent fill/reject/cancel rows are
+deterministic: `pt2-YYYYMMDD-<bucket_id>-<side>-<symbol>`; explicit order
+outcomes keep the caller's `order_id`. `plan.kind` is `"orders"` or
+`"target_weights"`.
+
+### Result and errors
+
+A success document contains `status`, `tool`, `schema_version`, `mode`,
+`account_id`, `base_currency`, `trade_date`, `planning_at`, `valuation_at`,
+`opening_portfolio`, `post_conversion_portfolio`, `end_portfolio`, `sessions`,
+`conversions`, `plan`, `bucket_results`, `fills`, `rejected_orders`,
+`canceled_orders`, `warnings`, `errors`, `complete` and `hashes`. Every planned
+order has exactly one terminal fill/reject/cancel row linked by `bucket_id` and
+`plan_order_id`; any rejection or cancellation sets `complete: false`. `hashes`
+contains exactly `plan_hash`, `planning_data_hash`,
+`execution_data_fingerprint` and `document_hash`, each 64 lowercase hex.
+
+The in-process `run_portfolio_step` returns a `PortfolioStepResult`: its public
+`document` is the result above, while its internal `order_plan` is only the
+linkage source used to verify that every outcome matches a plan line. No
+`order_plan` field is part of the public document.
+
+An error is an in-band JSON envelope, not a transport error and never a partial
+ledger or fill list:
+
+```json
+{"status":"error","tool":"paper_trade_step","schema_version":"pt-v2.0","mode":"portfolio","account_id":"portfolio-cross-market-01","code":"INVALID_REQUEST","error":{"reason":"required_bucket_closed","path":"sessions.hk.status","detail":"...; input_sha256=<64 lowercase hex>","bucket_id":"hk"}}
+```
+
+`code` is `INVALID_REQUEST` or `PAPER_DATA_NOT_READY`. `error` holds `reason`,
+`path`, `detail` and an optional `bucket_id`. The pt-v2.0 wire serializer
+appends the raw-request digest to `error.detail` as
+`; input_sha256=<64 lowercase hex>` (just the marker when the message is empty);
+it is not a top-level field, and the error envelope has no `hashes`, `fills` or
+`end_portfolio`. A legacy single-market error keeps its existing envelope
+(`received_state_hash` where computable).
+
+### Current portfolio limits
+
+- **One day, one mode.** `1d` + `all_or_none` only; no `5m`, `volume_share`,
+  strategy execution, multi-day period attribution, compounding across dates,
+  margin, shorting or broker support.
+- **No portfolio reconcile yet.** `paper_trade_reconcile` accepts only successful
+  single-market documents (`market`, `effective_fee_model`, `end_state`,
+  `nav_series`). Portfolio bucket conversions, plan IDs and NAV bridges are not
+  audited by that tool; portfolio reconcile is a stacked follow-up, not part of
+  this contract.
+- **No portfolio analytics yet.** `benchmark` and `sectors` are accepted by the
+  schema but do not produce an analytics field or report; there is no Brinson
+  attribution, sector allocation/selection, exposure/concentration or
+  contribution report.
+- **No saved account or UI.** Portfolio mode is stateless. Saved paper accounts,
+  the Web page, persistence and portfolio history remain daily single-market
+  surfaces only.
+- **Caller-supplied data only.** Sessions, prior marks, FX snapshots, opens and
+  closes are declared or loaded through the existing daily data path; the
+  portfolio branch does not infer holidays, fetch live FX, or convert a market
+  currency for you.
+- **HK counters must be HKD.** A non-HKD HK bucket, position, target, order or
+  fee counter is rejected; other markets use their one canonical currency.
+
 ## JoinQuant parity
 
 Reference: the official JoinQuant API guide,
@@ -260,16 +510,22 @@ accounting exact. Under `fill_model="volume_share"`, a sell is rejected
 fee would make cash negative; projected cash exactly zero is allowed. Legacy
 `all_or_none` behavior is unchanged.
 
-## Independent ledger reconciliation
+## Independent ledger reconciliation (single-market)
 
 The `paper_trade_reconcile` agent and MCP tool accepts the initial
-`{cash, positions}` ledger and a successful `paper_trade_step` document. It
-replays the returned fills with Decimal arithmetic, independently checks the
-per-fill fee schedule, cash, position quantities and fee-exclusive average
-costs, cn_a T+1 availability, `end_state`, and each NAV row's cash and
-`nav = cash + position_value` identity. A valid result with discrepancies returns
-`reconciled: false` and field-level issues; malformed input returns a stable
-JSON error envelope.
+`{cash, positions}` ledger and a successful **single-market**
+`paper_trade_step` document. It replays the returned fills with Decimal
+arithmetic, independently checks the per-fill fee schedule, cash, position
+quantities and fee-exclusive average costs, cn_a T+1 availability, `end_state`,
+and each NAV row's cash and `nav = cash + position_value` identity. A valid
+result with discrepancies returns `reconciled: false` and field-level issues;
+malformed input returns a stable JSON error envelope.
+
+The tool does not yet accept pt-v2.0 portfolio documents. A portfolio document
+has `mode: "portfolio"`, bucket ledgers, conversions, plan IDs and a NAV bridge
+instead of `market`/`effective_fee_model`/`end_state`/`nav_series`, so it is
+rejected as malformed input today. Portfolio reconciliation is a stacked
+follow-up and must not be inferred from the single-market audit.
 
 A position fully sold by the replay must be absent from `end_state.positions`.
 A nonzero residual is a quantity mismatch even if the symbol appeared in the
@@ -284,6 +540,10 @@ state and writes nothing.
 
 ## Known limits
 
+- **Portfolio mode is a separate, single-day contract.** It has no portfolio
+  reconcile, analytics/Brinson, multi-day attribution, saved account, UI,
+  persistence, 5m, volume-share, margin/shorting or broker support. Its full
+  limits are listed under [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
 - **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
   for any symbol is inferred closed: the day is recorded as
   `market_closed_inferred` with a warning, no NAV row is produced for it, its
@@ -338,5 +598,6 @@ Matching is all-or-none by default, with simplified fees, price limits, board
 lots and T+1 checks; `fill_model="volume_share"` opts into the per-order partial
 fills described above. HK lot fallback is disclosed. Invalid OHLC prevents
 fills; valuation uses a finite prior close or the disclosed average-cost
-fallback. This is not broker-execution simulation. Settlement, margin, options
-and cross-market phases in #1938 remain follow-up work.
+fallback. This is not broker-execution simulation. Settlement, margin and
+options in #1938 remain follow-up work; cross-market portfolio steps are
+documented above with their own limits.

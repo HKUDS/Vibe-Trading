@@ -8,7 +8,8 @@ selected connector's own local app or OAuth setup.
 
 Surfaces 81 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
-analysis, deterministic paper-trading matching (paper_trade_step), market data, fundamentals & capital-flow & news & discovery
+analysis, deterministic paper-trading matching (paper_trade_step, single-market
+default or pt-v2.0 cross-market portfolio), market data, fundamentals & capital-flow & news & discovery
 (get_fund_flow / get_dragon_tiger / get_northbound_flow / get_southbound_flow /
 get_margin_trading /
 get_block_trades / get_shareholder_count / get_lockup_expiry / get_sector_info /
@@ -1037,11 +1038,13 @@ def paper_trade_step(**kwargs: Any) -> str:
     """Run one paper-trading step for the legacy or portfolio branch.
 
     Registered on the MCP surface by :func:`_register_paper_trade_tool` with
-    ``PaperTradeStepTool.parameters``. The raw ``mode`` selects the branch;
-    valid payloads are forwarded unchanged to ``run_paper_trade_step``, which
-    emits the single in-band JSON document. Matching is handled by a
-    deterministic paper-trading matching engine; never places real orders,
-    and never touches a broker or trading connector.
+    ``PaperTradeStepTool.parameters``. Omitted/``mode='single'`` selects the
+    pt-v1.1-v1.3 single-market contract; ``mode='portfolio'`` with
+    ``schema_version='pt-v2.0'`` selects one cross-market daily step with
+    caller-declared buckets, sessions, direct-pair FX and exactly one of
+    ``orders`` / ``target_weights``. Valid payloads are forwarded unchanged to
+    ``run_paper_trade_step``, which emits the single in-band JSON document.
+    Matching is handled by a deterministic paper-trading matching engine; never places real orders, and never touches a broker or trading connector.
     """
     from src.tools.paper_trade.tool import PaperTradeStepTool, run_paper_trade_step
 
@@ -1052,16 +1055,18 @@ def paper_trade_step(**kwargs: Any) -> str:
 
 @mcp.tool
 def paper_trade_reconcile(account_state: _lenient_dict_any, result: _lenient_dict_any) -> str:
-    """Independently reconcile a paper-trading result without market or broker access.
+    """Independently reconcile a single-market paper-trading result.
 
     Replays the supplied fills from the initial ledger and checks fees, cash,
     positions, cn_a T+1 availability, end_state and NAV arithmetic. The report
     distinguishes verified ledger facts from market-value and hash checks that
-    the result alone cannot establish. Research only; no orders are placed.
+    the result alone cannot establish. Portfolio (pt-v2.0) documents are not
+    accepted yet; portfolio reconciliation is a stacked follow-up. Research
+    only; no orders are placed.
 
     Args:
         account_state: Initial ``{cash, positions}`` ledger supplied to the step.
-        result: Successful ``paper_trade_step`` document to audit.
+        result: Successful single-market ``paper_trade_step`` document to audit.
     """
     registry = _get_registry()
     return registry.execute(

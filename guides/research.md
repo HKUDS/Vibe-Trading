@@ -78,6 +78,18 @@ and inspect fills, rejections and NAV history. Strategy history stops before the
 execution date, and each day receives the ledger after preceding fills. The
 agent/MCP `paper_trade_step` remains a stateless research primitive.
 
+**Cross-market portfolio mode (pt-v2.0).** The same `paper_trade_step` name also
+accepts `mode: "portfolio"` with `schema_version: "pt-v2.0"` through the agent,
+MCP, `POST /api/paper-trade/step` and `vibe-trading paper step`; omitting `mode`
+or sending `mode: "single"` keeps the legacy single-market contract. Portfolio
+mode is one stateless daily step for one `trade_date` (`1d` + `all_or_none`),
+with caller-declared CNY/HKD/USD buckets, exactly one of `orders` /
+`target_weights`, caller-declared open/closed sessions and direct-pair FX
+snapshots; conversions settle against opening cash before planning. Closed
+buckets use dated prior marks and run no matcher. There is no portfolio
+reconcile, Brinson/multi-day attribution, saved account, UI or persistence yet,
+and no 5m, volume-share, margin or shorting support.
+
 **Five-minute A-share simulation (since 0.1.19).** `paper_trade_step` accepts `interval="5m"`. Saved paper accounts still settle daily. Each step covers one
 completed session and matches bar by bar against its 48 continuous five-minute
 bars. The 09:30 label is the opening
