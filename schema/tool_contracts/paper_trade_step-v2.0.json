@@ -297,6 +297,7 @@
           ]
         },
         "bucket_results": { "type": "array", "items": { "$ref": "#/$defs/bucketResult" } },
+        "analytics": { "$ref": "#/$defs/analytics" },
         "fills": { "type": "array", "items": { "$ref": "#/$defs/fill" } },
         "rejected_orders": { "type": "array", "items": { "$ref": "#/$defs/rejectedOrder" } },
         "canceled_orders": { "type": "array", "items": { "$ref": "#/$defs/canceledOrder" } },
@@ -510,6 +511,228 @@
             "planning_data_hash": { "$ref": "#/$defs/hash" },
             "execution_data_fingerprint": { "$ref": "#/$defs/hash" },
             "document_hash": { "$ref": "#/$defs/hash" }
+          }
+        },
+        "analyticsMark": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["price_date", "source", "as_of"],
+          "properties": {
+            "price_date": { "type": "string", "format": "date" },
+            "source": { "type": "string", "minLength": 1 },
+            "as_of": { "type": "string", "format": "date-time" }
+          }
+        },
+        "analyticsFx": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rate_id", "from_currency", "to_currency", "rate", "as_of", "source"],
+          "properties": {
+            "rate_id": { "type": "string", "minLength": 1 },
+            "from_currency": { "$ref": "#/$defs/currency" },
+            "to_currency": { "$ref": "#/$defs/currency" },
+            "rate": { "$ref": "#/$defs/decimalString" },
+            "as_of": { "type": "string", "format": "date-time" },
+            "source": { "type": "string", "minLength": 1 }
+          }
+        },
+        "analyticsProvenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["price_dates", "fx"],
+          "properties": {
+            "price_dates": {
+              "type": "array",
+              "items": { "type": "string", "format": "date" }
+            },
+            "fx": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/analyticsFx" }
+            }
+          }
+        },
+        "analyticsCashRow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bucket_id", "market", "currency", "valuation_date", "amount", "fx", "value_base", "exact_value_base", "rounding_residual"],
+          "properties": {
+            "bucket_id": { "type": "string", "minLength": 1 },
+            "market": { "type": "string", "enum": ["cn_a", "hk", "us"] },
+            "currency": { "$ref": "#/$defs/currency" },
+            "valuation_date": { "type": "string", "format": "date" },
+            "amount": { "$ref": "#/$defs/decimalString" },
+            "fx": { "$ref": "#/$defs/analyticsFx" },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "exact_value_base": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual": { "$ref": "#/$defs/decimalString" }
+          }
+        },
+        "analyticsPositionRow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bucket_id", "market", "currency", "symbol", "qty", "price", "mark", "local_value", "fx", "value_base", "exact_value_base", "rounding_residual", "weight"],
+          "properties": {
+            "bucket_id": { "type": "string", "minLength": 1 },
+            "market": { "type": "string", "enum": ["cn_a", "hk", "us"] },
+            "currency": { "$ref": "#/$defs/currency" },
+            "symbol": { "type": "string", "minLength": 1 },
+            "qty": { "type": "integer", "minimum": 0 },
+            "price": { "$ref": "#/$defs/decimalString" },
+            "mark": { "$ref": "#/$defs/analyticsMark" },
+            "local_value": { "$ref": "#/$defs/decimalString" },
+            "fx": { "$ref": "#/$defs/analyticsFx" },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "exact_value_base": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual": { "$ref": "#/$defs/decimalString" },
+            "weight": { "$ref": "#/$defs/decimalString" }
+          }
+        },
+        "analyticsConversionRow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rate_id", "from_bucket_id", "to_bucket_id", "from_currency", "to_currency", "source_amount", "rate", "exact_converted", "converted_amount", "rounding_residual_local", "valuation_fx", "rounding_residual_base"],
+          "properties": {
+            "rate_id": { "type": "string", "minLength": 1 },
+            "from_bucket_id": { "type": "string", "minLength": 1 },
+            "to_bucket_id": { "type": "string", "minLength": 1 },
+            "from_currency": { "$ref": "#/$defs/currency" },
+            "to_currency": { "$ref": "#/$defs/currency" },
+            "source_amount": { "$ref": "#/$defs/decimalString" },
+            "rate": { "$ref": "#/$defs/decimalString" },
+            "exact_converted": { "$ref": "#/$defs/decimalString" },
+            "converted_amount": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual_local": { "$ref": "#/$defs/decimalString" },
+            "valuation_fx": { "$ref": "#/$defs/analyticsFx" },
+            "rounding_residual_base": { "$ref": "#/$defs/decimalString" }
+          }
+        },
+        "analyticsBucketExposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bucket_id", "market", "currency", "cash_base", "position_value_base", "valuation_rounding", "value_base", "exact_value_base", "rounding_residual", "fx", "provenance"],
+          "properties": {
+            "bucket_id": { "type": "string", "minLength": 1 },
+            "market": { "type": "string", "enum": ["cn_a", "hk", "us"] },
+            "currency": { "$ref": "#/$defs/currency" },
+            "cash_base": { "$ref": "#/$defs/decimalString" },
+            "position_value_base": { "$ref": "#/$defs/decimalString" },
+            "valuation_rounding": { "$ref": "#/$defs/decimalString" },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "exact_value_base": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual": { "$ref": "#/$defs/decimalString" },
+            "fx": { "$ref": "#/$defs/analyticsFx" },
+            "provenance": { "$ref": "#/$defs/analyticsProvenance" }
+          }
+        },
+        "analyticsCurrencyExposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["currency", "cash_base", "position_value_base", "valuation_rounding", "value_base", "weight", "bucket_ids", "provenance"],
+          "properties": {
+            "currency": { "$ref": "#/$defs/currency" },
+            "cash_base": { "$ref": "#/$defs/decimalString" },
+            "position_value_base": { "$ref": "#/$defs/decimalString" },
+            "valuation_rounding": { "$ref": "#/$defs/decimalString" },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "weight": { "$ref": "#/$defs/decimalString" },
+            "bucket_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "provenance": { "$ref": "#/$defs/analyticsProvenance" }
+          }
+        },
+        "analyticsMarketExposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["market", "cash_base", "position_value_base", "valuation_rounding", "value_base", "weight", "bucket_ids", "provenance"],
+          "properties": {
+            "market": { "type": "string", "enum": ["cn_a", "hk", "us"] },
+            "cash_base": { "$ref": "#/$defs/decimalString" },
+            "position_value_base": { "$ref": "#/$defs/decimalString" },
+            "valuation_rounding": { "$ref": "#/$defs/decimalString" },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "weight": { "$ref": "#/$defs/decimalString" },
+            "bucket_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "provenance": { "$ref": "#/$defs/analyticsProvenance" }
+          }
+        },
+        "analyticsPositionWeight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bucket_id", "symbol", "value_base", "weight"],
+          "properties": {
+            "bucket_id": { "type": "string", "minLength": 1 },
+            "symbol": { "type": "string", "minLength": 1 },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "weight": { "$ref": "#/$defs/decimalString" }
+          }
+        },
+        "analyticsConcentration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["position_count", "top_1", "top_5", "hhi", "position_weights", "provenance"],
+          "properties": {
+            "position_count": { "type": "integer", "minimum": 0 },
+            "top_1": { "$ref": "#/$defs/decimalString" },
+            "top_5": { "$ref": "#/$defs/decimalString" },
+            "hhi": { "$ref": "#/$defs/decimalString" },
+            "position_weights": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/analyticsPositionWeight" }
+            },
+            "provenance": { "$ref": "#/$defs/analyticsProvenance" }
+          }
+        },
+        "analyticsSectorExposure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sector", "value_base", "weight_of_positions", "bucket_ids", "symbols", "provenance"],
+          "properties": {
+            "sector": { "type": "string", "minLength": 1 },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "weight_of_positions": { "$ref": "#/$defs/decimalString" },
+            "bucket_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "symbols": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "provenance": { "$ref": "#/$defs/analyticsProvenance" }
+          }
+        },
+        "analyticsNavBridge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cash_base", "position_value_base", "valuation_rounding", "nav_base", "exact_nav_base", "rounding_residual", "conversion_rounding_base"],
+          "properties": {
+            "cash_base": { "$ref": "#/$defs/decimalString" },
+            "position_value_base": { "$ref": "#/$defs/decimalString" },
+            "valuation_rounding": { "$ref": "#/$defs/decimalString" },
+            "nav_base": { "$ref": "#/$defs/decimalString" },
+            "exact_nav_base": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual": { "$ref": "#/$defs/decimalString" },
+            "conversion_rounding_base": { "$ref": "#/$defs/decimalString" }
+          }
+        },
+        "analytics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["base_currency", "valuation_at", "nav_base", "cash_base", "position_value_base", "valuation_rounding", "exact_nav_base", "rounding_residual", "nav_bridge", "cash_rows", "position_rows", "conversion_rows", "bucket_exposures", "currency_exposures", "market_exposures", "concentration", "sector_exposures", "provenance", "warnings", "unclassified_sector"],
+          "properties": {
+            "base_currency": { "$ref": "#/$defs/currency" },
+            "valuation_at": { "type": "string", "format": "date-time" },
+            "nav_base": { "$ref": "#/$defs/decimalString" },
+            "cash_base": { "$ref": "#/$defs/decimalString" },
+            "position_value_base": { "$ref": "#/$defs/decimalString" },
+            "valuation_rounding": { "$ref": "#/$defs/decimalString" },
+            "exact_nav_base": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual": { "$ref": "#/$defs/decimalString" },
+            "nav_bridge": { "$ref": "#/$defs/analyticsNavBridge" },
+            "cash_rows": { "type": "array", "items": { "$ref": "#/$defs/analyticsCashRow" } },
+            "position_rows": { "type": "array", "items": { "$ref": "#/$defs/analyticsPositionRow" } },
+            "conversion_rows": { "type": "array", "items": { "$ref": "#/$defs/analyticsConversionRow" } },
+            "bucket_exposures": { "type": "array", "items": { "$ref": "#/$defs/analyticsBucketExposure" } },
+            "currency_exposures": { "type": "array", "items": { "$ref": "#/$defs/analyticsCurrencyExposure" } },
+            "market_exposures": { "type": "array", "items": { "$ref": "#/$defs/analyticsMarketExposure" } },
+            "concentration": { "$ref": "#/$defs/analyticsConcentration" },
+            "sector_exposures": { "type": "array", "items": { "$ref": "#/$defs/analyticsSectorExposure" } },
+            "provenance": { "$ref": "#/$defs/analyticsProvenance" },
+            "warnings": { "type": "array", "items": { "type": "string" } },
+            "unclassified_sector": { "type": "string", "const": "unclassified" }
           }
         }
       }
