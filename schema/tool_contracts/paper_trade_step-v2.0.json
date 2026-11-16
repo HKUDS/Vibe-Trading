@@ -708,6 +708,41 @@
             "conversion_rounding_base": { "$ref": "#/$defs/decimalString" }
           }
         },
+        "analyticsBenchmarkObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["observed_at", "value", "currency", "value_base", "exact_value_base", "rounding_residual", "fx"],
+          "properties": {
+            "observed_at": { "type": "string", "format": "date-time" },
+            "value": { "$ref": "#/$defs/decimalString" },
+            "currency": { "$ref": "#/$defs/currency" },
+            "value_base": { "$ref": "#/$defs/decimalString" },
+            "exact_value_base": { "$ref": "#/$defs/decimalString" },
+            "rounding_residual": { "$ref": "#/$defs/decimalString" },
+            "fx": { "$ref": "#/$defs/analyticsFx" }
+          }
+        },
+        "analyticsBenchmark": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["benchmark_id", "start", "end", "benchmark_return", "exact_benchmark_return", "portfolio_start_nav_base", "portfolio_start_exact_nav_base", "portfolio_start_rounding_residual", "portfolio_end_nav_base", "portfolio_end_exact_nav_base", "portfolio_return", "exact_portfolio_return", "deviation", "exact_deviation"],
+          "properties": {
+            "benchmark_id": { "type": "string", "minLength": 1 },
+            "start": { "$ref": "#/$defs/analyticsBenchmarkObservation" },
+            "end": { "$ref": "#/$defs/analyticsBenchmarkObservation" },
+            "benchmark_return": { "$ref": "#/$defs/decimalString" },
+            "exact_benchmark_return": { "$ref": "#/$defs/decimalString" },
+            "portfolio_start_nav_base": { "$ref": "#/$defs/decimalString" },
+            "portfolio_start_exact_nav_base": { "$ref": "#/$defs/decimalString" },
+            "portfolio_start_rounding_residual": { "$ref": "#/$defs/decimalString" },
+            "portfolio_end_nav_base": { "$ref": "#/$defs/decimalString" },
+            "portfolio_end_exact_nav_base": { "$ref": "#/$defs/decimalString" },
+            "portfolio_return": { "$ref": "#/$defs/decimalString" },
+            "exact_portfolio_return": { "$ref": "#/$defs/decimalString" },
+            "deviation": { "$ref": "#/$defs/decimalString" },
+            "exact_deviation": { "$ref": "#/$defs/decimalString" }
+          }
+        },
         "analytics": {
           "type": "object",
           "additionalProperties": false,
@@ -730,6 +765,12 @@
             "market_exposures": { "type": "array", "items": { "$ref": "#/$defs/analyticsMarketExposure" } },
             "concentration": { "$ref": "#/$defs/analyticsConcentration" },
             "sector_exposures": { "type": "array", "items": { "$ref": "#/$defs/analyticsSectorExposure" } },
+            "benchmark": {
+              "oneOf": [
+                { "type": "null" },
+                { "$ref": "#/$defs/analyticsBenchmark" }
+              ]
+            },
             "provenance": { "$ref": "#/$defs/analyticsProvenance" },
             "warnings": { "type": "array", "items": { "type": "string" } },
             "unclassified_sector": { "type": "string", "const": "unclassified" }
