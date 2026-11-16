@@ -13,9 +13,13 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 
-from .models import JsonObject, JsonValue
+from pydantic import ValidationError
+
+from .analytics import reconcile_attribution
+from .models import AnalyticsAttribution, JsonObject, JsonValue
 from .wire_contract import _DECIMAL_PATTERN
 from .wire_errors import _reject
+from .wire_normalize import _location_path, _pydantic_reason
 
 
 def _decimal_value(value: JsonValue, path: str) -> Decimal:
@@ -223,3 +227,81 @@ def _assert_benchmark(payload: JsonObject, *, nav: Decimal, exact_nav: Decimal) 
                 else f"benchmark_{key}_mismatch",
                 f"analytics.benchmark.{key}",
             )
+
+def _assert_attribution(
+    raw: JsonObject,
+    *,
+    nav: Decimal,
+    exact_nav: Decimal,
+    base_currency: str,
+) -> None:
+    """Recompute the optional one-day attribution before publishing it."""
+    try:
+        attribution = AnalyticsAttribution.model_validate(raw)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        path = _location_path(tuple(first.get("loc", ())))
+        _reject(
+            _pydantic_reason(str(first.get("type", "")), path),
+            f"analytics.attribution.{path}",
+            detail=str(first.get("msg", "invalid attribution value")),
+        )
+    if attribution.base_currency != base_currency:
+        _reject(
+            "attribution_base_currency_mismatch",
+            "analytics.attribution.base_currency",
+            detail="attribution must use the document base currency",
+        )
+    if _decimal_value(
+        attribution.nav.end_nav_base,
+        "analytics.attribution.nav.end_nav_base",
+    ) != nav:
+        _reject(
+            "attribution_nav_mismatch",
+            "analytics.attribution.nav.end_nav_base",
+            detail="attribution end NAV must equal analytics NAV",
+        )
+    if _decimal_value(
+        attribution.nav.end_exact_nav_base,
+        "analytics.attribution.nav.end_exact_nav_base",
+    ) != exact_nav:
+        _reject(
+            "attribution_nav_mismatch",
+            "analytics.attribution.nav.end_exact_nav_base",
+            detail="attribution exact end NAV must equal analytics exact NAV",
+        )
+    try:
+        issues = reconcile_attribution(attribution)
+    except (ArithmeticError, ValueError) as exc:
+        _reject(
+            "invalid_attribution",
+            "analytics.attribution",
+            detail=f"{type(exc).__name__}: {exc}"[:200],
+        )
+    if issues:
+        first = issues[0]
+        path = (
+            first.path
+            if first.path.startswith("attribution.")
+            else f"analytics.attribution.{first.path}"
+        )
+        _reject(
+            first.reason,
+            f"analytics.{path}",
+            bucket_id=first.bucket_id,
+            detail=first.detail,
+        )
+    if not attribution.reconciliation.reconciled:
+        _reject(
+            "attribution_not_reconciled",
+            "analytics.attribution.reconciliation",
+            detail="the attribution document declares a failed reconciliation",
+        )
+    if attribution.reconciliation.issues or not all(
+        check.passed for check in attribution.reconciliation.checks
+    ):
+        _reject(
+            "attribution_reconciliation_mismatch",
+            "analytics.attribution.reconciliation",
+            detail="a reconciled verdict cannot carry issues or failed checks",
+        )

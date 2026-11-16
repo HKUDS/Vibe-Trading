@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from .wire_analytics import (
     _analytics_sum as _analytics_sum,
+    _assert_attribution as _assert_attribution,
     _assert_benchmark as _assert_benchmark,
     _canonical_money as _canonical_money,
     _canonical_ratio as _canonical_ratio,

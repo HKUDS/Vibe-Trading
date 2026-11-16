@@ -15,7 +15,12 @@ from typing import Any
 from pydantic import ValidationError
 
 from .models import JsonObject, JsonValue, PortfolioModel, PortfolioResult
-from .wire_analytics import _analytics_sum, _assert_benchmark, _decimal_value
+from .wire_analytics import (
+    _analytics_sum,
+    _assert_attribution,
+    _assert_benchmark,
+    _decimal_value,
+)
 from .wire_contract import (
     WIRE_MODE,
     WIRE_SCHEMA_VERSION,
@@ -397,6 +402,21 @@ def _assert_analytics(payload: JsonObject) -> None:
             "analytics.sector_exposures",
             detail="sector values including unclassified must sum to position value",
         )
+    exact_nav = _decimal_value(raw.get("exact_nav_base"), "analytics.exact_nav_base")
+    attribution = raw.get("attribution")
+    if attribution is not None:
+        if not isinstance(attribution, dict):
+            _reject(
+                "invalid_analytics",
+                "analytics.attribution",
+                detail="attribution must be an object",
+            )
+        _assert_attribution(
+            attribution,
+            nav=nav,
+            exact_nav=exact_nav,
+            base_currency=base_currency,
+        )
     if "benchmark" not in raw:
         return
     benchmark = raw.get("benchmark")
@@ -408,7 +428,6 @@ def _assert_analytics(payload: JsonObject) -> None:
             "analytics.benchmark",
             detail="benchmark must be an object or null",
         )
-    exact_nav = _decimal_value(raw.get("exact_nav_base"), "analytics.exact_nav_base")
     _assert_benchmark(benchmark, nav=nav, exact_nav=exact_nav)
 
 
