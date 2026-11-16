@@ -262,6 +262,22 @@ their target-day closes and closed buckets at their dated prior marks. A
 bucket's `nav_base` is its reported local NAV translated through its direct
 `fx_rate_id`; the exact bridge retains its rounding residual.
 
+### Analytics
+
+Every new success document carries an optional `analytics` object; documents
+created before this field existed remain valid without it. The object reports
+the base-currency NAV bridge (`cash_base + position_value_base + valuation_rounding
+= nav_base`), the exact `Σ cash×fx + Σ qty×price×fx` value and its rounding
+residual, per-currency and per-market exposure, top-1/top-5/HHI concentration
+over position value divided by NAV, and caller-sector exposure. Sector values
+sum to `position_value_base`; a held position without a caller sector is placed
+in the explicit `unclassified` bucket. Every cash, position, conversion,
+bucket, currency, market and sector value carries its dated mark and/or direct
+FX `rate_id`, `as_of` and `source`. A missing valuation mark or direct FX pair
+is a declared error, never an inferred price or currency. There is still no
+benchmark, Brinson attribution, sector allocation/selection, contribution or
+multi-day analytics.
+
 ### Example: explicit orders, conversion and a closed market
 
 <!-- pt-v2.0-request: explicit-orders -->
@@ -432,10 +448,11 @@ its existing envelope (`received_state_hash` where computable).
   `nav_series`). Portfolio bucket conversions, plan IDs and NAV bridges are not
   audited by that tool; portfolio reconcile is a stacked follow-up, not part of
   this contract.
-- **No portfolio analytics yet.** `benchmark` and `sectors` are accepted by the
-  schema but do not produce an analytics field or report; there is no Brinson
-  attribution, sector allocation/selection, exposure/concentration or
-  contribution report.
+- **Analytics are single-day valuation evidence.** `sectors` produce caller
+  sector exposure with an explicit `unclassified` bucket, and the document
+  reports NAV, exposure and concentration. There is no benchmark, Brinson
+  attribution, sector allocation/selection, contribution or multi-day
+  analytics yet.
 - **No saved account or UI.** Portfolio mode is stateless. Saved paper accounts,
   the Web page, persistence and portfolio history remain daily single-market
   surfaces only.
@@ -542,9 +559,10 @@ state and writes nothing.
 ## Known limits
 
 - **Portfolio mode is a separate, single-day contract.** It has no portfolio
-  reconcile, analytics/Brinson, multi-day attribution, saved account, UI,
-  persistence, 5m, volume-share, margin/shorting or broker support. Its full
-  limits are listed under [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
+  reconcile, benchmark/Brinson or contribution attribution, multi-day
+  attribution, saved account, UI, persistence, 5m, volume-share,
+  margin/shorting or broker support. Its full limits are listed under
+  [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
 - **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
   for any symbol is inferred closed: the day is recorded as
   `market_closed_inferred` with a warning, no NAV row is produced for it, its
