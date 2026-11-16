@@ -8,13 +8,15 @@ immutable models and resolves the packaged Draft 2020-12 contract.
 from __future__ import annotations
 
 import json
+from datetime import timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Final, Literal
 
 from pydantic import ValidationError
 
 from .errors import PortfolioRequestError as PortfolioRequestError
-from .models import JsonObject, JsonValue, PortfolioRequest
+from .models import FxSnapshot, JsonObject, JsonValue, PortfolioRequest
 from .numeric import _CANONICAL_CURRENCIES, _reject
 
 CONTRACT_PATH: Final = Path(__file__).resolve().parent.parent / "paper_trade_step-v2.0.json"
@@ -160,6 +162,52 @@ def _zero_decimal(value: str) -> bool:
     return whole == "0" and (not separator or set(fraction) <= {"0"})
 
 
+def _benchmark_value(value: str, path: str) -> None:
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation:
+        _reject("invalid_benchmark_value", path)
+    if not parsed.is_finite() or parsed <= 0:
+        _reject("invalid_benchmark_value", path)
+
+
+def _check_benchmark(request: PortfolioRequest, rates: dict[str, FxSnapshot]) -> None:
+    """Validate the optional caller benchmark before any provider call."""
+    benchmark = request.benchmark
+    if benchmark is None:
+        return
+    for leg, observation in (("start", benchmark.start), ("end", benchmark.end)):
+        path = f"benchmark.{leg}"
+        _benchmark_value(observation.value, f"{path}.value")
+        if observation.currency == request.base_currency:
+            if observation.rate_id is not None:
+                _reject("unexpected_benchmark_fx_rate", f"{path}.rate_id")
+            continue
+        if observation.rate_id is None:
+            _reject("missing_benchmark_fx_rate", f"{path}.rate_id")
+        snapshot = rates.get(observation.rate_id)
+        if snapshot is None:
+            _reject("unknown_fx_rate", f"{path}.rate_id")
+        expected = (observation.currency, request.base_currency)
+        pair = (snapshot.from_currency, snapshot.to_currency)
+        if pair == (expected[1], expected[0]):
+            _reject("inverse_fx_rate_only", f"{path}.rate_id")
+        if pair != expected:
+            _reject("fx_pair_mismatch", f"{path}.rate_id")
+        if snapshot.as_of > observation.observed_at:
+            _reject("future_fx_rate", f"{path}.rate_id")
+    if benchmark.start.currency != benchmark.end.currency:
+        _reject("benchmark_currency_mismatch", "benchmark.end.currency")
+    if benchmark.start.observed_at >= benchmark.end.observed_at:
+        _reject("invalid_benchmark_observation_order", "benchmark.end.observed_at")
+    if benchmark.end.observed_at > request.valuation_at:
+        _reject("future_benchmark_observation", "benchmark.end.observed_at")
+    if benchmark.end.observed_at.astimezone(timezone.utc).date() != request.trade_date:
+        _reject("stale_benchmark_observation", "benchmark.end.observed_at")
+    if request.valuation_at - benchmark.end.observed_at > timedelta(days=1):
+        _reject("stale_benchmark_observation", "benchmark.end.observed_at")
+
+
 def _check_semantics(request: PortfolioRequest) -> None:
     if request.base_currency not in set(_CANONICAL_CURRENCIES.values()):
         _reject("invalid_base_currency", "base_currency")
@@ -189,6 +237,7 @@ def _check_semantics(request: PortfolioRequest) -> None:
             )
             _reject("duplicate_fx_rate", f"fx_snapshots[{index}].rate_id", bucket_id=bucket_id)
         rates[snapshot.rate_id] = snapshot
+    _check_benchmark(request, rates)
     for index, conversion in enumerate(request.fx_conversions):
         snapshot = rates.get(conversion.rate_id)
         if snapshot is None:

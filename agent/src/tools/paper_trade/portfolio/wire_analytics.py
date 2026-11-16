@@ -11,9 +11,9 @@ in-band error envelope.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 
-from .models import JsonValue
+from .models import JsonObject, JsonValue
 from .wire_contract import _DECIMAL_PATTERN
 from .wire_errors import _reject
 
@@ -32,3 +32,194 @@ def _analytics_sum(rows: list[JsonValue], path: str) -> Decimal:
             _reject("invalid_analytics", f"{path}[{index}]")
         total += _decimal_value(row.get("value_base"), f"{path}[{index}].value_base")
     return total
+
+
+def _exact_change(numerator: Decimal, denominator: Decimal) -> Decimal:
+    """Recompute the published 60-digit one-day ratio exactly, never at 28 digits."""
+    with localcontext() as context:
+        context.prec = 60
+        return numerator / denominator - 1
+
+
+def _exact_difference(left: Decimal, right: Decimal) -> Decimal:
+    with localcontext() as context:
+        context.prec = 60
+        return left - right
+
+
+def _canonical_ratio(value: Decimal, path: str) -> str:
+    """Render one signed ratio at the published twelve-decimal scale."""
+    if not value.is_finite():
+        _reject("invalid_benchmark", path, detail="ratios must be finite")
+    quantized = value.quantize(Decimal(1).scaleb(-12), rounding=ROUND_HALF_EVEN)
+    if quantized.is_zero():
+        quantized = Decimal(0)
+    return format(quantized, ".12f")
+
+
+def _canonical_money(value: Decimal, path: str) -> str:
+    """Render one money value at the published two-decimal scale."""
+    if not value.is_finite():
+        _reject("invalid_benchmark", path, detail="money must be finite")
+    quantized = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
+    if quantized.is_zero():
+        quantized = Decimal(0)
+    return format(quantized, ".2f")
+
+
+def _assert_benchmark(payload: JsonObject, *, nav: Decimal, exact_nav: Decimal) -> None:
+    """Recompute every benchmark ratio from its exact observations."""
+    required = (
+        "benchmark_id",
+        "start",
+        "end",
+        "benchmark_return",
+        "exact_benchmark_return",
+        "portfolio_start_nav_base",
+        "portfolio_start_exact_nav_base",
+        "portfolio_start_rounding_residual",
+        "portfolio_end_nav_base",
+        "portfolio_end_exact_nav_base",
+        "portfolio_return",
+        "exact_portfolio_return",
+        "deviation",
+        "exact_deviation",
+    )
+    for key in required:
+        if key not in payload:
+            _reject("missing_field", f"analytics.benchmark.{key}")
+    if not isinstance(payload.get("benchmark_id"), str) or not payload["benchmark_id"]:
+        _reject("invalid_benchmark", "analytics.benchmark.benchmark_id")
+    observations: list[Decimal] = []
+    for leg in ("start", "end"):
+        raw = payload.get(leg)
+        if not isinstance(raw, dict):
+            _reject("invalid_benchmark", f"analytics.benchmark.{leg}")
+        exact = _decimal_value(
+            raw.get("exact_value_base"),
+            f"analytics.benchmark.{leg}.exact_value_base",
+        )
+        level = _decimal_value(
+            raw.get("value"),
+            f"analytics.benchmark.{leg}.value",
+        )
+        if exact <= 0 or level <= 0:
+            _reject(
+                "invalid_benchmark",
+                f"analytics.benchmark.{leg}.exact_value_base",
+                detail="benchmark levels must be positive",
+            )
+        reported = _decimal_value(
+            raw.get("value_base"),
+            f"analytics.benchmark.{leg}.value_base",
+        )
+        if _canonical_money(exact, f"analytics.benchmark.{leg}") != raw.get("value_base"):
+            _reject(
+                "benchmark_observation_mismatch",
+                f"analytics.benchmark.{leg}.value_base",
+            )
+        residual = _decimal_value(
+            raw.get("rounding_residual"),
+            f"analytics.benchmark.{leg}.rounding_residual",
+        )
+        if residual != _exact_difference(exact, reported):
+            _reject(
+                "benchmark_observation_mismatch",
+                f"analytics.benchmark.{leg}.rounding_residual",
+            )
+        observations.append(exact)
+
+    start_nav = _decimal_value(
+        payload.get("portfolio_start_exact_nav_base"),
+        "analytics.benchmark.portfolio_start_exact_nav_base",
+    )
+    end_nav = _decimal_value(
+        payload.get("portfolio_end_exact_nav_base"),
+        "analytics.benchmark.portfolio_end_exact_nav_base",
+    )
+    if start_nav <= 0 or end_nav <= 0:
+        _reject(
+            "invalid_benchmark",
+            "analytics.benchmark.portfolio_start_exact_nav_base",
+            detail="portfolio NAVs must be positive",
+        )
+    reported_start = _decimal_value(
+        payload.get("portfolio_start_nav_base"),
+        "analytics.benchmark.portfolio_start_nav_base",
+    )
+    if reported_start != Decimal(
+        _canonical_money(
+            reported_start,
+            "analytics.benchmark.portfolio_start_nav_base",
+        )
+    ):
+        _reject(
+            "benchmark_nav_mismatch",
+            "analytics.benchmark.portfolio_start_nav_base",
+            detail="the reported start NAV must represent whole cents",
+        )
+    start_residual = _decimal_value(
+        payload.get("portfolio_start_rounding_residual"),
+        "analytics.benchmark.portfolio_start_rounding_residual",
+    )
+    if reported_start + start_residual != start_nav:
+        _reject(
+            "benchmark_nav_mismatch",
+            "analytics.benchmark.portfolio_start_rounding_residual",
+            detail="the reported start NAV plus its residual must equal the exact start NAV",
+        )
+    if _decimal_value(
+        payload.get("portfolio_end_nav_base"),
+        "analytics.benchmark.portfolio_end_nav_base",
+    ) != nav:
+        _reject(
+            "benchmark_nav_mismatch",
+            "analytics.benchmark.portfolio_end_nav_base",
+            detail="the benchmark end NAV must equal analytics NAV",
+        )
+    if end_nav != exact_nav:
+        _reject(
+            "benchmark_nav_mismatch",
+            "analytics.benchmark.portfolio_end_exact_nav_base",
+            detail="the benchmark exact end NAV must equal analytics exact NAV",
+        )
+    exact_benchmark_return = _exact_change(observations[1], observations[0])
+    exact_portfolio_return = _exact_change(end_nav, start_nav)
+    exact_deviation = _exact_difference(exact_portfolio_return, exact_benchmark_return)
+    expected = (
+        (
+            "exact_benchmark_return",
+            exact_benchmark_return,
+            "benchmark_return_mismatch",
+        ),
+        (
+            "exact_portfolio_return",
+            exact_portfolio_return,
+            "benchmark_portfolio_return_mismatch",
+        ),
+        ("exact_deviation", exact_deviation, "benchmark_deviation_mismatch"),
+    )
+    for key, value, reason in expected:
+        if _decimal_value(
+            payload.get(key),
+            f"analytics.benchmark.{key}",
+        ) != value:
+            _reject(
+                reason,
+                f"analytics.benchmark.{key}",
+            )
+    for key, value in (
+        ("benchmark_return", exact_benchmark_return),
+        ("portfolio_return", exact_portfolio_return),
+        ("deviation", exact_deviation),
+    ):
+        if payload.get(key) != _canonical_ratio(
+            value,
+            f"analytics.benchmark.{key}",
+        ):
+            _reject(
+                "benchmark_return_mismatch"
+                if key == "benchmark_return"
+                else f"benchmark_{key}_mismatch",
+                f"analytics.benchmark.{key}",
+            )

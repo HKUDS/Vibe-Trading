@@ -37,7 +37,12 @@ from __future__ import annotations
 
 from .wire_analytics import (
     _analytics_sum as _analytics_sum,
+    _assert_benchmark as _assert_benchmark,
+    _canonical_money as _canonical_money,
+    _canonical_ratio as _canonical_ratio,
     _decimal_value as _decimal_value,
+    _exact_change as _exact_change,
+    _exact_difference as _exact_difference,
 )
 from .wire_contract import (
     INPUT_HASH_MARKER,
