@@ -6,7 +6,7 @@ Zero API key required for HK/US/crypto research markets (yfinance, OKX,
 AKShare are free). Trading connector tools are profile-scoped and require the
 selected connector's own local app or OAuth setup.
 
-Surfaces 81 tools: skills, research goals, strategy discovery,
+Surfaces 83 tools: skills, research goals, strategy discovery,
 backtest/factor/options/pattern
 analysis, deterministic paper-trading matching (paper_trade_step, single-market
 default or pt-v2.0 cross-market portfolio), market data, fundamentals & capital-flow & news & discovery

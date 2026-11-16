@@ -108,3 +108,48 @@ def test_error_detail_input_hash_matches_the_documented_wire_contract() -> None:
     )
     assert "input_sha256" not in payload
     assert "hashes" not in payload
+
+
+def test_required_list_publishes_every_schema_required_field() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+    required = re.search(r"Required: (.*?)\n\n", readme, re.DOTALL)
+    assert required is not None
+    named = set(re.findall(r"`([a-z_]+)`", required.group(1)))
+    schema = load_portfolio_contract_schema("request")
+
+    assert set(schema["required"]) <= named
+    assert {"interval", "fill_model"} <= named
+
+
+def test_docs_state_the_actual_transport_boundary() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+    for text in (readme, PaperTradeStepTool.description):
+        assert "never a transport error" not in text
+        assert "not a transport error" not in text
+        assert "INTERNAL" in text
+        assert "transport error" in text
+
+
+def test_empty_detail_falls_back_to_reason_before_the_hash_suffix() -> None:
+    readme = README_PATH.read_text(encoding="utf-8")
+    payload = wire.build_error_payload(
+        {"account_id": "portfolio-cross-market-01"},
+        code="INVALID_REQUEST",
+        reason="required_bucket_closed",
+        path="sessions.hk.status",
+    )
+
+    assert "(just the marker when the message is empty)" not in readme
+    assert "falls back to the error reason" in " ".join(readme.split())
+    assert re.fullmatch(
+        r"required_bucket_closed; input_sha256=[0-9a-f]{64}",
+        payload["error"]["detail"],
+    )
+
+
+def test_mcp_module_docstring_publishes_the_live_tool_count() -> None:
+    mcp_server = (Path(__file__).resolve().parents[1] / "mcp_server.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Surfaces 83 tools" in mcp_server

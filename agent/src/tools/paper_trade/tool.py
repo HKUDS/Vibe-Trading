@@ -294,7 +294,9 @@ _DESCRIPTION = (
     "buckets, direct-pair FX snapshots and caller-declared sessions, with "
     "either orders or target_weights. Both branches return one in-band JSON "
     "document — success or an INVALID_REQUEST / PAPER_DATA_NOT_READY envelope "
-    "on the same channel, never a transport error. Legacy interval/session/"
+    "on the same channel; those request/data errors are in-band, while INTERNAL "
+    "engine faults and unexpected exceptions propagate as transport errors. "
+    "Legacy interval/session/"
     "path_model/fill_model selectors default to pt-v1.1 daily behaviour; "
     "interval='5m' is cn_a-only. Research-only."
 )

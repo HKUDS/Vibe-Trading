@@ -223,8 +223,8 @@ floats, exponents, `NaN` or `Infinity`) and integer whole-share quantities.
 ### Request contract
 
 Required: `tool`, `schema_version`, `mode`, `account_id`, `base_currency`,
-`trade_date`, `planning_at`, `valuation_at`, `portfolio_state`, `sessions` and
-exactly one of `orders` / `target_weights`.
+`trade_date`, `planning_at`, `valuation_at`, `interval`, `fill_model`,
+`portfolio_state`, `sessions` and exactly one of `orders` / `target_weights`.
 
 | Field | Meaning |
 | --- | --- |
@@ -406,8 +406,9 @@ The in-process `run_portfolio_step` returns a `PortfolioStepResult`: its public
 linkage source used to verify that every outcome matches a plan line. No
 `order_plan` field is part of the public document.
 
-An error is an in-band JSON envelope, not a transport error and never a partial
-ledger or fill list:
+`INVALID_REQUEST` and `PAPER_DATA_NOT_READY` are in-band JSON envelopes, never a
+partial ledger or fill list. An `INTERNAL` engine fault or any unexpected
+exception is not in-band: it propagates to the caller as a transport error.
 
 ```json
 {"status":"error","tool":"paper_trade_step","schema_version":"pt-v2.0","mode":"portfolio","account_id":"portfolio-cross-market-01","code":"INVALID_REQUEST","error":{"reason":"required_bucket_closed","path":"sessions.hk.status","detail":"...; input_sha256=<64 lowercase hex>","bucket_id":"hk"}}
@@ -416,10 +417,10 @@ ledger or fill list:
 `code` is `INVALID_REQUEST` or `PAPER_DATA_NOT_READY`. `error` holds `reason`,
 `path`, `detail` and an optional `bucket_id`. The pt-v2.0 wire serializer
 appends the raw-request digest to `error.detail` as
-`; input_sha256=<64 lowercase hex>` (just the marker when the message is empty);
-it is not a top-level field, and the error envelope has no `hashes`, `fills` or
-`end_portfolio`. A legacy single-market error keeps its existing envelope
-(`received_state_hash` where computable).
+`; input_sha256=<64 lowercase hex>`; an empty message falls back to the error
+reason before the suffix. It is not a top-level field, and the error envelope
+has no `hashes`, `fills` or `end_portfolio`. A legacy single-market error keeps
+its existing envelope (`received_state_hash` where computable).
 
 ### Current portfolio limits
 
