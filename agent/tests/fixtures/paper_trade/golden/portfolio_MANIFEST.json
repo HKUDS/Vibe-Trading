@@ -1,34 +1,34 @@
 {
   "schema": "paper_trade.portfolio_golden_manifest/v1",
-  "generator": "task-22 analytics regeneration from test_paper_trade_portfolio_golden.py scenarios; adds the optional analytics object and refreshed document hashes",
-  "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. The task-22 regeneration adds exact NAV/exposure/concentration/sector analytics; regeneration still requires a human-verified diff naming the reason.",
+  "generator": "task-23 benchmark regeneration from test_paper_trade_portfolio_golden.py scenarios; adds explicit caller benchmark observations, one-day return/deviation, the reported-vs-exact start NAV residual and refreshed document hashes",
+  "description": "pt-v2.0 internal portfolio goldens: exact canonical bytes of PortfolioResult.model_dump(mode='json', by_alias=True, exclude_none=True) with sorted keys and compact separators, raw UTF-8, no trailing newline. test_paper_trade_portfolio_golden.py regenerates each scenario through the real run_portfolio_step and asserts byte equality, full parsed-document equality, document_hash recomputation and cross-process PYTHONHASHSEED determinism. The task-23 regeneration adds the optional caller benchmark with its two dated observations, direct-pair translation, one-day benchmark/portfolio returns and deviation, and the explicit start-NAV rounding residual; regeneration still requires a human-verified diff naming the reason.",
   "goldens": [
     {
       "file": "portfolio_explicit_cn_hk_us.json",
-      "sha256": "d5ad2baaa5e399c694c29d69dd4d63e06bbcef94692373fe9859c9ae1b2c8718",
-      "bytes": 13728,
-      "document_hash": "0ed3d2127a2d0916f6f3214fcf54b5c698c3c911b3fa0eb9e656ce7f0992b08a",
+      "sha256": "b27fc93b680476e41693a4835c6946be0ab1ad13503f6f739340d35cb36663ba",
+      "bytes": 14920,
+      "document_hash": "da38f7f6ea84cf7b9eeba0dfa4d3a4cf90f8f746422052eacfcfceb6fc996206",
       "scenario": "explicit cn_a+hk+us buys on 2026-11-13: cn 600519.SH 100, hk 00700.HK 100, us AAPL.US 10; cn cash 200000.00 CNY, hk fee override commission_rate 0.0003 / commission_min 20.00, no FX conversions"
     },
     {
       "file": "portfolio_target_weights_conversion.json",
-      "sha256": "5ec6e46250ae70b0de232d93f098021f8adf15d07ac6f7f2f949b4c5b49f6bac",
-      "bytes": 13050,
-      "document_hash": "1261695fd290a71683026ae4d5f8a99a907db94ec43e620a162aab80e0008d59",
+      "sha256": "e04f30c26c3dc7b53ff1b197bfadf7f1ecd22e8fe73f845a70710af761e54341",
+      "bytes": 14242,
+      "document_hash": "b2d3d542d030fff1f70c1efaff99a28a43a58f2530eebc9fd75995b561c7659c",
       "scenario": "target weights on 2026-11-13 (cn 0.00, hk 0.16, us 0.20) with one caller-declared pre-fill CNY->USD conversion of 1000.00 at 0.14"
     },
     {
       "file": "portfolio_cn_open_hk_closed_us_open.json",
-      "sha256": "4a678993f103a137750c4cec7a7ca5f4eb9c427b4f761264f5504cc3c9a4e67c",
-      "bytes": 13363,
-      "document_hash": "b191c60ea6272f3ce193050f394d760069ed09e0db7ecca54bd51f4f755a8745",
+      "sha256": "adc1e7b8273796f02fbd75ade1b69fae2e948672bdcb44d47586f25e10695444",
+      "bytes": 14555,
+      "document_hash": "48dcfe46be69ebfb381561a4ef0c0094480671a61a01622b22c1f7e122984f3a",
       "scenario": "CN-open/HK-closed/US-open on 2026-11-13: cn buy 100 and us buy 10; closed HK holdings carried at the 2026-11-12 prior mark 410.00 with no matcher run"
     },
     {
       "file": "portfolio_per_order_rejection.json",
-      "sha256": "f0606ec5923bac218da3f8db684f6d1f81f12fb16eefe59b9d4aa949b61b3ac9",
-      "bytes": 11101,
-      "document_hash": "258fe539b7490975f78d3ad72bc6e6c9dc37f6e3c3a8fadaba583dbfda8002e5",
+      "sha256": "b192edf57f4dd84c25e3d4337a80f38f94439704a291c91eaa50e1a53fb32be6",
+      "bytes": 12292,
+      "document_hash": "e24abf7809282894a7fb1b487a19458217e1908a922ce476b4c37b20c6f5f1b4",
       "scenario": "per-order rejection on 2026-11-13: cn sell 100 fills while the us buy 10 with limit 300.00 is rejected as limit_not_marketable and forces complete=false"
     }
   ]
