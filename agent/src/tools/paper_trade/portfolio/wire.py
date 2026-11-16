@@ -26,14 +26,19 @@ portfolio models: no jsonschema runtime import, no clock, no randomness, no
 network, and no legacy ``paper_trade.wire`` behaviour is touched.
 
 The implementation lives in focused sibling modules (``wire_contract``,
-``wire_errors``, ``wire_identity``, ``wire_normalize``, ``wire_success``,
-``wire_validation``, ``wire_serialize``); this facade keeps every historic
-``wire.<symbol>`` binding path importable unchanged. The submodules import the
-contract and each other, never this facade, so the import graph stays acyclic.
+``wire_errors``, ``wire_identity``, ``wire_normalize``, ``wire_analytics``,
+``wire_success``, ``wire_validation``, ``wire_serialize``); this facade keeps
+every historic ``wire.<symbol>`` binding path importable unchanged. The
+submodules import the contract and each other, never this facade, so the
+import graph stays acyclic.
 """
 
 from __future__ import annotations
 
+from .wire_analytics import (
+    _analytics_sum as _analytics_sum,
+    _decimal_value as _decimal_value,
+)
 from .wire_contract import (
     INPUT_HASH_MARKER,
     PUBLIC_ERROR_CODES,
@@ -46,6 +51,7 @@ from .wire_contract import (
     _DECIMAL_PATTERN as _DECIMAL_PATTERN,
     _HASH_PATTERN as _HASH_PATTERN,
     _INPUT_HASH_SUFFIX as _INPUT_HASH_SUFFIX,
+    _OPTIONAL_SUCCESS_KEYS as _OPTIONAL_SUCCESS_KEYS,
     _PLAN_LINE_FIELDS as _PLAN_LINE_FIELDS,
     _REQUIRED_SUCCESS_KEYS as _REQUIRED_SUCCESS_KEYS,
     _SUCCESS_KEYS as _SUCCESS_KEYS,
@@ -77,6 +83,7 @@ from .wire_normalize import (
 )
 from .wire_serialize import dumps_payload, serialize_error, serialize_success
 from .wire_success import (
+    _assert_analytics as _assert_analytics,
     _assert_plan_divergence as _assert_plan_divergence,
     _assert_required_nested_members as _assert_required_nested_members,
     _assert_result_model as _assert_result_model,

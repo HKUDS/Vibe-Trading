@@ -27,14 +27,32 @@ _DECIMAL_KEYS: Final = frozenset(
         "amount",
         "avg_cost",
         "cash",
+        "cash_base",
+        "conversion_rounding_base",
+        "converted_amount",
+        "exact_converted",
+        "exact_nav_base",
+        "exact_value_base",
         "fee",
+        "hhi",
         "limit",
         "nav_base",
         "position_value",
+        "position_value_base",
         "price",
+        "rate",
         "rebalance_band",
+        "rounding_residual",
+        "rounding_residual_base",
+        "rounding_residual_local",
+        "source_amount",
+        "top_1",
+        "top_5",
+        "valuation_rounding",
         "value",
+        "value_base",
         "weight",
+        "weight_of_positions",
     }
 )
 _REQUIRED_SUCCESS_KEYS: Final = (
@@ -62,7 +80,8 @@ _REQUIRED_SUCCESS_KEYS: Final = (
     "complete",
     "hashes",
 )
-_SUCCESS_KEYS: Final = frozenset(_REQUIRED_SUCCESS_KEYS)
+_OPTIONAL_SUCCESS_KEYS: Final = ("analytics",)
+_SUCCESS_KEYS: Final = frozenset((*_REQUIRED_SUCCESS_KEYS, *_OPTIONAL_SUCCESS_KEYS))
 _CURRENCY_VALUES: Final = frozenset({"CNY", "HKD", "USD"})
 _INPUT_HASH_SUFFIX: Final = re.compile(r"(?:^|;\s*)input_sha256=[0-9a-f]{64}\s*$")
 _BUCKET_REQUIRED_KEYS: Final = ("bucket_id", "market", "currency", "cash", "positions")

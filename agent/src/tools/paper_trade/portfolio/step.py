@@ -31,6 +31,7 @@ from decimal import Decimal
 from typing import Any
 
 from ..rules import RULES_VERSION
+from .analytics import build_portfolio_analytics
 from .data import (
     PreparedPortfolioData,
     PriorMarkValuation,
@@ -49,6 +50,7 @@ from .models import (
     PortfolioBucket,
     PortfolioFill,
     PortfolioHashes,
+    PortfolioAnalytics,
     PortfolioIssue,
     PortfolioPosition,
     PortfolioRequest,
@@ -99,6 +101,7 @@ class PortfolioStepResult:
     end_ledger: PortfolioLedger
     valuation: ValuationStageResult
     stage_trace: tuple[StageName, ...]
+    analytics: PortfolioAnalytics | None = None
 
     @property
     def complete(self) -> bool:
@@ -279,6 +282,7 @@ def _outcome_issue(
 
 def _warnings(
     orchestration: OrchestrationResult,
+    analytics: PortfolioAnalytics,
 ) -> tuple[str, ...]:
     messages: list[str] = list(orchestration.plan.warnings)
     for bucket in orchestration.prepared_data.buckets:
@@ -287,6 +291,7 @@ def _warnings(
                 f"{bucket.bucket_id}: market closed; valued at prior marks (no matcher run)"
             )
     messages.extend(orchestration.valuation.warnings)
+    messages.extend(analytics.warnings)
     seen: set[str] = set()
     unique: list[str] = []
     for message in messages:
@@ -318,6 +323,7 @@ def _hash_material(
 def _document_body(
     request: PortfolioRequest,
     orchestration: OrchestrationResult,
+    analytics: PortfolioAnalytics,
 ) -> JsonObject:
     execution = orchestration.execution
     return {
@@ -340,6 +346,7 @@ def _document_body(
         "conversions": request.fx_conversions,
         "plan": request.plan,
         "bucket_results": _bucket_results(orchestration),
+        "analytics": analytics,
         "fills": _fills(execution.fills),
         "rejected_orders": tuple(
             {
@@ -369,7 +376,7 @@ def _document_body(
             }
             for row in execution.canceled_orders
         ),
-        "warnings": _warnings(orchestration),
+        "warnings": _warnings(orchestration, analytics),
         "errors": tuple(
             _outcome_issue("rejected_orders", row)
             for row in execution.rejected_orders
@@ -386,8 +393,9 @@ def _document(
     request: PortfolioRequest,
     orchestration: OrchestrationResult,
     material: PortfolioHashInput,
+    analytics: PortfolioAnalytics,
 ) -> PortfolioResult:
-    body = _document_body(request, orchestration)
+    body = _document_body(request, orchestration, analytics)
     placeholder = PortfolioHashes(
         plan_hash="0" * 64,
         planning_data_hash="0" * 64,
@@ -491,7 +499,21 @@ def run_portfolio_step(
         observer=observer,
     )
     material = _hash_material(request, sessions, prepared, fee_models)
-    document = _document(request, orchestration, material)
+    analytics = build_portfolio_analytics(
+        request,
+        orchestration.end_ledger,
+        orchestration.prepared_data,
+        conversion_events=orchestration.conversion_replay.events,
+    )
+    if Decimal(analytics.nav_base) != orchestration.valuation.nav_bridge.total.reported_base:
+        raise OrchestrationError(
+            stage="valuate_reconcile",
+            reason="analytics_nav_mismatch",
+            code="INTERNAL",
+            path="analytics.nav_base",
+            detail="analytics NAV must equal the orchestration's reported ledger NAV",
+        )
+    document = _document(request, orchestration, material, analytics)
     return PortfolioStepResult(
         document=document,
         order_plan=orchestration.plan,
@@ -501,4 +523,5 @@ def run_portfolio_step(
         end_ledger=orchestration.end_ledger,
         valuation=orchestration.valuation,
         stage_trace=orchestration.stage_trace,
+        analytics=analytics,
     )
