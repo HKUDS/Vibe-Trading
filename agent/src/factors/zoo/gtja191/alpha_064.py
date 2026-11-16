@@ -7,7 +7,7 @@
 """GTJA Alpha #64.
 
 Formula: (MAX(RANK(DECAYLINEAR(CORR(RANK(VWAP),RANK(VOLUME),4),4)),RANK(DECAYLINEAR(MAX(CORR(RANK(CLOSE),RANK(MEAN(VOLUME,60)),4),13),14)))*-1)
-Source: 国泰君安 191 alpha 研报 (2014), alpha 64."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 64."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 14,
-    "min_warmup_bars": 30,
-    "notes": '60d mean truncated to 10d; ts_max window 13→4 and decay_linear 14→6 for warmup feasibility.',
+    "min_warmup_bars": 88,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -52,11 +52,11 @@ def compute(panel: dict) -> pd.DataFrame:
     vw = vwap(panel, "equity_cn")
     p1 = rank(decay_linear(ts_corr(rank(vw), rank(v), 4), 4))
     x = rank(c)
-    y = rank(ts_mean(v, 10))
+    y = rank(ts_mean(v, 60))
     # fillna(0.0) reads a constant window's undefined correlation as no co-movement;
     # a window that holds a missing input is not that, so it stays missing (#1452, #1463).
     present = (x.notna() & y.notna()).astype(float).rolling(4, min_periods=4).min() == 1.0
     inner = ts_corr(x, y, 4).fillna(0.0).where(present)
-    p2 = rank(decay_linear(ts_max(inner, 4), 6))
+    p2 = rank(decay_linear(ts_max(inner, 13), 14))
     return -1.0 * pd.DataFrame(np.maximum(p1.to_numpy(), p2.to_numpy()),
                                index=c.index, columns=c.columns)

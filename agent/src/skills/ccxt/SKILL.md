@@ -15,16 +15,27 @@ CCXT is a unified cryptocurrency exchange trading library supporting 100+ exchan
 
 ```python
 import ccxt
+from src.data_gateway.reads import managed_reader
+from src.data_gateway import get_gateway
 
-exchange = ccxt.binance({"enableRateLimit": True})
+@managed_reader
+def fetch_crypto_snapshot():
+    exchange = ccxt.binance({
+        "enableRateLimit": True,
+        "timeout": int(get_gateway().config.source_timeout * 1000),
+    })
+    try:
+        return {
+            "bars": exchange.fetch_ohlcv("BTC/USDT", "1d", limit=100),
+            "ticker": exchange.fetch_ticker("ETH/USDT"),
+        }
+    finally:
+        close = getattr(exchange, "close", None)
+        if callable(close):
+            close()
 
-# Fetch daily OHLCV
-ohlcv = exchange.fetch_ohlcv("BTC/USDT", "1d", limit=100)
-# Returns: [[timestamp, open, high, low, close, volume], ...]
-
-# Fetch ticker
-ticker = exchange.fetch_ticker("ETH/USDT")
-print(f"ETH price: {ticker['last']}")
+snapshot = fetch_crypto_snapshot()
+print(snapshot["ticker"]["last"])
 ```
 
 ## Key Methods

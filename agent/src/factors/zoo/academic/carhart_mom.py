@@ -32,7 +32,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_cn', 'equity_hk'],
     'frequency': ['1d'],
     'decay_horizon': 60,
-    'min_warmup_bars': 252,
+    'min_warmup_bars': 253,
     'notes': (
         'Carhart (1997) UMD momentum factor. Return from 12 months ago to 1 month '
         'ago, so the most recent month is skipped and today\'s price never enters; '

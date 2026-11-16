@@ -2,7 +2,7 @@
 that has a vision-capable model.
 
 Provider config (base_url, api_key) is resolved via the existing
-``provider_env_names()`` function in ``src/providers/capabilities.py``,
+``provider_env_names()`` function in ``src/providers/registry.py``,
 which already covers 18+ providers. No separate provider mapping is needed.
 
 Vision capability is not gated. ``is_available()`` returns True if an API
@@ -115,7 +115,7 @@ def _resolve_provider_config() -> dict[str, str]:
     reads go through ``os.getenv`` directly.
     """
     from src.config.accessor import get_env_config
-    from src.providers.capabilities import provider_env_names
+    from src.providers.registry import provider_env_names
 
     env = get_env_config()
     provider = env.llm.langchain_provider.strip().lower()

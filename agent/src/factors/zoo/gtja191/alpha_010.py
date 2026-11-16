@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 21,
+    "min_warmup_bars": 25,
     "notes": 'Per-day return = pct_change(1) via (close - delay(close,1))/delay(close,1).',
 }
 

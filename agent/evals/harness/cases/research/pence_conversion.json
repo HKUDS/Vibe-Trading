@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "case_id": "research.pence_conversion.v1",
+  "scenario": "currency_identity",
+  "prompt": "测试报价明确是100 GBp（便士），转换成GBP，保留单位区别。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "gbp",
+        "operator": "approx",
+        "expected": 1
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

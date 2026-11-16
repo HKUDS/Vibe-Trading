@@ -342,3 +342,42 @@ def test_midwalk_empty_page_that_persists_ends_the_walk(monkeypatch) -> None:
 
     assert calls["n"] == 3
     assert len(df) == tencent_loader._PAGE_SIZE
+
+
+def test_gateway_deadline_caps_socket_and_prevents_late_retry(monkeypatch):
+    from backtest.loaders.acquisition import source_deadline
+
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(tencent_loader.time, "monotonic", lambda: now[0])
+
+    def expire(req, timeout, **kwargs):
+        calls.append(timeout)
+        now[0] += timeout
+        raise TimeoutError("socket timeout")
+
+    monkeypatch.setattr(urllib.request, "urlopen", expire)
+    token = source_deadline.set(101.0)
+    try:
+        with pytest.raises(TimeoutError, match="Acquisition deadline"):
+            tencent_loader.DataLoader()._fetch_one("600519.SH", "2026-01-01", "2026-01-31")
+        assert calls == [1.0]
+    finally:
+        source_deadline.reset(token)
+
+
+@pytest.mark.parametrize("status,expected", [(401, 1), (403, 1), (404, 1), (501, 1), (408, 3), (429, 3), (503, 3)])
+def test_rejected_http_requests_do_not_spend_retry_budget(monkeypatch, status, expected):
+    calls = []
+    sleeps = []
+    loader = tencent_loader.DataLoader()
+
+    def rejected(*args):
+        calls.append(args)
+        raise urllib.error.HTTPError("https://example.test", status, "rejected", {}, None)
+
+    monkeypatch.setattr(loader, "_request_page", rejected)
+    monkeypatch.setattr(tencent_loader.time, "sleep", sleeps.append)
+    with pytest.raises(ValueError, match=f"failed after {expected} attempts"):
+        loader._fetch_one("601398.SH", "2026-11-02", "2026-11-13")
+    assert len(calls) == expected and len(sleeps) == expected - 1

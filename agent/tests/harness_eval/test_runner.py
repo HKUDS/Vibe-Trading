@@ -321,3 +321,12 @@ def test_cli_exit_codes_distinguish_failures_from_invalid_input(
 
     case_path.write_text("{}", encoding="utf-8")
     assert main(["--case", str(case_path), "--run-dir", str(artifact_dir)]) == 2
+
+
+def test_absent_numeric_validation_does_not_claim_pass(harness_case, artifact_dir):
+    path = artifact_dir / "artifacts" / "grounding_evidence.json"
+    evidence = json.loads(path.read_text())
+    evidence["validations"] = []
+    path.write_text(json.dumps(evidence))
+    verdicts = _by_code(evaluate_case(harness_case, artifact_dir))
+    assert verdicts["evidence.forbidden_issue_codes"].status is VerdictStatus.NOT_EVALUABLE

@@ -1,18 +1,4 @@
-"""Regression tests for P01 + P03 — swarm output contract.
-
-A worker that produced no substantive deliverable (plan-only stub, mock
-data, unparsed tool markup, raw tool envelope, or a data agent that made no
-tool call and wrote no report) must NOT be reported ``completed``, and the
-runtime must not fold ``timeout`` / ``token_limit`` / ``incomplete`` into a
-successful run.
-
-The ``test_timeout_terminal_*`` runtime test is the fail-before / pass-after
-anchor: on the pre-fix code ``timeout`` was mapped to ``completed`` so the run
-reported success; post-fix it is a failure. The content-contract unit tests
-pin the new ``_classify_deliverable`` policy (Hybrid: content-sanity for all
-agents, tool-evidence only for data agents — tool-less synthesis/editor roles
-are intentionally NOT failed).
-"""
+"""Delivery status and tool errors remain factual; prose is not graded."""
 
 from __future__ import annotations
 
@@ -33,11 +19,9 @@ from src.swarm.models import (
 )
 from src.swarm.store import SwarmStore
 from src.swarm.worker import (
-    _classify_deliverable,
+    _delivery_error,
     _collect_artifacts,
-    _is_data_agent,
     _is_error_result,
-    _report_written,
     run_worker,
 )
 import src.swarm.runtime as rt
@@ -59,121 +43,17 @@ REAL_REPORT = (
 )
 
 
-# ---- content contract (Hybrid policy) -------------------------------------
-def test_plan_only_is_rejected():
-    assert _classify_deliverable(PLAN_STUB, is_data_agent=True, report_written=False, data_tool_calls=0)
+@pytest.mark.parametrize("text", [PLAN_STUB, REAL_REPORT, "Hold.",
+    "No mock data was used. Hold based on the supplied data.",
+    '{"ok": true, "content": "Hold"}',
+    "## Plan\nAnalysis complete. Hold the existing position."])
+def test_report_shape_is_not_a_delivery_error(text):
+    assert _delivery_error(text) is None
 
 
-def test_unparsed_tool_markup_is_rejected():
-    txt = "<｜tool▁calls▁begin｜>function<tool_sep>load_skill"
-    assert _classify_deliverable(txt, is_data_agent=False, report_written=False, data_tool_calls=0)
-
-
-def test_mock_data_is_rejected():
-    txt = "### Risk Audit (Mock Data)\nWorst Drawdown: -23.5% | 95% VaR: -4.2%"
-    assert _classify_deliverable(txt, is_data_agent=True, report_written=True, data_tool_calls=3)
-
-
-def test_raw_tool_envelope_is_rejected():
-    txt = '{"status": "ok", "content": "<skill name=technical-basic>...</skill>"}'
-    assert _classify_deliverable(txt, is_data_agent=False, report_written=False, data_tool_calls=1)
-
-
-def test_raw_ok_data_envelope_is_rejected():
-    """Real success shape from get_fundamentals_tool.py, no top-level status key."""
-    txt = (
-        '{"ok": true, "source": "yfinance", "freq": "annual", "pit": false, '
-        '"symbols": ["AAPL.US"], "fields": ["revenue"], "data": {"revenue": [1, 2, 3]}}'
-    )
-    assert _classify_deliverable(
-        txt, is_data_agent=True, report_written=False, data_tool_calls=1
-    )
-
-
-def test_raw_ok_non_data_payload_envelope_is_rejected():
-    """Real success shape from research_papers_tool.py: uses "papers" as the
-    payload key, not "data". Proves the fix does not depend on the payload
-    key name, only on the repository's real ok/success discriminator."""
-    txt = (
-        '{"ok": true, "mode": "read", "source": "arxiv", '
-        '"disclaimer": "not investment advice", "requested": 1, "returned": 1, '
-        '"missing_ids": [], "papers": [{"id": "1234.5678", "title": "Example"}], '
-        '"next_actions": ["read_more"]}'
-    )
-    assert _classify_deliverable(
-        txt, is_data_agent=True, report_written=False, data_tool_calls=1
-    )
-
-
-def test_raw_success_envelope_is_rejected():
-    """SYNTHETIC: no current Vibe-Trading tool emits a top-level "success" key
-    (confirmed by repository survey). This branch exists only for consistency
-    with the sibling _is_tool_success / _is_error_result classifiers, which
-    already check both ok and success defensively."""
-    txt = '{"success": true, "data": {"x": 1}}'
-    assert _classify_deliverable(
-        txt, is_data_agent=True, report_written=False, data_tool_calls=1
-    )
-
-
-def test_prose_mentioning_ok_or_success_as_words_is_not_rejected():
-    """Control: legitimate prose that happens to contain the words ok/success
-    must not be misclassified, the check requires the text to start with
-    "{" before any key inspection happens."""
-    txt = "The fundamentals look ok and the outlook is a success story overall."
-    assert (
-        _classify_deliverable(
-            txt, is_data_agent=False, report_written=False, data_tool_calls=0
-        )
-        is None
-    )
-
-
-def test_json_with_late_ok_key_is_a_known_heuristic_limitation():
-    """Documents a known, accepted limitation: the character-window heuristic
-    only looks at the first 40/300 chars, matching the repository's own
-    existing convention for the status/content branch. Every real ok/success
-    tool in this repository puts ok/success first (verified across all 29
-    producers), so this is not expected to occur in practice."""
-    padding = "x" * 60
-    txt = '{"' + padding + '": 1, "ok": true, "data": {}}'
-    assert (
-        _classify_deliverable(
-            txt, is_data_agent=True, report_written=False, data_tool_calls=1
-        )
-        is None
-    )
-
-
-def test_data_agent_without_evidence_is_rejected():
-    assert _classify_deliverable(REAL_REPORT, is_data_agent=True, report_written=False, data_tool_calls=0)
-
-
-def test_synthesis_agent_prose_is_accepted():
-    """FALSE-REJECT GUARD: a tool-less synthesis/editor agent that produced
-    real prose with no tool calls and no report.md must pass."""
-    assert _classify_deliverable(REAL_REPORT, is_data_agent=False, report_written=False, data_tool_calls=0) is None
-
-
-def test_real_report_is_accepted():
-    assert _classify_deliverable(REAL_REPORT, is_data_agent=True, report_written=True, data_tool_calls=5) is None
-
-
-def test_is_data_agent_classification():
-    synth = SwarmAgentSpec(id="editor", role="Editor", system_prompt="x", tools=["bash", "read_file", "write_file"])
-    analyst = SwarmAgentSpec(
-        id="onchain", role="On-Chain", system_prompt="x", tools=["bash", "write_file", "get_market_data"]
-    )
-    assert _is_data_agent(synth) is False
-    assert _is_data_agent(analyst) is True
-
-
-def test_report_written_detection(tmp_path: Path):
-    assert _report_written(tmp_path) is False
-    (tmp_path / "report.md").write_text("   \n ", encoding="utf-8")
-    assert _report_written(tmp_path) is False
-    (tmp_path / "report.md").write_text("# Real report\nbuy.", encoding="utf-8")
-    assert _report_written(tmp_path) is True
+def test_actual_delivery_errors():
+    assert _delivery_error(" ") == "empty response"
+    assert _delivery_error("<tool_call_begin>broken")
 
 
 # ---- runtime integrity ----------------------------------------------------
@@ -199,7 +79,8 @@ def test_timeout_terminal_run_not_completed(tmp_path, monkeypatch):
     )
     run = _run(tmp_path, None)
     assert run.status != RunStatus.completed
-    assert run.final_report is None
+    assert run.final_report
+    assert run.report_is_partial
 
 
 def test_incomplete_terminal_run_not_completed(tmp_path, monkeypatch):
@@ -214,7 +95,8 @@ def test_incomplete_terminal_run_not_completed(tmp_path, monkeypatch):
     )
     run = _run(tmp_path, None)
     assert run.status != RunStatus.completed
-    assert run.final_report is None
+    assert run.final_report
+    assert run.report_is_partial
     assert run.tasks[0].error and "plan-only" in run.tasks[0].error
 
 
@@ -354,13 +236,13 @@ class _ScriptedLLM:
     ("result", "raises", "expected_event_status", "expected_worker_status"),
     [
         ('{"status": "ok", "data": [1]}', False, "ok", "completed"),
-        ('{"status": "error", "trace": "...', False, "error", "incomplete"),
-        ("", True, "error", "incomplete"),
+        ('{"status": "error", "trace": "...', False, "error", "completed"),
+        ("", True, "error", "completed"),
         (
             '{"ok": false, "error": "eastmoney news fetch failed"}',
             False,
             "error",
-            "incomplete",
+            "completed",
         ),
     ],
 )
@@ -510,7 +392,7 @@ def test_run_worker_closes_llm_on_tool_exception(monkeypatch, tmp_path: Path) ->
         user_vars={},
         run_dir=tmp_path,
     )
-    assert worker_result.status.value == "incomplete"
+    assert worker_result.status.value == "completed"
     assert len(closed) == 1, f"close must fire on failure path, got {len(closed)}"
 
 

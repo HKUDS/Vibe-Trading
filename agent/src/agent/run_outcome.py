@@ -56,13 +56,9 @@ class OutcomeInputs:
             streak tripped the breaker.
         has_output: Whether the run produced any user-visible output —
             a metrics artifact or a non-empty final answer.
-        released_fallback: Whether the grounding gate degraded the final
-            answer to the deterministic fallback.
+        released_fallback: Whether a delivery failure required a fallback answer.
         released_fallback_reason: Reason captured at the release site, if
             the release path set one.
-        grounding_validation_count: Rejected-draft count from the
-            grounding ledger, used only to build the lazily-worded
-            fallback reason when none was captured.
         pending_write_directive: The ``run ended without writing the task
             target file(s)`` directive, or ``None``. Evaluated lazily by
             the caller only on the success path.
@@ -77,6 +73,7 @@ class OutcomeInputs:
         budget_reason: An exhausted research-goal token budget, if any.
         answer_released: Whether a final answer was released to the user.
             One that crossed the budget is a degraded success, not a failure.
+        truncation_reason: Provider-reported output limit; partial text is retained.
     """
 
     stall_reason: Optional[str]
@@ -86,7 +83,6 @@ class OutcomeInputs:
     has_output: bool
     released_fallback: bool
     released_fallback_reason: Optional[str]
-    grounding_validation_count: int
     pending_write_directive: Callable[[], Optional[str]]
     empty_model_response_iter: Optional[int]
     empty_response_provider: str
@@ -94,6 +90,7 @@ class OutcomeInputs:
     max_iterations: int
     budget_reason: Optional[str] = None
     answer_released: bool = False
+    truncation_reason: Optional[str] = None
 
 
 @dataclass
@@ -144,15 +141,15 @@ def resolve_final_status(inputs: OutcomeInputs) -> RunOutcome:
             "responses were blocked by content moderation"
         )
         return RunOutcome("failed", reason, "failure", False)
+    if inputs.truncation_reason is not None:
+        return RunOutcome("failed", inputs.truncation_reason, "failure", False)
     if inputs.has_output:
         if inputs.budget_reason is not None:
             # The answer that crossed a goal's token budget was released.
             return RunOutcome("success", inputs.budget_reason, "success", True)
         if inputs.released_fallback:
             reason = inputs.released_fallback_reason or (
-                "final answer degraded to the deterministic fallback after "
-                f"{inputs.grounding_validation_count} "
-                "rejected drafts could not be corrected within the iteration budget"
+                "final response could not be delivered; a fallback was shown"
             )
             return RunOutcome("success", reason, "success", True)
         pending_directive = inputs.pending_write_directive()

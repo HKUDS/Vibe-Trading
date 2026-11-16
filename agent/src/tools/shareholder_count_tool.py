@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from backtest.loaders.eastmoney_client import datacenter_rejection, get_json, resolve_secid
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 # Eastmoney datacenter report endpoint + the two shareholder-number reports:
@@ -80,6 +81,7 @@ class ShareholderCountTool(BaseTool):
         "required": ["code"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Resolve the symbol, query the report, and return a JSON envelope.
 

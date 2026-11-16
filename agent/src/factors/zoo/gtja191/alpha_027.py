@@ -14,6 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from src.factors.base import geometric_wma
+
 from src.factors.base import (
     decay_linear,
     delta,
@@ -42,11 +44,11 @@ __alpha_meta__ = {
     "frequency": ["1d"],
     "decay_horizon": 12,
     "min_warmup_bars": 18,
-    "notes": 'WMA proxied by decay_linear.',
+    "notes": 'WMA uses normalized geometric 0.9**age weights from the report.',
 }
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
     r3 = safe_div(c - c.shift(3), c.shift(3)) * 100.0
     r6 = safe_div(c - c.shift(6), c.shift(6)) * 100.0
-    return decay_linear(r3 + r6, 12)
+    return geometric_wma(r3 + r6, 12)

@@ -45,7 +45,7 @@ __alpha_meta__ = {
     'universe': ['equity_cn'],
     'frequency': ['1d'],
     'decay_horizon': 13,
-    'min_warmup_bars': 20,
+    'min_warmup_bars': 13,
     'notes': '',
 }
 
@@ -67,7 +67,7 @@ def compute(panel):
     l = panel["low"]
     dc = c - c.shift(1)
     inv = safe_div(pd.DataFrame(np.ones_like(c, dtype=np.float64), index=c.index, columns=c.columns), dc)
-    val = inv.where(dc > 0, 1.0)
+    val = inv.where(dc > 0, 1.0).where(dc.notna())
     x = safe_div(val - ts_min(val, 12), (h - l)) * 100.0
     out = _sma(x, 13, 2)
     return out

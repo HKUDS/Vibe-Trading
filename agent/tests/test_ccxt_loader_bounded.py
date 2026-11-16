@@ -114,6 +114,16 @@ def test_get_exchange_sets_explicit_timeout():
     assert ex.timeout == cl._CCXT_TIMEOUT_MS
 
 
+@pytest.fixture(autouse=True)
+def _preserve_registered_loader_identity(monkeypatch):
+    """Restore classes after module reloads so inherited adapters stay coherent."""
+    from backtest.loaders import registry
+
+    monkeypatch.setattr(cl, "DataLoader", cl.DataLoader)
+    if "ccxt" in registry.LOADER_REGISTRY:
+        monkeypatch.setitem(registry.LOADER_REGISTRY, "ccxt", registry.LOADER_REGISTRY["ccxt"])
+
+
 def test_invalid_timeout_env_values_fall_back_on_reload(monkeypatch, caplog):
     monkeypatch.setenv("CCXT_TIMEOUT_MS", "abc")
     monkeypatch.setenv("CCXT_FETCH_BUDGET_S", "nope")

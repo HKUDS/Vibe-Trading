@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.tail_risk_identity.v1",
+  "scenario": "risk_identity",
+  "prompt": "测试来源明确给出var_95=0.03和es_95=0.05。分别提取95% VaR与95% ES，不要互换。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "var_95",
+        "operator": "approx",
+        "expected": 0.03
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "es_95",
+        "operator": "approx",
+        "expected": 0.05
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

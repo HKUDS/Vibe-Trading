@@ -31,7 +31,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_cn', 'equity_hk'],
     'frequency': ['1d'],
     'decay_horizon': 21,
-    'min_warmup_bars': 21,
+    'min_warmup_bars': 22,
     'notes': (
         '[PRICE PROXY] for the Sharpe (1964) / Fama-French market factor (MKT-RF). '
         'The original definition uses value-weighted market excess returns; here we '

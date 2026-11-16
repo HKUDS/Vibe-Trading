@@ -6,6 +6,7 @@ import math
 import sys
 from typing import Any
 
+from src.data_gateway.reads import managed_reader
 from src.trading.profiles import list_profiles, profile_by_id
 from src.trading.types import TradingProfile
 
@@ -324,6 +325,7 @@ def get_open_orders(
     return _call_remote(profile, "orders", _account_arg(overrides))
 
 
+@managed_reader
 def get_quote(
     symbol: str,
     profile_id: str | None = None,
@@ -374,6 +376,7 @@ def get_quote(
     )
 
 
+@managed_reader
 def search_instruments(
     query: str,
     profile_id: str | None = None,
@@ -424,6 +427,7 @@ def search_instruments(
     )
 
 
+@managed_reader
 def get_history(
     symbol: str,
     profile_id: str | None = None,
@@ -499,6 +503,7 @@ def get_history(
 # ---------------------------------------------------------------------------
 
 
+@managed_reader
 def get_rehab(symbol: str, profile_id: str | None = None, **overrides: Any) -> dict[str, Any]:
     """Dividend / split adjustment factors for ``symbol``."""
     profile = profile_by_id(profile_id)
@@ -514,6 +519,7 @@ def get_rehab(symbol: str, profile_id: str | None = None, **overrides: Any) -> d
     )
 
 
+@managed_reader
 def get_capital_flow(
     symbol: str,
     profile_id: str | None = None,
@@ -539,6 +545,7 @@ def get_capital_flow(
     )
 
 
+@managed_reader
 def get_capital_distribution(symbol: str, profile_id: str | None = None, **overrides: Any) -> dict[str, Any]:
     """Latest capital in-flow vs out-flow snapshot for ``symbol``."""
     profile = profile_by_id(profile_id)
@@ -603,6 +610,7 @@ def get_acc_cash_flow(
     )
 
 
+@managed_reader
 def get_financials(
     symbol: str,
     profile_id: str | None = None,
@@ -630,6 +638,7 @@ def get_financials(
     )
 
 
+@managed_reader
 def get_earnings_calendar(
     profile_id: str | None = None,
     *,

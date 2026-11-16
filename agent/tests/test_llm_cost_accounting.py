@@ -1,5 +1,8 @@
 """Paid responses remain accounted for when compaction or Stop interrupts work."""
 
+from src.providers import llm as _provider_adapters
+from src.providers.settings import resolve_config
+
 from types import SimpleNamespace
 from unittest.mock import Mock
 import json
@@ -195,19 +198,9 @@ def test_goal_token_budget_stops_current_turn_and_blocks_unfunded_retry(tmp_path
 
 @pytest.mark.parametrize("limit", [None, 2048])
 def test_native_deepseek_forwards_configured_output_limit(monkeypatch, limit):
-    from src.providers import llm as provider
-
-    factory = Mock(return_value=object())
-    monkeypatch.setattr(provider, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
-    monkeypatch.setattr(provider, "get_llm_credentials", lambda *args: {
-        "api_key": "test-key", "base_url": "https://example.invalid",
-    })
-    if limit is None:
-        monkeypatch.delenv("LANGCHAIN_MAX_TOKENS", raising=False)
-    else:
-        monkeypatch.setenv("LANGCHAIN_MAX_TOKENS", str(limit))
-    reset_env_config()
-    provider._build_native_deepseek(model="configured-model", temperature=0)
+    factory = Mock(return_value=SimpleNamespace(root_client=None, root_async_client=None))
+    monkeypatch.setattr(_provider_adapters, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
+    _provider_adapters._build_native_deepseek(model="configured-model", temperature=0, snapshot=resolve_config(environment={"LANGCHAIN_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "test-key", "LANGCHAIN_MAX_TOKENS": str(limit or "")}))
     kwargs = factory.call_args.kwargs
     assert kwargs.get("max_tokens") == limit
     assert ("max_tokens" in kwargs) == (limit is not None)
@@ -217,7 +210,6 @@ def test_native_deepseek_forwards_configured_output_limit(monkeypatch, limit):
 def test_native_deepseek_output_limit_reaches_http_request(monkeypatch):
     """Exercise the optional real adapter and SDK without contacting a provider."""
     import httpx
-    from src.providers import llm as provider
 
     native = pytest.importorskip("langchain_deepseek")
     requests = []
@@ -233,16 +225,13 @@ def test_native_deepseek_output_limit_reaches_http_request(monkeypatch):
         })
 
     monkeypatch.setenv("LANGCHAIN_MAX_TOKENS", "2048")
-    monkeypatch.setattr(provider, "get_llm_credentials", lambda *args: {
-        "api_key": "offline-test-key", "base_url": "https://example.invalid/v1",
-    })
     reset_env_config()
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
         def factory(**kwargs):
             return native.ChatDeepSeek(**kwargs, http_client=client)
 
-        monkeypatch.setattr(provider, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
-        adapter = provider._build_native_deepseek(model="deepseek-chat", temperature=0)
+        monkeypatch.setattr(_provider_adapters, "import_module", lambda name: SimpleNamespace(ChatDeepSeek=factory))
+        adapter = _provider_adapters._build_native_deepseek(model="deepseek-chat", temperature=0, snapshot=resolve_config(environment={"LANGCHAIN_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "offline-test-key", "DEEPSEEK_BASE_URL": "https://example.invalid/v1", "LANGCHAIN_MAX_TOKENS": "2048"}))
         response = adapter.invoke("Hello")
 
     assert response.content == "Hello"

@@ -300,8 +300,9 @@ def test_run_worker_uses_remote_mcp_tool_and_report_cites_canned_data(
     assert report_path.is_file()
     contents = report_path.read_text(encoding="utf-8")
     assert canned_payload["answer"] in contents
-    # report.md was the source of truth for the worker's summary.
-    assert canned_payload["answer"] in result.summary
+    # Preserve the model's delivered answer; the cited report remains an artifact.
+    assert result.summary == "Wrote report.md with KB-cited findings."
+    assert any(path.endswith("report.md") for path in result.artifact_paths)
 
     # The remote MCP server actually got the call — i.e. the registry
     # wired up a real adapter, not a stub that swallows the args.

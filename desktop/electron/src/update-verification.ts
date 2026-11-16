@@ -7,6 +7,7 @@ export type AuthenticodeInspection = {
   status: string;
   artifactSha256?: string;
   signerSubject?: string;
+  productVersion?: string;
   certificateSha256?: string;
 };
 
@@ -28,6 +29,7 @@ export type UpdateRejectionCode =
   | "artifact-inspection-failed"
   | "artifact-hash-mismatch"
   | "artifact-changed-during-verification"
+  | "artifact-version-mismatch"
   | "artifact-unsigned"
   | "artifact-signature-invalid"
   | "publisher-not-allowed";
@@ -115,6 +117,11 @@ export async function verifyWindowsUpdateCandidate(
     );
   }
 
+  // Bind the advertised version to the signed PE resource, not just feed text.
+  if (signature.productVersion !== candidate.version) {
+    return reject("artifact-version-mismatch", "The signed installer version does not match the release.");
+  }
+
   const inspectedArtifactSha256 = normalizeSha256(signature.artifactSha256);
   if (!inspectedArtifactSha256 || inspectedArtifactSha256 !== actualHash) {
     return reject(
@@ -193,7 +200,7 @@ export function inspectAuthenticodeSignature(artifactPath: string): Authenticode
         "      $certificateFingerprint = ([System.BitConverter]::ToString($certificateBytes)).Replace('-', '').ToLowerInvariant()",
         "    } finally { $certificateHasher.Dispose() }",
         "  }",
-        "  @{ status = $signature.Status.ToString(); artifactSha256 = $artifactFingerprint; signerSubject = $signature.SignerCertificate.Subject; certificateSha256 = $certificateFingerprint } | ConvertTo-Json -Compress",
+        "  @{ productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($artifactPath).ProductVersion; status = $signature.Status.ToString(); artifactSha256 = $artifactFingerprint; signerSubject = $signature.SignerCertificate.Subject; certificateSha256 = $certificateFingerprint } | ConvertTo-Json -Compress",
         "} finally { $stream.Dispose() }",
       ].join("\n"),
     ],
@@ -216,6 +223,7 @@ export function inspectAuthenticodeSignature(artifactPath: string): Authenticode
   const payload = parsed as Record<string, unknown>;
   return {
     status: payload.status as string,
+    productVersion: typeof payload.productVersion === "string" ? payload.productVersion : undefined,
     artifactSha256: typeof payload.artifactSha256 === "string"
       ? payload.artifactSha256
       : undefined,

@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, FilePlus2, Loader2, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Download, FilePlus2, Loader2, RefreshCw, Search } from "lucide-react";
 import {
   api,
   type ResearchArtifactRevision,
+  type ResearchArtifactComparison,
+  type ResearchArtifactExport,
   type ResearchArtifactSaveResult,
   type SaveResearchArtifactRequest,
 } from "@/lib/api";
@@ -63,6 +65,18 @@ function evidenceFromText(text: string): Array<Record<string, unknown>> {
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((source_uri) => ({ source_uri }));
 }
 
+function downloadExport(exported: ResearchArtifactExport) {
+  const url = URL.createObjectURL(new Blob([exported.content], { type: exported.media_type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = exported.filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ResearchArtifacts() {
   const { t } = useTranslation();
   const [artifacts, setArtifacts] = useState<ResearchArtifactRevision[]>([]);
@@ -71,8 +85,16 @@ export function ResearchArtifacts() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState<"json" | "markdown" | null>(null);
+  const [comparisonExporting, setComparisonExporting] = useState<"json" | "markdown" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [compareFrom, setCompareFrom] = useState("");
+  const [compareTo, setCompareTo] = useState("");
+  const [comparison, setComparison] = useState<ResearchArtifactComparison | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const comparisonRequest = useRef(0);
+  const detailRequest = useRef(0);
 
   async function loadArtifacts(search = "") {
     setLoading(true);
@@ -92,11 +114,40 @@ export function ResearchArtifacts() {
   }, []);
 
   async function openArtifact(artifactId: string) {
+    const requestId = ++detailRequest.current;
+    comparisonRequest.current += 1;
+    setDetail(null);
+    setComparison(null);
+    setComparing(false);
     setError(null);
     try {
-      setDetail(await api.getResearchArtifact(artifactId));
+      const result = await api.getResearchArtifact(artifactId);
+      if (detailRequest.current !== requestId) return;
+      setDetail(result);
+      setCompareFrom(result.revisions[1]?.revision_id ?? result.revisions[0]?.revision_id ?? "");
+      setCompareTo(result.revisions[0]?.revision_id ?? "");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("researchArtifacts.loadError"));
+      if (detailRequest.current === requestId) {
+        setError(err instanceof Error ? err.message : t("researchArtifacts.loadError"));
+      }
+    }
+  }
+
+  async function compareSelectedRevisions() {
+    if (!detail || !compareFrom || !compareTo) return;
+    const requestId = ++comparisonRequest.current;
+    setComparing(true);
+    setComparison(null);
+    setError(null);
+    try {
+      const result = await api.compareResearchArtifactRevisions(detail.artifact.artifact_id, compareFrom, compareTo);
+      if (comparisonRequest.current === requestId) setComparison(result.comparison);
+    } catch (err) {
+      if (comparisonRequest.current === requestId) {
+        setError(err instanceof Error ? err.message : t("researchArtifacts.compareError"));
+      }
+    } finally {
+      if (comparisonRequest.current === requestId) setComparing(false);
     }
   }
 
@@ -106,6 +157,34 @@ export function ResearchArtifacts() {
       ...(current.artifact_id && ["content", "data_as_of", "newEvidence"].includes(key)
         ? { verification_status: "unverified" } : {}),
     }));
+  }
+
+  async function exportArtifact(format: "json" | "markdown") {
+    if (!detail) return;
+    setExporting(format);
+    setError(null);
+    try {
+      const exported = await api.exportResearchArtifact(detail.artifact.artifact_id, format);
+      downloadExport(exported);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("researchArtifacts.exportError"));
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  async function exportComparison(format: "json" | "markdown") {
+    if (!detail || !compareFrom || !compareTo) return;
+    setComparisonExporting(format);
+    setError(null);
+    try {
+      const exported = await api.exportResearchArtifactComparison(detail.artifact.artifact_id, compareFrom, compareTo, format);
+      downloadExport(exported);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("researchArtifacts.exportError"));
+    } finally {
+      setComparisonExporting(null);
+    }
   }
 
   async function save(event: FormEvent) {
@@ -203,14 +282,93 @@ export function ResearchArtifacts() {
                     <h2 className="font-medium">{detail.artifact.subject}</h2>
                     <p className="mt-1 text-xs text-muted-foreground">{detail.artifact.artifact_id}</p>
                   </div>
-                  <button type="button" className="text-sm text-muted-foreground" onClick={() => setDetail(null)}>{t("researchArtifacts.close")}</button>
+                  <button type="button" className="text-sm text-muted-foreground" onClick={() => {
+                    detailRequest.current += 1;
+                    comparisonRequest.current += 1;
+                    setComparing(false);
+                    setComparison(null);
+                    setDetail(null);
+                  }}>{t("researchArtifacts.close")}</button>
                 </div>
                 <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 font-sans text-sm">{detail.artifact.content}</pre>
                 <details className="mt-3 text-sm">
                   <summary className="cursor-pointer">{t("researchArtifacts.evidence")}</summary>
                   <pre className="mt-2 overflow-auto whitespace-pre-wrap">{JSON.stringify(detail.artifact.evidence, null, 2)}</pre>
                 </details>
-                <button type="button" className="mt-3 rounded-md border px-3 py-1.5 text-sm" onClick={() => setForm(revisionForm(detail.artifact))}>{t("researchArtifacts.revise")}</button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" className="rounded-md border px-3 py-1.5 text-sm" onClick={() => setForm(revisionForm(detail.artifact))}>{t("researchArtifacts.revise")}</button>
+                  <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={exporting !== null} onClick={() => void exportArtifact("json")}>
+                    <Download className="me-1 inline h-4 w-4" />{exporting === "json" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportJson")}
+                  </button>
+                  <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={exporting !== null} onClick={() => void exportArtifact("markdown")}>
+                    <Download className="me-1 inline h-4 w-4" />{exporting === "markdown" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportMarkdown")}
+                  </button>
+                </div>
+                {detail.revisions.length > 1 && (
+                  <div className="mt-4 rounded-md border p-3 text-sm">
+                    <h3 className="font-medium">{t("researchArtifacts.compareTitle")}</h3>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <label className="text-xs text-muted-foreground">{t("researchArtifacts.fromRevision")}
+                        <select className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm text-foreground" value={compareFrom} onChange={(event) => {
+                          setCompareFrom(event.target.value);
+                          comparisonRequest.current += 1;
+                          setComparing(false);
+                          setComparison(null);
+                        }}>
+                          {detail.revisions.map((revision) => <option key={revision.revision_id} value={revision.revision_id}>r{revision.revision_number} · {revision.data_as_of}</option>)}
+                        </select>
+                      </label>
+                      <label className="text-xs text-muted-foreground">{t("researchArtifacts.toRevision")}
+                        <select className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm text-foreground" value={compareTo} onChange={(event) => {
+                          setCompareTo(event.target.value);
+                          comparisonRequest.current += 1;
+                          setComparing(false);
+                          setComparison(null);
+                        }}>
+                          {detail.revisions.map((revision) => <option key={revision.revision_id} value={revision.revision_id}>r{revision.revision_number} · {revision.data_as_of}</option>)}
+                        </select>
+                      </label>
+                      <button type="button" className="self-end rounded-md border px-3 py-2 disabled:opacity-50" disabled={comparing || !compareFrom || !compareTo} onClick={() => void compareSelectedRevisions()}>
+                        {comparing ? t("researchArtifacts.comparing") : t("researchArtifacts.compareAction")}
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">{t("researchArtifacts.comparisonOnly")}</p>
+                    {comparison && (
+                      <div className="mt-3 space-y-3 border-t pt-3">
+                        {!comparison.content.changed && !comparison.evidence.changed && Object.keys(comparison.metadata).length === 0 && (
+                          <p className="text-muted-foreground">{t("researchArtifacts.noChanges")}</p>
+                        )}
+                        {comparison.content.changed && (
+                          <section>
+                            <h4 className="text-xs font-medium">{t("researchArtifacts.content")}</h4>
+                            <pre className="mt-1 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 font-mono text-xs">{comparison.content.diff.join("\n")}</pre>
+                            {comparison.content.truncated && <p className="mt-1 text-xs text-amber-600">{t("researchArtifacts.compareTruncated")}</p>}
+                          </section>
+                        )}
+                        {comparison.evidence.changed && (
+                          <section>
+                            <h4 className="text-xs font-medium">{t("researchArtifacts.evidence")}</h4>
+                            <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-xs">{JSON.stringify(comparison.evidence, null, 2)}</pre>
+                          </section>
+                        )}
+                        {Object.keys(comparison.metadata).length > 0 && (
+                          <section>
+                            <h4 className="text-xs font-medium">{t("researchArtifacts.metadataChanges")}</h4>
+                            <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-xs">{JSON.stringify(comparison.metadata, null, 2)}</pre>
+                          </section>
+                        )}
+                        <div className="flex flex-wrap gap-2 border-t pt-3">
+                          <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={comparisonExporting !== null} onClick={() => void exportComparison("json")}>
+                            <Download className="me-1 inline h-4 w-4" />{comparisonExporting === "json" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportComparisonJson")}
+                          </button>
+                          <button type="button" className="rounded-md border px-3 py-1.5 text-sm" disabled={comparisonExporting !== null} onClick={() => void exportComparison("markdown")}>
+                            <Download className="me-1 inline h-4 w-4" />{comparisonExporting === "markdown" ? t("researchArtifacts.exporting") : t("researchArtifacts.exportComparisonMarkdown")}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <h3 className="mt-5 text-sm font-medium">{t("researchArtifacts.history")}</h3>
                 <div className="mt-2 space-y-2">
                   {detail.revisions.map((revision) => (

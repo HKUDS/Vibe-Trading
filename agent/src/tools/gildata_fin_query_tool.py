@@ -7,6 +7,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.config.gildata_features import feature_available
 from src.tools.gildata_srv import call_srv_tool_results
@@ -125,6 +126,7 @@ class GildataFinQueryTool(BaseTool):
     def check_available(cls) -> bool:
         return feature_available("fin_query")
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         if not self.check_available():
             return json.dumps({"ok": False, "error_type": "not_configured", "error": "Gildata feature is disabled or unavailable"})

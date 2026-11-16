@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 
 
 def _ledger(tmp_path: Path, values: tuple[float, ...]) -> GroundingLedger:
@@ -150,7 +150,7 @@ def test_non_percent_claim_does_not_gain_a_free_multiplier(tmp_path):
     ("-2亿元 / 2", -1e8),
 ])
 def test_formula_quantity_units(formula, expected):
-    from src.agent.grounding.policies import _evaluate_formula
+    from evals.grounding.policies import _evaluate_formula
 
     evaluated = _evaluate_formula(formula)
     assert evaluated is not None
@@ -159,7 +159,7 @@ def test_formula_quantity_units(formula, expected):
 
 @pytest.mark.parametrize("formula", ["2T / 2", "2Q / 2", "2MISSING / 2"])
 def test_unknown_magnitude_is_not_evaluated(formula):
-    from src.agent.grounding.policies import _evaluate_formula
+    from evals.grounding.policies import _evaluate_formula
 
     assert _evaluate_formula(formula) is None
 
@@ -169,7 +169,7 @@ def test_unknown_magnitude_is_not_evaluated(formula):
     "归母净利 779,216,390.40元 ÷ 1亿",
 ])
 def test_formula_labels_preserve_magnitude(note):
-    from src.agent.grounding.policies import _formula_in_note
+    from evals.grounding.policies import _formula_in_note
 
     evaluated = _formula_in_note(note)
     assert evaluated is not None

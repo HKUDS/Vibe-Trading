@@ -100,7 +100,8 @@ def test_non_hk_markets_ignore_the_table() -> None:
 
     assert _sized(us, "AAPL", 59.4321) == 59.43
     assert _sized(ca, "SHOP.TO", 59.9) == 59.0
-    assert us._engine_diagnostics() == {} and ca._engine_diagnostics() == {}
+    assert "lot_assumptions" not in us._engine_diagnostics()
+    assert ca._engine_diagnostics() == {}
 
 
 def test_a_rebalance_fills_each_symbol_on_its_own_lot() -> None:

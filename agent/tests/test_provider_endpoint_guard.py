@@ -109,18 +109,18 @@ def test_proxy_applies_follows_the_process_proxy_settings(monkeypatch: pytest.Mo
 
 
 def test_custom_model_uses_guarded_clients_unless_a_proxy_resolves_the_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    from src.providers import llm
+    from src.providers import llm, settings
 
-    monkeypatch.setattr(llm, "_ensure_dotenv", lambda: None)
+    monkeypatch.setattr(settings, "_ensure_dotenv", lambda: None)
     monkeypatch.setattr(
-        llm,
+        settings,
         "get_llm_credentials",
-        lambda provider, model: {"provider": "custom", "model": "m", "base_url": "https://provider.example/v1", "api_key": "k"},
+        lambda provider, model, **kwargs: {"provider": "custom", "model": "m", "base_url": "https://provider.example/v1", "api_key": "k"},
     )
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "custom")
     monkeypatch.setenv("LANGCHAIN_MODEL_NAME", "m")
     monkeypatch.delenv("VIBE_TRADING_DISABLE_HTTP_PROXY", raising=False)
-    llm.reset_env_config()
+    settings.reset_env_config()
 
     _no_proxy(monkeypatch)
     direct = llm.build_llm()
@@ -136,7 +136,7 @@ def test_a_fake_ip_proxy_answer_is_allowed_but_a_written_fake_ip_is_not(monkeypa
     every custom provider was refused on such a host at save time)."""
     import ipaddress
 
-    from src.api import custom_provider_routes
+    from src.providers import custom_profiles as custom_provider_routes
 
     fake = ipaddress.ip_address("198.18.0.4")
     assert endpoint_guard.is_non_public_address(fake)

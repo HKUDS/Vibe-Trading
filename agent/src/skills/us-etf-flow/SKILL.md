@@ -194,13 +194,13 @@ def etf_flow_signal(ticker, lookback_days=20):
 ### Via yfinance
 
 ```python
-import yfinance as yf
+from src.data_gateway.skill_sources import yahoo_download, yahoo_ticker
 
 # ETF price and volume data
-etf = yf.download("SPY", start="2025-01-01", end="2026-03-30", progress=False)
+etf = yahoo_download("SPY", start="2025-01-01", end="2026-03-30", progress=False)
 
 # ETF info (AUM, expense ratio, holdings)
-spy = yf.Ticker("SPY")
+spy = yahoo_ticker("SPY")
 info = spy.info
 print(f"AUM: {info.get('totalAssets')}")
 print(f"Expense ratio: {info.get('annualReportExpenseRatio')}")

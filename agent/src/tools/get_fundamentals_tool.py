@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,7 @@ class GetFundamentalsTool(BaseTool):
     }
     repeatable = True
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Validate inputs, call the loader, and return a JSON envelope.
 

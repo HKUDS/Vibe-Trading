@@ -16,10 +16,10 @@ from typing import Any
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from tests.grounding_parameter_helpers import declared_parameter
-from src.agent.grounding.evidence import _metric_kind_for_path
-from src.agent.grounding.policies import _note_tokens
+from evals.grounding.evidence import _metric_kind_for_path
+from evals.grounding.policies import _note_tokens
 
 pytestmark = pytest.mark.unit
 
@@ -682,57 +682,8 @@ XRAY_SECOND = (
 )
 
 
-def test_tool_name_before_field_ref_lists_exact_call_refs(tmp_path: Path) -> None:
-    ledger = _ledger(
-        tmp_path,
-        MARKET_A,
-        XRAY,
-        XRAY_SECOND,
-        message="Compare portfolio tail risk across two scopes.",
-    )
-    result = ledger.validate_final_answer(
-        HDR + " VaR 95%: 1.57%。"
-        + _block(
-            ROW,
-            "95% | count | confidence",
-            "1.57% | observed | VaR 95% | "
-            "portfolio_risk_xray::data.tail_risk.var_95",
-        )
-    )
-
-    assert result.valid is False
-    assert _reasons(result) == ["field_ref_needs_call_id"]
-    assert result.issues[0]["field_ref_candidates"] == [
-        "x1::data.tail_risk.var_95",
-        "x2::data.tail_risk.var_95",
-    ]
-    correction = ledger.correction_prompt(result)
-    assert "x1::data.tail_risk.var_95" in correction
-    assert "x2::data.tail_risk.var_95" in correction
 
 
-def test_tail_risk_correction_lists_exact_payload_fields(tmp_path: Path) -> None:
-    ledger = _ledger(
-        tmp_path,
-        MARKET_A,
-        XRAY,
-        XRAY_SECOND,
-        message="Compare portfolio tail risk across two scopes.",
-    )
-    result = ledger.validate_final_answer(
-        HDR + " ES 95%: 2.11%。"
-        + _block(
-            ROW,
-            "95% | count | confidence",
-            "2.11% | observed | ES 95% | portfolio_risk_xray",
-        )
-    )
-
-    assert result.valid is False
-    assert _reasons(result) == ["tail_risk_needs_field_ref"]
-    correction = ledger.correction_prompt(result)
-    assert "x1::data.tail_risk.expected_shortfall_95" in correction
-    assert "x2::data.tail_risk.expected_shortfall_95" in correction
 
 
 def test_an_undeclared_tail_risk_percent_needs_a_field_ref(tmp_path: Path) -> None:
@@ -860,19 +811,6 @@ def test_another_symbols_field_does_not_make_a_ref_ambiguous(tmp_path: Path) -> 
     assert result.valid is True, result.issues
 
 
-def test_the_ambiguity_correction_names_the_refs_to_use() -> None:
-    from src.agent.grounding.release import _correction_line
-
-    line = _correction_line(
-        {
-            "value": "1.98%",
-            "role": "observed",
-            "reason": "ambiguous_field_ref",
-            "source_tool_call_ids": ["historical_var"],
-            "ambiguous_sources": ["q1::historical_var", "q2::historical_var"],
-        }
-    )
-    assert "historical_var names q1::historical_var, q2::historical_var" in line
 
 
 @pytest.mark.parametrize(
@@ -905,14 +843,6 @@ def _nearest(result: Any, value: str) -> list[float]:
     return next(issue for issue in result.issues if issue["value"] == value)["observed_nearest"]
 
 
-def test_a_rejected_figure_is_pointed_at_its_own_symbols_closes(tmp_path: Path) -> None:
-    ledger = _ledger(tmp_path, MARKET_A, MARKET_B, message=f"对比 {A} 和 {B}")
-
-    validation = ledger.validate_final_answer(TWO + f"{A} 最新收盘 0.900 元。")
-    line = next(row for row in ledger.correction_prompt(validation).splitlines() if row.startswith("- 0.900"))
-
-    assert _nearest(validation, "0.900") == [1.04, 0.666]
-    assert "nearest observed 1.04, 0.666" in line
 
 
 def test_a_rejected_figure_of_no_instrument_is_pointed_at_nothing(tmp_path: Path) -> None:

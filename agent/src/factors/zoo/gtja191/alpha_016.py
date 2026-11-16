@@ -42,7 +42,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 11,
+    "min_warmup_bars": 9,
     "notes": 'Max over 5d of rank of rolling rank-volume vs rank-vwap correlation.',
 }
 

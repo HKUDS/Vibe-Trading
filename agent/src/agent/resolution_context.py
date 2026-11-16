@@ -2,7 +2,7 @@
 
 This module deliberately performs no query rewrite. It keeps the exact current
 user message in memory and extracts only literal market words with source spans
-that the grounding state machine can audit.
+that the instrument resolver can audit.
 """
 
 from __future__ import annotations

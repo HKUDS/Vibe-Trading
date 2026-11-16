@@ -333,16 +333,16 @@
    "zh": "5 日 delta(close) 的 SMA(5, m=1)。"
   },
   "gtja191_025": {
-   "en": "Long-window RET sum approximated with 60d cap (warmup feasibility); see notes.",
-   "zh": "长窗口 RET 求和以 60 日上限近似（为保证预热期可行）；详见说明。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_026": {
-   "en": "230d corr approximated with 30d window; see notes.",
-   "zh": "230 日相关系数以 30 日窗口近似；详见说明。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_027": {
-   "en": "WMA proxied by decay_linear.",
-   "zh": "WMA 以 decay_linear 近似代替。"
+   "en": "WMA uses normalized geometric 0.9**age weights from the report.",
+   "zh": "WMA 按原报告使用归一化的 0.9 的样本年龄次方作为权重。"
   },
   "gtja191_028": {
    "en": "Stochastic-like indicator double-smoothed.",
@@ -353,8 +353,8 @@
    "zh": "6 日收益率乘以当日成交量。"
   },
   "gtja191_030": {
-   "en": "Multi-factor REGRESI not implementable in pure-fn zoo; degraded to WMA of squared daily return (idio proxy). See notes.",
-   "zh": "多因子 REGRESI 无法在纯函数 zoo 中实现；退化为日收益率平方的 WMA（特质项代理）。详见说明。"
+   "en": "Requires observed MKT, SMB and HML return panels. Complete 60-observation OLS with intercept, then report WMA weights.",
+   "zh": "必须提供可观测的 MKT、SMB 和 HML 收益面板；对完整的 60 个观测做含截距的最小二乘回归，再应用报告定义的 WMA 权重。"
   },
   "gtja191_031": {
    "en": "Bias-12: deviation of close from MA12 in pct.",
@@ -365,8 +365,8 @@
    "zh": "rank-corr(rank(high), rank(volume), 3) 的 3 日求和，取负。"
   },
   "gtja191_033": {
-   "en": "240d/20d long-window approximated with 60d/20d (warmup feasibility).",
-   "zh": "240 日/20 日长窗口以 60 日/20 日近似（为保证预热期可行）。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_034": {
    "en": "MA12 over close.",
@@ -389,8 +389,8 @@
    "zh": "当日最高价 > MA20(high) 时输出 -delta(high,2)；否则为 0。"
   },
   "gtja191_039": {
-   "en": "180d / 37d windows approximated with 30d / 10d. See notes.",
-   "zh": "180 日 / 37 日窗口以 30 日 / 10 日近似。详见说明。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_040": {
    "en": "Up-volume vs down-volume ratio over 26 days.",
@@ -413,8 +413,8 @@
    "zh": "两个 TSRANK 项之和。"
   },
   "gtja191_045": {
-   "en": "150d MA volume approximated with 30d window.",
-   "zh": "150 日成交量 MA 以 30 日窗口近似。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_046": {
    "en": "Mean of four MA windows over price.",
@@ -457,8 +457,8 @@
    "zh": "逐日复合得分的 20 日求和；分子已简化。"
   },
   "gtja191_056": {
-   "en": "Boolean comparator returns 1/0; 40d mean truncated.",
-   "zh": "布尔比较返回 1/0；40 日均值窗口已截短。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_057": {
    "en": "KDJ %K-style indicator with SMA(3,1) smoothing.",
@@ -477,8 +477,8 @@
    "zh": "alpha #11 的 20 日版本。"
   },
   "gtja191_061": {
-   "en": "80d mean volume approximated with 30d.",
-   "zh": "80 日平均成交量以 30 日近似。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_062": {
    "en": "Negated 5d corr(high, rank(volume)).",
@@ -489,8 +489,8 @@
    "zh": "RSI-6 类指标。"
   },
   "gtja191_064": {
-   "en": "60d mean truncated to 10d; ts_max window 13→4 and decay_linear 14→6 for warmup feasibility.",
-   "zh": "60 日均值截短为 10 日；ts_max 窗口 13→4、decay_linear 14→6，以保证预热期可行。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_065": {
    "en": "MA6 over close.",
@@ -529,20 +529,20 @@
    "zh": "收盘价–成交量相关系数的线性衰减加权项减去另一线性衰减加权项的组合。"
   },
   "gtja191_074": {
-   "en": "40d MA volume truncated to 10d; SUM windows kept at 20.",
-   "zh": "40 日成交量 MA 截短为 10 日；SUM 窗口保持为 20。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_075": {
-   "en": "Benchmark unavailable in zoo panel; degraded to row-mean(close) as benchmark proxy. Window 50→20. See notes.",
-   "zh": "zoo 面板中无基准数据；退化为以 row-mean(close) 作为基准代理。窗口 50→20。详见说明。"
+   "en": "Benchmark unavailable in zoo panel; degraded to row-mean(close) as benchmark proxy. Original 50-observation count window.",
+   "zh": "基准缺失时使用当日收盘价的横截面均值作为代理；计数窗口使用原报告的 50 个观测。"
   },
   "gtja191_076": {
    "en": "Coefficient-of-variation of |daily return|/volume over 20 days.",
    "zh": "|日收益率|/成交量 在 20 日内的变异系数。"
   },
   "gtja191_077": {
-   "en": "40d MA truncated to 30d.",
-   "zh": "40 日 MA 截短为 30 日。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_078": {
    "en": "CCI-12 style.",
@@ -597,12 +597,12 @@
    "zh": "5 日 corr(rank vwap, rank volume) 的排名，取负。"
   },
   "gtja191_091": {
-   "en": "40d mean truncated to 30d.",
-   "zh": "40 日均值截短为 30 日。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_092": {
-   "en": "180d mean truncated to 30d.",
-   "zh": "180 日均值截短为 30 日。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_093": {
    "en": "Sum of downside range moves over 20 days.",
@@ -625,8 +625,8 @@
    "zh": "成交量的 10 日标准差。"
   },
   "gtja191_098": {
-   "en": "100d windows truncated to 30d for warmup feasibility.",
-   "zh": "为保证预热期可行，100 日窗口截短为 30 日。"
+   "en": "Original report windows; full nested-window coverage is required.",
+   "zh": "使用原报告窗口；嵌套窗口必须具有完整的历史样本。"
   },
   "gtja191_099": {
    "en": "Negated rank of 5d cov(rank close, rank volume).",

@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
-    "min_warmup_bars": 22,
+    "min_warmup_bars": 21,
     "notes": 'DTM/DBM as in GTJA spec.',
 }
 

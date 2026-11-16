@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.china_futures.v1",
+  "scenario": "contract_identity",
+  "prompt": "根据项目中国期货合约规格，检查裸代码PG2612：给出结算币种和合约乘数。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "currency",
+        "operator": "equals",
+        "expected": "CNY"
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "multiplier",
+        "operator": "approx",
+        "expected": 20
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

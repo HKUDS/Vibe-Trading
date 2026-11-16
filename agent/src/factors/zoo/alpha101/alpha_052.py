@@ -46,7 +46,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_in', 'equity_kr'],
     'frequency': ['1D'],
     'decay_horizon': 5,
-    'min_warmup_bars': 240,
+    'min_warmup_bars': 241,
     'notes': 'Very long lookback (>= ~100 bars); produces NaN warmup on short panels which may trigger the >95% NaN registry guard.',
 }
 

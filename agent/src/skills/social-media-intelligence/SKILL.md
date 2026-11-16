@@ -85,10 +85,11 @@ category: tool
 # Option A: Official API v2 (paid, basic tier starts at $100/month)
 # Best for: production environments where compliance is the priority
 from tweepy import Client
+from src.data_gateway.reads import managed_reader
 
-client = Client(bearer_token=os.getenv("TWITTER_BEARER_TOKEN"))
 
 # Search tweets discussing a cashtag over the last 7 days
+@managed_reader
 def fetch_cashtag_tweets(ticker: str, max_results: int = 100) -> list[dict]:
     """Collect Twitter discussion data for a given ticker.
 
@@ -99,6 +100,7 @@ def fetch_cashtag_tweets(ticker: str, max_results: int = 100) -> list[dict]:
     Returns:
         List of tweets, each containing id / text / created_at / public_metrics
     """
+    client = Client(bearer_token=os.getenv("TWITTER_BEARER_TOKEN"))
     query = f"${ticker} -is:retweet lang:en"
     tweets = client.search_recent_tweets(
         query=query,
@@ -113,8 +115,11 @@ def fetch_cashtag_tweets(ticker: str, max_results: int = 100) -> list[dict]:
 # pip install ntscraper
 from ntscraper import Nitter
 
-scraper = Nitter()
-tweets = scraper.get_tweets("$AAPL", mode="term", number=50)
+@managed_reader
+def fetch_nitter_tweets():
+    return Nitter().get_tweets("$AAPL", mode="term", number=50)
+
+tweets = fetch_nitter_tweets()
 ```
 
 **Data schema (Twitter JSON Schema)**
@@ -163,11 +168,12 @@ tweets = scraper.get_tweets("$AAPL", mode="term", number=50)
 # Telethon — official MTProto client, requires API_ID + API_HASH
 # pip install telethon
 from telethon.sync import TelegramClient
-from telethon import functions
+from src.data_gateway.reads import managed_async_reader
 
 API_ID = int(os.getenv("TELEGRAM_API_ID"))
 API_HASH = os.getenv("TELEGRAM_API_HASH")
 
+@managed_async_reader
 async def fetch_channel_messages(
     channel_username: str,
     limit: int = 200,
@@ -237,7 +243,9 @@ async def fetch_channel_messages(
 # pip install discord.py
 import discord
 from discord.ext import commands
+from src.data_gateway.reads import managed_async_reader
 
+@managed_async_reader
 async def fetch_channel_history(
     channel_id: int,
     limit: int = 500,
@@ -274,8 +282,11 @@ async def fetch_channel_history(
             })
         await bot.close()
 
-    await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
-    return messages
+    try:
+        await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
+        return messages
+    finally:
+        await bot.close()
 ```
 
 **Data schema (Discord JSON Schema)**
@@ -321,7 +332,9 @@ async def fetch_channel_history(
 # PRAW — official Reddit Python wrapper, free API
 # pip install praw
 import praw
+from src.data_gateway.reads import managed_reader
 
+@managed_reader
 def fetch_subreddit_posts(
     subreddit_name: str,
     mode: str = "hot",

@@ -39,7 +39,7 @@ def context(tmp_path, monkeypatch):
 def prepare(context, **overrides):
     values = dict(strategy_id="sdm:parent", name="child", universe="new",
                   config={"codes": ["AAPL.US"], "start_date": "2024-01-01", "end_date": "2024-02-08",
-                          "source": "local", "initial_cash": 100000, "commission": 0.001},
+                          "source": "local", "initial_cash": 100000, "commission": 0},
                   store=context[0], evidence_store=context[1], today=date(2026, 1, 31))
     values.update(overrides)
     return prepare_adaptation(**values)
@@ -146,7 +146,7 @@ def test_real_local_backtest_to_child_evidence(context, tmp_path):
     from src.tools.write_file_tool import WriteFileTool
 
     config = {"source": "local", "codes": ["AAPL.US"], "start_date": "2024-01-01", "end_date": "2025-12-31",
-              "benchmark": "AAPL.US", "initial_cash": 100000, "commission": 0.001, "interval": "1D", "engine": "daily"}
+              "benchmark": "AAPL.US", "initial_cash": 100000, "commission": 0, "interval": "1D", "engine": "daily"}
     result = prepare(context, config=config)
     code = '''import numpy as np
 import pandas as pd

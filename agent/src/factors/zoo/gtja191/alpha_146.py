@@ -45,7 +45,7 @@ __alpha_meta__ = {
     'universe': ['equity_cn'],
     'frequency': ['1d'],
     'decay_horizon': 60,
-    'min_warmup_bars': 81,
+    'min_warmup_bars': 21,
     'notes': 'Standardised return deviation; SMA(.,61,2)=ewm(alpha=2/61).',
 }
 

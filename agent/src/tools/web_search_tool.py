@@ -16,6 +16,7 @@ import logging
 import time
 from typing import Any
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.security.scanner import with_security_warnings
@@ -170,6 +171,7 @@ class WebSearchTool(BaseTool):
     }
     repeatable = True
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         """Run a web search across free engines with retry and backend fallback.
 

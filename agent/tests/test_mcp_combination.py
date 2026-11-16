@@ -43,6 +43,9 @@ def test_factor_combination_without_shell_tools_over_mcp(monkeypatch):
             expected = json.loads(registry.execute("quantlib_call", args))
             response = await client.call_tool("quantlib_call", args)
             actual = json.loads(response.content[0].text)
+            ref = actual.pop("_result_file")
+            from pathlib import Path
+            assert json.loads(Path(ref["path"]).read_text()) == expected
             assert actual == expected
             assert actual["ok"]
             result = actual["result"]

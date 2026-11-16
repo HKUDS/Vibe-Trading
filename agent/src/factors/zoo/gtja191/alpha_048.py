@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 21,
+    "min_warmup_bars": 20,
     "notes": 'Rank of 3d signed momentum sum times 5d/20d volume ratio, negated.',
 }
 

@@ -1,9 +1,10 @@
 """Persistent, versioned research artifacts."""
 
-from .models import ResearchArtifactRevision, ResearchArtifactSaveResult
+from .models import ResearchArtifactExport, ResearchArtifactRevision, ResearchArtifactSaveResult
 from .store import ResearchArtifactStore
 
 __all__ = [
+    "ResearchArtifactExport",
     "ResearchArtifactRevision",
     "ResearchArtifactSaveResult",
     "ResearchArtifactStore",

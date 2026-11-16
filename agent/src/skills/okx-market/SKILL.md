@@ -22,13 +22,13 @@ pip install requests pandas
 - Use Python code to retrieve data according to the documentation. Example for the **spot ticker** endpoint:
 
 ```python
-import requests
+from src.data_gateway.reads import public_http_get
 import pandas as pd
 
 BASE_URL = "https://www.okx.com/api/v5"
 
 # Get the latest BTC-USDT market quote
-resp = requests.get(f"{BASE_URL}/market/ticker", params={"instId": "BTC-USDT"})
+resp = public_http_get(f"{BASE_URL}/market/ticker", params={"instId": "BTC-USDT"})
 data = resp.json()["data"][0]
 print(f"BTC last price: {data['last']}  24h change: {float(data['last'])/float(data['open24h'])*100-100:.2f}%")
 ```

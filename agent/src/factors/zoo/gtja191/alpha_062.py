@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 6,
+    "min_warmup_bars": 5,
     "notes": 'Negated 5d corr(high, rank(volume)).',
 }
 

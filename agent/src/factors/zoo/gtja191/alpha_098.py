@@ -7,7 +7,7 @@
 """GTJA Alpha #98.
 
 Formula: ((((DELTA((SUM(CLOSE,100)/100),100)/DELAY(CLOSE,100))<0.05) || ((DELTA((SUM(CLOSE,100)/100),100)/DELAY(CLOSE,100))==0.05)) ? (-1*(CLOSE-TSMIN(CLOSE,100))) : (-1*DELTA(CLOSE,3)))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 98."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 98."""
 
 from __future__ import annotations
 
@@ -41,15 +41,15 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 30,
-    "min_warmup_bars": 60,
-    "notes": '100d windows truncated to 30d for warmup feasibility.',
+    "min_warmup_bars": 200,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
-    ma = ts_mean(c, 30)
-    drift = safe_div(delta(ma, 30), c.shift(30))
-    branch1 = -1.0 * (c - ts_min(c, 30))
+    ma = ts_mean(c, 100)
+    drift = safe_div(delta(ma, 100), c.shift(100))
+    branch1 = -1.0 * (c - ts_min(c, 100))
     branch2 = -1.0 * delta(c, 3)
     # An unknown drift selects neither branch; a NaN comparison is False, which picked branch2 (#1463).
     return branch1.where(drift <= 0.05, branch2).where(drift.notna())

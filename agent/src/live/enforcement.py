@@ -808,7 +808,11 @@ def market_cap_usd(symbol: str, asset_class: AssetClass) -> float | None:
     except Exception:
         return None
     try:
-        info = yfinance.Ticker(symbol).info
+        from src.data_gateway import get_gateway
+        from src.data_gateway.reads import read
+
+        info = read(get_gateway(), "public_market_cap", {},
+                    lambda: yfinance.Ticker(symbol).info, cacheable=False)
     except Exception as exc:
         logger.warning("market-cap lookup failed for %s: %s", symbol, exc)
         return None

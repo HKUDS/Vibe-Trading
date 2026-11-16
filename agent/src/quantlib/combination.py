@@ -299,7 +299,14 @@ def _table_weights(weights: pd.DataFrame, names: list[str], index: pd.Index) -> 
         table = np.divide(
             table, total, out=np.full_like(table, np.nan), where=total > 0
         )
-    return pd.DataFrame(table, index=index, columns=names).ffill()
+    # Hold whole rows forward. A per-column ffill would refill a weight the
+    # caller left missing in a later row with that factor's stale weight.
+    supplied = index.isin(weights.index)
+    source = pd.Series(np.where(supplied, np.arange(len(table)), np.nan)).ffill().to_numpy()
+    held = np.full_like(table, np.nan)
+    has_source = ~np.isnan(source)
+    held[has_source] = table[source[has_source].astype(int)]
+    return pd.DataFrame(held, index=index, columns=names)
 
 
 def _turnover(weights: pd.DataFrame) -> float | None:

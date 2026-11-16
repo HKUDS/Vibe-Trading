@@ -36,6 +36,7 @@ from key_value.aio.stores.filetree import FileTreeStore, FileTreeV1KeySanitizati
 from mcp import types as mcp_types
 from mcp.shared.auth import OAuthMetadata
 from pydantic_core import PydanticSerializationError, to_jsonable_python
+from src.data_gateway.guidance import MCP_DATA_GUIDANCE
 
 from src.agent.tools import BaseTool
 from src.config.schema import (
@@ -853,7 +854,7 @@ class MCPRemoteTool(BaseTool):
         self._adapter = adapter
         self._spec = spec
         self.name = spec.local_name
-        self.description = spec.description
+        self.description = spec.description + "\n\n" + MCP_DATA_GUIDANCE
         self.parameters = spec.parameters
 
     def execute(self, **kwargs: Any) -> str:

@@ -138,6 +138,7 @@ def test_cancellation_interrupts_backoff_without_starting_another_attempt(
 
     assert run_worker.call_count == 1
     assert result.status == "cancelled"
-    assert result.error is None
+    assert result.error == "529 overloaded"
+    assert result.summary == "provider overloaded"
     assert result.input_tokens == 12
     assert result.output_tokens == 3

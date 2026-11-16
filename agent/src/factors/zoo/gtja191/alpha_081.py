@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 21,
-    "min_warmup_bars": 22,
+    "min_warmup_bars": 1,
     "notes": 'SMA(21, m=2) of volume.',
 }
 

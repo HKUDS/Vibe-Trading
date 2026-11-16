@@ -22,8 +22,18 @@ helpers from ``cli._legacy`` directly.
 
 from __future__ import annotations
 
-from cli import _legacy as _legacy
-from cli.main import main
+import sys as _sys
+from pathlib import Path as _Path
+
+# Editable installs can share an environment with another project named
+# ``src``. Resolve this CLI's sibling packages before importing legacy code;
+# otherwise the console script can silently select the other project's src.
+_package_root = str(_Path(__file__).resolve().parents[1])
+if not _sys.path or _sys.path[0] != _package_root:
+    _sys.path.insert(0, _package_root)
+
+from cli import _legacy as _legacy  # noqa: E402 — resolve sibling packages first
+from cli.main import main  # noqa: E402 — resolve sibling packages first
 
 # Re-export the legacy module's public surface (anything not prefixed
 # with two underscores). This lets ``cli.cmd_memory_list`` /

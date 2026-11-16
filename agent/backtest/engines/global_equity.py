@@ -80,6 +80,16 @@ class GlobalEquityEngine(BaseEngine):
     """
 
     def __init__(self, config: dict, market: str = "us"):
+        from backtest.engines._market_hooks import _detect_market
+
+        if (market == "us" and config.get("commission", 0)
+                and all(_detect_market(code) == "us_equity" for code in config.get("codes", []))):
+            raise ValueError(
+                "US equities do not apply the generic 'commission' setting. "
+                "Remove it; use 'slippage_us' for per-side execution slippage "
+                "(5 bps = 0.0005). US broker commission is zero in this engine. "
+                "Do not describe a commission setting as slippage."
+            )
         config = {**config, "leverage": config.get("leverage", 1.0)}
         super().__init__(config)
         self.market = market
@@ -141,7 +151,15 @@ class GlobalEquityEngine(BaseEngine):
         return _DEFAULT_HK_BOARD_LOT
 
     def _engine_diagnostics(self) -> dict[str, Any]:
-        """Report every HK symbol this run sized on the default board lot."""
+        """Report effective US costs and HK board-lot assumptions."""
+        if self.market == "us":
+            return {"execution_costs": {
+                "market": "us_equity",
+                "slippage_config_key": "slippage_us",
+                "slippage_buy_rate": self._execution_price(1.0, 1) - 1.0,
+                "slippage_sell_rate": 1.0 - self._execution_price(1.0, -1),
+                "commission_rate": self._execution_commission(1.0, 1.0, 1, True),
+            }}
         if not self.lot_assumptions:
             return {}
         return {

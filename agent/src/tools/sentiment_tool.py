@@ -15,6 +15,7 @@ import logging
 import urllib.request
 from typing import Any
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ class SentimentTool(BaseTool):
     repeatable = True
     is_readonly = True
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         mode = str(kwargs.get("mode", "")).strip()
 

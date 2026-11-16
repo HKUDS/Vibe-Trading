@@ -237,8 +237,8 @@ class TestGroundingEvidence:
     """
 
     def test_only_registered_fund_nav_rows_are_price_indicators(self, tmp_path):
-        from src.agent.grounding.ledger import GroundingLedger
-        from src.agent.grounding.evidence import _is_registered_price_indicator, _price_field_for_path
+        from evals.grounding.ledger import GroundingLedger
+        from evals.grounding.evidence import _is_registered_price_indicator, _price_field_for_path
 
         payload = {
             "ok": True,
@@ -285,7 +285,7 @@ class TestIdentityGateBypass:
         # resolver cannot obtain for off-exchange codes. `funds` must stay
         # outside that set, or the tool becomes uncallable in the agent loop
         # (measured live: identity_required / identity_conflict loop).
-        from src.agent.grounding.identity import _SYMBOL_ARGUMENT_KEYS
+        from src.agent.instrument_identity import _SYMBOL_ARGUMENT_KEYS
 
         param_names = set(GildataFundNavTool.parameters["properties"])
         assert param_names & set(_SYMBOL_ARGUMENT_KEYS) == set()

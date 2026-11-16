@@ -145,9 +145,11 @@ export function OptionsChainTable() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const lastRequest = useRef<{ ticker: string; expiration?: number }>({ ticker: DEFAULT_TICKER });
 
   const load = useCallback(async (ticker: string, expiration?: number) => {
     const gen = ++generation.current;
+    lastRequest.current = { ticker, expiration };
     setLoading(true);
     setError(null);
     try {
@@ -171,9 +173,11 @@ export function OptionsChainTable() {
   useEffect(() => {
     if (!data) void load(tickerInput.trim().toUpperCase() || DEFAULT_TICKER);
     return () => { generation.current += 1; };
+    // Own the initial request for the mounted lifetime. Translation changes
+    // must not invalidate an in-flight refresh; unmount still rejects it.
     // A restored chain is explicitly refreshed by its load button.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
+  }, []);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -237,7 +241,7 @@ export function OptionsChainTable() {
           </span>
           <button
             type="button"
-            onClick={() => void load(data?.ticker ?? tickerInput.trim().toUpperCase() ?? DEFAULT_TICKER, data?.expiration)}
+            onClick={() => void load(lastRequest.current.ticker, lastRequest.current.expiration)}
             className="shrink-0 rounded border border-danger/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-danger/10"
           >
             {t("options.chain.retry")}

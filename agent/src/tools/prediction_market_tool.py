@@ -113,6 +113,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backtest.loaders._http import resolve_min_interval, throttled_get_json
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -1115,6 +1116,7 @@ class PredictionMarketTool(BaseTool):
         "required": ["mode"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Dispatch one of the four read modes and return a JSON envelope.
 

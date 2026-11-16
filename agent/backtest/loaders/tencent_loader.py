@@ -1,6 +1,6 @@
 """Tencent Finance loader: free, no-auth A-share / HK data via HTTP API.
 
-Uses Tencent's ifzq.gtimg.cn API which is not blocked by eastmoney's CDN.
+Uses Tencent's ifzq.gtimg.cn API; availability depends on the local network.
 Covers: A-shares (SH/SZ) and HK equities.  No API token required.
 
 API format:
@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Dict, List, Optional
 import ssl
+import urllib.error
 import urllib.request
 
 import certifi
@@ -24,6 +25,7 @@ from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.additive_conversion import convert_additive_to_multiplicative
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.registry import register
+from backtest.loaders.acquisition import remaining_timeout, source_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +98,13 @@ class DataLoader:
             )
             return {}
 
+        self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
+            until = source_deadline.get()
+            if until is not None and time.monotonic() >= until:
+                self.fetch_errors[code] = "request_deadline"
+                continue
             try:
                 df = cached_loader_fetch(
                     source=self.name,
@@ -142,6 +149,9 @@ class DataLoader:
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:
+                from .base import acquisition_error_kind
+
+                self.fetch_errors[code] = acquisition_error_kind(exc)
                 logger.warning("tencent failed for %s: %s", code, exc)
         return result
 
@@ -176,8 +186,9 @@ class DataLoader:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Referer": "https://web.ifzq.gtimg.cn/",
         })
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
+        with urllib.request.urlopen(req, timeout=remaining_timeout(15), context=_SSL_CONTEXT) as resp:
             raw = resp.read().decode("utf-8")
+        remaining_timeout(15)
 
         data = json.loads(raw)
         # Response: {"code":0,"data":{"sh601595":{"day":[["2026-06-01","21.32",...], ...]}}}
@@ -262,20 +273,29 @@ class DataLoader:
             page: Optional[pd.DataFrame] = None
             last_error: Optional[Exception] = None
             for attempt in range(_PAGE_RETRIES):
+                remaining_timeout(15)
                 try:
                     page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                     last_error = None
                     break
                 except Exception as exc:  # noqa: BLE001 - transient network jitter
                     last_error = exc
+                    # Retrying an unchanged rejected request cannot repair its
+                    # permissions or a WAF/unsupported-endpoint response. Leave
+                    # the caller's deadline available for a compatible source.
+                    if isinstance(exc, urllib.error.HTTPError) and (
+                        400 <= exc.code < 500 and exc.code not in {408, 429}
+                        or exc.code in {501, 505}
+                    ):
+                        break
                     if attempt < _PAGE_RETRIES - 1:
-                        time.sleep(_PAGE_BACKOFF * (2 ** attempt))
+                        time.sleep(remaining_timeout(_PAGE_BACKOFF * (2 ** attempt)))
             if last_error is not None:
                 # Partial pages already collected would read as a complete
                 # history downstream; a failed page is an error, not a series.
                 raise ValueError(
                     f"incomplete tencent history: {code} page ending at "
-                    f"{cursor_end} failed after {_PAGE_RETRIES} attempts: "
+                    f"{cursor_end} failed after {attempt + 1} attempts: "
                     f"{last_error}"
                 ) from last_error
 
@@ -286,7 +306,8 @@ class DataLoader:
                 # history, or a throttled reply. One re-request decides — a
                 # transient glitch returns data, a genuine boundary stays
                 # empty and terminates the walk.
-                time.sleep(_PAGE_BACKOFF)
+                time.sleep(remaining_timeout(_PAGE_BACKOFF))
+                remaining_timeout(15)
                 try:
                     page = self._request_page(code, start_date, cursor_end, forward_adjusted)
                 except Exception as exc:  # noqa: BLE001 - transient network jitter

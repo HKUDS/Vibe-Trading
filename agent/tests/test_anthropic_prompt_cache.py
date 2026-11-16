@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from tests.provider_helpers import chat_with_adapter
+
+from src.providers import settings as _provider_configuration
+
 import os
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-import src.providers.llm as llm_mod
 from src.agent.loop import _normalize_llm_usage, _record_llm_usage
 from src.config.accessor import get_env_config, reset_env_config
 from src.providers.chat import ChatLLM, prompt_cache_messages
@@ -18,7 +21,7 @@ from src.providers.chat import ChatLLM, prompt_cache_messages
 def _fresh_env_config(monkeypatch):
     # _dotenv_loaded suppresses .env loading for the tests that build a real
     # adapter; monkeypatch restores it so the flag does not leak to later tests.
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", True)
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", True)
     reset_env_config()
     yield
     reset_env_config()
@@ -120,11 +123,8 @@ class _FakeAnthropicNoStreamLLM(_RecordingLLM):
         return iter(())
 
 
-def _chat_client(fake) -> ChatLLM:
-    client = ChatLLM.__new__(ChatLLM)
-    client.model_name = "m"
-    client._llm = fake
-    return client
+def _chat_client(fake):
+    return chat_with_adapter(fake, model="m")
 
 
 _CACHE_KWARGS = {"cache_control": {"type": "ephemeral"}}

@@ -4,6 +4,8 @@ import type {
   OptionsChainResponse,
   OptionsPayoffRequest,
   OptionsPayoffResponse,
+  VolatilitySurfaceRequest,
+  VolatilitySurfaceResponse,
 } from "@/lib/options";
 
 const BASE = "";
@@ -408,6 +410,17 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
     const raw = body.detail ?? body.message ?? body.error;
     if (typeof raw === "string" && raw) {
       detail = raw;
+    } else if (Array.isArray(raw)) {
+      const details = raw.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const { loc, msg } = entry as { loc?: unknown; msg?: unknown };
+        if (typeof msg !== "string" || !msg) return [];
+        const location = Array.isArray(loc)
+          ? loc.filter((part) => typeof part === "string" || typeof part === "number").join(".")
+          : "";
+        return [location ? `${location}: ${msg}` : msg];
+      });
+      if (details.length) detail = details.join("; ");
     } else if (raw && typeof raw === "object") {
       const structured = raw as { code?: unknown; message?: unknown; max_length?: unknown };
       if (typeof structured.code === "string" && structured.code) code = structured.code;
@@ -494,6 +507,50 @@ export interface ResearchArtifactRevision {
   run_id: string | null;
 }
 
+export interface ResearchArtifactComparison {
+  artifact_id: string;
+  from: {
+    revision_id: string;
+    revision_number: number;
+    created_at: string;
+    content_hash: string;
+    provenance_hash: string;
+  };
+  to: {
+    revision_id: string;
+    revision_number: number;
+    created_at: string;
+    content_hash: string;
+    provenance_hash: string;
+  };
+  content: {
+    changed: boolean;
+    from_hash: string;
+    to_hash: string;
+    from_line_count: number;
+    to_line_count: number;
+    from_newline_style: string;
+    to_newline_style: string;
+    diff: string[];
+    truncated: boolean;
+  };
+  evidence: {
+    added: Array<Record<string, unknown>>;
+    removed: Array<Record<string, unknown>>;
+    unchanged_count: number;
+    order_changed: boolean;
+    changed: boolean;
+  };
+  metadata: Record<string, { from: unknown; to: unknown }>;
+}
+
+export interface ResearchArtifactExport {
+  filename: string;
+  media_type: string;
+  content: string;
+  sha256: string;
+}
+
 export interface ResearchArtifactSaveResult {
   revision: ResearchArtifactRevision;
   created: boolean;
@@ -514,7 +571,60 @@ export interface SaveResearchArtifactRequest {
   run_id?: string;
 }
 
+export type LabAction = "cost_sensitivity" | "walk_forward" | "factor_audit" | "replay";
+export interface LabCatalog {
+  runs: Array<{ id: string; codes: string[]; start_date: string; end_date: string; has_prices: boolean; has_trace: boolean; parameters: Record<string, string | number | boolean | null> }>;
+  cases: Array<{ id: string; scenario: string; prompt: string; checks: string[] }>;
+}
+interface LabMetrics { total_return: number; max_drawdown: number; sharpe: number }
+interface LabFold { fold: number; name: string; parameters: Record<string, unknown>; test_start: string; test_end: string; test: { metrics: LabMetrics; run_dir: string } }
+export type LabResult =
+  | { kind: "cost_sensitivity"; rows: Array<LabMetrics & { name: string; fee_multiplier: number; extra_slippage_bps: number }>; break_even_brackets: Array<{ fee_multiplier_interval: number[]; extra_slippage_bps: number }> }
+  | { kind: "walk_forward"; folds: LabFold[]; oos_total_return: number; holdout: (LabFold & { total_return: number }) | null }
+  | { kind: "factor_audit"; count: number; finding_count: number; rows: Array<{ id: string; minimum_bars: number; policy: "full_window" | "recursive_seed" | "partial_window" | "conditional_sample"; valid: boolean; findings?: string[] }> }
+  | { kind: "replay"; evaluation_status: "passed" | "failed" | "not_evaluable" | "invalid_artifact"; summary: { evaluation_coverage: number }; reports: Array<{ case_id: string; verdicts: Array<{ status: string; code: string; detail?: string }> }> };
+export interface LabJob {
+  id: string; action: LabAction; status: "pending" | "running" | "completed" | "failed";
+  progress?: { completed: number; total: number; phase: string; label?: string };
+  result?: LabResult; error?: string; request?: Record<string, unknown>;
+}
+
+export interface ScanJob { id: string; state: string; total: number; completed: number; failed: number; remaining: number; retries: number; last_error: string | null }
+export interface HistoryStorage { quota_bytes: number; retention_days: number; used_bytes: number; reserved_bytes: number; path: string }
+export interface HistorySpec { codes: string[]; start_date: string; end_date: string; interval: string; source?: string }
+export interface HistoryJob { auto_resume?: number; retry_at?: number; retry_count?: number; sources?: string[]; id: string; state: string; pinned: number; error: string | null; spec?: HistorySpec; rows?: number; completed_chunks?: number; total_chunks?: number }
+export interface GatewayCapabilities { history_datasets: { markets: string[]; intervals: string[]; sources: Array<{ source: string; markets: string[]; intervals: string[] | null; requires_auth: boolean }> } }
+export interface HistoryPlan { routes?: Record<string, { market: string; candidates: string[] }>; chunks: number; estimated_max_rows: number; estimated_uncompressed_bytes: number; storage: HistoryStorage }
+
+export interface SoftwareUpdate {
+  current_version: string;
+  latest_version: string | null;
+  available: boolean;
+  method: "wheel" | "editable" | "checkout" | "vcs" | "container" | "desktop" | "desktop-manual" | "desktop-unconfigured";
+  recovery?: string;
+}
+
 export const api = {
+  dataScans: () => request<ScanJob[]>("/data/scans"),
+  createDataScan: (spec: HistorySpec) => request<ScanJob>("/data/scans", { method: "POST", body: JSON.stringify(spec) }),
+  cancelDataScan: (id: string) => request<ScanJob>(`/data/scans/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+  dataCapabilities: () => request<GatewayCapabilities>("/data/capabilities"),
+  historyStorage: () => request<HistoryStorage>("/data/history/storage"),
+  saveHistoryStorage: (quota_bytes: number, retention_days: number) => request<HistoryStorage>("/data/history/storage", { method: "PUT", body: JSON.stringify({ quota_bytes, retention_days }) }),
+  historyJobs: () => request<HistoryJob[]>("/data/history/jobs"),
+  historyJob: (id: string) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}`),
+  planHistory: (spec: HistorySpec) => request<HistoryPlan>("/data/history/plan", { method: "POST", body: JSON.stringify(spec) }),
+  createHistory: (spec: HistorySpec) => request<HistoryJob>("/data/history/jobs", { method: "POST", body: JSON.stringify(spec) }),
+  historyAction: (id: string, action: "resume" | "cancel") => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
+  pinHistory: (id: string, pinned: boolean) => request<HistoryJob>(`/data/history/jobs/${encodeURIComponent(id)}/pin?pinned=${pinned}`, { method: "PUT" }),
+  deleteHistory: (id: string) => request(`/data/history/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pruneHistory: () => request<HistoryStorage>("/data/history/prune", { method: "POST" }),
+
+  checkForUpdates: () => request<SoftwareUpdate>("/api/system/update"),
+  getResearchLabCatalog: () => request<LabCatalog>("/api/research-lab/catalog"),
+  startResearchLabJob: (action: LabAction, body: Record<string, unknown>) =>
+    request<LabJob>("/api/research-lab/jobs", { method: "POST", body: JSON.stringify({ action, request: body }) }),
+  getResearchLabJob: (id: string) => request<LabJob>(`/api/research-lab/jobs/${encodeURIComponent(id)}`),
   getPixelOffice: () => request<OfficeSnapshot>("/api/pixel-office"),
   updatePixelOffice: (action: "create" | "assign" | "complete" | "rank", arguments_: Record<string, unknown>) =>
     request<OfficeSnapshot>("/api/pixel-office/actions", { method: "POST", body: JSON.stringify({ action, arguments: arguments_ }) }),
@@ -527,10 +637,20 @@ export const api = {
     const suffix = search.toString();
     return request<{ count: number; artifacts: ResearchArtifactRevision[] }>(`/api/research-artifacts${suffix ? `?${suffix}` : ""}`);
   },
+  compareResearchArtifactRevisions: (artifactId: string, fromRevisionId: string, toRevisionId: string) => {
+    const search = new URLSearchParams({ from_revision_id: fromRevisionId, to_revision_id: toRevisionId });
+    return request<{ comparison: ResearchArtifactComparison }>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/compare?${search}`);
+  },
   getResearchArtifact: (artifactId: string) =>
     request<{ artifact: ResearchArtifactRevision; revisions: ResearchArtifactRevision[] }>(`/api/research-artifacts/${encodeURIComponent(artifactId)}`),
   getResearchRevision: (revisionId: string) =>
     request<{ revision: ResearchArtifactRevision }>(`/api/research-artifacts/revision/${encodeURIComponent(revisionId)}`),
+  exportResearchArtifact: (artifactId: string, format: "json" | "markdown" = "json") =>
+    request<ResearchArtifactExport>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/export?format=${format}`),
+  exportResearchArtifactComparison: (artifactId: string, fromRevisionId: string, toRevisionId: string, format: "json" | "markdown" = "json") => {
+    const search = new URLSearchParams({ format, from_revision_id: fromRevisionId, to_revision_id: toRevisionId });
+    return request<ResearchArtifactExport>(`/api/research-artifacts/${encodeURIComponent(artifactId)}/export?${search}`);
+  },
   saveResearchArtifact: (body: SaveResearchArtifactRequest) =>
     request<ResearchArtifactSaveResult>("/api/research-artifacts", { method: "POST", body: JSON.stringify(body) }),
   getCorrelationAnalysis: (codes: string, days: number, method: "pearson" | "spearman", includeRegime: boolean, signal?: AbortSignal) =>
@@ -689,8 +809,8 @@ export const api = {
   swarmSseUrl: (id: string) => withAuthTicket(`${BASE}/swarm/runs/${id}/events`),
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
-  retrySwarmRun: (id: string) =>
-    request<{ id: string; status: string; preset_name: string }>(`/swarm/runs/${id}/retry`, { method: "POST" }),
+  retrySwarmRun: (id: string, resume = false) =>
+    request<{ id: string; status: string; preset_name: string }>(`/swarm/runs/${id}/retry${resume ? "?resume=true" : ""}`, { method: "POST" }),
   getLLMSettings: () => request<LLMSettings>("/settings/llm"),
   updateLLMSettings: (settings: UpdateLLMSettingsRequest) =>
     request<LLMSettings>("/settings/llm", {
@@ -784,10 +904,17 @@ export const api = {
       body: JSON.stringify(body),
       signal,
     }),
-  getOptionsChain: (ticker: string, expiration?: number) => {
+  computeVolatilitySurface: (body: VolatilitySurfaceRequest, signal?: AbortSignal) =>
+    request<VolatilitySurfaceResponse>("/options/volatility-surface", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal,
+    }),
+  getOptionsChain: (ticker: string, expiration?: number, nearSpotCount?: number) => {
     const q = new URLSearchParams();
     q.set("ticker", ticker);
     if (expiration !== undefined) q.set("expiration", String(expiration));
+    if (nearSpotCount !== undefined) q.set("near_spot_count", String(nearSpotCount));
     return request<OptionsChainResponse>(`/options/chain?${q.toString()}`);
   },
 
@@ -975,6 +1102,9 @@ export interface SwarmRunSummary {
 }
 
 export interface LLMProviderOption {
+  backend?: string;
+  automatic_model_list?: boolean;
+  model_options?: string[];
   name: string;
   label: string;
   api_key_env?: string | null;
@@ -1560,6 +1690,7 @@ export type SectorAssetClass =
   | "hk_equity"
   | "india_equity"
   | "kr_equity"
+  | "jp_equity"
   | "ca_equity"
   | "ar_equity"
   | "br_equity"

@@ -280,11 +280,13 @@ def format_grounding_block(grounding: dict[str, list[dict]]) -> str:
         return ""
 
     header = (
-        "## Ground Truth — Recent Market Data\n\n"
-        "**These are the authoritative current prices for this run.** Do NOT "
-        "cite prices, valuations, multiples, or returns from your training "
-        "data — markets have moved. If you need a price outside this window, "
-        "call `get_market_data` for the relevant range. When you state a "
-        "price, cite the date from this table."
+        "## Initial Market Snapshot — Dated Reference\n\n"
+        "These observations were fetched when the run began and may be older than "
+        "later tool results, especially after continuation. Use the observation dates "
+        "and price adjustment basis to choose comparable inputs. Newer verified "
+        "data can supersede this snapshot; do not call an old snapshot current. "
+        "When the entry price or other assumptions change, recompute dependent "
+        "returns and hedge bounds rather than carrying over old percentages. "
+        "Fetch missing data with get_market_data instead of recalling prices from training."
     )
     return header + "\n\n" + "\n\n".join(sections)

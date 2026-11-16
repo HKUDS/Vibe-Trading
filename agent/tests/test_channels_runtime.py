@@ -386,6 +386,69 @@ def test_channel_runtime_routes_inbound_to_session_and_outbound(tmp_path: Path) 
     asyncio.run(scenario())
 
 
+def test_channel_runtime_never_resends_an_earlier_attempts_reply(
+    tmp_path: Path,
+) -> None:
+    """A turn whose attempt writes no reply must not be answered with the previous turn's reply."""
+
+    async def scenario() -> None:
+        from src.channels.runtime import ChannelRuntime
+
+        bus = MessageBus()
+        service = FakeSessionService()
+        answer_first_turn = service.send_message
+
+        async def send_without_reply(
+            session_id: str, content: str, **kwargs: Any
+        ) -> dict[str, str]:
+            # The attempt starts, then fails or is cancelled: SessionService
+            # appends no assistant message linked to it.
+            del kwargs
+            service.sent.append((session_id, content))
+            return {"message_id": "msg-2", "attempt_id": f"attempt-{len(service.sent)}"}
+
+        runtime = ChannelRuntime(
+            bus=bus,
+            session_service=service,
+            manager=None,
+            session_map_path=tmp_path / "channel_sessions.json",
+            reply_timeout_s=0.2,
+            poll_interval_s=0.01,
+        )
+        await runtime.start(start_manager=False)
+        try:
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel="telegram",
+                    sender_id="u1",
+                    chat_id="c1",
+                    content="price of AAPL?",
+                )
+            )
+            first = await asyncio.wait_for(bus.consume_outbound(), timeout=1)
+
+            service.send_message = send_without_reply  # type: ignore[method-assign]
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel="telegram",
+                    sender_id="u1",
+                    chat_id="c1",
+                    content="price of TSLA?",
+                )
+            )
+            second = await asyncio.wait_for(bus.consume_outbound(), timeout=2)
+        finally:
+            service.send_message = answer_first_turn  # type: ignore[method-assign]
+            await runtime.stop()
+
+        assert first.content == "agent reply: price of AAPL?"
+        assert second.content != first.content
+        assert second.metadata.get("error") is True
+        assert "TimeoutError" in second.content
+
+    asyncio.run(scenario())
+
+
 def test_channel_runtime_handles_pairing_commands_without_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def scenario() -> None:
         from src.channels.pairing import store as pairing_store

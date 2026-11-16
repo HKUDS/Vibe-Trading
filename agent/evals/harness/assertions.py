@@ -33,6 +33,8 @@ def evaluate_assertions(
     verdicts.extend(_evidence_verdicts(case, bundle))
     verdicts.extend(_budget_verdicts(case, bundle))
     verdicts.extend(_risk_verdicts(case, bundle))
+    from .measurements import measurement_verdicts
+    verdicts.extend(measurement_verdicts(case, bundle))
     verdicts.append(manifest_verdict(bundle))
     return tuple(verdicts)
 
@@ -348,18 +350,22 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     expectation = _mapping(case.expect.get("identity"))
     if not expectation:
         return []
-    problem = _artifact_problem(bundle, "grounding", missing_invalid=True)
+    current = "identity" in bundle.present or "identity" in bundle.errors
+    artifact_key = "identity" if current else "grounding"
+    artifact_path = f"artifacts/{'identity' if current else 'grounding'}_evidence.json"
+    payload = bundle.identity if current else bundle.grounding
+    problem = _artifact_problem(bundle, artifact_key, missing_invalid=True)
     if problem:
         return [
             _verdict(
                 problem,
                 "identity.artifact_available",
                 expectation,
-                bundle.errors.get("grounding", "missing"),
-                "artifacts/grounding_evidence.json",
+                bundle.errors.get(artifact_key, "missing"),
+                artifact_path,
             )
         ]
-    identity = _mapping(bundle.grounding.get("identity") if bundle.grounding else None)
+    identity = _mapping(payload.get("identity") if payload else None)
     verdicts: list[Verdict] = []
     expected_status = expectation.get("status")
     if expected_status is not None:
@@ -374,7 +380,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                 "identity.status",
                 expected_status,
                 observed,
-                "artifacts/grounding_evidence.json#/identity/status",
+                artifact_path + "#/identity/status",
             )
         )
     expected_symbols = expectation.get("authorized_symbols")
@@ -391,7 +397,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                 "identity.authorized_symbols",
                 expected_symbols,
                 observed_symbols,
-                "artifacts/grounding_evidence.json#/identity/authorized_symbols",
+                artifact_path + "#/identity/authorized_symbols",
             )
         )
     forbidden = expectation.get("forbidden_symbols", [])
@@ -408,7 +414,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                 "identity.forbidden_symbols",
                 forbidden,
                 violations,
-                "artifacts/grounding_evidence.json#/identity/authorized_symbols",
+                artifact_path + "#/identity/authorized_symbols",
             )
         )
     constraint = expectation.get("constraint")
@@ -427,7 +433,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                     "identity.constraint",
                     constraint,
                     None,
-                    "artifacts/grounding_evidence.json#/identity/records/*/resolution_constraints",
+                    artifact_path + "#/identity/records/*/resolution_constraints",
                     detail="constraint provenance is not instrumented in this run",
                 )
             )
@@ -441,7 +447,7 @@ def _identity_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
                     "identity.constraint",
                     constraint,
                     constraint_records,
-                    "artifacts/grounding_evidence.json#/identity/records/*/resolution_constraints",
+                    artifact_path + "#/identity/records/*/resolution_constraints",
                 )
             )
     return verdicts
@@ -451,7 +457,9 @@ def _evidence_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     expectation = _mapping(case.expect.get("evidence"))
     if not expectation:
         return []
-    problem = _artifact_problem(bundle, "grounding", missing_invalid=True)
+    # Current research runs intentionally carry identity state only. Absence
+    # of the retired numeric artifact is missing evaluation, not corrupt output.
+    problem = _artifact_problem(bundle, "grounding", missing_invalid=bundle.identity is None)
     if problem:
         return [
             _verdict(
@@ -513,7 +521,8 @@ def _evidence_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdic
     )
     verdicts.append(
         _verdict(
-            VerdictStatus.PASS if not violations else VerdictStatus.FAIL,
+            (VerdictStatus.NOT_EVALUABLE if forbidden and not validations
+             else VerdictStatus.PASS if not violations else VerdictStatus.FAIL),
             "evidence.forbidden_issue_codes",
             forbidden,
             {"observed_issue_codes": sorted(issue_codes), "violations": violations},
@@ -530,7 +539,7 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
     verdicts: list[Verdict] = []
     end_records = [record for record in bundle.trace if record.get("type") == "end"]
     observed_iterations = end_records[-1].get("iterations") if end_records else None
-    for gate in ("max_llm_calls", "max_iterations"):
+    for gate in ("max_iterations",):
         limit = expectation.get(gate)
         if limit is None:
             continue
@@ -572,6 +581,19 @@ def _budget_verdicts(case: HarnessCase, bundle: ArtifactBundle) -> list[Verdict]
                     f"trace.jsonl:{end_records[-1]['_line']}",
                 )
             )
+
+    call_limit = expectation.get("max_llm_calls")
+    if call_limit is not None:
+        usage = bundle.llm_usage or {}
+        problem = _artifact_problem(bundle, "llm_usage", missing_invalid=False)
+        error = _usage_error(usage) if not problem else None
+        calls = _mapping(usage.get("totals")).get("calls")
+        status = problem or (VerdictStatus.INVALID_ARTIFACT if error else
+                            VerdictStatus.NOT_EVALUABLE if type(calls) is not int or
+                            (type(observed_iterations) is int and calls < observed_iterations) else
+                            VerdictStatus.PASS if _within_limit(calls, call_limit) else VerdictStatus.FAIL)
+        verdicts.append(_verdict(status, "budget.max_llm_calls", call_limit, calls,
+                                 "llm_usage.json#/totals/calls", detail=error))
 
     input_limit = expectation.get("max_input_tokens")
     if input_limit is not None:

@@ -94,11 +94,52 @@ def _cmd_revision(args: argparse.Namespace) -> int:
         store.close()
 
 
+def _cmd_compare(args: argparse.Namespace) -> int:
+    store = _store(args)
+    try:
+        comparison = store.compare_revisions(
+            artifact_id=args.artifact_id,
+            from_revision_id=args.from_revision_id,
+            to_revision_id=args.to_revision_id,
+        )
+        _emit({"comparison": comparison})
+        return 0
+    finally:
+        store.close()
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    # Presence is "was the flag given", not truthiness: an empty id (an unset
+    # shell variable) must not quietly turn a comparison into a series export.
+    if (args.from_revision_id is None) != (args.to_revision_id is None):
+        raise ValueError("from_revision_id and to_revision_id must be provided together")
+    if "" in (args.from_revision_id, args.to_revision_id):
+        raise ValueError("from_revision_id and to_revision_id must not be empty")
+    store = _store(args)
+    try:
+        if args.from_revision_id is not None:
+            exported = store.export_comparison(
+                artifact_id=args.artifact_id,
+                from_revision_id=args.from_revision_id,
+                to_revision_id=args.to_revision_id,
+                format=args.format,
+            )
+        else:
+            exported = store.export_series(args.artifact_id, args.format)
+        _emit(exported.to_dict())
+        return 0
+    finally:
+        store.close()
+
+
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "save": _cmd_save,
     "search": _cmd_search,
     "show": _cmd_show,
     "revision": _cmd_revision,
+    "compare": _cmd_compare,
+
+    "export": _cmd_export,
 }
 _PARSER: argparse.ArgumentParser | None = None
 
@@ -115,7 +156,7 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
     global _PARSER
     parser = subparsers.add_parser(
         "research-artifact",
-        help="Save, search, and revise evidence-backed research artifacts",
+        help="Save, search, revise, and compare evidence-backed research artifacts",
     )
     parser.add_argument("--path", default=None, help="Override research-artifact SQLite path")
     commands = parser.add_subparsers(dest="research_artifact_command")
@@ -143,6 +184,17 @@ def add_subparser(subparsers: Any) -> argparse.ArgumentParser:
 
     revision = commands.add_parser("revision", help="Show one immutable revision")
     revision.add_argument("revision_id")
+
+    compare = commands.add_parser("compare", help="Compare two revisions in one series")
+    compare.add_argument("artifact_id")
+    compare.add_argument("from_revision_id")
+    compare.add_argument("to_revision_id")
+
+    export = commands.add_parser("export", help="Export a full series or selected comparison as JSON or Markdown")
+    export.add_argument("artifact_id")
+    export.add_argument("--format", choices=("json", "markdown"), default="json")
+    export.add_argument("--from-revision-id", default=None)
+    export.add_argument("--to-revision-id", default=None)
 
     _PARSER = parser
     return parser

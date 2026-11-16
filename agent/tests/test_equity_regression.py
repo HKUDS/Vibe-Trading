@@ -115,3 +115,29 @@ class TestEquityVectorization:
             + (50 * 80 / 1.0 + (-1) * 50 * (cp_b - 80))
         )
         assert abs(equity - expected) < 1e-8
+
+
+class _LoopEquityEngine(_StubEngine):
+    """Same margin rule, but overriding it forces the per-position loop."""
+
+    def _calc_margin(self, symbol, size, price, leverage):
+        return BaseEngine._calc_margin(self, symbol, size, price, leverage)
+
+
+def test_fast_path_margin_is_positive_at_a_negative_entry_price():
+    dates = pd.date_range("2020-04-20", periods=3, freq="B")
+    close_df = pd.DataFrame({"CL": [-5.0, -5.0, -4.0]}, index=dates)
+    equities = []
+    for engine_cls in (_StubEngine, _LoopEquityEngine):
+        engine = engine_cls({"initial_cash": 1_000_000, "allow_nonpositive_prices": True})
+        engine.positions["CL"] = Position(
+            symbol="CL", direction=1, size=100_000.0,
+            entry_price=-5.0, leverage=1.0, entry_time=dates[0],
+        )
+        engine.capital = 1_000_000 - 100_000.0 * 5.0
+        equities.append([engine._calc_equity(close_df, ts) for ts in dates])
+    fast, loop = equities
+    # Unchanged price -> unchanged equity; a +1 move on a long adds size * 1.
+    assert fast[:2] == [1_000_000.0, 1_000_000.0]
+    assert fast[2] == 1_100_000.0
+    assert fast == loop

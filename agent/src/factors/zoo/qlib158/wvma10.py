@@ -19,7 +19,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_cn', 'equity_hk', 'equity_in', 'equity_kr'],
     'frequency': ['1d'],
     'decay_horizon': 10,
-    'min_warmup_bars': 10,
+    'min_warmup_bars': 11,
 }
 
 

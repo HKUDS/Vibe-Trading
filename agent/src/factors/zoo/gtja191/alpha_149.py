@@ -4,7 +4,7 @@
 # 简要说明: 国泰君安191短周期交易型alpha因子第149号，详见公式定义。
 # 典型用途: 在A股市场经中性化处理后用于选股或股指期货日内交易。
 # ============================================================
-"""GTJA Alpha 149 (国泰君安 191 短周期交易型 alpha 因子, 2014).
+"""GTJA Alpha 149 (国泰君安 191 短周期交易型 alpha 因子, 2017-06-15).
 
 Formula (verbatim from the report):
     REGBETA(FILTER(CLOSE/DELAY(CLOSE,1)-1, BENCH<DELAY(BENCH,1)), FILTER(BENCH/DELAY(BENCH,1)-1, BENCH<DELAY(BENCH,1)), 252)
@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from src.factors.base import downside_beta
 
 from src.factors.base import (
     decay_linear,
@@ -71,14 +73,4 @@ def compute(panel):
         )
     c = panel["close"]
     bench = _bench_close()
-    br = safe_div(bench - bench.shift(1), bench.shift(1))
-    cr = safe_div(c - c.shift(1), c.shift(1))
-    # Multiplicative gating instead of NaN-masking so the rolling window keeps
-    # enough valid samples (NaN-masking on roughly half the rows blows the
-    # min_periods=n requirement on small panels).
-    mask = (bench < bench.shift(1)).astype("float64")
-    cr_g = cr * mask
-    br_g = br * mask
-    n = 20
-    out = safe_div(ts_cov(cr_g, br_g, n), ts_std(br_g, n) ** 2)
-    return out
+    return downside_beta(c, bench, 252)

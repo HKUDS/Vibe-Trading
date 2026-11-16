@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
-    "min_warmup_bars": 21,
+    "min_warmup_bars": 6,
     "notes": 'Williams %R with SMA(20,1).',
 }
 

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "case_id": "research.benchmark_open.v1",
+  "scenario": "benchmark_alignment",
+  "prompt": "同一评估日开盘100、收盘110，策略和等权基准都在开盘买入。计算这一天的基准收益。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "benchmark_return",
+        "operator": "approx",
+        "expected": 0.1
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.a_share_fees.v1",
+  "scenario": "execution_costs",
+  "prompt": "A股买入100股、每股10元：佣金率0.00025、最低佣金5元、双边过户费率0.00001、卖出印花税率0.0005。分别计算同价买入和卖出的全部费用。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "buy_fee",
+        "operator": "approx",
+        "expected": 5.01
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "sell_fee",
+        "operator": "approx",
+        "expected": 5.51
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

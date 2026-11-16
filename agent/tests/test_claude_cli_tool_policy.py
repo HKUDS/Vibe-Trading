@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from src.providers import claude_cli, claude_cli_policy
+from src.providers import claude_cli, tool_policy
 from tests.claude_cli_helpers import install_fake_cli, payload, tool
 
 
@@ -94,7 +94,7 @@ def test_empty_deny_list_offers_every_tool(fake_cli, monkeypatch) -> None:
     ],
 )
 def test_python_only_policy_allows(command) -> None:
-    rewritten, reason = claude_cli_policy.check_bash_command(command)
+    rewritten, reason = tool_policy.check_bash_command(command)
     assert reason is None
     if command.startswith("python"):
         assert shlex.split(rewritten)[0] == sys.executable
@@ -124,7 +124,7 @@ def test_python_only_policy_allows(command) -> None:
     ],
 )
 def test_python_only_policy_blocks(command) -> None:
-    rewritten, reason = claude_cli_policy.check_bash_command(command)
+    rewritten, reason = tool_policy.check_bash_command(command)
     assert rewritten is None
     assert reason
 
