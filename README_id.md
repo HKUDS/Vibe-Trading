@@ -57,17 +57,20 @@
 
 ## 📰 Berita
 
+- **2026-11-16** 🛠️ **Perbaikan laporan, pencarian memori, dan pesan** — Laporan Shadow Account menandai laba/rugi yang belum terukur sebagai tidak tersedia, bukan nol, termasuk dalam ekspor HTML/PDF yang tersimpan di cache. Pencarian memori memperbaiki indeks lama; kegagalan sebagian OCR PDF ditandai sebagai penurunan kualitas.
+  Memperbaiki pemasangan Signal dan hilangnya teks Napcat akibat metadata gambar yang tidak valid. Percobaan ulang pengaturan suhu Anthropic dibatasi pada kesalahan validasi terkait, dan API historis AKShare versi baru maupun lama didukung. Lihat [CHANGELOG](CHANGELOG.md). **Tersedia di `main` untuk rilis pip berikutnya.**
+
 - **2026-11-15** 📡 **Gateway data pasar terpadu dan CSV siap pakai** — Bar historis dan snapshot opsi AS menggunakan satu [gateway data lokal](agent/src/data_gateway/README.md) dengan sumber cadangan, cache bersama, dan batas konkurensi. Respons mempertahankan sumber, mata uang, dan metode penyesuaian harga, serta menjelaskan cakupan dan keterkinian data.
   Pengambilan data pasar oleh Agent menyediakan CSV bersama JSON. Untuk permintaan yang didukung dengan instrumen dan satu rentang tanggal `YYYY-MM-DD` yang eksplisit, runtime membatasi tanggal sebelum pengambilan data. Data awal untuk perhitungan diminta secara terpisah; periode historis yang dibutuhkan indikator dan backtest yang ada tetap tersedia. **Tersedia di `main` untuk rilis pip berikutnya.**
 
 - **2026-11-14** 🔌 **Gateway LLM terpadu dan pemeriksaan versi** — Agent, CLI, API, dan Swarm kini menggunakan satu katalog dan lapisan konfigurasi untuk penyedia model. Pengaturan setiap klien tetap terisolasi, adaptor native mematuhi pengaturan proxy eksplisit, dan pengalihan lintas origin diblokir sebelum kredensial atau isi permintaan diteruskan.
   Periksa versi baru melalui pengaturan Web. Desktop kini mendukung pembaruan bertanda tangan digital dengan verifikasi dan pemulihan; distribusinya memerlukan konfigurasi feed pembaruan dan sertifikat penerbit. **Sudah di `main`, untuk rilis pip berikutnya.**
 
-- **2026-11-13** 🛠️ **Penyampaian riset dan alat kalkulasi** — Jawaban riset dialirkan tanpa penghapusan angka otomatis, penulisan ulang paksa, atau penilaian selesai berdasarkan format. Eksekusi komite yang terhenti menyimpan hasil parsial dan dapat melanjutkan peran yang belum selesai dengan memakai kembali pekerjaan yang sudah selesai.
-  Referensi data pasar lengkap terhubung ke kalkulasi QuantLib tanpa shell, dan bukti sumber dibagikan antarperan. Options Lab dan `options_payoff` menghitung strategi saham plus opsi serta membandingkan beberapa alternatif dalam satu panggilan, dengan biaya, batas laba/rugi, dan arah perbandingan yang eksplisit. Biaya backtest efektif serta status keluaran terpotong atau kesalahan tetap jelas; batas otorisasi trading riil tetap berlaku. **Belum dirilis.**
-
 <details>
 <summary>Berita sebelumnya</summary>
+
+- **2026-11-13** 🛠️ **Penyampaian riset dan alat kalkulasi** — Jawaban riset dialirkan tanpa penghapusan angka otomatis, penulisan ulang paksa, atau penilaian selesai berdasarkan format. Eksekusi komite yang terhenti menyimpan hasil parsial dan dapat melanjutkan peran yang belum selesai dengan memakai kembali pekerjaan yang sudah selesai.
+  Referensi data pasar lengkap terhubung ke kalkulasi QuantLib tanpa shell, dan bukti sumber dibagikan antarperan. Options Lab dan `options_payoff` menghitung strategi saham plus opsi serta membandingkan beberapa alternatif dalam satu panggilan, dengan biaya, batas laba/rugi, dan arah perbandingan yang eksplisit. Biaya backtest efektif serta status keluaran terpotong atau kesalahan tetap jelas; batas otorisasi trading riil tetap berlaku. **Belum dirilis.**
 
 - **2026-11-12** 🛠️ **Perbaikan waktu eksekusi, angka laporan, dan status riset** — Akun bayangan memakai modal awal yang diminta; respons worker yang terpotong oleh batas token tidak lagi dianggap selesai. PM komite dapat menyintesis laporan hulu yang valid tanpa mengambil ulang data. Adaptor Anthropic native memakai batas keluaran default 16.384 token yang dapat diubah.
   Strategi yang dihasilkan menolak pergeseran tambahan yang terdeteksi pada target keluaran kecuali dinyatakan sebagai penundaan yang disengaja; lookback indikator tetap diizinkan. Grounding mendukung variasi penulisan satuan besaran dan deklarasi nilai observasi yang presisi tanpa melonggarkan pemeriksaan bukti. Backtest SPY/GLD cocok dengan pembukuan independen untuk seluruh 206/140 eksekusi dan imbal hasil total. **Belum dirilis.**

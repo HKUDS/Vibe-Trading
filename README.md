@@ -57,17 +57,20 @@
 
 ## 📰 News
 
+- **2026-11-16** 🛠️ **More reliable reports, memory search and messaging** — Shadow Account reports keep unmeasured P&L unavailable instead of showing zero, including cached HTML/PDF exports. Memory search repairs legacy indexes; partially failed PDF OCR is marked degraded.
+  Fix Signal pairing, preserve Napcat text when image metadata is malformed, narrow Anthropic temperature retries to the relevant validation error, and support current and legacy AKShare history endpoints. See [CHANGELOG](CHANGELOG.md). **On `main`, for the next pip release.**
+
 - **2026-11-15** 📡 **Unified market-data gateway and ready-to-use CSVs** — Historical bars and US option snapshots share a [local data gateway](agent/src/data_gateway/README.md) with source fallback, shared caching and bounded concurrency. Responses preserve source, currency and price-adjustment metadata, with explicit coverage and freshness information.
   Agent market-data reads deliver CSVs alongside JSON. For supported requests naming instruments and one explicit `YYYY-MM-DD` range, the runtime constrains dates before acquisition; calculation warmup is requested separately, and existing indicator/backtest lookbacks remain available. **On `main`, for the next pip release.**
 
 - **2026-11-14** 🔌 **Unified LLM gateway and version checks** — Model providers now share one catalog and configuration layer across Agent, CLI, API and Swarm. Client settings stay isolated, native adapters respect explicit proxy settings, and cross-origin redirects are blocked before credentials or request bodies are forwarded.
   Check for new versions from Web settings. Desktop gains support for signed updates with verification and recovery; distribution requires a configured update feed and publisher certificates. **On `main`, for the next pip release.**
 
-- **2026-11-13** 🛠️ **Research delivery and calculation tools** — Research answers stream without automatic numeric redaction, forced rewrites, or format-based completion gates. Interrupted committee runs preserve partial results and can resume unfinished roles while reusing completed work.
-  Full market-data references feed shell-free QuantLib calculations, and committee roles share source evidence. Options Lab and `options_payoff` calculate stock-plus-options strategies and compare multiple alternatives in one call, returning explicit costs, payoff bounds, and comparison directions. Effective backtest fees and truncation/error states remain explicit; live-trading authorization limits remain in place. **Unreleased.**
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-11-13** 🛠️ **Research delivery and calculation tools** — Research answers stream without automatic numeric redaction, forced rewrites, or format-based completion gates. Interrupted committee runs preserve partial results and can resume unfinished roles while reusing completed work.
+  Full market-data references feed shell-free QuantLib calculations, and committee roles share source evidence. Options Lab and `options_payoff` calculate stock-plus-options strategies and compare multiple alternatives in one call, returning explicit costs, payoff bounds, and comparison directions. Effective backtest fees and truncation/error states remain explicit; live-trading authorization limits remain in place. **Unreleased.**
 
 - **2026-11-12** 🛠️ **Backtest timing, report figures and research completion fixes** — Shadow Account now uses the requested starting capital; token-truncated worker replies no longer count as completed. Committee PMs can synthesize valid upstream reports without fetching the same data again, and the native Anthropic adapter defaults to a configurable 16,384 output tokens.
   Generated strategies reject detected extra shifts on output targets unless explicitly declared intentional, while indicator lookbacks remain valid. Grounding now accepts supported magnitude spellings and precise observed declarations without weakening evidence checks. SPY/GLD backtests match an independent ledger on all 206/140 fills and total returns. **Unreleased.**
