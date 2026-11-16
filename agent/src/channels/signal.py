@@ -22,7 +22,12 @@ from src.channels.bus.queue import MessageBus
 from src.channels.base import BaseChannel
 from src.channels.utils import get_media_dir
 from pydantic import BaseModel
-from src.channels.pairing import is_approved
+from src.channels.pairing import (
+    PAIRING_CODE_META_KEY,
+    format_pairing_reply,
+    generate_code,
+    is_approved,
+)
 from src.channels.utils import safe_filename, split_message
 
 
@@ -422,7 +427,11 @@ class SignalChannel(BaseChannel):
         Pairing approval may be recorded under any of the identifier forms
         signal exposes (phone with/without ``+``, UUID, ACI), so we check
         each part of the pipe-joined composite against ``is_approved``.
+        A pairing code is issued for the whole composite, so that form is
+        checked first.
         """
+        if is_approved(self.name, str(sender_id)):
+            return True
         for part in str(sender_id).split("|"):
             for variant in self._normalize_signal_id(part):
                 if is_approved(self.name, variant):
@@ -443,9 +452,8 @@ class SignalChannel(BaseChannel):
 
         ``_check_inbound_policy`` is the authoritative gate for DM/group
         access, so we skip the base-class ``is_allowed()`` check and publish
-        directly to the bus.  The denied-DM pairing path calls
-        ``super()._handle_message`` instead, which goes through
-        ``is_allowed`` and issues a pairing code.
+        directly to the bus. Denied DMs receive a pairing code in
+        ``_handle_data_message`` without entering this publish path.
         """
         meta = metadata or {}
         if self.supports_streaming:
@@ -792,15 +800,26 @@ class SignalChannel(BaseChannel):
             timestamp=timestamp,
         )
         if not allowed:
-            # Mirror Slack: let denied DMs reach the base-class
-            # _handle_message so it can reply with a pairing code.
-            # Group denials stay dropped.
+            # Mirror Slack: a denied DM gets a pairing code. Issue it here
+            # rather than through the base _handle_message, whose is_allowed()
+            # can still pass (e.g. a channel-level allow_from entry) and would
+            # then publish an empty message to the agent. Group denials stay
+            # dropped.
             if not is_group_message and self.config.dm.enabled:
-                await super()._handle_message(
-                    sender_id=sender_id,
-                    chat_id=chat_id,
-                    content="",
-                    is_dm=True,
+                code = generate_code(self.name, str(sender_id))
+                await self.send(
+                    OutboundMessage(
+                        channel=self.name,
+                        chat_id=str(chat_id),
+                        content=format_pairing_reply(code),
+                        metadata={PAIRING_CODE_META_KEY: code},
+                    )
+                )
+                self.logger.info(
+                    "Sent pairing code %s to sender %s in chat %s",
+                    code,
+                    sender_id,
+                    chat_id,
                 )
             return
 
@@ -911,7 +930,10 @@ class SignalChannel(BaseChannel):
             self.logger.debug("Ignoring DM from %s (DMs disabled)", sender_id)
             return False, chat_id
         if self.config.dm.policy == "allowlist":
-            if not self._sender_matches_allowlist(sender_id, self.config.dm.allow_from):
+            if not (
+                self._sender_matches_allowlist(sender_id, self.config.dm.allow_from)
+                or self._sender_approved_via_pairing(sender_id)
+            ):
                 self.logger.debug(
                     "Ignoring DM from %s (policy: %s)", sender_id, self.config.dm.policy
                 )
