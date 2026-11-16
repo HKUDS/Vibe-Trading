@@ -28,7 +28,10 @@ T7 is in flight.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from src.agent.tools import BaseTool
@@ -37,6 +40,11 @@ from . import data, data_5m, engine, wire
 from .calendar import CN_A_MARKET, CalendarUnavailableError, snapshot_calendar
 from .data import ClickHouseBarsClient
 from .limits_cn_a import ClickHouseLimitsClient
+from .portfolio import run_portfolio_step
+from .portfolio.models import PortfolioErrorResult, PortfolioIssue
+from .portfolio.orchestrator import OrchestrationError
+from .portfolio.schema import PortfolioRequestError
+from .portfolio.sessions import PortfolioSessionError
 from .schema import (
     DateRange,
     ErrorEnvelope,
@@ -47,6 +55,45 @@ from .schema import (
 logger = logging.getLogger(__name__)
 
 __all__ = ["PaperTradeDocument", "PaperTradeStepTool", "run_paper_trade_step"]
+
+#: Canonical markets the internal portfolio step can dispatch.
+_PORTFOLIO_MARKETS = ("cn_a", "hk", "us")
+
+#: Fields that belong to the legacy single-market request envelope.  The
+#: portfolio parser owns the same list, but the tool gate rejects them before
+#: any portfolio parser sees a single raw value.
+_LEGACY_ONLY_FIELDS = (
+    "market",
+    "account_state",
+    "from_date",
+    "to_date",
+    "strategy_path",
+    "volume_share",
+    "order_volume_ratio",
+    "path_model",
+    "session",
+    "fee_model",
+)
+
+#: Fields that belong only to the pt-v2.0 portfolio request envelope.  They are
+#: rejected when an omitted/``single`` mode call still carries one, while every
+#: other unknown key keeps the legacy parser's ignore behavior.
+_PORTFOLIO_ONLY_FIELDS = (
+    "tool",
+    "schema_version",
+    "base_currency",
+    "trade_date",
+    "planning_at",
+    "valuation_at",
+    "portfolio_state",
+    "sessions",
+    "fx_snapshots",
+    "fx_conversions",
+    "target_weights",
+    "rebalance_band",
+    "benchmark",
+    "sectors",
+)
 
 
 class PaperTradeDocument(str):
@@ -130,6 +177,235 @@ def _error_document(
     return wire.dumps_payload(wire.build_error_payload(envelope))
 
 
+def _dumps_document(payload: Any) -> str:
+    """Serialize one portfolio document/error with the canonical byte spelling."""
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ModeGateError:
+    """One stable pre-parse mode rejection."""
+
+    reason: str
+    path: str
+    detail: str
+
+
+def _portfolio_error_document(
+    code: str,
+    raw_payload: Any,
+    *,
+    reason: str,
+    path: str,
+    detail: str,
+    bucket_id: str | None = None,
+) -> str:
+    """Build the structured pt-v2.0 error without touching a legacy state hash."""
+    raw = raw_payload if isinstance(raw_payload, dict) else {}
+    result = PortfolioErrorResult(
+        account_id=_as_str(raw.get("account_id")),
+        code=code,
+        error=PortfolioIssue(
+            reason=reason or "invalid_request",
+            path=path or "$",
+            detail=detail or reason or "invalid request",
+            bucket_id=bucket_id,
+        ),
+    )
+    return _dumps_document(result.model_dump(mode="json", by_alias=True, exclude_none=True))
+
+
+def _preparse_mode(payload: Any) -> tuple[str, _ModeGateError | None]:
+    """Classify one raw payload before either parser runs.
+
+    Returns ``("legacy", None)`` for omitted/``single`` mode,
+    ``("portfolio", None)`` for the exact pt-v2.0 pair, or
+    ``("error", error)`` for every unsupported combination.
+    """
+    if not isinstance(payload, dict):
+        return "legacy", None
+    mode = payload.get("mode")
+    schema_version = payload.get("schema_version")
+    if mode is None or mode == "single":
+        if schema_version == "pt-v2.0":
+            return "error", _ModeGateError(
+                reason="missing_mode" if mode is None else "invalid_mode",
+                path="mode",
+                detail="schema_version 'pt-v2.0' requires mode 'portfolio'",
+            )
+        for field in _PORTFOLIO_ONLY_FIELDS:
+            if field in payload:
+                return "error", _ModeGateError(
+                    reason="portfolio_field_forbidden",
+                    path=field,
+                    detail=f"portfolio-only field {field!r} is not allowed when mode is 'single'",
+                )
+        return "legacy", None
+    if mode == "portfolio":
+        if schema_version != "pt-v2.0":
+            return "error", _ModeGateError(
+                reason=(
+                    "missing_schema_version"
+                    if schema_version is None
+                    else "invalid_schema_version"
+                ),
+                path="schema_version",
+                detail="mode 'portfolio' requires schema_version 'pt-v2.0'",
+            )
+        for field in _LEGACY_ONLY_FIELDS:
+            if field in payload:
+                return "error", _ModeGateError(
+                    reason="legacy_field_forbidden",
+                    path=field,
+                    detail=f"legacy field {field!r} is not allowed in portfolio mode",
+                )
+        return "portfolio", None
+    return "error", _ModeGateError(
+        reason="invalid_mode",
+        path="mode",
+        detail="mode must be 'single' or 'portfolio'",
+    )
+
+
+def _portfolio_markets(raw_payload: Any) -> tuple[str, ...]:
+    """Read only the canonical bucket markets a valid request can dispatch."""
+    raw = raw_payload if isinstance(raw_payload, dict) else {}
+    state = raw.get("portfolio_state")
+    buckets = state.get("buckets") if isinstance(state, dict) else None
+    markets: list[str] = []
+    for bucket in buckets if isinstance(buckets, list) else ():
+        market = bucket.get("market") if isinstance(bucket, dict) else None
+        if isinstance(market, str) and market in _PORTFOLIO_MARKETS:
+            markets.append(market)
+    return tuple(dict.fromkeys(markets))
+
+
+def _portfolio_dependencies(
+    raw_payload: Any,
+    *,
+    loader: Any,
+    ch_client: Any,
+    calendar_client: Any,
+) -> tuple[dict[str, Any], dict[str, Any], Any]:
+    """Resolve the internal step's per-market loaders and cn_a calendar.
+
+    ``loader``/``ch_client`` accept either one shared injection (legacy test
+    seam) or a per-market mapping.  ``_AUTO`` resolves the existing raw network
+    loaders and ClickHouse helpers only; a missing source stays ``None`` so the
+    fetch reports data-not-ready instead of becoming an input error.
+    """
+    markets = _portfolio_markets(raw_payload)
+    connector = None
+    if "cn_a" in markets and (
+        loader is _AUTO or ch_client is _AUTO or calendar_client is _AUTO
+    ):
+        connector = _default_cn_a_connector()
+
+    if isinstance(loader, Mapping):
+        loaders = {market: loader.get(market) for market in markets}
+    elif loader is _AUTO:
+        loaders = {}
+        for market in markets:
+            try:
+                loaders[market] = data._resolve_network_loader(
+                    data.MARKET_LOADER_KEYS[market],
+                    exclude=frozenset({"clickhouse"}) if market == CN_A_MARKET else frozenset(),
+                )
+            except Exception as exc:  # noqa: BLE001 — unavailable source degrades to data-not-ready
+                logger.debug("paper_trade portfolio loader unavailable for %s: %s", market, exc)
+                loaders[market] = None
+    else:
+        loaders = {market: loader for market in markets}
+
+    if isinstance(ch_client, Mapping):
+        ch_clients = {market: ch_client.get(market) for market in markets}
+    elif ch_client is _AUTO:
+        ch_clients = {
+            market: (
+                ClickHouseBarsClient(connector)
+                if market == CN_A_MARKET and connector is not None
+                else None
+            )
+            for market in markets
+        }
+    elif ch_client is None:
+        ch_clients = {market: None for market in markets}
+    else:
+        ch_clients = {
+            market: ch_client if market == CN_A_MARKET else None
+            for market in markets
+        }
+
+    return loaders, ch_clients, connector if calendar_client is _AUTO else calendar_client
+
+
+def _execute_portfolio_step(
+    payload: Any,
+    *,
+    loader: Any,
+    ch_client: Any,
+    calendar_client: Any,
+    hk_lot_sizes: Any,
+) -> str:
+    """Run the internal seam and return only its public document bytes."""
+    raw_payload = payload if isinstance(payload, dict) else {}
+    try:
+        loaders, ch_clients, cal = _portfolio_dependencies(
+            raw_payload,
+            loader=loader,
+            ch_client=ch_client,
+            calendar_client=calendar_client,
+        )
+        result = run_portfolio_step(
+            payload,
+            loaders=loaders,
+            calendar_client=cal,
+            ch_clients=ch_clients,
+            hk_lot_sizes=None if hk_lot_sizes is _AUTO else hk_lot_sizes,
+        )
+    except PortfolioRequestError as exc:
+        return _portfolio_error_document(
+            "INVALID_REQUEST",
+            raw_payload,
+            reason=exc.reason,
+            path=exc.path,
+            detail=exc.detail or str(exc),
+            bucket_id=exc.bucket_id,
+        )
+    except PortfolioSessionError as exc:
+        return _portfolio_error_document(
+            exc.code,
+            raw_payload,
+            reason=exc.reason,
+            path=exc.path,
+            detail=exc.detail or str(exc),
+            bucket_id=exc.bucket_id,
+        )
+    except OrchestrationError as exc:
+        if exc.code == "INTERNAL":
+            raise
+        return _portfolio_error_document(
+            exc.code,
+            raw_payload,
+            reason=exc.reason,
+            path=exc.path,
+            detail=exc.detail or str(exc),
+            bucket_id=exc.bucket_id,
+        )
+    document = result.document
+    if isinstance(document, str):
+        return document
+    if isinstance(document, dict):
+        return _dumps_document(document)
+    return _dumps_document(document.model_dump(mode="json", by_alias=True, exclude_none=True))
+
+
 def _default_cn_a_connector() -> Any | None:
     """One shared ClickHouse connector for cn_a calendar+limits+bars, or None.
 
@@ -211,7 +487,36 @@ def run_paper_trade_step(
     The returned :class:`PaperTradeDocument` is the wire string plus the
     fetched :class:`data.MarketDataResult` (``None`` on every error envelope),
     so an in-process caller can record the day's bars without a second fetch.
+
+    A raw ``mode``/``schema_version`` gate runs before the legacy parser:
+    omitted or ``single`` mode follows the existing pipeline unchanged, while
+    ``mode="portfolio"`` plus ``schema_version="pt-v2.0"`` dispatches only to
+    the internal portfolio seam.
     """
+    dispatch, error = _preparse_mode(payload)
+    if dispatch == "error":
+        assert error is not None
+        return PaperTradeDocument(
+            _portfolio_error_document(
+                "INVALID_REQUEST",
+                payload,
+                reason=error.reason,
+                path=error.path,
+                detail=error.detail,
+            ),
+            None,
+        )
+    if dispatch == "portfolio":
+        return PaperTradeDocument(
+            _execute_portfolio_step(
+                payload,
+                loader=loader,
+                ch_client=ch_client,
+                calendar_client=calendar_client,
+                hk_lot_sizes=hk_lot_sizes,
+            ),
+            None,
+        )
     document, market_data = _execute_step(
         payload,
         loader=loader,
