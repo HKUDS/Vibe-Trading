@@ -402,6 +402,8 @@ def _make_fake_anthropic_base():
             self.calls.append(dict(payload))
             if self.model == "deprecates-temp" and "temperature" in payload:
                 raise RuntimeError("`temperature` is deprecated for this model.")
+            if self.model == "refuses-temp" and "temperature" in payload:
+                raise RuntimeError("temperature: Extra inputs are not permitted")
             return SimpleNamespace(payload=payload)
 
     return _FakeAnthropicBase
@@ -456,6 +458,30 @@ def test_is_anthropic_temperature_unsupported_error_matching() -> None:
     assert not _is_anthropic_temperature_unsupported_error(
         RuntimeError("rate limit exceeded")
     )
+    # The API also words the refusal as a validation error on the field itself.
+    assert _is_anthropic_temperature_unsupported_error(
+        RuntimeError("temperature: Extra inputs are not permitted")
+    )
+    # Without a mention of `temperature` the same wording is unrelated.
+    assert not _is_anthropic_temperature_unsupported_error(
+        RuntimeError("max_tokens: Extra inputs are not permitted")
+    )
+
+
+def test_anthropic_temperature_self_heal_handles_the_validation_wording() -> None:
+
+    _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED.clear()
+    base = _make_fake_anthropic_base()
+    safe_cls = _provider_adapters._make_temperature_safe_anthropic(base)
+    inst = safe_cls(model="refuses-temp", temperature=0.0)
+
+    result = inst._generate([])
+
+    assert len(inst.calls) == 2
+    assert "temperature" in inst.calls[0]
+    assert "temperature" not in inst.calls[1]
+    assert "temperature" not in result.payload
+    assert any(key[-1] == "refuses-temp" for key in _provider_adapters._ANTHROPIC_TEMPERATURE_UNSUPPORTED)
 
 
 # ---------------------------------------------------------------------------

@@ -1061,12 +1061,23 @@ def _is_anthropic_temperature_unsupported_error(exc: BaseException) -> bool:
     """Return True when an Anthropic error reports `temperature` as unsupported.
 
     Matches the model-level deprecation ("`temperature` is deprecated for this
-    model.") regardless of the SDK exception type or the temperature value sent.
+    model.") and the request-validation rejection of the field itself
+    ("temperature: Extra inputs are not permitted") regardless of the SDK
+    exception type or the temperature value sent.
     """
     message = str(getattr(exc, "message", "") or exc).lower()
     if "temperature" not in message:
         return False
-    return "deprecated" in message or "not supported" in message or "unsupported" in message or "not allowed" in message
+    return (
+        "deprecated" in message
+        or "not supported" in message
+        or "unsupported" in message
+        or "not allowed" in message
+        # Match the reported field validation, not an unrelated rejection
+        # elsewhere in an error that also happens to mention temperature.
+        or re.search(r"(?<![\w.])temperature[\"'`]*\s*:\s*extra inputs are not permitted\b", message)
+        is not None
+    )
 
 
 def _make_temperature_safe_anthropic(base_cls: type) -> type:
