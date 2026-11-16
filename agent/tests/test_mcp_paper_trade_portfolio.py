@@ -318,7 +318,10 @@ def test_valid_portfolio_call_needs_no_legacy_arguments(
 
 
 def test_invalid_mode_returns_in_band_invalid_request(mcp_server) -> None:
-    document = json.loads(_call(mcp_server, {"mode": "batch", "account_id": "x"}))
+    from src.tools.paper_trade.portfolio.wire import compute_raw_input_hash
+
+    payload = {"mode": "batch", "account_id": "x"}
+    document = json.loads(_call(mcp_server, payload))
 
     assert document["status"] == "error"
     assert document["schema_version"] == "pt-v2.0"
@@ -327,6 +330,11 @@ def test_invalid_mode_returns_in_band_invalid_request(mcp_server) -> None:
         "invalid_mode",
         "mode",
     )
+    assert document["error"]["detail"].count("input_sha256=") == 1
+    assert document["error"]["detail"].endswith(
+        f"; input_sha256={compute_raw_input_hash(payload)}"
+    )
+    assert "end_portfolio" not in document and "fills" not in document
 
 
 @pytest.mark.parametrize(
@@ -454,15 +462,19 @@ def test_call_params_forward_invalid_mode_without_branch_checks(mcp_server) -> N
 
 
 def test_malformed_json_container_strings_stay_in_band(mcp_server) -> None:
+    from src.tools.paper_trade.portfolio.wire import compute_raw_input_hash
+
     legacy = json.loads(_call(mcp_server, _legacy_arguments(account_state="not-json")))
-    portfolio = json.loads(
-        _call(mcp_server, _portfolio_arguments(portfolio_state="not-json"))
-    )
+    portfolio_payload = _portfolio_arguments(portfolio_state="not-json")
+    portfolio = json.loads(_call(mcp_server, portfolio_payload))
 
     assert (legacy["status"], legacy["code"]) == ("error", "INVALID_REQUEST")
     assert "account_state must be an object" in legacy["message"]
     assert (portfolio["status"], portfolio["code"]) == ("error", "INVALID_REQUEST")
     assert portfolio["error"]["path"] == "portfolio_state"
+    assert portfolio["error"]["detail"].endswith(
+        f"; input_sha256={compute_raw_input_hash(portfolio_payload)}"
+    )
 
 
 def test_repeated_calls_do_not_reuse_a_branch_or_payload(

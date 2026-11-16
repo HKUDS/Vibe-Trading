@@ -41,8 +41,8 @@ from .calendar import CN_A_MARKET, CalendarUnavailableError, snapshot_calendar
 from .data import ClickHouseBarsClient
 from .limits_cn_a import ClickHouseLimitsClient
 from .portfolio import run_portfolio_step
-from .portfolio.models import PortfolioErrorResult, PortfolioIssue
-from .portfolio.orchestrator import OrchestrationError
+from .portfolio import wire as portfolio_wire
+from .portfolio.orchestrator import OrchestrationCode, OrchestrationError
 from .portfolio.schema import PortfolioRequestError, load_portfolio_contract_schema
 from .portfolio.sessions import PortfolioSessionError
 from .schema import (
@@ -285,15 +285,18 @@ _AUTO = data._AUTO
 #: REQUIREMENTS R1 / VD-12 frozen description phrase — both registration
 #: surfaces (BaseTool.description and the MCP wrapper docstring) carry it.
 _DESCRIPTION = (
-    "Run one deterministic paper-trading step for a single account: a "
-    "deterministic paper-trading matching engine; never places real orders. "
-    "Matches the injected orders (or a strategy_path's per-day orders, Step 7) "
-    "against bars under the market's frozen rules (T+1, price limits, "
-    "board lots, fees), and returns one in-band JSON document — the success "
-    "result or an AM-5 error envelope (PAPER_DATA_NOT_READY / INVALID_REQUEST) "
-    "on the same channel, never a transport error. Optional pt-v1.2 selectors "
-    "(interval/session/path_model/fill_model) default to the pt-v1.1 daily "
-    "behaviour; interval='5m' is cn_a-only. Research-only."
+    "Run one deterministic paper-trading step. The default (or mode='single') "
+    "is the single-market contract: a deterministic paper-trading matching "
+    "engine; never places real orders. It matches injected orders (or a "
+    "strategy_path's per-day orders, Step 7) against bars under the market's "
+    "frozen rules (T+1, price limits, board lots, fees). mode='portfolio' with "
+    "schema_version='pt-v2.0' runs one cross-market daily step over caller "
+    "buckets, direct-pair FX snapshots and caller-declared sessions, with "
+    "either orders or target_weights. Both branches return one in-band JSON "
+    "document — success or an INVALID_REQUEST / PAPER_DATA_NOT_READY envelope "
+    "on the same channel, never a transport error. Legacy interval/session/"
+    "path_model/fill_model selectors default to pt-v1.1 daily behaviour; "
+    "interval='5m' is cn_a-only. Research-only."
 )
 
 
@@ -356,7 +359,7 @@ class _ModeGateError:
 
 
 def _portfolio_error_document(
-    code: str,
+    code: OrchestrationCode,
     raw_payload: Any,
     *,
     reason: str,
@@ -364,19 +367,20 @@ def _portfolio_error_document(
     detail: str,
     bucket_id: str | None = None,
 ) -> str:
-    """Build the structured pt-v2.0 error without touching a legacy state hash."""
-    raw = raw_payload if isinstance(raw_payload, dict) else {}
-    result = PortfolioErrorResult(
-        account_id=_as_str(raw.get("account_id")),
+    """Build the structured pt-v2.0 error through the public wire serializer.
+
+    The serializer owns the stable envelope shape and appends the raw-request
+    ``input_sha256`` suffix to ``detail``; it also refuses ``INTERNAL`` so an
+    engine fault can never become an in-band public code.
+    """
+    return portfolio_wire.serialize_error(
+        raw_payload,
         code=code,
-        error=PortfolioIssue(
-            reason=reason or "invalid_request",
-            path=path or "$",
-            detail=detail or reason or "invalid request",
-            bucket_id=bucket_id,
-        ),
+        reason=reason or "invalid_request",
+        path=path or "$",
+        detail=detail or reason or "invalid request",
+        bucket_id=bucket_id,
     )
-    return _dumps_document(result.model_dump(mode="json", by_alias=True, exclude_none=True))
 
 
 def _preparse_mode(payload: Any) -> tuple[str, _ModeGateError | None]:
@@ -929,8 +933,10 @@ class PaperTradeStepTool(BaseTool):
 
     Read-only research tool (REQUIREMENTS R1): it reads market data and the
     injected ledger, matches on paper under the frozen market rules, and
-    returns one in-band JSON document.  It registers no broker / trading
-    connector path and writes nothing.
+    returns one in-band JSON document. The same name serves the default/explicit
+    single-market contract and the pt-v2.0 portfolio branch selected by
+    ``mode='portfolio'`` + ``schema_version='pt-v2.0'``. It registers no broker /
+    trading connector path and writes nothing.
     """
 
     name = "paper_trade_step"

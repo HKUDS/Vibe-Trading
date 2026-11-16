@@ -27,6 +27,7 @@ from cli.commands.paper_trade import add_parser as add_paper_parser
 from cli.commands.paper_trade import dispatch as dispatch_paper
 from src.api import paper_trade_routes
 from src.tools.paper_trade import tool as tool_module
+from src.tools.paper_trade.portfolio.wire import compute_raw_input_hash
 from src.tools.paper_trade.tool import PaperTradeStepTool
 from tests.paper_trade_portfolio_fixture import valid_portfolio_payload
 
@@ -314,6 +315,10 @@ def test_cli_error_envelope_parity(
     assert parity.cli["status"] == "error"
     assert parity.cli["code"] == "INVALID_REQUEST"
     assert (parity.cli["error"]["reason"], parity.cli["error"]["path"]) == (reason, path)
+    assert parity.cli["error"]["detail"].count("input_sha256=") == 1
+    assert parity.cli["error"]["detail"].endswith(
+        f"; input_sha256={compute_raw_input_hash(payload)}"
+    )
     assert surfaces.fetches == []
 
 

@@ -36,6 +36,7 @@ from cli.commands.paper_trade import add_parser as add_paper_parser
 from cli.commands.paper_trade import dispatch as dispatch_paper
 from src.api import paper_trade_routes
 from src.tools.paper_trade import tool as tool_module
+from src.tools.paper_trade.portfolio.wire import compute_raw_input_hash
 from src.tools.paper_trade.tool import PaperTradeStepTool
 from tests.paper_trade_portfolio_fixture import valid_portfolio_payload
 
@@ -376,6 +377,11 @@ def test_invalid_mode_envelope_parity(
     assert document["mode"] == "portfolio"
     assert document["code"] == "INVALID_REQUEST"
     assert (document["error"]["reason"], document["error"]["path"]) == (reason, "mode")
+    assert document["error"]["detail"].count("input_sha256=") == 1
+    assert document["error"]["detail"].endswith(
+        f"; input_sha256={compute_raw_input_hash(payload)}"
+    )
+    assert "end_portfolio" not in document and "fills" not in document
     assert surfaces.fetches == []
 
 

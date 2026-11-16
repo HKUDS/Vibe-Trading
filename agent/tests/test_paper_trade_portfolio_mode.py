@@ -15,6 +15,7 @@ portfolio end-to-end path uses raw fake loaders and a caller calendar.
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,6 +26,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from src.tools.paper_trade import engine
 from src.tools.paper_trade import tool as tool_module
 from src.tools.paper_trade.portfolio.schema import load_portfolio_contract_schema
+from src.tools.paper_trade.portfolio.wire import compute_raw_input_hash
 from src.tools.paper_trade.tool import run_paper_trade_step
 
 _CN_A_DAY = "2026-10-20"
@@ -271,6 +273,24 @@ def _assert_v2_error(document: dict[str, Any], code: str) -> dict[str, Any]:
         Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(document)
     ) == []
     return document["error"]
+
+
+_INPUT_HASH_SUFFIX = re.compile(r"; input_sha256=([0-9a-f]{64})$")
+
+
+def _assert_wire_error_detail(
+    document: dict[str, Any], raw_payload: dict[str, Any]
+) -> str:
+    """The public detail ends with exactly one raw-input digest and no ledger."""
+    detail = document["error"]["detail"]
+    assert detail.count("input_sha256=") == 1
+    match = _INPUT_HASH_SUFFIX.search(detail)
+    assert match is not None, detail
+    assert match.group(1) == compute_raw_input_hash(raw_payload)
+    assert "end_portfolio" not in document
+    assert "fills" not in document
+    assert "hashes" not in document
+    return detail
 
 
 # ── default and explicit single follow the legacy pipeline ──
@@ -542,6 +562,33 @@ def test_portfolio_unsupported_legacy_plan_fields_never_reach_matcher(
     assert "legacy field" in error["detail"]
 
 
+@pytest.mark.parametrize(
+    ("payload", "reason"),
+    [
+        ({"mode": "hybrid", "account_id": "pf_hash"}, "invalid_mode"),
+        ({"schema_version": "pt-v2.0", "account_id": "pf_hash"}, "missing_mode"),
+        (
+            {"mode": "single", "schema_version": "pt-v2.0", "account_id": "pf_hash"},
+            "invalid_mode",
+        ),
+    ],
+)
+def test_portfolio_gate_error_detail_ends_with_one_raw_input_hash(
+    payload: dict[str, Any],
+    reason: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_legacy(monkeypatch)
+    monkeypatch.setattr(tool_module, "run_portfolio_step", _boom)
+
+    document = json.loads(run_paper_trade_step(payload))
+    error = _assert_v2_error(document, "INVALID_REQUEST")
+
+    assert (error["reason"], error["path"]) == (reason, "mode")
+    detail = _assert_wire_error_detail(document, payload)
+    assert detail.split("; input_sha256=", 1)[0]
+
+
 # ── portfolio runtime faults stay in-band and deterministic ──
 
 
@@ -553,11 +600,17 @@ def test_portfolio_request_error_maps_to_invalid_request(
     _forbid_legacy(monkeypatch)
 
     def _fail(payload: Any, **kwargs: Any) -> Any:
-        raise PortfolioRequestError(reason="invalid_field", path="sessions", bucket_id="cn")
+        raise PortfolioRequestError(
+            reason="invalid_field",
+            path="sessions",
+            detail="sessions must be declared",
+            bucket_id="cn",
+        )
 
     monkeypatch.setattr(tool_module, "run_portfolio_step", _fail)
+    payload = _portfolio_payload()
 
-    document = json.loads(run_paper_trade_step(_portfolio_payload(), loader={}))
+    document = json.loads(run_paper_trade_step(payload, loader={}))
     error = _assert_v2_error(document, "INVALID_REQUEST")
 
     assert (error["reason"], error["path"], error["bucket_id"]) == (
@@ -566,6 +619,10 @@ def test_portfolio_request_error_maps_to_invalid_request(
         "cn",
     )
     assert document["account_id"] == "pf_gate"
+    assert _assert_wire_error_detail(document, payload) == (
+        "sessions must be declared; "
+        f"input_sha256={compute_raw_input_hash(payload)}"
+    )
 
 
 def test_portfolio_data_error_maps_to_paper_data_not_ready(
@@ -584,14 +641,60 @@ def test_portfolio_data_error_maps_to_paper_data_not_ready(
         )
 
     monkeypatch.setattr(tool_module, "run_portfolio_step", _fail)
+    payload = _portfolio_payload()
 
-    document = json.loads(run_paper_trade_step(_portfolio_payload(), loader={}))
+    document = json.loads(run_paper_trade_step(payload, loader={}))
     error = _assert_v2_error(document, "PAPER_DATA_NOT_READY")
 
     assert (error["reason"], error["path"], error["bucket_id"]) == (
         "target_bar_not_ready",
         "market_data.cn.readiness",
         "cn",
+    )
+    assert _assert_wire_error_detail(document, payload).endswith(
+        f"input_sha256={compute_raw_input_hash(payload)}"
+    )
+
+
+def test_portfolio_data_error_after_a_declared_conversion_carries_the_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real post-conversion data fault keeps the whole raw request identity."""
+    _forbid_legacy(monkeypatch)
+    payload = _portfolio_payload(
+        fx_conversions=[
+            {
+                "rate_id": "cny-usd-fix",
+                "from_bucket_id": "cn",
+                "to_bucket_id": "us",
+                "amount": "1000.00",
+            }
+        ]
+    )
+    loaders = _portfolio_loaders()
+    # The USD bucket has only its planning mark: the target-day bar is missing
+    # after the declared conversion has already been planned and preflighted.
+    loaders["us"] = FakeLoader(
+        {"AAPL.US": _frame([(_PORTFOLIO_PRIOR, 340.0)])}, "us"
+    )
+
+    document = json.loads(
+        run_paper_trade_step(
+            payload,
+            loader=loaders,
+            ch_client=None,
+            calendar_client=FakeCalendarClient((_PORTFOLIO_DAY,)),
+        )
+    )
+    error = _assert_v2_error(document, "PAPER_DATA_NOT_READY")
+
+    assert (error["reason"], error["path"], error["bucket_id"]) == (
+        "open_bucket_zero_target_bars",
+        "market_data.us.execution.bars",
+        "us",
+    )
+    assert _assert_wire_error_detail(document, payload).startswith(
+        "PAPER_DATA_NOT_READY:open_bucket_zero_target_bars:"
     )
 
 
@@ -607,7 +710,22 @@ def test_portfolio_internal_error_is_not_masked_as_an_envelope(
 
     monkeypatch.setattr(tool_module, "run_portfolio_step", _fail)
 
-    with pytest.raises(OrchestrationError):
+    with pytest.raises(OrchestrationError) as raised:
+        run_paper_trade_step(_portfolio_payload(), loader={})
+    assert raised.value.code == "INTERNAL"
+
+
+def test_unexpected_portfolio_fault_is_not_masked_as_an_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_legacy(monkeypatch)
+
+    def _fail(payload: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("engine bug")
+
+    monkeypatch.setattr(tool_module, "run_portfolio_step", _fail)
+
+    with pytest.raises(RuntimeError, match="engine bug"):
         run_paper_trade_step(_portfolio_payload(), loader={})
 
 
