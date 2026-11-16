@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("vibeDesktop", {
   isDesktop: true,
+  checkForUpdates: () => ipcRenderer.invoke("desktop:check-update"),
+  installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   onStatus: (callback: (message: string) => void) => {
     ipcRenderer.on("desktop:status", (_event, message: string) => callback(message));
   },

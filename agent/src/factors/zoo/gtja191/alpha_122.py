@@ -45,7 +45,7 @@ __alpha_meta__ = {
     'universe': ['equity_cn'],
     'frequency': ['1d'],
     'decay_horizon': 13,
-    'min_warmup_bars': 40,
+    'min_warmup_bars': 2,
     'notes': 'Triple SMA of log close.',
 }
 

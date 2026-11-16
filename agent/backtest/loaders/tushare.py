@@ -14,6 +14,7 @@ from backtest.loaders._symbol_utils import _is_etf_listed
 from backtest.loaders.base import cached_loader_fetch, validate_date_range
 from backtest.loaders.cn_adjust import apply_qfq
 from backtest.loaders.registry import register
+from src.data_gateway.reads import managed_reader
 
 #: Substrings that identify a Tushare per-minute quota rejection rather than a
 #: real failure. Tushare returns these as an ordinary exception message, so the
@@ -66,6 +67,7 @@ def _call_with_backoff(fn: Callable[..., Any], /, **kwargs: Any) -> Any:
         Exception: The endpoint's own exception, either immediately (not a
             quota issue) or after the backoff schedule is exhausted.
     """
+    fn = managed_reader(fn)
     for delay in _RATE_LIMIT_BACKOFF_SECONDS:
         try:
             return fn(**kwargs)

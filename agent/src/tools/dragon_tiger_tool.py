@@ -19,6 +19,7 @@ import logging
 from typing import Any
 
 from backtest.loaders import eastmoney_client
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools import tushare_fallbacks
 
@@ -219,6 +220,7 @@ class DragonTigerTool(BaseTool):
         "required": ["date"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Fetch dragon-tiger appearances (and seats when ``code`` is given).
 

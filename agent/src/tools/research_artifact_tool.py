@@ -169,3 +169,40 @@ class GetResearchArtifactTool(BaseTool):
             return _error(exc)
         finally:
             store.close()
+
+
+class CompareResearchArtifactRevisionsTool(BaseTool):
+    """Compare two immutable revisions in one research-artifact series."""
+
+    name = "compare_research_artifact_revisions"
+    description = (
+        "Compare two immutable revisions in the same research-artifact series. Returns a bounded unified content "
+        "diff, evidence additions, removals and pure reorderings, and provenance changes. This is read-only and does not revalidate "
+        "either revision."
+    )
+    is_readonly = True
+    repeatable = True
+    parameters = {
+        "type": "object",
+        "properties": {
+            "artifact_id": {"type": "string", "description": "Research-artifact series containing both revisions"},
+            "from_revision_id": {"type": "string", "description": "Revision to compare from"},
+            "to_revision_id": {"type": "string", "description": "Revision to compare to"},
+        },
+        "required": ["artifact_id", "from_revision_id", "to_revision_id"],
+        "additionalProperties": False,
+    }
+
+    def execute(self, **kwargs: Any) -> str:
+        store = ResearchArtifactStore()
+        try:
+            comparison = store.compare_revisions(
+                artifact_id=str(kwargs.get("artifact_id", "")).strip(),
+                from_revision_id=str(kwargs.get("from_revision_id", "")).strip(),
+                to_revision_id=str(kwargs.get("to_revision_id", "")).strip(),
+            )
+            return _ok({"comparison": comparison})
+        except Exception as exc:
+            return _error(exc)
+        finally:
+            store.close()

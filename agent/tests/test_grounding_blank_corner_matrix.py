@@ -5,7 +5,7 @@ Synthetic tickers only; no external market data or provider dependencies.
 
 from __future__ import annotations
 
-from src.agent.grounding.figures import parse_figures_block, scan_figures, table_rows
+from evals.grounding.figures import parse_figures_block, scan_figures, table_rows
 
 
 def _matrix(header: tuple[str, ...], rows: tuple[str, ...]) -> str:

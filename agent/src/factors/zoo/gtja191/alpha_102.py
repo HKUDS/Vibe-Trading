@@ -45,7 +45,7 @@ __alpha_meta__ = {
     'universe': ['equity_cn'],
     'frequency': ['1d'],
     'decay_horizon': 6,
-    'min_warmup_bars': 7,
+    'min_warmup_bars': 2,
     'notes': 'SMA(x,n,m) -> x.ewm(alpha=m/n, adjust=False).mean().',
 }
 

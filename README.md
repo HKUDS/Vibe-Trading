@@ -57,6 +57,37 @@
 
 ## 📰 News
 
+- **2026-11-15** 📡 **Unified market-data gateway and ready-to-use CSVs** — Historical bars and US option snapshots share a [local data gateway](agent/src/data_gateway/README.md) with source fallback, shared caching and bounded concurrency. Responses preserve source, currency and price-adjustment metadata, with explicit coverage and freshness information.
+  Agent market-data reads deliver CSVs alongside JSON. For supported requests naming instruments and one explicit `YYYY-MM-DD` range, the runtime constrains dates before acquisition; calculation warmup is requested separately, and existing indicator/backtest lookbacks remain available. **On `main`, for the next pip release.**
+
+- **2026-11-14** 🔌 **Unified LLM gateway and version checks** — Model providers now share one catalog and configuration layer across Agent, CLI, API and Swarm. Client settings stay isolated, native adapters respect explicit proxy settings, and cross-origin redirects are blocked before credentials or request bodies are forwarded.
+  Check for new versions from Web settings. Desktop gains support for signed updates with verification and recovery; distribution requires a configured update feed and publisher certificates. **On `main`, for the next pip release.**
+
+- **2026-11-13** 🛠️ **Research delivery and calculation tools** — Research answers stream without automatic numeric redaction, forced rewrites, or format-based completion gates. Interrupted committee runs preserve partial results and can resume unfinished roles while reusing completed work.
+  Full market-data references feed shell-free QuantLib calculations, and committee roles share source evidence. Options Lab and `options_payoff` calculate stock-plus-options strategies and compare multiple alternatives in one call, returning explicit costs, payoff bounds, and comparison directions. Effective backtest fees and truncation/error states remain explicit; live-trading authorization limits remain in place. **Unreleased.**
+
+<details>
+<summary>Earlier news</summary>
+
+- **2026-11-12** 🛠️ **Backtest timing, report figures and research completion fixes** — Shadow Account now uses the requested starting capital; token-truncated worker replies no longer count as completed. Committee PMs can synthesize valid upstream reports without fetching the same data again, and the native Anthropic adapter defaults to a configurable 16,384 output tokens.
+  Generated strategies reject detected extra shifts on output targets unless explicitly declared intentional, while indicator lookbacks remain valid. Grounding now accepts supported magnitude spellings and precise observed declarations without weakening evidence checks. SPY/GLD backtests match an independent ledger on all 206/140 fills and total returns. **Unreleased.**
+
+- **2026-11-11** 🧾 **Paper-trade partial fills and ledger reconciliation** — Opt into per-order volume caps, partial fills and reported order states for A-share 5-minute paper simulations ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). Independently reconcile fees, cash, positions and NAV arithmetic from returned fills with the new `paper_trade_reconcile` Agent/MCP tool ([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
+  Correctly handle supported wrapped percentage headers and explicitly quoted document integers while preserving their source labels ([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). Also fix strict factor benchmark inputs ([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)) and prevent timed-out channel turns from returning an earlier answer ([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
+  Thanks [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen) and [@divya0795](https://github.com/divya0795)! **On `main`, for the next pip release.**
+
+- **2026-11-10** 📊 **Interactive IV surfaces and options analysis fixes** — Edit strike/expiry IV grids in Options Lab, with observed/interpolated labels and no extrapolation ([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
+  Fix low-price presets, quantities, expiry dates, retries, language-switch loading and the 20-leg limit. Bare three-digit Zhengzhou contracts such as `CF501` now use China futures rules ([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
+  Thanks [@he-yufeng](https://github.com/he-yufeng) and [@GPT-AGI](https://github.com/GPT-AGI)! **On `main`, for the next pip release.**
+
+- **2026-11-09** 🧭 **Export a selected revision comparison; backtests refuse codes they cannot place** — Download the exact pair of research revisions you are comparing as JSON or Markdown from the Web, API or CLI ([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). A backtest code no market rule recognises (such as `local:BHP.AX` or `7203.T`) is now refused before any data is fetched instead of running on A-share rules; bare six-digit and `.SS` Shanghai codes still work. OpenRouter replies no longer show the model name twice ([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), and an empty revision id in `research-artifact export` is now an error. Thanks [@he-yufeng](https://github.com/he-yufeng) and [@Gloubiboulgator](https://github.com/Gloubiboulgator)! **On `main`, for the next pip release.**
+
+- **2026-11-08** 📝 **Research revision comparison and full-history export** — Compare content, evidence and metadata between any two revisions ([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), and export the complete research history as JSON or Markdown ([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). Switching research records now ignores stale responses, and Markdown exports preserve original content in isolated code blocks. Also fix missing factor weights, partial-return attribution, insufficient IC samples, non-finite valuation inputs and margin calculations for negative entry prices. **On `main`, for the next pip release.**
+
+- **2026-11-07** 🧪 **Research Lab: trading costs and out-of-sample testing** — Rerun saved price inputs under different fees and slippage; select parameters using training results only, then freeze them for out-of-sample tests and a separate final holdout. The [Research Lab](guides/research-lab.md) shares Web, CLI, API and Agent/MCP workflows, with all eleven UI languages. Also correct window-boundary returns and factor warmup/long-window calculations, and add 20 offline task-replay cases that keep missing evidence visible. Versioned research artifacts can now store structured financial facts ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)), and bare Chinese futures contract codes resolve correctly ([#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)). **On `main`, for the next pip release.**
+
+- **2026-11-06** 📈 **Implied-volatility grids and paper-trading fixes** — Build strike-by-expiry IV grids from supplied option observations, with observed/interpolated labels and no extrapolation ([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). Extreme numeric inputs now produce finite results or explicit errors. A-share 5m market orders blocked by a price limit are canceled immediately ([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)); the matcher also processes symbols chronologically so later proceeds cannot fund earlier orders. **On `main`, for the next pip release; public 5m requests still support one symbol per step.**
+
 - **2026-11-05** 🚀 **v0.1.19 released** ([Release notes](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): research that outlives the chat — save versioned research artifacts with their evidence and revise them, reuse backtests from earlier turns and sessions, and edit a research goal in place. New opt-ins: a five-minute A-share paper simulation, and Gildata financial queries, stock screening and Shannon portfolio diagnosis (QVeris is removed; an existing `GILDATA_TOKEN` alone now enables nothing). Also Argentina (BYMA) backtests, Parallel web search, Codex OAuth model discovery, and both 0.1.18 regressions fixed. 116 merged pull requests plus 21 landed through maintainer commits, from 26 contributors ([CHANGELOG](CHANGELOG.md)).
   **Fixed today:** a backtest reports the benchmark it actually evaluated, long/short books get a risk x-ray, GTJA alpha 17 stays missing while its inputs warm up, the Shannon panel speaks all eleven UI languages, and two reviewed contributor fixes that had not landed are in ([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) TTM sums across a missing quarter, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) 3:2 split detection). Thanks [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd) and [@yufengsika](https://github.com/yufengsika)!
   **On main after the release (next pip release):** backtest benchmarks are bought at the first evaluated open, as the strategy is, instead of from the last warm-up close; excess return no longer includes that move (AAPL 20/60 SMA example: 22.5% → 18.4%).
@@ -65,9 +96,6 @@
   Also clarified next-bar backtest fills, fixed false Swarm timeouts on Unicode heartbeats and sped up research artifact deduplication. [#2137](https://github.com/HKUDS/Vibe-Trading/pull/2137) · [#2155](https://github.com/HKUDS/Vibe-Trading/pull/2155) · [#2159](https://github.com/HKUDS/Vibe-Trading/pull/2159)
 
 - **2026-11-03** 🛠️ **Runtime integrity and localization follow-ups**: Preserve U+2028/U+2029 inside trace, audit-ledger and session-search JSONL records, keep ledger appends valid after such payloads, normalize underscored model labels, and preserve handoff summaries during layer-2 compaction. Also accept BOM-prefixed frontmatter and keep the welcome surface aligned in RTL locales. Add regression coverage.
-
-<details>
-<summary>Earlier news</summary>
 
 - **2026-11-02** 🛠️ **Frontmatter, result safety and welcome polish**: Unquote quoted scalar metadata, fall back to a readable truncation when an oversized result cannot be encoded, and refine the welcome layout and featured cards. Add regression coverage.
 
@@ -100,7 +128,7 @@ Vibe-Trading turns finance questions into research reports, runnable backtests a
 | Combine accounts or compare allocations | Open `/portfolio` for holdings and proposed allocation changes. [Broker support](#broker-support-at-a-glance) |
 | Explore options and correlations | Open `/options` for multi-leg payoffs and Greeks, or `/correlation` for market regimes. |
 | Coordinate or repeat research | Run a [Swarm team](guides/research.md#swarm-workflows), assign work in Pixel Office or schedule a brief in `/scheduled`. |
-| Revisit research with dated evidence | Search `/research-artifacts`. [Versioned research](guides/research.md#versioned-research-artifacts) |
+| Revisit research with dated evidence | Search `/research-artifacts`, compare any two revisions, and export a full series or selected comparison as JSON or Markdown. [Versioned research](guides/research.md#versioned-research-artifacts) |
 
 ## ⚡ Quick Example
 
@@ -162,7 +190,7 @@ You can also choose a source explicitly. For example, installing `vibe-trading-a
 | Feature | What you can do |
 |---|---|
 | Portfolio | Bring read-only broker holdings into one snapshot or import an extraETF export. Enter target weights to preview the value change for each holding. |
-| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. |
+| Paper trading | Advance a saved account one trading day and inspect fills, cash and NAV. You can also replay an A-share session in five-minute steps in a separate simulation. The `paper_trade_reconcile` agent/MCP tool independently checks fees, cash, positions and NAV arithmetic without market or broker access. |
 | Shadow Account | Import your broker’s trade journal, inspect fees and trading habits, then compare the actual trades with a rule-based replay. |
 | Broker connections | Set up a connection in the CLI or Web and test it with a read. For supported live profiles, set symbol, order and exposure limits before enabling trading. The kill switch halts live activity. |
 
@@ -341,7 +369,7 @@ Vibe-Trading is part of the **[HKUDS](https://github.com/HKUDS)** agent ecosyste
 |---|---|---|
 | Paper trading | Daily accounts persist cash, fills and NAV between sessions. A separate simulation replays an A-share session in five-minute steps. | Opt-in volume-share matching ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draft). |
 | Research | Run cards record metrics and evidence for a completed backtest. Dated research artifacts keep revision history and are searchable. | Structured financial facts in research artifacts ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), in review). |
-| Options Lab | Explore multi-leg payoffs, Greeks and spot × IV scenarios. | Volatility surface planned. |
+| Options Lab | Explore multi-leg payoffs, Greeks and spot × IV scenarios. | Interactive volatility surface grid at `/options`. |
 
 ## Contributing
 

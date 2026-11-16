@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   buildPayoffRequest,
+  MAX_OPTION_LEGS,
   roundToNiceStrike,
   STRATEGY_PRESETS,
   type OptionLeg,
@@ -40,6 +41,7 @@ export function StrategyBuilder({
   };
 
   const addLeg = () => {
+    if (legs.length >= MAX_OPTION_LEGS) return;
     onLegsChange([
       ...legs,
       {
@@ -126,7 +128,7 @@ export function StrategyBuilder({
                     type="number"
                     step={1}
                     value={Number.isFinite(leg.qty) ? leg.qty : ""}
-                    onChange={(e) => updateLeg(i, { qty: parseInt(e.target.value, 10) })}
+                    onChange={(e) => updateLeg(i, { qty: e.target.valueAsNumber })}
                     className={cn(INPUT_CLS, "min-w-16 tabular-nums")}
                     aria-label={`${t("options.builder.qty")} ${i + 1}`}
                   />
@@ -168,7 +170,9 @@ export function StrategyBuilder({
         <button
           type="button"
           onClick={addLeg}
-          className="flex items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+          disabled={legs.length >= MAX_OPTION_LEGS}
+          title={t("options.builder.legLimit", { count: MAX_OPTION_LEGS })}
+          className="flex items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus className="h-3 w-3" />
           {t("options.builder.addLeg")}
@@ -244,6 +248,14 @@ export function StrategyBuilder({
           <span className="text-[10px] text-muted-foreground/70">{t("options.builder.multiplierHint")}</span>
         </div>
         <div className="flex flex-col gap-1">
+          <label htmlFor="option-underlying_qty" className="text-[11px] text-muted-foreground">{t("options.builder.underlyingQty")}</label>
+          <input type="number" step="any" id="option-underlying_qty"
+            value={Number.isFinite(params.underlying_qty ?? 0) ? params.underlying_qty ?? 0 : ""}
+            onChange={(e) => setParam({ underlying_qty: parseFloat(e.target.value) })}
+            className={cn(INPUT_CLS, "tabular-nums")} />
+          <span className="text-[10px] text-muted-foreground/70">{t("options.builder.underlyingQtyHint")}</span>
+        </div>
+        <div className="flex flex-col gap-1">
           <label htmlFor="option-commission_rate_pct" className="text-[11px] text-muted-foreground">{t("options.builder.commissionRate")}</label>
           <input
             type="number"
@@ -258,6 +270,13 @@ export function StrategyBuilder({
       </div>
 
       </details>
+
+      <div className="mt-3 flex flex-col gap-1">
+        <label htmlFor="option-expiry-spots" className="text-xs text-muted-foreground">{t("options.expiryScenarios.input")}</label>
+        <input id="option-expiry-spots" type="text" value={params.expiry_spots_text ?? ""}
+          onChange={(e) => setParam({ expiry_spots_text: e.target.value })}
+          placeholder="90, 100, 110" className={INPUT_CLS} />
+      </div>
 
       {!inputsValid && (
         <p className="mt-3 rounded border border-warning/30 bg-warning/5 p-2 text-xs text-warning">

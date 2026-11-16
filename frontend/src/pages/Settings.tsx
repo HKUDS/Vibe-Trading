@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Database, KeyRound, Loader2, RefreshCw, RotateCcw, Save, Server, SlidersHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { SoftwareUpdateSettings } from "@/components/settings/SoftwareUpdateSettings";
 import { ChannelSettings } from "@/components/settings/ChannelSettings";
 import { CustomProviderManager } from "@/components/settings/CustomProviderManager";
 import { ModelPicker } from "@/components/settings/ModelPicker";
+import { HistoryStorageSettings } from "@/components/settings/HistoryStorageSettings";
 import { SourcePrioritySettings } from "@/components/settings/SourcePrioritySettings";
 import { api, gildataFeatures, type GildataFeature, isAuthRequiredError, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
@@ -78,6 +80,7 @@ export function Settings() {
           setModelOptions(Array.from(new Set([
             llmResult.value.model_name,
             llmResult.value.providers.find((provider) => provider.name === llmResult.value.provider)?.default_model ?? "",
+            ...(llmResult.value.providers.find((provider) => provider.name === llmResult.value.provider)?.model_options ?? []),
           ].filter(Boolean))));
         } else {
           const message = llmResult.reason instanceof Error
@@ -128,7 +131,7 @@ export function Settings() {
       model_name: provider.default_model,
       base_url: provider.default_base_url,
     });
-    setModelOptions([provider.default_model]);
+    setModelOptions(Array.from(new Set([provider.default_model, ...(provider.model_options ?? [])])));
     setModelListHint(null);
     setEffortLevelsByModel(null);
     setModelLabels({});
@@ -146,7 +149,7 @@ export function Settings() {
     });
     setApiKey("");
     setClearApiKey(false);
-    setModelOptions([provider.default_model]);
+    setModelOptions(Array.from(new Set([provider.default_model, ...(provider.model_options ?? [])])));
     setModelListHint(null);
     setEffortLevelsByModel(null);
     setModelLabels({});
@@ -174,6 +177,7 @@ export function Settings() {
       setModelOptions(Array.from(new Set([
         form.model_name,
         selectedProvider.default_model,
+        ...(selectedProvider.model_options ?? []),
         ...result.models,
       ].filter(Boolean))));
       setEffortLevelsByModel(result.effort_levels ?? null);
@@ -199,8 +203,8 @@ export function Settings() {
 
   // The CLI reports which models the login can run and the levels each accepts,
   // so fetch that as soon as the provider is shown rather than on a button press.
-  const hasAutomaticModelList = selectedProvider?.auth_type === "claude_cli"
-    || selectedProvider?.name === "openai-codex";
+  const hasAutomaticModelList = selectedProvider?.automatic_model_list
+    ?? (selectedProvider?.auth_type === "claude_cli" || selectedProvider?.name === "openai-codex");
   useEffect(() => {
     if (hasAutomaticModelList) void refreshModels({ refresh: false });
     // refreshModels reads the form at call time; re-run only when the provider changes.
@@ -358,6 +362,7 @@ export function Settings() {
           <h1 className="text-2xl font-semibold tracking-tight">{t("settings.title")}</h1>
           <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.subtitle")}</p>
         </div>
+        <SoftwareUpdateSettings />
         {!isDesktop && localApiAccessSection}
         {partnerSection}
         <div className="flex min-h-32 items-center justify-center rounded-lg border bg-card p-5 text-sm text-muted-foreground">
@@ -402,6 +407,7 @@ export function Settings() {
         <p className="max-w-3xl text-sm text-muted-foreground">{t("settings.subtitle")}</p>
       </div>
 
+      <SoftwareUpdateSettings />
       {!isDesktop && localApiAccessSection}
 
       {partnerSection}
@@ -764,6 +770,7 @@ export function Settings() {
       </form>
 
       <SourcePrioritySettings />
+      <HistoryStorageSettings />
     </div>
   );
 }

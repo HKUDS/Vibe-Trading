@@ -32,7 +32,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_cn', 'equity_hk'],
     'frequency': ['1d'],
     'decay_horizon': 60,
-    'min_warmup_bars': 60,
+    'min_warmup_bars': 61,
     'notes': (
         '[PRICE PROXY] for the Fama-French (2015) RMW (Robust Minus Weak) '
         'profitability factor. The original definition uses operating profitability '

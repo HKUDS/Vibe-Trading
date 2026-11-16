@@ -60,8 +60,8 @@ def test_yahoo_loader_accepts_taiwan_suffixes(symbol: str) -> None:
     assert yahoo_is_supported(symbol.lower())
 
 
-@pytest.mark.parametrize("symbol", ["7203.T", "601398.SH", "2330.TWX"])
-def test_yahoo_loader_rejects_non_taiwan_suffixes(symbol: str) -> None:
+@pytest.mark.parametrize("symbol", ["2330.TWX", "6488.TWOX"])
+def test_yahoo_loader_rejects_unsupported_suffixes(symbol: str) -> None:
     assert not yahoo_is_supported(symbol)
 
 
@@ -85,9 +85,9 @@ def test_yahoo_fetch_returns_frame_for_taiwan_symbol(symbol: str) -> None:
     assert mock_chart.call_args.args[0] == symbol
 
 
-def test_yahoo_fetch_skips_non_taiwan_suffix_without_a_request() -> None:
+def test_yahoo_fetch_skips_unsupported_suffix_without_a_request() -> None:
     with patch("backtest.loaders.yahoo_loader.yahoo_client.get_chart") as mock_chart:
-        out = yahoo_loader.DataLoader().fetch(["7203.T"], "2024-01-01", "2024-01-31")
+        out = yahoo_loader.DataLoader().fetch(["2330.TWX"], "2024-01-01", "2024-01-31")
 
     assert out == {}
     mock_chart.assert_not_called()

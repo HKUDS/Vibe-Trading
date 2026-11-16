@@ -247,7 +247,7 @@ class TestEnvConfigTypeCoercion:
     def test_invalid_optional_int_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
         monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", value)
         c = EnvConfig()
-        assert c.llm.anthropic_max_tokens is None
+        assert c.llm.anthropic_max_tokens == 16384
 
     def test_valid_optional_int_is_coerced(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "4096")

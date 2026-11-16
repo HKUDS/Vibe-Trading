@@ -387,6 +387,12 @@ class TestIsChinaFutures:
         assert _is_china_futures("CF2412") is True
         assert _is_china_futures("M2412") is True
 
+    def test_bare_code_of_every_priced_product(self) -> None:
+        from backtest.engines.china_futures import _MULTIPLIER
+
+        for product in _MULTIPLIER:
+            assert _is_china_futures(f"{product}2501") is True, product
+
 
 # ---------------------------------------------------------------------------
 # _detect_market — task-required exhaustive assertions
@@ -493,3 +499,79 @@ class TestChinaFuturesMainContract:
         """Adding the main-contract rule must not disturb the dated forms."""
         for code in ("RB2601", "rb2410.SHFE", "IF2406.CFFEX", "CL2412.NYMEX", "ESZ4"):
             assert _detect_market(code) == "futures", code
+
+
+class TestBareThreeDigitZceFutures:
+    """Zhengzhou prints delivery year/month in three digits.
+
+    ``CF501.ZCE`` and ``CF501.CZC`` already reach China futures, and the
+    engine prices the bare code at multiplier 5. The bare spelling matched
+    no rule, so config validation refused it and the runner built a
+    ``ChinaAEngine`` (T+1, no shorting, 100-share lots) instead.
+    """
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "AP501",
+            "CF501",
+            "CJ501",
+            "CY501",
+            "FG501",
+            "MA501",
+            "OI501",
+            "PF501",
+            "PK501",
+            "RM501",
+            "SA501",
+            "SR501",
+            "TA501",
+            "UR501",
+            "cf501",
+            "local:CF501",
+        ],
+    )
+    def test_bare_zce_month_is_china_futures(self, code: str) -> None:
+        assert _detect_market(code) == "futures"
+        assert _is_china_futures(code)
+        assert code_currency(code) == "CNY"
+
+    def test_bare_code_uses_the_futures_multiplier_not_share_lots(self) -> None:
+        from backtest.engines.china_futures import ChinaFuturesEngine
+        from backtest.runner import _select_market_engine
+
+        engine = _select_market_engine(
+            "tushare",
+            {"codes": ["CF501"], "initial_capital": 1_000_000},
+            ["CF501"],
+        )
+        assert isinstance(engine, ChinaFuturesEngine)
+        # Same contract the suffixed spelling already priced: 5 CNY per point,
+        # 7% margin, 4.3 CNY per lot. One lot at 15000 is 75000 notional.
+        assert engine.get_contract_multiplier("CF501") == 5.0
+        assert engine.get_margin_rate("CF501") == 0.07
+        assert engine.calc_commission_for_symbol("CF501", 1, 15000.0, True) == 4.3
+        suffixed = ChinaFuturesEngine(
+            {"codes": ["CF501.ZCE"], "initial_capital": 1_000_000}
+        )
+        assert suffixed.get_contract_multiplier("CF501.ZCE") == 5.0
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "CL501",
+            "ES501",
+            "IF501",
+            "RB501",
+            "CS501",
+            "C2412",
+            "M2501",
+            "I2501",
+            "600519",
+            "AAPL",
+            "00700.HK",
+        ],
+    )
+    def test_other_bare_shapes_stay_out_of_this_rule(self, code: str) -> None:
+        """Non-ZCE futures, single-letter products, and equities stay out."""
+        assert _detect_market(code) != "futures"

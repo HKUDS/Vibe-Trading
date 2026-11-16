@@ -41,7 +41,7 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 9,
-    "min_warmup_bars": 10,
+    "min_warmup_bars": 6,
     "notes": 'Williams %R style indicator smoothed with SMA(9,1).',
 }
 

@@ -44,6 +44,19 @@ class ResearchArtifactRevision:
 
 
 @dataclass(frozen=True)
+class ResearchArtifactExport:
+    """A deterministic, downloadable research artifact representation."""
+
+    filename: str
+    media_type: str
+    content: str
+    sha256: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class ResearchArtifactSaveResult:
     """Distinguish a new revision from an idempotent repeated save."""
 

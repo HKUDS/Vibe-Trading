@@ -25,6 +25,7 @@ from typing import Any
 
 from backtest.engines._market_hooks import _detect_market
 from backtest.loaders.eastmoney_client import get_json, resolve_secid
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -346,6 +347,7 @@ class SectorInfoTool(BaseTool):
         "required": [],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Dispatch to the membership or ranking view and return a JSON envelope.
 

@@ -5,3 +5,7 @@ await copyFile(
   new URL("../src/loading.html", import.meta.url),
   new URL("../dist/loading.html", import.meta.url),
 );
+await copyFile(
+  new URL("../../../agent/src/providers/llm_providers.json", import.meta.url),
+  new URL("../dist/llm_providers.json", import.meta.url),
+);

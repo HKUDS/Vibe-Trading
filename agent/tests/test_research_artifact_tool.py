@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from src.tools.research_artifact_tool import (
+    CompareResearchArtifactRevisionsTool,
     GetResearchArtifactTool,
     SaveResearchArtifactTool,
     SearchResearchArtifactsTool,
@@ -60,6 +61,42 @@ def test_agent_tools_save_search_revise_and_read_history(tmp_path, monkeypatch):
     assert old["revision"]["data_as_of"] == "2026-10-20"
 
 
+def test_agent_tool_compares_revisions(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIBE_TRADING_RESEARCH_ARTIFACT_DB_PATH", str(tmp_path / "research.db"))
+    save = SaveResearchArtifactTool()
+    first = json.loads(save.execute(**_payload()))["revision"]
+    revised = json.loads(
+        save.execute(
+            **_payload(
+                artifact_id=first["artifact_id"],
+                content="Updated conclusion.",
+                data_as_of="2026-11-03",
+            )
+        )
+    )["revision"]
+
+    result = json.loads(
+        CompareResearchArtifactRevisionsTool().execute(
+            artifact_id=first["artifact_id"],
+            from_revision_id=first["revision_id"],
+            to_revision_id=revised["revision_id"],
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["comparison"]["content"]["changed"] is True
+    assert result["comparison"]["metadata"]["data_as_of"] == {"from": "2026-10-20", "to": "2026-11-03"}
+    missing = json.loads(
+        CompareResearchArtifactRevisionsTool().execute(
+            artifact_id=first["artifact_id"],
+            from_revision_id=first["revision_id"],
+            to_revision_id="ra_missing_r1",
+        )
+    )
+    assert missing["status"] == "error"
+    assert "not found" in missing["error"]
+
+
 def test_agent_tool_reports_validation_and_missing_records(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBE_TRADING_RESEARCH_ARTIFACT_DB_PATH", str(tmp_path / "research.db"))
 
@@ -82,4 +119,5 @@ def test_agent_registry_discovers_research_artifact_tools():
         "save_research_artifact",
         "search_research_artifacts",
         "get_research_artifact",
+        "compare_research_artifact_revisions",
     } <= set(registry.tool_names)

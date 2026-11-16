@@ -1,0 +1,2875 @@
+{
+  "schema_version": 1,
+  "semantics": "Earliest eligible one-based input row, not a convergence/burn-in recommendation. All formula branches must have their declared history. Conditional samples may require longer than this calendar lower bound.",
+  "contracts": {
+    "academic_bab": {
+      "minimum_bars": 253,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a3fe1754e74a95a727284fa587c550b2c3aa85afb71edf18f23f4e350bece2eb"
+    },
+    "academic_carhart_mom": {
+      "minimum_bars": 253,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "06f90e5c9313ac73ad1165d75191683a4a9882febd753e69c2b47e10537c0630"
+    },
+    "academic_cma": {
+      "minimum_bars": 120,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "73cac9580a3437fd9aad341982ddc675587d03e273c9ff4ad79c63266daa99dd"
+    },
+    "academic_corr_rewire": {
+      "minimum_bars": 140,
+      "policy": "partial_window",
+      "basis": "20 event + 120 calm return rows; 90% observed coverage explicitly allows the initial missing return.",
+      "source_sha256": "b34ea867555a891162122aa7e9b22dad2c1e18f7018f0a4cb672d9b9b243dcbe"
+    },
+    "academic_high52w": {
+      "minimum_bars": 252,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "82cbd8421fd56a7dddca9a142538a679d76493978544fa320499eb8baf785778"
+    },
+    "academic_hml": {
+      "minimum_bars": 253,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9376419ea695f4e5d571817de2df8b01cf4ea987d7e1c09464e1cb37f042ebb6"
+    },
+    "academic_illiq": {
+      "minimum_bars": 22,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a2bab2dce9549f1db7274d8699d41b8fa306c392f3c96fd1e46ac0bba0b6edc6"
+    },
+    "academic_mkt_rf": {
+      "minimum_bars": 22,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "861a5f0e41c4a880e6a9cf1a272782612264dc37b756d2bbc061eeae13ad7d8b"
+    },
+    "academic_retskew": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ebad2970ef2b2d23318bc34c34ec9407b43d231a3c964cd872295555ab57ebca"
+    },
+    "academic_rmw": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c026c3947b47ff4c753b3b6da28e7d210dee3235c2e64bcc7a2487cdef454a19"
+    },
+    "academic_smb": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b1564d22b3c0ad5f8240ed01b4f82f186ead2dbe064a3d455af61ccb38e67925"
+    },
+    "academic_strev": {
+      "minimum_bars": 22,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "762c06ee2871b9b0618e58d24880f79f652cb490dc67e6002cbb8d1c7674e2a2"
+    },
+    "alpha101_001": {
+      "minimum_bars": 25,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b4a64d07e5e8bb23036751009255cb8b43991e22f4c6edfea4c597b644d516f7"
+    },
+    "alpha101_002": {
+      "minimum_bars": 8,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "74a05e3b2d7cc2ade3b3b7ce6bf3efe444978061e7ae20a49bb7395842671f46"
+    },
+    "alpha101_003": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f6ebfe4db63722c5a606883faa58928acfef35d11be9a904ec8f6c8035ef4add"
+    },
+    "alpha101_004": {
+      "minimum_bars": 9,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4fbc7a2f2fd342b716fdda7c3a2d35e617a72dea33816370880f40be5b81d3f0"
+    },
+    "alpha101_005": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1b027c16778f2f37d79b74b941797bd7fdaeaf27fdca04475be2500c8366a2fb"
+    },
+    "alpha101_006": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ebae03e20684ab0174d12465eed250384bd751dabd2330abaffe3d23044c4d78"
+    },
+    "alpha101_007": {
+      "minimum_bars": 67,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "59a3d2dc39064183bead789e0522efa4a200aba03841aeff7dde7b73d68ea821"
+    },
+    "alpha101_008": {
+      "minimum_bars": 16,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d889afe9f1667a86b36def9e8e551999cb42472ce8c6f57cc6ecf03a0875435b"
+    },
+    "alpha101_009": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "249d926a482bb6fc13ce64cc4ab9b120f803598c0b883bbc56b9b97fc4d1ea14"
+    },
+    "alpha101_010": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5e10cbf07a07a19f947737cb07109b1515032153f5b89d9967e83e3bc0b73369"
+    },
+    "alpha101_011": {
+      "minimum_bars": 4,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "30215934ebb803c6251f56bce65e288b9e756478a328770bce53b25c753326df"
+    },
+    "alpha101_012": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e0dd877f93942b156487da1a4c4dff3f0be56ecada07c2b7fbfb3713e5629f7a"
+    },
+    "alpha101_013": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9325377d185226cc7a271703b343b33ccf00c50a8393c81136cc43b814ca8b68"
+    },
+    "alpha101_014": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "91f79c6691fb00a6e89f9c1693a27085456ad5dcfaf3ae2d90797059382c9280"
+    },
+    "alpha101_015": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ef97507d624dd35b4f8f746e58192eacc26a74bd5b3a2e33562745dc707c0f98"
+    },
+    "alpha101_016": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "62a1df05a3d8a82710cae4d643fb4a3e9d10c781e835f02b644cb7cb8e804f63"
+    },
+    "alpha101_017": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "faf97c8db2449221e12263f5a4a277ce6824543d8e2223e04e6e156416441852"
+    },
+    "alpha101_018": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b01518d0b1a06d4cb672dbd51894abc8c584a4f98844ad20018047489af63a23"
+    },
+    "alpha101_019": {
+      "minimum_bars": 251,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5f92af41b754693911abe56c0042164a759b2d95f5527fca00f145335f858f6a"
+    },
+    "alpha101_020": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c88572a84d850f45fe6f12470f3ea0c78c65aba9d8f8cdc9a4415c82593d802d"
+    },
+    "alpha101_021": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0b2dbbd10d33e03c2473aef72644644664cebfcd98f066bd49eeb50ad8409cd1"
+    },
+    "alpha101_022": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9b1ed73d1e86211c94ac6cbf443e7f9336f6a9afbd81232af91d17f47d6242f8"
+    },
+    "alpha101_023": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "005c62603a8c5f52cf136ddd7a97cf45bc0e830702a16f3a4ede122b07bcc046"
+    },
+    "alpha101_024": {
+      "minimum_bars": 200,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d0e5d60c90f5733fc152bae83d478e15a05ef398fa009317ee982b3a852faa82"
+    },
+    "alpha101_025": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "99c4eec7e8765ee22af579388bf36a762868f75e01b8db6e884bada7d5f72c94"
+    },
+    "alpha101_026": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c260fc8eaf00182e734835e94f15e1ab981a3190a7ca36b00fcb8772249ba03f"
+    },
+    "alpha101_027": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "50c618e72ecee26498d50875ea8b794c623dee28e048eba46d2e225e7451e967"
+    },
+    "alpha101_028": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6c5bac2b135e7009f79551f1e604ed5b774a3186a5f2b265a726edd0d47cf1c7"
+    },
+    "alpha101_029": {
+      "minimum_bars": 12,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "77a9f94ad3b8d80b665320e84c280706281274db9f3f6068e9bcc90e0c8b9fb3"
+    },
+    "alpha101_030": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cc86f865b802c9e190646fcc7a5afe3050261c82936fc0fd3b8e56d2389bb98e"
+    },
+    "alpha101_031": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0c39514e73e74377a0f2c3ad332d622d78dc0ecc9fdf54b21202fe443241476f"
+    },
+    "alpha101_032": {
+      "minimum_bars": 235,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b517d6b5d88f647dc22c17cb1059e4ce459c701fa70e76f002ddb313776c0102"
+    },
+    "alpha101_033": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "59a1bf3e7bc6b0abc7dc26f9617e383e373a3a6aa44c0857a44bbcf08a394405"
+    },
+    "alpha101_034": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "add8d86ed176c3ef214451a1bb8f4839cb6923733d7f8af42b0e6d750cefd14b"
+    },
+    "alpha101_035": {
+      "minimum_bars": 33,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2c047d8c32c55e5adca549cbbafa1aecd91acdee8037cdf2919f2472c54aca12"
+    },
+    "alpha101_036": {
+      "minimum_bars": 200,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7132c93be5a7bb386dbcdd021ccb8cba925c47ef69ac59a88a9c8515cfcb96a7"
+    },
+    "alpha101_037": {
+      "minimum_bars": 201,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "51a09fecd45d613d0c2f7e41c56600de060adde00568cbab0967831f7c42a72b"
+    },
+    "alpha101_038": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "759ed5633d210a5b06a371c293b5017f7842ba355ad77574d559a7ee8d948510"
+    },
+    "alpha101_039": {
+      "minimum_bars": 251,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cd02701ea8c50778e7c802c81f5e1fcdd7bf98cda7db1c91e674fd3d2f1539cf"
+    },
+    "alpha101_040": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3d92aa32055719c0345e7db13ca9edd6496ab23f6ae1e2e45578c1d4ff4a6950"
+    },
+    "alpha101_041": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "10b56a8cb8fcced75083bbc4aab827e6eee855b1ce09b83eb01c376ba397b517"
+    },
+    "alpha101_042": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c5ffd1aeaff902035f26f0b07abc7b4a4736c0314b44c33819e27e71eb229357"
+    },
+    "alpha101_043": {
+      "minimum_bars": 39,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "97cf219b4d5e600a8f7cfa35b969a25648ee8fda1a88be5e4b40eea033c764c7"
+    },
+    "alpha101_044": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3e31eaba8d51c7259ad1ae55c76784fd4b02a552d845e3de61b33972a82f1d66"
+    },
+    "alpha101_045": {
+      "minimum_bars": 25,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6db946e79df18fe37c32121f0e233596fe722717fd10d8ec0e17a992231eccdf"
+    },
+    "alpha101_046": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "87beaf6d00216b28740825d7df523e8e1c29982e4c6817bf2c7f9c9889761405"
+    },
+    "alpha101_047": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4f44fc4fdbd8237bb5541f0e8894ec9ceaafbcd31bdb980b126a434d93a13aed"
+    },
+    "alpha101_048": {
+      "minimum_bars": 252,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9cca611d16ea8637d4f36a98a0de46af7146164a60d6f1a636b0b2be2cf1a71d"
+    },
+    "alpha101_049": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "702ac7fe498944ef3e978fafc2a16a0b2e7e89ff1fb0df77ff2db00a50fd5a6f"
+    },
+    "alpha101_050": {
+      "minimum_bars": 9,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e6a87406b7691b589b5b125eb4f794c6798e5a0939b4aceaea205588cf963ee4"
+    },
+    "alpha101_051": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "89054f974fca671d08ea33704fcf6716065df47ce71c02fbf33bda257fcbc0c2"
+    },
+    "alpha101_052": {
+      "minimum_bars": 241,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f13443f2f9cf477434e201c91f27df71c31bbc0848b444d3bb52f6f7a3c24565"
+    },
+    "alpha101_053": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f89eade0f5d8dd64b0dba7d7168c69c2b436c715aa81ec90acf73493662c1885"
+    },
+    "alpha101_054": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "eb2c86a61dfe0fb8734a62f74fdbc5d15567f8044550e83e499eb567c1b6e26d"
+    },
+    "alpha101_055": {
+      "minimum_bars": 17,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "33896c7ac8cf3548d338f3fc0fa52989e5b396944384bbe0936434df46de6b54"
+    },
+    "alpha101_056": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c952617b4b2f2b93eddbe0131c99b006eef5cf5f68f8f1351be617c275dc0b1c"
+    },
+    "alpha101_057": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ed6dd3b814f4bce451fb840236bfbe87adedbe05caf179ccc506fb48bc0faf92"
+    },
+    "alpha101_058": {
+      "minimum_bars": 16,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e5591e97b714486b98a296bba1e3c0e8ac6946810dd70dad55bca81f0988d7c3"
+    },
+    "alpha101_059": {
+      "minimum_bars": 26,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "66e313781335e8e56dd0ff8018b424afbc2d851cd8d7b61d8174b5a0a76e1e0f"
+    },
+    "alpha101_060": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4534f192980ae8bccff92a25023ad786d7f1ccf309c79c842ab2890f65d9dc0c"
+    },
+    "alpha101_061": {
+      "minimum_bars": 197,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9e6fd96d10a02f05bb21438acd7c01e0cd4b97ec42740132ab5ff852c7f97f00"
+    },
+    "alpha101_062": {
+      "minimum_bars": 50,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4af5ecba084225657a561e81823029d78abb78269c44559dfb5508d508511caa"
+    },
+    "alpha101_063": {
+      "minimum_bars": 240,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c7f7afb79e7c07f652ef415e11aea9a47cf7e0dc276630c67430a03986ce426e"
+    },
+    "alpha101_064": {
+      "minimum_bars": 148,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "93344fad9668a5e3f02f287c56d5b7bd984e6c9bb84789d5ae0cf92f93c11ca2"
+    },
+    "alpha101_065": {
+      "minimum_bars": 73,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "25bab4184a6abd551dc00ee14967356137b13720c5256582c993af71e66db31d"
+    },
+    "alpha101_066": {
+      "minimum_bars": 17,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "419d9f65b586e7fcb17ec6b43f473d20aaa079462b71d952d0d1f8b419e7616e"
+    },
+    "alpha101_067": {
+      "minimum_bars": 25,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f1ef5be0a4a3c091ea5bf98a3eb4a588ebb86dce6a974cadaff990e7fe377133"
+    },
+    "alpha101_068": {
+      "minimum_bars": 36,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9a720cc586015ed83b402283865e34e6222021dd36931f85f0c29217efcd78a4"
+    },
+    "alpha101_069": {
+      "minimum_bars": 32,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "01ad13d0b8cc2d4bc4f4d28800735cf5320df0990659f978071cb9f537d756cb"
+    },
+    "alpha101_070": {
+      "minimum_bars": 84,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d858c621fb3e23910b6e7c737daeca68a2ef9557f4294ce9307c78441c00a58a"
+    },
+    "alpha101_071": {
+      "minimum_bars": 226,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b032cf3144e155e5b6f02a9b39b6ef5498f1ee1205b74e2b9834b5d3070200d3"
+    },
+    "alpha101_072": {
+      "minimum_bars": 57,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c47fc4f250f5458b94fcd382c48fa39887730744eb841df5feac0427f18a459c"
+    },
+    "alpha101_073": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "88d46d71c78d410748f28e601a2a8c9198107febe3ac9b684c168ed784699548"
+    },
+    "alpha101_074": {
+      "minimum_bars": 80,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "74306a60a0fd7c2e90e03fa901249b757f671a5a5647e09d502a68b7c2b74027"
+    },
+    "alpha101_075": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f3c3ee37d67efebef6ac448711141fa225a04f85cdac7c0bf8a2f846b7176fe2"
+    },
+    "alpha101_076": {
+      "minimum_bars": 141,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9f2498a2af84a6f95113138a6c09e710f8e191fad9b88657f57eb8799c22282f"
+    },
+    "alpha101_077": {
+      "minimum_bars": 47,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "22323f0366dcc4cac2f321d2a03d6df91220faaf808c8bf98fc94fe3902a66b5"
+    },
+    "alpha101_078": {
+      "minimum_bars": 65,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "94258166f4121bb0ee4a011bce68d05773ec65906f6286109a07a22efbf4cac6"
+    },
+    "alpha101_079": {
+      "minimum_bars": 172,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "43596825120dd20130a196d9a5c70f885de33b683cf8887db25ccd0c04a15e9a"
+    },
+    "alpha101_080": {
+      "minimum_bars": 19,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "99aff84256bad664add2aa22daeded363029ac580655fe77d8ed17ed1b9bd336"
+    },
+    "alpha101_081": {
+      "minimum_bars": 80,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "01d7791ee233fad6c1a13be260c89f833d473c267fc464efae4a4c58618f56b4"
+    },
+    "alpha101_082": {
+      "minimum_bars": 35,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0784a0ae675267ffca6e7aac60ef2ef3186f81e76615eb3b052ec0fe2c949265"
+    },
+    "alpha101_083": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "46fbfb069b94a8b867d9db3e62378e88b754f526a8232abb20dd89f789de8807"
+    },
+    "alpha101_084": {
+      "minimum_bars": 35,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cbc773953d1db0daa6abebda2a45707886f471eb8768bf5fe9e5d872a8f2890f"
+    },
+    "alpha101_085": {
+      "minimum_bars": 39,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "172348083d163b66407520a4a86de6adacbdf36c5779c548f7a60a0ee34b4424"
+    },
+    "alpha101_086": {
+      "minimum_bars": 58,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "924a383c96cccd95dc5fea02d01caf1f8ddb94efa031348755584e6c9b0ae031"
+    },
+    "alpha101_087": {
+      "minimum_bars": 110,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e88fac1970d839dbf0c4d170550c8977f0414367d3bcec00c375fb7edd1231a2"
+    },
+    "alpha101_088": {
+      "minimum_bars": 94,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "68af5583be18b86d7ea5b09033ca83f0f5404749617cabd6a5d5ce904ce0edee"
+    },
+    "alpha101_089": {
+      "minimum_bars": 27,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0b49568c4f4a03af6f0010bcb595a57d4c0bdfc50a66a74eca30f14d05e60f2d"
+    },
+    "alpha101_090": {
+      "minimum_bars": 46,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e26f104a2223ae92f42f464ead332f98f2fd2f4eb73f1f877b7d60c8268f4686"
+    },
+    "alpha101_091": {
+      "minimum_bars": 35,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4f80e08831f0ed69baa1b23c5a971aa1c81df56497d3c01f15d670135f4b7627"
+    },
+    "alpha101_092": {
+      "minimum_bars": 49,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "df9a7467d29717bee4c9ac5413b26e043b2317cb84d0bc35322992f9cad16f75"
+    },
+    "alpha101_093": {
+      "minimum_bars": 123,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fb490318018f5f93a241be4ec848484af96ac70509b43d2b39927ed94ce90cd0"
+    },
+    "alpha101_094": {
+      "minimum_bars": 82,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3cab0810006ada2fff6290532586b2231672c8de4a926b1c0a86aa3e01eb7217"
+    },
+    "alpha101_095": {
+      "minimum_bars": 81,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "19005e013da987c025c36720c683a7186cce1e9b79cf70a902921b98ecd60c09"
+    },
+    "alpha101_096": {
+      "minimum_bars": 103,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d3b52f8e2475187cedb6fb95d24b1056949fab2f584a8498b0dbb5d27c8d26f5"
+    },
+    "alpha101_097": {
+      "minimum_bars": 128,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cacd594307b1fa684896b80ef4569d44c2a7ab65db120e4cf07844d4203737d8"
+    },
+    "alpha101_098": {
+      "minimum_bars": 56,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8d8fca4d2694c463b78b99ae3661d029c3e4dea36394ec0038c9bbd8365a6406"
+    },
+    "alpha101_099": {
+      "minimum_bars": 87,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f1d3c974b282a4ba672e5241845b9ac3294d146703678d67c359c694178eabf3"
+    },
+    "alpha101_100": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "32dd99346b54083aaef7e22c1afc30fd6e3b5b87a03990f6a77328c8c13d711d"
+    },
+    "alpha101_101": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7df515c46a4630a46544c4bfd220d1d808f919ebc528d671d7a9b24365da5ecb"
+    },
+    "fund_accruals": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "70fdb4772fddc174d1b290e4b2923ab078a894f0148f08e39b76a9f6104db49f"
+    },
+    "fund_asset_growth": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ec1f41d259caf24247213bdb57d4c630a0030ddec118feaae80887e2c77a5bce"
+    },
+    "fund_book_to_market": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "813e934e0a42f44f505026ec96f40e1baae6b7489d6226c3b9e6001cb539ef33"
+    },
+    "fund_cash_to_assets": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ebc35ab4c2a5265663c8d06642e83dd1fc6e5cb14cfe147f1160db7fcad6a1f7"
+    },
+    "fund_cfo_yield": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "36e16b70aa1f8ef6598f9338a5d505736b95e43ddebf504aeaf6338ba8a51312"
+    },
+    "fund_dividend_yield": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c482f6e03d904eccca2ae5b7c5c967980930515267f4cf9b755d7e467000e119"
+    },
+    "fund_dividend_yield_ind_neutral": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9fb5b3ce4b636124e699d92651bd88d9ba117002779ca3bfe413a74ba37945d4"
+    },
+    "fund_earnings_growth": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6466e3521cd2c67308cd49bfc797775d8d0a20cefc324735529fdeda1e892142"
+    },
+    "fund_earnings_yield": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "acfd63a310c3cb54afcb2c470831697c20fda43a4e27caeb6e50cdb4dc89b9d6"
+    },
+    "fund_fcf_yield": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c68b447469e478343f2820cdbb4891b93f88a82ffe4e476e12167de0b3872620"
+    },
+    "fund_gross_profitability": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5e4543518385759fc5c8cb597b05fffe138de8f7fb530a29a40bc33001688ed9"
+    },
+    "fund_leverage": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "26c2f2df12cce554fa8bd4cbad4f7ca25aa711aa954e76bbbeb4b85f325c7f52"
+    },
+    "fund_operating_margin": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "521c8f0ba69cd63a230c720b0c71abc1159301c8c10be5c9c328451e4edc618e"
+    },
+    "fund_pb": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4e4568a2335c5da9f88d372741c30975ddd12c744f0bdfec346afcf475082563"
+    },
+    "fund_pb_ind_neutral": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bf4c6171050ccaf7510dd16bf4398b49b42caf737ba7ac1a93795922e0217100"
+    },
+    "fund_ps_ttm": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "654aec870f21a890b5acd184440e8d14b213d3a9d5c997aa6ecd7f9e1145bd4c"
+    },
+    "fund_ps_ttm_ind_neutral": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "76feb38eea0459d5649e8f74792a6df753d64394a9a798b744a556b382b4c989"
+    },
+    "fund_revenue_growth": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7e3884af3e6f85fea43668e8fe0bd93fce4062cc8c9a4e7092e3e62d252718e4"
+    },
+    "fund_roa": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2ebcd65dd458ef41af586435bf6ec618ed24bf517089a7945417ee24afb182f6"
+    },
+    "fund_roe": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bad00a30b2c1c7a6496093c11022d8751bc0986c227feb39d8be2717a67d383a"
+    },
+    "gtja191_001": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d1e892c34ec8d1634b644aa3e4917e713a32b4c6b02f8e01fac9a274f46eae56"
+    },
+    "gtja191_002": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "70c54c6e11c93bdb5a3c317c6b8de8f5e2f32706042e5eb4cb28ed396993f937"
+    },
+    "gtja191_003": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5a781af592c39d4a07026d33e5138fa459f8244e255ca10e80fd95b4f7b97423"
+    },
+    "gtja191_004": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7c6bbef19198315755f6189486ff57cdf85a684f18437549aed3c7872414c40e"
+    },
+    "gtja191_005": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "25a42f4383d2fcbd9633ae7f655725007e14a4dc65c7b8e552a88beca6b8a804"
+    },
+    "gtja191_006": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "07cbb5bffaa21e6b6c7ca4ee943714d032efcaba41f97db445beb4c4ac5b4c89"
+    },
+    "gtja191_007": {
+      "minimum_bars": 4,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f7448a94c21788d2025b6e790d6a813c3dfb5a9133e480ed952add0bae0d5411"
+    },
+    "gtja191_008": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "33ac83e7d383fe7072d16ff88741a20b611ab7992b735528e9e09b73c9ce24d9"
+    },
+    "gtja191_009": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c617c388c34549ec398ca1bdbf56b1b1579038faa2f81ad7e9cb198b9db6602e"
+    },
+    "gtja191_010": {
+      "minimum_bars": 25,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ba2b71681c3268667a87804ad6c540e33c71fdfe2ac917039494179c19f450d7"
+    },
+    "gtja191_011": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a789180744844120af7d10c1b236301137a2e9ad2051f6f140afb60deb810607"
+    },
+    "gtja191_012": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "546831b3e7d0446d277ce0680349499b591b8ce8b57bd2a88dd39b6e4ee873ce"
+    },
+    "gtja191_013": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "dbe6aab36d6b9ed19bd97d5738c59794e8443850f409e7562e100991100f350e"
+    },
+    "gtja191_014": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "22b9a62b3f84456be3d7efff257a819e58822ea6b3ebbca9237a8ce7a23c91a1"
+    },
+    "gtja191_015": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8cd89dd4429c4d059c2fedeb4f72b14130bf7418be4f0c856441bce2259e4761"
+    },
+    "gtja191_016": {
+      "minimum_bars": 9,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "08dd8b9069eeb70ef747696a4af2846b7dde4a6457d5e42d1d20d06b17a2e1cb"
+    },
+    "gtja191_017": {
+      "minimum_bars": 15,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "67e2091a36f5390a585c02a1bcd76cb6e702371c3d55269c5d648b6aa499951d"
+    },
+    "gtja191_018": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0048840cc2fb63aefdfa7870230dc154a2f07d1875cd87f81f093c583ebfd74f"
+    },
+    "gtja191_019": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4808976cee24d7e83105c3b0b3ad492b97396db3f4a7dbceb42a09fe41ae7c19"
+    },
+    "gtja191_020": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "887f8d8ff2d417bf876a3ebd8784f60c694ddfd22e1499d000fdc9f93b000500"
+    },
+    "gtja191_021": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5c05fbf2f7b49b03bc24f3fc132d36813e708f3906ea9f8aa7c987ee21739dd8"
+    },
+    "gtja191_022": {
+      "minimum_bars": 9,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0cd08538fc2b836a33c008caf445002f547dc120397df6c94aeed3fc13e54903"
+    },
+    "gtja191_023": {
+      "minimum_bars": 20,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1e81decd1c411681245e7e9be188b900ac529b400fedcec5d982b63eb80fd85e"
+    },
+    "gtja191_024": {
+      "minimum_bars": 6,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d21e5d29cc4f2c173260e66af4e70f9a9ee70b80d72d825fe54190d349a94a52"
+    },
+    "gtja191_025": {
+      "minimum_bars": 251,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "845b2674724b37851d00a858ab63955b3daa07c080f3fc7deff1603300bcdfd3"
+    },
+    "gtja191_026": {
+      "minimum_bars": 235,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cce7ab9b48dc650e877af5af8922782240a3610d9342ef7f01f994d64ca16f25"
+    },
+    "gtja191_027": {
+      "minimum_bars": 18,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1f93f27f723f4f07e6ae280f0bb41efa4c5baaee53776759a22c9e434fb44d50"
+    },
+    "gtja191_028": {
+      "minimum_bars": 9,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a71106eefda683c3f8d3f47acaa2f1efc82c4014cf0642a9a2377d718e8bd480"
+    },
+    "gtja191_029": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7f5164a5dc7c0702bf4a6bb2be46dfa6614eb76f345cd81b76266f977da018f3"
+    },
+    "gtja191_030": {
+      "minimum_bars": 80,
+      "policy": "full_window",
+      "basis": "60 complete return observations + 20-row WMA - 1; returns require one prior close.",
+      "source_sha256": "c5c035fa10d228e16e4d722b51865e94cd853dc40e6a049a0f00530bd062e113"
+    },
+    "gtja191_031": {
+      "minimum_bars": 12,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "15c300993ef62962361271121b92d3c9c47320b9058ae5e80230e9b8009a22e0"
+    },
+    "gtja191_032": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5adf3e229e4b5043479fa6b9bf205f6cadbbd9b0f3e955869221d0a0c19d09cb"
+    },
+    "gtja191_033": {
+      "minimum_bars": 241,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1e060e490668a93e2e7011edd16459e4c564faa0ea6b7d9f195fdc8d6427c5de"
+    },
+    "gtja191_034": {
+      "minimum_bars": 12,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "10ae6a70b8f857abcedaa75b8abeb258334f74bee7c72280cfda9a4b018317ed"
+    },
+    "gtja191_035": {
+      "minimum_bars": 23,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f15a95da5d0042428ede00e332a549095b50a8caecd745289d419c8a07a24a7f"
+    },
+    "gtja191_036": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ed93478b5dc0e5df59587e89050b37dceb4fe90fbdc30983716f4c4f074d99a2"
+    },
+    "gtja191_037": {
+      "minimum_bars": 16,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a6d2e64464dacfa5a4781689f52166bd8573667eb64ab1b37af3a5a0378c31d6"
+    },
+    "gtja191_038": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fc5c778b08689cc4a12b153dc1e355192e6c3ad83c07c40f5a1872b9394689b5"
+    },
+    "gtja191_039": {
+      "minimum_bars": 240,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "87e4da470c92e4bb1084c79f672b44dcd638185bf5a0f1b05db3c686a21dcbf3"
+    },
+    "gtja191_040": {
+      "minimum_bars": 27,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bfafbc98e70e29bfa02e5b7236055714b7675e6b4042476a6fb49c648605a133"
+    },
+    "gtja191_041": {
+      "minimum_bars": 8,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f636454387a0c2732cf8c3b990e8564cc2945f53e779cf432e9bbf525667ea32"
+    },
+    "gtja191_042": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5e00ed82383d50f2f569c729ff8a5350feb85859c46ec8ee1216d02d504e569c"
+    },
+    "gtja191_043": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "21f304ec78c9be959e040b646cac83ea713c0aaa2c420b96efbfcfa2d703dec2"
+    },
+    "gtja191_044": {
+      "minimum_bars": 27,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "58b3e24af8a1417a81b99cfd681c7c4a68eb5acc3a8f70a98b414ddd9388b473"
+    },
+    "gtja191_045": {
+      "minimum_bars": 164,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "667ee29f20e471f602e1591af163a1cec96a0a26501270245d7b52279706060b"
+    },
+    "gtja191_046": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b62d7edf9115f60bf1a4dab00e180c01431cf63e025de8a9195c39a2ab7192ee"
+    },
+    "gtja191_047": {
+      "minimum_bars": 6,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c4918fea3db52438d9796668cb72c10406cef8924160c61ed15453e3967e16de"
+    },
+    "gtja191_048": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c14325b7f927c54707a89b958f8ae75fa5076df1c21690a77704e2c221c457f3"
+    },
+    "gtja191_049": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0c1b88ae53b2a989b0f9c370defaea9320b7b4b6e3beae8c68bb7fcd65cefa0e"
+    },
+    "gtja191_050": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e724f35a4f2d5bb94149ed0438a7defc2f4d4fd7289b1cd5fef1bf0bde672c04"
+    },
+    "gtja191_051": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "119a4d1254cf94274d6e1e3ec2c7a3d88959bfbbeb1fbc16025a56053995b4d2"
+    },
+    "gtja191_052": {
+      "minimum_bars": 27,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "43dacfcc4fd8a95d3ac7b37c032c01e1e17106e2c9e5c0b2b1157e3448675dfe"
+    },
+    "gtja191_053": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "adf1a0738d155b8c41cd39a10eb076cf1c53aa3a88dd08690769cd9f86442d29"
+    },
+    "gtja191_054": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1e7003f94759fbfbe02f038dab3599690ec0c3c1266911867be84be86bc775ca"
+    },
+    "gtja191_055": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "27d5bffa4502b6431ffd03623de8b07d81079c1ecef79baf9a60adb732a3a3bf"
+    },
+    "gtja191_056": {
+      "minimum_bars": 70,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d57c492e7fbb86d2169a8f91849a847c3dbf22aaa38d082d5b5880935cf4d718"
+    },
+    "gtja191_057": {
+      "minimum_bars": 9,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fbb89c4ea472ee9cfac552ec5cc6015be1ce664075aa7b4b262683f111796eae"
+    },
+    "gtja191_058": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e8db99680e35d32aa5fc9a3e657f9e49bf70212b9243d0545ba28a1158ed3590"
+    },
+    "gtja191_059": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "eff0954ec7b64950af5416ebf8e34c4793ea06261931d97f930b1abf8b3a5a9a"
+    },
+    "gtja191_060": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7384fd3df348c2533d903908e6f9806f9b3075ebb9161f41acc93d592f131f33"
+    },
+    "gtja191_061": {
+      "minimum_bars": 103,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d8e8ffae5aa6d0d730be3b406202cf3e9467c554a1f9ec250477b87f47cbbdd9"
+    },
+    "gtja191_062": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0b6d4469cad58066822e8d9068bcd9dd3472cbe429c6e9f331007a3fca22bf0b"
+    },
+    "gtja191_063": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "594b28265f384d71cfcc69151e1a52ad0b819bb3dbdeb50647bb502d22743ede"
+    },
+    "gtja191_064": {
+      "minimum_bars": 88,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "63beee50e2a5822bb750accac0da9554d7df2e1276843e374ee36312fb364e2e"
+    },
+    "gtja191_065": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f0ac8faedc56d149fa89f8df8ec4cd0d114ebdba3cea47209a24ed56227cb858"
+    },
+    "gtja191_066": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "58f6b07698de0288a0adc8312fd86aaaa4f845d23abb74dab8eb62af5eecc8e1"
+    },
+    "gtja191_067": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a9f7c482f090a45020aa1c37f1b9ad53a9440e9a524946e9e50a21190491c31b"
+    },
+    "gtja191_068": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "57d30d70c651b11699b1b5c546998747198a69f88a422a91d6724a27182339c3"
+    },
+    "gtja191_069": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "baf7973fb69b161c7a201d515386d1213c85be82d9022e50acc04112e9336d7b"
+    },
+    "gtja191_070": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3d6adc94a4855b2287878967f1a0aa5622b9a7cb6c5ccb69b5469bf9f34064e1"
+    },
+    "gtja191_071": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b2ede8012845709cfdce4891a4e94f8c5cd31d6de6ea42b3f028730a4e822ad8"
+    },
+    "gtja191_072": {
+      "minimum_bars": 6,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3904ce2a5c25d6aeef4ad17fc52fce3c6ce4278809b5a0a5b6483765c0b753de"
+    },
+    "gtja191_073": {
+      "minimum_bars": 35,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "30dc2d1b0712b8de1a723989c71e5301dcbafe85b3a9d31ba23720bfee0e4cf4"
+    },
+    "gtja191_074": {
+      "minimum_bars": 65,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "eaded666efcfd495214949bee0f66675d3cd9aa2c97a5a3bf1d6e6aa164743c1"
+    },
+    "gtja191_075": {
+      "minimum_bars": 51,
+      "policy": "full_window",
+      "basis": "50 complete benchmark direction observations, requiring one previous benchmark close.",
+      "source_sha256": "dee88b2f93c811cf864c235812aa082257cb580a5e1b7fda4e2f6951da3a5a96"
+    },
+    "gtja191_076": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3a9cdaca21fe58e5638ee5e90801da517b142137fa1b7d46f109fab87ddc9ae2"
+    },
+    "gtja191_077": {
+      "minimum_bars": 47,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cb6c120dc08cbf99091112271af8653ee3ee7a40ce4a028bbe66752ff346d46b"
+    },
+    "gtja191_078": {
+      "minimum_bars": 23,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1f7794bc2bc757e64881846ac3ac7620726ddd54af12cc302fd3dd25e70330eb"
+    },
+    "gtja191_079": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b165a0b5254cbb94f9d12488bc348a645b16d160a4967d02cf99fd90f6cfe4af"
+    },
+    "gtja191_080": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9b07c35e7e651d8eb9cfd1e8407d5add2fc55d55e864b125005ddb6a1b197620"
+    },
+    "gtja191_081": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "be492e98d75c70e516b5d6d79997ea4fe5f809ad84094400fd58288c5d7a8dba"
+    },
+    "gtja191_082": {
+      "minimum_bars": 6,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c174c05e74687335cd54391cb95db2a59d9ce6766b924353e882f2f83ea71e54"
+    },
+    "gtja191_083": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d7566824720522820d61d9ab5a7d49226e6c7d2436d472d8a38ad55a7847b4c9"
+    },
+    "gtja191_084": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b3d16612a21c7443a5225a2455806c6ddf92e4e2c7bb93c212913d07a4296e87"
+    },
+    "gtja191_085": {
+      "minimum_bars": 39,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3315dae9f7e6af7f977988bb435569c280b72b4a410f1fd236dbfe44795dcdd1"
+    },
+    "gtja191_086": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "62a930192ece1b9fb12a1cf1b30e3e8855e2dac182826fa454a8518c9d49fc24"
+    },
+    "gtja191_087": {
+      "minimum_bars": 17,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ab9ee287c040953d821ae041bd7fe66b6bc0e29879f152dac3657897dc0087a0"
+    },
+    "gtja191_088": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e76b995698075cd06b1da7102b539f68a34a68608230d7bdfa9acae3e3067f55"
+    },
+    "gtja191_089": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c2be6ec5b13c28840611be6e80d7e3e74b4394a6cbe645a82d61baa283c50ed6"
+    },
+    "gtja191_090": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "692da28e23e544ce922f07afd61d49ef582e316f32152924bf668b80164bb1aa"
+    },
+    "gtja191_091": {
+      "minimum_bars": 44,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "aa955ceca0be7ee27076ff8a3c253bdf2f44c8a43aa5872d439f3446f395abd0"
+    },
+    "gtja191_092": {
+      "minimum_bars": 210,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "24633c379501810857436572ceff6e54bc7e42d03fb53b1a2b94401cd3d5c672"
+    },
+    "gtja191_093": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2150a3f054dc30096f755c4d833ee388ec4a1f1681ae93ef2b9f2b24e6a496f3"
+    },
+    "gtja191_094": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "400b00295a97424c5bb878569dbdf27242a0bb77fd6f29cdcb11dbcf8dd8385e"
+    },
+    "gtja191_095": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f9d8c92c54f6ae980d1d349a4faee74d576f7fb52f3256c4f796739106af086a"
+    },
+    "gtja191_096": {
+      "minimum_bars": 9,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f76b7a460bfc6973f38281b8fcde1c3640c1d65ca32f8c7e7c6e4c2e699822bb"
+    },
+    "gtja191_097": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6411ace601e80c514d8760d339a6da55d63a536268088dbf215829b065140a87"
+    },
+    "gtja191_098": {
+      "minimum_bars": 200,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9a8bb7eabfecec1e1708778e691edd3369ebdfb45a2a18a2985dd3c7973b4ea3"
+    },
+    "gtja191_099": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4256c8bfe9f45f588e887a4cbe18e0c7f61937f9bea306d478517c0af472b5a0"
+    },
+    "gtja191_100": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bbf3c64bac0b29cf62652227cd427ee79e6f05a6ff63df58112c491d4043101d"
+    },
+    "gtja191_101": {
+      "minimum_bars": 80,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "12f6b5b223e8c25e3fae0931ebe26ea4567d48c5753f0868b937046ba25f9ea2"
+    },
+    "gtja191_102": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "aa9179f574ae72b2e1e4fba519435e0df52c721c7e4a11bce44cebdbe7b70f0c"
+    },
+    "gtja191_103": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2412a26666d0bf52b2f3b804b580877e2ccd6235d65dbf68f9f358dfa4199701"
+    },
+    "gtja191_104": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e6e6485710b4e16940f93605f37da9b4f5f60a1685e8594ae19f2d7380ef1be4"
+    },
+    "gtja191_105": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3bac82a357bee6802c6336cf450d189ecc2bf9e78e56e5ce1328ccd9531d79da"
+    },
+    "gtja191_106": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "179a31fe4e914798c465cde1987763f06c702ae1bb4692dd824daac908f625f4"
+    },
+    "gtja191_107": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b18e2ef0bdb9d093c999e5b51b3e94f75c8453f0528a9da73b6b09d0f7c75974"
+    },
+    "gtja191_108": {
+      "minimum_bars": 125,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f8e7addccc8f6b1bc4ee2278d23dd7723df090ba213725544bcbdd20404980c2"
+    },
+    "gtja191_109": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a5aba291e1356342749ae5c04bca388071982904ba8487232a961946c1225583"
+    },
+    "gtja191_110": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a432b227335377cab7f4ae80b53d5f5dba9236214bd8e37dbbcccc0ee7cf2776"
+    },
+    "gtja191_111": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a07ef335ecb54e27bef89d3747057f33efe87698c55f51985dbe9e4fa382a9f3"
+    },
+    "gtja191_112": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f7bfd7fe38c2afca35507382c1307b386eadc55faf41beeca31af4d6bd10e28c"
+    },
+    "gtja191_113": {
+      "minimum_bars": 25,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4a49a8c630b2a2375db872e121d33a9d53917e8fbacef9bb5acaec5f23c67da5"
+    },
+    "gtja191_114": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "da509d2ca533bbd3485a09de6a1b8cbea92d09df08b7cc0c47b2cef67f7cb1f4"
+    },
+    "gtja191_115": {
+      "minimum_bars": 39,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a3d5546be89e305c673590ca5b94bab39d9852e30c2749a0c89441de3cece9e0"
+    },
+    "gtja191_116": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e634dfd738c2c973f01c6e099de1e8c51c0b7f552bdf8bef6739e2374f8354f2"
+    },
+    "gtja191_117": {
+      "minimum_bars": 33,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e77c612238adbcee38a467c5dc6c0f6f9d0a7c8e52825d1d58744687beca892c"
+    },
+    "gtja191_118": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "da6ef7ebd81bf6e4a34d356a080733b66972e70d9e84861c86e3cf9ea02fa2a0"
+    },
+    "gtja191_119": {
+      "minimum_bars": 56,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9a77d5bed5170945d9d7c2bc003d41bf690e30d090859d3e38697e8f238481d9"
+    },
+    "gtja191_120": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b66f64711303e11582257f252a44f248854db9f8bb4b055a9c8d8b6cfb2f1409"
+    },
+    "gtja191_121": {
+      "minimum_bars": 80,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "33fd58a0481cf916f3ad1b5d43724dd387f060265465b36790b08432f34c460f"
+    },
+    "gtja191_122": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1bc4d1aa5ea45e93d1e185db3c8958f4dbb10d7ed705fb37e7eedc5f58b42ee0"
+    },
+    "gtja191_123": {
+      "minimum_bars": 87,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7fdc67b5056b1cd6b3c0a3a5a555c3052d657faf2fcc33daf997cda0480b5eb5"
+    },
+    "gtja191_124": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c57e1fca475ab0883a34843b7901917b532f313279828b78960143c4c13e3e9c"
+    },
+    "gtja191_125": {
+      "minimum_bars": 115,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6a349bd421a5f84c1dfd9e11462f192d76dde2fe76a384c7d4644380bf99fead"
+    },
+    "gtja191_126": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "abdda6549c878105ef9bc2ab9cf8ecce7d7bec0e94ccce3fb62ba453fd8f0b69"
+    },
+    "gtja191_127": {
+      "minimum_bars": 23,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ccf0fbb5de1b491838d2eedfa22b7fb62040b233f26a7c34c02a0dcff9666120"
+    },
+    "gtja191_128": {
+      "minimum_bars": 15,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "750adc884e430a9f9b9732368bbba42773b3de9bdb0edf38a7b4b82ff87cf9dd"
+    },
+    "gtja191_129": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b22c579782d3308d6ab5235e1304169c31cd45b0829f977f2e69aa6f6f75e423"
+    },
+    "gtja191_130": {
+      "minimum_bars": 57,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c0f32ee087dc6beeeffbea7d6d12569d4f68109c6901a3463092f43d5af01586"
+    },
+    "gtja191_131": {
+      "minimum_bars": 84,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "54a5747e8af4ad52d1d09846ec22f87037514c1e2940cca378fc22ea39b37875"
+    },
+    "gtja191_132": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "555f1c03005713dd1e75fecedfa3aae84aee637c53219aaaddfa765661c9df63"
+    },
+    "gtja191_133": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1544803de0611773b2b7c232d062a1cc415b477934c8dfab720017d63812c723"
+    },
+    "gtja191_134": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cb5ccf4ed6cf03b2355c0d0721a1cd67c99c3d65aa3ec177cd81130a407a3da0"
+    },
+    "gtja191_135": {
+      "minimum_bars": 22,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8cd896dda0012e56b3a27697a63b31ecc352665642bf939d13767f4f6bccc034"
+    },
+    "gtja191_136": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2381a4ad6456646cd09c39d3102cec6eac97315b5f6cc456f747c6418c8ace35"
+    },
+    "gtja191_137": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "17eb69aee83d3fee9d991f6bae658b4d1c4d33789ea4eceecd968702db0e6313"
+    },
+    "gtja191_138": {
+      "minimum_bars": 119,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "23bd53fa98f0ecc2724f0e8a0db5931f5f940c3751fcc0200456f50a0b3db9ef"
+    },
+    "gtja191_139": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3b6e4a2361846f0e604a29bb233981e6eff0a7d7b622ce44bb9eff94e2ec199a"
+    },
+    "gtja191_140": {
+      "minimum_bars": 94,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2550c361a9052628f4414ee75661c7dcf2219eeb35a19eedeb4e4ad39881fb88"
+    },
+    "gtja191_141": {
+      "minimum_bars": 23,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0ce3179f32081a60933001d366861006f22a643cb488be9bba227ca49bcecb93"
+    },
+    "gtja191_142": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b3c950c859bd078f4d4756f5190a519031e8c2e0c369eaac45da8991f30c20f2"
+    },
+    "gtja191_143": {
+      "minimum_bars": 2,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8c69ff873ec4ad1c23e2181759ce1974e22be75767e99e2ca7b9492f99d8e3d5"
+    },
+    "gtja191_144": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "666219844450d0a6ae78e8b79e79556708054744b4ffe54b33665caf4aa59498"
+    },
+    "gtja191_145": {
+      "minimum_bars": 26,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fe8812c680562da9c1710f0008a68f6d5928f03ad63007d066f01207b2b4e0fc"
+    },
+    "gtja191_146": {
+      "minimum_bars": 21,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7a1c43a62ffbf9cf857f9c16f11a6de2234838f797774a1f9ad25107d8533877"
+    },
+    "gtja191_147": {
+      "minimum_bars": 23,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "27ce8f88fa9f10d40162f59b5a1ba468c9bd299a1388380aa03640ec11a8945c"
+    },
+    "gtja191_148": {
+      "minimum_bars": 73,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fa2a28c93e0c9296f032721582532f11ef4b2e324e3ddf7bd49175ae719c94f9"
+    },
+    "gtja191_149": {
+      "minimum_bars": 253,
+      "policy": "conditional_sample",
+      "basis": "One return needs two closes; FILTER requires 252 benchmark-down observations, which can take more than 253 calendar rows.",
+      "source_sha256": "fe5ad5121ee58b3b0374cbc51daaf8ce9fdcc27e946a95d446d74568036d7c8f"
+    },
+    "gtja191_150": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5eb3319f0d7542c6a5a6cf7d3e63cb4085dbb7f066ccb4a0b4a69e2111f6c6e6"
+    },
+    "gtja191_151": {
+      "minimum_bars": 21,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8dc5dd0abffe11a33311b3614d9a3edebca227f53ff973f076b3fec8a091e68b"
+    },
+    "gtja191_152": {
+      "minimum_bars": 37,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "65e0ce9453adee7e0514d08d8c3a3afbb2023a1e0780477b20bc6645e705a75b"
+    },
+    "gtja191_153": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8b66fc320176c03cf9687d9ab13aad6a8e0d3c50df7b6fc83db820ede8a945a6"
+    },
+    "gtja191_154": {
+      "minimum_bars": 197,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9e8845d886be2d5d9c992540e3363fa7bea27a97aa04789da20b422c8d8c7c25"
+    },
+    "gtja191_155": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "356158ebab759fc21990862e781a7e4ac8b1eafb1325a7325475229a5bc76b08"
+    },
+    "gtja191_156": {
+      "minimum_bars": 8,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6b8c1022b93a946c7f79fc53b19258a4e840188dba71e83a4baa239508e2814e"
+    },
+    "gtja191_157": {
+      "minimum_bars": 12,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "56916751395853451dc86d9b0ce30d4ea6be4c42bcf7b2c82ae4a8342d9ef72c"
+    },
+    "gtja191_158": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "33231fe2eebdd085fbbddce87abf70591ea88ef9642f78e23d663e532dbfbc84"
+    },
+    "gtja191_159": {
+      "minimum_bars": 25,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "493844f1d3a95418810e0743cd599cc66d8393780f7b57f5015bf1b6e2afb528"
+    },
+    "gtja191_160": {
+      "minimum_bars": 20,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fd056c1743bc822017dd7044ba7cee43f855dedd26d47ba1b405699b632c54cf"
+    },
+    "gtja191_161": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "940ede6aefa8daca1d9e74ee55e8e18bf57a7b0afaab64cf55603840f8d301ba"
+    },
+    "gtja191_162": {
+      "minimum_bars": 13,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b00d3f5085ce3e585769c29a6999362e2806bf960893b35ee66db564002add21"
+    },
+    "gtja191_163": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "95d4d8aefbd24cd1db54dbbe03e8c29ca0b9a4a78077f06fb057ddc7919a986f"
+    },
+    "gtja191_164": {
+      "minimum_bars": 13,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1efc4a71ecfb6d2a67682d1c0e75fd531e2ef64f0f606029ceebae84a564dc29"
+    },
+    "gtja191_165": {
+      "minimum_bars": 142,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b207eda29225f89db4d38d35ccd7c67cf60b8ea1925d6ae12a2611145b58bbf8"
+    },
+    "gtja191_166": {
+      "minimum_bars": 40,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ff70560f3e62ded5a90942b3488233eaf78b1b149c24c651d12c87639c219d2a"
+    },
+    "gtja191_167": {
+      "minimum_bars": 13,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4ee0e56a3d3fcaf0dc0abb2cbc1b11fd05db77a5d0da0893966560bde76dab02"
+    },
+    "gtja191_168": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "749abdd2d757cabd42f7fd0a4cd09632ed2306ec69fc34f8bbc6087c0c71aa6f"
+    },
+    "gtja191_169": {
+      "minimum_bars": 28,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c13d1e839b9a642e1f0573770bf2cf01b18dcea777501275e5b67ffd855ce6a3"
+    },
+    "gtja191_170": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5dca6feb4952882407c98f5a14143f96e2a90e2697906de20d24aa7d18e8ec14"
+    },
+    "gtja191_171": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1fac829d3b09839507439fc8ee6f69e60fb92937546b2558bf41d3471277fcbb"
+    },
+    "gtja191_172": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5b57fc2596a318b76e09cb86fdb19373b17e5b5977b1a943de7f7119d192bddc"
+    },
+    "gtja191_173": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f10ebd5565a16f6ee0a0fd90271c5e4ff5fd6b00272176e6e2b69c652f050995"
+    },
+    "gtja191_174": {
+      "minimum_bars": 20,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ce61971dfddadd534e5c534c57aafb24d8862c36775a2670c444cf88b0b3eb98"
+    },
+    "gtja191_175": {
+      "minimum_bars": 7,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "fa2aa8cae76d6ca7a7f0cfe3259f9f0c0dd8dc68b6e90bdcfb297acbcd503f83"
+    },
+    "gtja191_176": {
+      "minimum_bars": 17,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "072367278b0654dd3ed3862472f027797db7acb9146ed9d2b028ea6444465198"
+    },
+    "gtja191_177": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f751ab2eab6267f239f499b1433ff2b4329b5f44d8aaa93a88440ceee7fd4533"
+    },
+    "gtja191_178": {
+      "minimum_bars": 2,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "46d3a60f9d9b04a430898943c717f1c2322d96bc412d24b28acada00e7d34f66"
+    },
+    "gtja191_179": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "07d2634b8d6b4b381c25a4f5df688f8a576fc98971c022df1a6041964598a044"
+    },
+    "gtja191_180": {
+      "minimum_bars": 67,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9f488a551f352c51959d17492f73667cf17f45f9ee70163c2c6e5ab3e037f20d"
+    },
+    "gtja191_181": {
+      "minimum_bars": 40,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cfe7611fe55e6e703694c7dd4d28ed851e8d5a78a099a06b0151d6e408834527"
+    },
+    "gtja191_182": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "20 complete benchmark direction observations, requiring one previous benchmark close.",
+      "source_sha256": "7cfc628d8cc362474a8e36c084d246e391db3b54afe8350a3b0fd311ebe103a8"
+    },
+    "gtja191_183": {
+      "minimum_bars": 70,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a193771b21bc8c947e4cda243e84ad11bbeef2c1bbf0b90be263cb2c3a4bbd37"
+    },
+    "gtja191_184": {
+      "minimum_bars": 201,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7d06612ec4a8e70a18952fa0c18d1a333a9c357190d5b27c92aca02bef01c14c"
+    },
+    "gtja191_185": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "78f0208d3ac9e2efc63c72d17191868c4daa246a8312c9d86f5b86db7fd3aaf8"
+    },
+    "gtja191_186": {
+      "minimum_bars": 26,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5aede98e5b5db64c1385f023834271a9ac344ff32e510b2db66937ff0b5ce3f3"
+    },
+    "gtja191_187": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "699394eca613c457a8647d018d17401184ee468177c2102537961b676012c842"
+    },
+    "gtja191_188": {
+      "minimum_bars": 1,
+      "policy": "recursive_seed",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "382511ec578c819428b7f468970605b532d632789c1baed417fb1325a336c14e"
+    },
+    "gtja191_189": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1a9e3357589d0729752a01084995414c2d868b8e73bef96d815bd7e890846354"
+    },
+    "gtja191_190": {
+      "minimum_bars": 39,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9783d4367c12e3397989bc54b679f369326a66da4b85ac525275595d3207e211"
+    },
+    "gtja191_191": {
+      "minimum_bars": 24,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4aab74ebd7d58d9231066e8a895542670ea2193097eb8578d6e34c769b24bccd"
+    },
+    "qlib158_beta10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4dfc91b5c2909e37f4046f3f83b2eb36ae4d986e655f6384cb732252ad630294"
+    },
+    "qlib158_beta20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a160c1e32b9fca6ae0817508f717bb478606b8c33ed6c78fe2946658e5fcb91a"
+    },
+    "qlib158_beta30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2cdf12dd168051a094cbab237d6626d9a7de339d9b07cc218162207e010c68ce"
+    },
+    "qlib158_beta5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "cce3256cf54b2a449388c756a0b34af6df8de55a34ed463d7cc928a3bb3c9ed7"
+    },
+    "qlib158_beta60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c917576462300e87f8f77d703ff56f5229873b33ff4eb02ee49c8a7acc633958"
+    },
+    "qlib158_cntd10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "86ea7a88911c4e5de83275d4af25c729b918919caa7e857c16d65984163c490e"
+    },
+    "qlib158_cntd20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "91a011ed7dacd055a2af6d14e891ebcbe2dcd06cf9fcb7fac80de96ef683754e"
+    },
+    "qlib158_cntd30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6e2c05f034745e9b4f6aebee078d4eae08c1096347236b2f598f36d6da752dcd"
+    },
+    "qlib158_cntd5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "77f7d40d81cd6f3a4fd35be9979cbe68a93e844b077565dfbe59e698c95f5027"
+    },
+    "qlib158_cntd60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3863fa1e2400a33d6ecc888c57bb1e2babd39ead825a1641c77779626ea4c2de"
+    },
+    "qlib158_cntn10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6ff18f7bf1f14ad511454409342b4d3d1b145d7b15b827cd7da3dc1ba8505226"
+    },
+    "qlib158_cntn20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "143be2c065157ad431aef47a3592f41ab3cead05962c7d4a2cbaab7069b48fe6"
+    },
+    "qlib158_cntn30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ed3536cfa341b628259bdc6e8ac96d30417c7c40741a855ff8cca9b7623b7368"
+    },
+    "qlib158_cntn5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "997ce51c7d526301bec61b168371c9ac6330b56a1c1303d1a35815c536ece93d"
+    },
+    "qlib158_cntn60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "77e434222a2f3155aeccede6f41dc7fe5168127153ab8f7014c1db62203762af"
+    },
+    "qlib158_cntp10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b937c8ae6d494a7baab3beb4f7eed2dce9e72423df5cf5479bcd09e683d4d48e"
+    },
+    "qlib158_cntp20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "71f969b167d0da2d0f0cbfcceb06cda6c06d1e126e92986683eb34ce5309b21b"
+    },
+    "qlib158_cntp30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f4780acddbd00756937a56e0ebaab81ccd219969091b964fd647552383499b7f"
+    },
+    "qlib158_cntp5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "a5751fffd2d30e6a12fc0dddcd5801e732279830c1aef506c88d9cecbba402fe"
+    },
+    "qlib158_cntp60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ec06945a4dd0627df6797c2b10e4184a3e2be6f416f5300be214367f71dddcf5"
+    },
+    "qlib158_cord10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "01db988791f4f2bef9e464e27c8e6a252a83f9255a72b1d26ce36533b7a5b01e"
+    },
+    "qlib158_cord20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "29508335cfbccb557b703586d2da99e5715dbad53893c21551d35e395c228eee"
+    },
+    "qlib158_cord30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9165d91ccf25c91d5ab9b3d5bd3aa23d39fcbc4824992114c95e2fb56b81857a"
+    },
+    "qlib158_cord5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "acd4a715de395ef08a70cbaadab2932cb79dd9b678fffbf75d3b91da11c1bd42"
+    },
+    "qlib158_cord60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9dc748b87af3f0a88ea289544132245b346bfba212117785d938724688d46eb6"
+    },
+    "qlib158_corr10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "42a683b44225e58fdb8bac2b79f792d48d5c48f6509012e5155d75b573020685"
+    },
+    "qlib158_corr20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "64f7dca5eac48de43045e3d63e332f3561ddaa13a3bd614b83ed42cb4b844c63"
+    },
+    "qlib158_corr30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "67e0e091aea6d55d77d3f408d306493b80e3d0be3f3a2b38fa0704a98c0318f1"
+    },
+    "qlib158_corr5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b48dcd85827f747a1d333ffca1a4f1c258919e68471462ba91742e4447a38bea"
+    },
+    "qlib158_corr60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "48cd56c8f219aaa09874538f0374db4d2ec0549bf30b003c5b190c723f1bc3a1"
+    },
+    "qlib158_imax10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6ed70bae603cf053f7f56b0e7d6efd9134c430c0deff9e778f5de8b7596ed67f"
+    },
+    "qlib158_imax20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "13ce288386e4b0756727b863f3f15e80beaec2342b0459e80fd06a1660b8568c"
+    },
+    "qlib158_imax30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b561d46abf6a14044f260b774f365d7d996cf9ace128adef871001b0bb5c7d2d"
+    },
+    "qlib158_imax5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "072064c738309b5ad5015f1cc62391e8290455381f6a91b55fb609a286605527"
+    },
+    "qlib158_imax60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "11545cf75c72eb2119b1923de7bb42bfcb5274e4f1f63ed0fee122f3d0f64d68"
+    },
+    "qlib158_imin10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "324d0c00fcab02b7b6078be457fa5a9086642046e30366046d78b5266c7a55ae"
+    },
+    "qlib158_imin20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "757fe987e40a6fcb206c0e49b34b20c72590baa22da23625d1ba1728bc75354b"
+    },
+    "qlib158_imin30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e91663f5ad012c29feca74a41a0ff5d9f7fa586cb8eebc394d28bd7f6dfbbfd5"
+    },
+    "qlib158_imin5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2ddef051ac9ed3a68b08f8afab24818c62b5c0390ea3a2b7ae4cad7e02800e4d"
+    },
+    "qlib158_imin60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b15c5b517ea80fc06c8d1f1c500f5e052e0ff4683d25a805a5d3b64125ee64f0"
+    },
+    "qlib158_imxd10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7210d901a3d2c2f9e1174201a529a4066d36d0c32fc5b5d9a7dc8f7e035ae154"
+    },
+    "qlib158_imxd20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c22a6cc961b4e0db1a2aa74205e2b85fe5af100d230513eade3cbdc438572c6c"
+    },
+    "qlib158_imxd30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e274962a5b2ef0aa778509a586fe75cef592e42291aa5472e3bba66ac54fa1a0"
+    },
+    "qlib158_imxd5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7aefd2be21775e94b67347dd85fb6da5c083566e32dfeb0bb13f28fabcc0ea89"
+    },
+    "qlib158_imxd60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5e9adc805f7a40c2324d77f23d414da53a157c951d52ad05f8a1e515aad33444"
+    },
+    "qlib158_klen": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ce69adee750ae30149f61b44619f4a8d5b86cc7ae862920b3835f6e0dfcfdf20"
+    },
+    "qlib158_klow": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "507e7fb5d303557b69739882c3f452326e0fb70eb450900e9ac5f8f46f59bf02"
+    },
+    "qlib158_klow2": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e20b8b9f74b036c4de2ea09c1411f5b75289e736dabea5e8fbd7787bd537ea6a"
+    },
+    "qlib158_kmid": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d6c54f69720e3405af02f6e7fe15c5a4175036c9164fe171cfce21372e8a5950"
+    },
+    "qlib158_kmid2": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f2d1c961b6fb281f38894aa4a9a434446ff72ab50ddcccfbf5f6ea0cbc62ca22"
+    },
+    "qlib158_ksft": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1bdb958c24cbdae98d7ff09cc90aa7760a49716bd2da40f9c0e048e62fb4ca35"
+    },
+    "qlib158_ksft2": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ad6c8f055deb023da18069bea8d1ff39786e3626cd68d146b225ca9f644dcbb9"
+    },
+    "qlib158_kup": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "da14bf943ea805cb2b559bf600cbb5b7d86250bfbe510a0da02aa625e1b75b91"
+    },
+    "qlib158_kup2": {
+      "minimum_bars": 1,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e80fdcbac9c2d3ea2783c168ca5884c4a278eb4f47c7d836f694ac126ac6861d"
+    },
+    "qlib158_ma10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7ae173bce06a9a7a8a91fe8dcc16401e047448f36b9d5045340bd9c6597617ae"
+    },
+    "qlib158_ma20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "35d055ba653d93c6980611bff60944ffa1f498a884f3f4be253bb3f012116210"
+    },
+    "qlib158_ma30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1d58e7886a1a16041dd0fda9369f01c0730178e554306813e7ab4c78281bbcbc"
+    },
+    "qlib158_ma5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "125ad882018b3e923ab61404c2e3e0d9eda06abfb9e941832bf1914cc1bc2f09"
+    },
+    "qlib158_ma60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d074af6f0a2f94205e0c4b6171d838a2c6c1ede7f71ed59c1227b26999803cd7"
+    },
+    "qlib158_max10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1db5ccbfab4c397264c1bb2ff978c38cd0369b384d8df31aa83e617a9df4266e"
+    },
+    "qlib158_max20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2399469b0a0d942f0dcedd5a72db037645107fae30d2144de327b92194b2d50f"
+    },
+    "qlib158_max30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "eef18fecf9fb0d1c5f5845cdef270548ded522890ebf2119d2f636a95108e5ff"
+    },
+    "qlib158_max5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bdf0c6f0344bf35731124ceb63536f22a233c74df0e514203b5890d63b6246bc"
+    },
+    "qlib158_max60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "296948de7546175f0f0a819de99b906d0470013d09b6de3fdb76a807145c5a22"
+    },
+    "qlib158_min10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bf65ca2d683fd12d83c386cbeea573322ef4390bcf2399918241e1101e680030"
+    },
+    "qlib158_min20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5604f724f0ededd4069f4bea2e9a152c6f87ba341fd2f53eef2f9700478d86c7"
+    },
+    "qlib158_min30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4b398807a3edc6b52af41c4630124f1f50c7be31b6adf733a99faa7bfb212f93"
+    },
+    "qlib158_min5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4cc75a540724a5a78c9bc5ac50f6cba0200053e523c80ea57920b84c8eab6521"
+    },
+    "qlib158_min60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "b4325090a8777f02748d8cc345a3375eb8b99934f44896b3c56b1dcce7a96fd4"
+    },
+    "qlib158_qtld10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "59f4115a4ef5d89727e7b785b9e7ec7fa777f978d6c9bb898f0fbc240ec8a803"
+    },
+    "qlib158_qtld20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f0d92e60b59f10598518e6ce80b931d9569ee9200465c45c91648fe0fcd524cd"
+    },
+    "qlib158_qtld30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "9b966ed997db047d69e905b832e8e02c8899482b641add2699a4450b970c1c94"
+    },
+    "qlib158_qtld5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4d76ce9057f5fecb50581716033959b622772cc72b434f9afaea37e47f5e077c"
+    },
+    "qlib158_qtld60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c49787b2bd0d035492c91768d2177d57c207cd9a7f3cf5bea44308124b306206"
+    },
+    "qlib158_qtlu10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "eff297257fd593916d8eaa2338adb2816d917349150eb62764e53a33490c081a"
+    },
+    "qlib158_qtlu20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7eb3c925b9e61e995193cffe1d773288cff8d526bbd4ffa3ca78bfd6d4820c22"
+    },
+    "qlib158_qtlu30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "48193b2bcb765dd0c53254ab15e538c4be90e76430937e5f5de764799feec399"
+    },
+    "qlib158_qtlu5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "07c71655dbba58ec197f66542a8b7e19a95072b41c02577ab7544b280d818936"
+    },
+    "qlib158_qtlu60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2d770be95042288c44b4ccd6fe9f759193548af883bcf7d24c5777174919dea0"
+    },
+    "qlib158_rank10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "236e50d3cfa38a5d8775301b893ea5ef62a21583fabb6fd03c9e005cae61df0e"
+    },
+    "qlib158_rank20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7d3d42b6b2ac2303380670b37af32ba0a6c4e43f343dc84f9fdfdb70c5db013a"
+    },
+    "qlib158_rank30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "aac9dc18ee9ad0881aa6bd8105e4c8a5205cf95147666b3a4711bc81b4b17ac1"
+    },
+    "qlib158_rank5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4fad38ac385bf94d9a1dfc8de44889b892644ed41c242571d32e9755db5ab0e1"
+    },
+    "qlib158_rank60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2df95106aaac13be21022d22be76e7a86821b1935c2162dc86a07f6ffe6a015d"
+    },
+    "qlib158_resi10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "165d984ddf4db4efcb2b0f383fea5119fa0f8627f067ab5eab1ca5bdec6a9651"
+    },
+    "qlib158_resi20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1e0285f20128e4b59fff408c3c1d2cca44a135296ac5412b1ec94b0ef11e1b1a"
+    },
+    "qlib158_resi30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "535f0b499329e07bcc855dc368ab65cf2b7f14dc6a375fa93aeaeead6d4ba2e4"
+    },
+    "qlib158_resi5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d33224cfa96fc05a2a249db71566eaa48850db1b53c28729b7efd35fdd022316"
+    },
+    "qlib158_resi60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0e7c5e3d3bf43135442c7f89022ef5c803879eb70e1b86c69a1c9fdbf6e4dfa6"
+    },
+    "qlib158_roc10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4ef0302346e5468d07d07707db9e4d7b4670c6ede8d2e969248e264306aaad24"
+    },
+    "qlib158_roc20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "92fa828b2a7f37ca5be1881573724605f054094e1cc568e1f26a74783209c276"
+    },
+    "qlib158_roc30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "33aa1a0a5dcef8ff009fb59f97a69a203d68ce032ec38aa8fd7b294c68609181"
+    },
+    "qlib158_roc5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6bb78f276746ad1abf75511be06b9d1e4680e251d3d4167fda60290a892b4f99"
+    },
+    "qlib158_roc60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bf4820ffc15b653b9403910b9f2ae90f0f79d4a667aab12df504ce136ee8ecff"
+    },
+    "qlib158_rsqr10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "34b53ae6b16e85191ab0989c20064a505310e55c68cc10791ad95057766e9d84"
+    },
+    "qlib158_rsqr20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "89403281cefc7457a44b0244579bff0302bf9082678f93d74f319b0be04c91b5"
+    },
+    "qlib158_rsqr30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6c54249ddd8e69f1341569cb1c4317eff124a9875bfaad1faa229e3696029953"
+    },
+    "qlib158_rsqr5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "48b8c9c1f091c6a84a34a521dfd862d06806884c59cd343a77e479b7630b462b"
+    },
+    "qlib158_rsqr60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "842313b9dc0cca43cf13b43c3eb2505f18675998ea9643a0c1717442281dbe31"
+    },
+    "qlib158_rsv10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "83795b7f3030b037d4c035735ed4336dfefd61272666948b6efcf31a110c4c35"
+    },
+    "qlib158_rsv20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "904103606d9251c095a2af3474b83ef638411816e5f4f6d381927708c8d96c8b"
+    },
+    "qlib158_rsv30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4f58030e9491ce78ef921934a80c3c388d69a0fa621ad195278d24c0d571830d"
+    },
+    "qlib158_rsv5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "31bcc14d0837d1158f1ed5465b653f1c957f697b4547153e4f8725acd2850222"
+    },
+    "qlib158_rsv60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "054803d6b3119b44ce20b5dede6e30894363a7a886c0c7cdadbddeef498d1e3c"
+    },
+    "qlib158_std10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3998f25bbd92f89ea48719ef6f9d963d80963021f1ac78c9e079811d642f7b58"
+    },
+    "qlib158_std20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8abed102785febbc178930c99a954f207fe1fa066147d6328b41e842f9862724"
+    },
+    "qlib158_std30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e64f578f9a3da1211d8c951bd7e821cfa66bf2685a4033a7d251d6b9716965f8"
+    },
+    "qlib158_std5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e833502ab30b075b972bdc38033972fdc58ee1db92a5cf236bec00e81a1e3573"
+    },
+    "qlib158_std60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c727711941f15dc06e13a81ea0f614cad379b23dc476fedfd5cd6936916240ca"
+    },
+    "qlib158_sumd10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "41b9603c9d5f3659e7e7fc711b6cfa0dd558b64f6a0207bf85cd21d68858dafc"
+    },
+    "qlib158_sumd20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7fe9d2f1fd04dcc01cf8e957977b75401e80d4ff63256f96ed423c8807109ee8"
+    },
+    "qlib158_sumd30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "17dffcb2cf1c3dc2259acaee3361819c0159c23cc1b956e36b8a9231397c7456"
+    },
+    "qlib158_sumd5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bd4b8e0eb00e303021e647eee183d486173f8496b69421772e7a8e55f8b5fccc"
+    },
+    "qlib158_sumd60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "0de2624bb43503c3eddf4355fd22ece81d620d5d5a8e5631f4e8b92bde6d6478"
+    },
+    "qlib158_sumn10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7733d67a57e842779b17fa7ad663575eef39687d984ce47a19c24f4805c42d93"
+    },
+    "qlib158_sumn20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "5abdf0be354d2eadca542dc37c5febda42182b23210651262fdcc00967d87da8"
+    },
+    "qlib158_sumn30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3bfeade03b3359d4f1eb7f908e362fadec0acd371f638a12718db5b85f96a67d"
+    },
+    "qlib158_sumn5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8c11065c2c199dadced8e4feb70d2b4e24037d9298bfb02f629aed47f0970531"
+    },
+    "qlib158_sumn60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d7f5c7d0dc9dfe21e41eee91c1d5d0dfd2ad2b1580b9de4215a101b3873f1cae"
+    },
+    "qlib158_sump10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "19dbf0594f990a18395904697b8db8bb0112abfbdbd2ed7b81d185670693b150"
+    },
+    "qlib158_sump20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "3dd7d158f3825ece9e56c338c18c1f0b87c202b504d090bd828b0f8beaea6408"
+    },
+    "qlib158_sump30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "83fef1db306dddfe2e58c1e268f50f084706790c6ae0e3fcdd5f908e1dbb1fb9"
+    },
+    "qlib158_sump5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "af7391dc29893bcd227935883784f5e5d35d2c1a5925a18829239c07c7a3236f"
+    },
+    "qlib158_sump60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1dcd93bacb9dd474846e26d4c13c100e1a62eecc1473e2d7e3448ec1727eaf47"
+    },
+    "qlib158_vma10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "f38feae137adad705e5004ce7ab4fa1d8e1e71c01035cd58a76bd6f0213c2578"
+    },
+    "qlib158_vma20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "8c154eda51e41f9facaf3aaa70fea2905c9d149e8d2ac78a7ece9897f1b921de"
+    },
+    "qlib158_vma30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1ce7910abd7a78543ff0726d5449fa50ffd0d597b0ef350c7ca31abf77d11999"
+    },
+    "qlib158_vma5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "2389dd7070d8acf6084b4ddd70c76acff7a833191135e030634a804b599d32f0"
+    },
+    "qlib158_vma60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "6fd5e0c53d819785e4d17b6f0875b91ee4d1f83805b970a6b5a20f7be7df21fa"
+    },
+    "qlib158_vstd10": {
+      "minimum_bars": 10,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "36eae19ad4ecb0905e65f069ce4318aaafc923bbf56d7be53069c60089151af8"
+    },
+    "qlib158_vstd20": {
+      "minimum_bars": 20,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ee6f43a0399204b187930b5ee36369445a003db1d27109a120e5ab8376925974"
+    },
+    "qlib158_vstd30": {
+      "minimum_bars": 30,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "43158719cc7f35bdcc6261c71dfe0660152cb7b717bae9b4c36e5e43448b226c"
+    },
+    "qlib158_vstd5": {
+      "minimum_bars": 5,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ec02a5c8d0e01b6a6e53edfdc4da9f59afcd1cb251f77040bb8ade9504b30103"
+    },
+    "qlib158_vstd60": {
+      "minimum_bars": 60,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "226df11e2aee8480302a278bbe4705f3efb86a73e9007083d44aafa073599177"
+    },
+    "qlib158_vsumd10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "787e47ab1399a1016ab7d6a3003c1b127603f15ae82b3541b2688c3b674c26ba"
+    },
+    "qlib158_vsumd20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "638ac4688d30649c855f0f97c086937cb6db9f18e4ab0eb2fa86425a8761cc6f"
+    },
+    "qlib158_vsumd30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "02ffba637aa9b871468fdfe8354b433c167a97b44e29f2d98eb6d644e8ea3d74"
+    },
+    "qlib158_vsumd5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ccfcb8b48b45c553999041952d5d3acd3bcd6514e0fe5506866b5857159ab7bb"
+    },
+    "qlib158_vsumd60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1c033787ca0afd30793baad1e093dbfb6530af4b2dc80b42c317efd378938024"
+    },
+    "qlib158_vsumn10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ddafc11c9b79f5ff7951b43c46afb8450225ca5c7027745aff440e219498f8b0"
+    },
+    "qlib158_vsumn20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "11e33e9f1b3377ef97c777459c3fceff8ad1a8dbaa20daf4a517e48ee1b6feb1"
+    },
+    "qlib158_vsumn30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "ee6cf81cced342092fc9d68fb0251e9fa3b000596831fe03581a011d220e288d"
+    },
+    "qlib158_vsumn5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "e5fe3cba453037d530567e42f8871f1cab6e6e6c678019e1b8793cc0ae2a3fe8"
+    },
+    "qlib158_vsumn60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "404f8d21cae8f90e98dde222444f66774955f5ac47b5564c93c01e881a1d3fed"
+    },
+    "qlib158_vsump10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "4b2a10f51f7c52f7e9eed45413d247e446802b3b373304af6c03b01c14800799"
+    },
+    "qlib158_vsump20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "bb25a01ba77197ef422701abf1b9731f9d2efb43d5e4f5dc22970231d5d7dc02"
+    },
+    "qlib158_vsump30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "7b6969a914c2aec2a85a517537a790eefe3dc74aacef53556eee08f1baf8cb1e"
+    },
+    "qlib158_vsump5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "788f07ad81337864927d83c9e0b4030662e16da45ce2286870639dddae9cd0ae"
+    },
+    "qlib158_vsump60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "734b5c9e5136988836993e326245e4434a6e8dd37a0cedaf2b05a0c0941b894c"
+    },
+    "qlib158_wvma10": {
+      "minimum_bars": 11,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "d18dfad312fa8663e7e78b8f4e715217c053e16f7977cd604dab636103939c02"
+    },
+    "qlib158_wvma20": {
+      "minimum_bars": 21,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "c75332a19bd3ecb2c94c47f0df5b3252cc6126dd6798196cfb3f77f0463e220e"
+    },
+    "qlib158_wvma30": {
+      "minimum_bars": 31,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "866d99205a5171a16c160afa43059d8d476b2cdcd61b680c00bca4245132f317"
+    },
+    "qlib158_wvma5": {
+      "minimum_bars": 6,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "1443376a7673348fa214283765748e5efa47eee537c7700ca0639f88e4961fb4"
+    },
+    "qlib158_wvma60": {
+      "minimum_bars": 61,
+      "policy": "full_window",
+      "basis": "Nested full-window reach: input requires one bar; delay/delta adds lag; a complete n-row operator adds n-1. A recursive statistic seeds at its first observed input and skips missing observations.",
+      "source_sha256": "adfd514976e235fde97aaa6278f68d86f7a35d4103c637304c93281b7c240bb6"
+    }
+  },
+  "operators_sha256": "fdf6b8861cdfa4e08d19e43ff36ae82f5cd319fda4965230d3bc941f12614e28"
+}

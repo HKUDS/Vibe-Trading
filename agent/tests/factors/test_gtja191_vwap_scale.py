@@ -19,9 +19,8 @@ _ALPHAS = (
 )
 
 
-def _panels() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+def _panels(n: int = 120) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     rng = np.random.default_rng(5)
-    n = 120
     idx = pd.bdate_range("2024-01-01", periods=n)
     cols = ["A", "B", "C", "D", "E", "F"]
     close = pd.DataFrame(20 + rng.normal(0, 0.5, (n, 6)).cumsum(axis=0), index=idx, columns=cols)
@@ -40,7 +39,7 @@ def _panels() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
 @pytest.mark.parametrize("alpha", _ALPHAS)
 def test_vwap_from_tushare_units_matches_the_traded_price(alpha):
     module = importlib.import_module(f"src.factors.zoo.gtja191.alpha_{alpha}")
-    tushare, explicit = _panels()
+    tushare, explicit = _panels(400 if alpha in {"026", "039", "045", "092"} else 120)
 
     got = module.compute(tushare)
     expected = module.compute(explicit)

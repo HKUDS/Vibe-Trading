@@ -170,8 +170,9 @@ get_southbound_flow(lookback_days=20)
 ### Via Tushare (A-share perspective)
 
 ```python
-import tushare as ts
-pro = ts.pro_api()
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
 
 # Daily Northbound/Southbound aggregate flows
 df = pro.moneyflow_hsgt(start_date="20260101", end_date="20260330")
@@ -187,14 +188,14 @@ df = pro.hsgt_top10(trade_date="20260328", market_type="1")  # 1=Shanghai, 3=She
 ### Via yfinance (HK perspective)
 
 ```python
-import yfinance as yf
+from src.data_gateway.skill_sources import yahoo_download
 
 # HK-listed stocks price data
-tencent = yf.download("0700.HK", start="2025-01-01", end="2026-03-30", progress=False)
-alibaba = yf.download("9988.HK", start="2025-01-01", end="2026-03-30", progress=False)
+tencent = yahoo_download("0700.HK", start="2025-01-01", end="2026-03-30", progress=False)
+alibaba = yahoo_download("9988.HK", start="2025-01-01", end="2026-03-30", progress=False)
 
 # AH Premium Index (proxy via Hang Seng indices)
-hsi = yf.download("^HSI", start="2025-01-01", end="2026-03-30", progress=False)
+hsi = yahoo_download("^HSI", start="2025-01-01", end="2026-03-30", progress=False)
 ```
 
 ### Key Data Points to Track

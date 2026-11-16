@@ -28,6 +28,9 @@ def aggregate_reports(reports: Iterable[EvaluationReport]) -> dict[str, Any]:
     assertion_count = sum(totals.values())
     evaluable = totals[VerdictStatus.PASS.value] + totals[VerdictStatus.FAIL.value]
     metric_groups = {
+        "financial_correctness": ("financial.measurement.",),
+        "latency": ("latency.total_seconds",),
+        "budget": ("budget.",),
         "task_completion": ("completion.status",),
         "identity_resolution": ("identity.status", "identity.authorized_symbols"),
         "required_tool_coverage": ("tools.required.",),

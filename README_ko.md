@@ -57,6 +57,37 @@
 
 ## 📰 뉴스
 
+- **2026-11-15** 📡 **통합 시장 데이터 게이트웨이와 바로 쓸 수 있는 CSV** — 과거 가격 데이터와 미국 옵션 스냅샷이 데이터 소스 대체, 공유 캐시, 동시 실행 수 제한을 갖춘 [로컬 데이터 게이트웨이](agent/src/data_gateway/README.md)를 사용합니다. 출처, 통화, 가격 조정 방식을 보존하고 데이터 범위와 최신성을 명시합니다.
+  Agent가 시장 데이터를 조회하면 JSON과 CSV를 함께 제공합니다. 종목과 하나의 명시적 `YYYY-MM-DD` 날짜 범위를 지정한 지원 요청은 데이터를 가져오기 전에 런타임에서 날짜를 제한합니다. 계산에 필요한 워밍업 데이터는 별도로 지정하며, 기존 지표와 백테스트의 과거 참조 기간은 유지됩니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-14** 🔌 **통합 LLM 게이트웨이와 버전 확인** — Agent, CLI, API, Swarm의 모델 공급자를 하나의 목록과 설정 계층으로 통합했습니다. 클라이언트별 설정을 격리하고, 네이티브 어댑터가 명시적 프록시 설정을 따르도록 했습니다. 인증 정보나 요청 본문이 전달되기 전에 다른 출처로의 리디렉션을 차단합니다.
+  Web 설정에서 새 버전을 확인할 수 있습니다. Desktop에는 서명된 업데이트의 검증 및 복구 지원을 추가했으며, 배포하려면 업데이트 피드와 게시자 인증서를 설정해야 합니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-13** 🛠️ **리서치 결과 전달과 계산 도구 개편** — 숫자 자동 삭제, 강제 재작성, 형식 기반 완료 판정 없이 답변을 직접 스트리밍합니다. 위원회 실행이 중단되어도 부분 성과를 보존하고, 완료된 작업을 재사용해 미완료 역할을 이어서 실행할 수 있습니다.
+  전체 시장 데이터 참조를 셸 없는 QuantLib 계산에 연결하고 역할 간 원본 근거를 전달합니다. Options Lab과 `options_payoff`는 주식·옵션 조합과 여러 대안의 일괄 계산·비교를 지원하며 비용, 손익 상하한, 비교 방향을 반환합니다. 실제 백테스트 비용과 출력 중단·오류 상태를 명시하고 실거래 승인 한도를 유지합니다. **미출시.**
+
+<details>
+<summary>이전 뉴스</summary>
+
+- **2026-11-12** 🛠️ **백테스트 시점, 보고서 수치와 연구 완료 판정 수정** — 섀도 계좌가 지정한 초기 자본을 사용하고, 출력 토큰 한도로 잘린 워커 응답을 완료로 처리하지 않습니다. 위원회 PM은 유효한 상위 보고서를 바탕으로 데이터를 다시 가져오지 않고 종합할 수 있습니다. 네이티브 Anthropic 어댑터의 기본 출력 예산은 변경 가능한 16,384 토큰입니다.
+  생성 전략의 출력 목표에서 추가 시프트가 감지되면 의도한 지연이라고 명시해야 실행할 수 있으며, 지표의 lookback은 계속 허용됩니다. Grounding은 증거 검증을 유지하면서 금액 단위의 여러 표기와 정확한 관측값 선언을 지원합니다. 실제 SPY／GLD 백테스트의 206／140건 체결과 총수익률이 독립 장부 계산과 일치했습니다. **아직 출시되지 않았습니다.**
+
+- **2026-11-11** 🧾 **모의거래 부분 체결과 독립적인 원장 대사** — 중국 A주 5분봉 모의거래에서 주문별 거래량 한도, 부분 체결, 주문 상태 출력을 선택적으로 활성화할 수 있습니다([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)). 새로운 `paper_trade_reconcile` Agent/MCP 도구는 반환된 체결 기록을 바탕으로 수수료, 현금, 보유 포지션, 순자산가치(NAV) 계산을 독립적으로 대사합니다([#2197](https://github.com/HKUDS/Vibe-Trading/pull/2197)).
+  지원되는 여러 줄 백분율 헤더와 원문의 레이블을 유지하는 문서 내 정수의 명시적 인용을 올바르게 처리합니다([#2185](https://github.com/HKUDS/Vibe-Trading/pull/2185), [#2192](https://github.com/HKUDS/Vibe-Trading/pull/2192)). 엄격한 팩터 벤치마크의 입력도 수정하고([#2195](https://github.com/HKUDS/Vibe-Trading/pull/2195)), 채널 대화에서 응답 대기 시간이 초과되었을 때 이전 답변을 반환하지 않도록 했습니다([#2194](https://github.com/HKUDS/Vibe-Trading/pull/2194)).
+  [@shadowinlife](https://github.com/shadowinlife), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@divya0795](https://github.com/divya0795) 님께 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-10** 📊 **편집 가능한 IV 곡면과 옵션 분석 수정** — Options Lab에서 행사가·만기별 IV 그리드를 편집하고 관측값과 보간값을 구분할 수 있습니다. 외삽은 거부합니다([#2186](https://github.com/HKUDS/Vibe-Trading/pull/2186)).
+  저가 종목 프리셋, 수량 입력, 만기일 표시, 재시도, 언어 변경 시 로딩 멈춤, 20개 레그 제한을 수정했습니다. `CF501`처럼 만기 부분이 세 자리인 정저우 상품거래소 코드는 이제 중국 선물 규칙으로 백테스트됩니다([#2193](https://github.com/HKUDS/Vibe-Trading/pull/2193)).
+  [@he-yufeng](https://github.com/he-yufeng) 및 [@GPT-AGI](https://github.com/GPT-AGI)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-09** 🧭 **선택한 리비전 비교 내보내기와 인식할 수 없는 코드를 거부하는 백테스트** — 비교 중인 두 연구 리비전을 Web, API, CLI에서 JSON 또는 Markdown으로 내려받을 수 있습니다([#2189](https://github.com/HKUDS/Vibe-Trading/pull/2189)). 어떤 시장 규칙에도 해당하지 않는 백테스트 코드(`local:BHP.AX`, `7203.T` 등)는 이제 중국 A주 규칙으로 실행되지 않고 데이터를 가져오기 전에 거부됩니다. 6자리 숫자만 있는 코드와 상하이 `.SS` 표기는 계속 사용할 수 있습니다. OpenRouter 응답에 모델 이름이 두 번 표시되지 않으며([#2191](https://github.com/HKUDS/Vibe-Trading/pull/2191)), `research-artifact export`에 빈 리비전 ID를 넘기면 오류가 납니다. [@he-yufeng](https://github.com/he-yufeng) 및 [@Gloubiboulgator](https://github.com/Gloubiboulgator)에게 감사드립니다! **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-08** 📝 **연구 버전 비교와 전체 이력 내보내기** — 두 리비전의 본문, 근거, 메타데이터를 비교하고([#2168](https://github.com/HKUDS/Vibe-Trading/pull/2168)), 전체 연구 이력을 JSON 또는 Markdown으로 내보낼 수 있습니다([#2170](https://github.com/HKUDS/Vibe-Trading/pull/2170)). 연구 기록을 전환할 때 오래된 응답을 무시하며, Markdown 내보내기는 원문을 독립된 코드 블록에 보존합니다. 팩터 가중치 누락, 일부 수익률 누락 시의 성과 귀속, IC 표본 부족, 유한하지 않은 가치평가 입력값, 음수 진입 가격의 증거금 계산도 수정했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-07** 🧪 **Research Lab: 거래 비용과 표본 외 검증** — 저장된 가격 데이터로 수수료와 슬리피지를 바꿔 백테스트를 다시 실행합니다. 학습 결과만으로 매개변수를 선택한 뒤 고정해 표본 외 테스트와 별도의 최종 홀드아웃 검증을 수행합니다. [Research Lab](guides/research-lab.md)은 Web, CLI, API, Agent/MCP에서 같은 절차를 사용하며 UI는 11개 언어를 모두 지원합니다. 구간 경계의 수익률 누락, 팩터 초기화와 장기 구간 계산도 수정하고, 근거 부족을 명시하는 오프라인 작업 재검증 사례 20개를 추가했습니다. 버전별 연구 기록에 구조화된 재무 데이터를 저장할 수 있으며([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)), 거래소 접미사가 없는 중국 선물 계약 코드의 인식도 수정했습니다([#2177](https://github.com/HKUDS/Vibe-Trading/pull/2177)). **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
+
+- **2026-11-06** 📈 **내재변동성 격자와 모의 거래 수정** — 제공된 옵션 관측값으로 행사가 × 만기의 IV 격자를 만들고 관측점과 보간점을 구분하며, 데이터 범위 밖으로 외삽하지 않습니다([#2172](https://github.com/HKUDS/Vibe-Trading/pull/2172)). 극단적인 수치 입력에는 유한한 결과 또는 명시적인 오류를 반환합니다. A주 5분봉 모의 거래에서 가격 제한으로 체결할 수 없는 시장가 주문은 즉시 취소합니다([#2176](https://github.com/HKUDS/Vibe-Trading/pull/2176)). 여러 종목의 체결 처리도 시간순으로 진행해 나중의 매도 대금으로 앞선 매수 주문을 충당하지 못하게 했습니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다. 공개 5분봉 요청은 여전히 단계당 한 종목만 지원합니다.**
+
 - **2026-11-05** 🚀 **v0.1.19 출시**([릴리스 노트](https://github.com/HKUDS/Vibe-Trading/releases/tag/v0.1.19), `pip install -U vibe-trading-ai`): 대화가 끝나도 남는 리서치 — 근거를 담은 연구 기록을 버전별로 저장하고 수정하며, 이전 턴과 세션의 백테스트를 재사용하고, 연구 목표를 그 자리에서 편집할 수 있습니다. 새 옵트인 기능: A주 5분 단위 모의 거래 시뮬레이션, Gildata 재무 조회·종목 선별 및 Shannon 포트폴리오 진단(QVeris는 제거되었고, 기존 `GILDATA_TOKEN`만으로는 아무 기능도 켜지지 않습니다). 또한 아르헨티나(BYMA) 백테스트, Parallel 웹 검색, Codex OAuth 모델 탐색을 추가하고 0.1.18의 회귀 두 건을 모두 수정했습니다. 병합된 풀 리퀘스트 116개와 메인테이너 커밋으로 반영된 21개이며 기여자는 26명입니다([CHANGELOG](CHANGELOG.md)).
   **오늘의 수정:** 백테스트가 실제로 평가한 벤치마크를 보고하고, 롱숏 포트폴리오에도 위험 분석(risk x-ray)을 제공합니다. GTJA alpha 17은 입력이 워밍업되는 동안 결측으로 유지되고, Shannon 패널은 11개 UI 언어를 모두 지원합니다. 검토를 마쳤지만 반영되지 않았던 기여자 수정 두 건도 반영했습니다([#2042](https://github.com/HKUDS/Vibe-Trading/pull/2042) 결측 분기를 건너뛰는 TTM 합계 수정, [#1985](https://github.com/HKUDS/Vibe-Trading/pull/1985) 3:2 주식 분할 감지). [@rudycelekli](https://github.com/rudycelekli), [@he-yufeng](https://github.com/he-yufeng), [@Jackzigen](https://github.com/Jackzigen), [@Shizoqua](https://github.com/Shizoqua), [@cgycorey](https://github.com/cgycorey), [@dajiaohuang](https://github.com/dajiaohuang), [@zeus229](https://github.com/zeus229), [@alexwan02](https://github.com/alexwan02), [@BHhhh-123](https://github.com/BHhhh-123), [@remote-controlled-man](https://github.com/remote-controlled-man), [@shadowinlife](https://github.com/shadowinlife), [@TWJxi](https://github.com/TWJxi), [@lishuanghong1989-netizen](https://github.com/lishuanghong1989-netizen), [@TerryF7](https://github.com/TerryF7), [@davidalmeida90](https://github.com/davidalmeida90), [@DrDLyuan](https://github.com/DrDLyuan), [@goatyyc](https://github.com/goatyyc), [@hnq-ai](https://github.com/hnq-ai), [@kadyrbekovhamit-cyber](https://github.com/kadyrbekovhamit-cyber), [@MetaAviator](https://github.com/MetaAviator), [@octo-patch](https://github.com/octo-patch), [@RowanAldean](https://github.com/RowanAldean), [@VectorPeak](https://github.com/VectorPeak), [@wavebyrd](https://github.com/wavebyrd), [@yufengsika](https://github.com/yufengsika)에게 감사드립니다!
   **릴리스 후 main에서 수정(다음 pip 릴리스에 포함):** 백테스트 벤치마크는 전략과 같이 평가 구간 첫 봉의 시가에 매수하며, 더 이상 워밍업 마지막 종가에서 계산하지 않습니다. 초과 수익에 그 움직임이 더 이상 포함되지 않습니다(AAPL 20/60 SMA 예: 22.5% → 18.4%).
@@ -65,9 +96,6 @@
   백테스트 신호가 다음 봉의 시가에 체결된다는 점을 명시하고 Swarm의 시간 초과 오판을 수정했으며 연구 자료 중복 검사 속도를 높였습니다. [#2137](https://github.com/HKUDS/Vibe-Trading/pull/2137) · [#2155](https://github.com/HKUDS/Vibe-Trading/pull/2155) · [#2159](https://github.com/HKUDS/Vibe-Trading/pull/2159)
 
 - **2026-11-03** 🛠️ **기록 무결성과 다국어 처리**. 추적·감사·세션 검색 JSONL에서 U+2028/U+2029를 보존하고 이후 기록도 정상적으로 추가합니다. 밑줄이 든 모델 이름을 정규화하고 2단계 압축에서 인계 요약을 보존합니다. BOM이 있는 메타데이터와 오른쪽에서 왼쪽으로 읽는 시작 화면을 지원하며 회귀 검사를 추가했습니다.
-
-<details>
-<summary>이전 뉴스 전체</summary>
 
 - **2026-11-02** 🛠️ **메타데이터와 결과 표시**. 따옴표로 감싼 스칼라 값을 올바르게 읽고 인코딩할 수 없는 대형 결과는 읽을 수 있는 길이로 줄입니다. 시작 화면과 추천 카드도 다듬고 회귀 검사를 추가했습니다.
 
@@ -100,7 +128,7 @@
 | 계좌 합산과 배분 비교 | `/portfolio`에서 보유 종목과 배분 변경안을 확인합니다. [브로커 지원](#브로커-지원-현황) |
 | 옵션과 상관관계 | `/options`에서 다중 레그 손익과 그릭스를, `/correlation`에서 시장 국면을 확인합니다. |
 | 팀 운영과 정기 조사 | [Swarm 팀](guides/research.md#swarm-workflows)을 실행하거나 Pixel Office에서 업무를 배정하고 `/scheduled`에서 브리핑을 예약합니다. |
-| 연구 근거 재검토 | `/research-artifacts`에서 날짜가 있는 [연구 기록](guides/research.md#versioned-research-artifacts)을 검색합니다. |
+| 연구 근거 재검토 | `/research-artifacts`에서 날짜가 있는 [연구 기록](guides/research.md#versioned-research-artifacts)을 검색하고 두 리비전을 비교하며 전체 시리즈 또는 선택한 비교를 JSON 또는 Markdown으로 저장합니다. |
 
 ## ⚡ 실행 예제
 
@@ -162,7 +190,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 | 기능 | 사용 방법 |
 |---|---|
 | 포트폴리오 | 읽기 전용 계좌의 보유 종목을 합산하거나 extraETF 파일을 가져옵니다. 목표 비중으로 종목별 금액 변화를 미리 봅니다. |
-| 모의 거래 | 저장 계좌를 하루씩 진행해 체결, 현금, 순자산을 봅니다. 별도의 모의 환경에서 A주를 5분 단위로 재생할 수도 있습니다. |
+| 모의 거래 | 저장 계좌를 하루씩 진행해 체결, 현금, 순자산을 봅니다. 별도의 모의 환경에서 A주를 5분 단위로 재생할 수도 있습니다. `paper_trade_reconcile` agent/MCP 도구는 시장이나 브로커에 접근하지 않고 수수료, 현금, 포지션과 NAV 산식을 독립적으로 검증합니다. |
 | 섀도 계좌 | 브로커 거래 내역을 가져와 수수료와 매매 습관을 확인하고 규칙에 따른 재현 결과와 비교합니다. |
 | 브로커 연결 | CLI나 웹에서 연결한 뒤 읽기로 확인합니다. 실거래를 켜기 전 종목·주문·노출 한도를 정하며 긴급 중단도 가능합니다. |
 
@@ -338,7 +366,7 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** agent ecosystem의 일부�
 |---|---|---|
 | 모의 거래 | 일별 현금, 체결, 순자산을 세션 간 보존합니다. 별도의 모의 환경에서 A주 거래일을 5분 단위로 재생합니다. | 선택형 거래량 비율 체결([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), 초안). |
 | 리서치 | 실행 카드에 백테스트 지표와 근거를 기록합니다. 날짜별 연구 기록은 개정 이력을 보존하며 검색할 수 있습니다. | 연구 기록의 구조화된 재무 데이터([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), 검토 중). |
-| 옵션 랩 | 다중 레그 손익과 그릭스, 현물 × IV 시나리오를 봅니다. | 변동성 표면을 추가할 예정입니다. |
+| 옵션 랩 | 다중 레그 손익과 그릭스, 현물 × IV 시나리오를 봅니다. | `/options`에서 대화형 변동성 곡면 그리드를 제공합니다. |
 
 ## 기여하기
 

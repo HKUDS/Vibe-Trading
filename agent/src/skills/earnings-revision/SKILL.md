@@ -178,7 +178,7 @@ earnings_quality = {
 - Earnings season: Mar-Apr (annual), Aug-Sep (interim)
 - Many HK-listed companies report semi-annually, not quarterly
 - Dual-listed (A+H): compare A-share analyst estimates vs HK analyst estimates for arbitrage
-- Via yfinance: `yf.Ticker("0700.HK").financials`
+- Via yfinance: `yahoo_ticker("0700.HK").financials` (import from `src.data_gateway.skill_sources`)
 
 ### Key Differences
 

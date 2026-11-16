@@ -64,7 +64,8 @@ from src.market_data import (
         ("^SPX", "yahoo"),  # index (S&P 500)
         ("^FTSE", "yahoo"),  # index (FTSE 100)
         ("^VIX", "yahoo"),
-        ("something_weird", "tushare"),  # documented fallback
+        ("7203.T", "yahoo"),
+        ("130A.T", "yahoo"),
     ],
 )
 def test_detect_source(code: str, expected: str) -> None:
@@ -80,7 +81,7 @@ def test_yahoo_loader_accepts_futures_and_forex_suffixes() -> None:
     assert _is_supported("AAPL.US") is True  # unchanged
     assert _is_supported("TD.TO") is True
     assert _is_supported("PNG.V") is True
-    assert _is_supported("600519.SH") is False  # A-share still not yahoo
+    assert _is_supported("600519.SH") is True  # CNY-checked mainland fallback
 
 
 def test_yahoo_loader_accepts_index_symbols() -> None:
@@ -150,7 +151,7 @@ def test_yahoo_loader_accepts_futures_and_forex_suffixes() -> None:
     assert _is_supported("AAPL.US") is True  # unchanged
     assert _is_supported("TD.TO") is True
     assert _is_supported("PNG.V") is True
-    assert _is_supported("600519.SH") is False  # A-share still not yahoo
+    assert _is_supported("600519.SH") is True  # CNY-checked mainland fallback
 
 
 def test_fetch_market_data_auto_routes_yahoo_suffix_symbols() -> None:

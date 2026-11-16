@@ -210,7 +210,9 @@ class TushareFundamentalProvider:
             raise DataProviderError(f"Tushare API object has no method: {schema.api_name}")
 
         for code in codes:
-            frame = api_method(ts_code=code, period=None)
+            from src.data_gateway.reads import managed_reader
+
+            frame = managed_reader(api_method)(ts_code=code, period=None)
             if frame is not None and not frame.empty:
                 frames.append(frame.copy())
 

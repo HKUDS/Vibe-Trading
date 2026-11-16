@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from cli import onboard
+from src.config import dotenv
 from tests.module_os_helpers import patch_module_os
 
 pytestmark = pytest.mark.skipif(
@@ -62,7 +63,7 @@ def test_failed_write_preserves_the_previous_partial(fake_home, monkeypatch):
     def explode(*args, **kwargs):
         raise OSError(28, "No space left on device")
 
-    patch_module_os(monkeypatch, onboard, fdopen=explode)
+    patch_module_os(monkeypatch, dotenv, fdopen=explode)
     onboard._save_partial({"TUSHARE_TOKEN": "second-answer"})
 
     # The recovery state survives: a failed save must not leave the user with
@@ -84,9 +85,10 @@ def test_no_temp_files_are_left_behind(fake_home):
 def test_finalize_removes_the_partial_and_writes_owner_only_env(fake_home):
     onboard._save_partial({"TUSHARE_TOKEN": "draft"})
 
+    onboard._env_path().write_text("LANGCHAIN_REASONING_EFFORT=high\n")
     env_path = onboard._finalize({"TUSHARE_TOKEN": "final"})
 
-    assert env_path.read_text(encoding="utf-8") == "TUSHARE_TOKEN=final\n"
+    assert dotenv._read_env_values(env_path) == {"TUSHARE_TOKEN": "final"}
     assert _mode(env_path) == 0o600
     assert not onboard._partial_path().exists()
     assert [p.name for p in onboard._env_dir().iterdir()] == [".env"]

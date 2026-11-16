@@ -1,34 +1,26 @@
-"""LLM factory."""
+"""LLM construction, protocol compatibility and redacted diagnostics.
+
+Construction and wire behavior live together; ChatLLM supplies a settings snapshot.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
-import uuid
-from copy import copy
-from urllib.parse import urlparse
 import re
+import uuid
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from copy import copy
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlparse, urlsplit
 
 from pydantic import PrivateAttr
 
-from src.config.accessor import get_env_config, reset_env_config
+from src.providers.registry import ProviderCapabilities, get_provider_capabilities
+from src.providers.settings import ProviderConfig, resolve_config
 from src.providers.session_context import current_llm_session_id
-from src.providers.capabilities import (
-    ProviderCapabilities,
-    get_llm_credentials,
-    get_provider_capabilities,
-)
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None  # type: ignore
 
 try:
     from langchain_openai import ChatOpenAI
@@ -46,28 +38,92 @@ except ImportError:
     httpx = None  # type: ignore
 
 
-def _build_proxy_free_http_clients() -> tuple[Any, Any]:
-    """Build sync and async HTTPX clients that ignore proxy environment vars.
+def _endpoint_model(client: Any) -> tuple[str, str, str]:
+    """Scope learned wire behavior to a protocol, endpoint and model."""
+    openai = hasattr(client, "model_name")
+    return (
+        "openai" if openai else "anthropic",
+        str(getattr(client, "openai_api_base" if openai else "anthropic_api_url", "") or "").rstrip("/"),
+        str(client.model_name if openai else client.model),
+    )
 
-    Supplying an explicit transport prevents ``httpx.Client`` from installing
-    proxy mounts discovered from HTTP(S)_PROXY.  ``trust_env`` remains enabled
-    on the transports so SSL_CERT_FILE and SSL_CERT_DIR still work for private
-    certificate authorities.
+
+def _build_http_clients(proxy: str | None = None, *, sdk: Any = None) -> tuple[Any, Any]:
+    """Build owned HTTPX clients with explicit proxy routing (None means direct).
+
+    Explicit transports prevent ambient proxy mounts while retaining
+    SSL_CERT_FILE / SSL_CERT_DIR. Match the SDK's httpx or httpx2 types;
+    SDK default-client wrappers may install ambient mounts even with trust_env=False.
+
+    Args:
+        proxy: Explicit proxy URL, or None to connect directly.
+        sdk: Optional SDK exposing its sync and async HTTP client factories.
 
     Returns:
-        A ``(sync_client, async_client)`` pair for the OpenAI SDK.
+        A ``(sync_client, async_client)`` pair.
 
     Raises:
-        RuntimeError: If HTTPX is unavailable while proxy disabling is enabled.
+        RuntimeError: If HTTPX is unavailable.
     """
     if httpx is None:
-        raise RuntimeError("VIBE_TRADING_DISABLE_HTTP_PROXY requires the httpx package")
-    sync_transport = httpx.HTTPTransport(proxy=None, trust_env=True)
-    async_transport = httpx.AsyncHTTPTransport(proxy=None, trust_env=True)
+        raise RuntimeError("Explicit provider transport requires the httpx package")
+    http = httpx
+    if sdk is not None and not issubclass(sdk.DefaultHttpxClient, httpx.Client):
+        http = import_module("httpx2")
+    limits = {"limits": sdk.DEFAULT_CONNECTION_LIMITS} if sdk else {}
+    sync_transport = http.HTTPTransport(proxy=proxy, trust_env=True, **limits)
+    async_transport = http.AsyncHTTPTransport(proxy=proxy, trust_env=True, **limits)
+    # Supplying transports bypasses the SDK's ambient proxy discovery while
+    # preserving its client defaults (notably Anthropic's redirects).
+    sync_cls = sdk.DefaultHttpxClient if sdk else http.Client
+    async_cls = sdk.DefaultAsyncHttpxClient if sdk else http.AsyncClient
     return (
-        httpx.Client(transport=sync_transport),
-        httpx.AsyncClient(transport=async_transport),
+        sync_cls(transport=sync_transport),
+        async_cls(transport=async_transport),
     )
+
+
+class ProviderRedirectError(ValueError):
+    """A provider redirect would send a request outside its configured origin."""
+
+    status_code = 400
+
+
+def _check_provider_redirect(response: Any) -> None:
+    """Allow redirects only within the same scheme, host and port."""
+    if response.has_redirect_location:
+        source = response.request.url
+        target = source.join(response.headers["location"])
+        if (source.scheme, source.host, source.port) != (target.scheme, target.host, target.port):
+            raise ProviderRedirectError(
+                "Cross-origin provider redirect refused. Configure the final provider base URL explicitly."
+            )
+
+
+async def _check_async_provider_redirect(response: Any) -> None:
+    """Apply the same origin check on async HTTP clients."""
+    _check_provider_redirect(response)
+
+
+def _guard_provider_redirects(sync_sdk: Any, async_sdk: Any) -> None:
+    """Protect SDK transports without changing their ownership or defaults."""
+    # Stateless hooks are safe on LangChain's shared transports; install once.
+    for sdk, hook in ((sync_sdk, _check_provider_redirect), (async_sdk, _check_async_provider_redirect)):
+        client = getattr(sdk, "_client", None)
+        if client is not None and hook not in client.event_hooks["response"]:
+            client.event_hooks["response"].append(hook)
+
+
+def unwrap_provider_error(error: Exception) -> Exception:
+    """Preserve a deterministic redirect refusal through SDK connection wrappers."""
+    cause = error
+    seen = set()
+    while cause is not None and id(cause) not in seen:
+        if isinstance(cause, ProviderRedirectError):
+            return cause
+        seen.add(id(cause))
+        cause = cause.__cause__
+    return error
 
 
 _OPENCODE_PROVIDER_NAMES = frozenset({"opencode", "opencode-go", "opencode-zen"})
@@ -293,11 +349,20 @@ if ChatOpenAI is not None:
             *args: Any,
             vibe_provider: str | None = None,
             vibe_api_key: str | None = None,
+            vibe_environment: Mapping[str, str] | None = None,
             vibe_owned_http_clients: Sequence[Any] | None = None,
             **kwargs: Any,
         ) -> None:
             """Initialize while retaining the resolved provider name."""
             explicit_headers = kwargs.get("default_headers")
+            if vibe_environment is not None and (vibe_provider or "openai") == "openai":
+                ambient = dict(
+                    line.split(":", 1)
+                    for line in vibe_environment.get("OPENAI_CUSTOM_HEADERS", "").splitlines()
+                    if ":" in line
+                )
+                explicit_headers = {**{k.strip(): v.strip() for k, v in ambient.items()}, **(explicit_headers or {})}
+                kwargs["default_headers"] = explicit_headers
             explicit_names = (
                 {str(name) for name in explicit_headers} if isinstance(explicit_headers, Mapping) else set()
             )
@@ -306,6 +371,18 @@ if ChatOpenAI is not None:
                 os.getenv("OPENAI_CUSTOM_HEADERS")  # noqa: env-gate — SDK header isolation
             )
             super().__init__(*args, **kwargs)
+            _guard_provider_redirects(self.root_client, self.root_async_client)
+            if vibe_environment is not None:
+                # SDK constructors may read ambient custom headers even with
+                # explicit credentials. Replace only their captured overrides;
+                # normal SDK defaults and per-request headers remain intact.
+                for client in (self.root_client, self.root_async_client):
+                    if client is not None:
+                        client._custom_headers = dict(explicit_headers or {})
+                        client.project = vibe_environment.get("OPENAI_PROJECT_ID", "")
+                        client.organization = vibe_environment.get("OPENAI_ORG_ID") or vibe_environment.get(
+                            "OPENAI_ORGANIZATION", ""
+                        )
             self._vibe_provider = vibe_provider
             self._vibe_api_key = vibe_api_key or ""
             self._vibe_owned_http_clients = tuple(vibe_owned_http_clients or ())
@@ -580,17 +657,18 @@ if ChatOpenAI is not None:
             if not _is_anthropic_temperature_unsupported_error(exc):
                 return False
             model = str(self.model_name)
-            if model not in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
+            if _endpoint_model(self) not in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
                 logger.info(
                     "Model %s rejects `temperature`; retrying without it and omitting it for subsequent calls.",
                     model,
                 )
-                _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(model)
-            return True
+                _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(_endpoint_model(self))
+                return True
+            return False
 
         def _use_responses_api(self, payload: dict) -> bool:  # type: ignore[override]
             """Route a model whose chat endpoint refused tools to /v1/responses."""
-            if str(self.model_name) in _RESPONSES_REQUIRED:
+            if _endpoint_model(self) in _RESPONSES_REQUIRED:
                 return True
             return super()._use_responses_api(payload)
 
@@ -608,7 +686,7 @@ if ChatOpenAI is not None:
             if not _is_responses_required_error(exc):
                 return False
             model = str(self.model_name)
-            if model in _RESPONSES_REQUIRED or self.use_responses_api is True:
+            if _endpoint_model(self) in _RESPONSES_REQUIRED or self.use_responses_api is True:
                 return False
             logger.warning(
                 "Model %s refuses function tools on /v1/chat/completions with a "
@@ -617,7 +695,7 @@ if ChatOpenAI is not None:
                 "it up front.",
                 model,
             )
-            _RESPONSES_REQUIRED.add(model)
+            _RESPONSES_REQUIRED.add(_endpoint_model(self))
             return True
 
         def _recoverable_rejection(self, exc: BaseException) -> bool:
@@ -657,20 +735,23 @@ if ChatOpenAI is not None:
             # real token counts (issue #1224); an endpoint that rejects
             # stream_options is remembered and retried without it.
             model = str(self.model_name)
-            if model in _STREAM_USAGE_UNSUPPORTED:
+            if _endpoint_model(self) in _STREAM_USAGE_UNSUPPORTED:
                 yield from super()._stream(*args, stream_usage=False, **kwargs)
                 return
+            emitted = False
             try:
-                yield from super()._stream(*args, **kwargs)
+                for chunk in super()._stream(*args, **kwargs):
+                    emitted = True
+                    yield chunk
                 return
             except Exception as exc:  # noqa: BLE001 - classified below
-                if not _is_stream_usage_unsupported_error(exc):
+                if emitted or not _is_stream_usage_unsupported_error(exc):
                     raise
             logger.warning(
                 "Endpoint rejects stream usage; streaming without stream_options for %s",
                 model,
             )
-            _STREAM_USAGE_UNSUPPORTED.add(model)
+            _STREAM_USAGE_UNSUPPORTED.add(_endpoint_model(self))
             yield from super()._stream(*args, stream_usage=False, **kwargs)
 
         async def _astream_with_usage_fallback(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
@@ -678,22 +759,24 @@ if ChatOpenAI is not None:
             # real token counts (issue #1224); an endpoint that rejects
             # stream_options is remembered and retried without it.
             model = str(self.model_name)
-            if model in _STREAM_USAGE_UNSUPPORTED:
+            if _endpoint_model(self) in _STREAM_USAGE_UNSUPPORTED:
                 async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
                     yield chunk
                 return
+            emitted = False
             try:
                 async for chunk in super()._astream(*args, **kwargs):
+                    emitted = True
                     yield chunk
                 return
             except Exception as exc:  # noqa: BLE001 - classified below
-                if not _is_stream_usage_unsupported_error(exc):
+                if emitted or not _is_stream_usage_unsupported_error(exc):
                     raise
             logger.warning(
                 "Endpoint rejects stream usage; streaming without stream_options for %s",
                 model,
             )
-            _STREAM_USAGE_UNSUPPORTED.add(model)
+            _STREAM_USAGE_UNSUPPORTED.add(_endpoint_model(self))
             async for chunk in super()._astream(*args, stream_usage=False, **kwargs):
                 yield chunk
 
@@ -757,7 +840,7 @@ if ChatOpenAI is not None:
                 if "max_completion_tokens" in payload:
                     payload["max_tokens"] = payload.pop("max_completion_tokens")
             # Models that rejected `temperature` before omit it up front (#1223).
-            if str(self.model_name) in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
+            if _endpoint_model(self) in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
                 payload.pop("temperature", None)
             if "messages" in payload:
                 messages = super()._convert_input(input_).to_messages()
@@ -797,105 +880,12 @@ if ChatOpenAI is not None:
 else:
     ChatOpenAIWithReasoning = None  # type: ignore
 
-AGENT_DIR = Path(__file__).resolve().parents[2]
-
-# .env search order: ~/.vibe-trading/.env → agent/.env → $CWD/.env
-_ENV_CANDIDATES = [
-    Path.home() / ".vibe-trading" / ".env",
-    AGENT_DIR / ".env",
-    Path.cwd() / ".env",
-]
-
-# Index-aligned with _ENV_CANDIDATES. CWE-209: never log the absolute
-# .env path (it leaks the OS username / home / CWD). The label names
-# which slot won - the entire P08 R1 signal - using compile-time
-# constants only.
-_ENV_LABELS = ("~/.vibe-trading/.env", "<AGENT_DIR>/.env", "<CWD>/.env")
-
 # Kimi reasoning models (K-series: kimi-k2*, kimi-k3, …, and the
 # kimi-for-coding alias) reject any temperature other than 1 with
 # "invalid temperature: only 1 is allowed for this model".
 _KIMI_FORCED_TEMPERATURE_RE = re.compile(r"kimi-(k\d+|for-coding)", re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
-
-_dotenv_loaded: bool = False
-
-
-def _redact_env_source(loaded: Path | None) -> str:
-    """Map a resolved `.env` candidate to a stable, leak-free label.
-
-    Returns a symbolic slot label (never the absolute path) so a stale
-    or shadowed `.env` stays diagnosable without exposing the OS
-    username, home, or CWD (CWE-209). A candidate outside the fixed
-    list (e.g. one injected by a test) collapses to a generic
-    placeholder rather than echoing a real path.
-    """
-    if loaded is None:
-        return "none (no .env file found)"
-    for label, candidate in zip(_ENV_LABELS, _ENV_CANDIDATES):
-        if loaded == candidate:
-            return label
-    return "<.env>"
-
-
-def _redact_base_url_for_log(raw: str | None) -> str:
-    """Return a diagnostic-safe base URL label for logs."""
-    if not raw or not raw.strip():
-        return "(unset)"
-
-    try:
-        parsed = urlsplit(raw.strip())
-    except ValueError:
-        return "<base-url>"
-
-    if not parsed.scheme or not parsed.hostname:
-        return "<base-url>"
-
-    host = parsed.hostname
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-
-    try:
-        port = parsed.port
-    except ValueError:
-        port = None
-    if port is not None:
-        host = f"{host}:{port}"
-
-    return f"{parsed.scheme}://{host}"
-
-
-def _package_version(package: str) -> str:
-    """Return an installed package version or a stable missing label."""
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return "not_installed"
-
-
-def _redact_env_flag(name: str) -> str:
-    """Report whether an env var is set without exposing its value."""
-    value = os.getenv(name, "")  # noqa: env-gate — diagnostic redaction helper
-    return "set" if value else "unset"
-
-
-def _header_value_diagnostic(value: str) -> dict[str, Any]:
-    """Describe a possible HTTP header value without exposing its contents."""
-    return {
-        "set": bool(value),
-        "length": len(value),
-        "ascii_only": value.isascii(),
-    }
-
-
-def _credential_env_source(api_key_env: str | None) -> str:
-    """Return the env name supplying the selected provider credential."""
-    if api_key_env and os.getenv(api_key_env):  # noqa: env-gate — dynamic key source
-        return api_key_env
-    if os.getenv("OPENAI_API_KEY"):  # noqa: env-gate — compatibility fallback
-        return "OPENAI_API_KEY"
-    return api_key_env or "built_in"
 
 
 def _validate_authorization_credential(value: str, *, source: str) -> None:
@@ -925,18 +915,9 @@ def _validate_explicit_headers(headers: Mapping[str, str], *, source: str) -> No
             raise RuntimeError(f"{source} produces an invalid multiline HTTP header ({name!r}).")
 
 
-def _redact_proxy_url(name: str, raw: str | None) -> str:
-    """Return a credential-free proxy URL label."""
-    if not raw:
-        return "unset"
-    if name.upper().endswith("NO_PROXY"):
-        return "set"
-    return _redact_base_url_for_log(raw)
-
-
-def _deepseek_adapter_mode() -> str:
+def _deepseek_adapter_mode(value: str = "auto") -> str:
     """Return the configured DeepSeek adapter mode."""
-    mode = get_env_config().llm.vibe_trading_deepseek_adapter.strip().lower()
+    mode = value.strip().lower()
     aliases = {
         "compat": "openai-compatible",
         "compatible": "openai-compatible",
@@ -950,6 +931,7 @@ def _build_native_deepseek(
     *,
     model: str,
     temperature: float,
+    snapshot: Any,
     callbacks: Any = None,
 ) -> Any | None:
     """Build the optional native DeepSeek adapter when installed.
@@ -965,20 +947,35 @@ def _build_native_deepseek(
         logger.info("DeepSeek native adapter unavailable; using OpenAI-compatible path: %s", exc)
         return None
 
-    creds = get_llm_credentials("deepseek", model)
-    api_key = creds["api_key"]
-    base_url = creds["base_url"]
-    output_limit = get_env_config().llm.langchain_max_tokens
-    return chat_deepseek(
+    api_key, base_url = snapshot.api_key, snapshot.base_url
+    if not api_key:
+        raise RuntimeError("Set DEEPSEEK_API_KEY (or legacy OPENAI_API_KEY) before using the native DeepSeek adapter")
+    output_limit = snapshot.options.langchain_max_tokens
+    sdk_module = import_module("openai")
+    proxy = snapshot.environment.get("OPENAI_PROXY", "")
+    clients = _build_http_clients(sdk=sdk_module) if snapshot.options.vibe_trading_disable_http_proxy else (
+        _build_http_clients(proxy, sdk=sdk_module) if proxy else None
+    )
+    client = chat_deepseek(
         model=model,
         temperature=temperature,
-        timeout=get_env_config().llm.timeout_seconds,
-        max_retries=get_env_config().llm.max_retries,
+        timeout=snapshot.options.timeout_seconds,
+        max_retries=snapshot.options.max_retries,
         callbacks=callbacks,
-        api_key=api_key or None,
-        base_url=base_url or None,
+        api_key=api_key,
+        base_url=base_url,
+        openai_proxy="" if clients else proxy,
+        **({"http_client": clients[0], "http_async_client": clients[1]} if clients else {}),
         **({"max_tokens": output_limit} if output_limit is not None else {}),
     )
+    # Unlike ChatOpenAI, ChatDeepSeek constructs per-instance SDK clients.
+    client._vibe_owned_http_clients = clients or (client.root_client, client.root_async_client)
+    _guard_provider_redirects(client.root_client, client.root_async_client)
+    for sdk in (getattr(client, "root_client", None), getattr(client, "root_async_client", None)):
+        if sdk is not None:
+            sdk._custom_headers = {}
+            sdk.organization = sdk.project = None
+    return client
 
 
 def _native_deepseek_adapter_available() -> bool:
@@ -997,13 +994,13 @@ def _native_deepseek_adapter_available() -> bool:
 # claude-sonnet-4-5, …) still honor it. Model names are not reliably
 # predictable, so membership is populated on first failure and then reused
 # process-wide to skip the redundant failed request on subsequent calls.
-_ANTHROPIC_TEMPERATURE_UNSUPPORTED: set[str] = set()
+_ANTHROPIC_TEMPERATURE_UNSUPPORTED: set[tuple[str, str, str]] = set()
 
 # Endpoints discovered at runtime to reject the `stream_options` request
 # field. OpenAI-compatible gateways vary on include_usage support; membership
 # is populated on first failure and reused process-wide to skip the redundant
 # failed request on later calls (issue #1224).
-_STREAM_USAGE_UNSUPPORTED: set[str] = set()
+_STREAM_USAGE_UNSUPPORTED: set[tuple[str, str, str]] = set()
 
 
 def _is_stream_usage_unsupported_error(exc: BaseException) -> bool:
@@ -1037,7 +1034,7 @@ def _is_stream_usage_unsupported_error(exc: BaseException) -> bool:
 # request is retried on /v1/responses instead, where the effort travels as
 # ``reasoning.effort``. Membership is populated on that first refusal and reused
 # process-wide so later calls skip the failed request.
-_RESPONSES_REQUIRED: set[str] = set()
+_RESPONSES_REQUIRED: set[tuple[str, str, str]] = set()
 
 
 def _is_responses_required_error(exc: BaseException) -> bool:
@@ -1092,7 +1089,7 @@ def _make_temperature_safe_anthropic(base_cls: type) -> type:
 
     def _get_request_payload(self: Any, *args: Any, **kwargs: Any) -> dict:
         payload = base_cls._get_request_payload(self, *args, **kwargs)
-        if isinstance(payload, dict) and self.model in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
+        if isinstance(payload, dict) and _endpoint_model(self) in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
             payload.pop("temperature", None)
             # langchain-anthropic relocates sampling params the installed
             # anthropic SDK (>=1) no longer accepts as named arguments into
@@ -1109,13 +1106,13 @@ def _make_temperature_safe_anthropic(base_cls: type) -> type:
 
     def _remember_and_should_retry(self: Any, exc: BaseException) -> bool:
         if _is_anthropic_temperature_unsupported_error(exc):
-            if self.model not in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
+            if _endpoint_model(self) not in _ANTHROPIC_TEMPERATURE_UNSUPPORTED:
                 logger.info(
                     "Anthropic model %s rejects `temperature`; retrying without it "
                     "and omitting it for subsequent calls.",
                     self.model,
                 )
-                _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(self.model)
+                _ANTHROPIC_TEMPERATURE_UNSUPPORTED.add(_endpoint_model(self))
                 return True
         return False
 
@@ -1136,22 +1133,25 @@ def _make_temperature_safe_anthropic(base_cls: type) -> type:
             raise
 
     def _stream(self: Any, *args: Any, **kwargs: Any) -> Any:
-        # The temperature-unsupported error is raised before the first chunk is
-        # produced, so retrying the whole stream cannot duplicate output.
+        emitted = False
         try:
-            yield from base_cls._stream(self, *args, **kwargs)
+            for chunk in base_cls._stream(self, *args, **kwargs):
+                emitted = True
+                yield chunk
         except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-            if _remember_and_should_retry(self, exc):
+            if not emitted and _remember_and_should_retry(self, exc):
                 yield from base_cls._stream(self, *args, **kwargs)
             else:
                 raise
 
     async def _astream(self: Any, *args: Any, **kwargs: Any) -> Any:
+        emitted = False
         try:
             async for chunk in base_cls._astream(self, *args, **kwargs):
+                emitted = True
                 yield chunk
         except Exception as exc:  # noqa: BLE001 - retried or re-raised below
-            if _remember_and_should_retry(self, exc):
+            if not emitted and _remember_and_should_retry(self, exc):
                 async for chunk in base_cls._astream(self, *args, **kwargs):
                     yield chunk
             else:
@@ -1183,7 +1183,7 @@ def _make_temperature_safe_anthropic(base_cls: type) -> type:
 # than a warning.
 #
 # A positive allowlist, for the same reason ``top_level_reasoning_effort`` in
-# providers/capabilities.py is one: an unrecognised model gets nothing, because
+# providers/llm_providers.json is one: an unrecognised model gets nothing, because
 # the cost of a wrong entry is that every request to it fails, while the cost of
 # a missing one is only that the effort setting is inert there.
 _EFFORT_CAPABLE_ANTHROPIC: tuple[str, ...] = (
@@ -1216,11 +1216,9 @@ def _anthropic_supports_effort(model: str) -> bool:
 def _adapter_accepts_effort(chat_anthropic: type) -> bool:
     """Report whether the installed langchain-anthropic exposes the field.
 
-    ``ChatAnthropic`` is configured with ``extra="ignore"``, so an unknown
-    keyword is dropped in silence rather than raising. pyproject allows
-    ``langchain-anthropic>=1.3.0``, and ``reasoning_effort`` arrived later --
-    without this check, an older install would swallow the value while the
-    caller still paid the temperature cost below, which is the worst of both.
+    pyproject allows ``langchain-anthropic>=1.3.0``; ``reasoning_effort``
+    arrived later. Older adapters can forward unknown kwargs into the API
+    payload, so omit this field entirely unless the adapter declares it.
 
     Args:
         chat_anthropic: The resolved ``ChatAnthropic`` class.
@@ -1237,6 +1235,7 @@ def _build_anthropic(
     temperature: float,
     callbacks: Any = None,
     effort: str = "",
+    snapshot: Any,
 ) -> Any:
     """Build the native Anthropic Messages API adapter.
 
@@ -1267,113 +1266,48 @@ def _build_anthropic(
     # whenever effort is in play. The temperature-safe wrapper above does not
     # cover this: it handles models that reject `temperature` outright, not
     # this thinking-conditional variant.
-    return safe_anthropic(
+    client = safe_anthropic(
         model=model,
-        max_tokens=get_env_config().llm.anthropic_max_tokens,
+        max_tokens=snapshot.options.anthropic_max_tokens,
         temperature=None if use_effort else temperature,
-        timeout=get_env_config().llm.timeout_seconds,
-        max_retries=get_env_config().llm.max_retries,
+        timeout=snapshot.options.timeout_seconds,
+        max_retries=snapshot.options.max_retries,
         callbacks=callbacks,
         # Rendered by langchain-anthropic as output_config={'effort': ...}.
         # Without it, Fable 5 and Opus 5 run at the default effort however
         # LANGCHAIN_REASONING_EFFORT is set.
-        reasoning_effort=effort if use_effort else None,
-        api_key=os.getenv("ANTHROPIC_API_KEY") or None,  # noqa: env-gate — native provider credential
-        base_url=(
-            os.getenv("ANTHROPIC_BASE_URL")  # noqa: env-gate — native provider endpoint
-            or os.getenv("ANTHROPIC_API_URL")  # noqa: env-gate — SDK-compatible alias
-            or None
-        ),
+        **({"reasoning_effort": effort} if use_effort else {}),
+        api_key=snapshot.api_key,
+        base_url=snapshot.base_url,
+        anthropic_proxy=snapshot.environment.get("ANTHROPIC_PROXY"),
     )
-
-
-def _load_env_file(path: Path) -> None:
-    """Load a single .env file into os.environ without clobbering real vars.
-
-    Exported environment variables are explicit operator intent and outrank
-    the file; ``.env`` only fills the gaps (pinned by
-    ``test_dispatch_connector_never_overrides_a_real_environment_variable``).
-    """
-    if load_dotenv is not None:
-        load_dotenv(dotenv_path=path, override=False)
-    else:
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            if key and key not in os.environ:
-                os.environ[key] = value.strip().strip('"').strip("'")
-
-
-def _ensure_dotenv() -> None:
-    """Load `.env` from the first found candidate path."""
-    global _dotenv_loaded
-    if _dotenv_loaded:
-        return
-    loaded = None
-    for candidate in _ENV_CANDIDATES:
-        if candidate.exists():
-            _load_env_file(candidate)
-            loaded = candidate
-            break
-    if loaded is not None:
-        reset_env_config()
-    _dotenv_loaded = True
-    # P08 R1: one-time, behavior-preserving diagnostic so a stale or
-    # shadowed .env is observable instead of costing hours. The path is
-    # redacted to a symbolic slot label and the API key is never logged.
-    logger.info(
-        "dotenv resolved from %s | provider=%s model=%s base=%s",
-        _redact_env_source(loaded),
-        get_env_config().llm.langchain_provider,
-        get_env_config().llm.langchain_model_name or "(unset)",
-        _redact_base_url_for_log(
-            os.getenv("OPENAI_BASE_URL")  # noqa: env-gate — diagnostic display
-            or os.getenv("OPENAI_API_BASE")  # noqa: env-gate — diagnostic display
-        ),
-    )
-
-
-def _sync_provider_env() -> None:
-    """Map provider-specific env vars to OPENAI_* for ChatOpenAI.
-
-    Each entry: provider_name -> (api_key_env, base_url_env).
-    Base URLs come from .env; when unset, ``get_llm_credentials`` falls back to
-    the provider catalog's ``default_base_url`` (see ``capabilities.py``).
-    api_key_env=None means no key required (e.g. Ollama local).
-    """
-    _ensure_dotenv()
-    reset_env_config()
-    provider = get_env_config().llm.langchain_provider.lower()
-    if provider == "custom":
-        return  # Vault credentials are passed directly, never exported into ambient env.
-
-    if provider in {"openai-codex", "openai_codex"}:
-        codex_url = get_env_config().llm.openai_codex_base_url
-        # SDK-side env setup, not Vibe-Trading config reads
-        os.environ["OPENAI_API_BASE"] = codex_url
-        os.environ["OPENAI_BASE_URL"] = codex_url
-        os.environ.pop("OPENAI_API_KEY", None)
-        return
-
-    if provider in {"copilot", "github-copilot", "claude-cli"}:
-        os.environ.pop("OPENAI_API_BASE", None)
-        os.environ.pop("OPENAI_BASE_URL", None)
-        os.environ.pop("OPENAI_API_KEY", None)
-        return
-
-    creds = get_llm_credentials(provider, get_env_config().llm.langchain_model_name)
-    api_key = creds["api_key"]
-    base_url = creds["base_url"]
-
-    # SDK-side env setup, not Vibe-Trading config reads
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    if base_url:
-        os.environ["OPENAI_API_BASE"] = base_url
-        os.environ["OPENAI_BASE_URL"] = base_url
+    params = getattr(client, "_client_params", None)
+    if isinstance(params, dict):
+        # auth_token belongs to the SDK client, never the Messages request body.
+        params["api_key"] = snapshot.api_key or (None if snapshot.auth_token else "")
+        params["auth_token"] = snapshot.auth_token if not snapshot.api_key else None
+        headers = dict(
+            line.split(":", 1)
+            for line in snapshot.environment.get("ANTHROPIC_CUSTOM_HEADERS", "").splitlines()
+            if ":" in line
+        )
+        headers = {**(params.get("default_headers") or {}), **{k.strip(): v.strip() for k, v in headers.items()}}
+        sdk_module = import_module("anthropic")
+        proxy = snapshot.environment.get("ANTHROPIC_PROXY", "")
+        clients = _build_http_clients(sdk=sdk_module) if snapshot.options.vibe_trading_disable_http_proxy else (
+            _build_http_clients(proxy, sdk=sdk_module) if proxy else None
+        )
+        if clients:
+            # ChatAnthropic has no public HTTP-client fields. Populate its cached
+            # SDK clients before first use, retaining its normal request params.
+            client._client = sdk_module.Anthropic(**params, http_client=clients[0])
+            client._async_client = sdk_module.AsyncAnthropic(**params, http_client=clients[1])
+        client._vibe_owned_http_clients = clients or ()
+        _guard_provider_redirects(client._client, client._async_client)
+        for sdk in (client._client, client._async_client):
+            sdk.api_key, sdk.auth_token = params["api_key"], params["auth_token"]
+            sdk._custom_headers = dict(headers)
+    return client
 
 
 def _supports_top_level_reasoning_effort(caps: ProviderCapabilities, model: str | None = None) -> bool:
@@ -1418,7 +1352,7 @@ def _supports_top_level_reasoning_effort(caps: ProviderCapabilities, model: str 
     return any(lowered.startswith(prefix) for prefix in models)
 
 
-def _openai_label_points_at_openai(caps: ProviderCapabilities) -> bool:
+def _openai_label_points_at_openai(caps: ProviderCapabilities, base_url: str) -> bool:
     """Report whether the OpenAI capability is actually talking to OpenAI.
 
     An unknown ``LANGCHAIN_PROVIDER`` falls back to the OpenAI capabilities, and
@@ -1430,19 +1364,13 @@ def _openai_label_points_at_openai(caps: ProviderCapabilities) -> bool:
     """
     if caps.name != "openai":
         return True
-    try:
-        base_url = (
-            get_llm_credentials("openai", get_env_config().llm.langchain_model_name).get("base_url") or ""
-        ).strip()
-    except Exception:  # noqa: BLE001 - a credential lookup must not break the check
-        return False
     if not base_url:
         return True
     host = urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
     return host.lower() in {"api.openai.com", "openai.com"}
 
 
-def _moonshot_label_points_at_moonshot(caps: ProviderCapabilities) -> bool:
+def _moonshot_label_points_at_moonshot(caps: ProviderCapabilities, base_url: str) -> bool:
     """Report whether the Moonshot capability is actually talking to Moonshot.
 
     Mirrors ``_openai_label_points_at_openai``: ``MOONSHOT_BASE_URL`` can point
@@ -1453,31 +1381,27 @@ def _moonshot_label_points_at_moonshot(caps: ProviderCapabilities) -> bool:
     """
     if caps.name != "moonshot":
         return True
-    try:
-        base_url = (
-            get_llm_credentials("moonshot", get_env_config().llm.langchain_model_name).get("base_url") or ""
-        ).strip()
-    except Exception:  # noqa: BLE001 - a credential lookup must not break the check
-        return False
     if not base_url:
         return True
     host = urlparse(base_url if "//" in base_url else f"https://{base_url}").hostname or ""
     return host.lower() == "api.moonshot.ai"
 
 
-def _sends_top_level_reasoning_effort(caps: ProviderCapabilities, model: str | None = None) -> bool:
+def _sends_top_level_reasoning_effort(caps: ProviderCapabilities, model: str | None = None, base_url: str = "") -> bool:
     """Combine the allowlist flag with the endpoint-host checks."""
     return (
         _supports_top_level_reasoning_effort(caps, model)
-        and _openai_label_points_at_openai(caps)
-        and _moonshot_label_points_at_moonshot(caps)
+        and _openai_label_points_at_openai(caps, base_url)
+        and _moonshot_label_points_at_moonshot(caps, base_url)
     )
 
 
 _MOONSHOT_REASONING_EFFORT_LEVELS = ("low", "high", "max")
 
 
-def _validate_moonshot_reasoning_effort(caps: ProviderCapabilities, model: str, effort: str) -> None:
+def _validate_moonshot_reasoning_effort(
+    caps: ProviderCapabilities, model: str, effort: str, base_url: str = ""
+) -> None:
     """Reject an effort level the kimi-k3.1 API would reject (issue #2020).
 
     Moonshot publishes ``reasoning_effort`` for kimi-k3.1 as one of
@@ -1491,7 +1415,7 @@ def _validate_moonshot_reasoning_effort(caps: ProviderCapabilities, model: str, 
     """
     if caps.name != "moonshot" or not effort:
         return
-    if not _sends_top_level_reasoning_effort(caps, model):
+    if not _sends_top_level_reasoning_effort(caps, model, base_url):
         return
     if effort in _MOONSHOT_REASONING_EFFORT_LEVELS:
         return
@@ -1517,16 +1441,240 @@ def uses_responses_api(
         return False
     if normalized_provider != "deepseek":
         return True
-    adapter = _deepseek_adapter_mode() if deepseek_adapter is None else deepseek_adapter.strip().lower()
-    adapter = {
-        "compat": "openai-compatible",
-        "compatible": "openai-compatible",
-        "openai": "openai-compatible",
-        "openai_compatible": "openai-compatible",
-    }.get(adapter, adapter)
+    if deepseek_adapter is None:
+        from src.config.accessor import get_env_value
+
+        deepseek_adapter = get_env_value("VIBE_TRADING_DEEPSEEK_ADAPTER", "auto")
+    adapter = _deepseek_adapter_mode(deepseek_adapter)
     if adapter == "openai-compatible":
         return True
     return adapter == "auto" and not _native_deepseek_adapter_available()
+
+
+def build_llm(*, model_name: str | None = None, callbacks: Any = None, snapshot: ProviderConfig | None = None) -> Any:
+    """Construct the configured LangChain chat model.
+
+    Args:
+        snapshot: Resolved immutable config; defaults to current settings.
+        model_name: Model name; defaults to LANGCHAIN_MODEL_NAME.
+        callbacks: Optional LangChain callbacks.
+
+    Returns:
+        Provider-specific LangChain chat model.
+
+    Raises:
+        RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
+        ValueError: If a Moonshot kimi-k3.1 configuration carries a
+            ``LANGCHAIN_REASONING_EFFORT`` outside the published
+            low/high/max set.
+    """
+    snapshot = snapshot or resolve_config(model_name=model_name)
+    name = model_name or snapshot.model
+    if not name:
+        raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
+    provider = snapshot.provider
+    caps = get_provider_capabilities(provider, name)
+    options = snapshot.options
+    temperature = options.langchain_temperature
+    if snapshot.backend == "openai_codex":
+        from src.providers.openai_codex import OpenAICodexLLM
+
+        effort = options.langchain_reasoning_effort.strip().lower()
+        return OpenAICodexLLM(
+            model=name,
+            temperature=temperature,
+            timeout=options.timeout_seconds,
+            reasoning_effort=effort or None,
+            codex_url=snapshot.base_url,
+        )
+
+    if snapshot.backend == "copilot":
+        from src.providers.copilot_auth import CopilotSDKLLM
+
+        return CopilotSDKLLM(model=name, timeout=options.timeout_seconds, token=snapshot.api_key)
+
+    if snapshot.backend == "claude_cli":
+        from src.providers.claude_cli import ClaudeCliLLM
+
+        return ClaudeCliLLM(
+            model=name,
+            timeout=options.timeout_seconds,
+            reasoning_effort=options.langchain_reasoning_effort.strip().lower(),
+            environment=dict(snapshot.environment),
+        )
+
+    if snapshot.backend == "anthropic":
+        return _build_anthropic(
+            model=name,
+            temperature=temperature,
+            callbacks=callbacks,
+            snapshot=snapshot,
+            effort=options.langchain_reasoning_effort.strip().lower(),
+        )
+
+    if snapshot.backend == "deepseek":
+        adapter_mode = _deepseek_adapter_mode(options.vibe_trading_deepseek_adapter)
+        if adapter_mode != "openai-compatible":
+            native_llm = _build_native_deepseek(
+                model=name,
+                temperature=temperature,
+                callbacks=callbacks,
+                snapshot=snapshot,
+            )
+            if native_llm is not None:
+                return native_llm
+            if adapter_mode == "native":
+                raise RuntimeError("VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek")
+
+    if ChatOpenAI is None:
+        raise RuntimeError("langchain-openai is not installed")
+    # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
+    # default 0.0 is used to avoid an API validation error.
+    if provider == "minimax" and temperature <= 0.0:
+        temperature = 0.01
+    # Kimi reasoning models reject any temperature other than 1
+    # ("invalid temperature: only 1 is allowed for this model").
+    if (
+        caps.name in {"moonshot", "kimi-coding"}
+        and _KIMI_FORCED_TEMPERATURE_RE.match(name)
+        and temperature != 1.0
+    ):
+        logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
+        temperature = 1.0
+    effort = options.langchain_reasoning_effort.strip().lower()
+    # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.
+    configured_responses_api = options.langchain_use_responses_api
+    use_responses_api = uses_responses_api(
+        provider, configured_responses_api, options.vibe_trading_deepseek_adapter
+    )
+    _validate_moonshot_reasoning_effort(caps, name, effort, snapshot.base_url)
+    api_key = snapshot.api_key
+    _validate_authorization_credential(api_key, source=caps.api_key_env or "provider credential")
+    kwargs: dict[str, Any] = {
+        "model": name,
+        "api_key": api_key,
+        "base_url": snapshot.base_url or None,
+        "temperature": temperature,
+        "timeout": options.timeout_seconds,
+        "max_retries": options.max_retries,
+        "callbacks": callbacks,
+        # Ask for real token usage on streamed calls (issue #1224); endpoints
+        # that reject stream_options self-heal in _stream_with_usage_fallback.
+        "stream_usage": True,
+        "output_version": "responses/v1" if use_responses_api else None,
+        "use_responses_api": use_responses_api,
+        "reasoning": ({"effort": effort} if use_responses_api and effort else None),
+        "extra_body": (
+            {"reasoning": {"effort": effort}}
+            if effort and not use_responses_api and caps.openrouter_reasoning_body
+            else None
+        ),
+        "reasoning_effort": (
+            effort
+            if (
+                effort
+                and not use_responses_api
+                and _sends_top_level_reasoning_effort(caps, name, snapshot.base_url)
+            )
+            else None
+        ),
+        "vibe_provider": provider,
+        "vibe_api_key": api_key,
+        "vibe_environment": snapshot.environment,
+        "openai_proxy": snapshot.environment.get("OPENAI_PROXY", ""),
+        "organization": snapshot.environment.get("OPENAI_ORG_ID")
+        or snapshot.environment.get("OPENAI_ORGANIZATION", ""),
+    }
+    langchain_max_tokens = options.langchain_max_tokens
+    if langchain_max_tokens:
+        kwargs["max_tokens"] = langchain_max_tokens
+    if caps.default_headers:
+        headers = dict(caps.default_headers)
+        if caps.name in {"moonshot", "kimi-coding"}:
+            custom_ua = options.moonshot_user_agent.strip()
+            if custom_ua:
+                headers["User-Agent"] = custom_ua
+        _validate_explicit_headers(headers, source=f"{caps.name} provider configuration")
+        kwargs["default_headers"] = headers
+    disable_proxy = options.vibe_trading_disable_http_proxy
+    if provider == "custom":
+        # Imported here: the guard needs httpx/httpcore/anyio, and the
+        # background-tool lifecycle checks import this module without them.
+        from src.providers.endpoint_guard import build_public_only_clients, proxy_applies
+    clients = None
+    explicit_proxy = snapshot.environment.get("OPENAI_PROXY", "")
+    if provider == "custom" and (disable_proxy or not (explicit_proxy or proxy_applies(snapshot.base_url))):
+        # A saved custom endpoint is re-checked on every connection, so a
+        # host that re-resolves to a private address later is refused.
+        clients = build_public_only_clients()
+    elif disable_proxy:
+        clients = _build_http_clients()
+    elif explicit_proxy:
+        clients = _build_http_clients(explicit_proxy)
+    if clients:
+        kwargs["http_client"], kwargs["http_async_client"] = clients
+        kwargs["vibe_owned_http_clients"] = clients
+        kwargs["openai_proxy"] = ""
+    return ChatOpenAIWithReasoning(**kwargs)
+
+
+def _redact_base_url_for_log(raw: str | None) -> str:
+    """Return a diagnostic-safe base URL label for logs."""
+    if not raw or not raw.strip():
+        return "(unset)"
+
+    try:
+        parsed = urlsplit(raw.strip())
+    except ValueError:
+        return "<base-url>"
+
+    if not parsed.scheme or not parsed.hostname:
+        return "<base-url>"
+
+    host = parsed.hostname
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port is not None:
+        host = f"{host}:{port}"
+
+    return f"{parsed.scheme}://{host}"
+
+
+def _package_version(package: str) -> str:
+    """Return an installed package version or a stable missing label."""
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        return "not_installed"
+
+
+def _redact_env_flag(name: str, environment) -> str:
+    """Report whether an env var is set without exposing its value."""
+    value = environment.get(name, "")
+    return "set" if value else "unset"
+
+
+def _header_value_diagnostic(value: str) -> dict[str, Any]:
+    """Describe a possible HTTP header value without exposing its contents."""
+    return {
+        "set": bool(value),
+        "length": len(value),
+        "ascii_only": value.isascii(),
+    }
+
+
+def _redact_proxy_url(name: str, raw: str | None) -> str:
+    """Return a credential-free proxy URL label."""
+    if not raw:
+        return "unset"
+    if name.upper().endswith("NO_PROXY"):
+        return "set"
+    return _redact_base_url_for_log(raw)
 
 
 def provider_diagnostics() -> dict[str, Any]:
@@ -1535,14 +1683,14 @@ def provider_diagnostics() -> dict[str, Any]:
     Returns:
         Redacted provider/model/package/env/proxy/capability details.
     """
-    _sync_provider_env()
-    provider = get_env_config().llm.langchain_provider.strip().lower()
-    model = get_env_config().llm.langchain_model_name.strip()
+    snapshot = resolve_config()
+    environment = snapshot.environment
+    provider, model = snapshot.provider, snapshot.model
+    options = snapshot.options
     caps = get_provider_capabilities(provider, model)
     key_env = caps.api_key_env
-    creds = get_llm_credentials(provider, model)
-    base_url = creds["base_url"]
-    credential_source = _credential_env_source(key_env)
+    base_url = snapshot.base_url
+    credential_source = key_env if key_env and snapshot.environment.get(key_env) else "OPENAI_API_KEY"
     proxy_names = [
         "HTTP_PROXY",
         "HTTPS_PROXY",
@@ -1562,68 +1710,51 @@ def provider_diagnostics() -> dict[str, Any]:
         "langchain-deepseek",
     ]
     native_package_version = _package_version(caps.native_adapter_package) if caps.native_adapter_package else None
-    adapter_mode = (
-        _deepseek_adapter_mode()
-        if caps.name == "deepseek"
-        else "native"
-        if caps.name == "anthropic"
-        else "openai-compatible"
-    )
-    adapter_type = (
-        "native"
-        if (
-            caps.name == "anthropic"
-            or (
-                caps.name == "deepseek"
-                and adapter_mode != "openai-compatible"
-                and native_package_version not in {None, "not_installed"}
-            )
-        )
-        else "openai-compatible"
-    )
+    adapter_mode = adapter_type = "openai-compatible"
+    if snapshot.backend == "anthropic":
+        adapter_mode = adapter_type = "native"
+    elif snapshot.backend == "deepseek":
+        adapter_mode = _deepseek_adapter_mode(options.vibe_trading_deepseek_adapter)
+        if adapter_mode != "openai-compatible" and native_package_version not in {None, "not_installed"}:
+            adapter_type = "native"
     from src.providers.tool_policy import policy_status
 
     return {
         "provider": caps.name if provider in {"kimi", "openai_codex"} else provider,
         "model": model,
+        "backend": snapshot.backend,
         "base_url": _redact_base_url_for_log(base_url),
-        "api_key": {key_env: _redact_env_flag(key_env)} if key_env else {},
+        "api_key": {key_env: _redact_env_flag(key_env, environment)} if key_env else {},
         "http_header_env": {
             "authorization": {
                 "source": credential_source,
-                **_header_value_diagnostic(creds["api_key"]),
+                **_header_value_diagnostic(snapshot.api_key),
             },
             "ambient_openai": {
-                name: _header_value_diagnostic(
-                    os.getenv(name, "")  # noqa: env-gate — redacted header diagnostic
-                )
+                name: _header_value_diagnostic(environment.get(name, ""))
                 for name in _AMBIENT_OPENAI_HEADER_ENV_VARS
             },
         },
         "env": {
-            "LANGCHAIN_PROVIDER": _redact_env_flag("LANGCHAIN_PROVIDER"),
-            "LANGCHAIN_MODEL_NAME": _redact_env_flag("LANGCHAIN_MODEL_NAME"),
-            "OPENAI_API_KEY": _redact_env_flag("OPENAI_API_KEY"),
-            "OPENAI_BASE_URL": _redact_base_url_for_log(
-                os.getenv("OPENAI_BASE_URL")  # noqa: env-gate — diagnostic snapshot
-            ),
-            "OPENAI_API_BASE": _redact_base_url_for_log(
-                os.getenv("OPENAI_API_BASE")  # noqa: env-gate — diagnostic snapshot
-            ),
+            "LANGCHAIN_PROVIDER": _redact_env_flag("LANGCHAIN_PROVIDER", environment),
+            "LANGCHAIN_MODEL_NAME": _redact_env_flag("LANGCHAIN_MODEL_NAME", environment),
+            "OPENAI_API_KEY": _redact_env_flag("OPENAI_API_KEY", environment),
+            "OPENAI_BASE_URL": _redact_base_url_for_log(environment.get("OPENAI_BASE_URL")),
+            "OPENAI_API_BASE": _redact_base_url_for_log(environment.get("OPENAI_API_BASE")),
         },
         "proxy": {
             name: _redact_proxy_url(
                 name,
-                os.getenv(name),  # noqa: env-gate — proxy env iteration
+                environment.get(name),
             )
             for name in proxy_names
-            if os.getenv(name)  # noqa: env-gate — proxy env filter
+            if environment.get(name)
         },
         "packages": {name: _package_version(name) for name in package_names},
-        "timeout_seconds": get_env_config().llm.timeout_seconds,
-        "max_retries": get_env_config().llm.max_retries,
+        "timeout_seconds": options.timeout_seconds,
+        "max_retries": options.max_retries,
         "tool_policy": policy_status(),
-        "reasoning_effort": get_env_config().llm.langchain_reasoning_effort.strip().lower(),
+        "reasoning_effort": options.langchain_reasoning_effort.strip().lower(),
         "adapter": {
             "type": adapter_type,
             "mode": adapter_mode,
@@ -1636,160 +1767,8 @@ def provider_diagnostics() -> dict[str, Any]:
             "gemini_thought_signatures": caps.gemini_thought_signatures,
             "openrouter_reasoning_body": caps.openrouter_reasoning_body,
             "top_level_reasoning_effort": (
-                adapter_type == "openai-compatible" and _sends_top_level_reasoning_effort(caps, model)
+                adapter_type == "openai-compatible"
+                and _sends_top_level_reasoning_effort(caps, model, snapshot.base_url)
             ),
         },
     }
-
-
-def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any:
-    """Construct the configured LangChain chat model.
-
-    Args:
-        model_name: Model name; defaults to LANGCHAIN_MODEL_NAME.
-        callbacks: Optional LangChain callbacks.
-
-    Returns:
-        Provider-specific LangChain chat model.
-
-    Raises:
-        RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
-        ValueError: If a Moonshot kimi-k3.1 configuration carries a
-            ``LANGCHAIN_REASONING_EFFORT`` outside the published
-            low/high/max set.
-    """
-    _sync_provider_env()
-    name = model_name or get_env_config().llm.langchain_model_name.strip()
-    if not name:
-        raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
-    temperature = get_env_config().llm.langchain_temperature
-    provider = get_env_config().llm.langchain_provider.lower()
-    caps = get_provider_capabilities(provider, name)
-    if provider in {"openai-codex", "openai_codex"}:
-        from src.providers.openai_codex import OpenAICodexLLM
-
-        effort = get_env_config().llm.langchain_reasoning_effort.strip().lower()
-        return OpenAICodexLLM(
-            model=name,
-            temperature=temperature,
-            timeout=get_env_config().llm.timeout_seconds,
-            reasoning_effort=effort or None,
-        )
-
-    if provider in {"copilot", "github-copilot"}:
-        from src.providers.copilot_auth import CopilotSDKLLM
-
-        return CopilotSDKLLM(
-            model=name,
-            timeout=get_env_config().llm.timeout_seconds,
-        )
-
-    if provider == "claude-cli":
-        from src.providers.claude_cli import ClaudeCliLLM
-
-        llm_cfg = get_env_config().llm
-        return ClaudeCliLLM(
-            model=name,
-            timeout=llm_cfg.timeout_seconds,
-            reasoning_effort=llm_cfg.langchain_reasoning_effort.strip().lower(),
-        )
-
-    if provider == "anthropic":
-        return _build_anthropic(
-            model=name,
-            temperature=temperature,
-            callbacks=callbacks,
-            effort=get_env_config().llm.langchain_reasoning_effort.strip().lower(),
-        )
-
-    if provider == "deepseek":
-        adapter_mode = _deepseek_adapter_mode()
-        if adapter_mode != "openai-compatible":
-            native_llm = _build_native_deepseek(
-                model=name,
-                temperature=temperature,
-                callbacks=callbacks,
-            )
-            if native_llm is not None:
-                return native_llm
-            if adapter_mode == "native":
-                raise RuntimeError("VIBE_TRADING_DEEPSEEK_ADAPTER=native requires langchain-deepseek")
-
-    if ChatOpenAI is None:
-        raise RuntimeError("langchain-openai is not installed")
-    # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
-    # default 0.0 is used to avoid an API validation error.
-    if provider == "minimax" and temperature <= 0.0:
-        temperature = 0.01
-    # Kimi reasoning models reject any temperature other than 1
-    # ("invalid temperature: only 1 is allowed for this model").
-    if caps.name in {"moonshot", "kimi-coding"} and _KIMI_FORCED_TEMPERATURE_RE.match(name) and temperature != 1.0:
-        logger.info("Forcing temperature=1.0 for %s (provider requirement)", name)
-        temperature = 1.0
-    effort = get_env_config().llm.langchain_reasoning_effort.strip().lower()
-    # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.
-    configured_responses_api = get_env_config().llm.langchain_use_responses_api
-    use_responses_api = uses_responses_api(provider, configured_responses_api)
-    creds = get_llm_credentials(provider, name)
-    if provider == "custom":
-        name = model_name or creds["model"]
-    _validate_moonshot_reasoning_effort(caps, name, effort)
-    api_key = creds["api_key"]
-    _validate_authorization_credential(
-        api_key,
-        source=_credential_env_source(caps.api_key_env),
-    )
-    kwargs: dict[str, Any] = {
-        "model": name,
-        "api_key": api_key or None,
-        "base_url": creds["base_url"] or None,
-        "temperature": temperature,
-        "timeout": get_env_config().llm.timeout_seconds,
-        "max_retries": get_env_config().llm.max_retries,
-        "callbacks": callbacks,
-        # Ask for real token usage on streamed calls (issue #1224); endpoints
-        # that reject stream_options self-heal in _stream_with_usage_fallback.
-        "stream_usage": True,
-        "output_version": "responses/v1" if use_responses_api else None,
-        "use_responses_api": use_responses_api,
-        "reasoning": ({"effort": effort} if use_responses_api and effort else None),
-        "extra_body": (
-            {"reasoning": {"effort": effort}}
-            if effort and not use_responses_api and caps.openrouter_reasoning_body
-            else None
-        ),
-        "reasoning_effort": (
-            effort if (effort and not use_responses_api and _sends_top_level_reasoning_effort(caps, name)) else None
-        ),
-        "vibe_provider": provider,
-        "vibe_api_key": api_key,
-    }
-    langchain_max_tokens = get_env_config().llm.langchain_max_tokens
-    if langchain_max_tokens:
-        kwargs["max_tokens"] = langchain_max_tokens
-    if caps.default_headers:
-        headers = dict(caps.default_headers)
-        if caps.name in {"moonshot", "kimi-coding"}:
-            custom_ua = get_env_config().llm.moonshot_user_agent.strip()
-            if custom_ua:
-                headers["User-Agent"] = custom_ua
-        _validate_explicit_headers(headers, source=f"{caps.name} provider configuration")
-        kwargs["default_headers"] = headers
-    disable_proxy = get_env_config().llm.vibe_trading_disable_http_proxy
-    if provider == "custom":
-        # Imported here: the guard needs httpx/httpcore/anyio, and the
-        # background-tool lifecycle checks import this module without them.
-        from src.providers.endpoint_guard import build_public_only_clients, proxy_applies
-    if provider == "custom" and (disable_proxy or not proxy_applies(creds["base_url"])):
-        # A saved custom endpoint is re-checked on every connection, so a
-        # host that re-resolves to a private address later is refused.
-        sync_client, async_client = build_public_only_clients()
-        kwargs["http_client"] = sync_client
-        kwargs["http_async_client"] = async_client
-        kwargs["vibe_owned_http_clients"] = (sync_client, async_client)
-    elif disable_proxy:
-        sync_client, async_client = _build_proxy_free_http_clients()
-        kwargs["http_client"] = sync_client
-        kwargs["http_async_client"] = async_client
-        kwargs["vibe_owned_http_clients"] = (sync_client, async_client)
-    return ChatOpenAIWithReasoning(**kwargs)

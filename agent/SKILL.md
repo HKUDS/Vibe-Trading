@@ -133,7 +133,7 @@ Comprehensive knowledge base covering:
 
 Use `load_skill(name)` to access full methodology docs with code templates.
 
-## Available MCP Tools (81)
+## Available MCP Tools (84)
 
 | Tool | Description | API Key |
 |------|-------------|---------|
@@ -144,8 +144,10 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `add_goal_evidence` | Attach evidence to a research goal | None |
 | `update_research_goal` | Edit a research goal's objective or summary in place | None |
 | `update_research_goal_status` | Update goal lifecycle status | None |
+| `research_lab` | Frozen-input cost scenarios, training-only parameter selection and OOS/holdout, factor contracts and offline task replay | None |
 | `backtest` | Run vectorized backtest engine | None* |
 | `paper_trade_step` | Deterministic paper-trading matching engine; never places real orders | None* |
+| `paper_trade_reconcile` | Independently replay paper fills, fees, positions and NAV continuity | None* |
 | `factor_analysis` | IC/IR analysis + layered backtest | None* |
 | `alpha_zoo` | Browse bundled alpha metadata and registry health | None |
 | `alpha_bench` | Benchmark one alpha or a complete zoo | None* |
@@ -166,6 +168,7 @@ Use `load_skill(name)` to access full methodology docs with code templates.
 | `get_stock_news` | Market & company news headlines | None* |
 | `get_sec_filings` | SEC EDGAR filings (10-K/10-Q/8-K, etc.) | None |
 | `get_financial_statements` | Income / balance / cash-flow statements | None* |
+| `history_data` | Plan/resume quota-bounded historical datasets through compatible market/interval routes; unsampled pages with explicit coverage status | None |
 | `get_options_chain` | Options chain (strikes, IV, OI, Greeks) | None* |
 | `get_stock_profile` | Valuation, analyst estimates & institutional holdings (US/HK) | None |
 | `screen_market` | Market screener with fundamental/technical filters | None* |

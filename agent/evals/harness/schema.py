@@ -77,6 +77,15 @@ class HarnessCase:
 
 
 def _validate_expectations(expect: Mapping[str, Any]) -> None:
+    if "measurements" in expect:
+        from .measurements import validate_measurements
+        validate_measurements(expect["measurements"])
+    if "timing" in expect:
+        import math
+        timing = expect["timing"]
+        value = timing.get("max_seconds") if isinstance(timing, Mapping) else None
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            raise ValueError("expect.timing.max_seconds must be finite and non-negative")
     for name in ("execution", "completion", "safety"):
         section = expect.get(name)
         if section is None:

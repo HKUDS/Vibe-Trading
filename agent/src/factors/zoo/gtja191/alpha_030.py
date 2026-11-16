@@ -14,6 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from src.factors.base import geometric_wma, factor_residuals
+
 from src.factors.base import (
     decay_linear,
     delta,
@@ -36,17 +38,18 @@ __alpha_meta__ = {
     "theme": ['volatility'],
     "formula_latex": 'WMA((REGRESI(CLOSE/DELAY(CLOSE,1)-1, MKT_RET, SMB, HML, 60))^2, 20)',
     "columns_required": ['close'],
-    "extras_required": [],
+    "extras_required": ["mkt_ret", "smb", "hml"],
     "requires_sector": False,
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 20,
-    "min_warmup_bars": 21,
-    "notes": 'Multi-factor REGRESI not implementable in pure-fn zoo; degraded to WMA of squared daily return (idio proxy). See notes.',
+    "min_warmup_bars": 80,
+    "notes": "Requires observed MKT, SMB and HML return panels. Complete 60-observation OLS with intercept, then report WMA weights.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
     c = panel["close"]
     pc = c.shift(1)
     ret = safe_div(c - pc, pc)
-    return decay_linear(ret * ret, 20)
+    residual = factor_residuals(ret, [panel[name] for name in ("mkt_ret", "smb", "hml")], 60)
+    return geometric_wma(residual * residual, 20)

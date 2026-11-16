@@ -14,6 +14,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from backtest.loaders.yahoo_client import get_quote_summary
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -326,6 +327,7 @@ class StockProfileTool(BaseTool):
         "required": ["ticker"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Fetch and shape the requested profile sections for one ticker.
 

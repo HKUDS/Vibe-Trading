@@ -29,6 +29,7 @@ Submodules:
   impact       Market-impact and slippage models
   fundmath     Private-markets fund maths on the irregular cash-flow spine
   performance  Client money-weighted performance (XIRR, TWR) on that spine
+  volatility   Heston pricing and observed-IV surface grid construction
 
 Two modules expose a function named ``xirr`` and they are not interchangeable.
 ``fundmath.xirr`` takes a ``CashFlowSeries`` under a valuation policy, scans a

@@ -7,7 +7,7 @@
 """GTJA Alpha #56.
 
 Formula: (RANK(OPEN-TSMIN(OPEN,12)) < RANK((RANK(CORR(SUM(((HIGH+LOW)/2),19),SUM(MEAN(VOLUME,40),19),13))^5)))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 56."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 56."""
 
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 19,
-    "min_warmup_bars": 60,
-    "notes": 'Boolean comparator returns 1/0; 40d mean truncated.',
+    "min_warmup_bars": 70,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -54,9 +54,9 @@ def compute(panel: dict) -> pd.DataFrame:
     lhs = rank(o - ts_min(o, 12))
     mid = (h + l) / 2.0
     sumA = mid.rolling(19, min_periods=19).sum()
-    sumB = ts_mean(v, 30).rolling(19, min_periods=19).sum()
+    sumB = ts_mean(v, 40).rolling(19, min_periods=19).sum()
     rhs = rank(rank(ts_corr(sumA, sumB, 13)) ** 5)
     # Reach of each input through the nested windows; a gap inside it is not a verdict (#1463).
-    # v: mean 30 + sum 19 + corr 13; h/l: sum 19 + corr 13; o: ts_min 12.
-    present = observed_over((v, 60), (h, 31), (l, 31), (o, 12))
+    # v: mean 40 + sum 19 + corr 13; h/l: sum 19 + corr 13; o: ts_min 12.
+    present = observed_over((v, 70), (h, 31), (l, 31), (o, 12))
     return (lhs < rhs).astype(float).where(present)

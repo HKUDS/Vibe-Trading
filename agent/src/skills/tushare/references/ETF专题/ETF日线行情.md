@@ -48,8 +48,10 @@ amount | float | Y | 成交额(千元)
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
 
-pro = ts.pro_api()
+
+pro = tushare_client()
 
 #获取”沪深300ETF华夏”ETF2025年以来的行情，并通过fields参数指定输出了部分字段
 df = pro.fund_daily(ts_code='510330.SH', start_date='20250101', end_date='20250618', fields='trade_date,open,high,low,close,vol,amount')

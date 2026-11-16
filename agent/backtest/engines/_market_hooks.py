@@ -63,6 +63,8 @@ _CN_FUTURES_PRODUCTS = {
     "p",
     "jd",
     "lh",
+    "rr",
+    "pg",
     "cf",
     "sr",
     "ta",
@@ -70,6 +72,9 @@ _CN_FUTURES_PRODUCTS = {
     "ap",
     "rm",
     "oi",
+    "cj",
+    "pk",
+    "cy",
     "pp",
     "l",
     "v",
@@ -83,6 +88,26 @@ _CN_FUTURES_PRODUCTS = {
     "lc",
 }
 
+# ZCE contract tokens use a one-digit year plus a two-digit month. Keep this
+# separate from the all-exchange product set: IF501, RB501 and CS501 are not
+# valid three-digit spellings for their CFFEX, SHFE and DCE products.
+_ZCE_FUTURES_PRODUCTS = {
+    "ap",
+    "cf",
+    "cj",
+    "cy",
+    "fg",
+    "ma",
+    "oi",
+    "pf",
+    "pk",
+    "rm",
+    "sa",
+    "sr",
+    "ta",
+    "ur",
+}
+
 
 #: The main continuous contract, spelled ``<product>0`` (``RB0``, ``IF0``).
 #: Built from the product whitelist rather than a width rule, because a
@@ -92,7 +117,18 @@ _CN_FUTURES_MAIN_PATTERN = r"^(?:{})0$".format(
     "|".join(sorted(_CN_FUTURES_PRODUCTS, key=len, reverse=True))
 )
 
+# Zhengzhou writes the delivery year/month in three digits (CF501 = a cotton
+# January contract), not the four-digit YYMM form (CF2501) the global rule
+# matches.
+# CF501.ZCE / CF501.CZC already classify, and the futures engine prices the
+# bare spelling at the same multiplier. It matched no routing rule, so the
+# config gate refused it and market detection called it an A-share.
+_CN_FUTURES_DATED3_PATTERN = r"^(?:{})\d{{3}}$".format(
+    "|".join(sorted(_ZCE_FUTURES_PRODUCTS, key=len, reverse=True))
+)
+
 _MARKET_PATTERNS = [
+    (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "jp_equity"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
     (re.compile(r"^(51|15|56)\d{4}\.(SZ|SH)$", re.I), "a_share"),
     # US equities: tickers may carry a class-share dot (BRK.B.US, BF.B.US)
@@ -151,6 +187,10 @@ _MARKET_PATTERNS = [
         ),
         "futures",
     ),
+    # Bare three-digit ZCE futures (CF501, MA501). The suffixed form is the
+    # pattern above; four-digit bare codes (CF2501, RB2410) hit the YYMM rule
+    # below. Other Chinese exchanges use four-digit delivery codes.
+    (re.compile(_CN_FUTURES_DATED3_PATTERN, re.I), "futures"),
     # Global futures: product+month-code, including digit-bearing products
     # (ESZ4, CLF25, GCM2025, M2KZ4, 6EZ2026). Pure numeric ids stay excluded.
     (re.compile(r"^(?:[A-Z][A-Z0-9]{1,4}|[0-9][A-Z][A-Z0-9]{0,3})[FGHJKMNQUVXZ]\d{1,4}$", re.I), "futures"),
@@ -241,6 +281,7 @@ _MARKET_CURRENCY = {
     "hk_equity": "HKD",
     "india_equity": "INR",
     "kr_equity": "KRW",
+    "jp_equity": "JPY",
     "ca_equity": "CAD",
     "ar_equity": "ARS",
     "br_equity": "BRL",

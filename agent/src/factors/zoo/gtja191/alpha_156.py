@@ -46,7 +46,7 @@ __alpha_meta__ = {
     'universe': ['equity_cn'],
     'frequency': ['1d'],
     'decay_horizon': 5,
-    'min_warmup_bars': 10,
+    'min_warmup_bars': 8,
     'notes': 'MAX elementwise -> np.maximum.',
 }
 

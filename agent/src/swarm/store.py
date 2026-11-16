@@ -331,7 +331,17 @@ class SwarmStore:
         # caller that mutates the task set will not silently drop tasks).
         seen = {task.id for task in merged}
         merged.extend(task for tid, task in by_id.items() if tid not in seen)
-        return run.model_copy(update={"tasks": merged})
+        from src.swarm.delivery import refresh_report
+        from src.swarm.models import RunStatus
+        from src.swarm.task_store import topological_layers
+
+        hydrated = run.model_copy(update={"tasks": merged})
+        layers = topological_layers(merged)
+        if not hydrated.final_report or hydrated.status not in (RunStatus.completed, RunStatus.failed, RunStatus.cancelled):
+            refresh_report(hydrated, layers[-1] if layers else [])
+        else:
+            hydrated.report_is_partial = hydrated.status != RunStatus.completed
+        return hydrated
 
     def compute_stale_threshold(self, run: SwarmRun) -> float:
         """Per-run silence budget before a ``running`` run looks abandoned.
@@ -457,20 +467,16 @@ class SwarmStore:
         else:
             new_status = RunStatus.failed
 
-        final_report = run.final_report
-        if new_status == RunStatus.completed and not final_report:
-            for task in reversed(run.tasks):
-                if task.summary:
-                    final_report = task.summary
-                    break
+        from src.swarm.delivery import refresh_report
+        from src.swarm.task_store import topological_layers
 
-        return run.model_copy(
-            update={
-                "status": new_status,
-                "completed_at": run.completed_at or now.isoformat(),
-                "final_report": final_report,
-            }
-        )
+        recovered = run.model_copy(update={
+            "status": new_status,
+            "completed_at": run.completed_at or now.isoformat(),
+        })
+        layers = topological_layers(recovered.tasks)
+        refresh_report(recovered, layers[-1] if layers else [])
+        return recovered
 
     def _reap_stale(self, run: SwarmRun, *, now: datetime) -> SwarmRun:
         """Pure: mark non-terminal tasks failed; derive run status from tasks."""

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "case_id": "research.split_value.v1",
+  "scenario": "corporate_actions",
+  "prompt": "一股拆为两股：拆股前持有1股、每股100；拆股后持有2股、每股50，无其他现金流。计算前后市值和收益率。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "before_value",
+        "operator": "approx",
+        "expected": 100
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "after_value",
+        "operator": "approx",
+        "expected": 100
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "return",
+        "operator": "approx",
+        "expected": 0
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

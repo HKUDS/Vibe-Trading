@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
-from src.agent.grounding.evidence import _metric_kind_for_path
+from evals.grounding import GroundingLedger
+from evals.grounding.evidence import _metric_kind_for_path
 
 
 @pytest.mark.parametrize(

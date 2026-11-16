@@ -34,13 +34,13 @@
 **接口示例**
 
 ```python
-import requests
+from src.data_gateway.reads import public_http_get
 import pandas as pd
 
 BASE_URL = "https://www.okx.com/api/v5"
 
 # 获取 BTC-USDT 日线，最近30根
-resp = requests.get(f"{BASE_URL}/market/candles", params={
+resp = public_http_get(f"{BASE_URL}/market/candles", params={
     "instId": "BTC-USDT",
     "bar": "1D",
     "limit": "30"
@@ -56,7 +56,7 @@ for col in ["open", "high", "low", "close", "vol"]:
 print(df[["ts", "open", "high", "low", "close", "vol"]].head())
 
 # 获取 ETH-USDT 4小时K线
-resp = requests.get(f"{BASE_URL}/market/candles", params={
+resp = public_http_get(f"{BASE_URL}/market/candles", params={
     "instId": "ETH-USDT",
     "bar": "4H",
     "limit": "50"

@@ -22,7 +22,24 @@ from typing import Callable, Protocol, TypeVar, runtime_checkable
 
 import pandas as pd
 
+from .acquisition import SourceAdmissionTimeout, source_background as source_background, source_deadline as source_deadline
+
 logger = logging.getLogger(__name__)
+
+
+
+def acquisition_error_kind(exc: Exception) -> str:
+    """Classify transport failures without retaining exception tracebacks or bodies."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, SourceAdmissionTimeout):
+            return "source_busy"
+        if isinstance(exc, (OSError, TimeoutError)):
+            return "network_failure"
+        exc = exc.__cause__ or exc.__context__
+    return "fetch_failed"
+
 
 
 # The supported LSE contract settles in GBP. Yahoo may declare an individual
@@ -38,6 +55,7 @@ _UK_EQUITY_PATTERN = re.compile(r"^[A-Z0-9&.\-]+\.L$", re.I)
 # CAD and DLR-U.TO in USD. Yahoo declares each, and every priced source in
 # these markets' chains is Yahoo or yfinance, so the declared currency decides.
 _SINGLE_CURRENCY_VENUES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "JPY"),
     (re.compile(r"^[A-Z0-9&.\-]+\.BA$", re.I), "ARS"),
     (re.compile(r"^[A-Z0-9]+\.SA$", re.I), "BRL"),
     (re.compile(r"^[A-Z0-9&.\-]+\.(?:TO|V)$", re.I), "CAD"),

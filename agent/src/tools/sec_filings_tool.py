@@ -28,6 +28,7 @@ from backtest.loaders.sec_edgar_client import (
     get_company_facts,
     get_submissions,
 )
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.tools._result_paging import fit_records
 
@@ -99,6 +100,7 @@ class SecFilingsTool(BaseTool):
         "required": ["ticker"],
     }
 
+    @public_data_read()
     def execute(self, **kwargs: Any) -> str:
         """Resolve the ticker, fetch filings/facts, and return a JSON envelope.
 

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agent.grounding import GroundingLedger
+from evals.grounding import GroundingLedger
 from src.tools import gildata_stock_selection_tool as ss
 from src.tools import gildata_srv
 

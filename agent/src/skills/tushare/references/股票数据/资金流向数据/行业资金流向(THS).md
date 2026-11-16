@@ -45,6 +45,10 @@ net_amount | float | Y | 净额(亿元)
 **接口示例**
 
 ```python
+from src.data_gateway.skill_sources import tushare_client
+
+pro = tushare_client()
+
 
 #获取当日所有同花顺行业资金流向
 df = pro.moneyflow_ind_ths(trade_date='20240927')

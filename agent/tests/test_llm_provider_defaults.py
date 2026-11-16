@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 from pathlib import Path
 
 import cli
 from cli.onboard import PROVIDERS as ONBOARD_PROVIDERS
-from src.providers.capabilities import (
-    _provider_default_base_urls,
-    get_llm_credentials,
-)
+from src.providers.settings import get_llm_credentials
+from src.providers.registry import get_provider_capabilities
+from src.providers.registry import provider_catalog
 
 
 EXPECTED_PROVIDER_DEFAULTS = {
@@ -43,16 +44,35 @@ EXPECTED_PROVIDER_DEFAULTS = {
 }
 
 
-def test_llm_provider_registry_uses_current_default_models() -> None:
-    providers_path = Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
-    providers = json.loads(providers_path.read_text(encoding="utf-8"))
-    defaults = {item["name"]: item["default_model"] for item in providers}
+def test_catalog_defaults_and_connections_reach_every_surface():
+    from src.api.settings_routes import LLM_PROVIDERS
 
-    assert set(defaults) == set(EXPECTED_PROVIDER_DEFAULTS)
-    for provider, model in EXPECTED_PROVIDER_DEFAULTS.items():
-        assert defaults[provider] == model
-
-    assert defaults["openai"] != "gpt-5.5-instant"
+    rows = {row["name"]: row for row in provider_catalog()}
+    assert {name: row["default_model"] for name, row in rows.items()} == EXPECTED_PROVIDER_DEFAULTS
+    assert {p.name for p in LLM_PROVIDERS} == set(rows)
+    for name, row in rows.items():
+        caps = get_provider_capabilities(name)
+        assert (caps.api_key_env, caps.base_url_env) == (row.get("api_key_env"), row["base_url_env"])
+        endpoint = row["default_base_url"]
+        if name == "ollama":
+            endpoint += "/v1"
+        assert get_llm_credentials(name, row["default_model"], environment={})["base_url"] == endpoint
+    legacy = {p["provider"]: p for p in cli._PROVIDER_CHOICES}
+    onboard = {p.key: p for p in ONBOARD_PROVIDERS}
+    assert set(onboard) == {
+        "openrouter", "openai", "anthropic", "openai-codex", "deepseek", "opencode",
+        "siliconflow-cn", "siliconflow-global", "nvidia", "modelscope", "ollama",
+    }
+    assert {"openai", "nvidia", "siliconflow-cn", "siliconflow-global"} <= legacy.keys()
+    for name, p in legacy.items():
+        row = rows[name]
+        assert (p["model"], p["base_url"], p["key_env"], p["base_env"]) == (
+            row["default_model"], row["default_base_url"], row.get("api_key_env"), row["base_url_env"])
+    for name, p in onboard.items():
+        row = rows[name]
+        assert (p.default_model, p.base_url, p.key_env, p.base_env) == (
+            row["default_model"], row["default_base_url"], row.get("api_key_env"), row["base_url_env"])
+        assert p.suggested_models[0] == EXPECTED_PROVIDER_DEFAULTS[name]
 
 
 def test_minimax_provider_lists_regional_endpoints() -> None:
@@ -66,125 +86,24 @@ def test_minimax_provider_lists_regional_endpoints() -> None:
     ]
 
 
-def test_interactive_onboard_openai_defaults_to_available_model() -> None:
-    provider = next(provider for provider in ONBOARD_PROVIDERS if provider.key == "openai")
-
-    assert provider.default_model == "gpt-5.5"
-    assert provider.suggested_models[0] == "gpt-5.5"
-    assert "gpt-5.5-pro" in provider.suggested_models
-    assert "gpt-5.5-instant" in provider.suggested_models
-    assert provider.default_model != "gpt-5.5-instant"
-
-
-def test_interactive_onboard_codex_defaults_to_supported_model() -> None:
-    provider = next(provider for provider in ONBOARD_PROVIDERS if provider.key == "openai-codex")
-
-    assert provider.default_model == "openai-codex/gpt-6-sol"
-    assert provider.key_env is None
-    assert provider.base_env == "OPENAI_CODEX_BASE_URL"
-    assert provider.suggested_models[0] == "openai-codex/gpt-6-sol"
+@pytest.mark.parametrize("name,key,base,url", [
+    ("nvidia", "NVIDIA_API_KEY", "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    ("siliconflow-cn", "SILICONFLOW_API_KEY", "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
+    ("siliconflow-global", "SILICONFLOW_GLOBAL_API_KEY", "SILICONFLOW_GLOBAL_BASE_URL", "https://api.siliconflow.com/v1"),
+    ("openai-codex", None, "OPENAI_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex/responses"),
+])
+def test_pinned_connection_contracts(name, key, base, url):
+    row = next(p for p in provider_catalog() if p["name"] == name)
+    assert (row["api_key_env"], row["base_url_env"], row["default_base_url"]) == (key, base, url)
 
 
-def test_legacy_cli_provider_choices_match_registry_defaults() -> None:
-    legacy_defaults = {
-        str(item["provider"]): item["model"]
-        for item in cli._PROVIDER_CHOICES
-        if item["provider"] in EXPECTED_PROVIDER_DEFAULTS
-    }
-
-    for provider, model in legacy_defaults.items():
-        assert model == EXPECTED_PROVIDER_DEFAULTS[provider]
-
-    assert legacy_defaults["openai"] == "gpt-5.5"
-
-
-def test_interactive_onboard_suggests_current_primary_models() -> None:
-    onboard_defaults = {provider.key: provider.default_model for provider in ONBOARD_PROVIDERS}
-
-    assert onboard_defaults["openrouter"] == "deepseek/deepseek-v4-pro"
-    assert onboard_defaults["openai"] == "gpt-5.5"
-    assert onboard_defaults["anthropic"] == "claude-sonnet-4-6"
-    assert onboard_defaults["openai-codex"] == "openai-codex/gpt-6-sol"
-    assert onboard_defaults["deepseek"] == "deepseek-v4-pro"
-    assert onboard_defaults["siliconflow-cn"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
-    assert onboard_defaults["siliconflow-global"] == "deepseek-ai/DeepSeek-V3.1-Terminus"
-    assert onboard_defaults["modelscope"] == "Qwen/Qwen3.5-27B"
-    assert onboard_defaults["nvidia"] == "nvidia/nemotron-3-ultra-550b-a55b"
-
-
-def test_nvidia_is_available_in_both_cli_onboarding_surfaces() -> None:
-    onboard = next(provider for provider in ONBOARD_PROVIDERS if provider.key == "nvidia")
-    legacy = next(item for item in cli._PROVIDER_CHOICES if item["provider"] == "nvidia")
-
-    assert onboard.key_env == legacy["key_env"] == "NVIDIA_API_KEY"
-    assert onboard.base_env == legacy["base_env"] == "NVIDIA_BASE_URL"
-    assert onboard.base_url == legacy["base_url"] == "https://integrate.api.nvidia.com/v1"
-
-
-def test_siliconflow_is_available_in_both_cli_onboarding_surfaces() -> None:
-    expected = {
-        "siliconflow-cn": (
-            "SILICONFLOW_API_KEY",
-            "SILICONFLOW_BASE_URL",
-            "https://api.siliconflow.cn/v1",
-        ),
-        "siliconflow-global": (
-            "SILICONFLOW_GLOBAL_API_KEY",
-            "SILICONFLOW_GLOBAL_BASE_URL",
-            "https://api.siliconflow.com/v1",
-        ),
-    }
-
-    for provider, (key_env, base_env, base_url) in expected.items():
-        onboard = next(item for item in ONBOARD_PROVIDERS if item.key == provider)
-        legacy = next(item for item in cli._PROVIDER_CHOICES if item["provider"] == provider)
-
-        assert onboard.key_env == legacy["key_env"] == key_env
-        assert onboard.base_env == legacy["base_env"] == base_env
-        assert onboard.base_url == legacy["base_url"] == base_url
-
-
-# ---------------------------------------------------------------------------
-# #758: backend credential resolution falls back to the catalog default_base_url
-# when no *_BASE_URL is set, so CLI / manual-.env users reach the right endpoint.
-# ---------------------------------------------------------------------------
-
-
-def test_zai_base_url_falls_back_to_catalog_default(monkeypatch) -> None:
-    """With no *_BASE_URL set, zai resolves to its catalog endpoint instead of
-    silently defaulting to api.openai.com (which 404s glm-5.1)."""
-    for var in ("ZAI_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE"):
-        monkeypatch.delenv(var, raising=False)
-    creds = get_llm_credentials("zai", "glm-5.1")
-    assert creds["base_url"] == "https://api.z.ai/api/coding/paas/v4"
-
-
-def test_explicit_provider_base_url_overrides_catalog_default(monkeypatch) -> None:
-    monkeypatch.setenv("ZAI_BASE_URL", "https://custom.example/v1")
-    creds = get_llm_credentials("zai", "glm-5.1")
-    assert creds["base_url"] == "https://custom.example/v1"
-
-
-def test_openai_base_url_env_overrides_catalog_default(monkeypatch) -> None:
-    monkeypatch.delenv("ZAI_BASE_URL", raising=False)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://proxy.example/v1")
-    creds = get_llm_credentials("zai", "glm-5.1")
-    assert creds["base_url"] == "https://proxy.example/v1"
-
-
-def test_credential_fallback_map_matches_provider_catalog() -> None:
-    """The base-URL fallback map must stay in sync with llm_providers.json."""
-    providers_path = (
-        Path(__file__).resolve().parents[1] / "src" / "providers" / "llm_providers.json"
-    )
-    # claude-cli drives a local executable and has no HTTP endpoint, so it is
-    # the one provider deliberately left out of the fallback map.
-    catalog = {
-        item["name"]: item["default_base_url"]
-        for item in json.loads(providers_path.read_text(encoding="utf-8"))
-        if item.get("auth_type") != "claude_cli"
-    }
-    assert _provider_default_base_urls() == catalog
+@pytest.mark.parametrize("environment,endpoint", [
+    ({}, "https://api.z.ai/api/coding/paas/v4"),
+    ({"ZAI_BASE_URL": "https://direct.invalid", "OPENAI_BASE_URL": "https://relay.invalid"}, "https://direct.invalid"),
+    ({"OPENAI_BASE_URL": "https://relay.invalid"}, "https://relay.invalid"),
+])
+def test_endpoint_precedence(environment, endpoint):
+    assert get_llm_credentials("zai", "glm-5.1", environment=environment)["base_url"] == endpoint
 
 
 def test_env_example_default_matches_provider_registry():
@@ -197,10 +116,15 @@ def test_env_example_default_matches_provider_registry():
     assert assignments["LANGCHAIN_MODEL_NAME"] == provider["default_model"]
 
 
-def test_direct_deepseek_suggests_current_flash_name():
-    provider = next(p for p in ONBOARD_PROVIDERS if p.key == "deepseek")
-    assert "deepseek-flash" in provider.suggested_models
-    assert "deepseek-v4-flash" not in provider.suggested_models
+@pytest.mark.parametrize("name,required,obsolete", [
+    ("openai", {"gpt-5.5", "gpt-5.5-pro", "gpt-5.5-instant"}, set()),
+    ("deepseek", {"deepseek-flash"}, {"deepseek-v4-flash"}),
+    ("openrouter", {"deepseek/deepseek-v4.1-flash"}, {"deepseek/deepseek-v4-flash"}),
+])
+def test_curated_models(name, required, obsolete):
+    models = next(p.suggested_models for p in ONBOARD_PROVIDERS if p.key == name)
+    assert required <= set(models)
+    assert not obsolete.intersection(models)
 
 
 def test_codex_models_offered_are_ones_the_codex_backend_publishes() -> None:
@@ -224,13 +148,6 @@ def test_codex_models_offered_are_ones_the_codex_backend_publishes() -> None:
     offered = {EXPECTED_PROVIDER_DEFAULTS["openai-codex"], onboard.default_model, *onboard.suggested_models}
     for model in offered:
         assert any(re.search(pattern, model) for pattern in patterns), model
-
-
-def test_openrouter_suggests_current_flash_without_switching_default():
-    provider = next(p for p in ONBOARD_PROVIDERS if p.key == "openrouter")
-    assert provider.default_model == "deepseek/deepseek-v4-pro"
-    assert "deepseek/deepseek-v4.1-flash" in provider.suggested_models
-    assert "deepseek/deepseek-v4-flash" not in provider.suggested_models
 
 
 def test_documented_direct_deepseek_pair_matches_registry():

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "research.hk_counter.v1",
+  "scenario": "currency_identity",
+  "prompt": "按项目已有港交所柜台代码规则，给出80700.HK与00700.HK的报价币种；不获取价格。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "80700_currency",
+        "operator": "equals",
+        "expected": "CNY"
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "00700_currency",
+        "operator": "equals",
+        "expected": "HKD"
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

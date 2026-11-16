@@ -194,7 +194,7 @@ def test_cache_hit_still_passes_the_identity_gate(agent_factory) -> None:
     today either way. Any later tool marked deterministic that does carry
     one would otherwise skip identity checks from its second call onward.
     """
-    from src.agent.grounding import ToolAuthorization
+    from evals.grounding import ToolAuthorization
 
     tool = _CountingTool(deterministic=True)
     agent, run_dir, _ = agent_factory(tool)
@@ -222,7 +222,7 @@ def test_cache_hit_still_passes_the_identity_gate(agent_factory) -> None:
         def ingest_tool_result(self, **kwargs):
             ingested.append(kwargs["call_id"])
 
-    agent._grounding = _Grounding()
+    agent._identity = _Grounding()
     messages, records = _drive(agent, tool.name, run_dir, [{"a": 1}, {"a": 1}])
 
     # Both calls reached the gate; the blocked repeat was not served cached.

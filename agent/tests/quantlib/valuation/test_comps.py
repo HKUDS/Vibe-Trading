@@ -879,3 +879,13 @@ def test_calendarise_metric_finite_ltm_is_unchanged():
         "ltm", metric_name="ebitda", company_name="X",
     )
     assert result.value == pytest.approx(110.0, abs=EXACT)
+
+
+@pytest.mark.parametrize("book", [float("nan"), float("inf"), float("-inf")])
+def test_target_non_finite_book_value_is_rejected(book):
+    with pytest.raises(ValuationError, match="book_value_of_equity"):
+        _baseline_target(book_value_of_equity=book)
+
+
+def test_target_negative_book_value_is_still_accepted():
+    assert _baseline_target(book_value_of_equity=-50.0).book_value_of_equity == -50.0

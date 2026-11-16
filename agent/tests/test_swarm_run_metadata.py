@@ -10,9 +10,12 @@ re-read by ``SwarmStore.list_runs`` after this change.
 
 from __future__ import annotations
 
+from src.providers.registry import provider_names
+from src.providers import llm as _provider_adapters
+from src.providers import settings as _provider_configuration
+
 import pytest
 
-import src.providers.llm as llm_mod
 from src.config.accessor import reset_env_config
 from src.swarm.models import SwarmRun, public_model_metadata, public_provider_metadata
 from src.swarm.runtime import SwarmRuntime
@@ -75,8 +78,8 @@ def test_runtime_loads_dotenv_before_capturing_provider_model(
     monkeypatch.setenv("LANGCHAIN_REASONING_EFFORT", "max")
     monkeypatch.setenv("LANGCHAIN_USE_RESPONSES_API", "true")
     monkeypatch.delenv("LANGCHAIN_MODEL_NAME", raising=False)
-    monkeypatch.setattr(llm_mod, "_ENV_CANDIDATES", [env_file])
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", False)
+    monkeypatch.setattr(_provider_configuration, "_ENV_CANDIDATES", [env_file])
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     runtime = SwarmRuntime(store=SwarmStore(tmp_path / "runs"))
@@ -97,8 +100,8 @@ def test_runtime_resolves_unset_responses_api_to_false(
     env_file.write_text("LANGCHAIN_MODEL_NAME=smoke-model\n", encoding="utf-8")
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
     monkeypatch.delenv("LANGCHAIN_USE_RESPONSES_API", raising=False)
-    monkeypatch.setattr(llm_mod, "_ENV_CANDIDATES", [env_file])
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", False)
+    monkeypatch.setattr(_provider_configuration, "_ENV_CANDIDATES", [env_file])
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     runtime = SwarmRuntime(store=SwarmStore(tmp_path / "runs"))
@@ -130,8 +133,8 @@ def test_runtime_redacts_non_public_llm_model_metadata_before_persistence(
         encoding="utf-8",
     )
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
-    monkeypatch.setattr(llm_mod, "_ENV_CANDIDATES", [env_file])
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", False)
+    monkeypatch.setattr(_provider_configuration, "_ENV_CANDIDATES", [env_file])
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     store = SwarmStore(tmp_path / "runs")
@@ -153,8 +156,8 @@ def test_runtime_bounds_llm_metadata_before_persistence(
         encoding="utf-8",
     )
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
-    monkeypatch.setattr(llm_mod, "_ENV_CANDIDATES", [env_file])
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", False)
+    monkeypatch.setattr(_provider_configuration, "_ENV_CANDIDATES", [env_file])
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     store = SwarmStore(tmp_path / "runs")
@@ -176,8 +179,8 @@ def test_runtime_redacts_unsupported_reasoning_effort_before_persistence(
         encoding="utf-8",
     )
     monkeypatch.setenv("LANGCHAIN_PROVIDER", "openai")
-    monkeypatch.setattr(llm_mod, "_ENV_CANDIDATES", [env_file])
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", False)
+    monkeypatch.setattr(_provider_configuration, "_ENV_CANDIDATES", [env_file])
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
     reset_env_config()
     monkeypatch.setattr(SwarmRuntime, "_execute_run", lambda *_: None)
     store = SwarmStore(tmp_path / "runs")
@@ -205,6 +208,7 @@ def test_runtime_redacts_unsupported_reasoning_effort_before_persistence(
 )
 def test_provider_metadata_redacts_non_public_values(provider: str) -> None:
     assert public_provider_metadata(provider) == "[redacted]"
+    assert all(public_provider_metadata(name) == name for name in provider_names())
 
 
 @pytest.mark.parametrize(
@@ -288,9 +292,9 @@ def test_runtime_records_effective_responses_transport(
         monkeypatch.delenv("VIBE_TRADING_DEEPSEEK_ADAPTER", raising=False)
     else:
         monkeypatch.setenv("VIBE_TRADING_DEEPSEEK_ADAPTER", adapter)
-    monkeypatch.setattr(llm_mod, "_dotenv_loaded", True)
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", True)
     monkeypatch.setattr(
-        llm_mod,
+        _provider_adapters,
         "_native_deepseek_adapter_available",
         lambda: native_available,
     )

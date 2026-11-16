@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "case_id": "research.window_boundary.v1",
+  "scenario": "backtest_validation",
+  "prompt": "净值为 [100,100,100,100,50,50,50,50]，切成两个等长窗口。每个已观测相邻收益都必须分配到一个窗口。计算全程收益、两窗口收益复合值和最差窗口回撤。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "total_return",
+        "operator": "approx",
+        "expected": -0.5
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "compounded_window_return",
+        "operator": "approx",
+        "expected": -0.5
+      },
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "worst_window_drawdown",
+        "operator": "approx",
+        "expected": -0.5
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

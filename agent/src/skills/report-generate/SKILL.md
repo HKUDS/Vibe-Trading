@@ -25,6 +25,13 @@ as the content of a `.pdf` file.
 
 ## Report Types and Structure
 
+### Preserve evidence when formatting numbers
+
+Cite the source and reporting period in ordinary prose. Preserve currency and
+units when rounding: USD 96,221,000,000 can be written as USD 96.22 billion.
+Distinguish observations, calculated results, and proposed scenarios. Explain
+missing inputs; do not invent them. No hidden numeric declaration is required.
+
 ### Type Classification
 
 | Type | Length | Core Content | Trigger Scenario |

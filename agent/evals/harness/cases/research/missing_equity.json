@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "case_id": "research.missing_equity.v1",
+  "scenario": "missing_data",
+  "prompt": "净值为 [100,null,110]。只允许已观测相邻净值对计算单期收益，不能跨缺失值填充。给出可用单期收益的数量。 将结果作为JSON对象保存到运行目录的artifacts/task_result.json；仅使用题目给出的合成测试数据和明确指定的项目规则。",
+  "history": [],
+  "data_snapshot": null,
+  "expect": {
+    "execution": {
+      "allowed": [
+        "success"
+      ]
+    },
+    "tools": {
+      "forbidden": [
+        "trading_place_order"
+      ]
+    },
+    "measurements": [
+      {
+        "artifact": "artifacts/task_result.json",
+        "field": "adjacent_return_count",
+        "operator": "approx",
+        "expected": 0
+      }
+    ],
+    "budget": {
+      "max_llm_calls": 8,
+      "max_input_tokens": 150000,
+      "max_iterations": 10
+    },
+    "timing": {
+      "max_seconds": 300
+    }
+  }
+}

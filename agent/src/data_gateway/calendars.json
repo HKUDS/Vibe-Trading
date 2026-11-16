@@ -1,0 +1,13 @@
+{
+  "markets": {
+    "us_equity": "XNYS",
+    "hk_equity": "XHKG",
+    "ca_equity": "XTSE",
+    "uk_equity": "XLON",
+    "jp_equity": "XTKS"
+  },
+  "legacy_intraday_sources": {
+    "yahoo": {"timezone": "UTC", "timestamp_basis": "bar_open"}
+  },
+  "close_point_sources": ["yahoo"]
+}

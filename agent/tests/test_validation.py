@@ -486,7 +486,7 @@ class TestBarsPerYearNone:
 
 @pytest.mark.parametrize("pnls", [[-150, -25, -25], [100, -150, 100], [float('nan'), 10, 20]])
 def test_unmeasurable_monte_carlo_has_no_numeric_result(tmp_path, pnls):
-    from src.agent.grounding.evidence import _summary_scalars
+    from evals.grounding.evidence import _summary_scalars
 
     result = monte_carlo_test(_make_trades(pnls), 100, n_simulations=50, seed=42)
     assert set(result) == {"error"}

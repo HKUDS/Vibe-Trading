@@ -143,6 +143,9 @@ def _panel(
             array[_GAP, symbol] += step if mode == "up" else -step
         panel[name] = pd.DataFrame(array, index=index, columns=columns)
     panel["amount"] = panel["vwap"] * panel["volume"]
+    for offset, field in enumerate(("mkt_ret", "smb", "hml"), 1):
+        values = np.roll(panel["close"].pct_change(fill_method=None).to_numpy(), offset, axis=1)
+        panel[field] = pd.DataFrame(values, index=index, columns=columns)
     panel["sector"] = pd.DataFrame(np.tile(np.arange(_N) % 3, (_T, 1)), index=index, columns=columns)
     return panel
 
@@ -243,11 +246,11 @@ RESIDUE_ARTIFACTS = {
     "gtja191_121",
 }
 # Declared partial windows: rolling(60, min_periods=20/30) and a >=90% coverage rule.
-PARTIAL_WINDOWS = {"gtja191_025", "gtja191_033", "academic_corr_rewire"}
+PARTIAL_WINDOWS = {"academic_corr_rewire"}
 # The fallback benchmark is the cross-sectional mean of the closes present that day,
 # so one symbol's missing close moves every symbol's "benchmark down" flag on the
 # next bar. The symbol's own inputs are masked; the benchmark is left as it is.
-BENCHMARK_FROM_THE_PANEL = {"gtja191_075", "gtja191_182"}
+BENCHMARK_FROM_THE_PANEL = {"gtja191_075", "gtja191_149", "gtja191_182"}
 
 
 _VALUE_ORACLE_SYMBOLS = (_SYMBOL, 16)
@@ -298,7 +301,7 @@ GATE_REACH = {
     "alpha101_086": 58,
     "alpha101_095": 81,
     "alpha101_099": 87,
-    "gtja191_056": 60,
+    "gtja191_056": 70,
     "gtja191_101": 80,
     "gtja191_123": 87,
     "gtja191_154": 197,

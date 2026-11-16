@@ -47,6 +47,7 @@ def test_fetch_scales_lse_pence_to_gbp(monkeypatch: pytest.MonkeyPatch) -> None:
     assert frame.attrs == {
         "quote_currency": "GBP",
         "currency_conversion": "GBp→GBP (÷100)",
+        "timestamp_basis": "session_date",
     }
 
 
@@ -98,6 +99,7 @@ def test_fetch_leaves_gbp_quoted_lse_unscaled(monkeypatch: pytest.MonkeyPatch) -
     assert frame.attrs == {
         "quote_currency": "GBP",
         "currency_conversion": "none",
+        "timestamp_basis": "session_date",
     }
 
 

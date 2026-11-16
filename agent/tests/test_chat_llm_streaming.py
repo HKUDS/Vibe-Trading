@@ -2,44 +2,21 @@
 
 from __future__ import annotations
 
+from tests.provider_helpers import chat_with_adapter
+
 import os
 import threading
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from langchain_core.messages import AIMessageChunk
 
 from src.providers.chat import ChatLLM, ProviderStreamError
 
 
-class _FakeChunk:
-    def __init__(
-        self,
-        *,
-        content: str = "",
-        reasoning: str = "",
-        finish_reason: str = "stop",
-    ) -> None:
-        self.content = content
-        self.tool_calls: list[dict[str, Any]] = []
-        self.additional_kwargs = {"reasoning_content": reasoning} if reasoning else {}
-        self.response_metadata = {"finish_reason": finish_reason}
-        self.usage_metadata = None
-
-    def __add__(self, other: "_FakeChunk") -> "_FakeChunk":
-        merged = _FakeChunk(
-            content=f"{self.content}{other.content}",
-            reasoning=(
-                f"{self.additional_kwargs.get('reasoning_content', '')}"
-                f"{other.additional_kwargs.get('reasoning_content', '')}"
-            ),
-            finish_reason=other.response_metadata.get("finish_reason", "stop"),
-        )
-        return merged
-
-
 class _FakeStreamingLLM:
-    def __init__(self, chunks: list[_FakeChunk] | None = None, exc: Exception | None = None) -> None:
+    def __init__(self, chunks: list[AIMessageChunk] | None = None, exc: Exception | None = None) -> None:
         self.chunks = chunks or []
         self.exc = exc
         self.invoke_called = False
@@ -54,21 +31,18 @@ class _FakeStreamingLLM:
 
     def invoke(self, messages: list[dict[str, Any]], config: dict[str, Any] | None = None):
         self.invoke_called = True
-        return _FakeChunk(content="fallback")
+        return AIMessageChunk(content="fallback")
 
 
-def _client(fake_llm: _FakeStreamingLLM) -> ChatLLM:
-    client = ChatLLM.__new__(ChatLLM)
-    client.model_name = "deepseek-v4-pro"
-    client._llm = fake_llm
-    return client
+def _client(fake_llm: _FakeStreamingLLM):
+    return chat_with_adapter(fake_llm, model="deepseek-v4-pro")
 
 
 def test_reasoning_only_chunks_emit_progress_without_final_answer_text() -> None:
     fake = _FakeStreamingLLM([
-        _FakeChunk(reasoning="thinking "),
-        _FakeChunk(reasoning="more"),
-        _FakeChunk(content="final"),
+        AIMessageChunk(content="", additional_kwargs={"reasoning_content": "thinking "}),
+        AIMessageChunk(content="", additional_kwargs={"reasoning_content": "more"}),
+        AIMessageChunk(content="final"),
     ])
     text_chunks: list[str] = []
     reasoning_chunks: list[str] = []
@@ -97,7 +71,7 @@ def test_parse_dsml_tool_call_content_as_structured_tool_call() -> None:
         "</｜｜DSML｜｜tool_calls>/"
     )
 
-    response = ChatLLM._parse_response(_FakeChunk(content=content))
+    response = ChatLLM._parse_response(AIMessageChunk(content=content))
 
     assert response.content == ""
     assert len(response.tool_calls) == 1
@@ -118,7 +92,7 @@ def test_parse_dsml_tool_call_requires_pure_tool_call_payload() -> None:
         "</｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>"
     )
 
-    response = ChatLLM._parse_response(_FakeChunk(content=content))
+    response = ChatLLM._parse_response(AIMessageChunk(content=content))
 
     assert response.content == content
     assert response.tool_calls == []
@@ -134,7 +108,7 @@ def test_stream_dsml_tool_call_content_is_not_emitted_as_text() -> None:
         "</｜｜DSML｜｜invoke>"
         "</｜｜DSML｜｜tool_calls>"
     )
-    fake = _FakeStreamingLLM([_FakeChunk(content=content)])
+    fake = _FakeStreamingLLM([AIMessageChunk(content=content)])
     text_chunks: list[str] = []
 
     response = _client(fake).stream_chat(
@@ -148,7 +122,7 @@ def test_stream_dsml_tool_call_content_is_not_emitted_as_text() -> None:
 
 
 def test_anthropic_content_blocks_stream_with_native_tool_call() -> None:
-    chunk = _FakeChunk()
+    chunk = AIMessageChunk(content="")
     chunk.content = [
         {"type": "text", "text": "Checking quote"},
         {"type": "tool_use", "id": "toolu_1", "name": "quote", "input": {}},
@@ -174,9 +148,9 @@ def test_anthropic_content_blocks_stream_with_native_tool_call() -> None:
 def test_should_cancel_stops_stream_early() -> None:
     """A should_cancel predicate breaks the chunk loop; later chunks are dropped."""
     fake = _FakeStreamingLLM([
-        _FakeChunk(content="a"),
-        _FakeChunk(content="b"),
-        _FakeChunk(content="c"),
+        AIMessageChunk(content="a"),
+        AIMessageChunk(content="b"),
+        AIMessageChunk(content="c"),
     ])
     seen: list[str] = []
     cancelled = threading.Event()
@@ -204,7 +178,7 @@ def test_should_cancel_stops_stream_early() -> None:
 
 def test_should_cancel_absent_consumes_full_stream() -> None:
     """Without should_cancel the stream is consumed in full (no behavior change)."""
-    fake = _FakeStreamingLLM([_FakeChunk(content="x"), _FakeChunk(content="y")])
+    fake = _FakeStreamingLLM([AIMessageChunk(content="x"), AIMessageChunk(content="y")])
     seen: list[str] = []
 
     response = _client(fake).stream_chat(
@@ -216,39 +190,21 @@ def test_should_cancel_absent_consumes_full_stream() -> None:
     assert response.content == "xy"
 
 
-def test_stream_failure_raises_provider_error_without_silent_fallback() -> None:
-    fake = _FakeStreamingLLM(exc=RuntimeError("stream exploded"))
-
-    with patch.dict(
-        os.environ,
-        {"LANGCHAIN_PROVIDER": "deepseek", "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro"},
-        clear=True,
-    ):
-        with pytest.raises(ProviderStreamError) as excinfo:
+@pytest.mark.parametrize("error_type", [RuntimeError, ValueError])
+def test_stream_failure_is_redacted_without_silent_fallback(error_type):
+    """Ordinary stream errors, including ValueError, must not trigger invoke."""
+    fake = _FakeStreamingLLM(exc=error_type("bad key sk-live-secret-123456"))
+    with patch.dict(os.environ, {
+        "LANGCHAIN_PROVIDER": "deepseek", "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
+        "DEEPSEEK_API_KEY": "sk-live-secret-123456",
+    }, clear=True):
+        with pytest.raises(ProviderStreamError) as caught:
             _client(fake).stream_chat([{"role": "user", "content": "hi"}])
 
-    assert "provider=deepseek" in str(excinfo.value)
-    assert "model=deepseek-v4-pro" in str(excinfo.value)
-    assert fake.invoke_called is False
-
-
-def test_stream_error_redacts_configured_secret_values() -> None:
-    fake = _FakeStreamingLLM(exc=RuntimeError("bad key sk-live-secret-123456"))
-
-    with patch.dict(
-        os.environ,
-        {
-            "LANGCHAIN_PROVIDER": "deepseek",
-            "LANGCHAIN_MODEL_NAME": "deepseek-v4-pro",
-            "DEEPSEEK_API_KEY": "sk-live-secret-123456",
-        },
-        clear=True,
-    ):
-        with pytest.raises(ProviderStreamError) as excinfo:
-            _client(fake).stream_chat([{"role": "user", "content": "hi"}])
-
-    assert "sk-live-secret-123456" not in str(excinfo.value)
-    assert "[redacted]" in str(excinfo.value)
+    message = str(caught.value)
+    assert "provider=deepseek" in message and "model=deepseek-v4-pro" in message
+    assert "sk-live-secret-123456" not in message and "[redacted]" in message
+    assert not fake.invoke_called
 
 
 @pytest.mark.parametrize(
@@ -275,72 +231,37 @@ def test_provider_stream_error_retryable_classification(
     assert err.retryable is expected
 
 
-def test_content_filter_triggered_flag() -> None:
-    """content_filter finish_reason sets content_filter_triggered=True."""
+@pytest.mark.parametrize("reason,content,filtered", [
+    ("content_filter", "", True), ("stop", "text", False),
+])
+def test_content_filter_flag_follows_finish_reason(reason, content, filtered):
     response = ChatLLM._parse_response(
-        _FakeChunk(content="", finish_reason="content_filter")
+        AIMessageChunk(content=content, response_metadata={"finish_reason": reason})
     )
-
-    assert response.content == ""
-    assert response.finish_reason == "content_filter"
-    assert response.content_filter_triggered is True
-
-
-def test_content_filter_triggered_flag_false_on_stop() -> None:
-    """Normal stop reason leaves content_filter_triggered=False."""
-    response = ChatLLM._parse_response(
-        _FakeChunk(content="text", finish_reason="stop")
-    )
-
-    assert response.content == "text"
-    assert response.finish_reason == "stop"
-    assert response.content_filter_triggered is False
+    assert response.content == content
+    assert response.finish_reason == reason
+    assert response.content_filter_triggered is filtered
 
 
-# ---------------------------------------------------------------------------
-# #758: no-SSE endpoints (e.g. some Z.ai coding-plan routes) stream zero
-# chunks; stream_chat must fall back to a non-streaming invoke, and a bare
-# base-URL misconfiguration must surface an actionable hint.
-# ---------------------------------------------------------------------------
-
-
-def test_empty_stream_value_error_falls_back_to_invoke() -> None:
-    """LangChain's 'No generation chunks were returned' → non-streaming invoke."""
-    fake = _FakeStreamingLLM(exc=ValueError("No generation chunks were returned"))
+@pytest.mark.parametrize("error", [None, ValueError("No generation chunks were returned")],
+                         ids=["clean-eof", "langchain-empty-stream"])
+def test_empty_stream_falls_back_to_invoke(error):
+    """Both empty-SSE forms use the same non-streaming fallback (#758)."""
+    fake = _FakeStreamingLLM(exc=error)
     response = _client(fake).stream_chat([{"role": "user", "content": "hi"}])
-    assert fake.invoke_called is True
+    assert fake.invoke_called
     assert response.content == "fallback"
 
 
-def test_clean_zero_chunk_stream_falls_back_to_invoke() -> None:
-    """A stream that ends cleanly with no chunks (and no cancel) also falls back."""
-    fake = _FakeStreamingLLM(chunks=[])
-    response = _client(fake).stream_chat([{"role": "user", "content": "hi"}])
-    assert fake.invoke_called is True
-    assert response.content == "fallback"
-
-
-def test_generic_value_error_still_raises_provider_error() -> None:
-    """A ValueError that is NOT the empty-stream signal still surfaces as error."""
-    fake = _FakeStreamingLLM(exc=ValueError("malformed request payload"))
-    with patch.dict(
-        os.environ,
-        {"LANGCHAIN_PROVIDER": "zai", "LANGCHAIN_MODEL_NAME": "glm-5.1"},
-        clear=True,
-    ):
-        with pytest.raises(ProviderStreamError):
-            _client(fake).stream_chat([{"role": "user", "content": "hi"}])
-    assert fake.invoke_called is False
-
-
-def test_cancelled_empty_stream_returns_empty_without_fallback() -> None:
-    """A user cancel before any chunk returns empty — it must NOT invoke."""
-    fake = _FakeStreamingLLM([_FakeChunk(content="ignored")])
+@pytest.mark.parametrize("llm_type", [None, "openai-chat"])
+def test_cancelled_empty_stream_needs_no_terminal_metadata_or_fallback(llm_type):
+    fake = _FakeStreamingLLM([AIMessageChunk(content="ignored")])
+    fake._llm_type = llm_type
     response = _client(fake).stream_chat(
         [{"role": "user", "content": "hi"}], should_cancel=lambda: True
     )
-    assert fake.invoke_called is False
-    assert response.content == ""
+    assert not fake.invoke_called
+    assert response.content == "" and not response.tool_calls
 
 
 def test_provider_stream_error_hints_at_base_url_on_html_body() -> None:
@@ -355,52 +276,32 @@ def test_provider_stream_error_hints_at_base_url_on_html_body() -> None:
     assert "zai" in message
 
 
-def test_stream_idle_timeout_aborts_a_stalled_stream() -> None:
-    """A stream whose deltas stall past the idle budget fails retryably.
-
-    The loop passes idle_timeout_s so a provider that stops emitting
-    chunks (silent stall) surfaces as a retryable ProviderStreamError
-    instead of hanging the run indefinitely.
-    """
+@pytest.mark.parametrize("delay,stalls", [(0.05, False), (0.6, True)], ids=["flowing", "stalled"])
+def test_idle_budget_preserves_delivered_text_without_replaying(delay, stalls):
     import time
 
-    class _StallingLLM(_FakeStreamingLLM):
+    class Delayed(_FakeStreamingLLM):
         def stream(self, messages, config=None):
-            yield _FakeChunk(content="first")
-            time.sleep(0.6)  # longer than idle_timeout_s below
-            yield _FakeChunk(content="second")
+            yield AIMessageChunk(content="first")
+            time.sleep(delay)
+            yield AIMessageChunk(content="second")
 
-    client = _client(_StallingLLM())
-    with pytest.raises(ProviderStreamError) as excinfo:
-        client.stream_chat(
-            [{"role": "user", "content": "hi"}],
-            idle_timeout_s=0.2,
-        )
-    assert excinfo.value.retryable is True
-
-
-def test_stream_idle_timeout_allows_a_flowing_stream() -> None:
-    """Chunks arriving within the idle budget are unaffected by the timeout."""
-    import time
-
-    class _FlowingLLM(_FakeStreamingLLM):
-        def stream(self, messages, config=None):
-            yield _FakeChunk(content="a")
-            time.sleep(0.05)
-            yield _FakeChunk(content="b")
-
-    client = _client(_FlowingLLM())
-    response = client.stream_chat(
-        [{"role": "user", "content": "hi"}],
-        idle_timeout_s=0.2,
-    )
-    assert response.content == "ab"
-
+    fake = Delayed()
+    client = _client(fake)
+    seen = []
+    if stalls:
+        with pytest.raises(ProviderStreamError, match="idle timeout") as caught:
+            client.stream_chat([], idle_timeout_s=0.2, on_text_chunk=seen.append)
+        assert caught.value.retryable
+        assert seen == ["first"]
+    else:
+        response = client.stream_chat([], idle_timeout_s=0.2, on_text_chunk=seen.append)
+        assert response.content == "firstsecond"
+        assert seen == ["first", "second"]
+    assert not fake.invoke_called
 
 
 def test_only_explicit_provider_waiting_reaches_activity_callback():
-    from langchain_core.messages import AIMessageChunk
-
     waiting = []
     response = _client(_FakeStreamingLLM([
         AIMessageChunk(content=""),
@@ -411,9 +312,10 @@ def test_only_explicit_provider_waiting_reaches_activity_callback():
     assert response.content == "final"
 
 
+@pytest.mark.parametrize("adapter_kind", ["compatible", "native"])
 @pytest.mark.parametrize("terminal", [True, False])
 @pytest.mark.parametrize("tool_call", [True, False])
-def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call):
+def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call, adapter_kind):
     """Replay a clean EOF through the real SDK; truncated JSON is not a call."""
     import json
     import httpx
@@ -440,10 +342,13 @@ def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call):
         return httpx.Response(200, text=body, headers={"Content-Type": "text/event-stream"})
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as transport:
-        adapter = ChatOpenAIWithReasoning(model="deepseek-v4-pro", api_key="offline",
+        adapter_class = (ChatOpenAIWithReasoning if adapter_kind == "compatible"
+                         else pytest.importorskip("langchain_deepseek").ChatDeepSeek)
+        adapter = adapter_class(model="deepseek-v4-pro", api_key="offline",
                   base_url="https://example.invalid/v1", http_client=transport,
                   stream_usage=True, max_retries=0)
-        adapter._vibe_provider = "deepseek"
+        if adapter_kind == "compatible":
+            adapter._vibe_provider = "deepseek"
         client = _client(adapter)
         if terminal:
             result = client.stream_chat([{"role": "user", "content": "Calculate"}])
@@ -460,19 +365,55 @@ def test_actual_chat_stream_requires_terminal_metadata(terminal, tool_call):
 @pytest.mark.parametrize("status", ["completed", "incomplete"])
 def test_responses_terminal_status_remains_valid(status):
     """Responses has terminal status rather than Chat Completions finish_reason."""
-    chunk = _FakeChunk(content="Answer")
+    chunk = AIMessageChunk(content="Answer")
     chunk.response_metadata = {"status": status}
     fake = _FakeStreamingLLM([chunk])
     fake._llm_type = "openai-chat"
     assert _client(fake).stream_chat([{"role": "user", "content": "Hi"}]).content == "Answer"
 
 
-def test_cancelled_openai_stream_does_not_require_terminal_metadata():
-    chunk = _FakeChunk(content="Partial")
-    chunk.response_metadata = {}
-    fake = _FakeStreamingLLM([chunk])
-    fake._llm_type = "openai-chat"
-    response = _client(fake).stream_chat(
-        [{"role": "user", "content": "Hi"}], should_cancel=lambda: True)
-    assert response.content == ""
-    assert not fake.invoke_called
+@pytest.mark.parametrize("metadata,args,valid", [
+    ({"finish_reason": "tool_calls"}, '{"path":"a.txt"}', True),
+    ({"finish_reason": "length"}, '{"path":"a.txt"}', False),
+    ({"stop_reason": "max_tokens"}, '{"path":"a.txt"}', False),
+    ({"status": "incomplete"}, '{"path":"a.txt"}', False),
+    ({"finish_reason": "tool_calls"}, '{"path":"a.txt', False),
+    ({"finish_reason": "tool_calls"}, 'invalid-json', False),
+])
+def test_only_complete_tool_arguments_can_execute(metadata, args, valid):
+    chunk = AIMessageChunk(content="", response_metadata=metadata, tool_call_chunks=[
+        {"id": "call-1", "index": 0, "name": "write_file", "args": args},
+    ])
+    if valid:
+        assert ChatLLM._parse_response(chunk).tool_calls[0].arguments == {"path": "a.txt"}
+    else:
+        with pytest.raises(ValueError, match="tool.call"):
+            ChatLLM._parse_response(chunk)
+    cancelled = ChatLLM._parse_response(chunk, cancelled=True)
+    assert not cancelled.has_tool_calls and cancelled.finish_reason == "stop"
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_empty_stream_fallback_keeps_cancellation_and_timeout(cancel):
+    release, stopped = threading.Event(), threading.Event()
+    fake = _FakeStreamingLLM()
+
+    def invoke(*args, **kwargs):
+        fake.invoke_called = True
+        if cancel:
+            stopped.set()
+        release.wait(2)
+        return AIMessageChunk(content="late fallback")
+
+    fake.invoke = invoke
+    text = []
+    try:
+        if cancel:
+            response = _client(fake).stream_chat([], should_cancel=stopped.is_set, on_text_chunk=text.append)
+            assert not response.content and not response.tool_calls
+        else:
+            with pytest.raises(ProviderStreamError, match="idle timeout"):
+                _client(fake).stream_chat([], idle_timeout_s=0.05, on_text_chunk=text.append)
+        assert fake.invoke_called and not text
+    finally:
+        release.set()

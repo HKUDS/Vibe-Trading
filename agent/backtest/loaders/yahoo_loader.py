@@ -4,9 +4,9 @@ Wraps the shared :mod:`backtest.loaders.yahoo_client` (the public v8 chart
 endpoint) rather than the ``yfinance`` package, so it pulls in no new
 dependency and shares the process-wide throttle/session that keeps Yahoo from
 IP-rate-limiting us. Covers US equities (``AAPL.US``), HK equities
-(``00700.HK``), Canadian equities (``TD.TO`` / ``PNG.V``), Vietnamese
-equities (``VIC.VN``), and Taiwanese equities (``2330.TW`` / ``6488.TWO``);
-the client maps each project symbol to Yahoo's ticker form.
+(``00700.HK``), Canadian equities (``TD.TO`` / ``PNG.V``), and Vietnamese
+equities (``VIC.VN``); the client maps each project symbol to Yahoo's ticker
+form.
 
 Yahoo officially lists HOSE under ``.VN``; HNX and UPCOM are not supported.
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -26,6 +27,7 @@ import pandas as pd
 from backtest.loaders import yahoo_client
 from backtest.loaders.base import (
     cached_loader_fetch,
+    acquisition_error_kind,
     normalize_declared_quote_currency,
     validate_date_range,
 )
@@ -51,7 +53,7 @@ _INTERVAL_MAP = {
 def _is_supported(code: str) -> bool:
     """Return whether *code* is a symbol this loader handles.
 
-    Covers US/HK/India/Korea/Canada/Vietnam/UK/Taiwan equities plus Yahoo's own
+    Covers US/HK/India/Korea/Canada/Vietnam/UK equities plus Yahoo's own
     futures (``GC=F``), forex (``EURUSD=X``) and index (``^SPX``) symbol
     conventions, which the public chart endpoint serves verbatim (the code is
     used as-is in the request URL, no conversion) (#718). Supported UK ``.L``
@@ -59,14 +61,21 @@ def _is_supported(code: str) -> bool:
     (#1206).
     """
     upper = code.strip().upper()
+    if _is_a_share(upper):
+        return True
     if upper.startswith("^"):
         return True
     return upper.endswith(
         (
             ".US", ".HK", ".NS", ".BO", ".KS", ".KQ", ".TO", ".V", ".VN", ".BA",
-            ".SA", ".L", ".TW", ".TWO", "=F", "=X",
+            ".SA", ".L", ".T", ".TW", ".TWO", "=F", "=X",
         )
     )
+
+
+def _is_a_share(code: str) -> bool:
+    """Recognize mainland A-share identities, excluding B shares and indices."""
+    return bool(re.fullmatch(r"(?:6[0-9]{5}\.(?:SH|SS)|[03][0-9]{5}\.SZ)", code.upper()))
 
 
 def _to_yahoo_interval(interval: str) -> str:
@@ -181,7 +190,9 @@ def _rows_to_frame(
     lower = pd.Timestamp(start_date).normalize()
     upper = pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)
     frame = frame[(frame.index >= lower) & (frame.index < upper)]
-    return frame.astype(float).sort_index()
+    frame = frame.astype(float).sort_index()
+    frame.attrs.update(timezone="UTC", timestamp_basis="bar_open" if _is_intraday_interval(interval) else "session_date")
+    return frame
 
 
 @register
@@ -190,13 +201,13 @@ class DataLoader:
 
     name = "yahoo"
     markets = {
-        "us_equity", "hk_equity", "india_equity", "kr_equity", "ca_equity",
-        "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "taiwan_equity",
+        "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
+        "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share", "taiwan_equity",
     }
     # Yahoo chart volume is single shares for US/HK equities
     # (HKUDS/Vibe-Trading#1062; HK verified 2026-08-11, 00700.HK ratio 1.00
     # vs tencent/eastmoney). Other equity markets stay undeclared.
-    volume_units = {"us_equity": "shares", "hk_equity": "shares", "uk_equity": "shares"}
+    volume_units = {"us_equity": "shares", "hk_equity": "shares", "uk_equity": "shares", "a_share": "shares"}
     requires_auth = False
 
     def is_available(self) -> bool:
@@ -236,6 +247,7 @@ class DataLoader:
             return {}
         validate_date_range(start_date, end_date)
 
+        self.fetch_errors = {}
         result: Dict[str, pd.DataFrame] = {}
         for code in codes:
             try:
@@ -253,6 +265,7 @@ class DataLoader:
                 if df is not None and not df.empty:
                     result[code] = df
             except Exception as exc:
+                self.fetch_errors[code] = acquisition_error_kind(exc)
                 logger.warning("yahoo failed for %s: %s", code, exc)
         return result
 
@@ -285,6 +298,8 @@ class DataLoader:
             period1=period1,
             period2=period2,
         )
+        if _is_a_share(code) and currency != "CNY":
+            raise ValueError("Mainland A-share quotes must declare CNY")
         frame = _rows_to_frame(rows, start_date, end_date, interval)
         frame = normalize_declared_quote_currency(frame, code, currency)
         return frame if not frame.empty else None

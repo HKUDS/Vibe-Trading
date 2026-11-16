@@ -7,6 +7,8 @@ csi300 universe failed with "TUSHARE_TOKEN not in agent/.env or environment".
 
 from __future__ import annotations
 
+from src.providers import settings as _provider_configuration
+
 import argparse
 import os
 
@@ -36,10 +38,10 @@ def _no_report(monkeypatch, tmp_path):
 @pytest.fixture()
 def _order(monkeypatch):
     """Record the call order of dotenv loading vs. the actual work."""
-    import src.providers.llm as llm
+    from src.providers import settings
 
     order: list[str] = []
-    monkeypatch.setattr(llm, "_ensure_dotenv", lambda: order.append("env"))
+    monkeypatch.setattr(settings, "_ensure_dotenv", lambda: order.append("env"))
     return order
 
 
@@ -161,18 +163,17 @@ def test_compare_loads_dotenv_before_compare(capsys, monkeypatch, _reg, _order):
 
 def test_load_cli_env_swallows_dotenv_errors(monkeypatch):
     """A broken .env must not crash the command; the downstream error does."""
-    import src.providers.llm as llm
+    from src.providers import settings
 
     def boom():
         raise RuntimeError("dotenv unreadable")
 
-    monkeypatch.setattr(llm, "_ensure_dotenv", boom)
+    monkeypatch.setattr(settings, "_ensure_dotenv", boom)
     cli_handlers._load_cli_env()  # must not raise
 
 
 def test_load_cli_env_reads_dotenv_file(monkeypatch, tmp_path):
     """End-to-end: a token present only in .env reaches get_env_config()."""
-    import src.providers.llm as llm
 
     from src.config.accessor import get_env_config
 
@@ -180,8 +181,8 @@ def test_load_cli_env_reads_dotenv_file(monkeypatch, tmp_path):
     token = "cli_dotenv_regression_token"
     dotenv.write_text(f"TUSHARE_TOKEN={token}\n", encoding="utf-8")
     monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
-    monkeypatch.setattr(llm, "_ENV_CANDIDATES", [dotenv])
-    monkeypatch.setattr(llm, "_dotenv_loaded", False)
+    monkeypatch.setattr(_provider_configuration, "_ENV_CANDIDATES", [dotenv])
+    monkeypatch.setattr(_provider_configuration, "_dotenv_loaded", False)
 
     try:
         cli_handlers._load_cli_env()

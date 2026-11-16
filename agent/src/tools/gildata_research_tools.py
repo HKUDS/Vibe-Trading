@@ -28,6 +28,7 @@ import json
 import logging
 from typing import Any
 
+from src.data_gateway.reads import public_data_read
 from src.agent.tools import BaseTool
 from src.config.accessor import get_env_config
 from src.config.gildata_features import GildataFeature, feature_available
@@ -99,6 +100,7 @@ class _GildataSrvToolBase(BaseTool):
         """Require a token and explicit selection of this feature."""
         return feature_available(cls.feature)
 
+    @public_data_read(cacheable=False)
     def execute(self, **kwargs: Any) -> str:
         if not self.check_available():
             return _error(f"Enable {self.feature} in Gildata settings and configure GILDATA_TOKEN.")

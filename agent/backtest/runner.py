@@ -14,6 +14,7 @@ import importlib.util
 import inspect
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
@@ -50,6 +51,7 @@ from backtest.engines._market_hooks import (  # noqa: F401  (re-exported)
     _detect_submarket,
     _is_china_futures,
     hk_counter_currency,
+    matched_market,
     strip_local_prefix,
 )
 from backtest.rebalance_mask import RebalanceMask, validate_rebalance_mask
@@ -89,6 +91,7 @@ class BacktestConfigSchema(BaseModel):
     interval: str = "1D"
     engine: str = "daily"
     position_adjustment: Literal["hold", "rebalance"] = "hold"
+    intentional_signal_delay_bars: int = Field(default=0, ge=0, strict=True)
     rebalance_mask: RebalanceMask = None
     # Under "rebalance", a resize executes only once the held weight has
     # drifted further than this fraction of its target -- the tolerance band
@@ -113,6 +116,10 @@ class BacktestConfigSchema(BaseModel):
     # every direct-API caller passes through.
     warmup_bars: Optional[int] = Field(default=None, ge=0)
     evaluation_start_date: Optional[str] = None
+    signal_parameters: Dict[str, Any] = Field(default_factory=dict)
+    frozen_data_manifest: Optional[str] = None
+    execution_cost_multiplier: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+    extra_slippage_bps: float = Field(default=0.0, ge=0, lt=10000, allow_inf_nan=False)
 
     @field_validator("codes")
     @classmethod
@@ -121,6 +128,27 @@ class BacktestConfigSchema(BaseModel):
             raise ValueError("codes must be a non-empty list")
         if any(not c.strip() for c in v):
             raise ValueError("codes must not contain empty strings")
+        # The engine applies one market's trading rules, chosen from the code.
+        # A code no routing rule recognises used to fall through to the A-share
+        # default (T+1, price limits, 100-share lots, CNY) -- or to US rules
+        # under yfinance -- and the run still succeeded. A bare six-digit code
+        # and Yahoo's ``.SS`` Shanghai spelling are mainland listings that no
+        # routing rule names; the loaders and the benchmark resolve both.
+        if any(matched_market(c.strip()) == "jp_equity" for c in v):
+            raise ValueError("Japan market data is supported, but Japanese backtest execution rules are not implemented")
+        unrecognised = [
+            c for c in v
+            if matched_market(c.strip()) is None
+            and not re.fullmatch(r"\d{6}(?:\.SS)?", strip_local_prefix(c.strip()), re.I)
+        ]
+        if unrecognised:
+            raise ValueError(
+                f"no market rule recognises {', '.join(unrecognised)}, so the backtest "
+                "cannot tell which market's trading rules to apply. Write the code "
+                "with its market suffix, e.g. 600519.SH / 000001.SZ, AAPL or BRK-B.US, "
+                "00700.HK, VOD.L, TD.TO, RELIANCE.NS, 005930.KS, PETR4.SA, GGAL.BA, "
+                "VNM.VN, BTC-USDT, EURUSD, ^GSPC or IF2406.CFFEX"
+            )
         return v
 
     @field_validator("start_date", "end_date")
@@ -1497,6 +1525,10 @@ def main(run_dir: Path) -> None:
         sys.exit(1)
 
     try:
+        if config.get("engine", "daily") == "daily":
+            from backtest.signal_timing import validate_signal_timing
+
+            validate_signal_timing(signal_path, config.get("intentional_signal_delay_bars", 0))
         signal_module = _load_module_from_file(signal_path, "signal_engine")
     except ValueError as exc:
         # Source-level AST validation (circular self-import, unsafe imports,
@@ -1529,11 +1561,17 @@ def main(run_dir: Path) -> None:
     if not data_map:
         print(json.dumps({"error": "No data fetched"}))
         sys.exit(1)
-    data_map = _maybe_inject_fundamentals_for_factor_panel(data_map, config)
+    if not config.get("frozen_data_manifest"):
+        data_map = _maybe_inject_fundamentals_for_factor_panel(data_map, config)
 
     # Engine
     engine_type = config.get("engine", "daily")
-    signal_engine = engine_cls()
+    parameters = config.get("signal_parameters", {})
+    try:
+        inspect.signature(engine_cls).bind(**parameters)
+    except TypeError as exc:
+        raise ValueError(f"SignalEngine parameters do not match its constructor: {exc}") from exc
+    signal_engine = engine_cls(**parameters)
 
     # Annualization bars
     effective_source = _detect_primary_source(codes, source)
@@ -1555,7 +1593,9 @@ def main(run_dir: Path) -> None:
     # aligned with the data consumed by the engine. A source that prohibits
     # fallback keeps its own loader behind the snapshot: a declared benchmark
     # is usually outside ``codes``, but must still come from that same source.
-    if is_no_network_fallback_source(source):
+    if config.get("frozen_data_manifest"):
+        loader = _AutoLoader(data_map, name="local")
+    elif is_no_network_fallback_source(source):
         loader = _AutoLoader(
             data_map,
             inner=loader,
@@ -1761,6 +1801,9 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     """
     # Detect dominant market type from codes
     markets = {_detect_market(c) for c in codes} if codes else set()
+
+    if "jp_equity" in markets:
+        raise ValueError("Japanese backtest execution rules are not implemented; market data is available")
 
     # The Hong Kong pool books in HKD. HKEX numbers its RMB and USD counters
     # in their own code ranges, and no source in the hk_equity chain but Yahoo
@@ -2036,6 +2079,15 @@ def fetch_data_map(config: dict) -> DataFetchResult:
         NoAvailableSourceError: If a requested symbol cannot be served.
     """
     config = copy.deepcopy(config)
+    if config.get("frozen_data_manifest"):
+        from backtest.frozen import load_frozen_frames
+
+        frames, manifest = load_frozen_frames(config["frozen_data_manifest"], config)
+        return DataFetchResult(
+            frames, list(frames), config.get("source", "auto"),
+            _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),
+            manifest.get("caliber_warning"),
+        )
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
     # Weekly and monthly bars are built from daily ones after the fetch, so

@@ -32,7 +32,7 @@ __alpha_meta__ = {
     'universe': ['equity_us', 'equity_cn', 'equity_hk'],
     'frequency': ['1d'],
     'decay_horizon': 60,
-    'min_warmup_bars': 252,
+    'min_warmup_bars': 253,
     'notes': (
         '[PRICE PROXY] for the Fama-French (1993) HML (High Minus Low) value factor. '
         'The original definition uses book-to-market ratio from fundamental data; here '

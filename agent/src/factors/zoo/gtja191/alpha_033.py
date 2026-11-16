@@ -7,7 +7,7 @@
 """GTJA Alpha #33.
 
 Formula: ((((-1*TSMIN(LOW,5))+DELAY(TSMIN(LOW,5),5))*RANK(((SUM(RET,240)-SUM(RET,20))/220)))*TSRANK(VOLUME,5))
-Source: 国泰君安 191 alpha 研报 (2014), alpha 33."""
+Source: 国泰君安 191 alpha 研报 (2017-06-15), alpha 33."""
 
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ __alpha_meta__ = {
     "universe": ["equity_cn"],
     "frequency": ["1d"],
     "decay_horizon": 5,
-    "min_warmup_bars": 61,
-    "notes": '240d/20d long-window approximated with 60d/20d (warmup feasibility).',
+    "min_warmup_bars": 241,
+    "notes": "Original report windows; full nested-window coverage is required.",
 }
 
 def compute(panel: dict) -> pd.DataFrame:
@@ -53,5 +53,5 @@ def compute(panel: dict) -> pd.DataFrame:
     ret = safe_div(c - pc, pc)
     tmin5 = ts_min(l, 5)
     a = -1.0 * tmin5 + tmin5.shift(5)
-    long_diff = (ret.rolling(60, min_periods=30).sum() - ret.rolling(20, min_periods=10).sum()) / 40.0
+    long_diff = (ret.rolling(240, min_periods=240).sum() - ret.rolling(20, min_periods=20).sum()) / 220.0
     return a * rank(long_diff) * ts_rank(v, 5)

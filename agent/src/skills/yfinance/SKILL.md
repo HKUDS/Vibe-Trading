@@ -11,7 +11,7 @@ yfinance is an open-source Python wrapper for Yahoo Finance, providing global ma
 
 The project has a built-in yfinance DataLoader (`backtest/loaders/yfinance_loader.py`). When backtesting, set `source: "yfinance"` or `source: "auto"` to invoke it automatically.
 
-For OHLCV bars in agent/swarm work, prefer the `get_market_data` tool when it is available. It routes through the project loader layer, normalizes symbols, removes malformed OHLC rows, and returns strict JSON. Use direct `yfinance` calls mainly for data outside OHLCV coverage such as company info, financial statements, options, holders, and insider transactions.
+For OHLCV bars in agent/swarm work, prefer the `get_market_data` tool when it is available. It routes through the project loader layer, normalizes symbols, removes malformed OHLC rows, and returns strict JSON. Use the gateway-backed research tools for profiles, statements, options and holdings. For additional fields, use the bounded `yahoo_ticker` / `yahoo_download` examples below; do not instantiate the raw SDK outside acquisition.
 
 ## Deep Yahoo Interfaces (references/)
 
@@ -139,7 +139,9 @@ hourly = loader.fetch(["AAPL.US"], "2026-03-01", "2026-03-30", interval="1H")
 ### 2. Company Info
 
 ```python
-ticker = yf.Ticker("AAPL")
+from src.data_gateway.skill_sources import yahoo_ticker
+
+ticker = yahoo_ticker("AAPL")
 
 info = ticker.info
 print(f"Company: {info.get('longName')}")
@@ -153,7 +155,9 @@ print(f"Dividend yield: {info.get('dividendYield')}")
 ### 3. Financial Statements
 
 ```python
-ticker = yf.Ticker("AAPL")
+from src.data_gateway.skill_sources import yahoo_ticker
+
+ticker = yahoo_ticker("AAPL")
 
 # Income statement (annual)
 income = ticker.financials
@@ -173,7 +177,9 @@ earnings = ticker.earnings
 ### 4. Dividends and Splits
 
 ```python
-ticker = yf.Ticker("AAPL")
+from src.data_gateway.skill_sources import yahoo_ticker
+
+ticker = yahoo_ticker("AAPL")
 
 # Dividend history
 dividends = ticker.dividends
@@ -188,7 +194,9 @@ actions = ticker.actions
 ### 5. Institutional Holdings
 
 ```python
-ticker = yf.Ticker("AAPL")
+from src.data_gateway.skill_sources import yahoo_ticker
+
+ticker = yahoo_ticker("AAPL")
 
 # Institutional holders
 holders = ticker.institutional_holders
@@ -203,23 +211,27 @@ insider = ticker.insider_transactions
 ### 6. Indices and ETFs
 
 ```python
+from src.data_gateway.skill_sources import yahoo_download
+
 # Major indices
-sp500 = yf.download("^GSPC", start="2025-01-01", end="2026-01-01", progress=False)  # S&P 500
-nasdaq = yf.download("^IXIC", start="2025-01-01", end="2026-01-01", progress=False)  # NASDAQ
-hsi = yf.download("^HSI", start="2025-01-01", end="2026-01-01", progress=False)      # Hang Seng Index
+sp500 = yahoo_download("^GSPC", start="2025-01-01", end="2026-01-01", progress=False)  # S&P 500
+nasdaq = yahoo_download("^IXIC", start="2025-01-01", end="2026-01-01", progress=False)  # NASDAQ
+hsi = yahoo_download("^HSI", start="2025-01-01", end="2026-01-01", progress=False)      # Hang Seng Index
 
 # ETFs
-spy = yf.download("SPY", start="2025-01-01", end="2026-01-01", progress=False)
-qqq = yf.download("QQQ", start="2025-01-01", end="2026-01-01", progress=False)
+spy = yahoo_download("SPY", start="2025-01-01", end="2026-01-01", progress=False)
+qqq = yahoo_download("QQQ", start="2025-01-01", end="2026-01-01", progress=False)
 ```
 
 ### 7. FX Rates
 
 ```python
+from src.data_gateway.skill_sources import yahoo_download
+
 # Currency pairs
-usdcny = yf.download("CNY=X", start="2025-01-01", end="2026-01-01", progress=False)
-usdhkd = yf.download("HKD=X", start="2025-01-01", end="2026-01-01", progress=False)
-eurusd = yf.download("EURUSD=X", start="2025-01-01", end="2026-01-01", progress=False)
+usdcny = yahoo_download("CNY=X", start="2025-01-01", end="2026-01-01", progress=False)
+usdhkd = yahoo_download("HKD=X", start="2025-01-01", end="2026-01-01", progress=False)
+eurusd = yahoo_download("EURUSD=X", start="2025-01-01", end="2026-01-01", progress=False)
 ```
 
 ## Backtest Usage
@@ -262,5 +274,5 @@ eurusd = yf.download("EURUSD=X", start="2025-01-01", end="2026-01-01", progress=
 - **HK tickers**: Yahoo Finance uses 4-digit numbers + `.HK`; pad with leading zeros where needed
 - **Adjustment**: `auto_adjust=True` (default) returns forward-adjusted prices; the project loader uses `auto_adjust=False`
 - **Timezone**: returned data includes timezone info; the DataLoader strips it automatically
-- **extra_fields not supported**: yfinance via the backtest loader returns OHLCV only; PE/PB and other fundamentals require separate `yf.Ticker().info` calls
+- **extra_fields not supported**: yfinance via the backtest loader returns OHLCV only; PE/PB and other fundamentals use gateway-backed profile reads or `yahoo_ticker(symbol).info`
 - **Comparison with Tushare**: Tushare covers deep A-share data (financials, fund flows, block trades, etc.); yfinance covers global markets but with less depth
