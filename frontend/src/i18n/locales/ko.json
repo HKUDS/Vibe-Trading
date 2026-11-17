@@ -1310,7 +1310,7 @@
     "riskDrawdownNonPositive": "모델 자산 가치가 항상 양수는 아닙니다",
     "riskDrawdownEmptyPath": "수익률 관측값이 없습니다",
     "riskDrawdownUnknown": "모델 이력을 사용할 수 없습니다",
-    "riskDrawdownCurrent": "관측 구간 말 낙폭: {{depth}}; 관측 봉 수: {{bars}}",
+    "riskDrawdownCurrent": "진행 중인 낙폭 구간: 최대 하락률 {{depth}}; 관측 봉 수: {{bars}}",
     "rebalanceNotes": "리밸런스 노트",
     "hhi": "HHI",
     "effectiveN": "유효 N",

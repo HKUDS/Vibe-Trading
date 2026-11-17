@@ -1316,7 +1316,7 @@
     "riskDrawdownNonPositive": "o patrimônio do modelo não é sempre positivo",
     "riskDrawdownEmptyPath": "não há observações de retorno",
     "riskDrawdownUnknown": "o histórico do modelo não pode ser utilizado",
-    "riskDrawdownCurrent": "Drawdown ao final da janela: {{depth}}; barras observadas: {{bars}}",
+    "riskDrawdownCurrent": "Período de drawdown em andamento: queda máxima {{depth}}; barras observadas: {{bars}}",
     "rebalanceNotes": "Notas de reequilíbrio",
     "hhi": "IHH",
     "effectiveN": "Efetivo N",

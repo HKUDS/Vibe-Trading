@@ -1310,7 +1310,7 @@
     "riskDrawdownNonPositive": "قيمة الثروة في النموذج ليست موجبة دائماً",
     "riskDrawdownEmptyPath": "لا توجد ملاحظات عوائد",
     "riskDrawdownUnknown": "سجل النموذج غير قابل للاستخدام",
-    "riskDrawdownCurrent": "التراجع عند نهاية النافذة: {{depth}}؛ الشموع المرصودة: {{bars}}",
+    "riskDrawdownCurrent": "فترة التراجع المستمرة: أقصى انخفاض {{depth}}؛ الشموع المرصودة: {{bars}}",
     "rebalanceNotes": "ملاحظات إعادة التوازن",
     "hhi": "HHI",
     "effectiveN": "N الفعّال",

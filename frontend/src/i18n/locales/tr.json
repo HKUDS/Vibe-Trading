@@ -1276,7 +1276,7 @@
     "riskDrawdownNonPositive": "model varlığı her zaman pozitif değil",
     "riskDrawdownEmptyPath": "getiri gözlemi yok",
     "riskDrawdownUnknown": "model geçmişi kullanılamıyor",
-    "riskDrawdownCurrent": "Aralık sonundaki düşüş: {{depth}}; gözlemlenen barlar: {{bars}}",
+    "riskDrawdownCurrent": "Devam eden düşüş dönemi: en büyük düşüş {{depth}}; gözlemlenen barlar: {{bars}}",
     "rebalanceNotes": "Yeniden dengeleme notları",
     "hhi": "HHI",
     "effectiveN": "Etkin N",

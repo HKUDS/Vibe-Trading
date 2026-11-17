@@ -1316,7 +1316,7 @@
     "riskDrawdownNonPositive": "nilai kekayaan model tidak selalu positif",
     "riskDrawdownEmptyPath": "tidak ada observasi imbal hasil",
     "riskDrawdownUnknown": "riwayat model tidak dapat digunakan",
-    "riskDrawdownCurrent": "Drawdown di akhir jendela: {{depth}}; bar yang diamati: {{bars}}",
+    "riskDrawdownCurrent": "Periode drawdown berjalan: penurunan maksimum {{depth}}; bar yang diamati: {{bars}}",
     "rebalanceNotes": "Catatan Rebalance",
     "hhi": "HHI",
     "effectiveN": "N Efektif",

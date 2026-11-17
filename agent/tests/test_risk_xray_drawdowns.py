@@ -188,7 +188,7 @@ def test_markdown_reports_recovery_and_observed_duration() -> None:
     assert "| Depth | Peak | Trough | Recovery | Observed bars |" in text
     assert f"| -50.00% | {dates[1]} | {dates[2]} | {dates[4]} | 3 |" in text
     assert f"| -25.00% | {dates[5]} | {dates[6]} | Not recovered | 1 |" in text
-    assert "Window-end drawdown: -25.00%; observed bars: 1" in text
+    assert "Ongoing drawdown period: maximum decline -25.00%; observed bars: 1" in text
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -227,7 +227,7 @@ def test_markdown_keeps_a_window_end_period_outside_the_deepest_five() -> None:
     text = render_risk_xray_markdown(report)
 
     assert "Showing 5 of 8 observed drawdowns." in text
-    assert "Window-end drawdown: -1.00%; observed bars: 1" in text
+    assert "Ongoing drawdown period: maximum decline -1.00%; observed bars: 1" in text
     assert f"Window-end peak: {dates[-2]}; trough: {dates[-1]}" in text
 
 
@@ -373,3 +373,16 @@ def test_run_emits_periods_that_survive_the_run_detail_reader(tmp_path: Path) ->
     response = api_server._build_response_from_run_dir(tmp_path, elapsed=0.0)
     assert response.risk_xray == report
     assert json.loads(response.model_dump_json())["risk_xray"] == report
+
+
+def test_ongoing_period_labels_maximum_decline_after_partial_rebound():
+    closes = pd.DataFrame({"AAA": [100.0, 50.0, 80.0]}, index=["peak", "trough", "end"])
+    report = compute_risk_xray(closes, {"AAA": 1.0}, min_history=2)
+    current = report["drawdown"]["episodes"]["current"]
+    assert current["depth"] == pytest.approx(-0.5)
+    assert current["trough"] == "trough"
+    assert current["recovery"] is None
+    text = render_risk_xray_markdown(report)
+    assert "Ongoing drawdown period: maximum decline -50.00%" in text
+    assert "Window-end drawdown:" not in text
+    assert report["risk_contributions"]["status"] == "ok"

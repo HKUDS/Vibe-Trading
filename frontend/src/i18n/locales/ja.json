@@ -1310,7 +1310,7 @@
     "riskDrawdownNonPositive": "モデル資産額が常に正ではありません",
     "riskDrawdownEmptyPath": "リターンの観測がありません",
     "riskDrawdownUnknown": "モデルの履歴を利用できません",
-    "riskDrawdownCurrent": "観測期間末のドローダウン：{{depth}}、観測バー数：{{bars}}",
+    "riskDrawdownCurrent": "継続中のドローダウン期間：最大下落率 {{depth}}、観測バー数：{{bars}}",
     "rebalanceNotes": "リバランスノート",
     "hhi": "HHI",
     "effectiveN": "実効N",

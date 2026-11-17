@@ -133,7 +133,7 @@ describe("Risk X-Ray drawdown periods in Portfolio Studio", () => {
       current: { peak: "2026-03-01", trough: "2026-03-04", recovery: null, depth: -0.01, duration_bars: 3 },
     }, -0.6);
 
-    expect(await screen.findByText("Window-end drawdown: -1.00%; observed bars: 3")).toBeInTheDocument();
+    expect(await screen.findByText("Ongoing drawdown period: maximum decline -1.00%; observed bars: 3")).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Drawdown periods" });
     expect(within(table).queryByText("2026-03-01")).not.toBeInTheDocument();
   });

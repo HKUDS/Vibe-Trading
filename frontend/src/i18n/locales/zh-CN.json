@@ -1310,7 +1310,7 @@
     "riskDrawdownNonPositive": "模型净值并非始终为正",
     "riskDrawdownEmptyPath": "没有收益观测",
     "riskDrawdownUnknown": "模型历史路径不可用",
-    "riskDrawdownCurrent": "窗口末端回撤：{{depth}}；观测条数：{{bars}}",
+    "riskDrawdownCurrent": "未恢复回撤区间：最大跌幅 {{depth}}；观测条数：{{bars}}",
     "rebalanceNotes": "调仓笔记",
     "hhi": "HHI 集中度",
     "effectiveN": "有效持仓数",

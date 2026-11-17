@@ -1316,7 +1316,7 @@
     "riskDrawdownNonPositive": "ثروت مدل همواره مثبت نیست",
     "riskDrawdownEmptyPath": "مشاهده‌ای از بازده وجود ندارد",
     "riskDrawdownUnknown": "تاریخچه مدل قابل استفاده نیست",
-    "riskDrawdownCurrent": "افت در انتهای بازه: {{depth}}؛ کندل‌های مشاهده‌شده: {{bars}}",
+    "riskDrawdownCurrent": "دوره افت جاری: بیشترین کاهش {{depth}}؛ کندل‌های مشاهده‌شده: {{bars}}",
     "rebalanceNotes": "یادداشت‌های متوازن‌سازی",
     "hhi": "HHI",
     "effectiveN": "N مؤثر",

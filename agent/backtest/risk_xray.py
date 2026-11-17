@@ -537,7 +537,7 @@ def render_risk_xray_markdown(report: dict[str, Any]) -> str:
                 lines.extend(
                     [
                         "",
-                        f"Window-end drawdown: {current['depth']:.2%}; observed bars: {current['duration_bars']}",
+                        f"Ongoing drawdown period: maximum decline {current['depth']:.2%}; observed bars: {current['duration_bars']}",
                         f"Window-end peak: {_drawdown_cell(current['peak'])}; "
                         f"trough: {_drawdown_cell(current['trough'])}",
                     ]

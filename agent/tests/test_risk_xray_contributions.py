@@ -12,7 +12,7 @@ from backtest.risk_xray import (
     render_risk_xray_markdown,
     write_risk_xray,
 )
-from src.agent.grounding import GroundingLedger
+from evals.grounding.ledger import GroundingLedger
 from src.tools.portfolio_risk_tool import PortfolioRiskXrayTool
 
 

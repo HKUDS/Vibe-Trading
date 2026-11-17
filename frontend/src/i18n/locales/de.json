@@ -1316,7 +1316,7 @@
     "riskDrawdownNonPositive": "das Modellvermögen ist nicht durchgehend positiv",
     "riskDrawdownEmptyPath": "es gibt keine Renditebeobachtungen",
     "riskDrawdownUnknown": "die Modellhistorie ist nicht verwendbar",
-    "riskDrawdownCurrent": "Drawdown am Fensterende: {{depth}}; beobachtete Balken: {{bars}}",
+    "riskDrawdownCurrent": "Laufende Drawdown-Phase: maximaler Rückgang {{depth}}; beobachtete Balken: {{bars}}",
     "rebalanceNotes": "Rebalance-Hinweise",
     "hhi": "HHI",
     "effectiveN": "Effektives N",
