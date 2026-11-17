@@ -26,6 +26,11 @@
 </p>
 
 <p align="center">
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=flat" alt="FastAPI">
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
@@ -66,11 +71,11 @@
 - **2026-11-15** 📡 **Pasarela de datos de mercado unificada y CSV listos para usar** — Las barras históricas y las instantáneas de opciones de EE. UU. comparten una [pasarela local](agent/src/data_gateway/README.md) con fuentes alternativas, caché compartida y concurrencia limitada. Las respuestas conservan la fuente, la moneda y el ajuste de precios, e indican la cobertura y la antigüedad de los datos.
   Las consultas de mercado del Agent entregan CSV junto con JSON. Para las solicitudes compatibles que indican instrumentos y un único intervalo explícito `YYYY-MM-DD`, el sistema limita las fechas antes de obtener los datos. El historial de inicialización para los cálculos se solicita por separado; se mantienen los períodos retrospectivos de los indicadores y backtests existentes. **En `main`, para la próxima versión de pip.**
 
-- **2026-11-14** 🔌 **Pasarela LLM unificada y comprobación de versiones** — Agent, CLI, API y Swarm comparten un catálogo y una capa de configuración para los proveedores de modelos. La configuración de cada cliente permanece aislada, los adaptadores nativos respetan el proxy explícito y las redirecciones a otro origen se bloquean antes de reenviar credenciales o el cuerpo de la solicitud.
-  Consulta nuevas versiones desde los ajustes Web. Desktop incorpora soporte para actualizaciones firmadas con verificación y recuperación; su distribución requiere configurar la fuente de actualizaciones y los certificados del editor. **En `main`, para la próxima versión de pip.**
-
 <details>
 <summary>Noticias anteriores</summary>
+
+- **2026-11-14** 🔌 **Pasarela LLM unificada y comprobación de versiones** — Agent, CLI, API y Swarm comparten un catálogo y una capa de configuración para los proveedores de modelos. La configuración de cada cliente permanece aislada, los adaptadores nativos respetan el proxy explícito y las redirecciones a otro origen se bloquean antes de reenviar credenciales o el cuerpo de la solicitud.
+  Consulta nuevas versiones desde los ajustes Web. Desktop incorpora soporte para actualizaciones firmadas con verificación y recuperación; su distribución requiere configurar la fuente de actualizaciones y los certificados del editor. **En `main`, para la próxima versión de pip.**
 
 - **2026-11-13** 🛠️ **Entrega de análisis y herramientas de cálculo** — Las respuestas se transmiten sin borrar cifras automáticamente, forzar reescrituras ni decidir la finalización por el formato. Las ejecuciones interrumpidas del comité conservan resultados parciales y permiten reanudar los roles pendientes reutilizando el trabajo completado.
   Las referencias a datos de mercado completos alimentan cálculos con QuantLib sin shell, y los roles comparten la evidencia original. Options Lab y `options_payoff` calculan estrategias de acciones y opciones y comparan varias alternativas en una sola llamada, devolviendo costes, límites de pérdidas y ganancias y la dirección de las comparaciones. Se mantienen explícitos los costes efectivos del backtest y los estados de truncamiento o error, así como los límites de autorización para operar en real. **Aún no publicado.**

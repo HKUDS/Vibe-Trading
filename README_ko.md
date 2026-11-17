@@ -26,6 +26,11 @@
 </p>
 
 <p align="center">
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=flat" alt="FastAPI">
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
@@ -66,11 +71,11 @@
 - **2026-11-15** 📡 **통합 시장 데이터 게이트웨이와 바로 쓸 수 있는 CSV** — 과거 가격 데이터와 미국 옵션 스냅샷이 데이터 소스 대체, 공유 캐시, 동시 실행 수 제한을 갖춘 [로컬 데이터 게이트웨이](agent/src/data_gateway/README.md)를 사용합니다. 출처, 통화, 가격 조정 방식을 보존하고 데이터 범위와 최신성을 명시합니다.
   Agent가 시장 데이터를 조회하면 JSON과 CSV를 함께 제공합니다. 종목과 하나의 명시적 `YYYY-MM-DD` 날짜 범위를 지정한 지원 요청은 데이터를 가져오기 전에 런타임에서 날짜를 제한합니다. 계산에 필요한 워밍업 데이터는 별도로 지정하며, 기존 지표와 백테스트의 과거 참조 기간은 유지됩니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
-- **2026-11-14** 🔌 **통합 LLM 게이트웨이와 버전 확인** — Agent, CLI, API, Swarm의 모델 공급자를 하나의 목록과 설정 계층으로 통합했습니다. 클라이언트별 설정을 격리하고, 네이티브 어댑터가 명시적 프록시 설정을 따르도록 했습니다. 인증 정보나 요청 본문이 전달되기 전에 다른 출처로의 리디렉션을 차단합니다.
-  Web 설정에서 새 버전을 확인할 수 있습니다. Desktop에는 서명된 업데이트의 검증 및 복구 지원을 추가했으며, 배포하려면 업데이트 피드와 게시자 인증서를 설정해야 합니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
-
 <details>
 <summary>이전 뉴스</summary>
+
+- **2026-11-14** 🔌 **통합 LLM 게이트웨이와 버전 확인** — Agent, CLI, API, Swarm의 모델 공급자를 하나의 목록과 설정 계층으로 통합했습니다. 클라이언트별 설정을 격리하고, 네이티브 어댑터가 명시적 프록시 설정을 따르도록 했습니다. 인증 정보나 요청 본문이 전달되기 전에 다른 출처로의 리디렉션을 차단합니다.
+  Web 설정에서 새 버전을 확인할 수 있습니다. Desktop에는 서명된 업데이트의 검증 및 복구 지원을 추가했으며, 배포하려면 업데이트 피드와 게시자 인증서를 설정해야 합니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
 
 - **2026-11-13** 🛠️ **리서치 결과 전달과 계산 도구 개편** — 숫자 자동 삭제, 강제 재작성, 형식 기반 완료 판정 없이 답변을 직접 스트리밍합니다. 위원회 실행이 중단되어도 부분 성과를 보존하고, 완료된 작업을 재사용해 미완료 역할을 이어서 실행할 수 있습니다.
   전체 시장 데이터 참조를 셸 없는 QuantLib 계산에 연결하고 역할 간 원본 근거를 전달합니다. Options Lab과 `options_payoff`는 주식·옵션 조합과 여러 대안의 일괄 계산·비교를 지원하며 비용, 손익 상하한, 비교 방향을 반환합니다. 실제 백테스트 비용과 출력 중단·오류 상태를 명시하고 실거래 승인 한도를 유지합니다. **미출시.**

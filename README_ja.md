@@ -26,6 +26,11 @@
 </p>
 
 <p align="center">
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=flat" alt="FastAPI">
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
@@ -66,11 +71,11 @@
 - **2026-11-15** 📡 **統合市場データゲートウェイとすぐに使える CSV** — 過去の価格データと米国オプションのスナップショットが、データソースの切り替え、共有キャッシュ、同時実行数の制限を備えた[ローカルデータゲートウェイ](agent/src/data_gateway/README.md)を使用します。取得元、通貨、価格調整方式を保持し、取得範囲とデータの鮮度を明示します。
   Agent の市場データ取得では JSON と CSV を提供します。銘柄と単一の `YYYY-MM-DD` 日付範囲を明示した対応リクエストは、取得前に実行時処理で日付を制約します。計算に必要なウォームアップ期間は別途指定でき、既存の指標・バックテストの参照期間は維持されます。**`main` に反映済みで、次回の pip リリースに含まれます。**
 
-- **2026-11-14** 🔌 **LLM ゲートウェイの統合と更新確認** — Agent、CLI、API、Swarm のモデルプロバイダーを共通のカタログと設定層に統合しました。クライアントごとに設定を分離し、ネイティブアダプターは明示的なプロキシ設定に従います。認証情報やリクエスト本文を転送する前に、別オリジンへのリダイレクトをブロックします。
-  Web の設定画面から新しいバージョンを確認できます。Desktop には署名付き更新の検証と復旧機能を追加しました。配信には更新フィードと発行者証明書の設定が必要です。**`main` に統合済み、次回の pip リリースに含まれます。**
-
 <details>
 <summary>過去のニュース</summary>
+
+- **2026-11-14** 🔌 **LLM ゲートウェイの統合と更新確認** — Agent、CLI、API、Swarm のモデルプロバイダーを共通のカタログと設定層に統合しました。クライアントごとに設定を分離し、ネイティブアダプターは明示的なプロキシ設定に従います。認証情報やリクエスト本文を転送する前に、別オリジンへのリダイレクトをブロックします。
+  Web の設定画面から新しいバージョンを確認できます。Desktop には署名付き更新の検証と復旧機能を追加しました。配信には更新フィードと発行者証明書の設定が必要です。**`main` に統合済み、次回の pip リリースに含まれます。**
 
 - **2026-11-13** 🛠️ **調査結果の配信と計算ツールを刷新** — 数値の自動削除、強制書き直し、形式による完了判定を撤廃し、調査回答を直接ストリーミングします。委員会の実行が中断しても途中成果を保持し、完了済みの作業を再利用して未完了の役割を再開できます。
   全件の市場データへの参照をシェル不要の QuantLib 計算に接続し、役割間で元の証拠を共有します。Options Lab と `options_payoff` は株式とオプションの組み合わせに対応し、複数案を一度に計算・比較してコスト、損益の上下限、比較方向を返します。実効バックテスト費用、出力打ち切り・エラー状態を明示し、実取引の承認範囲と上限を維持します。**未リリース。**
