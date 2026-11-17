@@ -57,6 +57,9 @@
 
 ## 📰 Noticias
 
+- **2026-11-17** 📊 **Detalle del riesgo de cartera y análisis de opciones reutilizable** — Risk X-Ray añade períodos de drawdown observados y contribuciones con signo a la volatilidad por posición. Options Lab exporta instantáneas calculadas como JSON y cuadrículas de escenarios como CSV, y diagnostica cortes de IV observados con límites de cobertura explícitos; no certifica una superficie libre de arbitraje. Las herramientas Agent/MCP comparan estrategias con nombre sobre cuadrículas comunes de precio e IV.
+  Se corrigen los metadatos de actualización inválidos y los fallos de verificación de la actualización, el descubrimiento de modelos en modo directo, los nombres de adjuntos, el tratamiento de precios ausentes y las respuestas obsoletas de la lista de sesiones. **En `main`, para la próxima versión de pip.**
+
 - **2026-11-16** 🛠️ **Informes, búsqueda de memoria y mensajería más fiables** — Shadow Account muestra las pérdidas y ganancias no medidas como no disponibles, en lugar de cero, incluso en las exportaciones HTML/PDF en caché. La búsqueda de memoria repara índices antiguos y los fallos parciales del OCR de PDF se señalan como calidad degradada.
   Se corrigen el emparejamiento de Signal y la pérdida de texto en Napcat ante metadatos de imagen incorrectos. Los reintentos de temperatura de Anthropic se limitan al error de validación correspondiente y se admiten las API históricas nuevas y antiguas de AKShare. Véase [CHANGELOG](CHANGELOG.md). **En `main`, para la próxima versión de pip.**
 

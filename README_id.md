@@ -57,6 +57,9 @@
 
 ## 📰 Berita
 
+- **2026-11-17** 📊 **Rincian risiko portofolio dan analisis opsi yang dapat digunakan kembali** — Risk X-Ray menambahkan periode drawdown teramati dan kontribusi volatilitas bertanda per posisi. Options Lab mengekspor snapshot hasil perhitungan sebagai JSON dan grid skenario sebagai CSV, serta mendiagnosis irisan IV teramati dengan batas cakupan yang jelas; hasilnya bukan sertifikasi permukaan bebas arbitrase. Tool Agent/MCP membandingkan strategi bernama pada grid harga dan IV bersama.
+  Memperbaiki penanganan metadata pembaruan tidak valid dan kegagalan verifikasi upgrade, penemuan model dalam mode langsung, nama lampiran, penanganan harga yang hilang, serta respons daftar sesi yang kedaluwarsa. **Tersedia di `main`, untuk rilis pip berikutnya.**
+
 - **2026-11-16** 🛠️ **Perbaikan laporan, pencarian memori, dan pesan** — Laporan Shadow Account menandai laba/rugi yang belum terukur sebagai tidak tersedia, bukan nol, termasuk dalam ekspor HTML/PDF yang tersimpan di cache. Pencarian memori memperbaiki indeks lama; kegagalan sebagian OCR PDF ditandai sebagai penurunan kualitas.
   Memperbaiki pemasangan Signal dan hilangnya teks Napcat akibat metadata gambar yang tidak valid. Percobaan ulang pengaturan suhu Anthropic dibatasi pada kesalahan validasi terkait, dan API historis AKShare versi baru maupun lama didukung. Lihat [CHANGELOG](CHANGELOG.md). **Tersedia di `main` untuk rilis pip berikutnya.**
 

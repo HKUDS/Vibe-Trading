@@ -57,6 +57,9 @@
 
 ## 📰 News
 
+- **2026-11-17** 📊 **Portfolio risk details and reusable options analysis** — Risk X-Ray adds observed drawdown periods and signed per-holding volatility contributions. Options Lab exports calculated snapshots as JSON and scenario grids as CSV, and diagnoses observed IV slices with explicit coverage limits; the diagnostics do not certify an arbitrage-free surface. Agent/MCP tools compare named option strategies on shared price and IV grids.
+  Fix malformed update metadata and failed upgrade verification, direct-mode model discovery, attachment filenames, missing-price handling and stale session-list responses. **On `main`, for the next pip release.**
+
 - **2026-11-16** 🛠️ **More reliable reports, memory search and messaging** — Shadow Account reports keep unmeasured P&L unavailable instead of showing zero, including cached HTML/PDF exports. Memory search repairs legacy indexes; partially failed PDF OCR is marked degraded.
   Fix Signal pairing, preserve Napcat text when image metadata is malformed, narrow Anthropic temperature retries to the relevant validation error, and support current and legacy AKShare history endpoints. See [CHANGELOG](CHANGELOG.md). **On `main`, for the next pip release.**
 
