@@ -35,6 +35,29 @@ it("keeps old chart parameters consistent and restores completed results without
   expect(api.analyzeOptionsPayoff).toHaveBeenCalledTimes(2);
   expect(screen.queryByText("chain loaded")).not.toBeInTheDocument();
 });
+it("exports the completed request snapshot after parameters change", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue(output);
+  const createObjectURL = vi.fn(() => "blob:options-export");
+  const revokeObjectURL = vi.fn();
+  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  render(<OptionsLab />); await tick();
+  fireEvent.click(screen.getByText("Edit spot"));
+
+  fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+  const jsonBlob = createObjectURL.mock.calls[0][0] as Blob;
+  const exported = JSON.parse(await jsonBlob.text());
+  expect(exported.request.entry_spot).toBe(100);
+  expect(exported.result).toEqual(output);
+
+  fireEvent.click(screen.getByRole("button", { name: "Export CSV" }));
+  const csvBlob = createObjectURL.mock.calls[1][0] as Blob;
+  expect(await csvBlob.text()).toContain("expiry,,100,7");
+  expect(click).toHaveBeenCalledTimes(2);
+  expect(revokeObjectURL).toHaveBeenCalledWith("blob:options-export");
+  click.mockRestore();
+});
 
 it("sends saved legs with the current strategy and displays server comparisons", async () => {
   vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue({ ...output, comparisons: [{
