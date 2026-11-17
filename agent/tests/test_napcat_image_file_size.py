@@ -121,3 +121,32 @@ def test_download_keeps_actual_byte_limit_with_unusable_metadata(
     else:
         assert Path(received[0]["media"][0]).read_bytes() == expected
         assert calls[0][1] == {"allow_redirects": False}
+
+
+@pytest.mark.parametrize("filename", ["report\x00.png", ".", "..", "report.png"])
+def test_untrusted_filename_does_not_drop_downloaded_message(monkeypatch, tmp_path, filename):
+    channel, received = _make_channel(monkeypatch)
+    channel._media_root = tmp_path
+
+    async def stream(size):
+        yield b"image"
+
+    class Response:
+        status = 200
+        content = SimpleNamespace(iter_chunked=stream)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+    channel._http = SimpleNamespace(get=lambda *a, **k: Response())
+    event = _event(5)
+    event["message"][1]["data"]["file"] = filename
+    asyncio.run(channel._on_message(event))
+    assert len(received) == 1
+    assert received[0]["content"] == "hello with a pic"
+    path = Path(received[0]["media"][0])
+    assert path.parent == tmp_path
+    assert path.read_bytes() == b"image"
