@@ -172,7 +172,7 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 ## 📡 数据源与自动切换
 
-支持 **28 个行情数据源**。`source: "auto"` 会根据代码识别市场，按配置顺序尝试数据源。
+支持 **29 个行情数据源**。`source: "auto"` 会根据代码识别市场，按配置顺序尝试数据源。
 
 | 市场 | 取数顺序 |
 |---|---|

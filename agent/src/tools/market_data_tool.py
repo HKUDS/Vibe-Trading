@@ -147,7 +147,12 @@ class MarketDataTool(BaseTool):
                     "read-only Shoonya/Dhan bars for .NS/.BO. mt5: forex/metals "
                     "from a local MetaTrader 5 terminal (Windows; e.g. EUR/USD, "
                     "XAUUSD.FX); tickerall: the same feed hosted, no terminal, "
-                    "any OS. local: your own CSV/Parquet/DuckDB files."
+                    "any OS. aperiodic: perpetual bars and funding on a named venue, "
+                    "VENUE.BASE-QUOTE-PERP with VENUE BINANCE/OKX/HYPERLIQUID "
+                    "(e.g. OKX.BTC-USDT-PERP, HYPERLIQUID.XYZ.TSLA-USDC-PERP for a "
+                    "HIP-3 market), delisted contracts included; needs the optional "
+                    "SDK and APERIODIC_API_KEY beyond a public preview sample. "
+                    "local: your own CSV/Parquet/DuckDB files."
                 ),
                 "default": "auto",
             },

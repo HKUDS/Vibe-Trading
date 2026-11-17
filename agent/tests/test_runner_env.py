@@ -27,6 +27,7 @@ def test_backtest_runtime_env_keeps_market_data_configuration(
         "ALPHAVANTAGE_API_KEY": "alpha-key",
         "TIINGO_API_KEY": "tiingo-key",
         "FMP_API_KEY": "fmp-key",
+        "APERIODIC_API_KEY": "aperiodic-key",
         "FRED_API_KEY": "fred-key",
         "VIBE_TRADING_IWENCAI_KEY": "iwencai-key",
         "VIBE_TRADING_SEC_UA": "Research Bot bot@example.com",

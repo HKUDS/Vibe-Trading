@@ -127,6 +127,16 @@ _CN_FUTURES_DATED3_PATTERN = r"^(?:{})\d{{3}}$".format(
     "|".join(sorted(_ZCE_FUTURES_PRODUCTS, key=len, reverse=True))
 )
 
+#: Venue-qualified linear perpetuals served by the opt-in ``aperiodic`` loader:
+#: ``OKX.BTC-USDT-PERP``, or ``HYPERLIQUID.XYZ.TSLA-USDC-PERP`` for a market a
+#: Hyperliquid builder dex (HIP-3) lists. Quotes are limited to USD
+#: stablecoins, the contract the crypto entry in ``_MARKET_CURRENCY`` assumes.
+VENUE_PERP_PATTERN = re.compile(
+    r"^(?P<venue>BINANCE|OKX|HYPERLIQUID)\.(?:(?P<dex>[A-Z0-9]+)\.)?(?P<base>[A-Z0-9]+)"
+    r"-(?P<quote>USDT0|USDT|USDC|USDH|USDE|USD1|BUSD|USD)-PERP$",
+    re.I,
+)
+
 _MARKET_PATTERNS = [
     (re.compile(r"^[A-Z0-9]{4}\.T$", re.I), "jp_equity"),
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "a_share"),
@@ -165,6 +175,7 @@ _MARKET_PATTERNS = [
     # zero_size rejection (#1863). Base alphabet matches the loader's own
     # ``([A-Z0-9]+)-USDT-PERP`` fullmatch.
     (re.compile(r"^[A-Z0-9]+-USDT-PERP$", re.I), "crypto"),
+    (VENUE_PERP_PATTERN, "crypto"),
     # yfinance's native crypto spelling (BTC-USD, ETH-USD). Distinct from
     # USDT pairs only in the quote currency; both belong to CryptoEngine.
     (re.compile(r"^(?=[A-Z0-9]*[A-Z])[A-Z0-9]+-USD$", re.I), "crypto"),
