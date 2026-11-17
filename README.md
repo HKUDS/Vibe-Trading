@@ -30,6 +30,8 @@
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=flat" alt="FastAPI">
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
+  <a href="https://pepy.tech/projects/vibe-trading-ai"><img src="https://static.pepy.tech/badge/vibe-trading-ai" alt="PyPI total downloads"></a>
+  <img src="https://visitor-badge.laobi.icu/badge?page_id=HKUDS.Vibe-Trading&amp;left_text=README%20views" alt="README views">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>

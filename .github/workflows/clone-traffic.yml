@@ -1,0 +1,71 @@
+name: Archive clone traffic
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: clone-traffic-archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    if: github.repository == 'HKUDS/Vibe-Trading'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check traffic credential
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_READ_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo '::error::Add TRAFFIC_READ_TOKEN with repository Administration read permission.'
+            exit 1
+          fi
+      - name: Load persistent archive branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git init "$RUNNER_TEMP/clone-archive"
+          cd "$RUNNER_TEMP/clone-archive"
+          git remote add origin "https://github.com/$REPOSITORY.git"
+          gh auth setup-git
+          refs=$(git ls-remote --heads origin refs/heads/traffic-archive)
+          if [ -n "$refs" ]; then
+            git fetch --depth=1 origin traffic-archive
+            git switch -c traffic-archive FETCH_HEAD
+          else
+            git switch --orphan traffic-archive
+          fi
+      - name: Collect full rolling window
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_READ_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: python3 tools/github_traffic/archive.py --repository "$REPOSITORY" --output "$RUNNER_TEMP/clone-archive"
+      - name: Commit and push archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/clone-archive"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add snapshots daily.json summary.json
+          git commit -m 'Archive clone traffic snapshot'
+          git push origin HEAD:refs/heads/traffic-archive
+      - name: Report source freshness and missing days
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          summary = json.loads((Path(os.environ['RUNNER_TEMP']) / 'clone-archive/summary.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
+              report.write('## Clone traffic archive\n\n```json\n' + json.dumps(summary, indent=2) + '\n```\n')
+          if summary['attention_required']:
+              raise SystemExit('Archive saved, but missing dates or stale source require attention; inspect summary.json')
+          PY
