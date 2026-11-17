@@ -13,6 +13,7 @@ from typing import Any
 from src.config.paths import get_runs_dir
 from src.research_lab.execution import constructor_defaults, source_run
 from src.research_lab.models import REQUEST_MODELS
+from src.utils.process import pid_is_running
 
 
 def _write(path: Path, payload: dict) -> None:
@@ -107,18 +108,13 @@ def get_job(identifier: str) -> dict:
     if not path.is_file():
         raise ValueError("research job not found")
     state = json.loads(path.read_text())
-    if state["status"] in {"pending", "running"}:
-        try:
-            os.kill(state["owner_pid"], 0)
-        except ProcessLookupError:
-            state.update(
-                status="failed",
-                error="Research worker was interrupted; start a new job to rerun the saved request.",
-                finished_at=datetime.now(timezone.utc).isoformat(),
-            )
-            _write(path, state)
-        except PermissionError:
-            pass
+    if state["status"] in {"pending", "running"} and not pid_is_running(state["owner_pid"]):
+        state.update(
+            status="failed",
+            error="Research worker was interrupted; start a new job to rerun the saved request.",
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
+        _write(path, state)
     return state
 
 
