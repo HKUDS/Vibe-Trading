@@ -574,5 +574,29 @@
     ],
     "backend": "claude_cli",
     "automatic_model_list": true
+  },
+  {
+    "name": "teapotrouter",
+    "label": "TeaPotRouter",
+    "api_key_env": "TEAPOTROUTER_API_KEY",
+    "base_url_env": "TEAPOTROUTER_BASE_URL",
+    "default_model": "claude-sonnet-5-5",
+    "default_base_url": "https://api.teapotrouter.com/v1",
+    "api_key_required": true,
+    "capabilities": {},
+    "onboarding": {
+      "order": 8,
+      "label": "TeaPotRouter",
+      "description": "Claude and GPT model lines behind one API key"
+    },
+    "model_options": [
+      "claude-sonnet-5-5",
+      "claude-fable-5-2",
+      "claude-opus-5-5",
+      "claude-haiku-4-5",
+      "gpt-6.1-sol",
+      "gpt-6.1-terra",
+      "gpt-6-astra"
+    ]
   }
 ]
