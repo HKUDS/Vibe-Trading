@@ -3,7 +3,11 @@
 from __future__ import annotations
 from src.providers import settings as provider_settings
 
+import json
 import os
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -42,6 +46,32 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(api_server, "_baostock_installed", lambda: False)
     monkeypatch.delenv("API_AUTH_KEY", raising=False)
     return TestClient(api_server.app, client=("127.0.0.1", 50000))
+
+
+@contextmanager
+def _model_list_server(payload, received):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            received.append((self.path, self.headers.get("Authorization")))
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
 
 
 def test_get_llm_settings_is_side_effect_free_and_hides_placeholders(
@@ -99,7 +129,8 @@ def test_list_llm_models_uses_unsaved_form_values(
 ) -> None:
     observed: dict[str, str] = {}
 
-    async def fake_list(provider, *, base_url: str, api_key: str):
+    async def fake_list(provider, *, base_url: str, api_key: str, disable_proxy: bool):
+        del disable_proxy
         observed.update(provider=provider.name, base_url=base_url, api_key=api_key)
         return settings_routes.LLMModelsResponse(
             provider=provider.name,
@@ -145,8 +176,8 @@ def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
     )
     observed: list[tuple[str, str]] = []
 
-    async def fake_list(provider, *, base_url: str, api_key: str):
-        del provider
+    async def fake_list(provider, *, base_url: str, api_key: str, disable_proxy: bool):
+        del provider, disable_proxy
         observed.append((base_url, api_key))
         return settings_routes.LLMModelsResponse(
             provider="deepseek",
@@ -171,6 +202,51 @@ def test_list_llm_models_does_not_send_saved_key_to_unsaved_endpoint(
         ("https://api.deepseek.com/v1", "stored-secret-key"),
         ("https://models.example.test/v1", ""),
     ]
+
+
+@pytest.mark.parametrize("exported", [False, True])
+@pytest.mark.parametrize(("disable_proxy", "expected_direct"), [("1", True), ("0", False)])
+def test_model_discovery_direct_option_bypasses_environment_proxy(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    disable_proxy: str, expected_direct: bool, exported: bool,
+) -> None:
+    if exported:
+        monkeypatch.setenv("VIBE_TRADING_DISABLE_HTTP_PROXY", disable_proxy)
+        (tmp_path / ".env").write_text("")
+    else:
+        monkeypatch.delenv("VIBE_TRADING_DISABLE_HTTP_PROXY", raising=False)
+        (tmp_path / ".env").write_text(f"VIBE_TRADING_DISABLE_HTTP_PROXY={disable_proxy}\n")
+    provider_received = []
+    proxy_received = []
+    with _model_list_server({"data": [{"id": "direct-model"}]}, provider_received) as provider_url:
+        with _model_list_server({"data": [{"id": "proxied-model"}]}, proxy_received) as proxy_url:
+            for name in ("HTTP_PROXY", "http_proxy"):
+                monkeypatch.setenv(name, proxy_url)
+            for name in ("NO_PROXY", "no_proxy"):
+                monkeypatch.delenv(name, raising=False)
+
+            response = client.post(
+                "/settings/llm/models",
+                json={
+                    "provider": "openrouter",
+                    "base_url": provider_url,
+                    "api_key": "private-fixture-key",
+                },
+            )
+
+    assert response.status_code == 200
+    if expected_direct:
+        assert proxy_received == []
+        assert provider_received == [("/models", "Bearer private-fixture-key")]
+        expected_model, unexpected_model = "direct-model", "proxied-model"
+    else:
+        assert provider_received == []
+        assert len(proxy_received) == 1
+        assert proxy_received[0][0].endswith("/models")
+        assert proxy_received[0][1] == "Bearer private-fixture-key"
+        expected_model, unexpected_model = "proxied-model", "direct-model"
+    assert expected_model in response.json()["models"]
+    assert unexpected_model not in response.json()["models"]
 
 
 @pytest.mark.parametrize("placeholder", ["sk-xxx", "xxx", "gsk_xxx"])
