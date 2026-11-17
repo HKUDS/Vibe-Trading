@@ -24,5 +24,3 @@ def test_risk_tool_preserves_invalid_price_dates(bad_close):
     assert actual["status"] == "ok", actual
     assert actual["data"]["inputs"]["return_observations"] == 37
     assert actual["data"]["volatility"] == pytest.approx(expected["volatility"])
-
-
