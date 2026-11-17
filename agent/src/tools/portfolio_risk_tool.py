@@ -194,13 +194,15 @@ class PortfolioRiskXrayTool(BaseTool):
             times: list[Any] = []
             prices: list[float] = []
             for record in records:
-                if not isinstance(record, Mapping) or "close" not in record:
+                if not isinstance(record, Mapping):
                     continue
                 when = next((record[k] for k in _DATE_KEYS if k in record), None)
                 try:
-                    price = float(record["close"])
+                    price = float(record.get("close"))
                 except (TypeError, ValueError):
-                    continue
+                    # Keep this bar in the timeline: removing it would turn a
+                    # multi-bar move across the gap into a one-bar return.
+                    price = float("nan")
                 times.append(when)
                 prices.append(price)
             if not prices:
