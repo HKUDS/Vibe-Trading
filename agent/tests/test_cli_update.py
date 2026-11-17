@@ -319,3 +319,13 @@ def test_malformed_pypi_response_fails_without_installing(monkeypatch, capsys, p
     assert update_mod.cmd_update() == update_mod.EXIT_FAILED
     assert calls == []
     assert "Could not check for updates on PyPI" in capsys.readouterr().out
+
+
+def test_failed_verifier_cannot_report_success(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(update_mod.subprocess, "run", lambda *a, **k: SimpleNamespace(
+        returncode=1, stdout="99.0.0\n", stderr="interpreter shutdown failed",
+    ))
+    assert update_mod._verify_upgrade("99.0.0") == update_mod.EXIT_FAILED
+    assert "Updated to" not in capsys.readouterr().out
