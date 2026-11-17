@@ -214,6 +214,29 @@ describe("Layout accessibility", () => {
     expect(screen.getByText("Renamed once")).toBeInTheDocument();
   });
 
+  it.each(["rename", "delete"])("does not let a stale list undo a completed %s", async (action) => {
+    const { container } = renderLayout();
+    await screen.findByText(sessions[0].title);
+    let resolveList!: (value: typeof sessions) => void;
+    vi.mocked(api.listSessions).mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve; }) as never);
+    act(() => window.dispatchEvent(new Event("vibe:sessions-refresh")));
+
+    if (action === "rename") {
+      fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+      fireEvent.change(screen.getByRole("textbox"), { target: { value: "New title" } });
+      fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+      await screen.findByText("New title");
+    } else {
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+      await waitFor(() => expect(screen.queryByText(sessions[0].title)).not.toBeInTheDocument());
+    }
+    await act(async () => resolveList(sessions));
+    expect(screen.queryByText(sessions[0].title)).not.toBeInTheDocument();
+    if (action === "rename") expect(screen.getByText("New title")).toBeInTheDocument();
+    expect(container.querySelector("aside .animate-pulse")).toBeNull();
+  });
+
   it("keeps history, new chat and language reachable with a collapsed sidebar", async () => {
     window.localStorage.setItem("qa-sidebar", "collapsed");
     renderLayout();
