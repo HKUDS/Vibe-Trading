@@ -299,3 +299,23 @@ def test_unparseable_installed_version_errors(monkeypatch, capsys: pytest.Captur
     assert update_mod.cmd_update() == update_mod.EXIT_FAILED
     assert calls == []
     assert "Could not compare versions" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("payload", [
+    None, [], "unexpected", {}, {"info": None}, {"info": []},
+    {"info": {}}, {"info": {"version": None}},
+    {"info": {"version": 99}}, {"info": {"version": ""}},
+    {"info": {"version": "   "}},
+])
+def test_malformed_pypi_response_fails_without_installing(monkeypatch, capsys, payload):
+    response = _FakePyPIResponse("99.0.0")
+    monkeypatch.setattr(response, "json", lambda: payload)
+    monkeypatch.setattr(update_core.requests, "get", lambda *a, **k: response)
+    calls, fake_run = _fake_subprocess()
+    monkeypatch.setattr(update_mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(update_mod, "detect_install_kind", lambda: update_mod.KIND_WHEEL)
+    monkeypatch.setattr(update_mod, "CURRENT_VERSION", "0.1.19")
+
+    assert update_mod.cmd_update() == update_mod.EXIT_FAILED
+    assert calls == []
+    assert "Could not check for updates on PyPI" in capsys.readouterr().out
