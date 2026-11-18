@@ -290,6 +290,8 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 | **Composite** | cross-market | one shared capital pool across markets (`source="auto"`) |
 | **options_portfolio** | options | multi-leg, Greeks, payoff/scenario |
 
+KRX and HOSE backtests reject intraday intervals because their execution rules require a daily price reference. Intraday market data is available separately from loaders that support it.
+
 Benchmark selection honors `.SH`, `.SZ`, and `.BJ` A-share suffixes, plus Yahoo's `.SS` spelling for Shanghai, independently of the chosen loader, including offline local sources.
 
 The engine's trading rules come from each code's market, so a backtest code must name one: a suffix listed above (`.SH`, `.US`, `.HK`, `.L`, `.TO`, `.NS`, `.KS`, `.SA`, `.BA`, `.VN`, …), a bare US ticker, a crypto or FX pair, an index (`^GSPC`), a futures contract, or a mainland code written as six bare digits or with `.SS`. A code no market rule recognises, `local:` datasets included, is refused before any data is fetched instead of running on another market's rules.
