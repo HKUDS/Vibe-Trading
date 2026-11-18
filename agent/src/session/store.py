@@ -116,6 +116,7 @@ class SessionStore:
         if not session_dir.exists():
             return False
         import shutil
+
         shutil.rmtree(session_dir, ignore_errors=True)
         return True
 
@@ -165,12 +166,14 @@ class SessionStore:
             f.flush()
             os.fsync(f.fileno())
 
-    def get_messages(self, session_id: str, limit: int = 100) -> List[Message]:
+    def get_messages(
+        self, session_id: str, limit: Optional[int] = 100
+    ) -> List[Message]:
         """Read all messages for a session.
 
         Args:
             session_id: Session ID.
-            limit: Maximum number of messages to return.
+            limit: Maximum number of messages to return, or None for all messages.
 
         Returns:
             List of Message objects in chronological order.
@@ -206,7 +209,7 @@ class SessionStore:
                         session_id,
                         type(exc).__name__,
                     )
-        return messages[-limit:]
+        return messages if limit is None else messages[-limit:]
 
     # ---- Attempt CRUD ----
 
