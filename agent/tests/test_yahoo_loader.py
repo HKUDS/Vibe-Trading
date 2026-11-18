@@ -415,7 +415,7 @@ class TestLoaderMetadata:
         assert loader.name == "yahoo"
         assert loader.markets == {
             "us_equity", "hk_equity", "india_equity", "kr_equity", "jp_equity", "ca_equity",
-            "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share",
+            "vietnam_equity", "uk_equity", "ar_equity", "br_equity", "a_share", "taiwan_equity",
         }
         assert loader.requires_auth is False
         assert loader.is_available() is True

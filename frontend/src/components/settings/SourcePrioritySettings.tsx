@@ -34,6 +34,7 @@ export function SourcePrioritySettings() {
     jp_equity: t("settings.sourcePriority.markets.jp_equity"),
     kr_equity: t("settings.sourcePriority.markets.kr_equity"),
     ca_equity: t("settings.sourcePriority.markets.ca_equity"),
+    taiwan_equity: t("settings.sourcePriority.markets.taiwan_equity"),
     vietnam_equity: t("settings.sourcePriority.markets.vietnam_equity"),
     ar_equity: t("settings.sourcePriority.markets.ar_equity"),
     br_equity: t("settings.sourcePriority.markets.br_equity"),
