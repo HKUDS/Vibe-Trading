@@ -1144,6 +1144,7 @@
         "jp_equity": "Acciones japonesas",
         "kr_equity": "Acciones de Corea",
         "ca_equity": "Acciones de Canadá",
+        "taiwan_equity": "Acciones de Taiwán",
         "vietnam_equity": "Acciones de Vietnam",
         "ar_equity": "Acciones de Argentina",
         "br_equity": "Acciones de Brasil",
@@ -1484,6 +1485,7 @@
         "ar_equity": "Renta variable Argentina",
         "br_equity": "Renta variable Brasil",
         "uk_equity": "Renta variable Reino Unido",
+        "taiwan_equity": "Acciones de Taiwán",
         "vietnam_equity": "Renta variable Vietnam",
         "other": "Otros"
       }

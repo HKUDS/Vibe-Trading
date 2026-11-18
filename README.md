@@ -62,17 +62,20 @@
 
 ## 📰 News
 
+- **2026-11-18** 📈 **Taiwan equity backtests and execution fixes** — TWSE (`.TW`) and TPEx (`.TWO`) stocks now support daily-bar backtests via Yahoo Finance. The Korea, Taiwan and Vietnam backtest engines use the simulated fill price, including extra slippage, to check daily price limits. Intraday backtest requests for these markets are rejected before fetching data. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
+  Switching between listed sessions reuses the sidebar list. The bundled AKShare skill supports current and legacy endpoint names. Regression tests cover attachment filenames, configuration lookup order, and MCP market-data previews and artifact parts. **On `main`, for the next pip release.**
+
 - **2026-11-17** 📊 **Portfolio risk details and reusable options analysis** — Risk X-Ray adds observed drawdown periods and signed per-holding volatility contributions. Options Lab exports calculated snapshots as JSON and scenario grids as CSV, and diagnoses observed IV slices with explicit coverage limits; the diagnostics do not certify an arbitrage-free surface. Agent/MCP tools compare named option strategies on shared price and IV grids.
   Fix malformed update metadata and failed upgrade verification, direct-mode model discovery, attachment filenames, missing-price handling and stale session-list responses. **On `main`, for the next pip release.**
 
 - **2026-11-16** 🛠️ **More reliable reports, memory search and messaging** — Shadow Account reports keep unmeasured P&L unavailable instead of showing zero, including cached HTML/PDF exports. Memory search repairs legacy indexes; partially failed PDF OCR is marked degraded.
   Fix Signal pairing, preserve Napcat text when image metadata is malformed, narrow Anthropic temperature retries to the relevant validation error, and support current and legacy AKShare history endpoints. See [CHANGELOG](CHANGELOG.md). **On `main`, for the next pip release.**
 
-- **2026-11-15** 📡 **Unified market-data gateway and ready-to-use CSVs** — Historical bars and US option snapshots share a [local data gateway](agent/src/data_gateway/README.md) with source fallback, shared caching and bounded concurrency. Responses preserve source, currency and price-adjustment metadata, with explicit coverage and freshness information.
-  Agent market-data reads deliver CSVs alongside JSON. For supported requests naming instruments and one explicit `YYYY-MM-DD` range, the runtime constrains dates before acquisition; calculation warmup is requested separately, and existing indicator/backtest lookbacks remain available. **On `main`, for the next pip release.**
-
 <details>
 <summary>Earlier news</summary>
+
+- **2026-11-15** 📡 **Unified market-data gateway and ready-to-use CSVs** — Historical bars and US option snapshots share a [local data gateway](agent/src/data_gateway/README.md) with source fallback, shared caching and bounded concurrency. Responses preserve source, currency and price-adjustment metadata, with explicit coverage and freshness information.
+  Agent market-data reads deliver CSVs alongside JSON. For supported requests naming instruments and one explicit `YYYY-MM-DD` range, the runtime constrains dates before acquisition; calculation warmup is requested separately, and existing indicator/backtest lookbacks remain available. **On `main`, for the next pip release.**
 
 - **2026-11-14** 🔌 **Unified LLM gateway and version checks** — Model providers now share one catalog and configuration layer across Agent, CLI, API and Swarm. Client settings stay isolated, native adapters respect explicit proxy settings, and cross-origin redirects are blocked before credentials or request bodies are forwarded.
   Check for new versions from Web settings. Desktop gains support for signed updates with verification and recovery; distribution requires a configured update feed and publisher certificates. **On `main`, for the next pip release.**

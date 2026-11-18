@@ -215,12 +215,11 @@ class KoreaEquityEngine(BaseEngine):
                 )
             return True
 
-        open_price = float(bar.get("open", bar.get("close", 0.0)) or 0.0)
-        if open_price <= 0:
+        fill_price = self.prospective_fill_price(bar, direction or -1)
+        if fill_price is None:
             return True  # order sizing rejects non-positive prices downstream
 
         upper, lower = krx_price_limits(base_price, float(self.price_limit))
-        fill_price = self.apply_slippage(open_price, direction if direction else -1)
         if direction == 1 and fill_price >= upper - _PRICE_EPS:
             return False  # limit-up (상한가): no ask to buy from
         if direction == 0 and fill_price <= lower + _PRICE_EPS:

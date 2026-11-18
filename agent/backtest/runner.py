@@ -233,7 +233,17 @@ class BacktestConfigSchema(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def start_before_end(self) -> "BacktestConfigSchema":
+    def validate_run_configuration(self) -> "BacktestConfigSchema":
+        if self.engine == "daily" and source_interval(self.interval) != "1D":
+            restricted = [
+                code for code in self.codes
+                if matched_market(code.strip()) in {"kr_equity", "taiwan_equity", "vietnam_equity"}
+            ]
+            if restricted:
+                raise ValueError(
+                    f"intraday backtests are unsupported for {', '.join(restricted)}. "
+                    "Their execution rules use a daily price reference. Use interval='1D'."
+                )
         if self.rebalance_mask is not None and self.position_adjustment != "rebalance":
             raise ValueError(
                 "rebalance_mask requires position_adjustment='rebalance'"
@@ -887,6 +897,7 @@ _MARKET_TO_SOURCE = {
     "br_equity": "yahoo",
     "uk_equity": "yahoo",
     "vietnam_equity": "yahoo",
+    "taiwan_equity": "yahoo",
     "crypto": "okx",
     "futures": "tushare",
     "fund": "tushare",
@@ -1857,6 +1868,12 @@ def _select_market_engine(source: str, config: dict, codes: List[str]):
     if "vietnam_equity" in markets:
         from backtest.engines.vietnam_equity import VietnamEquityEngine
         return VietnamEquityEngine(config)
+    # Taiwan equity routing — same reason as India, Korea and Vietnam: its
+    # effective source (``yahoo``) has no Wave-1 branch and would fall through
+    # to the default.
+    if "taiwan_equity" in markets:
+        from backtest.engines.taiwan_equity import TaiwanEquityEngine
+        return TaiwanEquityEngine(config)
     # Brazil (B3) routing — same reason as India: ``yahoo`` has no Wave-1
     # branch and would otherwise fall through to the crypto default.
     if "br_equity" in markets:

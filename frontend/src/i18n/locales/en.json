@@ -1144,6 +1144,7 @@
         "jp_equity": "Japan equities",
         "kr_equity": "Korea Equities",
         "ca_equity": "Canada Equities",
+        "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam Equities",
         "ar_equity": "Argentina Equities",
         "br_equity": "Brazil Equities",
@@ -1484,6 +1485,7 @@
         "ar_equity": "Argentina equity",
         "br_equity": "Brazil equity",
         "uk_equity": "UK equity",
+        "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam equity",
         "other": "Other"
       }

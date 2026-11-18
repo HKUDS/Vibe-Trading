@@ -29,6 +29,8 @@ class TestCodeCurrency:
             ("TD.TO", "CAD"),
             ("PNG.V", "CAD"),
             ("VIC.VN", "VND"),
+            ("2330.TW", "TWD"),
+            ("6488.TWO", "TWD"),
             ("IF2406.CFFEX", "CNY"),
         ],
     )
@@ -84,6 +86,16 @@ class TestRejectMixedCurrency:
 
     def test_two_hose_symbols_are_one_currency(self):
         _reject_mixed_currency(["VIC.VN", "FPT.VN"])
+
+    def test_twd_is_named_rather_than_marked_unknown(self):
+        with pytest.raises(ValueError) as excinfo:
+            _reject_mixed_currency(["2330.TW", "AAPL.US"])
+        message = str(excinfo.value)
+        assert "TWD" in message
+        assert "UNKNOWN" not in message
+
+    def test_twse_and_tpex_symbols_are_one_currency(self):
+        _reject_mixed_currency(["2330.TW", "6488.TWO"])
 
     def test_the_error_names_every_currency_and_its_codes(self):
         with pytest.raises(ValueError) as excinfo:

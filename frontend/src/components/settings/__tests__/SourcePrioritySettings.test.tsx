@@ -66,8 +66,37 @@ describe("SourcePrioritySettings", () => {
     apiMock.getDataSourceSettings.mockResolvedValue(dataSourceSettings());
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await i18n.changeLanguage("en");
+  });
+
+  it.each([
+    ["en", "Taiwan Equities"], ["zh-CN", "台湾股票"],
+    ["ja", "台湾株"], ["ko", "대만 주식"],
+    ["ar", "الأسهم التايوانية"], ["fa", "سهام تایوان"],
+    ["es", "Acciones de Taiwán"], ["de", "Taiwanesische Aktien"],
+    ["pt-BR", "Ações de Taiwan"], ["id", "Saham Taiwan"],
+    ["tr", "Tayvan Hisseleri"],
+  ])("renders the Taiwan source-order option in %s", async (language, label) => {
+    await i18n.changeLanguage(language);
+    const settings = dataSourceSettings();
+    settings.source_orders = [{
+      market: "taiwan_equity",
+      env_var: "MARKET_DATA_ORDER_TAIWAN_EQUITY",
+      default_order: ["yahoo", "yfinance", "local"],
+      effective_order: ["yahoo", "yfinance", "local"],
+      override: null,
+      override_invalid: false,
+    }];
+    apiMock.getDataSourceSettings.mockResolvedValue(settings);
+    render(<SourcePrioritySettings />);
+
+    const option = await screen.findByRole("option", { name: label });
+    expect(option).toHaveValue("taiwan_equity");
+    expect(option).not.toHaveTextContent("taiwan_equity");
+    expect(screen.getByRole("combobox")).toHaveValue("taiwan_equity");
+    expect(screen.getByText("yahoo")).toBeInTheDocument();
   });
 
   it("renders the default order for the first market with boundary-disabled reordering", async () => {

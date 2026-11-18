@@ -1,6 +1,6 @@
 # Clone traffic utility
 
-Daily collection now runs in the private `HKUDS/Vibe-Trading-metrics` repository.
+Daily collection now runs in a private metrics repository.
 The collector, Actions logs and raw observations are stored there. The public
 repository no longer runs the archive workflow or publishes a traffic data branch.
 Authorized maintainers can use the private repository's **Archive adoption metrics**
