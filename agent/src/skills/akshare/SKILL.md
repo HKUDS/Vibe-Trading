@@ -54,7 +54,7 @@ df = akshare_query("stock_hk_hist_em", symbol="00700", period="daily",
 | `macro_china_gdp()` | China GDP data |
 | `macro_china_cpi()` | China CPI data |
 | `futures_main_sina()` | Futures main contract quotes |
-| `currency_boc_sina()` | BOC forex rates |
+| `fx_boc_rate_sina()` | BOC forex rates |
 
 ## Column Names
 

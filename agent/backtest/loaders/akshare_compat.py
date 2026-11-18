@@ -7,6 +7,7 @@ _CURRENT_NAMES = {
     "stock_us_hist": "stock_us_hist_em",
     "stock_hk_hist": "stock_hk_hist_em",
     "forex_hist_em": "fx_hist_em",
+    "currency_boc_sina": "fx_boc_rate_sina",
 }
 _LEGACY_NAMES = {current: legacy for legacy, current in _CURRENT_NAMES.items()}
 
