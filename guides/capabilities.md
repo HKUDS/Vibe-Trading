@@ -126,11 +126,10 @@ APERIODIC_API_KEY=...
 
 Without a key, requests go to Aperiodic's public preview, which serves one
 sample (the Binance BTC-USDT perpetual at 5-minute bars, May 2025) and refuses
-everything else. A free account key covers 2025 for a limited set of markets,
-which in practice means the BTC, ETH and SOL perpetuals, because Aperiodic's
-HIP-3 and other RWA history starts in 2026. Other years and markets need a paid
-plan (see aperiodic.io/pricing). When a key does not cover a request, the API's
-refusal is raised as the error.
+everything else. A free account key covers a fixed sample of markets and
+dates, and other markets and years need a paid plan; aperiodic.io/pricing
+lists what each covers. When a key does not cover a request, the API's refusal
+is raised as the error.
 
 Symbols name the venue: `VENUE.BASE-QUOTE-PERP`, with `VENUE` one of `BINANCE`,
 `OKX` and `HYPERLIQUID`, and a builder dex prefix for HIP-3 markets:
