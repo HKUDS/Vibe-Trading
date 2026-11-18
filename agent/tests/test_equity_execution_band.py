@@ -10,7 +10,9 @@ from backtest.loaders import local_loader
 from backtest.runner import BacktestConfigSchema, main
 
 
-@pytest.mark.parametrize("symbol,opening", [("005930.KS", 12_900), ("VIC.VN", 10_600)])
+@pytest.mark.parametrize("symbol,opening", [
+    ("005930.KS", 12_900), ("2330.TW", 10_900), ("VIC.VN", 10_600),
+])
 @pytest.mark.parametrize("shock_bps", [0, 200])
 def test_daily_band_uses_the_actual_fill_price(tmp_path, monkeypatch, symbol, opening, shock_bps):
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))
@@ -54,7 +56,7 @@ def test_daily_band_uses_the_actual_fill_price(tmp_path, monkeypatch, symbol, op
     assert entries == ([opening] if shock_bps == 0 else [])
 
 
-@pytest.mark.parametrize("symbol", ["local:005930.KS", "local:VIC.VN"])
+@pytest.mark.parametrize("symbol", ["local:005930.KS", "local:2330.TW", "local:6488.TWO", "local:VIC.VN"])
 @pytest.mark.parametrize("interval", ["1m", "1H"])
 def test_intraday_cash_equity_guard_runs_before_fetch(tmp_path, capsys, monkeypatch, symbol, interval):
     monkeypatch.setenv("VIBE_TRADING_ALLOWED_RUN_ROOTS", str(tmp_path))

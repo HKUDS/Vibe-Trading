@@ -291,7 +291,7 @@ Run `vibe-trading alpha list` to browse, `vibe-trading alpha show <id>` for form
 | **Composite** | cross-market | one shared capital pool across markets (`source="auto"`) |
 | **options_portfolio** | options | multi-leg, Greeks, payoff/scenario |
 
-KRX and HOSE backtests reject intraday intervals because their execution rules require a daily price reference. Intraday market data is available separately from loaders that support it.
+KRX, TWSE/TPEx and HOSE backtests reject intraday intervals because their execution rules require a daily price reference. Intraday market data is available separately from loaders that support it.
 
 Benchmark selection honors `.SH`, `.SZ`, and `.BJ` A-share suffixes, plus Yahoo's `.SS` spelling for Shanghai, independently of the chosen loader, including offline local sources.
 

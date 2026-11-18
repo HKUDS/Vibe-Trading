@@ -330,13 +330,11 @@ def tw_can_execute(
             )
         return True
 
-    raw_open = bar.get("open", bar.get("close"))
-    open_price = float(raw_open) if raw_open is not None and pd.notna(raw_open) else 0.0
-    if not (0 < open_price < math.inf):
+    fill_price = rules.prospective_fill_price(bar, direction or -1)
+    if fill_price is None or not math.isfinite(fill_price):
         return True  # order sizing rejects unusable prices downstream
 
     upper, lower = tw_price_limits(base_price, float(rules.price_limit), etf=tw_is_etf(symbol))
-    fill_price = rules.apply_slippage(open_price, direction if direction else -1)
     if direction == 1 and fill_price >= upper - _PRICE_EPS:
         return False  # locked at the ceiling: no ask to buy from
     if direction == 0 and fill_price <= lower + _PRICE_EPS:

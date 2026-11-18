@@ -237,7 +237,7 @@ class BacktestConfigSchema(BaseModel):
         if self.engine == "daily" and source_interval(self.interval) != "1D":
             restricted = [
                 code for code in self.codes
-                if matched_market(code.strip()) in {"kr_equity", "vietnam_equity"}
+                if matched_market(code.strip()) in {"kr_equity", "taiwan_equity", "vietnam_equity"}
             ]
             if restricted:
                 raise ValueError(
