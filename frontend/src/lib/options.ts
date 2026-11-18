@@ -105,7 +105,16 @@ export interface ScenarioGrid {
   pnl: number[][];
 }
 
+export type PayoffAlternativeResult = Partial<
+  Omit<OptionsPayoffResponse, "alternatives" | "comparisons" | "status">
+> & {
+  label: string;
+  status: "ok" | "error";
+  error?: string;
+};
+
 export interface OptionsPayoffResponse {
+  alternatives?: PayoffAlternativeResult[];
   comparisons?: PayoffComparison[];
   status: "ok";
   inputs: Record<string, unknown>;

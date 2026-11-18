@@ -10,10 +10,11 @@ interface Props {
   curve: ExpiryCurve;
   entrySpot: number;
   breakevens: number[];
+  comparisonCurves?: Array<{ label: string; curve: ExpiryCurve }>;
   height?: number;
 }
 
-export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 }: Props) {
+export function OptionsPayoffChart({ curve, entrySpot, breakevens, comparisonCurves = [], height = 340 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useChartLifecycle(ref, () => {
@@ -27,6 +28,22 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
     const pairs: [number, number][] = curve.spot.map((s, idx) => [s, curve.pnl[idx] ?? 0]);
     const profitData = pairs.map(([s, v]) => [s, v >= 0 ? v : null]);
     const lossData = pairs.map(([s, v]) => [s, v <= 0 ? v : null]);
+    const comparisonSeries = comparisonCurves.map(({ label, curve: alternative }, index) => {
+      const pnlBySpot = new Map(
+        alternative.spot.map((spot, itemIndex) => [spot, alternative.pnl[itemIndex] ?? null]),
+      );
+      const color = [t.warningColor, "#8b5cf6", "#14b8a6", "#f97316", "#ec4899"][index % 5];
+      return {
+        name: label,
+        type: "line",
+        data: curve.spot.map((spot) => [spot, pnlBySpot.get(spot) ?? null]),
+        smooth: false,
+        symbol: "none",
+        itemStyle: { color },
+        lineStyle: { color, width: 1.5 },
+      };
+    });
+    const comparableNames = new Set([pnlLabel, ...comparisonCurves.map((entry) => entry.label)]);
 
     return {
       backgroundColor: "transparent",
@@ -39,17 +56,22 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         formatter: (params: any) => {
           if (!Array.isArray(params) || !params.length) return "";
-          const main = params.find((p) => p.seriesName === pnlLabel) ?? params[0];
-          const [spotVal, pnlVal] = Array.isArray(main.value) ? main.value : [main.axisValue, NaN];
-          const pnlNum = Number(pnlVal);
-          const pnlText = Number.isFinite(pnlNum)
-            ? pnlNum.toLocaleString(undefined, { maximumFractionDigits: 2 })
-            : "–";
-          return `<b>${Number(spotVal).toLocaleString()}</b><br/>${main.marker} ${pnlLabel}: <b>${pnlText}</b>`;
+          const rows = params.filter((entry) => comparableNames.has(entry.seriesName));
+          if (!rows.length) return "";
+          const spotVal = rows[0].axisValue;
+          const values = rows.map((entry) => {
+            const raw = Array.isArray(entry.value) ? entry.value[1] : NaN;
+            const pnlNum = raw == null ? NaN : Number(raw);
+            const pnlText = Number.isFinite(pnlNum)
+              ? pnlNum.toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : "–";
+            return `${entry.marker} ${entry.seriesName}: <b>${pnlText}</b>`;
+          });
+          return `<b>${Number(spotVal).toLocaleString()}</b><br/>${values.join("<br/>")}`;
         },
       },
       legend: {
-        data: [pnlLabel],
+        data: [pnlLabel, ...comparisonCurves.map((entry) => entry.label)],
         textStyle: { color: t.textColor, fontSize: 11 },
         right: 60,
         top: 4,
@@ -127,6 +149,7 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
             ],
           },
         },
+        ...comparisonSeries,
         {
           name: "profit-fill",
           type: "line",
@@ -149,7 +172,7 @@ export function OptionsPayoffChart({ curve, entrySpot, breakevens, height = 340 
         },
       ],
     };
-  }, [curve, entrySpot, breakevens]);
+  }, [curve, entrySpot, breakevens, comparisonCurves]);
 
   if (curve.spot.length === 0 || curve.pnl.length === 0) {
     return <div className="text-muted-foreground text-sm p-4">{i18n.t("options.payoff.noData")}</div>;

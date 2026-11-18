@@ -8,7 +8,7 @@ vi.mock("@/components/options/StrategyBuilder", () => ({ StrategyBuilder: ({ par
 vi.mock("@/components/options/OptionsChainTable", () => ({ OptionsChainTable: () => <div>chain loaded</div> }));
 vi.mock("@/components/options/GreeksCards", () => ({ GreeksCards: () => null }));
 vi.mock("@/components/charts/OptionsScenarioMatrix", () => ({ OptionsScenarioMatrix: () => null }));
-vi.mock("@/components/charts/OptionsPayoffChart", () => ({ OptionsPayoffChart: ({ entrySpot, curve }: { entrySpot: number; curve: { pnl: number[] } }) => <div data-testid="payoff">{entrySpot}:{curve.pnl.join(",")}</div> }));
+vi.mock("@/components/charts/OptionsPayoffChart", () => ({ OptionsPayoffChart: ({ entrySpot, curve, comparisonCurves }: { entrySpot: number; curve: { pnl: number[] }; comparisonCurves?: Array<{ label: string }> }) => <><div data-testid="payoff">{entrySpot}:{curve.pnl.join(",")}</div><div data-testid="comparison-curves">{comparisonCurves?.map((entry) => entry.label).join(",")}</div></> }));
 const output: OptionsPayoffResponse = { status: "ok", inputs: {}, summary: { net_premium: 10, entry_commission: 0, entry_cost: 10, entry_side: "debit", breakevens: [110], breakeven_intervals: [], max_profit: null, max_loss: -10, profit_unbounded: true, loss_unbounded: false }, greeks: { delta: 0, gamma: 0, theta: 0, vega: 0, rho: 0 }, expiry_curve: { spot: [100], pnl: [7] }, scenario_grid: { iv_values: [], spot: [], pnl: [] }, limitations: [] };
 beforeEach(() => { clearAnalysisState("options"); vi.clearAllMocks(); vi.useFakeTimers(); });
 afterEach(() => vi.useRealTimers());
@@ -73,4 +73,17 @@ it("sends saved legs with the current strategy and displays server comparisons",
   const updated = vi.mocked(api.analyzeOptionsPayoff).mock.lastCall![0];
   expect(updated.entry_spot).toBe(110);
   expect(updated.alternatives).toEqual(sent.alternatives);
+});
+
+it("passes backend alternative curves into the shared payoff chart", async () => {
+  vi.mocked(api.analyzeOptionsPayoff).mockResolvedValue({
+    ...output,
+    alternatives: [{
+      ...output,
+      label: "Strategy 1",
+      expiry_curve: { spot: [100, 120], pnl: [5, 15] },
+    }],
+  });
+  render(<OptionsLab />); await tick();
+  expect(screen.getByTestId("comparison-curves")).toHaveTextContent("Strategy 1");
 });
