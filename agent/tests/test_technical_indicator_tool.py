@@ -5,6 +5,7 @@ import json
 import pandas as pd
 import pytest
 
+from src.shadow_account.indicators import compute_rsi as shadow_rsi
 from src.tools.technical_indicator_tool import (
     TechnicalIndicatorTool,
     _compute_bollinger,
@@ -67,14 +68,11 @@ class TestRSI:
         close = pd.Series([100.0, 101.0], dtype=float)
         assert _compute_rsi(close, 14) is None
 
-    def test_rsi_uses_wilder_ewm_not_rolling_mean(self):
-        """Regression (sibling divergence): the docstring promises Wilder
-        smoothing, which is Wilder's exponential method, not a plain rolling
-        mean of gains/losses -- a materially different, well-known-distinct
-        technique. Classic 15-bar Wilder worked example: seeded avg_gain/
-        avg_loss over the first 14 deltas gives RSI approx 71.80. A rolling-mean
-        implementation gives approx 70.46 for the same input -- close enough to
-        look plausible, far enough to be wrong.
+    def test_rsi_first_value_is_the_seed_average(self):
+        """Classic 15-bar Wilder worked example: with exactly 14 deltas the
+        RSI is the seed itself, the simple mean of the 14 gains and losses
+        (approx 70.46, TA-Lib's value). An exponential mean started from the
+        first delta gives approx 71.80 for the same input.
         """
         close = pd.Series(
             [
@@ -96,16 +94,15 @@ class TestRSI:
             ]
         )
         rsi = _compute_rsi(close, period=14)
-        assert rsi == pytest.approx(71.8024, abs=0.01)
-        assert rsi != pytest.approx(70.4641, abs=0.01)
+        assert rsi == pytest.approx(70.4641, abs=0.01)
+        assert rsi != pytest.approx(71.8024, abs=0.01)
 
-    def test_rsi_matches_sibling_wilder_implementations(self):
-        """Regression: must agree with the Wilder-EWM RSI already used
-        elsewhere in this codebase (shadow_account/extractor.py,
-        shadow_account/scanner.py, skills/technical-basic/
-        example_signal_engine.py -- all three implement the identical
-        formula below), on a series that crosses both the 30 and 70
-        thresholds a rolling-mean implementation would place differently.
+    def test_rsi_matches_shadow_account_wilder_rsi(self):
+        """Regression: must agree with the SMA-seeded Wilder RSI that
+        shadow_account/extractor.py and shadow_account/scanner.py use
+        (shadow_account/indicators.py). An exponential mean started from the
+        first delta reads approx 18.82 on this 20-delta series, 10 points
+        below the Wilder value.
         """
         close = pd.Series(
             [
@@ -137,18 +134,9 @@ class TestRSI:
         )
         period = 14
 
-        def sibling_rsi(close: pd.Series, period: int) -> float:
-            delta = close.diff()
-            gain = delta.clip(lower=0)
-            loss = (-delta).clip(lower=0)
-            avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
-            avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
-            rs = avg_gain / avg_loss
-            return float((100 - 100 / (1 + rs)).iloc[-1])
-
         rsi = _compute_rsi(close, period=period)
-        assert rsi == pytest.approx(sibling_rsi(close, period), abs=1e-9)
-        assert rsi == pytest.approx(18.8237, abs=0.01)
+        assert rsi == pytest.approx(float(shadow_rsi(close, period).iloc[-1]), abs=1e-9)
+        assert rsi == pytest.approx(28.9835, abs=0.01)
 
 
 class TestVolume:
@@ -188,6 +176,17 @@ class TestBollinger:
         result = _compute_bollinger(close, period=20)
         assert result is not None
         assert result["upper"] > result["middle"] > result["lower"]
+
+    def test_bollinger_uses_population_std(self):
+        """Bands use the population std of the window (TA-Lib, pandas-ta).
+        For 1..20 that is sqrt(33.25) approx 5.766, so the upper band is
+        approx 22.03; the sample std (approx 5.916) would give approx 22.33.
+        """
+        close = pd.Series(range(1, 21), dtype=float)
+        result = _compute_bollinger(close, period=20)
+        assert result["middle"] == pytest.approx(10.5)
+        assert result["upper"] == pytest.approx(10.5 + 2 * 33.25**0.5, abs=0.01)
+        assert result["lower"] == pytest.approx(10.5 - 2 * 33.25**0.5, abs=0.01)
 
     def test_bollinger_flat(self):
         """Flat prices → bands collapse to the same value."""

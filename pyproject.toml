@@ -41,6 +41,7 @@ dependencies = [
     "exchange-calendars>=4.13.2,<5",
     "scipy>=1.10.0",
     "bottleneck>=1.3.7",
+    "fin-primitives>=3.8.0,<4",
     "duckdb>=1.2.0",
     "scikit-learn>=1.3.0",
     "joblib>=1.3.0",

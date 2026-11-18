@@ -1,8 +1,8 @@
 """Read-only technical indicator tool.
 
 Computes RSI, MACD, Bollinger Bands, SMA, EMA, and volume statistics for a given
-symbol using the existing market-data pipeline. All computation is pure Python (numpy/pandas);
-no new dependencies.
+symbol using the existing market-data pipeline. RSI and Bollinger Bands come from
+``fin_primitives.ta`` (TA-Lib conventions); the rest is numpy/pandas.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
+from fin_primitives import ta
 
 from src.agent.tools import BaseTool
 from src.market_data import fetch_market_data
@@ -174,23 +175,18 @@ def _compute_ema(close: pd.Series, period: int) -> float | None:
 def _compute_rsi(close: pd.Series, period: int = _RSI_PERIOD) -> float | None:
     """Relative Strength Index (Wilder smoothing) over *period* bars.
 
-    Matches the Wilder-EWM convention already used for RSI elsewhere in this
-    codebase (``shadow_account/extractor.py``, ``shadow_account/scanner.py``,
-    ``skills/technical-basic/example_signal_engine.py``): a plain rolling mean
-    of gains/losses is a materially different, non-Wilder technique and used
-    to diverge from those siblings by several RSI points on ordinary data.
+    Wilder's averages start from the simple mean of the first *period*
+    gains/losses and then recurse, as in TA-Lib and in
+    ``shadow_account/indicators.py``. An exponential mean started from the
+    first delta reads differently over the short windows this tool accepts.
+    A series with no down bar reads 100 (no downward pressure).
     """
     if len(close) < period + 1:
         return None
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean().iloc[-1]
-    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean().iloc[-1]
-    if avg_loss == 0:
+    if not (close.diff() < 0).any():
         return 100.0
-    rs = avg_gain / avg_loss
-    return float(100.0 - (100.0 / (1.0 + rs)))
+    value = ta.rsi(close, length=period).iloc[-1]
+    return float(value) if pd.notna(value) else None
 
 
 def _round_keeping_precision(value: float, min_decimals: int, reference: float | None = None) -> float:
@@ -248,17 +244,19 @@ def _compute_bollinger(
     period: int = _BB_PERIOD,
     num_std: float = _BB_STD,
 ) -> dict[str, float | None] | None:
-    """Bollinger Bands: upper, middle (SMA), lower."""
+    """Bollinger Bands: upper, middle (SMA), lower.
+
+    The band width uses the population standard deviation of the window, as
+    Bollinger defined it and as TA-Lib, pandas-ta and TradingView compute it.
+    """
     if len(close) < period:
         return None
-    sma = close.rolling(window=period).mean()
-    std = close.rolling(window=period).std()
-    middle = float(sma.iloc[-1])
-    spread = num_std * float(std.iloc[-1])
+    bands = ta.bbands(close, length=period, std=num_std)
+    lower, middle, upper = (float(value) for value in bands.iloc[-1, :3])
     return {
-        "upper": _round_keeping_precision(middle + spread, 2, reference=middle),
+        "upper": _round_keeping_precision(upper, 2, reference=middle),
         "middle": _round_keeping_precision(middle, 2, reference=middle),
-        "lower": _round_keeping_precision(middle - spread, 2, reference=middle),
+        "lower": _round_keeping_precision(lower, 2, reference=middle),
     }
 
 
@@ -266,9 +264,8 @@ class TechnicalIndicatorTool(BaseTool):
     """Compute common technical indicators for a symbol.
 
     Fetches OHLCV data through the existing loader pipeline, then computes
-    RSI, MACD, Bollinger Bands, SMA, EMA, and volume statistics. All math is
-    pure Python; no new dependencies, no network calls beyond what the loaders
-    already do.
+    RSI, MACD, Bollinger Bands, SMA, EMA, and volume statistics locally, with
+    no network calls beyond what the loaders already do.
     """
 
     name = "technical_indicators"
