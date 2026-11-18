@@ -88,6 +88,33 @@ def test_timeout_closes_transient_stream(tmp_path):
             messages.append(await bus.consume_outbound())
         assert any(m.metadata.get('_stream_end') for m in messages)
         assert messages[-1].metadata['error']
+        # Abandoned, not finished: the agent may still be working, so a later
+        # consumer (e.g. Feishu's OnIt->done_emoji transition) must not treat
+        # this as the real end.
+        end = next(m for m in messages if m.metadata.get('_stream_end'))
+        assert end.metadata.get('_resuming') is True
+    asyncio.run(scenario())
+
+
+def test_successful_completion_reports_resuming_false(tmp_path):
+    """_resuming must be false on the attempt's true end, or Feishu's OnIt ->
+    done_emoji reaction transition (`not meta.get('_resuming')`) never fires.
+    """
+    async def scenario():
+        bus, service = MessageBus(), _Service()
+        runtime = ChannelRuntime(bus=bus, session_service=service, manager=None,
+                                 session_map_path=tmp_path/'sessions.json', poll_interval_s=.001)
+        msg = InboundMessage(channel='feishu', chat_id='oc_chat', sender_id='u', content='research',
+                             metadata={'message_id': 'm', '_wants_stream': True})
+        task = asyncio.create_task(runtime._handle_inbound(msg))
+        first = await asyncio.wait_for(bus.consume_outbound(), 1)
+        service.messages.append(Message(session_id='s', role='assistant', content='Checked answer', linked_attempt_id='a'))
+        await task
+        messages = [first]
+        while bus.outbound_size:
+            messages.append(await bus.consume_outbound())
+        end = next(m for m in messages if m.metadata.get('_stream_end'))
+        assert not end.metadata.get('_resuming')
     asyncio.run(scenario())
 
 
