@@ -94,6 +94,28 @@ def test_vendor_clients_construct_and_materialize_inside_gateway(gateway, monkey
     assert gateway.status()["cache"]["disk_entries"] == 0
 
 
+
+@pytest.mark.parametrize("legacy,current,symbol", [
+    ("stock_zh_a_hist", "stock_zh_a_hist_em", "600519"),
+    ("stock_us_hist", "stock_us_hist_em", "105.AAPL"),
+    ("stock_hk_hist", "stock_hk_hist_em", "00700"),
+])
+@pytest.mark.parametrize("current_sdk", [False, True])
+def test_akshare_skill_history_preserves_old_and_new_names(gateway, monkeypatch, legacy, current, symbol, current_sdk):
+    from src.data_gateway.skill_sources import akshare_query
+
+    def query(**kwargs):
+        assert owned_source.get()
+        assert kwargs == {"symbol": symbol, "adjust": "qfq"}
+        return pd.DataFrame({"收盘": [12.0]})
+
+    endpoint = current if current_sdk else legacy
+    monkeypatch.setitem(sys.modules, "akshare", SimpleNamespace(**{endpoint: query}))
+    for name in (legacy, current):
+        expected = pd.DataFrame({"收盘": [12.0]})
+        pd.testing.assert_frame_equal(akshare_query(name, symbol=symbol, adjust="qfq"), expected)
+
+
 def test_two_coordinators_can_probe_without_self_queue_deadlock(tmp_path, monkeypatch):
     gateway = MarketDataGateway(Config(cache_dir=tmp_path / "nested", source_timeout=0.3, request_timeout=1))
     entered = threading.Barrier(2)
