@@ -1485,6 +1485,7 @@
         "ar_equity": "Saham Argentina",
         "br_equity": "Saham Brasil",
         "uk_equity": "Saham Inggris",
+        "taiwan_equity": "Saham Taiwan",
         "vietnam_equity": "Saham Vietnam",
         "other": "Lainnya"
       }

@@ -1720,6 +1720,7 @@ export type SectorAssetClass =
   | "ar_equity"
   | "br_equity"
   | "uk_equity"
+  | "taiwan_equity"
   | "vietnam_equity"
   | "index"
   | "crypto"

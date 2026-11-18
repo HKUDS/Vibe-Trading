@@ -1479,6 +1479,7 @@
         "ar_equity": "阿根廷股",
         "br_equity": "巴西股",
         "uk_equity": "英股",
+        "taiwan_equity": "台湾股票",
         "vietnam_equity": "越股",
         "other": "其他"
       }

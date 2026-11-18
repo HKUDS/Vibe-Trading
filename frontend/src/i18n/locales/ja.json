@@ -1479,6 +1479,7 @@
         "ar_equity": "アルゼンチン株",
         "br_equity": "ブラジル株",
         "uk_equity": "英国株",
+        "taiwan_equity": "台湾株",
         "vietnam_equity": "ベトナム株",
         "other": "その他"
       }

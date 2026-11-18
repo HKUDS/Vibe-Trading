@@ -1479,6 +1479,7 @@
         "ar_equity": "아르헨티나 주식",
         "br_equity": "브라질 주식",
         "uk_equity": "영국 주식",
+        "taiwan_equity": "대만 주식",
         "vietnam_equity": "베트남 주식",
         "other": "기타"
       }

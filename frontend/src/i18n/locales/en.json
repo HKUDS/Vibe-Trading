@@ -1485,6 +1485,7 @@
         "ar_equity": "Argentina equity",
         "br_equity": "Brazil equity",
         "uk_equity": "UK equity",
+        "taiwan_equity": "Taiwan Equities",
         "vietnam_equity": "Vietnam equity",
         "other": "Other"
       }

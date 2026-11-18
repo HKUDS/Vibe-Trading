@@ -1485,6 +1485,7 @@
         "ar_equity": "Renta variable Argentina",
         "br_equity": "Renta variable Brasil",
         "uk_equity": "Renta variable Reino Unido",
+        "taiwan_equity": "Acciones de Taiwán",
         "vietnam_equity": "Renta variable Vietnam",
         "other": "Otros"
       }
