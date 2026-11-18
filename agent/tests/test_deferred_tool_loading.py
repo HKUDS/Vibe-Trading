@@ -8,7 +8,8 @@ from src.agent.context import ContextBuilder, _SYSTEM_PROMPT
 from src.agent.context_budget import ContextMeter
 from src.agent.loop import AgentLoop
 from src.agent.memory import WorkspaceMemory
-from src.agent.tool_loading import DeferredToolRegistry, prepare_registry, request_definitions
+from src.agent.skills import Skill, SkillsLoader
+from src.agent.tool_loading import DeferredToolRegistry, loading_policy, prepare_registry, request_definitions
 from src.agent.tools import BaseTool, ToolRegistry
 from src.providers.chat import LLMResponse, ToolCallRequest
 
@@ -105,6 +106,33 @@ def test_deferred_prompt_retains_grounding_and_every_skill_name():
     assert "No catalog entry is hidden" in compact
     assert "Layer 2" in compact
     assert "MUST" in _SYSTEM_PROMPT
+
+
+def test_small_deferred_prompt_compacts_skill_hints_but_keeps_every_skill(tmp_path):
+    legacy_skill = tmp_path / "legacy"
+    legacy_skill.mkdir()
+    (legacy_skill / "SKILL.md").write_text("---\nname: legacy\ndescription: true\n---\n")
+    loader = SkillsLoader(tmp_path, user_skills_dir=tmp_path)
+    long_hint = "公开研究数据来源与使用说明" * 12
+    loader.skills.extend([
+        Skill(name="source", description=long_hint, category="data-source", body="Complete skill."),
+        Skill(name="other", description="Short hint.", category="other"),
+    ])
+    memory = WorkspaceMemory()
+    source = registry()
+    deferred = DeferredToolRegistry(source)
+
+    compact = ContextBuilder(deferred, memory, loader, context_window=16_384).build_system_prompt()
+    limit = loading_policy()["catalog_description_chars"]
+    assert f"  - source: {long_hint[:limit - 1]}…" in compact
+    assert "  - other: Short hint." in compact
+    assert "  - legacy: True" in compact
+    assert long_hint not in compact
+    assert "Complete skill." in loader.get_content("source")
+    assert all(f"- {name}:" in compact for name in source.tool_names)
+
+    assert long_hint in ContextBuilder(source, memory, loader, context_window=16_384).build_system_prompt()
+    assert long_hint in ContextBuilder(deferred, memory, loader, context_window=65_536).build_system_prompt()
 
 
 def test_new_schemas_change_measured_context_size_without_double_counting():
