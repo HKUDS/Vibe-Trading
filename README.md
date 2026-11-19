@@ -764,3 +764,12 @@ or pass your own `--symbols-file` CSV. This archive command runs until stopped
 and can retain quotes outside sessions; it does not install a scheduler or
 cloud service. See [HK quote package](agent/src/hk_data/README.md). Observed
 last-trade age is not a latency guarantee or a verified real-time entitlement.
+
+### Hong Kong market-layer inputs
+
+HK backtests support a dated `hk_lot_sizes_file` CSV and statutory bilateral
+stamp duty with session dates and whole-HKD ceiling. Historical FX helpers report
+local and USD returns using only earlier, published closes; missing rates fail
+closed. The existing XHKG calendar validator excludes lunch and sourced weather
+exceptions. See [the HK market-layer contract](agent/backtest/HK_MARKET_LAYER.md) for
+usage, the current-lot historical assumption, data requirements and limits.
