@@ -733,3 +733,14 @@ Vibe-Trading is research and trading software. It is not investment advice, hold
 ## License
 
 MIT License — see [LICENSE](LICENSE)
+
+## Hang Seng Index benchmark
+
+Run `vibe alpha bench --universe hsi --zoo alpha101 --period 2016-01-01/2026-10-31`.
+HSI works in the benchmark/compare API, CLI and Alpha Zoo selector.
+Current Wikipedia membership is revision-stamped and checked against the dated published count.
+A count mismatch or source failure stops the benchmark; there is no benchmark roster fallback.
+Prices use the shared HK provider chain with provider-native adjustment/volume provenance.
+Sector labels require 90% coverage; VWAP is a labeled OHLC4 proxy.
+Current members and sectors have survivorship bias, not point-in-time membership.
+Inspect missing instruments, observation counts and data-quality warnings before using results.

@@ -62,6 +62,8 @@ _SP500_CONSTITUENT_SOURCE_DATE = "2026-05-17"
 # "unknown" bucket demeans as a single group, which is the global fallback
 # the alphas already have, but reported as industry neutralization.
 _SP500_MIN_SECTOR_COVERAGE = 0.9
+# Keep the HSI gate explicit so market-specific label policies do not couple.
+_HSI_MIN_SECTOR_COVERAGE = 0.9
 
 # Concurrent Tushare ``pro.daily`` fetches when building CSI300. Free tier
 # allows ~200 calls/min; 4 workers stays well under that with a 300-name list.
@@ -80,6 +82,7 @@ _PERIOD_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})/(\d{4}-\d{2}-\d{2})$")
 _UNIVERSE_TAG = {
     "csi300": "equity_cn",
     "sp500": "equity_us",
+    "hsi": "equity_hk",
     "btc-usdt": "crypto",
 }
 
@@ -115,7 +118,7 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500`` | ``btc-usdt``.
+        universe: ``csi300`` | ``sp500`` | ``hsi`` | ``btc-usdt``.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
             ``~/.vibe-trading/cache/`` if the same universe+period was fetched
@@ -132,7 +135,12 @@ def _load_universe_panel(
     start, end = _parse_period(period)
 
     cache_dir = get_runtime_root() / "cache"
-    cache_path = cache_dir / f"{universe}_{start}_{end}.pkl"
+    # Old HSI cache entries predate canonical provenance and roster reconciliation.
+    # Keep other universes' cache names stable; this versions HSI metadata only.
+    # Prior HSI caches accepted an incomplete 85-name roster/frozen fallback.
+    # A new namespace prevents bypassing the strict published-count validation.
+    cache_universe = "hsi_v3" if universe == "hsi" else universe
+    cache_path = cache_dir / f"{cache_universe}_{start}_{end}.pkl"
     if use_cache and cache_path.is_file():
         cached = _read_pickle_cache(cache_path)
         if cached is not None:
@@ -143,6 +151,8 @@ def _load_universe_panel(
         panel = _load_csi300_panel(start, end)
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
+    elif universe == "hsi":
+        panel = _load_hsi_panel(start, end)
     elif universe == "btc-usdt":
         panel = _load_btc_panel(start, end)
     else:  # pragma: no cover — guarded above
@@ -623,6 +633,26 @@ def _fetch_sp500_constituents() -> tuple[list[str], dict[str, str]]:
         logger.warning("sp500 Wikipedia fetch failed: %s", exc)
     return [], {}
 
+
+def _fetch_hsi_constituents() -> tuple[list[str], dict[str, str], dict]:
+    """Fetch the strict benchmark roster, separate from operational quote fallback."""
+    from src.tools.hsi_universe import fetch_benchmark_constituents
+
+    return fetch_benchmark_constituents()
+
+
+def _load_hsi_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
+    """Load HSI through the isolated adapter and existing benchmark helpers."""
+    from src.tools.hsi_panel import load_hsi_panel
+
+    return load_hsi_panel(
+        start,
+        end,
+        constituents_loader=_fetch_hsi_constituents,
+        wide_builder=_wide_from_fetched,
+        retry=_retry,
+        min_sector_coverage=_HSI_MIN_SECTOR_COVERAGE,
+    )
 
 def _load_btc_panel(start: str, end: str) -> dict[str, pd.DataFrame]:
     """Single-instrument BTC-USDT panel via OKX. Adds vwap = typical price."""
@@ -1488,7 +1518,7 @@ class AlphaBenchTool(BaseTool):
             },
             "universe": {
                 "type": "string",
-                "description": "csi300 | sp500 | btc-usdt (resolved via existing data tools).",
+                "description": "csi300 | sp500 | hsi | btc-usdt (resolved via existing data tools).",
             },
             "period": {
                 "type": "string",
