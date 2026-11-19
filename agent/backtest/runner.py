@@ -37,6 +37,7 @@ from backtest.loaders.registry import (
 )
 from backtest.loaders.base import (
     NoAvailableSourceError,
+    ohlc_price_policy,
     resample_bars,
     source_interval,
     validate_ohlc,
@@ -2104,6 +2105,11 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),
             manifest.get("caliber_warning"),
         )
+    with ohlc_price_policy(bool(config.get("allow_nonpositive_prices", False))):
+        return _fetch_source_data_map(config)
+
+
+def _fetch_source_data_map(config: dict) -> DataFetchResult:
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
     # Weekly and monthly bars are built from daily ones after the fetch, so
