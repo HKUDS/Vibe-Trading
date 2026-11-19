@@ -150,6 +150,12 @@ Vibe-Trading turns finance questions into research reports, runnable backtests a
 | Coordinate or repeat research | Run a [Swarm team](guides/research.md#swarm-workflows), assign work in Pixel Office or schedule a brief in `/scheduled`. |
 | Revisit research with dated evidence | Search `/research-artifacts`, compare any two revisions, and export a full series or selected comparison as JSON or Markdown. [Versioned research](guides/research.md#versioned-research-artifacts) |
 
+For image attachments, `analyze_image` accepts browser handles such as
+`uploads/<filename>` (and legacy `agent/uploads/<filename>`), resolving them
+under the runtime upload directory (`~/.vibe-trading/uploads`, or
+`$VIBE_TRADING_HOME/uploads` when configured), independent of the service working
+directory. Absolute image paths remain subject to the allowed-file-root checks.
+
 ## ⚡ Quick Example
 
 Once you have run `vibe-trading init`, you can ask for a backtest in plain English or benchmark an existing alpha library from the terminal.
