@@ -49,6 +49,56 @@ def test_interrupted_worker_does_not_remain_running(isolated, monkeypatch):
     assert "interrupted" in service.get_job(state["id"])["error"]
 
 
+def test_poll_does_not_overwrite_completion_when_worker_exits(isolated, monkeypatch):
+    state = service.create_job("factor_audit", {})
+    path = service.job_root(state["id"]) / "study.json"
+    completed = {**state, "status": "completed", "result": {"kind": "factor_audit", "count": 0}}
+
+    def finish_before_exit(pid, signal):
+        service._write(path, completed)
+        raise ProcessLookupError()
+
+    patch_module_os(monkeypatch, service, kill=finish_before_exit)
+    assert service.get_job(state["id"]) == completed
+    assert json.loads(path.read_text()) == completed
+
+
+def test_report_survives_interruption_before_final_status(isolated, monkeypatch):
+    import src.factors.audit
+
+    report = {"kind": "factor_audit", "count": 0, "rows": [], "finding_count": 0}
+    monkeypatch.setattr(src.factors.audit, "audit_factors", lambda ids: report)
+    state = service.create_job("factor_audit", {})
+    identifier = state["id"]
+    write = service._write
+
+    def interrupt_final_status(path, payload):
+        if path.name == "study.json" and payload["status"] == "completed":
+            raise SystemExit()
+        write(path, payload)
+
+    with monkeypatch.context() as worker:
+        worker.setattr(service, "_write", interrupt_final_status)
+        with pytest.raises(SystemExit):
+            service.execute_job(identifier)
+
+    root = service.job_root(identifier)
+    assert json.loads((root / "report.json").read_text()) == report
+    assert service.get_job(identifier)["status"] == "running"
+
+    def missing(pid, signal):
+        raise ProcessLookupError()
+
+    patch_module_os(monkeypatch, service, kill=missing)
+    app = FastAPI()
+    register_research_lab_routes(app, lambda: None, lambda: None)
+    with TestClient(app) as client:
+        response = client.get(f"/api/research-lab/jobs/{identifier}/report")
+        assert response.status_code == 200
+        assert response.json() == report
+    assert service.get_job(identifier)["status"] == "completed"
+
+
 def test_running_job_is_not_executed_twice(isolated, monkeypatch):
     state = service.create_job("factor_audit", {})
     root = service.job_root(state["id"])
