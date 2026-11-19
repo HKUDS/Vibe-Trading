@@ -22,7 +22,7 @@ from .fx import (
     NavBridgeTotal,
     value_in_base_currency,
 )
-from .models import Currency, Market, PortfolioBucket, PortfolioState
+from .models import Currency, Market, PortfolioBucket, PortfolioRequest, PortfolioState
 from .numeric import (
     FX_RATE_SPEC,
     MONEY_SPEC,
@@ -260,7 +260,7 @@ class PortfolioLedger:
         )
 
     @classmethod
-    def from_request(cls, request) -> PortfolioLedger:
+    def from_request(cls, request: PortfolioRequest) -> PortfolioLedger:
         """Build the opening ledger from a parsed pt-v2.0 request."""
         return cls.from_state(request.portfolio_state)
 
