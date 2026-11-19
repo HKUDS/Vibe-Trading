@@ -146,8 +146,22 @@ def _cash_at(cash_by_date: dict[str, Decimal], date: str, initial: Decimal) -> D
     return cash_by_date[max(eligible)] if eligible else initial
 
 
+def _is_portfolio_result(result: Any) -> bool:
+    """Select the pt-v2.0 replay only for its exact declared signature."""
+    return (
+        isinstance(result, dict)
+        and result.get("tool") == "paper_trade_step"
+        and result.get("mode") == "portfolio"
+        and result.get("schema_version") == "pt-v2.0"
+    )
+
+
 def reconcile_document(account_state: Any, result: Any) -> dict[str, Any]:
     """Return a JSON-ready reconciliation report or raise for malformed input."""
+    if _is_portfolio_result(result):
+        from .portfolio.reconcile import reconcile_portfolio_document
+
+        return reconcile_portfolio_document(account_state, result)
     if (
         not isinstance(result, dict)
         or result.get("tool") != "paper_trade_step"

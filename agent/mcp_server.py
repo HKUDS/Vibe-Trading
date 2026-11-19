@@ -1055,18 +1055,25 @@ def paper_trade_step(**kwargs: Any) -> str:
 
 @mcp.tool
 def paper_trade_reconcile(account_state: _lenient_dict_any, result: _lenient_dict_any) -> str:
-    """Independently reconcile a single-market paper-trading result.
+    """Independently reconcile a paper-trading result.
 
-    Replays the supplied fills from the initial ledger and checks fees, cash,
-    positions, cn_a T+1 availability, end_state and NAV arithmetic. The report
-    distinguishes verified ledger facts from market-value and hash checks that
-    the result alone cannot establish. Portfolio (pt-v2.0) documents are not
-    accepted yet; portfolio reconciliation is a stacked follow-up. Research
-    only; no orders are placed.
+    Accepts two ``account_state`` shapes with no signature change: the legacy
+    single-market ``{cash, positions}`` ledger and a pt-v2.0 portfolio's
+    opening ``{buckets:[...]}`` ``portfolio_state``. A result declaring
+    ``paper_trade_step`` + ``mode=portfolio`` + ``schema_version=pt-v2.0`` is
+    dispatched to the portfolio replay, which checks opening buckets,
+    conversions, plan order ids, fills, fees, cash, positions, NAV, exposures
+    and attribution, including duplicate fills. Legacy documents keep the
+    original ledger-only output byte for byte.
+
+    The report distinguishes verified document arithmetic from caller marks,
+    FX snapshots and hashes that were not re-fetched or recomputed. This is not
+    a broker audit; research only, and no orders are placed.
 
     Args:
-        account_state: Initial ``{cash, positions}`` ledger supplied to the step.
-        result: Successful single-market ``paper_trade_step`` document to audit.
+        account_state: Legacy ``{cash, positions}`` ledger, or the portfolio
+            step's opening ``portfolio_state`` object.
+        result: Successful ``paper_trade_step`` document to audit.
     """
     registry = _get_registry()
     return registry.execute(

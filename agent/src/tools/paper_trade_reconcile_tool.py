@@ -15,18 +15,28 @@ class PaperTradeReconcileTool(BaseTool):
     name = "paper_trade_reconcile"
     description = (
         "Independently replay a paper_trade_step result from the initial account "
-        "state and fills. Checks per-fill fees, cash, position quantity and "
-        "average cost, cn_a T+1 availability, end_state, and NAV arithmetic. "
-        "Returns field-level mismatches and names facts that cannot be verified "
-        "without bars or stable order ids. Research only; no market data, broker, "
-        "order placement, or persistent write is used."
+        "state and fills. Accepts two account_state shapes: the legacy "
+        "{cash, positions} ledger and, for a pt-v2.0 portfolio document, its "
+        "opening {buckets:[...]} portfolio_state object. A result declaring "
+        "paper_trade_step + mode=portfolio + schema_version=pt-v2.0 is dispatched "
+        "to the portfolio replay (buckets, conversions, plan order ids, fills, "
+        "fees, cash, positions, NAV, exposures and attribution); every legacy "
+        "document follows the original ledger-only checks. Returns field-level "
+        "mismatches and names facts that cannot be verified without marks, FX "
+        "snapshots or hashes. Research only; no market data, broker, order "
+        "placement, or persistent write is used."
     )
     parameters = {
         "type": "object",
         "properties": {
             "account_state": {
                 "type": "object",
-                "description": "Initial ledger {cash, positions:[{symbol, qty, avg_cost}]}.",
+                "description": (
+                    "Initial ledger. Legacy single-market: {cash, positions:["
+                    "{symbol, qty, avg_cost}]}. Portfolio (pt-v2.0): the opening "
+                    "portfolio_state {buckets:[{bucket_id, market, currency, "
+                    "cash, positions, fee_model?}]} supplied to the step."
+                ),
             },
             "result": {
                 "type": "object",

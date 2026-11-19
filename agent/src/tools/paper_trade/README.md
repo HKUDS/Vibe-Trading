@@ -501,11 +501,11 @@ its existing envelope (`received_state_hash` where computable).
 - **One day, one mode.** `1d` + `all_or_none` only; no `5m`, `volume_share`,
   strategy execution, multi-day period attribution, compounding across dates,
   margin, shorting or broker support.
-- **No portfolio reconcile yet.** `paper_trade_reconcile` accepts only successful
-  single-market documents (`market`, `effective_fee_model`, `end_state`,
-  `nav_series`). Portfolio bucket conversions, plan IDs and NAV bridges are not
-  audited by that tool; portfolio reconcile is a stacked follow-up, not part of
-  this contract.
+- **Portfolio reconcile is document-internal.** `paper_trade_reconcile` now
+  dispatches `mode: "portfolio"` / `schema_version: "pt-v2.0"` documents to its
+  bucket replay and lists every caller mark, FX snapshot and hash it did not
+  independently recompute in `not_verified`. It does not fetch a market price,
+  verify a broker fill or claim live-account agreement.
 - **Analytics are single-day valuation evidence.** `sectors` produce caller
   sector exposure with an explicit `unclassified` bucket, and the document
   reports NAV, exposure, concentration, an optional caller benchmark with its
@@ -521,6 +521,13 @@ its existing envelope (`received_state_hash` where computable).
   currency for you.
 - **HK counters must be HKD.** A non-HKD HK bucket, position, target, order or
   fee counter is rejected; other markets use their one canonical currency.
+- **cn_a price bands are board heuristics.** The portfolio branch runs each
+  cn_a bucket through the legacy daily engine without a limits-table client,
+  so bands come from the frozen board-ratio heuristic on the prior close
+  (main board 10%, ChiNext/STAR 20%, BSE 30%), not from the ClickHouse limit
+  table the single-market path consults. ST names are not detected here and
+  keep their board's non-ST band; callers needing exchange-published limits
+  or the ST 5% band should use the single-market path.
 
 ## JoinQuant parity
 
@@ -587,41 +594,83 @@ accounting exact. Under `fill_model="volume_share"`, a sell is rejected
 fee would make cash negative; projected cash exactly zero is allowed. Legacy
 `all_or_none` behavior is unchanged.
 
-## Independent ledger reconciliation (single-market)
+## Independent ledger reconciliation (single-market and pt-v2.0 portfolio)
 
-The `paper_trade_reconcile` agent and MCP tool accepts the initial
-`{cash, positions}` ledger and a successful **single-market**
-`paper_trade_step` document. It replays the returned fills with Decimal
-arithmetic, independently checks the per-fill fee schedule, cash, position
-quantities and fee-exclusive average costs, cn_a T+1 availability, `end_state`,
-and each NAV row's cash and `nav = cash + position_value` identity. A valid
-result with discrepancies returns `reconciled: false` and field-level issues;
-malformed input returns a stable JSON error envelope.
+The `paper_trade_reconcile` agent and MCP tool keeps one name, one signature and
+one report envelope. Its `account_state` argument accepts two shapes:
 
-The tool does not yet accept pt-v2.0 portfolio documents. A portfolio document
-has `mode: "portfolio"`, bucket ledgers, conversions, plan IDs and a NAV bridge
-instead of `market`/`effective_fee_model`/`end_state`/`nav_series`, so it is
-rejected as malformed input today. Portfolio reconciliation is a stacked
-follow-up and must not be inferred from the single-market audit.
+- **Legacy single-market:** the initial `{cash, positions}` ledger for a
+  successful single-market `paper_trade_step` document.
+- **Portfolio:** the opening `portfolio_state` object
+  `{buckets:[{bucket_id, market, currency, cash, positions, fee_model?}]}` for a
+  successful pt-v2.0 portfolio document. This is the same object the step
+  request accepted, not the full request and not a dummy single-market ledger.
 
-A position fully sold by the replay must be absent from `end_state.positions`.
-A nonzero residual is a quantity mismatch even if the symbol appeared in the
-initial ledger; an explicit zero-quantity ending row is reported separately.
+Dispatch is exact: only a result declaring `tool: "paper_trade_step"`,
+`mode: "portfolio"` and `schema_version: "pt-v2.0"` takes the portfolio path.
+Every other document follows the legacy function unchanged, including its
+scalar `account_state` path, output bytes and error behavior. No new tool or MCP
+argument is added.
 
-This is a ledger audit, not a second market replay. The step document does not
-contain the bars behind `position_value`, so that market value is not
-recomputed. `received_state_hash` and `engine_fingerprint` are not recomputed
-either, and duplicate fills cannot be detected without stable order ids. These
-limits are listed in `not_verified`. The tool fetches no data, reads no broker
-state and writes nothing.
+The legacy replay checks the per-fill fee schedule, cash, position quantities
+and fee-exclusive average costs, cn_a T+1 availability, `end_state`, and each
+NAV row's cash and `nav = cash + position_value` identity. A valid result with
+discrepancies returns `reconciled: false` and field-level issues; malformed
+input returns a stable JSON error envelope.
+
+For a portfolio document the replay reconstructs, with Decimal arithmetic:
+
+- each bucket's opening cash and positions, compared field by field with the
+  caller-supplied opening `portfolio_state`;
+- pre-fill conversions from the published `analytics.conversion_rows` rates,
+  including the opening-cash-only debit, quantized target credit and rounding
+  residual;
+- the plan's `order_id`/`plan_order_id` linkage, one terminal fill, reject or
+  cancel per planned order, generated target-weight ids, and duplicate fill or
+  duplicate plan order detection;
+- every fill's bucket, currency, date, quantity, price, independently
+  recalculated fee, cash effect and fee-exclusive average cost, ending cash and
+  positions;
+- bucket result rows (`cash`, `position_value`, `nav_base`) and the analytics
+  NAV bridge built from the published cash rows, marked position rows, direct
+  FX rates and explicit rounding terms;
+- currency, market, sector and concentration exposures, each recomputed from
+  position rows and NAV;
+- the one-day attribution NAV identity, contribution/FX/fee/conversion rows,
+  expected versus published rounding residual, and weight tie-out. A nonzero
+  unexplained residual is an issue; it is never fitted away.
+
+`reconciled: true` means the document's own arithmetic is internally
+consistent. Caller valuation marks, direct FX snapshots, target declarations
+and the four provenance hashes were not independently re-fetched or recomputed,
+so they are listed in `not_verified`, together with the fact that this is not a
+broker, venue or live-account audit.
+
+A position fully sold by the replay must be absent from `end_state.positions`
+(legacy) or from the ending bucket (portfolio). A nonzero residual is a
+quantity mismatch even if the symbol appeared in the opening ledger; an
+explicit zero-quantity ending row is reported separately.
+
+This is a ledger and document-arithmetic audit, not a second market replay. For
+legacy documents the step does not contain the bars behind `position_value`, so
+that market value is not recomputed. `received_state_hash`, `engine_fingerprint`
+and the portfolio `plan_hash`/`planning_data_hash`/`execution_data_fingerprint`/
+`document_hash` are not recomputed either. Legacy duplicate fills cannot be
+detected without stable order ids; portfolio fills are linked by
+`plan_order_id` and duplicates are rejected. These limits are listed in
+`not_verified`. The tool fetches no data, reads no broker state and writes
+nothing.
 
 ## Known limits
 
-- **Portfolio mode is a separate, single-day contract.** It has no portfolio
-  reconcile, Brinson allocation/selection, sector or multi-day attribution,
-  saved account, UI, persistence, 5m, volume-share, margin/shorting or broker
-  support. Its one-day contribution and weight-gap attribution is documented
-  under [Cross-market portfolio steps](#cross-market-portfolio-steps-pt-v20).
+- **Portfolio mode is a separate, single-day contract.** It has no Brinson
+  allocation/selection, sector or multi-day attribution, saved account, UI,
+  persistence, 5m, volume-share, margin/shorting or broker support.
+  `paper_trade_reconcile` audits the document's ledger, NAV, exposure and
+  one-day attribution arithmetic offline; it does not verify a broker fill or
+  re-fetch caller marks. Its one-day contribution and weight-gap attribution is
+  documented under [Cross-market portfolio
+  steps](#cross-market-portfolio-steps-pt-v20).
 - **Zero-calendar markets (HK/US).** A mid-range candidate weekday with no bar
   for any symbol is inferred closed: the day is recorded as
   `market_closed_inferred` with a warning, no NAV row is produced for it, its

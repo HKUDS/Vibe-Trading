@@ -78,8 +78,13 @@ with `--host` / `--port`.
 `mode: "portfolio"` with `schema_version: "pt-v2.0"` runs one stateless
 cross-market daily step with caller-declared buckets, sessions, direct-pair FX
 and exactly one of `orders` / `target_weights`. No separate portfolio tool is
-registered. `paper_trade_reconcile` currently audits single-market documents
-only; portfolio reconciliation is a stacked follow-up.
+registered. `paper_trade_reconcile` keeps one name and one `account_state`
+argument: a legacy single-market document takes its `{cash, positions}` ledger,
+while a document declaring `mode: "portfolio"` and `schema_version: "pt-v2.0"`
+takes the step's opening `portfolio_state` object and is replayed across
+buckets, conversions, plan order ids, fills, NAV, exposures and attribution.
+Neither branch fetches a market price, verifies a broker fill or recomputes
+hashes without their raw inputs; those limits are published in `not_verified`.
 
 `web_search` tries its existing Sogou and Bing China fallbacks when ddgs returns
 no results or fails. Set `VIBE_TRADING_SEARCH_BING_FALLBACK=0` to disable both.
