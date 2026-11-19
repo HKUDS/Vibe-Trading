@@ -258,6 +258,14 @@ class DataLoader:
         A window this loader cannot serve in full raises instead of returning a
         quietly short series, matching the other bounded-window loaders.
         """
+        # Normalize the window bounds to zero-padded ISO before any URL build or
+        # cursor comparison. A caller may pass a pandas-parseable but non-ISO
+        # date (e.g. "2023-1-5"); the pagination stop test compares the cursor
+        # as a string, and a lexicographic "<" against "2023-1-5" would decide a
+        # "2023-05-11" cursor had already reached the window start, silently
+        # truncating the series to its most recent page.
+        start_date = pd.Timestamp(start_date).strftime("%Y-%m-%d")
+        end_date = pd.Timestamp(end_date).strftime("%Y-%m-%d")
         chunks: List[pd.DataFrame] = []
         cursor_end = end_date
         seen_ends: set[str] = set()
