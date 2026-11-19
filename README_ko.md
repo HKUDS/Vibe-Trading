@@ -36,6 +36,7 @@
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
+  <a href="https://arxiv.org/abs/2611.24845"><img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat-square&logo=wechat&logoColor=white" alt="WeChat"></a>
@@ -61,6 +62,8 @@
 </p>
 
 ## 📰 뉴스
+
+- **2026-11-19** 📄 **기술 보고서 공개** — 이 보고서는 Vibe-Trading이 결과를 원본 데이터와 실행 기록에 연결하고, 연구의 수정 이력을 보존하며, 실거래를 사용자가 승인한 범위로 제한하는 방식을 설명합니다. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **대만 주식 백테스트와 가격제한폭 검사 수정** — Yahoo Finance 일봉으로 대만증권거래소(`.TW`)와 타이베이거래소(`.TWO`) 주식을 백테스트할 수 있습니다. 한국·대만·베트남 주식 백테스트는 추가 슬리피지를 반영한 모의 체결가로 일일 가격제한폭을 검사합니다. 이 시장의 장중 백테스트 요청은 데이터 조회 전에 거부합니다. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   목록에 있는 세션 사이를 전환할 때 사이드바 목록을 재사용합니다. 내장 AKShare 스킬은 이전 및 최신 엔드포인트 이름을 지원합니다. 첨부 파일명, 설정 검색 순서, MCP 시장 데이터 미리보기와 분할 파일 재조립을 회귀 테스트로 검증합니다. **`main`에 반영되었으며 다음 pip 릴리스에 포함됩니다.**
@@ -381,6 +384,22 @@ Vibe-Trading은 **[HKUDS](https://github.com/HKUDS)** agent ecosystem의 일부�
 | 모의 거래 | 일별 현금, 체결, 순자산을 세션 간 보존합니다. 별도의 모의 환경에서 A주 거래일을 5분 단위로 재생합니다. | 선택형 거래량 비율 체결([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), 초안). |
 | 리서치 | 실행 카드에 백테스트 지표와 근거를 기록합니다. 날짜별 연구 기록은 개정 이력을 보존하며 검색할 수 있습니다. | 연구 기록의 구조화된 재무 데이터([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), 검토 중). |
 | 옵션 랩 | 다중 레그 손익과 그릭스, 현물 × IV 시나리오를 봅니다. | `/options`에서 대화형 변동성 곡면 그리드를 제공합니다. |
+
+## 인용
+
+연구에 Vibe-Trading을 사용했다면 이 기술 보고서를 인용해 주세요.
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## 기여하기
 

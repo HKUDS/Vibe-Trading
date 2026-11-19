@@ -36,6 +36,7 @@
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
+  <a href="https://arxiv.org/abs/2611.24845"><img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat-square&logo=wechat&logoColor=white" alt="WeChat"></a>
@@ -61,6 +62,8 @@
 </p>
 
 ## 📰 ニュース
+
+- **2026-11-19** 📄 **技術レポートを公開** — Vibe-Trading が分析結果を元データと実行記録に結び付け、研究の改訂履歴を保持し、実取引をユーザーが許可した範囲に制限する仕組みを解説しています。 [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **台湾株のバックテストと値幅制限の修正** — Yahoo Finance の日足で台湾証券取引所（`.TW`）と台北取引所（`.TWO`）の株式をバックテストできます。韓国・台湾・ベトナム株のバックテストでは、追加のスリッページを含む約定価格で日次の値幅制限を判定します。これらの市場の日中足バックテストはデータ取得前に拒否します。 [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   表示済みのセッションを切り替えるときはサイドバーの一覧を再利用します。組み込みの AKShare スキルは新旧の API 名に対応しました。添付ファイル名、設定ファイルの探索順序、MCP 市場データのプレビューと分割ファイルの復元を回帰テストで確認します。**`main` に統合済み。次回の pip リリースに含まれます。**
@@ -381,6 +384,22 @@ Vibe-Trading は **[HKUDS](https://github.com/HKUDS)** agent ecosystem の一部
 | 模擬取引 | 口座の現金・約定・純資産を日単位で保存。別のシミュレーションで中国A株を5分刻みで再生。 | オプトインの出来高シェア約定（[#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)、ドラフト）。 |
 | 調査 | 検証指標と根拠を実行カードに記録。日付付きの調査記録は改訂履歴を保持し、検索できます。 | 調査記録への構造化された財務データ（[#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)、レビュー中）。 |
 | オプションラボ | 複数レッグの損益、感応度、原資産価格 × IV のシナリオ。 | `/options` で対話的なボラティリティ曲面グリッドを利用可能。 |
+
+## 引用
+
+研究で Vibe-Trading を利用する際は、この技術レポートを引用してください。
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## 開発への参加
 

@@ -36,6 +36,7 @@
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
+  <a href="https://arxiv.org/abs/2611.24845"><img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat-square&logo=wechat&logoColor=white" alt="WeChat"></a>
@@ -61,6 +62,8 @@
 </p>
 
 ## 📰 新闻
+
+- **2026-11-19** 📄 **技术报告发布** — 报告介绍了 Vibe-Trading 如何将研究结果追溯到数据来源和运行记录、保留研究修订历史，并将实盘交易限制在用户授权的范围内。 [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **台股回测与涨跌停修复** — 通过 Yahoo Finance 日线回测台湾证券交易所（`.TW`）和柜买中心（`.TWO`）股票。韩国、台湾和越南回测用包含额外滑点的模拟成交价检查日涨跌停，并在取数前拒绝这三个市场的盘中回测。 [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   切换已列出的会话时复用侧栏列表。内置 AKShare 技能兼容新旧接口名。新增回归测试覆盖附件文件名、配置查找顺序，以及 MCP 市场数据摘要预览和分片重组。**已合入 `main`，将随下次 pip 版本发布。**
@@ -395,6 +398,22 @@ Vibe-Trading 是 **[HKUDS](https://github.com/HKUDS)** 智能体生态的一部�
 观测切片诊断使用你输入的标的价格、连续复利无风险利率和股息率，重构欧式看涨期权模型价格，检查同一观测到期日内的垂直价差界限和蝶式凸性。结果明确列出覆盖不足和无法定价的切片，最多展示前 20 项问题，但不缩减实际检查数量，也不改变插值网格。只读 `quantlib_call` 的 `volatility.diagnose_iv_surface` 和 `POST /options/volatility-surface/diagnostics` 使用相同观测值及小数形式的利率。这是模型价格检查，不是可成交报价或交易建议。
 
 详见[模型边界与示例](agent/src/skills/options-advanced/SKILL.md#volatility-surface)。
+
+## 引用
+
+如果你在研究中使用了 Vibe-Trading，请引用这篇技术报告。
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## 参与贡献
 

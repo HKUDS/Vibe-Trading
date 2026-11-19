@@ -36,6 +36,7 @@
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat&logo=react&logoColor=white" alt="React">
   <a href="https://pypi.org/project/vibe-trading-ai/"><img src="https://img.shields.io/pypi/v/vibe-trading-ai?style=flat&logo=pypi&logoColor=white" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=flat" alt="License"></a>
+  <a href="https://arxiv.org/abs/2611.24845"><img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
   <br>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/Feishu-Group-E9DBFC?style=flat-square&logo=feishu&logoColor=white" alt="Feishu"></a>
   <a href="https://github.com/HKUDS/.github/blob/main/profile/README.md"><img src="https://img.shields.io/badge/WeChat-Group-C5EAB4?style=flat-square&logo=wechat&logoColor=white" alt="WeChat"></a>
@@ -61,6 +62,8 @@
 </p>
 
 ## 📰 الأخبار
+
+- **2026-11-19** 📄 **نشر التقرير التقني** — يوضح التقرير كيف يربط Vibe-Trading النتائج بمصادر البيانات وسجلات التشغيل، ويحفظ سجل مراجعات الأبحاث، ويقيّد التداول الفعلي بالحدود التي فوّض بها المستخدم. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **اختبار الأسهم التايوانية تاريخياً وتصحيح حدود الأسعار** — يمكن اختبار أسهم بورصة تايوان (`.TW`) وبورصة تايبيه (`.TWO`) على البيانات اليومية من Yahoo Finance. تتحقق محركات كوريا وتايوان وفيتنام من حدود الأسعار اليومية باستخدام سعر التنفيذ المحاكى بعد احتساب الانزلاق الإضافي. تُرفض طلبات الاختبار على بيانات داخل اليوم لهذه الأسواق قبل جلب البيانات. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   عند التنقل بين الجلسات المدرجة تُعاد الاستفادة من قائمة الشريط الجانبي. تدعم مهارة AKShare المضمّنة أسماء الواجهات الجديدة والقديمة. تغطي اختبارات الانحدار أسماء المرفقات وترتيب البحث عن الإعدادات ومعاينة بيانات السوق عبر MCP وإعادة تجميع أجزائها. **متاح على `main` وسيُضمّن في إصدار pip المقبل.**
@@ -381,6 +384,22 @@ Vibe-Trading جزء من نظام وكلاء **[HKUDS](https://github.com/HKUDS)
 | التداول التجريبي | تحتفظ الحسابات اليومية بالنقد والصفقات وصافي الأصول بين الجلسات. وتعيد محاكاة منفصلة تشغيل جلسة أسهم A بخطوات خمس دقائق. | مطابقة اختيارية بحسب حصة حجم التداول ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128)، مسودة). |
 | البحث | تسجل بطاقات التشغيل المقاييس والأدلة لكل اختبار. وتحتفظ الأبحاث المؤرخة بسجل مراجعاتها ويمكن البحث فيها. | بيانات مالية منظَّمة داخل الأبحاث المحفوظة ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164)، قيد المراجعة). |
 | مختبر الخيارات | عوائد متعددة الأطراف وحساسيات وسيناريوهات السعر الفوري والتقلب الضمني. | شبكة تفاعلية لسطح التقلب الضمني في `/options`. |
+
+## الاستشهاد
+
+إذا استخدمت Vibe-Trading في بحثك، يُرجى الاستشهاد بالتقرير التقني.
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## كيفية المساهمة
 
