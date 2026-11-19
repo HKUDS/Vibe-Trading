@@ -85,6 +85,38 @@ class TestResolveSecidUS:
         with patch.object(ec, "throttled_get_json", return_value=payload):
             assert ec.resolve_secid("NOPE.US") is None
 
+    def test_does_not_resolve_a_different_security(self):
+        # Regression: a fuzzy suggest for "BRK" lists BRKC (a YieldMax ETF)
+        # first. Resolving to it silently hands back the wrong security's bars.
+        payload = {
+            "QuotationCodeTable": {
+                "Data": [
+                    {"Code": "BRKC", "QuoteID": "107.BRKC"},
+                    {"Code": "BRK-B", "QuoteID": "106.BRK-B"},
+                ]
+            }
+        }
+        with patch.object(ec, "throttled_get_json", return_value=payload):
+            assert ec.resolve_secid("BRK.US") is None
+
+    def test_picks_exact_code_among_multiple_candidates(self):
+        payload = {
+            "QuotationCodeTable": {
+                "Data": [
+                    {"Code": "BRKC", "QuoteID": "107.BRKC"},
+                    {"Code": "BRK", "QuoteID": "106.BRK"},
+                ]
+            }
+        }
+        with patch.object(ec, "throttled_get_json", return_value=payload):
+            assert ec.resolve_secid("BRK.US") == "106.BRK"
+
+    def test_class_share_separator_is_ignored(self):
+        # Eastmoney writes Berkshire B as BRK-B; callers may pass BRKB.
+        payload = {"QuotationCodeTable": {"Data": [{"Code": "BRKB", "QuoteID": "106.BRKB"}]}}
+        with patch.object(ec, "throttled_get_json", return_value=payload):
+            assert ec.resolve_secid("BRK-B.US") == "106.BRKB"
+
     def test_search_failure_returns_none_without_raising(self):
         with patch.object(
             ec, "throttled_get_json", side_effect=RuntimeError("banned")

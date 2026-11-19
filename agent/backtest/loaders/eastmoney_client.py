@@ -141,18 +141,33 @@ def _resolve_a_share_secid(code: str, suffix: str) -> str | None:
     return None
 
 
-def _parse_us_secid(payload: Any) -> str | None:
-    """Extract a US ``<market>.<code>`` secid from a search/suggest payload.
+def _norm_us_ticker(value: str) -> str:
+    """Upper-case a US ticker and drop class-share separators.
+
+    Eastmoney writes Berkshire B as ``BRK-B`` while callers may pass ``BRKB``;
+    stripping ``-``/``_`` lets both forms match while keeping distinct tickers
+    (``BRK`` vs ``BRKC``) apart.
+    """
+    return value.upper().replace("-", "").replace("_", "")
+
+
+def _parse_us_secid(payload: Any, code: str) -> str | None:
+    """Extract the US ``<market>.<code>`` secid matching ``code`` from a payload.
 
     Eastmoney's suggest endpoint returns candidates under
     ``QuotationCodeTable.Data``, each carrying a ``QuoteID`` already in
-    ``<market>.<code>`` form. The first US-market (105/106/107) candidate wins.
+    ``<market>.<code>`` form. Only a candidate whose ticker equals ``code`` is
+    accepted: a fuzzy search for ``BRK`` otherwise returns the first US row
+    (``BRKC``, a different ETF) and silently hands back the wrong security's
+    bars. Class-share separators are ignored when comparing.
 
     Args:
         payload: Decoded JSON from the search endpoint.
+        code: Bare US ticker we intend to resolve (e.g. ``"BRK"``).
 
     Returns:
-        The first matching US secid, or ``None`` when no US candidate is found.
+        The matching US secid, or ``None`` when no exact-match US candidate is
+        found.
     """
     if not isinstance(payload, dict):
         return None
@@ -162,14 +177,21 @@ def _parse_us_secid(payload: Any) -> str | None:
     candidates = table.get("Data")
     if not isinstance(candidates, list):
         return None
+    wanted = _norm_us_ticker(code)
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
         quote_id = candidate.get("QuoteID")
         if not isinstance(quote_id, str) or "." not in quote_id:
             continue
-        market = quote_id.split(".", 1)[0]
-        if market in ("105", "106", "107"):
+        market, _, tail = quote_id.partition(".")
+        if market not in ("105", "106", "107"):
+            continue
+        # Prefer the explicit code field, else the secid's tail.
+        cand_code = candidate.get("Code")
+        if not isinstance(cand_code, str) or not cand_code:
+            cand_code = tail
+        if _norm_us_ticker(cand_code) == wanted:
             return quote_id
     return None
 
@@ -209,7 +231,7 @@ def _resolve_us_secid(code: str) -> str | None:
         )
         if isinstance(payload, str):
             payload = _strip_jsonp(payload)
-        secid = _parse_us_secid(payload)
+        secid = _parse_us_secid(payload, code)
     except Exception as exc:  # noqa: BLE001 - an unresolved ticker is non-fatal
         logger.warning("eastmoney secid search failed for %s: %s", code, exc)
         secid = None
