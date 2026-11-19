@@ -34,7 +34,12 @@ def schedule(market, start, end):
     # Padding permits an all-weekend/holiday request; never create the default
     # multi-decade calendar or its materialized all-minutes property.
     calendar = calendar_type(start=lower - timedelta(days=7), end=upper + timedelta(days=7), side="left")
-    return name, str(calendar.tz), calendar.schedule.loc[start:end].copy()
+    frame = calendar.schedule.loc[start:end].copy()
+    if name == "XHKG":
+        from src.data_gateway.hk_sessions import apply_weather_overrides
+
+        frame = apply_weather_overrides(frame)
+    return name, str(calendar.tz), frame
 
 
 def validate(rows, market, start, end, interval, provenance, *, prepared=None):
@@ -71,6 +76,10 @@ def validate(rows, market, start, end, interval, provenance, *, prepared=None):
         "coverage_verified": False,
         "coverage": "exchange_calendar_grid",
     }
+    if name == "XHKG":
+        meta["calendar_limitations"] = (
+            "exchange_calendars plus dated weather overrides; historical weather inventory is not exhaustive"
+        )
     raw = [row.get("trade_date", row.get("time")) for row in rows]
     excluded = []
     kept = list(rows)

@@ -63,7 +63,7 @@ class GlobalEquityEngine(BaseEngine):
     Config keys:
       - slippage_us: default 0.0005
       - slippage_hk: default 0.001
-      - hk_stamp_tax: default 0.001 (0.1% bilateral)
+      - hk_stamp_tax: optional explicit override; otherwise dated statutory duty, whole-HKD ceiling
       - hk_commission: default 0.00015 (万1.5)
       - hk_levy: default 0.0000565 (SFC + FRC)
       - hk_settlement: default 0.00002 (CCASS)
@@ -71,6 +71,10 @@ class GlobalEquityEngine(BaseEngine):
         issuer, so a flat 100 mis-sizes most names. Any HK symbol missing
         from the table falls back to 100 and is reported in the run metrics
         under ``lot_assumptions``, including runs with no table.
+      - hk_lot_sizes_file: dated HKEX CSV; mutually exclusive with hk_lot_sizes.
+        File-backed sizing requires every traded symbol; missing lots fail closed.
+        Snapshot retrieval time does not prove historical lot validity.
+      - hk_require_lot_sizes: require complete coverage for an in-memory lot map.
       - slippage_ca: defaults to slippage_us
       - ca_commission: broker commission rate, default 0.0
       - slippage_uk: defaults to slippage_us
@@ -99,6 +103,7 @@ class GlobalEquityEngine(BaseEngine):
         # HK defaults
         self.slippage_hk: float = config.get("slippage_hk", 0.001)
         self.hk_stamp_tax: float = config.get("hk_stamp_tax", 0.001)
+        self._hk_stamp_tax_override = config.get("hk_stamp_tax")
         self.hk_commission: float = config.get("hk_commission", 0.00015)
         self.hk_levy: float = config.get("hk_levy", 0.0000565)
         self.hk_settlement: float = config.get("hk_settlement", 0.00002)
@@ -106,6 +111,15 @@ class GlobalEquityEngine(BaseEngine):
             _hk_lot_key(k): int(v)
             for k, v in (config.get("hk_lot_sizes") or {}).items()
         }
+        self.hk_lot_snapshot = None
+        self.hk_require_lot_sizes = bool(config.get("hk_require_lot_sizes", False))
+        if config.get("hk_lot_sizes_file"):
+            from backtest.market_layer import load_hk_board_lots
+
+            if config.get("hk_lot_sizes"):
+                raise ValueError("Use hk_lot_sizes or hk_lot_sizes_file, not both")
+            self.hk_lot_sizes, self.hk_lot_snapshot = load_hk_board_lots(config["hk_lot_sizes_file"])
+            self.hk_require_lot_sizes = True
         self.lot_assumptions: dict[str, int] = {}
         # Canada defaults. Commission varies by broker, so the model exposes a
         # rate instead of inventing an exchange-wide charge.
@@ -140,6 +154,8 @@ class GlobalEquityEngine(BaseEngine):
         lot = self.hk_lot_sizes.get(key, 0)
         if lot > 0:
             return lot
+        if self.hk_require_lot_sizes:
+            raise ValueError(f"HK board lot missing from the declared snapshot: {key}")
         if key not in self.lot_assumptions:
             self.lot_assumptions[key] = _DEFAULT_HK_BOARD_LOT
             logger.warning(
@@ -160,9 +176,10 @@ class GlobalEquityEngine(BaseEngine):
                 "slippage_sell_rate": 1.0 - self._execution_price(1.0, -1),
                 "commission_rate": self._execution_commission(1.0, 1.0, 1, True),
             }}
-        if not self.lot_assumptions:
+        if not self.lot_assumptions and not self.hk_lot_snapshot:
             return {}
         return {
+            **({"hk_board_lot_snapshot": self.hk_lot_snapshot} if self.hk_lot_snapshot else {}),
             "lot_assumptions": [
                 {"symbol": symbol, "field": "board_lot", "value": lot}
                 for symbol, lot in sorted(self.lot_assumptions.items())
@@ -198,9 +215,13 @@ class GlobalEquityEngine(BaseEngine):
         to purchases of every kind: opening long and buying to cover.
         """
         if self.market == "hk":
+            from backtest.market_layer import hk_stamp_duty
+
             notional = size * price
             comm = notional * self.hk_commission       # broker commission
-            comm += notional * self.hk_stamp_tax       # stamp tax bilateral
+            comm += hk_stamp_duty(
+                size, price, self._bar_ts, rate_override=self._hk_stamp_tax_override,
+            )
             comm += notional * self.hk_levy            # SFC + FRC levies
             comm += notional * self.hk_settlement      # CCASS settlement
             return comm

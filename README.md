@@ -733,3 +733,12 @@ Vibe-Trading is research and trading software. It is not investment advice, hold
 ## License
 
 MIT License — see [LICENSE](LICENSE)
+
+### Hong Kong market-layer inputs
+
+HK backtests support a dated `hk_lot_sizes_file` CSV and statutory bilateral
+stamp duty with session dates and whole-HKD ceiling. Historical FX helpers report
+local and USD returns using only earlier, published closes; missing rates fail
+closed. The existing XHKG calendar validator excludes lunch and sourced weather
+exceptions. See [the HK market-layer contract](agent/backtest/HK_MARKET_LAYER.md) for
+usage, the current-lot historical assumption, data requirements and limits.
