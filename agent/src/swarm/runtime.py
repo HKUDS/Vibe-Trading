@@ -386,6 +386,8 @@ class SwarmRuntime:
         live_callback: Callable | None = None,
         include_shell_tools: bool = False,
         resume_from: SwarmRun | None = None,
+        *,
+        session_id: str | None = None,
     ) -> SwarmRun:
         """Start a swarm run. Returns immediately, execution happens in background.
 
@@ -399,6 +401,8 @@ class SwarmRuntime:
                 new run as-is. Compatible unfinished tasks continue from saved
                 context; tasks without checkpoints restart from retained reports.
                 ``None`` (default) starts a fully fresh run.
+            session_id: Owning session, if the run should be reachable after
+                its initiating tool call returns.
 
         Returns:
             The created SwarmRun instance (status=pending initially).
@@ -441,20 +445,44 @@ class SwarmRuntime:
         self._store.create_run(run)
 
         cancel_event = threading.Event()
-        with self._lock:
-            self._cancel_events[run.id] = cancel_event
-            if live_callback is not None:
-                self._live_callbacks[run.id] = live_callback
-
         thread = threading.Thread(
-            target=self._execute_run,
+            target=self._run_with_cleanup,
             args=(run, cancel_event, include_shell_tools, resume_from),
             name=f"swarm-{run.id}",
             daemon=True,
         )
-        thread.start()
+        with self._lock:
+            self._cancel_events[run.id] = cancel_event
+            if live_callback is not None:
+                self._live_callbacks[run.id] = live_callback
+        if session_id is not None:
+            # Register before the run can finish, regardless of how long the tool waits.
+            register_active_run(run.id, session_id, lambda: self.cancel_run(run.id))
+        try:
+            thread.start()
+        except RuntimeError:
+            self._forget_run(run.id)
+            raise
 
         return run
+
+    def _forget_run(self, run_id: str) -> None:
+        with self._lock:
+            self._cancel_events.pop(run_id, None)
+            self._live_callbacks.pop(run_id, None)
+        unregister_active_run(run_id)
+
+    def _run_with_cleanup(
+        self,
+        run: SwarmRun,
+        cancel_event: threading.Event,
+        include_shell_tools: bool,
+        resume_from: SwarmRun | None,
+    ) -> None:
+        try:
+            self._execute_run(run, cancel_event, include_shell_tools, resume_from)
+        finally:
+            self._forget_run(run.id)
 
     def cancel_run(self, run_id: str) -> bool:
         """Signal cancellation for a running swarm.
@@ -760,11 +788,6 @@ class SwarmRuntime:
 
         self._store.update_run(run)
         self._emit_event(run_id, self._make_event("run_completed", data={"status": final_status.value, "report_is_partial": run.report_is_partial, "final_report": run.final_report}))
-
-        # Cleanup cancel event and live callback
-        with self._lock:
-            self._cancel_events.pop(run_id, None)
-            self._live_callbacks.pop(run_id, None)
 
     def _sync_run_tasks_snapshot(self, run: SwarmRun, task_store: TaskStore) -> None:
         """Mirror live ``tasks/*.json`` back into ``run.json`` at a safe point.
