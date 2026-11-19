@@ -928,7 +928,6 @@ def _from_yahoo_symbol(raw_symbol: str, quote: Dict[str, Any]) -> tuple[str, str
     if (
         quote_type in _US_LISTED_QUOTE_TYPES
         and "." not in raw_symbol
-        and "-" not in raw_symbol
         and (not exchange or exchange in _US_YAHOO_EXCHANGES)
     ):
         # ETFs and mutual funds are US listings just like equities: Yahoo

@@ -156,6 +156,34 @@ class TestSymbolSearchSuccess:
         assert candidate["symbol"] == "GGAL.BA"
         assert candidate["market"] == "ar"
 
+    def test_us_multiclass_share_maps_to_us_suffix(self):
+        # Yahoo writes Berkshire B as BRK-B. It must map to BRK-B.US (market
+        # "us"), not stay bare on "global" where the data layer cannot resolve
+        # it and an explicit BRK-B.US query finds nothing.
+        quote = {
+            "symbol": "BRK-B",
+            "shortname": "Berkshire Hathaway B",
+            "exchange": "NYQ",
+            "quoteType": "EQUITY",
+        }
+        candidate = ss._yahoo_candidate(quote)
+        assert candidate is not None
+        assert candidate["symbol"] == "BRK-B.US"
+        assert candidate["market"] == "us"
+
+    def test_crypto_hyphen_symbol_stays_native(self):
+        # BTC-USD must not gain a .US suffix merely because it has a hyphen.
+        quote = {
+            "symbol": "BTC-USD",
+            "shortname": "Bitcoin USD",
+            "exchange": "CCC",
+            "quoteType": "CRYPTOCURRENCY",
+        }
+        candidate = ss._yahoo_candidate(quote)
+        assert candidate is not None
+        assert candidate["symbol"] == "BTC-USD"
+        assert candidate["market"] == "global"
+
     def test_limit_clamped_and_applied(self):
         with patch.object(
             ss.eastmoney_client, "get_json", return_value=_eastmoney_payload()
