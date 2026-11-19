@@ -2145,6 +2145,24 @@ def _cap_rows(records: list, max_rows: int) -> list | dict[str, object]:
     return cap_rows(records, max_rows)
 
 
+@mcp.tool
+def get_hk_quotes(
+    symbols: _lenient_str_list,
+    source: str = "tencent",
+    max_age_seconds: float = 60,
+) -> str:
+    """Fetch read-only HK quotes with provider time, currency, age and delay.
+
+    Tencent r_hk is the faster default; age is not a guaranteed latency.
+    Yahoo HK quotes are delayed. Futu requires the operator's local quote rights.
+    Use get_market_data for bar history. No broker order or account login occurs.
+    """
+    return _get_registry().execute(
+        "get_hk_quotes",
+        {"symbols": symbols, "source": source, "max_age_seconds": max_age_seconds},
+    )
+
+
 def _calculation_workspace() -> str:
     """Use the normal runtime run root for MCP observations and calculations."""
     from src.config.paths import get_runs_dir
