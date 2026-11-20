@@ -371,7 +371,7 @@ class ChatLLM:
 
         LangChain may lend multiple adapters the same cached HTTPX clients.
         Those process-scoped clients must remain open when one ``ChatLLM`` is
-        discarded. Only explicitly marked, Vibe-created clients are closed;
+        discarded. Only explicitly marked, instance-owned clients are closed;
         adapters without the ownership marker keep the legacy best-effort
         behavior for compatibility.
         """
