@@ -94,6 +94,27 @@ describe("Compare page", () => {
     expect(await screen.findByText("20.00%")).toBeInTheDocument();
   });
 
+  it.each([
+    [-0.3, "-20.00%", "Worse:"],
+    [0, "+10.00%", "Better:"],
+    [-0.1, "0.00%", null],
+  ])("compares signed drawdown of %s against -0.1", async (rightDrawdown, delta, verdict) => {
+    apiMock.getRun.mockImplementation((runId: string) => Promise.resolve({
+      status: "success",
+      run_id: runId,
+      metrics: { max_drawdown: runId === "right" ? rightDrawdown : -0.1 },
+    }));
+
+    render(<Compare />);
+
+    expect(await screen.findByText(delta)).toBeInTheDocument();
+    if (verdict) {
+      expect(screen.getByText(verdict)).toHaveClass("sr-only");
+    } else {
+      expect(screen.queryByText(/^(Better|Worse):$/)).not.toBeInTheDocument();
+    }
+  });
+
   it("localizes the title and gives metric deltas non-color verdicts", async () => {
     apiMock.getRun.mockImplementation((runId: string) => Promise.resolve({
       status: "success",
