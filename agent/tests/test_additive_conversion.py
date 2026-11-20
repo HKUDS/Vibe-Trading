@@ -159,7 +159,8 @@ class TestLoaderWiring:
 
     def _patch_fetch_pair(self, monkeypatch, loader_mod, raw, additive):
         def cached_pair(*, source, symbol, timeframe, start_date, end_date, fields, fetch, source_revision=None):
-            assert source_revision is None  # A-share frames retain their existing cache identity.
+            if source == "eastmoney":
+                assert source_revision is None  # The Eastmoney revision applies only to US bars.
             return raw if fields == ["raw"] else additive
 
         monkeypatch.setattr(loader_mod, "cached_loader_fetch", cached_pair)
@@ -268,7 +269,7 @@ class TestRawFetchFailureDegrades:
 
         _, additive = _two_action_series()
 
-        def flaky(source, symbol, timeframe, start_date, end_date, fields, fetch):
+        def flaky(source, symbol, timeframe, start_date, end_date, fields, fetch, source_revision=None):
             if fields == ["raw"]:
                 raise ConnectionError("throttled")
             return additive
