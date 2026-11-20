@@ -163,6 +163,13 @@ def test_opens_on_negative_price_bar_when_allowed() -> None:
     assert order.cost > 0
 
 
+@pytest.mark.parametrize("value", ["false", "true", 1])
+def test_direct_engine_rejects_non_boolean_opt_in(value) -> None:
+    engine = _PlainEngine({"initial_cash": 1_000_000, "allow_nonpositive_prices": value})
+    df, ts = _bar_df(-5.0)
+    assert engine._plan_open_order("POWER-DA-DELU", 0.5, df, ts, equity=1_000_000) is None
+
+
 def test_default_still_rejects_negative_open() -> None:
     eng = _engine(allow=False)
     df, ts = _bar_df(-5.0)

@@ -286,7 +286,7 @@ class SymbolSearchTool(BaseTool):
         # Keep the asserted identity in the result, and require an observed
         # exact match after converting the provider query (never invent a hit).
         explicit_us = query.upper() if re.fullmatch(r"[A-Z][A-Z0-9&.\-]{0,19}\.US", query, re.I) else None
-        provider_query = explicit_us[:-3] if explicit_us else query
+        provider_query = explicit_us[:-3].replace(".", "-") if explicit_us else query
 
         candidates: List[Dict[str, Any]] = []
         sources: Dict[str, str] = {}
@@ -318,7 +318,8 @@ class SymbolSearchTool(BaseTool):
                 sources[public_source] = public_status or "ok"
                 candidates.extend(public_hits)
 
-        em_hits, sources["eastmoney"] = _search_eastmoney(provider_query)
+        em_query = provider_query.replace("-", "_") if explicit_us else provider_query
+        em_hits, sources["eastmoney"] = _search_eastmoney(em_query)
         candidates.extend(em_hits)
 
         # An explicit FX pair searches Yahoo by its canonical ``XXXYYY=X``
@@ -403,7 +404,11 @@ class SymbolSearchTool(BaseTool):
             ]
 
         if explicit_us is not None:
-            candidates = [c for c in candidates if str(c.get("symbol") or "").upper() == explicit_us]
+            spellings = {explicit_us, f"{provider_query}.US"}
+            candidates = [
+                {**candidate, "symbol": explicit_us} for candidate in candidates
+                if str(candidate.get("symbol") or "").upper() in spellings
+            ]
 
         merged = _merge_candidates(candidates)
         merged, sources["sec_edgar"] = _enrich_us_cik(merged)
@@ -768,6 +773,8 @@ def _eastmoney_candidate(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     code = str(row.get("Code") or "").strip()
     if isinstance(quote_id, str) and "." in quote_id:
         market, _, qid_code = quote_id.partition(".")
+        if _EASTMONEY_SUFFIX_BY_MARKET.get(market) == "US" and code and code.upper() != qid_code.strip().upper():
+            return None
         code = code or qid_code.strip()
     else:
         market = str(row.get("MktNum") or "").strip()
@@ -811,6 +818,8 @@ def _format_symbol(code: str, suffix: str) -> Optional[str]:
         return None
     if suffix == "HK":
         return f"{code.zfill(5)}.HK"
+    if suffix == "US":
+        code = code.replace("_", "-")  # Eastmoney BRK_B and Yahoo BRK-B name one listing.
     return f"{code}.{suffix}"
 
 
@@ -928,7 +937,6 @@ def _from_yahoo_symbol(raw_symbol: str, quote: Dict[str, Any]) -> tuple[str, str
     if (
         quote_type in _US_LISTED_QUOTE_TYPES
         and "." not in raw_symbol
-        and "-" not in raw_symbol
         and (not exchange or exchange in _US_YAHOO_EXCHANGES)
     ):
         # ETFs and mutual funds are US listings just like equities: Yahoo
