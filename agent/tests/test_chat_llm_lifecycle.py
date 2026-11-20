@@ -112,10 +112,11 @@ def test_native_adapter_without_marker_keeps_legacy_cleanup() -> None:
 
 @pytest.mark.parametrize("provider", ["openai", "deepseek", "anthropic"])
 def test_close_respects_default_transport_ownership(monkeypatch, provider_server, provider) -> None:
-    """Closing one adapter releases owned clients without breaking a sibling.
+    """Closing one adapter releases instance clients without breaking a sibling.
 
-    OpenAI/Anthropic borrow cached transports; DeepSeek owns its transports.
-    Both must leave a sibling usable after closing the first adapter.
+    Cached transports stay borrowed, while per-instance transports are closed.
+    LangChain OpenAI 1.8.2 and Anthropic 1.7.12 create an async default
+    per model. Older releases cache both transports.
     """
     if provider != "openai":
         pytest.importorskip(f"langchain_{provider}")
@@ -133,12 +134,19 @@ def test_close_respects_default_transport_ownership(monkeypatch, provider_server
     first_http = [getattr(first._llm, attr)._client for attr in (sync_attr, async_attr)]
     second_http = [getattr(second._llm, attr)._client for attr in (sync_attr, async_attr)]
 
-    shared = provider != "deepseek"  # ChatDeepSeek builds its own SDK clients.
-    assert all((a is b) == shared for a, b in zip(first_http, second_http))
+    shared = [a is b for a, b in zip(first_http, second_http)]
+    if provider == "deepseek":
+        assert shared == [False, False]  # ChatDeepSeek builds its own SDK clients.
+    else:
+        assert shared[0]  # The synchronous OpenAI and Anthropic defaults remain cached.
     first.close()
-    assert all(client.is_closed == (not shared) for client in first_http)
+    assert [client.is_closed for client in first_http] == [
+        not value for value in shared
+    ]
     assert all(not client.is_closed for client in second_http)
     assert second.chat([{"role": "user", "content": "still open"}]).content == "m"
     assert asyncio.run(second._llm.ainvoke("still open")).content == "m"
     asyncio.run(second.aclose())
-    assert all(client.is_closed == (not shared) for client in second_http)
+    assert [client.is_closed for client in second_http] == [
+        not value for value in shared
+    ]

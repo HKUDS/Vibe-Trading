@@ -16,6 +16,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Optional
 from urllib.parse import urlparse, urlsplit
 
+from packaging.version import InvalidVersion, Version
 from pydantic import PrivateAttr
 
 from src.providers.registry import ProviderCapabilities, get_provider_capabilities
@@ -311,6 +312,14 @@ class _ResponsesAsyncClient:
         return getattr(self._client, name)
 
 
+def _default_async_client_is_instance_owned(package: str, first_version: str) -> bool:
+    """Return whether LangChain creates a default async client per model."""
+    try:
+        return Version(version(package)) >= Version(first_version)
+    except (InvalidVersion, PackageNotFoundError):
+        return False
+
+
 def _openai_custom_header_names(raw: str | None) -> tuple[str, ...]:
     """Return header names parsed by the OpenAI SDK environment format."""
     names: list[str] = []
@@ -385,7 +394,17 @@ if ChatOpenAI is not None:
                         )
             self._vibe_provider = vibe_provider
             self._vibe_api_key = vibe_api_key or ""
-            self._vibe_owned_http_clients = tuple(vibe_owned_http_clients or ())
+            owned_http_clients = tuple(vibe_owned_http_clients or ())
+            if (
+                vibe_owned_http_clients is None
+                and kwargs.get("http_async_client") is None
+                and _default_async_client_is_instance_owned("langchain-openai", "1.8.2")
+            ):
+                # LangChain 1.8.2 stopped caching only the default async client.
+                # Its event-loop-bound transport belongs to this adapter, unlike
+                # the still-cached synchronous default and explicit user clients.
+                owned_http_clients += (self.root_async_client._client,)
+            self._vibe_owned_http_clients = owned_http_clients
             # One id per adapter: outside a bound Vibe session (swarm workers,
             # scheduled research, CLI) every request from this adapter still
             # shares a stable conversation identity.
@@ -1313,7 +1332,11 @@ def _build_anthropic(
             # SDK clients before first use, retaining its normal request params.
             client._client = sdk_module.Anthropic(**params, http_client=clients[0])
             client._async_client = sdk_module.AsyncAnthropic(**params, http_client=clients[1])
-        client._vibe_owned_http_clients = clients or ()
+            client._vibe_owned_http_clients = clients
+        elif _default_async_client_is_instance_owned("langchain-anthropic", "1.7.12"):
+            client._vibe_owned_http_clients = (client._async_client._client,)
+        else:
+            client._vibe_owned_http_clients = ()
         _guard_provider_redirects(client._client, client._async_client)
         for sdk in (client._client, client._async_client):
             sdk.api_key, sdk.auth_token = params["api_key"], params["auth_token"]
