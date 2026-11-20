@@ -169,15 +169,18 @@ class SessionStore:
     def get_messages(
         self, session_id: str, limit: Optional[int] = 100
     ) -> List[Message]:
-        """Read all messages for a session.
+        """Read the most recent messages for a session.
 
         Args:
             session_id: Session ID.
-            limit: Maximum number of messages to return, or None for all messages.
+            limit: Maximum number of messages, or None for the full history.
+                A nonpositive limit returns an empty list.
 
         Returns:
             List of Message objects in chronological order.
         """
+        if limit is not None and limit <= 0:
+            return []
         path = self._messages_file(session_id)
         if not path.exists():
             return []
