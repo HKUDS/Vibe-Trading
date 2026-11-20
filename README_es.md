@@ -66,19 +66,22 @@
 
 ## 📰 Noticias
 
+- **2026-11-20** 📈 **Clases de acciones estadounidenses e histórico de Tencent** — Eastmoney y Yahoo identifican las acciones de clase B de Berkshire como `BRK-B.US`. Antes de cargar los precios de Eastmoney se comprueba el símbolo para distinguir valores como `BW-A.US` y `BWA.US`. Las consultas diarias a Tencent con fechas como `2023-1-5` recuperan todas las páginas. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
+  La comparación de estrategias valora mejor una caída máxima del −10% que una del −30%. Los backtests conservan precios negativos solo con `allow_nonpositive_prices: true`. La CLI permite retomar un chat con su historial. **Disponible en `main` para la próxima versión de pip.**
+
 - **2026-11-19** 📄 **Publicación del informe técnico** — El informe explica cómo Vibe-Trading vincula los resultados con sus fuentes de datos y registros de ejecución, conserva el historial de revisiones y limita las operaciones reales al alcance autorizado por el usuario. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **Backtests de acciones taiwanesas y correcciones de los límites de precio** — Usa barras diarias de Yahoo Finance para probar estrategias en acciones de las bolsas de Taiwán (`.TW`) y Taipéi (`.TWO`). Los motores de Corea, Taiwán y Vietnam comprueban los límites diarios con el precio simulado de ejecución, incluido el deslizamiento adicional. Las solicitudes de backtest intradía para estos mercados se rechazan antes de consultar los datos. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   Al cambiar entre sesiones que ya aparecen en la barra lateral se reutiliza la lista. La habilidad integrada de AKShare admite los nombres de las interfaces actuales y anteriores. Las pruebas de regresión cubren nombres de adjuntos, el orden de búsqueda de la configuración y la vista previa y el reensamblado de datos de mercado en MCP. **Disponible en `main` para la próxima versión de pip.**
+
+<details>
+<summary>Noticias anteriores</summary>
 
 - **2026-11-17** 📊 **Detalle del riesgo de cartera y análisis de opciones reutilizable** — Risk X-Ray añade períodos de drawdown observados y contribuciones con signo a la volatilidad por posición. Options Lab exporta instantáneas calculadas como JSON y cuadrículas de escenarios como CSV, y diagnostica cortes de IV observados con límites de cobertura explícitos; no certifica una superficie libre de arbitraje. Las herramientas Agent/MCP comparan estrategias con nombre sobre cuadrículas comunes de precio e IV.
   Se corrigen los metadatos de actualización inválidos y los fallos de verificación de la actualización, el descubrimiento de modelos en modo directo, los nombres de adjuntos, el tratamiento de precios ausentes y las respuestas obsoletas de la lista de sesiones. **En `main`, para la próxima versión de pip.**
 
 - **2026-11-16** 🛠️ **Informes, búsqueda de memoria y mensajería más fiables** — Shadow Account muestra las pérdidas y ganancias no medidas como no disponibles, en lugar de cero, incluso en las exportaciones HTML/PDF en caché. La búsqueda de memoria repara índices antiguos y los fallos parciales del OCR de PDF se señalan como calidad degradada.
   Se corrigen el emparejamiento de Signal y la pérdida de texto en Napcat ante metadatos de imagen incorrectos. Los reintentos de temperatura de Anthropic se limitan al error de validación correspondiente y se admiten las API históricas nuevas y antiguas de AKShare. Véase [CHANGELOG](CHANGELOG.md). **En `main`, para la próxima versión de pip.**
-
-<details>
-<summary>Noticias anteriores</summary>
 
 - **2026-11-15** 📡 **Pasarela de datos de mercado unificada y CSV listos para usar** — Las barras históricas y las instantáneas de opciones de EE. UU. comparten una [pasarela local](agent/src/data_gateway/README.md) con fuentes alternativas, caché compartida y concurrencia limitada. Las respuestas conservan la fuente, la moneda y el ajuste de precios, e indican la cobertura y la antigüedad de los datos.
   Las consultas de mercado del Agent entregan CSV junto con JSON. Para las solicitudes compatibles que indican instrumentos y un único intervalo explícito `YYYY-MM-DD`, el sistema limita las fechas antes de obtener los datos. El historial de inicialización para los cálculos se solicita por separado; se mantienen los períodos retrospectivos de los indicadores y backtests existentes. **En `main`, para la próxima versión de pip.**
