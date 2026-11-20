@@ -9,7 +9,8 @@ and retain its provenance; this module never treats today's display FX as histor
 from __future__ import annotations
 
 import csv
-from datetime import date
+from collections.abc import Iterable
+from datetime import date, datetime
 from decimal import Decimal, ROUND_CEILING
 from pathlib import Path
 
@@ -24,12 +25,30 @@ import pandas as pd
 # https://www.hkex.com.hk/Services/Rules-and-Forms-and-Fees/Fees/Securities-(Hong-Kong)/Trading/Transaction?sc_lang=en
 # Exemptions and non-HKD counters require their own declared policy; this is
 # the ordinary HKD-equity contract, not a complete historical fee certification.
-def hk_stamp_duty(size, price, timestamp=None, *, rate_override=None) -> float:
+def hk_stamp_duty(
+    size: int | float | Decimal,
+    price: int | float | Decimal,
+    timestamp: str | date | datetime | pd.Timestamp | None = None,
+    *,
+    rate_override: int | float | Decimal | None = None,
+) -> float:
     """Return bilateral, per-note duty, optionally using an explicit run override.
 
     An undated direct engine call retains the current 0.1% default. Actual
     backtest fills carry their session timestamp. The dated default is supported
     from 2001-09-01; earlier runs must supply a researched explicit override.
+
+    Args:
+        size: Nonnegative number of shares on the note.
+        price: Nonnegative price per share in HKD.
+        timestamp: Fill/session timestamp; aware values use the Hong Kong date.
+        rate_override: Explicit fractional rate instead of the dated default.
+
+    Returns:
+        Duty on this note, rounded up to a whole Hong Kong dollar.
+
+    Raises:
+        ValueError: Inputs are invalid or an early date lacks an override.
     """
     if rate_override is None:
         rate = Decimal("0.001")
@@ -103,7 +122,10 @@ def load_hk_board_lots(path: str | Path) -> tuple[dict[str, int], dict]:
 
 
 def previous_close_fx(
-    valuation_times, observations: pd.DataFrame, *, max_age="7D"
+    valuation_times: Iterable[datetime | pd.Timestamp | str],
+    observations: pd.DataFrame,
+    *,
+    max_age: str | pd.Timedelta = "7D",
 ) -> pd.DataFrame:
     """Select the last available FX CLOSE strictly before each valuation instant.
 
@@ -154,7 +176,10 @@ def previous_close_fx(
 
 
 def local_and_usd_returns(
-    local_values: pd.Series, observations: pd.DataFrame, *, max_age="7D"
+    local_values: pd.Series,
+    observations: pd.DataFrame,
+    *,
+    max_age: str | pd.Timedelta = "7D",
 ) -> pd.DataFrame:
     """Report local and unhedged USD returns from the same portfolio value path.
 
