@@ -106,9 +106,9 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
                 **config,
                 "start_date": calendar[0].isoformat(),
                 "end_date": calendar[boundary - 1].isoformat(),
-                "evaluation_start_date": calendar[start].isoformat(),
-                "warmup_bars": 0,
             }
+            settings.pop("evaluation_start_date", None)
+            settings["warmup_bars"] = 0
             measured = trial(
                 root,
                 f"{'holdout' if holdout else 'fold'}-{number}-train-{index}",
@@ -158,8 +158,8 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
             "start_date": calendar[0].isoformat(),
             "end_date": calendar[end - 1].isoformat(),
             "evaluation_start_date": calendar[boundary].isoformat(),
-            "warmup_bars": 0,
         }
+        settings.pop("warmup_bars", None)
         measured = trial(
             root,
             f"{'holdout' if holdout else 'fold'}-{number}-test",
