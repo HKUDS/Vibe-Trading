@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2611.24845"><b>📄 Baca laporan teknis</b>&nbsp; <img src="https://img.shields.io/badge/arXiv-2611.24845-B31B1B?style=flat&amp;logo=arxiv&amp;logoColor=white" alt="arXiv: 2611.24845"></a>
+</p>
+
+<p align="center">
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading&amp;type=trending" height="55" alt="Star History: GitHub Trending"/></a>
   <a href="https://trendshift.io/repositories/25527"><img src="https://trendshift.io/api/badge/trendshift/repositories/25527/daily" height="55" alt="Trendshift: daily ranking"/></a>
   <a href="https://www.star-history.com/HKUDS/Vibe-Trading"><img src="https://api.star-history.com/badge?repo=HKUDS/Vibe-Trading" height="55" alt="Star History: global star ranking"/></a>
@@ -61,6 +65,8 @@
 </p>
 
 ## 📰 Berita
+
+- **2026-11-19** 📄 **Laporan teknis diterbitkan** — Laporan ini menjelaskan cara Vibe-Trading menautkan hasil ke sumber data dan catatan eksekusi, menyimpan riwayat revisi riset, dan membatasi perdagangan riil pada lingkup yang diizinkan pengguna. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **Backtest saham Taiwan dan perbaikan batas harga** — Backtest saham bursa Taiwan (`.TW`) dan Taipei (`.TWO`) dengan bar harian dari Yahoo Finance. Mesin backtest Korea, Taiwan, dan Vietnam memeriksa batas harga harian dengan harga eksekusi simulasi yang sudah memperhitungkan slippage tambahan. Permintaan backtest intrahari untuk pasar ini ditolak sebelum data diambil. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   Daftar di bilah samping tetap digunakan saat beralih antar sesi yang sudah tercantum. Skill AKShare bawaan mendukung nama endpoint lama dan baru. Uji regresi mencakup nama berkas lampiran, urutan pencarian konfigurasi, serta pratinjau dan penggabungan bagian data pasar MCP. **Sudah tersedia di `main` untuk rilis pip berikutnya.**
@@ -381,6 +387,22 @@ Vibe-Trading adalah bagian dari ekosistem agent **[HKUDS](https://github.com/HKU
 | Trading simulasi | Akun harian menyimpan kas, transaksi, dan nilai aset bersih lintas sesi. Simulasi terpisah memutar ulang sesi saham A per lima menit. | Pencocokan opsional berdasarkan porsi volume ([#2128](https://github.com/HKUDS/Vibe-Trading/pull/2128), draf). |
 | Riset | Kartu eksekusi merekam metrik dan bukti backtest. Riset bertanggal menyimpan riwayat revisi dan dapat dicari. | Fakta keuangan terstruktur dalam artefak riset ([#2164](https://github.com/HKUDS/Vibe-Trading/pull/2164), sedang ditinjau). |
 | Lab opsi | Profil laba rugi multikaki, Greeks, dan skenario spot × IV. | Grid permukaan volatilitas interaktif di `/options`. |
+
+## Sitasi
+
+Jika Anda menggunakan Vibe-Trading dalam riset, harap kutip laporan teknis ini.
+
+```bibtex
+@misc{wu2026vibetradingagentnativetrading,
+  title         = {Vibe-Trading: Towards Agent-Native Trading},
+  author        = {Haozhe Wu and Zhonghang Li and Chao Huang},
+  year          = {2026},
+  eprint        = {2611.24845},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2611.24845},
+}
+```
 
 ## Cara berkontribusi
 

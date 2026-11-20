@@ -85,6 +85,50 @@ class TestResolveSecidUS:
         with patch.object(ec, "throttled_get_json", return_value=payload):
             assert ec.resolve_secid("NOPE.US") is None
 
+    def test_does_not_resolve_a_different_security(self):
+        # Regression: a fuzzy suggest for "BRK" lists BRKC (a YieldMax ETF)
+        # first. Resolving to it silently hands back the wrong security's bars.
+        payload = {
+            "QuotationCodeTable": {
+                "Data": [
+                    {"Code": "BRKC", "QuoteID": "107.BRKC"},
+                    {"Code": "BRK-B", "QuoteID": "106.BRK-B"},
+                ]
+            }
+        }
+        with patch.object(ec, "throttled_get_json", return_value=payload):
+            assert ec.resolve_secid("BRK.US") is None
+
+    def test_picks_exact_code_among_multiple_candidates(self):
+        payload = {
+            "QuotationCodeTable": {
+                "Data": [
+                    {"Code": "BRKC", "QuoteID": "107.BRKC"},
+                    {"Code": "BRK", "QuoteID": "106.BRK"},
+                ]
+            }
+        }
+        with patch.object(ec, "throttled_get_json", return_value=payload):
+            assert ec.resolve_secid("BRK.US") == "106.BRK"
+
+    @pytest.mark.parametrize("symbol", ["BRK-B.US", "BRK.B.US", "BRK_B.US"])
+    def test_class_share_search_uses_provider_spelling(self, symbol):
+        # The Eastmoney suggest response for BRK_B identifies Berkshire Class B.
+        row = {"Code": "BRK_B", "QuoteID": "106.BRK_B"}
+        with patch.object(ec, "throttled_get_json", return_value={"QuotationCodeTable": {"Data": [row]}}) as get:
+            assert ec.resolve_secid(symbol) == "106.BRK_B"
+        assert get.call_args.kwargs["params"]["input"] == "BRK_B"
+
+    @pytest.mark.parametrize(("symbol", "row"), [
+        ("BW-A.US", {"Code": "BWA", "QuoteID": "106.BWA"}),
+        ("BWA.US", {"Code": "BW_A", "QuoteID": "106.BW_A"}),
+        ("AAPL.US", {"Code": "AAPL", "QuoteID": "105.MSFT"}),
+        ("AAPL.US", {"Code": "MSFT", "QuoteID": "105.AAPL"}),
+    ])
+    def test_refuses_conflicting_security_identity(self, symbol, row):
+        with patch.object(ec, "throttled_get_json", return_value={"QuotationCodeTable": {"Data": [row]}}):
+            assert ec.resolve_secid(symbol) is None
+
     def test_search_failure_returns_none_without_raising(self):
         with patch.object(
             ec, "throttled_get_json", side_effect=RuntimeError("banned")
