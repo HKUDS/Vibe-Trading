@@ -188,6 +188,46 @@ def test_multiyear_window_is_served_in_full(monkeypatch) -> None:
     assert ends[2] < ends[1]
 
 
+def test_non_iso_start_date_does_not_truncate(monkeypatch) -> None:
+    """Regression: a non-ISO start_date must not silently truncate the window.
+
+    The pagination stop test compared the ISO cursor against the raw
+    ``start_date`` as a string. ``"2023-05-11" < "2023-1-5"`` is true
+    lexicographically even though 2023-05-11 is chronologically later, so the
+    backward walk broke early and dropped every bar before the final page.
+    """
+    loader = tencent_loader.DataLoader()
+    history = _history("2023-01-05", 600)
+    end_date = history.index.max().strftime("%Y-%m-%d")
+    monkeypatch.setattr(loader, "_request_page", _last500_api(history, None))
+
+    df = loader._fetch_one("600519.SH", "2023-1-5", end_date)  # non-ISO start
+
+    assert len(df) == 600
+    assert df.index.min() == pd.Timestamp("2023-01-05")
+
+
+def test_fetch_refreshes_legacy_truncated_pages(tmp_path, monkeypatch):
+    from backtest.loaders.base import loader_cache_put
+
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE", "1")
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE_ROOT", str(tmp_path))
+    history = _history("2023-01-05", 600)
+    end = history.index[-1].strftime("%Y-%m-%d")
+    for fields in (None, ["raw"]):
+        loader_cache_put(source="tencent", symbol="600519.SH", timeframe="1D",
+                         start_date="2023-1-5", end_date=end, fields=fields,
+                         frame=history.tail(500))
+
+    loader = tencent_loader.DataLoader()
+    requests = []
+    monkeypatch.setattr(loader, "_request_page", _last500_api(history, requests))
+    for start in ("2023-1-5", "2023-01-05"):
+        result = loader.fetch(["600519.SH"], start, end)["600519.SH"]
+        assert result.index.equals(history.index)
+        assert len(requests) == 4  # Two pages each for adjusted and raw, then cache hits.
+
+
 def test_pagination_moves_the_end_cursor_behind_each_page(monkeypatch) -> None:
     """Next request's end = the day before the current page's oldest bar."""
     loader = tencent_loader.DataLoader()
