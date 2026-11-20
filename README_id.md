@@ -66,19 +66,22 @@
 
 ## 📰 Berita
 
+- **2026-11-20** 📈 **Kelas saham AS dan riwayat harga Tencent** — Pencarian di Eastmoney dan Yahoo kini mengenali saham kelas B Berkshire sebagai `BRK-B.US`. Kode saham diperiksa sebelum harga diambil dari Eastmoney agar `BW-A.US` dan `BWA.US` tidak tertukar. Permintaan data harian Tencent dengan tanggal seperti `2023-1-5` kini mengambil semua halaman. [#2270](https://github.com/HKUDS/Vibe-Trading/pull/2270) · [#2266](https://github.com/HKUDS/Vibe-Trading/pull/2266) · [#2268](https://github.com/HKUDS/Vibe-Trading/pull/2268)
+  Perbandingan strategi menilai drawdown −10% lebih baik daripada −30%. Backtest hanya menyertakan harga negatif jika `allow_nonpositive_prices: true` diaktifkan. Percakapan di CLI dapat dilanjutkan beserta riwayat pesannya. **Sudah tersedia di `main` untuk rilis pip berikutnya.**
+
 - **2026-11-19** 📄 **Laporan teknis diterbitkan** — Laporan ini menjelaskan cara Vibe-Trading menautkan hasil ke sumber data dan catatan eksekusi, menyimpan riwayat revisi riset, dan membatasi perdagangan riil pada lingkup yang diizinkan pengguna. [Vibe-Trading: Towards Agent-Native Trading](https://arxiv.org/abs/2611.24845)
 
 - **2026-11-18** 📈 **Backtest saham Taiwan dan perbaikan batas harga** — Backtest saham bursa Taiwan (`.TW`) dan Taipei (`.TWO`) dengan bar harian dari Yahoo Finance. Mesin backtest Korea, Taiwan, dan Vietnam memeriksa batas harga harian dengan harga eksekusi simulasi yang sudah memperhitungkan slippage tambahan. Permintaan backtest intrahari untuk pasar ini ditolak sebelum data diambil. [#2174](https://github.com/HKUDS/Vibe-Trading/pull/2174) · [#2175](https://github.com/HKUDS/Vibe-Trading/pull/2175)
   Daftar di bilah samping tetap digunakan saat beralih antar sesi yang sudah tercantum. Skill AKShare bawaan mendukung nama endpoint lama dan baru. Uji regresi mencakup nama berkas lampiran, urutan pencarian konfigurasi, serta pratinjau dan penggabungan bagian data pasar MCP. **Sudah tersedia di `main` untuk rilis pip berikutnya.**
+
+<details>
+<summary>Berita sebelumnya</summary>
 
 - **2026-11-17** 📊 **Rincian risiko portofolio dan analisis opsi yang dapat digunakan kembali** — Risk X-Ray menambahkan periode drawdown teramati dan kontribusi volatilitas bertanda per posisi. Options Lab mengekspor snapshot hasil perhitungan sebagai JSON dan grid skenario sebagai CSV, serta mendiagnosis irisan IV teramati dengan batas cakupan yang jelas; hasilnya bukan sertifikasi permukaan bebas arbitrase. Tool Agent/MCP membandingkan strategi bernama pada grid harga dan IV bersama.
   Memperbaiki penanganan metadata pembaruan tidak valid dan kegagalan verifikasi upgrade, penemuan model dalam mode langsung, nama lampiran, penanganan harga yang hilang, serta respons daftar sesi yang kedaluwarsa. **Tersedia di `main`, untuk rilis pip berikutnya.**
 
 - **2026-11-16** 🛠️ **Perbaikan laporan, pencarian memori, dan pesan** — Laporan Shadow Account menandai laba/rugi yang belum terukur sebagai tidak tersedia, bukan nol, termasuk dalam ekspor HTML/PDF yang tersimpan di cache. Pencarian memori memperbaiki indeks lama; kegagalan sebagian OCR PDF ditandai sebagai penurunan kualitas.
   Memperbaiki pemasangan Signal dan hilangnya teks Napcat akibat metadata gambar yang tidak valid. Percobaan ulang pengaturan suhu Anthropic dibatasi pada kesalahan validasi terkait, dan API historis AKShare versi baru maupun lama didukung. Lihat [CHANGELOG](CHANGELOG.md). **Tersedia di `main` untuk rilis pip berikutnya.**
-
-<details>
-<summary>Berita sebelumnya</summary>
 
 - **2026-11-15** 📡 **Gateway data pasar terpadu dan CSV siap pakai** — Bar historis dan snapshot opsi AS menggunakan satu [gateway data lokal](agent/src/data_gateway/README.md) dengan sumber cadangan, cache bersama, dan batas konkurensi. Respons mempertahankan sumber, mata uang, dan metode penyesuaian harga, serta menjelaskan cakupan dan keterkinian data.
   Pengambilan data pasar oleh Agent menyediakan CSV bersama JSON. Untuk permintaan yang didukung dengan instrumen dan satu rentang tanggal `YYYY-MM-DD` yang eksplisit, runtime membatasi tanggal sebelum pengambilan data. Data awal untuk perhitungan diminta secara terpisah; periode historis yang dibutuhkan indikator dan backtest yang ada tetap tersedia. **Tersedia di `main` untuk rilis pip berikutnya.**

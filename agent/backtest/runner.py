@@ -37,6 +37,7 @@ from backtest.loaders.registry import (
 )
 from backtest.loaders.base import (
     NoAvailableSourceError,
+    ohlc_price_policy,
     resample_bars,
     source_interval,
     validate_ohlc,
@@ -91,6 +92,7 @@ class BacktestConfigSchema(BaseModel):
     interval: str = "1D"
     engine: str = "daily"
     position_adjustment: Literal["hold", "rebalance"] = "hold"
+    allow_nonpositive_prices: bool = Field(default=False, strict=True)
     intentional_signal_delay_bars: int = Field(default=0, ge=0, strict=True)
     rebalance_mask: RebalanceMask = None
     # Under "rebalance", a resize executes only once the held weight has
@@ -2104,6 +2106,11 @@ def fetch_data_map(config: dict) -> DataFetchResult:
             _AutoLoader(frames, name="local"), manifest.get("sources", [config.get("source", "auto")]),
             manifest.get("caliber_warning"),
         )
+    with ohlc_price_policy(config.get("allow_nonpositive_prices") is True):
+        return _fetch_source_data_map(config)
+
+
+def _fetch_source_data_map(config: dict) -> DataFetchResult:
     source = str(config.get("source") or "tushare")
     codes = list(config.get("codes") or [])
     # Weekly and monthly bars are built from daily ones after the fetch, so

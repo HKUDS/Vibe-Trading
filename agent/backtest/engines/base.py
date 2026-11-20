@@ -574,9 +574,7 @@ class BaseEngine(ABC):
         # "reject any open_price <= 0" behavior. An exactly-zero open is always
         # rejected (undefined size = notional / price); negatives are handled by
         # abs()-based sizing and margin below.
-        self.allow_nonpositive_prices: bool = bool(
-            config.get("allow_nonpositive_prices", False)
-        )
+        self.allow_nonpositive_prices = config.get("allow_nonpositive_prices") is True
         #: Bar fields consulted, in order, for the price-limit base price.
         #: Futures engines put ``pre_settle`` first: exchanges set the band off
         #: the previous settlement, not the previous close.
