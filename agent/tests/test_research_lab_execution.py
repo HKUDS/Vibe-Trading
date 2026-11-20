@@ -158,11 +158,15 @@ def test_walk_forward_keeps_source_warmup_out_of_training_and_test(saved_run, tm
     assert calendar(
         Path(result["holdout"]["test"]["run_dir"]) / "artifacts/equity.csv"
     ).equals(evaluated[-3:])
-    start = evaluated[4] - pd.Timedelta(days=1)
-    stop = evaluated[4]
-    train_prices = prices[(prices >= start) & (prices < stop)]
+    train_config = json.loads((train / "config.json").read_text())
+    assert train_config["warmup_bars"] == 0
+    assert "evaluation_start_date" not in train_config
+    train_prices = prices[
+        (prices >= train_config["start_date"])
+        & (prices <= train_config["end_date"])
+    ]
     assert calendar(train / "snapshot/frame-0.csv").equals(train_prices)
-    assert calendar(train / "artifacts/ohlcv_AAPL.US.csv").equals(prices[:15])
+    assert calendar(train / "artifacts/ohlcv_AAPL.US.csv").equals(train_prices)
 
 
 @pytest.mark.parametrize("saved_run", [{"warmup_bars": 30}], indirect=True)
