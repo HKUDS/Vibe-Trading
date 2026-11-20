@@ -221,7 +221,7 @@ _INHERIT_OHLC_POLICY = _InheritOhlcPolicy()
 @contextmanager
 def ohlc_price_policy(allow_nonpositive_prices: bool) -> Iterator[None]:
     """Keep loader normalization and cache identity on the same price policy."""
-    token = _ALLOW_NEGATIVE_OHLC.set(allow_nonpositive_prices)
+    token = _ALLOW_NEGATIVE_OHLC.set(allow_nonpositive_prices is True)
     try:
         yield
     finally:
@@ -282,7 +282,7 @@ def validate_ohlc(
     allow_negative = (
         _ALLOW_NEGATIVE_OHLC.get()
         if allow_nonpositive_prices is _INHERIT_OHLC_POLICY
-        else bool(allow_nonpositive_prices)
+        else allow_nonpositive_prices is True
     )
     if allow_negative:
         nonpositive = (open_ == 0) | (high == 0) | (low == 0) | (close == 0)

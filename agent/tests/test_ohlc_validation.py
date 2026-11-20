@@ -216,6 +216,55 @@ def test_backtest_keeps_signed_bars_with_separate_cache_entries(
         gateway.close()
 
 
+@pytest.mark.parametrize("value", ["false", "true", 1])
+def test_only_json_boolean_can_enable_signed_backtests(value):
+    from pydantic import ValidationError
+    from backtest.runner import BacktestConfigSchema
+
+    with pytest.raises(ValidationError, match="allow_nonpositive_prices"):
+        BacktestConfigSchema(codes=["POWER.US"], start_date="2026-01-01", end_date="2026-01-02",
+                             allow_nonpositive_prices=value)
+
+
+def test_public_market_read_stays_strict_during_signed_backtest(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from backtest.runner import fetch_data_map
+    from src import data_gateway
+    from src.data_gateway.config import Config
+    from src.data_gateway.service import MarketDataGateway
+    from src.market_data import fetch_market_data
+
+    csv_path = tmp_path / "prices.csv"
+    _frame([(10, 12, 9, 11, 100), (-10, -9, -14, -12, 100)]).to_csv(csv_path)
+    entry = {"type": "csv", "symbol": "POWER.US", "path": str(csv_path), "columns": {"date": "trade_date"}}
+    monkeypatch.setattr(local_loader, "_load_config", lambda: {"sources": [entry]})
+    monkeypatch.setenv("VIBE_TRADING_DATA_CACHE", "0")
+    both_reading = Barrier(2)
+    read_csv = local_loader._READERS["csv"]
+
+    def overlapping_read(*args):
+        both_reading.wait(timeout=5)
+        return read_csv(*args)
+
+    gateway = MarketDataGateway(Config(cache_dir=tmp_path / "gateway"))
+    monkeypatch.setattr(data_gateway, "_instance", gateway)
+    config = {"source": "local", "codes": ["POWER.US"], "start_date": "2026-01-01", "end_date": "2026-01-02"}
+    try:
+        monkeypatch.setitem(local_loader._READERS, "csv", overlapping_read)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            signed = pool.submit(fetch_data_map, {**config, "allow_nonpositive_prices": True})
+            public = fetch_market_data(**config, as_frames=True)
+            assert signed.result(timeout=10).data_map["POWER.US"]["close"].tolist() == [11, -12]
+            assert public["POWER.US"]["close"].tolist() == [11]
+        monkeypatch.setitem(local_loader._READERS, "csv", read_csv)
+        for options in ({}, {"allow_nonpositive_prices": "false"}):
+            assert fetch_data_map({**config, **options}).data_map["POWER.US"]["close"].tolist() == [11]
+    finally:
+        gateway.close()
+
+
 def test_backtest_price_policy_is_nested_and_restored_on_error(monkeypatch) -> None:
     from backtest import runner
 
@@ -268,7 +317,7 @@ def test_frozen_backtest_honors_explicit_price_policy(tmp_path, monkeypatch) -> 
     signed_bars = _frame([(10, 12, 9, 11, 100), (-10, -9, -14, -12, 100)])
     write_snapshot(signed_bars)
     with ohlc_price_policy(True):
-        for policy in (False, None):
+        for policy in (False, None, "false", 1):
             with pytest.raises(ValueError, match="violate OHLC"):
                 runner.fetch_data_map({**config, "allow_nonpositive_prices": policy})
     result = runner.fetch_data_map({**config, "allow_nonpositive_prices": True})
