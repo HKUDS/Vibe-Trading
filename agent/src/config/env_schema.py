@@ -284,6 +284,7 @@ class DataConfig(_EnvBase):
     tickerall_api_key: str = Field(alias="TICKERALL_API_KEY", default="")
     tickerall_account_id: str = Field(alias="TICKERALL_ACCOUNT_ID", default="")
     tickerall_base_url: str = Field(alias="TICKERALL_BASE_URL", default="")
+    aperiodic_api_key: str = Field(alias="APERIODIC_API_KEY", default="")
     rsshub_base_url: str = Field(alias="RSSHUB_BASE_URL", default="")
     dashscope_api_key: str = Field(alias="DASHSCOPE_API_KEY", default="")
     longbridge_app_key: str = Field(alias="LONGBRIDGE_APP_KEY", default="")

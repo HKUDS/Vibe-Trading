@@ -62,6 +62,10 @@ _SOURCE_PATTERNS = [
     # Iran: Wallex TMN-quoted crypto pairs (USDTTMN / USDT-TMN). Public UDF
     # endpoint, no auth; explicit-source only like nobitex.
     (re.compile(r"^[A-Z]+[-/]?TMN$", re.I), "wallex"),
+    # Venue-qualified perpetuals (OKX.BTC-USDT-PERP, HYPERLIQUID.XYZ.TSLA-USDC-PERP)
+    # name an Aperiodic market and no other loader serves that form; like
+    # nobitex/wallex it is not in the crypto fallback chain.
+    (re.compile(r"^(?:BINANCE|OKX|HYPERLIQUID)\.", re.I), "aperiodic"),
     # Forex pairs and metals (EUR/USD, XAU/USD, EURUSD.FX). mt5 is the head of
     # the forex chain and degrades to akshare/yfinance via the registry when no
     # local MT5 terminal is attached. The 3-letter quote cannot collide with

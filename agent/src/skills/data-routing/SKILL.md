@@ -115,6 +115,7 @@ per-source skill.
 | tiingo | US equities | Yes (`TIINGO_API_KEY`) | Unrestricted | data-routing |
 | fmp | US equities | Yes (`FMP_API_KEY`) | Unrestricted | data-routing |
 | gildata | A-shares (前复权 dailies), HK equities (raw), CN indices | Token + market quotes enabled in Settings; only when the user requests `source="gildata"`, no fallback | Gildata MCP API | data-routing |
+| aperiodic | Crypto & RWA perpetuals on a named venue: Binance, OKX, Hyperliquid incl. HIP-3 dex markets (`OKX.BTC-USDT-PERP`, `HYPERLIQUID.XYZ.TSLA-USDC-PERP`) and delisted contracts; OHLCV + funding rate | Yes (`APERIODIC_API_KEY`; without it only a public preview sample) + optional SDK (`vibe-trading-ai[aperiodic]`) | Aperiodic API | data-routing (**explicit `source=aperiodic` only**, no fallback in either direction) |
 
 ## Capability → Tool Routing
 
@@ -162,6 +163,8 @@ Notes:
 
 Use `source: "auto"` — the runner routes by symbol pattern and falls back across
 same-market sources automatically. Only set a concrete source when the user asks.
+A venue-qualified perpetual (`OKX.BTC-USDT-PERP`, `HYPERLIQUID.XYZ.TSLA-USDC-PERP`)
+is served only by Aperiodic, so its backtest config needs `source: "aperiodic"`.
 
 ### Analysis / research scenario
 
@@ -187,6 +190,7 @@ main and could retry a source the gateway has already cooled down.
 | HK stocks | `NNNNN.HK` | 00700.HK, 09988.HK |
 | Canada TSX / TSXV | `TICKER.TO` / `TICKER.V` | TD.TO, BBD-B.TO, PNG.V |
 | Crypto | `SYMBOL-USDT` | BTC-USDT, ETH-USDT |
+| Perpetual on a named venue (`source=aperiodic`) | `VENUE.[DEX.]BASE-QUOTE-PERP` | OKX.BTC-USDT-PERP, BINANCE.ETH-USDT-PERP, HYPERLIQUID.XYZ.TSLA-USDC-PERP |
 | Futures | `XXNNNN.EXCHANGE` | CU2406.SHFE |
 | Forex | `XXX/YYY` | USD/CNY, EUR/USD |
 

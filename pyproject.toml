@@ -149,6 +149,13 @@ ibkr = [
 longbridge = [
     "longbridge>=0.2.5",
 ]
+aperiodic = [
+    # Perpetuals on Binance, OKX and Hyperliquid (HIP-3 and delisted contracts
+    # included) for the explicit-only `aperiodic` loader, which imports the SDK
+    # lazily and reports itself unavailable until it is installed. The pandas
+    # extra brings pyarrow, which reads the SDK's Parquet files.
+    "aperiodic[pandas]>=4.5,<5",
+]
 mt5 = [
     # Official Windows-only bridge to a locally running MetaTrader 5 terminal
     # (broker connector + mt5 data loader). Lazy-imported; on other platforms

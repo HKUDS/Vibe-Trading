@@ -176,7 +176,7 @@ Abre **Run Detail** para comparar ambas estrategias, revisar las operaciones dur
 
 ## 📡 Fuentes de datos y alternativas
 
-Hay **28 fuentes de datos de mercado**. Con `source: "auto"` se identifica el mercado por el símbolo y se prueban las fuentes en el orden configurado.
+Hay **29 fuentes de datos de mercado**. Con `source: "auto"` se identifica el mercado por el símbolo y se prueban las fuentes en el orden configurado.
 
 | Mercado | Orden de consulta |
 |---|---|

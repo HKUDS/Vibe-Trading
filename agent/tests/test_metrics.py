@@ -109,6 +109,11 @@ class TestBarsPerYear:
         assert calc_bars_per_year("1m", "binance") == 365 * 1440
         assert calc_bars_per_year("1H", "binance") == 365 * 24
 
+    def test_crypto_aperiodic(self) -> None:
+        assert calc_bars_per_year("1D", "aperiodic") == 365
+        assert calc_bars_per_year("1m", "aperiodic") == 365 * 1440
+        assert calc_bars_per_year("4H", "aperiodic") == 365 * 6
+
     # A-share equity (252-day, 240-min session) sources
     def test_ashare_baostock(self) -> None:
         assert calc_bars_per_year("1D", "baostock") == 252

@@ -61,6 +61,7 @@ VALID_SOURCES: set[str] = {
     "mt5",
     "tickerall",
     "b3_cotahist",
+    "aperiodic",
     "local",
     "auto",
 }
@@ -127,6 +128,7 @@ def _ensure_registered() -> None:
             "backtest.loaders.mt5_loader",
             "backtest.loaders.tickerall_loader",
             "backtest.loaders.b3_cotahist_loader",
+            "backtest.loaders.aperiodic_loader",
             "backtest.loaders.local_loader",
         ]
         import importlib
@@ -156,8 +158,11 @@ def _ensure_registered() -> None:
 # ``BTCIRT`` request into the crypto chain would hand a USDT-quoted series back
 # as if it were Toman — a caliber error of about six orders of magnitude, not a
 # missing-data error. An unreachable Iranian endpoint must be visible.
+# ``aperiodic`` joins because its symbols name a venue (OKX.BTC-USDT-PERP,
+# HYPERLIQUID.XYZ.TSLA-USDC-PERP): another loader's series for the pair would
+# be a different instrument, and a plan refusal must reach the user.
 _NO_NETWORK_FALLBACK_SOURCES: frozenset[str] = frozenset(
-    {"local", "gildata", "tickerall", "fmp", "nobitex", "wallex", "b3_cotahist"}
+    {"local", "gildata", "tickerall", "fmp", "nobitex", "wallex", "b3_cotahist", "aperiodic"}
 )
 
 
@@ -679,6 +684,8 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
             "wallex": "Wallex's public endpoint was unreachable. It quotes in "
             "Toman (TMN) and has no substitute — check network access "
             "to api.wallex.ir.",
+            "aperiodic": "Install its SDK: pip install 'vibe-trading-ai[aperiodic]', "
+            "and set APERIODIC_API_KEY for data beyond the public preview.",
         }.get(source, "")
         raise NoAvailableSourceError(
             f"Data source '{source}' is unavailable and does not fall back to a "

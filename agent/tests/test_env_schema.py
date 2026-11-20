@@ -133,6 +133,7 @@ class TestEnvConfigDefaults:
         assert c.data.alphavantage_api_key == ""
         assert c.data.tiingo_api_key == ""
         assert c.data.fmp_api_key == ""
+        assert c.data.aperiodic_api_key == ""
         assert c.data.gildata_token == ""
         assert c.data.gildata_base_url.endswith("aidata-assistant-srv-rawapi")
         assert c.data.gildata_srv_tool_url == ""

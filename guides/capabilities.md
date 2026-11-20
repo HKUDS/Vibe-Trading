@@ -2,7 +2,7 @@
 
 ## 📡 Data Sources & Smart Fallback
 
-The `get_market_data` tool supports **28 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries that market’s configured chain. Some sources require credentials, a local terminal or your own files.
+The `get_market_data` tool supports **29 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries that market’s configured chain. Some sources require credentials, a local terminal or your own files.
 
 | Source | Markets | Auth | Role |
 |--------|---------|------|------|
@@ -19,6 +19,7 @@ The `get_market_data` tool supports **28 market-data sources**. With `source: "a
 | `finnhub` · `alphavantage` · `tiingo` · `fmp` | US | key | optional providers |
 | `nobitex` · `wallex` | crypto (Iranian Toman pairs) | none | public UDF endpoints; **explicit-only** — the only Toman-quoted sources, so they never join the crypto chain where a USD-quoted series could stand in for one |
 | `okx` · `ccxt` · `binance` | crypto | none | OKX + 100+ exchanges + Binance historical / USD-M perps |
+| `aperiodic` | crypto & RWA perpetuals (Binance / OKX / Hyperliquid, incl. HIP-3) | key (public preview sample without one) | venue-qualified perps such as `OKX.BTC-USDT-PERP` or `HYPERLIQUID.XYZ.TSLA-USDC-PERP`, delisted contracts included; OHLCV + funding rate; optional `aperiodic` extra; **explicit-only**, never in auto fallback |
 | `futu` | HK / A | OpenD | optional local FutuOpenD |
 | `mt5` | forex / metals | MT5 terminal | MetaTrader 5 (Exness-style) forex / metal bars, 1m–1D |
 | `tickerall` | forex / metals | key + account (read-only) | same broker MT5 feed, **hosted** — no local terminal, any OS (explicit-only, never in auto fallback) |
@@ -102,6 +103,73 @@ For a backtest, set `source` in `config.json`:
 ```
 
 In an Agent conversation, ask explicitly: **"Use Longbridge to fetch QQQ.US historical data."** The explicit source request is separate from `source: "auto"`; `auto` keeps the normal per-market fallback chain.
+
+### Perpetuals on a named venue (Aperiodic)
+
+The optional `aperiodic` loader reads perpetual-futures bars from
+[Aperiodic](https://aperiodic.io) for Binance USD-M, OKX and Hyperliquid. It
+covers Hyperliquid HIP-3 markets (tokenized stocks, indices and commodities)
+and contracts that have since been delisted, so a backtest is not limited to
+today's listings. Published bars are not revised. The existing `BASE-USDT-PERP`
+path stays on CCXT and Binance; this source is used only when you select it,
+and an unavailable or refused request never falls back to another loader.
+
+Install the SDK and set a key:
+
+```bash
+pip install "vibe-trading-ai[aperiodic]"
+```
+
+```dotenv
+APERIODIC_API_KEY=...
+```
+
+Without a key, requests go to Aperiodic's public preview, which serves one
+sample (the Binance BTC-USDT perpetual at 5-minute bars, May 2025) and refuses
+everything else. A free account key covers a fixed sample of markets and
+dates, and other markets and years need a paid plan; aperiodic.io/pricing
+lists what each covers. When a key does not cover a request, the API's refusal
+is raised as the error.
+
+Symbols name the venue: `VENUE.BASE-QUOTE-PERP`, with `VENUE` one of `BINANCE`,
+`OKX` and `HYPERLIQUID`, and a builder dex prefix for HIP-3 markets:
+
+| Symbol | Market |
+|--------|--------|
+| `BINANCE.BTC-USDT-PERP` | Binance USD-M BTC/USDT perpetual |
+| `OKX.ETH-USDT-PERP` | OKX ETH/USDT swap |
+| `HYPERLIQUID.BTC-USDC-PERP` | Hyperliquid BTC perpetual |
+| `HYPERLIQUID.XYZ.TSLA-USDC-PERP` | Hyperliquid HIP-3 TSLA market on the `xyz` dex |
+
+Only linear contracts quoted in a USD stablecoin are accepted. Intervals run
+from `1m` to `1D`; bars are stamped at the open, in UTC. For a backtest, set
+`source` in `config.json`:
+
+```json
+{
+  "codes": ["HYPERLIQUID.XYZ.TSLA-USDC-PERP", "OKX.TSLA-USDT-PERP"],
+  "start_date": "2026-04-01",
+  "end_date": "2026-06-30",
+  "interval": "1H",
+  "source": "aperiodic"
+}
+```
+
+Each frame carries OHLCV and a `funding_rate` column that the crypto engine
+settles at 00:00, 08:00 and 16:00 UTC. It holds the rate the venue published
+before each settlement hour, restated per 8 hours: Hyperliquid funds hourly, so
+its rate is multiplied by 8, while Binance and OKX are taken to fund every 8
+hours, as most of their contracts do. A published rate is the venue's
+prediction until settlement, not settled-rate history. If a settlement hour has
+no published rate (some markets' funding history starts later than their bars),
+the symbol fails with the first uncovered date rather than settling at the
+engine's fixed rate. Mark-price candles and maintenance brackets are not
+supplied, so `perpetual_strict` runs remain on the CCXT/Binance path.
+
+Each symbol's bars and funding are requested concurrently. Some long ranges,
+such as most of a year of daily 2026 bars, take longer than the data gateway's
+default 6-second budget per source call; raise `VIBE_GATEWAY_SOURCE_TIMEOUT`
+(up to 30) and `VIBE_GATEWAY_REQUEST_TIMEOUT` (up to 60) for such requests.
 
 Beyond OHLCV, **29 read-only data tools** reach into fundamentals & flow — fund flow, dragon-tiger, northbound, southbound, margin, block trades, shareholder count, lockup, sector, research reports, broker research search, news, SEC filings, Chinese-market announcements, financial statements, PIT fundamentals, options chains, crypto order-book depth, stock profile, market screening, symbol search, macro, China macro (EDB), iwencai, institutional holdings (13F), ETF look-through, off-exchange fund NAV, prediction markets, and research papers — all exposed over MCP. An explicit `local:` symbol never silently falls back to a network source.
 
@@ -459,8 +527,8 @@ Vibe-Trading/
 │   │   └── providers/              # LLM provider abstraction
 │   │
 │   └── backtest/                   # Backtest engines
-│       ├── engines/                #   12 engines + composite cross-market engine + options_portfolio
-│       ├── loaders/                #   28 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, india_broker, tickerall, gildata, b3_cotahist
+│       ├── engines/                #   13 engines + composite cross-market engine + options_portfolio
+│       ├── loaders/                #   29 sources: tushare, okx, nobitex, wallex, binance, yfinance, akshare, baostock, tencent, mootdx, ccxt, futu, pykrx, local, eastmoney, sina, stooq, yahoo, finnhub, alphavantage, tiingo, fmp, longbridge, mt5, india_broker, tickerall, gildata, b3_cotahist, aperiodic
 │       │   ├── base.py             #   DataLoader Protocol
 │       │   └── registry.py         #   Registry + auto-fallback chains
 │       └── optimizers/             #   MVO, equal vol, max div, risk parity

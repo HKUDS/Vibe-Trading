@@ -309,6 +309,7 @@ _RUNTIME_ENV_KEYS = frozenset(
         "ALPHAVANTAGE_API_KEY",
         "TIINGO_API_KEY",
         "FMP_API_KEY",
+        "APERIODIC_API_KEY",
         "FRED_API_KEY",
         "VIBE_TRADING_IWENCAI_KEY",
         "VIBE_TRADING_SEC_UA",

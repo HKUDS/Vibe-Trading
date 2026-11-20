@@ -176,7 +176,7 @@ Buka **Run Detail** untuk membandingkan hasil dengan beli dan tahan, meninjau tr
 
 ## 📡 Sumber data dan peralihan otomatis
 
-Tersedia **28 sumber data pasar**. Dengan `source: "auto"`, sistem mengenali pasar dari simbol dan mencoba sumber sesuai urutan konfigurasi.
+Tersedia **29 sumber data pasar**. Dengan `source: "auto"`, sistem mengenali pasar dari simbol dan mencoba sumber sesuai urutan konfigurasi.
 
 | Pasar | Urutan sumber |
 |---|---|
