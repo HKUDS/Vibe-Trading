@@ -159,7 +159,7 @@ vibe-trading run -p "Backtest a BTC-USDT 20/50 moving-average crossover for 2024
 vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --top 20
 ```
 
-Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trades behind a drawdown and check the data source on the run card.
+Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trades behind a drawdown and check the data source on the run card. In **Strategy Comparison**, drawdown is shown as a signed loss: a run at −10% fares better on this metric than one at −30%.
 
 ### Portfolio drawdown periods
 

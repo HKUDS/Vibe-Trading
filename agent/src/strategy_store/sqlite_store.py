@@ -518,27 +518,22 @@ class SqliteStrategyStore:
         Clears it when transitioning away.
         Returns the updated artifact, or ``None`` if not found.
         """
-        existing = self.get_artifact(artifact_id)
-        if existing is None:
-            return None
-
-        now = _now_iso()
-        disabled_at: str | None = None
-        disabled_reason: str | None = None
-
-        if status is ArtifactStatus.DISABLED:
-            disabled_at = now
-            disabled_reason = reason if reason is not None else existing.disabled_reason
-        elif existing.status is ArtifactStatus.DISABLED:
-            # Clear disabled fields when moving out of DISABLED.
-            disabled_at = None
-            disabled_reason = None
-        else:
-            # Preserve existing disabled fields.
-            disabled_at = existing.disabled_at
-            disabled_reason = existing.disabled_reason
-
         with self._write_transaction():
+            existing = self.get_artifact(artifact_id)
+            if existing is None:
+                return None
+
+            now = _now_iso()
+            if status is ArtifactStatus.DISABLED:
+                disabled_at = now
+                disabled_reason = reason if reason is not None else existing.disabled_reason
+            elif existing.status is ArtifactStatus.DISABLED:
+                disabled_at = None
+                disabled_reason = None
+            else:
+                disabled_at = existing.disabled_at
+                disabled_reason = existing.disabled_reason
+
             self._conn.execute(
                 """
                 UPDATE artifacts
@@ -547,23 +542,20 @@ class SqliteStrategyStore:
                 """,
                 (status.value, now, disabled_at, disabled_reason, artifact_id),
             )
-        return self.get_artifact(artifact_id)
+            return self.get_artifact(artifact_id)
 
     @_synchronized
     def update_artifact(self, artifact: Artifact) -> Artifact | None:
         """Replace an artifact record.  Returns updated artifact or ``None``."""
-        existing = self.get_artifact(artifact.id)
-        if existing is None:
-            return None
-
-        # Structural enforcement of the validation state machine: an
-        # unvalidated model can never be updated straight into APPROVED.
-        validate_validation_status_transition(
-            existing.validation_status, artifact.validation_status
-        )
-
-        now = _now_iso()
         with self._write_transaction():
+            existing = self.get_artifact(artifact.id)
+            if existing is None:
+                return None
+
+            validate_validation_status_transition(
+                existing.validation_status, artifact.validation_status
+            )
+            now = _now_iso()
             self._conn.execute(
                 """
                 UPDATE artifacts
@@ -616,7 +608,7 @@ class SqliteStrategyStore:
                     artifact.id,
                 ),
             )
-        return self.get_artifact(artifact.id)
+            return self.get_artifact(artifact.id)
 
     # -- Bench history ------------------------------------------------------
 

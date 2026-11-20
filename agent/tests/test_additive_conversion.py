@@ -158,13 +158,11 @@ class TestLoaderWiring:
     is not."""
 
     def _patch_fetch_pair(self, monkeypatch, loader_mod, raw, additive):
-        monkeypatch.setattr(
-            loader_mod,
-            "cached_loader_fetch",
-            lambda source, symbol, timeframe, start_date, end_date, fields, fetch: (
-                raw if fields == ["raw"] else additive
-            ),
-        )
+        def cached_pair(*, source, symbol, timeframe, start_date, end_date, fields, fetch, source_revision=None):
+            assert source_revision is None  # A-share frames retain their existing cache identity.
+            return raw if fields == ["raw"] else additive
+
+        monkeypatch.setattr(loader_mod, "cached_loader_fetch", cached_pair)
 
     def test_tencent_converts_and_stamps(self, monkeypatch):
         from backtest.loaders import tencent_loader
