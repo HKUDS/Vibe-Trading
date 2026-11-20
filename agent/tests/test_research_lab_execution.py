@@ -105,6 +105,66 @@ def test_training_selection_precedes_frozen_oos_and_holdout(saved_run, tmp_path)
     assert (tmp_path / "wf-study/selection-1.json").is_file()
 
 
+@pytest.mark.parametrize("saved_run", ["000001.SZ"], indirect=True)
+@pytest.mark.parametrize("enrichment", ["fundamentals", "events"])
+def test_frozen_backtest_keeps_saved_enrichment(saved_run, tmp_path, monkeypatch, enrichment):
+    from types import SimpleNamespace
+
+    from backtest import runner
+    from backtest.engines import base
+    from src.research_lab.execution import freeze_run
+
+    symbol = "000001.SZ"
+    config_path = saved_run / "config.json"
+    config = json.loads(config_path.read_text())
+    with monkeypatch.context() as source_fixture:
+        if enrichment == "fundamentals":
+            config["fundamental_fields"] = {"income": ["revenue"]}
+            column = "income_revenue"
+            filings = pd.DataFrame(
+                {"ts_code": [symbol], "ann_date": ["20260105"], "end_date": ["20251231"], "revenue": [125.0]}
+            )
+            provider = base.TushareFundamentalProvider(api=SimpleNamespace(income=lambda **_: filings))
+            source_fixture.setattr(base, "TushareFundamentalProvider", lambda: provider)
+        else:
+            config["event_feeds"] = [{"name": "fixture", "route_template": "/news/{code}", "event_type": "sentiment"}]
+            column = "event_score"
+            events = pd.DataFrame({"ts_code": [symbol], "knowable_date": [pd.Timestamp("2026-01-05")], "score": [0.8]})
+            provider = SimpleNamespace(is_available=lambda: True, query_events=lambda *_, **__: events)
+            source_fixture.setattr(base, "RSSHubEventProvider", lambda **_: provider)
+        config_path.write_text(json.dumps(config))
+        (saved_run / "code/signal_engine.py").write_text(
+            "class SignalEngine:\n"
+            "    def generate(self, data_map):\n"
+            f"        return {{code: frame[{column!r}].gt(0).astype(float) for code, frame in data_map.items()}}\n"
+        )
+        runner.main(saved_run)
+
+    prices_path = Path(f"artifacts/ohlcv_{symbol}.csv")
+    saved_prices = pd.read_csv(saved_run / prices_path, index_col=0, parse_dates=True)
+    assert saved_prices.loc["2026-01-05", column] == pytest.approx(125.0 if enrichment == "fundamentals" else 0.8)
+    config, manifest, _, _ = freeze_run(saved_run, tmp_path / "study")
+    replay = tmp_path / "replay"
+    (replay / "code").mkdir(parents=True)
+    (replay / "code/signal_engine.py").write_bytes((manifest.parent / "signal_engine.py").read_bytes())
+    (replay / "config.json").write_text(
+        json.dumps({**config, "codes": [symbol], "frozen_data_manifest": str(manifest)})
+    )
+
+    def unexpected_provider(*args, **kwargs):
+        pytest.fail("frozen backtest tried to enrich inputs again")
+
+    monkeypatch.setattr(base, "TushareFundamentalProvider", unexpected_provider)
+    monkeypatch.setattr(base, "RSSHubEventProvider", unexpected_provider)
+    runner.main(replay)
+
+    replayed_prices = pd.read_csv(replay / prices_path, index_col=0, parse_dates=True)
+    pd.testing.assert_series_equal(replayed_prices[column], saved_prices[column])
+    expected_equity = pd.read_csv(saved_run / "artifacts/equity.csv")
+    assert expected_equity["equity"].nunique() > 1
+    pd.testing.assert_frame_equal(pd.read_csv(replay / "artifacts/equity.csv"), expected_equity)
+
+
 def test_modified_source_prices_are_not_relabelled_as_frozen(saved_run, tmp_path):
     prices = saved_run / "artifacts/ohlcv_AAPL.US.csv"
     prices.write_text(prices.read_text().replace("10.0", "10.1"))

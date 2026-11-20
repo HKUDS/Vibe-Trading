@@ -1014,8 +1014,10 @@ class BaseEngine(ABC):
         if not data_map:
             print(json.dumps({"error": "No data fetched"}))
             sys.exit(1)
-        data_map = _maybe_enrich_fundamentals(data_map, config)
-        data_map = _maybe_enrich_events(data_map, config)
+        # Frozen run artifacts already contain the enrichment seen by the strategy.
+        if not config.get("frozen_data_manifest"):
+            data_map = _maybe_enrich_fundamentals(data_map, config)
+            data_map = _maybe_enrich_events(data_map, config)
         data_map = self.prepare_market_data(data_map)
 
         # 2. Generate signals
