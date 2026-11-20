@@ -171,6 +171,14 @@ class TestSymbolSearchSuccess:
         assert candidate["symbol"] == "BRK-B.US"
         assert candidate["market"] == "us"
 
+    def test_eastmoney_and_yahoo_corroborate_the_same_share_class(self):
+        em = ss._eastmoney_candidate({"Code": "BRK_B", "QuoteID": "106.BRK_B"})
+        yahoo = ss._yahoo_candidate({"symbol": "BRK-B", "exchange": "NYQ", "quoteType": "EQUITY"})
+        merged = ss._merge_candidates([em, yahoo])
+        assert [c["symbol"] for c in merged] == ["BRK-B.US"]
+        assert "yahoo" in merged[0]["also_from"]
+        assert ss._eastmoney_candidate({"Code": "BWA", "QuoteID": "106.BW_A"}) is None
+
     def test_crypto_hyphen_symbol_stays_native(self):
         # BTC-USD must not gain a .US suffix merely because it has a hyphen.
         quote = {
@@ -1337,7 +1345,7 @@ def test_eastmoney_market_zero_splits_beijing_from_shenzhen(quote_id: str, expec
     assert candidate["symbol"] == expected
 
 
-@pytest.mark.parametrize("query,expected", [("AAPL.US", "AAPL"), ("aapl.us", "AAPL"), ("BRK-B.US", "BRK-B")])
+@pytest.mark.parametrize("query,expected", [("AAPL.US", "AAPL"), ("aapl.us", "AAPL"), ("BRK-B.US", "BRK-B"), ("BRK.B.US", "BRK-B")])
 def test_project_us_suffix_is_translated_only_for_provider_search(monkeypatch, query, expected):
     calls = []
     monkeypatch.setattr(ss, "_search_selected_connector", lambda *args: ([], None, None))
@@ -1355,9 +1363,9 @@ def test_project_us_suffix_is_translated_only_for_provider_search(monkeypatch, q
     monkeypatch.setattr(ss, "_search_eastmoney", search)
     monkeypatch.setattr(ss, "_search_yahoo", search)
     result = json.loads(ss.SymbolSearchTool.execute.__wrapped__(ss.SymbolSearchTool(), query=query))
-    assert calls == [expected, expected]
+    assert calls == [expected.replace("-", "_"), expected]
     assert result["data"]["query"] == query
-    assert [c["symbol"] for c in result["data"]["candidates"]] == [expected + ".US"]
+    assert [c["symbol"] for c in result["data"]["candidates"]] == [query.upper()]
 
 
 def test_project_us_query_cannot_fabricate_identity_from_wrong_or_missing_hits(monkeypatch):
