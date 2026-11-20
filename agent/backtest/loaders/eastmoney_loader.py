@@ -115,6 +115,8 @@ class DataLoader:
                     start_date=start_date,
                     end_date=end_date,
                     fields=None,
+                    # Older US frames may contain bars for a fuzzy ticker match.
+                    source_revision="us-exact-secid-v1" if code.rpartition(".")[2].strip().upper() == "US" else None,
                     fetch=lambda code=code: self._fetch_one(
                         code, start_date, end_date, interval
                     ),
