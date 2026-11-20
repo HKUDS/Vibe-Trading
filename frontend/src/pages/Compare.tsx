@@ -73,7 +73,8 @@ const METRICS: MetricDef[] = [
   { key: "sharpe",                 label: i18n.t("compare.sharpeRatio"),         type: "num", higherIsBetter: true },
   { key: "calmar_ratio",           label: i18n.t("compare.calmarRatio"),         type: "num", higherIsBetter: true },
   { key: "sortino_ratio",          label: i18n.t("compare.sortinoRatio"),        type: "num", higherIsBetter: true },
-  { key: "max_drawdown",           label: i18n.t("compare.maxDrawdown"),         type: "pct", higherIsBetter: false },
+  // Backtest artifacts store drawdown as a signed loss, not its magnitude.
+  { key: "max_drawdown",           label: i18n.t("compare.maxDrawdown"),         type: "pct", higherIsBetter: true },
   { key: "volatility",             label: i18n.t("compare.volatility"),           type: "pct", higherIsBetter: false },
   { key: "win_rate",               label: i18n.t("compare.winRate"),             type: "pct", higherIsBetter: true },
   { key: "profit_factor",          label: i18n.t("compare.profitFactor"),        type: "num", higherIsBetter: true },
