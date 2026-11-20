@@ -115,8 +115,8 @@ def test_close_respects_default_transport_ownership(monkeypatch, provider_server
     """Closing one adapter releases instance clients without breaking a sibling.
 
     Cached transports stay borrowed, while per-instance transports are closed.
-    LangChain OpenAI 1.8.2 made only the async default client per-instance so
-    its connections cannot cross event loops; older releases cache both.
+    LangChain OpenAI 1.8.2 and Anthropic 1.7.12 create an async default
+    per model. Older releases cache both transports.
     """
     if provider != "openai":
         pytest.importorskip(f"langchain_{provider}")
@@ -137,10 +137,8 @@ def test_close_respects_default_transport_ownership(monkeypatch, provider_server
     shared = [a is b for a, b in zip(first_http, second_http)]
     if provider == "deepseek":
         assert shared == [False, False]  # ChatDeepSeek builds its own SDK clients.
-    elif provider == "anthropic":
-        assert shared == [True, True]
     else:
-        assert shared[0]  # The synchronous OpenAI default remains cached.
+        assert shared[0]  # The synchronous OpenAI and Anthropic defaults remain cached.
     first.close()
     assert [client.is_closed for client in first_http] == [
         not value for value in shared
