@@ -184,7 +184,7 @@ A missing interior return or non-positive/non-finite model wealth makes the peri
 
 ## 📡 Data Sources & Smart Fallback
 
-The loader supports **28 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries the configured sources in order.
+The loader supports **28 market-data sources**. With `source: "auto"`, it infers the market from the symbol and tries the configured sources in order. A backtest retries only symbols with no bars left after price validation and aggregation. An explicit `local` source or a `local:` symbol never falls back to the network.
 
 | Market | How a request is filled |
 |---|---|
