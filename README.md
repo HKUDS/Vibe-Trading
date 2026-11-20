@@ -164,6 +164,8 @@ vibe-trading alpha bench --zoo gtja191 --universe csi300 --period 2018-2025 --to
 
 Open **Run Detail** to compare the crossover with buy-and-hold, inspect the trades behind a drawdown and check the data source on the run card. In **Strategy Comparison**, drawdown is shown as a signed loss: a run at −10% fares better on this metric than one at −30%.
 
+In backtests with `allow_nonpositive_prices: true`, a separately loaded benchmark uses the same price policy as the strategy. Local benchmark data still comes only from the configured local source.
+
 ### Portfolio drawdown periods
 
 In **Run Detail > Portfolio Studio > Risk X-Ray**, inspect the five deepest observed drawdowns, with peak, trough, recovery and duration. A drawdown still open at the end of the input window is reported separately even when it is outside the deepest five. The same `drawdown.episodes` data is saved in `artifacts/risk_xray.json`, summarized in `artifacts/risk_xray.md`, and returned by the `portfolio_risk_xray` Agent/MCP tool.
