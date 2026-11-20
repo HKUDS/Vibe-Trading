@@ -111,11 +111,23 @@ class TestResolveSecidUS:
         with patch.object(ec, "throttled_get_json", return_value=payload):
             assert ec.resolve_secid("BRK.US") == "106.BRK"
 
-    def test_class_share_separator_is_ignored(self):
-        # Eastmoney writes Berkshire B as BRK-B; callers may pass BRKB.
-        payload = {"QuotationCodeTable": {"Data": [{"Code": "BRKB", "QuoteID": "106.BRKB"}]}}
-        with patch.object(ec, "throttled_get_json", return_value=payload):
-            assert ec.resolve_secid("BRK-B.US") == "106.BRKB"
+    @pytest.mark.parametrize("symbol", ["BRK-B.US", "BRK.B.US", "BRK_B.US"])
+    def test_class_share_search_uses_provider_spelling(self, symbol):
+        # The Eastmoney suggest response for BRK_B identifies Berkshire Class B.
+        row = {"Code": "BRK_B", "QuoteID": "106.BRK_B"}
+        with patch.object(ec, "throttled_get_json", return_value={"QuotationCodeTable": {"Data": [row]}}) as get:
+            assert ec.resolve_secid(symbol) == "106.BRK_B"
+        assert get.call_args.kwargs["params"]["input"] == "BRK_B"
+
+    @pytest.mark.parametrize(("symbol", "row"), [
+        ("BW-A.US", {"Code": "BWA", "QuoteID": "106.BWA"}),
+        ("BWA.US", {"Code": "BW_A", "QuoteID": "106.BW_A"}),
+        ("AAPL.US", {"Code": "AAPL", "QuoteID": "105.MSFT"}),
+        ("AAPL.US", {"Code": "MSFT", "QuoteID": "105.AAPL"}),
+    ])
+    def test_refuses_conflicting_security_identity(self, symbol, row):
+        with patch.object(ec, "throttled_get_json", return_value={"QuotationCodeTable": {"Data": [row]}}):
+            assert ec.resolve_secid(symbol) is None
 
     def test_search_failure_returns_none_without_raising(self):
         with patch.object(

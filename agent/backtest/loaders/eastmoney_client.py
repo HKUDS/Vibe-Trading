@@ -141,16 +141,6 @@ def _resolve_a_share_secid(code: str, suffix: str) -> str | None:
     return None
 
 
-def _norm_us_ticker(value: str) -> str:
-    """Upper-case a US ticker and drop class-share separators.
-
-    Eastmoney writes Berkshire B as ``BRK-B`` while callers may pass ``BRKB``;
-    stripping ``-``/``_`` lets both forms match while keeping distinct tickers
-    (``BRK`` vs ``BRKC``) apart.
-    """
-    return value.upper().replace("-", "").replace("_", "")
-
-
 def _parse_us_secid(payload: Any, code: str) -> str | None:
     """Extract the US ``<market>.<code>`` secid matching ``code`` from a payload.
 
@@ -159,11 +149,11 @@ def _parse_us_secid(payload: Any, code: str) -> str | None:
     ``<market>.<code>`` form. Only a candidate whose ticker equals ``code`` is
     accepted: a fuzzy search for ``BRK`` otherwise returns the first US row
     (``BRKC``, a different ETF) and silently hands back the wrong security's
-    bars. Class-share separators are ignored when comparing.
+    bars. Match the ticker in the routing ID and any explicit code field.
 
     Args:
         payload: Decoded JSON from the search endpoint.
-        code: Bare US ticker we intend to resolve (e.g. ``"BRK"``).
+        code: Upper-case ticker in Eastmoney spelling (e.g. ``"BRK_B"``).
 
     Returns:
         The matching US secid, or ``None`` when no exact-match US candidate is
@@ -177,7 +167,6 @@ def _parse_us_secid(payload: Any, code: str) -> str | None:
     candidates = table.get("Data")
     if not isinstance(candidates, list):
         return None
-    wanted = _norm_us_ticker(code)
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
@@ -185,13 +174,10 @@ def _parse_us_secid(payload: Any, code: str) -> str | None:
         if not isinstance(quote_id, str) or "." not in quote_id:
             continue
         market, _, tail = quote_id.partition(".")
-        if market not in ("105", "106", "107"):
+        if market not in ("105", "106", "107") or tail.upper() != code:
             continue
-        # Prefer the explicit code field, else the secid's tail.
-        cand_code = candidate.get("Code")
-        if not isinstance(cand_code, str) or not cand_code:
-            cand_code = tail
-        if _norm_us_ticker(cand_code) == wanted:
+        candidate_code = candidate.get("Code", tail)
+        if isinstance(candidate_code, str) and candidate_code.upper() == code:
             return quote_id
     return None
 
@@ -267,7 +253,9 @@ def resolve_secid(symbol: str) -> str | None:
     if suffix == "HK":
         return f"116.{code.zfill(5)}"
     if suffix == "US":
-        return _resolve_us_secid(code)
+        # Eastmoney lists BRK.B / BRK-B as BRK_B. Keep the separator:
+        # BW-A (Babcock & Wilcox preferred) and BWA (BorgWarner) are distinct.
+        return _resolve_us_secid(code.replace(".", "_").replace("-", "_"))
     return None
 
 
