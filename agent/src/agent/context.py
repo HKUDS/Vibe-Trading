@@ -6,8 +6,10 @@ import copy
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from src.agent.instructions import build_instruction_block
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
@@ -236,7 +238,7 @@ Follow-up on a backtest already run (a `[prev_run: <id>]` marker in the history)
 - Respond in the same language the user used.
 - You have persistent cross-session memory (`remember` tool). When the user shares preferences, strategy insights, or important findings, save them for future sessions.
 - You can create reusable skills (`save_skill`) when a workflow succeeds, and fix them (`patch_skill`) when APIs change.
-{memory_section}
+{memory_section}{user_instructions}
 ## Current Date & Time
 
 Today is {current_datetime}.
@@ -261,7 +263,8 @@ class ContextBuilder:
 
     def __init__(self, registry: ToolRegistry, memory: WorkspaceMemory,
                  skills_loader: Optional[SkillsLoader] = None,
-                 persistent_memory: Optional[PersistentMemory] = None) -> None:
+                 persistent_memory: Optional[PersistentMemory] = None,
+                 instruction_launch_dir: Optional[Path] = None) -> None:
         """Initialize ContextBuilder.
 
         Args:
@@ -269,7 +272,11 @@ class ContextBuilder:
             memory: Workspace memory.
             skills_loader: Skills loader (auto-created if not provided).
             persistent_memory: PersistentMemory instance for cross-session recall.
+            instruction_launch_dir: Directory a CLI run was launched from; its
+                ``AGENTS.md`` is loaded too. ``None`` (API, channel, scheduler)
+                reads only the runtime root.
         """
+        self.instruction_launch_dir = instruction_launch_dir
         self.registry = registry
         self.memory = memory
         self.skills_loader = skills_loader or SkillsLoader()
@@ -282,7 +289,10 @@ class ContextBuilder:
         PersistentMemory snapshot is frozen at session start (preserves prompt cache).
         The Output Principles are literal template text with no substitution, so they
         stay byte-identical across sessions (cacheable) and no per-session input can
-        reach them.
+        reach them. The user instruction block sits after the memory section and
+        before the minute-resolution date line, so everything before it stays
+        byte-identical across turns and the block itself changes only with the
+        file.
 
         Args:
             user_message: User message (kept for API compatibility).
@@ -329,6 +339,7 @@ class ContextBuilder:
             data_source_count=self._count_data_sources(),
             skill_descriptions=self.skills_loader.get_descriptions(),
             memory_section=memory_section,
+            user_instructions=build_instruction_block(self.instruction_launch_dir),
             strategy_discovery_routing=routing,
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M UTC"),
         )

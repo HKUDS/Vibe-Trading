@@ -492,6 +492,11 @@ class AgentTuningConfig(_EnvBase):
     vibe_trading_context_max_tokens: int = Field(
         alias="VIBE_TRADING_CONTEXT_MAX_TOKENS", default=200_000, gt=0,
     )
+    # Byte cap per user instruction file (AGENTS.md) injected into the system
+    # prompt; a larger file is truncated with a visible marker.
+    vibe_trading_instructions_max_bytes: int = Field(
+        alias="VIBE_TRADING_INSTRUCTIONS_MAX_BYTES", default=32_768, gt=0,
+    )
     vt_heartbeat_interval_s: float = Field(alias="VT_HEARTBEAT_INTERVAL_S", default=3.0)
     vt_reasoning_delta_min_interval_s: float = Field(
         alias="VT_REASONING_DELTA_MIN_INTERVAL_S", default=1.0,

@@ -251,6 +251,8 @@ class AgentLoop(ToolCallLifecycle):
         )
         self._previous_summary: str = ""
         self._persistent_memory = persistent_memory
+        # Set by the CLI to its launch directory so ./AGENTS.md is loaded too.
+        self.instruction_launch_dir: Path | None = None
         self._run_iteration: int = 0
         self._has_run = False
         self._identity: IdentityLedger | None = None
@@ -450,7 +452,8 @@ class AgentLoop(ToolCallLifecycle):
         )
 
         context = ContextBuilder(self.registry, self.memory,
-                                  persistent_memory=self._persistent_memory)
+                                  persistent_memory=self._persistent_memory,
+                                  instruction_launch_dir=self.instruction_launch_dir)
         goal_context, active_goal_id = get_current_goal_context(session_id) if session_id else ("", None)
         llm_user_message = user_message
         if goal_context:

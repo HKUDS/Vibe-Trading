@@ -1271,6 +1271,7 @@ def _run_agent(
         persistent_memory=pm,
         background_manager=background,
     )
+    agent.instruction_launch_dir = Path.cwd()
     if run_dir_override:
         agent.memory.run_dir = run_dir_override
 
