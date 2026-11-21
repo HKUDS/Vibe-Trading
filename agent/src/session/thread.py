@@ -19,6 +19,7 @@ never parsed out of what the model said or saw.
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
 import json
 import logging
 import os
@@ -27,6 +28,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has no fcntl
+    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +321,8 @@ class _PathState:
 
 _PATH_STATES: Dict[str, _PathState] = {}
 _PATH_STATES_LOCK = threading.Lock()
+_FILE_LOCKS: Dict[str, threading.Lock] = {}
+_FILE_LOCKS_LOCK = threading.Lock()
 
 
 def _path_state(path: Path) -> _PathState:
@@ -324,6 +332,15 @@ def _path_state(path: Path) -> _PathState:
         if state is None:
             state = _PATH_STATES[key] = _PathState()
         return state
+
+
+def _file_lock(path: Path) -> threading.Lock:
+    key = os.path.normcase(os.path.abspath(path))
+    with _FILE_LOCKS_LOCK:
+        lock = _FILE_LOCKS.get(key)
+        if lock is None:
+            lock = _FILE_LOCKS[key] = threading.Lock()
+        return lock
 
 
 def _encode_record(record: Mapping[str, Any]) -> bytes:
@@ -339,10 +356,9 @@ class ThreadLog:
     """Append-only, fsynced ``thread.jsonl`` for one session.
 
     ``seq`` is assigned under a lock shared by every instance open on the same
-    path in this process, and recovered from the file whenever the file is not
-    the size this process last left it (first use, reopen, external append).
-    Concurrent writers in separate processes are not supported: one server
-    owns a sessions directory, as ``SessionService`` already assumes.
+    path in this process and an advisory file lock for writers in other
+    processes. It is recovered from the file whenever the file is not the size
+    this process last left it (first use, reopen, external append).
 
     Attributes:
         path: Location of ``thread.jsonl``.
@@ -382,26 +398,41 @@ class ThreadLog:
         state = self._state
         with state.lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            needs_separator = self._sync_seq(state)
-            item = ThreadItem(
-                seq=state.last_seq + 1,
-                ts=float(self._clock()),
-                turn_id=turn_id,
-                type=item_type,
-                data=data,
-            )
-            encoded = _encode_record(item.to_dict())
-            with self.path.open("ab") as log:
+            with self._writer_lock() as log:
+                needs_separator = self._sync_seq(state)
+                item = ThreadItem(
+                    seq=state.last_seq + 1,
+                    ts=float(self._clock()),
+                    turn_id=turn_id,
+                    type=item_type,
+                    data=data,
+                )
+                encoded = _encode_record(item.to_dict())
                 if needs_separator:
                     # A torn last line (crash mid-write) must stay its own
                     # corrupt line, not swallow this record.
                     log.write(b"\n")
+                log.seek(0, os.SEEK_END)
                 log.write(encoded)
                 log.flush()
                 os.fsync(log.fileno())
                 state.known_size = log.tell()
-            state.last_seq = item.seq
+                state.last_seq = item.seq
         return item
+
+    @contextmanager
+    def _writer_lock(self):
+        """Open the log and serialize appends across processes when supported."""
+        process_lock = _file_lock(self.path)
+        with process_lock:
+            with self.path.open("a+b") as log:
+                if fcntl is not None:
+                    fcntl.flock(log.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield log
+                finally:
+                    if fcntl is not None:
+                        fcntl.flock(log.fileno(), fcntl.LOCK_UN)
 
     def _sync_seq(self, state: _PathState) -> bool:
         """Re-derive ``last_seq`` when the file is not as this process left it.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import threading
 from pathlib import Path
 
@@ -43,6 +44,12 @@ def _write_full_turn(log: ThreadLog, turn_id: str) -> None:
     log.append("assistant", turn_id, content="Max drawdown was 8%.", phase="final")
     log.append("state", turn_id, loaded_tools=["get_market_data"])
     log.append("turn_end", turn_id, status="completed", usage={"input_tokens": 10}, elapsed_ms=40)
+
+
+def _append_from_process(path: str, worker_id: int, count: int) -> None:
+    log = ThreadLog(Path(path))
+    for index in range(count):
+        log.append("inject", f"process-{worker_id}", content=f"{worker_id}-{index}")
 
 
 def test_round_trip_keeps_every_field_and_type(tmp_path: Path) -> None:
@@ -164,6 +171,25 @@ def test_concurrent_appends_from_two_logs_keep_seq_unique_and_ordered(tmp_path: 
     assert len(items) == 400
     assert seqs == list(range(1, 401))
     assert len(path.read_bytes().splitlines()) == 400
+
+
+def test_concurrent_appends_from_processes_keep_seq_unique_and_ordered(tmp_path: Path) -> None:
+    path = tmp_path / "thread.jsonl"
+    context = multiprocessing.get_context("spawn")
+    processes = [
+        context.Process(target=_append_from_process, args=(str(path), worker_id, 30))
+        for worker_id in range(4)
+    ]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    items = ThreadLog(path).read()
+    seqs = [item.seq for item in items]
+    assert len(items) == 120
+    assert seqs == list(range(1, 121))
 
 
 def test_a_corrupt_line_costs_that_line_only(tmp_path: Path, caplog) -> None:
