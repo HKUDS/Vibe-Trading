@@ -13,7 +13,7 @@ import {
 import { useSessionsStore } from "@/stores/sessions";
 import { useSSE } from "@/hooks/useSSE";
 import { useLlmUsageCounter } from "@/hooks/useLlmUsageCounter";
-import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, isQueuedMessage, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings } from "@/lib/api";
+import { ApiError, AUTH_REQUIRED_MESSAGE, api, isAuthRequiredError, isQueuedMessage, type GoalSnapshot, type MandateProposal, type MandateCommitted, type ScheduledResearchProposal, type LiveAction, type LiveHalted, type LLMSettings, type SessionModelSelection } from "@/lib/api";
 import {
   addQueuedInput,
   applyThreadEvent,
@@ -257,6 +257,7 @@ export function Agent() {
   const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [runtimeIdentity, setRuntimeIdentity] = useState<RuntimeIdentity>({});
+  const [sessionModel, setSessionModel] = useState<SessionModelSelection | null>(null);
 
   const messages = useAgentStore(s => s.messages);
   const streamingText = useAgentStore(s => s.streamingText);
@@ -418,6 +419,21 @@ export function Agent() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!urlSessionId) {
+      setSessionModel(null);
+      return;
+    }
+    let active = true;
+    if (typeof api.getSessionModel !== "function") return;
+    api.getSessionModel(urlSessionId).then((selection) => {
+      if (active) setSessionModel(selection);
+    }).catch(() => {
+      if (active) setSessionModel(null);
+    });
+    return () => { active = false; };
+  }, [urlSessionId]);
 
   const fillComposer = useCallback((prompt: string) => {
     composerRef.current?.fill(prompt);
@@ -646,6 +662,49 @@ export function Agent() {
     genRef.current = gen;
     await loadSessionMessages(sid, gen);
   }, [loadSessionMessages]);
+
+  const changeSessionModel = useCallback(async (selection: { provider: string; model: string; reasoning_effort: string }) => {
+    if (!sessionId) return;
+    try {
+      setSessionModel(await api.setSessionModel(sessionId, selection));
+      toast.success(t("agent.modelUpdated" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.modelUpdateFailed" as never));
+    }
+  }, [sessionId, t]);
+
+  const clearSessionModel = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      setSessionModel(await api.clearSessionModel(sessionId));
+      toast.success(t("agent.modelUpdated" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.modelUpdateFailed" as never));
+    }
+  }, [sessionId, t]);
+
+  const compactSession = useCallback(async () => {
+    if (!sessionId || status === "streaming") return;
+    try {
+      await api.compactSession(sessionId);
+      await refreshSessionMessages(sessionId);
+      toast.success(t("agent.contextCompacted" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.compactFailed" as never));
+    }
+  }, [refreshSessionMessages, sessionId, status, t]);
+
+  const forkFromTurn = useCallback(async (turnId: string) => {
+    if (!sessionId) return;
+    try {
+      const fork = await api.forkSession(sessionId, turnId);
+      useSessionsStore.getState().upsert(fork);
+      setSearchParams({ session: fork.session_id });
+      toast.success(t("agent.sessionForked" as never));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("agent.forkFailed" as never));
+    }
+  }, [sessionId, setSearchParams, t]);
 
   const setupSSE = useCallback((sid: string) => {
     if (sseSessionRef.current === sid) return;
@@ -1605,7 +1664,22 @@ export function Agent() {
         runtimeProvider={visibleRuntimeIdentity.provider}
         runtimeModel={visibleRuntimeIdentity.model}
         runtimeReasoningEffort={visibleRuntimeIdentity.reasoningEffort}
+        sessionModel={sessionModel}
+        onSelectionChange={changeSessionModel}
+        onClearSelection={clearSessionModel}
       />
+      {sessionId && (
+        <div className="flex justify-end border-b border-border/40 px-6 py-1">
+          <button
+            type="button"
+            onClick={() => void compactSession()}
+            disabled={status === "streaming"}
+            className="rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("agent.compactContext" as never)}
+          </button>
+        </div>
+      )}
       {historyError && (
         <div role="alert" className="flex flex-wrap items-center gap-2 border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs">
           <span>{t("layout.sessionsLoadFailed")} {historyError}</span>
@@ -1745,6 +1819,15 @@ export function Agent() {
                 className={shouldAnimate ? "msg-enter" : undefined}
               >
                 <MessageBubble msg={g.msg} onRetry={g.msg.type === "error" ? handleRetry : undefined} />
+                {g.msg.type === "answer" && g.msg.meta?.turnId && (
+                  <button
+                    type="button"
+                    onClick={() => void forkFromTurn(g.msg.meta?.turnId || "")}
+                    className="mt-2 rounded border border-border/60 px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted"
+                  >
+                    {t("agent.forkFromHere" as never)}
+                  </button>
+                )}
               </div>
             );
           })}
