@@ -49,6 +49,7 @@ DOCUMENTED_NAMES = {
     "Client", "ClientClosedError", "ClientSettings", "Event", "MessageInfo",
     "ReasoningDelta", "RunCancelled", "RunCompleted", "RunFailed", "RunResult",
     "RunStarted", "RuntimeRootInUseError", "SessionBusyError", "SessionInfo",
+    "register_tool",
     "SessionNotFoundError", "Stream", "TextDelta", "ToolCompleted", "ToolFailed",
     "ToolStarted",
 }
@@ -472,7 +473,7 @@ def test_public_surface_is_exactly_the_documented_names() -> None:
     assert len(vibe_trading.__all__) == len(DOCUMENTED_NAMES)
     for name in vibe_trading.__all__:
         assert getattr(vibe_trading, name) is not None
-    for internal in ("AgentLoop", "SessionService", "ToolRegistry", "build_registry", "register_tool"):
+    for internal in ("AgentLoop", "SessionService", "ToolRegistry", "build_registry"):
         assert not hasattr(vibe_trading, internal)
 
 

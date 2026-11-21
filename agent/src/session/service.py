@@ -133,6 +133,7 @@ class SessionService:
         self._inflight_lock = threading.Lock()
         self._search_index = get_shared_index()
         self._background_handles: Dict[str, Any] = {}
+        self._host_tools: Dict[str, Any] = {}
         # One runtime per conversation, alive across its turns. Rebuilt from
         # the thread's state items on first use after a restart.
         self._runtimes: Dict[str, SessionRuntime] = {}
@@ -149,6 +150,25 @@ class SessionService:
         )
         self._recover_interrupted_attempts()
         self._recover_pending_inputs()
+
+    def register_tool(self, tool: Any) -> str:
+        """Register one explicit host tool for subsequent attempts."""
+        from src.agent.tools import BaseTool
+        if not isinstance(tool, BaseTool):
+            raise TypeError("host tools must be BaseTool instances")
+        name = str(getattr(tool, "name", "")).strip()
+        if not name:
+            raise ValueError("host tools require a non-empty name")
+        if bool(getattr(tool, "is_trading_tool", False)):
+            raise ValueError("host tools cannot be marked as trading tools")
+        if not bool(getattr(tool, "is_readonly", False)):
+            raise ValueError("host tools must be read-only")
+        from src.tools import _discover_subclasses
+        builtins = {cls.name for cls in _discover_subclasses()}
+        if name in builtins or name in self._host_tools:
+            raise ValueError(f"host tool name collides with registered tool: {name}")
+        self._host_tools[name] = tool
+        return name
 
     def _recover_interrupted_attempts(self) -> None:
         """Finalize attempts that could not outlive the previous process.
@@ -1138,12 +1158,17 @@ class SessionService:
                     cancel_event=turn_cancel,
                     background_manager=background,
                     background_scope=background_scope,
+                    host_tools=list(self._host_tools.values()),
                 ),
             )
+
+            hook_manager = getattr(registry, "hooks", None)
 
             from src.config.accessor import get_env_config
 
             recorder = runtime.begin_turn(attempt_id, messages or [])
+            if hook_manager is not None:
+                hook_manager.set_audit_sink(recorder)
             queued_inputs = QueuedInputDelivery(
                 self.pending_inputs,
                 session_id=session_id,

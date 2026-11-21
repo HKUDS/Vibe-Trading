@@ -357,6 +357,12 @@ class TurnRecorder:
             artifact=artifact,
         )
 
+    def hook(self, decision: Dict[str, Any]) -> None:
+        """Record a redacted command-hook decision in the thread audit."""
+        self._write("hook_decision", None, **dict(decision))
+
+    hook_decision = hook
+
     def inject(self, message: Dict[str, Any]) -> None:
         """Record a message the loop added on its own (``<system>`` notes).
 

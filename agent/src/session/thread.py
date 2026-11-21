@@ -172,6 +172,15 @@ _SCHEMA: Dict[str, Optional[Dict[str, _Field]]] = {
     "checkpoint": {
         "content": _Field(_is_str, required=True),
     },
+    "hook_decision": {
+        "event": _Field(_is_str, required=True),
+        "decision": _Field(_is_str, required=True),
+        "reason": _Field(_is_str, default=""),
+        "elapsed_ms": _Field(_optional(_is_number)),
+        "timed_out": _Field(lambda v: isinstance(v, bool), default=False),
+        "exit_code": _Field(_optional(lambda v: _is_int(v))),
+        "tool": _Field(_optional(_is_str)),
+    },
     "compaction": {
         "summary": _Field(_is_str, default=""),
         "replaces_through_seq": _Field(_is_int, default=0),

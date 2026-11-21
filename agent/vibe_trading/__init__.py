@@ -44,10 +44,10 @@ Contract:
 * Events are a closed vocabulary (see :mod:`vibe_trading.events`); kernel
   events outside it are dropped. :attr:`RunResult.text` is the final answer —
   streamed text may be retracted by a ``TextDelta(reset=True)``.
-* There is no ``register_tool``: tools are discovered process-wide from
-  ``src/tools`` and a same-named class replaces a real tool, so no safe
-  per-client registration exists. Extra tools reach the agent through MCP
-  servers in the operator's config file.
+* ``Client.register_tool`` and the module-level ``register_tool`` accept an
+  explicit read-only ``BaseTool`` for that client. Names colliding with
+  built-ins or another host registration are refused, and host tools cannot
+  be trading tools.
 """
 
 from __future__ import annotations
@@ -87,6 +87,15 @@ from vibe_trading.events import (  # noqa: E402
     ToolStarted,
 )
 
+
+def register_tool(client: Client, tool: object) -> str:
+    """Register one explicit host tool on a :class:`Client`.
+
+    The function form keeps embedding code concise while registration remains
+    scoped to the supplied client and never participates in discovery.
+    """
+    return client.register_tool(tool)
+
 __all__ = [
     "Client",
     "ClientClosedError",
@@ -99,6 +108,7 @@ __all__ = [
     "RunFailed",
     "RunResult",
     "RunStarted",
+    "register_tool",
     "RuntimeRootInUseError",
     "SessionBusyError",
     "SessionInfo",

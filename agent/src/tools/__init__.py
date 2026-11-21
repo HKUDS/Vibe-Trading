@@ -1,8 +1,9 @@
-"""Tool registry: auto-discovery via BaseTool.__subclasses__().
+"""Tool registry for built-ins and explicitly supplied host tools.
 
-Adding a new tool:
-  1. Create a file in src/tools/ with a class extending BaseTool
-  2. Done. It's automatically discovered and registered.
+Built-in classes are discovered from ``src/tools`` for compatibility with the
+existing catalog. Host tools supplied through ``register_tool`` are added only
+to that client's registry and never enter this discovery path. This keeps a
+third-party class import from changing every process-wide registry.
 
 Tools with missing dependencies can override check_available() → False
 to be silently excluded from the registry.
@@ -20,6 +21,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.agent.tools import BaseTool, ToolRegistry
+from src.agent.hooks import HookManager, load_hooks
+from src.tools.sandbox import SandboxSettings
 
 if TYPE_CHECKING:
     from src.config.schema import AgentConfig
@@ -65,7 +68,11 @@ def _discover_subclasses() -> list[type[BaseTool]]:
     queue = deque(BaseTool.__subclasses__())
     while queue:
         cls = queue.popleft()
-        if cls.name:
+        module_name = str(getattr(cls, "__module__", ""))
+        if cls.name and (
+            module_name.startswith("src.tools.")
+            or module_name == "src.agent.tool_loading"
+        ):
             classes.append(cls)
         queue.extend(cls.__subclasses__())
 
@@ -119,6 +126,9 @@ def build_registry(
     background_manager: Any | None = None,
     background_scope: Any | None = None,
     _mcp_server_tool_name_segments: Mapping[str, str] | None = None,
+    host_tools: list[BaseTool] | None = None,
+    hook_manager: HookManager | None = None,
+    sandbox_settings: SandboxSettings | None = None,
 ) -> ToolRegistry:
     """Build the tool registry via auto-discovery, optionally enriched with MCP tools.
 
@@ -182,6 +192,9 @@ def build_registry(
     session_injected_classes = session_bound_tool_classes()
     classes = _discover_subclasses()
     registry = ToolRegistry()
+    sandbox = sandbox_settings or SandboxSettings.from_env()
+    registry.sandbox = sandbox
+    registry.hooks = hook_manager or load_hooks()
 
     bg_scope = background_scope or (
         BackgroundScope(owner_id=f"session:{session_id}")
@@ -189,7 +202,8 @@ def build_registry(
         else getattr(background_manager, "scope", None)
         or BackgroundScope(owner_id=f"isolated:{uuid.uuid4().hex}")
     )
-    bg = (background_manager or get_background_manager()).for_scope(bg_scope)
+    bg_base = background_manager or get_background_manager(sandbox=sandbox)
+    bg = bg_base.for_scope(bg_scope, sandbox=sandbox)
     # The loop drains the same handle the tools write to, so a task's result
     # reaches the conversation that started it and no other.
     registry.background = bg
@@ -230,6 +244,8 @@ def build_registry(
                         event_callback=event_callback,
                     )
                 )
+            elif cls.name == "bash":
+                registry.register(cls(sandbox=sandbox))
             else:
                 registry.register(cls())
         except Exception as exc:
@@ -336,6 +352,9 @@ def build_registry(
                 logger.warning("Skipped MCP server '%s': %s", server_name, exc)
                 if warn_callback is not None:
                     warn_callback(skip_msg)
+
+    for host_tool in host_tools or []:
+        registry.register_host_tool(host_tool)
 
     return registry
 
