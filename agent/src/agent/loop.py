@@ -287,6 +287,10 @@ class AgentLoop(ToolCallLifecycle):
         self._tool_schema_tokens = 0
         self._llm_usage_summary = _new_llm_usage_summary(self.llm)
         self._goal_usage_callback = None
+        spawn_agent = self.registry.get("spawn_agent")
+        set_usage_callback = getattr(spawn_agent, "set_usage_callback", None)
+        if callable(set_usage_callback):
+            set_usage_callback(self._record_subagent_usage)
 
     def cancel(self) -> None:
         """Cancel the current loop.
@@ -1392,6 +1396,7 @@ class AgentLoop(ToolCallLifecycle):
 
     def _account_llm_usage(
         self, run_dir: Path, usage: Any, iteration: int, *, purpose: str | None = None,
+        include_call_index: bool = True,
     ) -> None:
         """Persist reported usage and notify spending monitors before more work.
 
@@ -1400,6 +1405,9 @@ class AgentLoop(ToolCallLifecycle):
             usage: Provider metadata, or None when unavailable.
             iteration: Parent agent iteration, also for auxiliary calls.
             purpose: Auxiliary call kind; omitted for ordinary agent responses.
+            include_call_index: Whether the emitted event belongs to the
+                parent's call-indexed stream. Child calls have their own
+                sequence and therefore omit this field.
         """
         delta = _record_llm_usage(
             run_dir, self._llm_usage_summary, usage, iteration, purpose=purpose,
@@ -1410,18 +1418,41 @@ class AgentLoop(ToolCallLifecycle):
         if purpose is not None:
             metadata["purpose"] = purpose
         if delta:
-            self._emit("llm_usage", {
-                **delta, **metadata,
-                "call_index": self._llm_usage_summary["totals"]["calls"],
-            })
+            event = {**delta, **metadata}
+            if include_call_index:
+                event["call_index"] = self._llm_usage_summary["totals"]["calls"]
+            self._emit("llm_usage", event)
         elif purpose is None and not self._cancel_event.is_set():
             self._emit("llm_usage_unavailable", metadata)
+        elif purpose == "subagent":
+            self._emit("llm_usage_unavailable", metadata)
+            _record_unreported_llm_call(run_dir, self._llm_usage_summary)
         else:
             # A failed stream, a compaction call or a cancelled response that
             # reported nothing is counted as unreported, not announced as a
             # missing bill: the live decision budget halts on that event, so a
             # retried connection reset stopped live decisions for the day.
             _record_unreported_llm_call(run_dir, self._llm_usage_summary)
+
+    def _record_subagent_usage(self, event_type: str, data: dict[str, Any]) -> bool:
+        """Account one child-provider usage event in the parent run.
+
+        Args:
+            event_type: ``llm_usage`` or ``llm_usage_unavailable``.
+            data: Provider usage payload without the child's iteration keys.
+
+        Returns:
+            True when the parent's goal budget has stopped further work.
+        """
+        run_dir = self.memory.run_dir
+        if not run_dir:
+            return False
+        usage = data if event_type == "llm_usage" else None
+        self._account_llm_usage(
+            Path(run_dir), usage, self._run_iteration,
+            purpose="subagent", include_call_index=False,
+        )
+        return self._budget_stop_reason is not None
 
     # -- Context compression ---------------------------------------------------
 

@@ -256,7 +256,10 @@ def _bound_values(tool: BaseTool) -> list[Any]:
     return list(vars(inner).values())
 
 
-def test_child_registry_drops_order_and_trading_state_tools_from_the_real_registry(tmp_path: Path) -> None:
+@pytest.mark.parametrize("include_shell_tools", [False, True])
+def test_child_registry_enumeration_has_no_order_path_under_either_shell_configuration(
+    tmp_path: Path, include_shell_tools: bool
+) -> None:
     from src.memory.persistent import PersistentMemory
     from src.tools import build_registry
 
@@ -265,7 +268,7 @@ def test_child_registry_drops_order_and_trading_state_tools_from_the_real_regist
 
     memory = PersistentMemory(memory_dir=tmp_path / "memory")
     parent = build_registry(
-        include_shell_tools=True,
+        include_shell_tools=include_shell_tools,
         session_id="PARENT-SESSION",
         event_callback=parent_callback,
         persistent_memory=memory,
@@ -275,8 +278,14 @@ def test_child_registry_drops_order_and_trading_state_tools_from_the_real_regist
 
     assert {"spawn_agent", "run_swarm", "trading_place_order", "trading_cancel_order"} <= dropped
     assert "trading_select_connection" in dropped
-    # The shell and background tools could start another agent.
-    assert {"bash", "background_run", "check_background", "cancel_background"} <= dropped
+    # Shell and background tools could start another agent or invoke arbitrary
+    # trading code, so they are excluded even when the CLI enables them.
+    shell_tools = {"bash", "background_run", "check_background", "cancel_background"}
+    if include_shell_tools:
+        assert shell_tools <= dropped
+    else:
+        assert {"bash", "background_run", "cancel_background"}.isdisjoint(parent.tool_names)
+        assert "check_background" in dropped
     # Session-bound tools would act on the parent's goal; memory and skill
     # writers would shape the user's later prompts.
     assert {
@@ -305,6 +314,57 @@ def test_child_registry_drops_order_and_trading_state_tools_from_the_real_regist
     for name in dropped:
         assert child_exclusion(parent.get(name)) is not None, name
 
+    # Enumerate the actual child registry, including wrappers, and apply the
+    # same order-state identification rule used by the tool policy.
+    reachable_order_tools = [
+        name for name in child.tool_names if is_trading_state_tool(child.get(name))
+    ]
+    assert reachable_order_tools == []
+    assert not {"spawn_agent", "run_swarm", "bash", "background_run"} & set(child.tool_names)
+
+
+def test_parent_run_usage_artifact_includes_child_provider_calls(run_root: Path) -> None:
+    child_llm = ScriptedLLM([answer("Child done.")])
+    registry = parent_registry(child_llm)
+    loop, _, events = run_parent(
+        registry,
+        [call("spawn_agent", "spawn", task="Answer once."), answer("Parent done.")],
+        run_root,
+    )
+
+    result = loop.run("Delegate once.")
+
+    assert result["status"] == "success"
+    usage = json.loads((run_root / "llm_usage.json").read_text(encoding="utf-8"))
+    assert usage["totals"]["total_tokens"] == 3 * USAGE["total_tokens"]
+    assert sum(
+        1 for entry in usage["per_iteration"] if entry.get("purpose") == "subagent"
+    ) == 1
+    child_events = [data for name, data in events if name == "llm_usage" and data.get("purpose") == "subagent"]
+    assert len(child_events) == 1
+    assert "call_index" not in child_events[0]
+
+
+def test_parent_loop_charges_child_usage_to_the_active_goal_once(run_root: Path, goal_db) -> None:
+    from src.goal import GoalStore
+
+    goal = start_goal("S1", token_budget=20)
+    child_llm = ScriptedLLM([answer("Child done.")])
+    registry = parent_registry(child_llm, session_id="S1")
+    loop, _, _ = run_parent(
+        registry,
+        [call("spawn_agent", "spawn", task="Answer once."), answer("Parent done.")],
+        run_root,
+    )
+
+    loop.run("Delegate once.", session_id="S1")
+
+    stored = GoalStore().get_goal(goal.goal_id)
+    # The parent provider call and the child provider call are both charged,
+    # while the child does not maintain a second goal meter.
+    assert stored.tokens_used == 2 * USAGE["total_tokens"]
+    assert stored.status.value == "budget_limited"
+
 
 def test_trading_state_does_not_depend_on_the_broker_prefix_setting(monkeypatch: pytest.MonkeyPatch) -> None:
     from src.config.env_schema import LLMConfig
@@ -316,6 +376,19 @@ def test_trading_state_does_not_depend_on_the_broker_prefix_setting(monkeypatch:
 
     assert is_trading_state_tool(ModuleOrderTool("submit_probe_order", is_readonly=False))
     assert not is_trading_state_tool(ModuleOrderTool("read_probe_orders", is_readonly=True))
+
+
+def test_trading_state_identification_survives_child_workspace_wrapping(tmp_path: Path) -> None:
+    class ModuleOrderTool(RecordingTool):
+        __module__ = "src.trading.probe"
+
+    # Build the same wrapper used for a child registry around a non-prefixed
+    # trading-state tool. The identification rule must inspect its source.
+    from src.tools.spawn_agent_tool import _WorkspaceTool
+
+    source = ModuleOrderTool("submit_probe_order", is_readonly=False)
+    wrapped_tool = _WorkspaceTool(source, tmp_path)
+    assert is_trading_state_tool(wrapped_tool)
 
 
 def _remote_tool(name: str, annotations: Any) -> BaseTool:

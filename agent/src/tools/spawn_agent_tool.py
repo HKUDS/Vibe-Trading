@@ -77,9 +77,10 @@ def is_trading_state_tool(tool: BaseTool) -> bool:
     """Whether a tool places, modifies or cancels orders or changes trading state.
 
     A tool that is not read-only and is either a live-broker order tool
-    wrapped by the mandate gate, defined in a trading or live module, or named
-    with a broker prefix. Read-only broker tools (positions, quotes, order
-    history) are not trading state changes.
+    wrapped by the mandate gate, defined in a trading or live module, named
+    with a broker prefix, or an MCP tool classified as write/unknown. Read-only
+    broker tools (positions, quotes, order history) are not trading state
+    changes.
 
     Args:
         tool: A registered tool.
@@ -87,15 +88,29 @@ def is_trading_state_tool(tool: BaseTool) -> bool:
     Returns:
         True when a child agent must not receive the tool.
     """
-    if getattr(tool, "is_readonly", False) is True:
+    # Child registries wrap tools to confine their workspace. Inspect the
+    # source tool so the same rule remains valid after wrapping.
+    candidate = getattr(tool, "_tool", tool)
+    if getattr(candidate, "is_readonly", False) is True:
         return False
     from src.live.order_guard import LiveOrderGuardTool
 
-    if isinstance(tool, LiveOrderGuardTool):
+    if isinstance(candidate, LiveOrderGuardTool):
         return True
-    if type(tool).__module__.startswith(_TRADING_MODULES):
+    if type(candidate).__module__.startswith(_TRADING_MODULES):
         return True
-    return str(tool.name).startswith(_broker_tool_prefixes())
+    try:
+        from src.tools.mcp import MCPRemoteTool
+        from src.live.classification import ToolClass, classify_tool
+
+        if isinstance(candidate, MCPRemoteTool):
+            spec = getattr(candidate, "_spec", None)
+            if spec is None:
+                return True
+            return classify_tool(spec.remote_name, spec.annotations) is not ToolClass.READ
+    except ImportError:
+        pass
+    return str(candidate.name).startswith(_broker_tool_prefixes())
 
 
 def _parent_bound_classes() -> tuple[type[BaseTool], ...]:
@@ -156,10 +171,10 @@ def child_exclusion(tool: BaseTool) -> str | None:
     """
     if isinstance(tool, _parent_bound_classes()):
         return "parent_bound"
-    if is_trading_state_tool(tool):
-        return "trading_state"
     if _is_undeclared_remote_tool(tool):
         return "undeclared_remote"
+    if is_trading_state_tool(tool):
+        return "trading_state"
     return None
 
 
@@ -418,6 +433,19 @@ class SpawnAgentTool(BaseTool):
         self._llm_factory = llm_factory
         self._session_id = session_id or None
         self._event_callback = event_callback
+        self._usage_callback: Callable[[str, dict[str, Any]], bool] | None = None
+
+    def set_usage_callback(self, callback: Callable[[str, dict[str, Any]], bool] | None) -> None:
+        """Set the parent loop's usage sink for child provider calls.
+
+        The parent installs this after constructing its registry. Direct uses
+        of the tool keep the local goal-meter fallback when no sink is set.
+
+        Args:
+            callback: Receives ``llm_usage`` or ``llm_usage_unavailable`` and
+                returns whether the parent budget has been exhausted.
+        """
+        self._usage_callback = callback
 
     def execute(self, **kwargs: Any) -> str:
         """Run the child to completion.
@@ -447,7 +475,11 @@ class SpawnAgentTool(BaseTool):
         from src.core.state import RunStateStore
         from src.tools.path_utils import safe_run_dir
 
-        meter = _GoalMeter(self._session_id, self._event_callback) if self._session_id else None
+        meter = (
+            _GoalMeter(self._session_id, self._event_callback)
+            if self._session_id and self._usage_callback is None
+            else None
+        )
         if meter is not None and meter.exhausted:
             return _error(
                 "goal_token_budget_exhausted",
@@ -492,13 +524,20 @@ class SpawnAgentTool(BaseTool):
                 progress("subagent_tool", f"{data.get('tool')}: {data.get('status')}")
             elif event_type in ("llm_usage", "llm_usage_unavailable"):
                 usage = {k: v for k, v in data.items() if k not in ("iter", "call_index")}
-                emit_parent(event_type, {**usage, "purpose": "subagent", "subagent": child_dir.name})
-                if (
-                    event_type == "llm_usage"
-                    and meter is not None
-                    and meter.charge(int(data.get("total_tokens") or 0))
-                    and "reason" not in stop_reason
-                ):
+                if self._usage_callback is not None:
+                    try:
+                        exhausted = self._usage_callback(event_type, usage)
+                    except Exception:  # noqa: BLE001 - a sink must not break the child
+                        logger.debug("spawn_agent usage callback failed", exc_info=True)
+                        exhausted = False
+                else:
+                    emit_parent(event_type, {**usage, "purpose": "subagent", "subagent": child_dir.name})
+                    exhausted = (
+                        event_type == "llm_usage"
+                        and meter is not None
+                        and meter.charge(int(data.get("total_tokens") or 0))
+                    )
+                if exhausted and "reason" not in stop_reason:
                     stop_reason["reason"] = "goal_budget"
                     child = holder.get("child")
                     if child is not None:

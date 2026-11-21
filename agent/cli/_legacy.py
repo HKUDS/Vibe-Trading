@@ -1254,6 +1254,7 @@ def _run_agent(
         owner_id=f"session:{session_id}" if session_id else f"cli:{uuid.uuid4().hex}"
     )
     background = get_background_manager().for_scope(background_scope)
+    cancel_event = threading.Event()
 
     agent = AgentLoop(
         registry=build_registry(
@@ -1264,12 +1265,14 @@ def _run_agent(
             warn_callback=_mcp_warn,
             background_manager=background,
             background_scope=background_scope,
+            cancel_event=cancel_event,
         ),
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,
         persistent_memory=pm,
         background_manager=background,
+        cancel_event=cancel_event,
     )
     if run_dir_override:
         agent.memory.run_dir = run_dir_override
