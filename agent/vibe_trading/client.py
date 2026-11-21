@@ -2,8 +2,11 @@
 
 The client owns exactly one :class:`src.session.service.SessionService` and
 reaches the kernel only through its public methods, the same calls the HTTP
-session routes make, so every guard on that path (session claim, shell-tool
-policy, mandate gate, grounding, budgets) applies unchanged.
+session routes make, so the kernel's guards on that path (session claim,
+mandate gate, grounding, budgets) apply unchanged. The route-level checks are
+applied here from the same definitions: session ids and message size from
+:mod:`src.session.input_rules`, and shell tools only when the operator's
+``VIBE_TRADING_ENABLE_SHELL_TOOLS`` allows them, as on the HTTP API.
 """
 
 from __future__ import annotations
@@ -11,13 +14,19 @@ from __future__ import annotations
 import asyncio
 import copy
 import sys
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, Union
 
+from src.config.accessor import get_env_config
 from src.session.events import EventBus, SSEEvent
+from src.session.input_rules import check_message_text, check_session_id
+from src.session.runtime_lock import (
+    SessionsDirInUseError,
+    claim_sessions_dir,
+    release_sessions_dir,
+)
 from src.session.service import SessionBusyError, SessionService
 from src.session.store import SessionStore
 from vibe_trading._mapping import translate
@@ -29,7 +38,8 @@ class RuntimeRootInUseError(RuntimeError):
 
     ``SessionService`` marks every pending or running attempt it finds on disk
     as interrupted when it is constructed, so a second service over the same
-    sessions directory would interrupt the first one's in-flight runs.
+    sessions directory would interrupt the first one's in-flight runs. The
+    owner may live in this process or in another one (``vibe-trading serve``).
     """
 
 
@@ -52,8 +62,9 @@ class ClientSettings:
             root other than that one is refused rather than splitting one
             run's state across two roots. ``None`` uses the kernel's root.
         include_shell_tools: Whether runs may use shell tools (``bash``,
-            ``background_run``, ``cancel_background``). Off by default, as on
-            the HTTP API.
+            ``background_run``, ``cancel_background``). Off by default, and
+            honoured only when the operator also sets
+            ``VIBE_TRADING_ENABLE_SHELL_TOOLS``, the switch the HTTP API reads.
     """
 
     runtime_root: Optional[Path] = None
@@ -89,12 +100,6 @@ class MessageInfo:
     created_at: str
     attempt_id: Optional[str]
     metadata: Mapping[str, Any]
-
-
-# Sessions directories owned by a live client in this process. Keyed by the
-# resolved path so two spellings of one directory collide.
-_CLAIMED_ROOTS: Dict[Path, "Client"] = {}
-_CLAIM_LOCK = threading.Lock()
 
 
 def _kernel_root() -> tuple[Path, Path]:
@@ -236,11 +241,12 @@ class Client:
     """Embeddable entry point to the Vibe-Trading agent kernel.
 
     One client owns one ``SessionService`` for its runtime root. A second
-    client (or an in-process HTTP server's service) on the same root raises
-    :class:`RuntimeRootInUseError` instead of sharing it, because each
-    service's construction interrupts the attempts it finds running; close
-    the first client to release the root. Another *process* on the same root
-    is not detected.
+    client, or an HTTP server's service, on the same root — in this process
+    or another one — raises :class:`RuntimeRootInUseError` instead of sharing
+    it, because each service's construction interrupts the attempts it finds
+    running; close the first client to release the root. The claim is an
+    operating-system file lock on ``<sessions>/.service.lock``
+    (:mod:`src.session.runtime_lock`), dropped when its process exits.
 
     Use it inside a running event loop; ``async with Client() as client``
     closes it on exit.
@@ -269,16 +275,15 @@ class Client:
             )
         self._root = root
         self._claim = (root / "sessions").resolve()
-        with _CLAIM_LOCK:
-            if self._claim in _CLAIMED_ROOTS:
-                raise RuntimeRootInUseError(
-                    f"a vibe_trading Client already owns {self._claim}; close it first"
-                )
-            if self._claim in _api_service_sessions_dirs():
-                raise RuntimeRootInUseError(
-                    f"the HTTP server's session service in this process owns {self._claim}"
-                )
-            _CLAIMED_ROOTS[self._claim] = self
+        self._owner = f"vibe_trading.Client {id(self):#x}"
+        if self._claim in _api_service_sessions_dirs():
+            raise RuntimeRootInUseError(
+                f"the HTTP server's session service in this process owns {self._claim}"
+            )
+        try:
+            claim_sessions_dir(self._claim, self._owner)
+        except SessionsDirInUseError as exc:
+            raise RuntimeRootInUseError(str(exc)) from exc
         try:
             self._service = SessionService(
                 store=SessionStore(base_dir=root / "sessions"),
@@ -302,15 +307,14 @@ class Client:
         return self._settings
 
     def _release(self) -> None:
-        with _CLAIM_LOCK:
-            if _CLAIMED_ROOTS.get(self._claim) is self:
-                del _CLAIMED_ROOTS[self._claim]
+        release_sessions_dir(self._claim, self._owner)
 
     def _check_open(self) -> None:
         if self._closed:
             raise ClientClosedError("this Client is closed")
 
     def _require_session(self, session_id: str) -> None:
+        check_session_id(session_id)
         if self._service.get_session(session_id) is None:
             raise SessionNotFoundError(f"session {session_id} not found")
 
@@ -350,6 +354,7 @@ class Client:
             The messages.
 
         Raises:
+            ValueError: ``session_id`` is not a safe session id.
             SessionNotFoundError: The session does not exist.
         """
         self._check_open()
@@ -366,9 +371,11 @@ class Client:
             Whether the session existed and was deleted.
 
         Raises:
+            ValueError: ``session_id`` is not a safe session id.
             SessionBusyError: The session has a run in progress.
         """
         self._check_open()
+        check_session_id(session_id)
         deleted = self._service.delete_session(session_id)
         if deleted:
             # The HTTP delete route clears the session's goals the same way.
@@ -388,10 +395,13 @@ class Client:
             A handle on the started run.
 
         Raises:
+            ValueError: ``session_id`` is not a safe session id, or ``text``
+                is empty or longer than ``MAX_MESSAGE_CHARS``.
             SessionNotFoundError: The session does not exist.
             SessionBusyError: The session already has a run in progress.
         """
         self._check_open()
+        check_message_text(text)
         self._require_session(session_id)
         loop = asyncio.get_running_loop()
         stream = Stream(
@@ -416,7 +426,8 @@ class Client:
             sent = await self._service.send_message(
                 session_id,
                 text,
-                include_shell_tools=self._settings.include_shell_tools,
+                include_shell_tools=self._settings.include_shell_tools
+                and get_env_config().api.vibe_trading_enable_shell_tools,
             )
         except ValueError as exc:
             self._stream_done(stream)

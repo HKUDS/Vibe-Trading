@@ -31,10 +31,14 @@ Contract:
   CLI and server read (``agent/.env``, ``~/.vibe-trading``); the facade takes
   none and exposes none.
 * Every send goes through ``SessionService.send_message``, exactly like
-  ``POST /sessions/{id}/messages``, so all kernel guards apply. Shell tools are
-  off unless ``ClientSettings(include_shell_tools=True)``.
-* One :class:`Client` per runtime root per process. A second one on the same
-  root raises :class:`RuntimeRootInUseError`; close the first to release it.
+  ``POST /sessions/{id}/messages``, so all kernel guards apply, and the route's
+  own checks (session id shape, 1 to ``MAX_MESSAGE_CHARS`` characters) are
+  applied from the same definitions. Shell tools are off unless
+  ``ClientSettings(include_shell_tools=True)`` AND the operator's
+  ``VIBE_TRADING_ENABLE_SHELL_TOOLS``, the switch the HTTP API reads.
+* One live session service per runtime root, across processes. A second
+  :class:`Client`, or a ``vibe-trading serve`` on the same root, raises
+  :class:`RuntimeRootInUseError`; close the first to release it.
   The runtime root is the kernel's (``VIBE_TRADING_HOME``, else
   ``~/.vibe-trading``), bound when the kernel is first imported.
 * Events are a closed vocabulary (see :mod:`vibe_trading.events`); kernel

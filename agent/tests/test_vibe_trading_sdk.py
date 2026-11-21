@@ -509,3 +509,157 @@ def test_setuptools_find_includes_the_package_and_keeps_the_console_script() -> 
     assert pyproject["project"]["scripts"]["vibe-trading"] == "cli:main"
     assert "py.typed" in pyproject["tool"]["setuptools"]["package-data"]["vibe_trading"]
     assert (AGENT_DIR / "vibe_trading" / "py.typed").is_file()
+
+
+_HOLD_SCRIPT = (
+    "import sys\n"
+    "from src.session.runtime_lock import claim_sessions_dir\n"
+    "claim_sessions_dir(sys.argv[1], 'a test process')\n"
+    "print('held', flush=True)\n"
+    "sys.stdin.read()\n"
+)
+
+
+def _hold_in_another_process(sessions_dir: Path, tmp_path: Path) -> subprocess.Popen:
+    env = {key: os.environ[key] for key in ("PATH", "LANG", "TMPDIR") if key in os.environ}
+    env.update(HOME=str(tmp_path), VIBE_TRADING_HOME=str(tmp_path / "other-home"), PYTHONPATH=str(AGENT_DIR))
+    holder = subprocess.Popen(
+        [sys.executable, "-c", _HOLD_SCRIPT, str(sessions_dir)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+    )
+    line = holder.stdout.readline().strip()
+    assert line == "held", holder.stderr.read()
+    return holder
+
+
+def _release_holder(holder: subprocess.Popen) -> None:
+    holder.stdin.close()
+    holder.wait(timeout=60)
+
+
+def test_another_process_on_the_root_is_refused_and_its_runs_are_left_alone(
+    kernel, tmp_path, monkeypatch
+) -> None:
+    from src.session.models import Attempt, AttemptStatus, Session
+    from src.session.runtime_lock import HTTP_SERVER_OWNER, SessionsDirInUseError, release_sessions_dir
+    from src.session.store import SessionStore
+
+    import api_server
+
+    sessions_dir = kernel.root / "sessions"
+    store = SessionStore(base_dir=sessions_dir)
+    session = Session(title="served elsewhere")
+    store.create_session(session)
+    attempt = Attempt(session_id=session.session_id, prompt="in flight")
+    attempt.mark_running()
+    store.create_attempt(attempt)
+
+    monkeypatch.setattr(api_server, "_session_service", None)
+    monkeypatch.setattr(api_server, "SESSIONS_DIR", sessions_dir)
+    monkeypatch.setattr(api_server, "RUNS_DIR", kernel.root / "runs")
+    holder = _hold_in_another_process(sessions_dir, tmp_path)
+    try:
+        with pytest.raises(RuntimeRootInUseError, match="another process"):
+            Client()
+        # `vibe-trading serve` in this process is refused the same way.
+        with pytest.raises(SessionsDirInUseError, match="another process"):
+            api_server._get_session_service()
+        assert store.get_attempt(session.session_id, attempt.attempt_id).status == AttemptStatus.RUNNING
+    finally:
+        _release_holder(holder)
+        release_sessions_dir(sessions_dir, HTTP_SERVER_OWNER)
+
+    async def scenario():
+        async with Client():
+            pass
+
+    _run(scenario())  # The exited process's lock is gone with it.
+
+
+def test_a_client_and_the_http_servers_service_exclude_each_other(kernel, monkeypatch) -> None:
+    from src.session.runtime_lock import HTTP_SERVER_OWNER, SessionsDirInUseError, release_sessions_dir
+
+    import api_server
+
+    sessions_dir = kernel.root / "sessions"
+    monkeypatch.setattr(api_server, "_session_service", None)
+    monkeypatch.setattr(api_server, "SESSIONS_DIR", sessions_dir)
+    monkeypatch.setattr(api_server, "RUNS_DIR", kernel.root / "runs")
+
+    async def scenario():
+        client = Client()
+        # The server builds its service lazily, after the client took the root.
+        with pytest.raises(SessionsDirInUseError, match="vibe_trading.Client"):
+            api_server._get_session_service()
+        await client.aclose()
+
+    try:
+        _run(scenario())
+        assert api_server._get_session_service() is not None
+        monkeypatch.setattr(api_server, "_session_service", None)
+        # Rebuilding the server's own service on its root is not a conflict.
+        assert api_server._get_session_service() is not None
+        with pytest.raises(RuntimeRootInUseError):
+            Client()
+    finally:
+        release_sessions_dir(sessions_dir, HTTP_SERVER_OWNER)
+
+
+@pytest.mark.parametrize("bad_id", ["../x", "a/b", "", "x" * 129, "..", "id with space"])
+def test_unsafe_session_ids_are_refused_before_touching_storage(kernel, bad_id) -> None:
+    async def scenario():
+        async with Client() as client:
+            for call in (
+                lambda: client.get_messages(bad_id),
+                lambda: client.send(bad_id, "hello"),
+                lambda: client.delete_session(bad_id),
+            ):
+                with pytest.raises(ValueError, match="invalid session_id"):
+                    await call()
+
+    _run(scenario())
+    assert not (kernel.root / "x").exists()
+    assert sorted(p.name for p in kernel.root.iterdir()) == ["sessions"]
+
+
+def test_message_size_follows_the_http_route_limit(kernel) -> None:
+    from src.session.input_rules import MAX_MESSAGE_CHARS
+
+    def answer(**_: Any) -> SimpleNamespace:
+        return _reply("ok")
+
+    kernel.scripts.append([answer])
+
+    async def scenario():
+        async with Client() as client:
+            session = await client.create_session()
+            for text in ("", "x" * (MAX_MESSAGE_CHARS + 1)):
+                with pytest.raises(ValueError, match="Message must contain"):
+                    await client.send(session.session_id, text)
+            assert await client.get_messages(session.session_id) == []
+            stream = await client.send(session.session_id, "x" * MAX_MESSAGE_CHARS)
+            return await stream.wait()
+
+    assert _run(scenario()).status == "completed"
+
+
+@pytest.mark.parametrize(("env_value", "expected"), [(None, False), ("0", False), ("1", True)])
+def test_shell_tools_also_need_the_operators_switch(kernel, monkeypatch, env_value, expected) -> None:
+    from src.config.accessor import reset_env_config
+
+    if env_value is None:
+        monkeypatch.delenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", raising=False)
+    else:
+        monkeypatch.setenv("VIBE_TRADING_ENABLE_SHELL_TOOLS", env_value)
+    reset_env_config()
+    kernel.scripts.append([lambda **_: _reply("ok")])
+
+    async def scenario():
+        async with Client(ClientSettings(include_shell_tools=True)) as client:
+            return await client.run("hi")
+
+    try:
+        assert _run(scenario()).status == "completed"
+    finally:
+        reset_env_config()
+    assert kernel.registry_args[0]["include_shell_tools"] is expected
