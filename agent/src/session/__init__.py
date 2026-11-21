@@ -2,6 +2,7 @@
 
 from src.session.models import Session, Message, Attempt, SessionStatus, AttemptStatus
 from src.session.store import SessionStore
+from src.session.thread import ThreadItem, ThreadLog, TurnProjection, project_turn, replay
 from src.session.events import EventBus, SSEEvent
 from src.session.service import SessionService
 
@@ -12,6 +13,11 @@ __all__ = [
     "SessionStatus",
     "AttemptStatus",
     "SessionStore",
+    "ThreadItem",
+    "ThreadLog",
+    "TurnProjection",
+    "project_turn",
+    "replay",
     "EventBus",
     "SSEEvent",
     "SessionService",

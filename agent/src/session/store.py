@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.session.models import Attempt, Message, Session
+from src.session.thread import THREAD_FILENAME, ThreadLog
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class SessionStore:
         ├── {session_id}/
         │   ├── session.json
         │   ├── messages.jsonl
+        │   ├── thread.jsonl
         │   └── attempts/
         │       └── {attempt_id}/
         │           └── attempt.json
@@ -48,6 +50,28 @@ class SessionStore:
 
     def _messages_file(self, session_id: str) -> Path:
         return self._session_dir(session_id) / "messages.jsonl"
+
+    def thread_path(self, session_id: str) -> Path:
+        """Return the location of a session's conversation thread log.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            Path of ``thread.jsonl`` (it may not exist yet).
+        """
+        return self._session_dir(session_id) / THREAD_FILENAME
+
+    def thread_log(self, session_id: str) -> ThreadLog:
+        """Open a session's conversation thread log.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            The session's ThreadLog; the file is created on first append.
+        """
+        return ThreadLog(self.thread_path(session_id))
 
     def _attempt_dir(self, session_id: str, attempt_id: str) -> Path:
         return self._session_dir(session_id) / "attempts" / attempt_id
