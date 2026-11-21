@@ -208,15 +208,13 @@ def _market_registry(market_calls: list, monkeypatch):
 
 
 def _market_policy(llm: _PolicyLLM, messages: list, tools: list, on_text) -> SimpleNamespace:
-    """Resolve, load and fetch only what the request does not already show."""
+    """Resolve and fetch only what the request does not already show."""
     del on_text
     n = len(llm.requests)
-    names = {tool["function"]["name"] for tool in tools}
+    del tools
     resolved = any("AAPL.US" in m["content"] for m in _tool_messages(messages, "search_symbol"))
     if not resolved:
         return _response(calls=(_call(f"call-{n}", "search_symbol", query="Apple"),))
-    if "get_market_data" not in names:
-        return _response(calls=(_call(f"call-{n}", "load_tools", names=["get_market_data"]),))
     user_positions = [i for i, m in enumerate(messages) if m["role"] == "user"]
     refresh_at = max(
         (i for i in user_positions if "refresh" in str(messages[i]["content"])), default=-1,
@@ -238,7 +236,7 @@ def test_follow_up_turn_sees_earlier_results_and_repeats_no_resolution_or_loadin
         sid = session.session_id
         first = await _send(service, sid, "Quote Apple")
         assert _tool_names_called(_turn_items(service, sid, first)) == [
-            "search_symbol", "load_tools", "get_market_data",
+            "search_symbol", "get_market_data",
         ]
         turn_one_requests = len(llm.requests)
 
