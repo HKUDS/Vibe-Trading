@@ -37,7 +37,10 @@ def _bars(opens: list[float], closes: list[float], dates=_DATES) -> pd.DataFrame
     ).rename_axis("date")
 
 
-def _run(tmp_path, monkeypatch, *, benchmark=None, warmup=True, frames=None, codes=("AAPL.US",)):
+def _run(
+    tmp_path, monkeypatch, *, benchmark=None, warmup=True, frames=None,
+    codes=("AAPL.US",), allow_nonpositive_prices=False,
+):
     from backtest.loaders import local_loader
 
     frames = frames or {
@@ -75,6 +78,8 @@ def _run(tmp_path, monkeypatch, *, benchmark=None, warmup=True, frames=None, cod
         config["evaluation_start_date"] = _EVALUATION_START
     if benchmark:
         config["benchmark"] = benchmark
+    if allow_nonpositive_prices:
+        config["allow_nonpositive_prices"] = True
     (run / "config.json").write_text(json.dumps(config))
     runner.main(run)
     card = json.loads((run / "run_card.json").read_text())
@@ -101,6 +106,32 @@ def test_external_benchmark_buys_at_its_first_evaluated_open(tmp_path, monkeypat
     assert metrics["benchmark_return"] == pytest.approx(300 / 230 - 1, abs=1e-6)
     assert equity["benchmark_equity"].iloc[0] == pytest.approx(100_000 * 240 / 230)
     assert equity["benchmark_equity"].iloc[-1] == pytest.approx(100_000 * 300 / 230)
+
+
+def test_external_benchmark_equity_recovers_after_negative_close(tmp_path, monkeypatch):
+    frames = {
+        "AAPL.US": _bars(_STOCK_OPEN, _STOCK_CLOSE),
+        "SPY.US": _bars([190.0, 215.0, 10.0, -6.0, 19.0], [200.0, 220.0, 12.0, -5.0, 20.0]),
+    }
+    metrics, equity = _run(
+        tmp_path, monkeypatch, benchmark="SPY.US", frames=frames, allow_nonpositive_prices=True,
+    )
+
+    assert metrics["benchmark_kind"] == "external"
+    assert metrics["benchmark_return"] == pytest.approx(1.0)
+    assert equity["benchmark_equity"].tolist() == pytest.approx([120_000, -50_000, 200_000])
+
+
+def test_external_benchmark_keeps_cash_until_first_overlap(tmp_path, monkeypatch):
+    frames = {
+        "AAPL.US": _bars(_STOCK_OPEN, _STOCK_CLOSE),
+        "SPY.US": _bars([190.0, 215.0, 245.0, 290.0], [200.0, 220.0, 250.0, 300.0], dates=_DATES.delete(2)),
+    }
+    metrics, equity = _run(tmp_path, monkeypatch, benchmark="SPY.US", frames=frames)
+
+    assert metrics["benchmark_kind"] == "external"
+    assert metrics["benchmark_return"] == pytest.approx(300 / 245 - 1, abs=1e-6)
+    assert equity["benchmark_equity"].tolist() == pytest.approx([100_000, 100_000 * 250 / 245, 100_000 * 300 / 245])
 
 
 def test_without_a_warm_up_boundary_the_basket_buys_at_the_first_open(tmp_path, monkeypatch):

@@ -70,14 +70,25 @@ class BenchmarkResult:
             The buy-and-hold return over the overlap, or ``None`` when fewer
             than two benchmark closes fall inside it.
         """
-        window = self.close.reindex(dates).dropna()
-        if len(window) < 2:
+        equity = self.normalized_equity_over(dates)
+        return float(equity.iloc[-1]) - 1.0 if equity is not None else None
+
+    def normalized_equity_over(self, dates: pd.DatetimeIndex) -> Optional[pd.Series]:
+        """Mark one fixed benchmark position against its entry price.
+
+        Keep cash before entry and carry the last close through missing bars.
+        Compounding per-bar returns would lose moves after a negative close.
+        """
+        aligned = self.close.reindex(dates)
+        observed = aligned.dropna()
+        if len(observed) < 2:
             return None
-        entry = self._entry_open(window.index[0])
+        entry = self._entry_open(observed.index[0])
         if entry is None:
-            return buy_and_hold_return(window)
-        last = float(window.iloc[-1])
-        return last / entry - 1.0 if np.isfinite(last) else None
+            entry = float(observed.iloc[0])
+        if not (np.isfinite(entry) and entry > 0 and np.isfinite(observed.iloc[-1])):
+            return None
+        return aligned.ffill().fillna(entry) / entry
 
     def returns_over(self, dates: pd.DatetimeIndex) -> pd.Series:
         """Per-bar returns of the same position on the evaluated bar index.
