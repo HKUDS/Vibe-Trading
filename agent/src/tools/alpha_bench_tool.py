@@ -115,7 +115,8 @@ def _load_universe_panel(
     with one column per instrument.
 
     Args:
-        universe: ``csi300`` | ``sp500`` | ``btc-usdt``.
+        universe: ``csi300`` | ``sp500``. ``btc-usdt`` is single-asset and
+            rejected before cache or data access.
         period: ``YYYY-YYYY`` or ``YYYY-MM-DD/YYYY-MM-DD``.
         use_cache: When True (default) reuse a pickle in
             ``~/.vibe-trading/cache/`` if the same universe+period was fetched
@@ -130,6 +131,12 @@ def _load_universe_panel(
             f"universe {universe!r} not recognized; expected one of {sorted(_UNIVERSE_TAG)}"
         )
     start, end = _parse_period(period)
+    if universe == "btc-usdt":
+        raise ValueError(
+            "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
+            "Use a multi-symbol crypto basket (e.g. multiple OKX pairs) for "
+            "meaningful results."
+        )
 
     cache_dir = get_runtime_root() / "cache"
     cache_path = cache_dir / f"{universe}_{start}_{end}.pkl"
@@ -143,8 +150,6 @@ def _load_universe_panel(
         panel = _load_csi300_panel(start, end)
     elif universe == "sp500":
         panel = _load_sp500_panel(start, end)
-    elif universe == "btc-usdt":
-        panel = _load_btc_panel(start, end)
     else:  # pragma: no cover — guarded above
         raise ValueError(f"unhandled universe {universe!r}")
 
@@ -152,17 +157,6 @@ def _load_universe_panel(
         raise RuntimeError(
             f"universe {universe!r} produced empty panel for {start}..{end}; "
             "check network / token / date range"
-        )
-
-    # btc-usdt loader returns a single-column close (one instrument). Cross-
-    # sectional IC needs >= 2 instruments — short-circuit with a clean error
-    # that propagates to API (400) and CLI.
-    close_df = panel["close"]
-    if universe == "btc-usdt" and close_df.shape[1] < 2:
-        raise ValueError(
-            "btc-usdt is single-asset; cross-sectional IC needs >=2 instruments. "
-            "Use a multi-symbol crypto basket (e.g. multiple OKX pairs) for "
-            "meaningful results."
         )
 
     if use_cache:
@@ -1488,7 +1482,11 @@ class AlphaBenchTool(BaseTool):
             },
             "universe": {
                 "type": "string",
-                "description": "csi300 | sp500 | btc-usdt (resolved via existing data tools).",
+                "description": (
+                    "csi300 | sp500. btc-usdt is single-asset and is rejected before "
+                    "data loading. Alphas requiring fund:* SEC filings need sp500; "
+                    "elsewhere they are excluded."
+                ),
             },
             "period": {
                 "type": "string",
