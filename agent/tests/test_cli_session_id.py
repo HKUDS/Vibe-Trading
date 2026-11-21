@@ -198,11 +198,13 @@ def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -
 
     seen = []
 
-    def fake_run_agent(prompt, history=None, **kwargs):
+    def fake_run_agent(prompt, **kwargs):
+        # History is replayed from the session by ``_run_agent`` itself, so a
+        # resumed chat passes the session id and nothing else of the past.
         seen.append(
             {
                 "prompt": prompt,
-                "history": list(history or []),
+                "history": kwargs.get("history"),
                 "session_id": kwargs.get("session_id"),
             }
         )
@@ -220,10 +222,7 @@ def test_cmd_session_chat_restores_existing_history(sessions_dir, monkeypatch) -
     assert seen == [
         {
             "prompt": "next question",
-            "history": [
-                {"role": "user", "content": "earlier question"},
-                {"role": "assistant", "content": "earlier answer"},
-            ],
+            "history": None,
             "session_id": session.session_id,
         }
     ]

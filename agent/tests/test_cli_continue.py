@@ -1,4 +1,9 @@
-"""Regression tests for continuing a persisted CLI conversation."""
+"""Regression tests for continuing a persisted CLI conversation.
+
+The history a continuation sends is replayed from the session's thread log by
+``_run_agent``; ``tests/test_cli_conversation.py`` covers it end to end. These
+tests pin which directory and session a continuation lands in.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ from src.agent.trace import TraceWriter
 def test_repeated_continue_reads_and_appends_one_canonical_trace(
     tmp_path, monkeypatch
 ) -> None:
-    """A session continuation must remain visible to the next continuation."""
+    """Every continuation of a session lands in that session's trace directory."""
     runs_dir = tmp_path / "runs"
     sessions_dir = tmp_path / "sessions"
     trace_dir = sessions_dir / "session-1"
@@ -21,10 +26,12 @@ def test_repeated_continue_reads_and_appends_one_canonical_trace(
     writer.write({"type": "answer", "content": "initial answer"})
     writer.close()
 
-    histories = []
+    seen = []
 
-    def fake_run_agent(prompt, history, run_dir_override, **kwargs):
-        histories.append(list(history))
+    def fake_run_agent(prompt, run_dir_override, **kwargs):
+        # The caller no longer builds a history: ``_run_agent`` replays it.
+        assert "history" not in kwargs
+        seen.append((prompt, run_dir_override, kwargs["session_id"]))
         continuation = TraceWriter(Path(run_dir_override))
         continuation.write({"type": "start", "prompt": prompt})
         continuation.write({"type": "answer", "content": f"answer to {prompt}"})
@@ -45,13 +52,8 @@ def test_repeated_continue_reads_and_appends_one_canonical_trace(
         == _legacy.EXIT_SUCCESS
     )
 
-    assert histories[0] == [
-        {"role": "user", "content": "initial question"},
-        {"role": "assistant", "content": "initial answer"},
-    ]
-    assert histories[1] == [
-        *histories[0],
-        {"role": "user", "content": "first follow-up"},
-        {"role": "assistant", "content": "answer to first follow-up"},
+    assert seen == [
+        ("first follow-up", str(trace_dir), "session-1"),
+        ("second follow-up", str(trace_dir), "session-1"),
     ]
     assert not (runs_dir / "session-1").exists()

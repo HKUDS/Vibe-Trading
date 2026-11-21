@@ -1081,7 +1081,6 @@ def _ensure_session_id(title: str, *, session_id: Optional[str] = None) -> str:
 
 def _run_agent(
     prompt: str,
-    history: Optional[List[Dict]] = None,
     run_dir_override: Optional[str] = None,
     max_iter: int = 50,
     *,
@@ -1092,6 +1091,11 @@ def _run_agent(
     proposal_sink: Optional[Any] = None,
 ) -> dict:
     """Build AgentLoop and execute, return result dict.
+
+    A turn with a ``session_id`` is recorded like a web turn
+    (:mod:`cli.conversation`): the history the model sees is replayed from the
+    session's thread log, never passed in by the caller, and the turn's items
+    and reply row are written back to the session.
 
     Args:
         proposal_sink: Optional callable invoked with the payload of every
@@ -1113,7 +1117,14 @@ def _run_agent(
         "last_progress_ts": {},  # type: ignore[var-annotated]
     }
 
+    streamed_text: list[str] = []
+
     def on_event(event_type: str, data: Dict[str, Any]) -> None:
+        # Text streamed so far, kept for the reply of a turn the user stops.
+        if event_type == "stream_reset":
+            streamed_text.clear()
+        elif event_type == "text_delta" and isinstance(data.get("delta"), str):
+            streamed_text.append(data["delta"])
         # Live mandate proposals are surfaced to the REPL out-of-band so the
         # user's pick is intercepted before the model (SPEC.md Consent §2).
         # This fires regardless of stream_output / rich state — capturing the
@@ -1255,32 +1266,59 @@ def _run_agent(
     )
     background = get_background_manager().for_scope(background_scope)
 
-    agent = AgentLoop(
-        registry=build_registry(
-            persistent_memory=pm,
-            include_shell_tools=True,
-            agent_config=agent_config,
-            session_id=session_id or None,
-            warn_callback=_mcp_warn,
-            background_manager=background,
-            background_scope=background_scope,
-        ),
-        llm=ChatLLM(),
-        event_callback=on_event,
-        max_iterations=max_iter,
+    registry = build_registry(
         persistent_memory=pm,
+        include_shell_tools=True,
+        agent_config=agent_config,
+        session_id=session_id or None,
+        warn_callback=_mcp_warn,
         background_manager=background,
+        background_scope=background_scope,
     )
-    if run_dir_override:
-        agent.memory.run_dir = run_dir_override
+    llm = ChatLLM()
 
-    return _run_with_graceful_cancel(
-        agent,
-        prompt,
-        history,
-        no_rich=no_rich,
-        session_id=session_id,
-    )
+    # Opened only once the agent can run: it writes the user's message and
+    # replays the session's history, and a turn left open would be replayed
+    # as interrupted.
+    turn = None
+    if session_id:
+        from cli.conversation import open_turn
+        from src.session.store import SessionStore
+
+        turn = open_turn(SessionStore(base_dir=SESSIONS_DIR), session_id, prompt)
+
+    try:
+        agent = AgentLoop(
+            registry=registry,
+            llm=llm,
+            event_callback=on_event,
+            max_iterations=max_iter,
+            persistent_memory=pm,
+            background_manager=background,
+            thread_recorder=turn.recorder if turn is not None else None,
+        )
+        if run_dir_override:
+            agent.memory.run_dir = run_dir_override
+
+        result = _run_with_graceful_cancel(
+            agent,
+            prompt,
+            (turn.history or None) if turn is not None else None,
+            no_rich=no_rich,
+            session_id=session_id,
+        )
+    except BaseException as exc:
+        # A forced quit (second Ctrl+C) or a crash: close the turn so the
+        # next one replays it as stopped instead of finding it open.
+        if turn is not None:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                turn.abort("cancelled", "Interrupted")
+            else:
+                turn.abort("failed", str(exc))
+        raise
+    if turn is not None:
+        result = turn.finish(result, "".join(streamed_text))
+    return result
 
 
 def _run_with_graceful_cancel(
@@ -1585,26 +1623,6 @@ def cmd_run(prompt: str, max_iter: int, *, json_mode: bool = False, no_rich: boo
     return _result_exit_code(result)
 
 
-def _build_history_from_trace(trace_dir: Path) -> List[Dict[str, str]]:
-    """Build conversation history from trace.jsonl."""
-    from src.agent.trace import TraceWriter
-
-    if not (trace_dir / "trace.jsonl").exists():
-        return []
-    entries = TraceWriter.read(
-        trace_dir,
-        resolve_offloads=True,
-        resolve_fields={"prompt", "content"},
-    )
-    history: List[Dict[str, str]] = []
-    for e in entries:
-        if e.get("type") == "start" and e.get("prompt"):
-            history.append({"role": "user", "content": e["prompt"]})
-        elif e.get("type") == "answer" and e.get("content"):
-            history.append({"role": "assistant", "content": e["content"]})
-    return history
-
-
 def cmd_continue(
     run_id: str,
     prompt: str,
@@ -1634,10 +1652,11 @@ def cmd_continue(
         trace_dir = session_trace_dir if session_trace_dir.exists() else run_dir
     trace_dir.mkdir(parents=True, exist_ok=True)
 
-    history = _build_history_from_trace(trace_dir)
     # Continuations of one run share a session so goals and evidence accumulate
-    # across them. A session-backed run_id already *is* a session id (sessions
-    # and their traces share ``SESSIONS_DIR``); a plain run gets a derived id.
+    # across them, and so does the history the model sees: ``_run_agent``
+    # replays it from that session's thread log. A session-backed run_id
+    # already *is* a session id (sessions and their traces share
+    # ``SESSIONS_DIR``); a plain run gets a derived id.
     session_id = _ensure_session_id(
         prompt,
         session_id=run_id if session_trace_dir.exists() else f"run-{run_id}",
@@ -1649,7 +1668,6 @@ def cmd_continue(
         try:
             result = _run_agent(
                 prompt,
-                history=history,
                 run_dir_override=str(trace_dir),
                 max_iter=max_iter,
                 no_rich=no_rich,
@@ -1683,7 +1701,6 @@ def cmd_continue(
             dashboard.live = live
             result = _run_agent(
                 prompt,
-                history=history,
                 run_dir_override=str(trace_dir),
                 max_iter=max_iter,
                 dashboard=dashboard,
@@ -2065,7 +2082,6 @@ def cmd_interactive(max_iter: int) -> None:
     if any(r.critical and r.status != "ready" for r in results):
         return
 
-    history: List[Dict[str, str]] = []
     stats = _SessionStats(session_start=time.monotonic())
     prompt_session = _create_prompt_session(stats)
     # Created on the first agent turn so a REPL used only for slash commands
@@ -2103,7 +2119,6 @@ def cmd_interactive(max_iter: int) -> None:
                 dashboard.live = live
                 result = _run_agent(
                     user_input,
-                    history=history[-6:],
                     max_iter=max_iter,
                     dashboard=dashboard,
                     session_id=session_id,
@@ -2112,13 +2127,9 @@ def cmd_interactive(max_iter: int) -> None:
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted[/yellow]")
             continue
-        finally:
-            history.append({"role": "user", "content": user_input})
         stats.last_elapsed = time.perf_counter() - start
         stats.tool_count += dashboard.iterations
         _print_result(result, stats.last_elapsed)
-        if result.get("content"):
-            history.append({"role": "assistant", "content": result["content"]})
 
     console.print("[dim]Goodbye[/dim]")
 
@@ -2936,11 +2947,9 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
         console.print(f"[red]Session {session_id} not found[/red]")
         return
 
+    # The model's history is replayed from the session's thread log by
+    # ``_run_agent``; the messages here are only what the user reads.
     messages = store.get_messages(session_id, limit=None)
-    history: List[Dict[str, str]] = []
-    for msg in messages:
-        if msg.role in ("user", "assistant") and msg.content.strip():
-            history.append({"role": msg.role, "content": msg.content})
 
     console.print(Panel(
         f"[bold cyan]Session: {session.title or session_id}[/bold cyan]\n"
@@ -2979,21 +2988,16 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
             _timer = threading.Thread(target=_session_event_timer, args=(spinner,), daemon=True)
             _timer.start()
             try:
-                result = _run_agent(
-                    prompt, history=history[-6:], max_iter=max_iter, session_id=session_id
-                )
+                result = _run_agent(prompt, max_iter=max_iter, session_id=session_id)
             except KeyboardInterrupt:
                 console.print("\n[yellow]Interrupted[/yellow]")
                 continue
             finally:
-                history.append({"role": "user", "content": prompt})
                 _stop_timer.set()
                 _timer.join(timeout=1)
 
         stats.last_elapsed = time.perf_counter() - run_start
         _print_result(result, stats.last_elapsed)
-        if result.get("content"):
-            history.append({"role": "assistant", "content": result["content"]})
 
     console.print("[dim]Goodbye[/dim]")
 

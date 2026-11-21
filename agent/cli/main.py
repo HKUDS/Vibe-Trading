@@ -110,7 +110,6 @@ _CWD_ENV_PATH = Path.cwd() / ".env"
 # so a probe failure still shows a plausible banner rather than "0 loaded".
 _FALLBACK_SKILLS = 77
 _FALLBACK_TOOLS = 31
-_HISTORY_RETAINED_TURNS = 6  # how many prior turns to feed the agent loop
 
 # Cached banner-stats and session-store so ``/clear`` and repeat slash handlers
 # don't redo the heavy build_registry() / SessionStore construction.
@@ -336,12 +335,13 @@ class InteractiveContext:
 
     Attributes:
         session_id: Active session id (populated lazily on first turn).
-        history: Compact transcript (role/content pairs) fed back to the
-            agent for follow-up context.
+        transcript: User/assistant text of the session, for the recap line
+            only. The model's history is replayed from the session's thread
+            log (:mod:`cli.conversation`), never from this list.
         max_iter: ReAct iteration ceiling.
         debug: Whether the ``/debug`` panel is currently shown.
-        last_recap_history_len: Number of history messages covered by the
-            most recently printed deterministic recap.
+        last_recap_len: Number of transcript messages covered by the most
+            recently printed deterministic recap.
         pending_prompt: Optional prompt queued by a slash handler
             (``/journal``, ``/shadow``) that the loop should execute as
             the next user turn. Consumed by :func:`_interactive_loop`
@@ -355,10 +355,10 @@ class InteractiveContext:
     """
 
     session_id: Optional[str] = None
-    history: List[Dict[str, str]] = field(default_factory=list)
+    transcript: List[Dict[str, str]] = field(default_factory=list)
     max_iter: int = 50
     debug: bool = False
-    last_recap_history_len: int = 0
+    last_recap_len: int = 0
     pending_prompt: Optional[str] = None
     pending_proposal: Optional[Dict[str, Any]] = None
     pending_scheduled_proposal: Optional[Dict[str, Any]] = None
@@ -372,7 +372,7 @@ class InteractiveContext:
 def _session_store() -> Any:
     """Return a process-wide :class:`SessionStore` rooted at the user-level sessions dir.
 
-    Cached on the module so repeat ``_append_message`` / ``_new_session``
+    Cached on the module so repeat ``_session_transcript`` / ``_new_session``
     calls don't re-import ``src.session.store`` every turn.
     """
     global _SESSION_STORE_CACHE
@@ -384,22 +384,34 @@ def _session_store() -> Any:
     return _SESSION_STORE_CACHE
 
 
-def _build_session_history(store: Any, session_id: str) -> list[dict]:
-    """Load and filter recent message history for a session.
+def _session_transcript(store: Any, session_id: str) -> list[dict]:
+    """Load the user/assistant text of a session, for the resume banner and recap.
 
-    Returns up to ``_HISTORY_RETAINED_TURNS`` user/assistant messages
-    with non-empty content.
+    This is what the user reads, not what the model is sent: the model's
+    history is replayed from the session's thread log when the next turn runs.
+
+    Args:
+        store: Session store.
+        session_id: Session to read.
+
+    Returns:
+        ``{"role", "content"}`` rows with text, oldest first; empty when the
+        session cannot be read.
     """
     try:
-        messages = store.get_messages(session_id, limit=_HISTORY_RETAINED_TURNS * 2)
-    except Exception:  # noqa: BLE001 — persistence error → empty history
+        messages = store.get_messages(session_id, limit=None)
+    except Exception:  # noqa: BLE001 — persistence error → empty transcript
         return []
-    history = [
+    return [
         {"role": m.role, "content": m.content}
         for m in messages
         if m.role in {"user", "assistant"} and m.content.strip()
     ]
-    return history[-_HISTORY_RETAINED_TURNS:]
+
+
+def _prior_turns(transcript: list[dict]) -> int:
+    """Count the turns a transcript holds (one per user message)."""
+    return sum(1 for m in transcript if m["role"] == "user")
 
 
 def _new_session(prompt_preview: str) -> Optional[str]:
@@ -435,50 +447,11 @@ def _new_session(prompt_preview: str) -> Optional[str]:
     return session.session_id
 
 
-def _append_message(session_id: str, role: str, content: str) -> None:
-    """Append a single message to the session JSONL log + FTS5 index.
-
-    Dual-writes:
-
-    * Canonical: append the :class:`Message` to ``messages.jsonl`` via
-      the filesystem :class:`SessionStore`. ``_maybe_resume_last_session``
-      and the legacy ``sessions`` CLI both read from here.
-    * Search index: insert the same row into the SQLite FTS5 index so
-      ``SessionSearchTool`` finds it. Required for the CLAUDE.md promise
-      that cross-session full-text search works.
-
-    Args:
-        session_id: Active session id. Skipped if empty.
-        role: ``"user"`` / ``"assistant"`` / ``"tool"``.
-        content: Message text. Empty/whitespace strings are skipped.
-    """
-    if not session_id or not content:
-        return
-    try:
-        from src.session.models import Message
-
-        store = _session_store()
-        store.append_message(
-            Message(session_id=session_id, role=role, content=content)
-        )
-    except Exception:  # noqa: BLE001 — persistence is best-effort
-        pass
-
-    # FTS5 cross-session search. Independent try/except so a JSONL write
-    # that succeeded is not retried just because the search index failed.
-    try:
-        from src.session.search import get_shared_index
-
-        get_shared_index().index_message(session_id, role, content)
-    except Exception:  # noqa: BLE001
-        pass
-
-
 def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
     """Prompt to resume the most recent session, if any exist.
 
     Returns:
-        A dict ``{"session_id": str, "history": list[dict], "title": str}``
+        A dict ``{"session_id": str, "transcript": list[dict], "title": str}``
         when the user opts to resume, ``{"pending_input": str}`` when the
         user typed a first chat turn into the prompt, otherwise ``None`` (new
         session).
@@ -509,7 +482,7 @@ def _maybe_resume_last_session(console: Any) -> Optional[Dict[str, Any]]:
 
     return {
         "session_id": last.session_id,
-        "history": _build_session_history(store, last.session_id),
+        "transcript": _session_transcript(store, last.session_id),
         "title": title,
     }
 
@@ -669,15 +642,14 @@ def _print_debug_summary(
     console: Any,
     result: Dict[str, Any],
     elapsed: float,
-    ctx: InteractiveContext,
 ) -> None:
     """Render the one-line ``[debug]`` summary after a turn.
 
     Reads the iteration count from ``result`` (populated by
     :class:`src.agent.loop.AgentLoop`), counts tool events from
-    ``react_trace`` when present, and approximates the post-turn
-    context size from ``ctx.history``. Best-effort — any missing field
-    falls back to ``?`` so the summary still prints.
+    ``react_trace`` when present, and reports the turn's token usage as the
+    provider returned it. Best-effort — any missing field falls back to ``?``
+    so the summary still prints.
     """
     iterations = result.get("iterations", "?")
     trace = result.get("react_trace") or []
@@ -689,12 +661,11 @@ def _print_debug_summary(
         )
     else:
         tools = "?"
-    history_chars = sum(len(m.get("content", "")) for m in ctx.history)
-    # Rough char-to-token ratio (matches the loop's estimator).
-    approx_tokens = history_chars // 4
+    usage = result.get("usage") or {}
     console.print(
         f"[dim][debug] iter={iterations} tools={tools} "
-        f"elapsed={elapsed:.1f}s ctx≈{approx_tokens}tok ({history_chars}ch)[/dim]"
+        f"elapsed={elapsed:.1f}s tokens in={usage.get('input_tokens', '?')} "
+        f"out={usage.get('output_tokens', '?')}[/dim]"
     )
 
 
@@ -703,7 +674,9 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
 
     Routes through :func:`cli._legacy._run_agent` so all tool callbacks,
     persistent memory, and the ReAct engine remain untouched — we only
-    swap in the Rich dashboard and persist the turn to ``SessionStore``.
+    swap in the Rich dashboard. ``_run_agent`` records the turn in the
+    session (user message, thread items, reply row) and replays the
+    session's history into the model.
     """
     from cli._legacy import _RunDashboard, _run_agent
     from rich.live import Live
@@ -715,7 +688,6 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
         # the turn of its session, which would fail every research-goal call
         # with ``session_id is required`` (#885).
         ctx.session_id = _new_session(user_input) or uuid.uuid4().hex[:12]
-    _append_message(ctx.session_id or "", "user", user_input)
 
     start = time.perf_counter()
     dashboard = _RunDashboard(user_input, ctx.max_iter)
@@ -739,7 +711,6 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
             dashboard.live = live
             result = _run_agent(
                 user_input,
-                history=ctx.history[-_HISTORY_RETAINED_TURNS:],
                 max_iter=ctx.max_iter,
                 dashboard=dashboard,
                 session_id=ctx.session_id or "",
@@ -771,14 +742,13 @@ def _run_one_turn(user_input: str, ctx: InteractiveContext) -> None:
             ctx.pending_proposal = dict(captured_proposal)
             _render_mandate_proposal(console, ctx.pending_proposal)
 
-    ctx.history.append({"role": "user", "content": user_input})
+    ctx.transcript.append({"role": "user", "content": user_input})
     answer = (result.get("content") or "").strip()
     if answer:
-        ctx.history.append({"role": "assistant", "content": answer})
-        _append_message(ctx.session_id or "", "assistant", answer)
+        ctx.transcript.append({"role": "assistant", "content": answer})
 
     if ctx.debug:
-        _print_debug_summary(console, result, elapsed, ctx)
+        _print_debug_summary(console, result, elapsed)
 
 
 def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: float) -> None:
@@ -830,15 +800,15 @@ def _print_interactive_result(console: Any, result: Dict[str, Any], elapsed: flo
 def _print_recap_if_needed(console: Any, ctx: InteractiveContext) -> None:
     """Print a dim recap once per completed turn."""
 
-    if len(ctx.history) <= ctx.last_recap_history_len:
+    if len(ctx.transcript) <= ctx.last_recap_len:
         return
     from cli.ui.transcript import render_recap
 
-    recap = render_recap(ctx.history)
+    recap = render_recap(ctx.transcript)
     if recap is not None:
         console.print()
         console.print(recap)
-    ctx.last_recap_history_len = len(ctx.history)
+    ctx.last_recap_len = len(ctx.transcript)
 
 
 def _print_input_hint(console: Any, hint: str) -> None:
@@ -1331,10 +1301,10 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
             console.print(f"[red]Session {resume_session_id} not found[/red]")
             return 1
         ctx.session_id = resume_session_id
-        ctx.history = _build_session_history(store, resume_session_id)
+        ctx.transcript = _session_transcript(store, resume_session_id)
         console.print(
             f"[dim]Resumed session: {session.title or session.session_id} "
-            f"({len(ctx.history)} prior turns)[/dim]"
+            f"({_prior_turns(ctx.transcript)} prior turns)[/dim]"
         )
     else:
         # Offer to resume the most recent session. Audit item 8.
@@ -1344,9 +1314,10 @@ def _interactive_loop(max_iter: int, resume_session_id: Optional[str] = None) ->
                 pending_input = str(resume["pending_input"])
             else:
                 ctx.session_id = resume["session_id"]
-                ctx.history = list(resume["history"])
+                ctx.transcript = list(resume["transcript"])
                 console.print(
-                    f"[dim]Resumed session: {resume['title']} ({len(ctx.history)} prior turns)[/dim]"
+                    f"[dim]Resumed session: {resume['title']} "
+                    f"({_prior_turns(ctx.transcript)} prior turns)[/dim]"
                 )
 
     # Build the prompt session once so history + completer persist.

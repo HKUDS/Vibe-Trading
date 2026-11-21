@@ -88,10 +88,15 @@ def cmd_clear(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
         print_banner(console, **_collect_banner_stats())
     except Exception:  # noqa: BLE001
         console.print(Text("Conversation cleared.", style="dim"))
-    # Caller is expected to also drop in-memory conversation history.
-    if ctx is not None and hasattr(ctx, "history"):
+    # The model's history is the session's thread log, so a cleared
+    # conversation has to leave the session: the next turn opens a new one.
+    # (The old session stays on disk and can be resumed.)
+    if ctx is not None:
         try:
-            ctx.history.clear()
+            if hasattr(ctx, "transcript"):
+                ctx.transcript.clear()
+            if hasattr(ctx, "session_id"):
+                ctx.session_id = None
         except Exception:  # noqa: BLE001
             pass
     return 0
@@ -184,8 +189,8 @@ def cmd_debug(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
     """Toggle the debug summary that prints after each agent turn.
 
     When ON the interactive loop appends a single muted line after every
-    turn containing ``iter``, ``tools``, ``elapsed``, and an approximate
-    context-size estimate — see ``_print_debug_summary`` in
+    turn containing ``iter``, ``tools``, ``elapsed``, and the turn's token
+    usage — see ``_print_debug_summary`` in
     :mod:`cli.main`. When OFF the summary is suppressed.
     """
     console = _resolve_console()
@@ -198,7 +203,7 @@ def cmd_debug(ctx: Any = None, *args: str) -> int:  # noqa: ARG001
                 console.print(
                     Text(
                         "After each turn a one-line summary will print: "
-                        "iterations, tool count, elapsed, approx context tokens.",
+                        "iterations, tool count, elapsed, token usage.",
                         style="dim",
                     )
                 )
