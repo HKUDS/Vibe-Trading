@@ -1102,7 +1102,11 @@ def _run_agent(
             call (SPEC.md Consent §2).
     """
     from src.tools import build_registry
-    from src.providers.chat import ChatLLM
+    from src.session.model_selection import (
+        ModelSelectionError,
+        chat_llm_for_stored_session,
+        unavailable_selection_result,
+    )
     from src.agent.loop import AgentLoop
 
     # Closure-level state for the no-rich path so dots and progress lines
@@ -1255,6 +1259,10 @@ def _run_agent(
     )
     background = get_background_manager().for_scope(background_scope)
 
+    try:
+        llm = chat_llm_for_stored_session(SESSIONS_DIR, session_id)
+    except ModelSelectionError as exc:
+        return unavailable_selection_result(exc)
     agent = AgentLoop(
         registry=build_registry(
             persistent_memory=pm,
@@ -1265,7 +1273,7 @@ def _run_agent(
             background_manager=background,
             background_scope=background_scope,
         ),
-        llm=ChatLLM(),
+        llm=llm,
         event_callback=on_event,
         max_iterations=max_iter,
         persistent_memory=pm,

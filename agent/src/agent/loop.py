@@ -86,7 +86,7 @@ from src.goal.context import (
     goal_needs_continuation,
     goal_progress_tuple,
 )
-from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError
+from src.providers.chat import ChatLLM, LLMRuntimeSnapshot, ProviderStreamError, reported_model_source
 from src.providers.session_context import bind_llm_session_id, reset_llm_session_id
 from src.providers.content_filter import (
     CONTENT_FILTER_SKIP_MESSAGE,
@@ -222,7 +222,7 @@ class AgentLoop(ToolCallLifecycle):
             )
         self._llm_runtime = runtime_snapshot
         self._active_model_id = runtime_snapshot.configured_model
-        self._active_model_source = "configured"
+        self._active_model_source = reported_model_source(runtime_snapshot, None)
         self.memory = memory or WorkspaceMemory()
         self._event_callback = event_callback
         self.max_iterations = max_iterations
@@ -839,7 +839,7 @@ class AgentLoop(ToolCallLifecycle):
                             {
                                 "type": "empty_model_response",
                                 "iter": current_iter,
-                                "provider": get_env_config().llm.langchain_provider,
+                                "provider": self._llm_runtime.provider,
                                 "model": getattr(self.llm, "model_name", None) or get_env_config().llm.langchain_model_name,
                             }
                         )
@@ -1026,8 +1026,8 @@ class AgentLoop(ToolCallLifecycle):
                 self._active_model_id = (
                     current_response_model or self._llm_runtime.configured_model
                 )
-                self._active_model_source = (
-                    "provider_response" if current_response_model else "configured"
+                self._active_model_source = reported_model_source(
+                    self._llm_runtime, current_response_model
                 )
                 compact_requested, focus_topic = self._process_tool_calls(
                     response.tool_calls, context, messages, trace, react_trace, current_iter,
@@ -1234,7 +1234,7 @@ class AgentLoop(ToolCallLifecycle):
     def _context_budget(self, messages: list) -> CompactionBudget:
         """Compaction thresholds for the active model's real context window."""
         cfg = get_env_config()
-        provider = (cfg.llm.langchain_provider or "").strip().lower().replace("_", "-")
+        provider = (self._llm_runtime.provider or "").strip().lower().replace("_", "-")
         model = getattr(self.llm, "model_name", "") or cfg.llm.langchain_model_name
         window, source = resolve_window(
             provider,

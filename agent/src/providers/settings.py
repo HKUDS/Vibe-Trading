@@ -65,6 +65,18 @@ class ProviderConfig:
     environment: Mapping[str, str] = field(repr=False, default_factory=dict)
 
 
+def current_settings() -> dict[str, str]:
+    """Copy the process's current connection settings, `.env` included.
+
+    Returns:
+        A private copy a caller may change without affecting the process or
+        any other client resolved from it.
+    """
+    with CONFIG_LOCK:
+        _ensure_dotenv()
+        return dict(os.environ)
+
+
 def resolve_config(*, model_name: str | None = None, environment: Mapping[str, str] | None = None) -> ProviderConfig:
     """Resolve once from supplied settings and, for custom providers, the vault.
 
@@ -76,9 +88,7 @@ def resolve_config(*, model_name: str | None = None, environment: Mapping[str, s
         An immutable config for one client and all of its subsequent requests.
     """
     with CONFIG_LOCK:
-        if environment is None:
-            _ensure_dotenv()
-        values = dict(os.environ if environment is None else environment)
+        values = current_settings() if environment is None else dict(environment)
         options = ModelOptions(**values)
         provider = options.langchain_provider.strip().lower()
         model = model_name or options.langchain_model_name.strip()

@@ -77,7 +77,10 @@ def _new_llm_usage_summary(llm: Any) -> dict[str, Any]:
     """Create the run-scoped provider usage accumulator."""
     from src.config.accessor import get_env_config
     cfg = get_env_config()
-    provider = cfg.llm.langchain_provider.strip() or "openai"
+    # A session may select another provider than the server's settings; the
+    # client's own snapshot names the one actually called.
+    runtime = getattr(llm, "runtime_snapshot", None)
+    provider = getattr(runtime, "provider", "") or cfg.llm.langchain_provider.strip() or "openai"
     model = getattr(llm, "model_name", None) or cfg.llm.langchain_model_name.strip()
     return {
         "provider": provider,

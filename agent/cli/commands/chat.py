@@ -2,7 +2,8 @@
 ``/shadow``, ``/swarm``, ``/debug``, ``/quit``.
 
 ``/model`` renders the current configuration via the legacy
-``_show_settings`` helper. ``/swarm`` dispatches to the legacy
+``_show_settings`` helper, and ``/model set`` / ``/model clear`` change the
+current session's own model selection. ``/swarm`` dispatches to the legacy
 ``_handle_swarm_command`` so the existing presets keep working. ``/clear``
 clears the screen and reprints the banner. ``/journal``, ``/shadow``, and
 ``/debug`` show a "Coming soon" placeholder pointing at the established
@@ -41,8 +42,68 @@ def _coming_soon(command: str, *, hint: str) -> int:
 # --- /model ----------------------------------------------------------------
 
 
-def cmd_model(ctx: Any = None, *args: str) -> int:  # noqa: ARG001 — ctx unused
-    """Print the current provider/model + how to re-run the wizard."""
+_MODEL_USAGE = "/model set <provider> <model> [reasoning_effort]  |  /model clear"
+
+
+def _current_session(ctx: Any, *, create: bool) -> Any:
+    """Return ``(store, session)`` for the REPL's session, creating one if asked."""
+    from cli.main import _new_session, _session_store
+
+    store = _session_store()
+    session_id = getattr(ctx, "session_id", None)
+    if session_id is None and create:
+        session_id = _new_session("")
+        if session_id is None:
+            raise RuntimeError("could not create a session to hold the model selection")
+        ctx.session_id = session_id
+    return store, (store.get_session(session_id) if session_id else None)
+
+
+def _change_session_model(ctx: Any, args: tuple[str, ...]) -> int:
+    """Handle ``/model set ...`` and ``/model clear`` for the REPL's session."""
+    from src.providers.selection import ModelSelection, ModelSelectionError, validate_model_selection
+    from src.session.model_selection import set_model_selection
+
+    console = _resolve_console()
+    action, rest = args[0].lower(), args[1:]
+    if not (action == "clear" and not rest) and not (action == "set" and len(rest) in (2, 3)):
+        console.print(Text(f"Usage: {_MODEL_USAGE}", style="bold red"))
+        return 1
+    selection: ModelSelection | None = None
+    if action == "set":
+        raw = {"provider": rest[0], "model": rest[1], "reasoning_effort": rest[2] if len(rest) == 3 else ""}
+        try:
+            selection, _config = validate_model_selection(raw)
+        except ModelSelectionError as exc:
+            console.print(Text(f"Model not changed: {exc}", style="bold red"))
+            return 1
+    store, session = _current_session(ctx, create=selection is not None)
+    if session is None:
+        console.print(Text("This session has no model selection; it uses the configured model.", style="dim"))
+        return 0
+    set_model_selection(session, selection)
+    store.update_session(session)
+    if selection is None:
+        console.print(Text("Session model cleared; the next turn uses the configured model.", style="bold"))
+    else:
+        effort = f" (effort {selection.reasoning_effort})" if selection.reasoning_effort else ""
+        console.print(Text(
+            f"Session model: {selection.provider} / {selection.model}{effort}; applies from the next turn.",
+            style="bold",
+        ))
+    return 0
+
+
+def cmd_model(ctx: Any = None, *args: str) -> int:
+    """Show the configuration, or set/clear the current session's model.
+
+    ``/model`` prints the configured provider/model and the session's own
+    selection when it has one; ``/model set <provider> <model> [effort]`` and
+    ``/model clear`` change that selection. Only providers the server is
+    configured for are accepted, and only from the next turn on.
+    """
+    if args:
+        return _change_session_model(ctx, args)
     console = _resolve_console()
     try:
         from cli._legacy import _show_settings
@@ -58,10 +119,26 @@ def cmd_model(ctx: Any = None, *args: str) -> int:  # noqa: ARG001 — ctx unuse
         console.print(Text(f"Model:    {model}", style="bold"))
         console.print(Text(f"(legacy _show_settings unavailable: {exc})", style="dim"))
 
+    try:
+        from src.session.model_selection import effective_model_selection
+
+        _store, session = _current_session(ctx, create=False)
+        effective = effective_model_selection(session) if session is not None else None
+    except Exception as exc:  # noqa: BLE001 — showing the config must not fail on the store
+        effective = {"source": "session", "error": str(exc)}
+    if effective and effective["source"] == "session":
+        console.print()
+        detail = effective.get("error") or (
+            f"{effective['provider']} / {effective['model']}"
+            + (f" (effort {effective['reasoning_effort']})" if effective["reasoning_effort"] else "")
+        )
+        console.print(Text(f"This session: {detail}", style="bold"))
+
     console.print()
     console.print(
         Text(
-            "Run `vibe-trading init` to switch provider, model, or credentials.",
+            "Run `vibe-trading init` to switch provider, model, or credentials; "
+            f"for this session only: {_MODEL_USAGE}",
             style="dim",
         )
     )
