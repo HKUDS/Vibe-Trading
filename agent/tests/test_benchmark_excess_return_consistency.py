@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+import yaml
 
 from backtest.benchmark import BenchmarkResult
 from backtest.engines.china_a import ChinaAEngine
+from backtest.loaders import local_loader
 from backtest.metrics import bar_returns, buy_and_hold_return
+from backtest.runner import _AutoLoader, fetch_data_map
 
 
 class _FakeLoader:
@@ -124,3 +127,41 @@ def test_excess_return_unaffected_when_no_external_benchmark(tmp_path):
     assert "benchmark_ticker" not in metrics
     assert metrics["benchmark_label"] == "equal-weight basket (000001.SZ)"
     assert metrics["excess_return"] == pytest.approx(0.0)
+
+
+def test_signed_price_policy_applies_to_the_lazily_loaded_benchmark(monkeypatch, tmp_path):
+    dates = pd.bdate_range("2026-01-05", periods=4)
+    sources = []
+    for symbol, prices in (("000001.SZ", [10.0] * 4), ("BENCH", [10.0, -2.0, -3.0, -5.0])):
+        csv_path = tmp_path / f"{symbol}.csv"
+        pd.DataFrame(
+            {
+                "date": dates,
+                "open": prices,
+                "high": prices,
+                "low": prices,
+                "close": prices,
+                "volume": [1_000] * 4,
+            }
+        ).to_csv(csv_path, index=False)
+        sources.append({"symbol": symbol, "type": "csv", "path": str(csv_path)})
+    config_path = tmp_path / "data.yaml"
+    config_path.write_text(yaml.safe_dump({"sources": sources}), encoding="utf-8")
+    monkeypatch.setattr(local_loader, "_CONFIG_PATH", config_path)
+
+    def run(label: str, allow: bool):
+        run_dir = tmp_path / label
+        run_dir.mkdir()
+        config = _config(run_dir, dates) | {"source": "local", "allow_nonpositive_prices": allow}
+        fetched = fetch_data_map(config)
+        assert set(fetched.data_map) == {"000001.SZ"}
+        loader = _AutoLoader(fetched.data_map, inner=fetched.loader, name="local")
+        return ChinaAEngine(config).run_backtest(config, loader, _FlatSignal(), run_dir)
+
+    assert run("strict-before", False)["benchmark_kind"] == "equal_weight"
+    signed = run("signed", True)
+    assert signed["benchmark_kind"] == "external"
+    assert signed["benchmark_ticker"] == "BENCH"
+    assert signed["benchmark_return"] == pytest.approx(-1.5)
+    assert signed["excess_return"] == pytest.approx(1.5)
+    assert run("strict-after", False)["benchmark_kind"] == "equal_weight"
