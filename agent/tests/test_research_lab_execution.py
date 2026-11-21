@@ -218,15 +218,11 @@ def test_walk_forward_keeps_source_warmup_out_of_training_and_test(saved_run, tm
     assert calendar(
         Path(result["holdout"]["test"]["run_dir"]) / "artifacts/equity.csv"
     ).equals(evaluated[-3:])
-    train_config = json.loads((train / "config.json").read_text())
-    assert train_config["warmup_bars"] == 0
-    assert "evaluation_start_date" not in train_config
-    train_prices = prices[
-        (prices >= train_config["start_date"])
-        & (prices <= train_config["end_date"])
-    ]
+    train_prices = prices[prices <= evaluated[4]]
+    test_prices = prices[prices <= evaluated[7]]
     assert calendar(train / "snapshot/frame-0.csv").equals(train_prices)
     assert calendar(train / "artifacts/ohlcv_AAPL.US.csv").equals(train_prices)
+    assert calendar(test / "snapshot/frame-0.csv").equals(test_prices)
 
 
 @pytest.mark.parametrize("saved_run", [{"warmup_bars": 30}], indirect=True)
@@ -262,6 +258,48 @@ def test_walk_forward_rejects_a_changed_source_evaluation_artifact(saved_run, tm
             lambda value: None,
         )
     assert not (tmp_path / "wf-study/trials").exists()
+
+
+@pytest.mark.parametrize("saved_run", [{}, {"warmup_bars": 10}], indirect=True)
+def test_rolling_fit_uses_only_its_own_evaluation_window(saved_run, tmp_path):
+    evaluated = pd.read_csv(saved_run / "artifacts/equity.csv", index_col=0, parse_dates=True).index
+    result = walk_forward(
+        WalkForwardRequest(
+            run_dir=str(saved_run),
+            training="rolling",
+            train_bars=5,
+            test_bars=3,
+            holdout_bars=3,
+            max_folds=2,
+            objective="total_return",
+            candidates=[{"name": "baseline"}],
+        ),
+        tmp_path / "rolling-study",
+        lambda value: None,
+    )
+    expected = (evaluated[:5], evaluated[3:8], evaluated[-8:-3])
+    for fold, window in zip([*result["folds"], result["holdout"]], expected, strict=True):
+        train = Path(fold["training"][0]["run_dir"])
+        actual = pd.read_csv(train / "artifacts/equity.csv", index_col=0, parse_dates=True).index
+        assert actual.equals(window)
+
+
+@pytest.mark.parametrize("saved_run", [{"warmup_bars": 0}], indirect=True)
+def test_cost_replay_does_not_require_a_saved_equity_calendar(saved_run, tmp_path):
+    card_path = saved_run / "run_card.json"
+    card = json.loads(card_path.read_text())
+    card["artifacts"] = [entry for entry in card["artifacts"] if entry["path"] != "artifacts/equity.csv"]
+    card_path.write_text(json.dumps(card))
+
+    result = cost_sensitivity(
+        CostRequest(run_dir=str(saved_run), scenarios=[{"name": "base"}]),
+        tmp_path / "cost-study",
+        lambda value: None,
+    )
+    row, = result["rows"]
+    replay = pd.read_csv(Path(row["run_dir"]) / "artifacts/equity.csv", index_col=0)
+    source = pd.read_csv(saved_run / "artifacts/equity.csv", index_col=0)
+    assert replay.index.equals(source.index)
 
 
 def test_modified_source_prices_are_not_relabelled_as_frozen(saved_run, tmp_path):

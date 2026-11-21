@@ -67,7 +67,9 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
     liquidate at their end, so fold boundary costs are included. A reserved
     final holdout is never included in any training or validation fold.
     """
-    config, manifest, calendar, code_hash = freeze_run(source_run(request.run_dir), root)
+    config, manifest, calendar, code_hash = freeze_run(
+        source_run(request.run_dir), root, use_evaluation_calendar=True
+    )
     if config.get("engine", "daily") != "daily":
         raise ValueError("walk-forward parameter selection currently requires a daily/bar execution engine")
     limit = len(calendar) - request.holdout_bars
@@ -102,13 +104,13 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
             progress(
                 {"phase": "training", "completed": completed, "total": count, "fold": number, "label": candidate.name}
             )
+            # Keep the source input start; only scoring moves with the fold.
             settings = {
                 **config,
-                "start_date": calendar[0].isoformat(),
                 "end_date": calendar[boundary - 1].isoformat(),
+                "evaluation_start_date": calendar[start].isoformat(),
             }
-            settings.pop("evaluation_start_date", None)
-            settings["warmup_bars"] = 0
+            settings.pop("warmup_bars", None)
             measured = trial(
                 root,
                 f"{'holdout' if holdout else 'fold'}-{number}-train-{index}",
@@ -155,7 +157,6 @@ def walk_forward(request: WalkForwardRequest, root: Path, progress: Progress) ->
         )
         settings = {
             **config,
-            "start_date": calendar[0].isoformat(),
             "end_date": calendar[end - 1].isoformat(),
             "evaluation_start_date": calendar[boundary].isoformat(),
         }
