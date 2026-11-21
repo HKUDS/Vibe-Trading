@@ -983,7 +983,11 @@ class SignalChannel(BaseChannel):
                 try:
                     source_path = self._signal_attachments_dir() / attachment_id
                     if source_path.exists():
-                        dest_path = media_dir / f"signal_{safe_filename(filename)}"
+                        # attachment_id is unique per attachment; filename alone is
+                        # not (multiple photos routinely share a name like
+                        # "image.jpg"), and a name-only dest_path let a later
+                        # attachment silently overwrite an earlier one on disk.
+                        dest_path = media_dir / f"signal_{safe_filename(attachment_id)}_{safe_filename(filename)}"
                         shutil.copy2(source_path, dest_path)
                         media_paths.append(str(dest_path))
                         media_type = content_type.split("/")[0] if "/" in content_type else "file"
